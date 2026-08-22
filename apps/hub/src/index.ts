@@ -1364,6 +1364,25 @@ export async function createHub(config: HubConfig) {
     chatOrchestratorDeps.memory = memoryHandle.memory;
   }
   const chatOrchestrator = createChatOrchestrator(chatOrchestratorDeps);
+  // CL-6644: a loud, unconditional boot confirmation that message intake
+  // is actually wired — a composition-root mistake here (an import
+  // dropped, a construction reordered, an argument omitted) type-checks
+  // fine but produces a hub that accepts messages into a void: no
+  // dispatch, no error, no notice, just a message that persists and is
+  // never asked of anyone. This can't detect every such mistake (the
+  // pieces below are non-optional local bindings, not feature-flagged),
+  // but it turns "intake is wired" from an assumption nothing checks
+  // into a line every boot log carries — the next investigation starts
+  // by grepping for this instead of re-deriving the whole call chain.
+  getLogger(["hub", "chat-intake"]).info(
+    "Chat message intake wired: turnQueue={hasTurnQueue} " +
+      "chatOrchestrator={hasOrchestrator} chatPlatform={hasPlatform}",
+    {
+      hasTurnQueue: turnQueue !== undefined,
+      hasOrchestrator: chatOrchestrator !== undefined,
+      hasPlatform: chatPlatform !== undefined,
+    },
+  );
   // A room participant that died with its sidecar is otherwise silently
   // dead until somebody writes into it, and the turn the crash
   // interrupted never surfaces at all — the run that died never sends

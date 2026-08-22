@@ -1138,6 +1138,25 @@ async function routeToRecipients(
     if (host !== undefined) recipientSet.add(host.address);
   }
   const recipients = [...recipientSet];
+  // CL-6644: unconditional, not gated on failure — the silent gap this
+  // investigation found is that nothing at all logs between "message
+  // persisted" and either a dispatch failure or a successful reply,
+  // so a turn that resolves zero recipients (a workbench with no host
+  // participant, a stale settings row) or one that stalls before ever
+  // reaching `dispatchTurnBatch`'s own error handling looks identical
+  // to total silence in the logs. This line exists so the next person
+  // chasing an "agent never replied" report can tell, from logs alone,
+  // whether routing ever ran and what it resolved to.
+  fanoutLog.info(
+    "Routed workbench {workbenchId}'s message {messageId} to {count} " +
+      "recipient(s): {recipients}",
+    {
+      workbenchId: input.workbenchId,
+      messageId,
+      count: recipients.length,
+      recipients,
+    },
+  );
 
   const contextText =
     !isDefaultRouting && recipients.length > 0
@@ -1201,6 +1220,17 @@ async function dispatchTurnBatch(
   const last = batch[batch.length - 1];
   if (last === undefined) return;
   const messageIds = batch.map((turn) => turn.messageId);
+
+  // CL-6644: unconditional entry marker — see the matching note on the
+  // caller's own recipient-resolution log. This is the one line that
+  // proves execution reached turn dispatch at all; its absence for a
+  // message known to have persisted narrows a future "no reply"
+  // report to upstream of here without needing a live repro first.
+  fanoutLog.info(
+    "Dispatching workbench {workbenchId}'s turn for message(s) " +
+      "{messageIds} to {count} recipient(s): {recipients}",
+    { workbenchId, messageIds, count: recipients.length, recipients },
+  );
 
   // Concurrent: agents are independent, and a dispatch that has to wake
   // its target pays a full redeploy — serially, one slept agent would
