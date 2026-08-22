@@ -7,6 +7,7 @@ import {
   clearAgentModel,
   getAgentDefinitionBySlug,
   listCatalogModels,
+  listRoutineRunFires,
   loadAgentDirectory,
   updateAgentSkills,
 } from "../src/agents-api";
@@ -267,6 +268,31 @@ describe("getAgentDefinitionBySlug", () => {
     const definition = await getAgentDefinitionBySlug("tnt_1", "triage-bot");
     expect(definition.id).toBe("wfd_1");
     expect(calls.every((call) => !call.path.includes("limit="))).toBe(true);
+  });
+});
+
+describe("listRoutineRunFires", () => {
+  test("requests the fires feed of top-level-runs, not the plain feed", async () => {
+    const calls = stubFetch(() =>
+      json({
+        data: [
+          {
+            ...instanceFixture,
+            routineId: "rtn_1",
+            routineName: "Weekly digest",
+          },
+        ],
+        nextCursor: null,
+      }),
+    );
+
+    const fires = await listRoutineRunFires("tnt_1");
+
+    expect(calls[0]?.path).toContain("/api/tenants/tnt_1/top-level-runs");
+    expect(calls[0]?.path).toContain("feed=fires");
+    expect(fires).toEqual([
+      { ...instanceFixture, routineId: "rtn_1", routineName: "Weekly digest" },
+    ]);
   });
 });
 

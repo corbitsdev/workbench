@@ -1,10 +1,11 @@
-// The seam standing in for `@corbits/routines` (not on `main` yet): today it
-// maps `listTopLevelRuns`'s server-scoped run listing into
-// `RoutineActivityItem`, so the second column gets real bench-scoped
-// activity instead of nothing. Folded/chat/task runs never reach this
-// module at all — the hub's `/top-level-runs` route already excludes them
-// (see `@corbits/folded-runs`'s `scope-routes.ts`), so there is nothing
-// left for this seam to filter.
+// CL-6595: the shell's "Running" section and Mission Control's active-run
+// count both read `listRoutineActivity`, which must source the `feed=fires`
+// listing — the one top-level-runs view that keeps a routine's fire (see
+// `@corbits/folded-runs`'s `scope-routes.ts`). The plain `listTopLevelRuns`
+// feed excludes every folded run, and a routine fire IS a folded run, so a
+// routine genuinely running would never appear here at all -- Mission
+// Control would read "0 active" while the Routines page's own "Running
+// now" pill (driven by the same run's `workflow_run.status`) disagreed.
 
 import { afterEach, describe, expect, test } from "bun:test";
 
@@ -16,41 +17,93 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
+let lastRequestedPath: string | null = null;
+
 function stubTopLevelRunsFetch(runs: readonly unknown[]): void {
-  globalThis.fetch = ((_input: RequestInfo | URL, _init?: RequestInit) =>
-    Promise.resolve(
+  globalThis.fetch = ((input: RequestInfo | URL) => {
+    lastRequestedPath = typeof input === "string" ? input : input.toString();
+    return Promise.resolve(
       new Response(JSON.stringify({ data: runs, nextCursor: null }), {
         status: 200,
         headers: { "content-type": "application/json" },
       }),
-    )) as typeof fetch;
+    );
+  }) as typeof fetch;
 }
 
-const deploymentRun = {
+const runningFire = {
   id: "run_1",
   definitionId: "wfd_1",
-  definitionName: "Researcher",
+  definitionName: "Weekly digest",
   tenantId: "tnt_1",
   address: "run_1@tnt1.example",
   status: "running",
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
+  routineId: "rtn_1",
+  routineName: "Weekly digest",
+};
+
+const completedFire = {
+  ...runningFire,
+  id: "run_2",
+  status: "stopped",
+  routineId: "rtn_1",
+};
+
+const nonRoutineFire = {
+  id: "run_3",
+  definitionId: "wfd_2",
+  definitionName: "Directly triggered deployment",
+  tenantId: "tnt_1",
+  address: "run_3@tnt1.example",
+  status: "running",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  routineId: null,
+  routineName: null,
 };
 
 describe("listRoutineActivity", () => {
-  test("maps a workflow run into a routine activity item", async () => {
-    stubTopLevelRunsFetch([deploymentRun]);
+  test("reads the fires feed, not the plain top-level-runs feed", async () => {
+    stubTopLevelRunsFetch([runningFire]);
+    await listRoutineActivity("tnt_1");
+    expect(lastRequestedPath).toContain("feed=fires");
+  });
+
+  test("maps a running routine fire into a routine activity item", async () => {
+    stubTopLevelRunsFetch([runningFire]);
 
     const items = await listRoutineActivity("tnt_1");
 
     expect(items).toEqual([
       {
         id: "run_1",
-        name: "Researcher",
+        name: "Weekly digest",
         status: "running",
         startedAt: "2026-01-01T00:00:00.000Z",
       },
     ]);
+  });
+
+  // The bug this ticket reports: a run that genuinely finished must not
+  // keep counting toward "active" just because it once fired. Mission
+  // Control's active-run count filters on `status === "running"`, so this
+  // item leaving that status here is what makes the two surfaces agree.
+  test("a completed routine fire no longer reads as running", async () => {
+    stubTopLevelRunsFetch([completedFire]);
+
+    const [item] = await listRoutineActivity("tnt_1");
+
+    expect(item?.status).not.toBe("running");
+  });
+
+  // A directly-triggered deployment run is also a `feed=fires` row (it is
+  // not a folded run at all), but it has no routine parent -- it must not
+  // be counted as routine activity.
+  test("drops a fires-feed row with no routine parent", async () => {
+    stubTopLevelRunsFetch([nonRoutineFire]);
+    expect(await listRoutineActivity("tnt_1")).toEqual([]);
   });
 
   test("an empty run list is an empty routine list", async () => {

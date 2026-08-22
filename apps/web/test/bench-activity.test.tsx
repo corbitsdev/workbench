@@ -115,7 +115,7 @@ describe("useBenchActivity", () => {
     container.remove();
   });
 
-  test("splits workbenches by kind and shows only genuine top-level runs", async () => {
+  test("splits workbenches by kind and shows only genuine routine fires (CL-6595)", async () => {
     const calls: string[] = [];
     stubTenantFetch(calls, {
       workbenches: [
@@ -139,21 +139,37 @@ describe("useBenchActivity", () => {
         },
       ],
       // The workbench host and the invited agent never appear here: the
-      // hub's `/top-level-runs` route excludes every folded run
-      // server-side (see `@corbits/folded-runs`'s `scope-routes.ts`),
-      // so this mock reflects exactly what that route returns — only
-      // the genuine deployment.
+      // hub's `/top-level-runs?feed=fires` route excludes every folded
+      // run that isn't a routine fire (see `@corbits/folded-runs`'s
+      // `scope-routes.ts`). A routine's own fire IS a folded run, so it
+      // must still show up here (`run_routine1`, tagged with its
+      // `routineId`) -- that is the CL-6595 fix; a directly-triggered
+      // deployment with no routine parent (`run_deployment1`) is not
+      // routine activity and must not appear.
       runs: [
         {
           id: "run_deployment1",
           definitionId: "def_researcher",
-          workbenchId: "ch_1",
           definitionName: "researcher",
           tenantId: "tnt_1",
           address: "run_deployment1@tnt1.example",
           status: "running",
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
+          routineId: null,
+          routineName: null,
+        },
+        {
+          id: "run_routine1",
+          definitionId: "def_digest",
+          definitionName: "Digest agent",
+          tenantId: "tnt_1",
+          address: "run_routine1@tnt1.example",
+          status: "running",
+          createdAt: "2026-01-02T00:00:00.000Z",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+          routineId: "rtn_1",
+          routineName: "Weekly digest",
         },
       ],
     });
@@ -163,7 +179,8 @@ describe("useBenchActivity", () => {
     if (state.kind !== "ready") throw new Error(`not ready: ${state.kind}`);
     expect(state.workbenches.map((c) => c.id)).toEqual(["run_host1"]);
     expect(state.chats.map((c) => c.id)).toEqual(["run_chat1"]);
-    expect(state.routines.map((r) => r.id)).toEqual(["run_deployment1"]);
+    expect(state.routines.map((r) => r.id)).toEqual(["run_routine1"]);
+    expect(state.routines.map((r) => r.name)).toEqual(["Weekly digest"]);
     root.unmount();
     container.remove();
   });
