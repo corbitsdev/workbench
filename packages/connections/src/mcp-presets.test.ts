@@ -13,6 +13,7 @@ describe("MCP_PRESETS", () => {
     expect(slugs).toEqual(
       [
         "attio",
+        "canva",
         "exa",
         "github-mcp",
         "granola",
@@ -79,6 +80,7 @@ describe("MCP_PRESETS", () => {
       railway: "https://mcp.railway.com",
       posthog: "https://mcp.posthog.com/mcp",
       sumble: "https://mcp.sumble.com/",
+      canva: "https://mcp.canva.com/mcp",
     });
   });
 
@@ -104,5 +106,10 @@ describe("MCP_PRESETS", () => {
 
   test("mcpPresetBySlug returns undefined for an unknown slug", () => {
     expect(mcpPresetBySlug("not-a-preset")).toBeUndefined();
+  });
+
+  test("Canva is a DCR-verified OAuth preset with no simple-icons mark yet", () => {
+    expect(mcpPresetBySlug("canva")?.connectionMode).toBe("oauth");
+    expect(mcpPresetBySlug("canva")?.icon).toBeUndefined();
   });
 });
