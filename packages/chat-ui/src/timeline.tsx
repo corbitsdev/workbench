@@ -38,6 +38,7 @@ import {
   PushPinSlash,
   Smiley,
 } from "@corbits/icons";
+import { memo } from "react";
 import type { CSSProperties } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
@@ -1209,7 +1210,44 @@ function PinToggleButton({
   );
 }
 
-function MessageParts({
+/**
+ * `MessageParts`'s own memo guard (CL-6625): a streamed token, a typing
+ * ping, or a presence update re-renders `WorkbenchTimeline`'s parent with a
+ * freshly-built `items` array (`mergeStreamingReply`/`mergePendingSends` in
+ * `chat-workspace.tsx`), but every *unchanged* message keeps its own
+ * object identity across that rebuild — only the growing streaming bubble
+ * and the array wrapper are new. Without this guard, every row re-runs its
+ * full render (markdown, menu building, avatar lookups) on every token of
+ * someone else's reply, which is the dominant cause of "jerky" scrolling
+ * during a live turn. Handler props (`onOpenThread` and friends) are
+ * excluded on purpose: the host recreates them each render regardless, and
+ * they carry no data this component displays, only what it calls back
+ * into — so treating them as always-equal costs nothing and is what makes
+ * this guard effective at all. `items` (the full timeline, used only to
+ * recover retry text for a failed turn — see its own doc below) is
+ * excluded the same way; its reference changes every render independent of
+ * this row's own content, and a one-render-stale read of it is invisible to
+ * the reader.
+ */
+function messagePartsPropsEqual(
+  prev: Readonly<Record<string, unknown>>,
+  next: Readonly<Record<string, unknown>>,
+): boolean {
+  const ignoredKeys = new Set(["items"]);
+  const keys = new Set([...Object.keys(prev), ...Object.keys(next)]);
+  for (const key of keys) {
+    if (ignoredKeys.has(key)) continue;
+    const prevValue = prev[key];
+    const nextValue = next[key];
+    if (typeof prevValue === "function" && typeof nextValue === "function") {
+      continue;
+    }
+    if (prevValue !== nextValue) return false;
+  }
+  return true;
+}
+
+function MessagePartsInner({
   item,
   items,
   participants,
@@ -1490,6 +1528,8 @@ function MessageParts({
     </div>
   );
 }
+
+const MessageParts = memo(MessagePartsInner, messagePartsPropsEqual);
 
 /**
  * Whether `item`'s header (avatar + name + timestamp) collapses because it
