@@ -8,7 +8,10 @@
 // invitable listing, and participant/fromWorkbenchId send semantics.
 // A workbench itself is data — only invited agents have runs here.
 import { and, desc, eq } from "drizzle-orm";
-import { createAgentLifecycle } from "@corbits/agent-lifecycle";
+import {
+  createAgentLifecycle,
+  DEFAULT_WAKE_TIMEOUT_MS,
+} from "@corbits/agent-lifecycle";
 import {
   authoredDefinitionCandidates,
   createCryptoProviderCache,
@@ -486,10 +489,18 @@ export function createHubChatPlatform(
    * `address` may be either side of the mapping — the stable address
    * the room holds, or the live deployment address the sidecar reports.
    *
-   * CL-6267: the sidecar's own park/wake handler owns respawning a
-   * parked-but-still-announced deployment the moment mail routes to it,
-   * so a routable address is never deployed or undeployed here for
-   * routability alone.
+   * CL-6267 (superseded by CL-6644): a parked deployment used to stay
+   * announced (routable), with the sidecar's own park/wake handler
+   * respawning it in place the moment mail routed to it. `0fd3fbc8`
+   * deleted that in-sidecar handler in favor of reap-and-relaunch
+   * teardown, and the sidecar now unregisters a parked address's
+   * transport routing at park time too — so a parked address reads as
+   * genuinely unroutable here, and this function's `isRoutable` branch
+   * below is reached only by an address that is actually live. A
+   * parked-and-now-unroutable address still never gets deployed or
+   * undeployed FOR ROUTABILITY ALONE here — it falls through to the
+   * explicit `wakeFoldedRun` redeploy a few lines down, the one wake
+   * path a parked deployment has left.
    *
    * CL-6365: a run that is unroutable because it DIED — the hub's own
    * `workflow_run.status` is terminal and it is not merely a folded run
@@ -538,6 +549,40 @@ export function createHubChatPlatform(
     await wakeFoldedRun(foldedRunsDeps, {
       ...wakeParams,
       ...(await deployShapeFor(binding)),
+    });
+  }
+
+  /**
+   * `wakeByAddress`, bounded to `DEFAULT_WAKE_TIMEOUT_MS` — the same
+   * bound `@corbits/agent-lifecycle`'s `ensureAwake` puts on this exact
+   * call when `lifecycle` is configured (CL-6643). Every call site that
+   * invokes `wakeByAddress` directly rather than through
+   * `lifecycle.ensureAwake` — `sendFoldedMailWithReclaimRetry`'s reclaim
+   * retry, and the exported `ensureAwake` hook's no-`lifecycle` fallback
+   * — used to await the underlying sidecar deploy round-trip with no
+   * bound at all, so a deploy the sidecar never acked wedged the caller
+   * (and, for the reclaim retry, every later send) forever instead of
+   * failing loud (CL-6644).
+   */
+  function wakeByAddressBounded(address: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(
+          new Error(
+            `wake for "${address}" did not settle within ${String(DEFAULT_WAKE_TIMEOUT_MS)}ms`,
+          ),
+        );
+      }, DEFAULT_WAKE_TIMEOUT_MS);
+      wakeByAddress(address).then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (cause: unknown) => {
+          clearTimeout(timer);
+          reject(cause);
+        },
+      );
     });
   }
 
@@ -656,7 +701,7 @@ export function createHubChatPlatform(
           loggedRetryStart = true;
         }
         await sleep(delay);
-        await wakeByAddress(params.agentAddress);
+        await wakeByAddressBounded(params.agentAddress);
       }
     }
   }
@@ -905,7 +950,7 @@ export function createHubChatPlatform(
       if (lifecycle !== undefined) {
         await lifecycle.ensureAwake(liveAddress);
       } else if (!isRoutable(liveAddress)) {
-        await wakeByAddress(liveAddress);
+        await wakeByAddressBounded(liveAddress);
       }
       // CL-6588: `lifecycle.ensureAwake` returns immediately for an
       // address that is already routable — routability is the only
@@ -1061,7 +1106,7 @@ export function createHubChatPlatform(
         await reconcileDriftedRun(binding.liveAddress);
         return;
       }
-      await wakeByAddress(binding.liveAddress);
+      await wakeByAddressBounded(binding.liveAddress);
     },
   };
 

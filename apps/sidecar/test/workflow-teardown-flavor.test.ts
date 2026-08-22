@@ -196,4 +196,45 @@ describe("teardownDeployment reclaimDirs flavors", () => {
     // Any other reason still gets the destructive default.
     await expect(fs.stat(reclaimStepStateDir)).rejects.toThrow();
   });
+
+  // CL-6644 part B: a hub-driven wake for a parked deployment is a fresh
+  // `agent.deploy` for the same address, not a resume in place -- `0fd3fbc8`
+  // deleted the sidecar-side in-place park/wake handler this used to be, and
+  // a boot scan (CL-6282) skips a parked record entirely rather than
+  // restoring it. Nothing sidecar-side ever resumes a parked deployment on
+  // its own, so the wake's redeploy must complete cleanly against whatever
+  // residue the parked record and its hibernate teardown left behind: the
+  // deployment record still on disk (parked, not deleted), the slug
+  // (`releaseSlug` only runs for a reclaiming teardown), and the step-state
+  // dir the hibernate deliberately preserved. This proves that residue
+  // never blocks the redeploy.
+  test("deploy() after a hibernate teardown completes (a wake's redeploy for a parked address)", async () => {
+    const { router, spawns, dataDir } = await makeLifecycleFixture();
+    const frame = makeWorkflowFrame("run_teardown-wake-redeploy@example.com");
+    const firstDeploy = router.deploy(frame);
+    await answerReadyHandshake(spawns, 0);
+    await firstDeploy;
+
+    await router.teardownDeployment(frame.agentAddress, {
+      reclaimDirs: false,
+    });
+
+    const deploymentId = deriveDeploymentId(frame.agentAddress);
+    const parkedBeforeRedeploy = await readWorkflowDeploymentRecord(
+      dataDir,
+      deploymentId,
+    );
+    expect(parkedBeforeRedeploy?.parkedAt).toBeDefined();
+
+    const secondDeploy = router.deploy(frame);
+    await answerReadyHandshake(spawns, 1);
+    await expect(secondDeploy).resolves.toBeDefined();
+
+    expect(router.activeAddresses()).toEqual([frame.agentAddress]);
+    const redeployedRecord = await readWorkflowDeploymentRecord(
+      dataDir,
+      deploymentId,
+    );
+    expect(redeployedRecord?.parkedAt).toBeUndefined();
+  });
 });
