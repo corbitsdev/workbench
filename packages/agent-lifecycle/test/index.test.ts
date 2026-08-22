@@ -325,4 +325,50 @@ describe("createAgentLifecycle", () => {
       failure,
     );
   });
+
+  // CL-6643: a run whose deployed record was parked aside (no sidecar
+  // record, cold wake required) can hang inside the injected `wake` port
+  // forever — the sidecar never acks a redeploy it has no state for.
+  // Without a bound, that first hung call never leaves `pendingWakes`
+  // (its `.finally` never runs because the promise it's attached to
+  // never settles), so every later `ensureAwake` for the same address
+  // coalesces onto that same dead promise and hangs too — silently,
+  // forever, for the rest of the process's life. This is the mechanism
+  // behind "message accepted, then silence: no fanout, no wake, no
+  // error" — the caller (`sendMail`) never sees a rejection to report as
+  // an undelivered notice, because nothing ever rejects.
+  test("a wake that never settles does not wedge every later call behind it forever", async () => {
+    const routable = new Set<string>();
+    let wakeCalls = 0;
+
+    const lifecycle = createAgentLifecycle({
+      idleSleepMs: 1_000,
+      wakeTimeoutMs: 20,
+      isRoutable: (address) => routable.has(address),
+      undeploy: async () => undefined,
+      wake: async () => {
+        wakeCalls += 1;
+        // Never resolves and never rejects — the hung sidecar RPC.
+        await new Promise<void>(() => {});
+      },
+      log,
+    });
+    stop = lifecycle.stop;
+
+    // The first caller must not hang forever: the bounded wake times out
+    // and the caller sees a rejection it can turn into an undelivered
+    // notice, instead of an unsettled promise nothing ever observes.
+    await expect(lifecycle.ensureAwake("agent-1@t.test")).rejects.toThrow(
+      /wake/i,
+    );
+    expect(wakeCalls).toBe(1);
+
+    // A second, later call for the same address — the next message sent
+    // to the same workbench — must attempt its own wake rather than
+    // coalescing onto the first call's dead, already-timed-out promise.
+    await expect(lifecycle.ensureAwake("agent-1@t.test")).rejects.toThrow(
+      /wake/i,
+    );
+    expect(wakeCalls).toBe(2);
+  });
 });
