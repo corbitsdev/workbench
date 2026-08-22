@@ -2125,6 +2125,23 @@ select:disabled,
   border-radius: 0;
 }
 
+/* The escape hatch below the form: low-emphasis on purpose, since
+   connecting a provider is still the primary path — this is only for the
+   account that genuinely has nothing to paste yet. */
+.onboarding-credential-skip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  margin-top: -0.25rem;
+}
+
+.onboarding-credential-skip-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
 /* The one-click paths sit above the key forms, side by side in a
    two-column row so both fit without stacking the page tall — each card
    stays square-cornered like the rest of the wizard, with the shell
