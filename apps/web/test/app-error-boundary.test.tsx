@@ -55,4 +55,20 @@ describe("AppErrorBoundary", () => {
     expect(el.textContent).toContain("Reload");
     expect(el.textContent).not.toContain("Everything is fine");
   });
+
+  // CL-6632: a render crash that never reaches a sink is undiagnosable in
+  // production — the boundary must report through `reportError`
+  // (`@corbits/error-sink`) and show the refId that call returns, so a
+  // person hitting this can quote it back to support.
+  test("a caught render error surfaces a refId a person can quote", () => {
+    const originalError = console.error;
+    console.error = () => undefined;
+    let el: HTMLDivElement;
+    try {
+      el = render(<Bomb />);
+    } finally {
+      console.error = originalError;
+    }
+    expect(el.textContent).toMatch(/Reference: [0-9a-z]+-[0-9a-z]+/);
+  });
 });
