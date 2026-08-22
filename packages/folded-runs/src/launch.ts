@@ -231,14 +231,21 @@ export async function deployAtHead(
      */
     sources?: SourcesOverride;
     /**
-     * The model to resolve against when `foldedBody.model` is `null` —
-     * a definition that declares no model requirements of its own
-     * (e.g. a hand-authored agent created without a `model`). Absent,
-     * a `null` `foldedBody.model` resolves to the loud
-     * `InferenceResolutionError` it always has; present, it is what
-     * lets that same definition still launch by falling back to the
-     * caller's own tenant-default resolution instead of 409ing. Never
-     * consulted when `foldedBody.model` is already set.
+     * The tenant's current live default model — the same (provider,
+     * model) Settings' "Default model & fallbacks" row heads today
+     * (see `@corbits/chat`'s `resolveFallbackModel`). Tried first when
+     * `foldedBody.model` is `null` (a definition that declares no model
+     * of its own); tried SECOND, as a retry, when `foldedBody.model` is
+     * set but does not resolve against the tenant's current catalog —
+     * e.g. it was pinned (by a person, or by the seed that created this
+     * definition) against a provider the tenant has since disconnected,
+     * or before it connected any provider at all. Without that retry an
+     * agent whose pin predates the tenant's current connection stays
+     * permanently dead even after a working provider is connected,
+     * because `foldedBody.model` alone would keep resolving to the same
+     * unlaunchable name forever. Absent, a `foldedBody.model` that fails
+     * to resolve — or a `null` one with nothing to fall back to —
+     * resolves to the loud `InferenceResolutionError` it always has.
      */
     fallbackModel?: string;
     /**
@@ -252,20 +259,45 @@ export async function deployAtHead(
   },
 ): Promise<void> {
   const sourcesOverride = parseSourcesOverride(params.sources);
-  const resolution =
+  const resolveAgainst = (model: string | null) =>
+    resolveDefinitionSources({
+      db: deps.db,
+      tenantId: params.tenantId,
+      modelRequirements: null,
+      fallbackModel: model,
+      invokerPreferences: {},
+      ...(deps.credentialCipher !== undefined
+        ? { credentialCipher: deps.credentialCipher }
+        : {}),
+    });
+
+  const definitionModel = params.foldedBody.model;
+  let resolution =
     sourcesOverride !== undefined
       ? { ok: true as const, ...sourcesOverride }
-      : await resolveDefinitionSources({
-          db: deps.db,
-          tenantId: params.tenantId,
-          modelRequirements: null,
-          fallbackModel:
-            params.foldedBody.model ?? params.fallbackModel ?? null,
-          invokerPreferences: {},
-          ...(deps.credentialCipher !== undefined
-            ? { credentialCipher: deps.credentialCipher }
-            : {}),
-        });
+      : await resolveAgainst(definitionModel ?? params.fallbackModel ?? null);
+
+  // The definition's own pinned model failed to resolve — it may have
+  // been pinned (by a person, or by the seed that created this
+  // definition) against a provider the tenant has since disconnected,
+  // or before it connected any provider at all. Retry once against the
+  // tenant's current live default rather than leaving the agent
+  // permanently dead: reconnecting a DIFFERENT provider must heal every
+  // agent already pinned to the old one, not only a freshly created
+  // one. Never retried for a caller-supplied override (nothing to
+  // retry against — the tenant catalog is never touched for those) or
+  // when the definition already declared no model of its own (that
+  // case already tried `fallbackModel` as its one and only attempt).
+  if (
+    !resolution.ok &&
+    sourcesOverride === undefined &&
+    definitionModel !== null &&
+    params.fallbackModel !== undefined &&
+    params.fallbackModel !== definitionModel
+  ) {
+    resolution = await resolveAgainst(params.fallbackModel);
+  }
+
   if (!resolution.ok) {
     throw new InferenceResolutionError(params.launchLabel, resolution.message);
   }
