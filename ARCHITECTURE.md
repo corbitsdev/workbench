@@ -120,10 +120,11 @@ one path, deltas to pixels:
 ## Capability growth and approval gates
 
 An agent's capability set grows through what it is granted, not through
-code changes: Skills and Plugins are installable, tenant- or
-principal-scoped capabilities layered onto a definition or a workbench,
-resolved live rather than baked in at deploy time (see
-`packages/skills`). Every external side effect — anything leaving the
+code changes: Skills are installable, tenant- or principal-scoped
+capabilities layered onto a definition or a workbench, resolved live
+rather than baked in at deploy time (see `packages/skills`). Plugins are
+installed globally rather than per bench or workbench (CL-6272.2). Every
+external side effect — anything leaving the
 platform's own boundary — sits behind a human approval gate. Approval
 itself is native Interchange state (an `approval` row backed by a
 `signal_correlation` row); workbench's own `@corbits/approvals` package
