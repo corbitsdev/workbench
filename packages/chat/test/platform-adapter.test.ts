@@ -183,6 +183,7 @@ function createFakeDb(opts: {
         name?: string;
         origin?: "authored" | "run";
         grantRequirements?: unknown;
+        wireHash?: string | null;
       }
     | undefined;
   workflowDefinitionRows?:
@@ -195,6 +196,7 @@ function createFakeDb(opts: {
         assetId?: string | null;
         origin?: "authored" | "run";
         grantRequirements?: unknown;
+        wireHash?: string | null;
       }[]
     | undefined;
   tenantRow?: { id: string; domain: string } | undefined;
@@ -2524,6 +2526,283 @@ describe("createHubChatPlatform", () => {
           .foldedBody.systemPrompt,
       ).toBe("You are now a blunt, no-nonsense assistant.");
     });
+  });
+});
+
+// CL-6588: a launch renders `workflow_run.definitionId`/`workbench_launch`'s
+// `foldedBody` once, and neither a wake nor a relaunch has ever re-read the
+// definition's asset on its own -- only an explicit
+// `refreshAgentInstanceFromDefinition` call (a human saving settings) did.
+// A run that is routable but was deployed from a definition that has since
+// changed for a reason nobody in the room caused (a platform code fix, a
+// redeployed default agent package) stayed silently wrong forever. These
+// prove the automatic reconciliation added ahead of `wakeByAddress`'s
+// already-routable return and `sendMail`'s choke point.
+describe("createHubChatPlatform stale-definition reconciliation", () => {
+  const STALE_SYSTEM_PROMPT =
+    "the openai adapter: invalid quirks: default must be removed";
+  const FIXED_SYSTEM_PROMPT = "I am working in this workbench.";
+
+  // CL-6452: every deploy freezes a per-run clone of the agent's
+  // definition under a wire hash that bakes in per-run values
+  // (`wf_<runId>`, the run's own trigger address) — so the clone's
+  // hash is unique to the run BY DESIGN, even when its content is
+  // byte-identical to what's authored today. The fixture's clone row
+  // deliberately carries no `wireHash` field at all (undefined), and
+  // the tests below prove staleness is decided on CONTENT
+  // (`foldedBody`), never on that per-run-unique hash.
+  function createDriftFixture(opts: {
+    deployedSystemPrompt: string;
+    authoredSystemPrompt: string;
+    routable: boolean;
+  }) {
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "workbench-1",
+        displayName: null,
+      },
+      definitionId: "wfd_unused",
+      workflowRunRow: {
+        id: "run_stale",
+        address: "run_stale@ten1.workbench.test",
+        principalId: "prin_room1",
+        definitionId: "wfd_run_clone",
+        status: "running",
+      },
+      workflowDefinitionRow: {
+        id: "wfd_run_clone",
+        tenantId: "ten_1",
+        status: "deployed",
+        assetId: "asst_myra",
+        name: "myra",
+        origin: "run",
+      },
+      workflowDefinitionRows: [
+        {
+          id: "wfd_run_clone",
+          tenantId: "ten_1",
+          status: "deployed",
+          name: "myra",
+          assetId: "asst_myra",
+          origin: "run",
+        },
+        {
+          id: "wfd_myra_authored",
+          tenantId: "ten_1",
+          status: "deployed",
+          name: "myra",
+          assetId: "asst_myra",
+          origin: "authored",
+        },
+      ],
+      workbenchLaunchRow: {
+        tenantId: "ten_1",
+        instanceId: "run_stale",
+        currentRunId: "run_stale",
+        foldedBody: {
+          systemPrompt: opts.deployedSystemPrompt,
+          toolPackagePins: [],
+          grantRequirements: [],
+          credentialBindings: [],
+          model: null,
+        },
+      },
+      wireProjectionsByDefinitionId: {
+        // `model: null` matches `foldedBody.model` above -- `inertProjection`
+        // defaults `model` to `"claude-sonnet-5"`, which would otherwise
+        // read as content drift on its own and mask what these tests
+        // are actually proving (system-prompt equality vs. difference).
+        wfd_run_clone: inertProjection({
+          id: "wfd_run_clone",
+          systemPrompt: opts.deployedSystemPrompt,
+          model: null,
+        }),
+        wfd_myra_authored: inertProjection({
+          id: "wfd_myra_authored",
+          systemPrompt: opts.authoredSystemPrompt,
+          model: null,
+        }),
+      },
+    });
+    const sidecarRouter = createFakeSidecarRouter({
+      routableAddresses: opts.routable ? ["run_stale@ten1.workbench.test"] : [],
+    });
+    const platform = createHubChatPlatform({
+      toolGrantsForPins: () => [],
+      db: db as never,
+      sessionService: createFakeSessionService(),
+      assetService: createFakeAssetService(),
+      sidecarRouter,
+      eventCollectors: createFakeEventCollectors(),
+    });
+    return { db, platform };
+  }
+
+  test("a routable run whose deployed content differs from the current authored content is relaunched, not served as-is", async () => {
+    const { db, platform } = createDriftFixture({
+      deployedSystemPrompt: STALE_SYSTEM_PROMPT,
+      authoredSystemPrompt: FIXED_SYSTEM_PROMPT,
+      routable: true,
+    });
+
+    await platform.ensureAwake("run_stale@ten1.workbench.test");
+
+    const repointed = db.updated.find((row) => row.table === workbenchLaunch)
+      ?.values as { currentRunId: string } | undefined;
+    expect(repointed?.currentRunId).toBeDefined();
+    expect(repointed?.currentRunId).not.toBe("run_stale");
+  });
+
+  // The exact regression this test guards against: PR #298's first cut
+  // compared the run's own clone's wire hash (always unique per run)
+  // against the authored row's hash, so this fixture -- content
+  // identical, hash necessarily different -- read as "drifted" on
+  // every single call and relaunched a perfectly healthy run on every
+  // wake/send, breaking three chat e2e tests that watched a run stay
+  // alive across a turn.
+  test("a routable run whose deployed content matches the current authored content is left alone, even though its per-run clone's wire hash is necessarily unrelated to the authored row's", async () => {
+    const { db, platform } = createDriftFixture({
+      deployedSystemPrompt: FIXED_SYSTEM_PROMPT,
+      authoredSystemPrompt: FIXED_SYSTEM_PROMPT,
+      routable: true,
+    });
+
+    await platform.ensureAwake("run_stale@ten1.workbench.test");
+
+    expect(
+      db.updated.find((row) => row.table === workbenchLaunch),
+    ).toBeUndefined();
+  });
+
+  test("sendMail redeploys an already-routable-but-drifted target before delivering — lifecycle.ensureAwake's routability check alone would have missed it", async () => {
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          apiKey: "placeholder",
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+    const { db } = createDriftFixture({
+      deployedSystemPrompt: STALE_SYSTEM_PROMPT,
+      authoredSystemPrompt: FIXED_SYSTEM_PROMPT,
+      routable: true,
+    });
+    db.inserted.push({
+      table: agentSession,
+      values: { id: "ses_stale", principalId: "prin_room1" },
+    });
+    const sessionService = createFakeSessionService();
+    const platform = createHubChatPlatform({
+      toolGrantsForPins: () => [],
+      db: db as never,
+      sessionService,
+      assetService: createFakeAssetService(),
+      sidecarRouter: createFakeSidecarRouter({
+        routableAddresses: ["run_stale@ten1.workbench.test"],
+      }),
+      eventCollectors: createFakeEventCollectors(),
+      // Configured: `sendMail` takes the `lifecycle.ensureAwake` branch,
+      // whose own routability check alone would never have caught this.
+      lifecycle: { idleSleepMs: 60_000 },
+    });
+
+    await platform.sendMail({
+      tenantId: "ten_1",
+      workbenchId: "run_stale",
+      principalId: "prin_sender",
+      content: { content: "hello" },
+    });
+
+    expect(sessionService.adoptedDeployCalls).toHaveLength(1);
+    const deployed = sessionService.adoptedDeployCalls[0] as {
+      config: { systemPrompt: string };
+    };
+    expect(deployed.config.systemPrompt).toBe(FIXED_SYSTEM_PROMPT);
+  });
+
+  // The coordinator's explicit ask: "unknown" (no authored sibling this
+  // adapter can resolve at all -- e.g. a standalone/section-mode run
+  // whose asset carries no hub-authored candidate) must mean leave it
+  // alone, never treat as drifted.
+  test("a run whose asset has no resolvable authored sibling is left alone, not blocked or relaunched", async () => {
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "workbench-1",
+        displayName: null,
+      },
+      definitionId: "wfd_unused",
+      workflowRunRow: {
+        id: "run_standalone",
+        address: "run_standalone@ten1.workbench.test",
+        principalId: "prin_room1",
+        definitionId: "wfd_standalone_clone",
+        status: "running",
+      },
+      workflowDefinitionRow: {
+        id: "wfd_standalone_clone",
+        tenantId: "ten_1",
+        status: "deployed",
+        assetId: "asst_standalone",
+        name: "standalone-agent",
+        origin: "run",
+      },
+      // No "authored" sibling at all -- `resolveAuthoredProjectedDefinition`
+      // finds no candidate and raises `DefinitionProjectionMissingError`.
+      workflowDefinitionRows: [
+        {
+          id: "wfd_standalone_clone",
+          tenantId: "ten_1",
+          status: "deployed",
+          name: "standalone-agent",
+          assetId: "asst_standalone",
+          origin: "run",
+        },
+      ],
+      workbenchLaunchRow: {
+        tenantId: "ten_1",
+        instanceId: "run_standalone",
+        currentRunId: "run_standalone",
+        foldedBody: {
+          systemPrompt: "be helpful",
+          toolPackagePins: [],
+          grantRequirements: [],
+          credentialBindings: [],
+          model: null,
+        },
+      },
+      wireProjectionsByDefinitionId: {
+        wfd_standalone_clone: inertProjection({
+          id: "wfd_standalone_clone",
+          systemPrompt: "be helpful",
+        }),
+      },
+    });
+    const platform = createHubChatPlatform({
+      toolGrantsForPins: () => [],
+      db: db as never,
+      sessionService: createFakeSessionService(),
+      assetService: createFakeAssetService(),
+      sidecarRouter: createFakeSidecarRouter({
+        routableAddresses: ["run_standalone@ten1.workbench.test"],
+      }),
+      eventCollectors: createFakeEventCollectors(),
+    });
+
+    await platform.ensureAwake("run_standalone@ten1.workbench.test");
+
+    expect(
+      db.updated.find((row) => row.table === workbenchLaunch),
+    ).toBeUndefined();
   });
 });
 
