@@ -558,7 +558,7 @@ describe("launchFoldedRun", () => {
   // built-in OpenAI adapter serves the request instead and rejects the
   // offering's `quirks.default` bag. `deployAtHead` must fix the key up
   // before the source reaches the deployed config.
-  test("corrects the adapter key to \"ollama\" for a catalog-resolved Ollama offering", async () => {
+  test('corrects the adapter key to "ollama" for a catalog-resolved Ollama offering', async () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
       ok: true,
