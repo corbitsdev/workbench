@@ -548,6 +548,14 @@ describe("seedTenant", () => {
         };
       if (
         method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/runs/dep_1/health`
+      )
+        return {
+          status: 200,
+          data: { liveness: "ok", readiness: "ok", lastCheckedAt: null },
+        };
+      if (
+        method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/dep_1/runs`
       ) {
         runsCalls += 1;
@@ -590,6 +598,107 @@ describe("seedTenant", () => {
       "workflow echo already deployed as dep_1 (skipped)",
     );
     expect(output).toContain("confirmed workflow echo: run run_2 started");
+  });
+
+  test("a deployment orphaned by a stack restart is redeployed, not skipped", async () => {
+    const { lines, log } = collector();
+    const push: WorkflowPusher = async () => ({
+      outcome: "unchanged" as const,
+      commitSha: "b".repeat(40),
+    });
+    let runsCalls = 0;
+    const handler: FakeHandler = (method, path) => {
+      const base = baseRoutes(method, path);
+      if (base) return base;
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
+        return { status: 409, data: { error: "name taken" } };
+      if (
+        method === "GET" &&
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+      )
+        return {
+          status: 200,
+          data: [
+            {
+              ...assetRow("ast_1", "echo"),
+              origin: { tenantId: TENANT_ID, direct: true },
+            },
+          ],
+        };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      )
+        return {
+          status: 200,
+          // dep_1 is a survivor from before the stack restarted: its
+          // workflow_run row still reads "deployed", but no sidecar
+          // owns its address anymore.
+          data: [deploymentRow("dep_1", "ast_1", "deployed")],
+        };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/runs/dep_1/health`
+      )
+        return {
+          status: 200,
+          data: {
+            liveness: "unhealthy",
+            readiness: "not_ready",
+            lastCheckedAt: null,
+          },
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      )
+        return {
+          status: 201,
+          data: deploymentRow("dep_2", "ast_1", "deployed"),
+        };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/dep_2/runs`
+      ) {
+        runsCalls += 1;
+        return {
+          status: 200,
+          data: { runIds: runsCalls === 1 ? [] : ["run_1"] },
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/dep_2/mail`
+      )
+        return {
+          status: 202,
+          data: {
+            runId: "dep_2",
+            address: `ins_dep_2@${TENANT_DOMAIN}`,
+            messageId: "<m3@workbench.localhost>",
+          },
+        };
+      return undefined;
+    };
+
+    const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
+    await seedTenant(
+      args({
+        api: fakeAPI(handler),
+        pushWorkflow: push,
+        log,
+        workflows: echoOnly,
+      }),
+    );
+
+    const output = lines.join("\n");
+    expect(output).toContain(
+      "workflow echo's deployment dep_1 is stale (its sidecar is gone); redeploying",
+    );
+    expect(output).toContain("deployed workflow echo as dep_2");
+    expect(output).toContain("confirmed workflow echo: run run_1 started");
+    expect(output).not.toContain("not routable");
   });
 
   test("an unreachable deployment address names the sidecar as the fix", async () => {
