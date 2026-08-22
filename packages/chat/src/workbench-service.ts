@@ -47,6 +47,7 @@ import type { WorkbenchSubscriberRegistry } from "./workbench-events";
 import type { QueuedTurn, WorkbenchTurnQueue } from "./turn-queue";
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
 import type { ChatStore } from "./store";
+import { withTimeout } from "./with-timeout";
 
 const provisionLog = getLogger(["chat", "provision-space"]);
 const removeLog = getLogger(["chat", "remove-participant"]);
@@ -923,7 +924,39 @@ export type SendWorkbenchMessageDeps = {
    * with the whole room. See `./turn-context.ts`.
    */
   readonly threads?: Pick<ThreadStore, "listThreadAssignments">;
+  /**
+   * The turn-level deadline (CL-6644): `dispatchTurnBatch` wraps every
+   * recipient's `dispatchTurn` call in this single wall-clock budget,
+   * defaulting to `DEFAULT_TURN_DISPATCH_TIMEOUT_MS`. This is the
+   * structural fix three rounds of per-hop timeouts (#312's wake bound,
+   * #314's bypassed-wake bound, #316's mail-delivery bound) kept falling
+   * short of: each closed one stalling hop and a new one appeared next
+   * (see the CL-6644 comment isolating a fourth hang — a direct send to
+   * an already-live run — that needed neither #312's nor #316's bound).
+   * No agent turn may hang past this budget regardless of which
+   * internal hop stalls; the per-hop bounds stay in place as
+   * diagnostics that produce a sharper cause when they fire first.
+   * Injectable so tests exercise the bound in milliseconds instead of
+   * the production default.
+   */
+  readonly turnDispatchTimeoutMs?: number;
 };
+
+/** CL-6644's default turn-level deadline: generous enough to cover a
+ * cold wake plus a remote inference round-trip, the same reasoning
+ * `DEFAULT_WAKE_TIMEOUT_MS` (30s) uses for the wake step alone. */
+export const DEFAULT_TURN_DISPATCH_TIMEOUT_MS = 120_000;
+
+/** The turn-level deadline's own rejection message: names the turn's
+ * run address (the recipient every dispatch failure is already reported
+ * and notified against) and the budget it exceeded, so a person reading
+ * the `reportError` refId's logged cause sees exactly what expired. */
+export function turnDispatchTimeoutMessage(
+  agentAddress: string,
+  timeoutMs: number,
+): string {
+  return `turn for "${agentAddress}" did not settle within ${String(timeoutMs)}ms`;
+}
 
 export type SendWorkbenchMessageInput = {
   readonly tenantId: string;
@@ -1206,11 +1239,16 @@ async function routeToRecipients(
  * exactly as a single, unqueued message's fan-out always has.
  */
 async function dispatchTurnBatch(
-  deps: Pick<SendWorkbenchMessageDeps, "platform" | "roomMessages" | "publish">,
+  deps: Pick<
+    SendWorkbenchMessageDeps,
+    "platform" | "roomMessages" | "publish" | "turnDispatchTimeoutMs"
+  >,
   tenantId: string,
   workbenchId: string,
   batch: readonly QueuedTurn[],
 ): Promise<void> {
+  const turnDispatchTimeoutMs =
+    deps.turnDispatchTimeoutMs ?? DEFAULT_TURN_DISPATCH_TIMEOUT_MS;
   const recipientSet = new Set<string>();
   for (const turn of batch) {
     for (const agentAddress of turn.recipients) recipientSet.add(agentAddress);
@@ -1238,14 +1276,26 @@ async function dispatchTurnBatch(
   await Promise.all(
     recipients.map(async (agentAddress) => {
       try {
-        await dispatchTurn(deps, {
-          tenantId,
-          workbenchId,
-          principalId: last.principalId,
-          agentAddress,
-          parts,
-          requestMessageIds: messageIds,
-        });
+        // CL-6644: one deadline around the whole turn, not another
+        // per-hop bound. `dispatchTurn` only ever reaches "the mail was
+        // handed to the agent's mailbox" (see `./turn-queue.ts`'s own
+        // note) — the agent's actual streaming reply is produced and
+        // posted onto the timeline later, off this call stack, through
+        // `chat-orchestrator.ts`'s independent sidecar-event
+        // subscription. This deadline therefore can never cut off a
+        // reply in progress: nothing it awaits is the reply.
+        await withTimeout(
+          dispatchTurn(deps, {
+            tenantId,
+            workbenchId,
+            principalId: last.principalId,
+            agentAddress,
+            parts,
+            requestMessageIds: messageIds,
+          }),
+          turnDispatchTimeoutMs,
+          turnDispatchTimeoutMessage(agentAddress, turnDispatchTimeoutMs),
+        );
       } catch (err) {
         const refId = reportError(err, {
           operation: "chat.dispatchTurn",

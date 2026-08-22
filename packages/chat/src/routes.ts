@@ -148,6 +148,12 @@ export type CreateChatRoutesDeps = {
   /** Per-turn timeout, the default write-claim TTL. */
   turnTimeoutMs: number;
   /**
+   * CL-6644's turn-level deadline: see `SendWorkbenchMessageDeps`'s field
+   * of the same name in `./workbench-service.ts`. Omitted,
+   * `dispatchTurnBatch` uses `DEFAULT_TURN_DISPATCH_TIMEOUT_MS`.
+   */
+  turnDispatchTimeoutMs?: number;
+  /**
    * Resolves a principal to the display name a greeting can use. The
    * hub wires this to its user table; omitted, the canned greeting
    * simply carries no name.
@@ -2163,6 +2169,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             ? { agentTurns: deps.agentTurns }
             : {}),
           ...(deps.threads !== undefined ? { threads: deps.threads } : {}),
+          ...(deps.turnDispatchTimeoutMs !== undefined
+            ? { turnDispatchTimeoutMs: deps.turnDispatchTimeoutMs }
+            : {}),
         },
         {
           tenantId: ownerTenantId,
@@ -2335,6 +2344,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               ? { agentTurns: deps.agentTurns }
               : {}),
             ...(deps.threads !== undefined ? { threads: deps.threads } : {}),
+            ...(deps.turnDispatchTimeoutMs !== undefined
+              ? { turnDispatchTimeoutMs: deps.turnDispatchTimeoutMs }
+              : {}),
           },
           {
             tenantId: ownerTenantId,

@@ -52,6 +52,7 @@ import { getLogger } from "@intx/log";
 import { extractPartByPath } from "@intx/mime";
 import { workbenchLaunch } from "./schema";
 import { isWorkbenchHostDefinitionName } from "./workbench-host-naming";
+import { withTimeout } from "./with-timeout";
 import type { EventCollectorRegistry, SidecarRouter } from "@intx/hub-sessions";
 import type { InferencePreference } from "@intx/agent";
 import { formatRunAddress } from "@intx/types";
@@ -266,26 +267,6 @@ export function createHubChatPlatform(
 
   function sleep(ms: number): Promise<void> {
     return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
-  }
-
-  function withTimeout<T>(
-    promise: Promise<T>,
-    ms: number,
-    message: string,
-  ): Promise<T> {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(message)), ms);
-      promise.then(
-        (value) => {
-          clearTimeout(timer);
-          resolve(value);
-        },
-        (cause: unknown) => {
-          clearTimeout(timer);
-          reject(cause);
-        },
-      );
-    });
   }
 
   function isAgentUnreachable(err: unknown): boolean {
