@@ -383,14 +383,60 @@ export function createHubChatPlatform(
   }
 
   /**
-   * Brings the run behind `address` back to routable, whichever kind of
-   * "not routable" it is in. `address` may be either side of the
-   * mapping — the stable address the room holds, or the live deployment
-   * address the sidecar reports.
+   * Whether a routable run's deployed content has drifted from its
+   * definition's current hub-authored projection, and the folded body
+   * it should redeploy with if so.
+   *
+   * CL-6588: a launch (and every wake/relaunch since) renders a run's
+   * `foldedBody` once and never re-reads the definition's asset again
+   * on its own — `refreshAgentInstanceFromDefinition` above is the
+   * existing, explicitly-triggered lever for that, fired only when a
+   * human saves an edit. This is the same recompute, fired automatically
+   * ahead of a send instead of waiting for someone to click refresh, so
+   * a definition that changed for a reason the room's occupants never
+   * caused (a platform code fix, a redeployed default agent package)
+   * still reaches an already-launched instance.
+   *
+   * CL-6452's per-deploy clone carries the wire hash of whatever it
+   * deployed, so comparing it against the asset's current hub-authored
+   * hash is the same identity check the platform already uses to key
+   * a definition's content — no new staleness signal invented here. A
+   * run predating the wire-hash cutover (both sides null) reads as
+   * fresh: there is no signal to act on, not evidence of drift.
+   */
+  async function resolveDriftedFoldedBody(
+    tenantId: string,
+    run: LiveAgent["run"],
+  ) {
+    if (run.definitionId === null) return undefined;
+    const definitionRow = await deps.db.query.workflowDefinition.findFirst({
+      where: and(
+        eq(workflowDefinition.id, run.definitionId),
+        eq(workflowDefinition.tenantId, tenantId),
+      ),
+    });
+    if (definitionRow === undefined || definitionRow.assetId === null) {
+      return undefined;
+    }
+    const { row: authoredRow, projection } =
+      await resolveAuthoredProjectedDefinition(tenantId, {
+        assetId: definitionRow.assetId,
+        name: definitionRow.name,
+      });
+    if (authoredRow.wireHash === definitionRow.wireHash) return undefined;
+    return readFoldedBody(projection, authoredRow.grantRequirements);
+  }
+
+  /**
+   * Brings the run behind `address` back to routable — or, now, current
+   * — whichever kind of "not serving what it should" it is in.
+   * `address` may be either side of the mapping — the stable address
+   * the room holds, or the live deployment address the sidecar reports.
    *
    * CL-6267: the sidecar's own park/wake handler owns respawning a
    * parked-but-still-announced deployment the moment mail routes to it,
-   * so a routable address is never deployed or undeployed here.
+   * so a routable address is never deployed or undeployed here for
+   * routability alone.
    *
    * CL-6365: a run that is unroutable because it DIED — the hub's own
    * `workflow_run.status` is terminal and it is not merely a folded run
@@ -398,6 +444,13 @@ export function createHubChatPlatform(
    * durable event log already carries the terminal event, so
    * redeploying it would come straight back as `workflow_run_terminal`
    * and the message would be dropped in silence. That case relaunches.
+   *
+   * CL-6588: a run that is very much alive and routable can still be
+   * serving stale bytes — the pattern behind every "fixed but still
+   * broken for yesterday's signup" bug tonight. `relaunchTerminalRun`
+   * already mints a fresh run and repoints the room's stable address at
+   * it without moving the room; a drifted-but-alive run gets exactly
+   * that treatment, just triggered by content drift instead of death.
    */
   async function wakeByAddress(address: string): Promise<void> {
     const binding = await readBindingByAddress(deps.db, address);
@@ -417,7 +470,10 @@ export function createHubChatPlatform(
       await relaunchTerminalRun(live);
       return;
     }
-    if (isRoutable(live.run.address)) return;
+    if (isRoutable(live.run.address)) {
+      await reconcileDriftedRun(address);
+      return;
+    }
 
     const wakeParams = {
       tenantId: binding.tenantId,
@@ -429,6 +485,49 @@ export function createHubChatPlatform(
     await wakeFoldedRun(foldedRunsDeps, {
       ...wakeParams,
       ...(await deployShapeFor(binding)),
+    });
+  }
+
+  /**
+   * Redeploys `address`'s run in place if its deployed definition has
+   * drifted from the current authored projection, otherwise no-ops.
+   * Never throws for an address this adapter cannot resolve to a live,
+   * routable, non-terminal run — `sendMail` calls this unconditionally
+   * after its own wake gate (see the CL-6588 note there), so a send
+   * that never needed waking must not gain a new failure mode from a
+   * check that used to never run for it.
+   */
+  async function reconcileDriftedRun(address: string): Promise<void> {
+    const binding = await readBindingByAddress(deps.db, address);
+    if (binding === undefined) return;
+    const live = await resolveLiveAgent(deps.db, binding);
+    if (live === undefined || live.run.address === null) return;
+    if (await isBeyondWake(deps.db, live.run)) return;
+    if (!isRoutable(live.run.address)) return;
+    // Best-effort: a staleness check that cannot resolve the current
+    // authored projection (e.g. `DefinitionProjectionMissingError` for
+    // a pre-cutover definition with no frozen wire projection at all)
+    // must never take the send down with it — the run is exactly as
+    // routable as it was before this check ran. Log and proceed as
+    // "nothing to reconcile", the same posture `sweepTerminalRuns`
+    // takes for a relaunch failure.
+    let driftedFoldedBody: Awaited<ReturnType<typeof resolveDriftedFoldedBody>>;
+    try {
+      driftedFoldedBody = await resolveDriftedFoldedBody(
+        binding.tenantId,
+        live.run,
+      );
+    } catch (cause: unknown) {
+      wakeLogger.error`drift check for ${binding.roomAddress} (run ${live.run.id}) failed, leaving it as-is: ${
+        cause instanceof Error ? cause.message : String(cause)
+      }`;
+      return;
+    }
+    if (driftedFoldedBody === undefined) return;
+    wakeLogger.info`relaunching ${binding.roomAddress}: run ${live.run.id} is routable but its deployed definition has drifted from the current authored projection; minting a fresh run`;
+    await relaunchTerminalRun({
+      binding: { ...binding, foldedBody: driftedFoldedBody },
+      run: live.run,
     });
   }
 
@@ -754,6 +853,13 @@ export function createHubChatPlatform(
       } else if (!isRoutable(liveAddress)) {
         await wakeByAddress(liveAddress);
       }
+      // CL-6588: `lifecycle.ensureAwake` returns immediately for an
+      // address that is already routable — routability is the only
+      // thing it checks — so an already-live-but-stale run would never
+      // reach `wakeByAddress`'s drift check above through that branch.
+      // Run it unconditionally so every send through this choke point
+      // — not only the ones that needed waking — reconciles staleness.
+      await reconcileDriftedRun(liveAddress);
       const delivery = await requireLive(input.workbenchId);
       const deliveryAddress = delivery.binding.liveAddress;
       // Tracking here (not only at launch) brings instances that were
@@ -891,9 +997,16 @@ export function createHubChatPlatform(
       }
       if (lifecycle !== undefined) {
         await lifecycle.ensureAwake(binding.liveAddress);
+        // CL-6588: see the matching note in `sendMail` — routability
+        // alone is what `lifecycle.ensureAwake` checks, so an
+        // already-routable-but-stale run needs this run unconditionally.
+        await reconcileDriftedRun(binding.liveAddress);
         return;
       }
-      if (isRoutable(binding.liveAddress)) return;
+      if (isRoutable(binding.liveAddress)) {
+        await reconcileDriftedRun(binding.liveAddress);
+        return;
+      }
       await wakeByAddress(binding.liveAddress);
     },
   };
