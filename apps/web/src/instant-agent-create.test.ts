@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { QueryClient } from "@tanstack/react-query";
 import {
   CODE_REVIEW_TEMPLATE,
   serializeWorkbenchTemplateManifest,
@@ -8,6 +9,12 @@ import {
   createWorkbenchFromTemplate,
   NEW_WORKBENCH_TITLE,
 } from "./instant-agent-create";
+
+function newQueryClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+}
 
 describe("createWorkbenchFromTemplate (CL-6387)", () => {
   const realFetch = globalThis.fetch;
@@ -70,11 +77,17 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
       throw new Error(`unexpected fetch: ${path}`);
     });
 
-    await createWorkbenchFromTemplate("tnt_1", "blank", (to) =>
-      navigated.push(to),
+    await createWorkbenchFromTemplate(
+      "tnt_1",
+      "blank",
+      (to) => navigated.push(to),
+      newQueryClient(),
     );
-    await createWorkbenchFromTemplate("tnt_1", "blank", (to) =>
-      navigated.push(to),
+    await createWorkbenchFromTemplate(
+      "tnt_1",
+      "blank",
+      (to) => navigated.push(to),
+      newQueryClient(),
     );
 
     const createCalls = calls.filter((call) =>
@@ -145,8 +158,18 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
       throw new Error(`unexpected fetch: ${path}`);
     });
 
-    await createWorkbenchFromTemplate("tnt_1", "code-review", (to) =>
-      navigated.push(to),
+    const queryClient = newQueryClient();
+    // Seed the cache the way a person browsing before creating this
+    // workbench would have: a `workbenches` list fetched before any of
+    // the reviewer roster below was invited.
+    const staleQueryKey = ["tenant", "tnt_1", "workbenches", "chat"] as const;
+    queryClient.setQueryData(staleQueryKey, { items: [] });
+
+    await createWorkbenchFromTemplate(
+      "tnt_1",
+      "code-review",
+      (to) => navigated.push(to),
+      queryClient,
     );
 
     const createCall = calls.find((call) =>
@@ -174,5 +197,12 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
     );
     expect(invitedIds.sort()).toEqual(createdIds.sort());
     expect(navigated).toEqual(["/w/chan-1"]);
+
+    // CL-6594: a room this function navigates to must never carry a
+    // `workbenches` cache captured before its own reviewer roster
+    // finished being invited — that staleness is what left an invited
+    // agent with no name, no avatar, and no `@mention` in the room the
+    // owner reported it from.
+    expect(queryClient.getQueryState(staleQueryKey)?.isInvalidated).toBe(true);
   });
 });

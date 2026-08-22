@@ -14,12 +14,14 @@
 // (Settings → Agents), unchanged.
 
 import { getLogger } from "@corbits/client-log";
+import type { QueryClient } from "@tanstack/react-query";
 import {
   createWorkbench,
   getConnectGithubState,
   inviteAgent,
   patchWorkbenchSettings,
   startReviewingGithubRepos,
+  workbenchesQueryKeyPrefix,
   type ConnectGithubRepo,
 } from "@corbits/chat-ui";
 import { listPluginsForTenant } from "@workbench/connections/plugins";
@@ -111,11 +113,22 @@ export type PickGithubRepos = (args: {
  * GitHub is already connected for this tenant, this also drives
  * CL-6386's "select on new-workbench" step — see `PickGithubRepos`'s
  * own doc.
+ *
+ * `queryClient` invalidates the workbenches list once every template
+ * participant has been invited (CL-6594) — `ChatWorkspace`'s own
+ * in-room "Invite agent" dialog does the same
+ * (`workbenchesQueryKeyPrefix`, `chat-workspace.tsx`'s
+ * `refreshWorkbenchLists`) so the room the invite landed in never
+ * shows a participant it already has data for as if it never joined.
+ * Without this, the room this function `navigate`s to can start life
+ * holding a `workbenches` query cached from before the last invite
+ * resolved.
  */
 export async function createWorkbenchFromTemplate(
   tenantId: string,
   templateId: WorkbenchTemplateId,
   navigate: (to: string) => void,
+  queryClient: QueryClient,
   pickGithubRepos?: PickGithubRepos,
 ): Promise<void> {
   const definitions = await listAgentDefinitions(tenantId);
@@ -217,6 +230,9 @@ export async function createWorkbenchFromTemplate(
     for (const todo of result.webhookTriggerTodos) {
       log.error(todo);
     }
+    await queryClient.invalidateQueries({
+      queryKey: workbenchesQueryKeyPrefix(tenantId),
+    });
   }
 
   navigate(workbenchPath(workbench.id));

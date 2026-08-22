@@ -155,6 +155,12 @@ export const TEAM_AVATAR_STACK_LIMIT = 6;
  * are always "active" — they have no presence concept of their own) plus
  * every human currently reflected in live presence. Agents first since
  * they're a workbench's stable roster; humans are who's here right now.
+ *
+ * Each agent gets its own `generatedAvatarStyle` fill keyed by address
+ * (CL-6594) — the same deterministic-per-principal machinery humans
+ * already use — rather than one shared CSS accent color for every
+ * agent, so two agents in the same room never render as
+ * indistinguishable avatars.
  */
 export function buildTeamAvatarStack(
   participants: readonly ParticipantRecord[],
@@ -162,12 +168,17 @@ export function buildTeamAvatarStack(
 ): readonly TeamAvatarEntry[] {
   const agents = participants
     .filter((participant) => isAgentAddress(participant.address))
-    .map((participant) => ({
-      key: participant.address,
-      initials: participant.handle,
-      label: participant.handle,
-      tone: "agent" as const,
-    }));
+    .map((participant) => {
+      const style = generatedAvatarStyle(participant.address);
+      return {
+        key: participant.address,
+        initials: participant.handle.slice(0, 1).toUpperCase(),
+        label: participant.handle,
+        tone: "agent" as const,
+        color: style["--avatar-identity-bg"],
+        textColor: style["--avatar-identity-fg"],
+      };
+    });
   const humans = presenceMembers.map((member) => ({
     key: member.principalId,
     initials: member.displayName.slice(0, 1).toUpperCase(),
@@ -1142,30 +1153,22 @@ function ChatWorkspaceInner({
                       className="chat-team-stack"
                       aria-label={CHAT_STRINGS.workbenchMembersLabel}
                     >
-                      {visibleTeamStack.map((entry) =>
-                        entry.tone === "agent" ? (
-                          <span
-                            key={entry.key}
-                            className="chat-presence-avatar"
-                            data-agent="true"
-                            title={entry.label}
-                          >
-                            {entry.initials.slice(0, 1).toUpperCase()}
-                          </span>
-                        ) : (
-                          <span
-                            key={entry.key}
-                            className="chat-presence-avatar"
-                            style={{
-                              backgroundColor: entry.color,
-                              color: entry.textColor,
-                            }}
-                            title={entry.label}
-                          >
-                            {entry.initials}
-                          </span>
-                        ),
-                      )}
+                      {visibleTeamStack.map((entry) => (
+                        <span
+                          key={entry.key}
+                          className="chat-presence-avatar"
+                          data-agent={
+                            entry.tone === "agent" ? "true" : undefined
+                          }
+                          style={{
+                            backgroundColor: entry.color,
+                            color: entry.textColor,
+                          }}
+                          title={entry.label}
+                        >
+                          {entry.initials}
+                        </span>
+                      ))}
                       {teamStackOverflow > 0 ? (
                         <span
                           className="chat-team-stack-overflow"
