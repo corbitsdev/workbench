@@ -16,18 +16,21 @@ function fakePorts(
   alreadyDeployedBlocks: readonly string[] = [],
 ): WorkbenchTemplateInstantiationPorts & {
   readonly created: string[];
+  readonly invited: string[];
   readonly recordedConnections: (readonly string[])[];
   readonly deployedBlocks: string[];
 } {
   const created: string[] = [];
+  const invited: string[] = [];
   const recordedConnections: (readonly string[])[] = [];
   const deployedBlocks: string[] = [];
   return {
     created,
+    invited,
     recordedConnections,
     deployedBlocks,
     async listAgentHandles() {
-      return existingHandles;
+      return existingHandles.map((handle) => ({ handle, id: `def-${handle}` }));
     },
     async createParticipantAgent(request) {
       created.push(request.handle);
@@ -36,6 +39,9 @@ function fakePorts(
     async deployBlockWorkflow(block) {
       deployedBlocks.push(block.assetName);
       return { created: !alreadyDeployedBlocks.includes(block.assetName) };
+    },
+    async inviteParticipantAgent(id) {
+      invited.push(id);
     },
     async recordPendingConnections(pendingConnections) {
       recordedConnections.push(pendingConnections);
@@ -81,6 +87,36 @@ test("instantiating the code-review template skips a reviewer that already exist
     "release-risk-reviewer",
   ]);
   expect(ports.created).not.toContain("architecture-reviewer");
+});
+
+// A reviewer whose agent-directory definition already exists (a second
+// workbench from the same template) still has to become a participant
+// of THIS new room — an existing definition is not an existing
+// invitation, so skipping the create must never skip the invite too.
+test("instantiating the code-review template invites every reviewer into the room, created or skipped alike", async () => {
+  const ports = fakePorts(["architecture-reviewer"]);
+  const result = await instantiateWorkbenchTemplate(
+    CODE_REVIEW_TEMPLATE,
+    ports,
+  );
+  expect(result.invitedHandles).toEqual(
+    CODE_REVIEW_REVIEWERS.map((reviewer) => reviewer.handle),
+  );
+  expect(ports.invited).toEqual(
+    expect.arrayContaining([
+      "def-architecture-reviewer",
+      "def-correctness-reviewer",
+      "def-release-risk-reviewer",
+    ]),
+  );
+  expect(ports.invited).toHaveLength(3);
+});
+
+test("instantiating the code-review template never invites Myra — she is already the room's own agent", async () => {
+  const ports = fakePorts();
+  await instantiateWorkbenchTemplate(CODE_REVIEW_TEMPLATE, ports);
+  expect(ports.invited).not.toContain("def-myra");
+  expect(ports.invited).toHaveLength(CODE_REVIEW_REVIEWERS.length);
 });
 
 test("instantiating the code-review template names an honest pending note for its not-yet-scoped webhook trigger", async () => {
@@ -164,6 +200,9 @@ test("Scout's create request carries its tool package pins", async () => {
     },
     async deployBlockWorkflow() {
       return { created: true };
+    },
+    async inviteParticipantAgent() {
+      /* noop */
     },
     async recordPendingConnections() {
       /* noop */

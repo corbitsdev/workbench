@@ -379,6 +379,18 @@ describe("NewWorkbenchPickerRoute", () => {
           skills: [],
         });
       }
+      if (
+        path.endsWith("/chat/workbenches/chan_new/invite") &&
+        init?.method === "POST"
+      ) {
+        const body = JSON.parse(String(init.body)) as {
+          definitionId: string;
+        };
+        return json({
+          address: `${body.definitionId}@chan_new`,
+          definitionId: body.definitionId,
+        });
+      }
       if (path.endsWith("/chat/workbenches/chan_new/settings")) {
         return json({
           id: "chan_new",
@@ -499,6 +511,18 @@ describe("NewWorkbenchPickerRoute", () => {
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
           skills: [],
+        });
+      }
+      if (
+        path.endsWith("/chat/workbenches/chan_new/invite") &&
+        init?.method === "POST"
+      ) {
+        const body = JSON.parse(String(init.body)) as {
+          definitionId: string;
+        };
+        return json({
+          address: `${body.definitionId}@chan_new`,
+          definitionId: body.definitionId,
         });
       }
       if (path.endsWith("/chat/workbenches/chan_new/settings")) {

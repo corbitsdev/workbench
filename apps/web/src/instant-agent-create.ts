@@ -17,6 +17,7 @@ import { getLogger } from "@corbits/client-log";
 import {
   createWorkbench,
   getConnectGithubState,
+  inviteAgent,
   patchWorkbenchSettings,
   startReviewingGithubRepos,
   type ConnectGithubRepo,
@@ -94,21 +95,22 @@ export type PickGithubRepos = (args: {
 
 /**
  * The template picker's "Create workbench" action (CL-6344): mints a
- * fresh "New Workbench" chat against the account's default setup template
- * (the seeded `assistant`/Myra definition), passing the picked row's id
- * through as `templateId` so the room opens with that template's own intro
- * (`packages/chat/src/routes.ts`'s `POST /workbenches` resolves it into
- * the canned greeting). When the id names a real manifest
- * (`workbenchTemplate`), this also creates its participant agent
- * definitions and records its required connections as pending — see
- * `instantiateWorkbenchTemplate`'s own doc for exactly what that does
- * and does not do yet (inviting the reviewers into the room, and the
- * GitHub connect card itself, are the next slice). A template id with
- * no manifest yet (`blank`, "Just start talking") mints a plain
- * untagged chat, exactly like before templates existed. When
- * `pickGithubRepos` is supplied and GitHub is already connected for this
- * tenant, this also drives CL-6386's "select on new-workbench" step —
- * see `PickGithubRepos`'s own doc.
+ * fresh chat, named after the picked template, against the account's
+ * default setup template (the seeded `assistant`/Myra definition),
+ * passing the picked row's id through as `templateId` so the room opens
+ * with that template's own intro (`packages/chat/src/routes.ts`'s
+ * `POST /workbenches` resolves it into the canned greeting). When the id
+ * names a real manifest (`workbenchTemplate`), this also creates its
+ * participant agent definitions, invites each into the room so the
+ * roster the greeting promises is the roster actually there (see
+ * `instantiateWorkbenchTemplate`'s own doc), and records its required
+ * connections as pending. A template id with no manifest yet (`blank`,
+ * "Just start talking") mints a plain untagged chat under the generic
+ * `NEW_WORKBENCH_TITLE`, exactly like before templates existed — there
+ * is no better name to give it. When `pickGithubRepos` is supplied and
+ * GitHub is already connected for this tenant, this also drives
+ * CL-6386's "select on new-workbench" step — see `PickGithubRepos`'s
+ * own doc.
  */
 export async function createWorkbenchFromTemplate(
   tenantId: string,
@@ -161,7 +163,7 @@ export async function createWorkbenchFromTemplate(
   const workbench = await createWorkbench(tenantId, {
     kind: "chat",
     definitionId: setupTemplate.id,
-    name: NEW_WORKBENCH_TITLE,
+    name: manifest?.title ?? NEW_WORKBENCH_TITLE,
     ...(manifest !== undefined ? { templatePromise: manifest.promise } : {}),
     ...(requiresGithub && !githubAlreadyConnected
       ? { connectGithubRequiredFor: manifest?.title ?? "" }
@@ -186,7 +188,10 @@ export async function createWorkbenchFromTemplate(
     const result = await instantiateWorkbenchTemplate(manifest, {
       async listAgentHandles() {
         const current = await listAgentDefinitions(tenantId);
-        return current.map((definition) => definition.name);
+        return current.map((definition) => ({
+          handle: definition.name,
+          id: definition.id,
+        }));
       },
       async createParticipantAgent(request) {
         const created = await createAgentDefinition(tenantId, request);
@@ -194,6 +199,9 @@ export async function createWorkbenchFromTemplate(
       },
       async deployBlockWorkflow(block) {
         return deployWorkbenchTemplateBlock(tenantId, block.assetName);
+      },
+      async inviteParticipantAgent(id) {
+        await inviteAgent(tenantId, workbench.id, id);
       },
       async recordPendingConnections(pendingConnections) {
         await patchWorkbenchSettings(

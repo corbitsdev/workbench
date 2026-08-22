@@ -1,4 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import {
+  CODE_REVIEW_TEMPLATE,
+  serializeWorkbenchTemplateManifest,
+} from "@corbits/workflow-catalog";
 
 import {
   createWorkbenchFromTemplate,
@@ -79,5 +83,96 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
     expect(createCalls).toHaveLength(2);
     expect(navigated).toEqual(["/w/chan-1", "/w/chan-2"]);
     expect(navigated[0]).not.toBe(navigated[1]);
+
+    // Blank ("Just start talking") has no template to name the bench
+    // after, so it keeps the generic title rather than something
+    // invented.
+    const body = JSON.parse(String(createCalls[0]?.init?.body));
+    expect(body.name).toBe(NEW_WORKBENCH_TITLE);
+  });
+
+  // CL-6387 follow-up: picking a named template threw its own name away
+  // and left the reviewer roster its greeting promises out of the room
+  // (every bench looked like every other "New Workbench", and Myra's
+  // "Three reviewers read every pull request" greeting described a team
+  // that wasn't there — see `createWorkbenchFromTemplate`'s own doc).
+  test("picking the code-review template names the bench after it and invites the whole reviewer roster", async () => {
+    const navigated: string[] = [];
+    let nextReviewerId = 0;
+    const calls = stubFetch((path) => {
+      if (path.includes("/workflows/definitions")) {
+        return json({ data: [assistantDefinitionWire], nextCursor: null });
+      }
+      if (path.endsWith("/library/templates/code-review")) {
+        return json({
+          id: "code-review",
+          content: serializeWorkbenchTemplateManifest(CODE_REVIEW_TEMPLATE),
+        });
+      }
+      if (path.endsWith("/chat/workbenches")) {
+        return json({
+          id: "chan-1",
+          title: "Code review",
+          kind: "chat",
+          pinned: false,
+          participants: [],
+        });
+      }
+      if (path.endsWith("/template-blocks/code-review/deploy")) {
+        return json({ id: "def-code-review-block", created: true });
+      }
+      if (path.endsWith("/agent-definitions")) {
+        nextReviewerId += 1;
+        return json({
+          ...assistantDefinitionWire,
+          id: `def-reviewer-${nextReviewerId}`,
+        });
+      }
+      if (path.endsWith("/chat/workbenches/chan-1/invite")) {
+        return json({ address: "agent:invited", definitionId: "def-reviewer" });
+      }
+      if (path.endsWith("/chat/workbenches/chan-1/settings")) {
+        return json({
+          id: "chan-1",
+          title: "Code review",
+          kind: "chat",
+          pinned: false,
+          participants: [],
+          settings: {},
+          contextWindow: { value: 0, source: "inherit" },
+        });
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    });
+
+    await createWorkbenchFromTemplate("tnt_1", "code-review", (to) =>
+      navigated.push(to),
+    );
+
+    const createCall = calls.find((call) =>
+      call.path.endsWith("/chat/workbenches"),
+    );
+    const createBody = JSON.parse(String(createCall?.init?.body));
+    expect(createBody.name).toBe(CODE_REVIEW_TEMPLATE.title);
+
+    const createAgentCalls = calls.filter((call) =>
+      call.path.endsWith("/agent-definitions"),
+    );
+    const reviewerCount = CODE_REVIEW_TEMPLATE.participants.filter(
+      (participant) => participant.handle !== "myra",
+    ).length;
+    expect(createAgentCalls).toHaveLength(reviewerCount);
+
+    const inviteCalls = calls.filter((call) =>
+      call.path.endsWith("/chat/workbenches/chan-1/invite"),
+    );
+    const invitedIds = inviteCalls.map(
+      (call) => JSON.parse(String(call.init?.body)).definitionId,
+    );
+    const createdIds = createAgentCalls.map(
+      (_, index) => `def-reviewer-${index + 1}`,
+    );
+    expect(invitedIds.sort()).toEqual(createdIds.sort());
+    expect(navigated).toEqual(["/w/chan-1"]);
   });
 });
