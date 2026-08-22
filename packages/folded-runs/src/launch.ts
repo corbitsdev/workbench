@@ -14,7 +14,7 @@
 import { eq } from "drizzle-orm";
 import { type } from "arktype";
 import type { DBExecutor } from "@intx/db";
-import { buildCredentialDelivery } from "@intx/db";
+import { buildCredentialDelivery, listVisibleOfferings } from "@intx/db";
 import type { CredentialBinding } from "@intx/types";
 import {
   agentSession,
@@ -97,6 +97,39 @@ export function parseSourcesOverride(
  * the mode travels inside the rendered config.
  */
 export type FoldedRunMode = AgentRuntimeConfig["mode"];
+
+/**
+ * `resolveDefinitionSources` sets `InferenceSource.provider` to the
+ * winning offering's catalog `plugin` — accurate as the wire format
+ * (`openai-compatible` for Ollama, since `@corbits/ollama-adapter` wraps
+ * `createOpenAIAdapter` unmodified) but wrong as an adapter-registry key:
+ * the sidecar's registry dispatches a locally-served offering through
+ * `@corbits/ollama-adapter` under the key `"ollama"`
+ * (`apps/sidecar/src/config.ts`), which a `plugin`-only source can never
+ * name. Left uncorrected, an Ollama source resolves to the built-in
+ * OpenAI adapter, whose stricter `quirks` schema rejects the offering's
+ * `default` bag outright. `plugin` and this dispatch key are deliberately
+ * different concepts — the DB `plugin` column stays `openai-compatible`
+ * (`ModelProviderPlugin` has no `"ollama"` member, nor should it); this
+ * only corrects the in-flight `provider` field a launch pins into its
+ * run config.
+ *
+ * `ollamaOfferingIds` names every offering whose provider row is
+ * literally `"ollama"` (`@corbits/hub-client`'s `CATALOG_SEEDS.ollama`) —
+ * the same identity `quirksForDeployment` keys its own override on
+ * (`@corbits/inference-catalog`'s `ollama-context-defaults.ts`). A
+ * source whose id names none of them is returned unchanged.
+ */
+export function withOllamaAdapterKey(
+  sources: readonly InferenceSource[],
+  ollamaOfferingIds: ReadonlySet<string>,
+): InferenceSource[] {
+  return sources.map((source) =>
+    ollamaOfferingIds.has(source.id)
+      ? { ...source, provider: "ollama" }
+      : source,
+  );
+}
 
 /**
  * The ref a folded run's per-run workflow source tree is committed to
@@ -300,6 +333,22 @@ export async function deployAtHead(
 
   if (!resolution.ok) {
     throw new InferenceResolutionError(params.launchLabel, resolution.message);
+  }
+
+  // A caller-supplied override already states the adapter key it wants
+  // (see `SourcesOverride`'s doc) — only a catalog-resolved chain needs
+  // its `provider` field corrected for Ollama offerings.
+  if (sourcesOverride === undefined) {
+    const offerings = await listVisibleOfferings(deps.db, params.tenantId);
+    const ollamaOfferingIds = new Set(
+      offerings
+        .filter((resolved) => resolved.provider.name === "ollama")
+        .map((resolved) => resolved.offering.id),
+    );
+    resolution.sources = withOllamaAdapterKey(
+      resolution.sources,
+      ollamaOfferingIds,
+    );
   }
 
   // `create` replaces any collector already registered for this
