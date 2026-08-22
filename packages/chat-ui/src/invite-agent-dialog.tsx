@@ -21,6 +21,7 @@ import {
 import { Users, WarningCircle } from "@corbits/icons";
 import { useEffect, useState } from "react";
 
+import { humanizeSlug } from "@corbits/chat/display-name";
 import {
   ChatApiError,
   describeChatError,
@@ -151,31 +152,53 @@ export function InviteAgentDialog({
             />
           ) : (
             <ul className="chat-invitable-list">
-              {state.items.map((definition) => (
-                <li
-                  key={definition.id}
-                  className="chat-invitable-item"
-                  data-testid="invitable-definition"
-                >
-                  <span>{definition.description ?? definition.name}</span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={invitingId !== null}
-                    onClick={() => void handleInvite(definition.id)}
+              {state.items.map((definition) => {
+                // `description` carries the definition's real display
+                // name (set at creation), never a summary sentence — see
+                // `InvitableDefinition`'s own doc comment — so the
+                // fallback below is "no display name was ever set", not
+                // "no description exists". `name` is the immutable slug
+                // and never belongs in the title slot on its own.
+                const displayName =
+                  definition.description ?? humanizeSlug(definition.name);
+                return (
+                  <li
+                    key={definition.id}
+                    className="chat-invitable-item"
+                    data-testid="invitable-definition"
                   >
-                    {invitingId === definition.id
-                      ? CHAT_STRINGS.inviteAgentInviting
-                      : CHAT_STRINGS.inviteAgentAction}
-                  </Button>
-                </li>
-              ))}
+                    <span className="chat-invitable-item-name">
+                      {displayName}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={invitingId !== null}
+                      onClick={() => void handleInvite(definition.id)}
+                    >
+                      {invitingId === definition.id
+                        ? CHAT_STRINGS.inviteAgentInviting
+                        : CHAT_STRINGS.inviteAgentAction}
+                    </Button>
+                  </li>
+                );
+              })}
               {jimmyMissing && (
                 <li
                   className="chat-invitable-item"
                   data-testid="quick-create-jimmy"
                 >
-                  <span>{JIMMY_QUICK_CREATE.description}</span>
+                  <span className="chat-invitable-item-info">
+                    <span className="chat-invitable-item-name">
+                      {JIMMY_QUICK_CREATE.name}
+                      <span className="chat-invitable-item-attribution">
+                        {CHAT_STRINGS.inviteAgentFirstPartyAttribution}
+                      </span>
+                    </span>
+                    <span className="chat-invitable-item-description">
+                      {JIMMY_QUICK_CREATE.description}
+                    </span>
+                  </span>
                   <Button
                     variant="outline"
                     size="sm"

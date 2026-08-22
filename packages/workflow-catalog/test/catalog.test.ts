@@ -116,6 +116,18 @@ describe("workflow catalog", () => {
       expect(isConversationalWorkflowName("wfd_deadbeef")).toBe(true);
     });
 
+    // CL-6649: `echo` and `last-30-days-research` are both non-automatable
+    // AND non-conversational — the exact combination that let a picker
+    // gated on `!isAutomatableWorkflowName` alone (rather than
+    // `isConversationalWorkflowName`) mistake a routine's delivery
+    // workflow, and the Echo wiring check, for an invitable chat agent.
+    test("a non-automatable utility is still non-conversational (the CL-6649 trap)", () => {
+      for (const name of ["echo", "last-30-days-research"]) {
+        expect(isAutomatableWorkflowName(name)).toBe(false);
+        expect(isConversationalWorkflowName(name)).toBe(false);
+      }
+    });
+
     test("every catalog entry declares a conversational flag", () => {
       for (const entry of WORKFLOW_CATALOG) {
         expect(typeof entry.conversational).toBe("boolean");

@@ -685,29 +685,17 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   }, 90_000);
 
   test("inviting the echo agent launches its own run, joins the workbench, and receives @mentions", async () => {
-    const invitableRes = await api(
-      "GET",
-      `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/invitable`,
-      undefined,
-      user1.cookies,
-    );
-    expectStatus("list invitable definitions", invitableRes, 200);
-    const invitable = arrayField(
-      invitableRes.data,
-      "items",
-      "list invitable definitions",
-    ) as { id: string; name: string }[];
-    const echoDefinition = invitable.find((item) => item.name === "echo");
-    if (echoDefinition === undefined) {
-      throw new Error(
-        `no invitable definition named "echo": ${JSON.stringify(invitable)}`,
-      );
-    }
+    // Echo is a non-conversational wiring check (`conversational: false`
+    // in the workflow catalog, CL-6649) — the invite dialog's own
+    // listing correctly excludes it, so this test resolves its
+    // definition id directly by name rather than through that filtered
+    // listing.
+    const echoId = await echoDefinitionId();
 
     const invited = await api(
       "POST",
       `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/invite`,
-      { definitionId: echoDefinition.id },
+      { definitionId: echoId },
       user1.cookies,
     );
     expectStatus("invite echo agent", invited, 201);
@@ -717,7 +705,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       "invite echo agent",
     );
     expect(stringField(invited.data, "definitionId", "invite echo agent")).toBe(
-      echoDefinition.id,
+      echoId,
     );
     const invitedLocalPart = invitedAddress.split("@")[0];
     if (invitedLocalPart === undefined || invitedLocalPart === "") {
@@ -786,26 +774,19 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     expect(fresh.length).toBeGreaterThan(0);
   }, 90_000);
 
+  // Echo is a non-conversational wiring check (`conversational: false` in
+  // the workflow catalog, CL-6649) — it never appears in the invite
+  // dialog's own (correctly filtered) listing, so its definition id is
+  // resolved directly by name instead.
   async function echoDefinitionId(): Promise<string> {
-    const invitableRes = await api(
+    const byNameRes = await api(
       "GET",
-      `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/invitable`,
+      `/api/tenants/${tenantId}/agent-definitions/by-name/echo`,
       undefined,
       user1.cookies,
     );
-    expectStatus("list invitable definitions", invitableRes, 200);
-    const invitable = arrayField(
-      invitableRes.data,
-      "items",
-      "list invitable definitions",
-    ) as { id: string; name: string }[];
-    const echoDefinition = invitable.find((item) => item.name === "echo");
-    if (echoDefinition === undefined) {
-      throw new Error(
-        `no invitable definition named "echo": ${JSON.stringify(invitable)}`,
-      );
-    }
-    return echoDefinition.id;
+    expectStatus("resolve echo definition by name", byNameRes, 200);
+    return stringField(byNameRes.data, "id", "resolve echo definition by name");
   }
 
   test("a chat auto-invites the echo agent and delivers un-mentioned messages to it", async () => {
