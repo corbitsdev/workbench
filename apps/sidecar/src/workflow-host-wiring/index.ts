@@ -51,8 +51,12 @@ import type {
   MultistepSourcesRouter,
 } from "../workflow-run-pack-client";
 import {
+  WorkflowRestoreFailure,
+  clearWorkflowDeploymentRestoreFailure,
   deleteWorkflowDeploymentRecord,
+  isWorkflowDeploymentRestoreQuarantined,
   markWorkflowDeploymentRecordParked,
+  recordWorkflowDeploymentRestoreFailure,
   scanWorkflowDeploymentRecords,
   writeWorkflowDeploymentRecord,
   type WorkflowDeploymentRecord,
@@ -174,8 +178,17 @@ export interface SidecarDeployRouter extends DeployRouter {
    * substrate. Runs once at boot, before `hubLink.connect()`, so a single-step
    * head's mailbox/transport registration is live before the hub routes to it.
    * Soft-fails per deployment: a record that cannot be restored (unbuildable
-   * provider, corrupt `workflow.json`, spawn failure) is logged and left on
-   * disk for a later boot to retry -- it is never deleted here.
+   * provider, corrupt `deployment.json`, spawn failure) is logged and left on
+   * disk for a later boot to retry -- it is never deleted here. A failure
+   * that is deterministic given only the record's own bytes (a
+   * `WorkflowRestoreFailure("permanent", ...)`, e.g. a corrupt/misplaced
+   * record or a closure-derived definition that fails validation) is
+   * tracked on the record and, after `RESTORE_QUARANTINE_THRESHOLD`
+   * consecutive such failures, quarantined: later boots skip it entirely
+   * rather than re-attempting and re-warning. A failure that depends on
+   * this boot's environment (an unbuildable inference provider, and
+   * anything else not explicitly classified permanent) never quarantines
+   * and is retried every boot for as long as the record exists.
    */
   restoreWorkflowDeployments(): Promise<void>;
   /**
@@ -1378,10 +1391,18 @@ export function createSidecarDeployRouter(deps: {
    * shared core of the boot-time restore loop and the CL-5477 idle-reap
    * wake path. Applies exactly the gates the live deploy path applies
    * (address integrity, wire arktype, tool-metadata-equivalent structural
-   * projection, source admission). Soft-skips (corrupt record, failed
-   * validation, unbuildable provider) log and return without spawning,
-   * matching the boot scan's existing posture; the record is never deleted
-   * here. Throws only where the spawn core itself throws.
+   * projection, source admission). Every failure throws so the caller's
+   * failure-accounting (`recordWorkflowDeploymentRestoreFailure`) sees it;
+   * the record is never deleted here. A failure that is intrinsic to the
+   * record's own persisted bytes -- deterministic, will recur identically
+   * on every future boot -- throws a `WorkflowRestoreFailure("permanent",
+   * ...)`: address-derivation mismatch and closure-derived-definition
+   * validation are the only two such gates below. Every other failure
+   * (an unbuildable inference provider, a closure-materialization miss, a
+   * spawn-core throw) is a plain `Error`, which the caller treats as
+   * "transient" -- it depends on this boot's environment, not the
+   * record's content, and may clear on a later boot with no change to the
+   * record at all.
    */
   async function restoreDeploymentFromRecord(
     dataDir: string,
@@ -1389,12 +1410,15 @@ export function createSidecarDeployRouter(deps: {
     record: WorkflowDeploymentRecord,
   ): Promise<void> {
     // Integrity: the stored address must re-derive to its own directory
-    // name. A mismatch means a corrupt or misplaced record; skip it
-    // rather than restore a deployment under the wrong slug.
+    // name. A mismatch means a corrupt or misplaced record -- permanent,
+    // since re-deriving the same address on a later boot yields the same
+    // mismatch every time.
     const derived = deriveDeploymentId(record.agentAddress);
     if (derived !== deploymentId) {
-      logger.warn`skipping workflow deployment restore: ${record.agentAddress} derives slug ${derived}, not its directory ${deploymentId}`;
-      return;
+      throw new WorkflowRestoreFailure(
+        "permanent",
+        `${record.agentAddress} derives slug ${derived}, not its directory ${deploymentId}`,
+      );
     }
 
     // A record whose address the platform's own parser rejects is
@@ -1428,25 +1452,47 @@ export function createSidecarDeployRouter(deps: {
       projectLiveToInert(applied.definition),
     );
     if (validatedDefinition instanceof type.errors) {
-      logger.warn`skipping workflow deployment restore for ${record.agentAddress}: workflow definition loaded from the frozen closure failed projection validation: ${validatedDefinition.summary}`;
-      return;
+      // Permanent: the closure is an immutable pin, so re-evaluating it on
+      // a later boot yields the identical (broken) projection every time.
+      throw new WorkflowRestoreFailure(
+        "permanent",
+        `workflow definition loaded from the frozen closure failed projection validation for ${record.agentAddress}: ${validatedDefinition.summary}`,
+      );
     }
     const definition: WorkflowProjectionDefinition = validatedDefinition;
 
     // Structural invariants the wire arktype does not cover. The closure eval
     // skips the deploy frame's coverage narrow, so this is where the
-    // definition-vs-sources coverage is checked.
-    validateWorkflowProjection({ definition, sources: record.sources });
+    // definition-vs-sources coverage is checked. Also permanent, for the
+    // same reason as the projection check above: both the definition and
+    // `record.sources` are immutable once persisted.
+    try {
+      validateWorkflowProjection({ definition, sources: record.sources });
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      throw new WorkflowRestoreFailure("permanent", reason);
+    }
 
     // Re-run the source-admission gate: refuse to restore a deployment
     // whose pinned provider this sidecar can no longer build. Every
     // source in a step's failover chain must be buildable, so this
-    // iterates the whole list. The record is KEPT (not deleted) so a
-    // later boot with the provider restored retries it.
+    // iterates the whole list. Transient, not permanent: the buildable-
+    // provider set is this boot's adapter registry, not anything the
+    // record itself carries, so a later boot with the provider restored
+    // retries and can succeed with the SAME record unchanged. The record
+    // is KEPT (not deleted) either way.
     for (const stepId of definition.stepOrder) {
       const chain = record.sources[stepId];
       if (chain !== undefined) {
-        for (const source of chain) deps.assertSourceBuildable(source);
+        for (const source of chain) {
+          try {
+            deps.assertSourceBuildable(source);
+          } catch (cause) {
+            const reason =
+              cause instanceof Error ? cause.message : String(cause);
+            throw new WorkflowRestoreFailure("transient", reason);
+          }
+        }
       }
     }
 
@@ -1472,10 +1518,12 @@ export function createSidecarDeployRouter(deps: {
     // the spawn, release on failure. Unlike deploy's soft-fail, restore
     // does NOT delete the record and does NOT re-materialize the step grants
     // or the onTrigger body sources -- both are already on disk from the
-    // original deploy. A failed restore just warns and
-    // leaves the record for the next boot; there is deliberately no GC
-    // of a permanently-unrestorable record here (an operator reclaims it
-    // by undeploying the address).
+    // original deploy. A failed restore's caller (the boot loop, below)
+    // tracks the failure on the record and always leaves the record itself
+    // in place for the next boot; there is deliberately no GC of the record
+    // FILE here (an operator reclaims it by undeploying the address) --
+    // only of the ATTENTION a permanently-unrestorable one demands, via
+    // the quarantine threshold below.
     //
     // Release only a slug THIS pass newly claimed: if the address is
     // already live (its slug still held by the running deployment), the
@@ -1628,33 +1676,73 @@ export function createSidecarDeployRouter(deps: {
       // Report parked-vs-live counts from the `parkedAt` marker
       // (`markWorkflowDeploymentRecordParked`, written on the hibernate
       // teardown) before restoring anything. This is REPORT-ONLY: every
-      // record below still restores LIVE regardless of this count, exactly
-      // as before this marker existed. Making the boot scan actually skip
-      // (or defer) the parked ones is CL-6282 -- a separate change, once its
-      // design pass lands -- and needs a signal this scan cannot see on its
-      // own before that cutover is safe: whether the hub still wants a
-      // parked deployment running is a hub-side decision, not something a
-      // sidecar with no hub connection yet can determine at boot.
+      // non-quarantined record below still restores LIVE regardless of
+      // this count, exactly as before this marker existed. Making the
+      // boot scan actually skip (or defer) the parked ones is CL-6282 -- a
+      // separate change, once its design pass lands -- and needs a signal
+      // this scan cannot see on its own before that cutover is safe:
+      // whether the hub still wants a parked deployment running is a
+      // hub-side decision, not something a sidecar with no hub connection
+      // yet can determine at boot.
       const parkedCount = scanned.filter(
         ({ record }) => record.parkedAt !== undefined,
       ).length;
-      logger.info`Boot scan found ${scanned.length} deployment record(s): ${parkedCount} parked, ${scanned.length - parkedCount} live; restoring all of them (parked-aware boot restore is CL-6282)`;
+      const alreadyQuarantinedCount = scanned.filter(({ record }) =>
+        isWorkflowDeploymentRestoreQuarantined(record),
+      ).length;
+      logger.info`Boot scan found ${scanned.length} deployment record(s): ${parkedCount} parked, ${alreadyQuarantinedCount} quarantined, ${scanned.length - parkedCount - alreadyQuarantinedCount} to restore (parked-aware boot restore is CL-6282)`;
       // Restore serially, not in parallel: deterministic boot-log ordering,
       // one isolable warning per failed record, and no concurrent
       // child-spawn / transport-register storm. Restore runs before
       // `hubLink.connect()`, so there are no concurrent deploys to contend
       // with. Each record's failure is caught so one bad deployment cannot
-      // strand the rest. Every persisted record restores LIVE: a deployment
-      // that was previously torn down as a state-preserving hibernate is
-      // relaunched by the hub's own reap-and-relaunch flow, not by this
-      // boot scan guessing at staleness.
+      // strand the rest. Every non-quarantined persisted record restores
+      // LIVE: a deployment that was previously torn down as a
+      // state-preserving hibernate is relaunched by the hub's own
+      // reap-and-relaunch flow, not by this boot scan guessing at
+      // staleness.
+      let skippedQuarantinedCount = 0;
       for (const { deploymentId, record } of scanned) {
+        // Skip WITHOUT attempting: a permanently unrestorable record that
+        // has already crossed RESTORE_QUARANTINE_THRESHOLD gets neither a
+        // spawn attempt nor a per-record warning this boot -- both are
+        // pointless for a deterministic failure that has already been
+        // reported that many times. It still counts toward the one
+        // summary line below, and the record itself is untouched (an
+        // operator reclaims it by undeploying the address).
+        if (isWorkflowDeploymentRestoreQuarantined(record)) {
+          skippedQuarantinedCount += 1;
+          continue;
+        }
         try {
           await restoreDeploymentFromRecord(dataDir, deploymentId, record);
+          if (record.restoreFailure !== undefined) {
+            await clearWorkflowDeploymentRestoreFailure(
+              dataDir,
+              deploymentId,
+              record,
+            );
+          }
         } catch (cause) {
           const reason = cause instanceof Error ? cause.message : String(cause);
-          logger.warn`Failed to restore workflow deployment ${deploymentId}: ${reason}`;
+          const kind =
+            cause instanceof WorkflowRestoreFailure ? cause.kind : "transient";
+          const updated = await recordWorkflowDeploymentRestoreFailure(
+            dataDir,
+            deploymentId,
+            record,
+            { kind, reason },
+          );
+          if (isWorkflowDeploymentRestoreQuarantined(updated)) {
+            const attempts = updated.restoreFailure?.attempts ?? 0;
+            logger.warn`Workflow deployment ${deploymentId} failed to restore ${attempts} consecutive times and is now quarantined -- it will not be retried again until the address is undeployed. Last failure: ${reason}`;
+          } else {
+            logger.warn`Failed to restore workflow deployment ${deploymentId}: ${reason}`;
+          }
         }
+      }
+      if (skippedQuarantinedCount > 0) {
+        logger.warn`Skipped ${skippedQuarantinedCount} quarantined workflow deployment record(s) (permanent restore failures, already reported); undeploy an address to clear its record`;
       }
     },
     activeAddresses(): string[] {
