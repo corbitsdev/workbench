@@ -10,7 +10,10 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { supportedCredentialProviders } from "@workbench/hub-client/credential-test";
+import {
+  OLLAMA_PLACEHOLDER_SECRET,
+  supportedCredentialProviders,
+} from "@workbench/hub-client/credential-test";
 
 import { App } from "../src/app";
 import { NavigationProvider } from "../src/navigation";
@@ -1121,5 +1124,165 @@ describe("OnboardingPage resuming a bench_unseeded account", () => {
     expect(container.textContent).not.toContain(
       "A working key is already in place",
     );
+  });
+});
+
+describe("connecting a local Ollama instance from onboarding", () => {
+  const settle = () =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+
+  function findByRoleText(
+    container: HTMLElement,
+    role: string,
+    text: string,
+  ): HTMLElement {
+    const match = Array.from(
+      container.querySelectorAll<HTMLElement>(`[role="${role}"]`),
+    ).find((el) => el.textContent?.includes(text));
+    if (match === undefined) {
+      throw new Error(`no [role="${role}"] element containing "${text}"`);
+    }
+    return match;
+  }
+
+  function findButtonByText(container: HTMLElement, text: string): HTMLElement {
+    const match = Array.from(container.querySelectorAll("button")).find((el) =>
+      el.textContent?.includes(text),
+    );
+    if (match === undefined) {
+      throw new Error(`no button containing "${text}"`);
+    }
+    return match;
+  }
+
+  test("picking the Ollama card prefills its base URL, and submitting connects it and marks the tenant as having a usable model", async () => {
+    let completeRequestBody: unknown = null;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url === "/api/onboarding/provision") {
+        return json({ kind: "existing-member", seeded: false });
+      }
+      if (url === "/api/onboarding/complete") {
+        completeRequestBody = JSON.parse((init?.body as string) ?? "{}");
+        // The hub's own connect route is what actually marks the tenant
+        // as having a usable model (persisting the credential + seeding
+        // its catalog) — this response is what that route answers once
+        // it has. The onboarding page's job, proven below, is sending
+        // the URL as `baseURL` with the fixed Ollama placeholder secret,
+        // and moving on once this comes back.
+        return json({
+          kind: "ready",
+          tenantId: "ten_1",
+          tenantSlug: "ada-user1",
+          deployed: ["echo"],
+          pending: [],
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const { navigate, calls } = trackedNavigate();
+    try {
+      act(() => {
+        root.render(
+          <App
+            path={ONBOARDING_PATH}
+            navigate={navigate}
+            session={signedIn}
+            onSignedIn={noop}
+            onSignOut={noop}
+            onRetry={noop}
+          />,
+        );
+      });
+      await settle();
+
+      act(() => {
+        findByRoleText(container, "radio", "Ollama (local)").click();
+      });
+
+      const urlInput = container.querySelector<HTMLInputElement>(
+        "#onboarding-provider-url",
+      );
+      expect(urlInput).not.toBeNull();
+      expect(urlInput?.value).toBe("http://localhost:11434");
+
+      act(() => {
+        findButtonByText(container, "Connect this address").click();
+      });
+      await settle();
+
+      expect(completeRequestBody).toEqual({
+        provider: "ollama",
+        apiKey: OLLAMA_PLACEHOLDER_SECRET,
+        baseURL: "http://localhost:11434",
+      });
+      expect(calls).toEqual(["/"]);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+});
+
+describe("skipping the onboarding credential step", () => {
+  const settle = () =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+
+  function findButtonByText(container: HTMLElement, text: string): HTMLElement {
+    const match = Array.from(container.querySelectorAll("button")).find((el) =>
+      el.textContent?.includes(text),
+    );
+    if (match === undefined) {
+      throw new Error(`no button containing "${text}"`);
+    }
+    return match;
+  }
+
+  test("skipping hands off to the workbench without connecting a provider", async () => {
+    // A bench with no provider ready yet — this is the anticipated
+    // `bench_unseeded` state, not an error (see `handleSkip`'s own
+    // comment): skipping must never call the credential-complete route.
+    globalThis.fetch = (async (url: string) => {
+      if (url === "/api/onboarding/provision") {
+        return json({ kind: "existing-member", seeded: false });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const { navigate, calls } = trackedNavigate();
+    try {
+      act(() => {
+        root.render(
+          <App
+            path={ONBOARDING_PATH}
+            navigate={navigate}
+            session={signedIn}
+            onSignedIn={noop}
+            onSignOut={noop}
+            onRetry={noop}
+          />,
+        );
+      });
+      await settle();
+
+      act(() => {
+        findButtonByText(container, "Skip for now").click();
+      });
+
+      expect(calls).toEqual(["/"]);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
   });
 });
