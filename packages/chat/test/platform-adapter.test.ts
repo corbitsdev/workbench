@@ -943,6 +943,70 @@ describe("createHubChatPlatform", () => {
     );
   });
 
+  test("sendMail rejects within the mail-delivery deadline instead of hanging forever when delivery never settles (CL-6644)", async () => {
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          apiKey: "placeholder",
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "workbench-1",
+        displayName: null,
+      },
+      definitionId: "wfd_workbench1",
+      workflowRunRow: {
+        id: "ins_workbench1",
+        address: "ins_workbench1@ten1.workbench.test",
+        principalId: "prin_run1",
+      },
+    });
+    db.inserted.push({
+      table: agentSession,
+      values: { id: "ses_run1", principalId: "prin_run1" },
+    });
+
+    const sessionService = createFakeSessionService();
+    // Models the observed CL-6644 symptom: the post-deploy delivery
+    // step (`sessionService.sendUserMessage`, reached through
+    // `sendFoldedMail`) never resolves and never rejects -- a wedged
+    // ack, not a thrown "agent is unreachable" the reclaim-retry loop
+    // already knows how to handle. Before the fix, `sendMail`'s
+    // returned promise stayed pending forever with nothing logged.
+    sessionService.sendUserMessage = () => new Promise<never>(() => {});
+    const sidecarRouter = createFakeSidecarRouter();
+
+    const platform = createHubChatPlatform({
+      toolGrantsForPins: () => [],
+      db: db as never,
+      sessionService,
+      assetService: createFakeAssetService(),
+      sidecarRouter,
+      eventCollectors: createFakeEventCollectors(),
+      mailDeliveryTimeoutMs: 20,
+    });
+
+    await expect(
+      platform.sendMail({
+        tenantId: "ten_1",
+        workbenchId: "ins_workbench1",
+        principalId: "prin_sender",
+        content: { content: "hello workbench" },
+      }),
+    ).rejects.toThrow(/did not settle within 20ms/);
+  });
+
   test("launchInvite mints from the target definition and ensureAwake deploys it", async () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
