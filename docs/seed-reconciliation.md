@@ -99,6 +99,31 @@ publish from stranding a usable-looking-but-empty asset:
   this history is the same operation as seeding one for the first
   time: re-run `workbench seed`.
 
+## Workflow deployments (`workbench seed`)
+
+`ensureDeployment` (`packages/hub-client/src/seed.ts`) treats a
+workflow's `workflow_run` deployment row as seed-owned state, but the
+row's `status` column is not the whole story: the hub only routes mail
+to a deployment through an in-memory table (`sidecarRouter`'s
+`addressIndex`, `vendor/intx/hub-sessions/src/ws/sidecar-handler.ts`)
+that binds an agent address to whichever sidecar socket most recently
+proved ownership of it. That table lives in the hub process, not the
+database — a hub or sidecar restart empties it, while the persisted row
+still reads `deployed`.
+
+Before skipping a `deployed`/`pending` row as "already deployed",
+`ensureDeployment` checks `GET
+/api/tenants/:tenantId/workflows/runs/:runId/health` (a live read of
+`sidecarRouter.getRoutableAddresses()`, not the stored status) and
+skips only when `liveness` answers `"ok"`. A row whose sidecar is gone
+is stale, not deployed: seed logs it as stale and pushes a fresh
+deployment, which mints a new `workflow_run` (new anchor run id, new
+agent address) on whichever sidecar is currently connected. The stale
+row is left in place rather than rebound — a sidecar carries no durable
+state of its own, so handing an old run's identity to a new sidecar
+process would silently pretend session state survived that never did.
+A genuine redeploy is the only honest repair.
+
 ## Env provider credentials (hub boot)
 
 `apps/hub/src/env-credential-plant.ts` delegates to
