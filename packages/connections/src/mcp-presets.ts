@@ -130,6 +130,17 @@ export const MCP_PRESETS: readonly McpPreset[] = [
     connectionMode: "oauth",
     docsUrl: "https://sumble.com/guides/account-research",
   },
+  {
+    // No simple-icons listing for Canva (CL-6647) — same gap as Granola
+    // and Sumble above, so this card falls back to the initial-letter
+    // tile rather than risk a hand-traced or doctored mark.
+    slug: "canva",
+    displayName: "Canva",
+    description: "Design decks, docs, and graphics.",
+    url: "https://mcp.canva.com/mcp",
+    connectionMode: "oauth",
+    docsUrl: "https://www.canva.dev/docs/mcp/",
+  },
 ];
 
 export const MCP_PRESET_CONNECTOR_IDS: readonly string[] = MCP_PRESETS.flatMap(
