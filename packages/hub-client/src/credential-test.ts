@@ -31,15 +31,28 @@ export type SupportedCredentialProvider =
   | "ollama";
 
 /**
- * The inference adapter (`@intx/inference`'s runtime provider registry,
- * mirrored by `@intx/types`' `ModelProviderPlugin`) that actually serves a
- * credential's requests. Deliberately narrower than
- * `SupportedCredentialProvider`: OpenRouter, Opencode Zen, Groq, DeepSeek,
- * Mistral, and Hugging Face each get their own credential-test probe and onboarding
- * card, but at deploy time they all ride the same OpenAI-compatible wire
- * shape, so their `ModelSource.provider` and catalog `plugin` value must be
- * `"openai-compatible"` — the registry key `byProvider.get(source.provider)`
- * resolves against — never their own provider id.
+ * The wire format (`@intx/inference`'s built-in adapter shape, mirrored by
+ * `@intx/types`' `ModelProviderPlugin`) that actually serves a credential's
+ * requests. Deliberately narrower than `SupportedCredentialProvider`:
+ * OpenRouter, Opencode Zen, Groq, DeepSeek, Mistral, Hugging Face, and
+ * Ollama each get their own credential-test probe and onboarding card, but
+ * at deploy time they all ride the same OpenAI-compatible wire shape, so
+ * their catalog `plugin` value must be `"openai-compatible"` — never their
+ * own provider id — and `ModelProviderPlugin` gets no wider for them.
+ *
+ * This is NOT the same string as the registry key
+ * `byProvider.get(source.provider)` resolves against (CL-6586). For every
+ * provider above but Ollama the two happen to be equal, because the
+ * built-in `"openai-compatible"` adapter is exactly what serves them. Ollama
+ * is the one exception: it needs `@corbits/ollama-adapter`'s custom factory
+ * (registered under the key `"ollama"`, `apps/sidecar/src/config.ts`) so an
+ * offering's `quirks.numCtx` actually reaches `options.num_ctx` — the
+ * built-in adapter's stricter `quirks` schema rejects that shape outright.
+ * `packages/folded-runs/src/launch.ts`'s `withOllamaAdapterKey` is the one
+ * place that correction happens: it leaves `plugin`/`ModelSource.provider`
+ * as the accurate `"openai-compatible"` wire format and only rewrites the
+ * launched `InferenceSource.provider` — the actual registry-dispatch
+ * field — for an offering whose catalog provider is named `"ollama"`.
  */
 export type AdapterPluginId =
   "anthropic" | "openai" | "openai-compatible" | "google-genai";
