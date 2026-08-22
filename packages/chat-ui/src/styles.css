@@ -28,6 +28,11 @@
   min-height: 0;
   align-items: center;
   justify-content: center;
+  /* Without this, a short viewport lets the centered loader overflow past
+     this frame's own box and render on top of the page header above it
+     (CL-6624) — `overflow` makes the frame clip/scroll its own content
+     instead of bleeding into chrome it doesn't own. */
+  overflow: auto;
 }
 
 /* Stage top bar — mock `.top`: fixed 3rem row, tight title, trailing actions. */
@@ -718,13 +723,26 @@
 }
 
 /* The async-mint setup state: three staggered orange squares (the
-   brand's zero-radius language) pulsing while the launches finish. */
+   brand's zero-radius language) pulsing while the launches finish.
+   `flex: 1` claims the rest of `.chat-main`'s column instead of sitting
+   flush under `.chat-workbench-header` with no gap — without it the dots
+   render right on top of the header's bottom rule (CL-6624). Centering
+   in that claimed space, plus its own padding, keeps a real gap from the
+   header at any viewport height; `overflow: auto` is the same
+   containment `.chat-workspace-frame` needs for the pre-workbench
+   loading screen, so a very short viewport scrolls this in place rather
+   than bleeding past its box. */
 .chat-workbench-loading {
   display: flex;
+  flex: 1;
+  min-height: 0;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 0.65rem;
+  padding: 1.5rem 1rem;
   text-align: center;
+  overflow: auto;
 }
 
 .chat-workbench-loading-mark {
