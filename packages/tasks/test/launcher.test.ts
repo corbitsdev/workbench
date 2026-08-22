@@ -45,6 +45,19 @@ mock.module("@intx/hub-api", () => ({
   },
 }));
 
+// `deployAtHead` (reached through `launchRun` -> `launchFoldedRun`) looks
+// up `listVisibleOfferings` once per launch to correct an Ollama
+// offering's adapter-registry key (CL-6586's `withOllamaAdapterKey`) --
+// the real implementation walks a drizzle `db.query` surface this file's
+// hand-rolled `createFakeDb` never implements. None of these fixtures
+// resolve against an Ollama offering, so an empty list is the correct
+// fake: nothing here should ever need its `provider` field corrected.
+const actualDb = await import("@intx/db");
+mock.module("@intx/db", () => ({
+  ...actualDb,
+  listVisibleOfferings: async () => [],
+}));
+
 const {
   launchTask,
   launchTaskLeg,
