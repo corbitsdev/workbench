@@ -182,11 +182,11 @@ describe("NewWorkbenchPickerRoute", () => {
     );
     expect(radios.length).toBe(3);
     const dueDiligence = radios.find((row) =>
-      row.textContent?.includes("Research & due diligence"),
+      row.textContent?.includes("Due Diligence"),
     );
     expect(dueDiligence).not.toBeUndefined();
     expect(dueDiligence?.textContent).toContain(
-      "Scout researches the web and what your team already knows",
+      "Scout checks a company, deal, or vendor",
     );
   });
 
