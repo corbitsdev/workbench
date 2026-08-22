@@ -20,6 +20,7 @@ import type {
   DeployRouterResult,
   SessionManager,
 } from "@intx/hub-agent";
+import { reportError } from "@corbits/error-sink";
 import {
   type DeriveStepAddress,
   type DispatchTimingMark,
@@ -61,6 +62,11 @@ import {
   writeWorkflowDeploymentRecord,
   type WorkflowDeploymentRecord,
 } from "../workflow-deployment-record";
+import {
+  reapExpiredHibernationSnapshots as reapVaultSnapshots,
+  restoreAgentIdentity,
+  snapshotAgentIdentity,
+} from "../hibernated-agent-identity-vault";
 import {
   computeWireDefinitionHash,
   validateWorkflowProjection,
@@ -191,6 +197,17 @@ export interface SidecarDeployRouter extends DeployRouter {
    * and is retried every boot for as long as the record exists.
    */
   restoreWorkflowDeployments(): Promise<void>;
+  /**
+   * Sweep this sidecar's hibernated-agent-identity vault
+   * (`hibernated-agent-identity-vault.ts`) for snapshots older than its
+   * stated retention window and delete them, returning how many were
+   * reaped for observability. Independent of `restoreWorkflowDeployments`
+   * -- an orphaned snapshot (its address hibernated, then permanently
+   * torn down without ever redeploying) has no relationship to that scan
+   * and this does not touch its concurrency. Intended to run once at
+   * boot, in either order relative to the restore scan.
+   */
+  reapExpiredHibernationSnapshots(): Promise<number>;
   /**
    * The workflow-substrate deployment addresses (`ins_dep_...`) this router
    * currently hosts a live supervisor for -- the set of addresses this
@@ -811,6 +828,15 @@ export function createSidecarDeployRouter(deps: {
       };
       const wired = createSidecarWorkflowSupervisor(wiredBaseConfig);
 
+      // Restore a hibernated identity directory, if this address has one
+      // vaulted, BEFORE the `loadOrGenerateKey` call below: it is a no-op
+      // for an address that was never hibernated (an ordinary fresh
+      // deploy), and otherwise puts the preserved keypair back on disk so
+      // that call loads it (`isNew: false`) instead of minting a new one.
+      const identityRestore = await (stepStateDataDir !== undefined
+        ? restoreAgentIdentity(stepStateDataDir, spec.agentAddress)
+        : Promise.resolve({ restored: false }));
+
       // OUTBOUND half of mailbox ownership: register a signing key for
       // the deployment mail address on the host transport so the supervisor
       // signs the deployment's outbound mail. Every step -- single- or
@@ -820,9 +846,25 @@ export function createSidecarDeployRouter(deps: {
       // `getTransportFor(senderAddress).send` throws "not registered".
       // Registration happens before `spawn()` so the address is live the
       // instant the first reply routes outbound.
-      const { keyPair } = await deps.keyStore.loadOrGenerateKey(
-        spec.agentAddress,
-      );
+      const { keyPair, isNew: keyIsNew } =
+        await deps.keyStore.loadOrGenerateKey(spec.agentAddress);
+      // A restored vault entry that did not yield an existing on-disk key
+      // means the restore itself is broken (a corrupt or partial
+      // snapshot) -- the exact "wake silently rotates identity" failure
+      // this workaround exists to make impossible to ship unnoticed.
+      if (identityRestore.restored && keyIsNew) {
+        reportError(
+          new Error(
+            "restored a hibernated agent identity snapshot but " +
+              "loadOrGenerateKey still minted a fresh keypair; the " +
+              "restored snapshot was missing or corrupt key material",
+          ),
+          {
+            operation: "workflow-host-wiring.restoreAgentIdentity",
+            agentId: spec.agentAddress,
+          },
+        );
+      }
       deps.transport.register(
         spec.agentAddress,
         deps.createAgentCrypto(keyPair),
@@ -1566,6 +1608,18 @@ export function createSidecarDeployRouter(deps: {
     agentAddress: string,
     opts: { reclaimDirs: boolean },
   ): Promise<void> {
+    // Snapshot the agent's identity directory (its reconnect-challenge
+    // keypair) BEFORE anything else, and before this function returns:
+    // the published `@intx/hub-agent` package's own undeploy handling
+    // destroys that directory unconditionally, but only AFTER this hook
+    // returns -- this is a compensating workaround for CL-6239 (still
+    // open: the real fix is a non-destructive upstream undeploy), not a
+    // substitute for it. Skipped for a reclaiming (non-hibernate)
+    // teardown, which is expected to destroy the identity along with
+    // everything else.
+    if (!opts.reclaimDirs && stepStateDataDir !== undefined) {
+      await snapshotAgentIdentity(stepStateDataDir, agentAddress);
+    }
     const deploymentId = deriveDeploymentId(agentAddress);
     deps.multistepMailRouter?.unregister(agentAddress);
     deps.multistepSignalRouter?.unregister(agentAddress);
@@ -1744,6 +1798,14 @@ export function createSidecarDeployRouter(deps: {
       if (skippedQuarantinedCount > 0) {
         logger.warn`Skipped ${skippedQuarantinedCount} quarantined workflow deployment record(s) (permanent restore failures, already reported); undeploy an address to clear its record`;
       }
+    },
+    async reapExpiredHibernationSnapshots(): Promise<number> {
+      if (stepStateDataDir === undefined) return 0;
+      const { reapedEntries } = await reapVaultSnapshots(stepStateDataDir);
+      if (reapedEntries.length > 0) {
+        logger.info`Reaped ${reapedEntries.length} expired hibernated-agent-identity snapshot(s)`;
+      }
+      return reapedEntries.length;
     },
     activeAddresses(): string[] {
       // `activeSupervisors` holds exactly the deployments with a live
