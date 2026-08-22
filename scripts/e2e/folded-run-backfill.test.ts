@@ -2,23 +2,29 @@
 // other drizzle/e2e suite in this repo. Runs against its own scratch
 // database (CREATE/DROP DATABASE), never the shared e2e database other
 // suites in `scripts/e2e` use — this test seeds raw rows straight into
-// `chat`/`tasks`' own global Postgres schemas, which are NOT scoped by
-// a per-test schema name the way the platform's own tables are, so
+// `chat`'s own global Postgres schema, which is NOT scoped by a
+// per-test schema name the way the platform's own tables are, so
 // isolation has to come from the database itself.
 //
 // This is the test for CL-6061's backfill follow-up: before
 // `@corbits/folded-runs`' own `folded_run` marker table existed, a
 // folded run was recorded only in the launching package's own table
-// (`@corbits/chat`'s `workbench_launch`, `@corbits/tasks`' `task` and
-// `task_leg`). Proves the coordinated backfill this repo chose —
-// `scripts/db-setup.ts` sourcing seeds from each package's own
-// exported lister and handing them to `@corbits/folded-runs`' own
-// `backfillFoldedRunMarkers`, never a direct cross-schema SELECT
-// inside `@corbits/folded-runs` itself, which would make it depend on
-// two packages that already depend on it — actually closes the gap:
-// pre-existing "old-shape" rows (workbench host, invited agent, task,
-// and a chain leg) get a marker, and `listTopLevelRuns` excludes every
-// one of them afterward while still listing a genuine deployment.
+// (`@corbits/chat`'s `workbench_launch`). Proves the coordinated
+// backfill this repo chose — `scripts/db-setup.ts` sourcing seeds from
+// each package's own exported lister and handing them to
+// `@corbits/folded-runs`' own `backfillFoldedRunMarkers`, never a
+// direct cross-schema SELECT inside `@corbits/folded-runs` itself,
+// which would make it depend on a package that already depends on it
+// — actually closes the gap: pre-existing "old-shape" rows (workbench
+// host, invited agent) get a marker, and `listTopLevelRuns` excludes
+// both of them afterward while still listing a genuine deployment.
+//
+// This used to also seed `@corbits/tasks`' `task`/`task_leg` tables
+// through its own lister (listTaskFoldedRunIds); that package was
+// deleted (tasks primitive removed in favor of workflows/routines) and
+// `scripts/db-setup.ts` no longer reads those tables, so this test no
+// longer seeds them either. The tables themselves are untouched in any
+// database that already has them.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import path from "node:path";
 
@@ -33,10 +39,6 @@ import {
   applyChatMigrations,
   listWorkbenchLaunchFoldedRunIds,
 } from "../../packages/chat/src/migrations";
-import {
-  applyTasksMigrations,
-  listTaskFoldedRunIds,
-} from "../../packages/tasks/src/migrations";
 
 // `@intx/db` is not a root dependency (only `apps/hub` and the workspace
 // packages declare it), so it is resolved dynamically through the
@@ -103,7 +105,6 @@ describeIfDb("folded-run backfill", () => {
     await intxDb.runMigrations(target, { schema: "public" });
     await applyFoldedRunsMigrations(scratchUrl);
     await applyChatMigrations(scratchUrl);
-    await applyTasksMigrations(scratchUrl);
   }, 30000);
 
   afterAll(async () => {
@@ -117,7 +118,7 @@ describeIfDb("folded-run backfill", () => {
     }
   }, 30000);
 
-  test("backfills markers for pre-existing workbench_launch/task/task_leg runs and the scoped listing excludes them", async () => {
+  test("backfills markers for pre-existing workbench_launch runs and the scoped listing excludes them", async () => {
     const target = dbTargetFromUrl(scratchUrl);
     const intxDb = await loadIntxDb();
     const { db, close } = intxDb.createDB(target);
@@ -157,17 +158,12 @@ describeIfDb("folded-run backfill", () => {
         ],
       );
 
-      // Four "old-shape" folded runs — workbench host, invited agent,
-      // task, and a chain leg — each self-anchored in workflow_run
-      // exactly like the deployment above, but with NO folded_run
-      // marker yet: only their launching package's own table records
-      // them, simulating data written before CL-6061.
-      const oldShapeIds = [
-        "run_workbench_host_old",
-        "run_invited_agent_old",
-        "run_task_old",
-        "run_chain_leg_old",
-      ];
+      // Two "old-shape" folded runs — workbench host and invited agent
+      // — each self-anchored in workflow_run exactly like the
+      // deployment above, but with NO folded_run marker yet: only
+      // their launching package's own table records them, simulating
+      // data written before CL-6061.
+      const oldShapeIds = ["run_workbench_host_old", "run_invited_agent_old"];
       for (const id of oldShapeIds) {
         await sql.unsafe(
           `INSERT INTO "workflow_run" ("id", "definition_id", "anchor_run_id", "tenant_id", "address", "status", "created_at") VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -201,33 +197,6 @@ describeIfDb("folded-run backfill", () => {
           JSON.stringify({ systemPrompt: "invited" }),
         ],
       );
-      await sql.unsafe(
-        `INSERT INTO "tasks"."task" ("id", "tenant_id", "principal_id", "definition_id", "agent_name", "prompt", "status", "run_id") VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [
-          "task_old1",
-          TENANT,
-          "prn_1",
-          "wfd_researcher",
-          "Researcher",
-          "Summarize",
-          "running",
-          "run_task_old",
-        ],
-      );
-      await sql.unsafe(
-        `INSERT INTO "tasks"."task_leg" ("id", "task_id", "tenant_id", "position", "definition_id", "prompt", "message_id", "run_id", "status") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [
-          "tleg_old1",
-          "task_old1",
-          TENANT,
-          1,
-          "wfd_researcher",
-          "Draft the follow-up",
-          "chain:task_old1:1",
-          "run_chain_leg_old",
-          "done",
-        ],
-      );
 
       // Pre-backfill: no marker rows exist for the old-shape runs yet,
       // so the scoped listing (wrongly) still includes them.
@@ -241,23 +210,18 @@ describeIfDb("folded-run backfill", () => {
         [...oldShapeIds, "run_deployment1"].sort(),
       );
 
-      const [workbenchLaunchSeeds, taskSeeds] = await Promise.all([
-        listWorkbenchLaunchFoldedRunIds(scratchUrl),
-        listTaskFoldedRunIds(scratchUrl),
-      ]);
+      const workbenchLaunchSeeds =
+        await listWorkbenchLaunchFoldedRunIds(scratchUrl);
       expect(workbenchLaunchSeeds.map((s) => s.id).sort()).toEqual(
         ["run_workbench_host_old", "run_invited_agent_old"].sort(),
       );
-      expect(taskSeeds.map((s) => s.id).sort()).toEqual(
-        ["run_chain_leg_old", "run_task_old"].sort(),
-      );
 
-      const report = await backfillFoldedRunMarkers(scratchUrl, [
-        ...workbenchLaunchSeeds,
-        ...taskSeeds,
-      ]);
+      const report = await backfillFoldedRunMarkers(
+        scratchUrl,
+        workbenchLaunchSeeds,
+      );
       expect(report.applied).toBe(true);
-      expect(report.inserted).toBe(4);
+      expect(report.inserted).toBe(2);
 
       // (a) marker rows now exist for every old-shape run.
       const afterMarkers = await sql.unsafe(
@@ -278,10 +242,10 @@ describeIfDb("folded-run backfill", () => {
 
       // Idempotent: a second call is a no-op, ledgered under its own
       // migration name.
-      const secondReport = await backfillFoldedRunMarkers(scratchUrl, [
-        ...workbenchLaunchSeeds,
-        ...taskSeeds,
-      ]);
+      const secondReport = await backfillFoldedRunMarkers(
+        scratchUrl,
+        workbenchLaunchSeeds,
+      );
       expect(secondReport).toEqual({ applied: false, inserted: 0 });
     } finally {
       await close();

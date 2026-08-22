@@ -1,9 +1,7 @@
 // The sidebar's one list: every workbench (an agent conversation, each its
 // own tenancy under the hood) as a flat run of rows — no kind sections, no
 // per-page variants. Pinned rows float to the top; everything else keeps
-// the order the platform returns. The "Working" group above the rows is the
-// signed-in user's running tasks (spawn-and-return; selecting one opens its
-// workbench, or its run in Insights when it has none), not a workbench kind.
+// the order the platform returns.
 
 import {
   Badge,
@@ -24,7 +22,6 @@ import {
   patchWorkbenchSettings,
 } from "@corbits/chat-ui";
 import type { Workbench } from "@corbits/chat-ui";
-import { WorkingTaskRow } from "@corbits/tasks-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChatCircle, DotsThree, Hash, MagnifyingGlass } from "@corbits/icons";
 import { useEffect, useState } from "react";
@@ -402,30 +399,10 @@ export function WorkbenchList({
   }
 
   const all = buildSidebarRows(activity.workbenches, activity.chats);
-  const workingGroup =
-    activity.workingTasks.length > 0 ? (
-      <div className="panel-stack-group">
-        <p className="panel-band-subheading">Working</p>
-        {activity.workingTasks.map((task) => (
-          <WorkingTaskRow
-            key={task.id}
-            task={task}
-            onSelect={() =>
-              onNavigate(
-                task.workbenchId !== null
-                  ? workbenchPath(task.workbenchId)
-                  : `/insights/runs/${encodeURIComponent(task.runId)}`,
-              )
-            }
-          />
-        ))}
-      </div>
-    ) : null;
 
   if (all.length === 0) {
     return (
       <div className="panel-stack" aria-label="Workbenches">
-        {workingGroup}
         <NeedsYouSignal tenantId={selectedTenantId} />
         <h2 className="shell-panel-list-label">Workbenches</h2>
         <div className="panel-stack-group">
@@ -449,7 +426,6 @@ export function WorkbenchList({
 
   return (
     <div className="panel-stack" aria-label="Workbenches">
-      {workingGroup}
       <label className="shell-panel-search">
         <MagnifyingGlass aria-hidden="true" />
         <Input

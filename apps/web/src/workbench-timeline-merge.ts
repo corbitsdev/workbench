@@ -1,8 +1,8 @@
-// Pure merge over the five event kinds a per-workbench Timeline draws from
-// (chat messages, thread forks, routine runs, tasks, approvals) — one
-// wall-clock spine, oldest first, with day dividers and KPI rollups derived
-// from the same merged array. No new backend: every input here is already
-// fetched by an existing page (chat-ui, routines-api, tasks-ui, api.ts).
+// Pure merge over the four event kinds a per-workbench Timeline draws from
+// (chat messages, thread forks, routine runs, approvals) — one wall-clock
+// spine, oldest first, with day dividers and KPI rollups derived from the
+// same merged array. No new backend: every input here is already fetched by
+// an existing page (chat-ui, routines-api, api.ts).
 
 import { isAgentAddress } from "@corbits/chat/mentions";
 import { localPartOf } from "@corbits/chat/agent-address";
@@ -10,7 +10,6 @@ import type { WorkbenchThread, MessageItem } from "@corbits/chat-ui";
 
 import type { NeedsYouItem } from "./api";
 import type { Routine, RoutineRun } from "./routines-api";
-import type { Task } from "@corbits/tasks-ui";
 
 export type TimelineMessageEvent = {
   readonly kind: "message";
@@ -40,15 +39,6 @@ export type TimelineRoutineRunEvent = {
   readonly durationMs: number | null;
 };
 
-export type TimelineTaskEvent = {
-  readonly kind: "task";
-  readonly id: string;
-  readonly at: string;
-  readonly agentName: string;
-  readonly prompt: string;
-  readonly status: string;
-};
-
 export type TimelineApprovalEvent = {
   readonly kind: "approval";
   readonly id: string;
@@ -61,7 +51,6 @@ export type TimelineEvent =
   | TimelineMessageEvent
   | TimelineThreadForkEvent
   | TimelineRoutineRunEvent
-  | TimelineTaskEvent
   | TimelineApprovalEvent;
 
 const EXCERPT_LIMIT = 120;
@@ -175,23 +164,6 @@ export function toRoutineRunEvents(
   return events;
 }
 
-/** Tasks carry their own `workbenchId` — this workbench's tasks only. */
-export function toTaskEvents(
-  tasks: readonly Task[],
-  workbenchId: string,
-): readonly TimelineTaskEvent[] {
-  return tasks
-    .filter((task) => task.workbenchId === workbenchId)
-    .map((task) => ({
-      kind: "task",
-      id: task.id,
-      at: task.createdAt,
-      agentName: task.agentName,
-      prompt: task.prompt,
-      status: task.status,
-    }));
-}
-
 /**
  * `needs-you` carries no workbench/workbench id (a known v1 gap — see
  * workbench-timeline.tsx), so every pending approval for the owning bench
@@ -213,7 +185,6 @@ export type TimelineEventGroups = {
   readonly messages: readonly TimelineMessageEvent[];
   readonly threadForks: readonly TimelineThreadForkEvent[];
   readonly routineRuns: readonly TimelineRoutineRunEvent[];
-  readonly tasks: readonly TimelineTaskEvent[];
   readonly approvals: readonly TimelineApprovalEvent[];
 };
 
@@ -226,7 +197,6 @@ export function mergeTimelineEvents(
     ...groups.messages,
     ...groups.threadForks,
     ...groups.routineRuns,
-    ...groups.tasks,
     ...groups.approvals,
   ];
   return all
@@ -317,7 +287,6 @@ export function computeTimelineDayKpis(
           approvals += 1;
           break;
         case "thread-fork":
-        case "task":
           break;
       }
     }
@@ -346,9 +315,7 @@ export function filterTimelineEvents(
         (event) => event.kind === "message" || event.kind === "thread-fork",
       );
     case "runs":
-      return events.filter(
-        (event) => event.kind === "routine-run" || event.kind === "task",
-      );
+      return events.filter((event) => event.kind === "routine-run");
     case "approvals":
       return events.filter((event) => event.kind === "approval");
   }

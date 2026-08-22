@@ -135,7 +135,7 @@ export function listAgentInstances(
 
 /**
  * The tenant's genuine top-level deployment runs — every folded run
- * (workbench host, invited agent, task) excluded server-side by the hub's
+ * (workbench host, invited agent) excluded server-side by the hub's
  * own `folded_run` marker table (see `@corbits/folded-runs`'s
  * `scope-routes.ts`), not derived client-side from a tenant's workbenches
  * the way `foldedRunIdsFromWorkbenches` used to. Used wherever a page needs
@@ -181,7 +181,7 @@ export type AgentDefinitionDraft =
  * Asks Myra to draft a starting system prompt (and optionally a
  * refined description, a model pick, and skills) from a name and a
  * plain-language purpose — the create-agent panel's "Create & chat"
- * flow (CL-6074). Hits `@corbits/task-planner`'s
+ * flow (CL-6074). Hits `@corbits/agent-directory`'s
  * `POST .../planner/agent-definitions/draft`; never deploys anything
  * itself. A caller that gets a rejected promise here (Myra unavailable,
  * the draft timing out, an unparseable or out-of-inventory reply, or a
@@ -408,7 +408,7 @@ type ModelsOutcome =
  * the model catalog and each definition's attached skills are best-effort
  * so either failing alone never blanks the page. `instances` comes from
  * `listTopLevelRuns`, which already excludes every folded run (workbench
- * host, invited agent, task) server-side — see `@corbits/folded-runs`'s
+ * host, invited agent) server-side — see `@corbits/folded-runs`'s
  * `scope-routes.ts` — so this page never has to derive that exclusion
  * itself from a tenant's workbenches.
  */

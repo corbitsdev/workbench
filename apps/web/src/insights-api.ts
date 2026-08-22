@@ -12,11 +12,7 @@
 //     workbenches. usage/activity/tools roll up automatically when called
 //     with a parent's tenantId (see @corbits/insights' resolveScope) —
 //     /scope is how a page discovers that shape to build a switcher.
-// Plus two tenant-scoped routes outside `/insights`, reused for chain
-// context on a run's detail view (packages/tasks/src/routes.ts):
-//   GET /tasks/by-run/:runId → { item: Task } | 404 (run has no owning task)
-//   GET /tasks/:id/legs → { items: TaskLeg[] } in position order
-// and one more reused as Insights' run feed: GET /top-level-runs?feed=fires
+// Plus one more reused as Insights' run feed: GET /top-level-runs?feed=fires
 // → Paginated<WorkflowRunResponse & { routineId, routineName }>
 // (packages/folded-runs/src/scope-routes.ts's `listTopLevelRunFires`).
 
@@ -226,53 +222,6 @@ export type InsightsScope = typeof InsightsScopeSchema.infer;
 
 export function insightsScopePath(tenantId: string): string {
   return `/api/tenants/${tenantId}/insights/scope`;
-}
-
-/** GET /tasks/:id/legs item — one step of a chained task. */
-export const TaskLegSchema = type({
-  position: "number",
-  definitionId: "string",
-  prompt: "string",
-  status: "'pending' | 'dispatching' | 'running' | 'done' | 'failed'",
-  runId: "string | null",
-  startedAt: "string | null",
-  settledAt: "string | null",
-});
-
-/** GET /tasks/:id/legs envelope. */
-export const TaskLegsResponseSchema = type({
-  items: TaskLegSchema.array(),
-});
-
-/** GET /tasks/:id and GET /tasks/by-run/:runId item — the chain a run
- * belongs to, when it belongs to one. */
-export const TaskSchema = type({
-  id: "string",
-  definitionId: "string",
-  agentName: "string",
-  prompt: "string",
-  status: "string",
-  runId: "string",
-  runIds: "string[]",
-  stepCount: "number",
-});
-
-/** GET /tasks/by-run/:runId envelope — `item` is null for a run with no
- * owning task (every directly-launched run), a normal state the server
- * answers 200 for, never 404. */
-export const TaskResponseSchema = type({
-  item: TaskSchema.or("null"),
-});
-
-export type TaskLeg = typeof TaskLegSchema.infer;
-export type Task = typeof TaskSchema.infer;
-
-export function insightsTaskByRunPath(tenantId: string, runId: string): string {
-  return `/api/tenants/${tenantId}/tasks/by-run/${encodeURIComponent(runId)}`;
-}
-
-export function insightsTaskLegsPath(tenantId: string, taskId: string): string {
-  return `/api/tenants/${tenantId}/tasks/${encodeURIComponent(taskId)}/legs`;
 }
 
 /**

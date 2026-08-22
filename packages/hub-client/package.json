@@ -21,7 +21,6 @@
     "@corbits/heartbeat-workflow": "workspace:*",
     "@corbits/inference-catalog": "workspace:*",
     "@corbits/last-30-days-research-workflow": "workspace:*",
-    "@corbits/recurring-task-workflow": "workspace:*",
     "@corbits/tool-registry-publish": "workspace:*",
     "@corbits/workbench-digest-workflow": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",

@@ -5,14 +5,11 @@ import {
   computeTraceStats,
   filterRunsByCreatedAt,
   groupRunsByDefinition,
-  legDurationMs,
-  legStatusTone,
   purposeRunsForInsights,
   runDisplayName,
 } from "./insights-stats";
 import type { InsightsRun, RunTraceSpan } from "./insights-api";
 import type { Routine } from "./routines-api";
-import type { TaskLeg } from "./insights-api";
 
 function span(
   partial: Partial<RunTraceSpan> & Pick<RunTraceSpan, "id">,
@@ -165,18 +162,6 @@ describe("computeTraceStats", () => {
   });
 });
 
-function leg(partial: Partial<TaskLeg> & Pick<TaskLeg, "position">): TaskLeg {
-  return {
-    definitionId: "wfd_agent",
-    prompt: "do the thing",
-    status: "pending",
-    runId: null,
-    startedAt: null,
-    settledAt: null,
-    ...partial,
-  };
-}
-
 describe("groupRunsByDefinition", () => {
   test("groups runs by definitionId, newest first within each group", () => {
     const groups = groupRunsByDefinition([
@@ -296,46 +281,6 @@ describe("runDisplayName", () => {
         }),
       ),
     ).toBe("researcher");
-  });
-});
-
-describe("legDurationMs", () => {
-  test("derives duration from startedAt/settledAt", () => {
-    expect(
-      legDurationMs(
-        leg({
-          position: 0,
-          startedAt: "2026-01-01T00:00:00.000Z",
-          settledAt: "2026-01-01T00:00:05.000Z",
-        }),
-      ),
-    ).toBe(5000);
-  });
-
-  test("returns null when the leg has not settled", () => {
-    expect(
-      legDurationMs(
-        leg({
-          position: 0,
-          startedAt: "2026-01-01T00:00:00.000Z",
-          settledAt: null,
-        }),
-      ),
-    ).toBeNull();
-  });
-
-  test("returns null when the leg never started", () => {
-    expect(legDurationMs(leg({ position: 0 }))).toBeNull();
-  });
-});
-
-describe("legStatusTone", () => {
-  test("maps each leg status to a badge tone", () => {
-    expect(legStatusTone("pending")).toBe("neutral");
-    expect(legStatusTone("dispatching")).toBe("info");
-    expect(legStatusTone("running")).toBe("info");
-    expect(legStatusTone("done")).toBe("success");
-    expect(legStatusTone("failed")).toBe("danger");
   });
 });
 

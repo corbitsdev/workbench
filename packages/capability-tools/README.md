@@ -56,8 +56,8 @@ Both gaps this package was originally written against are now closed:
 
 `@corbits/capability-tools` is pinned into every drafted agent's default
 tool-package set whenever the tenant's inventory offers it
-(`packages/task-planner/src/agent-definition-drafting.ts`), and listed in
-`apps/hub`'s `listMyraUsableToolPackages`.
+(`packages/agent-directory/src/agent-definition-drafting.ts`), and listed
+in `apps/hub`'s `listMyraUsableToolPackages`.
 
 ## Usage
 

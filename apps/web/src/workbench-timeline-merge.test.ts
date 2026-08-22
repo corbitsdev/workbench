@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import type { WorkbenchThread, MessageItem } from "@corbits/chat-ui";
-import type { Task } from "@corbits/tasks-ui";
 
 import type { NeedsYouItem } from "./api";
 import type { Routine, RoutineRun } from "./routines-api";
@@ -15,7 +14,6 @@ import {
   toApprovalEvents,
   toMessageEvents,
   toRoutineRunEvents,
-  toTaskEvents,
   toThreadForkEvents,
   type TimelineEvent,
 } from "./workbench-timeline-merge";
@@ -73,25 +71,6 @@ function routineRun(overrides: Partial<RoutineRun> = {}): RoutineRun {
     },
     ...overrides,
   } as RoutineRun;
-}
-
-function task(overrides: Partial<Task> = {}): Task {
-  return {
-    id: "task-1",
-    definitionId: "def-1",
-    workbenchId: "workbench-1",
-    agentName: "Researcher",
-    prompt: "Summarize the thread",
-    modelPreference: null,
-    status: "done",
-    runId: "run-2",
-    runIds: ["run-2"],
-    stepCount: 1,
-    resultMailId: null,
-    createdAt: "2026-08-17T11:00:00.000Z",
-    completedAt: "2026-08-17T11:05:00.000Z",
-    ...overrides,
-  } as Task;
 }
 
 function approval(overrides: Partial<NeedsYouItem> = {}): NeedsYouItem {
@@ -211,17 +190,6 @@ describe("toRoutineRunEvents", () => {
   });
 });
 
-describe("toTaskEvents", () => {
-  test("filters to this workbench's workbenchId", () => {
-    const tasks = [
-      task({ id: "t1", workbenchId: "workbench-1" }),
-      task({ id: "t2", workbenchId: "workbench-2" }),
-      task({ id: "t3", workbenchId: null }),
-    ];
-    expect(toTaskEvents(tasks, "workbench-1").map((e) => e.id)).toEqual(["t1"]);
-  });
-});
-
 describe("toApprovalEvents", () => {
   test("carries every pending approval through unfiltered", () => {
     const events = toApprovalEvents([approval()]);
@@ -260,15 +228,11 @@ describe("mergeTimelineEvents", () => {
           ],
         ]),
       ),
-      tasks: toTaskEvents(
-        [task({ id: "t1", createdAt: "2026-08-17T11:00:00.000Z" })],
-        "workbench-1",
-      ),
       approvals: toApprovalEvents([
         approval({ id: "a1", createdAt: "2026-08-17T12:00:00.000Z" }),
       ]),
     });
-    expect(merged.map((e) => e.id)).toEqual(["run-1", "f1", "m1", "t1", "a1"]);
+    expect(merged.map((e) => e.id)).toEqual(["run-1", "f1", "m1", "a1"]);
   });
 
   test("drops an event with an unparseable timestamp instead of sorting it arbitrarily", () => {
@@ -278,7 +242,6 @@ describe("mergeTimelineEvents", () => {
       ]),
       threadForks: [],
       routineRuns: [],
-      tasks: [],
       approvals: [],
     });
     expect(merged).toEqual([]);
@@ -356,14 +319,6 @@ describe("computeTimelineDayKpis", () => {
         headline: "Do it",
       },
       {
-        kind: "task",
-        id: "t1",
-        at: "2026-08-17T09:20:00.000Z",
-        agentName: "Researcher",
-        prompt: "p",
-        status: "done",
-      },
-      {
         kind: "thread-fork",
         id: "f1",
         at: "2026-08-17T09:25:00.000Z",
@@ -410,14 +365,6 @@ describe("filterTimelineEvents", () => {
       durationMs: null,
     },
     {
-      kind: "task",
-      id: "t1",
-      at: "2026-08-17T09:03:00.000Z",
-      agentName: "Researcher",
-      prompt: "p",
-      status: "done",
-    },
-    {
       kind: "approval",
       id: "a1",
       at: "2026-08-17T09:04:00.000Z",
@@ -427,7 +374,7 @@ describe("filterTimelineEvents", () => {
   ];
 
   test("all keeps everything", () => {
-    expect(filterTimelineEvents(events, "all")).toHaveLength(5);
+    expect(filterTimelineEvents(events, "all")).toHaveLength(4);
   });
 
   test("messages keeps messages and thread forks", () => {
@@ -437,10 +384,9 @@ describe("filterTimelineEvents", () => {
     ]);
   });
 
-  test("runs keeps routine runs and tasks", () => {
+  test("runs keeps routine runs", () => {
     expect(filterTimelineEvents(events, "runs").map((e) => e.id)).toEqual([
       "run-1",
-      "t1",
     ]);
   });
 

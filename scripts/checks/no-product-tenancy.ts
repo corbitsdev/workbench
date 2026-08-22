@@ -139,16 +139,6 @@ const ALLOWLIST: readonly {
     tables: ["policy", "pending_invite"],
   },
   {
-    // `task_leg` records which agent runs make up one task and in what
-    // order — product correlation, not delivery state. The platform's
-    // own `workflow_run_dispatch` stays the authority on whether a
-    // message was delivered; nothing about a workbench task's meaning
-    // belongs in it.
-    relPath: "packages/tasks/src/schema.ts",
-    maxOccurrences: 2,
-    tables: ["task", "task_leg"],
-  },
-  {
     relPath: "packages/onboarding/src/schema.ts",
     maxOccurrences: 1,
     tables: ["pending_seed"],

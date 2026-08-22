@@ -3,7 +3,6 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { QueryClient } from "@tanstack/react-query";
 
 import {
   createInsightsWindow,
@@ -19,7 +18,6 @@ import {
   type InsightsScope,
   type LatencySummary,
   type RunTrace,
-  type TaskLeg,
   type ToolCall,
   type WorkbenchUsage,
 } from "../src/insights-api";
@@ -27,15 +25,10 @@ import { NavigationProvider } from "../src/navigation";
 import {
   InsightsPage,
   InsightsRunDetail,
-  InsightsRunDetailRoute,
   InsightsRunsHistory,
 } from "../src/pages/insights-page";
-import { shouldRetryQuery } from "../src/query-client";
 import type { Routine } from "../src/routines-api";
-import {
-  createTestQueryClient,
-  TestQueryProvider,
-} from "./test-query-provider";
+import { TestQueryProvider } from "./test-query-provider";
 
 const range = createInsightsWindow(7, new Date("2026-01-15T18:00:00.000Z"));
 
@@ -356,13 +349,7 @@ describe("InsightsPage run-detail stat strip", () => {
 
   test("while the trace is loading, the KPIs render a shimmer, not a dash", () => {
     const markup = renderToStaticMarkup(
-      <InsightsRunDetail
-        runId="run_1"
-        run={purposeRun}
-        trace={{ kind: "loading" }}
-        chainLegs={null}
-        onOpenRun={() => undefined}
-      />,
+      <InsightsRunDetail run={purposeRun} trace={{ kind: "loading" }} />,
     );
     expect(markup).toContain('data-slot="skeleton"');
     // Owner is genuinely absent from WorkflowRunResponse today (not a
@@ -373,14 +360,11 @@ describe("InsightsPage run-detail stat strip", () => {
   test("once the trace is ready-but-empty, the KPIs fall back to a genuine dash", () => {
     const markup = renderToStaticMarkup(
       <InsightsRunDetail
-        runId="run_1"
         run={purposeRun}
         trace={{
           kind: "ready",
           data: { runId: "run_1", spans: null, absent: "no trace reader" },
         }}
-        chainLegs={null}
-        onOpenRun={() => undefined}
       />,
     );
     expect(markup).not.toContain(">…<");
@@ -424,11 +408,8 @@ describe("InsightsPage trace timeline honesty", () => {
   test("a tool span positioned only by event order never gets a fabricated duration", () => {
     const markup = renderToStaticMarkup(
       <InsightsRunDetail
-        runId="run_1"
         run={purposeRun}
         trace={traceQuery([measuredSpan, ordinalSpanWithNoDuration])}
-        chainLegs={null}
-        onOpenRun={() => undefined}
       />,
     );
     // The ordinal span's own duration cell reads as an honest dash, never a
@@ -439,29 +420,11 @@ describe("InsightsPage trace timeline honesty", () => {
 
   test("a turn span with real measured timing still renders its actual duration", () => {
     const markup = renderToStaticMarkup(
-      <InsightsRunDetail
-        runId="run_1"
-        run={purposeRun}
-        trace={traceQuery([measuredSpan])}
-        chainLegs={null}
-        onOpenRun={() => undefined}
-      />,
+      <InsightsRunDetail run={purposeRun} trace={traceQuery([measuredSpan])} />,
     );
     expect(markup).toContain("5.0s");
   });
 });
-
-function leg(partial: Partial<TaskLeg> & Pick<TaskLeg, "position">): TaskLeg {
-  return {
-    definitionId: "wfd_agent",
-    prompt: "do the thing",
-    status: "pending",
-    runId: null,
-    startedAt: null,
-    settledAt: null,
-    ...partial,
-  };
-}
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -483,144 +446,6 @@ afterEach(() => {
   }
   container?.remove();
   container = null;
-});
-
-describe("InsightsRunDetail chain strip", () => {
-  const readyEmptyTrace: APIQuery<RunTrace> = {
-    kind: "ready",
-    data: { runId: "run_2", spans: [] },
-  };
-
-  test("renders legs in order with the current leg marked distinct", () => {
-    const legs = [
-      leg({
-        position: 0,
-        definitionId: "wfd_first",
-        status: "done",
-        runId: "run_1",
-        startedAt: "2026-01-01T00:00:00.000Z",
-        settledAt: "2026-01-01T00:00:05.000Z",
-      }),
-      leg({
-        position: 1,
-        definitionId: "wfd_second",
-        status: "running",
-        runId: "run_2",
-        startedAt: "2026-01-01T00:00:05.000Z",
-      }),
-      leg({ position: 2, definitionId: "wfd_third" }),
-    ];
-
-    const el = mount(
-      <InsightsRunDetail
-        runId="run_2"
-        run={null}
-        trace={readyEmptyTrace}
-        chainLegs={legs}
-        onOpenRun={() => undefined}
-      />,
-    );
-
-    const steps = el.querySelectorAll("[data-chain-step]");
-    expect(steps.length).toBe(3);
-    expect(steps[0]?.textContent).toContain("Step 1 of 3");
-    expect(steps[1]?.textContent).toContain("Step 2 of 3");
-    expect(steps[2]?.textContent).toContain("Step 3 of 3");
-    expect(steps[1]?.getAttribute("aria-current")).toBe("step");
-    expect(steps[0]?.getAttribute("aria-current")).toBeNull();
-    expect(steps[2]?.getAttribute("aria-current")).toBeNull();
-  });
-
-  test("clicking a completed leg with a runId navigates to that leg's run", () => {
-    const legs = [
-      leg({
-        position: 0,
-        definitionId: "wfd_first",
-        status: "done",
-        runId: "run_1",
-      }),
-      leg({
-        position: 1,
-        definitionId: "wfd_second",
-        status: "running",
-        runId: "run_2",
-      }),
-    ];
-    const opened: string[] = [];
-
-    const el = mount(
-      <InsightsRunDetail
-        runId="run_2"
-        run={null}
-        trace={readyEmptyTrace}
-        chainLegs={legs}
-        onOpenRun={(runId) => opened.push(runId)}
-      />,
-    );
-
-    const firstStep = el.querySelectorAll("[data-chain-step]")[0];
-    expect(firstStep?.tagName).toBe("BUTTON");
-    act(() => {
-      firstStep?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true, cancelable: true }),
-      );
-    });
-    expect(opened).toEqual(["run_1"]);
-  });
-
-  test("a pending leg with no runId is not clickable", () => {
-    const legs = [
-      leg({
-        position: 0,
-        definitionId: "wfd_first",
-        status: "done",
-        runId: "run_1",
-      }),
-      leg({ position: 1, definitionId: "wfd_second", status: "pending" }),
-    ];
-
-    const el = mount(
-      <InsightsRunDetail
-        runId="run_1"
-        run={null}
-        trace={readyEmptyTrace}
-        chainLegs={legs}
-        onOpenRun={() => undefined}
-      />,
-    );
-
-    const pendingStep = el.querySelectorAll("[data-chain-step]")[1];
-    expect(pendingStep?.tagName).not.toBe("BUTTON");
-  });
-
-  test("a chain-less run (no owning task) renders no chain strip", () => {
-    const el = mount(
-      <InsightsRunDetail
-        runId="run_solo"
-        run={null}
-        trace={readyEmptyTrace}
-        chainLegs={null}
-        onOpenRun={() => undefined}
-      />,
-    );
-
-    expect(el.querySelector("[data-chain-step]")).toBeNull();
-    expect(el.querySelector("[data-insights-chain-strip]")).toBeNull();
-  });
-
-  test("a single-leg task renders no chain strip", () => {
-    const el = mount(
-      <InsightsRunDetail
-        runId="run_solo"
-        run={null}
-        trace={readyEmptyTrace}
-        chainLegs={[leg({ position: 0, runId: "run_solo" })]}
-        onOpenRun={() => undefined}
-      />,
-    );
-
-    expect(el.querySelector("[data-insights-chain-strip]")).toBeNull();
-  });
 });
 
 function insightsRun(
@@ -728,151 +553,6 @@ describe("InsightsRunsHistory definition grouping", () => {
     );
     expect(el.textContent).toContain("Pulse check");
     expect(el.textContent).not.toContain("workbench-digest");
-  });
-});
-
-describe("InsightsRunDetailRoute wiring", () => {
-  const realFetch = globalThis.fetch;
-
-  afterEach(() => {
-    globalThis.fetch = realFetch;
-  });
-
-  function json(body: unknown, status = 200): Response {
-    return new Response(JSON.stringify(body), {
-      status,
-      headers: { "content-type": "application/json" },
-    });
-  }
-
-  const readyTrace = { runId: "run_1", spans: [] };
-
-  async function mountRoute(
-    client: QueryClient = createTestQueryClient(),
-  ): Promise<HTMLDivElement> {
-    const el = document.createElement("div");
-    document.body.appendChild(el);
-    const r = createRoot(el);
-    await act(async () => {
-      r.render(
-        <TestQueryProvider client={client}>
-          <InsightsRunDetailRoute
-            runId="run_1"
-            run={null}
-            tenantId="tnt_1"
-            onOpenRun={() => undefined}
-          />
-        </TestQueryProvider>,
-      );
-    });
-    for (let i = 0; i < 20; i++) {
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      });
-    }
-    return el;
-  }
-
-  test("a null-item by-run answer is the quiet no-op: plain view, no error note, one request", async () => {
-    const calls: string[] = [];
-    globalThis.fetch = ((input: RequestInfo | URL) => {
-      const path = typeof input === "string" ? input : String(input);
-      calls.push(path);
-      if (path.includes("/tasks/by-run/")) {
-        return Promise.resolve(json({ item: null }));
-      }
-      if (path.includes("/trace")) {
-        return Promise.resolve(json(readyTrace));
-      }
-      return Promise.resolve(json({ error: "unexpected" }, 500));
-    }) as typeof fetch;
-
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: shouldRetryQuery, retryDelay: 0 } },
-    });
-
-    const el = await mountRoute(client);
-
-    expect(el.querySelector("[data-insights-chain-strip]")).toBeNull();
-    expect(el.textContent).not.toContain(
-      "Couldn't check this run's task context",
-    );
-    const byRunCalls = calls.filter((c) => c.includes("/tasks/by-run/"));
-    expect(byRunCalls.length).toBe(1);
-  });
-
-  test("a 500 on the by-run lookup renders an honest inline note, never a silent omission", async () => {
-    globalThis.fetch = ((input: RequestInfo | URL) => {
-      const path = typeof input === "string" ? input : String(input);
-      if (path.includes("/tasks/by-run/")) {
-        return Promise.resolve(json({ error: "boom" }, 500));
-      }
-      if (path.includes("/trace")) {
-        return Promise.resolve(json(readyTrace));
-      }
-      return Promise.resolve(json({ error: "unexpected" }, 500));
-    }) as typeof fetch;
-
-    const el = await mountRoute();
-
-    expect(el.textContent).toContain("Couldn't check this run's task context");
-    expect(el.querySelector("[data-insights-chain-strip]")).toBeNull();
-  });
-
-  test("chained happy path: by-run resolves, legs fetch, and the strip renders through the real component tree", async () => {
-    const task = {
-      id: "task_1",
-      definitionId: "wfd_agent",
-      agentName: "Agent",
-      prompt: "do the thing",
-      status: "running",
-      runId: "run_1",
-      runIds: ["run_1", "run_2"],
-      stepCount: 2,
-    };
-    const legs = [
-      {
-        position: 0,
-        definitionId: "wfd_first",
-        prompt: "p1",
-        status: "done",
-        runId: "run_1",
-        startedAt: "2026-01-01T00:00:00.000Z",
-        settledAt: "2026-01-01T00:00:05.000Z",
-      },
-      {
-        position: 1,
-        definitionId: "wfd_second",
-        prompt: "p2",
-        status: "running",
-        runId: "run_2",
-        startedAt: "2026-01-01T00:00:05.000Z",
-        settledAt: null,
-      },
-    ];
-
-    globalThis.fetch = ((input: RequestInfo | URL) => {
-      const path = typeof input === "string" ? input : String(input);
-      if (path.includes("/tasks/by-run/")) {
-        return Promise.resolve(json({ item: task }));
-      }
-      if (path.includes("/legs")) {
-        return Promise.resolve(json({ items: legs }));
-      }
-      if (path.includes("/trace")) {
-        return Promise.resolve(json(readyTrace));
-      }
-      return Promise.resolve(json({ error: "unexpected" }, 500));
-    }) as typeof fetch;
-
-    const el = await mountRoute();
-
-    expect(el.querySelector("[data-insights-chain-strip]")).not.toBeNull();
-    expect(el.textContent).toContain("Step 1 of 2");
-    expect(el.textContent).toContain("Step 2 of 2");
-    expect(el.textContent).not.toContain(
-      "Couldn't check this run's task context",
-    );
   });
 });
 

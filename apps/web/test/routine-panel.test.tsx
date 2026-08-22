@@ -62,7 +62,6 @@ let workbenchAgentsByWorkbench: Record<
 };
 let chatWorkbenches: Record<string, unknown>[] = [];
 let runsByRoutineId: Record<string, Record<string, unknown>[]> = {};
-let tasks: Record<string, unknown>[] = [];
 let topLevelRuns: Record<string, unknown>[] = [];
 let runTraces: Record<string, Record<string, unknown>> = {};
 
@@ -183,9 +182,6 @@ async function routeFetch(
       nextCursor: null,
     });
   }
-  if (url.endsWith("/tasks") && method === "GET") {
-    return jsonResponse({ items: tasks });
-  }
   if (url.includes("/top-level-runs")) {
     return jsonResponse({ data: topLevelRuns, nextCursor: null });
   }
@@ -263,7 +259,6 @@ describe("RoutinePanel", () => {
     networkDelayMs = 0;
     chatWorkbenches = [];
     runsByRoutineId = {};
-    tasks = [];
     topLevelRuns = [];
     runTraces = {};
     workbenchAgentsByWorkbench = {

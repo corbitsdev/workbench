@@ -1,6 +1,5 @@
 // DB-gated: runs against its own scratch database, never the
-// developer's or the walking-skeleton suite's, mirroring
-// packages/tasks/test/migrations.test.ts.
+// developer's or the walking-skeleton suite's.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import postgres from "postgres";
 

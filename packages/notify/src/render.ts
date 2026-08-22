@@ -67,72 +67,14 @@ export function renderNotification(
       refs: [{ kind: "credential", id: event.credentialId }],
     };
   }
-  if (event.kind === "mention") {
-    return {
-      subject: `${event.mentionedBy} mentioned you in “${event.threadLabel}”`,
-      body: [
-        `${event.mentionedBy} mentioned you in “${event.threadLabel}”.`,
-        event.excerpt === "" ? "The message has no text." : event.excerpt,
-      ].join("\n\n"),
-      refs: [{ kind: "thread", id: event.threadId }],
-    };
-  }
   return {
-    subject:
-      event.status === "done"
-        ? `“${event.agentName}” finished your task`
-        : `“${event.agentName}” failed your task`,
+    subject: `${event.mentionedBy} mentioned you in “${event.threadLabel}”`,
     body: [
-      `Agent: ${event.agentName} · Elapsed: ${formatElapsed(event.elapsedMs)}`,
-      describeHandOffs(event.status, event.runIds.length, event.stepCount),
-      event.status === "done"
-        ? (event.replyText ?? "The agent finished without a reply.")
-        : (event.errorMessage ??
-          "The task run failed without a reported error."),
-      event.artifacts.length > 0
-        ? `Artifacts: ${event.artifacts.map((artifact) => artifact.title).join(", ")}`
-        : "",
-    ]
-      .filter((line) => line !== "")
-      .join("\n\n"),
-    refs: [
-      { kind: "task", id: event.taskId },
-      ...event.runIds.map((runId) => ({ kind: "run", id: runId })),
-      ...event.artifacts.map((artifact) => ({
-        kind: "artifact",
-        id: artifact.id,
-        label: artifact.title,
-      })),
-    ],
+      `${event.mentionedBy} mentioned you in “${event.threadLabel}”.`,
+      event.excerpt === "" ? "The message has no text." : event.excerpt,
+    ].join("\n\n"),
+    refs: [{ kind: "thread", id: event.threadId }],
   };
-}
-
-/**
- * One plain line about a task that passed through more than one agent
- * — where it got to, and out of how many. A single-agent task says
- * nothing extra, so the ordinary result reads exactly as it always
- * has.
- */
-function describeHandOffs(
-  status: "done" | "failed",
-  agentsRun: number,
-  agentsPlanned: number,
-): string {
-  if (agentsPlanned < 2) return "";
-  if (status === "done") {
-    return `This task was passed through ${String(agentsPlanned)} agents in turn, and the reply below is the last one's.`;
-  }
-  return `This task was meant to pass through ${String(agentsPlanned)} agents in turn, and it stopped at agent ${String(agentsRun)}.`;
-}
-
-/** `"3m 12s"`-style duration, floored to the second — never a raw
- * millisecond count in front of a person. */
-function formatElapsed(elapsedMs: number): string {
-  const totalSeconds = Math.floor(elapsedMs / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  if (minutes === 0) return `${seconds}s`;
-  return `${minutes}m ${seconds}s`;
 }
 
 /**
@@ -146,10 +88,5 @@ export function notificationExternalId(event: NotificationEvent): string {
   if (event.kind === "approval") return event.approvalId;
   if (event.kind === "run-failure") return `${event.runId}:${event.createdAt}`;
   if (event.kind === "credential-expired") return event.credentialId;
-  if (event.kind === "mention") return `${event.threadId}:${event.createdAt}`;
-  // A task reaches its terminal state exactly once — keying on the task
-  // alone (no timestamp) makes a redelivered terminal event's mail
-  // collapse in the mailbox's own externalId dedupe instead of
-  // minting a fresh identity per delivery attempt.
-  return `task-result:${event.taskId}`;
+  return `${event.threadId}:${event.createdAt}`;
 }

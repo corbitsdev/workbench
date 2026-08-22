@@ -68,7 +68,7 @@ export function noToolCalls(tools: readonly string[]) {
 }
 
 /** Fails if any of `BUILD_TOOLS` (create_agent, routine_create,
- * dispatch_task) was called in a step before `interviewAnsweredAtStep`
+ * routine_run_now) was called in a step before `interviewAnsweredAtStep`
  * — the owner's rule that the interview (step 1) must land before any
  * building (step 4) starts. */
 export function noBuildBeforeAnswers(interviewAnsweredAtStep: number) {

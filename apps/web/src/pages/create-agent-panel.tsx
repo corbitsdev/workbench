@@ -16,7 +16,7 @@
 // is optional, a quiet secondary field, not a gate. Either way, one
 // click on "Get started" asks Myra to draft a starting system prompt
 // (and optionally a description/model/skills) via `draftAgentDefinition`
-// (`@corbits/task-planner`'s one-shot drafting port, CL-6074) — with a
+// (`@corbits/agent-directory`'s one-shot drafting port, CL-6074) — with a
 // purpose, from that brief; with none, a friendly general-purpose draft
 // the person teaches in the conversation that follows — then deploys
 // with that draft. The Suggestions row below the button is the same

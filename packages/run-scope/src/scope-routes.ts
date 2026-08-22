@@ -22,9 +22,9 @@
 // rather than "which deployments exist." A deployment's anchor row that
 // never got triggered is not a run at all (it stays `status: "deployed"`
 // forever — see `listTopLevelRunFires`'s own comment), so that feed drops
-// it; but a routine's fire — workbench-digest, recurring-task, or any
-// other — genuinely ran, so that feed puts it back even though it is a
-// folded run, via the host-supplied `resolveRoutineFires` port.
+// it; but a routine's fire — workbench-digest or any other — genuinely
+// ran, so that feed puts it back even though it is a folded run, via
+// the host-supplied `resolveRoutineFires` port.
 import { and, desc, eq, inArray, isNotNull, ne, notExists } from "drizzle-orm";
 import { Hono } from "hono";
 import { type } from "arktype";

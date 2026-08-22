@@ -32,10 +32,10 @@ import {
   createEnvKeyCredentialCipher,
   createNoopCredentialCipher,
 } from "@intx/crypto";
-import { authorize, timeWindowEvaluator } from "@intx/authz";
+import { timeWindowEvaluator } from "@intx/authz";
 import type { ConditionRegistry } from "@intx/types/authz";
 import { credentialAad } from "@intx/types";
-import type { CredentialBinding, CredentialCipher } from "@intx/types";
+import type { CredentialCipher } from "@intx/types";
 import {
   createApp,
   createMailTriggeredRunGrantsMaterializer,
@@ -46,17 +46,23 @@ import {
 } from "@intx/hub-api";
 
 import {
-  agentDefinitionSourceTree,
-  buildAgentDefinitionWorkflow,
   createAgentDefinitionRoutes,
   createDefinitionAssetHistory,
   createDrizzleDefinitionSkillsStore,
   createWorkflowAgentCreateRoutes,
   createWorkflowCapabilityRoutes,
   createWorkflowSkillPinRoutes,
-  reindexPinnedSkills,
-  serializeAgentDefinitionWorkflow,
   type CapabilityInventoryProvider,
+  AgentDefinitionDraftReferenceOutOfInventoryError,
+  AgentDefinitionDraftReplyUnparseableError,
+  createMyraAgentDefinitionDrafting,
+  isPlannerCreatedDefinitionName,
+  MyraAgentDefinitionDraftingUnavailableError,
+  resolveMyraDefinitionIdFromDb,
+  type InventoryAgent,
+  type InventoryModel,
+  type InventorySources,
+  type InventoryToolPackage,
 } from "@corbits/agent-directory";
 
 import {
@@ -84,7 +90,6 @@ import {
   createHubChatPlatform,
   createNoopInferenceRoutes,
   createRelaunchNoticePoster,
-  findExistingAgentChat,
   createWorkflowParticipantRoutes,
   isWorkbenchHostDefinitionName,
   listConnectedProviders,
@@ -95,7 +100,6 @@ import {
   workbenchLaunchPersistExtra,
 } from "@corbits/chat";
 import type { RelaunchNoticePort } from "@corbits/chat";
-import { reportError } from "@corbits/error-sink";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
 import { decodedOrNull } from "@corbits/url-path";
 import {
@@ -187,15 +191,6 @@ import {
   routineRun as routineRunTable,
   type RoutineDraftInventoryWorkflow,
 } from "@corbits/routines";
-import { createAgentLifecycle } from "@corbits/agent-lifecycle";
-import {
-  createDrizzleTaskStore,
-  createStuckLegSweep,
-  createTaskOrchestrator,
-  createTaskRoutes,
-  launchTask,
-  launchTaskLeg,
-} from "@corbits/tasks";
 import {
   createSidecarProvisioner as createE2BSidecarProvisioner,
   readProvisionerConfig as readE2BProvisionerConfig,
@@ -211,19 +206,10 @@ import {
   withDeploySourceRecording,
 } from "@corbits/workflow-deploy-source";
 import {
-  createMyraAgentDefinitionDrafting,
-  createPlannerRoutes,
-  createWorkflowDispatchRoutes,
-  dispatchWithPlanner,
-  isPlannerCreatedDefinitionName,
-  PlannerDefinitionGrantDeniedError,
-  resolveMyraDefinitionIdFromDb,
+  FoldedRunFailedError,
+  FoldedRunTimedOutError,
   runOneShotFoldedPrompt,
-  type InventoryAgent,
-  type InventoryModel,
-  type InventorySources,
-  type InventoryToolPackage,
-} from "@corbits/task-planner";
+} from "@corbits/folded-run-one-shot";
 
 import {
   createEventCollectorRegistry,
@@ -404,15 +390,6 @@ const SignInEmailBody = type({ email: "string" });
 // emergency bump (8ca85543) band-aided around was genuinely lossy: a
 // later `wakeByAddress` relaunch resumes the same run rather than
 // starting a fresh one.
-//
-// `TASK_IDLE_UNDEPLOY_MS` remains for `taskLifecycle` below and stays a
-// genuinely different, longer threshold: a spawn-and-return task's
-// `wake` is unreachable by construction (a one-shot task never sends a
-// follow-up after its opening prompt), so there is nothing a relaunch
-// could ever revive — undeploying an idle task-launched resident is
-// exactly the intended cleanup once the task's single turn has settled,
-// not a case this state-preserving reap needs to cover.
-const TASK_IDLE_UNDEPLOY_MS = 8 * 60 * 60 * 1000;
 
 // Signup mode is operator-controlled (WORKBENCH_SIGNUP). Default closed:
 // self-serve email signup is rejected; owners add users or share a
@@ -644,7 +621,7 @@ export async function createHub(config: HubConfig) {
   // for the process, read here ahead of `workflow_run` and written to
   // there off every `agent.deploy.ack`.
   const runKeyHistoryStore = createDrizzleRunKeyHistoryStore(db);
-  // A folded run (a workbench host, an invited agent, a task) settles
+  // A folded run (a workbench host, an invited agent) settles
   // "completed" between message occurrences as part of its own normal
   // wake/redeploy cycle — not "done forever" the way a one-shot
   // workflow deployment's "completed" is. The platform's own
@@ -1315,11 +1292,9 @@ export async function createHub(config: HubConfig) {
     mcpCredentialBindingsFor,
     // Chat residents are undeployed on idle again (see the comment above
     // this function): `chatIdleReapMs` (env-overridable via
-    // `WORKBENCH_CHAT_IDLE_REAP_MS`, default 30 minutes) is a genuinely
-    // separate threshold from `TASK_IDLE_UNDEPLOY_MS` — chat's reap is
-    // state-preserving (`IDLE_HIBERNATE_UNDEPLOY_REASON`) so a much
-    // shorter window is safe here, unlike the destructive undeploy a
-    // task-launched resident gets.
+    // `WORKBENCH_CHAT_IDLE_REAP_MS`, default 30 minutes) is
+    // state-preserving (`IDLE_HIBERNATE_UNDEPLOY_REASON`), unlike a
+    // destructive undeploy.
     lifecycle: { idleSleepMs: config.chatIdleReapMs },
     //
     // A hand-authored definition with no model requirements of its own
@@ -1488,30 +1463,24 @@ export async function createHub(config: HubConfig) {
   );
 
   // The one "is this a conversational agent?" ruling, shared by every
-  // picker that offers agents to a person AND every taskability gate —
-  // chat's invite/new-chat pickers, the task composer, and task-planner's
-  // {use} target validation alike: automatable catalog workflows
+  // picker that offers agents to a person and by a routine's `"agent"`-kind
+  // trigger-field validation below: automatable catalog workflows
   // (routines material) and workbench-host anchor definitions (chat's own
   // plumbing, never a person-facing agent) belong in neither.
   const isConversationalAgentDefinition = (definition: { name: string }) =>
     !isAutomatableWorkflowName(definition.name) &&
     !isWorkbenchHostDefinitionName(definition.name);
 
-  // A second, narrower ruling layered on top of the taskability gate
-  // above, for LISTING/PICKER surfaces only — never for taskability
-  // itself. A planner-created agent (CL-6051's `{create}` branch, see
-  // `@corbits/task-planner`'s `planner-created-naming.ts`) exists for
-  // exactly one task; it must stay fully launchable (`spawnFromTaskSpec`
-  // calls `launchTask` against the definition it just created) but must
-  // never clutter a picker meant for agents a person deliberately keeps
-  // around. Wired into every picker surface: chat's invite/new-chat
-  // dialogs (`chatDeps.isInvitableDefinition` below) and the planner's
-  // own inventory (`listMyraConversationalAgents` below) — the manual
-  // task composer's picker (`apps/web`'s
-  // `listTenantInvitableDefinitions`) calls the same chat route, so it
-  // inherits this for free. `@corbits/agent-directory` has no listing
-  // route of its own today (only create/read-skills/update-skills), so
-  // there is no third surface to thread this through there yet.
+  // A second, narrower ruling layered on top of the ruling above, for
+  // LISTING/PICKER surfaces only. A planner-created agent (the
+  // now-deleted tasks primitive's planner `{create}` branch, CL-6051;
+  // see `@corbits/agent-directory`'s `stale-task-agent-naming.ts`)
+  // existed for exactly one now-retired task; any that still linger
+  // must stay out of a picker meant for agents a person deliberately
+  // keeps around. Wired into every picker surface:
+  // chat's invite/new-chat dialogs (`chatDeps.isInvitableDefinition` below)
+  // and the agent-definition drafting inventory
+  // (`listMyraConversationalAgents` below).
   const isPickerListableDefinition = (definition: { name: string }) =>
     isConversationalAgentDefinition(definition) &&
     !isPlannerCreatedDefinitionName(definition.name);
@@ -1828,12 +1797,11 @@ export async function createHub(config: HubConfig) {
     }),
   );
   // The guided-capability-add fail-closed check reuses the exact same
-  // listers `plannerInventorySources` (below) wires — `@corbits/agent-directory`
-  // cannot import `@corbits/task-planner`'s `InventorySources`/`PlannerInventory`
-  // types directly (task-planner already depends on agent-directory, so that
-  // edge would cycle), but the tenant's live inventory of usable tool
-  // packages, skills, and models is never assembled twice: both this
-  // provider and the planner's own inventory read through the same
+  // listers `plannerInventorySources` (below) wires — both this provider
+  // and the drafting inventory read `InventorySources`/`PlannerInventory`
+  // from `@corbits/agent-directory` directly, and the tenant's live
+  // inventory of usable tool packages, skills, and models is never
+  // assembled twice: both share the same
   // `listMyraUsableToolPackages`/`listMyraModels`/`skills.registry.list`
   // functions (declared further down this file, hoisted).
   const capabilityInventory: CapabilityInventoryProvider = {
@@ -2279,10 +2247,9 @@ export async function createHub(config: HubConfig) {
   );
   // Template block workflows (CL-6405): the instantiate path's
   // `deployBlockWorkflow` port lands here — the same source-form
-  // materialization `deployAgentDefinition` below runs for a
-  // participant agent (asset + `@corbits/workflow-source` tree +
-  // `freezeInertWorkflowDefinition`), applied to a template's
-  // referenced block definition (`code-review` today).
+  // materialization pattern (asset + `@corbits/workflow-source` tree +
+  // `freezeInertWorkflowDefinition`) applied to a template's referenced
+  // block definition (`code-review` today).
   app.route(
     `${TENANT_PREFIX}/template-blocks`,
     createTemplateBlockRoutes({
@@ -2473,137 +2440,29 @@ export async function createHub(config: HubConfig) {
     },
   });
 
-  // Spawn-and-return agent tasks (`@corbits/tasks`, CL-6049): a prompt
-  // plus an agent definition launches a one-shot folded run with no
-  // workbench, and its finalized reply lands in the Inbox through the
-  // same notify delivery adapter `credentialExpirySweep` uses above.
-  // Own idle-sleep-and-UNDEPLOY lifecycle instance (the same
-  // `@corbits/agent-lifecycle` package chat's platform adapter used to
-  // drive before CL-5477 retired that binding) — kept here, unlike
-  // chat's, because `wake` is never actually called: a task's run only
-  // ever needs waking to deliver a follow-up message, and a one-shot task
-  // never sends one after its opening prompt. There is no run left to
-  // lose by undeploying once one goes idle, so this sweep's undeploy is
-  // genuine cleanup, not the lossy "kill what the wake path cannot
-  // revive" failure mode chat's own lifecycle had.
-  const taskStore = createDrizzleTaskStore(db);
-  const taskLifecycle = createAgentLifecycle({
-    idleSleepMs: TASK_IDLE_UNDEPLOY_MS,
-    isRoutable: (address) =>
-      sidecarRouter.getRoutableAddresses().includes(address),
-    undeploy: (address, reason) =>
-      sidecarRouter.sendAgentUndeploy(address, reason),
-    wake: () => {
-      throw new Error(
-        "a task-launched run is never woken after its opening prompt",
-      );
-    },
-    isBusy: (address) =>
-      typeof eventCollectors.getCurrentTurnId(address) === "string",
-    log: getLogger(["tasks", "lifecycle"]),
-  });
-  const taskNotifyDeps = {
-    mail: mailboxDelivery,
-    addressing: {
-      inbox: (recipient: { principalId: string }) =>
-        `${recipient.principalId}@inbox.${notifyHost}`,
-      from: (kind: string) => `${kind}@notify.${notifyHost}`,
-    },
-    dispatch: createInMemoryNotifyDispatchStore(),
-    sinks: createSinkRegistry(),
-  };
-  const taskLauncherDeps = {
+  // Shared `FoldedRunsDeps` for every one-shot Myra prompt below (routine
+  // drafting, agent-definition drafting): a real one-shot inference call
+  // that launches a folded run, awaits its single reply, and tears the run
+  // down immediately — never a resident that outlives the request, so no
+  // idle-sleep lifecycle is needed for it.
+  const oneShotFoldedRunsDeps = {
     db,
-    store: taskStore,
-    foldedRuns: {
-      db,
-      sessionService,
-      assetService,
-      sidecarRouter,
-      eventCollectors,
-      credentialCipher,
-      hubPublicKey,
-      toolGrantsForPins,
-      mcpCredentialBindingsFor,
-    },
-    cryptoProviders: createCryptoProviderCache(),
-    notify: taskNotifyDeps,
-    isTaskableDefinition: isConversationalAgentDefinition,
-    lifecycle: taskLifecycle,
+    sessionService,
+    assetService,
+    sidecarRouter,
+    eventCollectors,
+    credentialCipher,
+    hubPublicKey,
+    toolGrantsForPins,
+    mcpCredentialBindingsFor,
   };
-  const taskOrchestrator = createTaskOrchestrator({
-    db,
-    store: taskStore,
-    events: sidecarRouter.events,
-    notify: taskNotifyDeps,
-    recordActivity: (address) => taskLifecycle.recordActivity(address),
-    launchLeg: (input) => launchTaskLeg(taskLauncherDeps, input),
-    workbench: {
-      async post({ tenantId, workbenchId, text }) {
-        await chatPlatform.sendMail({
-          tenantId,
-          workbenchId,
-          fromWorkbenchId: workbenchId,
-          content: { content: text },
-        });
-      },
-      async resolveFallbackWorkbenchId(tenantId) {
-        try {
-          const myraDefinitionId = await resolveMyraDefinitionIdFromDb(
-            db,
-            tenantId,
-          );
-          const chat = await findExistingAgentChat(
-            { store: chatStore, platform: chatPlatform, tenancy: chatTenancy },
-            tenantId,
-            myraDefinitionId,
-          );
-          return chat?.workbenchId;
-        } catch (cause) {
-          // Best-effort fallback lookup (CL-6496): a failure here means
-          // the task orchestrator falls back further, never that the
-          // caller sees an error -- but that made this failure invisible
-          // until reportError existed. Reported, not swallowed.
-          reportError(cause, {
-            operation: "resolveFallbackWorkbenchId",
-            tenantId,
-          });
-          return undefined;
-        }
-      },
-    },
-  });
-  // A hand-off claimed by a process that died has no one left to
-  // redeliver it, so a periodic pass gives up on it and tells the
-  // person — same shape `credentialExpirySweep` above uses.
-  const stuckLegSweep = createStuckLegSweep({
-    db,
-    store: taskStore,
-    notify: taskNotifyDeps,
-  });
-  const chatFinalizedTurnHandler = artifactDeliveryHandlerRef.current;
-  artifactDeliveryHandlerRef.current = (agentAddress, turn) => {
-    chatFinalizedTurnHandler?.(agentAddress, turn);
-    taskOrchestrator.handleFinalizedTurn(agentAddress, turn);
-  };
-  app.route(
-    `${TENANT_PREFIX}/tasks`,
-    createTaskRoutes({
-      store: taskStore,
-      requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
-      }),
-      launch: (input) => launchTask(taskLauncherDeps, input),
-    }),
-  );
 
   // Every genuine top-level deployment run, folded runs (workbench hosts,
-  // invited agents, tasks) excluded — the scoped listing CL-6061 adds
+  // invited agents) excluded — the scoped listing CL-6061 adds
   // so the Agent Directory and the shell's "Running" bands stop
   // deriving that exclusion client-side from a tenant's workbenches alone
-  // (see `@corbits/folded-runs`'s `scope-routes.ts`, which task-style
-  // runs — no workbench involved — silently slipped past). The route's
+  // (see `@corbits/folded-runs`'s `scope-routes.ts`, which a folded run
+  // with no workbench involved silently slipped past). The route's
   // `feed=fires` mode (Insights, CL-6249) needs the one bridge
   // `@corbits/folded-runs` cannot own itself — resolving a folded run id
   // back to the routine that fired it — wired here, the one place in
@@ -2649,11 +2508,7 @@ export async function createHub(config: HubConfig) {
   // that turns a routine's `launchRoutineRun` call into a real folded
   // run via `@corbits/folded-runs` (routine-launcher.ts), and a run
   // summary resolver so `GET /routines/:id/runs` reports each fire's
-  // real status instead of a bare run id. Constructed after
-  // `taskLauncherDeps` above (not alongside chat/connections earlier)
-  // because its `dispatchTask` port needs that object to exist first —
-  // see routine-launcher.ts's own doc for why a routine ever calls
-  // `launchTask` at all.
+  // real status instead of a bare run id.
   const routineGrantStore = createGrantStore(db);
   const routineStore = createDrizzleRoutineStore(db);
   const routineDraftStore = createDrizzleDraftStore(db);
@@ -2684,11 +2539,10 @@ export async function createHub(config: HubConfig) {
   // is never rejected here (`validateTriggerFieldsAtCreate` only
   // checks a value the caller actually provided), only resolved
   // further for an `"agent"`-kind field — that a provided value names
-  // a real taskable definition. An unknown definitionId or asset name
-  // passes here (its 404 comes from `definitionInTenant` instead); a
-  // definition with no declared trigger fields accepts any input, same
-  // as today. `launchTask`'s own definition checks at fire time remain
-  // the authoritative required-field gate.
+  // a real conversational definition. An unknown definitionId or asset
+  // name passes here (its 404 comes from `definitionInTenant` instead);
+  // a definition with no declared trigger fields accepts any input, same
+  // as today.
   async function routineInputValid(
     tenantId: string,
     definitionId: string,
@@ -2729,7 +2583,7 @@ export async function createHub(config: HubConfig) {
       ) {
         return {
           ok: false,
-          message: `"${field.label}" must be a taskable agent`,
+          message: `"${field.label}" must be a conversational agent`,
         };
       }
     }
@@ -2775,12 +2629,11 @@ export async function createHub(config: HubConfig) {
     return out;
   }
 
-  // A separate `CryptoProviderCache` from the task launcher's and the
-  // planner's own (`plannerCryptoProviders` below): a routine-drafting
-  // one-shot run's instance id has nothing to do with either lifecycle,
-  // so a separate cache keeps the three from ever contending over the
-  // same key space — same rationale as `plannerCryptoProviders`' own
-  // comment.
+  // A separate `CryptoProviderCache` from `foldedRunCryptoProviders`
+  // above and `agentDefinitionDraftingCryptoProviders` below: a
+  // routine-drafting one-shot run's instance id has nothing to do with
+  // either, so a separate cache keeps them from ever contending over the
+  // same key space.
   const routineDraftingCryptoProviders = createCryptoProviderCache();
 
   const routineLauncher = createHubRoutineLauncher({
@@ -2793,7 +2646,6 @@ export async function createHub(config: HubConfig) {
     toolGrantsForPins,
     mcpCredentialBindingsFor,
     cryptoProviderCache: foldedRunCryptoProviders,
-    dispatchTask: (input) => launchTask(taskLauncherDeps, input),
     joinDeliveryWorkbench: (input) =>
       joinRunParticipant({ store: chatStore }, input),
   });
@@ -2835,10 +2687,9 @@ export async function createHub(config: HubConfig) {
       drafts: routineDraftStore,
       workbenchNotice: routineWorkbenchNotice,
       // Myra-backed drafting (CL-5917): a real one-shot inference call,
-      // mirroring `@corbits/task-planner`'s own Myra auto-dispatch
-      // wiring below (`plannerInventorySources`/`dispatchWithPlanner`)
-      // — resolve Myra's definition, offer her the automatable-workflow
-      // and taskable-agent inventory, and never trust her reply beyond
+      // mirroring the agent-definition drafting wiring below — resolve
+      // Myra's definition, offer her the automatable-workflow and
+      // conversational-agent inventory, and never trust her reply beyond
       // what `@corbits/routines`' own fail-closed validation proves.
       drafting: createMyraRoutineDrafting({
         resolveMyraDefinitionId: (tenantId) =>
@@ -2847,10 +2698,9 @@ export async function createHub(config: HubConfig) {
           run: (runnerInput) =>
             runOneShotFoldedPrompt(
               {
-                foldedRuns: taskLauncherDeps.foldedRuns,
+                foldedRuns: oneShotFoldedRunsDeps,
                 events: sidecarRouter.events,
                 cryptoProviders: routineDraftingCryptoProviders,
-                lifecycle: taskLifecycle,
                 undeploy: (address, reason) =>
                   sidecarRouter.sendAgentUndeploy(address, reason),
               },
@@ -2991,9 +2841,9 @@ export async function createHub(config: HubConfig) {
     deliveryWorkbenchRequired: routineDeliveryWorkbenchRequired,
   });
 
-  // Myra auto-dispatch (CL-6051): a typed outcome becomes a validated
-  // task plan via `@corbits/task-planner`, dispatched exactly like a
-  // manually-launched task. Every inventory lister below generalizes a
+  // The inventory Myra is offered when drafting a new agent definition
+  // (`plannerInventorySources` below, `@corbits/agent-directory`'s own
+  // `InventorySources` seam). Every inventory lister below generalizes a
   // pattern that already lives elsewhere in this composition root
   // (`isConversationalAgentDefinition`, `workbenchHostInferencePreferencesResolver`'s
   // per-tenant connected-provider derivation) — this package owns the
@@ -3119,226 +2969,83 @@ export async function createHub(config: HubConfig) {
     listModels: listMyraModels,
   };
 
-  /**
-   * Wraps the same sequence `@corbits/agent-directory`'s `POST /`
-   * handler runs (`buildAgentDefinitionWorkflow` → `reindexPinnedSkills`
-   * when skills are present → `createAsset` + `populateAsset` →
-   * `freezeInertWorkflowDefinition`), reusing the exact `db`,
-   * `assetService`, and `skills.skillIndex` already in scope — never a
-   * second instance of any of them. The one addition beyond that route's
-   * own input is `toolPackagePins`, which the REST boundary deliberately
-   * has no field for (see `@corbits/agent-directory`'s `validation.ts`)
-   * since only this in-process planner caller needs it.
-   */
-  async function deployAgentDefinition(input: {
-    readonly tenantId: string;
-    readonly principalId: string;
-    readonly name: string;
-    readonly handle: string;
-    readonly systemPrompt: string;
-    readonly toolPackagePins: readonly string[];
-    readonly skills: readonly string[];
-    readonly credentialBindings: readonly CredentialBinding[];
-    readonly model?: string;
-  }): Promise<{ readonly definitionId: string }> {
-    const tenantRow = await db.query.tenant.findFirst({
-      where: eq(tenantTable.id, input.tenantId),
-    });
-    if (tenantRow === undefined) {
-      throw new Error(`No tenant "${input.tenantId}"`);
-    }
-
-    const handle = input.handle;
-    const skillEntries =
-      input.skills.length > 0
-        ? await skills.skillIndex.resolve(
-            input.tenantId,
-            input.principalId,
-            input.skills,
-          )
-        : [];
-
-    type MutableBuildAgentDefinitionInput = {
-      -readonly [
-        K in keyof Parameters<typeof buildAgentDefinitionWorkflow>[0]
-      ]: Parameters<typeof buildAgentDefinitionWorkflow>[0][K];
-    };
-    const buildInput: MutableBuildAgentDefinitionInput = {
-      handle,
-      tenantDomain: tenantRow.domain,
-      description: "",
-      systemPrompt: input.systemPrompt,
-    };
-    if (input.model !== undefined) {
-      buildInput.model = input.model;
-    }
-    if (input.toolPackagePins.length > 0) {
-      buildInput.toolPackagePins = input.toolPackagePins.map((name) => ({
-        name,
-        version: "*",
-      }));
-    }
-    if (input.credentialBindings.length > 0) {
-      buildInput.credentialBindings = input.credentialBindings;
-    }
-    const definition = buildAgentDefinitionWorkflow(buildInput);
-    const workflowJson = reindexPinnedSkills(
-      serializeAgentDefinitionWorkflow(definition),
-      skillEntries,
-    );
-
-    const created = await assetService.createAsset({
-      tenantId: input.tenantId,
-      kind: "workflow",
-      name: handle,
-      displayName: input.name,
-      creatorPrincipalId: input.principalId,
-    });
-
-    await assetService.populateAsset({
-      assetId: created.id,
-      ref: DEFAULT_ASSET_REF,
-      principal: { kind: "hub" },
-      tree: {
-        files: agentDefinitionSourceTree({ handle, workflowJson }),
-        message: `Define agent ${input.name}`,
-      },
-    });
-    await definitionSkillsStore.setSkills(created.id, input.skills);
-
-    // Freeze, not a bare ensure — see `createAgentDefinitionCore`'s own
-    // freeze call for the why (CL-6447).
-    const { definitionId } = await freezeInertWorkflowDefinition(db, {
-      assetId: created.id,
-      workflowJson,
-    });
-    return { definitionId };
-  }
-
-  /**
-   * A chain spawn's cleanup half: flips a definition `deployAgentDefinition`
-   * just deployed to `workflowDefinition`'s own `"stopped"` status, so a
-   * step later in the same chain failing to validate or deploy never
-   * leaves an orphaned agent nothing will ever launch. Scoped to
-   * `tenantId` + `definitionId` like every other definition write in
-   * this file; no asset/materialization cleanup, since a `"stopped"`
-   * definition is already excluded from every launch/taskability path
-   * `deployAgentDefinition` itself feeds.
-   */
-  async function undeployAgentDefinition(input: {
-    readonly tenantId: string;
-    readonly definitionId: string;
-  }): Promise<void> {
-    await db
-      .update(workflowDefinition)
-      .set({ status: "stopped" })
-      .where(
-        and(
-          eq(workflowDefinition.tenantId, input.tenantId),
-          eq(workflowDefinition.id, input.definitionId),
-        ),
-      );
-  }
-
-  // A separate `CryptoProviderCache` from the task launcher's own
-  // (`taskLauncherDeps.cryptoProviders`): a planning run's instance id
-  // is never a real task's, but the cache is keyed by instance id
-  // regardless, and a planning run's one-shot prompt/reply cadence has
-  // nothing to do with a launched task's — separate caches keep the
-  // two lifecycles from ever contending over the same key space.
-  const plannerCryptoProviders = createCryptoProviderCache();
-
-  // A separate `CryptoProviderCache` again from `plannerCryptoProviders`
-  // — an agent-definition drafting one-shot run's instance id has
-  // nothing to do with either lifecycle, same rationale as
+  // An agent-definition drafting one-shot run's instance id has nothing
+  // to do with a routine draft's, same rationale as
   // `routineDraftingCryptoProviders`' own comment above.
   const agentDefinitionDraftingCryptoProviders = createCryptoProviderCache();
 
-  app.route(
-    `${TENANT_PREFIX}/planner`,
-    createPlannerRoutes({
-      requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
-      }),
-      dispatch: (input) =>
-        dispatchWithPlanner(
+  // The create-agent panel's "Describe" step (CL-6074): a real one-shot
+  // Myra call that proposes a starting system prompt/tool pins/skills
+  // from a name + plain-language purpose, offering her the same
+  // inventory `capabilityInventory` above reads through. Never deploys
+  // on its own — the panel submits the validated draft through the
+  // ordinary create-agent-definition path once the person confirms. This
+  // route is hand-wired here rather than through a factory the package
+  // exports, since agent-directory's own route factories are each scoped
+  // to a narrower concern.
+  const CreateAgentDefinitionDraftBody = type({
+    name: "string > 0",
+    "purpose?": "string > 0",
+  });
+  const agentDefinitionDraftingInFlightPrincipals = new Set<string>();
+  function isAgentDefinitionDraftingFailure(err: unknown): boolean {
+    return (
+      err instanceof MyraAgentDefinitionDraftingUnavailableError ||
+      err instanceof FoldedRunTimedOutError ||
+      err instanceof FoldedRunFailedError ||
+      err instanceof AgentDefinitionDraftReplyUnparseableError ||
+      err instanceof AgentDefinitionDraftReferenceOutOfInventoryError
+    );
+  }
+  const plannerRoutes = new Hono<TenantEnv>();
+  plannerRoutes.post(
+    "/agent-definitions/draft",
+    createRequireGrant({
+      grantStore: chatGrantStore,
+      conditionRegistry: chatConditionRegistry,
+    })("workflow-definition:*", "create"),
+    async (c) => {
+      const body = CreateAgentDefinitionDraftBody(
+        await c.req.json().catch(() => undefined),
+      );
+      if (body instanceof type.errors) {
+        return c.json(
           {
-            db,
-            runner: {
-              run: (runnerInput) =>
-                runOneShotFoldedPrompt(
-                  {
-                    foldedRuns: taskLauncherDeps.foldedRuns,
-                    events: sidecarRouter.events,
-                    cryptoProviders: plannerCryptoProviders,
-                    // Reuses `taskLifecycle` rather than standing up a
-                    // second idle-sleep instance: it's keyed entirely by
-                    // address, and a planner run's `triggerAddress`
-                    // (`formatRunAddress` over a freshly generated
-                    // `workflowRun` instance id) can never collide with a
-                    // task's — sharing costs nothing and keeps one sweep
-                    // instead of two.
-                    lifecycle: taskLifecycle,
-                    undeploy: (address, reason) =>
-                      sidecarRouter.sendAgentUndeploy(address, reason),
-                  },
-                  runnerInput,
-                ),
-            },
-            inventorySources: plannerInventorySources,
-            resolveMyraDefinitionId: (tenantId) =>
-              resolveMyraDefinitionIdFromDb(db, tenantId),
-            taskLauncherDeps,
-            store: taskStore,
-            deployAgentDefinition,
-            undeployAgentDefinition,
-            // The `{create}` branch's own grant, checked deep inside
-            // `dispatch` rather than at route-middleware time — the
-            // definitional plan (`{use}` vs `{create}`) is only known
-            // after Myra's reply resolves. Same `chatGrantStore`/
-            // `chatConditionRegistry` every other `requireGrant` call
-            // site in this file uses, called through `authorize`
-            // directly (the standalone, non-middleware primitive
-            // `createRequireGrant`'s own middleware wraps) since this
-            // is not a route boundary.
-            requireDefinitionCreateGrant: async ({ tenantId, principalId }) => {
-              const result = await authorize(
-                chatGrantStore,
-                principalId,
-                tenantId,
-                "workflow-definition:*",
-                "create",
-                chatConditionRegistry,
-              );
-              if (result.effect !== "allow") {
-                throw new PlannerDefinitionGrantDeniedError(principalId);
-              }
+            error: {
+              code: "bad_request",
+              message: `This couldn't be read: ${body.summary}`,
             },
           },
-          input,
-        ),
-      // Agent-definition drafting (CL-6074): the create-agent panel's
-      // "Create & chat" flow asks Myra for a starting system prompt from
-      // a name + plain-language purpose, mirroring the routine-drafting
-      // wiring above — resolve Myra's definition, offer her the same
-      // inventory the planner itself uses, and never trust her reply
-      // beyond what `@corbits/task-planner`'s own fail-closed validation
-      // proves. Never deploys on its own; the panel submits the
-      // validated draft through the ordinary create-agent-definition
-      // path once the person confirms.
-      draftAgentDefinition: (input) =>
-        createMyraAgentDefinitionDrafting({
+          400,
+        );
+      }
+
+      const tenant = c.get("tenant");
+      const principal = c.get("principal");
+
+      if (agentDefinitionDraftingInFlightPrincipals.has(principal.id)) {
+        return c.json(
+          {
+            error: {
+              code: "dispatch_in_progress",
+              message: "Myra is already drafting your last agent.",
+            },
+          },
+          409,
+        );
+      }
+      agentDefinitionDraftingInFlightPrincipals.add(principal.id);
+      try {
+        const draft = await createMyraAgentDefinitionDrafting({
           resolveMyraDefinitionId: (tenantId) =>
             resolveMyraDefinitionIdFromDb(db, tenantId),
           runner: {
             run: (runnerInput) =>
               runOneShotFoldedPrompt(
                 {
-                  foldedRuns: taskLauncherDeps.foldedRuns,
+                  foldedRuns: oneShotFoldedRunsDeps,
                   events: sidecarRouter.events,
                   cryptoProviders: agentDefinitionDraftingCryptoProviders,
-                  lifecycle: taskLifecycle,
                   undeploy: (address, reason) =>
                     sidecarRouter.sendAgentUndeploy(address, reason),
                 },
@@ -3346,58 +3053,33 @@ export async function createHub(config: HubConfig) {
               ),
           },
           inventorySources: plannerInventorySources,
-        }).propose(input),
-    }),
-  );
-  // Myra's own task-dispatch surface (`@corbits/task-dispatch-tools`'
-  // `dispatch_task`): the workflow-run-authenticated counterpart to the
-  // tenant-session planner route just above, reusing the exact same
-  // spawn/planner deps. When the tool call names an `agentDefinitionId`
-  // it skips the planner's own one-shot re-ask entirely (see
-  // `@corbits/task-planner`'s `workflow-dispatch-routes.ts`); otherwise
-  // it falls back to the full Myra-picks-or-creates-an-agent flow.
-  app.route(
-    "/api/workflow-task-planner",
-    createWorkflowDispatchRoutes({
-      authenticator: createWorkflowRunAuthenticator({ db }),
-      db,
-      runner: {
-        run: (runnerInput) =>
-          runOneShotFoldedPrompt(
+        }).propose({
+          tenantId: tenant.id,
+          principalId: principal.id,
+          name: body.name,
+          ...(body.purpose !== undefined ? { purpose: body.purpose } : {}),
+        });
+        return c.json({ draft }, 201);
+      } catch (err) {
+        if (isAgentDefinitionDraftingFailure(err)) {
+          return c.json(
             {
-              foldedRuns: taskLauncherDeps.foldedRuns,
-              events: sidecarRouter.events,
-              cryptoProviders: plannerCryptoProviders,
-              lifecycle: taskLifecycle,
-              undeploy: (address, reason) =>
-                sidecarRouter.sendAgentUndeploy(address, reason),
+              error: {
+                code: "drafting_failed",
+                message:
+                  "Myra couldn't draft a starting prompt for that. Write one yourself, or try again.",
+              },
             },
-            runnerInput,
-          ),
-      },
-      inventorySources: plannerInventorySources,
-      resolveMyraDefinitionId: (tenantId) =>
-        resolveMyraDefinitionIdFromDb(db, tenantId),
-      taskLauncherDeps,
-      store: taskStore,
-      chatStore,
-      deployAgentDefinition,
-      undeployAgentDefinition,
-      requireDefinitionCreateGrant: async ({ tenantId, principalId }) => {
-        const result = await authorize(
-          chatGrantStore,
-          principalId,
-          tenantId,
-          "workflow-definition:*",
-          "create",
-          chatConditionRegistry,
-        );
-        if (result.effect !== "allow") {
-          throw new PlannerDefinitionGrantDeniedError(principalId);
+            422,
+          );
         }
-      },
-    }),
+        throw err;
+      } finally {
+        agentDefinitionDraftingInFlightPrincipals.delete(principal.id);
+      }
+    },
   );
+  app.route(`${TENANT_PREFIX}/planner`, plannerRoutes);
 
   // The sanctioned path for a workflow run to reach the memory plane
   // (CL-5852), mirroring `/api/workflow-artifacts` immediately above:
@@ -3703,9 +3385,6 @@ export async function createHub(config: HubConfig) {
       }
       envCredentialPlant.stop();
       chatOrchestrator.dispose();
-      taskOrchestrator.dispose();
-      taskLifecycle.stop();
-      stuckLegSweep.stop();
       routineScheduler.stop();
       credentialExpirySweep.stop();
       benchProvisioner.stop();

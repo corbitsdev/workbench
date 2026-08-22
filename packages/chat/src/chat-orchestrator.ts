@@ -892,10 +892,9 @@ export function createChatOrchestrator(
   // Every address with a `connector.reply` pending delivery for its
   // current turn — added the moment reply content is seen, cleared the
   // moment that turn's own `message.run.ended` bracket closes (see
-  // below). Mirrors `@corbits/tasks`' `orchestrator.ts` `lastReplyByAddress`
-  // bookkeeping, keyed the same way (per address, not per message —
-  // this stream carries no messageId to correlate on more precisely),
-  // but chat only needs a presence bit, never the reply text itself.
+  // below), keyed per address rather than per message — this stream
+  // carries no messageId to correlate on more precisely — though chat
+  // only needs a presence bit here, never the reply text itself.
   const repliedAddresses = new Set<string>();
 
   // Process-lifetime idempotency guard for the turn-drop notice below,

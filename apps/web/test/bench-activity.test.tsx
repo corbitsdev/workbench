@@ -33,7 +33,6 @@ function stubTenantFetch(
     readonly workbenches?: readonly unknown[];
     readonly chats?: readonly unknown[];
     readonly runs?: readonly unknown[];
-    readonly tasks?: readonly unknown[];
     readonly agents?: readonly unknown[];
   } = {},
 ): void {
@@ -42,8 +41,6 @@ function stubTenantFetch(
     calls.push(path);
     if (path.includes("/top-level-runs"))
       return Promise.resolve(json({ data: data.runs ?? [], nextCursor: null }));
-    if (path.includes("/tasks"))
-      return Promise.resolve(json({ items: data.tasks ?? [] }));
     if (path.includes("/agent-definitions/visible"))
       return Promise.resolve(json({ definitions: data.agents ?? [] }));
     if (path.includes("kind=chat"))
@@ -105,14 +102,12 @@ describe("useBenchActivity", () => {
       chats: [],
       agents: [],
       routines: [],
-      workingTasks: [],
     });
     // Per-kind workbench fetches — the shared query key each listing surface
     // subscribes to (see `tenantKeys.workbenches`).
     expect(calls.some((path) => path.includes("kind=workbench"))).toBe(true);
     expect(calls.some((path) => path.includes("kind=chat"))).toBe(true);
     expect(calls.some((path) => path.includes("/top-level-runs"))).toBe(true);
-    expect(calls.some((path) => path.includes("/tasks"))).toBe(true);
     expect(
       calls.some((path) => path.includes("/agent-definitions/visible")),
     ).toBe(true);
@@ -198,59 +193,6 @@ describe("useBenchActivity", () => {
         tenantName: "Acme",
         createdAt: "2026-01-01T00:00:00.000Z",
       },
-    ]);
-    root.unmount();
-    container.remove();
-  });
-
-  test("keeps a task's own agentName and drops terminal tasks", async () => {
-    const calls: string[] = [];
-    stubTenantFetch(calls, {
-      tasks: [
-        {
-          id: "tsk_running",
-          definitionId: "wfd_myra_task_1",
-          workbenchId: "ch_1",
-          agentName: "Incident triage",
-          prompt: "Summarize the thread",
-          modelPreference: null,
-          status: "running",
-          runId: "run_tsk1",
-          runIds: ["run_tsk1"],
-          stepCount: 1,
-          resultMailId: null,
-          createdAt: "2026-08-14T00:00:00.000Z",
-          completedAt: null,
-        },
-        {
-          id: "tsk_done",
-          definitionId: "def_researcher",
-          workbenchId: "ch_1",
-          agentName: "Researcher",
-          prompt: "Draft the summary",
-          modelPreference: null,
-          status: "done",
-          runId: "run_tsk2",
-          runIds: ["run_tsk2"],
-          stepCount: 1,
-          resultMailId: "mail_1",
-          createdAt: "2026-08-13T00:00:00.000Z",
-          completedAt: "2026-08-13T00:05:00.000Z",
-        },
-      ],
-    });
-    const { latest, root, container } = await mountHook("tnt_1");
-    await settle();
-    const state = latest();
-    if (state.kind !== "ready") throw new Error(`not ready: ${state.kind}`);
-    // A planner-created agent (wfd_myra_task_1) never appears in
-    // listTenantInvitableDefinitions (CL-6051) — the name still shows
-    // because it travels on the task record itself, not a lookup.
-    expect(state.workingTasks).toEqual([
-      expect.objectContaining({
-        id: "tsk_running",
-        agentName: "Incident triage",
-      }),
     ]);
     root.unmount();
     container.remove();

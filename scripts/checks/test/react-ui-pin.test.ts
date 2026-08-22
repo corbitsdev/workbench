@@ -24,7 +24,7 @@ test("two pins is a violation that names every offending manifest and pin", () =
       pin: "github:corbitsdev/react-ui#aaaa111",
     },
     {
-      relPath: "packages/tasks-ui/package.json",
+      relPath: "packages/settings-ui/package.json",
       pin: "github:corbitsdev/react-ui#bbbb222",
     },
     {
@@ -36,7 +36,7 @@ test("two pins is a violation that names every offending manifest and pin", () =
   expect(report.violations.length).toBeGreaterThan(0);
   const all = report.violations.join("\n");
   expect(all).toContain("packages/chat-ui/package.json");
-  expect(all).toContain("packages/tasks-ui/package.json");
+  expect(all).toContain("packages/settings-ui/package.json");
   expect(all).toContain("apps/web/package.json");
   expect(all).toContain("aaaa111");
   expect(all).toContain("bbbb222");

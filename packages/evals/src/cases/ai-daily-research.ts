@@ -34,7 +34,7 @@ export const aiDailyResearchEval = defineEval({
       human: "do research on AI daily for me",
       expect: [
         asksQuestions({ max: 4 }),
-        noToolCalls(["create_agent", "routine_create", "dispatch_task"]),
+        noToolCalls(["create_agent", "routine_create", "routine_run_now"]),
         noBuildBeforeAnswers(1),
       ],
     },

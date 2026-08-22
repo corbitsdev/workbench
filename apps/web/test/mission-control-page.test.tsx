@@ -4,7 +4,6 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import type { Workbench } from "@corbits/chat-ui";
-import type { WorkingTask } from "@corbits/tasks-ui";
 
 import { BenchContext, type BenchState } from "../src/bench-context";
 import { NavigationProvider } from "../src/navigation";
@@ -21,25 +20,6 @@ const realFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = realFetch;
 });
-
-function workingTask(overrides: Partial<WorkingTask>): WorkingTask {
-  return {
-    id: "task_1",
-    definitionId: "def_1",
-    workbenchId: null,
-    agentName: "Research Analyst",
-    prompt: "Summarize 3 threads",
-    modelPreference: null,
-    status: "running",
-    runId: "run_1",
-    runIds: ["run_1"],
-    stepCount: 6,
-    resultMailId: null,
-    createdAt: "2026-08-19T10:00:00.000Z",
-    completedAt: null,
-    ...overrides,
-  };
-}
 
 function routine(overrides: Partial<RoutineActivityItem>): RoutineActivityItem {
   return {
@@ -64,44 +44,28 @@ function workbench(overrides: Partial<Workbench>): Workbench {
 }
 
 describe("computeInFlightRows", () => {
-  test("drops queued tasks — nothing has started executing yet", () => {
-    const rows = computeInFlightRows([workingTask({ status: "queued" })], []);
-    expect(rows).toEqual([]);
-  });
-
-  test("keeps running and needs-you tasks, and only running routines", () => {
-    const rows = computeInFlightRows(
-      [
-        workingTask({ id: "t1", status: "running" }),
-        workingTask({ id: "t2", status: "needs-you" }),
-      ],
-      [
-        routine({ id: "r1", status: "running" }),
-        routine({ id: "r2", status: "deployed" }),
-      ],
-    );
-    expect(rows.map((row) => row.key)).toEqual([
-      "task:t1",
-      "task:t2",
-      "routine:r1",
+  test("keeps only running routines", () => {
+    const rows = computeInFlightRows([
+      routine({ id: "r1", status: "running" }),
+      routine({ id: "r2", status: "deployed" }),
     ]);
+    expect(rows.map((row) => row.key)).toEqual(["routine:r1"]);
   });
 
-  test("sorts newest first and derives an honest steps ratio from real run ids", () => {
-    const rows = computeInFlightRows(
-      [
-        workingTask({
-          id: "old",
-          createdAt: "2026-08-19T08:00:00.000Z",
-          runIds: ["a", "b"],
-          stepCount: 9,
-        }),
-        workingTask({ id: "new", createdAt: "2026-08-19T11:00:00.000Z" }),
-      ],
-      [],
-    );
-    expect(rows.map((row) => row.key)).toEqual(["task:new", "task:old"]);
-    expect(rows[1]?.steps).toBe("2/9");
+  test("sorts newest first", () => {
+    const rows = computeInFlightRows([
+      routine({
+        id: "old",
+        status: "running",
+        startedAt: "2026-08-19T08:00:00.000Z",
+      }),
+      routine({
+        id: "new",
+        status: "running",
+        startedAt: "2026-08-19T11:00:00.000Z",
+      }),
+    ]);
+    expect(rows.map((row) => row.key)).toEqual(["routine:new", "routine:old"]);
   });
 });
 
@@ -167,14 +131,6 @@ function stubEmptyBenchFetch(): void {
     if (url.includes("/insights/activity")) {
       return Promise.resolve(
         new Response(JSON.stringify({ days: [] }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
-      );
-    }
-    if (url.includes("/tasks")) {
-      return Promise.resolve(
-        new Response(JSON.stringify({ items: [] }), {
           status: 200,
           headers: { "content-type": "application/json" },
         }),

@@ -31,14 +31,6 @@ export interface DriftAllowlistEntry {
 
 export const REACT_UI_DRIFT_ALLOWLIST: readonly DriftAllowlistEntry[] = [
   {
-    relPath: "packages/tasks-ui/src/task-composer-dialog.tsx",
-    ticket: "CL-6320",
-  },
-  {
-    relPath: "packages/tasks-ui/src/myra-agent-selection-strategy.tsx",
-    ticket: "CL-6320",
-  },
-  {
     relPath: "apps/web/src/pages/insights-page.tsx",
     ticket: "CL-6320",
   },

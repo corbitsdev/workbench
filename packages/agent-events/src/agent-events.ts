@@ -1,9 +1,9 @@
 // Recognizers for the sidecar `agent.event` frames every folded-run
-// observer keys off. Both process-wide orchestrators — `@corbits/chat`'s
-// (replies into workbenches) and `@corbits/tasks`' (terminal results into
-// the Inbox) — subscribe to the same stream and need the same two
-// readings, so the parsing lives here, in a package both already build
-// on rather than duplicated in each. This module depends on nothing but
+// observer keys off. `@corbits/chat`'s own process-wide orchestrator
+// (replies into workbenches) subscribes to this same stream and needs
+// these same two readings, so the parsing lives here, in a package it
+// already builds on rather than duplicated inline. This module depends
+// on nothing but
 // the event shapes (`@intx/types`' `AgentEvent` union documents them;
 // these readers stay structural since the stream's payload arrives as
 // `unknown`), which is what keeps it importable from a browser context

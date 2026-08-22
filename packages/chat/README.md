@@ -18,8 +18,8 @@ workflow definition and its deployment, `@intx/db` for schema/query
 primitives, `@intx/authz` for grant checks, `@intx/crypto` for signing,
 `@intx/mime` for attachment validation, `@intx/log` for logging, and
 `@intx/types` for shared wire types. It also depends on
-`@corbits/folded-runs` (launch/wake/mail for folded runs, shared with
-`@corbits/tasks`) and `@corbits/agent-lifecycle` (idle-sleep/wake-on-mail).
+`@corbits/folded-runs` (launch/wake/mail for folded runs) and
+`@corbits/agent-lifecycle` (idle-sleep/wake-on-mail).
 
 ## Key modules
 

@@ -226,9 +226,9 @@ describeIfDb(
           name: "last-30-days-research",
         });
         await seedDefinition(db, {
-          id: "wfd_recurring_task",
+          id: "wfd_heartbeat",
           tenantId: "tnt_dm_catalog_guard",
-          name: "recurring-task",
+          name: "heartbeat",
         });
         await seedDefinition(db, {
           id: "wfd_workbench_digest",

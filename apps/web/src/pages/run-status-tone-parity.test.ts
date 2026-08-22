@@ -22,27 +22,7 @@ import { statusTone } from "./insights-page";
 import { runStatusTone } from "./routines-page";
 import { computeInFlightRows } from "./mission-control-page";
 import { AGENT_ROSTER_STATUS_TONE } from "./agents-page";
-import type { WorkingTask } from "@corbits/tasks-ui";
 import type { RoutineActivityItem } from "../shell/routine-activity";
-
-function workingTask(overrides: Partial<WorkingTask>): WorkingTask {
-  return {
-    id: "tsk_1",
-    definitionId: "def_1",
-    workbenchId: null,
-    agentName: "Myra",
-    prompt: "Do the thing",
-    modelPreference: null,
-    status: "running",
-    runId: "run_1",
-    runIds: ["run_1"],
-    stepCount: 1,
-    resultMailId: null,
-    createdAt: new Date().toISOString(),
-    completedAt: null,
-    ...overrides,
-  };
-}
 
 describe("run-status tone parity with react-ui's RUN_STATUS_TONE", () => {
   test("Insights' statusTone agrees with canonical for every shared status", () => {
@@ -59,25 +39,13 @@ describe("run-status tone parity with react-ui's RUN_STATUS_TONE", () => {
   });
 
   test("Mission Control's in-flight rows agree with canonical for every shared status", () => {
-    const [needsYouRow] = computeInFlightRows(
-      [workingTask({ id: "tsk_needs_you", status: "needs-you" })],
-      [],
-    );
-    expect(needsYouRow?.statusTone).toBe(RUN_STATUS_TONE.awaiting);
-
-    const [runningRow] = computeInFlightRows(
-      [workingTask({ id: "tsk_running", status: "running" })],
-      [],
-    );
-    expect(runningRow?.statusTone).toBe(RUN_STATUS_TONE.running);
-
     const routine: RoutineActivityItem = {
       id: "rtn_1",
       name: "Daily brief",
       status: "running",
       startedAt: new Date().toISOString(),
     };
-    const [routineRow] = computeInFlightRows([], [routine]);
+    const [routineRow] = computeInFlightRows([routine]);
     expect(routineRow?.statusTone).toBe(RUN_STATUS_TONE.running);
   });
 

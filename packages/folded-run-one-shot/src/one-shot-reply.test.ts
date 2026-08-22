@@ -1,4 +1,3 @@
-// Mirrors packages/tasks/test/launcher.test.ts's fake-db shape.
 // `launchFoldedRun` and `sendFoldedMailWithRetry` — the two free
 // functions this module calls directly rather than threading through
 // `FoldedRunsDeps` — are stubbed via `OneShotRunnerDeps`' own

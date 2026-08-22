@@ -22,7 +22,7 @@ export function purposeDefinitions<T extends { readonly name: string }>(
 }
 
 export type CatalogFields = {
-  /** The raw catalog asset name (e.g. "recurring-task") — distinct from
+  /** The raw catalog asset name (e.g. "workbench-digest") — distinct from
    * `name`, which a caller (see `listWorkflowDefinitions`) may go on to
    * overwrite with the friendly display name for UI rendering. A caller
    * that needs to recognize a *specific* known workflow (not just show

@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@corbits/chat": "workspace:*",
+    "@corbits/folded-run-one-shot": "workspace:*",
     "@corbits/skills": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",
     "@corbits/workflow-freeze": "workspace:*",
@@ -23,6 +24,7 @@
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/hub-sessions": "workspace:*",
+    "@intx/log": "0.3.0",
     "@intx/types": "0.3.0",
     "@intx/workflow": "workspace:*",
     "arktype": "catalog:",
