@@ -9,6 +9,7 @@
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { InferenceResolutionError } from "@corbits/folded-runs";
+import { workbenchTemplate } from "@corbits/workflow-catalog";
 import { encodeParts } from "./codec";
 import type { Part as PartType } from "./parts";
 import { localPartOf } from "./agent-address";
@@ -386,33 +387,73 @@ export type PostCannedGreetingInput = CannedGreetingInput & {
 };
 
 /**
+ * The two template ids a blank room's opener may name. Each one's
+ * participants fully resolve through `instantiateWorkbenchTemplate`'s
+ * agent-request ports today (the code reviewers and Scout both have a
+ * real `createParticipantAgent` request), so offering them is a promise
+ * the picker's "Create workbench" flow can actually keep. `gtm` stays
+ * out: its crm/collateral participants have no such resolver yet, so
+ * naming it would offer something that can't be created.
+ */
+const BLANK_ROOM_OFFER_TEMPLATE_IDS = ["code-review", "due-diligence"] as const;
+
+/** The titles to name in a blank room's opener, read live off
+ * `@corbits/workflow-catalog` every time — never a copy of the title
+ * text, so a rename in the catalog shows up here with no edit. */
+function blankRoomOfferTitles(): readonly string[] {
+  return BLANK_ROOM_OFFER_TEMPLATE_IDS.map(
+    (id) => workbenchTemplate(id)?.title,
+  ).filter((title): title is string => title !== undefined);
+}
+
+/** One clause naming what's ready to go, or "" once neither offer id
+ * resolves (a catalog shipping neither template) — never a bare
+ * "there's a" with nothing after it. Exactly two ids are ever offered
+ * today (see `BLANK_ROOM_OFFER_TEMPLATE_IDS`), so this only has to
+ * handle naming one or both. */
+function templateOfferClause(): string {
+  const [first, second] = blankRoomOfferTitles();
+  if (first === undefined) return "";
+  if (second === undefined) {
+    return ` There's a ${first} setup ready to go, if that fits.`;
+  }
+  return ` There's a ${first} setup and a ${second} one ready to go, if either fits.`;
+}
+
+/**
  * The opener variations. Canned rather than model-written so the
  * greeting is on the timeline the moment the agent joins — a fresh
  * chat used to stay silent through a whole kickoff inference turn, and
  * a person who typed into that silence wrong-footed the conversation.
- * Each takes the leading address (" Alice" or "") and the agent's
- * display name; none may mention the workbench's title (a label the
- * opener picked, never a request) or capabilities-as-a-menu.
+ * Each takes the leading address (" Alice" or ""), the agent's display
+ * name, and the template-offer clause (see `templateOfferClause`),
+ * inserted just before the closing question; none may mention the
+ * workbench's title (a label the opener picked, never a request).
  */
-const GREETING_VARIATIONS: readonly ((who: string, agent: string) => string)[] =
-  [
-    (who, agent) =>
-      `Hey${who} — good to have a space to work in together. I'm ${agent}, ` +
-      "your teammate here; I can write, plan, pull pieces together, and " +
-      "line up the specialists and automations when we need them. What " +
-      "are you working on?",
-    (who, agent) =>
-      `Hi${who}, I'm ${agent} — your teammate here. Drafting, planning, ` +
-      "research, lining up automations: all fair game. What should we " +
-      "dig into first?",
-    (who, agent) =>
-      `Welcome in${who === "" ? "" : `,${who}`}. I'm ${agent}; think of me ` +
-      "as the teammate who writes, plans, and pulls in the right " +
-      "specialists when a job calls for them. What's on your plate?",
-    (who, agent) =>
-      `Hey${who} — ${agent} here. This space is ours to work in: I can ` +
-      "draft, plan, and wire things up as we go. What are you working on?",
-  ];
+const GREETING_VARIATIONS: readonly ((
+  who: string,
+  agent: string,
+  templateOffer: string,
+) => string)[] = [
+  (who, agent, templateOffer) =>
+    `Hey${who} — good to have a space to work in together. I'm ${agent}, ` +
+    "your teammate here; I can write, plan, pull pieces together, and " +
+    `line up the specialists and automations when we need them.${templateOffer} ` +
+    "What are you working on?",
+  (who, agent, templateOffer) =>
+    `Hi${who}, I'm ${agent} — your teammate here. Drafting, planning, ` +
+    `research, lining up automations: all fair game.${templateOffer} What ` +
+    "should we dig into first?",
+  (who, agent, templateOffer) =>
+    `Welcome in${who === "" ? "" : `,${who}`}. I'm ${agent}; think of me ` +
+    "as the teammate who writes, plans, and pulls in the right " +
+    `specialists when a job calls for them.${templateOffer} What's on ` +
+    "your plate?",
+  (who, agent, templateOffer) =>
+    `Hey${who} — ${agent} here. This space is ours to work in: I can ` +
+    `draft, plan, and wire things up as we go.${templateOffer} What are ` +
+    "you working on?",
+];
 
 function greetingVariationIndex(workbenchId: string): number {
   let sum = 0;
@@ -449,7 +490,7 @@ export function cannedGreeting(input: CannedGreetingInput): string {
   const variation =
     GREETING_VARIATIONS[greetingVariationIndex(input.workbenchId)];
   if (variation === undefined) throw new Error("no greeting variations");
-  return variation(who, input.agentName);
+  return variation(who, input.agentName, templateOfferClause());
 }
 
 /**

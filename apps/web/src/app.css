@@ -350,26 +350,6 @@ select:disabled,
   color: var(--card-foreground);
 }
 
-/* The post-landing setup line (CL-6462): quieter than the health banner
-   above it — no icon, muted text — because nothing is wrong and nothing
-   is being asked of the reader. */
-.setup-progress-note {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  padding: 0.5rem 1rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--background);
-  flex-shrink: 0;
-}
-
-.setup-progress-note-text {
-  flex: 1;
-  min-width: 0;
-  font-size: 0.8125rem;
-  color: var(--muted-foreground);
-}
-
 /* The Plugins gallery's own "couldn't find that connection" notice
    (CL-6092): a deep link from the shell banner that names a provider the
    gallery has no card for. */
