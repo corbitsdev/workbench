@@ -5,7 +5,7 @@
 // matching.
 export const CREATE_AGENT_TOOL = "create_agent";
 export const ROUTINE_CREATE_TOOL = "routine_create";
-export const DISPATCH_TASK_TOOL = "dispatch_task";
+export const ROUTINE_RUN_NOW_TOOL = "routine_run_now";
 export const MEMORY_ADD_TOOL = "memory_add";
 export const MEMORY_SEARCH_TOOL = "memory_search";
 export const MEMORY_LIST_TOOL = "memory_list";
@@ -17,7 +17,7 @@ export const REQUEST_CONNECTION_TOOL = "request_connection";
 export const BUILD_TOOLS = [
   CREATE_AGENT_TOOL,
   ROUTINE_CREATE_TOOL,
-  DISPATCH_TASK_TOOL,
+  ROUTINE_RUN_NOW_TOOL,
 ] as const;
 
 // The shipped GitHub write path (CL-6340 Code Review MVP, PR #62):

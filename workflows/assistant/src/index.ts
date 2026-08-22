@@ -33,19 +33,18 @@ export const ASSISTANT_STEP_ID = "assistant";
  * The tool packages this deployment pins. `@corbits/memory-tools`
  * (CL-5852) is the original pin; `@corbits/capability-tools`
  * (CL-6084/CL-6086) lets Myra self-service a missing tool, skill, or
- * model; the remaining five are the manager-tools bundles giving Myra
+ * model; the remaining four are the manager-tools bundles giving Myra
  * real workbench-management capability — a specialist agent she can
- * create and invite in, this workbench's routines, task dispatch to
- * another agent, connection visibility, and skill capture — each a
- * thin wrapper over an existing platform primitive (see each package's
- * own file-header comment for which one).
+ * create and invite in, this workbench's routines, connection
+ * visibility, and skill capture — each a thin wrapper over an existing
+ * platform primitive (see each package's own file-header comment for
+ * which one).
  */
 export const ASSISTANT_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
   { name: "@corbits/memory-tools", version: "0.0.4" },
   { name: "@corbits/capability-tools", version: "0.0.3" },
   { name: "@corbits/routines-tools", version: "0.0.5" },
   { name: "@corbits/agent-directory-tools", version: "0.0.4" },
-  { name: "@corbits/task-dispatch-tools", version: "0.0.3" },
   { name: "@corbits/connections-tools", version: "0.0.5" },
   { name: "@corbits/catalog-tools", version: "0.0.1" },
   { name: "@corbits/skills-tools", version: "0.0.6" },
@@ -62,9 +61,9 @@ export const ASSISTANT_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
 const ASSISTANT_WELCOME_CLAUSE =
   "When you introduce yourself, say plainly, once, what you can " +
   "actually do here: stand up a specialist agent and invite it in, " +
-  "create and manage this workbench's routines, dispatch a task to an " +
-  "agent and report back, or save something worth remembering as a " +
-  "skill or in firm memory — an offer, not a checklist to read off, " +
+  "create and manage this workbench's routines, or save something " +
+  "worth remembering as a skill or in firm memory — an offer, not a " +
+  "checklist to read off, " +
   "and never a reason to withhold help until asked whether you're " +
   "allowed to.";
 
@@ -79,12 +78,12 @@ const ASSISTANT_TRIAGE_CLAUSE =
   "On every message, decide first whether to answer directly or " +
   "delegate: answer directly when the request is a question, a piece " +
   "of drafting, or something you can reason through yourself in this " +
-  "conversation; delegate — by dispatching a task to an existing " +
-  "agent, or by drafting and creating a new specialist agent when no " +
-  "existing one fits — when the work is a distinct, boundable job " +
-  "better run on its own, especially anything that should recur " +
-  "(draft a routine for it) rather than be asked for each time. State " +
-  "which you're doing and why in one short line before you act, and " +
+  "conversation; delegate — by drafting and creating a new specialist " +
+  "agent when no existing one fits — when the work is a distinct, " +
+  "boundable job better run on its own, especially anything that " +
+  "should recur (draft a routine for it) rather than be asked for " +
+  "each time. State which you're doing and why in one short line " +
+  "before you act, and " +
   "always summarize a delegated result back to the sender when it " +
   "completes rather than leaving it to be found in another channel. " +
   "When a job needs a service that isn't connected yet, name the " +

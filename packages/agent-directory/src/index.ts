@@ -86,3 +86,33 @@ export {
   listVisibleAgentDefinitions,
   type VisibleAgentDefinition,
 } from "./visible-definitions";
+export {
+  assembleInventory,
+  type InventoryAgent,
+  type InventoryModel,
+  type InventorySkill,
+  type InventorySources,
+  type InventoryToolPackage,
+  type PlannerInventory,
+} from "./inventory";
+export {
+  createMyraAgentDefinitionDrafting,
+  parseAgentDefinitionDraftReply,
+  validateAgentDefinitionDraftReplyAgainstInventory,
+  AgentDefinitionDraftReplyUnparseableError,
+  AgentDefinitionDraftReferenceOutOfInventoryError,
+  MyraAgentDefinitionDraftingUnavailableError,
+  type AgentDefinitionDraft,
+  type AgentDefinitionDraftReply,
+  type AgentDefinitionDraftingPort,
+  type AgentDefinitionDraftingRunnerDeps,
+} from "./agent-definition-drafting";
+export {
+  createAgentDefinitionDraftRoutes,
+  type CreateAgentDefinitionDraftRoutesDeps,
+} from "./agent-definition-draft-routes";
+export {
+  resolveMyraDefinitionIdFromDb,
+  MyraDefinitionUnresolvableError,
+} from "./resolve-myra-definition-id";
+export { isPlannerCreatedDefinitionName } from "./stale-task-agent-naming";

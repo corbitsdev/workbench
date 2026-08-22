@@ -1,14 +1,12 @@
 // A synchronous wrapper around one folded run's opening turn: launch,
 // send the prompt, wait for exactly one reply, tear down the
-// subscription AND the launched run itself. No precedent for this
-// shape existed elsewhere in the codebase — `@corbits/tasks`'
-// `launchTask` launches and returns immediately (its reply lands
-// asynchronously, via `createTaskOrchestrator`'s subscription to the
-// same event stream); this module is the one place that turns that
-// same event stream into an awaitable promise, for a caller that has
-// no Inbox and no task row to hang a later delivery on.
-// `@corbits/task-planner`'s `runPlanner` is one such caller: a
-// planning prompt isn't a task, so it must resolve in the same
+// subscription AND the launched run itself. Other run launchers return
+// as soon as the run starts, with the reply landing asynchronously via
+// a subscription to the run's own event stream and a later delivery
+// (an Inbox item, say); this module is the one place that turns that
+// same event stream into an awaitable promise, for a caller — a
+// drafting or planning prompt, e.g. — that has no such later-delivery
+// surface to hang a reply on and must resolve in the same
 // request/response cycle that asked for it.
 import { and, eq } from "drizzle-orm";
 import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
@@ -39,17 +37,17 @@ export type OneShotRunnerDeps = {
   readonly foldedRuns: FoldedRunsDeps;
   readonly events: SidecarEventEmitter;
   readonly cryptoProviders: CryptoProviderCache;
-  /** Same idle-sleep lifecycle tracking `@corbits/tasks`' own
-   * `TaskLauncherDeps.lifecycle?` takes — optional, since a caller
-   * that hasn't wired lifecycle tracking yet still gets a working
-   * call, just without idle-sleep bookkeeping. */
+  /** Same optional idle-sleep lifecycle tracking a longer-lived
+   * launched run takes — optional, since a caller that hasn't wired
+   * lifecycle tracking yet still gets a working call, just without
+   * idle-sleep bookkeeping. */
   readonly lifecycle?: Pick<
     AgentLifecycle,
     "track" | "recordActivity" | "untrack"
   >;
   /**
    * Tears the launched run's address down on the host. REQUIRED,
-   * unlike `lifecycle`: a `@corbits/tasks`-launched run lives on after
+   * unlike `lifecycle`: a longer-lived launched run lives on after
    * it launches, tracked by idle-sleep until it goes quiet — but a
    * one-shot run has no further purpose once it settles, so it must be
    * torn down immediately on every settle path (success, failure,
@@ -114,9 +112,9 @@ export class FoldedRunFailedError extends Error {
  * `FoldedRunFailedError` (the run itself ended `"failed"`) or
  * `FoldedRunTimedOutError` (`input.timeoutMs` elapsed first).
  *
- * Deliberately bypasses `@corbits/tasks`' `launchTask`: this run gets
- * no `task` row and no Inbox delivery — `launchFoldedRun` is called
- * directly with no `persistExtra`. The event subscription always
+ * Deliberately bypasses any task/Inbox-delivery launcher: this run
+ * gets no owning row and no Inbox delivery — `launchFoldedRun` is
+ * called directly with no `persistExtra`. The event subscription always
  * unsubscribes exactly once, and `deps.undeploy` always tears the
  * launched run down exactly once, on every exit path (success, run
  * failure, timeout, or a send-path throw) — a caller that runs many

@@ -9,7 +9,6 @@
 @import "@corbits/chat-ui/styles.css";
 @import "@corbits/bench-ui/styles.css";
 @import "@corbits/settings-ui/styles.css";
-@import "@corbits/tasks-ui/styles.css";
 @import "@corbits/plugins-ui/styles.css";
 
 /* react-ui's `.corbits-toast` ships a hardcoded horizontal-center transform
@@ -416,8 +415,7 @@ select:disabled,
 }
 
 /* Mock .section labels in sidebar lists — always 0.65rem / 0.07em. */
-.shell-sidebar .panel-band-heading,
-.shell-sidebar .panel-band-subheading {
+.shell-sidebar .panel-band-heading {
   font-size: 0.65rem;
   font-weight: 650;
   letter-spacing: 0.07em;
@@ -539,16 +537,6 @@ select:disabled,
 
 .panel-band-heading {
   margin: 0;
-  font-size: 0.65rem;
-  font-weight: 650;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--muted-foreground);
-}
-
-.panel-band-subheading {
-  margin: 0;
-  padding: 0.25rem 0.5rem 0.125rem;
   font-size: 0.65rem;
   font-weight: 650;
   letter-spacing: 0.07em;
@@ -2923,17 +2911,6 @@ tr.insights-row-clickable:hover {
 }
 
 .panel-status.is-muted {
-  color: var(--shell-panel-faint);
-}
-
-/* A working-task row's meta slot (`@corbits/tasks-ui`'s `WorkingTaskRow`):
-   elapsed time beside the optional needs-you badge. */
-.panel-task-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.6875rem;
-  font-weight: 500;
   color: var(--shell-panel-faint);
 }
 

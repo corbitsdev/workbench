@@ -75,8 +75,6 @@ import {
   LatencySummarySchema,
   OverallUsageSchema,
   RunTraceSchema,
-  TaskLegsResponseSchema,
-  TaskResponseSchema,
   ToolsResponseSchema,
   TopLevelRunsSchema,
   WorkbenchesResponseSchema,
@@ -84,8 +82,6 @@ import {
   insightsLatencyPath,
   insightsRunTracePath,
   insightsScopePath,
-  insightsTaskByRunPath,
-  insightsTaskLegsPath,
   insightsToolsPath,
   insightsTopLevelRunsPath,
   insightsUsagePath,
@@ -94,7 +90,6 @@ import {
   type InsightsScope,
   type LatencySummary,
   type RunTrace,
-  type TaskLeg,
   type ToolCall,
   type WorkbenchUsage,
 } from "../insights-api";
@@ -103,8 +98,6 @@ import {
   computeTraceStats,
   filterRunsByCreatedAt,
   groupRunsByDefinition,
-  legDurationMs,
-  legStatusTone,
   purposeRunsForInsights,
   runDisplayName,
 } from "../insights-stats";
@@ -1058,97 +1051,12 @@ export function InsightsRunsHistory({
   );
 }
 
-// A chain step strip for a linear task chain only — CL-5514 tracks parent →
-// child dispatch trees (real branching, not a straight hand-off sequence)
-// as future scope; this renders `legs` as a flat ordered sequence and
-// assumes there is exactly one "next" leg per position, same as the route
-// this reads from (`GET /tasks/:id/legs` in packages/tasks/src/routes.ts).
-// The strip reflects the legs query's own cache — up to 30s stale, or
-// refreshed on window refocus (see `createAppQueryClient` in
-// `../query-client.ts`) — not a live subscription; for a chain that is
-// actively progressing that's a deliberate read-mostly trade-off, not a bug.
-function TaskChainStrip({
-  legs,
-  currentRunId,
-  onOpenRun,
-}: {
-  readonly legs: readonly TaskLeg[];
-  readonly currentRunId: string;
-  readonly onOpenRun: (runId: string) => void;
-}) {
-  return (
-    <section className="insights-panel" data-insights-chain-strip="true">
-      <h3>Chain steps</h3>
-      <ol className="insights-chain-strip">
-        {legs.map((leg) => {
-          const isCurrent = leg.runId === currentRunId;
-          const durationMs = legDurationMs(leg);
-          const body = (
-            <>
-              <span className="insights-chain-step-title">
-                {`Step ${leg.position + 1} of ${legs.length}`}
-              </span>
-              <Badge tone={legStatusTone(leg.status)}>{leg.status}</Badge>
-              <span className="insights-chain-step-duration">
-                {durationMs === null ? "—" : durationLabel(durationMs)}
-              </span>
-            </>
-          );
-          if (leg.runId === null) {
-            return (
-              <li
-                key={leg.position}
-                data-chain-step
-                aria-current={isCurrent ? "step" : undefined}
-                data-current={isCurrent}
-                className="insights-chain-step"
-              >
-                {body}
-              </li>
-            );
-          }
-          return (
-            <li key={leg.position}>
-              <button
-                type="button"
-                data-chain-step
-                aria-current={isCurrent ? "step" : undefined}
-                data-current={isCurrent}
-                className="insights-chain-step insights-chain-step-clickable"
-                onClick={() => onOpenRun(leg.runId as string)}
-              >
-                {body}
-              </button>
-            </li>
-          );
-        })}
-      </ol>
-    </section>
-  );
-}
-
 export function InsightsRunDetail({
-  runId,
   run,
   trace,
-  chainLegs,
-  chainLookupFailed = false,
-  onOpenRun,
 }: {
-  readonly runId: string;
   readonly run: InsightsRun | null;
   readonly trace: APIQuery<RunTrace>;
-  /** Ordered legs for the owning task, or null when this run has no
-   * owning task, or the task has never been fetched. A single-leg task's
-   * legs are still passed through — the strip itself hides for
-   * `legs.length <= 1` so a chain-less run renders unchanged. */
-  readonly chainLegs: readonly TaskLeg[] | null;
-  /** True when the by-run chain-context lookup failed — a 500 or a
-   * network failure ("no owning task" is a normal `{item: null}` 200,
-   * not a failure). Never silently omitted: renders a small honest note
-   * instead of just leaving the strip out. */
-  readonly chainLookupFailed?: boolean;
-  readonly onOpenRun: (runId: string) => void;
 }) {
   const spans = trace.kind === "ready" ? toTraceSpans(trace.data) : [];
   const traceStats =
@@ -1168,18 +1076,6 @@ export function InsightsRunDetail({
       <div className="min-h-0 flex-1 overflow-y-auto">
         <PageShell width="full" className="page-fill">
           <div className="insights-layout">
-            {chainLegs !== null && chainLegs.length > 1 ? (
-              <TaskChainStrip
-                legs={chainLegs}
-                currentRunId={runId}
-                onOpenRun={onOpenRun}
-              />
-            ) : null}
-            {chainLookupFailed ? (
-              <p className="insights-note">
-                Couldn't check this run's task context.
-              </p>
-            ) : null}
             <StatGrid columns={5}>
               {/* Owner is not carried by WorkflowRunResponse yet — dash, not
                   a fabricated identity. */}
@@ -1461,9 +1357,6 @@ export function InsightsPage({
         runId={runId}
         run={run}
         tenantId={selectedTenantId}
-        onOpenRun={(id) =>
-          navigate(`${INSIGHTS_RUNS_PATH}/${encodeURIComponent(id)}`)
-        }
       />
     );
   }
@@ -1551,47 +1444,17 @@ export function InsightsRunDetailRoute({
   runId,
   run,
   tenantId,
-  onOpenRun,
 }: {
   readonly runId: string;
   readonly run: InsightsRun | null;
   readonly tenantId: string | null;
-  readonly onOpenRun: (runId: string) => void;
 }) {
   const trace = useAPIQuery(
     tenantId === null ? "" : insightsRunTracePath(tenantId, runId),
     RunTraceSchema,
   );
 
-  // Chain context (CL-5626): resolve the owning task from this run, then
-  // its legs, so a run reached from a task/inbox link shows its chain. A
-  // run with no owning task answers `{item: null}` — a normal 200, so the
-  // plain single-run view renders quietly. Any failure (500, network) is
-  // a real problem and must say so — see `chainLookupFailed` below.
-  const taskByRun = useAPIQuery(
-    tenantId === null ? "" : insightsTaskByRunPath(tenantId, runId),
-    TaskResponseSchema,
-  );
-  const task = taskByRun.kind === "ready" ? taskByRun.data.item : null;
-  const chainLookupFailed = taskByRun.kind === "error";
-  const legsQuery = useAPIQuery(
-    tenantId === null || task === null || task.stepCount <= 1
-      ? ""
-      : insightsTaskLegsPath(tenantId, task.id),
-    TaskLegsResponseSchema,
-  );
-  const chainLegs = legsQuery.kind === "ready" ? legsQuery.data.items : null;
-
-  return (
-    <InsightsRunDetail
-      runId={runId}
-      run={run}
-      trace={trace}
-      chainLegs={chainLegs}
-      chainLookupFailed={chainLookupFailed}
-      onOpenRun={onOpenRun}
-    />
-  );
+  return <InsightsRunDetail run={run} trace={trace} />;
 }
 
 /**

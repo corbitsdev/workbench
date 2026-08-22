@@ -1,8 +1,7 @@
 // Gives a running workflow (Myra) a way to pin a skill onto ANY
 // definition in its own tenant — the execution half of a `pin_skill`
-// tool the workbench-tools side wires up, mirroring
-// `@corbits/task-planner`'s `createWorkflowDispatchRoutes` and this
-// package's own `createWorkflowCapabilityRoutes`: a workflow child has
+// tool the workbench-tools side wires up, mirroring this package's own
+// `createWorkflowCapabilityRoutes`: a workflow child has
 // no browser session, only its sidecar bearer token and its own run
 // address, so it authenticates through a `WorkflowRunAuthenticator`
 // rather than the tenant-session pipeline `./routes.ts` uses. Mounted

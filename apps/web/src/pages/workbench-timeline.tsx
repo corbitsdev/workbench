@@ -1,9 +1,9 @@
 // Per-workbench Insights view (CL-6224): one wall-clock spine merging chat
-// messages, thread forks, routine runs, tasks, and approvals for a single
-// workbench (== workbench, per docs/GLOSSARY.md), oldest to newest with day
-// dividers. No new backend — every fetch here is an existing route this app
-// already reads elsewhere (chat-ui, routines-api, tasks-ui, api.ts); the new
-// work is `../workbench-timeline-merge.ts`'s pure merge, plus this render.
+// messages, thread forks, routine runs, and approvals for a single workbench
+// (== workbench, per docs/GLOSSARY.md), oldest to newest with day dividers.
+// No new backend — every fetch here is an existing route this app already
+// reads elsewhere (chat-ui, routines-api, api.ts); the new work is
+// `../workbench-timeline-merge.ts`'s pure merge, plus this render.
 
 import {
   Badge,
@@ -13,7 +13,6 @@ import {
   type BadgeTone,
 } from "@corbits/react-ui";
 import { listMessages, listThreads } from "@corbits/chat-ui";
-import { listTasks } from "@corbits/tasks-ui";
 import { Clock } from "@corbits/icons";
 import { useMemo, useState } from "react";
 
@@ -34,7 +33,6 @@ import {
   toApprovalEvents,
   toMessageEvents,
   toRoutineRunEvents,
-  toTaskEvents,
   toThreadForkEvents,
   type TimelineEvent,
   type TimelineFilter,
@@ -70,19 +68,6 @@ function routineRunTone(status: "ok" | "failed" | "running"): BadgeTone {
   }
 }
 
-function taskStatusTone(status: string): BadgeTone {
-  switch (status) {
-    case "done":
-      return "success";
-    case "failed":
-      return "danger";
-    case "needs-you":
-      return "warning";
-    default:
-      return "info";
-  }
-}
-
 function markerClass(event: TimelineEvent): string {
   switch (event.kind) {
     case "message":
@@ -97,8 +82,6 @@ function markerClass(event: TimelineEvent): string {
         : event.status === "failed"
           ? "workbench-timeline-marker-danger"
           : "workbench-timeline-marker-info";
-    case "task":
-      return "workbench-timeline-marker-info";
     case "approval":
       return "workbench-timeline-marker-warn";
   }
@@ -148,15 +131,6 @@ function TimelineRowBody({
           >
             Open trace
           </Button>
-        </div>
-      );
-    case "task":
-      return (
-        <div className="workbench-timeline-entry-body">
-          <span>
-            {event.agentName} ran a task · {event.prompt}
-          </span>
-          <Badge tone={taskStatusTone(event.status)}>{event.status}</Badge>
         </div>
       );
     case "approval":
@@ -253,7 +227,7 @@ export function WorkbenchTimelineView({
       <RichEmptyState
         icon={<Clock />}
         title="Nothing on this workbench's timeline yet"
-        description="Messages, routine runs, tasks, and approvals will show up here as they happen."
+        description="Messages, routine runs, and approvals will show up here as they happen."
       />
     );
   }
@@ -320,7 +294,7 @@ export function WorkbenchTimelineView({
  * `workbenchId` is the workbench's own id, resolved to that workbench tenant
  * one level up in `InsightsWorkbenchPage` (`../insights-workbench-scope.ts`)
  * for the tenant-scoped Insights endpoints; this component only ever reads
- * messages/threads/routines/tasks/approvals off the owning bench.
+ * messages/threads/routines/approvals off the owning bench.
  */
 export function WorkbenchTimelineRoute({
   benchTenantId,
@@ -382,13 +356,6 @@ export function WorkbenchTimelineRoute({
       return new Map(entries);
     },
   );
-  const tasksQuery = useTenantQuery(
-    benchTenantId === null
-      ? ["tenant", "none", "tasks"]
-      : tenantKeys.tasks(benchTenantId),
-    benchTenantId !== null,
-    () => listTasks(benchTenantId as string),
-  );
   const approvalsQuery = useAPIQuery(
     benchTenantId === null
       ? ""
@@ -400,14 +367,12 @@ export function WorkbenchTimelineRoute({
     messagesQuery.kind === "loading" ||
     threadsQuery.kind === "loading" ||
     routinesQuery.kind === "loading" ||
-    tasksQuery.kind === "loading" ||
     approvalsQuery.kind === "loading";
 
   const messages = messagesQuery.kind === "ready" ? messagesQuery.data : [];
   const threads = threadsQuery.kind === "ready" ? threadsQuery.data : [];
   const routineRunsByRoutineId =
     routineRunsQuery.kind === "ready" ? routineRunsQuery.data : new Map();
-  const tasks = tasksQuery.kind === "ready" ? tasksQuery.data : [];
   // needs-you carries no workbench/workbench id (a known v1 gap — see
   // workbench-timeline-merge.ts's toApprovalEvents), so this is every
   // pending approval on the owning bench, not just this workbench's own.
@@ -418,7 +383,6 @@ export function WorkbenchTimelineRoute({
     messages: toMessageEvents(messages),
     threadForks: toThreadForkEvents(threads),
     routineRuns: toRoutineRunEvents(routines, routineRunsByRoutineId),
-    tasks: toTaskEvents(tasks, workbenchId),
     approvals: toApprovalEvents(approvals),
   });
 

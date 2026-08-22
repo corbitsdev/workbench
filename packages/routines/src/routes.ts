@@ -133,8 +133,8 @@ export type CreateRoutineRoutesDeps = {
   /**
    * Whether a routine on this definition must carry a `deliveryWorkbenchId`
    * — `false` for a workflow whose result never posts to a workbench at
-   * all (e.g. the recurring-task bridge, which always delivers to its
-   * creator's Inbox). Omitted defaults every definition to
+   * all (its result reaches only its creator's Inbox instead). Omitted
+   * defaults every definition to
    * workbench-required, the behavior before this port existed — a host
    * that never wires it keeps every prior create/run-now/fire contract
    * unchanged. Consulted at create, at "run now", and at every
@@ -153,8 +153,8 @@ export type CreateRoutineRoutesDeps = {
    * string — and, for an `"agent"`-kind field, that the value actually
    * resolves to a real taskable definition) before a routine is
    * created. This is the friendly, early rejection; the workflow's own
-   * fire-time validation (a host's launcher, e.g. `launchTask`'s
-   * definition checks) is the authoritative second line — omitting
+   * fire-time validation (a host's own launcher definition checks) is
+   * the authoritative second line — omitting
    * this port never blocks create, matching every prior contract.
    */
   validateRoutineInput?: (
@@ -184,9 +184,8 @@ const DRAFT_FAILED_MESSAGE =
  * can throw — Myra unresolvable, the one-shot run timing out or
  * failing, an unparseable reply, an out-of-inventory reference — reads
  * as the same honest "couldn't draft" 422 to the person who typed the
- * description, mirroring `@corbits/task-planner`'s own
- * `isPlanningFailure`. Anything else is a platform fault and is
- * re-thrown for the host's own error handling to surface. */
+ * description. Anything else is a platform fault and is re-thrown for
+ * the host's own error handling to surface. */
 function isDraftingFailure(err: unknown): boolean {
   return (
     err instanceof MyraRoutineDraftingUnavailableError ||
@@ -360,8 +359,8 @@ export async function launchAndCorrelate(
  * otherwise-successful create.
  *
  * Exported: `./workflow-routine-routes.ts`'s `POST /routines` (Myra's
- * own routine-management surface, the path task-dispatch tooling mints
- * run-once routines through) calls this exact same helper after its own
+ * own routine-management surface, the path a run-once routine is
+ * minted through) calls this exact same helper after its own
  * `createRoutine`, never a second, drifting fire path.
  */
 export async function fireOnceTriggerIfNeeded(
@@ -495,9 +494,10 @@ export function createRoutineRoutes(
   // A person can't have two "describe it, Myra drafts it" calls racing
   // at once — a real one-shot inference call with no other
   // serialization (CL-5917 wires a live `runOneShotFoldedPrompt`, not a
-  // stub) — mirrors `@corbits/task-planner`'s own `inFlightPrincipals`
-  // guard exactly: a plain-language 409 rejection of a same-principal
-  // concurrent second request, released in a `finally` once the first
+  // stub) — the same `inFlightPrincipals` guard shape other one-shot
+  // drafting surfaces in this codebase use: a plain-language 409
+  // rejection of a same-principal concurrent second request, released
+  // in a `finally` once the first
   // settles. Single-principal-in-flight only; broader per-tenant rate
   // limiting is tracked separately as CL-5285. This Set is in-memory and
   // resets on process restart — it guards within a single running

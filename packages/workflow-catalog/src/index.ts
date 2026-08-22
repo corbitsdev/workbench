@@ -96,12 +96,11 @@ export type WorkflowCatalogEntry = {
    * Where a run's result actually lands — the honest end-to-end
    * contract a routine's "Deliver results to" step depends on. Every
    * entry states this plainly, whether or not it is automatable:
-   * `"workbench"` posts into the picked delivery workbench's thread (the
-   * default every workflow used before recurring-task existed);
-   * `"inbox"` never posts to a workbench at all — its result reaches only
-   * the creator's Inbox, so a create/run flow for it must never collect
-   * or require a deliveryWorkbenchId that would otherwise be silently
-   * discarded.
+   * `"workbench"` posts into the picked delivery workbench's thread —
+   * every catalog entry today; `"inbox"` never posts to a workbench at
+   * all — its result reaches only the creator's Inbox, so a create/run
+   * flow for it must never collect or require a deliveryWorkbenchId that
+   * would otherwise be silently discarded.
    */
   readonly deliveryMode: "workbench" | "inbox";
   /** One honest sentence: what this workflow actually does. No metrics, no hype. */
@@ -128,16 +127,6 @@ export type WorkflowCatalogEntry = {
    */
   readonly triggerFields?: readonly WorkflowTriggerField[];
 };
-
-/**
- * The asset name `workflows/recurring-task` deploys under, and the one
- * name `apps/hub/src/routine-launcher.ts` recognizes to dispatch a fired
- * routine straight through `@corbits/tasks`' `launchTask` instead of
- * running this workflow's own (otherwise-unused) folded run — see that
- * file's own comment for the full bridge. Exported so both sides name
- * the same literal rather than each hand-typing `"recurring-task"`.
- */
-export const RECURRING_TASK_ASSET_NAME = "recurring-task";
 
 /**
  * Every known workbench workflow package, keyed by the asset name seed
@@ -445,51 +434,6 @@ export const WORKFLOW_CATALOG: readonly WorkflowCatalogEntry[] = [
       },
     ],
   },
-  {
-    assetName: RECURRING_TASK_ASSET_NAME,
-    displayName: "Recurring task",
-    automatable: true,
-    conversational: false,
-    // A task result always lands in its creator's Inbox — never a
-    // workbench — the same delivery every manual task uses. The create
-    // dialog reads this to skip the "Deliver results to" workbench step
-    // entirely for this workflow, and packages/routines' create/fire
-    // validation reads it (via the host's deliveryWorkbenchRequired port)
-    // to never require a deliveryWorkbenchId this workflow would silently
-    // discard.
-    deliveryMode: "inbox",
-    whatItDoes:
-      "Runs a task prompt through a picked agent on a schedule — the same launch a manual task uses, delivered to your Inbox the same way.",
-    requiredConnections: [],
-    exampleOutput: "Delivered to your Inbox, same as a manual task's reply",
-    typicalDuration: "same as the agent's own manual-task duration",
-    // The bridge "Make this a routine" (an Inbox action on a completed
-    // task result) exists for: these two fields are its whole contract.
-    // `agent` is a taskable definition id — the same id "New task"'s
-    // picker offers, never a conversational-agent-excluded automation.
-    // `apps/hub/src/routine-launcher.ts` recognizes this asset name and
-    // dispatches straight through `@corbits/tasks`' `launchTask` with
-    // these two fields, never rendering them as a first-turn mail to
-    // this workflow's own (otherwise-unused) agent step.
-    triggerFields: [
-      {
-        key: "agent",
-        kind: "agent",
-        label: "Agent",
-        placeholder: "wfd_...",
-        required: true,
-        help: "The agent this recurring task runs — the same one 'New task' picks from.",
-      },
-      {
-        key: "prompt",
-        kind: "text",
-        label: "Prompt",
-        placeholder: "Summarize last night's incidents",
-        required: true,
-        help: "What to ask the agent to do, every time this routine fires.",
-      },
-    ],
-  },
 ];
 
 for (const entry of WORKFLOW_CATALOG) {
@@ -618,7 +562,7 @@ export function validateTriggerFieldsInput(
  * taskable definition) is a separate, still-eager check a host layers
  * on top (`apps/hub/src/index.ts`'s `routineInputValid`) since it
  * needs a tenant DB lookup this function can't do. Fire-time
- * validation (`launchTask`'s own definition checks) remains the
+ * validation (a host's own launcher definition checks) remains the
  * authoritative required-field gate.
  */
 export function validateTriggerFieldsAtCreate(

@@ -47,10 +47,6 @@ import { applySkillsMigrations } from "../packages/skills/src/migrations";
 import { applyAgentDirectoryMigrations } from "../packages/agent-directory/src/migrations";
 import { applyOnboardingMigrations } from "../packages/onboarding/src/migrations";
 import { applyAccessPolicyMigrations } from "../packages/access-policy/src/migrations";
-import {
-  applyTasksMigrations,
-  listTaskFoldedRunIds,
-} from "../packages/tasks/src/migrations";
 import { applyRunKeyHistoryMigrations } from "../packages/run-key-history/src/migrations";
 import { applyWorkflowDeploySourceMigrations } from "../packages/workflow-deploy-source/src/migrations";
 import { applyInferenceCatalogMigrations } from "../packages/inference-catalog/src/migrations";
@@ -71,9 +67,9 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   name: string;
   apply: (databaseUrl: string) => Promise<{ applied: string[] }>;
 }[] = [
-  // Ahead of @corbits/chat and @corbits/tasks: both launch runs
-  // through @corbits/folded-runs' `launchFoldedRun`, which writes into
-  // its `folded_run` marker table unconditionally on every launch.
+  // Ahead of @corbits/chat: it launches runs through
+  // @corbits/folded-runs' `launchFoldedRun`, which writes into its
+  // `folded_run` marker table unconditionally on every launch.
   { name: "@corbits/folded-runs", apply: applyFoldedRunsMigrations },
   { name: "@corbits/chat", apply: applyChatMigrations },
   { name: "@corbits/webhook-triggers", apply: applyWebhookTriggersMigrations },
@@ -87,7 +83,6 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   { name: "@corbits/agent-directory", apply: applyAgentDirectoryMigrations },
   { name: "@workbench/onboarding", apply: applyOnboardingMigrations },
   { name: "@workbench/access-policy", apply: applyAccessPolicyMigrations },
-  { name: "@corbits/tasks", apply: applyTasksMigrations },
   { name: "@corbits/run-key-history", apply: applyRunKeyHistoryMigrations },
   {
     name: "@corbits/workflow-deploy-source",
@@ -132,32 +127,37 @@ async function applyInstalledPackageMigrations(
  * One-time cross-package backfill for every folded run launched
  * before @corbits/folded-runs' own `folded_run` marker table existed
  * (CL-6061). Neither @corbits/folded-runs nor this script reads
- * another package's tables directly to do this — @corbits/chat and
- * @corbits/tasks already depend on @corbits/folded-runs, so having it
- * read back their schemas would close that into a cycle. Instead each
- * launching package exposes its own read-only lister over its own
- * schema (listWorkbenchLaunchFoldedRunIds, listTaskFoldedRunIds), this
- * script — the one place that already knows and sequences every
- * installed package — combines their output, and
- * @corbits/folded-runs' own backfillFoldedRunMarkers is the only thing
- * that ever writes to its table. Ledgered by that function under its
- * own migration name, so every run after the first is a fast no-op.
+ * another package's tables directly to do this — @corbits/chat
+ * already depends on @corbits/folded-runs, so having it read back its
+ * schema would close that into a cycle. Instead the launching package
+ * exposes its own read-only lister over its own schema
+ * (listWorkbenchLaunchFoldedRunIds), this script — the one place that
+ * already knows and sequences every installed package — passes its
+ * output through, and @corbits/folded-runs' own
+ * backfillFoldedRunMarkers is the only thing that ever writes to its
+ * table. Ledgered by that function under its own migration name, so
+ * every run after the first is a fast no-op.
+ *
+ * @corbits/tasks used to contribute a second seed list here
+ * (listTaskFoldedRunIds); that package was deleted (tasks primitive
+ * removed in favor of workflows/routines). Its `tasks.task` and
+ * `tasks.task_leg` tables and their migration ledger are left in
+ * place in Postgres untouched — only this backfill's read of them
+ * stops, per the removal ruling.
  */
 async function backfillFoldedRunsFromInstalledPackages(
   databaseUrl: string,
 ): Promise<void> {
-  const [workbenchLaunchSeeds, taskSeeds] = await Promise.all([
-    listWorkbenchLaunchFoldedRunIds(databaseUrl),
-    listTaskFoldedRunIds(databaseUrl),
-  ]);
-  const { applied, inserted } = await backfillFoldedRunMarkers(databaseUrl, [
-    ...workbenchLaunchSeeds,
-    ...taskSeeds,
-  ]);
+  const workbenchLaunchSeeds =
+    await listWorkbenchLaunchFoldedRunIds(databaseUrl);
+  const { applied, inserted } = await backfillFoldedRunMarkers(
+    databaseUrl,
+    workbenchLaunchSeeds,
+  );
   if (applied) {
     console.log(
       `db-setup: backfilled ${inserted} folded_run marker(s) from ` +
-        "@corbits/chat and @corbits/tasks",
+        "@corbits/chat",
     );
   }
 }

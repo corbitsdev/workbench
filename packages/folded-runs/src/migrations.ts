@@ -58,18 +58,17 @@ export interface BackfillFoldedRunMarkersReport {
  * One-time backfill for every folded run launched before this
  * package's own `folded_run` marker table existed (CL-6061). Those
  * runs are still recorded — just in each launching package's own
- * table (`@corbits/chat`'s `workbench_launch`, `@corbits/tasks`' `task`
- * and `task_leg`) — so this package never reads them itself: chat and
- * tasks both depend on `@corbits/folded-runs` already, and reading
- * their schemas from here would close that into a cycle. Instead the
- * caller (scripts/db-setup.ts, the one place that already knows and
- * sequences every installed package's migrations) sources `seeds` from
- * each package's own exported lister
- * (`listWorkbenchLaunchFoldedRunIds`, `listTaskFoldedRunIds`) and this
- * function only ever inserts into its own table. Ledgered under
- * `BACKFILL_MIGRATION_NAME` so a second call — the very next
- * `db-setup` run, or the next deploy — is a no-op rather than
- * re-scanning every installed package's tables forever.
+ * table (`@corbits/chat`'s `workbench_launch`) — so this package never
+ * reads them itself: chat already depends on `@corbits/folded-runs`,
+ * and reading its schema from here would close that into a cycle.
+ * Instead the caller (scripts/db-setup.ts, the one place that already
+ * knows and sequences every installed package's migrations) sources
+ * `seeds` from each launching package's own exported lister
+ * (`listWorkbenchLaunchFoldedRunIds`) and this function only ever
+ * inserts into its own table. Ledgered under `BACKFILL_MIGRATION_NAME`
+ * so a second call — the very next `db-setup` run, or the next deploy
+ * — is a no-op rather than re-scanning every installed package's
+ * tables forever.
  */
 export async function backfillFoldedRunMarkers(
   databaseUrl: string,

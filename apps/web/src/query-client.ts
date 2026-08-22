@@ -124,13 +124,6 @@ export const tenantKeys = {
    * of the literal that could drift apart. */
   workbenches: (tenantId: string, kind: WorkbenchKind) =>
     workbenchesQueryKey(tenantId, kind),
-  tasks: (tenantId: string) => ["tenant", tenantId, "tasks"] as const,
-  task: (tenantId: string, taskId: string) =>
-    ["tenant", tenantId, "tasks", taskId] as const,
-  taskLegs: (tenantId: string, taskId: string) =>
-    ["tenant", tenantId, "tasks", taskId, "legs"] as const,
-  taskByRun: (tenantId: string, runId: string) =>
-    ["tenant", tenantId, "tasks", "by-run", runId] as const,
   topLevelRuns: (tenantId: string) =>
     ["tenant", tenantId, "top-level-runs"] as const,
   /** A workbench's own timeline reads (CL-6224): `tenantId` is the owning
@@ -185,16 +178,6 @@ export function pathToQueryKey(path: string): readonly unknown[] {
   );
   if (artifacts?.[1] !== undefined) {
     return [...tenantKeys.artifacts(artifacts[1]), artifacts[2] ?? ""] as const;
-  }
-  const taskLegs = /^\/api\/tenants\/([^/]+)\/tasks\/([^/]+)\/legs$/.exec(path);
-  if (taskLegs?.[1] !== undefined && taskLegs[2] !== undefined) {
-    return tenantKeys.taskLegs(taskLegs[1], taskLegs[2]);
-  }
-  const taskByRun = /^\/api\/tenants\/([^/]+)\/tasks\/by-run\/([^/]+)$/.exec(
-    path,
-  );
-  if (taskByRun?.[1] !== undefined && taskByRun[2] !== undefined) {
-    return tenantKeys.taskByRun(taskByRun[1], taskByRun[2]);
   }
   return ["path", path];
 }

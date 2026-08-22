@@ -20,11 +20,10 @@ export const foldedRunsSchema = pgSchema("folded_runs");
  * key — see `docs/package-migrations.md` on why a siloed package schema
  * references platform ids as plain text). A row's mere presence marks
  * that id as folded; there is no status or kind column because every
- * caller of `launchFoldedRun` (workbench hosts, invited agents, tasks)
- * needs exactly the same thing recorded here — which specific kind of
- * folded run it is lives in each caller's own table
- * (`@corbits/chat`'s `workbench_launch`, `@corbits/tasks`'s `task`), not
- * here.
+ * caller of `launchFoldedRun` (workbench hosts, invited agents, and
+ * others) needs exactly the same thing recorded here — which specific
+ * kind of folded run it is lives in each caller's own table
+ * (`@corbits/chat`'s `workbench_launch`), not here.
  */
 export const foldedRun = foldedRunsSchema.table("folded_run", {
   id: text("id").primaryKey(),

@@ -8,8 +8,8 @@ import { runKeyHistory } from "./schema";
 
 /**
  * The drizzle handle `createDrizzleRunKeyHistoryStore` operates
- * against. Generic over the host's schema record, like
- * `@corbits/tasks`' `TaskDb` — the host hands in its own
+ * against. Generic over the host's schema record, the same shape
+ * other packages' own drizzle handles use — the host hands in its own
  * `drizzle(sql, { schema })` instance unchanged, and no cast is
  * needed at the call site.
  */

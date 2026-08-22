@@ -3,9 +3,9 @@
 // top-level route (`/mission-control`), never `/` — `/` stays the Myra
 // land-hop redirect (see routes.tsx's header comment). Every panel here is
 // backed by a query already used elsewhere in this app (needs-you
-// approvals, working tasks, top-level runs, insights activity); nothing on
-// this page is invented. A panel with no honest data source renders an
-// empty state naming what's missing instead of a fabricated number.
+// approvals, top-level runs, insights activity); nothing on this page is
+// invented. A panel with no honest data source renders an empty state
+// naming what's missing instead of a fabricated number.
 
 import {
   Badge,
@@ -32,7 +32,6 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { formatUsd } from "@corbits/insights/client";
 import type { Workbench } from "@corbits/chat-ui";
-import type { WorkingTask } from "@corbits/tasks-ui";
 
 import {
   approveApproval,
@@ -66,28 +65,6 @@ type InFlightRow = {
   readonly steps: string;
 };
 
-function taskInFlightRow(task: WorkingTask): InFlightRow {
-  const statusLabel = task.status === "needs-you" ? "Needs you" : "Running";
-  return {
-    key: `task:${task.id}`,
-    label: task.prompt,
-    context: `${task.agentName} · task`,
-    createdAt: task.createdAt,
-    statusLabel,
-    // needs-you is react-ui's `awaiting` (the one status a person can act
-    // on); every other in-flight task reads `running` — both read their
-    // tone from react-ui's own `RUN_STATUS_TONE` rather than a hand-picked
-    // one.
-    statusTone:
-      task.status === "needs-you"
-        ? RUN_STATUS_TONE.awaiting
-        : RUN_STATUS_TONE.running,
-    // stepCount is the task's planned total; runIds is how many legs have
-    // actually dispatched so far — a real ratio, not an invented total.
-    steps: `${task.runIds.length}/${task.stepCount}`,
-  };
-}
-
 function routineInFlightRow(routine: RoutineActivityItem): InFlightRow {
   return {
     key: `routine:${routine.id}`,
@@ -101,21 +78,13 @@ function routineInFlightRow(routine: RoutineActivityItem): InFlightRow {
   };
 }
 
-/** Every task/routine this bench is actively running right now, newest
- * first. Queued tasks (accepted, not yet executing) are left out — they
- * are not yet "in flight." */
+/** Every routine this bench is actively running right now, newest first. */
 export function computeInFlightRows(
-  workingTasks: readonly WorkingTask[],
   routines: readonly RoutineActivityItem[],
 ): readonly InFlightRow[] {
-  const rows = [
-    ...workingTasks
-      .filter((task) => task.status !== "queued")
-      .map(taskInFlightRow),
-    ...routines
-      .filter((routine) => routine.status === "running")
-      .map(routineInFlightRow),
-  ];
+  const rows = routines
+    .filter((routine) => routine.status === "running")
+    .map(routineInFlightRow);
   return rows.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
@@ -261,14 +230,10 @@ export function MissionControlRoute({
       : null;
 
   const inFlightRows =
-    activity.kind === "ready"
-      ? computeInFlightRows(activity.workingTasks, activity.routines)
-      : [];
+    activity.kind === "ready" ? computeInFlightRows(activity.routines) : [];
   const activeRunsCount =
     activity.kind === "ready"
-      ? activity.workingTasks.filter((task) => task.status === "running")
-          .length +
-        activity.routines.filter((routine) => routine.status === "running")
+      ? activity.routines.filter((routine) => routine.status === "running")
           .length
       : null;
 

@@ -20,8 +20,7 @@
 // `handler` string an `ActionInvoker` resolves, and this repo's
 // production host leaves `invokeAction` undefined
 // (`vendor/intx/workflow/src/runtime/run.ts` throws "this host does not
-// support action primitives"; see also `packages/tasks/src/chain.ts`'s
-// own note on the same gap). Every OG `awaitSignal` gate likewise needs a
+// support action primitives"). Every OG `awaitSignal` gate likewise needs a
 // stepper UI to fulfil it, and a gate nobody fulfils hangs a run forever.
 // Both collapse into the single reasoning step below: the planner /
 // writer / reviewer / suggest phases become four named phases of one

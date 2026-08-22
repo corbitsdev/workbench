@@ -11,11 +11,8 @@
 // write that never happened. The residual gap this can't close: a
 // process that dies between winning a claim and either finishing the
 // write or reaching that catch block leaves a claimed-but-unwritten row
-// behind, exactly like `@corbits/tasks`' `chain.ts` surviving a claim
-// but not a hub restart mid-hand-off — there is no sweep here (unlike
-// that package's `stuck-legs.ts`, which exists precisely to re-open
-// `chain.ts`'s abandoned claims) to notice and re-open one of these, so
-// that one entry is lost silently until a human does.
+// behind — there is no sweep here to notice and re-open one of these,
+// so that one entry is lost silently until a human does.
 import { and, eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 

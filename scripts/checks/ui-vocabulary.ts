@@ -41,11 +41,7 @@ import {
   type CheckReport,
 } from "./lib/repo";
 
-const SCAN_DIRS = [
-  "apps/web/src",
-  "packages/chat-ui/src",
-  "packages/tasks-ui/src",
-];
+const SCAN_DIRS = ["apps/web/src", "packages/chat-ui/src"];
 
 const BANNED_TERMS: readonly { name: string; pattern: RegExp }[] = [
   { name: "hub", pattern: /\bhub\b/i },

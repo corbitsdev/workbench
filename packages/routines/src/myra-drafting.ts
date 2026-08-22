@@ -1,7 +1,6 @@
 // Myra-backed `RoutineDraftingPort` (CL-5917): turns a free-text
 // description into a machine-checked routine draft via one one-shot
-// Myra call, mirroring `@corbits/task-planner`'s `TaskSpec` pattern —
-// inventory assembly, a strict reply schema, and fail-closed
+// Myra call — inventory assembly, a strict reply schema, and fail-closed
 // validation against the inventory that was actually offered. Every
 // failure mode — Myra unresolvable, the run timing out or failing, an
 // unparseable reply, an out-of-inventory reference — propagates as
@@ -46,8 +45,7 @@ export type RoutineDraftInventory = {
 };
 
 /**
- * Host-injected listers, mirroring `@corbits/task-planner`'s own
- * `InventorySources` seam: this package owns the inventory's shape and
+ * Host-injected listers: this package owns the inventory's shape and
  * assembly, never the listing logic — a tenant's automatable catalog
  * workflows and taskable agents are each already owned elsewhere
  * (`apps/hub`'s `workflowDefinition` queries).
@@ -62,12 +60,10 @@ export type RoutineDraftInventorySources = {
 };
 
 /**
- * Mirrors `@corbits/task-planner`'s own `sanitize-inventory-text.ts`
- * exactly (not imported from there — that helper is not part of
- * task-planner's public barrel, and this package has no other reason
- * to depend on task-planner). Same defense-in-depth: strip
- * newlines/control characters and truncate, so a free-text description
- * can't pad the prompt with an oversized block of imperative text.
+ * Same defense-in-depth as other one-shot drafting surfaces in this
+ * codebase: strip newlines/control characters and truncate, so a
+ * free-text description can't pad the prompt with an oversized block
+ * of imperative text.
  */
 function sanitizeInventoryText(raw: string, maxLen: number): string {
   const singleLine = raw
@@ -203,8 +199,7 @@ export function parseRoutineDraftReply(raw: string): RoutineDraftReply {
  * `triggerFields` contract (shape, then — for an `"agent"`-kind field —
  * that the value is an agent id actually offered), or trigger input
  * given with no workflow picked to validate it against. No return
- * value — a pure assertion, exactly like
- * `validateTaskSpecAgainstInventory`.
+ * value — a pure assertion.
  */
 export function validateRoutineDraftReplyAgainstInventory(
   reply: RoutineDraftReply,
@@ -260,9 +255,10 @@ export function validateRoutineDraftReplyAgainstInventory(
 // --- port ---
 
 export type RoutineDraftingRunnerDeps = {
-  /** `resolveMyraDefinitionIdFromDb` (`@corbits/task-planner`) in
-   * production — a host-supplied function so this package never
-   * depends on task-planner for a type it can express itself. */
+  /** A host-supplied resolver in production (looks Myra's own
+   * workflow definition up by tenant) — a port rather than a direct
+   * dependency so this package never has to depend on another
+   * package for a type it can express itself. */
   readonly resolveMyraDefinitionId: (tenantId: string) => Promise<string>;
   /** `runOneShotFoldedPrompt` in production — the one boundary tests
    * stub, never live inference. */

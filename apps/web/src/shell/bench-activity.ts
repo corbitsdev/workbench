@@ -1,14 +1,7 @@
 // The sidebar's one data source: everything happening in the currently
 // selected bench right now. Workbenches and chats come from
 // `@corbits/chat-ui`'s own validated fetches; running routines come through
-// the seam in `./routine-activity.ts`; the signed-in user's in-progress
-// tasks come from `@corbits/tasks-ui` (`GET /tasks` is already
-// creator-scoped, so every task here is already "mine" — see
-// `packages/tasks/src/routes.ts`). Each task carries its own `agentName`
-// (set at launch time, see `packages/tasks/src/schema.ts`), so this hook
-// never has to cross-reference a definitions listing to name a row — that
-// listing excludes planner-created agents (CL-6051), which would have
-// left their tasks with no name to show. Notifications have no backing
+// the seam in `./routine-activity.ts`. Notifications have no backing
 // feature in the hub yet, so they are not fetched here at all — the
 // column renders an honest empty state for that section instead of a
 // query with nowhere to point.
@@ -31,8 +24,6 @@ import {
   listVisibleAgentDefinitions,
 } from "@corbits/chat-ui";
 import type { Workbench, VisibleAgentDefinition } from "@corbits/chat-ui";
-import { listTasks, workingTasks } from "@corbits/tasks-ui";
-import type { WorkingTask } from "@corbits/tasks-ui";
 
 import { tenantKeys } from "../query-client";
 import { listRoutineActivity } from "./routine-activity";
@@ -48,7 +39,6 @@ export type BenchActivityQuery =
       readonly chats: readonly Workbench[];
       readonly agents: readonly VisibleAgentDefinition[];
       readonly routines: readonly RoutineActivityItem[];
-      readonly workingTasks: readonly WorkingTask[];
     };
 
 function errorMessage(cause: unknown): string {
@@ -95,11 +85,6 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
     enabled,
     queryFn: () => listRoutineActivity(key),
   });
-  const tasksQuery = useQuery({
-    queryKey: tenantKeys.tasks(key),
-    enabled,
-    queryFn: () => listTasks(key),
-  });
   const agentsQuery = useQuery({
     queryKey: tenantKeys.visibleAgents(key),
     enabled,
@@ -112,7 +97,6 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
     workbenchesQuery,
     chatsQuery,
     routinesQuery,
-    tasksQuery,
     agentsQuery,
   ]) {
     if (query.isError)
@@ -122,7 +106,6 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
     workbenchesQuery.data === undefined ||
     chatsQuery.data === undefined ||
     routinesQuery.data === undefined ||
-    tasksQuery.data === undefined ||
     agentsQuery.data === undefined
   ) {
     return { kind: "loading" };
@@ -134,6 +117,5 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
     chats: chatsQuery.data,
     agents: agentsQuery.data,
     routines: routinesQuery.data,
-    workingTasks: workingTasks(tasksQuery.data),
   };
 }

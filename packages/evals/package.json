@@ -41,7 +41,6 @@
     "@corbits/mcp-tools": "workspace:*",
     "@corbits/memory-tools": "workspace:*",
     "@corbits/routines-tools": "workspace:*",
-    "@corbits/task-dispatch-tools": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   }
