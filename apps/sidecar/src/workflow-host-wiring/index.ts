@@ -57,11 +57,13 @@ import {
   deleteWorkflowDeploymentRecord,
   isWorkflowDeploymentRestoreQuarantined,
   markWorkflowDeploymentRecordParked,
+  partitionScannedDeployments,
   recordWorkflowDeploymentRestoreFailure,
   scanWorkflowDeploymentRecords,
   writeWorkflowDeploymentRecord,
   type WorkflowDeploymentRecord,
 } from "../workflow-deployment-record";
+import { runWithConcurrency } from "../concurrency";
 import {
   reapExpiredHibernationSnapshots as reapVaultSnapshots,
   restoreAgentIdentity,
@@ -137,6 +139,54 @@ export const CHILD_KILL_ESCALATION_MS = 3000;
  * shape.
  */
 export const TEARDOWN_DRAIN_DEADLINE_MS = 5000;
+
+/**
+ * How many workflow deployment records `restoreWorkflowDeployments` restores
+ * at once. Bounded, not unbounded, so a host with many live records at boot
+ * cannot storm the OS with concurrent `Bun.spawn` calls all at once; 8 is
+ * comfortably below typical per-process fd/thread pressure from a handful of
+ * child processes while still cutting a boot with dozens of records from
+ * minutes of serial restore to a few bounded rounds.
+ */
+export const RESTORE_CONCURRENCY = 8;
+
+/**
+ * Ceiling on a single `restoreDeploymentFromRecord` attempt. A restore
+ * candidate can wedge indefinitely -- a stalled closure fetch, a spawn that
+ * never reports back -- and with a bounded worker pool one wedged record
+ * pins its worker (and, at the extreme, every worker) for the rest of
+ * boot. A restore that exceeds this deadline is treated as an ordinary
+ * transient failure: counted on the record's `restoreFailure` counter,
+ * logged, and skipped, so the boot moves on and the record gets another
+ * attempt next boot (or quarantines after `RESTORE_QUARANTINE_THRESHOLD`
+ * consecutive permanent failures).
+ */
+export const RESTORE_ATTEMPT_TIMEOUT_MS = 30_000;
+
+function withRestoreTimeout(
+  promise: Promise<void>,
+  deploymentId: string,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(
+        new Error(
+          `restore of ${deploymentId} exceeded ${RESTORE_ATTEMPT_TIMEOUT_MS}ms`,
+        ),
+      );
+    }, RESTORE_ATTEMPT_TIMEOUT_MS);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
 
 /**
  * Await a supervisor's graceful `shutdown()`, escalating to a direct
@@ -1727,74 +1777,83 @@ export function createSidecarDeployRouter(deps: {
       }
 
       const scanned = await scanWorkflowDeploymentRecords(dataDir);
-      // Report parked-vs-live counts from the `parkedAt` marker
-      // (`markWorkflowDeploymentRecordParked`, written on the hibernate
-      // teardown) before restoring anything. This is REPORT-ONLY: every
-      // non-quarantined record below still restores LIVE regardless of
-      // this count, exactly as before this marker existed. Making the
-      // boot scan actually skip (or defer) the parked ones is CL-6282 -- a
-      // separate change, once its design pass lands -- and needs a signal
-      // this scan cannot see on its own before that cutover is safe:
-      // whether the hub still wants a parked deployment running is a
-      // hub-side decision, not something a sidecar with no hub connection
-      // yet can determine at boot.
-      const parkedCount = scanned.filter(
-        ({ record }) => record.parkedAt !== undefined,
-      ).length;
-      const alreadyQuarantinedCount = scanned.filter(({ record }) =>
+      // CL-6282: `parkedAt` (written by `markWorkflowDeploymentRecordParked`
+      // on a state-preserving hibernate teardown) is the durable, locally
+      // decidable answer to "is this deployment genuinely live" -- a
+      // deployment the hub deliberately put to sleep does not need to be
+      // running to be correct; it resumes the moment a message or routine
+      // fire addresses it again (the same wake path `ensureAwake`/`deployAtHead`
+      // already use for an idle-slept deployment that never crashed at all).
+      // Restoring it anyway at every boot is exactly the "restart dead
+      // stuff" cost this cutover removes. A record with no `parkedAt`
+      // (never hibernated, or predates the field) restores as before --
+      // absent is "assume live", matching `readWorkflowDeploymentRecord`'s
+      // own backward-compatible read.
+      const { live, parked } = partitionScannedDeployments(scanned);
+      const alreadyQuarantinedCount = live.filter(({ record }) =>
         isWorkflowDeploymentRestoreQuarantined(record),
       ).length;
-      logger.info`Boot scan found ${scanned.length} deployment record(s): ${parkedCount} parked, ${alreadyQuarantinedCount} quarantined, ${scanned.length - parkedCount - alreadyQuarantinedCount} to restore (parked-aware boot restore is CL-6282)`;
-      // Restore serially, not in parallel: deterministic boot-log ordering,
-      // one isolable warning per failed record, and no concurrent
-      // child-spawn / transport-register storm. Restore runs before
-      // `hubLink.connect()`, so there are no concurrent deploys to contend
-      // with. Each record's failure is caught so one bad deployment cannot
-      // strand the rest. Every non-quarantined persisted record restores
-      // LIVE: a deployment that was previously torn down as a
-      // state-preserving hibernate is relaunched by the hub's own
-      // reap-and-relaunch flow, not by this boot scan guessing at
-      // staleness.
+      logger.info`Boot scan found ${scanned.length} deployment record(s): ${parked.length} parked (left asleep; will wake on the next message or routine fire), ${alreadyQuarantinedCount} quarantined, ${live.length - alreadyQuarantinedCount} to restore`;
+      // Bounded-parallel, not fully parallel: `RESTORE_CONCURRENCY` caps how
+      // many workflow-process children spawn at once so a boot with many
+      // live deployments cannot storm the host, while still restoring far
+      // faster than one-at-a-time. Restore runs before `hubLink.connect()`,
+      // so there are no concurrent hub-driven deploys to contend with. Each
+      // worker handles its own quarantine skip/record/clear bookkeeping and
+      // logging inline (rather than via `runWithConcurrency`'s returned
+      // failure list) so one record's outcome never depends on another's
+      // ordering, matching the isolation the old serial loop's per-iteration
+      // `try`/`catch` gave.
       let skippedQuarantinedCount = 0;
-      for (const { deploymentId, record } of scanned) {
-        // Skip WITHOUT attempting: a permanently unrestorable record that
-        // has already crossed RESTORE_QUARANTINE_THRESHOLD gets neither a
-        // spawn attempt nor a per-record warning this boot -- both are
-        // pointless for a deterministic failure that has already been
-        // reported that many times. It still counts toward the one
-        // summary line below, and the record itself is untouched (an
-        // operator reclaims it by undeploying the address).
-        if (isWorkflowDeploymentRestoreQuarantined(record)) {
-          skippedQuarantinedCount += 1;
-          continue;
-        }
-        try {
-          await restoreDeploymentFromRecord(dataDir, deploymentId, record);
-          if (record.restoreFailure !== undefined) {
-            await clearWorkflowDeploymentRestoreFailure(
+      await runWithConcurrency(
+        live,
+        RESTORE_CONCURRENCY,
+        async ({ deploymentId, record }) => {
+          // Skip WITHOUT attempting: a permanently unrestorable record that
+          // has already crossed RESTORE_QUARANTINE_THRESHOLD gets neither a
+          // spawn attempt nor a per-record warning this boot -- both are
+          // pointless for a deterministic failure that has already been
+          // reported that many times. It still counts toward the one
+          // summary line below, and the record itself is untouched (an
+          // operator reclaims it by undeploying the address).
+          if (isWorkflowDeploymentRestoreQuarantined(record)) {
+            skippedQuarantinedCount += 1;
+            return;
+          }
+          try {
+            await withRestoreTimeout(
+              restoreDeploymentFromRecord(dataDir, deploymentId, record),
+              deploymentId,
+            );
+            if (record.restoreFailure !== undefined) {
+              await clearWorkflowDeploymentRestoreFailure(
+                dataDir,
+                deploymentId,
+                record,
+              );
+            }
+          } catch (cause) {
+            const reason =
+              cause instanceof Error ? cause.message : String(cause);
+            const kind =
+              cause instanceof WorkflowRestoreFailure
+                ? cause.kind
+                : "transient";
+            const updated = await recordWorkflowDeploymentRestoreFailure(
               dataDir,
               deploymentId,
               record,
+              { kind, reason },
             );
+            if (isWorkflowDeploymentRestoreQuarantined(updated)) {
+              const attempts = updated.restoreFailure?.attempts ?? 0;
+              logger.warn`Workflow deployment ${deploymentId} failed to restore ${attempts} consecutive times and is now quarantined -- it will not be retried again until the address is undeployed. Last failure: ${reason}`;
+            } else {
+              logger.warn`Failed to restore workflow deployment ${deploymentId}: ${reason}`;
+            }
           }
-        } catch (cause) {
-          const reason = cause instanceof Error ? cause.message : String(cause);
-          const kind =
-            cause instanceof WorkflowRestoreFailure ? cause.kind : "transient";
-          const updated = await recordWorkflowDeploymentRestoreFailure(
-            dataDir,
-            deploymentId,
-            record,
-            { kind, reason },
-          );
-          if (isWorkflowDeploymentRestoreQuarantined(updated)) {
-            const attempts = updated.restoreFailure?.attempts ?? 0;
-            logger.warn`Workflow deployment ${deploymentId} failed to restore ${attempts} consecutive times and is now quarantined -- it will not be retried again until the address is undeployed. Last failure: ${reason}`;
-          } else {
-            logger.warn`Failed to restore workflow deployment ${deploymentId}: ${reason}`;
-          }
-        }
-      }
+        },
+      );
       if (skippedQuarantinedCount > 0) {
         logger.warn`Skipped ${skippedQuarantinedCount} quarantined workflow deployment record(s) (permanent restore failures, already reported); undeploy an address to clear its record`;
       }
