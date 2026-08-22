@@ -29,8 +29,17 @@ export type AgentDefinition = typeof WorkflowDefinitionResponse.infer;
 export type AgentInstance = typeof WorkflowRunResponse.infer;
 export type CatalogModel = typeof ModelResponse.infer;
 
+const RunFireResponse = WorkflowRunResponse.and(
+  type({ routineId: "string | null", routineName: "string | null" }),
+);
+/** A `feed=fires` row: every `AgentInstance` field plus the routine that
+ * fired it (both `null` for a directly-triggered deployment with no
+ * routine parent). */
+export type RunFire = typeof RunFireResponse.infer;
+
 const DefinitionsPage = paginatedSchema(WorkflowDefinitionResponse);
 const InstancesPage = paginatedSchema(WorkflowRunResponse);
+const RunFiresPage = paginatedSchema(RunFireResponse);
 const ModelsPage = paginatedSchema(ModelResponse);
 
 // The REST pagination ceiling (see `vendor/intx/hub-api/src/pagination.ts`).
@@ -135,12 +144,13 @@ export function listAgentInstances(
 
 /**
  * The tenant's genuine top-level deployment runs — every folded run
- * (workbench host, invited agent) excluded server-side by the hub's
- * own `folded_run` marker table (see `@corbits/folded-runs`'s
+ * (workbench host, invited agent, routine fire, task) excluded server-side
+ * by the hub's own `folded_run` marker table (see `@corbits/folded-runs`'s
  * `scope-routes.ts`), not derived client-side from a tenant's workbenches
  * the way `foldedRunIdsFromWorkbenches` used to. Used wherever a page needs
- * "real deployments only" — the Agent Directory and the shell's
- * "Running" activity band alike.
+ * "real deployments only" — the Agent Directory. A routine fire IS a
+ * folded run, so this feed structurally never carries one; a caller that
+ * needs routine activity wants `listRoutineRunFires` below instead.
  */
 export function listTopLevelRuns(
   tenantId: string,
@@ -148,6 +158,26 @@ export function listTopLevelRuns(
   return getJSON(
     `/api/tenants/${tenantId}/top-level-runs?limit=${PAGE_LIMIT}`,
     InstancesPage,
+  ).then((page) => page.data);
+}
+
+/**
+ * `feed=fires` (CL-6249): the tenant's genuine *executed* runs — unlike
+ * `listTopLevelRuns`, a routine's fire is kept even though it is a folded
+ * run, tagged with the routine that fired it (see
+ * `@corbits/folded-runs`'s `scope-routes.ts`'s `listTopLevelRunFires`).
+ * The shell's "Running" activity band (CL-6595) reads this, not
+ * `listTopLevelRuns`, so a routine's own run is actually visible here —
+ * `listTopLevelRuns`'s `notExists(folded_run)` filter drops every routine
+ * fire by construction, which left Mission Control's active-run count
+ * permanently desynced from the Routines page's own "Running now" pill.
+ */
+export function listRoutineRunFires(
+  tenantId: string,
+): Promise<readonly RunFire[]> {
+  return getJSON(
+    `/api/tenants/${tenantId}/top-level-runs?limit=${PAGE_LIMIT}&feed=fires`,
+    RunFiresPage,
   ).then((page) => page.data);
 }
 
