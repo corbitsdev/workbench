@@ -12,6 +12,7 @@ import path from "node:path";
 
 import { createEd25519Crypto, generateKeyPair } from "@intx/crypto";
 import { hexEncode } from "@intx/types";
+import { agentDir } from "@intx/hub-agent";
 import { createInMemoryTransport } from "@intx/mail-memory";
 import type { RepoId, RepoStore } from "@intx/hub-sessions";
 import {
@@ -201,6 +202,13 @@ export async function makeLifecycleFixture(opts?: {
    * restart (boot-time restore).
    */
   dataDir?: string;
+  /**
+   * Override the default in-memory fake key store with a real one (e.g.
+   * `@intx/hub-agent`'s `createAgentKeyStore` bound to the same
+   * `dataDir`), for a test that needs the actual on-disk key-persistence
+   * behavior the fake bypasses entirely.
+   */
+  keyStore?: Parameters<typeof createSidecarDeployRouter>[0]["keyStore"];
 }): Promise<Fixture> {
   const spawns: Spawn[] = [];
   const spawner: SubprocessSpawner = ({ env }) => {
@@ -279,14 +287,22 @@ export async function makeLifecycleFixture(opts?: {
       initRepo: async () => undefined,
     } as unknown as Parameters<typeof createSidecarDeployRouter>[0]["sessions"],
     // Boundary type assertion: the single-step branch registers the agent's signing key (loadOrGenerateKey) and records the hub key (recordHubKey) at the head before spawn
-    keyStore: {
-      recordHubKey: () => undefined,
-      forgetAgent: () => undefined,
-      loadOrGenerateKey: async () => ({
-        keyPair: await generateKeyPair(),
-        isNew: false,
-      }),
-    } as unknown as Parameters<typeof createSidecarDeployRouter>[0]["keyStore"],
+    keyStore:
+      opts?.keyStore ??
+      ({
+        recordHubKey: () => undefined,
+        forgetAgent: () => undefined,
+        // Mirrors the real `AgentKeyStore`'s on-disk contract just enough
+        // for `hibernated-agent-identity-vault.ts`'s snapshot step to find
+        // a real `agentDir` to preserve: a fixture-driven hibernate
+        // teardown must not spuriously trip its "ordering broke" report.
+        loadOrGenerateKey: async (address: string) => {
+          await fs.mkdir(agentDir(dataDir, address), { recursive: true });
+          return { keyPair: await generateKeyPair(), isNew: false };
+        },
+      } as unknown as Parameters<
+        typeof createSidecarDeployRouter
+      >[0]["keyStore"]),
     transport,
     repoStore,
     signingKeySeed: keyPair.privateKey,
