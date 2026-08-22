@@ -310,7 +310,7 @@ export function RoutineRunHistory({
                   <TriggeredByCell run={run} />
                 </TableCell>
                 <TableCell>
-                  <RunStatusCell run={run} />
+                  <RunStatusCell run={run} now={now} />
                 </TableCell>
                 <TableCell>{formatRelativeTime(run.createdAt, now)}</TableCell>
                 <TableCell>
@@ -352,7 +352,7 @@ export function RoutineDetailPage({
   readonly onSaveSchedule: (expression: string) => Promise<void>;
   readonly onEdit: () => void;
 }) {
-  const health = routineHealth(row.routine, row.runs);
+  const health = routineHealth(row.routine, row.runs, now);
   const latestRunId =
     row.runs.find((run) => !fireNeverStarted(run.triggeredBy))?.runId ?? null;
   return (

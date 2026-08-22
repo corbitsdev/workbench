@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 
 import {
   cleanFireStreak,
+  FIRE_RUNNING_WINDOW_MS,
+  fireOutcomeStatus,
   lastFailedFire,
   medianFireDurationMs,
   routineHealth,
@@ -14,6 +16,9 @@ const healthy: RoutineHealthSubject = {
   deadLetteredAt: null,
 };
 
+const FIRE_CREATED_AT = "2026-01-01T00:00:00.000Z";
+const NOW = Date.parse(FIRE_CREATED_AT) + 60_000;
+
 function fire(
   runId: string,
   overrides: Partial<RoutineFire> = {},
@@ -22,32 +27,74 @@ function fire(
   return {
     runId,
     triggeredBy: "schedule",
-    createdAt: "2026-01-01T00:00:00.000Z",
+    createdAt: FIRE_CREATED_AT,
     run,
     ...overrides,
   };
 }
 
+describe("fireOutcomeStatus", () => {
+  test("a running fire still inside its window reads as running", () => {
+    expect(fireOutcomeStatus(fire("r1", {}, { status: "running" }), NOW)).toBe(
+      "running",
+    );
+  });
+
+  test("warm-keep (CL-6681): a running fire past its window reads as completed", () => {
+    const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+    expect(
+      fireOutcomeStatus(fire("r1", {}, { status: "running" }), staleNow),
+    ).toBe("completed");
+  });
+
+  test("every terminal status passes through unchanged, however old", () => {
+    const longAfter = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS * 10;
+    expect(
+      fireOutcomeStatus(fire("r1", {}, { status: "failed" }), longAfter),
+    ).toBe("failed");
+    expect(
+      fireOutcomeStatus(fire("r1", {}, { status: "cancelled" }), longAfter),
+    ).toBe("cancelled");
+  });
+
+  test("null when the platform has no run to report", () => {
+    expect(fireOutcomeStatus(fire("r1", {}, {}), NOW)).toBeNull();
+  });
+});
+
 describe("cleanFireStreak", () => {
   test("counts successes from the newest fire and stops at the first failure", () => {
     expect(
-      cleanFireStreak([
-        fire("r5"),
-        fire("r4"),
-        fire("r3", {}, { status: "failed" }),
-        fire("r2"),
-      ]),
+      cleanFireStreak(
+        [
+          fire("r5"),
+          fire("r4"),
+          fire("r3", {}, { status: "failed" }),
+          fire("r2"),
+        ],
+        NOW,
+      ),
     ).toBe(2);
   });
 
   test("an in-flight run neither breaks nor extends the streak", () => {
     expect(
-      cleanFireStreak([fire("r2", {}, { status: "running" }), fire("r1")]),
+      cleanFireStreak([fire("r2", {}, { status: "running" }), fire("r1")], NOW),
     ).toBe(1);
   });
 
+  test("a stale running fire (warm-keep) counts as a success, not in-flight forever", () => {
+    const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+    expect(
+      cleanFireStreak(
+        [fire("r2", {}, { status: "running" }), fire("r1")],
+        staleNow,
+      ),
+    ).toBe(2);
+  });
+
   test("no history is a streak of zero, not a failure", () => {
-    expect(cleanFireStreak([])).toBe(0);
+    expect(cleanFireStreak([], NOW)).toBe(0);
   });
 });
 
@@ -135,8 +182,20 @@ describe("routineHealth", () => {
 
   test("an in-flight latest run reports Running now", () => {
     expect(
-      routineHealth(healthy, [fire("r1", {}, { status: "running" })]).state,
+      routineHealth(healthy, [fire("r1", {}, { status: "running" })], NOW)
+        .state,
     ).toBe("running");
+  });
+
+  test("warm-keep (CL-6681): a latest run stuck 'running' past its window reads as healthy, not stuck Running now forever", () => {
+    const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+    const health = routineHealth(
+      healthy,
+      [fire("r1", {}, { status: "running" })],
+      staleNow,
+    );
+    expect(health.state).toBe("ok");
+    expect(health.label).not.toBe("Running now");
   });
 
   test("consecutive failures are stated in the caption, not just the pill", () => {
