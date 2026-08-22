@@ -2,7 +2,7 @@
   "name": "@corbits/scout-agent",
   "private": true,
   "description": "Scout, the research/due-diligence agent: a ported system prompt plus its firm-memory, web-research, and Library-artifact tool declarations for a workbench chat agent",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
