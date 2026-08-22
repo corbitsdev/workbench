@@ -26,9 +26,9 @@ export const WORKBENCH_TEMPLATES: readonly WorkbenchTemplate[] = [
   },
   {
     id: "due-diligence",
-    title: "Research & due diligence",
+    title: "Due Diligence",
     promise:
-      "Scout researches the web and what your team already knows, and saves what it finds so you can pick it up later.",
+      "Scout checks a company, deal, or vendor against the web and what your team already knows, and saves what it finds so you can pick it up later.",
   },
   {
     id: "blank",
