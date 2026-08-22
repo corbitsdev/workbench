@@ -183,6 +183,7 @@ function createFakeDb(opts: {
         name?: string;
         origin?: "authored" | "run";
         grantRequirements?: unknown;
+        wireHash?: string | null;
       }
     | undefined;
   workflowDefinitionRows?:
@@ -195,6 +196,7 @@ function createFakeDb(opts: {
         assetId?: string | null;
         origin?: "authored" | "run";
         grantRequirements?: unknown;
+        wireHash?: string | null;
       }[]
     | undefined;
   tenantRow?: { id: string; domain: string } | undefined;
@@ -2524,6 +2526,188 @@ describe("createHubChatPlatform", () => {
           .foldedBody.systemPrompt,
       ).toBe("You are now a blunt, no-nonsense assistant.");
     });
+  });
+});
+
+// CL-6588: a launch renders `workflow_run.definitionId`/`workbench_launch`'s
+// `foldedBody` once, and neither a wake nor a relaunch has ever re-read the
+// definition's asset on its own -- only an explicit
+// `refreshAgentInstanceFromDefinition` call (a human saving settings) did.
+// A run that is routable but was deployed from a definition that has since
+// changed for a reason nobody in the room caused (a platform code fix, a
+// redeployed default agent package) stayed silently wrong forever. These
+// prove the automatic reconciliation added ahead of `wakeByAddress`'s
+// already-routable return and `sendMail`'s choke point.
+describe("createHubChatPlatform stale-definition reconciliation", () => {
+  const STALE_ROOM_FOLDED_BODY = {
+    systemPrompt: "the openai adapter: invalid quirks: default must be removed",
+    toolPackagePins: [],
+    grantRequirements: [],
+    credentialBindings: [],
+    model: null,
+  };
+
+  function createDriftFixture(opts: {
+    deployedWireHash: string | null;
+    authoredWireHash: string | null;
+    routable: boolean;
+  }) {
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "workbench-1",
+        displayName: null,
+      },
+      definitionId: "wfd_unused",
+      workflowRunRow: {
+        id: "run_stale",
+        address: "run_stale@ten1.workbench.test",
+        principalId: "prin_room1",
+        definitionId: "wfd_run_clone",
+        status: "running",
+      },
+      workflowDefinitionRow: {
+        id: "wfd_run_clone",
+        tenantId: "ten_1",
+        status: "deployed",
+        assetId: "asst_myra",
+        name: "myra",
+        origin: "run",
+        wireHash: opts.deployedWireHash,
+      },
+      workflowDefinitionRows: [
+        {
+          id: "wfd_run_clone",
+          tenantId: "ten_1",
+          status: "deployed",
+          name: "myra",
+          assetId: "asst_myra",
+          origin: "run",
+          wireHash: opts.deployedWireHash,
+        },
+        {
+          id: "wfd_myra_authored",
+          tenantId: "ten_1",
+          status: "deployed",
+          name: "myra",
+          assetId: "asst_myra",
+          origin: "authored",
+          wireHash: opts.authoredWireHash,
+        },
+      ],
+      workbenchLaunchRow: {
+        tenantId: "ten_1",
+        instanceId: "run_stale",
+        currentRunId: "run_stale",
+        foldedBody: STALE_ROOM_FOLDED_BODY,
+      },
+      wireProjectionsByDefinitionId: {
+        wfd_run_clone: inertProjection({
+          id: "wfd_run_clone",
+          systemPrompt: STALE_ROOM_FOLDED_BODY.systemPrompt,
+        }),
+        wfd_myra_authored: inertProjection({
+          id: "wfd_myra_authored",
+          systemPrompt: "I am working in this workbench.",
+        }),
+      },
+    });
+    const sidecarRouter = createFakeSidecarRouter({
+      routableAddresses: opts.routable ? ["run_stale@ten1.workbench.test"] : [],
+    });
+    const platform = createHubChatPlatform({
+      toolGrantsForPins: () => [],
+      db: db as never,
+      sessionService: createFakeSessionService(),
+      assetService: createFakeAssetService(),
+      sidecarRouter,
+      eventCollectors: createFakeEventCollectors(),
+    });
+    return { db, platform };
+  }
+
+  test("a routable run whose deployed wire hash differs from the current authored one is relaunched, not served as-is", async () => {
+    const { db, platform } = createDriftFixture({
+      deployedWireHash: "hash_before_fix",
+      authoredWireHash: "hash_after_fix",
+      routable: true,
+    });
+
+    await platform.ensureAwake("run_stale@ten1.workbench.test");
+
+    const repointed = db.updated.find((row) => row.table === workbenchLaunch)
+      ?.values as { currentRunId: string } | undefined;
+    expect(repointed?.currentRunId).toBeDefined();
+    expect(repointed?.currentRunId).not.toBe("run_stale");
+  });
+
+  test("a routable run whose deployed wire hash matches the current authored one is left alone", async () => {
+    const { db, platform } = createDriftFixture({
+      deployedWireHash: "hash_same",
+      authoredWireHash: "hash_same",
+      routable: true,
+    });
+
+    await platform.ensureAwake("run_stale@ten1.workbench.test");
+
+    expect(
+      db.updated.find((row) => row.table === workbenchLaunch),
+    ).toBeUndefined();
+  });
+
+  test("sendMail redeploys an already-routable-but-drifted target before delivering — lifecycle.ensureAwake's routability check alone would have missed it", async () => {
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          apiKey: "placeholder",
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+    const { db } = createDriftFixture({
+      deployedWireHash: "hash_before_fix",
+      authoredWireHash: "hash_after_fix",
+      routable: true,
+    });
+    db.inserted.push({
+      table: agentSession,
+      values: { id: "ses_stale", principalId: "prin_room1" },
+    });
+    const sessionService = createFakeSessionService();
+    const platform = createHubChatPlatform({
+      toolGrantsForPins: () => [],
+      db: db as never,
+      sessionService,
+      assetService: createFakeAssetService(),
+      sidecarRouter: createFakeSidecarRouter({
+        routableAddresses: ["run_stale@ten1.workbench.test"],
+      }),
+      eventCollectors: createFakeEventCollectors(),
+      // Configured: `sendMail` takes the `lifecycle.ensureAwake` branch,
+      // whose own routability check alone would never have caught this.
+      lifecycle: { idleSleepMs: 60_000 },
+    });
+
+    await platform.sendMail({
+      tenantId: "ten_1",
+      workbenchId: "run_stale",
+      principalId: "prin_sender",
+      content: { content: "hello" },
+    });
+
+    expect(sessionService.adoptedDeployCalls).toHaveLength(1);
+    const deployed = sessionService.adoptedDeployCalls[0] as {
+      config: { systemPrompt: string };
+    };
+    expect(deployed.config.systemPrompt).toBe(
+      "I am working in this workbench.",
+    );
   });
 });
 
