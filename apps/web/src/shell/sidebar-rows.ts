@@ -4,86 +4,14 @@
 // conversation act, not a standing nav item.
 
 import type { Workbench } from "@corbits/chat-ui";
-import { isAgentAddress } from "@corbits/chat/mentions";
 
 export type SidebarRow = {
   readonly kind: "workbench";
   readonly workbench: Workbench;
 };
 
-/**
- * The stable identity a DM chat collapses on: an agent participant's
- * mention `handle` is the same immutable slug
- * (`buildAgentDefinitionWorkflow`'s `input.handle`) regardless which
- * ancestor tenant minted the definition, so two chats DM'ing "the same"
- * agent across tenants share this key even though their `definitionId`s
- * genuinely differ. `title` is a display-only fallback for a chat with no
- * recorded agent participant (a pre-participant-record legacy row) — never
- * the primary key, since a display title can be produced two different
- * ways for two entirely different agents (CL-6413's `humanizeSlug`
- * backfill, or simply two creators picking the same human name) and must
- * never be mistaken for identity.
- */
-function agentIdentityKey(chat: Workbench): string {
-  const agentParticipant = chat.participants.find((participant) =>
-    isAgentAddress(participant.address),
-  );
-  return agentParticipant?.handle ?? chat.title;
-}
-
-type AgentChat = Workbench & { readonly definitionId: string };
-
-/** A group workbench never carries a `definitionId`; every agent DM does. */
-function isAgentChat(chat: Workbench): chat is AgentChat {
-  return chat.definitionId !== null && chat.definitionId !== undefined;
-}
-
 function activityOf(chat: Workbench): number {
   return chat.lastActivityAt ? Date.parse(chat.lastActivityAt) : 0;
-}
-
-/**
- * Drop agent-DM chats minted against a superseded sibling definition of
- * the same agent (CL-6271), keeping every chat that belongs to the
- * live one (CL-6459).
- *
- * Shadowing already picks a single nearest definition per name in
- * `listVisibleAgentDefinitions`, but a DM chat is minted against a
- * specific definition id, so a caller who has separately DM'd the same
- * named agent (e.g. "Myra") launched from more than one ancestor tenant
- * ends up with one durable `Workbench` row per instance — the dedupe
- * there never runs again once a chat exists.
- *
- * `definitionId` is the discriminator that separates those stale
- * cross-tenant siblings from workbenches a person deliberately created:
- * "+ New Workbench" always mints against the bench's own currently
- * resolved definition (`instant-agent-create.ts`), so N deliberate
- * creations share one definition id and each keeps its row, while an
- * ancestor tenant's leftover DM carries a different one. Per agent
- * identity, the most recently active chat names the live definition;
- * chats under any other definition are the stale siblings.
- */
-function dropSupersededAgentChats(chats: readonly Workbench[]): Workbench[] {
-  const groupChats = chats.filter((chat) => !isAgentChat(chat));
-  const agentChats = chats.filter(isAgentChat);
-
-  const liveDefinitionByIdentity = new Map<string, AgentChat>();
-  for (const chat of agentChats) {
-    const key = agentIdentityKey(chat);
-    const current = liveDefinitionByIdentity.get(key);
-    if (current === undefined || activityOf(chat) > activityOf(current)) {
-      liveDefinitionByIdentity.set(key, chat);
-    }
-  }
-
-  return [
-    ...groupChats,
-    ...agentChats.filter(
-      (chat) =>
-        chat.definitionId ===
-        liveDefinitionByIdentity.get(agentIdentityKey(chat))?.definitionId,
-    ),
-  ];
 }
 
 function recencyOf(row: SidebarRow): number {
@@ -104,15 +32,18 @@ export function buildSidebarRows(
   workbenches: readonly Workbench[],
   chats: readonly Workbench[],
 ): readonly SidebarRow[] {
-  const dedupedChats = dropSupersededAgentChats(chats);
-  const rows: SidebarRow[] = [
-    ...workbenches.map(
-      (workbench) => ({ kind: "workbench", workbench }) as const,
-    ),
-    ...dedupedChats.map(
-      (workbench) => ({ kind: "workbench", workbench }) as const,
-    ),
-  ];
+  // Every row a person can see in Postgres appears here. An earlier
+  // heuristic (CL-6271) collapsed same-agent chats onto the newest
+  // definitionId to hide stale cross-tenant DM siblings; once creation
+  // began cloning a fresh definition per workbench (CL-6452), that
+  // heuristic could no longer tell a stale sibling from a deliberately
+  // created workbench and hid every workbench but the newest (CL-6621).
+  // Hiding real workbenches reads as data loss; a duplicate stale DM is
+  // merely untidy. If stale siblings resurface, fix them server-side at
+  // list time, not with a client-side identity guess.
+  const rows: SidebarRow[] = [...workbenches, ...chats].map(
+    (workbench) => ({ kind: "workbench", workbench }) as const,
+  );
   const byRecency = (a: SidebarRow, b: SidebarRow) =>
     recencyOf(b) - recencyOf(a);
   return [
