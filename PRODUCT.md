@@ -16,8 +16,7 @@ conversation; the conversation is the unit of work.
 
 This is why the sidebar is one list of workbenches, not sections split by
 kind — every workbench a person has, agent conversation or group
-conversation alike, shows up the same way — plus an in-progress
-**Working** strip when the signed-in user has tasks still running. See
+conversation alike, shows up the same way. See
 [docs/GLOSSARY.md](docs/GLOSSARY.md) for the full term mapping and
 [docs/CHAT.md](docs/CHAT.md) for how a conversation is built underneath.
 
@@ -67,7 +66,7 @@ conversation rather than an empty shell:
    conversation, and its first reply introduces itself and names what it
    can do. There is no separate screen for this step: the drafted system
    prompt itself carries the instruction (see
-   `packages/task-planner/src/agent-definition-drafting.ts`), so the
+   `packages/agent-directory/src/agent-definition-drafting.ts`), so the
    greeting arrives as an ordinary streamed reply in the new workbench.
 
 A bench that already has one or more workbenches skips straight past step
@@ -113,9 +112,9 @@ again, on what schedule, and where the result should land. See
 Two account-wide surfaces sit outside any single workbench:
 
 - **Inbox** projects a person's mail into three groups — action, mention,
-  delivery — with mark-all-read and clear-done bulk actions. It is where a
-  task's result, a mention, or a routine's delivery lands once the
-  triggering activity is done. See `packages/inbox`.
+  delivery — with mark-all-read and clear-done bulk actions. It is where
+  a mention or a routine's delivery lands once the triggering activity is
+  done. See `packages/inbox`.
 - **Approvals ("needs you")** surface a paused agent run waiting on a
   human decision. There is no dedicated Approvals page — pending approvals
   show up in the Activity band, a permanent section of the contextual

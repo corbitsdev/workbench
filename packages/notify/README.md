@@ -31,8 +31,7 @@ mail commits, never the source of truth.
 ## Key modules
 
 - `events.ts` — `NotificationEvent` union (approval, mention, run
-  failure, credential-expired, task-result) parsed at the boundary via
-  arktype.
+  failure, credential-expired) parsed at the boundary via arktype.
 - `deliver.ts` — `deliverNotification` and per-kind `deliver*Mail`
   helpers: writes the mailbox row, then queues one dispatch row per
   enabled sink.
