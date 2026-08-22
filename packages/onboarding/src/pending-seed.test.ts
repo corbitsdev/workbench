@@ -201,6 +201,29 @@ describe("createInMemoryPendingSeedStore", () => {
     ).resolves.toBeUndefined();
   });
 
+  test("round-trips baseURLOverride for an ollama-shaped seed — the drain needs the real instance URL, not a curated default", async () => {
+    const store = createInMemoryPendingSeedStore(testCipher());
+    const ollamaSeed: PendingSeed = {
+      ...SEED,
+      provider: "ollama",
+      baseURLOverride: "https://home-mac-studio.tail87f5aa.ts.net",
+    };
+    await store.put(ollamaSeed);
+
+    const read = await store.read({ userId: "user_1", tenantId: "ten_1" });
+
+    expect(read).toEqual(ollamaSeed);
+  });
+
+  test("omits baseURLOverride when the seed carries none, rather than round-tripping it as undefined", async () => {
+    const store = createInMemoryPendingSeedStore(testCipher());
+    await store.put(SEED);
+
+    const read = await store.read({ userId: "user_1", tenantId: "ten_1" });
+
+    expect(read).not.toHaveProperty("baseURLOverride");
+  });
+
   test("round-trips for a provider other than the first — every supported provider seals and opens correctly", async () => {
     const store = createInMemoryPendingSeedStore(testCipher());
     const hfSeed: PendingSeed = { ...SEED, provider: "huggingface" };
