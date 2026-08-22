@@ -135,8 +135,18 @@ async function renderPickerWithToaster(): Promise<void> {
   });
   for (let i = 0; i < 20; i++) {
     await settle();
-    if (container.querySelector('[role="radiogroup"]') !== null) break;
+    if (container.querySelector(".new-workbench-prompt-input") !== null) {
+      break;
+    }
   }
+}
+
+function justStartTalkingCard(): HTMLButtonElement | undefined {
+  return Array.from(
+    container?.querySelectorAll<HTMLButtonElement>(
+      "button.new-workbench-prefab-card",
+    ) ?? [],
+  ).find((card) => card.textContent?.includes("Just start talking"));
 }
 
 describe("the one toast system (CL-6372)", () => {
@@ -152,11 +162,10 @@ describe("the one toast system (CL-6372)", () => {
     stubFailingCreate();
     await renderPickerWithToaster();
 
-    const createButton = Array.from(
-      container?.querySelectorAll("button") ?? [],
-    ).find((button) => button.textContent === "Create workbench");
     await act(async () => {
-      createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      justStartTalkingCard()?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
     });
     for (let i = 0; i < 30; i++) {
       await settle();
@@ -203,11 +212,10 @@ describe("the one toast system (CL-6372)", () => {
     }) as typeof fetch;
     await renderPickerWithToaster();
 
-    const createButton = Array.from(
-      container?.querySelectorAll("button") ?? [],
-    ).find((button) => button.textContent === "Create workbench");
     await act(async () => {
-      createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      justStartTalkingCard()?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
     });
     for (let i = 0; i < 30; i++) {
       await settle();
@@ -222,11 +230,10 @@ describe("the one toast system (CL-6372)", () => {
     stubFailingCreate();
     await renderPickerWithToaster();
 
-    const createButton = Array.from(
-      container?.querySelectorAll("button") ?? [],
-    ).find((button) => button.textContent === "Create workbench");
     await act(async () => {
-      createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      justStartTalkingCard()?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
     });
     for (let i = 0; i < 30; i++) {
       await settle();

@@ -1,9 +1,11 @@
-// Screen 1 of the approved mock (CL-6342): a one-column row list — no card
-// grid, no second "or start blank" branch. Every assertion here pins the
-// mock's own spec note: a row is always selected on entry so "Create
-// workbench" starts enabled, the disabled row is a row (not a ghost
-// card), and picking "Code review" tags the minted workbench rather than
-// leaving it blank.
+// CL-6628 flips the picker's hierarchy: a prompt box is the primary act,
+// with the prefab cards (still real template instantiation, CL-6342/
+// CL-6344) demoted to one-click shortcuts underneath — no radio-then-
+// Create two-step. These pin: the prompt box is what's on screen and
+// autofocused, submitting it creates a blank workbench and delivers the
+// typed text as the person's own first message, and a prefab card click
+// still instantiates its template exactly like the old "Create workbench"
+// button did.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import {
@@ -60,7 +62,7 @@ function stubFetch(
       return Promise.resolve(json(MEMBERSHIP));
     }
     // The bench library the first read converges (CL-6458) — what the
-    // picker offers rows from and the create flow instantiates from,
+    // picker offers cards from and the create flow instantiates from,
     // never a hardcoded import.
     if (path.endsWith("/library/templates")) {
       return Promise.resolve(
@@ -125,30 +127,115 @@ async function renderPicker(
   });
   for (let i = 0; i < 20; i++) {
     await settle();
-    if (container.querySelector('[role="radiogroup"]') !== null) break;
+    if (container.querySelector(".new-workbench-prompt-input") !== null) break;
   }
 }
 
+function promptInput(): HTMLTextAreaElement | null {
+  return container?.querySelector(".new-workbench-prompt-input") ?? null;
+}
+
+// Setting `.value` directly on a React-controlled element doesn't trip
+// its value tracker, so a plain `input` event dispatched right after is a
+// no-op — the same native-setter workaround `form-block.test.tsx` and
+// `connect-github-block.test.tsx` use for the same reason.
+function typeIntoPrompt(value: string): void {
+  const input = promptInput();
+  if (input === null) return;
+  const setter = Object.getOwnPropertyDescriptor(
+    window.HTMLTextAreaElement.prototype,
+    "value",
+  )?.set;
+  setter?.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+/** Only the clickable (offered) cards — a template the library can't
+ * serve renders as a disabled `<span>` with the same class, never a
+ * `<button>`, so this selector alone tells offered apart from
+ * unavailable. */
+function prefabCards(): HTMLButtonElement[] {
+  return Array.from(
+    container?.querySelectorAll<HTMLButtonElement>(
+      "button.new-workbench-prefab-card",
+    ) ?? [],
+  );
+}
+
+/** The standard fixture for a create that mints against `blank` (no
+ * manifest, no participants, no settings patch) — shared by every test
+ * exercising the prompt box's blank-plus-first-message path. */
+function stubBlankCreate(
+  onSendMessage?: (body: { parts: readonly { kind: string }[] }) => void,
+): RecordedCall[] {
+  return stubFetch((path, init) => {
+    if (path.includes("/workflows/definitions")) {
+      return json({
+        data: [
+          {
+            id: "wfd_assistant",
+            tenantId: "tnt_1",
+            name: "assistant",
+            currentVersion: "1",
+            status: "deployed",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+        nextCursor: null,
+      });
+    }
+    if (path.endsWith("/chat/workbenches") && init?.method === "POST") {
+      return json({
+        id: "chan_new",
+        title: "New Workbench",
+        kind: "chat",
+        pinned: false,
+        participants: [],
+      });
+    }
+    if (
+      path.endsWith("/chat/workbenches/chan_new/messages") &&
+      init?.method === "POST"
+    ) {
+      const body = JSON.parse(String(init.body)) as {
+        parts: readonly { kind: string }[];
+      };
+      onSendMessage?.(body);
+      return json({ id: "msg_1", createdAt: "2026-01-01T00:00:00.000Z" });
+    }
+    return undefined;
+  });
+}
+
 describe("NewWorkbenchPickerRoute", () => {
-  test("is the row list the mock specs: three rows, no card grid", async () => {
+  test("the prompt box is on screen, autofocused, with its placeholder", async () => {
     stubFetch(() => undefined);
     await renderPicker();
 
-    const group = container?.querySelector('[role="radiogroup"]');
-    expect(group).not.toBeNull();
-    expect(group?.getAttribute("aria-label")).toBe("Workbench kind");
+    const input = promptInput();
+    expect(input).not.toBeNull();
+    expect(input?.placeholder).toBe("What do you want your Workbench to do?");
+    expect(document.activeElement).toBe(input);
+  });
 
-    const radios = container?.querySelectorAll('[role="radio"]');
-    expect(radios?.length).toBe(2);
+  test("the prefab cards render below the prompt box, one click each — no radio group", async () => {
+    stubFetch(() => undefined);
+    await renderPicker();
+
+    expect(container?.querySelector('[role="radiogroup"]')).toBeNull();
+    expect(container?.querySelector('[role="radio"]')).toBeNull();
+
+    const cards = prefabCards();
+    expect(cards.length).toBe(2);
     expect(container?.textContent).toContain("Code review");
     expect(container?.textContent).toContain("Just start talking");
-    expect(container?.textContent).toContain("More kinds soon");
   });
 
   // The library seeds every shipped template (`createTemplateLibrarySeeder`),
   // so a bench whose library serves due-diligence too offers it as a real
-  // row, not just an entry in the static row catalog with nothing to back it.
-  test("due-diligence is offered as a selectable row once the library serves it", async () => {
+  // card, not just an entry in the static catalog with nothing to back it.
+  test("due-diligence is offered as a card once the library serves it", async () => {
     globalThis.fetch = ((input: RequestInfo | URL) => {
       const path = typeof input === "string" ? input : String(input);
       if (path.includes("/api/me/principals")) {
@@ -177,12 +264,10 @@ describe("NewWorkbenchPickerRoute", () => {
     }) as typeof fetch;
     await renderPicker();
 
-    const radios = Array.from(
-      container?.querySelectorAll('[role="radio"]') ?? [],
-    );
-    expect(radios.length).toBe(3);
-    const dueDiligence = radios.find((row) =>
-      row.textContent?.includes("Due Diligence"),
+    const cards = prefabCards();
+    expect(cards.length).toBe(3);
+    const dueDiligence = cards.find((card) =>
+      card.textContent?.includes("Due Diligence"),
     );
     expect(dueDiligence).not.toBeUndefined();
     expect(dueDiligence?.textContent).toContain(
@@ -191,9 +276,9 @@ describe("NewWorkbenchPickerRoute", () => {
   });
 
   // CL-6458: the picker offers what the bench's library can actually
-  // serve. A row the library has no manifest for is shown as not set up
+  // serve. A kind the library has no manifest for is shown as not set up
   // — never offered and then dead-ended on a 404 at create time.
-  test("a kind this bench's library cannot serve is not offered", async () => {
+  test("a kind this bench's library cannot serve is not offered as a live card", async () => {
     globalThis.fetch = ((input: RequestInfo | URL) => {
       const path = typeof input === "string" ? input : String(input);
       if (path.includes("/api/me/principals")) {
@@ -206,16 +291,14 @@ describe("NewWorkbenchPickerRoute", () => {
     }) as typeof fetch;
     await renderPicker();
 
-    const radios = Array.from(
-      container?.querySelectorAll('[role="radio"]') ?? [],
-    );
-    expect(radios.length).toBe(1);
-    expect(radios[0]?.textContent).toContain("Just start talking");
+    const cards = prefabCards();
+    expect(cards.length).toBe(1);
+    expect(cards[0]?.textContent).toContain("Just start talking");
     expect(container?.textContent).toContain("Code review");
     expect(container?.textContent).toContain("Not set up on this bench yet");
   });
 
-  test("when the library can't be read, the row list says so instead of offering a dead end", async () => {
+  test("when the library can't be read, the screen says so instead of offering a dead end", async () => {
     globalThis.fetch = ((input: RequestInfo | URL) => {
       const path = typeof input === "string" ? input : String(input);
       if (path.includes("/api/me/principals")) {
@@ -231,63 +314,86 @@ describe("NewWorkbenchPickerRoute", () => {
     expect(container?.textContent).toContain(
       "Couldn't load what this bench can set up",
     );
-    const radios = Array.from(
-      container?.querySelectorAll('[role="radio"]') ?? [],
-    );
-    expect(radios.length).toBe(1);
-    expect(radios[0]?.textContent).toContain("Just start talking");
+    expect(prefabCards().length).toBe(1);
+    expect(prefabCards()[0]?.textContent).toContain("Just start talking");
   });
 
-  test("Code review is selected on entry, so Create workbench starts enabled", async () => {
-    stubFetch(() => undefined);
-    await renderPicker();
+  test("typing a goal and hitting Enter creates a blank workbench and delivers the goal as the first message", async () => {
+    let sentParts: readonly { kind: string; text?: string }[] = [];
+    const calls = stubBlankCreate((body) => {
+      sentParts = body.parts as typeof sentParts;
+    });
+    const navigated: string[] = [];
+    await renderPicker((to) => navigated.push(to));
 
-    const rows = Array.from(
-      container?.querySelectorAll<HTMLButtonElement>('[role="radio"]') ?? [],
-    );
-    const codeReview = rows.find((row) =>
-      row.textContent?.includes("Code review"),
-    );
-    expect(codeReview?.getAttribute("aria-checked")).toBe("true");
-    expect(codeReview?.textContent).toContain("Selected");
-
-    const createButton = Array.from(
-      container?.querySelectorAll("button") ?? [],
-    ).find((button) => button.textContent === "Create workbench");
-    expect(createButton?.disabled).toBe(false);
-  });
-
-  test("the third row is disabled, not selectable, and carries no radio role", async () => {
-    stubFetch(() => undefined);
-    await renderPicker();
-
-    const disabledRow = Array.from(
-      container?.querySelectorAll('[aria-disabled="true"]') ?? [],
-    ).find((row) => row.textContent?.includes("More kinds soon"));
-    expect(disabledRow).not.toBeUndefined();
-    expect(disabledRow?.getAttribute("role")).not.toBe("radio");
-    expect(container?.querySelectorAll('[role="radio"]').length).toBe(2);
-  });
-
-  test("clicking a row switches the selection", async () => {
-    stubFetch(() => undefined);
-    await renderPicker();
-
-    const rows = Array.from(
-      container?.querySelectorAll<HTMLButtonElement>('[role="radio"]') ?? [],
-    );
-    const justTalk = rows.find((row) =>
-      row.textContent?.includes("Just start talking"),
-    );
     await act(async () => {
-      justTalk?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      typeIntoPrompt("Get our onboarding docs into shape");
+    });
+    await act(async () => {
+      promptInput()?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+    });
+    for (let i = 0; i < 20; i++) {
+      await settle();
+      if (navigated.length > 0) break;
+    }
+
+    expect(navigated).toEqual(["/w/chan_new"]);
+
+    const createWorkbenchCall = calls.find(
+      (call) =>
+        call.path.endsWith("/chat/workbenches") && call.init?.method === "POST",
+    );
+    expect(JSON.parse(String(createWorkbenchCall?.init?.body))).toMatchObject({
+      kind: "chat",
+      definitionId: "wfd_assistant",
     });
 
-    expect(justTalk?.getAttribute("aria-checked")).toBe("true");
-    const codeReview = rows.find((row) =>
-      row.textContent?.includes("Code review"),
+    const sendMessageCall = calls.find((call) =>
+      call.path.endsWith("/chat/workbenches/chan_new/messages"),
     );
-    expect(codeReview?.getAttribute("aria-checked")).toBe("false");
+    expect(sendMessageCall).not.toBeUndefined();
+    expect(sentParts).toEqual([
+      { kind: "text", text: "Get our onboarding docs into shape" },
+    ]);
+  });
+
+  test("Shift+Enter does not submit — the prompt box stays open for a new line", async () => {
+    stubFetch(() => undefined);
+    await renderPicker();
+
+    await act(async () => {
+      typeIntoPrompt("line one");
+    });
+    await act(async () => {
+      promptInput()?.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          shiftKey: true,
+          bubbles: true,
+        }),
+      );
+    });
+    await settle();
+
+    expect(container?.querySelector(".chat-workbench-loading")).toBeNull();
+    expect(promptInput()?.value).toBe("line one");
+  });
+
+  test("submitting an empty prompt does nothing", async () => {
+    stubFetch(() => undefined);
+    const navigated: string[] = [];
+    await renderPicker((to) => navigated.push(to));
+
+    await act(async () => {
+      promptInput()?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+    });
+    await settle();
+
+    expect(navigated).toEqual([]);
   });
 
   // CL-6510: a bench whose default agents haven't finished deploying yet
@@ -314,11 +420,11 @@ describe("NewWorkbenchPickerRoute", () => {
     });
     await renderPicker();
 
-    const createButton = Array.from(
-      container?.querySelectorAll("button") ?? [],
-    ).find((button) => button.textContent === "Create workbench");
+    const justTalk = prefabCards().find((card) =>
+      card.textContent?.includes("Just start talking"),
+    );
     await act(async () => {
-      createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      justTalk?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     for (let i = 0; i < 20; i++) {
       await settle();
@@ -331,7 +437,7 @@ describe("NewWorkbenchPickerRoute", () => {
     );
   });
 
-  test("creating with Code review selected mints a workbench from the template, then navigates in", async () => {
+  test("clicking the Code review card mints a workbench from the template, then navigates in", async () => {
     const createdAgentHandles: string[] = [];
     const calls = stubFetch((path, init) => {
       if (path.includes("/workflows/definitions")) {
@@ -419,11 +525,11 @@ describe("NewWorkbenchPickerRoute", () => {
     const navigated: string[] = [];
     await renderPicker((to) => navigated.push(to));
 
-    const createButton = Array.from(
-      container?.querySelectorAll("button") ?? [],
-    ).find((button) => button.textContent === "Create workbench");
+    const codeReview = prefabCards().find((card) =>
+      card.textContent?.includes("Code review"),
+    );
     await act(async () => {
-      createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      codeReview?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     for (let i = 0; i < 20; i++) {
       await settle();
@@ -467,7 +573,7 @@ describe("NewWorkbenchPickerRoute", () => {
     });
   });
 
-  test("with GitHub already connected, the create flow skips the in-room card and mints grants from an inline repo pick (CL-6386)", async () => {
+  test("with GitHub already connected, clicking Code review skips the in-room card and mints grants from an inline repo pick (CL-6386)", async () => {
     const calls = stubFetch((path, init) => {
       if (path.includes("/workflows/definitions")) {
         return json({
@@ -582,11 +688,11 @@ describe("NewWorkbenchPickerRoute", () => {
     const navigated: string[] = [];
     await renderPicker((to) => navigated.push(to));
 
-    const createButton = Array.from(
-      container?.querySelectorAll("button") ?? [],
-    ).find((button) => button.textContent === "Create workbench");
+    const codeReview = prefabCards().find((card) =>
+      card.textContent?.includes("Code review"),
+    );
     await act(async () => {
-      createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      codeReview?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     let startReviewingButton: HTMLButtonElement | undefined;

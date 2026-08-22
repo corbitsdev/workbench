@@ -3379,35 +3379,80 @@ tr.insights-row-clickable:hover {
   margin: 0;
 }
 
-.new-workbench-pick-list {
-  border: 1px solid var(--border);
+/* The prompt box (CL-6628): the primary act on this screen, so it gets
+   the heaviest visual weight — a bordered, focus-ringed field with the
+   send button inline, sized to read as "type here first". */
+.new-workbench-prompt {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: 0.6rem;
+  padding: 0.7rem 0.7rem 0.7rem 1rem;
+  margin-bottom: 1.5rem;
+  background: var(--background);
 }
 
-.new-workbench-pick-row {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 0.9rem;
-  text-align: left;
+.new-workbench-prompt:has(.new-workbench-prompt-input:focus) {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+.new-workbench-prompt-input {
+  flex: 1;
+  min-width: 0;
+  resize: none;
   border: 0;
-  border-bottom: 1px solid var(--border);
+  background: transparent;
+  font: inherit;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  padding: 0.2rem 0;
+}
+
+.new-workbench-prompt-input:focus {
+  outline: none;
+}
+
+.new-workbench-prefab-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .new-workbench-prefab-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.new-workbench-prefab-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
   background: var(--background);
-  padding: 0.85rem 0.9rem;
+  padding: 0.9rem;
   font: inherit;
   cursor: pointer;
 }
 
-.new-workbench-pick-row:last-child {
-  border-bottom: 0;
-}
-
-.new-workbench-pick-row:hover:not([aria-disabled="true"]) {
+.new-workbench-prefab-card:hover:not([aria-disabled="true"]) {
   background: var(--muted);
+  border-color: var(--border-strong, var(--border));
 }
 
-.new-workbench-pick-row[data-selected="true"] {
-  background: color-mix(in srgb, var(--primary) 10%, transparent);
-  box-shadow: inset 2px 0 0 0 var(--shell-accent);
+.new-workbench-prefab-card[aria-disabled="true"] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.new-workbench-prefab-card:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .new-workbench-pick-glyph {
@@ -3420,13 +3465,7 @@ tr.insights-row-clickable:hover {
   color: var(--muted-foreground);
 }
 
-.new-workbench-pick-row[data-selected="true"] .new-workbench-pick-glyph {
-  border-color: color-mix(in srgb, var(--primary) 55%, transparent);
-  color: var(--primary);
-}
-
 .new-workbench-pick-text {
-  flex: 1;
   min-width: 0;
 }
 
@@ -3442,34 +3481,6 @@ tr.insights-row-clickable:hover {
   font-size: 0.8125rem;
   color: var(--muted-foreground);
   margin-top: 0.1rem;
-}
-
-.new-workbench-pick-row[aria-disabled="true"] {
-  opacity: 0.75;
-  cursor: not-allowed;
-}
-
-.new-workbench-pick-cta {
-  flex-shrink: 0;
-  font-size: 0.75rem;
-  font-weight: 650;
-  color: var(--muted-foreground);
-}
-
-.new-workbench-pick-row[data-selected="true"] .new-workbench-pick-cta {
-  color: var(--primary);
-}
-
-.new-workbench-picker-foot {
-  margin-top: 1.1rem;
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-}
-
-.new-workbench-picker-foot-note {
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
 }
 
 /* Mission Control (CL-6488/CL-6489) — stat strip, then a main column

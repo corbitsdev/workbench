@@ -1,26 +1,26 @@
-// Screen 1 of the approved mock (CL-6342): one row list, no card grid, no
-// second "or start blank" branch underneath it — "Just start talking" is a
-// peer row, not a fallback. A row is always selected on entry (the mock's
-// "Code review" default), so the primary button stays enabled the whole
-// time. Picking "Code review" instantiates the real template (CL-6344):
-// the reviewer roster's agent definitions and the room's own opening
-// intro — see `createWorkbenchFromTemplate`'s own doc for exactly what
-// that does and doesn't do yet (the GitHub connect card itself is the
-// next slice).
+// CL-6628: flips the picker's hierarchy from "choose a kind, then create"
+// to "say what you want, or choose a shortcut" — a prompt box is the
+// primary act, with the prefab rows (still CL-6342/CL-6344's real
+// instantiation paths) demoted to one-click shortcuts underneath. Typing
+// a goal and hitting Enter creates a blank room and hands that text to
+// `createWorkbenchFromTemplate` as `firstMessage`, so Myra's first read of
+// the room is the person's actual intent rather than a kind label. A
+// prefab click still creates immediately — no radio-then-Create
+// second step anywhere on this screen.
 
 import { Button, toast } from "@corbits/react-ui";
 import {
   ChatCircle,
   GitPullRequest,
   MagnifyingGlass,
-  Plus,
+  PaperPlaneRight,
 } from "@corbits/icons";
 import {
   ChatApiError,
   describeChatError,
   WorkbenchLoadingState,
 } from "@corbits/chat-ui";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getLogger } from "@corbits/client-log";
 import { ApiQueryError, describeApiError } from "@corbits/api-query";
@@ -39,7 +39,6 @@ import { fetchAgentReadiness } from "../onboarding";
 import { useNavigate } from "../navigation";
 import { StageTopBar } from "../shell/stage-top-bar";
 import {
-  COMING_SOON_ROW,
   WORKBENCH_TEMPLATES,
   type WorkbenchTemplateId,
 } from "../workbench-templates";
@@ -79,19 +78,17 @@ type RepoPickerState = {
   readonly resolve: (repoIds: readonly string[] | null) => void;
 };
 
-const ROW_ICON: Record<WorkbenchTemplateId, typeof GitPullRequest> = {
+const CARD_ICON: Record<WorkbenchTemplateId, typeof GitPullRequest> = {
   "code-review": GitPullRequest,
   "due-diligence": MagnifyingGlass,
   blank: ChatCircle,
 };
 
-function ctaLabel(selected: boolean): string {
-  return selected ? "Selected" : "Choose";
-}
-
 /** The one kind that needs no manifest: an empty room is always
  * something this bench can set up. */
 const BLANK_TEMPLATE_ID: WorkbenchTemplateId = "blank";
+
+const PROMPT_PLACEHOLDER = "What do you want your Workbench to do?";
 
 export function NewWorkbenchPickerRoute() {
   const navigate = useNavigate();
@@ -103,7 +100,7 @@ export function NewWorkbenchPickerRoute() {
       : `/api/tenants/${selectedTenantId}/library/templates`,
     TemplateLibraryPage,
   );
-  const [picked, setPicked] = useState<WorkbenchTemplateId | null>(null);
+  const [prompt, setPrompt] = useState("");
   const [creating, setCreating] = useState(false);
   // Set only when `createWorkbenchFromTemplate` hit the missing-setup-agent
   // precondition *and* a readiness check confirmed the bench genuinely
@@ -113,6 +110,25 @@ export function NewWorkbenchPickerRoute() {
   // finishes, not a request in flight.
   const [stillSettingUp, setStillSettingUp] = useState(false);
   const [repoPicker, setRepoPicker] = useState<RepoPickerState | null>(null);
+  const promptRef = useRef<HTMLTextAreaElement | null>(null);
+  // The last attempted create, so "Try again" (both the still-setting-up
+  // dead end and a plain toast-and-retry) replays the exact same request
+  // rather than silently falling back to blank.
+  const lastAttemptRef = useRef<{
+    readonly templateId: WorkbenchTemplateId;
+    readonly firstMessage: string | undefined;
+  } | null>(null);
+
+  // The prompt box only exists in the DOM once the library read settles
+  // and neither dead-end state is showing — an unconditional mount-time
+  // effect would fire while that branch renders `WorkbenchLoadingState`
+  // instead, before `promptRef` has anything to focus. Re-running on
+  // `showingPrompt` catches the moment the textarea actually mounts.
+  const showingPrompt =
+    !stillSettingUp && !creating && library.kind !== "loading";
+  useEffect(() => {
+    if (showingPrompt) promptRef.current?.focus();
+  }, [showingPrompt]);
 
   // What this bench's library can actually serve (CL-6458). A kind whose
   // manifest the library doesn't hold is shown as not set up rather than
@@ -128,8 +144,6 @@ export function NewWorkbenchPickerRoute() {
   const unavailableTemplates = WORKBENCH_TEMPLATES.filter(
     (template) => !offeredTemplates.includes(template),
   );
-  const selectedId =
-    picked ?? offeredTemplates[0]?.id ?? WORKBENCH_TEMPLATES[0]?.id ?? "blank";
 
   const pickGithubRepos: PickGithubRepos = ({
     orgName,
@@ -140,17 +154,22 @@ export function NewWorkbenchPickerRoute() {
       setRepoPicker({ orgName, repos, selectedRepoIds, resolve });
     });
 
-  async function handleCreate() {
+  async function handleCreate(
+    templateId: WorkbenchTemplateId,
+    firstMessage?: string,
+  ) {
     if (selectedTenantId === null || creating) return;
+    lastAttemptRef.current = { templateId, firstMessage };
     setCreating(true);
     setStillSettingUp(false);
     try {
       await createWorkbenchFromTemplate(
         selectedTenantId,
-        selectedId,
+        templateId,
         navigate,
         queryClient,
         pickGithubRepos,
+        firstMessage,
       );
     } catch (cause) {
       // The missing-setup-agent precondition reads identically whether
@@ -182,6 +201,18 @@ export function NewWorkbenchPickerRoute() {
     }
   }
 
+  function retryLastAttempt() {
+    const attempt = lastAttemptRef.current;
+    if (attempt === null) return;
+    void handleCreate(attempt.templateId, attempt.firstMessage);
+  }
+
+  function handlePromptSubmit() {
+    const trimmed = prompt.trim();
+    if (trimmed === "") return;
+    void handleCreate(BLANK_TEMPLATE_ID, trimmed);
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
@@ -205,24 +236,60 @@ export function NewWorkbenchPickerRoute() {
               Your account&apos;s agents are finishing setup in the background.
               This usually takes under a minute — try again in a moment.
             </p>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => void handleCreate()}
-            >
+            <Button type="button" variant="outline" onClick={retryLastAttempt}>
               Try again
             </Button>
           </div>
         ) : creating ? (
-          <WorkbenchLoadingState title="Setting up your workbench…" />
+          // `delayMs={0}`: we already know this is a genuine wait the
+          // instant the person hits Enter or clicks a card, so the default
+          // "hold back briefly in case it resolves fast" delay only bought
+          // a blank pane here (CL-6623 finding #3) — show the loader
+          // outright instead of leaving a gap before it mounts.
+          <WorkbenchLoadingState
+            delayMs={0}
+            title="Setting up your workbench…"
+          />
         ) : library.kind === "loading" ? (
           <WorkbenchLoadingState title="Seeing what you can set up here…" />
         ) : (
           <>
-            <h3>What should this workbench do?</h3>
+            <h3>What do you want your Workbench to do?</h3>
             <p className="new-workbench-picker-sub">
-              Pick one. You can change your mind later — nothing is locked in.
+              Tell it what you're trying to get done, or pick one below. Takes
+              about ten seconds.
             </p>
+
+            <form
+              className="new-workbench-prompt"
+              onSubmit={(event) => {
+                event.preventDefault();
+                handlePromptSubmit();
+              }}
+            >
+              <textarea
+                ref={promptRef}
+                className="new-workbench-prompt-input"
+                placeholder={PROMPT_PLACEHOLDER}
+                value={prompt}
+                rows={2}
+                onChange={(event) => setPrompt(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    handlePromptSubmit();
+                  }
+                }}
+              />
+              <Button
+                type="submit"
+                size="icon"
+                aria-label="Start this workbench"
+                disabled={prompt.trim() === "" || selectedTenantId === null}
+              >
+                <PaperPlaneRight size={16} strokeWidth={1.8} />
+              </Button>
+            </form>
 
             {library.kind === "error" ? (
               <p className="new-workbench-picker-sub" role="status">
@@ -239,23 +306,16 @@ export function NewWorkbenchPickerRoute() {
               </p>
             ) : null}
 
-            <div
-              className="new-workbench-pick-list"
-              role="radiogroup"
-              aria-label="Workbench kind"
-            >
+            <div className="new-workbench-prefab-grid">
               {offeredTemplates.map((template) => {
-                const Icon = ROW_ICON[template.id];
-                const selected = template.id === selectedId;
+                const Icon = CARD_ICON[template.id];
                 return (
                   <button
                     key={template.id}
                     type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    data-selected={selected ? "true" : undefined}
-                    className="new-workbench-pick-row"
-                    onClick={() => setPicked(template.id)}
+                    className="new-workbench-prefab-card"
+                    disabled={creating || selectedTenantId === null}
+                    onClick={() => void handleCreate(template.id)}
                   >
                     <span
                       className="new-workbench-pick-glyph"
@@ -271,19 +331,16 @@ export function NewWorkbenchPickerRoute() {
                         {template.promise}
                       </span>
                     </span>
-                    <span className="new-workbench-pick-cta">
-                      {ctaLabel(selected)}
-                    </span>
                   </button>
                 );
               })}
 
               {unavailableTemplates.map((template) => {
-                const Icon = ROW_ICON[template.id];
+                const Icon = CARD_ICON[template.id];
                 return (
                   <span
                     key={template.id}
-                    className="new-workbench-pick-row"
+                    className="new-workbench-prefab-card"
                     aria-disabled="true"
                   >
                     <span
@@ -300,38 +357,9 @@ export function NewWorkbenchPickerRoute() {
                         Not set up on this bench yet.
                       </span>
                     </span>
-                    <span className="new-workbench-pick-cta">Unavailable</span>
                   </span>
                 );
               })}
-
-              <span className="new-workbench-pick-row" aria-disabled="true">
-                <span className="new-workbench-pick-glyph" aria-hidden="true">
-                  <Plus size={16} strokeWidth={1.8} />
-                </span>
-                <span className="new-workbench-pick-text">
-                  <span className="new-workbench-pick-title">
-                    {COMING_SOON_ROW.title}
-                  </span>
-                  <span className="new-workbench-pick-promise">
-                    {COMING_SOON_ROW.promise}
-                  </span>
-                </span>
-                <span className="new-workbench-pick-cta">Coming</span>
-              </span>
-            </div>
-
-            <div className="new-workbench-picker-foot">
-              <Button
-                type="button"
-                onClick={() => void handleCreate()}
-                disabled={creating || selectedTenantId === null}
-              >
-                Create workbench
-              </Button>
-              <span className="new-workbench-picker-foot-note">
-                Takes about ten seconds.
-              </span>
             </div>
           </>
         )}

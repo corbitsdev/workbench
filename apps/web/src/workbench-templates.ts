@@ -1,13 +1,14 @@
-// The picker's row catalog: one entry per selectable kind, plus the
-// disabled "more kinds soon" row. `code-review` and `blank` are pinned to
-// the approved mock (CL-6342) verbatim; `due-diligence` mirrors the
-// backend's `DUE_DILIGENCE_TEMPLATE` (`@corbits/workflow-catalog`, CL-6499)
-// — it and every other id here are still gated by what this bench's
-// library actually serves before either is offered as a live row (see
+// The picker's prefab catalog: one entry per one-click shortcut card
+// (CL-6628). `code-review` and `blank` are pinned to the approved mock
+// (CL-6342) verbatim; `due-diligence` mirrors the backend's
+// `DUE_DILIGENCE_TEMPLATE` (`@corbits/workflow-catalog`, CL-6499) — it and
+// every other id here are still gated by what this bench's library
+// actually serves before either is offered as a live card (see
 // `NewWorkbenchPickerRoute`'s `servedTemplateIds`). See
-// `pages/new-workbench-picker.tsx` for the row rendering and
+// `pages/new-workbench-picker.tsx` for the card rendering and
 // `instant-agent-create.ts`'s `createWorkbenchFromTemplate` for what
-// picking one actually does today.
+// picking one — or typing a goal into the prompt box above them —
+// actually does today.
 
 export type WorkbenchTemplateId = "code-review" | "due-diligence" | "blank";
 
@@ -37,9 +38,3 @@ export const WORKBENCH_TEMPLATES: readonly WorkbenchTemplate[] = [
       "An empty room with Myra in it. Bring your own work, connect things as you go.",
   },
 ];
-
-/** The disabled third row — not a real template, never selectable. */
-export const COMING_SOON_ROW = {
-  title: "More kinds soon",
-  promise: "Standups, incident recaps, on-call triage.",
-} as const;

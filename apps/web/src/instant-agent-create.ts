@@ -19,7 +19,9 @@ import {
   createWorkbench,
   getConnectGithubState,
   inviteAgent,
+  partsForSend,
   patchWorkbenchSettings,
+  sendMessage,
   startReviewingGithubRepos,
   workbenchesQueryKeyPrefix,
   type ConnectGithubRepo,
@@ -123,6 +125,12 @@ export type PickGithubRepos = (args: {
  * Without this, the room this function `navigate`s to can start life
  * holding a `workbenches` query cached from before the last invite
  * resolved.
+ *
+ * `firstMessage`, when given (CL-6628's prompt box), is sent as the
+ * signed-in person's own opening message once the room and its
+ * template participants exist, so it lands after the setup/template
+ * greeting rather than racing it — Myra reads the room's actual intent
+ * as the next line, not the first.
  */
 export async function createWorkbenchFromTemplate(
   tenantId: string,
@@ -130,6 +138,7 @@ export async function createWorkbenchFromTemplate(
   navigate: (to: string) => void,
   queryClient: QueryClient,
   pickGithubRepos?: PickGithubRepos,
+  firstMessage?: string,
 ): Promise<void> {
   const definitions = await listAgentDefinitions(tenantId);
   const setupTemplate = findMyraDefinition(definitions);
@@ -233,6 +242,10 @@ export async function createWorkbenchFromTemplate(
     await queryClient.invalidateQueries({
       queryKey: workbenchesQueryKeyPrefix(tenantId),
     });
+  }
+
+  if (firstMessage !== undefined && firstMessage.trim() !== "") {
+    await sendMessage(tenantId, workbench.id, partsForSend(firstMessage, []));
   }
 
   navigate(workbenchPath(workbench.id));
