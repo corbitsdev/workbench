@@ -47,6 +47,7 @@
     "@corbits/tasks": "workspace:*",
     "@corbits/tool-registry-publish": "workspace:*",
     "@corbits/turn-artifacts": "workspace:*",
+    "@corbits/workflow-deploy-source": "workspace:*",
     "@corbits/url-path": "workspace:*",
     "@corbits/webhook-triggers": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",

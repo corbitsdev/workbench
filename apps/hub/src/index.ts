@@ -207,6 +207,10 @@ import {
   lookupRunKeyHistoryReconnectKey,
 } from "@corbits/run-key-history";
 import {
+  createDrizzleWorkflowDeploySourceStore,
+  withDeploySourceRecording,
+} from "@corbits/workflow-deploy-source";
+import {
   createMyraAgentDefinitionDrafting,
   createPlannerRoutes,
   createWorkflowDispatchRoutes,
@@ -870,17 +874,28 @@ export async function createHub(config: HubConfig) {
     getSigningPublicKey: agentRepoStore.getSigningPublicKey,
     repoStore: launchCaches.repoStore,
   };
-  const sessionService = createSessionService({
-    sidecarRouter,
-    agentRepoStore: launchAgentRepoStore,
-    assetService: launchCaches.assetService,
-    db,
-    toolPackageRegistries: {
-      httpRegistries: REGISTRIES,
-      defaultRegistry: "npmjs",
-      scopeRouting: [{ scope: "@corbits", registry: CORBITS_TOOLS_REGISTRY }],
-    },
-  });
+  // Shared placement's code-sourced deploys previously left their
+  // `WorkflowDefinitionSource` durable nowhere on the hub -- only on the
+  // sidecar's local `deployment.json` (CL-6581). Wrapping the two deploy
+  // methods here, at the composition root, records that source into
+  // Postgres on every deploy without touching vendored
+  // `session-service.ts`; exclusive placement already persists its own via
+  // `workflow_run_launch_spec`, untouched.
+  const workflowDeploySourceStore = createDrizzleWorkflowDeploySourceStore(db);
+  const sessionService = withDeploySourceRecording(
+    createSessionService({
+      sidecarRouter,
+      agentRepoStore: launchAgentRepoStore,
+      assetService: launchCaches.assetService,
+      db,
+      toolPackageRegistries: {
+        httpRegistries: REGISTRIES,
+        defaultRegistry: "npmjs",
+        scopeRouting: [{ scope: "@corbits", registry: CORBITS_TOOLS_REGISTRY }],
+      },
+    }),
+    workflowDeploySourceStore,
+  );
   // Provisioner plugins are injected at the application composition
   // boundary, mirroring @intx/hub-sessions's own reference wiring: the
   // registry always exists, but ships with no provisioners (and no
