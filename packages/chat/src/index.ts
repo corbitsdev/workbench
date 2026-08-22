@@ -217,6 +217,8 @@ export type {
 } from "./run-participant";
 export {
   dispatchTurn,
+  DEFAULT_TURN_DISPATCH_TIMEOUT_MS,
+  turnDispatchTimeoutMessage,
   launchAndJoinAgent,
   postCannedGreeting,
   cannedGreeting,
