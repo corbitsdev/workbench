@@ -707,12 +707,15 @@ function FailedTurnStrip({
   readonly onRetryFailedTurn?: (
     item: TimelineMessageItem,
     retryText?: string,
-  ) => void;
+  ) => void | Promise<void>;
   readonly onWhatHappenedFailedTurn?: (item: TimelineMessageItem) => void;
 }) {
   const display = senderDisplay(item.sender, participants, currentUser);
   const sender = display?.label ?? CHAT_STRINGS.senderFallbackMember;
   const [expanded, setExpanded] = useState(false);
+  // Guards the resend itself against a double-click firing two sends —
+  // not composer state, since Retry never touches the composer any more.
+  const [retrying, setRetrying] = useState(false);
   return (
     <div className="chat-turn-failed" role="status">
       <span className="chat-turn-failed-text">
@@ -723,7 +726,14 @@ function FailedTurnStrip({
         variant="ghost"
         size="sm"
         className="chat-turn-failed-retry"
-        onClick={() => onRetryFailedTurn?.(item, retryText)}
+        disabled={retrying}
+        onClick={() => {
+          if (retrying) return;
+          setRetrying(true);
+          void Promise.resolve(onRetryFailedTurn?.(item, retryText)).finally(
+            () => setRetrying(false),
+          );
+        }}
       >
         {CHAT_STRINGS.prThreadRetryAction}
       </Button>
@@ -1318,7 +1328,7 @@ function MessagePartsInner({
   readonly onRetryFailedTurn?: (
     item: TimelineMessageItem,
     retryText?: string,
-  ) => void;
+  ) => void | Promise<void>;
   readonly onWhatHappenedFailedTurn?: (item: TimelineMessageItem) => void;
 }) {
   // A message this reader's own composer submitted and the server hasn't
@@ -1730,7 +1740,7 @@ export function WorkbenchTimeline({
   readonly onRetryFailedTurn?: (
     item: TimelineMessageItem,
     retryText?: string,
-  ) => void;
+  ) => void | Promise<void>;
   /** The failed-turn strip's "what happened" action — same undefined
    * contract as `onRetryFailedTurn`. */
   readonly onWhatHappenedFailedTurn?: (item: TimelineMessageItem) => void;

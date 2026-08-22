@@ -92,7 +92,9 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
           participants={[
             { address: "ins_echo1@agents.example", handle: "echo" },
           ]}
-          onRetryFailedTurn={(item) => retried.push(item.id)}
+          onRetryFailedTurn={(item) => {
+            retried.push(item.id);
+          }}
           onWhatHappenedFailedTurn={(item) => whatHappened.push(item.id)}
         />,
       );
@@ -185,7 +187,7 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
     );
   });
 
-  test("Retry hands back the original request text so it isn't lost", async () => {
+  test("Retry auto-resends the recovered request text — no composer round trip", async () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -197,7 +199,9 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
           participants={[
             { address: "ins_echo1@agents.example", handle: "echo" },
           ]}
-          onRetryFailedTurn={(_item, retryText) => retried.push(retryText)}
+          onRetryFailedTurn={(_item, retryText) => {
+            retried.push(retryText);
+          }}
         />,
       );
     });
@@ -208,6 +212,55 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
       ).click();
     });
 
+    // The strip hands the recovered text straight to the host's resend
+    // action — the host (chat-workspace.tsx) sends it through the normal
+    // send path itself; the strip never touches a composer.
     expect(retried).toEqual(["hi @echo"]);
+  });
+
+  test("Retry disables itself while the resend is in flight, and re-enables once it settles", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const calls: (string | undefined)[] = [];
+    let resolveSend: (() => void) | undefined;
+    await act(async () => {
+      root?.render(
+        <WorkbenchTimeline
+          items={failedTurnItem()}
+          participants={[
+            { address: "ins_echo1@agents.example", handle: "echo" },
+          ]}
+          onRetryFailedTurn={(_item, retryText) => {
+            calls.push(retryText);
+            return new Promise<void>((resolve) => {
+              resolveSend = resolve;
+            });
+          }}
+        />,
+      );
+    });
+
+    const retryButton = () =>
+      container?.querySelector(".chat-turn-failed-retry") as HTMLButtonElement;
+
+    act(() => {
+      retryButton().click();
+    });
+    // A second click while the first resend is still in flight must not
+    // fire a second send.
+    act(() => {
+      retryButton().click();
+    });
+
+    expect(calls).toEqual(["hi @echo"]);
+    expect(retryButton().disabled).toBe(true);
+
+    await act(async () => {
+      resolveSend?.();
+      await Promise.resolve();
+    });
+
+    expect(retryButton().disabled).toBe(false);
   });
 });
