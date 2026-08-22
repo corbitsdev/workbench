@@ -74,34 +74,18 @@ describe("buildSidebarRows", () => {
     expect(rows).toEqual([{ kind: "workbench", workbench: dm }]);
   });
 
-  test("DMs with the same agent identity minted from different ancestor tenants collapse to the most recent one (CL-6271)", () => {
-    const staleDm = workbench({
-      id: "ch_myra_ancestor",
-      kind: "chat",
-      title: "Myra",
-      definitionId: "wfd_myra_ancestor",
-      lastActivityAt: "2026-01-01T00:00:00.000Z",
-    });
-    const freshDm = workbench({
-      id: "ch_myra_leaf",
-      kind: "chat",
-      title: "Myra",
-      definitionId: "wfd_myra_leaf",
-      lastActivityAt: "2026-01-05T00:00:00.000Z",
-    });
-
-    const rows = buildSidebarRows([], [staleDm, freshDm]);
-
-    expect(rows).toEqual([{ kind: "workbench", workbench: freshDm }]);
-  });
-
-  test("every workbench deliberately created against the same agent definition keeps its own row (CL-6459)", () => {
+  test("every created workbench keeps its row even when each minted its own definition (CL-6621)", () => {
+    // Creation now clones a fresh definition per workbench (CL-6452), so
+    // sibling rows for the same agent legitimately carry distinct
+    // definitionIds. The old CL-6271 collapse keyed on exactly that and
+    // hid every workbench but the newest — a person creating a second
+    // workbench watched the first vanish.
     const created = ["ch_new_1", "ch_new_2", "ch_new_3"].map((id, index) =>
       workbench({
         id,
         kind: "chat",
         title: "New Workbench",
-        definitionId: "wfd_myra",
+        definitionId: `wfd_myra_${id}`,
         participants: [{ address: "myra@acme.localhost", handle: "myra" }],
         lastActivityAt: `2026-01-0${index + 1}T00:00:00.000Z`,
       }),
@@ -113,43 +97,6 @@ describe("buildSidebarRows", () => {
       "ch_new_3",
       "ch_new_2",
       "ch_new_1",
-    ]);
-  });
-
-  test("a stale cross-tenant sibling drops without taking the live definition's deliberate workbenches with it", () => {
-    const staleAncestorDm = workbench({
-      id: "ch_myra_ancestor",
-      kind: "chat",
-      title: "Myra",
-      definitionId: "wfd_myra_ancestor",
-      participants: [{ address: "myra@acme.localhost", handle: "myra" }],
-      lastActivityAt: "2026-01-01T00:00:00.000Z",
-    });
-    const homeDm = workbench({
-      id: "ch_myra_home",
-      kind: "chat",
-      title: "Myra",
-      definitionId: "wfd_myra_leaf",
-      participants: [{ address: "myra@acme.localhost", handle: "myra" }],
-      lastActivityAt: "2026-01-04T00:00:00.000Z",
-    });
-    const createdWorkbench = workbench({
-      id: "ch_myra_new",
-      kind: "chat",
-      title: "New Workbench",
-      definitionId: "wfd_myra_leaf",
-      participants: [{ address: "myra@acme.localhost", handle: "myra" }],
-      lastActivityAt: "2026-01-05T00:00:00.000Z",
-    });
-
-    const rows = buildSidebarRows(
-      [],
-      [staleAncestorDm, homeDm, createdWorkbench],
-    );
-
-    expect(rows.map((row) => row.workbench.id)).toEqual([
-      "ch_myra_new",
-      "ch_myra_home",
     ]);
   });
 
@@ -192,15 +139,15 @@ describe("buildSidebarRows", () => {
     ]);
   });
 
-  test("DMs sharing an agent identity still collapse when only their titles, not their participant handles, are known (legacy rows)", () => {
-    const staleDm = workbench({
+  test("same-titled DMs both stay: a title is not identity (CL-6621)", () => {
+    const olderDm = workbench({
       id: "ch_legacy_ancestor",
       kind: "chat",
       title: "Assist",
       definitionId: "wfd_legacy_ancestor",
       lastActivityAt: "2026-01-01T00:00:00.000Z",
     });
-    const freshDm = workbench({
+    const newerDm = workbench({
       id: "ch_legacy_leaf",
       kind: "chat",
       title: "Assist",
@@ -208,12 +155,15 @@ describe("buildSidebarRows", () => {
       lastActivityAt: "2026-01-05T00:00:00.000Z",
     });
 
-    const rows = buildSidebarRows([], [staleDm, freshDm]);
+    const rows = buildSidebarRows([], [olderDm, newerDm]);
 
-    expect(rows).toEqual([{ kind: "workbench", workbench: freshDm }]);
+    expect(rows.map((row) => row.workbench.id)).toEqual([
+      "ch_legacy_leaf",
+      "ch_legacy_ancestor",
+    ]);
   });
 
-  test("group workbenches are never mistaken for agent DMs during dedupe", () => {
+  test("group workbenches with identical titles each keep their row", () => {
     const groupOne = workbench({ id: "ch_group_1", title: "Launch plan" });
     const groupTwo = workbench({ id: "ch_group_2", title: "Launch plan" });
 
