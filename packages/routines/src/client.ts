@@ -26,7 +26,9 @@ export {
 } from "./run-language";
 export {
   cleanFireStreak,
+  FIRE_RUNNING_WINDOW_MS,
   fireFailed,
+  fireOutcomeStatus,
   lastFailedFire,
   medianFireDurationMs,
   routineHealth,

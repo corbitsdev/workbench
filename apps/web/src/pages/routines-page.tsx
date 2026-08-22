@@ -36,6 +36,7 @@ import type { BadgeTone, RunStatus } from "@corbits/react-ui";
 import { Clock, PlayCircle, Plus } from "@corbits/icons";
 import type { KeyboardEvent } from "react";
 import {
+  fireOutcomeStatus,
   routineHealth,
   routineScheduleSentence,
   runStatusLabel,
@@ -145,7 +146,7 @@ export function RunsTable({
                 <TriggeredByCell run={run} />
               </TableCell>
               <TableCell>
-                <RunStatusCell run={run} />
+                <RunStatusCell run={run} now={now} />
               </TableCell>
               <TableCell>{formatRelativeTime(run.createdAt, now)}</TableCell>
             </TableRow>
@@ -176,11 +177,20 @@ export function TriggeredByCell({ run }: { readonly run: RoutineRun }) {
   );
 }
 
-/** A fire's settled run status in words, or a dash when the platform has
- * no run to report (a launch that never got that far). */
-export function RunStatusCell({ run }: { readonly run: RoutineRun }) {
-  const status = run.run?.status;
-  if (typeof status !== "string") {
+/** A fire's outcome in words, or a dash when the platform has no run to
+ * report (a launch that never got that far). Reads `fireOutcomeStatus`,
+ * not the raw `run.status` — warm-keep (CL-6681) leaves a fire's delivery
+ * agent deployed after it replies, so the raw column never settles out of
+ * `running` on its own. */
+export function RunStatusCell({
+  run,
+  now,
+}: {
+  readonly run: RoutineRun;
+  readonly now: number;
+}) {
+  const status = fireOutcomeStatus(run, now);
+  if (status === null) {
     return <span className="text-[var(--ui-fg-muted)]">—</span>;
   }
   return <Badge tone={runStatusTone(status)}>{runStatusLabel(status)}</Badge>;
@@ -189,8 +199,11 @@ export function RunStatusCell({ run }: { readonly run: RoutineRun }) {
 /** A routine's health, from the telemetry the scheduler already records —
  * the same reading the detail page's health rail shows, never a second
  * opinion. */
-export function routineRowHealth(row: GlobalRoutineRow): RoutineHealth {
-  return routineHealth(row.routine, row.runs);
+export function routineRowHealth(
+  row: GlobalRoutineRow,
+  now: number,
+): RoutineHealth {
+  return routineHealth(row.routine, row.runs, now);
 }
 
 /** "At 09:00, Monday through Friday (UTC)" — the schedule as a sentence,
@@ -275,7 +288,7 @@ export function GlobalRoutinesList({
       </TableHeader>
       <TableBody>
         {rows.map((row) => {
-          const health = routineRowHealth(row);
+          const health = routineRowHealth(row, now);
           const lastRun = latestFire(row);
           return (
             <TableRow key={row.routine.id}>
@@ -311,7 +324,7 @@ export function GlobalRoutinesList({
                     <span className="text-sm">
                       {formatRelativeTime(lastRun.createdAt, now)}
                     </span>
-                    <RunStatusCell run={lastRun} />
+                    <RunStatusCell run={lastRun} now={now} />
                   </span>
                 )}
               </TableCell>

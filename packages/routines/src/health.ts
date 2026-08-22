@@ -70,6 +70,37 @@ function statusOf(fire: RoutineFire): string | null {
   return typeof status === "string" ? status : null;
 }
 
+/**
+ * How long a fire may credibly still be doing work before its lingering
+ * `running` status is read as warm-keep (CL-6681) — a routine's delivery
+ * agent deliberately stays deployed after it replies, so
+ * `workflow_run.status` never settles out of `running` on its own. Past
+ * this window a `running` fire is presumed to have already delivered its
+ * reply, so every surface badging its status reads it through
+ * `fireOutcomeStatus` rather than the raw column.
+ */
+export const FIRE_RUNNING_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * A fire's status the way this build should show it: the raw `run.status`
+ * for every terminal value, but a `running` status older than
+ * `FIRE_RUNNING_WINDOW_MS` is read as `completed` instead of taken
+ * literally — see that constant's own comment. This is the one place that
+ * tells a fire still doing work apart from one merely staying warm; every
+ * caller that needs a fire's displayed status goes through here, never
+ * `fire.run?.status` directly.
+ */
+export function fireOutcomeStatus(
+  fire: RoutineFire,
+  now: number,
+): string | null {
+  const status = statusOf(fire);
+  if (status !== "running") return status;
+  const startedAt = Date.parse(fire.createdAt);
+  if (Number.isNaN(startedAt)) return status;
+  return now - startedAt > FIRE_RUNNING_WINDOW_MS ? "completed" : "running";
+}
+
 /** A fire failed when it recorded a launch error (the synthetic
  * `schedule-failed` row) or its run settled as failed. */
 export function fireFailed(fire: RoutineFire): boolean {
@@ -77,17 +108,20 @@ export function fireFailed(fire: RoutineFire): boolean {
   return statusOf(fire) === "failed";
 }
 
-function fireSucceeded(fire: RoutineFire): boolean {
-  return !fireFailed(fire) && statusOf(fire) === "completed";
+function fireSucceeded(fire: RoutineFire, now: number): boolean {
+  return !fireFailed(fire) && fireOutcomeStatus(fire, now) === "completed";
 }
 
 /** Successful fires from the newest backwards, stopping at the first
  * failure — the "N clean runs" streak, not a lifetime total. */
-export function cleanFireStreak(fires: readonly RoutineFire[]): number {
+export function cleanFireStreak(
+  fires: readonly RoutineFire[],
+  now: number,
+): number {
   let streak = 0;
   for (const fire of fires) {
     if (fireFailed(fire)) break;
-    if (fireSucceeded(fire)) streak += 1;
+    if (fireSucceeded(fire, now)) streak += 1;
   }
   return streak;
 }
@@ -142,6 +176,7 @@ function stateAndWords(
   routine: RoutineHealthSubject,
   fires: readonly RoutineFire[],
   streak: number,
+  now: number,
 ): {
   readonly state: RoutineHealthState;
   readonly label: string;
@@ -163,7 +198,7 @@ function stateAndWords(
     };
   }
   const latest = fires[0];
-  if (latest !== undefined && statusOf(latest) === "running") {
+  if (latest !== undefined && fireOutcomeStatus(latest, now) === "running") {
     return {
       state: "running",
       label: "Running now",
@@ -203,14 +238,17 @@ function stateAndWords(
 
 /**
  * A routine's health from its own row plus its fire history (newest
- * first, as `GET /routines/:id/runs` returns it).
+ * first, as `GET /routines/:id/runs` returns it). `now` defaults to the
+ * wall clock — callers that render a ticking page pass their own shared
+ * clock so this agrees with the rest of that page's relative times.
  */
 export function routineHealth(
   routine: RoutineHealthSubject,
   fires: readonly RoutineFire[],
+  now: number = Date.now(),
 ): RoutineHealth {
-  const cleanStreak = cleanFireStreak(fires);
-  const words = stateAndWords(routine, fires, cleanStreak);
+  const cleanStreak = cleanFireStreak(fires, now);
+  const words = stateAndWords(routine, fires, cleanStreak, now);
   return {
     state: words.state,
     label: words.label,
