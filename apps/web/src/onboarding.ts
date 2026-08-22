@@ -430,13 +430,16 @@ async function postOnboarding(
   apiKey: string,
   baseURL?: string,
 ): Promise<{ readonly response: Response; readonly body: unknown }> {
+  // A key copied from a provider console often carries a trailing
+  // newline; sent verbatim the provider 401s a valid key (CL-6682).
+  const trimmedKey = apiKey.trim();
   const response = await fetch(`/api/onboarding/${path}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(
       baseURL !== undefined
-        ? { provider, apiKey, baseURL }
-        : { provider, apiKey },
+        ? { provider, apiKey: trimmedKey, baseURL }
+        : { provider, apiKey: trimmedKey },
     ),
   });
   const body: unknown = await response.json().catch(() => null);

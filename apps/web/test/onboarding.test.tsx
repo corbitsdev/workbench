@@ -304,6 +304,27 @@ describe("submitCredential", () => {
     });
   });
 
+  // CL-6682: a key copied from a provider console often carries a
+  // trailing newline; sent verbatim the provider 401s a valid key.
+  test("strips leading/trailing whitespace from the pasted key", async () => {
+    let requestBody: unknown = null;
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      requestBody = JSON.parse((init as RequestInit).body as string);
+      return json({
+        kind: "ready",
+        tenantSlug: "ada-user1",
+        deployed: [],
+        pending: [],
+      });
+    }) as unknown as typeof fetch;
+
+    await submitCredential("anthropic", " sk-ant-good\n");
+    expect(requestBody).toEqual({
+      provider: "anthropic",
+      apiKey: "sk-ant-good",
+    });
+  });
+
   test("a bench whose agents are all live reports nothing pending", async () => {
     globalThis.fetch = (async () =>
       json({
