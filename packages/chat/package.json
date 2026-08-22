@@ -24,6 +24,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/agent-events": "workspace:*",
     "@corbits/agent-lifecycle": "workspace:*",
     "@corbits/agent-runtime": "workspace:*",
     "@corbits/approvals": "workspace:*",

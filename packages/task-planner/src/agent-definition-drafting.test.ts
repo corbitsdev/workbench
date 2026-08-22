@@ -10,7 +10,7 @@ import {
   type AgentDefinitionDraftingRunnerDeps,
 } from "./agent-definition-drafting";
 import type { InventorySources, PlannerInventory } from "./inventory";
-import { FoldedRunTimedOutError } from "@corbits/folded-runs";
+import { FoldedRunTimedOutError } from "@corbits/folded-run-one-shot";
 
 const INVENTORY_SOURCES: InventorySources = {
   async listConversationalAgents() {

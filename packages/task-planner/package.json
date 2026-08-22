@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@corbits/agent-directory": "workspace:*",
+    "@corbits/folded-run-one-shot": "workspace:*",
     "@corbits/folded-runs": "workspace:*",
     "@corbits/skills": "workspace:*",
     "@corbits/tasks": "workspace:*",

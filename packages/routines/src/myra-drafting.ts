@@ -9,7 +9,7 @@
 // falls back to an empty proposal.
 import { type } from "arktype";
 
-import type { OneShotReply } from "@corbits/folded-runs";
+import type { OneShotReply } from "@corbits/folded-run-one-shot";
 import {
   validateTriggerFieldsInput,
   type WorkflowTriggerField,

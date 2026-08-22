@@ -39,6 +39,7 @@
     "@corbits/presence": "workspace:*",
     "@corbits/routines": "workspace:*",
     "@corbits/run-key-history": "workspace:*",
+    "@corbits/run-scope": "workspace:*",
     "@corbits/sidecar-placement": "workspace:*",
     "@corbits/agent-workflow-authoring": "workspace:*",
     "@corbits/skills": "workspace:*",

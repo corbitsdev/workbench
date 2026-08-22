@@ -4,8 +4,8 @@
 // deriving an exclusion set from a tenant's *workbenches*, which silently
 // missed every task-style folded run (a task creates no workbench at
 // all). This route answers it server-side instead, straight off
-// `workflow_run` plus this package's own `folded_run` marker table (see
-// `./schema.ts`), so every folded run — workbench host, invited agent, or
+// `workflow_run` plus `@corbits/folded-runs`' own `folded_run` marker
+// table, so every folded run — workbench host, invited agent, or
 // task — is excluded uniformly with no per-consumer opt-in.
 //
 // The listing predicate mirrors vendor's own "top-level run" predicate
@@ -14,8 +14,8 @@
 // `vendor/intx/hub-sessions/src/hub-session-lookups.ts`'s
 // `isTopLevelRun`, this route's reference implementation — with one
 // addition vendor cannot express: a `NOT EXISTS` against `folded_run`,
-// dropping every self-anchored run this package's own `launchFoldedRun`
-// ever minted.
+// dropping every self-anchored run `@corbits/folded-runs`' own
+// `launchFoldedRun` ever minted.
 //
 // A second feed lives here too (`feed=fires`, `listTopLevelRunFires`,
 // CL-6249): Insights' different question, "which runs actually executed"
@@ -32,8 +32,7 @@ import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { getDescendantTenants, type DB } from "@intx/db";
 import { workflowDefinition, workflowRun } from "@intx/db/schema";
 import type { WorkflowRunStatus } from "@intx/types";
-
-import { foldedRun } from "./schema";
+import { foldedRun } from "@corbits/folded-runs";
 
 /** A routine fire's parent, resolved by `resolveRoutineFires` below. */
 export type RoutineFireInfo = {

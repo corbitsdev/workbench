@@ -1,13 +1,12 @@
 {
-  "name": "@corbits/tasks",
+  "name": "@corbits/folded-run-one-shot",
   "private": true,
-  "description": "Spawn-and-return agent tasks: a prompt plus an agent definition launches a one-shot folded run with no workbench, and its finalized reply lands in the Inbox.",
+  "description": "A synchronous request/reply runner over one folded run's opening turn: launch, send the prompt, wait for exactly one reply, tear the run down on every exit path",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./migrations": "./src/migrations.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -17,22 +16,15 @@
     "@corbits/agent-events": "workspace:*",
     "@corbits/agent-lifecycle": "workspace:*",
     "@corbits/folded-runs": "workspace:*",
-    "@corbits/notify": "workspace:*",
-    "@corbits/turn-artifacts": "workspace:*",
     "@intx/db": "workspace:*",
-    "@intx/hub-api": "workspace:*",
     "@intx/hub-common": "0.3.0",
     "@intx/hub-sessions": "workspace:*",
     "@intx/log": "0.3.0",
     "@intx/types": "0.3.0",
     "@intx/workflow-deploy": "workspace:*",
-    "arktype": "catalog:",
-    "drizzle-orm": "catalog:",
-    "hono": "^4.11.9",
-    "postgres": "catalog:"
+    "drizzle-orm": "catalog:"
   },
   "devDependencies": {
-    "@corbits/chat": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   }

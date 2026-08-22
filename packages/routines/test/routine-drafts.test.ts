@@ -9,7 +9,7 @@ import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 
 import type { TenantEnv } from "@intx/hub-api";
-import { FoldedRunTimedOutError } from "@corbits/folded-runs";
+import { FoldedRunTimedOutError } from "@corbits/folded-run-one-shot";
 
 import {
   createRoutineRoutes,

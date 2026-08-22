@@ -1,0 +1,19 @@
+{
+  "name": "@corbits/agent-events",
+  "private": true,
+  "description": "Structural readers for the sidecar agent.event frames: connector replies, inference-done content blocks, tool-done results, and message-run start/end brackets",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

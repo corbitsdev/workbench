@@ -43,7 +43,7 @@ import { getLogger } from "@intx/log";
 import {
   FoldedRunFailedError,
   FoldedRunTimedOutError,
-} from "@corbits/folded-runs";
+} from "@corbits/folded-run-one-shot";
 import { SkillRegistryError } from "@corbits/skills";
 import type { TaskRecord } from "@corbits/tasks";
 import type {
