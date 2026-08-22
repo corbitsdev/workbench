@@ -112,6 +112,13 @@ export type CreateHubChatPlatformDeps = {
    */
   reclaimRetryDelaysMs?: readonly number[];
   /**
+   * Per-attempt wall-clock bound on `sendFoldedMail` inside
+   * `sendFoldedMailWithReclaimRetry` (CL-6644). Defaults to
+   * `DEFAULT_WAKE_TIMEOUT_MS`. Injectable so tests exercise the bound
+   * in milliseconds instead of the production ~30s budget.
+   */
+  mailDeliveryTimeoutMs?: number;
+  /**
    * The invite-launch model fallback (see `./inference-preferences.ts`'s
    * `createWorkbenchHostInferencePreferencesResolver`): a
    * hand-authored definition that declares no model requirements of
@@ -245,8 +252,40 @@ export function createHubChatPlatform(
     250, 500, 1000, 2000, 4000,
   ];
 
+  // CL-6644: the reclaim-retry loop's own delays only run between
+  // attempts that already failed LOUD with "agent is unreachable" --
+  // they bound nothing about an attempt that instead stalls forever
+  // (a sidecar ack that never comes, a wedged promise anywhere in
+  // `sendFoldedMail`'s call chain) without ever throwing. Each
+  // attempt gets the same kind of wall-clock bound `wakeByAddressBounded`
+  // already puts on the wake itself, so that hang becomes a rejection
+  // `dispatchTurnBatch`'s catch can report and notify on, instead of a
+  // promise nothing ever settles.
+  const MAIL_DELIVERY_TIMEOUT_MS =
+    deps.mailDeliveryTimeoutMs ?? DEFAULT_WAKE_TIMEOUT_MS;
+
   function sleep(ms: number): Promise<void> {
     return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+  }
+
+  function withTimeout<T>(
+    promise: Promise<T>,
+    ms: number,
+    message: string,
+  ): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(message)), ms);
+      promise.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (cause: unknown) => {
+          clearTimeout(timer);
+          reject(cause);
+        },
+      );
+    });
   }
 
   function isAgentUnreachable(err: unknown): boolean {
@@ -565,25 +604,11 @@ export function createHubChatPlatform(
    * failing loud (CL-6644).
    */
   function wakeByAddressBounded(address: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(
-          new Error(
-            `wake for "${address}" did not settle within ${String(DEFAULT_WAKE_TIMEOUT_MS)}ms`,
-          ),
-        );
-      }, DEFAULT_WAKE_TIMEOUT_MS);
-      wakeByAddress(address).then(
-        (value) => {
-          clearTimeout(timer);
-          resolve(value);
-        },
-        (cause: unknown) => {
-          clearTimeout(timer);
-          reject(cause);
-        },
-      );
-    });
+    return withTimeout(
+      wakeByAddress(address),
+      DEFAULT_WAKE_TIMEOUT_MS,
+      `wake for "${address}" did not settle within ${String(DEFAULT_WAKE_TIMEOUT_MS)}ms`,
+    );
   }
 
   /**
@@ -682,7 +707,11 @@ export function createHubChatPlatform(
     let loggedRetryStart = false;
     for (let attempt = 0; ; attempt++) {
       try {
-        return await sendFoldedMail(foldedRunsDeps, params);
+        return await withTimeout(
+          sendFoldedMail(foldedRunsDeps, params),
+          MAIL_DELIVERY_TIMEOUT_MS,
+          `mail to ${params.agentAddress} did not settle within ${String(MAIL_DELIVERY_TIMEOUT_MS)}ms`,
+        );
       } catch (err) {
         const delay = RECLAIM_RETRY_DELAYS_MS[attempt];
         if (!isAgentUnreachable(err) || delay === undefined) {
