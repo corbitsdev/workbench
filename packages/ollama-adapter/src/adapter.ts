@@ -25,6 +25,7 @@ import {
   resolveOverride,
   type OllamaAdapterOverride,
 } from "./overrides";
+import { createThinkSplitState, reclassifyThinkingEvents } from "./think-tags";
 
 type OllamaChatBody = {
   options?: Record<string, unknown>;
@@ -78,6 +79,12 @@ export const createOllamaAdapter: AdapterFactory = (
 ): ProviderAdapter => {
   const config = parseOllamaAdapterConfig(quirks);
   const inner = createOpenAIAdapter(source);
+  // One split state per adapter instance: the registry resolves a fresh
+  // adapter per request (see `createAdapterRegistry`'s own doc comment),
+  // so this safely tracks "are we inside a `<think>` span" across every
+  // chunk of one response without leaking state between requests.
+  const streamThinkState = createThinkSplitState();
+  const jsonThinkState = createThinkSplitState();
   return {
     ...inner,
     buildRequest: (messages, model, options) =>
@@ -85,5 +92,9 @@ export const createOllamaAdapter: AdapterFactory = (
         inner.buildRequest(messages, model, options),
         resolveOverride(config, model),
       ),
+    parseResponse: (sseData) =>
+      reclassifyThinkingEvents(inner.parseResponse(sseData), streamThinkState),
+    parseJSONResponse: (body) =>
+      reclassifyThinkingEvents(inner.parseJSONResponse(body), jsonThinkState),
   };
 };
