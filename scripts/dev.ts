@@ -334,15 +334,37 @@ async function seedDevAccount(config: HubConfig): Promise<void> {
   const email = process.env["HUB_ADMIN_EMAIL"] ?? "alice@example.com";
   const password = process.env["HUB_ADMIN_PASSWORD"] ?? "password123";
   const name = email.split("@")[0] ?? email;
-  const deadline = Date.now() + 30_000;
+  const readinessTimeoutMs = 30_000;
+  const deadline = Date.now() + readinessTimeoutMs;
+  let hubReady = false;
   while (Date.now() < deadline) {
     try {
       const probe = await fetch(`${config.baseUrl}/api/auth/get-session`);
-      if (probe.ok) break;
+      if (probe.ok) {
+        hubReady = true;
+        break;
+      }
     } catch {
       // hub not listening yet; keep waiting
     }
     await new Promise((r) => setTimeout(r, 500));
+  }
+  // A timed-out wait must never fall through into the sign-in/sign-up
+  // attempt below: that attempt would only reproduce the same "unable to
+  // connect" failure this wait exists to rule out, and swallowing it (the
+  // former behavior) left alice's account permanently half-provisioned —
+  // created, but with none of its default agents ever deployed, and no
+  // sign a person could see. Fail the whole dev bootstrap loudly instead.
+  if (!hubReady) {
+    fail(
+      [
+        `[dev] the hub at ${config.baseUrl} never answered ` +
+          `/api/auth/get-session within ${readinessTimeoutMs / 1000}s, so`,
+        `account seeding for ${email} did not run. Check the hub's own`,
+        "log output above for why it never came up, fix that, then re-run",
+        "`bun run dev`.",
+      ].join(" "),
+    );
   }
   try {
     const signIn = await fetch(`${config.baseUrl}/api/auth/sign-in/email`, {
@@ -371,20 +393,17 @@ async function seedDevAccount(config: HubConfig): Promise<void> {
       return;
     }
     if (signUp.status === 403 && /signup_closed/i.test(body)) {
-      console.error(
+      fail(
         [
           `[dev] could not seed account ${email}: self-serve signup is closed`,
           "and the account does not exist yet. Set WORKBENCH_SIGNUP=open in",
           ".env, restart, then re-run `bun run dev` once.",
         ].join(" "),
       );
-      return;
     }
-    console.error(
-      `[dev] could not seed account ${email}: ${signUp.status} ${body}`,
-    );
+    fail(`[dev] could not seed account ${email}: ${signUp.status} ${body}`);
   } catch (error) {
-    console.error(
+    fail(
       `[dev] could not seed account ${email}: ${error instanceof Error ? error.message : String(error)}`,
     );
   }

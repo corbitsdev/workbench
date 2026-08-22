@@ -1,13 +1,19 @@
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_WORKFLOWS, SEED_GRANTS } from "@workbench/hub-client";
+import {
+  DEFAULT_WORKFLOWS,
+  SEED_GRANTS,
+  SETUP_AGENT_ASSET_NAME,
+} from "@workbench/hub-client";
 import type { ApiCall } from "@workbench/hub-client";
 import type {
   WorkflowPusher,
   ToolRegistryPublisher,
 } from "@workbench/hub-client";
 import {
+  isFullySeeded,
   personalTenantSlug,
   provisionPersonalTenantIfNeeded,
+  seededWorkflowStatus,
 } from "../src/provision";
 
 const TENANT_ID = "ten_new";
@@ -1223,5 +1229,243 @@ describe("provisionPersonalTenantIfNeeded", () => {
       tenantId: "ten_new",
     });
     expect(assetCreateCount).toBeGreaterThan(0);
+  });
+
+  test("a tenant with zero workflow definitions recovers a live assistant deployment on sign-in (CL-6510)", async () => {
+    // Reproduces the live bug verbatim: a personal bench with a real
+    // membership and 0 rows in workflow_definition — exactly
+    // tnt_b780a4d8050c8d679f107642809ab7ab's shape — hitting sign-in
+    // with a seed model configured. The bar this test holds itself to:
+    // not "seedTenant was called", but that the same read the app's own
+    // `/provisioning-status` route and `findMyraDefinition` depend on
+    // (an "assistant"-named asset with a live deployment) is genuinely
+    // there afterward.
+    const assets: { id: string; name: string }[] = [];
+    const deployments: { id: string; definitionAssetId: string }[] = [];
+    const startedRuns: Record<string, string[]> = {};
+
+    const api: ApiCall = async (method, path, body) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return {
+          status: 200,
+          data: {
+            data: [
+              {
+                principalId: PRINCIPAL_ID,
+                tenantId: TENANT_ID,
+                tenantName: "alice's team",
+                tenantSlug: TENANT_SLUG,
+                kind: "user",
+                status: "active",
+                roles: [{ id: "rol_owner", name: "owner" }],
+              },
+            ],
+            nextCursor: null,
+          },
+          cookies: [],
+        };
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return {
+          status: 200,
+          data: {
+            id: TENANT_ID,
+            name: "alice's team",
+            slug: TENANT_SLUG,
+            domain: `${TENANT_SLUG}.localhost`,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)
+      ) {
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/grants`) {
+        return { status: 201, data: {}, cookies: [] };
+      }
+      if (
+        method === "GET" &&
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+      ) {
+        // 0 rows, exactly like the live tenant, until seedTenant creates
+        // some — every subsequent read reflects whatever exists so far.
+        return {
+          status: 200,
+          data: assets.map((asset) => ({
+            id: asset.id,
+            tenantId: TENANT_ID,
+            kind: "workflow",
+            name: asset.name,
+            displayName: null,
+            creatorPrincipalId: null,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+            origin: { tenantId: TENANT_ID, direct: true },
+          })),
+          cookies: [],
+        };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`) {
+        const name =
+          typeof body === "object" && body !== null && "name" in body
+            ? String((body as { name: unknown }).name)
+            : `wf_${assets.length + 1}`;
+        const asset = { id: `ast_${assets.length + 1}`, name };
+        assets.push(asset);
+        return {
+          status: 201,
+          data: {
+            id: asset.id,
+            tenantId: TENANT_ID,
+            kind: "workflow",
+            name,
+            displayName: null,
+            creatorPrincipalId: null,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/git-tokens`
+      ) {
+        return {
+          status: 201,
+          data: { id: "tok_1", secret: "s3cret" },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+      ) {
+        return { status: 404, data: {}, cookies: [] };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
+        return { status: 201, data: {}, cookies: [] };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+      ) {
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
+        return { status: 200, data: { items: [] }, cookies: [] };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        return {
+          status: 200,
+          data: deployments.map((deployment) => ({
+            id: deployment.id,
+            tenantId: TENANT_ID,
+            definitionAssetId: deployment.definitionAssetId,
+            status: "deployed",
+            createdAt: "2026-01-01T00:00:00.000Z",
+          })),
+          cookies: [],
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        const definitionAssetId =
+          assets[assets.length - 1]?.id ?? "ast_unknown";
+        const deployment = {
+          id: `dep_${deployments.length + 1}`,
+          definitionAssetId,
+        };
+        deployments.push(deployment);
+        startedRuns[deployment.id] = [];
+        return {
+          status: 201,
+          data: {
+            id: deployment.id,
+            tenantId: TENANT_ID,
+            definitionAssetId,
+            status: "deployed",
+            createdAt: "2026-01-01T00:00:00.000Z",
+          },
+          cookies: [],
+        };
+      }
+      const runsMatch =
+        /^\/api\/tenants\/ten_new\/workflows\/(dep_\d+)\/runs$/.exec(path);
+      if (method === "GET" && runsMatch) {
+        const deploymentId = runsMatch[1] as string;
+        return {
+          status: 200,
+          data: { runIds: [...(startedRuns[deploymentId] ?? [])] },
+          cookies: [],
+        };
+      }
+      const mailMatch =
+        /^\/api\/tenants\/ten_new\/workflows\/(dep_\d+)\/mail$/.exec(path);
+      if (method === "POST" && mailMatch) {
+        const deploymentId = mailMatch[1] as string;
+        const runId = `run_${(startedRuns[deploymentId]?.length ?? 0) + 1}`;
+        startedRuns[deploymentId] = [
+          ...(startedRuns[deploymentId] ?? []),
+          runId,
+        ];
+        return {
+          status: 202,
+          data: { runId: deploymentId, address: "x@x", messageId: runId },
+          cookies: [],
+        };
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    // Confirm the bug is real before recovering from it: no assistant
+    // asset, no live deployment.
+    const before = await isFullySeeded(api, ["session=abc"], TENANT_ID);
+    expect(before).toBe(false);
+
+    const result = await provisionPersonalTenantIfNeeded({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      userEmailVerified: true,
+      seedModel: MODEL,
+      pushWorkflow: noopPush,
+      publishToolRegistry: noopPublishToolRegistry,
+      log: collector().log,
+    });
+
+    expect(result).toEqual({
+      kind: "existing-member",
+      seeded: true,
+      tenantId: TENANT_ID,
+    });
+
+    // The verification bar: the same read `findMyraDefinition` and the
+    // `/provisioning-status` route's `setupAgentReady` depend on now
+    // resolves the assistant, not merely "seedTenant ran".
+    const status = await seededWorkflowStatus(api, ["session=abc"], TENANT_ID);
+    expect(status.deployed).toContain(SETUP_AGENT_ASSET_NAME);
+    expect(status.pending).not.toContain(SETUP_AGENT_ASSET_NAME);
   });
 });

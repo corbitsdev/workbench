@@ -3368,6 +3368,17 @@ tr.insights-row-clickable:hover {
   color: var(--muted-foreground);
 }
 
+.new-workbench-picker-not-ready {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.new-workbench-picker-not-ready .new-workbench-picker-sub {
+  margin: 0;
+}
+
 .new-workbench-pick-list {
   border: 1px solid var(--border);
 }
