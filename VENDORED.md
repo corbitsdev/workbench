@@ -226,6 +226,17 @@ can re-invert is now persisted as-is; anything else collapses to a stable
 bad tool-call name fails that turn cleanly instead of wedging the room.
 `@intx/inference` is added to `vendor/intx/hub-sessions`'s own
 `package.json` dependencies for this.
+`vendor/intx/hub-sessions` (CL-6595) fixes `workflow-run-kind.ts`'s
+newly-terminal detection, which skipped a run's `events.jsonl` subtree
+entirely (`enumerateEventBlobs` only walks per-event `<seq>.json` files),
+so a run sealed from birth — its whole event log arriving pre-combined in
+one push, with no per-event blobs ever landing — never fired `markTerminal`
+and stayed "running" in `workflow_run.status` forever despite the run
+having genuinely finished; `validatePush` now also scans a newly-sealed
+run's combined log for its terminal event, and `hub-session-lookups.ts`
+gained a same-push defense-in-depth backfill via the new
+`readCommittedWorkflowRunTerminalStatus` export, in case a future pack still
+slips past the primary detection.
 Each package's `VENDORED-FROM` file restates its own delta.
 
 `apps/sidecar` records `b5580a02` (v0.3.0): the fork tracks the
