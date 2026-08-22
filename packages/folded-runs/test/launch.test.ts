@@ -38,12 +38,21 @@ let resolveDefinitionSourcesResult: DefinitionSourceResolution = {
   defaultSource: "off_1",
 };
 const resolveDefinitionSourcesCalls: unknown[] = [];
+// A queued sequence of per-call results, consumed oldest-first, for a
+// test that must prove `deployAtHead` retries with a SECOND fallback
+// model after the first attempt fails — a single shared
+// `resolveDefinitionSourcesResult` cannot express "fails, then
+// succeeds" across two calls inside the same synchronous resolution.
+// Empty (the common case) falls back to the single shared result
+// above, unchanged for every other test in this file.
+let resolveDefinitionSourcesQueue: DefinitionSourceResolution[] = [];
 
 mock.module("@intx/hub-api", () => ({
   ...actualHubApi,
   resolveDefinitionSources: async (...args: unknown[]) => {
     resolveDefinitionSourcesCalls.push(args[0]);
-    return resolveDefinitionSourcesResult;
+    const queued = resolveDefinitionSourcesQueue.shift();
+    return queued ?? resolveDefinitionSourcesResult;
   },
 }));
 
@@ -59,11 +68,27 @@ let buildCredentialDeliveryResult: BuildCredentialDeliveryResult = {
 };
 const buildCredentialDeliveryCalls: unknown[] = [];
 
+// `deployAtHead` consults `listVisibleOfferings` once per catalog-resolved
+// launch, to correct a source's adapter-registry key when its offering's
+// provider is actually named "ollama" (`withOllamaAdapterKey`). Only the
+// two fields that decision reads are given here; a real `ResolvedOffering`
+// carries far more, none of which this fix touches.
+type FakeResolvedOffering = {
+  offering: { id: string };
+  provider: { name: string };
+};
+let listVisibleOfferingsResult: FakeResolvedOffering[] = [];
+const listVisibleOfferingsCalls: unknown[] = [];
+
 mock.module("@intx/db", () => ({
   ...actualDb,
   buildCredentialDelivery: async (...args: unknown[]) => {
     buildCredentialDeliveryCalls.push(args[0]);
     return buildCredentialDeliveryResult;
+  },
+  listVisibleOfferings: async (...args: unknown[]) => {
+    listVisibleOfferingsCalls.push(args);
+    return listVisibleOfferingsResult;
   },
 }));
 
@@ -526,6 +551,74 @@ describe("launchFoldedRun", () => {
     });
   });
 
+  // CL-6586: an Ollama-backed offering resolves with `provider:
+  // "openai-compatible"` — the accurate wire format — but the sidecar's
+  // adapter registry only recognizes a locally-served source under the
+  // key "ollama" (`apps/sidecar/src/config.ts`). Left uncorrected, the
+  // built-in OpenAI adapter serves the request instead and rejects the
+  // offering's `quirks.default` bag. `deployAtHead` must fix the key up
+  // before the source reaches the deployed config.
+  test('corrects the adapter key to "ollama" for a catalog-resolved Ollama offering', async () => {
+    resolveDefinitionSourcesCalls.length = 0;
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      sources: [
+        {
+          id: "off_ollama",
+          provider: "openai-compatible",
+          baseURL: "https://home-mac-studio.tail87f5aa.ts.net/v1",
+          apiKey: "placeholder",
+          model: "gpt-oss:20b",
+          quirks: { default: { numCtx: 131_072, maxOutputTokens: 32_768 } },
+        },
+      ],
+      defaultSource: "off_ollama",
+    };
+    listVisibleOfferingsResult = [
+      { offering: { id: "off_ollama" }, provider: { name: "ollama" } },
+    ];
+    listVisibleOfferingsCalls.length = 0;
+
+    const db = createFakeDb();
+    const sessionService = createFakeSessionService();
+    const eventCollectors = createFakeEventCollectors();
+
+    await launchFoldedRun(
+      {
+        db: db as never,
+        sessionService,
+        assetService: createFakeAssetService(),
+        sidecarRouter: createFakeSidecarRouter(),
+        toolGrantsForPins: () => [],
+        eventCollectors,
+      },
+      {
+        tenantId: "ten_1",
+        instanceId: "ins_workbench1",
+        triggerAddress: "ins_workbench1@ten1.workbench.test",
+        definitionId: "wfd_workbench1",
+        foldedBody: FOLDED_BODY,
+        launchLabel: "the workbench host",
+      },
+    );
+
+    expect(listVisibleOfferingsCalls).toEqual([[db, "ten_1"]]);
+    const deployed = onlyCall(sessionService.adoptedDeployCalls);
+    expect(deployed.config.sources).toEqual([
+      {
+        id: "off_ollama",
+        provider: "ollama",
+        baseURL: "https://home-mac-studio.tail87f5aa.ts.net/v1",
+        apiKey: "placeholder",
+        model: "gpt-oss:20b",
+        quirks: { default: { numCtx: 131_072, maxOutputTokens: 32_768 } },
+      },
+    ]);
+
+    // Reset for every test after this one.
+    listVisibleOfferingsResult = [];
+  });
+
   // CL-6164: the step's default input selector (`{ from:
   // "trigger.payload" }`) reads the triggering mail's bare `content`
   // verbatim and feeds it straight into `agent.send`, which throws on an
@@ -886,6 +979,113 @@ describe("launchFoldedRun", () => {
     expect(err.message).toMatch(/the workbench host/);
   });
 
+  // The reproduction this fixes: a definition pinned to a model from a
+  // provider the tenant has since disconnected (or one baked in before
+  // any provider was connected at all) must not stay permanently dead
+  // once a DIFFERENT provider is connected. `deployAtHead` retries once
+  // against `fallbackModel` — the tenant's current live default — when
+  // the definition's own pinned model fails to resolve.
+  test("retries against fallbackModel when the definition's pinned model has no launchable source", async () => {
+    resolveDefinitionSourcesCalls.length = 0;
+    resolveDefinitionSourcesQueue = [
+      {
+        ok: false,
+        message: 'No launchable inference source for model "claude-sonnet-5"',
+      },
+      {
+        ok: true,
+        sources: [
+          {
+            id: "off_ollama",
+            provider: "ollama",
+            baseURL: "https://home-mac-studio.tail87f5aa.ts.net/v1",
+            apiKey: "placeholder",
+            model: "gpt-oss:20b",
+          },
+        ],
+        defaultSource: "off_ollama",
+      },
+    ];
+
+    const db = createFakeDb();
+    const sessionService = createFakeSessionService();
+
+    const result = await launchFoldedRun(
+      {
+        db: db as never,
+        sessionService,
+        assetService: createFakeAssetService(),
+        sidecarRouter: createFakeSidecarRouter(),
+        toolGrantsForPins: () => [],
+        eventCollectors: createFakeEventCollectors(),
+      },
+      {
+        tenantId: "ten_1",
+        instanceId: "ins_workbench1",
+        triggerAddress: "ins_workbench1@ten1.workbench.test",
+        definitionId: "wfd_workbench1",
+        // Pinned to a model the tenant no longer (or never did) has a
+        // credential for.
+        foldedBody: FOLDED_BODY,
+        launchLabel: "the workbench host",
+        // The tenant's current live default, e.g. the connected Ollama
+        // instance's own resolved model.
+        fallbackModel: "gpt-oss:20b",
+      },
+    );
+
+    expect(result.sessionId).toBeTruthy();
+    expect(resolveDefinitionSourcesCalls).toHaveLength(2);
+    expect(resolveDefinitionSourcesCalls[0]).toMatchObject({
+      fallbackModel: "claude-sonnet-5",
+    });
+    expect(resolveDefinitionSourcesCalls[1]).toMatchObject({
+      fallbackModel: "gpt-oss:20b",
+    });
+
+    const deployed = onlyCall(sessionService.adoptedDeployCalls);
+    expect(deployed.config.defaultSource).toBe("off_ollama");
+  });
+
+  test("does not retry when fallbackModel is absent or matches the definition's own pinned model", async () => {
+    resolveDefinitionSourcesCalls.length = 0;
+    resolveDefinitionSourcesQueue = [];
+    resolveDefinitionSourcesResult = {
+      ok: false,
+      message: 'No launchable inference source for model "claude-sonnet-5"',
+    };
+
+    const db = createFakeDb();
+    let caught: unknown;
+    try {
+      await launchFoldedRun(
+        {
+          db: db as never,
+          sessionService: createFakeSessionService(),
+          assetService: createFakeAssetService(),
+          sidecarRouter: createFakeSidecarRouter(),
+          toolGrantsForPins: () => [],
+          eventCollectors: createFakeEventCollectors(),
+        },
+        {
+          tenantId: "ten_1",
+          instanceId: "ins_workbench1",
+          triggerAddress: "ins_workbench1@ten1.workbench.test",
+          definitionId: "wfd_workbench1",
+          foldedBody: FOLDED_BODY,
+          launchLabel: "the workbench host",
+          // Same name as the definition's own pin -- nothing new to try.
+          fallbackModel: "claude-sonnet-5",
+        },
+      );
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(InferenceResolutionError);
+    expect(resolveDefinitionSourcesCalls).toHaveLength(1);
+  });
+
   test("uses a caller-supplied sources override verbatim, never touching the catalog", async () => {
     resolveDefinitionSourcesCalls.length = 0;
     // Forced to fail if ever consulted: proves the override path skips
@@ -895,6 +1095,7 @@ describe("launchFoldedRun", () => {
       ok: false,
       message: "the catalog must not be consulted when an override is given",
     };
+    listVisibleOfferingsCalls.length = 0;
 
     const db = createFakeDb();
     const sessionService = createFakeSessionService();
@@ -935,6 +1136,7 @@ describe("launchFoldedRun", () => {
 
     expect(result.sessionId).toBeTruthy();
     expect(resolveDefinitionSourcesCalls).toHaveLength(0);
+    expect(listVisibleOfferingsCalls).toHaveLength(0);
     expect(sessionService.adoptedDeployCalls).toHaveLength(1);
     const deployed = sessionService.adoptedDeployCalls[0] as {
       config: { sources: unknown[]; defaultSource: string };

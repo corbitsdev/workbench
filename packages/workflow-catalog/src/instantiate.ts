@@ -45,11 +45,17 @@ export type ParticipantAgentRequest = CodeReviewAgentRequest & {
 };
 
 export interface WorkbenchTemplateInstantiationPorts {
-  /** Every agent definition handle already deployed in the bench —
-   * the idempotency check so re-running instantiation (a retried
-   * create, a second workbench from the same template) never double-
-   * creates a reviewer. */
-  listAgentHandles(): Promise<readonly string[]>;
+  /** Every agent definition already deployed in the bench, as
+   * `{handle, id}` pairs. Doubles as the idempotency check (re-running
+   * instantiation — a retried create, a second workbench from the same
+   * template — never double-creates a reviewer) and as the id source
+   * for `inviteParticipantAgent` below: an agent definition the tenant
+   * already has is not yet a participant of a freshly minted room, so
+   * its id still has to reach the invite call even when this function
+   * skips creating it. */
+  listAgentHandles(): Promise<
+    readonly { readonly handle: string; readonly id: string }[]
+  >;
   /** The agent-directory create path (`POST /agent-definitions`), or a
    * fake of it in tests. */
   createParticipantAgent(
@@ -65,6 +71,14 @@ export interface WorkbenchTemplateInstantiationPorts {
   deployBlockWorkflow(
     block: WorkbenchTemplateBlock,
   ): Promise<{ readonly created: boolean }>;
+  /** Adds one participant's agent definition to the newly created
+   * workbench's room (`POST /workbenches/:id/invite` —
+   * `@corbits/chat-ui`'s `inviteAgent`), or a fake of it in tests. This
+   * is what makes a template's roster actually present in the room
+   * rather than merely registered in the agent directory. Never called
+   * for Myra: she joins the room at workbench creation as its own
+   * `definitionId`. */
+  inviteParticipantAgent(id: string): Promise<void>;
   /** Persists the room's still-needed connections — the workbench
    * settings `template/pendingConnections` key today; see
    * `apps/web/src/instant-agent-create.ts`. */
@@ -76,6 +90,11 @@ export interface WorkbenchTemplateInstantiationPorts {
 export interface WorkbenchTemplateInstantiationResult {
   readonly createdHandles: readonly string[];
   readonly skippedHandles: readonly string[];
+  /** Every non-Myra participant handle actually added to the room —
+   * `createdHandles` and `skippedHandles` combined, in manifest order.
+   * A caller proving the roster a template's greeting promises is
+   * really present checks this, not just that the definitions exist. */
+  readonly invitedHandles: readonly string[];
   /** Block workflows `deployBlockWorkflow` actually deployed on this
    * run, by asset name; a block the tenant already carried lands in
    * `skippedBlockAssetNames` instead. */
@@ -119,7 +138,9 @@ export async function instantiateWorkbenchTemplate(
   manifest: WorkbenchTemplateManifest,
   ports: WorkbenchTemplateInstantiationPorts,
 ): Promise<WorkbenchTemplateInstantiationResult> {
-  const existingHandles = new Set(await ports.listAgentHandles());
+  const existingIdsByHandle = new Map(
+    (await ports.listAgentHandles()).map((agent) => [agent.handle, agent.id]),
+  );
   const requestsByHandle = new Map<string, ParticipantAgentRequest>(
     [
       ...codeReviewAgentRequests(),
@@ -144,21 +165,28 @@ export async function instantiateWorkbenchTemplate(
 
   const createdHandles: string[] = [];
   const skippedHandles: string[] = [];
+  const invitedHandles: string[] = [];
   for (const participant of manifest.participants) {
     if (participant.handle === "myra") continue;
-    if (existingHandles.has(participant.handle)) {
+    const existingId = existingIdsByHandle.get(participant.handle);
+    let participantId: string;
+    if (existingId !== undefined) {
       skippedHandles.push(participant.handle);
-      continue;
+      participantId = existingId;
+    } else {
+      const request = requestsByHandle.get(participant.handle);
+      if (request === undefined) {
+        throw new Error(
+          `workbench template "${manifest.id}" participant "${participant.handle}" ` +
+            "has no known create-agent request to instantiate it from",
+        );
+      }
+      const created = await ports.createParticipantAgent(request);
+      createdHandles.push(participant.handle);
+      participantId = created.id;
     }
-    const request = requestsByHandle.get(participant.handle);
-    if (request === undefined) {
-      throw new Error(
-        `workbench template "${manifest.id}" participant "${participant.handle}" ` +
-          "has no known create-agent request to instantiate it from",
-      );
-    }
-    await ports.createParticipantAgent(request);
-    createdHandles.push(participant.handle);
+    await ports.inviteParticipantAgent(participantId);
+    invitedHandles.push(participant.handle);
   }
 
   await ports.recordPendingConnections(manifest.requiredConnections);
@@ -166,6 +194,7 @@ export async function instantiateWorkbenchTemplate(
   return {
     createdHandles,
     skippedHandles,
+    invitedHandles,
     deployedBlockAssetNames,
     skippedBlockAssetNames,
     pendingConnections: manifest.requiredConnections,

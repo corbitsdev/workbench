@@ -25,7 +25,9 @@
 import { Avatar, Badge, Button } from "@corbits/react-ui";
 import type { AvatarTone, BadgeTone } from "@corbits/react-ui";
 import { Fragment } from "react";
+import type { CSSProperties } from "react";
 
+import { AVATAR_IDENTITY_CLASS, generatedAvatarStyle } from "./avatar-identity";
 import { Markdown } from "./markdown";
 import { CHAT_STRINGS } from "./strings";
 
@@ -221,14 +223,25 @@ function SuggestedFixBlock({ fix }: { readonly fix: PrThreadSuggestedFix }) {
 }
 
 function ReplyRow({ reply }: { readonly reply: PrThreadReply }) {
-  const avatarTone: AvatarTone = reply.role === "human" ? "neutral" : "agent";
+  const isHuman = reply.role === "human";
+  const avatarTone: AvatarTone = isHuman ? "neutral" : "agent";
+  // No stable reviewer id reaches this pure view (see the file header) —
+  // the reviewer's own display name is already the identity this row
+  // shows, so it doubles as the hash seed for a deterministic per-person
+  // fill (same reviewer, same color, on every reply and every reload).
   return (
-    <div className="chat-pr-reply">
+    <div
+      className="chat-pr-reply"
+      {...(isHuman
+        ? { style: generatedAvatarStyle(reply.sender) as CSSProperties }
+        : {})}
+    >
       <Avatar
         initials={initialsFromName(reply.sender)}
         label={reply.sender}
         tone={avatarTone}
         size="lg"
+        {...(isHuman ? { className: AVATAR_IDENTITY_CLASS } : {})}
       />
       <div className="chat-pr-reply-body">
         <div className="chat-pr-reply-head">

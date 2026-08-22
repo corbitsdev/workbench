@@ -2,13 +2,12 @@
 // observer keys off. Both process-wide orchestrators — `@corbits/chat`'s
 // (replies into workbenches) and `@corbits/tasks`' (terminal results into
 // the Inbox) — subscribe to the same stream and need the same two
-// readings, so the parsing lives here, in the package both already
-// build on, rather than duplicated in each: this module is about
-// folded-run agents' events exactly as much as launch/wake/mail are
-// about their lifecycle, and it depends on nothing but the event
-// shapes (`@intx/types`' `AgentEvent` union documents them; these
-// readers stay structural since the stream's payload arrives as
-// `unknown`).
+// readings, so the parsing lives here, in a package both already build
+// on rather than duplicated in each. This module depends on nothing but
+// the event shapes (`@intx/types`' `AgentEvent` union documents them;
+// these readers stay structural since the stream's payload arrives as
+// `unknown`), which is what keeps it importable from a browser context
+// too (e.g. a future `@corbits/chat-ui` consumer).
 
 /** The reply text of a `connector.reply` event, or undefined for any
  * other event or an empty reply. */

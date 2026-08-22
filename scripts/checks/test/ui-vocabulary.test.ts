@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { auditUiVocabulary, stripNonUserFacing } from "../ui-vocabulary";
+import {
+  auditUiVocabulary,
+  findViolations,
+  stripNonUserFacing,
+} from "../ui-vocabulary";
 
 test("clean prose passes with no violations", () => {
   const report = auditUiVocabulary([
@@ -380,4 +384,36 @@ test("stripNonUserFacing preserves line and column positions", () => {
   expect(stripped.split("\n")).toHaveLength(3);
   expect(stripped).not.toContain("hub");
   expect(stripped).toContain("workbench");
+});
+
+test("a className built from a literal plus an interpolation is not copy", () => {
+  expect(
+    findViolations([
+      {
+        relPath: "packages/chat-ui/src/timeline.tsx",
+        contents: "const c = `chat-sender-avatar ${AVATAR_IDENTITY_CLASS}`;",
+      },
+    ]),
+  ).toEqual([]);
+});
+
+test("a key with no real whitespace is not copy, even after blanking", () => {
+  expect(
+    findViolations([
+      {
+        relPath: "apps/web/src/pages/mission-control-page.tsx",
+        contents: "const k = `bench:${bench.id}`;",
+      },
+    ]),
+  ).toEqual([]);
+});
+
+test("real copy containing a banned term is still caught", () => {
+  const found = findViolations([
+    {
+      relPath: "apps/web/src/x.tsx",
+      contents: 'const s = "Open the chat to keep going.";',
+    },
+  ]);
+  expect(found.length).toBe(1);
 });

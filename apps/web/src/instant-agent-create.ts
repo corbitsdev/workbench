@@ -14,11 +14,14 @@
 // (Settings → Agents), unchanged.
 
 import { getLogger } from "@corbits/client-log";
+import type { QueryClient } from "@tanstack/react-query";
 import {
   createWorkbench,
   getConnectGithubState,
+  inviteAgent,
   patchWorkbenchSettings,
   startReviewingGithubRepos,
+  workbenchesQueryKeyPrefix,
   type ConnectGithubRepo,
 } from "@corbits/chat-ui";
 import { listPluginsForTenant } from "@workbench/connections/plugins";
@@ -50,8 +53,34 @@ export const NEW_WORKBENCH_TITLE = "New Workbench";
  * that error type's own describer instead — allow-listing safe
  * throws, rather than denylisting unsafe ones, so a new error type
  * added later fails safe (masked) instead of leaking by default.
+ *
+ * `kind` lets a caller tell "the setup agent isn't deployed yet" apart
+ * from "this template genuinely doesn't exist here" without parsing
+ * `message` text: the first is very often a still-provisioning bench
+ * (CL-6457's background deploy hasn't finished, or never started
+ * without a credential) that the caller should check
+ * `fetchAgentReadiness` over before treating as a dead end; the second
+ * never resolves itself and should surface as-is.
  */
-export class WorkbenchPreconditionError extends Error {}
+export class WorkbenchPreconditionError extends Error {
+  readonly kind: "setup-agent-missing" | "template-unavailable";
+  constructor(
+    message: string,
+    kind: "setup-agent-missing" | "template-unavailable",
+  ) {
+    super(message);
+    this.kind = kind;
+  }
+}
+
+/**
+ * Consumer-language stand-in for the system precondition this bench
+ * hit: "no deployed setup agent" describes an internal implementation
+ * detail, never something a person signing in for the first time
+ * should have to parse.
+ */
+const SETUP_AGENT_MISSING_MESSAGE =
+  "Your workbench is still finishing setup. Try again in a moment.";
 
 /**
  * Presents the connected org's repo list for the person to pick from once
@@ -68,33 +97,46 @@ export type PickGithubRepos = (args: {
 
 /**
  * The template picker's "Create workbench" action (CL-6344): mints a
- * fresh "New Workbench" chat against the account's default setup template
- * (the seeded `assistant`/Myra definition), passing the picked row's id
- * through as `templateId` so the room opens with that template's own intro
- * (`packages/chat/src/routes.ts`'s `POST /workbenches` resolves it into
- * the canned greeting). When the id names a real manifest
- * (`workbenchTemplate`), this also creates its participant agent
- * definitions and records its required connections as pending — see
- * `instantiateWorkbenchTemplate`'s own doc for exactly what that does
- * and does not do yet (inviting the reviewers into the room, and the
- * GitHub connect card itself, are the next slice). A template id with
- * no manifest yet (`blank`, "Just start talking") mints a plain
- * untagged chat, exactly like before templates existed. When
- * `pickGithubRepos` is supplied and GitHub is already connected for this
- * tenant, this also drives CL-6386's "select on new-workbench" step —
- * see `PickGithubRepos`'s own doc.
+ * fresh chat, named after the picked template, against the account's
+ * default setup template (the seeded `assistant`/Myra definition),
+ * passing the picked row's id through as `templateId` so the room opens
+ * with that template's own intro (`packages/chat/src/routes.ts`'s
+ * `POST /workbenches` resolves it into the canned greeting). When the id
+ * names a real manifest (`workbenchTemplate`), this also creates its
+ * participant agent definitions, invites each into the room so the
+ * roster the greeting promises is the roster actually there (see
+ * `instantiateWorkbenchTemplate`'s own doc), and records its required
+ * connections as pending. A template id with no manifest yet (`blank`,
+ * "Just start talking") mints a plain untagged chat under the generic
+ * `NEW_WORKBENCH_TITLE`, exactly like before templates existed — there
+ * is no better name to give it. When `pickGithubRepos` is supplied and
+ * GitHub is already connected for this tenant, this also drives
+ * CL-6386's "select on new-workbench" step — see `PickGithubRepos`'s
+ * own doc.
+ *
+ * `queryClient` invalidates the workbenches list once every template
+ * participant has been invited (CL-6594) — `ChatWorkspace`'s own
+ * in-room "Invite agent" dialog does the same
+ * (`workbenchesQueryKeyPrefix`, `chat-workspace.tsx`'s
+ * `refreshWorkbenchLists`) so the room the invite landed in never
+ * shows a participant it already has data for as if it never joined.
+ * Without this, the room this function `navigate`s to can start life
+ * holding a `workbenches` query cached from before the last invite
+ * resolved.
  */
 export async function createWorkbenchFromTemplate(
   tenantId: string,
   templateId: WorkbenchTemplateId,
   navigate: (to: string) => void,
+  queryClient: QueryClient,
   pickGithubRepos?: PickGithubRepos,
 ): Promise<void> {
   const definitions = await listAgentDefinitions(tenantId);
   const setupTemplate = findMyraDefinition(definitions);
   if (setupTemplate === undefined) {
     throw new WorkbenchPreconditionError(
-      "No default setup agent found for this workbench.",
+      SETUP_AGENT_MISSING_MESSAGE,
+      "setup-agent-missing",
     );
   }
   // The manifest comes from the bench library (CL-6344), never from a
@@ -112,6 +154,7 @@ export async function createWorkbenchFromTemplate(
   if (templateId !== "blank" && manifest === undefined) {
     throw new WorkbenchPreconditionError(
       `A ${templateId} workbench isn't available here yet.`,
+      "template-unavailable",
     );
   }
   const requiresGithub =
@@ -133,7 +176,7 @@ export async function createWorkbenchFromTemplate(
   const workbench = await createWorkbench(tenantId, {
     kind: "chat",
     definitionId: setupTemplate.id,
-    name: NEW_WORKBENCH_TITLE,
+    name: manifest?.title ?? NEW_WORKBENCH_TITLE,
     ...(manifest !== undefined ? { templatePromise: manifest.promise } : {}),
     ...(requiresGithub && !githubAlreadyConnected
       ? { connectGithubRequiredFor: manifest?.title ?? "" }
@@ -158,7 +201,10 @@ export async function createWorkbenchFromTemplate(
     const result = await instantiateWorkbenchTemplate(manifest, {
       async listAgentHandles() {
         const current = await listAgentDefinitions(tenantId);
-        return current.map((definition) => definition.name);
+        return current.map((definition) => ({
+          handle: definition.name,
+          id: definition.id,
+        }));
       },
       async createParticipantAgent(request) {
         const created = await createAgentDefinition(tenantId, request);
@@ -166,6 +212,9 @@ export async function createWorkbenchFromTemplate(
       },
       async deployBlockWorkflow(block) {
         return deployWorkbenchTemplateBlock(tenantId, block.assetName);
+      },
+      async inviteParticipantAgent(id) {
+        await inviteAgent(tenantId, workbench.id, id);
       },
       async recordPendingConnections(pendingConnections) {
         await patchWorkbenchSettings(
@@ -181,6 +230,9 @@ export async function createWorkbenchFromTemplate(
     for (const todo of result.webhookTriggerTodos) {
       log.error(todo);
     }
+    await queryClient.invalidateQueries({
+      queryKey: workbenchesQueryKeyPrefix(tenantId),
+    });
   }
 
   navigate(workbenchPath(workbench.id));

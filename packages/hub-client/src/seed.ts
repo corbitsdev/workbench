@@ -19,6 +19,7 @@ import {
   ModelProviderResponse,
   ModelResponse,
   ProviderResponse,
+  WorkflowRunHealth,
   paginatedSchema,
   Capability,
 } from "@intx/types";
@@ -521,6 +522,14 @@ async function plantDefaultSkills(
       },
       cookies,
     );
+    if (created.status === 409) {
+      // The by-name GET above missed a row that the create route still
+      // considers a conflict (an inherited/other-scope row, or a race
+      // with a concurrent seed pass) — "already exists" is a skip, not
+      // a fatal error, exactly like every other seed step's 409.
+      log(`skill ${skill.name} already exists (skipped)`);
+      continue;
+    }
     if (created.status !== 201) {
       throw new CliError(
         `the hub rejected the default skill "${skill.name}" with status ${created.status}: ${JSON.stringify(created.data)}`,
@@ -626,6 +635,43 @@ async function listRunIds(
   return parseAs(WorkflowRunListResponse, runs.data, "runs response").runIds;
 }
 
+/**
+ * Whether a "deployed" deployment's run is actually routable right now.
+ * `GET .../runs/:runId/health` reads `sidecarRouter.getRoutableAddresses()`
+ * — the hub's in-memory table binding an agent address to the specific
+ * connected sidecar socket that owns it — so this is a live check, not a
+ * read of the persisted `workflow_run.status` column the caller already
+ * has. That column survives a hub/sidecar restart; the routing table
+ * does not, so a "deployed" row can answer `false` here forever until
+ * something redeploys it. 404 (run never existed) and 410 (run stopped)
+ * both count as not routable: either way, nothing this deployment id
+ * names can be reused.
+ */
+async function isDeploymentRoutable(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+  deploymentId: string,
+): Promise<boolean> {
+  const health = await api(
+    "GET",
+    `/api/tenants/${tenantId}/workflows/runs/${deploymentId}/health`,
+    undefined,
+    cookies,
+  );
+  if (health.status === 404 || health.status === 410) return false;
+  if (health.status !== 200) {
+    throw new CliError(
+      `the hub answered deployment ${deploymentId}'s health check with status ${health.status}: ${JSON.stringify(health.data)}`,
+      "check the hub logs for the underlying failure, then re-run: workbench seed",
+    );
+  }
+  return (
+    parseAs(WorkflowRunHealth, health.data, "run health response").liveness ===
+    "ok"
+  );
+}
+
 async function ensureDeployment(
   api: ApiCall,
   cookies: string[],
@@ -654,10 +700,23 @@ async function ensureDeployment(
       d.definitionAssetId === args.assetId && isLiveDeploymentStatus(d.status),
   );
   if (active) {
+    if (await isDeploymentRoutable(api, cookies, args.tenantId, active.id)) {
+      log(
+        `workflow ${args.assetName} already deployed as ${active.id} (skipped)`,
+      );
+      return active.id;
+    }
+    // The DB row survives a stack restart; the in-memory sidecar
+    // routing table that binds an address to a live process does not.
+    // Restart the hub and sidecar and every previously "deployed"
+    // workflow_run still reads "deployed" while nothing routes its
+    // address. Skipping here would just move the same 409
+    // `confirmDeploymentAnswers` hits below one step earlier — redeploy
+    // fresh instead of trusting a status column that outlived the
+    // process it described.
     log(
-      `workflow ${args.assetName} already deployed as ${active.id} (skipped)`,
+      `workflow ${args.assetName}'s deployment ${active.id} is stale (its sidecar is gone); redeploying`,
     );
-    return active.id;
   }
 
   const deployed = await api(

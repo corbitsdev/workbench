@@ -14,7 +14,7 @@
 import { eq } from "drizzle-orm";
 import { type } from "arktype";
 import type { DBExecutor } from "@intx/db";
-import { buildCredentialDelivery } from "@intx/db";
+import { buildCredentialDelivery, listVisibleOfferings } from "@intx/db";
 import type { CredentialBinding } from "@intx/types";
 import {
   agentSession,
@@ -97,6 +97,39 @@ export function parseSourcesOverride(
  * the mode travels inside the rendered config.
  */
 export type FoldedRunMode = AgentRuntimeConfig["mode"];
+
+/**
+ * `resolveDefinitionSources` sets `InferenceSource.provider` to the
+ * winning offering's catalog `plugin` — accurate as the wire format
+ * (`openai-compatible` for Ollama, since `@corbits/ollama-adapter` wraps
+ * `createOpenAIAdapter` unmodified) but wrong as an adapter-registry key:
+ * the sidecar's registry dispatches a locally-served offering through
+ * `@corbits/ollama-adapter` under the key `"ollama"`
+ * (`apps/sidecar/src/config.ts`), which a `plugin`-only source can never
+ * name. Left uncorrected, an Ollama source resolves to the built-in
+ * OpenAI adapter, whose stricter `quirks` schema rejects the offering's
+ * `default` bag outright. `plugin` and this dispatch key are deliberately
+ * different concepts — the DB `plugin` column stays `openai-compatible`
+ * (`ModelProviderPlugin` has no `"ollama"` member, nor should it); this
+ * only corrects the in-flight `provider` field a launch pins into its
+ * run config.
+ *
+ * `ollamaOfferingIds` names every offering whose provider row is
+ * literally `"ollama"` (`@corbits/hub-client`'s `CATALOG_SEEDS.ollama`) —
+ * the same identity `quirksForDeployment` keys its own override on
+ * (`@corbits/inference-catalog`'s `ollama-context-defaults.ts`). A
+ * source whose id names none of them is returned unchanged.
+ */
+export function withOllamaAdapterKey(
+  sources: readonly InferenceSource[],
+  ollamaOfferingIds: ReadonlySet<string>,
+): InferenceSource[] {
+  return sources.map((source) =>
+    ollamaOfferingIds.has(source.id)
+      ? { ...source, provider: "ollama" }
+      : source,
+  );
+}
 
 /**
  * The ref a folded run's per-run workflow source tree is committed to
@@ -231,14 +264,21 @@ export async function deployAtHead(
      */
     sources?: SourcesOverride;
     /**
-     * The model to resolve against when `foldedBody.model` is `null` —
-     * a definition that declares no model requirements of its own
-     * (e.g. a hand-authored agent created without a `model`). Absent,
-     * a `null` `foldedBody.model` resolves to the loud
-     * `InferenceResolutionError` it always has; present, it is what
-     * lets that same definition still launch by falling back to the
-     * caller's own tenant-default resolution instead of 409ing. Never
-     * consulted when `foldedBody.model` is already set.
+     * The tenant's current live default model — the same (provider,
+     * model) Settings' "Default model & fallbacks" row heads today
+     * (see `@corbits/chat`'s `resolveFallbackModel`). Tried first when
+     * `foldedBody.model` is `null` (a definition that declares no model
+     * of its own); tried SECOND, as a retry, when `foldedBody.model` is
+     * set but does not resolve against the tenant's current catalog —
+     * e.g. it was pinned (by a person, or by the seed that created this
+     * definition) against a provider the tenant has since disconnected,
+     * or before it connected any provider at all. Without that retry an
+     * agent whose pin predates the tenant's current connection stays
+     * permanently dead even after a working provider is connected,
+     * because `foldedBody.model` alone would keep resolving to the same
+     * unlaunchable name forever. Absent, a `foldedBody.model` that fails
+     * to resolve — or a `null` one with nothing to fall back to —
+     * resolves to the loud `InferenceResolutionError` it always has.
      */
     fallbackModel?: string;
     /**
@@ -252,22 +292,63 @@ export async function deployAtHead(
   },
 ): Promise<void> {
   const sourcesOverride = parseSourcesOverride(params.sources);
-  const resolution =
+  const resolveAgainst = (model: string | null) =>
+    resolveDefinitionSources({
+      db: deps.db,
+      tenantId: params.tenantId,
+      modelRequirements: null,
+      fallbackModel: model,
+      invokerPreferences: {},
+      ...(deps.credentialCipher !== undefined
+        ? { credentialCipher: deps.credentialCipher }
+        : {}),
+    });
+
+  const definitionModel = params.foldedBody.model;
+  let resolution =
     sourcesOverride !== undefined
       ? { ok: true as const, ...sourcesOverride }
-      : await resolveDefinitionSources({
-          db: deps.db,
-          tenantId: params.tenantId,
-          modelRequirements: null,
-          fallbackModel:
-            params.foldedBody.model ?? params.fallbackModel ?? null,
-          invokerPreferences: {},
-          ...(deps.credentialCipher !== undefined
-            ? { credentialCipher: deps.credentialCipher }
-            : {}),
-        });
+      : await resolveAgainst(definitionModel ?? params.fallbackModel ?? null);
+
+  // The definition's own pinned model failed to resolve — it may have
+  // been pinned (by a person, or by the seed that created this
+  // definition) against a provider the tenant has since disconnected,
+  // or before it connected any provider at all. Retry once against the
+  // tenant's current live default rather than leaving the agent
+  // permanently dead: reconnecting a DIFFERENT provider must heal every
+  // agent already pinned to the old one, not only a freshly created
+  // one. Never retried for a caller-supplied override (nothing to
+  // retry against — the tenant catalog is never touched for those) or
+  // when the definition already declared no model of its own (that
+  // case already tried `fallbackModel` as its one and only attempt).
+  if (
+    !resolution.ok &&
+    sourcesOverride === undefined &&
+    definitionModel !== null &&
+    params.fallbackModel !== undefined &&
+    params.fallbackModel !== definitionModel
+  ) {
+    resolution = await resolveAgainst(params.fallbackModel);
+  }
+
   if (!resolution.ok) {
     throw new InferenceResolutionError(params.launchLabel, resolution.message);
+  }
+
+  // A caller-supplied override already states the adapter key it wants
+  // (see `SourcesOverride`'s doc) — only a catalog-resolved chain needs
+  // its `provider` field corrected for Ollama offerings.
+  if (sourcesOverride === undefined) {
+    const offerings = await listVisibleOfferings(deps.db, params.tenantId);
+    const ollamaOfferingIds = new Set(
+      offerings
+        .filter((resolved) => resolved.provider.name === "ollama")
+        .map((resolved) => resolved.offering.id),
+    );
+    resolution.sources = withOllamaAdapterKey(
+      resolution.sources,
+      ollamaOfferingIds,
+    );
   }
 
   // `create` replaces any collector already registered for this

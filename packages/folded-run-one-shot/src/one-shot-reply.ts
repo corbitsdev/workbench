@@ -18,13 +18,15 @@ import type { SidecarEventEmitter } from "@intx/hub-sessions";
 import { formatRunAddress } from "@intx/types";
 import type { FoldedBody } from "@intx/workflow-deploy";
 import type { AgentLifecycle } from "@corbits/agent-lifecycle";
-
-import { connectorReplyContent, messageRunEnded } from "./agent-events";
-import type { CryptoProviderCache } from "./crypto-cache";
-import { readDefinitionProjection, readFoldedBody } from "./definition";
-import { launchFoldedRun as launchFoldedRunDefault } from "./launch";
-import { sendFoldedMailWithRetry as sendFoldedMailWithRetryDefault } from "./mail";
-import type { FoldedRunsDeps } from "./types";
+import { connectorReplyContent, messageRunEnded } from "@corbits/agent-events";
+import {
+  readDefinitionProjection,
+  readFoldedBody,
+  launchFoldedRun as launchFoldedRunDefault,
+  sendFoldedMailWithRetry as sendFoldedMailWithRetryDefault,
+  type CryptoProviderCache,
+  type FoldedRunsDeps,
+} from "@corbits/folded-runs";
 
 const log = getLogger(["folded-runs", "one-shot-reply"]);
 
@@ -58,12 +60,13 @@ export type OneShotRunnerDeps = {
   readonly undeploy: (address: string, reason: string) => Promise<void>;
   /**
    * Test seam only — no production caller ever sets these. Defaults to
-   * the real `launchFoldedRun`/`sendFoldedMailWithRetry`. Exists
-   * because this module's own tests live alongside `test/launch.test.ts`
-   * and `test/mail.test.ts` in this same package, both of which
-   * dynamically import the exact modules a `mock.module("./launch",
-   * ...)`/`mock.module("./mail", ...)` here would replace — a plain
-   * injected override sidesteps that shared-registry collision
+   * the real `@corbits/folded-runs` `launchFoldedRun`/
+   * `sendFoldedMailWithRetry`. Exists because a whole-repo `bun test`
+   * run shares one process-wide module registry across every package —
+   * `@corbits/folded-runs`' own `test/launch.test.ts` and
+   * `test/mail.test.ts` dynamically import the exact modules a
+   * `mock.module("@corbits/folded-runs", ...)` here would replace — a
+   * plain injected override sidesteps that shared-registry collision
    * entirely rather than racing it.
    */
   readonly launchFoldedRun?: typeof launchFoldedRunDefault;

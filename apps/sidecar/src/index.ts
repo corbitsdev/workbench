@@ -368,6 +368,13 @@ try {
   bootRestorePushHold.end();
 }
 
+// Independent of the deployment restore above: reclaims any
+// hibernated-agent-identity snapshot (see
+// `hibernated-agent-identity-vault.ts`) whose address hibernated and was
+// never redeployed within the retention window, so a permanently
+// abandoned hibernate does not leak disk forever.
+await deployRouter.reapExpiredHibernationSnapshots();
+
 // The first connect bypasses the reconnect scheduler, so arm the stall
 // deadline by hand; the open path's getWorkflowAddresses disarms it.
 watchdog.armForBoot();

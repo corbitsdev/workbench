@@ -16,7 +16,7 @@ export const GIF_SEARCH_TOOL = "gif_search";
 
 /** This definition pins itself: the package that carries `gif_search` is this one. */
 export const JIMMY_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
-  { name: "@corbits/jimmy-agent", version: "0.0.1" },
+  { name: "@corbits/jimmy-agent", version: "0.0.2" },
 ];
 
 export const JIMMY_SYSTEM_PROMPT =

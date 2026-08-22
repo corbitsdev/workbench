@@ -6,21 +6,20 @@
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./migrations": "./src/migrations.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/agent-lifecycle": "workspace:*",
     "@corbits/agent-runtime": "workspace:*",
     "@intx/crypto": "0.3.0",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/hub-common": "0.3.0",
     "@intx/hub-sessions": "workspace:*",
-    "@intx/log": "0.3.0",
     "@intx/mime": "0.3.0",
     "@intx/types": "0.3.0",
     "@intx/workflow": "workspace:*",
@@ -28,7 +27,6 @@
     "@workbench/connections": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
-    "hono": "^4.11.9",
     "postgres": "catalog:"
   },
   "devDependencies": {

@@ -47,6 +47,13 @@ const MEMBERSHIP = {
   nextCursor: null,
 };
 
+// A genuine create failure: the tenant has its setup agent deployed (so
+// the flow gets past `findMyraDefinition`'s precondition), and the actual
+// workbench-create request is what 500s. Serving an empty definitions
+// list here instead would fail the precondition first, which is a
+// different, already-covered path (a missing setup agent shows the
+// retry panel below, not a toast) — this stub exists to prove the
+// one-toast invariant for a real create failure, so it must reach one.
 function stubFailingCreate(): void {
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const path = typeof input === "string" ? input : String(input);
@@ -54,7 +61,23 @@ function stubFailingCreate(): void {
       return Promise.resolve(json(MEMBERSHIP));
     }
     if (path.includes("/workflows/definitions")) {
-      return Promise.resolve(json({ data: [], nextCursor: null }));
+      return Promise.resolve(
+        json({
+          data: [
+            {
+              id: "def-assistant",
+              tenantId: "tnt_1",
+              name: "assistant",
+              currentVersion: "1",
+              status: "deployed",
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+              skills: [] as readonly string[],
+            },
+          ],
+          nextCursor: null,
+        }),
+      );
     }
     return Promise.resolve(json({ error: "boom" }, 500));
   }) as typeof fetch;
@@ -142,13 +165,57 @@ describe("the one toast system (CL-6372)", () => {
 
     const shown = visibleToasts();
     expect(shown.length).toBe(1);
-    // The stub serves an empty definitions list, so the create fails its
-    // precondition before any request is sent. That is a
-    // `WorkbenchPreconditionError`, which the picker shows verbatim.
+    // The stub's setup agent is deployed, so this is a real create
+    // failure (the workbench-create request itself 500s) — a
+    // `ChatApiError`, described through `describeChatError`.
     expect(shown[0]?.textContent).toBe(
-      "No default setup agent found for this workbench.",
+      "Something went wrong on our end. Try again in a moment.",
     );
     await waitForClear();
+  });
+
+  // CL-6510: the new contract this file's own change introduced — a
+  // missing setup agent no longer fires a toast at all, since the
+  // picker now shows a retryable "still setting up" panel instead of
+  // treating that precondition as a dead end.
+  test("a missing setup agent shows the retry panel and fires no toast", async () => {
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      if (path.includes("/api/me/principals")) {
+        return Promise.resolve(json(MEMBERSHIP));
+      }
+      if (path.includes("/workflows/definitions")) {
+        return Promise.resolve(json({ data: [], nextCursor: null }));
+      }
+      if (path.endsWith("/api/onboarding/provisioning-status")) {
+        return Promise.resolve(
+          json({
+            kind: "provisioning",
+            tenantId: "tnt_1",
+            tenantSlug: "corbits-bench",
+            setupAgentReady: false,
+            deployed: [],
+            pending: ["assistant"],
+          }),
+        );
+      }
+      return Promise.resolve(json({ error: "boom" }, 500));
+    }) as typeof fetch;
+    await renderPickerWithToaster();
+
+    const createButton = Array.from(
+      container?.querySelectorAll("button") ?? [],
+    ).find((button) => button.textContent === "Create workbench");
+    await act(async () => {
+      createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    for (let i = 0; i < 30; i++) {
+      await settle();
+      if (container?.textContent?.includes("Still setting up")) break;
+    }
+
+    expect(container?.textContent).toContain("Still setting up your workbench");
+    expect(visibleToasts().length).toBe(0);
   });
 
   test("the failure toast carries the house styling, not sonner's default", async () => {

@@ -156,12 +156,29 @@ function stripInterpolations(inner: string): string {
  * tokens), an arktype/TS quoted-union type literal ('personal' |
  * 'bench'), or a URL/API path. None of those are copy a user reads. */
 function isProseLiteral(literal: string): boolean {
-  const inner = literal.slice(1, -1);
-  if (!/\s/.test(inner)) return false;
+  const raw = literal.slice(1, -1);
+  // Whitespace is judged on the literal as written: blanking an
+  // interpolation substitutes spaces, which would make a key like
+  // `` `bench:${id}` `` — no real whitespace, never prose — look like it.
+  if (!/\s/.test(raw)) return false;
+  // Shape, though, is judged with interpolations blanked, since they are
+  // code the user never sees: otherwise a className like `` `a-b ${X}` ``
+  // tokenizes as ["a-b", "${X}"] and the class-list exemption never applies.
+  const inner = stripInterpolations(raw);
   if (QUOTED_UNION.test(inner.trim())) return false;
   if (inner.trim().startsWith("/")) return false;
   const tokens = inner.trim().split(/\s+/);
-  if (tokens.length > 1 && tokens.every((token) => KEBAB_TOKEN.test(token))) {
+  // A className built from a literal plus an interpolation — `` `a-b ${X}` ``
+  // — blanks down to one token, so the multi-token rule alone would read it
+  // as prose. A single token only counts as a class when it is hyphenated:
+  // a bare lowercase word like "workbench" is exactly the copy this check
+  // exists to catch.
+  const everyTokenIsClassLike = tokens.every((token) =>
+    KEBAB_TOKEN.test(token),
+  );
+  const looksLikeClassList =
+    tokens.length > 1 || (tokens[0] ?? "").includes("-");
+  if (everyTokenIsClassLike && looksLikeClassList) {
     return false;
   }
   return true;

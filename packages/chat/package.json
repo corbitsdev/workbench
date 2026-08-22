@@ -24,6 +24,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/agent-events": "workspace:*",
     "@corbits/agent-lifecycle": "workspace:*",
     "@corbits/agent-runtime": "workspace:*",
     "@corbits/approvals": "workspace:*",
@@ -31,6 +32,7 @@
     "@corbits/folded-runs": "workspace:*",
     "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3",
     "@corbits/turn-artifacts": "workspace:*",
+    "@corbits/workflow-catalog": "workspace:*",
     "@corbits/workflow-source": "workspace:*",
     "@intx/agent": "0.3.0",
     "@intx/authz": "0.3.0",

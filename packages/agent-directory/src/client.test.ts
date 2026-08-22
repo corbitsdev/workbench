@@ -40,11 +40,34 @@ const workbenchHostInstance = {
   definitionName: "ins-0f1e2d3c4b5a69788796a5b4c3d2e1f0",
 };
 
+const dailyDigestDefinition = {
+  ...researcher,
+  id: "wfd_3",
+  name: "workbench-digest",
+  description: null,
+};
+
+const last30DaysResearchDefinition = {
+  ...researcher,
+  id: "wfd_4",
+  name: "last-30-days-research",
+  description: null,
+};
+
 describe("purposeAgentDefinitions", () => {
   test("drops the chat anchor machinery's workbench-host definitions", () => {
     const result = purposeAgentDefinitions([
       researcher,
       workbenchHostDefinition,
+    ]);
+    expect(result).toEqual([researcher]);
+  });
+
+  test("drops routine-only workflow catalog utilities (Daily digest, Last 30 days research) — they are non-conversational, seeded as routines, and belong on the Routines page, not the Agents list", () => {
+    const result = purposeAgentDefinitions([
+      researcher,
+      dailyDigestDefinition,
+      last30DaysResearchDefinition,
     ]);
     expect(result).toEqual([researcher]);
   });

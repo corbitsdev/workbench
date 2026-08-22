@@ -8,6 +8,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   CODE_REVIEW_TEMPLATE,
+  DUE_DILIGENCE_TEMPLATE,
   serializeWorkbenchTemplateManifest,
 } from "@corbits/workflow-catalog";
 import { act } from "react";
@@ -144,6 +145,51 @@ describe("NewWorkbenchPickerRoute", () => {
     expect(container?.textContent).toContain("More kinds soon");
   });
 
+  // The library seeds every shipped template (`createTemplateLibrarySeeder`),
+  // so a bench whose library serves due-diligence too offers it as a real
+  // row, not just an entry in the static row catalog with nothing to back it.
+  test("due-diligence is offered as a selectable row once the library serves it", async () => {
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      if (path.includes("/api/me/principals")) {
+        return Promise.resolve(json(MEMBERSHIP));
+      }
+      if (path.endsWith("/library/templates")) {
+        return Promise.resolve(
+          json({
+            data: [
+              {
+                id: "code-review",
+                content:
+                  serializeWorkbenchTemplateManifest(CODE_REVIEW_TEMPLATE),
+              },
+              {
+                id: "due-diligence",
+                content: serializeWorkbenchTemplateManifest(
+                  DUE_DILIGENCE_TEMPLATE,
+                ),
+              },
+            ],
+          }),
+        );
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    }) as typeof fetch;
+    await renderPicker();
+
+    const radios = Array.from(
+      container?.querySelectorAll('[role="radio"]') ?? [],
+    );
+    expect(radios.length).toBe(3);
+    const dueDiligence = radios.find((row) =>
+      row.textContent?.includes("Due Diligence"),
+    );
+    expect(dueDiligence).not.toBeUndefined();
+    expect(dueDiligence?.textContent).toContain(
+      "Scout checks a company, deal, or vendor",
+    );
+  });
+
   // CL-6458: the picker offers what the bench's library can actually
   // serve. A row the library has no manifest for is shown as not set up
   // — never offered and then dead-ended on a 404 at create time.
@@ -244,6 +290,47 @@ describe("NewWorkbenchPickerRoute", () => {
     expect(codeReview?.getAttribute("aria-checked")).toBe("false");
   });
 
+  // CL-6510: a bench whose default agents haven't finished deploying yet
+  // (CL-6457's background drain still running, or never started without a
+  // credential) must never dead-end the person on the raw internal
+  // precondition message — the picker checks readiness first and shows an
+  // honest, retryable "still setting up" state instead.
+  test("when the setup agent isn't deployed yet, creating shows an honest still-setting-up state, not the raw precondition error", async () => {
+    stubFetch((path) => {
+      if (path.includes("/workflows/definitions")) {
+        return json({ data: [], nextCursor: null });
+      }
+      if (path.endsWith("/api/onboarding/provisioning-status")) {
+        return json({
+          kind: "provisioning",
+          tenantId: "tnt_1",
+          tenantSlug: "corbits-bench",
+          setupAgentReady: false,
+          deployed: [],
+          pending: ["assistant"],
+        });
+      }
+      return undefined;
+    });
+    await renderPicker();
+
+    const createButton = Array.from(
+      container?.querySelectorAll("button") ?? [],
+    ).find((button) => button.textContent === "Create workbench");
+    await act(async () => {
+      createButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    for (let i = 0; i < 20; i++) {
+      await settle();
+      if (container?.textContent?.includes("Still setting up")) break;
+    }
+
+    expect(container?.textContent).toContain("Still setting up your workbench");
+    expect(container?.textContent).not.toContain(
+      "No default setup agent found",
+    );
+  });
+
   test("creating with Code review selected mints a workbench from the template, then navigates in", async () => {
     const createdAgentHandles: string[] = [];
     const calls = stubFetch((path, init) => {
@@ -290,6 +377,18 @@ describe("NewWorkbenchPickerRoute", () => {
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
           skills: [],
+        });
+      }
+      if (
+        path.endsWith("/chat/workbenches/chan_new/invite") &&
+        init?.method === "POST"
+      ) {
+        const body = JSON.parse(String(init.body)) as {
+          definitionId: string;
+        };
+        return json({
+          address: `${body.definitionId}@chan_new`,
+          definitionId: body.definitionId,
         });
       }
       if (path.endsWith("/chat/workbenches/chan_new/settings")) {
@@ -412,6 +511,18 @@ describe("NewWorkbenchPickerRoute", () => {
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
           skills: [],
+        });
+      }
+      if (
+        path.endsWith("/chat/workbenches/chan_new/invite") &&
+        init?.method === "POST"
+      ) {
+        const body = JSON.parse(String(init.body)) as {
+          definitionId: string;
+        };
+        return json({
+          address: `${body.definitionId}@chan_new`,
+          definitionId: body.definitionId,
         });
       }
       if (path.endsWith("/chat/workbenches/chan_new/settings")) {

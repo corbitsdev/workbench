@@ -170,6 +170,45 @@ describe("workbench header team avatar stack", () => {
     harness.unmount();
   });
 
+  test("gives every agent its own initial and color, never a shared fallback (CL-6594)", async () => {
+    stubFetch({
+      participants: [
+        { address: "run_myra@dana.localhost", handle: "myra" },
+        { address: "run_scout@dana.localhost", handle: "scout" },
+      ],
+    });
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "ch_1",
+    });
+    await harness.settle();
+
+    const agentAvatars = Array.from(
+      harness.container.querySelectorAll(
+        '.chat-presence-avatar[data-agent="true"]',
+      ),
+    ) as HTMLElement[];
+    expect(agentAvatars).toHaveLength(2);
+    expect(agentAvatars.map((avatar) => avatar.textContent)).toEqual([
+      "M",
+      "S",
+    ]);
+    // Each agent avatar carries its own `AVATAR_IDENTITY_CLASS`-free
+    // inline text color (the CSS custom-property indirection this
+    // package uses elsewhere doesn't apply to this chip), proving two
+    // agents never render with the exact same computed fill — the
+    // per-address color itself is `buildTeamAvatarStack`'s own unit
+    // test (`../src/chat-workspace.test.ts`), since happy-dom drops the
+    // space-syntax `hsl()` `colorForPrincipal` emits before it reaches
+    // any DOM assertion here.
+    const [myraText, scoutText] = agentAvatars.map(
+      (avatar) => avatar.style.color,
+    );
+    expect(myraText).not.toBe("");
+    expect(scoutText).not.toBe("");
+    harness.unmount();
+  });
+
   test("collapses anything past the limit into a +N chip", async () => {
     const humanNames = ["Alice", "Bob", "Carla", "Dana", "Eve", "Finn"];
     const humanParticipants = humanNames.map((name, index) =>

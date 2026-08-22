@@ -254,17 +254,22 @@ export function createHubChatPlatform(
   }
 
   /**
-   * A definition that declares no model of its own resolves the same
-   * catalog default at every deploy that `launchInvite` used to resolve
-   * at launch time — every deploy of such a run now goes through a wake
-   * or a relaunch (launches mint only), and a slept one always did.
+   * The tenant's current live default model — always resolved, whether
+   * or not `binding.foldedBody.model` names one of its own. A
+   * definition that declares no model resolves this same catalog
+   * default at every deploy, exactly as `launchInvite` used to resolve
+   * it at launch time (every deploy of such a run now goes through a
+   * wake or a relaunch — launches mint only — and a slept one always
+   * did). A definition that DOES name a model still needs this: it is
+   * `deployAtHead`'s retry target when that pinned model no longer
+   * resolves against the tenant's current catalog (a provider it was
+   * pinned against got disconnected, or none was connected yet when it
+   * was pinned) — so reconnecting a different provider heals an
+   * already-invited agent, not only a freshly invited one.
    */
   async function resolveFallbackModel(
     binding: AgentBinding,
   ): Promise<string | undefined> {
-    if (binding.foldedBody.model !== null) {
-      return undefined;
-    }
     const preferences =
       (await deps.workbenchHostInferencePreferences?.(binding.tenantId)) ?? [];
     return preferences[0]?.model;

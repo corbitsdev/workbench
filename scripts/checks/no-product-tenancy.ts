@@ -104,6 +104,20 @@ const ALLOWLIST: readonly {
     tables: ["run_key_history"],
   },
   {
+    // A native workflow's deploy source (an npm name@range pin or a
+    // hub-asset commit) is a real external pin nothing native records.
+    // RepoStore holds the source bytes; workflow_definition_version holds
+    // the body projection (wireProjection, grantSnapshot,
+    // approvedWireHash). Neither stores the deploy PARAMETERS — entry,
+    // pin, sourceRef, deploymentDomain, and the WorkflowDefinitionSource
+    // union itself — that select and apply those bytes. This table is
+    // that missing record, for shared placement (CL-6581 phase 1;
+    // exclusive placement already has workflow_run_launch_spec).
+    relPath: "packages/workflow-deploy-source/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["workflow_deploy_source.workflow_deploy_source"],
+  },
+  {
     relPath: "packages/bench/src/schema.ts",
     maxOccurrences: 1,
     tables: ["bench_settings"],

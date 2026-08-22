@@ -786,7 +786,7 @@ folded-run-<runId>`), definition loaded from that closure, run grants
    `GET /workflows/<runId>/runs/<runId>/events` stays empty: the folded
    conversational shape is one unbounded step servicing every inbound
    mail, and its per-message bracket is the `message.run.started` AGENT
-   event (`packages/folded-runs/src/agent-events.ts`), not a
+   event (`packages/agent-events/src/agent-events.ts`), not a
    workflow-host `RunStarted` in the run's durable event log. The
    milestone's RunStarted assertion is therefore an assertion about
    CL-6329's `section` mode — where every message is an `onTrigger`

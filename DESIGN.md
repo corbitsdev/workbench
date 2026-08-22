@@ -25,10 +25,11 @@ Top to bottom:
    workbenches, and each is its own top-level route (`/mission-control`,
    `/routines`, `/files`, `/skills`, `/agents`, `/plugins`, `/insights`,
    `/evals`).
-4. **Account row** — avatar and name, anchoring the rail. The whole row is
-   a menu trigger (weekly usage, Settings, feedback, log out) that pops
-   upward. Settings is reached only through this menu — it has no rail
-   icon of its own.
+4. **Account row** — avatar and name, anchoring the rail, plus a separate
+   settings icon beside it. The avatar+name half is a menu trigger
+   (weekly usage, feedback, log out) that pops upward; the gear is a
+   direct one-click control to Settings, not a menu item — Settings
+   never cost two clicks to reach.
 
 A workbench is an agent conversation, and the bench list IS the switcher —
 its rows are the primary way to move between workbenches, with no separate
@@ -97,16 +98,21 @@ as a document, and these are working surfaces.
 
 ## Search
 
-There is exactly one search surface in the product: the command-palette
-scope. It is reachable two ways that resolve to the same UI — cmd+K
-anywhere, or clicking the magnifier in the top nav, which morphs in place
-into an inline search bar over about 200ms with the in-place morph easing
-(see Motion). Esc collapses it back to the magnifier, with focus returning
-to the magnifier itself. There is no page-local
-search input that duplicates palette scope; a page that needs scoped
-filtering builds it as a filter control, not a second "search." See
-`docs/command-palette.md` for the palette's scoring and result-group
-contract — this section only fixes how it's invoked from chrome.
+Two separate surfaces, never merged, and neither opens the other (a
+decision re-litigated more than once — see `docs/DECISIONS.md` → Search):
+
+- **The magnifier in the stage top bar is a per-page filter.** It scopes to
+  whatever page it's on — Files filters files, Skills filters skills — and
+  never leaves that page. Clicking it morphs it in place into an inline
+  input over about 200ms with the in-place morph easing (see Motion); Esc
+  collapses it back, with focus returning to the magnifier. Where a page
+  already has its own filter, the magnifier drives that filter directly
+  rather than the page adding a second input. A page with nothing to filter
+  renders no magnifier at all.
+- **`Cmd+K` opens the global command palette**, reachable from anywhere
+  (including a route with no stage top bar of its own) and rendered as its
+  own surface, never anchored to the magnifier. See `docs/command-palette.md`
+  for the palette's scoring and result-group contract.
 
 ## Color, Type & Icons
 
@@ -115,6 +121,15 @@ contract — this section only fixes how it's invoked from chrome.
 and the rest of its semantic palette. Never hardcode a hex value or an
 arbitrary Tailwind color class in product code; if a needed token doesn't
 exist yet, add it in react-ui, not locally.
+
+**Generated identity color** is the one deliberate exception: a person's
+fallback avatar (no explicit picture) needs a color per principal, not a
+handful of shared tokens, so it's the same `colorForPrincipal` hash
+already shipped for presence cursors (`@corbits/presence/color`), paired
+with a computed black/white initials color for contrast
+(`@corbits/chat-ui`'s `generatedAvatarStyle`). Agents keep react-ui's
+`Avatar` tone system (solid `--primary`/`--accent`/`--success`) so the two
+identity kinds stay visually distinct at a glance.
 
 **Type.** Red Hat Display for sans (UI text, headings), Space Mono for
 monospace (code, IDs, numeric/tabular contexts). Both are declared once in

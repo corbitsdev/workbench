@@ -15,11 +15,13 @@
 import { Hono, type Context } from "hono";
 import { type } from "arktype";
 import {
+  ModelInfo,
   ModelProviderResponse,
   ProviderResponse,
   paginatedSchema,
 } from "@intx/types";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
+import { hasUsableModel } from "@corbits/inference-settings";
 import {
   cookiesFromHeader,
   createHubAPI,
@@ -34,8 +36,16 @@ import {
   type SeedCatalogArgs,
 } from "@workbench/hub-client";
 import type { ConnectorDescriptor } from "./descriptor";
-import { fireConnectedHook, type ServiceConnectedHook } from "./connected-hook";
-import { persistConnectorCredential } from "./persist-credential";
+import {
+  fireConnectedHook,
+  fireInferenceCredentialSeedableHook,
+  type InferenceCredentialSeedableHook,
+  type ServiceConnectedHook,
+} from "./connected-hook";
+import {
+  isInferenceProvider,
+  persistConnectorCredential,
+} from "./persist-credential";
 import type { ProviderHealthStore } from "./provider-health";
 import { CONNECTOR_REGISTRY } from "./registry";
 
@@ -198,6 +208,15 @@ export type CreateConnectionRoutesDeps = {
    * connector never does) without reaching for module mocking. */
   seedCatalogFn?: (args: SeedCatalogArgs) => ReturnType<typeof seedCatalog>;
   /** Test-only override, matching every other override in this file —
+   * lets `routes.test.ts` stub the post-connect resolved-catalog read
+   * `onInferenceCredentialUsable`'s `hasUsableModel` gate runs against,
+   * without reaching for module mocking. */
+  getResolvedCatalogFn?: (
+    api: ApiCall,
+    cookies: string[],
+    tenantId: string,
+  ) => Promise<readonly ModelInfo[]>;
+  /** Test-only override, matching every other override in this file —
    * lets `routes.test.ts` stub disconnect's catalog/provider cleanup
    * without reaching for module mocking. */
   disconnectConnectorFn?: (
@@ -255,6 +274,17 @@ export type CreateConnectionRoutesDeps = {
    * connect cards, resume waiting agents). Failures are logged and
    * never surface into the response. */
   onConnected?: ServiceConnectedHook;
+  /** Fires once an inference connector's credential is durably stored
+   * AND leaves the tenant with `hasUsableModel` true — never on a
+   * non-inference connector, and never merely because a credential row
+   * exists (seeding plants that row regardless of whether it actually
+   * resolves an offering). The composition wires this to the same
+   * durable pending-seed drain onboarding's own credential step feeds,
+   * so a provider connected through Settings deploys the tenant's
+   * default workflows exactly like one connected through onboarding —
+   * see `./connected-hook.ts`. Absent means this hub build never
+   * re-seeds off a Settings connect (every existing test double). */
+  onInferenceCredentialUsable?: InferenceCredentialSeedableHook;
 };
 
 export function createConnectionRoutes(
@@ -265,6 +295,21 @@ export function createConnectionRoutes(
   const registry = deps.registry ?? CONNECTOR_REGISTRY;
   const runDisconnectConnector =
     deps.disconnectConnectorFn ?? disconnectConnector;
+  const runGetResolvedCatalog =
+    deps.getResolvedCatalogFn ??
+    (async (resolveApi: ApiCall, cookies: string[], tenantId: string) => {
+      const response = await resolveApi(
+        "GET",
+        `/api/tenants/${tenantId}/models`,
+        undefined,
+        cookies,
+      );
+      return parseAs(
+        ModelInfo.array(),
+        response.data,
+        "resolved catalog response",
+      );
+    });
 
   // Lets a settings-ui OAuth card tell "not configured" (an operator
   // hasn't registered this connector's OAuth app yet) apart from "not
@@ -431,6 +476,52 @@ export function createConnectionRoutes(
           connectorId: descriptor.id,
           displayName: descriptor.displayName,
         });
+        // A tenant that just connected its own inference provider is an
+        // equally valid seed source as an operator-configured hub key —
+        // it must not sit unseeded forever waiting on one (CL-6568). Ask
+        // the same resolved-catalog question launch itself asks
+        // (`hasUsableModel`, `@corbits/inference-settings`) rather than
+        // trusting the credential row's mere presence, then hand the
+        // provisioning drain this connector's own provider and key —
+        // best-effort: a failure here never turns a stored, working
+        // credential into a failed connect response.
+        if (isInferenceProvider(descriptor.id) && seedResult !== undefined) {
+          const user = c.get("user");
+          if (user) {
+            try {
+              const models = await runGetResolvedCatalog(
+                api,
+                cookies,
+                tenant.id,
+              );
+              if (hasUsableModel(models)) {
+                await fireInferenceCredentialSeedableHook(
+                  deps.onInferenceCredentialUsable,
+                  deps.log,
+                  {
+                    userId: user.id,
+                    tenantId: tenant.id,
+                    tenantDomain: tenant.domain,
+                    principalId: c.get("principal").id,
+                    provider: descriptor.id,
+                    apiKey: isUrlCredential
+                      ? OLLAMA_PLACEHOLDER_SECRET
+                      : parsed.apiKey,
+                    ...(isUrlCredential
+                      ? { baseURLOverride: parsed.apiKey }
+                      : {}),
+                  },
+                );
+              }
+            } catch (cause) {
+              const message =
+                cause instanceof Error ? cause.message : String(cause);
+              deps.log(
+                `could not check tenant ${tenant.id}'s resolved catalog after connecting ${descriptor.id}; the bench stays as-is until its next reconcile: ${message}`,
+              );
+            }
+          }
+        }
         return c.json(
           modelGuidance !== undefined
             ? { credentialId, status: "active" as const, modelGuidance }

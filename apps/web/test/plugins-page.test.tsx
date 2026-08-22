@@ -192,7 +192,7 @@ describe("PluginsRoute", () => {
     const el = await mount();
 
     expect(
-      el.querySelector('input[aria-label="Search plugins"]'),
+      el.querySelector('button[aria-label="Filter plugins"]'),
     ).not.toBeNull();
     expect(el.textContent).not.toContain("New skill");
 
@@ -205,7 +205,7 @@ describe("PluginsRoute", () => {
     });
 
     expect(
-      el.querySelector('input[aria-label="Search skills"]'),
+      el.querySelector('button[aria-label="Filter skills"]'),
     ).not.toBeNull();
     expect(el.textContent).toContain("New skill");
     expect(el.textContent).toContain("weekly-digest");

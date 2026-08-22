@@ -9,7 +9,7 @@ import {
   PlannerInferenceUnavailableError,
   PlannerMyraUnavailableError,
 } from "./planner-run";
-import { FoldedRunTimedOutError } from "@corbits/folded-runs";
+import { FoldedRunTimedOutError } from "@corbits/folded-run-one-shot";
 import { PlannerReferenceOutOfInventoryError } from "./task-spec";
 import { SkillRegistryError } from "@corbits/skills";
 import {

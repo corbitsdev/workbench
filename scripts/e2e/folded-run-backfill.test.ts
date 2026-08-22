@@ -28,7 +28,7 @@ import {
   applyFoldedRunsMigrations,
   backfillFoldedRunMarkers,
 } from "../../packages/folded-runs/src/migrations";
-import { listTopLevelRuns } from "../../packages/folded-runs/src/scope-routes";
+import { listTopLevelRuns } from "@corbits/run-scope";
 import {
   applyChatMigrations,
   listWorkbenchLaunchFoldedRunIds,

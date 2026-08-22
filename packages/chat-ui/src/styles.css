@@ -832,6 +832,19 @@
   border-radius: 50%;
 }
 
+/* A human's generated fallback fill (`avatar-identity.ts`). react-ui's
+   `Avatar` takes no `style` prop — only `className` — so the two custom
+   properties this class reads are set on an ancestor by the caller and
+   inherit down through the DOM to whichever element carries this class.
+   Plain, unlayered CSS at equal specificity to react-ui's own
+   `bg-muted`/`text-muted-foreground` tone classes, positioned after them
+   in the cascade (this stylesheet imports after react-ui's), so it wins
+   without needing `!important`. */
+.avatar-identity-generated {
+  background-color: var(--avatar-identity-bg);
+  color: var(--avatar-identity-fg);
+}
+
 /* A SenderAvatar rendered without the profile-button wrapper (the
    streaming bubble) still occupies the same avatar column, so text
    never shifts when the streamed reply finalizes into a persisted
@@ -1785,6 +1798,32 @@
   border-top: 1px solid var(--border);
   padding: 0.45rem 0.75rem 0.7rem;
   box-sizing: border-box;
+}
+
+/* CL-6568's pre-send banner — a tenant with no usable model sees this
+   above the composer, before typing a single character, rather than
+   discovering it only after a reply never arrives. Never disables the
+   composer beneath it. */
+.chat-no-model-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--ui-radius-md, 0.375rem);
+  background: color-mix(in srgb, var(--destructive) 8%, transparent);
+  color: color-mix(in srgb, var(--destructive) 78%, var(--muted-foreground));
+  font-size: 0.8125rem;
+}
+
+.chat-no-model-banner svg {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+}
+
+.chat-no-model-banner-text {
+  flex: 1;
 }
 
 .chat-composer {
@@ -2800,13 +2839,6 @@
 
 .chat-presence-avatar:first-child {
   margin-left: 0;
-}
-
-/* Agents in the header stack keep their accent color but share the
-   humans' circular shape — one motif for the whole roster row. */
-.chat-presence-avatar[data-agent="true"] {
-  background: var(--chat-agent-accent, var(--primary));
-  color: var(--primary-foreground, var(--background));
 }
 
 /* Existing reaction chips + pin toggle, indented to align under the bubble

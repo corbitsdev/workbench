@@ -144,7 +144,7 @@ pick who does the work (`createMyraAgentSelectionStrategy`,
   `POST /api/tenants/:id/planner` (`dispatchPlanner`,
   `packages/tasks-ui/src/api.ts`, mounted by
   `@corbits/task-planner`'s `createPlannerRoutes`). Server-side, Myra's own
-  one-shot run (`runOneShotFoldedPrompt`, `@corbits/folded-runs`) turns
+  one-shot run (`runOneShotFoldedPrompt`, `@corbits/folded-run-one-shot`) turns
   your outcome plus the tenant's real inventory of agents/tools/skills into
   a `TaskSpec` (`packages/task-planner/src/planner-run.ts`), which then
   dispatches exactly like a manually-launched task — a real task row, and
@@ -221,7 +221,7 @@ under it; a run outside your tenant, or that never existed, reads back as
 
 A dispatched task's run is deliberately absent from the Insights landing
 page's own top-level feed (`GET /api/tenants/:id/top-level-runs`,
-`packages/folded-runs/src/scope-routes.ts`) — that feed is scoped to
+`packages/run-scope/src/scope-routes.ts`) — that feed is scoped to
 genuine top-level deployments (workbenches, scheduled routines), and a task
 is folded-run plumbing the same way an invited workbench participant is
 (`launchTask` shares `launchFoldedRun` with `@corbits/chat`'s own invite

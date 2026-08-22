@@ -17,6 +17,7 @@
   "dependencies": {
     "@corbits/agent-lifecycle": "workspace:*",
     "@corbits/credential-providers": "workspace:*",
+    "@corbits/error-sink": "workspace:*",
     "@corbits/ollama-adapter": "workspace:*",
     "@corbits/workflow-host-actions": "workspace:*",
     "@intx/agent": "0.3.0",

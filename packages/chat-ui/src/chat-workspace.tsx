@@ -55,6 +55,7 @@ import { useStreamingReply, typingAgentNames } from "./streaming-reply";
 import { useTurnActivity, TurnActivityStrip } from "./turn-activity";
 import type { StreamingReplyState } from "./streaming-reply";
 import { AgentBadge, WorkbenchTimeline, messageDomId } from "./timeline";
+import { NoUsableModelBanner } from "./no-usable-model-banner";
 import type {
   CurrentUser,
   PinActions,
@@ -80,7 +81,7 @@ import {
   applyStreamReaction,
   useWorkbenchFeed,
 } from "./use-workbench-feed";
-import { colorForPrincipal } from "@corbits/presence/color";
+import { generatedAvatarStyle } from "./avatar-identity";
 import { useWorkbenchPresenceRoster } from "./workbench-presence";
 import { type } from "arktype";
 import {
@@ -120,14 +121,16 @@ export type TenantResolution =
  * One live presence entry for the workbench's who's-here stack (CL-6328) —
  * derived from this workbench's own `/stream` connection
  * (`useWorkbenchPresenceRoster`), never a second connection or an HTTP
- * heartbeat poll. `displayName`/`color` are resolved client-side against
- * the workbench's own participants and `@corbits/presence`'s deterministic
- * `colorForPrincipal`, since the roster itself carries only ids.
+ * heartbeat poll. `displayName`/`color`/`textColor` are resolved
+ * client-side against the workbench's own participants and
+ * `generatedAvatarStyle`'s deterministic per-principal fill, since the
+ * roster itself carries only ids.
  */
 export interface PresenceMember {
   readonly principalId: string;
   readonly displayName: string;
   readonly color: string;
+  readonly textColor: string;
 }
 
 /** One entry in the header's combined who's-active stack — an agent
@@ -139,6 +142,7 @@ export interface TeamAvatarEntry {
   readonly label: string;
   readonly tone: "agent" | "neutral";
   readonly color?: string;
+  readonly textColor?: string;
 }
 
 /** How many avatars the header shows before collapsing the rest into a
@@ -151,6 +155,12 @@ export const TEAM_AVATAR_STACK_LIMIT = 6;
  * are always "active" — they have no presence concept of their own) plus
  * every human currently reflected in live presence. Agents first since
  * they're a workbench's stable roster; humans are who's here right now.
+ *
+ * Each agent gets its own `generatedAvatarStyle` fill keyed by address
+ * (CL-6594) — the same deterministic-per-principal machinery humans
+ * already use — rather than one shared CSS accent color for every
+ * agent, so two agents in the same room never render as
+ * indistinguishable avatars.
  */
 export function buildTeamAvatarStack(
   participants: readonly ParticipantRecord[],
@@ -158,18 +168,24 @@ export function buildTeamAvatarStack(
 ): readonly TeamAvatarEntry[] {
   const agents = participants
     .filter((participant) => isAgentAddress(participant.address))
-    .map((participant) => ({
-      key: participant.address,
-      initials: participant.handle,
-      label: participant.handle,
-      tone: "agent" as const,
-    }));
+    .map((participant) => {
+      const style = generatedAvatarStyle(participant.address);
+      return {
+        key: participant.address,
+        initials: participant.handle.slice(0, 1).toUpperCase(),
+        label: participant.handle,
+        tone: "agent" as const,
+        color: style["--avatar-identity-bg"],
+        textColor: style["--avatar-identity-fg"],
+      };
+    });
   const humans = presenceMembers.map((member) => ({
     key: member.principalId,
     initials: member.displayName.slice(0, 1).toUpperCase(),
     label: member.displayName,
     tone: "neutral" as const,
     color: member.color,
+    textColor: member.textColor,
   }));
   return [...agents, ...humans];
 }
@@ -407,6 +423,8 @@ function ChatWorkspaceInner({
   onWorkbenchNotFound,
   onBackToWorkbenchList,
   onSignIn,
+  hasUsableModel,
+  onConnectModel,
 }: {
   readonly tenantId: string;
   readonly workbenchId?: string | null;
@@ -493,6 +511,18 @@ function ChatWorkspaceInner({
    * retry that can only ever hit the same 401. Omitted, that state falls
    * back to no action at all (never "Try again" for a session that's gone). */
   readonly onSignIn?: () => void;
+  /** Whether this tenant can actually run inference right now — the
+   * host's read of `hasUsableModel` (`@corbits/inference-settings`)
+   * against its resolved catalog, never mere `model_provider` row
+   * presence (CL-6568). `undefined` while that read is still in flight:
+   * the banner stays hidden rather than flashing "no model" before the
+   * real answer lands. */
+  readonly hasUsableModel?: boolean;
+  /** The pre-send banner's "Connect a model" action — the host's own
+   * navigation into Settings → AI providers. Undefined still renders the
+   * banner, just with an inert button, matching every other optional
+   * action this file wires. */
+  readonly onConnectModel?: () => void;
 }) {
   const queryClient = useQueryClient();
   const refreshWorkbenchLists = useCallback(() => {
@@ -521,6 +551,18 @@ function ChatWorkspaceInner({
   // navigated to next.
 
   const composerRef = useRef<ComposerHandle>(null);
+
+  /** Retry on a failed-turn strip: the request text was already
+   * recovered (`findRetryText`) rather than resent silently — a person
+   * may have since fixed what broke, or may not want it re-sent
+   * verbatim, so this hands it back into the composer ready to send
+   * rather than re-sending on their behalf. */
+  const handleRetryFailedTurn = useCallback(
+    (_item: TimelineMessageItem, retryText?: string) => {
+      if (retryText !== undefined) composerRef.current?.insertText(retryText);
+    },
+    [],
+  );
 
   const feed = useWorkbenchFeed({
     tenantId,
@@ -897,14 +939,18 @@ function ChatWorkspaceInner({
   // `typingLabel` resolves a typing ping's principal.
   const presenceMembers: readonly PresenceMember[] = useMemo(
     () =>
-      presenceRoster.map((member) => ({
-        principalId: member.principalId,
-        displayName: typingLabel(
-          member.principalId,
-          activeWorkbench?.participants ?? [],
-        ),
-        color: colorForPrincipal(member.principalId),
-      })),
+      presenceRoster.map((member) => {
+        const style = generatedAvatarStyle(member.principalId);
+        return {
+          principalId: member.principalId,
+          displayName: typingLabel(
+            member.principalId,
+            activeWorkbench?.participants ?? [],
+          ),
+          color: style["--avatar-identity-bg"],
+          textColor: style["--avatar-identity-fg"],
+        };
+      }),
     [presenceRoster, activeWorkbench?.participants],
   );
 
@@ -1107,27 +1153,22 @@ function ChatWorkspaceInner({
                       className="chat-team-stack"
                       aria-label={CHAT_STRINGS.workbenchMembersLabel}
                     >
-                      {visibleTeamStack.map((entry) =>
-                        entry.tone === "agent" ? (
-                          <span
-                            key={entry.key}
-                            className="chat-presence-avatar"
-                            data-agent="true"
-                            title={entry.label}
-                          >
-                            {entry.initials.slice(0, 1).toUpperCase()}
-                          </span>
-                        ) : (
-                          <span
-                            key={entry.key}
-                            className="chat-presence-avatar"
-                            style={{ backgroundColor: entry.color }}
-                            title={entry.label}
-                          >
-                            {entry.initials}
-                          </span>
-                        ),
-                      )}
+                      {visibleTeamStack.map((entry) => (
+                        <span
+                          key={entry.key}
+                          className="chat-presence-avatar"
+                          data-agent={
+                            entry.tone === "agent" ? "true" : undefined
+                          }
+                          style={{
+                            backgroundColor: entry.color,
+                            color: entry.textColor,
+                          }}
+                          title={entry.label}
+                        >
+                          {entry.initials}
+                        </span>
+                      ))}
                       {teamStackOverflow > 0 ? (
                         <span
                           className="chat-team-stack-overflow"
@@ -1274,6 +1315,7 @@ function ChatWorkspaceInner({
                       : {})}
                     reactionActions={reactionActions}
                     pinActions={pinActions}
+                    onRetryFailedTurn={handleRetryFailedTurn}
                     pendingActions={{
                       onRetry: retryPendingSend,
                       onDiscard: discardPendingSend,
@@ -1302,6 +1344,11 @@ function ChatWorkspaceInner({
                   />
                   <TurnActivityStrip activity={turnActivity} />
                   <div className="chat-composer-stack">
+                    {hasUsableModel === false && hasAgentParticipant ? (
+                      <NoUsableModelBanner
+                        onConnectModel={() => onConnectModel?.()}
+                      />
+                    ) : null}
                     <Composer
                       ref={composerRef}
                       agents={mentionCandidatesFromParticipants(
@@ -1377,6 +1424,8 @@ export function ChatWorkspace({
   onWorkbenchNotFound,
   onBackToWorkbenchList,
   onSignIn,
+  hasUsableModel,
+  onConnectModel,
 }: {
   readonly tenant: TenantResolution;
   /** Controlled active workbench (e.g. from the app's URL); null = pick the first. */
@@ -1456,6 +1505,10 @@ export function ChatWorkspace({
   readonly onBackToWorkbenchList?: () => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
   readonly onSignIn?: () => void;
+  /** See `ChatWorkspaceInner`'s prop of the same name. */
+  readonly hasUsableModel?: boolean;
+  /** See `ChatWorkspaceInner`'s prop of the same name. */
+  readonly onConnectModel?: () => void;
 }) {
   switch (tenant.kind) {
     case "ready":
@@ -1508,6 +1561,8 @@ export function ChatWorkspace({
             ? { onBackToWorkbenchList }
             : {})}
           {...(onSignIn !== undefined ? { onSignIn } : {})}
+          {...(hasUsableModel !== undefined ? { hasUsableModel } : {})}
+          {...(onConnectModel !== undefined ? { onConnectModel } : {})}
         />
       );
     case "empty":

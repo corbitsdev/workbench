@@ -8,10 +8,12 @@
 // carries an `href`, so the trail is deep-linkable and a plain click
 // navigates through the app's own `Link` instead of reloading the shell.
 //
-// The bar also carries the product's one search entry point (`StageSearch`,
-// DESIGN.md → Search) ahead of the page's own controls. It is shell chrome,
-// not a page action: no page passes it, and no page can opt out — that is
-// what makes "exactly one search surface" true of every route at once.
+// `filter` is a page's own per-page filter (DECISIONS.md → Search), rendered
+// through `StageSearch` ahead of `actions` when a page passes one. It is not
+// shell chrome the way it used to be: a page with nothing to filter passes
+// none and gets no magnifier at all. The global command palette (`Cmd+K`)
+// is a separate surface entirely — see `command-palette-provider.tsx` —
+// mounted on its own rather than out of this bar.
 //
 // `@corbits/react-ui`'s `TopBarBreadcrumbs` renders bare `<a href>`, which
 // would drop the SPA out from under the click, so the trail lives here
@@ -21,7 +23,7 @@ import { Fragment, type ReactNode } from "react";
 
 import { Link } from "../navigation";
 import { Chip, type ChipTone } from "./chip";
-import { StageSearch } from "./stage-search";
+import { StageSearch, type StageSearchProps } from "./stage-search";
 
 export type StageCrumb = {
   readonly label: string;
@@ -34,6 +36,7 @@ export function StageTopBar({
   crumbs,
   subtitle,
   chip,
+  filter,
   actions,
 }: {
   /** The page's title trail: parents first, the page itself last. */
@@ -42,6 +45,10 @@ export function StageTopBar({
   /** A quiet status pill (mock's `.chip[data-tone]`), rendered first among
    * the right-aligned actions — ambient state, not a button. */
   readonly chip?: { readonly tone: ChipTone; readonly label: ReactNode };
+  /** This page's own filter, if it has one — rendered as the magnifier that
+   * morphs into an input (`StageSearch`), driving the page's own filter
+   * state directly. Omitted entirely on a page with nothing to filter. */
+  readonly filter?: StageSearchProps;
   /** The primary-action slot: the buttons and inputs this page owns. */
   readonly actions?: ReactNode;
 }) {
@@ -61,7 +68,7 @@ export function StageTopBar({
         className="stage-top-bar-actions"
         data-testid="stage-top-bar-actions"
       >
-        <StageSearch />
+        {filter !== undefined ? <StageSearch {...filter} /> : null}
         {chip !== undefined ? <Chip tone={chip.tone}>{chip.label}</Chip> : null}
         {actions}
       </div>

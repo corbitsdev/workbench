@@ -1,7 +1,8 @@
 export { ChatWorkspace } from "./chat-workspace";
 export type { TenantResolution, PresenceMember } from "./chat-workspace";
 
-export { WorkbenchTimeline, messageDomId } from "./timeline";
+export { WorkbenchTimeline, messageDomId, findRetryText } from "./timeline";
+export { NoUsableModelBanner } from "./no-usable-model-banner";
 export type {
   CurrentUser,
   ReactionActions,
@@ -12,6 +13,13 @@ export type {
 } from "./timeline";
 
 export { WorkbenchLoadingState } from "./loading-state";
+
+export {
+  AVATAR_IDENTITY_CLASS,
+  generatedAvatarStyle,
+  resolveAvatarFill,
+} from "./avatar-identity";
+export type { AvatarFill, GeneratedAvatarStyle } from "./avatar-identity";
 
 export { PinnedStrip } from "./pinned-strip";
 export {

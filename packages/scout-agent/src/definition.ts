@@ -32,7 +32,7 @@ export const SCOUT_AGENT_DESCRIPTION =
 export const SCOUT_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
   { name: "@corbits/memory-tools", version: "0.0.4" },
   { name: "@corbits/web-search-tools", version: "0.0.3" },
-  { name: "@corbits/scout-agent", version: "0.0.1" },
+  { name: "@corbits/scout-agent", version: "0.0.2" },
 ];
 
 /** The plain-data shape the agent-directory create path takes. */

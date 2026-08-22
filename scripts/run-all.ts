@@ -79,6 +79,63 @@ async function runJob(job: Job, script: string): Promise<number> {
   return code;
 }
 
+const SINCE_ENV = "WORKBENCH_CHECK_SINCE";
+
+/**
+ * The files this change touches, relative to `ref`: everything committed since
+ * the merge base, plus whatever is still uncommitted. Uncommitted work counts
+ * because the gate runs before the commit exists.
+ */
+function changedFilesSince(ref: string): string[] {
+  const base =
+    Bun.spawnSync(["git", "merge-base", "HEAD", ref])
+      .stdout.toString()
+      .trim() || ref;
+  const committed = Bun.spawnSync([
+    "git",
+    "diff",
+    "--name-only",
+    `${base}...HEAD`,
+  ]);
+  const working = Bun.spawnSync(["git", "status", "--porcelain"]);
+  return [
+    ...committed.stdout.toString().split("\n"),
+    ...working.stdout
+      .toString()
+      .split("\n")
+      .map((line) => line.slice(3)),
+  ]
+    .map((file) => file.trim())
+    .filter((file) => file.length > 0);
+}
+
+/**
+ * Narrows the job list to packages this change can actually break. Opt-in:
+ * without the env var every package runs, so CI and a bare `bun run check`
+ * keep their existing all-packages meaning.
+ */
+async function narrowToAffected(jobs: readonly Job[]): Promise<Job[]> {
+  const ref = process.env[SINCE_ENV];
+  if (ref === undefined || ref === "") return [...jobs];
+
+  const { affectedPackages, readManifests } = await import("./affected.ts");
+  const affected = affectedPackages(
+    changedFilesSince(ref),
+    await readManifests(),
+  );
+  if (affected === "all") {
+    console.error(
+      `${SINCE_ENV}=${ref}: change is repo-wide, running every package`,
+    );
+    return [...jobs];
+  }
+  const narrowed = jobs.filter((job) => affected.has(job.name));
+  console.error(
+    `${SINCE_ENV}=${ref}: ${narrowed.length} of ${jobs.length} package(s) affected`,
+  );
+  return narrowed;
+}
+
 const script = process.argv[2];
 if (!script) {
   console.error("usage: bun run scripts/run-all.ts <script-name>");
@@ -93,9 +150,14 @@ try {
   process.exit(1);
 }
 
-const jobs = await discover(script);
+const discovered = await discover(script);
+const jobs = await narrowToAffected(discovered);
 if (jobs.length === 0) {
-  console.log(`${script}: no workspace packages define it yet`);
+  const reason =
+    discovered.length === 0
+      ? "no workspace packages define it yet"
+      : "nothing affected by this change";
+  console.log(`${script}: ${reason}`);
   process.exit(0);
 }
 

@@ -734,8 +734,8 @@ export async function bootMyraTarget(
             res.data,
             "data",
             "list agent definitions",
-          ) as { name: string }[];
-          return rows.map((row) => row.name);
+          ) as { name: string; id: string }[];
+          return rows.map((row) => ({ handle: row.name, id: row.id }));
         },
         async createParticipantAgent(request) {
           const res = await api(
@@ -754,6 +754,21 @@ export async function bootMyraTarget(
           return {
             id: stringField(res.data, "id", `created "${request.handle}"`),
           };
+        },
+        async inviteParticipantAgent(id) {
+          const res = await api(
+            hub.baseUrl,
+            "POST",
+            `/api/tenants/${seeded.tenantId}/chat/workbenches/${workbenchId}/invite`,
+            { definitionId: id },
+            cookies,
+          );
+          if (res.status !== 200 && res.status !== 201) {
+            throw new Error(
+              `invite participant agent "${id}" returned ` +
+                `${String(res.status)}: ${JSON.stringify(res.data)}`,
+            );
+          }
         },
         async deployBlockWorkflow(block) {
           const res = await api(

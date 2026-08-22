@@ -25,6 +25,7 @@ import {
   toast,
 } from "@corbits/react-ui";
 import { toReactUiReasoning } from "./agent-part-adapter";
+import { AVATAR_IDENTITY_CLASS, generatedAvatarStyle } from "./avatar-identity";
 import { groupTimelineParts } from "./tool-activity";
 import { ToolActivityGroup } from "./tool-activity-view";
 import {
@@ -37,6 +38,7 @@ import {
   PushPinSlash,
   Smiley,
 } from "@corbits/icons";
+import type { CSSProperties } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
@@ -269,6 +271,10 @@ type SenderDisplay = {
   readonly handle?: string;
   readonly isAgent: boolean;
   readonly initials: string;
+  /** The wire address behind this sender — never shown, only hashed
+   * (`generatedAvatarStyle`) into a stable per-person fallback color for
+   * a human's avatar. */
+  readonly id: string;
 };
 
 function senderDisplay(
@@ -283,7 +289,12 @@ function senderDisplay(
     localPartOf(sender.address) === currentUser.principalId
   ) {
     const label = currentUser.name ?? CHAT_STRINGS.senderYou;
-    return { label, isAgent: false, initials: ownAvatarInitials(currentUser) };
+    return {
+      label,
+      isAgent: false,
+      initials: ownAvatarInitials(currentUser),
+      id: currentUser.principalId,
+    };
   }
 
   const matched = participants.find(
@@ -307,6 +318,7 @@ function senderDisplay(
       handle: matched.handle,
       isAgent,
       initials: initialsOf(displayName ?? matched.handle),
+      id: matched.address,
     };
   }
 
@@ -315,6 +327,7 @@ function senderDisplay(
       label: sender.name,
       isAgent: false,
       initials: initialsOf(sender.name),
+      id: sender.address,
     };
   }
 
@@ -322,33 +335,53 @@ function senderDisplay(
     label: CHAT_STRINGS.senderFallbackMember,
     isAgent: false,
     initials: "?",
+    id: sender.address,
   };
 }
 
 /** The message header's avatar chip — the same react-ui `Avatar` (tone by
  * agent-vs-neutral, a tooltip carrying the full name) `chat-workspace.tsx`'s
- * member stack already uses, rather than a bespoke initials box. */
+ * member stack already uses, rather than a bespoke initials box. A human
+ * sender additionally gets `generatedAvatarStyle`'s deterministic
+ * per-person fill — set on this wrap (Avatar takes no `style` prop) and
+ * inherited into `Avatar`'s own root span through the
+ * `AVATAR_IDENTITY_CLASS` className — so every human reads as their own
+ * color instead of the same flat neutral gray agents already stand apart
+ * from. */
 function SenderAvatar({
+  id,
   initials,
   label,
   isAgent,
   tenantMonogram,
   tenantName,
 }: {
+  id: string;
   initials: string;
   label: string;
   isAgent: boolean;
   tenantMonogram?: string;
   tenantName?: string;
 }) {
+  const identityStyle = isAgent
+    ? undefined
+    : (generatedAvatarStyle(id) as CSSProperties);
   return (
-    <span className="chat-sender-avatar-wrap" title={label}>
+    <span
+      className="chat-sender-avatar-wrap"
+      title={label}
+      style={identityStyle}
+    >
       <Avatar
         initials={initials}
         label={label}
         tone={isAgent ? "agent" : "neutral"}
         size="md"
-        className="chat-sender-avatar"
+        className={
+          isAgent
+            ? "chat-sender-avatar"
+            : `chat-sender-avatar ${AVATAR_IDENTITY_CLASS}`
+        }
       />
       {tenantMonogram !== undefined ? (
         <span
@@ -456,6 +489,7 @@ function TextBubble({
           onClick={handleOpenProfile}
         >
           <SenderAvatar
+            id={display.id}
             initials={display.initials}
             label={display.label}
             isAgent={display.isAgent}
@@ -543,7 +577,7 @@ function TextBubble({
  * anything else falls back to the event name with its separators turned
  * into spaces.
  */
-function friendlyEventText(
+export function friendlyEventText(
   part: Part & { kind: "event" },
   participants: readonly ParticipantRecord[],
 ): string {
@@ -555,10 +589,15 @@ function friendlyEventText(
     data !== undefined && typeof data.address === "string"
       ? data.address
       : undefined;
+  // The participant record's own handle is the friendly, settings-held
+  // name (see `packages/chat/src/participants.ts`); when the roster
+  // hasn't caught up with this address yet, the address's own local
+  // part (CL-6594) is still a real identifier — never the generic "An
+  // agent joined", which hides a name the event already carries.
   const handle =
     address !== undefined
-      ? participants.find((participant) => participant.address === address)
-          ?.handle
+      ? (participants.find((participant) => participant.address === address)
+          ?.handle ?? localPartOf(address))
       : undefined;
 
   switch (part.event) {
@@ -642,15 +681,32 @@ function EventLine({
  */
 function FailedTurnStrip({
   item,
+  detailText,
+  retryText,
   participants,
   currentUser,
   onRetryFailedTurn,
   onWhatHappenedFailedTurn,
 }: {
   readonly item: TimelineMessageItem;
+  /** The undelivered-turn notice's own text (`postUndeliveredNotice`,
+   * `@corbits/chat`) — already cause-aware server-side (a missing model
+   * credential reads "add or check your model key," a generic dispatch
+   * failure reads "send it again"). Shown as this strip's own detail
+   * rather than the fixed `turnFailedSub` string, so the person reads
+   * the real diagnosis instead of a guess. Falls back to `turnFailedSub`
+   * only when the notice carries no text at all. */
+  readonly detailText: string;
+  /** The original message this turn never answered, recovered by
+   * `findRetryText` — handed to `onRetryFailedTurn` so Retry has
+   * something to resend rather than nothing. */
+  readonly retryText?: string;
   readonly participants: readonly ParticipantRecord[];
   readonly currentUser: CurrentUser | undefined;
-  readonly onRetryFailedTurn?: (item: TimelineMessageItem) => void;
+  readonly onRetryFailedTurn?: (
+    item: TimelineMessageItem,
+    retryText?: string,
+  ) => void;
   readonly onWhatHappenedFailedTurn?: (item: TimelineMessageItem) => void;
 }) {
   const display = senderDisplay(item.sender, participants, currentUser);
@@ -666,7 +722,7 @@ function FailedTurnStrip({
         variant="ghost"
         size="sm"
         className="chat-turn-failed-retry"
-        onClick={() => onRetryFailedTurn?.(item)}
+        onClick={() => onRetryFailedTurn?.(item, retryText)}
       >
         {CHAT_STRINGS.prThreadRetryAction}
       </Button>
@@ -683,11 +739,41 @@ function FailedTurnStrip({
       </button>
       {expanded ? (
         <span className="chat-turn-failed-detail">
-          {CHAT_STRINGS.turnFailedSub}
+          {detailText.length > 0 ? detailText : CHAT_STRINGS.turnFailedSub}
         </span>
       ) : null}
     </div>
   );
+}
+
+/**
+ * The nearest message before a failed-turn notice sent by someone other
+ * than the unreachable agent itself — the request that notice answered.
+ * `postUndeliveredNotice` posts the notice from that agent's own address
+ * right after the dispatch it was answering, so walking backward from
+ * the notice to the first message from a different sender finds that
+ * request without the wire needing to carry an explicit back-reference.
+ * Undefined when nothing precedes it (a notice at the very top of what's
+ * loaded) — Retry then has nothing to hand back, same as before this
+ * existed.
+ */
+export function findRetryText(
+  items: readonly TimelineMessageItem[],
+  failedItem: TimelineMessageItem,
+): string | undefined {
+  const index = items.findIndex((candidate) => candidate.id === failedItem.id);
+  if (index === -1) return undefined;
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const candidate = items[i];
+    if (candidate === undefined) continue;
+    if (candidate.sender.address === failedItem.sender.address) continue;
+    const text = candidate.parts
+      .filter((part): part is Part & { kind: "text" } => part.kind === "text")
+      .map((part) => part.text)
+      .join("");
+    return text.length > 0 ? text : undefined;
+  }
+  return undefined;
 }
 
 function FallbackPart({ part }: { part: Part }) {
@@ -863,6 +949,7 @@ function StreamingMessageGroup({
       <div className="chat-bubble-row" data-own="false">
         {display !== undefined && (
           <SenderAvatar
+            id={display.id}
             initials={display.initials}
             label={display.label}
             isAgent={display.isAgent}
@@ -1124,6 +1211,7 @@ function PinToggleButton({
 
 function MessageParts({
   item,
+  items,
   participants,
   currentUser,
   showDayDivider,
@@ -1146,6 +1234,10 @@ function MessageParts({
   onWhatHappenedFailedTurn,
 }: {
   readonly item: TimelineMessageItem;
+  /** The full timeline, oldest→newest — only read to recover the request
+   * text a failed-turn notice answered (`findRetryText`), never for
+   * anything else this component renders. */
+  readonly items: readonly TimelineMessageItem[];
   readonly participants: readonly ParticipantRecord[];
   readonly currentUser: CurrentUser | undefined;
   readonly showDayDivider: boolean;
@@ -1185,7 +1277,10 @@ function MessageParts({
    * renders the strip with inert buttons, never hiding the strip
    * itself: a failed turn stays visible even on a host that wires no
    * recovery action for it. */
-  readonly onRetryFailedTurn?: (item: TimelineMessageItem) => void;
+  readonly onRetryFailedTurn?: (
+    item: TimelineMessageItem,
+    retryText?: string,
+  ) => void;
   readonly onWhatHappenedFailedTurn?: (item: TimelineMessageItem) => void;
 }) {
   // A message this reader's own composer submitted and the server hasn't
@@ -1241,12 +1336,15 @@ function MessageParts({
           }
           const part = group.part;
           if (part.kind === "text" && part.turnFailed === true) {
+            const retryText = findRetryText(items, item);
             return (
               <FailedTurnStrip
                 key={key}
                 item={item}
+                detailText={part.text}
                 participants={participants}
                 currentUser={currentUser}
+                {...(retryText !== undefined ? { retryText } : {})}
                 {...(onRetryFailedTurn !== undefined
                   ? { onRetryFailedTurn }
                   : {})}
@@ -1589,7 +1687,10 @@ export function WorkbenchTimeline({
    * Undefined still renders the strip, just with a Retry button that
    * does nothing when pressed — the strip's job is to make the failure
    * visible, which it does either way. */
-  readonly onRetryFailedTurn?: (item: TimelineMessageItem) => void;
+  readonly onRetryFailedTurn?: (
+    item: TimelineMessageItem,
+    retryText?: string,
+  ) => void;
   /** The failed-turn strip's "what happened" action — same undefined
    * contract as `onRetryFailedTurn`. */
   readonly onWhatHappenedFailedTurn?: (item: TimelineMessageItem) => void;
@@ -1756,6 +1857,7 @@ export function WorkbenchTimeline({
           <MessageParts
             key={key}
             item={item}
+            items={items}
             participants={participants}
             currentUser={currentUser}
             showDayDivider={showDayDivider}

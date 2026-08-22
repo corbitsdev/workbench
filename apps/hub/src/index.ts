@@ -89,7 +89,6 @@ import {
   isWorkbenchHostDefinitionName,
   listConnectedProviders,
   listDefaultInferencePreferences,
-  provisionSpaceWorkbench,
   startWorkflowCommand,
   sendWorkbenchMessage,
   settleConnectedService,
@@ -101,9 +100,9 @@ import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
 import { decodedOrNull } from "@corbits/url-path";
 import {
   createCryptoProviderCache,
-  createTopLevelRunRoutes,
   lookupFoldedRunReconnectKey,
 } from "@corbits/folded-runs";
+import { createTopLevelRunRoutes } from "@corbits/run-scope";
 import {
   createInboxRoutes,
   createWorkbenchMailboxDelivery,
@@ -208,6 +207,10 @@ import {
   lookupRunKeyHistoryReconnectKey,
 } from "@corbits/run-key-history";
 import {
+  createDrizzleWorkflowDeploySourceStore,
+  withDeploySourceRecording,
+} from "@corbits/workflow-deploy-source";
+import {
   createMyraAgentDefinitionDrafting,
   createPlannerRoutes,
   createWorkflowDispatchRoutes,
@@ -281,7 +284,11 @@ import {
   createPresenceRoutes,
   type PresenceRoomKey,
 } from "@corbits/presence";
-import { createGitWorkflowPusher, createHubAPI } from "@workbench/hub-client";
+import {
+  createGitWorkflowPusher,
+  createHubAPI,
+  supportedCredentialProviders,
+} from "@workbench/hub-client";
 import {
   createDrizzlePendingSeedStore,
   createBenchProvisioner,
@@ -871,17 +878,28 @@ export async function createHub(config: HubConfig) {
     getSigningPublicKey: agentRepoStore.getSigningPublicKey,
     repoStore: launchCaches.repoStore,
   };
-  const sessionService = createSessionService({
-    sidecarRouter,
-    agentRepoStore: launchAgentRepoStore,
-    assetService: launchCaches.assetService,
-    db,
-    toolPackageRegistries: {
-      httpRegistries: REGISTRIES,
-      defaultRegistry: "npmjs",
-      scopeRouting: [{ scope: "@corbits", registry: CORBITS_TOOLS_REGISTRY }],
-    },
-  });
+  // Shared placement's code-sourced deploys previously left their
+  // `WorkflowDefinitionSource` durable nowhere on the hub -- only on the
+  // sidecar's local `deployment.json` (CL-6581). Wrapping the two deploy
+  // methods here, at the composition root, records that source into
+  // Postgres on every deploy without touching vendored
+  // `session-service.ts`; exclusive placement already persists its own via
+  // `workflow_run_launch_spec`, untouched.
+  const workflowDeploySourceStore = createDrizzleWorkflowDeploySourceStore(db);
+  const sessionService = withDeploySourceRecording(
+    createSessionService({
+      sidecarRouter,
+      agentRepoStore: launchAgentRepoStore,
+      assetService: launchCaches.assetService,
+      db,
+      toolPackageRegistries: {
+        httpRegistries: REGISTRIES,
+        defaultRegistry: "npmjs",
+        scopeRouting: [{ scope: "@corbits", registry: CORBITS_TOOLS_REGISTRY }],
+      },
+    }),
+    workflowDeploySourceStore,
+  );
   // Provisioner plugins are injected at the application composition
   // boundary, mirroring @intx/hub-sessions's own reference wiring: the
   // registry always exists, but ships with no provisioners (and no
@@ -2055,6 +2073,35 @@ export async function createHub(config: HubConfig) {
           ? { github: config.githubApiBaseUrl }
           : {},
       onConnected: settleServiceConnection,
+      // CL-6568's other half: a tenant whose only provider is one it
+      // connected itself through Settings — never an operator-configured
+      // hub key — must converge on Myra and the default workflow set the
+      // same way an onboarding-connected one does. `pendingSeedStore` and
+      // `benchProvisioner` are declared further down this function, but
+      // this closure only runs on a future request, well after both are
+      // constructed below — the same forward-reference this file already
+      // relies on for `onboardingDeps`.
+      onInferenceCredentialUsable: async (info) => {
+        const provider = supportedCredentialProviders().find(
+          (candidate) => candidate.id === info.provider,
+        )?.id;
+        if (provider === undefined) {
+          log.error`onInferenceCredentialUsable fired for an unsupported provider ${info.provider} on tenant ${info.tenantId}; skipping the pending-seed row`;
+          return;
+        }
+        await pendingSeedStore.put({
+          userId: info.userId,
+          tenantId: info.tenantId,
+          principalId: info.principalId,
+          tenantDomain: info.tenantDomain,
+          provider,
+          apiKey: info.apiKey,
+          ...(info.baseURLOverride !== undefined
+            ? { baseURLOverride: info.baseURLOverride }
+            : {}),
+        });
+        benchProvisioner.wake();
+      },
     }),
   );
   // Connections' own OAuth connect flow (CL-6389): `createOAuthConnectRoutes`
@@ -2849,18 +2896,6 @@ export async function createHub(config: HubConfig) {
         return row !== undefined && row.workflowDefinitionId === definitionId;
       },
       deliveryWorkbenchRequired: routineDeliveryWorkbenchRequired,
-      // A routine created with no `deliveryWorkbenchId` gets a brand-new
-      // space of its own, named after it, rather than a dead-end
-      // 400 — the same workbench-provisioning core `POST /chat/workbenches`
-      // uses (`@corbits/chat`'s `provisionSpaceWorkbench`), reused here
-      // instead of reimplemented.
-      deliverySpace: {
-        createDeliverySpace: (input) =>
-          provisionSpaceWorkbench(
-            { tenancy: chatTenancy, store: chatStore },
-            input,
-          ),
-      },
       validateRoutineInput: routineInputValid,
     }),
   );
@@ -2937,23 +2972,6 @@ export async function createHub(config: HubConfig) {
           `${runId}@${row.domain}`,
         );
         return hit?.workbenchId;
-      },
-      deliverySpace: {
-        createDeliverySpace: (input) =>
-          provisionSpaceWorkbench(
-            { tenancy: chatTenancy, store: chatStore },
-            input,
-          ),
-      },
-      resolveTenantDomain: async (tenantId) => {
-        const row = await db.query.tenant.findFirst({
-          where: eq(tenantTable.id, tenantId),
-          columns: { domain: true },
-        });
-        if (row === undefined) {
-          throw new Error(`No tenant "${tenantId}"`);
-        }
-        return row.domain;
       },
       validateRoutineInput: routineInputValid,
     }),

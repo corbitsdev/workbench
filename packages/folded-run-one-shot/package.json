@@ -1,0 +1,31 @@
+{
+  "name": "@corbits/folded-run-one-shot",
+  "private": true,
+  "description": "A synchronous request/reply runner over one folded run's opening turn: launch, send the prompt, wait for exactly one reply, tear the run down on every exit path",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/agent-events": "workspace:*",
+    "@corbits/agent-lifecycle": "workspace:*",
+    "@corbits/folded-runs": "workspace:*",
+    "@intx/db": "workspace:*",
+    "@intx/hub-common": "0.3.0",
+    "@intx/hub-sessions": "workspace:*",
+    "@intx/log": "0.3.0",
+    "@intx/types": "0.3.0",
+    "@intx/workflow-deploy": "workspace:*",
+    "drizzle-orm": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

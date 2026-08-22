@@ -67,8 +67,61 @@ export const WorkflowDeploymentRecord = type({
   // and the boot scan both treat an absent marker as "live", so an old
   // on-disk record keeps loading and restoring exactly as before.
   "parkedAt?": "string > 0",
+  // Populated only after a failed boot-time restore attempt; absent for a
+  // record that has never failed restore, and dropped again the moment a
+  // restore succeeds (`clearWorkflowDeploymentRestoreFailure`). `kind`
+  // mirrors `WorkflowRestoreFailure.kind`: "permanent" counts toward
+  // `RESTORE_QUARANTINE_THRESHOLD`, "transient" is recorded for visibility
+  // only and never quarantines. `attempts` counts CONSECUTIVE failures of
+  // the SAME kind -- a kind change resets it to 1, so a transient failure
+  // streak can never inflate the permanent counter, or vice versa.
+  "restoreFailure?": {
+    kind: "'permanent' | 'transient'",
+    attempts: "number > 0",
+    reason: "string > 0",
+    lastAttemptAt: "string > 0",
+  },
 });
 export type WorkflowDeploymentRecord = typeof WorkflowDeploymentRecord.infer;
+
+export type RestoreFailureKind = NonNullable<
+  WorkflowDeploymentRecord["restoreFailure"]
+>["kind"];
+
+/**
+ * Thrown from inside the restore path to mark WHY a specific attempt
+ * failed. `kind` distinguishes a failure intrinsic to the record's own
+ * persisted bytes -- deterministic, will fail identically on every future
+ * boot too (a corrupt/misplaced record, a closure-derived definition that
+ * fails structural validation) -- from one that depends on this boot's
+ * environment and may clear on its own (an inference provider the sidecar
+ * cannot currently build). Only "permanent" failures count toward
+ * `RESTORE_QUARANTINE_THRESHOLD`; an ordinary (unwrapped) `Error` thrown
+ * anywhere else in the restore path is treated as "transient" by the boot
+ * loop -- the safe default, since misclassifying a recoverable failure as
+ * permanent stops future restore attempts for it.
+ */
+export class WorkflowRestoreFailure extends Error {
+  readonly kind: RestoreFailureKind;
+  constructor(kind: RestoreFailureKind, message: string) {
+    super(message);
+    this.name = "WorkflowRestoreFailure";
+    this.kind = kind;
+  }
+}
+
+/**
+ * Consecutive PERMANENT restore failures before a record stops being
+ * attempted and collapses into the boot scan's one-line summary instead
+ * of an individual per-record warning every boot. 3: permanent failures
+ * are deterministic (derived only from the record's own immutable
+ * closure pin and address, never from runtime environment), so they do
+ * not actually need repeated confirmation to be believed -- but a small
+ * buffer costs nothing and guards against a misclassification, while
+ * still bounding the "warn every boot forever" failure mode this
+ * quarantine exists to fix to a handful of boots.
+ */
+export const RESTORE_QUARANTINE_THRESHOLD = 3;
 
 function recordPath(dataDir: string, deploymentId: string): string {
   return pathJoin(dataDir, "workflow-runs", deploymentId, RECORD_FILENAME);
@@ -167,6 +220,71 @@ export async function markWorkflowDeploymentRecordParked(
     ...existing,
     parkedAt: new Date().toISOString(),
   });
+}
+
+/**
+ * Record a failed boot-time restore attempt on an existing record: bump
+ * `attempts` (reset to 1 when `failure.kind` differs from the previously
+ * recorded kind, so a transient streak can never inflate the permanent
+ * counter or vice versa), stamp `reason`/`lastAttemptAt`, and persist.
+ * Returns the updated record so the caller can check `isWorkflowDeploymentRestoreQuarantined`
+ * without a re-read. Takes the caller's in-memory `record` rather than
+ * re-reading it, matching `markWorkflowDeploymentRecordParked`'s sibling
+ * shape but avoiding a redundant read on the hot boot-restore path.
+ */
+export async function recordWorkflowDeploymentRestoreFailure(
+  dataDir: string,
+  deploymentId: string,
+  record: WorkflowDeploymentRecord,
+  failure: { kind: RestoreFailureKind; reason: string },
+): Promise<WorkflowDeploymentRecord> {
+  const previous = record.restoreFailure;
+  const attempts =
+    previous !== undefined && previous.kind === failure.kind
+      ? previous.attempts + 1
+      : 1;
+  const updated: WorkflowDeploymentRecord = {
+    ...record,
+    restoreFailure: {
+      kind: failure.kind,
+      attempts,
+      reason: failure.reason,
+      lastAttemptAt: new Date().toISOString(),
+    },
+  };
+  await writeWorkflowDeploymentRecord(dataDir, deploymentId, updated);
+  return updated;
+}
+
+/**
+ * Clear a record's failure tracking after a restore succeeds. A no-op
+ * (no write) when there is nothing to clear, so a caller can call this
+ * unconditionally after every successful restore.
+ */
+export async function clearWorkflowDeploymentRestoreFailure(
+  dataDir: string,
+  deploymentId: string,
+  record: WorkflowDeploymentRecord,
+): Promise<void> {
+  if (record.restoreFailure === undefined) return;
+  const { restoreFailure, ...rest } = record;
+  await writeWorkflowDeploymentRecord(dataDir, deploymentId, rest);
+}
+
+/**
+ * Whether a record's next boot-time restore attempt should be skipped
+ * entirely: a "permanent"-kind failure that has reached
+ * `RESTORE_QUARANTINE_THRESHOLD` consecutive attempts. A "transient"-kind
+ * streak never quarantines, however high its own counter climbs -- see
+ * `WorkflowRestoreFailure`.
+ */
+export function isWorkflowDeploymentRestoreQuarantined(
+  record: WorkflowDeploymentRecord,
+): boolean {
+  return (
+    record.restoreFailure?.kind === "permanent" &&
+    record.restoreFailure.attempts >= RESTORE_QUARANTINE_THRESHOLD
+  );
 }
 
 /**

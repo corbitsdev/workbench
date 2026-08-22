@@ -27,6 +27,7 @@
     "@corbits/command-palette": "workspace:*",
     "@corbits/context-menu": "workspace:*",
     "@corbits/inbox": "workspace:*",
+    "@corbits/inference-settings": "workspace:*",
     "@corbits/insights": "workspace:*",
     "@corbits/plugins-ui": "workspace:*",
     "@corbits/preferences": "workspace:*",

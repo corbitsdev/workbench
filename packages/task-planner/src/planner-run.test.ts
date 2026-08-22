@@ -11,7 +11,7 @@ import {
   PlannerReferenceOutOfInventoryError,
   PlannerReplyUnparseableError,
 } from "./task-spec";
-import { FoldedRunTimedOutError } from "@corbits/folded-runs";
+import { FoldedRunTimedOutError } from "@corbits/folded-run-one-shot";
 
 const INVENTORY_SOURCES: InventorySources = {
   async listConversationalAgents() {

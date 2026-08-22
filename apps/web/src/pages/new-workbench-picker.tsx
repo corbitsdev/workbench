@@ -9,13 +9,19 @@
 // next slice).
 
 import { Button, toast } from "@corbits/react-ui";
-import { ChatCircle, GitPullRequest, Plus } from "@corbits/icons";
+import {
+  ChatCircle,
+  GitPullRequest,
+  MagnifyingGlass,
+  Plus,
+} from "@corbits/icons";
 import {
   ChatApiError,
   describeChatError,
   WorkbenchLoadingState,
 } from "@corbits/chat-ui";
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { getLogger } from "@corbits/client-log";
 import { ApiQueryError, describeApiError } from "@corbits/api-query";
 
@@ -29,6 +35,7 @@ import {
   WorkbenchPreconditionError,
   type PickGithubRepos,
 } from "../instant-agent-create";
+import { fetchAgentReadiness } from "../onboarding";
 import { useNavigate } from "../navigation";
 import { StageTopBar } from "../shell/stage-top-bar";
 import {
@@ -74,6 +81,7 @@ type RepoPickerState = {
 
 const ROW_ICON: Record<WorkbenchTemplateId, typeof GitPullRequest> = {
   "code-review": GitPullRequest,
+  "due-diligence": MagnifyingGlass,
   blank: ChatCircle,
 };
 
@@ -87,6 +95,7 @@ const BLANK_TEMPLATE_ID: WorkbenchTemplateId = "blank";
 
 export function NewWorkbenchPickerRoute() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { selectedTenantId } = useBench();
   const library = useAPIQuery(
     selectedTenantId === null
@@ -96,6 +105,13 @@ export function NewWorkbenchPickerRoute() {
   );
   const [picked, setPicked] = useState<WorkbenchTemplateId | null>(null);
   const [creating, setCreating] = useState(false);
+  // Set only when `createWorkbenchFromTemplate` hit the missing-setup-agent
+  // precondition *and* a readiness check confirmed the bench genuinely
+  // isn't chat-ready yet — never a guess from the error alone, since that
+  // precondition is also what a template-that-will-never-exist looks like.
+  // Distinct from `creating`'s loader: this is a dead end until setup
+  // finishes, not a request in flight.
+  const [stillSettingUp, setStillSettingUp] = useState(false);
   const [repoPicker, setRepoPicker] = useState<RepoPickerState | null>(null);
 
   // What this bench's library can actually serve (CL-6458). A kind whose
@@ -127,14 +143,32 @@ export function NewWorkbenchPickerRoute() {
   async function handleCreate() {
     if (selectedTenantId === null || creating) return;
     setCreating(true);
+    setStillSettingUp(false);
     try {
       await createWorkbenchFromTemplate(
         selectedTenantId,
         selectedId,
         navigate,
+        queryClient,
         pickGithubRepos,
       );
     } catch (cause) {
+      // The missing-setup-agent precondition reads identically whether
+      // this bench's default agents never finished deploying (CL-6457's
+      // background drain is still running, or never started without a
+      // credential) or something is genuinely broken. Only a readiness
+      // check tells those apart — never assume from the throw alone.
+      if (
+        cause instanceof WorkbenchPreconditionError &&
+        cause.kind === "setup-agent-missing"
+      ) {
+        const readiness = await fetchAgentReadiness();
+        if (readiness.kind !== "ready" && readiness.kind !== "chat-ready") {
+          setCreating(false);
+          setStillSettingUp(true);
+          return;
+        }
+      }
       log.error("Couldn't create the workbench", {
         message: cause instanceof Error ? cause.message : String(cause),
         status:
@@ -164,7 +198,22 @@ export function NewWorkbenchPickerRoute() {
         }
       />
       <div className="new-workbench-picker">
-        {creating ? (
+        {stillSettingUp ? (
+          <div className="new-workbench-picker-not-ready">
+            <h3>Still setting up your workbench</h3>
+            <p className="new-workbench-picker-sub">
+              Your account&apos;s agents are finishing setup in the background.
+              This usually takes under a minute — try again in a moment.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void handleCreate()}
+            >
+              Try again
+            </Button>
+          </div>
+        ) : creating ? (
           <WorkbenchLoadingState title="Setting up your workbench…" />
         ) : library.kind === "loading" ? (
           <WorkbenchLoadingState title="Seeing what you can set up here…" />

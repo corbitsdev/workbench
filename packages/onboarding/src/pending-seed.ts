@@ -91,6 +91,7 @@ const PendingSeedSecret = type({
   principalId: "string > 0",
   tenantDomain: "string > 0",
   apiKey: "string > 0",
+  "baseURLOverride?": "string > 0",
 });
 
 export type PendingSeed = {
@@ -100,6 +101,13 @@ export type PendingSeed = {
   readonly tenantDomain: string;
   readonly provider: SupportedCredentialProvider;
   readonly apiKey: string;
+  /** The instance origin a `credentialInputKind: "url"` connector
+   * (Ollama) was actually pointed at, connect time — never a curated
+   * default. Absent for every other provider. Threaded through so the
+   * drain's `ensureSeeded` call resolves `modelSourceFor` against the
+   * real instance rather than falling back to `CATALOG_SEEDS.ollama`'s
+   * fixed origin (CL-6366's same failure mode, one hop later). */
+  readonly baseURLOverride?: string;
 };
 
 export type PendingSeedDb<
@@ -211,6 +219,9 @@ function createPendingSeedStore(
         principalId: parsed.principalId,
         tenantDomain: parsed.tenantDomain,
         apiKey: parsed.apiKey,
+        ...(parsed.baseURLOverride !== undefined
+          ? { baseURLOverride: parsed.baseURLOverride }
+          : {}),
       };
     } catch {
       return drop();
@@ -226,6 +237,9 @@ function createPendingSeedStore(
           principalId: seed.principalId,
           tenantDomain: seed.tenantDomain,
           apiKey: seed.apiKey,
+          ...(seed.baseURLOverride !== undefined
+            ? { baseURLOverride: seed.baseURLOverride }
+            : {}),
         }),
         pendingSeedAad(seed.provider),
       );

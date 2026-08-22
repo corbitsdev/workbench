@@ -19,7 +19,7 @@ import {
 import {
   FoldedRunFailedError,
   FoldedRunTimedOutError,
-} from "@corbits/folded-runs";
+} from "@corbits/folded-run-one-shot";
 import {
   PlannerReferenceOutOfInventoryError,
   PlannerReplyUnparseableError,
