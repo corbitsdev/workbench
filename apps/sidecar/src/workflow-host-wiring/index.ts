@@ -1836,7 +1836,9 @@ export function createSidecarDeployRouter(deps: {
             const reason =
               cause instanceof Error ? cause.message : String(cause);
             const kind =
-              cause instanceof WorkflowRestoreFailure ? cause.kind : "transient";
+              cause instanceof WorkflowRestoreFailure
+                ? cause.kind
+                : "transient";
             const updated = await recordWorkflowDeploymentRestoreFailure(
               dataDir,
               deploymentId,
