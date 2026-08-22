@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { isAgentAddress } from "@corbits/chat/mentions";
+import { reportError } from "@corbits/error-sink";
 import type { ParticipantRecord } from "./api";
 import { displayNameFromHandle } from "./timeline";
 
@@ -262,12 +263,17 @@ export function useStreamingReply(
   minVisibleMs: number = TYPING_INDICATOR_MIN_VISIBLE_MS,
 ): {
   readonly streamingReply: StreamingReplyState;
-  /** True once the backstop above has fired for the turn just cleared —
-   * the host's cue to render `CHAT_STRINGS.replyTimedOutNotice` rather
-   * than silently dropping back to no indicator at all. Reset on the
-   * next workbench switch, stream event, or awaited reply, same lifecycle
-   * as `streamingReply` itself. */
-  readonly replyTimedOut: boolean;
+  /** Set once the backstop above has fired for the turn just cleared — a
+   * `reportError` refId (CL-6677) the host's honest notice quotes, the
+   * same "ref id + Retry" treatment `postUndeliveredNotice`
+   * (`@corbits/chat`) gives a dispatch failure that surfaces server-side.
+   * This is the same class of failure with no server signal at all (a
+   * cold-waking agent that never streams back a token), so it deserves
+   * the same backstop rather than the ref-less, action-less notice this
+   * used to render. `null` when idle. Reset on the next workbench switch,
+   * stream event, or awaited reply, same lifecycle as `streamingReply`
+   * itself. */
+  readonly replyTimedOutRefId: string | null;
   readonly handleStreamEvent: (eventType: string, data: unknown) => void;
   readonly noteAwaitingReply: () => void;
   /** See `resumeFromTurn`'s own doc comment below. */
@@ -277,13 +283,15 @@ export function useStreamingReply(
 } {
   const [streamingReply, setStreamingReply] =
     useState<StreamingReplyState>(null);
-  const [replyTimedOut, setReplyTimedOut] = useState(false);
+  const [replyTimedOutRefId, setReplyTimedOutRefId] = useState<string | null>(
+    null,
+  );
   const pendingSinceRef = useRef<number | null>(null);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setStreamingReply(null);
-    setReplyTimedOut(false);
+    setReplyTimedOutRefId(null);
     pendingSinceRef.current = null;
     if (holdTimerRef.current !== null) {
       clearTimeout(holdTimerRef.current);
@@ -307,12 +315,22 @@ export function useStreamingReply(
       // timer) the instant `streamingReply` changes, so this callback only
       // ever runs while it's still the same pending reply it was armed
       // for — no need to re-check identity here.
+      const refId = reportError(
+        new Error(
+          `Reply timed out: no token received within ${clearMs}ms` +
+            (workbenchId !== null ? ` for workbench ${workbenchId}` : ""),
+        ),
+        {
+          operation: "chat.replyTimedOut",
+          ...(workbenchId !== null ? { roomId: workbenchId } : {}),
+        },
+      );
       setStreamingReply(null);
-      setReplyTimedOut(true);
+      setReplyTimedOutRefId(refId);
       pendingSinceRef.current = null;
     }, clearMs);
     return () => clearTimeout(timer);
-  }, [streamingReply, clearMs]);
+  }, [streamingReply, clearMs, workbenchId]);
 
   function commitReply(
     next: StreamingReplyState,
@@ -348,7 +366,7 @@ export function useStreamingReply(
   }
 
   function handleStreamEvent(eventType: string, data: unknown) {
-    setReplyTimedOut(false);
+    setReplyTimedOutRefId(null);
     setStreamingReply((current) =>
       commitReply(
         nextStreamingReplyState(current, { eventType, data }),
@@ -358,7 +376,7 @@ export function useStreamingReply(
   }
 
   function noteAwaitingReply() {
-    setReplyTimedOut(false);
+    setReplyTimedOutRefId(null);
     setStreamingReply((current) =>
       commitReply(openPendingReply(current), current),
     );
@@ -378,7 +396,7 @@ export function useStreamingReply(
     runningTurn: { readonly textSnapshot?: string | null } | null,
   ) {
     if (runningTurn === null) return;
-    setReplyTimedOut(false);
+    setReplyTimedOutRefId(null);
     setStreamingReply(
       (current) => current ?? hydrateStreamingReplyFromTurn(runningTurn),
     );
@@ -386,7 +404,7 @@ export function useStreamingReply(
 
   return {
     streamingReply,
-    replyTimedOut,
+    replyTimedOutRefId,
     handleStreamEvent,
     noteAwaitingReply,
     resumeFromTurn,

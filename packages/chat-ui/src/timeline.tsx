@@ -634,8 +634,6 @@ export function friendlyEventText(
       }
       return CHAT_STRINGS.eventSettingsChanged;
     }
-    case "chat.reply-timed-out":
-      return CHAT_STRINGS.replyTimedOutNotice;
     case "block.response": {
       const kind = data !== undefined ? data.kind : undefined;
       return kind === "poll"
