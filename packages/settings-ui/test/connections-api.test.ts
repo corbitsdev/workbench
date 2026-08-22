@@ -94,6 +94,17 @@ describe("completeConnectorCredential", () => {
     expect(result).toEqual({ credentialId: "cred_1", status: "active" });
   });
 
+  // CL-6682: a key copied from a provider console often carries a
+  // trailing newline; sent verbatim it 401s a perfectly valid key.
+  test("strips leading/trailing whitespace from the pasted key", async () => {
+    const calls = stubFetch(() =>
+      json({ credentialId: "cred_1", status: "active" }, 200),
+    );
+    await completeConnectorCredential("tnt_1", "granola", " sk-good\n");
+    const body = JSON.parse(String(calls[0]?.init?.body));
+    expect(body).toEqual({ apiKey: "sk-good" });
+  });
+
   // CL-6377: connecting is the one round-trip — a rejected key throws
   // straight from this call, with no separate test step beforehand.
   test("throws ConnectionsApiError with the probe's own message on a 422", async () => {
