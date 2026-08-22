@@ -1024,6 +1024,17 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/workflows/runs/`) &&
+        path.endsWith("/health")
+      ) {
+        return {
+          status: 200,
+          data: { liveness: "ok", readiness: "ok", lastCheckedAt: null },
+          cookies: [],
+        };
+      }
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`) {
         const name = (body as { name: string }).name;
         const existing = providers.find((p) => p.name === name);
@@ -1773,6 +1784,17 @@ describe("ensureSeeded (the slow half)", () => {
             status: "deployed",
             createdAt: TIMESTAMP,
           })),
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/workflows/runs/`) &&
+        path.endsWith("/health")
+      ) {
+        return {
+          status: 200,
+          data: { liveness: "ok", readiness: "ok", lastCheckedAt: null },
           cookies: [],
         };
       }
