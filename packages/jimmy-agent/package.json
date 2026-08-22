@@ -2,7 +2,7 @@
   "name": "@corbits/jimmy-agent",
   "private": true,
   "description": "Jimmy: a one-shot chat agent that searches Giphy and replies with a GIF",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "interchange": {
