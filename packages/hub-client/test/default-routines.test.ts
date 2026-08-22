@@ -170,6 +170,45 @@ describe("ensureDefaultRoutines", () => {
     );
   });
 
+  // The hub never auto-provisions a delivery workbench (that pollution —
+  // a workbench literally named "Daily digest" — is exactly what this
+  // fix removes): a delivery-required preset seeded with no workbench
+  // named gets this 400, and seeding must skip it honestly rather than
+  // failing the whole seed or fabricating a destination.
+  test("skips a delivery-required preset honestly when the hub 400s for lacking a named workbench", async () => {
+    const { lines, log } = collector();
+    const handler: FakeHandler = (method, path) => {
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+      ) {
+        return deployedDefinitionsResponse();
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
+        return { status: 200, data: { items: [] } };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/routines`) {
+        return {
+          status: 400,
+          data: {
+            error: {
+              code: "bad_request",
+              message: "deliveryWorkbenchId is required for this workflow",
+            },
+          },
+        };
+      }
+      return undefined;
+    };
+
+    await ensureDefaultRoutines(fakeAPI(handler), [], TENANT_ID, log);
+
+    const output = lines.join("\n");
+    expect(output).toContain(
+      'routine "Daily digest" skipped: its workflow needs a delivery workbench and this preset names none — create it by hand and pick one',
+    );
+  });
+
   test("a re-seed matches every preset by presetKey — even renamed — and creates nothing twice", async () => {
     const { lines, log } = collector();
     const handler: FakeHandler = (method, path) => {

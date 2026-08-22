@@ -87,7 +87,6 @@ export type {
   RoutineLauncher,
   LaunchedRoutineRun,
   RunSummaryResolver,
-  DeliverySpacePort,
 } from "./routes";
 
 export { createWorkflowRoutineRoutes } from "./workflow-routine-routes";

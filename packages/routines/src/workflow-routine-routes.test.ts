@@ -1,7 +1,9 @@
 // Route-level tests for Myra's own workflow-run-authenticated routine
 // surface: authentication, tenant-scoped (not self-definition-scoped)
-// create/list/update/run-now, and the deliverySpace auto-provision
-// fallback. Mirrors `packages/agent-directory/test/workflow-capability-routes.test.ts`'s
+// create/list/update/run-now, and delivery-target precedence (a named
+// workbench, then the creating run's own workbench — never an
+// auto-provisioned one). Mirrors
+// `packages/agent-directory/test/workflow-capability-routes.test.ts`'s
 // auth-check shape and `./test/routes.test.ts`'s fakes for the tenant-
 // session routine route this surface parallels.
 import { expect, test } from "bun:test";
@@ -14,11 +16,7 @@ import {
   type WorkflowRunAuthenticator,
 } from "./workflow-routine-routes";
 import { createInMemoryRoutineStore, type RoutineStore } from "./store";
-import type {
-  WorkbenchNoticePort,
-  DeliverySpacePort,
-  RoutineLauncher,
-} from "./routes";
+import type { WorkbenchNoticePort, RoutineLauncher } from "./routes";
 
 const TENANT_ID = "tnt_1";
 const PRINCIPAL_ID = "prn_myra";
@@ -222,7 +220,7 @@ test("rejects an invalid trigger with a 400", async () => {
   expect(response.status).toBe(400);
 });
 
-test("400s when delivery is required, no workbench is named, and no deliverySpace is wired", async () => {
+test("400s when delivery is required and no workbench is named — never auto-provisioned", async () => {
   const app = buildApp(
     buildDeps({ deliveryWorkbenchRequired: async () => true }),
   );
@@ -233,53 +231,9 @@ test("400s when delivery is required, no workbench is named, and no deliverySpac
   expect(response.status).toBe(400);
 });
 
-test("auto-provisions a delivery space via deliverySpace + resolveTenantDomain when none is named", async () => {
-  let seenInput: Record<string, unknown> | undefined;
-  const deliverySpace: DeliverySpacePort = {
-    createDeliverySpace: (input) => {
-      seenInput = input;
-      return Promise.resolve({
-        workbenchId: "ch_provisioned",
-        compensate: () => Promise.resolve(),
-      });
-    },
-  };
+test("delivery defaults to the creating run's own workbench when none is named", async () => {
   const deps = buildDeps({
     deliveryWorkbenchRequired: async () => true,
-    deliverySpace,
-    resolveTenantDomain: async () => "acme.example",
-  });
-  const app = buildApp(deps);
-  const { response, body } = await createRoutine(app, {
-    ...VALID_BODY,
-    deliveryWorkbenchId: undefined,
-  });
-  expect(response.status).toBe(201);
-  expect(body["deliveryWorkbenchId"]).toBe("ch_provisioned");
-  expect(seenInput).toEqual({
-    tenantId: TENANT_ID,
-    tenantDomain: "acme.example",
-    creatorPrincipalId: PRINCIPAL_ID,
-    creatorUserId: RUN_ID,
-    name: "Morning digest",
-  });
-});
-
-test("delivery defaults to the creating run's own workbench — no new space is provisioned", async () => {
-  let provisioned = false;
-  const deliverySpace: DeliverySpacePort = {
-    createDeliverySpace: () => {
-      provisioned = true;
-      return Promise.resolve({
-        workbenchId: "ch_provisioned",
-        compensate: () => Promise.resolve(),
-      });
-    },
-  };
-  const deps = buildDeps({
-    deliveryWorkbenchRequired: async () => true,
-    deliverySpace,
-    resolveTenantDomain: async () => "acme.example",
     resolveRunWorkbench: async (tenantId, runId) =>
       tenantId === TENANT_ID && runId === RUN_ID ? "ch_home" : undefined,
   });
@@ -290,30 +244,19 @@ test("delivery defaults to the creating run's own workbench — no new space is 
   });
   expect(response.status).toBe(201);
   expect(body["deliveryWorkbenchId"]).toBe("ch_home");
-  expect(provisioned).toBe(false);
 });
 
-test("a run with no home workbench still auto-provisions a delivery space", async () => {
-  const deliverySpace: DeliverySpacePort = {
-    createDeliverySpace: () =>
-      Promise.resolve({
-        workbenchId: "ch_provisioned",
-        compensate: () => Promise.resolve(),
-      }),
-  };
+test("a run with no home workbench still 400s — no space is invented on its behalf", async () => {
   const deps = buildDeps({
     deliveryWorkbenchRequired: async () => true,
-    deliverySpace,
-    resolveTenantDomain: async () => "acme.example",
     resolveRunWorkbench: async () => undefined,
   });
   const app = buildApp(deps);
-  const { response, body } = await createRoutine(app, {
+  const { response } = await createRoutine(app, {
     ...VALID_BODY,
     deliveryWorkbenchId: undefined,
   });
-  expect(response.status).toBe(201);
-  expect(body["deliveryWorkbenchId"]).toBe("ch_provisioned");
+  expect(response.status).toBe(400);
 });
 
 test("an explicit deliveryWorkbenchId always wins over the run's home workbench", async () => {
