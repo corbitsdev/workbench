@@ -164,10 +164,10 @@ export const RESTORE_CONCURRENCY = 8;
  */
 export const RESTORE_ATTEMPT_TIMEOUT_MS = 30_000;
 
-function withRestoreTimeout(
-  promise: Promise<void>,
+function withRestoreTimeout<T>(
+  promise: Promise<T>,
   deploymentId: string,
-): Promise<void> {
+): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(
@@ -1519,12 +1519,34 @@ export function createSidecarDeployRouter(deps: {
    * "transient" -- it depends on this boot's environment, not the
    * record's content, and may clear on a later boot with no change to the
    * record at all.
+   *
+   * Returns `"deferred-to-wake"` instead of restoring for a single-step
+   * ("warm-keep") deployment (CL-6648): that shape is exactly what a
+   * folded run deploys, and folded runs already have a working lazy-wake
+   * port (`@corbits/agent-lifecycle`'s `ensureAwake` ->
+   * `@corbits/folded-runs`' `wakeFoldedRun` -> `deployAtHead`) that
+   * re-resolves inference sources fresh against the tenant's LIVE catalog
+   * on every wake -- `record.sources` is only ever a snapshot of what
+   * resolved at the deployment's last deploy or rotation. Restoring one
+   * eagerly here would instead replay that frozen snapshot forever,
+   * including a chain whose credential died after the freeze, with no
+   * later trigger to ever refresh it (a restored deployment reads as
+   * "already live" to every future wake check, so the self-healing wake
+   * path never fires for it again). Deferring leaves the address
+   * unroutable until its next message or routine fire, at which point the
+   * ordinary wake path redeploys it against a current resolution -- the
+   * same re-derive-at-wake property this ticket asks for, without
+   * inventing a new sidecar-to-hub source-resolution channel (the sidecar
+   * has no hub DB access and no pre-connect RPC to one; see CL-6648). A
+   * true multi-step workflow deployment has no such wake port today (open
+   * follow-up), so it keeps restoring eagerly from its frozen `sources`
+   * below, unchanged.
    */
   async function restoreDeploymentFromRecord(
     dataDir: string,
     deploymentId: string,
     record: WorkflowDeploymentRecord,
-  ): Promise<void> {
+  ): Promise<"restored" | "deferred-to-wake" | "pruned"> {
     // Integrity: the stored address must re-derive to its own directory
     // name. A mismatch means a corrupt or misplaced record -- permanent,
     // since re-deriving the same address on a later boot yields the same
@@ -1546,7 +1568,19 @@ export function createSidecarDeployRouter(deps: {
     if (!isRunAddress(record.agentAddress)) {
       await deleteWorkflowDeploymentRecord(dataDir, deploymentId);
       logger.info`Pruned unrestorable workflow deployment record ${deploymentId} (legacy address ${record.agentAddress})`;
-      return;
+      return "pruned";
+    }
+
+    // Single-step ("warm-keep") deployment: defer to the wake path rather
+    // than eagerly restoring from a frozen `sources` snapshot. `sources`
+    // always carries exactly one entry per `stepOrder` id (the wire
+    // boundary's own invariant -- see `validateWorkflowProjection`), so a
+    // single entry here means a single step without needing to
+    // re-materialize the closure just to find out. See this function's
+    // doc comment for why deferring is what makes CL-6648's re-derive
+    // property hold without a new sidecar-to-hub RPC.
+    if (Object.keys(record.sources).length === 1) {
+      return "deferred-to-wake";
     }
 
     // Reconstruct this deployment's runnable definition: re-materialize the
@@ -1675,6 +1709,7 @@ export function createSidecarDeployRouter(deps: {
     try {
       await spawnWorkflowDeployment(spec);
       logger.info`Restored workflow deployment for ${record.agentAddress}`;
+      return "restored";
     } catch (cause) {
       if (slugNewlyClaimed) {
         releaseSlug(deploymentId, record.agentAddress);
@@ -1838,7 +1873,7 @@ export function createSidecarDeployRouter(deps: {
       const alreadyQuarantinedCount = live.filter(({ record }) =>
         isWorkflowDeploymentRestoreQuarantined(record),
       ).length;
-      logger.info`Boot scan found ${scanned.length} deployment record(s): ${parked.length} parked (left asleep; will wake on the next message or routine fire), ${alreadyQuarantinedCount} quarantined, ${live.length - alreadyQuarantinedCount} to restore`;
+      logger.info`Boot scan found ${scanned.length} deployment record(s): ${parked.length} parked (left asleep; will wake on the next message or routine fire), ${alreadyQuarantinedCount} quarantined, ${live.length - alreadyQuarantinedCount} to attempt (single-step deployments among them defer to their wake path instead of restoring frozen sources -- CL-6648)`;
       // Bounded-parallel, not fully parallel: `RESTORE_CONCURRENCY` caps how
       // many workflow-process children spawn at once so a boot with many
       // live deployments cannot storm the host, while still restoring far
@@ -1850,6 +1885,7 @@ export function createSidecarDeployRouter(deps: {
       // ordering, matching the isolation the old serial loop's per-iteration
       // `try`/`catch` gave.
       let skippedQuarantinedCount = 0;
+      let deferredToWakeCount = 0;
       await runWithConcurrency(
         live,
         RESTORE_CONCURRENCY,
@@ -1866,10 +1902,14 @@ export function createSidecarDeployRouter(deps: {
             return;
           }
           try {
-            await withRestoreTimeout(
+            const outcome = await withRestoreTimeout(
               restoreDeploymentFromRecord(dataDir, deploymentId, record),
               deploymentId,
             );
+            if (outcome === "deferred-to-wake") {
+              deferredToWakeCount += 1;
+              return;
+            }
             if (record.restoreFailure !== undefined) {
               await clearWorkflowDeploymentRestoreFailure(
                 dataDir,
@@ -1901,6 +1941,9 @@ export function createSidecarDeployRouter(deps: {
       );
       if (skippedQuarantinedCount > 0) {
         logger.warn`Skipped ${skippedQuarantinedCount} quarantined workflow deployment record(s) (permanent restore failures, already reported); undeploy an address to clear its record`;
+      }
+      if (deferredToWakeCount > 0) {
+        logger.info`Deferred ${deferredToWakeCount} single-step workflow deployment(s) to their lazy-wake path instead of restoring from a frozen sources snapshot (CL-6648); they redeploy against a current catalog resolution on their next message or routine fire`;
       }
     },
     async reapExpiredHibernationSnapshots(): Promise<number> {
