@@ -31,3 +31,6 @@ tmp/
 
 # Browser walkthrough harness screenshots + run summary (CL-6072)
 scripts/e2e/browser/shots/
+
+# Lint caches — local only; CI installs fresh and rebuilds them.
+.eslintcache
