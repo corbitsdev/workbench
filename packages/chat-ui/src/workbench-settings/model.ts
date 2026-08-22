@@ -6,10 +6,15 @@
 // capabilities, and history are edited — a click-through master-detail,
 // not a separate "Myra" nav item duplicating the same editor for one
 // hardcoded agent. Keys & plugins and Inference are gone as distinct
-// sections: plugin/tool connections move to `plugins` (workbench-scoped,
-// connections only — no inference-provider keys, which live in Shared
-// Settings now); inference provider+model assignment moves onto the
-// Agents detail view, per agent, fed from the tenant-wide provider pool.
+// sections: inference provider+model assignment moves onto the Agents
+// detail view, per agent, fed from the tenant-wide provider pool.
+//
+// Plugins are global-only for now (owner ruling): the workbench-scoped
+// `plugins` section that used to live here is removed — connect/manage
+// plugins from the bench-level Plugins page instead. Per-workbench
+// credential rows written by that old section are left in place (nothing
+// reads or writes them now); see the Plugins page for the surviving
+// surface.
 
 import { CHAT_STRINGS } from "../strings";
 
@@ -17,7 +22,6 @@ export type WorkbenchSettingsSectionId =
   | "general"
   | "members"
   | "agents"
-  | "plugins"
   | "capacity"
   | "notifications"
   | "danger";
@@ -31,7 +35,6 @@ export const WORKBENCH_SETTINGS_SECTION_IDS: readonly WorkbenchSettingsSectionId
     "general",
     "members",
     "agents",
-    "plugins",
     "capacity",
     "notifications",
     "danger",
@@ -97,18 +100,11 @@ export function workbenchSettingsSections(
       group: "shared",
     });
   }
-  sections.push(
-    {
-      id: "plugins",
-      label: CHAT_STRINGS.workbenchSettingsSectionPlugins,
-      group: "shared",
-    },
-    {
-      id: "notifications",
-      label: CHAT_STRINGS.workbenchSettingsSectionNotifications,
-      group: "personal",
-    },
-  );
+  sections.push({
+    id: "notifications",
+    label: CHAT_STRINGS.workbenchSettingsSectionNotifications,
+    group: "personal",
+  });
   if (hasCapacity) {
     sections.push({
       id: "capacity",

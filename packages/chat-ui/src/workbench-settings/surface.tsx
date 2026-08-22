@@ -36,7 +36,6 @@ import {
 import type { ContextWindowMode } from "./context-window";
 import { DangerSection } from "./danger-section";
 import { GeneralSection } from "./general-section";
-import { PluginsSection } from "./plugins-section";
 import { MembersSection } from "./members-section";
 import { workbenchSettingsSections } from "./model";
 import type {
@@ -363,10 +362,6 @@ export function WorkbenchSettingsSurface({
                     ? { onEntityIdChange }
                     : {})}
                 />
-              ) : null}
-
-              {activeSection.id === "plugins" ? (
-                <PluginsSection tenantId={tenantId} />
               ) : null}
 
               {activeSection.id === "capacity" ? (
