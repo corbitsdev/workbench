@@ -67,11 +67,13 @@ export function completeConnectorCredential(
   status: "active";
   modelGuidance?: string;
 }> {
+  // A key copied from a provider console often carries a trailing
+  // newline; sent verbatim the provider 401s a valid key (CL-6682).
   return request(
     `/api/tenants/${tenantId}/connections/${connectorId}/complete`,
     CompleteResult,
     "saving that connection",
-    { method: "POST", body: JSON.stringify({ apiKey }) },
+    { method: "POST", body: JSON.stringify({ apiKey: apiKey.trim() }) },
   );
 }
 
