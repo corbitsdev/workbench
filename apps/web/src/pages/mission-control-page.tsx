@@ -508,16 +508,16 @@ export function MissionControlRoute({
                 ) : null}
                 {insightsActivity.kind === "ready" ? (
                   <p className="mission-control-week-summary">
-                    {priorDays
+                    {days
                       .reduce((sum, day) => sum + day.turns, 0)
                       .toLocaleString()}{" "}
                     runs ·{" "}
                     {formatUsd(
-                      priorDays.some((day) =>
+                      days.some((day) =>
                         day.byModel.some((model) => model.costUsd === null),
                       )
                         ? null
-                        : priorDays.reduce(
+                        : days.reduce(
                             (sum, day) =>
                               sum +
                               day.byModel.reduce(

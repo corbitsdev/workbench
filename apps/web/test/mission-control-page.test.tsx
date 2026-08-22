@@ -153,6 +153,49 @@ function stubEmptyBenchFetch(): void {
   }) as typeof fetch;
 }
 
+function stubBenchFetchWithActivity(
+  days: {
+    day: string;
+    turns: number;
+    tokens: number;
+    byModel: { model: string; tokens: number; costUsd: number | null }[];
+  }[],
+): void {
+  globalThis.fetch = ((input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.includes("/approvals/needs-you")) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    }
+    if (url.includes("/insights/activity")) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ days }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    }
+    if (url.includes("/agent-definitions/visible")) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ definitions: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    }
+    return Promise.resolve(
+      new Response(JSON.stringify({ items: [], data: [], nextCursor: null }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+  }) as typeof fetch;
+}
+
 describe("MissionControlRoute", () => {
   let container: HTMLDivElement | null = null;
   let root: Root | null = null;
@@ -191,5 +234,39 @@ describe("MissionControlRoute", () => {
     expect(container.textContent).toContain("Nothing waiting on you");
     expect(container.textContent).toContain("Nothing running right now");
     expect(container.textContent).toContain("Nothing recent yet.");
+  });
+
+  test("This week's run count includes today, so it is never less than runs today (CL-6667)", async () => {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const yesterdayKey = new Date(Date.now() - 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    stubBenchFetchWithActivity([
+      { day: yesterdayKey, turns: 4, tokens: 100, byModel: [] },
+      { day: todayKey, turns: 10, tokens: 200, byModel: [] },
+    ]);
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root?.render(
+        <TestQueryProvider>
+          <NavigationProvider navigate={() => undefined}>
+            <BenchContext.Provider value={benchState}>
+              <MissionControlRoute navigate={() => undefined} />
+            </BenchContext.Provider>
+          </NavigationProvider>
+        </TestQueryProvider>,
+      );
+    });
+    for (let count = 0; count < 5; count += 1) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+    // Today (10) + yesterday (4) = 14. A "This week" that silently excludes
+    // today would show 4, which is less than "Runs today" (10) -- the
+    // logical impossibility CL-6667 reported.
+    expect(container.textContent).toContain("14 runs");
   });
 });

@@ -2259,6 +2259,44 @@ export const workflowRunKindHandler: KindHandler = {
       return { ok: false, reason: combinedRuns.reason };
     }
 
+    // A sealed run (`hasCombined`, above) is skipped by the per-event
+    // terminal scan entirely, since its events never appear as individual
+    // `<seq>.json` blobs -- `checkCombinedStructure` already proved every
+    // combined `events.jsonl` ends on a terminal event, so every combined
+    // run IS terminal. Surface it here as newly terminal unless the prior
+    // tree already carried the same sealed file (already reported on
+    // whichever push first sealed it, or a run compacted before its first
+    // push ever landed -- CL-6595's "finished before we started recording
+    // steps" runs are exactly this case: sealed from birth, so the
+    // per-event loop above never had a blob to see them by).
+    for (const runId of combinedRuns.combinedRunIds) {
+      const runDirPath = `${WORKFLOW_RUN_RUNS_PREFIX}/${runId}`;
+      const priorChildren = await priorListDir(runDirPath);
+      if (priorChildren.includes(WORKFLOW_RUN_EVENTS_FILE)) continue;
+      const combinedPath = `${runDirPath}/${WORKFLOW_RUN_EVENTS_FILE}`;
+      const content = new TextDecoder().decode(await readBlob(combinedPath));
+      const lines = splitCombinedEventLog(content);
+      const lastLine = lines[lines.length - 1];
+      if (lastLine === undefined) {
+        throw new Error(
+          `combined event log ${combinedPath} sealed with no lines after passing structural validation`,
+        );
+      }
+      const body: unknown = JSON.parse(lastLine);
+      const type =
+        typeof body === "object" && body !== null && "type" in body
+          ? body.type
+          : undefined;
+      const status =
+        typeof type === "string" ? TERMINAL_EVENT_STATUS.get(type) : undefined;
+      if (status === undefined) {
+        throw new Error(
+          `combined event log ${combinedPath} for run ${runId} sealed without a recognized terminal event type`,
+        );
+      }
+      newlyTerminalRuns.push({ runId, status, terminalEventJson: lastLine });
+    }
+
     const blobsEnumerated = await enumerateRunBlobs(listDir, scopeRunIds);
     if (!blobsEnumerated.ok) {
       logger.debug`workflow-run validatePush rejected ${repoId.kind}/${repoId.id} on ${ref}: ${blobsEnumerated.reason}`;
@@ -3373,6 +3411,85 @@ export async function readCommittedWorkflowRunLifecycle(
     }
   }
   return eventEntries.length === 0 ? "absent" : "live";
+}
+
+/**
+ * Read one run's terminal `workflow_run.status` value from a committed
+ * workflow-run tree, or `null` if the run has not reached a terminal event.
+ * Companion to `readCommittedWorkflowRunLifecycle` for a caller that needs
+ * the actual status to write (e.g. a `markTerminal` backfill), not just the
+ * live/terminal/absent classification.
+ */
+export async function readCommittedWorkflowRunTerminalStatus(
+  reads: CommittedReads | null,
+  runId: string,
+): Promise<"completed" | "failed" | "cancelled" | null> {
+  if (reads === null) return null;
+  const runPath = `${WORKFLOW_RUN_RUNS_PREFIX}/${runId}`;
+  const runChildren = await reads.listDir(runPath);
+  const sealed = runChildren.find(
+    (entry) => entry.type === "blob" && entry.name === WORKFLOW_RUN_EVENTS_FILE,
+  );
+  if (sealed !== undefined) {
+    const content = new TextDecoder().decode(
+      await reads.readBlobByOid(sealed.oid),
+    );
+    const lines = splitCombinedEventLog(content);
+    const lastLine = lines[lines.length - 1];
+    if (lastLine === undefined) {
+      throw new Error(
+        `combined event log ${runPath}/${WORKFLOW_RUN_EVENTS_FILE} is sealed but has no lines`,
+      );
+    }
+    const body: unknown = JSON.parse(lastLine);
+    const type =
+      typeof body === "object" && body !== null && "type" in body
+        ? body.type
+        : undefined;
+    const status =
+      typeof type === "string" ? TERMINAL_EVENT_STATUS.get(type) : undefined;
+    if (status === undefined) {
+      throw new Error(
+        `sealed run ${runId} has no recognized terminal event type`,
+      );
+    }
+    return status;
+  }
+
+  const eventsPath = `${runPath}/${WORKFLOW_RUN_EVENTS_DIR}`;
+  const eventEntries = (await reads.listDir(eventsPath)).filter(
+    (entry) => entry.type === "blob" && parseEventSeq(entry.name) !== null,
+  );
+  const latest = eventEntries.reduce<(typeof eventEntries)[number] | undefined>(
+    (candidate, entry) => {
+      if (candidate === undefined) return entry;
+      const candidateSeq = parseEventSeq(candidate.name);
+      const entrySeq = parseEventSeq(entry.name);
+      return entrySeq !== null &&
+        candidateSeq !== null &&
+        entrySeq > candidateSeq
+        ? entry
+        : candidate;
+    },
+    undefined,
+  );
+  if (latest === undefined) return null;
+  const eventPath = `${eventsPath}/${latest.name}`;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(
+      new TextDecoder().decode(await reads.readBlobByOid(latest.oid)),
+    );
+  } catch (cause) {
+    throw new Error(`workflow_run_event_unreadable: ${eventPath}`, { cause });
+  }
+  const type =
+    typeof parsed === "object" && parsed !== null && "type" in parsed
+      ? parsed.type
+      : undefined;
+  return typeof type === "string"
+    ? (TERMINAL_EVENT_STATUS.get(type) ?? null)
+    : null;
 }
 
 /**
