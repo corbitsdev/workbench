@@ -293,7 +293,6 @@ export const CHAT_STRINGS = {
   workbenchSettingsSectionGeneral: "General",
   workbenchSettingsSectionMembers: "Members",
   workbenchSettingsSectionAgents: "Agents",
-  workbenchSettingsSectionPlugins: "Plugins",
   workbenchSettingsSectionCapacity: "Capacity",
   workbenchSettingsSectionNotifications: "Notifications",
   workbenchSettingsSectionDanger: "Danger zone",

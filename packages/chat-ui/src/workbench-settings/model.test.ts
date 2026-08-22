@@ -20,12 +20,11 @@ describe("isWorkbenchSettingsSectionId", () => {
 });
 
 describe("workbenchSettingsSections", () => {
-  test("workbenches expose the full settings surface: General/Agents/Plugins in Shared, Notifications in Personal", () => {
+  test("workbenches expose the full settings surface: General/Agents in Shared, Notifications in Personal", () => {
     expect(workbenchSettingsSections("workbench").map((s) => s.id)).toEqual([
       "general",
       "members",
       "agents",
-      "plugins",
       "notifications",
       "danger",
     ]);
@@ -35,7 +34,6 @@ describe("workbenchSettingsSections", () => {
     expect(workbenchSettingsSections("chat").map((s) => s.id)).toEqual([
       "general",
       "agents",
-      "plugins",
       "notifications",
     ]);
   });
@@ -43,7 +41,6 @@ describe("workbenchSettingsSections", () => {
   test("a DM chat additionally trims Agents — no agent participant, nothing to invite", () => {
     expect(workbenchSettingsSections("chat", true).map((s) => s.id)).toEqual([
       "general",
-      "plugins",
       "notifications",
     ]);
   });
@@ -52,7 +49,6 @@ describe("workbenchSettingsSections", () => {
     expect(workbenchSettingsSections("chat", false).map((s) => s.id)).toEqual([
       "general",
       "agents",
-      "plugins",
       "notifications",
     ]);
   });
@@ -60,14 +56,7 @@ describe("workbenchSettingsSections", () => {
   test("isDm is ignored for a workbench — Agents stays regardless", () => {
     expect(
       workbenchSettingsSections("workbench", true).map((s) => s.id),
-    ).toEqual([
-      "general",
-      "members",
-      "agents",
-      "plugins",
-      "notifications",
-      "danger",
-    ]);
+    ).toEqual(["general", "members", "agents", "notifications", "danger"]);
   });
 
   test("Myra/Keys & plugins/Inference are gone as distinct nav ids", () => {
@@ -75,6 +64,15 @@ describe("workbenchSettingsSections", () => {
     expect(ids).not.toContain("assistant");
     expect(ids).not.toContain("keys-plugins");
     expect(ids).not.toContain("inference");
+  });
+
+  test("Plugins is global-only now — no workbench-scoped nav id", () => {
+    expect(
+      workbenchSettingsSections("workbench").map((s) => s.id),
+    ).not.toContain("plugins");
+    expect(
+      workbenchSettingsSections("chat", true).map((s) => s.id),
+    ).not.toContain("plugins");
   });
 
   test("Capacity is absent by default — this server has no isolated capacity to offer", () => {
@@ -93,26 +91,15 @@ describe("workbenchSettingsSections", () => {
       "general",
       "members",
       "agents",
-      "plugins",
       "notifications",
       "capacity",
       "danger",
     ]);
   });
 
-  test("Plugins is always present, regardless of workbench kind", () => {
-    expect(workbenchSettingsSections("workbench").map((s) => s.id)).toContain(
-      "plugins",
-    );
-    expect(workbenchSettingsSections("chat", true).map((s) => s.id)).toContain(
-      "plugins",
-    );
-  });
-
   test("groups sections Shared / Personal / Danger for the nav", () => {
     const groups = workbenchSettingsSections("workbench").map((s) => s.group);
     expect(groups).toEqual([
-      "shared",
       "shared",
       "shared",
       "shared",
