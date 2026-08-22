@@ -40,6 +40,7 @@ describe("AccountSectionView", () => {
   test("renders no Sign out action when the host gives no onSignOut", () => {
     const el = mount(
       <AccountSectionView
+        id="prn_ada"
         name="Ada Lovelace"
         email="ada@example.com"
         emailVerified={true}
@@ -52,6 +53,7 @@ describe("AccountSectionView", () => {
     let signedOut = false;
     const el = mount(
       <AccountSectionView
+        id="prn_ada"
         name="Ada Lovelace"
         email="ada@example.com"
         emailVerified={true}
@@ -73,6 +75,7 @@ describe("AccountSectionView", () => {
   test("shows an avatar and the name/email in the account card, and the same email again in the quieter details subsection", () => {
     const el = mount(
       <AccountSectionView
+        id="prn_ada"
         name="Ada Lovelace"
         email="ada@example.com"
         emailVerified={true}
@@ -101,6 +104,7 @@ describe("AccountSectionView", () => {
     try {
       const el = mount(
         <AccountSectionView
+          id="prn_ada"
           name="Ada Lovelace"
           email="ada@example.com"
           emailVerified={true}

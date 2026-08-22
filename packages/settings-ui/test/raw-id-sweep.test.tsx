@@ -98,6 +98,7 @@ describe("raw-id sweep", () => {
   test("AccountSectionView renders only the user's name and email, never a uuid", () => {
     const markup = renderToStaticMarkup(
       <AccountSectionView
+        id="3c1b1a2e-8b4f-4c8d-9a3e-9c2f1e6a7b1d"
         name="Ada Lovelace"
         email="ada@example.com"
         emailVerified={true}

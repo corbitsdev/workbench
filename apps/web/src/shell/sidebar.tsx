@@ -47,8 +47,10 @@ import {
   SlidersHorizontal,
   SquaresFour,
 } from "@corbits/icons";
+import type { CSSProperties } from "react";
 import { useMemo } from "react";
 
+import { AVATAR_IDENTITY_CLASS, generatedAvatarStyle } from "@corbits/chat-ui";
 import {
   createInsightsWindow,
   formatUsd,
@@ -248,43 +250,55 @@ export function Sidebar({
           <span>Evals</span>
         </button>
 
-        <Menu>
-          <MenuTrigger asChild>
-            <button
-              type="button"
-              className="shell-sidebar-account-btn"
-              aria-label={`${user.name} · Account menu`}
-              title={user.name}
-              data-ctx-account=""
-            >
-              <Avatar
-                initials={initialsOf(user.name)}
-                label={user.name}
-                size="sm"
-                tone="neutral"
-              />
-              <span className="shell-sidebar-account-name">{user.name}</span>
-            </button>
-          </MenuTrigger>
-          <MenuContent align="start" side="top">
-            <WeeklyUsageMenuItem onNavigate={onNavigate} />
-            <MenuItem onSelect={() => onNavigate(SETTINGS_PATH)}>
-              <SlidersHorizontal /> Settings
-            </MenuItem>
-            <MenuItem asChild>
-              <a href={FEEDBACK_URL} target="_blank" rel="noreferrer">
-                <ChatCircleDots /> Send Feedback
-              </a>
-            </MenuItem>
-            <MenuSeparator />
-            <MenuItem
-              onSelect={onSignOut}
-              className="text-destructive data-[highlighted]:bg-destructive/10 data-[highlighted]:text-destructive"
-            >
-              <SignOut /> Log out
-            </MenuItem>
-          </MenuContent>
-        </Menu>
+        <div className="shell-sidebar-account-row">
+          <Menu>
+            <MenuTrigger asChild>
+              <button
+                type="button"
+                className="shell-sidebar-account-btn"
+                aria-label={`${user.name} · Account menu`}
+                title={user.name}
+                data-ctx-account=""
+                style={generatedAvatarStyle(user.id) as CSSProperties}
+              >
+                <Avatar
+                  initials={initialsOf(user.name)}
+                  label={user.name}
+                  size="sm"
+                  tone="neutral"
+                  className={AVATAR_IDENTITY_CLASS}
+                />
+                <span className="shell-sidebar-account-name">{user.name}</span>
+              </button>
+            </MenuTrigger>
+            <MenuContent align="start" side="top">
+              <WeeklyUsageMenuItem onNavigate={onNavigate} />
+              <MenuItem asChild>
+                <a href={FEEDBACK_URL} target="_blank" rel="noreferrer">
+                  <ChatCircleDots /> Send Feedback
+                </a>
+              </MenuItem>
+              <MenuSeparator />
+              <MenuItem
+                onSelect={onSignOut}
+                className="text-destructive data-[highlighted]:bg-destructive/10 data-[highlighted]:text-destructive"
+              >
+                <SignOut /> Log out
+              </MenuItem>
+            </MenuContent>
+          </Menu>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shell-sidebar-settings-btn"
+            aria-label="Settings"
+            title="Settings"
+            data-active={matchesRoute(SETTINGS_PATH, path) ? "true" : undefined}
+            onClick={() => onNavigate(SETTINGS_PATH)}
+          >
+            <SlidersHorizontal />
+          </Button>
+        </div>
       </SidebarPanelFooter>
     </SidebarPanel>
   );

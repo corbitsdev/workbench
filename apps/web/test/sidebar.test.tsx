@@ -132,8 +132,9 @@ describe("Sidebar", () => {
     expect(markup).toContain("data-ctx-account");
     expect(markup).not.toContain(">Inbox<");
     expect(markup).not.toContain('aria-label="Notifications"');
-    // Settings stays in the account menu, not a standalone footer icon.
-    expect(markup).not.toContain('aria-label="Settings"');
+    // Settings is its own direct control beside the account row (one
+    // click, not buried in the account menu).
+    expect(markup).toContain('aria-label="Settings"');
     // Routines is first — CL-6362 gives it the same top-level rail slot
     // as every other global surface.
     expect(markup.indexOf(">Routines<")).toBeLessThan(
@@ -435,8 +436,13 @@ describe("Sidebar", () => {
   //
   // CL-6132: grown to the reference shape — the whole account row (avatar
   // + name) is the trigger, and the menu itself carries a weekly usage
-  // line, Settings, a feedback link out to the repo's GitHub issues, a
-  // divider, and a danger-styled "Log out".
+  // line, a feedback link out to the repo's GitHub issues, a divider, and
+  // a danger-styled "Log out".
+  //
+  // A later pass split Settings out to its own direct icon beside the row
+  // (one click instead of two) — the menu still carries everything else
+  // that used to live alongside it, so nothing the old menu offered is
+  // stranded.
   describe("the account menu", () => {
     async function openAccountMenu(
       container: HTMLDivElement,
@@ -494,7 +500,7 @@ describe("Sidebar", () => {
       container.remove();
     });
 
-    test("offers a Weekly usage line, Settings, a feedback link, and Log out", async () => {
+    test("offers a Weekly usage line, a feedback link, and Log out", async () => {
       stubFetch();
       const container = document.createElement("div");
       document.body.appendChild(container);
@@ -502,9 +508,11 @@ describe("Sidebar", () => {
 
       const menu = document.querySelector('[role="menu"]');
       expect(menu?.textContent).toContain("Weekly usage");
-      expect(menu?.textContent).toContain("Settings");
       expect(menu?.textContent).toContain("Send Feedback");
       expect(menu?.textContent).toContain("Log out");
+      // Settings moved out to its own direct control (see the test
+      // below) — the menu no longer duplicates it.
+      expect(menu?.textContent).not.toContain("Settings");
 
       const feedbackLink = menu?.querySelector<HTMLAnchorElement>(
         'a[href*="github.com/corbitsdev/workbench"]',
@@ -541,5 +549,42 @@ describe("Sidebar", () => {
       act(() => root.unmount());
       container.remove();
     });
+  });
+
+  test("the settings icon navigates straight to Settings, no menu in the way", async () => {
+    stubFetch();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const navigated: string[] = [];
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <TestQueryProvider>
+          <BenchProvider>
+            <Sidebar
+              path="/w"
+              user={user}
+              onNavigate={(to) => navigated.push(to)}
+              onSignOut={noop}
+            />
+          </BenchProvider>
+        </TestQueryProvider>,
+      );
+    });
+
+    const settingsButton = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Settings"]',
+    );
+    expect(settingsButton).not.toBeNull();
+    await act(async () => {
+      settingsButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(navigated).toEqual(["/settings"]);
+    // No popup menu opened along the way — this is a direct control, not
+    // a trigger.
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+
+    act(() => root.unmount());
+    container.remove();
   });
 });

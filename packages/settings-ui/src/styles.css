@@ -703,6 +703,18 @@
   min-width: 0;
 }
 
+/* An account's real profile picture (e.g. better-auth's `image`), shown
+   instead of the generated initials fallback whenever one is on hand —
+   same footprint as `Avatar`'s own `lg` size so the row doesn't reflow
+   depending on which a given account has. */
+.settings-account-avatar-image {
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
 .settings-account-identity-text {
   display: flex;
   flex-direction: column;
