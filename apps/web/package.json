@@ -26,6 +26,7 @@
     "@corbits/client-log": "workspace:*",
     "@corbits/command-palette": "workspace:*",
     "@corbits/context-menu": "workspace:*",
+    "@corbits/error-sink": "workspace:*",
     "@corbits/inbox": "workspace:*",
     "@corbits/inference-settings": "workspace:*",
     "@corbits/insights": "workspace:*",

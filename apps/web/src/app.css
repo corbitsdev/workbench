@@ -87,6 +87,13 @@ select:disabled,
   height: 100dvh;
 }
 
+/* A quoteable reference id under the error boundary's failure message
+   (CL-6632) — small and muted, same treatment as `.onboarding-error-refid`. */
+.app-boot-frame-refid {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
 /* The app shell: one sidebar, the main pane, and the optional canvas.
    Columns are sized in rem/vw so they hold their proportions across
    viewports instead of clipping at a fixed pixel width. */
