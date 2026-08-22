@@ -69,6 +69,7 @@ import {
   restoreAgentIdentity,
   snapshotAgentIdentity,
 } from "../hibernated-agent-identity-vault";
+import { isErrnoNotFound } from "../conversation-state";
 import {
   computeWireDefinitionHash,
   validateWorkflowProjection,
@@ -1479,6 +1480,28 @@ export function createSidecarDeployRouter(deps: {
   }
 
   /**
+   * Whether a closure-materialization failure is an ENOENT reading the
+   * workflow package's `package.json` (or a `package.json`-shaped read
+   * inside the staged closure) -- the CL-6640 crash-loop shape:
+   * `applyFrozenWorkflowClosure` stages fresh into a new deploy-id
+   * directory on every call and immediately reads back from that same
+   * directory in the same `await` chain, so a missing file there is never
+   * this boot's timing -- it is corrupt/incomplete PERSISTED input (the
+   * tarball cache, or a durable source-asset checkout) that reproduces
+   * identically on every future retry. `readPackageJSON`
+   * (`@intx/workflow-host`) wraps the raw ENOENT in a describing `Error`
+   * with `{ cause }`, so both the direct code and the wrapped cause's code
+   * are checked.
+   */
+  function isMissingClosureStagingFailure(cause: unknown): boolean {
+    if (!(cause instanceof Error)) return false;
+    if (isErrnoNotFound(cause)) return true;
+    return (
+      "cause" in cause && isErrnoNotFound((cause as { cause?: unknown }).cause)
+    );
+  }
+
+  /**
    * Re-establish one persisted deployment from its on-disk record -- the
    * shared core of the boot-time restore loop and the CL-5477 idle-reap
    * wake path. Applies exactly the gates the live deploy path applies
@@ -1488,9 +1511,10 @@ export function createSidecarDeployRouter(deps: {
    * the record is never deleted here. A failure that is intrinsic to the
    * record's own persisted bytes -- deterministic, will recur identically
    * on every future boot -- throws a `WorkflowRestoreFailure("permanent",
-   * ...)`: address-derivation mismatch and closure-derived-definition
-   * validation are the only two such gates below. Every other failure
-   * (an unbuildable inference provider, a closure-materialization miss, a
+   * ...)`: address-derivation mismatch, closure-derived-definition
+   * validation, and a missing/incomplete closure staging directory
+   * (CL-6640 -- see `isMissingClosureStagingFailure`) are the only such
+   * gates below. Every other failure (an unbuildable inference provider, a
    * spawn-core throw) is a plain `Error`, which the caller treats as
    * "transient" -- it depends on this boot's environment, not the
    * record's content, and may clear on a later boot with no change to the
@@ -1534,12 +1558,33 @@ export function createSidecarDeployRouter(deps: {
     // `hubLink.connect()`. Asset-sourced entries read from the durable source
     // store the original deploy checked out, so no re-delivery is needed; a
     // store miss soft-fails the record (kept for the next boot).
-    const applied = await applyClosure({
-      dataDir,
-      deploymentId,
-      pin: record.sourceRef,
-      substrateEnv: multistepSubstrateEnv,
-    });
+    let applied: Awaited<ReturnType<typeof applyClosure>>;
+    try {
+      applied = await applyClosure({
+        dataDir,
+        deploymentId,
+        pin: record.sourceRef,
+        substrateEnv: multistepSubstrateEnv,
+      });
+    } catch (cause) {
+      if (isMissingClosureStagingFailure(cause)) {
+        // The closure re-materializes fresh into a brand-new staging
+        // directory on every single restore attempt (a new deploy-id is
+        // minted each call; see `applyFrozenWorkflowClosure`), so an ENOENT
+        // reading the package it JUST staged is not this boot's
+        // environment -- it is a corrupt/incomplete PERSISTED input (the
+        // pinned closure's tarball cache entry, or the durable source-asset
+        // checkout `resolveDeploymentAssetMounts` already validated) that
+        // re-derives byte-for-byte the same broken result on every future
+        // boot too. Permanent, so it quarantines instead of warning forever
+        // while silently never making progress.
+        throw new WorkflowRestoreFailure(
+          "permanent",
+          cause instanceof Error ? cause.message : String(cause),
+        );
+      }
+      throw cause;
+    }
     const validatedDefinition = WorkflowProjectionDefinition(
       projectLiveToInert(applied.definition),
     );
