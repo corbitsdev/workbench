@@ -9,6 +9,7 @@ import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
+import type { ModelInfo } from "@intx/types";
 import type { ConnectorDescriptor } from "./descriptor";
 import type { ApiCall } from "@workbench/hub-client";
 import { createProviderHealthStore } from "./provider-health";
@@ -33,6 +34,15 @@ const PRINCIPAL = {
   status: "active" as const,
   createdAt: new Date(),
   updatedAt: new Date(),
+};
+
+const USER = {
+  id: "user_alice",
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  email: "alice@example.test",
+  emailVerified: true,
+  name: "Alice",
 };
 
 const allowAll: RequireGrant = () => async (_c, next) => {
@@ -107,6 +117,7 @@ function mountAs(routes: Hono<TenantEnv>): Hono<TenantEnv> {
   const asTenant: MiddlewareHandler<TenantEnv> = async (c, next) => {
     c.set("tenant", TENANT);
     c.set("principal", PRINCIPAL);
+    c.set("user", USER);
     await next();
   };
   const app = new Hono<TenantEnv>();
@@ -138,6 +149,12 @@ function buildApp(
       typeof createConnectionRoutes
     >[0]["listConnectedProviders"];
     onConnected?: Parameters<typeof createConnectionRoutes>[0]["onConnected"];
+    onInferenceCredentialUsable?: Parameters<
+      typeof createConnectionRoutes
+    >[0]["onInferenceCredentialUsable"];
+    getResolvedCatalogFn?: Parameters<
+      typeof createConnectionRoutes
+    >[0]["getResolvedCatalogFn"];
   } = {},
 ) {
   const routeArgs: Parameters<typeof createConnectionRoutes>[0] = {
@@ -161,6 +178,11 @@ function buildApp(
     routeArgs.listConnectedProviders = overrides.listConnectedProviders;
   if (overrides.onConnected !== undefined)
     routeArgs.onConnected = overrides.onConnected;
+  if (overrides.onInferenceCredentialUsable !== undefined)
+    routeArgs.onInferenceCredentialUsable =
+      overrides.onInferenceCredentialUsable;
+  if (overrides.getResolvedCatalogFn !== undefined)
+    routeArgs.getResolvedCatalogFn = overrides.getResolvedCatalogFn;
   const routes = createConnectionRoutes(routeArgs);
   return mountAs(routes);
 }
@@ -1035,6 +1057,122 @@ describe("onConnected hook", () => {
       body: JSON.stringify({ apiKey: "bad-key" }),
     });
     expect(response.status).toBe(422);
+    expect(events).toHaveLength(0);
+  });
+});
+
+function modelWithOfferings(offeringCount: number): ModelInfo {
+  return {
+    id: "model_1",
+    canonicalName: "qwen3",
+    displayName: "Qwen3",
+    offerings: Array.from({ length: offeringCount }, (_, index) => ({
+      offeringId: `off_${index}`,
+      providerId: "prov_1",
+      providerName: "ollama",
+      plugin: "ollama",
+      priority: index,
+      capabilities: [],
+    })),
+  } as unknown as ModelInfo;
+}
+
+describe("onInferenceCredentialUsable hook", () => {
+  const OLLAMA_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> = {
+    ...FAKE_REGISTRY,
+    ollama: {
+      id: "ollama",
+      displayName: "Ollama",
+      authKind: "api-key",
+      credentialPlugin: "http",
+      docsUrl: "https://example.test/docs",
+      feedsTools: [],
+      credentialInputKind: "url",
+      credentialPlaceholder: "http://localhost:11434",
+      probe: async () => ({ ok: true }),
+    },
+  };
+
+  test("a connected provider that resolves a usable model fires the hook with that provider's own key and endpoint", async () => {
+    const events: unknown[] = [];
+    const routes = createConnectionRoutes({
+      hubUrl: "http://hub.test",
+      requireGrant: allowAll,
+      log: () => {},
+      registry: OLLAMA_REGISTRY,
+      ensureProviderFn: async () => "prv_1",
+      ensureCredentialFn: async () => "crd_1",
+      seedCatalogFn: async () => ({ hasCompletionCapableModel: true }),
+      getResolvedCatalogFn: async () => [modelWithOfferings(1)],
+      onInferenceCredentialUsable: async (info) => {
+        events.push(info);
+      },
+    });
+    const app = mountAs(routes);
+    const response = await app.request("/ollama/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        apiKey: "https://home-mac-studio.tail87f5aa.ts.net",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(events).toEqual([
+      {
+        userId: USER.id,
+        tenantId: TENANT.id,
+        tenantDomain: TENANT.domain,
+        principalId: PRINCIPAL.id,
+        provider: "ollama",
+        apiKey: "ollama",
+        baseURLOverride: "https://home-mac-studio.tail87f5aa.ts.net",
+      },
+    ]);
+  });
+
+  test("a connected provider that resolves no usable model never fires the hook — a seeded row is not the same as a usable one", async () => {
+    const events: unknown[] = [];
+    const routes = createConnectionRoutes({
+      hubUrl: "http://hub.test",
+      requireGrant: allowAll,
+      log: () => {},
+      registry: OLLAMA_REGISTRY,
+      ensureProviderFn: async () => "prv_1",
+      ensureCredentialFn: async () => "crd_1",
+      seedCatalogFn: async () => ({ hasCompletionCapableModel: false }),
+      getResolvedCatalogFn: async () => [modelWithOfferings(0)],
+      onInferenceCredentialUsable: async (info) => {
+        events.push(info);
+      },
+    });
+    const app = mountAs(routes);
+    const response = await app.request("/ollama/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "http://localhost:11434" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(events).toHaveLength(0);
+  });
+
+  test("a non-inference connector never fires the hook", async () => {
+    const events: unknown[] = [];
+    const app = buildApp({
+      ensureProviderFn: async () => "prv_1",
+      ensureCredentialFn: async () => "crd_1",
+      onInferenceCredentialUsable: async (info) => {
+        events.push(info);
+      },
+    });
+    const response = await app.request("/accepting-connector/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ apiKey: "good-key" }),
+    });
+
+    expect(response.status).toBe(200);
     expect(events).toHaveLength(0);
   });
 });

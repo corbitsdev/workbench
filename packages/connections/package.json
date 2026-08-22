@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@corbits/credential-providers": "workspace:*",
+    "@corbits/inference-settings": "workspace:*",
     "@corbits/mcp-tools": "workspace:*",
     "@intx/crypto": "0.3.0",
     "@intx/db": "workspace:*",
