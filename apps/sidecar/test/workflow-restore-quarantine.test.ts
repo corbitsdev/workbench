@@ -57,6 +57,10 @@ async function makeDataDir(): Promise<string> {
 }
 
 const closureDefinitions = new Map<string, WorkflowDefinition>();
+// CL-6640 fixture: deployment ids in this set fail materialization with
+// the exact wrapped-ENOENT shape `readPackageJSON` (`@intx/workflow-host`)
+// throws when a closure's staged `package.json` is missing.
+const closureMissingStagingDir = new Set<string>();
 
 async function makeRouter(
   dataDir: string,
@@ -87,6 +91,16 @@ async function makeRouter(
     unregisterDeployment: () => undefined,
     multistepSubstrateEnv: { SIDECAR_DATA_DIR: dataDir },
     materializeDeploymentClosure: ({ deploymentId }) => {
+      if (closureMissingStagingDir.has(deploymentId)) {
+        const rawEnoent = new Error(
+          "ENOENT: no such file or directory, open '.../store/@workbench-seed/last-30-days-research/0.0.0/package.json'",
+        ) as Error & { code: string };
+        rawEnoent.code = "ENOENT";
+        throw new Error(
+          `cannot read package.json for workflow package at ${dataDir}/workflow-definition-closures/${deploymentId}/packages/some-fresh-uuid/store/@workbench-seed/last-30-days-research/0.0.0`,
+          { cause: rawEnoent },
+        );
+      }
       const definition = closureDefinitions.get(deploymentId);
       if (definition === undefined) {
         throw new Error(
@@ -233,4 +247,98 @@ test("a transiently unbuildable provider is retried every boot and never quarant
   const onDisk = await readWorkflowDeploymentRecord(dataDir, deploymentId);
   expect(onDisk?.restoreFailure?.kind).toBe("transient");
   expect(onDisk?.restoreFailure?.attempts).toBe(bootCount);
+});
+
+// CL-6640: the sidecar crash-looped on boot because an ENOENT reading a
+// closure's `package.json` -- observed for a UUID staging directory
+// `applyFrozenWorkflowClosure` had just minted and populated moments
+// earlier -- was falling through the boot loop's default "transient"
+// classification, which never quarantines, so the record was retried
+// forever and (by a mechanism outside this test's scope) the process
+// itself died and was relaunched. This fabricates that exact failure
+// shape -- `readPackageJSON`'s wrapped-ENOENT `Error` -- from the
+// closure-materialization seam and proves: (a) the boot loop classifies
+// it PERMANENT and quarantines it rather than retrying forever, (b) a
+// sibling record's restore is still attempted every boot, unaffected, and
+// (c) `restoreWorkflowDeployments()` itself never throws -- boot
+// completes either way.
+test("a missing/incomplete closure staging directory quarantines as a permanent failure without stopping the boot restore loop", async () => {
+  const dataDir = await makeDataDir();
+  const brokenAgentAddress = "run_missing-staging-dir@example.com";
+  const brokenDeploymentId = deriveDeploymentId(brokenAgentAddress);
+  closureMissingStagingDir.add(brokenDeploymentId);
+
+  const healthyAgentAddress = "run_sibling-case@example.com";
+  const healthyDeploymentId = deriveDeploymentId(healthyAgentAddress);
+  stageClosureDefinition(healthyDeploymentId);
+
+  const router = await makeRouter(dataDir, {
+    assertSourceBuildable: () => undefined,
+  });
+
+  const brokenRecord: WorkflowDeploymentRecord = {
+    version: 1,
+    agentAddress: brokenAgentAddress,
+    definitionId: "def_1",
+    sources: {},
+    approvedWireHash: "d".repeat(64),
+    sourceRef: SOURCE_REF,
+  };
+  await writeWorkflowDeploymentRecord(
+    dataDir,
+    brokenDeploymentId,
+    brokenRecord,
+  );
+
+  const healthyRecord: WorkflowDeploymentRecord = {
+    version: 1,
+    agentAddress: healthyAgentAddress,
+    definitionId: "def_1",
+    // A buildable provider clears the source-admission gate and reaches
+    // `spawnWorkflowDeployment`, where the test's `recordingSpawner`
+    // refuses to launch a real child -- a plain `Error`, classified
+    // "transient" by the boot loop's default. What matters for this test
+    // is only that this record's own restore is attempted every boot,
+    // independent of the broken sibling record.
+    sources: { "step-1": [makeSource("buildable")] },
+    approvedWireHash: "d".repeat(64),
+    sourceRef: SOURCE_REF,
+  };
+  await writeWorkflowDeploymentRecord(
+    dataDir,
+    healthyDeploymentId,
+    healthyRecord,
+  );
+
+  for (let boot = 1; boot <= RESTORE_QUARANTINE_THRESHOLD; boot++) {
+    // Boot completes without throwing -- the ENOENT never escapes the
+    // restore loop, however it is classified.
+    await expect(router.restoreWorkflowDeployments()).resolves.toBeUndefined();
+    const broken = await readWorkflowDeploymentRecord(
+      dataDir,
+      brokenDeploymentId,
+    );
+    expect(broken?.restoreFailure?.kind).toBe("permanent");
+    expect(broken?.restoreFailure?.attempts).toBe(boot);
+
+    // The sibling deployment's own restore was attempted on every boot,
+    // unaffected by the broken record ahead of (or behind) it in the scan.
+    const healthy = await readWorkflowDeploymentRecord(
+      dataDir,
+      healthyDeploymentId,
+    );
+    expect(healthy?.restoreFailure?.kind).toBe("transient");
+    expect(healthy?.restoreFailure?.attempts).toBe(boot);
+  }
+
+  // One more boot: quarantined now, so the attempt count stops moving --
+  // the record is skipped rather than re-attempted and re-failed.
+  await router.restoreWorkflowDeployments();
+  const afterQuarantine = await readWorkflowDeploymentRecord(
+    dataDir,
+    brokenDeploymentId,
+  );
+  expect(afterQuarantine?.restoreFailure?.attempts).toBe(
+    RESTORE_QUARANTINE_THRESHOLD,
+  );
 });
