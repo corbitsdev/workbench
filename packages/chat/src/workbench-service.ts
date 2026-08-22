@@ -1241,7 +1241,11 @@ async function routeToRecipients(
 async function dispatchTurnBatch(
   deps: Pick<
     SendWorkbenchMessageDeps,
-    "platform" | "roomMessages" | "publish" | "turnDispatchTimeoutMs"
+    | "platform"
+    | "roomMessages"
+    | "publish"
+    | "turnDispatchTimeoutMs"
+    | "agentTurns"
   >,
   tenantId: string,
   workbenchId: string,
@@ -1276,6 +1280,24 @@ async function dispatchTurnBatch(
   await Promise.all(
     recipients.map(async (agentAddress) => {
       try {
+        // CL-6670: wait OUTSIDE the per-hop deadline below. An agent
+        // that already has a turn running must never be handed a
+        // second occurrence while the first is still generating — the
+        // sidecar's `agent.event` stream carries only the agent's
+        // address, so `chat-orchestrator.ts`'s reply path cannot tell
+        // two simultaneously-`running` turns for the same agent apart
+        // (see `AgentTurnStore.findRunningTurn`'s own doc comment) and
+        // one of the two replies would land stamped onto the wrong
+        // turn, or as the wrong turn's own drop notice. Waiting here
+        // serializes the SAME agent's turns into arrival order, in
+        // this recipient's own concurrent branch only — a different
+        // agent named in the same batch (`recipients.map` above) is a
+        // different key and proceeds immediately, unaffected.
+        await deps.agentTurns?.waitUntilFree({
+          tenantId,
+          workbenchId,
+          agentAddress,
+        });
         // CL-6644: one deadline around the whole turn, not another
         // per-hop bound. `dispatchTurn` only ever reaches "the mail was
         // handed to the agent's mailbox" (see `./turn-queue.ts`'s own
