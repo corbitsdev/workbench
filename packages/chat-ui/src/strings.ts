@@ -108,6 +108,7 @@ export const CHAT_STRINGS = {
   inviteAgentQuickCreateAction: "Add",
   inviteAgentQuickCreating: "Adding…",
   inviteAgentQuickCreateError: "Couldn't add Jimmy — try again.",
+  inviteAgentFirstPartyAttribution: "by Corbits",
   forkThreadAction: "Fork",
   forkThreadError: "Couldn't fork that message into a thread — try again.",
   replyInThreadAction: "Reply in thread",
