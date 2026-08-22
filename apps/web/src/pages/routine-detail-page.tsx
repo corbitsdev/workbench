@@ -60,6 +60,7 @@ import { runDetailPath } from "../insights-deeplinks";
 import { Link } from "../navigation";
 import { ROUTINES_PATH_PREFIX } from "../path-ids";
 import { ROUTINE_HEALTH_TONE } from "../routine-health-tone";
+import { useOpenRoutineInCanvas } from "../shell/canvas-availability";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { nextRunLabel, RunStatusCell, TriggeredByCell } from "./routines-page";
 import { listWorkflowDefinitions, useTenantQuery } from "../routines-api";
@@ -341,6 +342,7 @@ export function RoutineDetailPage({
   onRunNow,
   onToggleEnabled,
   onSaveSchedule,
+  onEdit,
 }: {
   readonly row: GlobalRoutineRow;
   readonly now: number;
@@ -348,6 +350,7 @@ export function RoutineDetailPage({
   readonly onRunNow: () => Promise<void>;
   readonly onToggleEnabled: (enabled: boolean) => void;
   readonly onSaveSchedule: (expression: string) => Promise<void>;
+  readonly onEdit: () => void;
 }) {
   const health = routineHealth(row.routine, row.runs);
   const latestRunId =
@@ -369,6 +372,9 @@ export function RoutineDetailPage({
               onClick={() => onToggleEnabled(!row.routine.enabled)}
             >
               {row.routine.enabled ? "Pause" : "Resume"}
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={onEdit}>
+              Edit
             </Button>
           </>
         }
@@ -499,6 +505,7 @@ export function RoutineDetailRoute({
 }) {
   const routinesQuery = useGlobalRoutines();
   const actions = useRoutineActions();
+  const openRoutine = useOpenRoutineInCanvas();
   const rows = routinesQuery.kind === "ready" ? routinesQuery.data : [];
   const resolution = resolveRoutineSegment(rows, segment);
   const row = resolution.kind === "found" ? resolution.row : undefined;
@@ -582,6 +589,7 @@ export function RoutineDetailRoute({
       onSaveSchedule={(expression) =>
         actions.saveCronSchedule(resolved, expression)
       }
+      onEdit={() => openRoutine({ routineId: resolved.routine.id })}
     />
   );
 }
