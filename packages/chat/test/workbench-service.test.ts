@@ -370,6 +370,15 @@ describe("message fan-out", () => {
       expect(text).toContain("send it again");
       expect(text).not.toContain("model key");
     });
+
+    // CL-6644: a dispatch failure that never surfaces a logged cause is
+    // unfixable by anyone who cannot read the code — the notice must
+    // carry a `reportError` refId a person can quote to support, and
+    // that refId must be the one the caller actually logged.
+    test("carries a reportError refId a person can quote to support", async () => {
+      const text = await noticeTextFor(new Error("sidecar unavailable"));
+      expect(text).toMatch(/\(ref [^)]+\)$/);
+    });
   });
 
   test("a message to a chat delivers to its agent without a mention", async () => {
