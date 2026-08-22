@@ -168,6 +168,9 @@ export function createBenchProvisioner(
       },
       provider: seed.provider,
       apiKey: seed.apiKey,
+      ...(seed.baseURLOverride !== undefined
+        ? { baseURLOverride: seed.baseURLOverride }
+        : {}),
     };
     const result = await runEnsureSeeded(
       deps.publishToolRegistry !== undefined

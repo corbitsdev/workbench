@@ -280,7 +280,11 @@ import {
   createPresenceRoutes,
   type PresenceRoomKey,
 } from "@corbits/presence";
-import { createGitWorkflowPusher, createHubAPI } from "@workbench/hub-client";
+import {
+  createGitWorkflowPusher,
+  createHubAPI,
+  supportedCredentialProviders,
+} from "@workbench/hub-client";
 import {
   createDrizzlePendingSeedStore,
   createBenchProvisioner,
@@ -2054,6 +2058,35 @@ export async function createHub(config: HubConfig) {
           ? { github: config.githubApiBaseUrl }
           : {},
       onConnected: settleServiceConnection,
+      // CL-6568's other half: a tenant whose only provider is one it
+      // connected itself through Settings — never an operator-configured
+      // hub key — must converge on Myra and the default workflow set the
+      // same way an onboarding-connected one does. `pendingSeedStore` and
+      // `benchProvisioner` are declared further down this function, but
+      // this closure only runs on a future request, well after both are
+      // constructed below — the same forward-reference this file already
+      // relies on for `onboardingDeps`.
+      onInferenceCredentialUsable: async (info) => {
+        const provider = supportedCredentialProviders().find(
+          (candidate) => candidate.id === info.provider,
+        )?.id;
+        if (provider === undefined) {
+          log.error`onInferenceCredentialUsable fired for an unsupported provider ${info.provider} on tenant ${info.tenantId}; skipping the pending-seed row`;
+          return;
+        }
+        await pendingSeedStore.put({
+          userId: info.userId,
+          tenantId: info.tenantId,
+          principalId: info.principalId,
+          tenantDomain: info.tenantDomain,
+          provider,
+          apiKey: info.apiKey,
+          ...(info.baseURLOverride !== undefined
+            ? { baseURLOverride: info.baseURLOverride }
+            : {}),
+        });
+        benchProvisioner.wake();
+      },
     }),
   );
   // Connections' own OAuth connect flow (CL-6389): `createOAuthConnectRoutes`

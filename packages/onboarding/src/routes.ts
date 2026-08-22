@@ -787,6 +787,9 @@ export function createOnboardingRoutes(
         tenantDomain: result.tenantDomain,
         provider: parsed.provider,
         apiKey: parsed.apiKey,
+        ...(parsed.baseURL !== undefined
+          ? { baseURLOverride: parsed.baseURL }
+          : {}),
       });
       deps.benchProvisioner?.wake();
       return c.json(status, 200);

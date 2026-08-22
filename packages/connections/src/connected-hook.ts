@@ -32,3 +32,50 @@ export async function fireConnectedHook(
     );
   }
 }
+
+// A second, narrower seam: fires only when an inference connector's
+// `/complete` just left the tenant with `hasUsableModel` true — a model
+// with a resolvable offering, whether or not this tenant's bench has
+// ever deployed its default workflows. A composition wires this to the
+// same durable pending-seed drain the onboarding credential step already
+// feeds (`@workbench/onboarding`'s `pendingSeedStore` + `benchProvisioner`),
+// so a tenant that connects its own provider through Settings converges
+// on Myra and the default workflow set exactly like one that connects
+// through onboarding — never stuck waiting on an operator-configured
+// hub key. `apiKey` here is the same secret `/complete` just stored
+// (the URL placeholder for a `credentialInputKind: "url"` connector like
+// Ollama, a real key otherwise); never logged, never returned to the
+// caller.
+export type InferenceCredentialSeedableInfo = {
+  readonly userId: string;
+  readonly tenantId: string;
+  readonly tenantDomain: string;
+  readonly principalId: string;
+  readonly provider: string;
+  readonly apiKey: string;
+  /** The real instance origin a `credentialInputKind: "url"` connector
+   * (Ollama) was just pointed at — absent for every other provider.
+   * Carried through to the drain so its deploy targets this tenant's
+   * actual endpoint rather than a curated default. */
+  readonly baseURLOverride?: string;
+};
+
+export type InferenceCredentialSeedableHook = (
+  info: InferenceCredentialSeedableInfo,
+) => Promise<void> | void;
+
+export async function fireInferenceCredentialSeedableHook(
+  hook: InferenceCredentialSeedableHook | undefined,
+  log: (line: string) => void,
+  info: InferenceCredentialSeedableInfo,
+): Promise<void> {
+  if (hook === undefined) return;
+  try {
+    await hook(info);
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    log(
+      `onInferenceCredentialUsable hook failed for ${info.provider} on tenant ${info.tenantId}: ${message}`,
+    );
+  }
+}
