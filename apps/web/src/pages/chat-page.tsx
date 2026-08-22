@@ -7,7 +7,11 @@ import { libraryArtifactPath } from "@corbits/artifact-ui";
 import { describeApiError } from "@corbits/api-query";
 import { listPrincipals } from "@corbits/settings-ui";
 import { ChatWorkspace, fetchWorkbenchBlob, type Part } from "@corbits/chat-ui";
-import { useQueryClient } from "@tanstack/react-query";
+import {
+  getResolvedCatalog,
+  hasUsableModel as computeHasUsableModel,
+} from "@corbits/inference-settings";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 
 import { fetchArtifactDetail } from "../api";
@@ -142,6 +146,24 @@ export function ChatPage({
     navigate("/plugins");
   }, [providerHealthBanner, requestPluginsConnect, navigate]);
 
+  // CL-6568: whether this tenant can actually run inference — never
+  // whether a `model_provider` row merely exists, since seeding mints
+  // that row with no credential attached. The same resolved-catalog
+  // read `resolveModelSources` acts on at launch, so a model only
+  // carries an offering once a real credential backs it.
+  const resolvedCatalogQuery = useQuery({
+    queryKey: ["chat-page", "resolved-catalog", tenantId],
+    queryFn: () => getResolvedCatalog(tenantId ?? ""),
+    enabled: tenantId !== null,
+  });
+  const hasUsableModel =
+    resolvedCatalogQuery.data !== undefined
+      ? computeHasUsableModel(resolvedCatalogQuery.data)
+      : undefined;
+  const handleConnectModel = useCallback(() => {
+    navigate("/settings/connections");
+  }, [navigate]);
+
   // A file part with an `artifactId` links back to a real Library row
   // (CL-6000) — this always resolves through the Library artifacts read
   // surface for that id, the same one `LibraryRoute` reads, never raw blob
@@ -239,6 +261,8 @@ export function ChatPage({
       onOpenArtifact={openArtifact}
       onOpenArtifactInLibrary={openArtifactInLibrary}
       onFixConnection={handleFixConnection}
+      {...(hasUsableModel !== undefined ? { hasUsableModel } : {})}
+      onConnectModel={handleConnectModel}
       {...(approvalActions !== undefined ? { approvalActions } : {})}
       {...(blockResponses !== undefined ? { blockResponses } : {})}
       {...(connectGithubActions !== undefined ? { connectGithubActions } : {})}

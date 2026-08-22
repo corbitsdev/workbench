@@ -642,15 +642,32 @@ function EventLine({
  */
 function FailedTurnStrip({
   item,
+  detailText,
+  retryText,
   participants,
   currentUser,
   onRetryFailedTurn,
   onWhatHappenedFailedTurn,
 }: {
   readonly item: TimelineMessageItem;
+  /** The undelivered-turn notice's own text (`postUndeliveredNotice`,
+   * `@corbits/chat`) — already cause-aware server-side (a missing model
+   * credential reads "add or check your model key," a generic dispatch
+   * failure reads "send it again"). Shown as this strip's own detail
+   * rather than the fixed `turnFailedSub` string, so the person reads
+   * the real diagnosis instead of a guess. Falls back to `turnFailedSub`
+   * only when the notice carries no text at all. */
+  readonly detailText: string;
+  /** The original message this turn never answered, recovered by
+   * `findRetryText` — handed to `onRetryFailedTurn` so Retry has
+   * something to resend rather than nothing. */
+  readonly retryText?: string;
   readonly participants: readonly ParticipantRecord[];
   readonly currentUser: CurrentUser | undefined;
-  readonly onRetryFailedTurn?: (item: TimelineMessageItem) => void;
+  readonly onRetryFailedTurn?: (
+    item: TimelineMessageItem,
+    retryText?: string,
+  ) => void;
   readonly onWhatHappenedFailedTurn?: (item: TimelineMessageItem) => void;
 }) {
   const display = senderDisplay(item.sender, participants, currentUser);
@@ -666,7 +683,7 @@ function FailedTurnStrip({
         variant="ghost"
         size="sm"
         className="chat-turn-failed-retry"
-        onClick={() => onRetryFailedTurn?.(item)}
+        onClick={() => onRetryFailedTurn?.(item, retryText)}
       >
         {CHAT_STRINGS.prThreadRetryAction}
       </Button>
@@ -683,11 +700,41 @@ function FailedTurnStrip({
       </button>
       {expanded ? (
         <span className="chat-turn-failed-detail">
-          {CHAT_STRINGS.turnFailedSub}
+          {detailText.length > 0 ? detailText : CHAT_STRINGS.turnFailedSub}
         </span>
       ) : null}
     </div>
   );
+}
+
+/**
+ * The nearest message before a failed-turn notice sent by someone other
+ * than the unreachable agent itself — the request that notice answered.
+ * `postUndeliveredNotice` posts the notice from that agent's own address
+ * right after the dispatch it was answering, so walking backward from
+ * the notice to the first message from a different sender finds that
+ * request without the wire needing to carry an explicit back-reference.
+ * Undefined when nothing precedes it (a notice at the very top of what's
+ * loaded) — Retry then has nothing to hand back, same as before this
+ * existed.
+ */
+export function findRetryText(
+  items: readonly TimelineMessageItem[],
+  failedItem: TimelineMessageItem,
+): string | undefined {
+  const index = items.findIndex((candidate) => candidate.id === failedItem.id);
+  if (index === -1) return undefined;
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const candidate = items[i];
+    if (candidate === undefined) continue;
+    if (candidate.sender.address === failedItem.sender.address) continue;
+    const text = candidate.parts
+      .filter((part): part is Part & { kind: "text" } => part.kind === "text")
+      .map((part) => part.text)
+      .join("");
+    return text.length > 0 ? text : undefined;
+  }
+  return undefined;
 }
 
 function FallbackPart({ part }: { part: Part }) {
@@ -1124,6 +1171,7 @@ function PinToggleButton({
 
 function MessageParts({
   item,
+  items,
   participants,
   currentUser,
   showDayDivider,
@@ -1146,6 +1194,10 @@ function MessageParts({
   onWhatHappenedFailedTurn,
 }: {
   readonly item: TimelineMessageItem;
+  /** The full timeline, oldest→newest — only read to recover the request
+   * text a failed-turn notice answered (`findRetryText`), never for
+   * anything else this component renders. */
+  readonly items: readonly TimelineMessageItem[];
   readonly participants: readonly ParticipantRecord[];
   readonly currentUser: CurrentUser | undefined;
   readonly showDayDivider: boolean;
@@ -1185,7 +1237,10 @@ function MessageParts({
    * renders the strip with inert buttons, never hiding the strip
    * itself: a failed turn stays visible even on a host that wires no
    * recovery action for it. */
-  readonly onRetryFailedTurn?: (item: TimelineMessageItem) => void;
+  readonly onRetryFailedTurn?: (
+    item: TimelineMessageItem,
+    retryText?: string,
+  ) => void;
   readonly onWhatHappenedFailedTurn?: (item: TimelineMessageItem) => void;
 }) {
   // A message this reader's own composer submitted and the server hasn't
@@ -1241,12 +1296,15 @@ function MessageParts({
           }
           const part = group.part;
           if (part.kind === "text" && part.turnFailed === true) {
+            const retryText = findRetryText(items, item);
             return (
               <FailedTurnStrip
                 key={key}
                 item={item}
+                detailText={part.text}
                 participants={participants}
                 currentUser={currentUser}
+                {...(retryText !== undefined ? { retryText } : {})}
                 {...(onRetryFailedTurn !== undefined
                   ? { onRetryFailedTurn }
                   : {})}
@@ -1589,7 +1647,10 @@ export function WorkbenchTimeline({
    * Undefined still renders the strip, just with a Retry button that
    * does nothing when pressed — the strip's job is to make the failure
    * visible, which it does either way. */
-  readonly onRetryFailedTurn?: (item: TimelineMessageItem) => void;
+  readonly onRetryFailedTurn?: (
+    item: TimelineMessageItem,
+    retryText?: string,
+  ) => void;
   /** The failed-turn strip's "what happened" action — same undefined
    * contract as `onRetryFailedTurn`. */
   readonly onWhatHappenedFailedTurn?: (item: TimelineMessageItem) => void;
@@ -1756,6 +1817,7 @@ export function WorkbenchTimeline({
           <MessageParts
             key={key}
             item={item}
+            items={items}
             participants={participants}
             currentUser={currentUser}
             showDayDivider={showDayDivider}
