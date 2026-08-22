@@ -552,18 +552,6 @@ function ChatWorkspaceInner({
 
   const composerRef = useRef<ComposerHandle>(null);
 
-  /** Retry on a failed-turn strip: the request text was already
-   * recovered (`findRetryText`) rather than resent silently — a person
-   * may have since fixed what broke, or may not want it re-sent
-   * verbatim, so this hands it back into the composer ready to send
-   * rather than re-sending on their behalf. */
-  const handleRetryFailedTurn = useCallback(
-    (_item: TimelineMessageItem, retryText?: string) => {
-      if (retryText !== undefined) composerRef.current?.insertText(retryText);
-    },
-    [],
-  );
-
   const feed = useWorkbenchFeed({
     tenantId,
     activeWorkbenchId,
@@ -887,6 +875,18 @@ function ChatWorkspaceInner({
       hasAgentParticipant,
       restoreDraft: (text) => composerRef.current?.insertText(text),
     });
+
+  /** Retry on a failed-turn strip: sends the recovered text
+   * (`findRetryText`) straight back through the normal send path — same
+   * as the person typing it and hitting Enter — rather than parking it
+   * in the composer for them to resend by hand. */
+  const handleRetryFailedTurn = useCallback(
+    async (_item: TimelineMessageItem, retryText?: string) => {
+      if (retryText === undefined) return;
+      await handleSend({ text: retryText, attachments: [] });
+    },
+    [handleSend],
+  );
 
   // The mention popover's "Bring in…" group: only a `workbench` grows its
   // participants after creation (a chat's counterpart is fixed at
