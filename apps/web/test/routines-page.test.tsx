@@ -61,6 +61,7 @@ const listProps = {
   onToggleEnabled: (_row: GlobalRoutineRow, _enabled: boolean) => {},
   onRunNow: (_row: GlobalRoutineRow) => Promise.resolve(),
   onOpenWorkbench: (_workbenchId: string) => {},
+  onEditRoutine: (_row: GlobalRoutineRow) => {},
 };
 
 function renderList(rows: readonly GlobalRoutineRow[]): string {
@@ -347,6 +348,41 @@ describe("GlobalRoutinesList", () => {
     }
   });
 
+  test("Edit calls onEditRoutine with the row", () => {
+    const calls: GlobalRoutineRow[] = [];
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root: Root = createRoot(container);
+    act(() => {
+      root.render(
+        createElement(NavigationProvider, {
+          navigate: noop,
+          children: createElement(GlobalRoutinesList, {
+            rows: [row()],
+            ...listProps,
+            onEditRoutine: (r: GlobalRoutineRow) => {
+              calls.push(r);
+            },
+          }),
+        }),
+      );
+    });
+    try {
+      const editButton = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent?.trim() === "Edit",
+      );
+      expect(editButton).not.toBeUndefined();
+      act(() => {
+        editButton?.click();
+      });
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.routine.id).toBe("rtn_1");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
   test("clicking the delivery workbench opens it", () => {
     const opened: string[] = [];
     const container = document.createElement("div");
@@ -460,6 +496,7 @@ describe("RoutinesRoute — membership-based aggregation (CL-6362)", () => {
 
   async function renderRoute(
     navigate: (to: string) => void,
+    openRoutine: (subject: { routineId?: string | null }) => void = () => {},
   ): Promise<{ container: HTMLDivElement; root: Root }> {
     const { BenchProvider } = await import("../src/bench-context");
     const { CanvasAvailabilityProvider } =
@@ -484,7 +521,7 @@ describe("RoutinesRoute — membership-based aggregation (CL-6362)", () => {
                 focus={false}
                 openProfile={() => {}}
                 openArtifact={() => {}}
-                openRoutine={() => {}}
+                openRoutine={openRoutine}
                 toggleFocus={() => {}}
                 close={() => {}}
               >
@@ -534,6 +571,35 @@ describe("RoutinesRoute — membership-based aggregation (CL-6362)", () => {
       expect(hrefs).toContain("/routines/rtn_mine");
       expect(hrefs).toContain("/routines/rtn_theirs");
       expect(hrefs).not.toContain("/routines/my-digest");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      globalThis.fetch = realFetch;
+      window.localStorage.clear();
+    }
+  });
+
+  test("Edit opens the routine's editor with its id, not a fresh draft", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = mockFetch();
+    const opened: { routineId?: string | null }[] = [];
+    const { container, root } = await renderRoute(
+      () => {},
+      (subject) => {
+        opened.push(subject);
+      },
+    );
+    try {
+      const editButtons = [...container.querySelectorAll("button")].filter(
+        (button) => button.textContent?.trim() === "Edit",
+      );
+      expect(editButtons.length).toBeGreaterThan(0);
+      act(() => {
+        editButtons[0]?.click();
+      });
+      expect(opened).toHaveLength(1);
+      expect(opened[0]?.routineId).not.toBeNull();
+      expect(opened[0]?.routineId).not.toBeUndefined();
     } finally {
       act(() => root.unmount());
       container.remove();

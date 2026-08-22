@@ -33,7 +33,7 @@ import {
   TableRow,
 } from "@corbits/react-ui";
 import type { BadgeTone, RunStatus } from "@corbits/react-ui";
-import { Clock, PlayCircle, Plus } from "@corbits/icons";
+import { Clock, PencilSimple, PlayCircle, Plus } from "@corbits/icons";
 import type { KeyboardEvent } from "react";
 import {
   routineHealth,
@@ -243,12 +243,14 @@ export function GlobalRoutinesList({
   onToggleEnabled,
   onRunNow,
   onOpenWorkbench,
+  onEditRoutine,
 }: {
   readonly rows: readonly GlobalRoutineRow[];
   readonly now: number;
   readonly onToggleEnabled: (row: GlobalRoutineRow, enabled: boolean) => void;
   readonly onRunNow: (row: GlobalRoutineRow) => Promise<void>;
   readonly onOpenWorkbench: (workbenchId: string) => void;
+  readonly onEditRoutine: (row: GlobalRoutineRow) => void;
 }) {
   if (rows.length === 0) {
     return (
@@ -341,22 +343,32 @@ export function GlobalRoutinesList({
                 />
               </TableCell>
               <TableCell>
-                {health.state === "paused" || !row.routine.enabled ? (
+                <div className="flex items-center gap-2">
+                  {health.state === "paused" || !row.routine.enabled ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onToggleEnabled(row, true)}
+                    >
+                      <PlayCircle /> Resume
+                    </Button>
+                  ) : (
+                    <RunNowButton
+                      variant="outline"
+                      size="sm"
+                      onRun={() => onRunNow(row)}
+                    />
+                  )}
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    onClick={() => onToggleEnabled(row, true)}
+                    onClick={() => onEditRoutine(row)}
                   >
-                    <PlayCircle /> Resume
+                    <PencilSimple /> Edit
                   </Button>
-                ) : (
-                  <RunNowButton
-                    variant="outline"
-                    size="sm"
-                    onRun={() => onRunNow(row)}
-                  />
-                )}
+                </div>
               </TableCell>
             </TableRow>
           );
@@ -411,6 +423,7 @@ export function RoutinesRoute({
               void actions.setEnabled(row, enabled);
             }}
             onRunNow={(row) => actions.runNow(row)}
+            onEditRoutine={(row) => openRoutine({ routineId: row.routine.id })}
             onOpenWorkbench={(workbenchId) => {
               const row = rows.find(
                 (r) => r.routine.deliveryWorkbenchId === workbenchId,

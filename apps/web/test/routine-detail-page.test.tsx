@@ -80,6 +80,7 @@ const pageProps = {
   onRunNow: () => Promise.resolve(),
   onToggleEnabled: (_enabled: boolean) => {},
   onSaveSchedule: (_expression: string) => Promise.resolve(),
+  onEdit: () => {},
 };
 
 function renderPage(overrides: Partial<GlobalRoutineRow> = {}): string {
@@ -246,6 +247,22 @@ describe("RoutineDetailPage lifecycle actions", () => {
     try {
       clickButton(container, "Run now");
       expect(runs).toBe(1);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("Edit opens the routine's editor", () => {
+    let edits = 0;
+    const { container, root } = mount({
+      onEdit: () => {
+        edits += 1;
+      },
+    });
+    try {
+      clickButton(container, "Edit");
+      expect(edits).toBe(1);
     } finally {
       act(() => root.unmount());
       container.remove();
@@ -649,6 +666,68 @@ describe("RoutineDetailRoute", () => {
     );
     try {
       expect(container.textContent).toContain("That routine is gone");
+    } finally {
+      cleanup(container, root);
+    }
+  });
+
+  test("Edit opens this routine's canvas editor by id", async () => {
+    const { CanvasAvailabilityProvider } =
+      await import("../src/shell/canvas-availability");
+    const { RoutineDetailRoute } =
+      await import("../src/pages/routine-detail-page");
+    const { BenchProvider } = await import("../src/bench-context");
+    const { TestQueryProvider } = await import("./test-query-provider");
+
+    globalThis.fetch = mockFetch({
+      tnt_1: [routineRecord({ id: "rtn_mine", name: "My digest" })],
+    });
+    const opened: { routineId?: string | null }[] = [];
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root: Root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <TestQueryProvider>
+          <NavigationProvider navigate={() => {}}>
+            <BenchProvider>
+              <CanvasAvailabilityProvider
+                allowed={false}
+                open={false}
+                profile={null}
+                artifact={null}
+                routine={null}
+                focus={false}
+                openProfile={() => {}}
+                openArtifact={() => {}}
+                openRoutine={(subject) => opened.push(subject)}
+                toggleFocus={() => {}}
+                close={() => {}}
+              >
+                {createElement(RoutineDetailRoute, {
+                  segment: "rtn_mine",
+                  navigate: () => {},
+                })}
+              </CanvasAvailabilityProvider>
+            </BenchProvider>
+          </NavigationProvider>
+        </TestQueryProvider>,
+      );
+    });
+    for (let i = 0; i < 8; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+    }
+    try {
+      const editButton = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent?.trim() === "Edit",
+      );
+      expect(editButton).not.toBeUndefined();
+      act(() => {
+        editButton?.click();
+      });
+      expect(opened).toEqual([{ routineId: "rtn_mine" }]);
     } finally {
       cleanup(container, root);
     }
