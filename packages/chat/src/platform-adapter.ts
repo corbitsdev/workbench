@@ -52,6 +52,7 @@ import { isWorkbenchHostDefinitionName } from "./workbench-host-naming";
 import type { EventCollectorRegistry, SidecarRouter } from "@intx/hub-sessions";
 import type { InferencePreference } from "@intx/agent";
 import { formatRunAddress } from "@intx/types";
+import type { FoldedBody } from "@intx/workflow-deploy";
 import {
   AgentUnreachableError,
   type ChatWorkbenchEvent,
@@ -383,6 +384,58 @@ export function createHubChatPlatform(
   }
 
   /**
+   * A JSON encoding with every object's keys sorted, recursively —
+   * order-independent, so two objects with the same key/value pairs
+   * built by different code paths (a fresh `readFoldedBody()` call vs.
+   * whatever `workbench_launch.foldedBody` already holds) always
+   * encode identically regardless of construction order.
+   */
+  function canonicalJSON(value: unknown): string {
+    return JSON.stringify(value, function replacer(_key, val) {
+      if (val === null || typeof val !== "object" || Array.isArray(val)) {
+        return val;
+      }
+      const sorted: Record<string, unknown> = {};
+      for (const k of Object.keys(val as Record<string, unknown>).sort()) {
+        sorted[k] = (val as Record<string, unknown>)[k];
+      }
+      return sorted;
+    });
+  }
+
+  /**
+   * Whether two folded bodies are the same deployable content.
+   *
+   * Deliberately NOT a wire-hash comparison. The first version of this
+   * check compared CL-6452's per-deploy clone's `wireHash` against the
+   * asset's current hub-authored `wireHash` — but that clone's hash is
+   * unique to the run BY DESIGN (`launch.ts`'s `markRunDeployClone`:
+   * "a folded run's deployed bytes carry per-run values (`wf_<runId>`,
+   * the run's trigger address), so their wire hash is unique to the
+   * run"). Comparing it to the authored hash therefore reads every
+   * live run as "drifted" on every single send, regardless of whether
+   * anything actually changed — the PR #298 regression that broke
+   * three chat e2e tests by relaunching a healthy run mid-flight.
+   * `foldedBody` itself carries no per-run values, so comparing its
+   * content directly is the correct, stable signal.
+   *
+   * A second, subtler regression on the way to this version: a raw
+   * `JSON.stringify(a) === JSON.stringify(b)` comparison is NOT the
+   * same as content equality — a freshly-built `readFoldedBody()`
+   * result and the object already stored on `workbench_launch` can
+   * hold identical key/value pairs in different insertion order (e.g.
+   * `model` last vs. first), which `JSON.stringify` renders as
+   * different strings. Confirmed live against the real echo-agent e2e
+   * fixture: `fresh`/`current` were byte-for-byte the same data,
+   * reordered, and every send relaunched a perfectly healthy run.
+   * `canonicalJSON` above sorts keys at every level before comparing,
+   * so construction order can never manufacture a false drift signal.
+   */
+  function foldedBodyContentEquals(a: FoldedBody, b: FoldedBody): boolean {
+    return canonicalJSON(a) === canonicalJSON(b);
+  }
+
+  /**
    * Whether a routable run's deployed content has drifted from its
    * definition's current hub-authored projection, and the folded body
    * it should redeploy with if so.
@@ -396,17 +449,11 @@ export function createHubChatPlatform(
    * a definition that changed for a reason the room's occupants never
    * caused (a platform code fix, a redeployed default agent package)
    * still reaches an already-launched instance.
-   *
-   * CL-6452's per-deploy clone carries the wire hash of whatever it
-   * deployed, so comparing it against the asset's current hub-authored
-   * hash is the same identity check the platform already uses to key
-   * a definition's content — no new staleness signal invented here. A
-   * run predating the wire-hash cutover (both sides null) reads as
-   * fresh: there is no signal to act on, not evidence of drift.
    */
   async function resolveDriftedFoldedBody(
     tenantId: string,
     run: LiveAgent["run"],
+    currentFoldedBody: FoldedBody,
   ) {
     if (run.definitionId === null) return undefined;
     const definitionRow = await deps.db.query.workflowDefinition.findFirst({
@@ -423,8 +470,14 @@ export function createHubChatPlatform(
         assetId: definitionRow.assetId,
         name: definitionRow.name,
       });
-    if (authoredRow.wireHash === definitionRow.wireHash) return undefined;
-    return readFoldedBody(projection, authoredRow.grantRequirements);
+    const freshFoldedBody = readFoldedBody(
+      projection,
+      authoredRow.grantRequirements,
+    );
+    if (foldedBodyContentEquals(freshFoldedBody, currentFoldedBody)) {
+      return undefined;
+    }
+    return freshFoldedBody;
   }
 
   /**
@@ -516,6 +569,7 @@ export function createHubChatPlatform(
       driftedFoldedBody = await resolveDriftedFoldedBody(
         binding.tenantId,
         live.run,
+        binding.foldedBody,
       );
     } catch (cause: unknown) {
       wakeLogger.error`drift check for ${binding.roomAddress} (run ${live.run.id}) failed, leaving it as-is: ${
