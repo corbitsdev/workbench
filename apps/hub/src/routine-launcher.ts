@@ -8,13 +8,17 @@
 // logic (what a folded run is, how a routine fires) lives in those
 // packages, and this adapter is pure composition.
 //
-// After launch, a non-empty stored `input` (the stepper-collected
-// topic/focus a routine's creator recorded) is delivered as the run's
-// first inbound mail via `sendFoldedMailWithRetry` — the same seam
-// `@corbits/webhook-triggers`' `launchWebhookTrigger` uses for its own
-// rendered input (both hardened identically; see that file's own note).
-// Both "run now" and a scheduled fire land here (see `@corbits/routines`'
-// `launchAndCorrelate`), so this one call covers both; a
+// After launch, the routine's stored `input` (the stepper-collected
+// topic/focus a routine's creator recorded), or a placeholder when it
+// stored none, is delivered as the run's first inbound mail via
+// `sendFoldedMailWithRetry` — the same seam `@corbits/webhook-triggers`'
+// `launchWebhookTrigger` uses for its own rendered input (both hardened
+// identically; see that file's own note). The mail is never optional: the
+// run deploys under `AGENT_SECTION_MODE`, an `onTrigger` section whose
+// one and only occurrence starts in response to an inbound mail, so a
+// routine with no stored input still needs a real message to ever run a
+// turn (CL-6678). Both "run now" and a scheduled fire land here (see
+// `@corbits/routines`' `launchAndCorrelate`), so this one call covers both; a
 // webhook-triggered routine's fire never reaches this adapter at all
 // (`launchWebhookTrigger` launches directly), so its own input delivery
 // is that package's concern, not this one's.
@@ -215,27 +219,34 @@ export function createHubRoutineLauncher(
         }
       }
 
-      // Empty/absent stored input keeps prior behavior: no mail, the
-      // agent starts from its system prompt alone.
-      const content = renderRoutineInput(input.input);
-      if (content !== "") {
-        const cryptoProvider = await deps.cryptoProviderCache.get(instanceId);
-        const result = await sendFoldedMailWithRetry(deps, {
-          tenantId: input.tenantId,
-          sessionId: launched.sessionId,
-          agentAddress: triggerAddress,
-          from: `${input.principalId}@${tenantRow.domain}`,
-          domain: domainOf(triggerAddress),
-          content,
-          cryptoProvider,
-        });
-        if (!result.ok) {
-          const reason =
-            result.error instanceof Error
-              ? result.error.message
-              : String(result.error);
-          log.error`routine run ${instanceId} launched but its stored input failed to deliver after ${result.attempts} attempts: ${reason}`;
-        }
+      // The run just deployed under AGENT_SECTION_MODE — an `onTrigger`
+      // section (CL-6329/CL-6367) whose one and only occurrence starts
+      // in response to an inbound mail. Unlike the pre-CL-6367 `step`
+      // shape, there is no "start from the system prompt alone"
+      // fallback: skipping mail here leaves the section permanently
+      // un-triggered (deployed, zero occurrences, forever "running" —
+      // CL-6678). Mirror `triggerNativeWorkflowRoutineRun`'s own
+      // empty-content substitution so a routine with no separately
+      // stored input still fires.
+      const renderedContent = renderRoutineInput(input.input);
+      const content =
+        renderedContent === "" ? "Run this routine now." : renderedContent;
+      const cryptoProvider = await deps.cryptoProviderCache.get(instanceId);
+      const result = await sendFoldedMailWithRetry(deps, {
+        tenantId: input.tenantId,
+        sessionId: launched.sessionId,
+        agentAddress: triggerAddress,
+        from: `${input.principalId}@${tenantRow.domain}`,
+        domain: domainOf(triggerAddress),
+        content,
+        cryptoProvider,
+      });
+      if (!result.ok) {
+        const reason =
+          result.error instanceof Error
+            ? result.error.message
+            : String(result.error);
+        log.error`routine run ${instanceId} launched but its trigger mail failed to deliver after ${result.attempts} attempts: ${reason}`;
       }
 
       return { runId: instanceId };
