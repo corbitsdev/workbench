@@ -187,15 +187,33 @@ describe("createHubRoutineLauncher", () => {
     );
   });
 
-  test("sends no mail when the routine's stored input is empty", async () => {
+  // CL-6678: the run deploys under AGENT_SECTION_MODE (an `onTrigger`
+  // section, CL-6329/CL-6367) — a turn only ever runs in response to an
+  // inbound mail. Skipping mail on empty stored input (the pre-CL-6367
+  // "starts from system prompt alone" behavior) left the section with
+  // zero occurrences forever: deployed, never delivering, stuck
+  // "running". A placeholder mail — mirroring
+  // `triggerNativeWorkflowRoutineRun`'s own empty-content substitution —
+  // is what actually fires the section's first occurrence.
+  test("sends a placeholder trigger mail when the routine's stored input is empty", async () => {
     launchFoldedRunCalls = [];
     sendFoldedMailWithRetryCalls = [];
+    sendFoldedMailWithRetryResult = {
+      ok: true,
+      mail: { id: "m_1", createdAt: new Date().toISOString() },
+    };
 
     const result = await buildLauncher().launchRoutineRun(baseInput({}));
 
     expect(result.runId).toBeTruthy();
     expect(launchFoldedRunCalls).toHaveLength(1);
-    expect(sendFoldedMailWithRetryCalls).toHaveLength(0);
+    expect(sendFoldedMailWithRetryCalls).toHaveLength(1);
+
+    const [, params] = sendFoldedMailWithRetryCalls[0] as [
+      unknown,
+      { content: string },
+    ];
+    expect(params.content).toBe("Run this routine now.");
   });
 
   // CL-6367: a routine-driven run with no stable-id -> current-run
