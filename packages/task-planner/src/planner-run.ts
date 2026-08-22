@@ -23,7 +23,7 @@ import {
   type TaskSpec,
 } from "./task-spec";
 import { isInferenceFailureReply } from "./inference-failure-reply";
-import type { OneShotReply } from "@corbits/folded-runs";
+import type { OneShotReply } from "@corbits/folded-run-one-shot";
 
 const DEFAULT_PLANNER_TIMEOUT_MS = 60_000;
 const DEFAULT_INFERENCE_RETRY_DELAY_MS = 2_000;

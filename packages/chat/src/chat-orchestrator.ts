@@ -28,7 +28,7 @@ import {
   messageRunStarted,
   toolDoneResult,
   type ReplyContentBlock,
-} from "@corbits/folded-runs";
+} from "@corbits/agent-events";
 import type { Memory } from "@corbits/memory";
 import {
   persistedArtifactsForFinalizedTurn,

@@ -21,11 +21,8 @@
 // the host wires this orchestrator's `handleFinalizedTurn` into that
 // callback alongside chat's own handler (see apps/hub/src/index.ts).
 import { and, eq } from "drizzle-orm";
-import {
-  connectorReplyContent,
-  findFoldedRunByAddress,
-  messageRunEnded,
-} from "@corbits/folded-runs";
+import { connectorReplyContent, messageRunEnded } from "@corbits/agent-events";
+import { findFoldedRunByAddress } from "@corbits/folded-runs";
 import {
   persistedArtifactsForFinalizedTurn,
   type FinalizedTurnToolCall,

@@ -58,6 +58,7 @@
         "@corbits/presence": "workspace:*",
         "@corbits/routines": "workspace:*",
         "@corbits/run-key-history": "workspace:*",
+        "@corbits/run-scope": "workspace:*",
         "@corbits/sidecar-placement": "workspace:*",
         "@corbits/skills": "workspace:*",
         "@corbits/slack-tag": "workspace:*",
@@ -237,6 +238,14 @@
         "@intx/types": "0.3.0",
         "arktype": "catalog:",
       },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/agent-events": {
+      "name": "@corbits/agent-events",
+      "version": "0.0.1",
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
@@ -427,6 +436,7 @@
       "name": "@corbits/chat",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/agent-events": "workspace:*",
         "@corbits/agent-lifecycle": "workspace:*",
         "@corbits/agent-runtime": "workspace:*",
         "@corbits/approvals": "workspace:*",
@@ -709,18 +719,36 @@
         "typescript": "catalog:",
       },
     },
+    "packages/folded-run-one-shot": {
+      "name": "@corbits/folded-run-one-shot",
+      "version": "0.0.1",
+      "dependencies": {
+        "@corbits/agent-events": "workspace:*",
+        "@corbits/agent-lifecycle": "workspace:*",
+        "@corbits/folded-runs": "workspace:*",
+        "@intx/db": "workspace:*",
+        "@intx/hub-common": "0.3.0",
+        "@intx/hub-sessions": "workspace:*",
+        "@intx/log": "0.3.0",
+        "@intx/types": "0.3.0",
+        "@intx/workflow-deploy": "workspace:*",
+        "drizzle-orm": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/folded-runs": {
       "name": "@corbits/folded-runs",
       "version": "0.0.1",
       "dependencies": {
-        "@corbits/agent-lifecycle": "workspace:*",
         "@corbits/agent-runtime": "workspace:*",
         "@intx/crypto": "0.3.0",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/hub-common": "0.3.0",
         "@intx/hub-sessions": "workspace:*",
-        "@intx/log": "0.3.0",
         "@intx/mime": "0.3.0",
         "@intx/types": "0.3.0",
         "@intx/workflow": "workspace:*",
@@ -728,7 +756,6 @@
         "@workbench/connections": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
-        "hono": "^4.11.9",
         "postgres": "catalog:",
       },
       "devDependencies": {
@@ -1128,7 +1155,7 @@
       "name": "@corbits/routines",
       "version": "0.0.1",
       "dependencies": {
-        "@corbits/folded-runs": "workspace:*",
+        "@corbits/folded-run-one-shot": "workspace:*",
         "@corbits/slug": "workspace:*",
         "@corbits/workflow-catalog": "workspace:*",
         "@intx/db": "workspace:*",
@@ -1170,6 +1197,23 @@
         "drizzle-orm": "catalog:",
         "hono": "^4.11.9",
         "postgres": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/run-scope": {
+      "name": "@corbits/run-scope",
+      "version": "0.0.1",
+      "dependencies": {
+        "@corbits/folded-runs": "workspace:*",
+        "@intx/db": "workspace:*",
+        "@intx/hub-api": "workspace:*",
+        "@intx/types": "0.3.0",
+        "arktype": "catalog:",
+        "drizzle-orm": "catalog:",
+        "hono": "^4.11.9",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -1338,6 +1382,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/agent-directory": "workspace:*",
+        "@corbits/folded-run-one-shot": "workspace:*",
         "@corbits/folded-runs": "workspace:*",
         "@corbits/skills": "workspace:*",
         "@corbits/tasks": "workspace:*",
@@ -1363,6 +1408,7 @@
       "name": "@corbits/tasks",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/agent-events": "workspace:*",
         "@corbits/agent-lifecycle": "workspace:*",
         "@corbits/folded-runs": "workspace:*",
         "@corbits/notify": "workspace:*",
@@ -2060,6 +2106,8 @@
 
     "@corbits/agent-directory-tools": ["@corbits/agent-directory-tools@workspace:packages/agent-directory-tools"],
 
+    "@corbits/agent-events": ["@corbits/agent-events@workspace:packages/agent-events"],
+
     "@corbits/agent-lifecycle": ["@corbits/agent-lifecycle@workspace:packages/agent-lifecycle"],
 
     "@corbits/agent-runtime": ["@corbits/agent-runtime@workspace:packages/agent-runtime"],
@@ -2123,6 +2171,8 @@
     "@corbits/evals": ["@corbits/evals@workspace:packages/evals"],
 
     "@corbits/exa-topic-watch-workflow": ["@corbits/exa-topic-watch-workflow@workspace:workflows/exa-topic-watch"],
+
+    "@corbits/folded-run-one-shot": ["@corbits/folded-run-one-shot@workspace:packages/folded-run-one-shot"],
 
     "@corbits/folded-runs": ["@corbits/folded-runs@workspace:packages/folded-runs"],
 
@@ -2199,6 +2249,8 @@
     "@corbits/routines-tools": ["@corbits/routines-tools@workspace:packages/routines-tools"],
 
     "@corbits/run-key-history": ["@corbits/run-key-history@workspace:packages/run-key-history"],
+
+    "@corbits/run-scope": ["@corbits/run-scope@workspace:packages/run-scope"],
 
     "@corbits/sandbox-sidecar": ["@corbits/sandbox-sidecar@workspace:packages/sandbox-sidecar"],
 

@@ -1,26 +1,26 @@
 // DB-gated: skipped when no DATABASE_URL is reachable, mirroring
 // `@corbits/granola-tools`'s `credential-wiring-e2e.drizzle.test.ts`.
 // Runs the real platform schema (`@intx/db`'s `runMigrations`, into its
-// own named schema on the shared e2e database) alongside this
-// package's own `folded_run` marker table
+// own named schema on the shared e2e database) alongside
+// `@corbits/folded-runs`' own `folded_run` marker table
 // (`applyFoldedRunsMigrations`), so `listTopLevelRuns` is proven
 // against real Postgres rows and a real `NOT EXISTS` subquery, not a
 // hand-rolled fake `db`.
 //
 // This is the test CL-6061 exists to write: a self-anchored folded run
 // (workbench host, invited agent, or task — indistinguishable from each
-// other by `workflow_run`'s own columns, see `../src/launch.ts`'s big
-// comment) never appears in this scoped listing, while a genuine
-// top-level deployment run does.
+// other by `workflow_run`'s own columns, see `@corbits/folded-runs`'
+// `launch.ts`'s big comment) never appears in this scoped listing,
+// while a genuine top-level deployment run does.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { createDB, runMigrations, dropSchema } from "@intx/db";
 import { schema } from "@intx/db";
+import { applyFoldedRunsMigrations } from "@corbits/folded-runs/migrations";
+import { foldedRun } from "@corbits/folded-runs";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
-import { applyFoldedRunsMigrations } from "../src/migrations";
-import { foldedRun } from "../src/schema";
 import { listTopLevelRuns, listTopLevelRunFires } from "../src/scope-routes";
 
 const databaseUrl = e2eDatabaseUrl();

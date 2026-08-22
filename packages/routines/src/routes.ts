@@ -19,7 +19,7 @@ import {
   FoldedRunFailedError,
   FoldedRunTimedOutError,
   OneShotDefinitionNotFoundError,
-} from "@corbits/folded-runs";
+} from "@corbits/folded-run-one-shot";
 
 import { RoutineTrigger, type RoutineTriggerT } from "./trigger";
 import { routineScheduleSentence } from "./schedule-language";

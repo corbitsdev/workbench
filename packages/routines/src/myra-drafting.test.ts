@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { FoldedRunTimedOutError } from "@corbits/folded-runs";
+import { FoldedRunTimedOutError } from "@corbits/folded-run-one-shot";
 
 import {
   assembleRoutineDraftInventory,

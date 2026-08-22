@@ -22,7 +22,7 @@
 
 import { type } from "arktype";
 
-import type { OneShotReply } from "@corbits/folded-runs";
+import type { OneShotReply } from "@corbits/folded-run-one-shot";
 
 import { BoundedDedupedToolPackageNameArray } from "./create-bounds";
 import {
