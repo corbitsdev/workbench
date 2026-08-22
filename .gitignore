@@ -12,7 +12,8 @@ coverage/
 # Local orchestration / planning artifacts (not product source)
 .worktrees/
 .agent-state/
-.claude/
+.claude/*
+!.claude/skills/
 dispatch/
 specs/
 plans/
