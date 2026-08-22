@@ -21,6 +21,7 @@ import {
   WorkbenchLoadingState,
 } from "@corbits/chat-ui";
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { getLogger } from "@corbits/client-log";
 import { ApiQueryError, describeApiError } from "@corbits/api-query";
 
@@ -94,6 +95,7 @@ const BLANK_TEMPLATE_ID: WorkbenchTemplateId = "blank";
 
 export function NewWorkbenchPickerRoute() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { selectedTenantId } = useBench();
   const library = useAPIQuery(
     selectedTenantId === null
@@ -147,6 +149,7 @@ export function NewWorkbenchPickerRoute() {
         selectedTenantId,
         selectedId,
         navigate,
+        queryClient,
         pickGithubRepos,
       );
     } catch (cause) {

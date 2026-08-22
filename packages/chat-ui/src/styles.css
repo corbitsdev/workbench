@@ -2841,13 +2841,6 @@
   margin-left: 0;
 }
 
-/* Agents in the header stack keep their accent color but share the
-   humans' circular shape — one motif for the whole roster row. */
-.chat-presence-avatar[data-agent="true"] {
-  background: var(--chat-agent-accent, var(--primary));
-  color: var(--primary-foreground, var(--background));
-}
-
 /* Existing reaction chips + pin toggle, indented to align under the bubble
    text the same way `.chat-thread-affordance` does. Chips are content —
    they always show once a reaction exists. The pin toggle fades in on

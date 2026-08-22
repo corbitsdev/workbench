@@ -577,7 +577,7 @@ function TextBubble({
  * anything else falls back to the event name with its separators turned
  * into spaces.
  */
-function friendlyEventText(
+export function friendlyEventText(
   part: Part & { kind: "event" },
   participants: readonly ParticipantRecord[],
 ): string {
@@ -589,10 +589,15 @@ function friendlyEventText(
     data !== undefined && typeof data.address === "string"
       ? data.address
       : undefined;
+  // The participant record's own handle is the friendly, settings-held
+  // name (see `packages/chat/src/participants.ts`); when the roster
+  // hasn't caught up with this address yet, the address's own local
+  // part (CL-6594) is still a real identifier — never the generic "An
+  // agent joined", which hides a name the event already carries.
   const handle =
     address !== undefined
-      ? participants.find((participant) => participant.address === address)
-          ?.handle
+      ? (participants.find((participant) => participant.address === address)
+          ?.handle ?? localPartOf(address))
       : undefined;
 
   switch (part.event) {
