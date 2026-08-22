@@ -734,8 +734,8 @@ export async function bootMyraTarget(
             res.data,
             "data",
             "list agent definitions",
-          ) as { name: string }[];
-          return rows.map((row) => row.name);
+          ) as { name: string; id: string }[];
+          return rows.map((row) => ({ handle: row.name, id: row.id }));
         },
         async createParticipantAgent(request) {
           const res = await api(
