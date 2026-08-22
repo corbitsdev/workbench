@@ -1,10 +1,10 @@
-// The state of the product's single search surface (DESIGN.md → Search),
-// held outside the React tree because the surfaces that read and write it are
-// siblings, not ancestors: `CommandPaletteProvider` renders the palette,
-// `StageTopBar`'s magnifier morphs into it, and a context menu item opens it,
-// and app.tsx's Shell mounts the first two side by side. One store, so the
-// morph and the palette can never disagree about whether search is open, and
-// so cmd+K, the magnifier, and a menu item all drive the same surface.
+// The state of the global command palette (DECISIONS.md → Search) — a
+// separate surface from the stage top bar's per-page filter, which owns no
+// state here at all. Held outside the React tree because the things that
+// open it are siblings, not ancestors: `CommandPaletteProvider` renders the
+// palette itself, `Cmd+K` opens it from anywhere via `useCommandShortcut`,
+// and a context menu item opens it too. One store, so all three ways in can
+// never disagree about whether the palette is open.
 //
 // Module state outlives a React remount, so search is scoped explicitly:
 // `CommandPaletteProvider` closes it on a route change (a Back out of a

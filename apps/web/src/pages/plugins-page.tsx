@@ -14,12 +14,7 @@
 // and mutations through `PluginSkillDetailPanel`, never forking
 // `SkillsPage` itself.
 
-import {
-  Button,
-  LibrarySearchInput,
-  PageShell,
-  RichEmptyState,
-} from "@corbits/react-ui";
+import { Button, PageShell, RichEmptyState } from "@corbits/react-ui";
 import { WorkbenchLoadingState } from "@corbits/chat-ui";
 import {
   PluginsGallery,
@@ -226,21 +221,17 @@ export function PluginsRoute({
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
         crumbs={[{ label: "Plugins" }]}
+        filter={{
+          label: activeTab === "plugins" ? "Filter plugins" : "Filter skills",
+          value: galleryQuery,
+          onChange: setGalleryQuery,
+        }}
         actions={
-          <>
-            <LibrarySearchInput
-              label={
-                activeTab === "plugins" ? "Search plugins" : "Search skills"
-              }
-              value={galleryQuery}
-              onChange={setGalleryQuery}
-            />
-            {activeTab === "skills" ? (
-              <Button size="sm" onClick={() => setCreateSkillOpen(true)}>
-                <Plus /> New skill
-              </Button>
-            ) : null}
-          </>
+          activeTab === "skills" ? (
+            <Button size="sm" onClick={() => setCreateSkillOpen(true)}>
+              <Plus /> New skill
+            </Button>
+          ) : null
         }
       />
       <PageShell width="full" className="page-fill">

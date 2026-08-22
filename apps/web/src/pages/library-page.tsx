@@ -1,7 +1,6 @@
 import {
   BulkActionBar,
   Button,
-  LibrarySearchInput,
   Menu,
   MenuContent,
   MenuItem,
@@ -332,9 +331,10 @@ function PreviewPane({
  * Every control the page owns — the workbench lens, the name filter, sort,
  * the rows/grid toggle, Upload — lives in `StageTopBar`'s action slot
  * (DESIGN.md → Pages & Routing: the top nav owns the page's actions, and a
- * page body never floats its own). The name filter is a filter control, not
- * a second search: the product has exactly one search surface and it is the
- * palette the top bar already carries (DESIGN.md → Search).
+ * page body never floats its own). The name filter drives the stage top
+ * bar's own magnifier (`filter` prop) rather than a second input — the
+ * magnifier IS this page's filter, never the global palette (DECISIONS.md
+ * → Search).
  */
 export function LibraryPage({
   artifacts,
@@ -456,6 +456,12 @@ export function LibraryPage({
             ? `${artifacts.length} files`
             : artifactKindLabel(selectedSummary.kind)
         }
+        filter={{
+          label: "Filter files",
+          placeholder: "Filter by name",
+          value: activeQuery,
+          onChange: setActiveQuery,
+        }}
         actions={
           <>
             {selectedSummary !== null ? (
@@ -498,12 +504,6 @@ export function LibraryPage({
                 </Button>
               </div>
             ) : null}
-            <LibrarySearchInput
-              label="Filter files"
-              placeholder="Filter by name"
-              value={activeQuery}
-              onChange={setActiveQuery}
-            />
             <Menu>
               <MenuTrigger asChild>
                 <Button
