@@ -22,7 +22,7 @@ function mount(
   document.body.appendChild(container);
   const root = createRoot(container);
   let latestState: StreamingReplyState = null;
-  let latestTimedOut = false;
+  let latestTimedOutRefId: string | null = null;
   let send: (eventType: string, data: unknown) => void = () => {};
   let setWorkbenchId: (id: string | null) => void = () => {};
   let awaitReply: () => void = () => {};
@@ -35,13 +35,13 @@ function mount(
     setWorkbenchId = updateWorkbenchId;
     const {
       streamingReply,
-      replyTimedOut,
+      replyTimedOutRefId,
       handleStreamEvent,
       noteAwaitingReply,
       resumeFromTurn,
     } = useStreamingReply(workbenchId, clearMs, minVisibleMs);
     latestState = streamingReply;
-    latestTimedOut = replyTimedOut;
+    latestTimedOutRefId = replyTimedOutRefId;
     send = handleStreamEvent;
     awaitReply = noteAwaitingReply;
     resume = resumeFromTurn;
@@ -73,7 +73,7 @@ function mount(
       }),
     settle: (ms: number) => act(() => sleep(ms)),
     get: () => latestState,
-    timedOut: () => latestTimedOut,
+    timedOutRefId: () => latestTimedOutRefId,
     unmount: () => act(() => root.unmount()),
   };
 }
@@ -151,15 +151,50 @@ describe("useStreamingReply (CL-6115: live wiring)", () => {
 });
 
 describe("useStreamingReply's reply-timeout backstop (CL-6252 #6)", () => {
-  test("a pending reply with no tokens for the whole clearMs marks replyTimedOut", async () => {
+  test("a pending reply with no tokens for the whole clearMs mints a timed-out ref id", async () => {
     const harness = mount("chan_a", 30);
     harness.awaitReply();
     expect(harness.get()).toEqual({ phase: "awaiting", text: "" });
-    expect(harness.timedOut()).toBe(false);
+    expect(harness.timedOutRefId()).toBeNull();
 
     await harness.settle(60);
     expect(harness.get()).toBeNull();
-    expect(harness.timedOut()).toBe(true);
+    expect(harness.timedOutRefId()).not.toBeNull();
+    harness.unmount();
+  });
+
+  // CL-6677: a cold-waking agent (a parked room re-deploying and
+  // re-deriving its inference source, PR #327's defer-to-wake path) never
+  // emits a single `chat.agent` event until it either replies or the
+  // sidecar gives up — from this hook's perspective that is
+  // indistinguishable from any other silent turn, so it must hit the
+  // exact same backstop, ref id included, rather than a special ref-less
+  // path of its own.
+  test("a cold-waking room that never streams a single token still gets a quotable ref id", async () => {
+    const harness = mount("chan_cold_wake", 30);
+    harness.awaitReply();
+    expect(harness.get()).toEqual({ phase: "awaiting", text: "" });
+
+    await harness.settle(60);
+    expect(harness.get()).toBeNull();
+    const refId = harness.timedOutRefId();
+    expect(refId).not.toBeNull();
+    expect(refId).toMatch(/^[0-9a-z]+-[0-9a-z]+$/);
+    harness.unmount();
+  });
+
+  test("two separate timed-out turns mint two distinct ref ids", async () => {
+    const harness = mount("chan_a", 30);
+    harness.awaitReply();
+    await harness.settle(60);
+    const first = harness.timedOutRefId();
+    expect(first).not.toBeNull();
+
+    harness.awaitReply();
+    await harness.settle(60);
+    const second = harness.timedOutRefId();
+    expect(second).not.toBeNull();
+    expect(second).not.toBe(first);
     harness.unmount();
   });
 
@@ -173,7 +208,7 @@ describe("useStreamingReply's reply-timeout backstop (CL-6252 #6)", () => {
     harness.send("chat.agent", delta("Hi"));
     await harness.settle(20);
     expect(harness.get()).toEqual({ phase: "awaiting", text: "Hi" });
-    expect(harness.timedOut()).toBe(false);
+    expect(harness.timedOutRefId()).toBeNull();
     harness.unmount();
   });
 
@@ -188,7 +223,7 @@ describe("useStreamingReply's reply-timeout backstop (CL-6252 #6)", () => {
     // forever just because *some* text streamed.
     await harness.settle(60);
     expect(harness.get()).toBeNull();
-    expect(harness.timedOut()).toBe(true);
+    expect(harness.timedOutRefId()).not.toBeNull();
     harness.unmount();
   });
 
@@ -196,10 +231,10 @@ describe("useStreamingReply's reply-timeout backstop (CL-6252 #6)", () => {
     const harness = mount("chan_a", 30);
     harness.awaitReply();
     await harness.settle(60);
-    expect(harness.timedOut()).toBe(true);
+    expect(harness.timedOutRefId()).not.toBeNull();
 
     harness.switchWorkbench("chan_b");
-    expect(harness.timedOut()).toBe(false);
+    expect(harness.timedOutRefId()).toBeNull();
     harness.unmount();
   });
 
@@ -207,10 +242,10 @@ describe("useStreamingReply's reply-timeout backstop (CL-6252 #6)", () => {
     const harness = mount("chan_a", 30);
     harness.awaitReply();
     await harness.settle(60);
-    expect(harness.timedOut()).toBe(true);
+    expect(harness.timedOutRefId()).not.toBeNull();
 
     harness.awaitReply();
-    expect(harness.timedOut()).toBe(false);
+    expect(harness.timedOutRefId()).toBeNull();
     harness.unmount();
   });
 });
@@ -236,7 +271,7 @@ describe("useStreamingReply (CL-false-no-reply: the notice must never fire once 
     // parks instead of ending. The backstop must not have armed for a
     // "replied" phase, so it must never fire.
     await harness.settle(60);
-    expect(harness.timedOut()).toBe(false);
+    expect(harness.timedOutRefId()).toBeNull();
     harness.unmount();
   });
 
@@ -264,7 +299,7 @@ describe("useStreamingReply (CL-false-no-reply: the notice must never fire once 
 
     await harness.settle(60);
     expect(harness.get()).toEqual({ phase: "replied" });
-    expect(harness.timedOut()).toBe(false);
+    expect(harness.timedOutRefId()).toBeNull();
     harness.unmount();
   });
 
@@ -275,7 +310,7 @@ describe("useStreamingReply (CL-false-no-reply: the notice must never fire once 
 
     await harness.settle(60);
     expect(harness.get()).toBeNull();
-    expect(harness.timedOut()).toBe(true);
+    expect(harness.timedOutRefId()).not.toBeNull();
     harness.unmount();
   });
 });

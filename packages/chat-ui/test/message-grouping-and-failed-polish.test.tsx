@@ -184,29 +184,59 @@ describe("failed pending message's inline recovery affordance", () => {
   });
 });
 
-// CL-6252 #6: the reply backstop's synthetic event item renders through
-// the same event-line path every other system line uses, with an honest
-// message rather than the strip just silently vanishing.
-describe("the reply-timed-out notice renders as an event line", () => {
-  test("shows the honest 'no reply arrived' copy", async () => {
+// CL-6677: the client-side reply-timeout backstop (a cold-waking room —
+// PR #327's defer-to-wake path — that never streams a single token back)
+// used to render as a bare quiet event line: no ref id, no Retry. It now
+// carries a `turnFailed` text part exactly like the server's own
+// undelivered-turn notice (`postUndeliveredNotice`, CL-6308/CL-6644), so
+// it renders through the same `FailedTurnStrip` — ref id quotable, Retry
+// wired — instead of a second, weaker backstop with no actions.
+describe("the reply-timed-out notice gets the same ref+Retry treatment as the server-side backstop", () => {
+  test("shows the honest 'no reply arrived' copy with a quotable ref id, through FailedTurnStrip", async () => {
     const items: MessageItem[] = [
       {
         id: "notice_1",
         createdAt: "2026-01-01T00:00:00.000Z",
-        parts: [{ kind: "event", event: "chat.reply-timed-out", data: {} }],
-        sender: { name: null, address: "" },
+        parts: [
+          {
+            kind: "text",
+            text: "No reply arrived — the agent may be unavailable. (ref mt4ewrje-zvbmti)",
+            turnFailed: true,
+          },
+        ],
+        sender: { name: null, address: "myra@agents.example" },
       },
     ];
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
     await act(async () => {
-      root?.render(<WorkbenchTimeline items={items} />);
+      root?.render(
+        <WorkbenchTimeline
+          items={items}
+          participants={[{ address: "myra@agents.example", handle: "myra" }]}
+        />,
+      );
     });
 
-    expect(container.querySelector(".chat-event-line")?.textContent).toContain(
-      "No reply arrived — the agent may be unavailable.",
-    );
+    const strip = container.querySelector(".chat-turn-failed");
+    expect(strip).not.toBeNull();
+    expect(strip?.textContent).toContain("didn't reply");
+
+    const retryButton = container.querySelector(".chat-turn-failed-retry");
+    expect(retryButton).not.toBeNull();
+
+    act(() => {
+      container
+        ?.querySelector(".chat-turn-failed-disclosure")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(
+      container.querySelector(".chat-turn-failed-detail")?.textContent,
+    ).toContain("(ref mt4ewrje-zvbmti)");
+
+    // Never the old, action-less plain event line for this failure.
+    expect(container.querySelector(".chat-event-line")).toBeNull();
   });
 });
 
