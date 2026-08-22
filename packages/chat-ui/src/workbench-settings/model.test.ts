@@ -56,13 +56,7 @@ describe("workbenchSettingsSections", () => {
   test("isDm is ignored for a workbench — Agents stays regardless", () => {
     expect(
       workbenchSettingsSections("workbench", true).map((s) => s.id),
-    ).toEqual([
-      "general",
-      "members",
-      "agents",
-      "notifications",
-      "danger",
-    ]);
+    ).toEqual(["general", "members", "agents", "notifications", "danger"]);
   });
 
   test("Myra/Keys & plugins/Inference are gone as distinct nav ids", () => {
@@ -73,12 +67,12 @@ describe("workbenchSettingsSections", () => {
   });
 
   test("Plugins is global-only now — no workbench-scoped nav id", () => {
-    expect(workbenchSettingsSections("workbench").map((s) => s.id)).not.toContain(
-      "plugins",
-    );
-    expect(workbenchSettingsSections("chat", true).map((s) => s.id)).not.toContain(
-      "plugins",
-    );
+    expect(
+      workbenchSettingsSections("workbench").map((s) => s.id),
+    ).not.toContain("plugins");
+    expect(
+      workbenchSettingsSections("chat", true).map((s) => s.id),
+    ).not.toContain("plugins");
   });
 
   test("Capacity is absent by default — this server has no isolated capacity to offer", () => {
