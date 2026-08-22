@@ -66,6 +66,39 @@ plants `DEFAULT_ROUTINE_PRESETS` through `POST /routines` with a
 - A routine whose preset no longer ships is deleted only while pristine
   (`updatedAt` still equals `createdAt`); a member-touched row is kept.
 
+## Default skills (`workbench seed`)
+
+`plantDefaultSkills` (`packages/hub-client/src/seed.ts`) plants each
+`DEFAULT_SKILLS` entry through `POST /api/tenants/:id/skills`, after
+first checking `GET /api/tenants/:id/skills/:name`.
+
+- An existing row the by-name GET finds is skipped outright.
+- A `409` from the create call itself — a row the GET missed (an
+  inherited/other-scope row, or a race with a concurrent seed pass) —
+  is also a skip, never a fatal error. Every seed step treats
+  "already exists" as done, not as a reason to abort the run the
+  hub's own error advice told the operator to re-run.
+
+## Tool registry publish (`workbench seed`, ahead of every workflow deploy)
+
+`publishCorbitsToolsRegistry` (`packages/tool-registry-publish/src/publish.ts`)
+finds-or-creates the tenant's `corbits-tools` package-registry asset,
+then PUTs whatever tarball is missing. Two properties keep a failed
+publish from stranding a usable-looking-but-empty asset:
+
+- `checkToolPackageFreshness` runs **before** the asset is ever
+  created — a version-bump violation aborts the publish with no HTTP
+  call made and no asset row planted, so this exact failure can never
+  leave a dangling registry asset behind on a fresh tenant again.
+- Listing tarballs on an asset whose repo has no commits yet (a
+  never-published asset, or one whose row survived from before the
+  point above shipped) answers an empty list rather than throwing —
+  so a re-run of `publishCorbitsToolsRegistry` treats it exactly like
+  a brand-new registry and pushes every package, which is what
+  actually creates the repo's first commit. Repairing a tenant with
+  this history is the same operation as seeding one for the first
+  time: re-run `workbench seed`.
+
 ## Env provider credentials (hub boot)
 
 `apps/hub/src/env-credential-plant.ts` delegates to
