@@ -14,7 +14,7 @@
     "check": "bun run typecheck && bun run lint && bun run test && bun run check:structural",
     "check:all": "bun run check && bun run check:packages",
     "typecheck": "bun run scripts/run-all.ts typecheck",
-    "lint": "prettier --check . && eslint .",
+    "lint": "prettier --check --cache . && eslint --cache .",
     "format": "prettier --write .",
     "build": "bun run scripts/run-all.ts build",
     "test": "bun test scripts/run-all.test.ts && bun run scripts/run-all.ts test",
