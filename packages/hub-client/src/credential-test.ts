@@ -618,6 +618,20 @@ export async function fetchOllamaModelCapabilities(
  * to fall back to a heuristic (name-sorting, a curated allowlist) to
  * tell a chat model from an embedding one (CL-6351/CL-6366).
  */
+/**
+ * Ollama's `-cloud` suffix names a model that this instance merely proxies
+ * to ollama.com — it answers `/api/tags` whether or not the box is signed
+ * in, but every actual inference call needs an ollama.com account and its
+ * own credential, which this catalog has no way to supply. Seeding one
+ * puts a keyed cloud upstream into what is otherwise an unauthenticated
+ * local chain (CL-6645). Excluded here rather than filtered by capability
+ * because a signed-in box's `-cloud` model still reports full
+ * capabilities — the suffix, not the capability probe, is what marks it.
+ */
+function isCloudProxyModel(modelName: string): boolean {
+  return modelName.endsWith("-cloud") || modelName.endsWith(":cloud");
+}
+
 export async function fetchOllamaModelCatalog(
   baseURL: string,
   fetchImpl: FetchLike = fetch as unknown as FetchLike,
@@ -634,8 +648,12 @@ export async function fetchOllamaModelCatalog(
     if (parsed instanceof type.errors || parsed.models.length === 0) {
       return undefined;
     }
+    const localModels = parsed.models.filter(
+      (model) => !isCloudProxyModel(model.name),
+    );
+    if (localModels.length === 0) return undefined;
     return await Promise.all(
-      parsed.models.map(async (model) => ({
+      localModels.map(async (model) => ({
         canonicalName: model.name,
         displayName: model.name,
         capabilities: await fetchOllamaModelCapabilities(
