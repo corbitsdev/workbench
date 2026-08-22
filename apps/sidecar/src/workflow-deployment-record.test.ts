@@ -5,6 +5,7 @@ import path from "node:path";
 
 import {
   markWorkflowDeploymentRecordParked,
+  partitionScannedDeployments,
   readWorkflowDeploymentRecord,
   scanWorkflowDeploymentRecords,
   writeWorkflowDeploymentRecord,
@@ -141,5 +142,32 @@ describe("scanWorkflowDeploymentRecords reaps pre-cutover records", () => {
     expect(scanned).toHaveLength(0);
     // Still on disk -- never silently eaten.
     await fs.access(filePath);
+  });
+});
+
+describe("partitionScannedDeployments", () => {
+  test("splits scanned records into live (no parkedAt) and parked (parkedAt set)", async () => {
+    const dataDir = await makeDataDir();
+    await writeWorkflowDeploymentRecord(dataDir, "dep_live", baseRecord);
+    await writeWorkflowDeploymentRecord(dataDir, "dep_parked", baseRecord);
+    await markWorkflowDeploymentRecordParked(dataDir, "dep_parked");
+    const scanned = await scanWorkflowDeploymentRecords(dataDir);
+
+    const { live, parked } = partitionScannedDeployments(scanned);
+
+    expect(live.map((s) => s.deploymentId)).toEqual(["dep_live"]);
+    expect(parked.map((s) => s.deploymentId)).toEqual(["dep_parked"]);
+  });
+
+  test("an all-live scan yields nothing to skip", () => {
+    const scanned = [
+      { deploymentId: "dep_a", record: baseRecord },
+      { deploymentId: "dep_b", record: baseRecord },
+    ];
+
+    const { live, parked } = partitionScannedDeployments(scanned);
+
+    expect(live).toHaveLength(2);
+    expect(parked).toHaveLength(0);
   });
 });
