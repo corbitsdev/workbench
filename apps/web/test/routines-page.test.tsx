@@ -75,6 +75,7 @@ describe("routineRowHealth", () => {
   test("Off for a disabled routine, regardless of run history", () => {
     const health = routineRowHealth(
       row({ routine: { ...routine, enabled: false } }),
+      listProps.now,
     );
     expect(health.state).toBe("off");
     expect(health.label).toBe("Off");
@@ -85,6 +86,7 @@ describe("routineRowHealth", () => {
       row({
         routine: { ...routine, deadLetteredAt: "2026-01-02T00:00:00.000Z" },
       }),
+      listProps.now,
     );
     expect(health.state).toBe("paused");
   });
@@ -96,7 +98,10 @@ describe("routineRowHealth", () => {
       createdAt: "2026-01-01T00:00:00.000Z",
       run: { status: "completed" },
     };
-    const health = routineRowHealth(row({ runs: [finished, finished] }));
+    const health = routineRowHealth(
+      row({ runs: [finished, finished] }),
+      listProps.now,
+    );
     expect(health.state).toBe("ok");
     expect(health.cleanStreak).toBe(2);
   });
@@ -206,7 +211,7 @@ describe("GlobalRoutinesList", () => {
           {
             runId: "run_1",
             triggeredBy: "schedule",
-            createdAt: "2026-01-01T09:00:00.000Z",
+            createdAt: "2026-01-01T11:55:00.000Z",
             run: { status: "running" },
           },
         ],
@@ -214,6 +219,23 @@ describe("GlobalRoutinesList", () => {
     ]);
     expect(markup).toContain("Running now");
     expect(markup).not.toContain(">running<");
+  });
+
+  test("warm-keep (CL-6681): a fire whose 'running' status is stale reads as finished, not stuck Running now forever", () => {
+    const markup = renderList([
+      row({
+        runs: [
+          {
+            runId: "run_1",
+            triggeredBy: "schedule",
+            createdAt: "2026-01-01T09:00:00.000Z",
+            run: { status: "running" },
+          },
+        ],
+      }),
+    ]);
+    expect(markup).not.toContain("Running now");
+    expect(markup).toContain("Finished");
   });
 
   test("a failing routine states its failure count in words, not only in colour", () => {
