@@ -155,4 +155,73 @@ describe("createInMemoryAgentTurnStore", () => {
         ?.status,
     ).toBe("failed");
   });
+
+  // CL-6670: `dispatchTurn` awaits this before opening a second occurrence
+  // for the same (workbench, agent) — the fix for two messages sent to
+  // one agent a few seconds apart each winning a `running` row while the
+  // other's reply was still in flight, which left `findRunningTurn`
+  // guessing which real reply belonged to which row.
+  describe("waitUntilFree (CL-6670)", () => {
+    test("resolves immediately when the agent has no running turn", async () => {
+      const store = createInMemoryAgentTurnStore();
+      // No timeout needed: a hanging promise would fail this test itself.
+      await store.waitUntilFree(BASE);
+    });
+
+    test("blocks until the running turn finishes, never before", async () => {
+      const store = createInMemoryAgentTurnStore();
+      const opened = await store.startTurn(BASE);
+
+      let freed = false;
+      const waiting = store.waitUntilFree(BASE).then(() => {
+        freed = true;
+      });
+
+      // Give the pending promise every chance to (wrongly) resolve early.
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(freed).toBe(false);
+
+      await store.finishTurn({
+        tenantId: BASE.tenantId,
+        turnId: opened.id,
+        status: "completed",
+      });
+      await waiting;
+      expect(freed).toBe(true);
+    });
+
+    test("a different agent's wait is never blocked by this one's turn", async () => {
+      const store = createInMemoryAgentTurnStore();
+      await store.startTurn(BASE);
+
+      // Would hang (and fail the test on timeout) if this incorrectly
+      // shared the first agent's gate.
+      await store.waitUntilFree({
+        ...BASE,
+        agentAddress: "ins_other@acme.example",
+      });
+    });
+
+    test("a failed turn also frees the wait", async () => {
+      const store = createInMemoryAgentTurnStore();
+      const opened = await store.startTurn(BASE);
+
+      let freed = false;
+      const waiting = store.waitUntilFree(BASE).then(() => {
+        freed = true;
+      });
+      await Promise.resolve();
+      expect(freed).toBe(false);
+
+      await store.finishTurn({
+        tenantId: BASE.tenantId,
+        turnId: opened.id,
+        status: "failed",
+        error: "boom",
+      });
+      await waiting;
+      expect(freed).toBe(true);
+    });
+  });
 });

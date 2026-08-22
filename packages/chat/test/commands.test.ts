@@ -290,6 +290,15 @@ describe("workbench command dispatch", () => {
       "@assistant set up a sales workbench",
     ]);
 
+    // CL-6670: dispatch now waits for the participant's own prior turn
+    // to close before opening the next occurrence for it — finish
+    // turn__0 first, standing in for the agent's real reply landing.
+    await deps.agentTurns.finishTurn({
+      tenantId: TENANT.id,
+      turnId: turns[0]?.id ?? "",
+      status: "completed",
+    });
+
     // CL-6453: the next mention rides the SAME run's occurrence
     // sequence — turn__0 then turn__1 on one section run — so the
     // first exchange lives in the same stepId-keyed history every later
