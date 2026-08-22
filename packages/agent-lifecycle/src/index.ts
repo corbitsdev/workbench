@@ -25,11 +25,30 @@ type Logger = ReturnType<typeof getLogger>;
  */
 export const IDLE_HIBERNATE_UNDEPLOY_REASON = "idle-hibernate";
 
+/**
+ * `ensureAwake`'s default bound on one call to the injected `wake` port.
+ * A cold wake for a run whose deployed record was parked aside is a real
+ * deploy round-trip to the host, not a local check — long enough to allow
+ * for that, short enough that a wake the host never acks turns into a
+ * rejection (CL-6643) instead of a promise nothing ever observes.
+ */
+export const DEFAULT_WAKE_TIMEOUT_MS = 30_000;
+
 export type CreateAgentLifecycleOptions = {
   /** How long an address may sit idle (no `recordActivity`) before the sweep sleeps it. Required — no default hidden in here. */
   idleSleepMs: number;
   /** How often the sweep runs. Defaults to half the sleep threshold, floored at 5s. */
   sweepIntervalMs?: number;
+  /**
+   * How long one `ensureAwake` call may wait on the injected `wake` port
+   * before treating it as failed. Defaults to `DEFAULT_WAKE_TIMEOUT_MS`.
+   * `wake` itself keeps running past the timeout — this only bounds how
+   * long a caller (and everyone coalesced behind it) waits before this
+   * package gives up and reports a rejection, so a wake the host never
+   * acks can never wedge an address's mail silently for the rest of the
+   * process's life (CL-6643).
+   */
+  wakeTimeoutMs?: number;
   /** Whether the host currently has this address deployed/connected. */
   isRoutable(address: string): boolean;
   /** Tears the address down on the host. Errors are the caller's to throw; the sweep catches and logs them per-address. */
@@ -76,6 +95,7 @@ export function createAgentLifecycle(
   const { idleSleepMs, isRoutable, undeploy, wake, log } = options;
   const sweepIntervalMs =
     options.sweepIntervalMs ?? Math.max(idleSleepMs / 2, 5_000);
+  const wakeTimeoutMs = options.wakeTimeoutMs ?? DEFAULT_WAKE_TIMEOUT_MS;
   const isBusy = options.isBusy ?? (() => false);
 
   const tracked = new Set<string>();
@@ -148,13 +168,41 @@ export function createAgentLifecycle(
   }, sweepIntervalMs);
   if (typeof interval.unref === "function") interval.unref();
 
+  /**
+   * Races `wake(address)` against `wakeTimeoutMs`. A timeout rejects
+   * with a distinct error so a caller (and everything coalesced behind
+   * it) always gets a settled outcome — never a hang — even though the
+   * underlying `wake` call keeps running unobserved past the deadline.
+   */
+  function wakeWithTimeout(address: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(
+          new Error(
+            `wake for "${address}" did not settle within ${String(wakeTimeoutMs)}ms`,
+          ),
+        );
+      }, wakeTimeoutMs);
+      wake(address).then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (cause: unknown) => {
+          clearTimeout(timer);
+          reject(cause);
+        },
+      );
+    });
+  }
+
   async function ensureAwake(address: string): Promise<void> {
     if (isRoutable(address)) return;
 
     const pending = pendingWakes.get(address);
     if (pending !== undefined) return pending;
 
-    const waking = wake(address)
+    const waking = wakeWithTimeout(address)
       .then(() => {
         recordActivity(address);
       })
