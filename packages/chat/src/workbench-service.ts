@@ -8,6 +8,7 @@
 // full `ChatPlatform`/`ChatStore`.
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
+import { reportError } from "@corbits/error-sink";
 import { InferenceResolutionError } from "@corbits/folded-runs";
 import { workbenchTemplate } from "@corbits/workflow-catalog";
 import { encodeParts } from "./codec";
@@ -1216,14 +1217,22 @@ async function dispatchTurnBatch(
           requestMessageIds: messageIds,
         });
       } catch (err) {
+        const refId = reportError(err, {
+          operation: "chat.dispatchTurn",
+          tenantId,
+          roomId: workbenchId,
+          agentId: agentAddress,
+          extra: { messageIds },
+        });
         fanoutLog.error(
           "Asking {agentAddress} for a turn failed for workbench " +
-            "{workbenchId}'s message(s) {messageIds}; posting an " +
-            "undelivered notice in its voice: {err}",
+            "{workbenchId}'s message(s) {messageIds} (ref {refId}); " +
+            "posting an undelivered notice in its voice: {err}",
           {
             agentAddress,
             workbenchId,
             messageIds,
+            refId,
             err,
           },
         );
@@ -1232,6 +1241,7 @@ async function dispatchTurnBatch(
           workbenchId,
           agentAddress,
           cause: err,
+          refId,
         });
       }
     }),
@@ -1351,9 +1361,16 @@ async function postUndeliveredNotice(
     readonly workbenchId: string;
     readonly agentAddress: string;
     readonly cause: unknown;
+    /** The `reportError` refId for the cause the caller already logged —
+     * a person can quote this to support instead of the notice reading
+     * as unexplainable silence. */
+    readonly refId: string;
   },
 ): Promise<void> {
   try {
+    const notice = isCredentialDispatchFailure(input.cause)
+      ? CREDENTIAL_UNDELIVERED_NOTICE
+      : RETRYABLE_UNDELIVERED_NOTICE;
     await postRoomMessage(deps, {
       tenantId: input.tenantId,
       workbenchId: input.workbenchId,
@@ -1362,9 +1379,7 @@ async function postUndeliveredNotice(
       parts: [
         {
           kind: "text",
-          text: isCredentialDispatchFailure(input.cause)
-            ? CREDENTIAL_UNDELIVERED_NOTICE
-            : RETRYABLE_UNDELIVERED_NOTICE,
+          text: `${notice} (ref ${input.refId})`,
           turnFailed: true,
         },
       ],
