@@ -2363,6 +2363,41 @@ describe("GET /workbenches/:id/invitable", () => {
     expect(body.items).toEqual([{ id: "wfd_echo", name: "echo" }]);
   });
 
+  // CL-6649: a definition already invited into the room isn't invitable
+  // again — the dialog must never re-offer someone already present.
+  test("excludes a definition whose agent is already a participant", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({
+        invitable: [
+          { id: "wfd_echo", name: "echo" },
+          { id: "wfd_myra", name: "assistant", description: "Myra" },
+        ],
+        resolveDefinitionIdByAddress: async (address) =>
+          address === "ins_invited1@acme.example" ? "wfd_echo" : undefined,
+      }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
+    await app.request(`/workbenches/${workbench.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_echo" }),
+    });
+
+    const response = await app.request(
+      `/workbenches/${workbench.id}/invitable`,
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      items: { id: string; name: string; description?: string }[];
+    };
+    expect(body.items).toEqual([
+      { id: "wfd_myra", name: "assistant", description: "Myra" },
+    ]);
+  });
+
   test("a denied grant is rejected", async () => {
     const deps = buildDeps({
       requireGrant: () => async (c) =>

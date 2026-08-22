@@ -91,6 +91,24 @@ describe("InviteAgentDialog's Jimmy quick-create row", () => {
     expect(row?.textContent).toContain(JIMMY_QUICK_CREATE.description);
   });
 
+  // CL-6649: the row used to render only `JIMMY_QUICK_CREATE.description`
+  // ("Searches Giphy and replies with a GIF") — Jimmy's own name never
+  // appeared at all. The name must lead, with the description as a
+  // secondary line and a first-party attribution alongside the name.
+  test("renders Jimmy's name prominently, attributed to Corbits, with the description as a secondary line", async () => {
+    const el = await mount({
+      invitable: () => [{ id: "wfd_echo", name: "echo" }],
+      onInvite: async () => undefined,
+      onOpenChange: () => undefined,
+    });
+    const row = el.querySelector('[data-testid="quick-create-jimmy"]');
+    const name = row?.querySelector(".chat-invitable-item-name");
+    const description = row?.querySelector(".chat-invitable-item-description");
+    expect(name?.textContent).toContain(JIMMY_QUICK_CREATE.name);
+    expect(name?.textContent).toContain("by Corbits");
+    expect(description?.textContent).toBe(JIMMY_QUICK_CREATE.description);
+  });
+
   test("is absent once the tenant's invitable list already includes Jimmy", async () => {
     const el = await mount({
       invitable: () => [{ id: "wfd_jimmy", name: JIMMY_QUICK_CREATE.handle }],
