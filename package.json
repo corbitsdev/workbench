@@ -108,6 +108,7 @@
     "@intx/workflow": "0.3.0",
     "@intx/workflow-deploy": "0.3.0",
     "@intx/workflow-host": "0.3.0",
-    "better-auth": "1.6.29"
+    "better-auth": "1.6.29",
+    "hono": "4.13.3"
   }
 }
