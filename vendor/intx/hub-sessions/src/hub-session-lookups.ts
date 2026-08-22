@@ -34,7 +34,10 @@ import {
   listAcceptedWorkflowDispatches,
   listConsumedWorkflowDispatches,
 } from "./workflow-dispatch-settlement";
-import { readCommittedWorkflowRunLifecycle } from "./workflow-run-kind";
+import {
+  readCommittedWorkflowRunLifecycle,
+  readCommittedWorkflowRunTerminalStatus,
+} from "./workflow-run-kind";
 
 const logger = getLogger(["hub", "lookups"]);
 
@@ -729,6 +732,41 @@ export function createHubSessionLookups(
           );
         } catch (error) {
           logger.error`Failed to close unsettled workflow dispatches for terminal run ${anchorAddress}: ${error instanceof Error ? error.message : String(error)}`;
+        }
+
+        // Defense in depth for CL-6595: the committed Git log just proved
+        // this run terminal, independent of whether the newly-terminal
+        // detection above caught it on this pack (or any earlier one). If
+        // `workflow_run.status` is still live, self-heal it here rather than
+        // leaving every future reader to hit the same stale column.
+        try {
+          const reads = await agentRepoStore.repoStore.openCommittedReads(
+            { kind: "hub" },
+            repoId,
+            ref,
+          );
+          const status = await readCommittedWorkflowRunTerminalStatus(
+            reads,
+            anchor.id,
+          );
+          if (status !== null) {
+            const won = await db.transaction((tx) =>
+              workflowRunStore.markTerminal(anchor.id, status, now, tx),
+            );
+            if (won !== null && won.principalId !== null) {
+              await db
+                .update(principal)
+                .set({ status: "deactivated", updatedAt: now })
+                .where(
+                  and(
+                    eq(principal.id, won.principalId),
+                    eq(principal.refId, anchor.id),
+                  ),
+                );
+            }
+          }
+        } catch (error) {
+          logger.error`Terminal-status backfill failed for run ${anchor.id}; workflow_run.status may still read live: ${error instanceof Error ? error.message : String(error)}`;
         }
       }
 

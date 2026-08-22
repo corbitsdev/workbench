@@ -161,6 +161,7 @@ export {
   markConsumed,
   readOwnedMessageIds,
   readCommittedWorkflowRunLifecycle,
+  readCommittedWorkflowRunTerminalStatus,
   readWorkflowRunLifecycle,
   replayProcessingToInbox,
   WORKFLOW_RUN_GITIGNORE_PATH,
