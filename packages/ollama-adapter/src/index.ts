@@ -6,3 +6,8 @@ export {
   parseOllamaAdapterConfig,
   resolveOverride,
 } from "./overrides";
+export {
+  createThinkSplitState,
+  reclassifyThinkingEvents,
+  type ThinkSplitState,
+} from "./think-tags";
