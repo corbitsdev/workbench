@@ -169,6 +169,7 @@ import {
 import {
   deliveryWorkbenchRequiredForWorkflowName,
   isAutomatableWorkflowName,
+  isConversationalWorkflowName,
   validateTriggerFieldsAtCreate,
   workflowCatalogEntry,
   workflowDisplayName,
@@ -1483,11 +1484,16 @@ export async function createHub(config: HubConfig) {
 
   // The one "is this a conversational agent?" ruling, shared by every
   // picker that offers agents to a person and by a routine's `"agent"`-kind
-  // trigger-field validation below: automatable catalog workflows
-  // (routines material) and workbench-host anchor definitions (chat's own
-  // plumbing, never a person-facing agent) belong in neither.
+  // trigger-field validation below: a catalog workflow whose entry says
+  // `conversational: false` (routine/automation material — Echo, "Last 30
+  // days research report", …) and workbench-host anchor definitions
+  // (chat's own plumbing, never a person-facing agent) belong in neither.
+  // `isConversationalWorkflowName`, not `isAutomatableWorkflowName`: a
+  // non-automatable utility workflow (Echo, the research report a routine
+  // delivers) is still not conversational, and the old automatable-only
+  // check let both leak into every agent picker (CL-6649).
   const isConversationalAgentDefinition = (definition: { name: string }) =>
-    !isAutomatableWorkflowName(definition.name) &&
+    isConversationalWorkflowName(definition.name) &&
     !isWorkbenchHostDefinitionName(definition.name);
 
   // A second, narrower ruling layered on top of the ruling above, for

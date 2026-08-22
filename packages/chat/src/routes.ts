@@ -2685,11 +2685,38 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     async (c) => {
       const tenant = c.get("tenant");
       const workbenchId = c.req.param("id");
-      if (!(await workbenchInTenant(deps.store, tenant.id, workbenchId))) {
+      const existing = await deps.store.getWorkbenchSettings(
+        tenant.id,
+        workbenchId,
+      );
+      if (
+        existing === undefined &&
+        !(await workbenchInTenant(deps.store, tenant.id, workbenchId))
+      ) {
         return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
       }
+
+      // A definition already in the room isn't invitable — resolve each
+      // current agent participant's address back to its definitionId so
+      // the listing never re-offers someone already present (CL-6649).
+      const presentDefinitionIds = new Set(
+        (
+          await Promise.all(
+            (existing !== undefined ? participantsOf(existing.settings) : [])
+              .filter((participant) => isAgentAddress(participant.address))
+              .map((participant) =>
+                deps.platform.resolveDefinitionIdByAddress(participant.address),
+              ),
+          )
+        ).filter((id): id is string => id !== undefined),
+      );
+
       const items = await deps.platform.listInvitableDefinitions(tenant.id);
-      return c.json({ items: items.filter(deps.isInvitableDefinition) });
+      return c.json({
+        items: items
+          .filter(deps.isInvitableDefinition)
+          .filter((item) => !presentDefinitionIds.has(item.id)),
+      });
     },
   );
 
