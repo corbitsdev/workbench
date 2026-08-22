@@ -29,9 +29,11 @@ behind human approval.
   `workflows/`. Root-bucket modules are operator-installed and may declare
   routes, migrations, credentials, and grants; sandboxed installables use
   Interchange's native contracts and never get root-bucket powers.
-- **No fallbacks, no spread-assembly.** Cut over cleanly — never leave a
-  legacy path beside a new one. Build config and manifest objects as explicit
-  literals, never assembled by spreading.
+- **No fallbacks.** Cut over cleanly — never leave a legacy path beside a
+  new one. Config and manifest objects are explicit literals; the one
+  exception is an optional key under `exactOptionalPropertyTypes` (see
+  below), where `...(x !== undefined ? { k: x } : {})` is the only correct
+  way to omit it and is not a fallback.
 - **Self-documenting code over comments.** Name things so the code explains
   itself; a comment is for the rare "why" the code cannot express, never a
   restatement of what it does.
@@ -43,11 +45,13 @@ behind human approval.
   composition lives in this repo.
 - **This repo is public.** No secrets or credentials, ever — `.env.example`
   is the only tracked env file. Anything sensitive or on-the-fence (client
-  names, internal context) goes in Linear, not in commits, PRs, or docs.
+  names, internal context, infra/deploy rulings) goes in Linear, not in
+  commits, PRs, or docs.
 
 ## Working conventions
 
-- `bun run check` (typecheck, lint, test) must pass before every commit.
+- `bun run check` (typecheck, lint, test, structural checks) must pass
+  before every commit.
 - Commit sequence per change: tests first ("Add tests for X"), then
   implementation ("X: what changed"), then docs ("Update docs: X"). One
   logical change per commit; commit messages are written for a public
@@ -57,16 +61,27 @@ behind human approval.
   line coverage floor: 80%. Unit tests for pure modules sit next to the
   source they cover (`src/**/*.test.ts`); multi-module / DOM / composition
   suites stay under a package `test/` tree (or top-level e2e).
-- Deployment is explicit via Pulumi (Railway); CI runs tests only — nothing
-  auto-deploys on main.
 - A fresh worktree has no `node_modules` symlinks until `bun install` runs.
   To check whether a workspace package exists, look in `packages/`, not
   `node_modules` — an absent `node_modules` entry means "not installed
   yet," not "doesn't exist."
+- `scripts/checks/*` are heuristics over source text, not proof — they can
+  and do false-positive (install artifacts read as vendored trees, comments
+  read as imports, class names read as user copy). A check failure is a
+  claim to go verify, not a verdict.
+- CI green is not "it works." `scripts/e2e/browser/walkthrough.ts` exists
+  because API-only e2e suites kept passing while the real UI broke — drive
+  the app through it (or by hand) before calling a UI change done.
+- Deployment mechanics (tooling, target, where infra config lives) are not
+  settled enough to state here — see IMPLEMENTATION.md's Deployment
+  section and its Open Questions before assuming anything about how or
+  where this deploys.
 
 ## Conventions a check enforces
 
-Prefer these over remembering the rule; each is backed by a `bun run
+A rule a check enforces has zero violations; a rule stated only in prose
+drifts the moment it's inconvenient — everything above this section is
+prose. Prefer these over remembering the rule; each is backed by a `bun run
 check:*` script, so a violation fails CI rather than waiting for review.
 
 - Report every caught error through `reportError` from
@@ -89,18 +104,25 @@ check:*` script, so a violation fails CI rather than waiting for review.
 - `tsconfig.base.json` sets `exactOptionalPropertyTypes: true`: an absent
   key and an explicit `{ foo: undefined }` are different types. Assigning
   `undefined` to an optional field the compiler expects omitted is a
-  recurring CI break — omit the key instead.
+  recurring CI break — omit the key instead (see the spread-literal
+  exception under Ground rules).
+
+Every other rule in this file is unchecked prose. If you find yourself
+relying on one under time pressure, that's a sign it should become a
+`check:*` script — ticket it instead of trusting memory.
 
 ## Docs map
 
 - [README.md](README.md) — quickstart and repo layout
 - [PRODUCT.md](PRODUCT.md) — what Workbench is and why
 - [ARCHITECTURE.md](ARCHITECTURE.md) — system structure
-- [IMPLEMENTATION.md](IMPLEMENTATION.md) — concrete stack
+- [IMPLEMENTATION.md](IMPLEMENTATION.md) — concrete stack, deployment, open
+  questions
 - [CONTRIBUTING.md](CONTRIBUTING.md) — contribution flow and CLA
 - [LICENSE.md](LICENSE.md) — GPLv2 with AI Exception
 - [SECURITY.md](SECURITY.md) — how to report vulnerabilities
 - [VENDORED.md](VENDORED.md) — the vendoring ledger and its rules
 - [DESIGN.md](DESIGN.md) — the UI design system canon; a screen that
   disagrees with it is wrong until a review changes the doc
-- `docs/` — architecture and design docs, added as the system grows
+- `docs/` — architecture and design docs, added as the system grows;
+  owner rulings and internal decisions belong in Linear, not a doc here
