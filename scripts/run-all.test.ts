@@ -63,9 +63,17 @@ async function runProbe(
   const logPath = join(workspace, `probe-${logCounter}.log`);
   await writeFile(logPath, "");
 
+  // These cases assert the runner's own fan-out over a fixture workspace, so
+  // they must not inherit the caller's gate configuration. A developer with
+  // WORKBENCH_CHECK_SINCE exported resolves the filter against the real repo's
+  // git rather than the fixture, every probe package reads as unaffected, and
+  // the runner correctly reports "nothing affected" — failing tests that are
+  // actually about something else. A case that wants either variable sets it
+  // through `extraEnv`.
+  const { WORKBENCH_CHECK_SINCE: _since, ...ambient } = process.env;
   const child = Bun.spawn(["bun", "run", RUNNER, script], {
     cwd: workspace,
-    env: { ...process.env, PROBE_LOG: logPath, ...extraEnv },
+    env: { ...ambient, PROBE_LOG: logPath, ...extraEnv },
     stdout: "pipe",
     stderr: "pipe",
   });
