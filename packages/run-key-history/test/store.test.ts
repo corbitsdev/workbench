@@ -1,6 +1,7 @@
 // DB-gated: proves `recordObservedKey`'s append-only supersession
-// semantics against a real Postgres transaction, mirroring
-// packages/tasks/test/migrations.test.ts's scratch-database setup.
+// semantics against a real Postgres transaction, using the same
+// scratch-database setup pattern every DB-gated suite in this repo
+// uses.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";

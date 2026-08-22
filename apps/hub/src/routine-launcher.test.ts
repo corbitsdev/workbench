@@ -11,7 +11,6 @@
 // `packages/webhook-triggers/test/launch.test.ts` use.
 import { describe, expect, mock, test } from "bun:test";
 import { CHAT_TURN_TIMEOUT_MS } from "@corbits/chat";
-import { RECURRING_TASK_ASSET_NAME } from "@corbits/workflow-catalog";
 
 const actualFoldedRuns = await import("@corbits/folded-runs");
 
@@ -131,18 +130,6 @@ function baseInput(input: Record<string, unknown>) {
   };
 }
 
-let dispatchTaskCalls: unknown[] = [];
-let dispatchTaskResult: unknown = { runId: "wfr_task1" };
-let dispatchTaskShouldThrow: Error | null = null;
-
-function dispatchTask(input: unknown) {
-  dispatchTaskCalls.push(input);
-  if (dispatchTaskShouldThrow !== null) {
-    return Promise.reject(dispatchTaskShouldThrow);
-  }
-  return Promise.resolve(dispatchTaskResult as never);
-}
-
 let joinDeliveryWorkbenchCalls: unknown[] = [];
 
 function buildLauncher(overrides: { definition?: unknown } = {}) {
@@ -162,7 +149,6 @@ function buildLauncher(overrides: { definition?: unknown } = {}) {
     toolGrantsForPins: () => [],
     eventCollectors: {} as never,
     cryptoProviderCache: { get: async () => ({}) as never },
-    dispatchTask: dispatchTask as never,
   });
 }
 
@@ -269,14 +255,6 @@ describe("createHubRoutineLauncher", () => {
   });
 });
 
-const RECURRING_TASK_DEFINITION_ROW = {
-  id: "wfd_recurring",
-  tenantId: "ten_1",
-  status: "deployed" as const,
-  assetId: "ast_recurring",
-  name: RECURRING_TASK_ASSET_NAME,
-};
-
 describe("createHubRoutineLauncher — delivery workbench", () => {
   test("joins the launched run into the routine's delivery workbench so the orchestrator posts its replies there", async () => {
     launchFoldedRunCalls = [];
@@ -317,154 +295,12 @@ describe("createHubRoutineLauncher — delivery workbench", () => {
       toolGrantsForPins: () => [],
       eventCollectors: {} as never,
       cryptoProviderCache: { get: async () => ({}) as never },
-      dispatchTask: dispatchTask as never,
     });
     const result = await launcher.launchRoutineRun({
       ...baseInput({}),
       deliveryWorkbenchId: "chn_delivery",
     });
     expect(result.runId).toBeTruthy();
-  });
-});
-
-describe("createHubRoutineLauncher — recurring-task bridge", () => {
-  test("dispatches through dispatchTask instead of launching its own folded run", async () => {
-    launchFoldedRunCalls = [];
-    dispatchTaskCalls = [];
-    dispatchTaskShouldThrow = null;
-    dispatchTaskResult = { runId: "wfr_task1" };
-
-    const result = await createHubRoutineLauncher({
-      joinDeliveryWorkbench: async () => {},
-      db: createFakeDb({ definition: RECURRING_TASK_DEFINITION_ROW }) as never,
-      sessionService: {} as never,
-      assetService: {} as never,
-      sidecarRouter: {} as never,
-      toolGrantsForPins: () => [],
-      eventCollectors: {} as never,
-      cryptoProviderCache: { get: async () => ({}) as never },
-      dispatchTask: dispatchTask as never,
-    }).launchRoutineRun(
-      baseInput({
-        agent: "wfd_summarizer",
-        prompt: "Summarize last night's incidents",
-      }),
-    );
-
-    expect(result.runId).toBe("wfr_task1");
-    // The placeholder definition's own folded run is never launched —
-    // the whole point of the bridge is to skip it.
-    expect(launchFoldedRunCalls).toHaveLength(0);
-    expect(dispatchTaskCalls).toEqual([
-      {
-        tenantId: "ten_1",
-        principalId: "usr_1",
-        definitionId: "wfd_summarizer",
-        prompt: "Summarize last night's incidents",
-      },
-    ]);
-  });
-
-  test("a deleted/unknown agent fails the routine run honestly, propagating dispatchTask's own error", async () => {
-    dispatchTaskCalls = [];
-    dispatchTaskShouldThrow = new Error(
-      'No definition "wfd_deleted" for this tenant',
-    );
-
-    const launcher = createHubRoutineLauncher({
-      joinDeliveryWorkbench: async () => {},
-      db: createFakeDb({ definition: RECURRING_TASK_DEFINITION_ROW }) as never,
-      sessionService: {} as never,
-      assetService: {} as never,
-      sidecarRouter: {} as never,
-      toolGrantsForPins: () => [],
-      eventCollectors: {} as never,
-      cryptoProviderCache: { get: async () => ({}) as never },
-      dispatchTask: dispatchTask as never,
-    });
-
-    await expect(
-      launcher.launchRoutineRun(
-        baseInput({ agent: "wfd_deleted", prompt: "Do the thing" }),
-      ),
-    ).rejects.toThrow('No definition "wfd_deleted" for this tenant');
-
-    dispatchTaskShouldThrow = null;
-  });
-
-  test("behaves the same whether the agent id is a manually-created or planner-created (myra-task-*) definition — no shape validation beyond non-empty", async () => {
-    dispatchTaskCalls = [];
-    dispatchTaskShouldThrow = null;
-    dispatchTaskResult = { runId: "wfr_task2" };
-
-    const result = await createHubRoutineLauncher({
-      joinDeliveryWorkbench: async () => {},
-      db: createFakeDb({ definition: RECURRING_TASK_DEFINITION_ROW }) as never,
-      sessionService: {} as never,
-      assetService: {} as never,
-      sidecarRouter: {} as never,
-      toolGrantsForPins: () => [],
-      eventCollectors: {} as never,
-      cryptoProviderCache: { get: async () => ({}) as never },
-      dispatchTask: dispatchTask as never,
-    }).launchRoutineRun(
-      baseInput({
-        agent: "myra-task-a1b2c3",
-        prompt: "Draft the weekly digest",
-      }),
-    );
-
-    expect(result.runId).toBe("wfr_task2");
-    expect(dispatchTaskCalls).toEqual([
-      {
-        tenantId: "ten_1",
-        principalId: "usr_1",
-        definitionId: "myra-task-a1b2c3",
-        prompt: "Draft the weekly digest",
-      },
-    ]);
-  });
-
-  test("refuses to dispatch when the stored input is missing its agent field", async () => {
-    dispatchTaskCalls = [];
-
-    const launcher = createHubRoutineLauncher({
-      joinDeliveryWorkbench: async () => {},
-      db: createFakeDb({ definition: RECURRING_TASK_DEFINITION_ROW }) as never,
-      sessionService: {} as never,
-      assetService: {} as never,
-      sidecarRouter: {} as never,
-      toolGrantsForPins: () => [],
-      eventCollectors: {} as never,
-      cryptoProviderCache: { get: async () => ({}) as never },
-      dispatchTask: dispatchTask as never,
-    });
-
-    await expect(
-      launcher.launchRoutineRun(baseInput({ prompt: "Do the thing" })),
-    ).rejects.toThrow(/agent/);
-    expect(dispatchTaskCalls).toHaveLength(0);
-  });
-
-  test("refuses to dispatch when the stored input is missing its prompt field", async () => {
-    dispatchTaskCalls = [];
-
-    const launcher = createHubRoutineLauncher({
-      joinDeliveryWorkbench: async () => {},
-      db: createFakeDb({ definition: RECURRING_TASK_DEFINITION_ROW }) as never,
-      sessionService: {} as never,
-      assetService: {} as never,
-      sidecarRouter: {} as never,
-      toolGrantsForPins: () => [],
-      eventCollectors: {} as never,
-      cryptoProviderCache: { get: async () => ({}) as never },
-      dispatchTask: dispatchTask as never,
-    });
-
-    await expect(
-      launcher.launchRoutineRun(baseInput({ agent: "wfd_summarizer" })),
-    ).rejects.toThrow(/prompt/);
-    expect(dispatchTaskCalls).toHaveLength(0);
   });
 });
 
@@ -559,7 +395,6 @@ describe("createHubRoutineLauncher — multi-step native routing", () => {
       toolGrantsForPins: () => [],
       eventCollectors: {} as never,
       cryptoProviderCache: { get: async () => ({}) as never },
-      dispatchTask: dispatchTask as never,
     });
 
     await expect(launcher.launchRoutineRun(baseInput({}))).rejects.toThrow(

@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
 
 import { CREATE_AGENT_TOOL as REAL_CREATE_AGENT_TOOL } from "@corbits/agent-directory-tools";
-import { ROUTINE_CREATE_TOOL as REAL_ROUTINE_CREATE_TOOL } from "@corbits/routines-tools";
-import { DISPATCH_TASK_TOOL as REAL_DISPATCH_TASK_TOOL } from "@corbits/task-dispatch-tools";
+import {
+  ROUTINE_CREATE_TOOL as REAL_ROUTINE_CREATE_TOOL,
+  ROUTINE_RUN_NOW_TOOL as REAL_ROUTINE_RUN_NOW_TOOL,
+} from "@corbits/routines-tools";
 import { MEMORY_ADD_TOOL as REAL_MEMORY_ADD_TOOL } from "@corbits/memory-tools";
 import { LIST_CONNECTIONS_TOOL as REAL_LIST_CONNECTIONS_TOOL } from "@corbits/connections-tools";
 import {
@@ -13,7 +15,7 @@ import {
 import {
   CREATE_AGENT_TOOL,
   ROUTINE_CREATE_TOOL,
-  DISPATCH_TASK_TOOL,
+  ROUTINE_RUN_NOW_TOOL,
   MEMORY_ADD_TOOL,
   LIST_CONNECTIONS_TOOL,
   GITHUB_PULL_REQUEST_DIFF_TOOL,
@@ -24,7 +26,7 @@ import {
 test("eval tool-name constants match the real manager-tools bundles", () => {
   expect(CREATE_AGENT_TOOL).toBe(REAL_CREATE_AGENT_TOOL);
   expect(ROUTINE_CREATE_TOOL).toBe(REAL_ROUTINE_CREATE_TOOL);
-  expect(DISPATCH_TASK_TOOL).toBe(REAL_DISPATCH_TASK_TOOL);
+  expect(ROUTINE_RUN_NOW_TOOL).toBe(REAL_ROUTINE_RUN_NOW_TOOL);
   expect(MEMORY_ADD_TOOL).toBe(REAL_MEMORY_ADD_TOOL);
   expect(LIST_CONNECTIONS_TOOL).toBe(REAL_LIST_CONNECTIONS_TOOL);
 });
@@ -40,6 +42,6 @@ test("BUILD_TOOLS names the three state-changing manager tools", () => {
   expect(BUILD_TOOLS).toEqual([
     CREATE_AGENT_TOOL,
     ROUTINE_CREATE_TOOL,
-    DISPATCH_TASK_TOOL,
+    ROUTINE_RUN_NOW_TOOL,
   ]);
 });

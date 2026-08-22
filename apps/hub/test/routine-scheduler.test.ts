@@ -52,8 +52,8 @@ describe("tickRoutineScheduler", () => {
     const store = createInMemoryRoutineStore();
     const routine = await store.createRoutine({
       tenantId: "t1",
-      name: "recurring task",
-      definitionId: "def_recurring_task",
+      name: "inbox-only task",
+      definitionId: "def_inbox_only",
       trigger: CRON,
       scope: "bench",
       input: { agent: "wfd_agent", prompt: "Do it" },
@@ -74,7 +74,7 @@ describe("tickRoutineScheduler", () => {
       },
       at,
     );
-    expect(launches).toEqual(["def_recurring_task"]);
+    expect(launches).toEqual(["def_inbox_only"]);
     const runs = await store.listRunsForRoutine("t1", routine.id);
     expect(runs).toHaveLength(1);
   });

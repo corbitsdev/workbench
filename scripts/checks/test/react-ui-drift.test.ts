@@ -84,13 +84,13 @@ test("a raw <select>/<textarea>/radio/checkbox is flagged as raw-form-control", 
 test("an allowlisted file's raw-form-control and raw-button hits don't count toward the ratchet", () => {
   const files = [
     {
-      relPath: "packages/tasks-ui/src/legacy-form.tsx",
+      relPath: "packages/chat-ui/src/legacy-form.tsx",
       contents: `<select value={v} /><button className="x">Go</button>`,
     },
   ];
   const { ratchetCount } = auditReactUiDrift(
     files,
-    [{ relPath: "packages/tasks-ui/src/legacy-form.tsx", ticket: "CL-0000" }],
+    [{ relPath: "packages/chat-ui/src/legacy-form.tsx", ticket: "CL-0000" }],
     0,
   );
   expect(ratchetCount).toBe(0);
@@ -99,13 +99,13 @@ test("an allowlisted file's raw-form-control and raw-button hits don't count tow
 test("a raw <table> in an allowlisted file still counts — class (b) has no exclusion", () => {
   const files = [
     {
-      relPath: "packages/tasks-ui/src/legacy-form.tsx",
+      relPath: "packages/chat-ui/src/legacy-form.tsx",
       contents: `<table className="x" />`,
     },
   ];
   const { ratchetCount } = auditReactUiDrift(
     files,
-    [{ relPath: "packages/tasks-ui/src/legacy-form.tsx", ticket: "CL-0000" }],
+    [{ relPath: "packages/chat-ui/src/legacy-form.tsx", ticket: "CL-0000" }],
     0,
   );
   expect(ratchetCount).toBe(1);

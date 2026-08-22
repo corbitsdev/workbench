@@ -17,9 +17,9 @@ const INVENTORY_SOURCES: RoutineDraftInventorySources = {
   async listAutomatableWorkflows() {
     return [
       {
-        definitionId: "wfd_recurring_task",
-        assetName: "recurring-task",
-        displayName: "Recurring task",
+        definitionId: "wfd_relay_task",
+        assetName: "relay-task",
+        displayName: "Relay task",
         deliveryMode: "inbox",
         triggerFields: [
           { key: "agent", kind: "agent", label: "Agent", required: true },
@@ -81,13 +81,13 @@ describe("createMyraRoutineDrafting", () => {
     });
   });
 
-  test("a reply proposing the recurring-task workflow with valid trigger input succeeds", async () => {
+  test("a reply proposing the relay-task workflow with valid trigger input succeeds", async () => {
     const deps = buildDeps({
       runner: {
         run: async () => ({
           content: JSON.stringify({
-            steps: [{ title: "Run the recurring task" }],
-            definitionId: "wfd_recurring_task",
+            steps: [{ title: "Run the relay task" }],
+            definitionId: "wfd_relay_task",
             cadence: { kind: "interval", unit: "hours", every: 6 },
             triggerInput: { agent: "wfd_summarizer", prompt: "Summarize" },
           }),
@@ -97,7 +97,7 @@ describe("createMyraRoutineDrafting", () => {
     });
     const drafting = createMyraRoutineDrafting(deps);
     const proposal = await drafting.propose(INPUT);
-    expect(proposal.definitionId).toBe("wfd_recurring_task");
+    expect(proposal.definitionId).toBe("wfd_relay_task");
     expect(proposal.autonomy).toEqual({
       triggerInput: { agent: "wfd_summarizer", prompt: "Summarize" },
     });
@@ -145,8 +145,8 @@ describe("createMyraRoutineDrafting", () => {
       runner: {
         run: async () => ({
           content: JSON.stringify({
-            steps: [{ title: "Run the recurring task" }],
-            definitionId: "wfd_recurring_task",
+            steps: [{ title: "Run the relay task" }],
+            definitionId: "wfd_relay_task",
             cadence: null,
             triggerInput: { agent: "wfd_unknown_agent", prompt: "Summarize" },
           }),
@@ -165,8 +165,8 @@ describe("createMyraRoutineDrafting", () => {
       runner: {
         run: async () => ({
           content: JSON.stringify({
-            steps: [{ title: "Run the recurring task" }],
-            definitionId: "wfd_recurring_task",
+            steps: [{ title: "Run the relay task" }],
+            definitionId: "wfd_relay_task",
             cadence: null,
             triggerInput: { agent: "wfd_summarizer" },
           }),

@@ -8,7 +8,6 @@ import {
   deliveryWorkbenchRequiredForWorkflowName,
   isAutomatableWorkflowName,
   isConversationalWorkflowName,
-  RECURRING_TASK_ASSET_NAME,
   validateTriggerFieldsAtCreate,
   validateTriggerFieldsInput,
   workflowDisplayName,
@@ -107,9 +106,6 @@ describe("workflow catalog", () => {
     test("marks every workflow utility, automatable or not, non-conversational", () => {
       expect(isConversationalWorkflowName("echo")).toBe(false);
       expect(isConversationalWorkflowName("workbench-digest")).toBe(false);
-      expect(isConversationalWorkflowName(RECURRING_TASK_ASSET_NAME)).toBe(
-        false,
-      );
       expect(isConversationalWorkflowName("last-30-days-research")).toBe(false);
       expect(isConversationalWorkflowName("heartbeat")).toBe(false);
       expect(isConversationalWorkflowName("process-granola-call")).toBe(false);
@@ -141,23 +137,19 @@ describe("workflow catalog", () => {
       }
     });
 
-    test("recurring-task is the only inbox-delivering entry", () => {
+    test("no catalog entry currently delivers to inbox", () => {
       const inboxEntries = WORKFLOW_CATALOG.filter(
         (entry) => entry.deliveryMode === "inbox",
       );
-      expect(inboxEntries.map((entry) => entry.assetName)).toEqual([
-        RECURRING_TASK_ASSET_NAME,
-      ]);
+      expect(inboxEntries).toEqual([]);
     });
 
-    test("deliveryWorkbenchRequiredForWorkflowName is false only for recurring-task", () => {
-      expect(
-        deliveryWorkbenchRequiredForWorkflowName(RECURRING_TASK_ASSET_NAME),
-      ).toBe(false);
-      expect(deliveryWorkbenchRequiredForWorkflowName("workbench-digest")).toBe(
-        true,
-      );
-      expect(deliveryWorkbenchRequiredForWorkflowName("heartbeat")).toBe(true);
+    test("deliveryWorkbenchRequiredForWorkflowName is true for every known catalog entry", () => {
+      for (const entry of WORKFLOW_CATALOG) {
+        expect(deliveryWorkbenchRequiredForWorkflowName(entry.assetName)).toBe(
+          true,
+        );
+      }
     });
 
     test("an unknown workflow name defaults to workbench-required", () => {
@@ -298,33 +290,6 @@ describe("workflow catalog", () => {
       }
     });
 
-    test("recurring-task is automatable and declares required agent and prompt fields", () => {
-      // The bridge "Make this a routine" needs: a taskable definition id
-      // (a task's actual agent) never satisfies the routine picker's
-      // automatable-only filter, so this catalog entry is what a task
-      // result's prefill targets instead — see
-      // apps/hub/src/routine-launcher.ts for how a fired routine on this
-      // asset name dispatches through @corbits/tasks' launchTask.
-      expect(isAutomatableWorkflowName(RECURRING_TASK_ASSET_NAME)).toBe(true);
-      const entry = workflowCatalogEntry(RECURRING_TASK_ASSET_NAME);
-      expect(entry?.triggerFields?.map((f) => f.key)).toEqual([
-        "agent",
-        "prompt",
-      ]);
-      for (const field of entry?.triggerFields ?? []) {
-        expect(field.required).toBe(true);
-      }
-    });
-
-    test("recurring-task's agent field is kind 'agent' (a picker), its prompt field is plain text", () => {
-      const entry = workflowCatalogEntry(RECURRING_TASK_ASSET_NAME);
-      const byKey = new Map(
-        (entry?.triggerFields ?? []).map((f) => [f.key, f]),
-      );
-      expect(byKey.get("agent")?.kind).toBe("agent");
-      expect(byKey.get("prompt")?.kind).toBe("text");
-    });
-
     test("workflows with no named trigger inputs declare no triggerFields", () => {
       // Heartbeat and workbench-digest take no human-supplied content at
       // create time — heartbeat ignores its trigger entirely, and
@@ -337,9 +302,17 @@ describe("workflow catalog", () => {
     });
   });
 
+  // Two required fields, one "agent"-kind and one "text"-kind — an
+  // explicit local fixture, not pulled from any catalog entry, so this
+  // block's assertions about required/blank/non-string handling stay
+  // meaningful regardless of which entries the catalog happens to carry.
+  const AGENT_AND_PROMPT_FIELDS: readonly WorkflowTriggerField[] = [
+    { key: "agent", kind: "agent", label: "Agent", required: true },
+    { key: "prompt", kind: "text", label: "Prompt", required: true },
+  ];
+
   describe("validateTriggerFieldsInput", () => {
-    const fields = workflowCatalogEntry(RECURRING_TASK_ASSET_NAME)
-      ?.triggerFields as readonly WorkflowTriggerField[];
+    const fields = AGENT_AND_PROMPT_FIELDS;
 
     test("accepts input with every required field non-empty", () => {
       expect(
@@ -394,8 +367,7 @@ describe("workflow catalog", () => {
   // absence of a required field is never rejected, only a value the
   // caller explicitly provided but left malformed is.
   describe("validateTriggerFieldsAtCreate", () => {
-    const fields = workflowCatalogEntry(RECURRING_TASK_ASSET_NAME)
-      ?.triggerFields as readonly WorkflowTriggerField[];
+    const fields = AGENT_AND_PROMPT_FIELDS;
 
     test("a required field left entirely unbound passes at create time", () => {
       expect(

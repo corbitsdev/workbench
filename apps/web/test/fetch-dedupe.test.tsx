@@ -2,7 +2,7 @@
 // because independent components each fetched independently instead of
 // sharing a cache. Every mount of `useBenchActivity` (the sidebar's
 // `WorkbenchList`, and any second subscriber) shares the same TanStack
-// Query keys (`tenantKeys.workbenches`, `.tasks`, `.topLevelRuns` — see
+// Query keys (`tenantKeys.workbenches`, `.topLevelRuns` — see
 // `../src/query-client.ts`) under one `QueryClient`, so two mounts fetch
 // each listing exactly once.
 import { afterEach, describe, expect, test } from "bun:test";
@@ -65,7 +65,6 @@ function stubFetch(calls: string[]): void {
       return Promise.resolve(json(membership));
     if (path.includes("/top-level-runs"))
       return Promise.resolve(json({ data: [], nextCursor: null }));
-    if (path.includes("/tasks")) return Promise.resolve(json({ items: [] }));
     if (path.includes("/agent-definitions/visible"))
       return Promise.resolve(json({ definitions: [] }));
     return Promise.resolve(json({ items: [] }));
@@ -114,7 +113,6 @@ describe("shell listing dedupe (CL-6045)", () => {
     expect(countsByMatch(calls, (p) => p.includes("kind=workbench"))).toBe(1);
     expect(countsByMatch(calls, (p) => p.includes("kind=chat"))).toBe(1);
     expect(countsByMatch(calls, (p) => p.includes("/top-level-runs"))).toBe(1);
-    expect(countsByMatch(calls, (p) => p.includes("/tasks"))).toBe(1);
   });
 
   test("a rename invalidates the shared listing query, triggering exactly one refetch", async () => {
@@ -133,7 +131,6 @@ describe("shell listing dedupe (CL-6045)", () => {
         return Promise.resolve(json(membership));
       if (path.includes("/top-level-runs"))
         return Promise.resolve(json({ data: [], nextCursor: null }));
-      if (path.includes("/tasks")) return Promise.resolve(json({ items: [] }));
       if (path.includes("/agent-definitions/visible"))
         return Promise.resolve(json({ definitions: [] }));
       if (init?.method === "PATCH") {

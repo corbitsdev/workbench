@@ -382,7 +382,6 @@ describe("completeCredentialSetup", () => {
         "assistant",
         "echo",
         "workbench-digest",
-        "recurring-task",
         "last-30-days-research",
       ],
     });
@@ -434,7 +433,6 @@ describe("completeCredentialSetup", () => {
         "assistant",
         "echo",
         "workbench-digest",
-        "recurring-task",
         "last-30-days-research",
       ],
     });
@@ -486,7 +484,6 @@ describe("completeCredentialSetup", () => {
         "assistant",
         "echo",
         "workbench-digest",
-        "recurring-task",
         "last-30-days-research",
       ],
     });
@@ -845,7 +842,6 @@ describe("completeCredentialSetup", () => {
         "assistant",
         "echo",
         "workbench-digest",
-        "recurring-task",
         "last-30-days-research",
       ]);
     }
@@ -1298,8 +1294,8 @@ describe("completeCredentialSetup", () => {
     // Every ensure-then-create helper hit its 409 branch on the second
     // pass and listed the row it already created on the first — nothing
     // was ever created twice.
-    expect(assetCreatePosts).toBe(5);
-    expect(deploymentCreatePosts).toBe(5);
+    expect(assetCreatePosts).toBe(4);
+    expect(deploymentCreatePosts).toBe(4);
     expect(catalogModelCreatePosts).toBe(1);
     expect(catalogProviderCreatePosts).toBe(1);
     expect(catalogOfferingCreatePosts).toBe(1);
@@ -1308,8 +1304,8 @@ describe("completeCredentialSetup", () => {
     // existing row rather than leaving it untouched (the CL-6103 fix,
     // updated by CL-6123 to no longer require a probe first).
     expect(credentialRotatePatches).toBe(1);
-    expect(assets.length).toBe(5);
-    expect(deployments.length).toBe(5);
+    expect(assets.length).toBe(4);
+    expect(deployments.length).toBe(4);
   });
 
   test("a pasted key with no metadata stays an ordinary api_key credential", async () => {
@@ -1409,7 +1405,6 @@ describe("completeCredentialSetup", () => {
         "assistant",
         "echo",
         "workbench-digest",
-        "recurring-task",
         "last-30-days-research",
       ],
       message: "Your workbench is ready — agents will come online shortly.",
@@ -1618,7 +1613,6 @@ describe("ensureSeeded (the slow half)", () => {
         "assistant",
         "echo",
         "workbench-digest",
-        "recurring-task",
         "last-30-days-research",
       ],
     });
@@ -1845,10 +1839,10 @@ describe("ensureSeeded (the slow half)", () => {
 
     expect(first.kind).toBe("seeded");
     expect(second.kind).toBe("seeded");
-    expect(assetCreatePosts).toBe(5);
-    expect(deploymentCreatePosts).toBe(5);
-    expect(assets.length).toBe(5);
-    expect(deployments.length).toBe(5);
+    expect(assetCreatePosts).toBe(4);
+    expect(deploymentCreatePosts).toBe(4);
+    expect(assets.length).toBe(4);
+    expect(deployments.length).toBe(4);
   });
 
   // CL-6264: tonight's live failure — completeCredentialSetup ->
@@ -1919,7 +1913,7 @@ describe("ensureSeeded (the slow half)", () => {
     expect(result).toEqual({
       kind: "seeded-pending-agents",
       deployed: ["assistant", "echo"],
-      pending: ["workbench-digest", "recurring-task", "last-30-days-research"],
+      pending: ["workbench-digest", "last-30-days-research"],
       message: "Your workbench is ready — agents will come online shortly.",
     });
   });

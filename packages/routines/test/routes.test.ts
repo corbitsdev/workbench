@@ -918,8 +918,8 @@ describe("fireScheduledRoutine", () => {
     const launcher = fakeLauncher();
     const created = await store.createRoutine({
       tenantId: TENANT.id,
-      name: "Recurring task",
-      definitionId: "def_recurring_task",
+      name: "Inbox-only task",
+      definitionId: "def_inbox_only",
       trigger: { kind: "daily", hour: 9, minute: 0 },
       scope: "bench",
       input: { agent: "wfd_agent", prompt: "Do it" },

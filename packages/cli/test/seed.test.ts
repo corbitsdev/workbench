@@ -52,7 +52,6 @@ describe("resolveSeedWorkflows", () => {
       "assistant",
       "echo",
       "workbench-digest",
-      "recurring-task",
       "last-30-days-research",
     ]);
   });
@@ -65,7 +64,6 @@ describe("resolveSeedWorkflows", () => {
       "assistant",
       "echo",
       "workbench-digest",
-      "recurring-task",
       "last-30-days-research",
       "heartbeat",
     ]);

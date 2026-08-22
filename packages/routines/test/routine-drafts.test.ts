@@ -2,8 +2,8 @@
 // wiring this package owns — the port is called, a successful reply
 // produces the exact draft shape the review UI consumes, and a failed
 // call surfaces the same honest, plain-language "drafting_failed"
-// envelope `@corbits/task-planner`'s own planning-failure convention
-// uses, never a fabricated draft or a silent empty one.
+// envelope other drafting/planning-failure surfaces in this codebase
+// use, never a fabricated draft or a silent empty one.
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";

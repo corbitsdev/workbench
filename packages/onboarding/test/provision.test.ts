@@ -719,9 +719,9 @@ describe("provisionPersonalTenantIfNeeded", () => {
     });
     // Attempt 1 fails creating the echo asset. The retry re-runs from
     // scratch: one create call per default workflow — echo, assistant,
-    // workbench-digest, recurring-task, last-30-days-research — on top of
-    // the one failed attempt.
-    expect(assetCreateAttempts).toBe(6);
+    // workbench-digest, last-30-days-research — on top of the one failed
+    // attempt.
+    expect(assetCreateAttempts).toBe(5);
   });
 
   test("a fully seeded personal bench reports existing-member with seeded: true, and backfills a grant added to SEED_GRANTS after it was provisioned", async () => {
