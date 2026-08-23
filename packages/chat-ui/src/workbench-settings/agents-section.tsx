@@ -30,6 +30,7 @@ import {
   toast,
 } from "@corbits/react-ui";
 import {
+  chatCapableModels,
   getResolvedCatalog,
   providerDisplayName,
 } from "@corbits/inference-settings";
@@ -435,13 +436,15 @@ type CatalogState =
 /** Only a model with at least one offering is actually launchable for this
  * tenant — an entry with none has no provider connected anywhere up the
  * ancestor chain, so it is left off the picker rather than offered to fail
- * at launch. Labeled by its top (highest-priority) offering's provider —
- * the same one `getResolvedCatalog`'s resolution would pick. */
+ * at launch. Embedding / Hugging Face / GGUF path names are also omitted
+ * (CL-6744) via `chatCapableModels`. Labeled by its top (highest-priority)
+ * offering's provider — the same one `getResolvedCatalog`'s resolution
+ * would pick. */
 function connectedModelOptions(
   models: readonly ModelInfo[],
   alreadySet: string | undefined,
 ): readonly ModelOption[] {
-  return models
+  return chatCapableModels(models)
     .filter(
       (model) =>
         model.offerings.length > 0 && model.canonicalName !== alreadySet,

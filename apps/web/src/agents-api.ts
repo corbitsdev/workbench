@@ -23,6 +23,7 @@ import {
   UnauthenticatedError,
   toAPIQuery,
 } from "@corbits/api-query";
+import { isChatPickerModelName } from "@workbench/hub-client/model-capability";
 import { tenantKeys } from "./query-client";
 
 export type AgentDefinition = typeof WorkflowDefinitionResponse.infer;
@@ -185,14 +186,22 @@ export function listRoutineRunFires(
  * model picker. Uses `/catalog/models` (paginated `ModelResponse`), not the
  * bare-array discovery route at `/models` (`ModelInfo[]`) — those are
  * different wire shapes. Disabled rows are filtered out here because the
- * catalog may retain them. */
+ * catalog may retain them. Embedding-named models, Hugging Face Hub paths,
+ * and bare `.gguf` names are also omitted (CL-6744) — this endpoint carries
+ * no offering capability lists, so the name-only
+ * {@link isChatPickerModelName} gate is the available signal. */
 export function listCatalogModels(
   tenantId: string,
 ): Promise<readonly CatalogModel[]> {
   return getJSON(
     `/api/tenants/${tenantId}/catalog/models?limit=${PAGE_LIMIT}`,
     ModelsPage,
-  ).then((page) => page.data.filter((model) => !model.disabled));
+  ).then((page) =>
+    page.data.filter(
+      (model) =>
+        !model.disabled && isChatPickerModelName(model.canonicalName),
+    ),
+  );
 }
 
 const AgentDefinitionDraftResponse = type({
