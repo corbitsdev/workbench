@@ -39,17 +39,50 @@
 // `e5`, `arctic-embed`) keep a required trailing delimiter: they are
 // short enough that matching them as a bare substring risks false
 // positives no real model name has exercised yet.
+//
+// CL-6744: person-facing pickers and default selection also drop Ollama's
+// Hugging Face / GGUF path names (`hf.co/...`, `huggingface.co/...`,
+// `*.gguf`). Those names are valid pulls, but they are not a stable chat
+// catalog entry — templates drift, quant tags litter the label, and they
+// crowd Settings / agent / bench pickers next to curated chat models.
 const EMBEDDING_MODEL_NAME_PATTERN =
   /(^|[-_/])embed(ding)?|(^|[-_/])(minilm|bge|gte|e5|arctic-embed)(-|_|:|$)/i;
 
+const HUGGING_FACE_OR_GGUF_NAME_PATTERN = /(^|\/)(hf\.co|huggingface\.co)\//i;
+
 function isEmbeddingModelName(canonicalName: string): boolean {
   return EMBEDDING_MODEL_NAME_PATTERN.test(canonicalName);
+}
+
+/** Ollama's Hugging Face Hub pull form (`hf.co/org/repo[:quant]`) or a
+ * bare `.gguf` path/tag — never offered in a person-facing chat picker
+ * (CL-6744). */
+export function isGgufOrHuggingFacePath(canonicalName: string): boolean {
+  const lower = canonicalName.toLowerCase();
+  return (
+    lower.includes(".gguf") ||
+    HUGGING_FACE_OR_GGUF_NAME_PATTERN.test(canonicalName)
+  );
+}
+
+/**
+ * Name-only chat-picker gate for catalog rows that carry no offering
+ * capability data (e.g. `/catalog/models`). Drops embedding-named models,
+ * GGUF paths, and Hugging Face URIs. Prefer {@link preferCompletionCapable}
+ * when real capability lists are available.
+ */
+export function isChatPickerModelName(canonicalName: string): boolean {
+  return (
+    !isGgufOrHuggingFacePath(canonicalName) &&
+    !isEmbeddingModelName(canonicalName)
+  );
 }
 
 function isCompletionCapable(
   capabilities: readonly string[],
   canonicalName: string,
 ): boolean {
+  if (isGgufOrHuggingFacePath(canonicalName)) return false;
   return capabilities.length > 0
     ? capabilities.includes("plain-text")
     : !isEmbeddingModelName(canonicalName);
@@ -58,13 +91,14 @@ function isCompletionCapable(
 /**
  * Narrows `offerings` to the completion-capable ones: whichever of
  * `capabilitiesOf`'s real, wire-observed data or (when that's empty,
- * uncataloged) `isEmbeddingModelName`'s name check says so. Returns an
- * empty list when every offering is excluded — CL-6351 requires an
- * embedding model never win default-model resolution by default, so
- * there is no "fall back to picking one anyway" case here; a caller with
- * nothing completion-capable to choose from must surface that as its own
- * state (see `hasCompletionCapableModel`), not silently hand back an
- * offering that will fail every chat turn.
+ * uncataloged) `isEmbeddingModelName`'s name check says so. Also drops
+ * Hugging Face / GGUF path names (CL-6744). Returns an empty list when
+ * every offering is excluded — CL-6351 requires an embedding model never
+ * win default-model resolution by default, so there is no "fall back to
+ * picking one anyway" case here; a caller with nothing completion-capable
+ * to choose from must surface that as its own state (see
+ * `hasCompletionCapableModel`), not silently hand back an offering that
+ * will fail every chat turn.
  */
 export function preferCompletionCapable<T>(
   offerings: readonly T[],

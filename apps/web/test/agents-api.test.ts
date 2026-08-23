@@ -93,6 +93,36 @@ describe("listCatalogModels", () => {
     expect(models).toEqual([modelFixture]);
   });
 
+  test("CL-6744: drops embedding-named, hf.co, and .gguf catalog rows from the picker", async () => {
+    const embedding = {
+      ...modelFixture,
+      id: "mdl_embed",
+      canonicalName: "all-minilm",
+      displayName: "all-minilm",
+    };
+    const hfPath = {
+      ...modelFixture,
+      id: "mdl_hf",
+      canonicalName: "hf.co/bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M",
+      displayName: "hf.co/bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M",
+    };
+    const gguf = {
+      ...modelFixture,
+      id: "mdl_gguf",
+      canonicalName: "model.Q4_K_M.gguf",
+      displayName: "model.Q4_K_M.gguf",
+    };
+    stubFetch(() =>
+      json({
+        data: [modelFixture, embedding, hfPath, gguf, disabledModel],
+        nextCursor: null,
+      }),
+    );
+
+    const models = await listCatalogModels("tnt_1");
+    expect(models).toEqual([modelFixture]);
+  });
+
   test("rejects the bare-array discovery shape the wrong endpoint returns", async () => {
     stubFetch(() =>
       json([

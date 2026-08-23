@@ -100,14 +100,17 @@ export type EffectiveInferenceRow = {
  * only annotates provenance by diffing each offering id against
  * `ownOfferingIds`. A row this tenant has restricted (disabled) never
  * appears here — the cascade in `listVisibleOfferings` already dropped it
- * from the resolved read — see `restrictedOfferings` for those.
+ * from the resolved catalog entirely, not merely flagged there. Embedding
+ * models, Hugging Face Hub paths, and bare `.gguf` names are also omitted
+ * (CL-6351 / CL-6744) so Settings' ModelRoutePanel never offers them as
+ * the shared chat default.
  */
 export function buildEffectiveInferenceRows(
   models: readonly ModelInfo[],
   ownOfferingIds: ReadonlySet<string>,
 ): readonly EffectiveInferenceRow[] {
   const rows: EffectiveInferenceRow[] = [];
-  for (const model of models) {
+  for (const model of chatCapableModels(models)) {
     for (const offering of model.offerings) {
       rows.push({
         offeringId: offering.offeringId,
@@ -125,6 +128,33 @@ export function buildEffectiveInferenceRows(
     }
   }
   return rows;
+}
+
+/**
+ * Models safe to offer in a person-facing chat picker or as a shared
+ * default (CL-6351 / CL-6744). Keeps only offerings
+ * {@link preferCompletionCapable} accepts — embedding-named models,
+ * Hugging Face Hub paths (`hf.co/...`), and bare `.gguf` names drop out.
+ * When every offering on a model is excluded the model itself is omitted.
+ */
+export function chatCapableModels(
+  models: readonly ModelInfo[],
+): readonly ModelInfo[] {
+  const kept: ModelInfo[] = [];
+  for (const model of models) {
+    const offerings = preferCompletionCapable(
+      model.offerings,
+      (offering) => offering.capabilities,
+      () => model.canonicalName,
+    );
+    if (offerings.length === 0) continue;
+    if (offerings.length === model.offerings.length) {
+      kept.push(model);
+      continue;
+    }
+    kept.push({ ...model, offerings: [...offerings] });
+  }
+  return kept;
 }
 
 /** This tenant's own offering rows it has restricted (`disabled: true`)

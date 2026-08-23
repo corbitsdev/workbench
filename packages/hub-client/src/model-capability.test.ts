@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import type { Capability } from "@intx/types";
 import {
   hasCompletionCapableModel,
+  isChatPickerModelName,
+  isGgufOrHuggingFacePath,
   preferCompletionCapable,
 } from "./model-capability";
 
@@ -73,6 +75,7 @@ describe("preferCompletionCapable", () => {
       noData("all-minilm"),
       noData("bge-m3"),
       noData("qwen3-embedding"),
+      noData("snowflake-arctic-embed"),
       completion("qwen3:8b"),
     ];
     expect(
@@ -94,6 +97,55 @@ describe("preferCompletionCapable", () => {
         nameOf,
       ).map((o) => o.name),
     ).toEqual(["embeddinggemma:300m"]);
+  });
+
+  // CL-6744: Hugging Face Hub / GGUF path names never win a chat default
+  // or appear in person-facing pickers, even when capability data says
+  // plain-text (Ollama's hf.co pulls often report completion).
+  test("CL-6744: drops hf.co and huggingface.co paths even with plain-text capabilities", () => {
+    const offerings = [
+      completion("hf.co/bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M"),
+      completion(
+        "huggingface.co/mlabonne/Meta-Llama-3.1-8B-Instruct-abliterated-GGUF",
+      ),
+      completion("qwen3:8b"),
+    ];
+    expect(
+      preferCompletionCapable(offerings, capabilitiesOf, nameOf).map(
+        (o) => o.name,
+      ),
+    ).toEqual(["qwen3:8b"]);
+  });
+
+  test("CL-6744: drops bare .gguf path/tag names", () => {
+    const offerings = [
+      noData("Llama-3.2-3B-Instruct-IQ3_M.gguf"),
+      completion("qwen3:8b"),
+    ];
+    expect(
+      preferCompletionCapable(offerings, capabilitiesOf, nameOf).map(
+        (o) => o.name,
+      ),
+    ).toEqual(["qwen3:8b"]);
+  });
+});
+
+describe("isChatPickerModelName / isGgufOrHuggingFacePath", () => {
+  test("CL-6744: name-only gate rejects embeddings, GGUF paths, and HF URIs", () => {
+    expect(isChatPickerModelName("qwen3:8b")).toBe(true);
+    expect(isChatPickerModelName("anthropic/claude-sonnet-4")).toBe(true);
+    expect(isChatPickerModelName("all-minilm")).toBe(false);
+    expect(isChatPickerModelName("nomic-embed-text")).toBe(false);
+    expect(isChatPickerModelName("qwen3-embedding")).toBe(false);
+    expect(isChatPickerModelName("snowflake-arctic-embed")).toBe(false);
+    expect(
+      isChatPickerModelName(
+        "hf.co/bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M",
+      ),
+    ).toBe(false);
+    expect(isChatPickerModelName("model.Q4_K_M.gguf")).toBe(false);
+    expect(isGgufOrHuggingFacePath("hf.co/org/repo")).toBe(true);
+    expect(isGgufOrHuggingFacePath("qwen3:8b")).toBe(false);
   });
 });
 
@@ -130,6 +182,19 @@ describe("hasCompletionCapableModel", () => {
 
   test("a chat-capable model is selected as the default when both an embeddinggemma pull and a chat model are present", () => {
     const offerings = [noData("embeddinggemma:300m"), completion("qwen3:8b")];
+    const chatDefault = preferCompletionCapable(
+      offerings,
+      capabilitiesOf,
+      nameOf,
+    )[0];
+    expect(chatDefault?.name).toBe("qwen3:8b");
+  });
+
+  test("CL-6744: prefers a local chat model over an alphabetically-earlier hf.co pull on refresh", () => {
+    const offerings = [
+      completion("hf.co/bartowski/Llama-3.2-1B-Instruct-GGUF"),
+      completion("qwen3:8b"),
+    ];
     const chatDefault = preferCompletionCapable(
       offerings,
       capabilitiesOf,
