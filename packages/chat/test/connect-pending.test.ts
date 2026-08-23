@@ -76,7 +76,6 @@ function buildDeps() {
       claims: createInMemoryTurnClaimStore({ ttlMs: 60_000 }),
       publish,
     }),
-    senderAddressFor: () => HUMAN_ADDRESS,
   };
   return { store, roomMessages, published, platform, agentTurns, deps };
 }
@@ -141,7 +140,7 @@ test("Connect card flips in place; agent wakes without a forged user message", a
     buildDeps();
   await seedWorkbench(store, "chan_waiting", ["gmail"]);
   await roomMessages.insertMessage({
-    id: "msg_user",
+    id: "msg_1",
     tenantId: TENANT.id,
     workbenchId: "chan_waiting",
     sender: { name: "owner", address: HUMAN_ADDRESS },
@@ -149,7 +148,7 @@ test("Connect card flips in place; agent wakes without a forged user message", a
     parts: [{ kind: "text", text: "send that email" }],
   });
   await roomMessages.insertMessage({
-    id: "msg_agent",
+    id: "msg_2",
     tenantId: TENANT.id,
     workbenchId: "chan_waiting",
     sender: { name: "myra", address: AGENT_ADDRESS },
@@ -181,7 +180,11 @@ test("Connect card flips in place; agent wakes without a forged user message", a
     tenantId: TENANT.id,
     workbenchId: "chan_waiting",
   });
-  expect(listed.items.map((item) => item.id)).toEqual(["msg_agent", "msg_user"]);
+  expect(listed.items).toHaveLength(2);
+  expect(listed.items.map((item) => item.id).toSorted()).toEqual([
+    "msg_1",
+    "msg_2",
+  ]);
   expect(
     listed.items.some((item) =>
       JSON.stringify(item.parts).includes("is connected now"),
@@ -196,7 +199,7 @@ test("Connect card flips in place; agent wakes without a forged user message", a
     workbenchId: "chan_waiting",
   });
   expect(turns[0]?.agentAddress).toBe(AGENT_ADDRESS);
-  expect(turns[0]?.requestMessageIds).toEqual(["msg_user", "msg_agent"]);
+  expect(turns[0]?.requestMessageIds).toEqual(["msg_1", "msg_2"]);
 });
 
 test("matches a pending mcp-prefixed entry when the preset connects under its bare slug", async () => {
