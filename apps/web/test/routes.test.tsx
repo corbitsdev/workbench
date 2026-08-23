@@ -17,7 +17,6 @@ import {
   APP_ROUTES,
   matchesRoute,
   NAV_ROUTES,
-  PLUGIN_DETAIL_PATH,
   ROUTINE_DETAIL_PATH,
   SKILL_DETAIL_PATH,
 } from "../src/routes";
@@ -26,12 +25,12 @@ import type { SessionState } from "../src/session";
 /** Slug-addressed detail routes (CL-6412). The generic render loop below
  * renders each `route.path` verbatim, which for these is the pattern
  * (`/agents/:slug`) rather than a real path - they get their own render
- * tests instead. */
+ * tests instead. Plugin detail (`/plugins/:slug`) is intentionally absent
+ * until CL-6417 — the stub was unlinked in CL-6817. */
 const DETAIL_ROUTE_PATHS = new Set([
   ROUTINE_DETAIL_PATH,
   AGENT_DETAIL_PATH,
   SKILL_DETAIL_PATH,
-  PLUGIN_DETAIL_PATH,
 ]);
 
 /** Legacy routes that only redirect - `/library` bounces to `/files`
@@ -160,7 +159,6 @@ describe("route table", () => {
       "/settings/skills",
       "/insights",
       "/evals",
-      "/plugins/:slug",
       "/plugins",
       "/settings",
     ]);
@@ -221,7 +219,6 @@ describe("route table", () => {
   test("a slug segment resolves to the entity's own detail route (CL-6412)", () => {
     expect(matchesRoute(AGENT_DETAIL_PATH, "/agents/triage-bot")).toBe(true);
     expect(matchesRoute(SKILL_DETAIL_PATH, "/skills/pr-review")).toBe(true);
-    expect(matchesRoute(PLUGIN_DETAIL_PATH, "/plugins/linear")).toBe(true);
     expect(matchesRoute(ROUTINE_DETAIL_PATH, "/routines/weekly-digest")).toBe(
       true,
     );
@@ -242,7 +239,6 @@ describe("route table", () => {
       APP_ROUTES.find((candidate) => matchesRoute(candidate.path, path))?.path;
     expect(routeFor("/agents/triage-bot")).toBe(AGENT_DETAIL_PATH);
     expect(routeFor("/skills/pr-review")).toBe(SKILL_DETAIL_PATH);
-    expect(routeFor("/plugins/linear")).toBe(PLUGIN_DETAIL_PATH);
     expect(routeFor("/routines/weekly-digest")).toBe(ROUTINE_DETAIL_PATH);
     expect(routeFor("/agents/wfd_1")).toBe("/agents");
     expect(routeFor("/skills/skill_1")).toBe("/skills");
@@ -251,11 +247,13 @@ describe("route table", () => {
     expect(routeFor("/routines/rtn_1")).toBe(ROUTINE_DETAIL_PATH);
   });
 
-  test("the Plugins roster owns its bare path and slug details, nothing else", () => {
+  test("the Plugins roster owns only its bare path until CL-6417 lands a detail page (CL-6817)", () => {
     const routeFor = (path: string) =>
       APP_ROUTES.find((candidate) => matchesRoute(candidate.path, path))?.path;
     expect(routeFor("/plugins")).toBe("/plugins");
-    expect(routeFor("/plugins/linear")).toBe(PLUGIN_DETAIL_PATH);
+    // No stub detail: a slug under /plugins is unroutable, not a
+    // "still being built" placeholder (CL-6817).
+    expect(routeFor("/plugins/linear")).toBeUndefined();
     expect(routeFor("/plugins/Linear")).toBeUndefined();
     expect(routeFor("/plugins/linear/settings")).toBeUndefined();
   });
@@ -267,7 +265,7 @@ describe("route table", () => {
     // A segment that cannot be decoded names no routine, so the detail
     // route declines it and the roster answers instead.
     expect(routeFor("/routines/%E0%A4%A")).toBe("/routines");
-    expect(matchesRoute(PLUGIN_DETAIL_PATH, "/plugins/%")).toBe(false);
+    expect(matchesRoute("/plugins", "/plugins/%")).toBe(false);
     expect(matchesRoute(ROUTINE_DETAIL_PATH, "/routines/%E0%A4%A")).toBe(false);
     expect(matchesRoute(AGENT_DETAIL_PATH, "/agents/%2Ftriage-bot")).toBe(
       false,
@@ -277,7 +275,7 @@ describe("route table", () => {
   test("a detail path keeps its roster's sidebar row lit", () => {
     expect(matchesRoute("/agents", "/agents/triage-bot")).toBe(true);
     expect(matchesRoute("/skills", "/skills/pr-review")).toBe(true);
-    expect(matchesRoute("/plugins", "/plugins/linear")).toBe(true);
+    expect(matchesRoute("/plugins", "/plugins/linear")).toBe(false);
     expect(matchesRoute("/routines", "/routines/weekly-digest")).toBe(true);
   });
 
@@ -368,15 +366,15 @@ describe("routes render", () => {
     expect(activeFooterLabel(markup)).toBe("Skills");
   });
 
-  test.each([["/plugins/linear", "linear", "Plugins"]])(
-    "%s titles the detail placeholder %s without lighting a Plugins footer row",
-    async (path, slug, rosterLabel) => {
-      const markup = await renderApp(path);
-      expect(stagePageTitle(markup)).toBe(slug);
-      expect(markup).toContain(`Back to ${rosterLabel}`);
-      expect(activeFooterLabel(markup)).toBeUndefined();
-    },
-  );
+  // CL-6817: the plugin detail stub ("still being built") is gone until
+  // CL-6417 ships a real page. A slug under /plugins must not promise one.
+  test("/plugins/<slug> is not-found, never a still-being-built stub (CL-6817)", async () => {
+    const markup = await renderApp("/plugins/linear");
+    expect(markup).toContain("Page not found");
+    expect(markup).not.toContain("still being built");
+    expect(markup).not.toContain("Back to Plugins");
+    expect(activeFooterLabel(markup)).toBeUndefined();
+  });
 
   test("a routine segment that resolves to nothing still titles itself and lights Routines", async () => {
     // Routines is a real page now, not a placeholder: with no routine
