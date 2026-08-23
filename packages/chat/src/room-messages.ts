@@ -14,7 +14,13 @@ import { and, asc, count, desc, eq, gt, inArray, lt, or } from "drizzle-orm";
 import type { Part } from "./parts";
 import { workbenchMessages } from "./schema";
 import type { ChatDb } from "./store";
-import { consumerFacingInferenceText } from "./consumer-inference-text";
+import {
+  activityPreviewText,
+  CONSUMER_INFERENCE_FAILURE_NOTICE,
+  consumerFacingInferenceText,
+  isClassifiedInferenceFailureText,
+} from "./consumer-inference-text";
+
 import { ChatMessageEventData } from "./stream-events";
 import type { WorkbenchSubscriberRegistry } from "./workbench-events";
 
@@ -99,6 +105,8 @@ export interface RoomMessageStore {
  * has always read a workbench in. */
 const PAGE_SIZE = 50;
 
+/** Cap on how far back listActivity walks for a last-good preview (CL-6735). */
+const PREVIEW_LOOKBACK = 20;
 const PREVIEW_MAX_LENGTH = 80;
 
 let lastMintedAt = 0;
@@ -128,10 +136,16 @@ function newMessageId(): string {
 /**
  * A bounded preview of a message for a workbench-list row: its text
  * parts, whitespace-collapsed and truncated. An attachment-only message
- * previews as nothing rather than a fabricated placeholder.
+ * previews as nothing rather than a fabricated placeholder. Failed turns
+ * and classified inference-failure paragraphs (CL-6735) collapse to the
+ * short consumer notice — never HTTP status, raw provider dumps, or the
+ * full credential-error sentence.
  */
 export function previewOf(parts: readonly Part[]): string {
-  const text = consumerFacingInferenceText(
+  if (isFailurePreviewParts(parts)) {
+    return CONSUMER_INFERENCE_FAILURE_NOTICE;
+  }
+  const text = activityPreviewText(
     parts
       .filter((part): part is Extract<Part, { kind: "text" }> => {
         return part.kind === "text";
@@ -144,6 +158,55 @@ export function previewOf(parts: readonly Part[]): string {
   return text.length > PREVIEW_MAX_LENGTH
     ? `${text.slice(0, PREVIEW_MAX_LENGTH).trimEnd()}…`
     : text;
+}
+
+/** True when these parts must not appear as a bench-list preview. */
+function isFailurePreviewParts(parts: readonly Part[]): boolean {
+  if (parts.some((part) => part.kind === "text" && part.turnFailed === true)) {
+    return true;
+  }
+  const joined = parts
+    .filter((part): part is Extract<Part, { kind: "text" }> => {
+      return part.kind === "text";
+    })
+    .map((part) => part.text)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (joined.length === 0) return false;
+  return isClassifiedInferenceFailureText(consumerFacingInferenceText(joined));
+}
+
+/**
+ * Pick bench-list preview text from newest-first messages: skip failed
+ * turns and classified failure paragraphs, keep the last good human/agent
+ * text, and fall back to the short consumer notice when nothing else
+ * qualifies (CL-6735). Does not skip ordinary user/agent replies
+ * (CL-6795 is separate).
+ */
+function activityPreviewFromNewestFirst(
+  newestFirst: readonly RoomMessage[],
+): string {
+  for (const message of newestFirst) {
+    if (isFailurePreviewParts(message.parts)) continue;
+    const preview = previewOf(message.parts);
+    if (preview.length > 0) return preview;
+  }
+  const newest = newestFirst[0];
+  if (newest !== undefined && isFailurePreviewParts(newest.parts)) {
+    return CONSUMER_INFERENCE_FAILURE_NOTICE;
+  }
+  return "";
+}
+
+function summaryOf(
+  newest: RoomMessage,
+  unreadCount: number,
+  newestFirstForPreview: readonly RoomMessage[] = [newest],
+): RoomActivitySummary {
+  const preview = activityPreviewFromNewestFirst(newestFirstForPreview);
+  const base = { unreadCount, lastActivityAt: newest.createdAt };
+  return preview.length === 0 ? base : { ...base, preview };
 }
 
 /**
@@ -212,15 +275,6 @@ function pageOf(newestFirst: readonly RoomMessage[]): ListedRoomMessages {
   return newestFirst.length > PAGE_SIZE && last !== undefined
     ? { items, nextCursor: encodeCursor(last) }
     : { items };
-}
-
-function summaryOf(
-  newest: RoomMessage,
-  unreadCount: number,
-): RoomActivitySummary {
-  const preview = previewOf(newest.parts);
-  const base = { unreadCount, lastActivityAt: newest.createdAt };
-  return preview.length === 0 ? base : { ...base, preview };
 }
 
 interface MessageRow {
@@ -374,9 +428,31 @@ export function createDrizzleRoomMessageStore(
       const result: Record<string, RoomActivitySummary> = {};
       for (const row of newestRows) {
         const newest = toRoomMessage(row as MessageRow);
+        const unreadCount = unreadByWorkbenchId.get(newest.workbenchId) ?? 0;
+        let newestFirstForPreview: readonly RoomMessage[] = [newest];
+        if (isFailurePreviewParts(newest.parts)) {
+          const recentRows = await db
+            .select()
+            .from(workbenchMessages)
+            .where(
+              and(
+                inTenant,
+                eq(workbenchMessages.workbenchId, newest.workbenchId),
+              ),
+            )
+            .orderBy(
+              desc(workbenchMessages.createdAt),
+              desc(workbenchMessages.id),
+            )
+            .limit(PREVIEW_LOOKBACK);
+          newestFirstForPreview = recentRows.map((recent) =>
+            toRoomMessage(recent as MessageRow),
+          );
+        }
         result[newest.workbenchId] = summaryOf(
           newest,
-          unreadByWorkbenchId.get(newest.workbenchId) ?? 0,
+          unreadCount,
+          newestFirstForPreview,
         );
       }
       return result;
@@ -451,7 +527,18 @@ export function createInMemoryRoomMessageStore(): RoomMessageStore {
             workbench.sinceCreatedAt === undefined ||
             message.createdAt > workbench.sinceCreatedAt,
         ).length;
-        result[workbench.workbenchId] = summaryOf(newest, unreadCount);
+        const newestFirst = [...messages]
+          .sort((left, right) =>
+            left.createdAt === right.createdAt
+              ? right.id.localeCompare(left.id)
+              : right.createdAt.localeCompare(left.createdAt),
+          )
+          .slice(0, PREVIEW_LOOKBACK);
+        result[workbench.workbenchId] = summaryOf(
+          newest,
+          unreadCount,
+          newestFirst,
+        );
       }
       return result;
     },
