@@ -161,9 +161,9 @@ describe("CreateAgentPanel happy path", () => {
   // workbench mint — title and CTA must use the agent noun.
   test("dialog title and primary CTA use the agent noun, not workbench", async () => {
     await mount();
-    const heading = [...document.body.querySelectorAll("h2, [role='heading']")].find(
-      (el) => (el.textContent ?? "").trim() === "New agent",
-    );
+    const heading = [
+      ...document.body.querySelectorAll("h2, [role='heading']"),
+    ].find((el) => (el.textContent ?? "").trim() === "New agent");
     expect(heading).toBeDefined();
     expect(document.body.textContent).not.toContain("New workbench");
     const cta = findButton("Get started");
