@@ -7,7 +7,7 @@
 //      resource labels ("agent workflows"), not the raw slug
 //      ("workflow-definition") — the slug survives only as a tooltip.
 //   3. target-type and resource are guided KindCards, matching the same
-//      who -> what -> effect card treatment CreateCredentialDialog uses.
+//      who -> what -> effect card treatment KindCards uses.
 
 import { describe, expect, test } from "bun:test";
 import { act } from "react";
