@@ -1,37 +1,15 @@
-// The bench surface's one seam to Interchange's native tenancy routes
-// (see vendor/intx/hub-api/src/routes/tenants.ts and principals.ts). Every
-// fetch the bench/* components make goes through a function here, and every
-// response is parsed with an arktype schema from `@intx/types` — the one
-// real wire contract, never a hand-copied second one — at the boundary.
+// The one HTTP seam this package still owns: asking which of the caller's
+// tenant ids are workbench child tenancies. Member/invite/create clients
+// lived here while the dead switcher and MembersPanel did; those UIs are
+// gone (creation is `/new`, people management is settings-ui's PeopleSection),
+// so the orphan invite/create/list clients went with them.
 
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
-import {
-  PrincipalResponse,
-  PrincipalSummary,
-  TenantResponse,
-  paginatedSchema,
-} from "@intx/types";
+import { PrincipalSummary } from "@intx/types";
 import { UnauthenticatedError } from "@corbits/api-query";
-import { getBenchSettings, patchBenchSettings } from "@corbits/bench/client";
-import type {
-  BenchSettingsPatch,
-  BenchSettingsResponse,
-} from "@corbits/bench/client";
-
-// Purpose and type aren't part of Interchange's native tenant shape (see
-// this file's header note), so they come from `@corbits/bench`'s own
-// side-table client — re-exported here rather than imported directly by
-// components, so `bench-ui`'s components keep this one seam.
-export { getBenchSettings, patchBenchSettings };
-export type { BenchSettingsPatch, BenchSettingsResponse };
 
 export type BenchMembership = typeof PrincipalSummary.infer;
-export type BenchMember = typeof PrincipalResponse.infer;
-export type Bench = typeof TenantResponse.infer;
-
-const MembershipsPage = paginatedSchema(PrincipalSummary);
-const MembersPage = paginatedSchema(PrincipalResponse);
 
 export class BenchApiError extends Error {
   constructor(
@@ -77,65 +55,6 @@ async function request<T>(
     );
   }
   return parsed;
-}
-
-/** The caller's own memberships, one row per bench they belong to. Only the
- * first page — a person on more than a page of benches is not a case this
- * surface handles yet, matching the same simplification `apps/web`'s
- * settings page already makes over this same endpoint. */
-export function listMyMemberships(): Promise<readonly BenchMembership[]> {
-  return request("/api/me/principals", MembershipsPage).then(
-    (page) => page.data,
-  );
-}
-
-export type CreateBenchInput = {
-  readonly name: string;
-  readonly slug: string;
-  readonly parentId?: string;
-};
-
-/**
- * Creates a bench. A `parentId` (creating a sub-workbench under an
- * existing one) routes through `@workbench/access-policy`'s gated
- * surface instead of the native route directly — that surface checks
- * the parent's own `tenancyCreation` policy against the caller's roles
- * before ever calling `POST /api/tenants` itself. A bare top-level
- * bench (no `parentId`) is unaffected and still hits the native route.
- */
-export function createBench(input: CreateBenchInput): Promise<Bench> {
-  if (input.parentId !== undefined) {
-    return request(
-      `/api/tenants/${input.parentId}/access-policy/child-tenants`,
-      TenantResponse,
-      {
-        method: "POST",
-        body: JSON.stringify({ name: input.name, slug: input.slug }),
-      },
-    );
-  }
-  return request("/api/tenants", TenantResponse, {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}
-
-/** Every member of one bench. Only the first page, same simplification as
- * `listMyMemberships`. */
-export function listMembers(tenantId: string): Promise<readonly BenchMember[]> {
-  return request(`/api/tenants/${tenantId}/principals`, MembersPage).then(
-    (page) => page.data,
-  );
-}
-
-export function inviteMember(
-  tenantId: string,
-  email: string,
-): Promise<BenchMember> {
-  return request(`/api/tenants/${tenantId}/members/invite`, PrincipalResponse, {
-    method: "POST",
-    body: JSON.stringify({ email }),
-  });
 }
 
 const WorkbenchTenantIds = type({

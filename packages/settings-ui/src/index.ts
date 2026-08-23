@@ -80,7 +80,6 @@ export type { SectionAccess, TenancyAccess } from "./access";
 export {
   TenancyApiError,
   listPrincipals,
-  invitePrincipal,
   updatePrincipalStatus,
   removePrincipal,
   listRoles,
