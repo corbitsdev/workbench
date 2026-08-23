@@ -12,6 +12,7 @@ function provider(overrides: Partial<Provider> = {}): Provider {
     id: "provider-1",
     name: "linear",
     plugin: "linear",
+    credentialId: null,
     ...overrides,
   } as Provider;
 }
@@ -39,6 +40,24 @@ describe("connectorStatus", () => {
   test("not_connected when a provider exists but no credential points at it", () => {
     const result = connectorStatus("linear", [], [provider()]);
     expect(result.status).toBe("not_connected");
+  });
+
+  test("connected when an inherited provider points at an ancestor credential", () => {
+    const result = connectorStatus(
+      "linear",
+      [],
+      [provider({ credentialId: "parent-cred-1" })],
+    );
+    expect(result.status).toBe("connected");
+  });
+
+  test("connected when local Ollama has an active credential", () => {
+    const result = connectorStatus(
+      "ollama",
+      [credential({ providerId: "ollama-provider", status: "active" })],
+      [provider({ id: "ollama-provider", name: "ollama", plugin: "ollama" })],
+    );
+    expect(result.status).toBe("connected");
   });
 
   test("connected when the newest credential is active", () => {
@@ -91,7 +110,7 @@ describe("connectorStatus", () => {
     const result = connectorStatus("linear", [older, newer], [provider()]);
     expect(result.status).toBe("connected");
     if (result.status === "connected") {
-      expect(result.credential.id).toBe("cred-new");
+      expect(result.credential?.id).toBe("cred-new");
     }
   });
 
