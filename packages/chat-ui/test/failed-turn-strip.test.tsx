@@ -5,12 +5,22 @@
 // row (`.chat-turn-failed`, CL-6376) instead of an ordinary text bubble —
 // or, before the CL-6376 redesign, `PrFailedTurnStrip`'s bordered banner.
 import { afterEach, describe, expect, test } from "bun:test";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import type { MessageItem } from "../src/api";
 import { WorkbenchTimeline } from "../src/timeline";
+
+if (typeof document === "undefined") {
+  GlobalRegistrator.register();
+}
+
+declare global {
+  var IS_REACT_ACT_ENVIRONMENT: boolean;
+}
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -185,6 +195,56 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
     expect(detail?.textContent).not.toBe(
       "No reply arrived — the agent may be unavailable.",
     );
+  });
+
+  test("the expanded detail never shows HTTP status or a raw provider dump", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const items: MessageItem[] = [
+      {
+        id: "msg_ok",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        parts: [{ kind: "text", text: "hi @echo" }],
+        sender: { name: null, address: "prn_alice@agents.example" },
+      },
+      {
+        id: "msg_notice",
+        createdAt: "2026-01-01T00:00:05.000Z",
+        parts: [
+          {
+            kind: "text",
+            text: "This agent could not complete your request due to a credential error [HTTP 401]: API key is invalid.",
+            turnFailed: true,
+          },
+        ],
+        sender: { name: null, address: "ins_echo1@agents.example" },
+      },
+    ];
+    await act(async () => {
+      root?.render(
+        <WorkbenchTimeline
+          items={items}
+          participants={[
+            { address: "ins_echo1@agents.example", handle: "echo" },
+          ]}
+        />,
+      );
+    });
+
+    act(() => {
+      container
+        ?.querySelector(".chat-turn-failed-disclosure")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const detail = container.querySelector(".chat-turn-failed-detail");
+    expect(detail?.textContent).toBe(
+      "This agent could not complete your request due to a credential error",
+    );
+    expect(detail?.textContent).not.toMatch(/\[HTTP/);
+    expect(detail?.textContent).not.toContain("401");
+    expect(detail?.textContent).not.toContain("API key is invalid");
   });
 
   test("Retry auto-resends the recovered request text — no composer round trip", async () => {

@@ -498,6 +498,22 @@ describe("WorkbenchTimeline", () => {
     expect(markup).toContain("Fix this connection");
   });
 
+  test("never renders HTTP status or the raw provider message on a classified failure reply", () => {
+    const markup = renderToStaticMarkup(
+      <WorkbenchTimeline
+        items={classifiedFailureItems}
+        onFixConnection={() => {}}
+      />,
+    );
+    expect(markup).not.toMatch(/\[HTTP/);
+    expect(markup).not.toContain("401");
+    expect(markup).not.toContain("invalid api key");
+    expect(markup).toContain(
+      "This agent could not complete your request due to a credential error",
+    );
+    expect(markup).toContain("Fix this connection");
+  });
+
   test("renders Fix this connection as a react-ui outline button, not a bare link", () => {
     const markup = renderToStaticMarkup(
       <WorkbenchTimeline
