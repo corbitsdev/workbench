@@ -36,9 +36,18 @@ describe("connectorStatus", () => {
     expect(result.status).toBe("not_connected");
   });
 
-  test("not_connected when a provider exists but no credential points at it", () => {
+  test("connected when a provider exists even if the credential list omits inherited credentials", () => {
     const result = connectorStatus("linear", [], [provider()]);
-    expect(result.status).toBe("not_connected");
+    expect(result.status).toBe("connected");
+  });
+
+  test("connected when local Ollama has an active credential", () => {
+    const result = connectorStatus(
+      "ollama",
+      [credential({ providerId: "ollama-provider", status: "active" })],
+      [provider({ id: "ollama-provider", name: "ollama", plugin: "ollama" })],
+    );
+    expect(result.status).toBe("connected");
   });
 
   test("connected when the newest credential is active", () => {
@@ -91,14 +100,14 @@ describe("connectorStatus", () => {
     const result = connectorStatus("linear", [older, newer], [provider()]);
     expect(result.status).toBe("connected");
     if (result.status === "connected") {
-      expect(result.credential.id).toBe("cred-new");
+      expect(result.credential?.id).toBe("cred-new");
     }
   });
 
-  test("ignores credentials belonging to a different provider", () => {
+  test("keeps the provider connected when only unrelated credentials are listed", () => {
     const other = credential({ providerId: "provider-2", status: "active" });
     const result = connectorStatus("linear", [other], [provider()]);
-    expect(result.status).toBe("not_connected");
+    expect(result.status).toBe("connected");
   });
 
   // Regression for the bug where the card grid matched on

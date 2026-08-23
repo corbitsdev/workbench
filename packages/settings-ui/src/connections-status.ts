@@ -8,7 +8,7 @@ export type ConnectorStatus = "not_connected" | "connected" | "needs_attention";
 
 export type ConnectorStatusResult =
   | { readonly status: "not_connected" }
-  | { readonly status: "connected"; readonly credential: Credential }
+  | { readonly status: "connected"; readonly credential?: Credential }
   | { readonly status: "needs_attention"; readonly credential: Credential };
 
 /**
@@ -35,7 +35,7 @@ export function connectorStatus(
   if (provider === undefined) return { status: "not_connected" };
 
   const matches = credentials.filter((c) => c.providerId === provider.id);
-  if (matches.length === 0) return { status: "not_connected" };
+  if (matches.length === 0) return { status: "connected" };
 
   const newest = matches.reduce((latest, candidate) => {
     const latestKey = latest.createdAt ?? latest.updatedAt;
