@@ -1015,21 +1015,22 @@ function ChatWorkspaceInner({
     onSettingsOpenChange,
   ]);
 
-  // CL-6796: a routed id absent from the resolved workbench list is already
-  // gone — tell the host (drop Recents) without waiting on a messages 404,
-  // so the fail-closed empty state can report the dead id immediately.
+  // CL-6796: a routed id missing from the ready workbench list is NOT proof
+  // the room is gone — create→navigate races the React Query list cache, so
+  // a freshly created id is absent until refetch. Only an authoritative
+  // messages/workbench fetch 404 marks the room gone. While the list miss
+  // coincides with messages still loading, hold the loading treatment so we
+  // neither flash not-found nor paint Invite / composer / Untitled chrome.
   const workbenchMissingFromList =
     workbenchesState.kind === "ready" &&
     activeWorkbenchId !== null &&
     activeWorkbench === undefined;
-  useEffect(() => {
-    if (!workbenchMissingFromList || activeWorkbenchId === null) return;
-    onWorkbenchNotFound?.(activeWorkbenchId);
-  }, [workbenchMissingFromList, activeWorkbenchId, onWorkbenchNotFound]);
-
   const workbenchGone =
-    workbenchMissingFromList ||
-    (messagesState.kind === "error" && messagesState.workbenchNotFound);
+    messagesState.kind === "error" && messagesState.workbenchNotFound;
+  const awaitingWorkbenchEvidence =
+    workbenchMissingFromList &&
+    !workbenchGone &&
+    messagesState.kind !== "ready";
 
   // Who's live in this workbench right now, beyond the static participants
   // list — derived from this workbench's own `chat.presence`/
@@ -1147,7 +1148,8 @@ function ChatWorkspaceInner({
           ) : workbenchGone ? (
             // CL-6796: fail closed — never mount Invite / composer / room
             // header over a missing or 404'd workbench. Recovery is the
-            // whole stage.
+            // whole stage. Authoritative evidence only (messages 404), never
+            // a stale ready-list miss alone.
             <EmptyState
               icon={<WarningCircle />}
               title={CHAT_STRINGS.workbenchNotFoundTitle}
@@ -1162,6 +1164,11 @@ function ChatWorkspaceInner({
                   : {}),
               })}
             />
+          ) : awaitingWorkbenchEvidence ? (
+            // List cache is ready but lacks this id — wait for messages to
+            // prove the room exists (create→navigate) or 404 (true miss)
+            // before painting room chrome or the not-found empty state.
+            <WorkbenchLoadingState />
           ) : (
             <>
               <div className="chat-workbench-header">
@@ -1486,7 +1493,9 @@ function ChatWorkspaceInner({
           )}
         </div>
       </div>
-      {activeWorkbenchId !== null && !workbenchGone ? (
+      {activeWorkbenchId !== null &&
+      !workbenchGone &&
+      !awaitingWorkbenchEvidence ? (
         <InviteAgentDialog
           open={inviteDialogOpen}
           onOpenChange={setInviteDialogOpen}

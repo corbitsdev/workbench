@@ -170,8 +170,50 @@ describe("ChatWorkspace settings surface", () => {
     harness.unmount();
   });
 
-  test("settingsOpen for a workbench id absent from the resolved list closes settings and shows not-found, never room chrome", async () => {
-    stubFetch();
+  test("settingsOpen for a workbench id that 404s closes settings and shows not-found, never room chrome", async () => {
+    // Authoritative miss is the messages/workbench fetch 404 — not mere
+    // absence from a ready list (that alone is the create→navigate stale-
+    // cache race CL-6796 must not treat as gone).
+    globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
+        return json({ items: [WORKBENCH_WIRE] });
+      }
+      if (/\/chat\/workbenches\?kind=chat$/.test(path))
+        return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
+        return json({ rootThreadId: "", items: [] });
+      }
+      if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
+        return new Response(JSON.stringify({ error: "not found" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
+      if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
+        return json({ items: [] });
+      }
+      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path))
+        return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
+        return json({
+          ...WORKBENCH_WIRE,
+          settings: {},
+          contextWindow: { value: 20, source: "inherit" },
+        });
+      }
+      if (/\/chat\/bench\/settings$/.test(path)) {
+        return json({ settings: {}, contextWindow: 20 });
+      }
+      throw new Error(`unstubbed fetch: ${path}`);
+    }) as typeof fetch;
     const settingsOpenChanges: boolean[] = [];
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
@@ -1046,9 +1088,9 @@ describe("a workbench-level 404 offers a way out instead of retrying forever", (
   });
 
   test("a non-workbench id never mounts Invite, composer, or Untitled chrome before not-found", async () => {
-    // CL-6796: opening a tenant id as `/w/:id` — the id is absent from the
-    // workbench list, so the room must fail closed to the empty state without
-    // ever painting conversation chrome.
+    // CL-6796: opening a tenant id as `/w/:id` — messages 404 is the
+    // authoritative miss, so the room must fail closed to the empty state
+    // without ever painting conversation chrome.
     stubFetchWithMissingWorkbench();
     const notFoundIds: string[] = [];
     const harness = await mount({
@@ -1075,6 +1117,94 @@ describe("a workbench-level 404 offers a way out instead of retrying forever", (
     expect(harness.container.querySelector("textarea")).toBeNull();
     expect(harness.container.textContent).toContain("Mission Control");
     expect(harness.container.textContent).toContain("New workbench");
+
+    harness.unmount();
+  });
+
+  test("a ready list lacking the routed id does not flash not-found while messages are still loading", async () => {
+    // CL-6796 critique: create→navigate leaves the React Query workbench
+    // list ready but stale — the new id is absent until refetch. That alone
+    // must not paint the not-found empty state; loading is fine until the
+    // messages fetch proves presence or 404s.
+    let resolveMessages: ((response: Response) => void) | undefined;
+    const messagesGate = new Promise<Response>((resolve) => {
+      resolveMessages = resolve;
+    });
+    globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
+        // Stale ready cache: existing workbench only — not the routed id.
+        return json({ items: [WORKBENCH_WIRE] });
+      }
+      if (/\/chat\/workbenches\?kind=chat$/.test(path))
+        return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
+        return json({ rootThreadId: "", items: [] });
+      }
+      if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
+        return messagesGate;
+      }
+      if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
+      if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
+        return json({ items: [] });
+      }
+      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path))
+        return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
+        return json({
+          id: "ch_fresh",
+          title: "Fresh room",
+          kind: "workbench",
+          pinned: false,
+          participants: [],
+          settings: {},
+          contextWindow: { value: 20, source: "inherit" },
+        });
+      }
+      if (/\/chat\/bench\/settings$/.test(path)) {
+        return json({ settings: {}, contextWindow: 20 });
+      }
+      throw new Error(`unstubbed fetch: ${path}`);
+    }) as typeof fetch;
+
+    const notFoundIds: string[] = [];
+    const harness = await mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "ch_fresh",
+      onWorkbenchNotFound: (workbenchId: string) =>
+        notFoundIds.push(workbenchId),
+      onGoToMissionControl: () => undefined,
+      onNewWorkbench: () => undefined,
+    });
+    await harness.settle();
+
+    expect(harness.container.textContent).not.toContain(
+      "This workbench isn't here anymore",
+    );
+    expect(notFoundIds).toEqual([]);
+    expect(harness.container.textContent).not.toContain("Invite agent");
+    expect(harness.container.querySelector("textarea")).toBeNull();
+
+    await act(async () => {
+      resolveMessages?.(
+        new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      await sleep(30);
+    });
+
+    expect(harness.container.textContent).not.toContain(
+      "This workbench isn't here anymore",
+    );
+    expect(notFoundIds).toEqual([]);
 
     harness.unmount();
   });
