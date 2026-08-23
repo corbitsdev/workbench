@@ -21,11 +21,14 @@ Top to bottom:
    page-scoped ever renders in this body; it lists conversations, not
    product sections.
 3. **Footer rail** — Mission Control is pinned above the rail as its own
-   row; below it the rail reads Routines, Files, Skills, Agents, Plugins,
-   Insights, Evals, in that order. These are utility destinations, not
-   workbenches, and each is its own top-level route (`/mission-control`,
-   `/routines`, `/files`, `/skills`, `/agents`, `/plugins`, `/insights`,
-   `/evals`).
+   row. The first-run rail below it is Routines, Files, Skills, Agents, in
+   that order (CL-6765). Insights and Evals join that rail only when
+   existing reads prove real usage (turns > 0 / at least one eval run);
+   Plugins stays off the rail entirely and is reached by deep link or the
+   command palette. These are utility destinations, not workbenches, and
+   each is its own top-level route (`/mission-control`, `/routines`,
+   `/files`, `/skills`, `/agents`; plus `/insights`, `/evals`, `/plugins`
+   when reached).
 4. **Account row** — avatar and name, anchoring the rail, plus a separate
    settings icon beside it. The avatar+name half is a menu trigger
    (weekly usage, feedback, log out) that pops upward; the gear is a
@@ -87,14 +90,17 @@ third pattern; three ways to list things is a defect, not a design system.
 ## Detail Pages
 
 Anything with enough content to browse gets a full page, not a panel:
-`/agents/<slug>`, `/skills/<slug>`, `/plugins/<slug>`, `/routines/<slug>`,
+`/agents/<slug>`, `/skills/<slug>`, `/plugins/<slug>`, `/routines/<id>`,
 `/files/<id>`, `/evals/<run-id>`.
 
 Slugs are immutable once assigned and tenant-unique, enforced as a hard
 database constraint — never a soft convention a migration can violate.
-Where uniqueness can't be guaranteed (import races, external IDs), the
-route falls back to an opaque ID rather than inventing a slug that might
-collide.
+Where uniqueness can't be guaranteed (import races, external IDs), or
+where the entity has no slug column at all (routines today), the route
+uses an opaque ID rather than inventing a slug that might collide. A
+routine name still resolves as a convenience — `/routines/<name>`
+redirects to `/routines/<id>` so bookmarks and shared links keep the
+address that survives a rename — but the id is the canonical path.
 
 Panels (slide-overs, popovers) are for quick-peek only — previewing enough
 of an item to decide whether to open its full page, never a substitute for

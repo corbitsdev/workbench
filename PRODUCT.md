@@ -69,6 +69,14 @@ A bench that already has one or more workbenches skips create and lands
 in an existing conversation instead (see
 `apps/web/src/pages/home-page.tsx`).
 
+The shell's first-run destinations stay small on purpose (CL-6765):
+Mission Control is pinned above the footer rail; the rail itself is
+Routines, Files, Skills, and Agents. Insights and Evals appear on that
+rail only after honest usage exists; Plugins stays reachable by deep
+link and the command palette, not as a first-run rail item. New benches
+should not meet an empty Plugins / Insights / Evals gallery before they
+have anything to put there.
+
 ### Code review's first minute
 
 Code review is the product scene for the template path: Connect GitHub
