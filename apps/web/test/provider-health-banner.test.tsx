@@ -11,7 +11,16 @@ import { createRoot, type Root } from "react-dom/client";
 
 import { BenchProvider } from "../src/bench-context";
 import { NavigationProvider } from "../src/navigation";
-import { ProviderHealthBanner } from "../src/shell/provider-health-banner";
+import {
+  FILES_PATH_PREFIX,
+  PLUGINS_PATH_PREFIX,
+  SKILLS_PATH_PREFIX,
+} from "../src/path-ids";
+import { MISSION_CONTROL_PATH, SETTINGS_PATH } from "../src/routes";
+import {
+  isProviderHealthRecoverySurface,
+  ProviderHealthBanner,
+} from "../src/shell/provider-health-banner";
 import { ProviderHealthProvider } from "../src/shell/provider-health-context";
 import { TestQueryProvider } from "./test-query-provider";
 
@@ -60,13 +69,19 @@ function stubFetch(providerHealthBody: unknown): void {
   }) as typeof fetch;
 }
 
-function Harness({ navigate }: { readonly navigate: (to: string) => void }) {
+function Harness({
+  navigate,
+  path,
+}: {
+  readonly navigate: (to: string) => void;
+  readonly path: string;
+}) {
   return (
     <TestQueryProvider>
       <NavigationProvider navigate={navigate}>
         <BenchProvider>
           <ProviderHealthProvider>
-            <ProviderHealthBanner />
+            <ProviderHealthBanner path={path} />
           </ProviderHealthProvider>
         </BenchProvider>
       </NavigationProvider>
@@ -99,12 +114,12 @@ describe("ProviderHealthBanner (CL-6092)", () => {
   let container: HTMLDivElement;
   let root: Root;
 
-  function mount(navigate: (to: string) => void) {
+  function mount(navigate: (to: string) => void, path = "/w/ch_1") {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
     return act(async () => {
-      root.render(<Harness navigate={navigate} />);
+      root.render(<Harness navigate={navigate} path={path} />);
     });
   }
 
@@ -235,5 +250,111 @@ describe("ProviderHealthBanner (CL-6092)", () => {
     await flush();
 
     expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+});
+
+const CREDENTIAL_FAILURE_HEALTH = {
+  providers: {
+    anthropic: {
+      status: "needs_attention" as const,
+      category: "credential_failure" as const,
+      at: "2026-08-15T00:00:00.000Z",
+    },
+  },
+  connectedProviderCount: 1,
+};
+
+describe("isProviderHealthRecoverySurface (CL-6734)", () => {
+  test("Skills, Files, Mission Control, and Plugins are not recovery surfaces", () => {
+    expect(isProviderHealthRecoverySurface(SKILLS_PATH_PREFIX)).toBe(false);
+    expect(
+      isProviderHealthRecoverySurface(`${SKILLS_PATH_PREFIX}/drafting`),
+    ).toBe(false);
+    expect(isProviderHealthRecoverySurface(FILES_PATH_PREFIX)).toBe(false);
+    expect(isProviderHealthRecoverySurface(MISSION_CONTROL_PATH)).toBe(false);
+    expect(isProviderHealthRecoverySurface(PLUGINS_PATH_PREFIX)).toBe(false);
+    expect(
+      isProviderHealthRecoverySurface(`${PLUGINS_PATH_PREFIX}/anthropic`),
+    ).toBe(false);
+  });
+
+  test("Settings and the broken room still are", () => {
+    expect(isProviderHealthRecoverySurface(SETTINGS_PATH)).toBe(true);
+    expect(isProviderHealthRecoverySurface(`${SETTINGS_PATH}/members`)).toBe(
+      true,
+    );
+    expect(isProviderHealthRecoverySurface("/w/ch_1")).toBe(true);
+    expect(isProviderHealthRecoverySurface("/w/ch_1/settings")).toBe(true);
+    expect(isProviderHealthRecoverySurface("/")).toBe(true);
+  });
+});
+
+describe("ProviderHealthBanner scope (CL-6734)", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  function mount(path: string) {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    return act(async () => {
+      root.render(<Harness navigate={() => undefined} path={path} />);
+    });
+  }
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  test("a credential failure is not a sticky toast on Skills, Files, Mission Control, or Plugins", async () => {
+    stubFetch(CREDENTIAL_FAILURE_HEALTH);
+    await mount(SKILLS_PATH_PREFIX);
+    for (const path of [
+      SKILLS_PATH_PREFIX,
+      FILES_PATH_PREFIX,
+      MISSION_CONTROL_PATH,
+      PLUGINS_PATH_PREFIX,
+    ]) {
+      await act(async () => {
+        root.render(<Harness navigate={() => undefined} path={path} />);
+      });
+      await flush();
+      expect(container.querySelector('[role="alert"]')).toBeNull();
+      expect(container.textContent).not.toContain("turned down your key.");
+    }
+  });
+
+  test("Settings and the broken room still show the credential failure", async () => {
+    stubFetch(CREDENTIAL_FAILURE_HEALTH);
+    await mount(SETTINGS_PATH);
+    for (const path of [SETTINGS_PATH, "/w/ch_1"]) {
+      await act(async () => {
+        root.render(<Harness navigate={() => undefined} path={path} />);
+      });
+      await flush();
+      expect(container.querySelector('[role="alert"]')).not.toBeNull();
+      expect(container.textContent).toContain("turned down your key.");
+    }
+  });
+
+  test("leaving the room for Skills hides the banner; Settings still recovers it", async () => {
+    stubFetch(CREDENTIAL_FAILURE_HEALTH);
+    await mount("/w/ch_1");
+    await flush();
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+
+    await act(async () => {
+      root.render(
+        <Harness navigate={() => undefined} path={SKILLS_PATH_PREFIX} />,
+      );
+    });
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+
+    await act(async () => {
+      root.render(<Harness navigate={() => undefined} path={SETTINGS_PATH} />);
+    });
+    await flush();
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
   });
 });

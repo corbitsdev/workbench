@@ -1,8 +1,11 @@
 // The shell's guided-fix banner (CL-6092): shown above the stage
 // whenever `ProviderHealthProvider` has a classified, undismissed
-// provider-health incident. "Fix it" deep-links to Plugins' connect
-// panel for that provider (see `../pages/plugins-page.tsx`'s pending-
-// connect consumption) — or, when the tenant has zero working providers,
+// provider-health incident *and* the person is on Settings or the
+// broken room (CL-6734). It is not a sticky toast on Skills, Files,
+// Mission Control, or Plugins — recovery lives on the surface that
+// broke. "Fix it" deep-links to Plugins' connect panel for that
+// provider (see `../pages/plugins-page.tsx`'s pending-connect
+// consumption) — or, when the tenant has zero working providers,
 // routes to onboarding's credential step instead, since there is no
 // provider gallery worth opening yet.
 
@@ -13,7 +16,8 @@ import { Warning, X } from "@corbits/icons";
 import { useEffect, useState } from "react";
 
 import { useNavigate } from "../navigation";
-import { ONBOARDING_PATH } from "../routes";
+import { matchesRoute, ONBOARDING_PATH, SETTINGS_PATH } from "../routes";
+import { WORKBENCH_PATH_PREFIX } from "../workbench-path";
 import {
   useDismissProviderHealthBanner,
   useProviderHealthBanner,
@@ -22,6 +26,14 @@ import {
 } from "./provider-health-context";
 
 const PLUGINS_PATH = "/plugins";
+
+// CL-6734: recovery on Settings and the room only — never a stalker toast.
+export function isProviderHealthRecoverySurface(path: string): boolean {
+  return (
+    matchesRoute(SETTINGS_PATH, path) ||
+    matchesRoute(WORKBENCH_PATH_PREFIX, path)
+  );
+}
 
 // How long the collapse/fade-out below takes to play before the banner's
 // last-known content is finally released — see the CSS pair
@@ -57,7 +69,7 @@ function bannerMessage(banner: ProviderHealthBannerState): string {
   return `${providerDisplayName(banner.provider)} ${CATEGORY_COPY[banner.category]}`;
 }
 
-export function ProviderHealthBanner() {
+export function ProviderHealthBanner({ path }: { readonly path: string }) {
   const banner = useProviderHealthBanner();
   const dismiss = useDismissProviderHealthBanner();
   const requestPluginsConnect = useRequestPluginsConnect();
@@ -84,6 +96,10 @@ export function ProviderHealthBanner() {
   }, [banner]);
 
   const isOpen = banner !== null;
+
+  if (!isProviderHealthRecoverySurface(path)) {
+    return null;
+  }
 
   const handleFix = () => {
     if (banner === null) return;
