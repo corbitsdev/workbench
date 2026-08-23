@@ -310,7 +310,9 @@ describe("listActivity", () => {
         workbenchId: WORKBENCH,
         sender: { name: "Myra", address: "run_myra@acme.example" },
         runId: "run_myra",
-        parts: [{ kind: "text", text: "Hi — I'm Myra. What are we working on?" }],
+        parts: [
+          { kind: "text", text: "Hi — I'm Myra. What are we working on?" },
+        ],
       },
     );
     await Bun.sleep(2);
