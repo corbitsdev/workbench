@@ -40,16 +40,16 @@ function ids(groups: ReturnType<typeof resolveSettingsSectionGroups>) {
 }
 
 describe("resolveSettingsSectionGroups", () => {
-  test("Account's Notifications and Account sections are always full; gated Everyone sections are absent, not disabled", () => {
+  test("Account's Account section is always full; gated Everyone sections are absent, not disabled", () => {
     expect(ids(resolveSettingsSectionGroups(denied))).toEqual([
-      { id: "account", sections: ["account", "chat"] },
+      { id: "account", sections: ["account"] },
       { id: "everyone", sections: ["audit"] },
     ]);
   });
 
   test("an allowed gate adds its section in registry order", () => {
     expect(ids(resolveSettingsSectionGroups(allowed))).toEqual([
-      { id: "account", sections: ["account", "chat"] },
+      { id: "account", sections: ["account"] },
       {
         id: "everyone",
         sections: ["connections", "people", "roles", "grants", "audit"],
@@ -65,7 +65,7 @@ describe("resolveSettingsSectionGroups", () => {
       credentials: "denied",
     };
     expect(ids(resolveSettingsSectionGroups(loading))).toEqual([
-      { id: "account", sections: ["account", "chat"] },
+      { id: "account", sections: ["account"] },
       { id: "everyone", sections: ["grants", "audit"] },
     ]);
   });
@@ -93,6 +93,17 @@ describe("resolveSettingsSectionGroups", () => {
     }
   });
 
+  test("never registers the notifications section — no preference store exists to back it yet", () => {
+    for (const access of [denied, allowed]) {
+      const account = resolveSettingsSectionGroups(access).find(
+        (group) => group.id === "account",
+      );
+      expect(account?.sections.map((section) => section.id)).not.toContain(
+        "chat",
+      );
+    }
+  });
+
   test("every section carries a leading icon for a host's own nav", () => {
     for (const group of resolveSettingsSectionGroups(allowed)) {
       for (const section of group.sections) {
@@ -114,7 +125,7 @@ describe("insertEveryoneSections", () => {
       extra,
     );
     expect(ids(groups)).toEqual([
-      { id: "account", sections: ["account", "chat"] },
+      { id: "account", sections: ["account"] },
       { id: "everyone", sections: ["agents", "skills", "audit"] },
     ]);
   });
@@ -127,7 +138,6 @@ describe("insertEveryoneSections", () => {
     const account = groups.find((group) => group.id === "account");
     expect(account?.sections.map((section) => section.id)).toEqual([
       "account",
-      "chat",
     ]);
   });
 

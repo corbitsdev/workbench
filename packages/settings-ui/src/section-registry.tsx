@@ -19,7 +19,6 @@
 // exist and who can see them" lives here, not in an app.
 
 import {
-  Bell,
   Key,
   ListBullets,
   Shield,
@@ -33,7 +32,6 @@ import type { TenancyAccess } from "./access";
 import { AuditSection } from "./audit-section";
 import { ConnectionsSection } from "./connections-section";
 import { GrantsSection } from "./grants-section";
-import { NotificationsSection } from "./notifications-section";
 import { PeopleSection } from "./people-section";
 import { RolesSection } from "./roles-section";
 import type { SettingsSection, SettingsSectionGroup } from "./shell";
@@ -57,8 +55,10 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
     label: SETTINGS_STRINGS.groupAccountLabel,
     // No "Your agent" section here: it has no preference store to back it —
     // see agent-section.tsx's header comment for the re-add condition.
-    // Account (General) leads — it is the reference's landing section
-    // (account card, theme, timezone); notifications follow.
+    // No Notifications ("chat") section either: toggles with no per-user
+    // preference store are fake controls — see notifications-section.tsx
+    // for the re-add condition (CL-6843). Account (General) is the sole
+    // Account-group section until those stores exist.
     sections: [
       {
         id: "account",
@@ -71,12 +71,6 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
               : {})}
           />
         ),
-      },
-      {
-        id: "chat",
-        title: SETTINGS_STRINGS.notificationsSectionTitle,
-        icon: Bell,
-        render: () => <NotificationsSection />,
       },
     ],
   },

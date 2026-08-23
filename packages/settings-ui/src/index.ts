@@ -20,7 +20,8 @@ export {
   AppearanceSection,
   AgentGeneralSection,
 } from "./account-section";
-export { NotificationsSection } from "./notifications-section";
+// NotificationsSection is not exported: it is draft-only and not in the
+// registry (CL-6843). Re-export when a preference store backs it.
 export { AuditSection } from "./audit-section";
 export { AccessPolicyBlock, AccessPolicyEditor } from "./access-policy";
 export {
