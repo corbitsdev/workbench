@@ -113,9 +113,11 @@ function stubFetch(options?: {
 }
 
 function footerRowLabelsFromMarkup(markup: string): string[] {
-  return [...markup.matchAll(/shell-sidebar-footer-row[\s\S]*?<span>([^<]*)<\/span>/g)].map(
-    (match) => match[1] ?? "",
-  );
+  return [
+    ...markup.matchAll(
+      /shell-sidebar-footer-row[\s\S]*?<span>([^<]*)<\/span>/g,
+    ),
+  ].map((match) => match[1] ?? "");
 }
 
 function footerRowLabelsFromDom(container: HTMLElement): string[] {
@@ -236,7 +238,9 @@ describe("Sidebar", () => {
     expect(markup.indexOf("shell-sidebar-mission-control")).toBeLessThan(
       markup.indexOf("shell-sidebar-footer-row"),
     );
-    expect(markup.indexOf(">Routines<")).toBeLessThan(markup.indexOf(">Files<"));
+    expect(markup.indexOf(">Routines<")).toBeLessThan(
+      markup.indexOf(">Files<"),
+    );
     expect(markup.indexOf(">Files<")).toBeLessThan(markup.indexOf(">Skills<"));
     expect(markup.indexOf(">Skills<")).toBeLessThan(markup.indexOf(">Agents<"));
   });
@@ -298,9 +302,9 @@ describe("Sidebar", () => {
       "Agents",
       "Insights",
     ]);
-    const insights = [...container.querySelectorAll(".shell-sidebar-footer-row")].find(
-      (row) => row.textContent?.includes("Insights") === true,
-    );
+    const insights = [
+      ...container.querySelectorAll(".shell-sidebar-footer-row"),
+    ].find((row) => row.textContent?.includes("Insights") === true);
     expect(insights?.getAttribute("aria-current")).toBe("page");
     act(() => root.unmount());
     container.remove();
@@ -316,9 +320,9 @@ describe("Sidebar", () => {
       "Agents",
       "Evals",
     ]);
-    const evals = [...container.querySelectorAll(".shell-sidebar-footer-row")].find(
-      (row) => row.textContent?.includes("Evals") === true,
-    );
+    const evals = [
+      ...container.querySelectorAll(".shell-sidebar-footer-row"),
+    ].find((row) => row.textContent?.includes("Evals") === true);
     expect(evals?.getAttribute("aria-current")).toBe("page");
     act(() => root.unmount());
     container.remove();
