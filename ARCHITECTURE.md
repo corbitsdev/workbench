@@ -35,8 +35,8 @@ this repo:
 - **Inference** — LLM calls (`@intx/inference`).
 - **Workflow runtime** — definitions, runs, and the workflow host
   (`@intx/workflow`, `@intx/workflow-host`, `@intx/workflow-deploy`).
-- **Mail** — the transport every agent run, including a workbench's own,
-  uses to receive and send messages.
+- **Mail** — the transport an agent turn uses to receive and send
+  messages. A workbench itself is not a mail-holding host run.
 
 Workbench adds product contracts on top of these primitives; it never
 forks or patches Interchange internals. See [docs/TENANCY.md](docs/TENANCY.md)
@@ -67,33 +67,26 @@ workbench's own child tenancy (native tenants carry no `kind` field), and
 [docs/GLOSSARY.md](docs/GLOSSARY.md) for the term mapping between product
 nouns and platform primitives.
 
-## Conversation as a folded workflow run
+## Conversation as workbench data
 
-A workbench is not a parallel messaging system bolted onto Interchange —
-it is an ordinary folded, credential-free interactive workflow run whose
-only job is to hold a mailbox. Creating a workbench launches that run (its
-**workbench host**, sometimes called its anchor); the host's system prompt
-forbids it from ever replying or acting — it exists purely to give the
-conversation a durable, listable mailbox. Reading that mailbox back in
-order is the conversation's timeline.
+A workbench is not a parallel messaging system bolted onto Interchange,
+and it is not itself a workflow run. Creating a workbench mints a child
+tenant and writes settings rows — no deploy, no host, no anchor instance
+(`provisionSpaceWorkbench` and the chat create path). A workbench holds a
+**timeline** of `chat.workbench_messages` rows; posting is one insert plus
+one publish onto the workbench's live stream, so the conversation takes
+messages whether or not any agent process is running.
 
-Because a workbench is an ordinary run, it goes through the same launch,
-addressing, and mail machinery any other interactive agent run uses — no
-parallel transport is invented for chat. An invited agent participant
-replies by emitting `connector.reply` events on its own stream; a reply
-bridge turns those events into timeline messages, mirroring how an
-`@mention` fans a message out to an agent participant. See
+A workbench's address is derived, not resolved. Asking an invited agent
+for a turn is a separate act over Interchange mail; the agent replies by
+emitting `connector.reply` events on its own stream, and a reply bridge
+turns those events into timeline messages. See
 [docs/CHAT.md](docs/CHAT.md) for the full message, thread, and
-participant model built on top of this run. Per-workbench settings (name,
-participants, capacity, connector overrides, notification prefs — see
-PRODUCT.md's "Workbench settings") are composition on top of this same
-run and its tenant, not a separate object; the surface lives in
-`packages/chat-ui`'s `workbench-settings`.
-
-**Direction (CL-6093):** today a workbench's run is "settle-and-wake" —
-the anchor run settles between deliveries and wakes on the next mail
-event. This is the current mechanism, not a permanent constraint; see
-CL-6093 for where the self-anchored run model is headed next.
+participant model. Per-workbench settings (name, participants, capacity,
+connector overrides, notification prefs — see PRODUCT.md's "Workbench
+settings") are composition on top of this tenant and its settings rows,
+not a separate object; the surface lives in `packages/chat-ui`'s
+`workbench-settings`.
 
 **Streaming a reply.** An agent's live reply reaches the timeline through
 one path, deltas to pixels:
@@ -156,9 +149,6 @@ does not maintain a parallel scheduler.
 
 ## Open questions
 
-- The exact shape of the CL-6093 self-anchored run model beyond
-  "settle-and-wake today" is not yet documented in this repo — treat it
-  as in-flight design, not a settled architecture.
 - Sidecar placement policy specifics (how a run is assigned to a
   particular sidecar instance under multi-sidecar deployment) are not
   detailed in the docs reviewed for this pass.
