@@ -188,4 +188,44 @@ describeIfDb("createDrizzleRoomMessageStore: listActivity", () => {
       await sql.end();
     }
   });
+
+  // CL-6795: a join/event newest row must not blank the list preview while
+  // earlier readable text still exists.
+  test("a join notice after readable text keeps the prior preview", async () => {
+    const sql = postgres(scratchUrl, { max: 5, onnotice: () => undefined });
+    try {
+      const store = createDrizzleRoomMessageStore(drizzle(sql));
+      await store.insertMessage({
+        id: "msg_join_keep_1",
+        tenantId: TENANT,
+        workbenchId: "run_join_keep",
+        sender: { name: null, address: "prn_alice@acme.example" },
+        parts: [{ kind: "text", text: "let's pull Scout in" }],
+      });
+      const joined = await store.insertMessage({
+        id: "msg_join_keep_2",
+        tenantId: TENANT,
+        workbenchId: "run_join_keep",
+        sender: { name: null, address: "run_scout@acme.example" },
+        runId: "run_scout",
+        parts: [
+          {
+            kind: "event",
+            event: "workbench.agent-joined",
+            data: { address: "run_scout@acme.example" },
+          },
+        ],
+      });
+
+      const activity = await store.listActivity({
+        tenantId: TENANT,
+        workbenches: [{ workbenchId: "run_join_keep" }],
+      });
+
+      expect(activity["run_join_keep"]?.lastActivityAt).toBe(joined.createdAt);
+      expect(activity["run_join_keep"]?.preview).toBe("let's pull Scout in");
+    } finally {
+      await sql.end();
+    }
+  });
 });
