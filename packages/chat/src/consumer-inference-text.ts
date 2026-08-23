@@ -10,6 +10,18 @@ const TRAILING_HTTP_DUMP = /\s*\[HTTP\s+\d+\]:[\s\S]*$/i;
 export const CONSUMER_INFERENCE_FAILURE_NOTICE =
   "This didn't go through. Try again, or check the connection in Settings.";
 
+/**
+ * Byte-for-byte copies of the two preambles `@intx/inference`'s
+ * `formatInferenceError` writes for `credential_failure` and
+ * `quota_exhausted`. Kept here so the bench-list preview path (CL-6735)
+ * can refuse them without depending on `@corbits/chat-ui`. The chat-ui
+ * drift guard still owns matching these against the published director.
+ */
+export const CLASSIFIED_INFERENCE_FAILURE_PREAMBLES: readonly string[] = [
+  "This agent could not complete your request due to a credential error",
+  "This agent could not complete your request because the API quota has been exhausted",
+];
+
 function isProviderJsonDump(raw: string): boolean {
   const trimmed = raw.trim();
   if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) return false;
@@ -26,4 +38,24 @@ export function consumerFacingInferenceText(raw: string): string {
   const stripped = raw.replace(TRAILING_HTTP_DUMP, "").trim();
   if (stripped.length > 0 && !needsSanitization(stripped)) return stripped;
   return CONSUMER_INFERENCE_FAILURE_NOTICE;
+}
+
+/** True when `text` is (or starts with) a classified inference-failure preamble. */
+export function isClassifiedInferenceFailureText(text: string): boolean {
+  return CLASSIFIED_INFERENCE_FAILURE_PREAMBLES.some((preamble) =>
+    text.startsWith(preamble),
+  );
+}
+
+/**
+ * Bench-list / sidebar preview copy (CL-6735): never the full failure
+ * paragraph, never HTTP/raw provider dumps — a short consumer sentence
+ * when the text is a classified failure.
+ */
+export function activityPreviewText(raw: string): string {
+  const facing = consumerFacingInferenceText(raw);
+  if (isClassifiedInferenceFailureText(facing)) {
+    return CONSUMER_INFERENCE_FAILURE_NOTICE;
+  }
+  return facing;
 }
