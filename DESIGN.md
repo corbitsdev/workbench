@@ -14,7 +14,8 @@ column and no collapse affordance — it is always present, at a fixed width.
 
 Top to bottom:
 
-1. **Brand row** — logo mark and a "New workbench" button (`+`).
+1. **Brand row** — logo mark and a "New workbench" button (`+`) that
+   opens `/new`.
 2. **Bench list** — the "Workbenches" label, then rows of workbench
    conversations, with search built into the list itself. Nothing
    page-scoped ever renders in this body; it lists conversations, not
@@ -53,6 +54,14 @@ diverging ones (`apps/web/src/routes.tsx` is the single source of truth
 consumed by both). A route that gets renamed or relocated leaves a redirect
 behind at its old path — old links and bookmarks always land somewhere
 real, never a 404.
+
+**`/new` is the shipped create surface** (`NewWorkbenchPickerRoute`). The
+primary act is a prompt: say what the workbench should do, or pick a
+template shortcut underneath. The sidebar `+` and an empty-bench land on
+`/` both open this route — there is no Describe door.
+
+**`/inbox` is gone as a page** (CL-6151). The path stays as a redirect
+home so old links still resolve; it is not a live groups inbox.
 
 ## Tables & Lists
 

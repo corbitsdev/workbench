@@ -1,8 +1,8 @@
 # Product
 
 Corbits Workbench is the multiplayer workspace for humans and agents — a
-team and its AI agents working side by side, with the same conversations,
-routines, and inbox. It is the default implementation of the Corbits
+team and its AI agents working side by side, with the same conversations
+and routines. It is the default implementation of the Corbits
 Platform, built on [Interchange](https://github.com/faremeter/interchange).
 
 ## The one concept
@@ -36,9 +36,10 @@ column at a time:
   bench, flat, most-recently-active first. There is no separate "channels"
   vs. "chats" grouping the sidebar exposes to a person — every row is a
   workbench.
-- **"+ New Workbench" always creates.** It never opens a picker of existing
-  things to join — starting a new workbench is the one way in, whether the
-  result is a one-on-one conversation with an agent or a group conversation
+- **"+ New Workbench" always creates.** It opens `/new` — the shipped
+  prompt-primary picker — never a picker of existing things to join.
+  Starting a new workbench is the one way in, whether the result is a
+  one-on-one conversation with an agent or a group conversation
   with people and agents together.
 - **Agents are templates.** Starting a new agent conversation means picking
   an agent definition (a named, reusable capability) as the starting point
@@ -48,29 +49,24 @@ column at a time:
   it carries account-wide surfaces (approvals, recent activity) that stay
   visible regardless of which workbench is open.
 
-## First run (CL-6104)
+## First run
 
-A brand-new account is walked through four steps, ending in a live
-conversation rather than an empty shell:
+A brand-new account is walked through login and a credential connect, then
+lands on the create surface rather than an empty shell:
 
 1. **Login.**
 2. **Credential** — connect a model provider (one-click OAuth for
    supported providers, or a pasted API key); see `packages/onboarding`.
-3. **Describe** — a single free-text field asking what the first agent
-   should do. No name field, no template picker: a name and a handle are
-   derived from the description, and submitting drafts an agent
-   definition the same way `CreateAgentPanel` does
-   (`draftAgentDefinition` → `createAgentDefinition`, CL-6074/CL-6086).
-   See `apps/web/src/pages/describe-first-workbench.tsx`.
-4. **Greeting** — the drafted agent is deployed and opened into a fresh
-   conversation, and its first reply introduces itself and names what it
-   can do. There is no separate screen for this step: the drafted system
-   prompt itself carries the instruction (see
-   `packages/agent-directory/src/agent-definition-drafting.ts`), so the
-   greeting arrives as an ordinary streamed reply in the new workbench.
+3. **Create** — `/` hops an empty bench to `/new`, the prompt-primary
+   picker (`apps/web/src/pages/new-workbench-picker.tsx`). A prompt box is
+   the primary act: typing a goal and submitting creates a blank
+   workbench and sends that text as the first message. Prefab template
+   rows underneath are one-click shortcuts, not a kind-then-Create
+   second step. There is no Describe door and no
+   `describe-first-workbench.tsx`.
 
-A bench that already has one or more workbenches skips straight past step
-3 and 4 and lands in its existing conversation instead (see
+A bench that already has one or more workbenches skips create and lands
+in an existing conversation instead (see
 `apps/web/src/pages/home-page.tsx`).
 
 ## Plugins and Skills
@@ -94,8 +90,8 @@ and capabilities; dedicated vs. shared inference capacity (CL-6117);
 per-workbench connector and plugin overrides against the account default
 (CL-6099); inference model/provider fallback order; applying a saved
 config profile; per-person notification preferences for that workbench;
-and archiving. See ARCHITECTURE.md's "Conversation as a folded workflow
-run" for how a workbench's settings relate to its underlying run, and
+and archiving. See ARCHITECTURE.md's "Conversation as workbench data"
+for how a workbench's settings relate to its tenant, and
 `packages/chat-ui`'s `workbench-settings` for the implementation.
 
 ## Routines, through conversation
@@ -109,12 +105,13 @@ again, on what schedule, and where the result should land. See
 
 ## Inbox and approvals
 
-Two account-wide surfaces sit outside any single workbench:
+Approvals sit outside any single workbench. Inbox does not:
 
-- **Inbox** projects a person's mail into three groups — action, mention,
-  delivery — with mark-all-read and clear-done bulk actions. It is where
-  a mention or a routine's delivery lands once the triggering activity is
-  done. See `packages/inbox`.
+- **Inbox is not a product page.** The groups UI (action / mention /
+  delivery) is gone. `/inbox` stays routable only as a redirect home
+  (CL-6151) so old links and bookmarks land somewhere real. The hub
+  inbox API (`packages/inbox`, `/api/tenants/:tenantId/inbox`) may still
+  exist as a backend; it is not a live groups page.
 - **Approvals ("needs you")** surface a paused agent run waiting on a
   human decision. There is no dedicated Approvals page — pending approvals
   show up in the Activity band, a permanent section of the contextual

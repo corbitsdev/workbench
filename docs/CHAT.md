@@ -109,8 +109,8 @@ event log. The shape lives in `@corbits/agent-runtime`
 (`buildAgentRuntimeWorkflow`, `mode: "section"`), and
 `platform-adapter.ts`'s `ROOM_AGENT_MODE` is the single place that pins
 it — one switch feeding both the wake and the relaunch path. The
-workbench host keeps the folded step shape: it holds a mailbox and never
-takes a turn, so it has no occurrences to name.
+workbench itself has no host run and no occurrences to name; only invited
+agents deploy as sections.
 
 `onBodyFailure: "continue"` — authored in the section shape itself — is
 the failure edge: a turn that ends `failed` records the failed occurrence
@@ -332,7 +332,7 @@ following routes:
 
 | Method & path                                                | What it does                                                                                                                                                                                                                      |
 | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /workbenches`                                          | Mints the workbench's own tenant, launches its host, writes its initial settings, and — for a chat — joins its one counterpart (an agent or a person; see [Chats and direct messages](#chats-and-direct-messages-dms))            |
+| `POST /workbenches`                                          | Mints the workbench's own tenant, writes its initial settings, and — for a chat — joins its one counterpart (an agent or a person; see [Chats and direct messages](#chats-and-direct-messages-dms))                                |
 | `GET /workbenches`                                           | Lists the tenant's workbenches, optionally filtered by kind                                                                                                                                                                       |
 | `GET /workbenches/:id/messages`                              | Reads the workbench's timeline, decoded into parts, paginated by cursor                                                                                                                                                           |
 | `POST /workbenches/:id/messages`                             | Posts a message, fanning a copy to every @mentioned agent participant. `threadId` or `inReplyToMessageId` route it into a thread instead of the root feed; a reply that would nest past depth 2 is a `409 conflict`               |
