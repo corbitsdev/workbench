@@ -8,7 +8,7 @@ export type ConnectorStatus = "not_connected" | "connected" | "needs_attention";
 
 export type ConnectorStatusResult =
   | { readonly status: "not_connected" }
-  | { readonly status: "connected"; readonly credential: Credential }
+  | { readonly status: "connected"; readonly credential?: Credential }
   | { readonly status: "needs_attention"; readonly credential: Credential };
 
 /**
@@ -35,11 +35,7 @@ export function connectorStatus(
   if (provider === undefined) return { status: "not_connected" };
 
   const matches = credentials.filter((c) => c.providerId === provider.id);
-  if (matches.length === 0) {
-    return provider.credentialId === null
-      ? { status: "not_connected" }
-      : { status: "connected", credential: inheritedCredential(provider) };
-  }
+  if (matches.length === 0) return { status: "connected" };
 
   const newest = matches.reduce((latest, candidate) => {
     const latestKey = latest.createdAt ?? latest.updatedAt;
@@ -56,17 +52,4 @@ export function connectorStatus(
   // revoked reads the same as never having connected — nothing to attend
   // to, the user must reconnect from scratch.
   return { status: "not_connected" };
-}
-
-function inheritedCredential(provider: Provider): Credential {
-  return {
-    id: provider.credentialId,
-    tenantId: provider.tenantId,
-    providerId: provider.id,
-    name: provider.name,
-    type: "api_key",
-    status: "active",
-    createdAt: provider.createdAt,
-    updatedAt: provider.updatedAt,
-  };
 }

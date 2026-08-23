@@ -12,7 +12,6 @@ function provider(overrides: Partial<Provider> = {}): Provider {
     id: "provider-1",
     name: "linear",
     plugin: "linear",
-    credentialId: null,
     ...overrides,
   } as Provider;
 }
@@ -37,17 +36,8 @@ describe("connectorStatus", () => {
     expect(result.status).toBe("not_connected");
   });
 
-  test("not_connected when a provider exists but no credential points at it", () => {
+  test("connected when a provider exists even if the credential list omits inherited credentials", () => {
     const result = connectorStatus("linear", [], [provider()]);
-    expect(result.status).toBe("not_connected");
-  });
-
-  test("connected when an inherited provider points at an ancestor credential", () => {
-    const result = connectorStatus(
-      "linear",
-      [],
-      [provider({ credentialId: "parent-cred-1" })],
-    );
     expect(result.status).toBe("connected");
   });
 
@@ -114,10 +104,10 @@ describe("connectorStatus", () => {
     }
   });
 
-  test("ignores credentials belonging to a different provider", () => {
+  test("keeps the provider connected when only unrelated credentials are listed", () => {
     const other = credential({ providerId: "provider-2", status: "active" });
     const result = connectorStatus("linear", [other], [provider()]);
-    expect(result.status).toBe("not_connected");
+    expect(result.status).toBe("connected");
   });
 
   // Regression for the bug where the card grid matched on
