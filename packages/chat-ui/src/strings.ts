@@ -25,7 +25,10 @@ export const CHAT_STRINGS = {
   workbenchNotFoundTitle: "This workbench isn't here anymore",
   workbenchNotFoundDescription:
     "It may have been deleted, or the link is out of date.",
+  /** @deprecated Prefer Mission Control / New workbench recovery (CL-6796). */
   workbenchNotFoundAction: "Back to workbenches",
+  workbenchNotFoundMissionControlAction: "Mission Control",
+  workbenchNotFoundNewWorkbenchAction: "New workbench",
   composerPlaceholder:
     "Send a message… use @ to mention an agent, / for commands",
   composerPlaceholderChat: (name: string) => `Message ${name}… / for commands`,
