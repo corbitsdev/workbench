@@ -86,17 +86,6 @@ export function listPrincipals(
   );
 }
 
-export function invitePrincipal(
-  tenantId: string,
-  email: string,
-  roleId?: string,
-): Promise<Principal> {
-  return request(`/api/tenants/${tenantId}/members/invite`, PrincipalResponse, {
-    method: "POST",
-    body: JSON.stringify(roleId === undefined ? { email } : { email, roleId }),
-  });
-}
-
 export function updatePrincipalStatus(
   tenantId: string,
   principalId: string,

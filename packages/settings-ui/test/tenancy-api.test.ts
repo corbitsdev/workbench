@@ -11,7 +11,6 @@ import {
   createGrant,
   createRole,
   evaluate,
-  invitePrincipal,
   listGrants,
   listPrincipals,
   listRoles,
@@ -87,38 +86,6 @@ describe("listPrincipals", () => {
     await expect(listPrincipals("tnt_1")).rejects.toBeInstanceOf(
       TenancyApiError,
     );
-  });
-});
-
-describe("invitePrincipal", () => {
-  test("POSTs the invite email", async () => {
-    const calls = stubFetch(() =>
-      json({
-        id: "prn_2",
-        tenantId: "tnt_1",
-        kind: "user",
-        refId: "user_2",
-        displayName: "Grace Hopper",
-        status: "invited",
-        roles: [],
-        ...timestamps,
-      }),
-    );
-    await invitePrincipal("tnt_1", "grace@example.com");
-    expect(calls[0]?.path).toBe("/api/tenants/tnt_1/members/invite");
-    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
-      email: "grace@example.com",
-    });
-  });
-
-  test("surfaces a 404 (no matching account) as a TenancyApiError", async () => {
-    stubFetch(() => json({ error: { code: "not_found" } }, 404));
-    await expect(
-      invitePrincipal("tnt_1", "nobody@example.com"),
-    ).rejects.toMatchObject({ status: 404 });
-    await expect(
-      invitePrincipal("tnt_1", "nobody@example.com"),
-    ).rejects.toBeInstanceOf(TenancyApiError);
   });
 });
 

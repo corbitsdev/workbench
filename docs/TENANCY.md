@@ -118,10 +118,10 @@ same way:
   `"owners"` (default), `"owners-admins"`, or `"none"`.
 
 `@workbench/access-policy`'s `POST /api/tenants/:tenantId/access-policy/
-child-tenants` is the polished UI-facing wrapper `@corbits/bench-ui`'s
-`createBench` calls whenever a `parentId` is given — it makes the same
-decision and gives a clean pre-flight 403, but the guard above is what
-actually closes the gap; the wrapper alone would not.
+child-tenants` is the polished UI-facing wrapper for creating a child
+tenant under a parent — it makes the same decision and gives a clean
+pre-flight 403, but the guard above is what actually closes the gap; the
+wrapper alone would not.
 
 Interchange currently does **not** validate `parentId` on POST and has
 **no** cycle constraint — see gaps below.
@@ -208,13 +208,13 @@ Creation helper: `createDmWorkbenchSpec` in `@corbits/bench-ui`.
   dual-membership path) — that path is unaffected by, and independent
   of, the projection machinery above.
 
-### Tenancy kind (bench switcher)
+### Tenancy kind (bench vs workbench child)
 
 A native tenant row carries no `kind`/`type` field, so `/api/me/principals`
 returns one row per tenant a principal belongs to — workbenches and
 workbench child tenancies alike, indistinguishable to the platform. The
-bench switcher needs to show only real workbenches, so workbench owns
-the discriminator:
+web client needs to treat only real workbenches as selectable benches, so
+workbench owns the discriminator:
 
 - `packages/chat`'s `workbench_tenancy` link table is the source of truth
   for "this tenant is a workbench". `WorkbenchTenancyStore.listWorkbenchTenantIds`
@@ -223,9 +223,9 @@ the discriminator:
   the web client for the caller's own tenant ids.
 - `@corbits/bench-ui`'s `classifyBenchMembership` combines that set with
   `isRawIdentifier` (a tenant with no human-assigned name never renders,
-  regardless of kind) to produce a `TenancyKind`: `"workbench"`,
-  `"workbench"`, or `"unknown"`. `filterWorkbenchMemberships` is what the
-  switcher renders from.
+  regardless of kind) to produce a `TenancyKind`: `"bench"`,
+  `"workbench"`, or `"unknown"`. `filterBenchMemberships` is what callers
+  use to keep only real benches.
 
 This is the extension point for every other tenancy kind the product
 adds (sub-workbenches, DMs, shared workbenches): each is still a tenant
@@ -303,7 +303,7 @@ needs a weaker role, that is an Interchange conversation first.
 
 ## Related packages
 
-- `@corbits/bench-ui` — switcher, create dialog, members, tenancy contracts
+- `@corbits/bench-ui` — tenancy-kind helpers, workbench-tenancy client, tenancy contracts
 - `@workbench/onboarding` — personal bench provision under operator parent
 - `@workbench/access-policy` — closed-by-default signup/sub-workbench-
   creation policy, pending invites (CL-5886)
