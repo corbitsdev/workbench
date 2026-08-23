@@ -18,14 +18,7 @@
 // `resolveSettingsSectionGroups` — the domain model of "what settings
 // exist and who can see them" lives here, not in an app.
 
-import {
-  Key,
-  ListBullets,
-  Shield,
-  Star,
-  User,
-  Users,
-} from "@corbits/icons";
+import { Key, ListBullets, Shield, Star, User, Users } from "@corbits/icons";
 
 import { AccountSection } from "./account-section";
 import type { TenancyAccess } from "./access";

@@ -136,9 +136,7 @@ describe("insertEveryoneSections", () => {
       extra,
     );
     const account = groups.find((group) => group.id === "account");
-    expect(account?.sections.map((section) => section.id)).toEqual([
-      "account",
-    ]);
+    expect(account?.sections.map((section) => section.id)).toEqual(["account"]);
   });
 
   test("is a no-op when there is nothing to insert", () => {
