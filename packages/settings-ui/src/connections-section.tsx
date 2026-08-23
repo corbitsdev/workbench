@@ -883,13 +883,17 @@ export function ConnectorCredentialDialog({
                   )}
           </DialogTitle>
           <DialogDescription>
-            {SETTINGS_STRINGS.connectionsDialogDescription}
+            {isUrlField
+              ? SETTINGS_STRINGS.connectionsDialogUrlDescription
+              : SETTINGS_STRINGS.connectionsDialogDescription}
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="settings-form-stack">
           <div className="settings-form-field">
             <span>
-              {isUrlField ? "URL" : SETTINGS_STRINGS.connectionsKeyLabel}
+              {isUrlField
+                ? SETTINGS_STRINGS.connectionsUrlLabel
+                : SETTINGS_STRINGS.connectionsKeyLabel}
             </span>
             {isUrlField ? (
               <Input

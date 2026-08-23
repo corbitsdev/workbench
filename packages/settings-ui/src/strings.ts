@@ -270,7 +270,10 @@ export const SETTINGS_STRINGS = {
   connectionsDialogReconnectTitle: (name: string) => `Reconnect ${name}`,
   connectionsDialogDescription:
     "Sealed on save — this key is never shown again after create. A bad key never gets saved; connecting surfaces the problem right here.",
+  connectionsDialogUrlDescription:
+    "The base address of the instance to connect. A bad address never gets saved; connecting surfaces the problem right here.",
   connectionsKeyLabel: "API key",
+  connectionsUrlLabel: "Base URL",
   connectionsConnectDialogAction: "Connect",
   connectionsConnecting: "Connecting…",
   connectionsSaving: "Saving…",
