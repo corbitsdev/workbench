@@ -50,12 +50,6 @@ export type {
 export { renamePayload, rowMenuLabels } from "./sidebar";
 
 export { InviteAgentDialog } from "./invite-agent-dialog";
-export { DialogStepper, DialogStepAccordion } from "./dialog-stepper";
-export type {
-  DialogStepperStep,
-  DialogStepStatus,
-  DialogStepAccordionStep,
-} from "./dialog-stepper";
 
 export { useWorkbenchStream } from "./use-workbench-stream";
 export type { WorkbenchStreamState } from "./use-workbench-stream";
