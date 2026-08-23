@@ -88,8 +88,9 @@ export { CHAT_STRINGS } from "./strings";
 export { displayWorkbenchTitle } from "./workbench-display-title";
 
 export { BlockPartView } from "./blocks/registry";
-export { BlockCard, RiskBadge } from "./blocks/block-card";
+export { BlockCard } from "./blocks/block-card";
 export { ConnectGithubBlockView } from "./blocks/connect-github-block";
+
 export type {
   ConnectGithubCardProps,
   ConnectGithubRepo,
