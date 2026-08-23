@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { CONSUMER_INFERENCE_FAILURE_NOTICE } from "./consumer-inference-text";
 import {
   createInMemoryRoomMessageStore,
   postRoomMessage,
@@ -217,6 +218,84 @@ describe("listActivity", () => {
     // A workbench with no messages is absent, never a fabricated zero.
     expect(activity["run_never_opened"]).toBeUndefined();
   });
+
+  // CL-6735: bench-list preview never shows the credential-error paragraph
+  // (or HTTP/raw dumps). Prefer the last good human/agent text; fall back
+  // to the short consumer notice when nothing earlier qualifies.
+  // CL-6795 (preview blanks/ignores the latest user message) is separate —
+  // this only skips failed-turn / classified-failure copy, never a normal
+  // human or agent reply.
+  test("a failed turn previews the last good text, never the failure paragraph", async () => {
+    const roomMessages = createInMemoryRoomMessageStore();
+    const publisher = recordingPublisher();
+    const post = (
+      parts: Parameters<typeof postRoomMessage>[1]["parts"],
+      sender: { name: null; address: string } = {
+        name: null,
+        address: "prn_ada@acme.example",
+      },
+    ) =>
+      postRoomMessage(
+        { roomMessages, publish: publisher.publish },
+        { tenantId: TENANT, workbenchId: WORKBENCH, sender, parts },
+      );
+
+    await post([{ kind: "text", text: "draft the agenda" }]);
+    await Bun.sleep(2);
+    const failed = await post(
+      [
+        {
+          kind: "text",
+          text: "This agent could not complete your request due to a credential error [HTTP 401]: API key is invalid.",
+          turnFailed: true,
+        },
+      ],
+      { name: null, address: "run_myra@acme.example" },
+    );
+
+    const activity = await roomMessages.listActivity({
+      tenantId: TENANT,
+      workbenches: [{ workbenchId: WORKBENCH }],
+    });
+
+    expect(activity[WORKBENCH]?.lastActivityAt).toBe(failed.createdAt);
+    expect(activity[WORKBENCH]?.preview).toBe("draft the agenda");
+    expect(activity[WORKBENCH]?.preview).not.toMatch(/credential error/i);
+    expect(activity[WORKBENCH]?.preview).not.toMatch(/\[HTTP/i);
+    expect(activity[WORKBENCH]?.preview).not.toContain("API key");
+  });
+
+  test("a lone failed turn falls back to the short consumer notice", async () => {
+    const roomMessages = createInMemoryRoomMessageStore();
+    const publisher = recordingPublisher();
+    await postRoomMessage(
+      { roomMessages, publish: publisher.publish },
+      {
+        tenantId: TENANT,
+        workbenchId: WORKBENCH,
+        sender: { name: null, address: "run_myra@acme.example" },
+        runId: "run_myra",
+        parts: [
+          {
+            kind: "text",
+            text: "I can't reach a model right now — add or check your model key in Settings, then I'll pick this up. (ref abc)",
+            turnFailed: true,
+          },
+        ],
+      },
+    );
+
+    const activity = await roomMessages.listActivity({
+      tenantId: TENANT,
+      workbenches: [{ workbenchId: WORKBENCH }],
+    });
+
+    expect(activity[WORKBENCH]?.preview).toBe(
+      CONSUMER_INFERENCE_FAILURE_NOTICE,
+    );
+    expect(activity[WORKBENCH]?.preview).not.toMatch(/model key/i);
+    expect(activity[WORKBENCH]?.preview).not.toMatch(/ref /i);
+  });
 });
 
 describe("previewOf", () => {
@@ -240,7 +319,7 @@ describe("previewOf", () => {
     ).toBe("");
   });
 
-  test("does not preview HTTP status or raw provider dumps", () => {
+  test("does not preview HTTP status, raw provider dumps, or the failure paragraph", () => {
     expect(
       previewOf([
         {
@@ -248,8 +327,26 @@ describe("previewOf", () => {
           text: "This agent could not complete your request due to a credential error [HTTP 401]: API key is invalid.",
         },
       ]),
-    ).toBe(
-      "This agent could not complete your request due to a credential error",
-    );
+    ).toBe(CONSUMER_INFERENCE_FAILURE_NOTICE);
+    expect(
+      previewOf([
+        {
+          kind: "text",
+          text: "This agent could not complete your request because the API quota has been exhausted [HTTP 429]: rate limited",
+        },
+      ]),
+    ).toBe(CONSUMER_INFERENCE_FAILURE_NOTICE);
+  });
+
+  test("a turnFailed notice is never the bench-list preview copy", () => {
+    expect(
+      previewOf([
+        {
+          kind: "text",
+          text: "I didn't get that one — send it again and I'll pick it up. (ref xyz)",
+          turnFailed: true,
+        },
+      ]),
+    ).toBe(CONSUMER_INFERENCE_FAILURE_NOTICE);
   });
 });
