@@ -32,10 +32,7 @@ const socialActions = {
   } satisfies PinActions,
 };
 
-async function mount(
-  items: readonly MessageItem[],
-  currentUser?: CurrentUser,
-) {
+async function mount(items: readonly MessageItem[], currentUser?: CurrentUser) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
