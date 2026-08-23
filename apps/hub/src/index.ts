@@ -2006,12 +2006,12 @@ export async function createHub(config: HubConfig) {
         ),
     }),
   );
-  // CL-6393: a connection completing through ANY door below — OAuth
-  // callback, pasted key, MCP OAuth, keyless MCP preset — settles every
-  // room waiting on that connector: the room's `connections/pending`
-  // entry clears (flipping the in-room connect card via
-  // `chat.settings`), and a message posts under the connecting person's
-  // address so the room's agent resumes the parked task.
+  // A connection completing through ANY door below — OAuth callback,
+  // pasted key, MCP OAuth, keyless MCP preset — settles every room
+  // waiting on that connector: the room's `connections/pending` entry
+  // clears (flipping the in-room connect card via `chat.settings`), and
+  // the host agent is woken via `dispatchTurn` without a forged
+  // signed-in-user timeline row.
   const settleServiceConnection: ServiceConnectedHook = (info) =>
     settleConnectedService(
       {
@@ -2019,9 +2019,7 @@ export async function createHub(config: HubConfig) {
         platform: chatPlatform,
         roomMessages,
         publish: workbenchSubscribers.publish,
-        turnQueue,
         agentTurns,
-        senderAddressFor,
       },
       {
         tenantId: info.tenantId,

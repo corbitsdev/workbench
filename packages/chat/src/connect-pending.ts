@@ -1,14 +1,13 @@
-// The room-side ledger behind the in-room connect flow (CL-6393). A
+// The room-side ledger behind the in-room connect flow. A
 // `connect-service` card posted into a room registers the connector on
 // the room's own settings under `connections/pending`; when the
 // connection completes in the browser, `settleConnectedService` finds
 // every room in the tenant still waiting on that connector, clears the
-// entry (publishing `chat.settings` so the open card flips), and posts
-// a message under the connecting person's own address — which routes to
-// the room's host agent through the ordinary message path, so the agent
-// resumes the task it parked without any new trigger machinery.
+// entry (publishing `chat.settings` so the open card flips), and wakes
+// the room's host agent via `dispatchTurn` — never by posting a timeline
+// row as the connecting person.
 //
-// CL-6463: the code-review template's own GitHub connect card registers
+// The code-review template's own GitHub connect card registers
 // under a second, template-owned key (`@corbits/workflow-catalog`'s
 // `template/pendingConnections`) instead of `connections/pending` — a
 // credential completed anywhere other than that card's own submit (the
@@ -18,13 +17,17 @@
 // belongs to one mechanism, not two parallel key conventions.
 import { type } from "arktype";
 
+import { localPartOf } from "./agent-address";
+import { ConnectServiceBlockData } from "./blocks";
+import { isAgentAddress } from "./mentions";
+import type { Part as PartType } from "./parts";
+import type { RoomMessage, RoomMessageStore } from "./room-messages";
+import type { ChatStore } from "./store";
 import {
-  sendWorkbenchMessage,
+  dispatchTurn,
   type SendWorkbenchMessageDeps,
 } from "./workbench-service";
-import type { ChatStore } from "./store";
-import type { Part as PartType } from "./parts";
-import { ConnectServiceBlockData } from "./blocks";
+import { participantsOf } from "./workbench-settings";
 
 export const CONNECTIONS_PENDING_KEY = "connections/pending";
 
@@ -82,27 +85,59 @@ function bareConnectorId(connectorId: string): string {
     : connectorId;
 }
 
-export type SettleConnectedServiceDeps = SendWorkbenchMessageDeps & {
+export type SettleConnectedServiceDeps = Pick<
+  SendWorkbenchMessageDeps,
+  "platform" | "agentTurns" | "roomMessages" | "publish"
+> & {
   readonly store: Pick<
     ChatStore,
     "listWorkbenchSettings" | "updateWorkbenchSettings"
-  > &
-    SendWorkbenchMessageDeps["store"];
-  readonly senderAddressFor: (
-    tenantId: string,
-    principalId: string,
-  ) => string | Promise<string>;
+  >;
 };
 
 export type SettleConnectedServiceInput = {
   readonly tenantId: string;
-  /** The person whose browser completed the connection — the settle
-   * message posts under their own address, and the message's ordinary
-   * routing is what wakes the room's host agent. */
+  /** The person whose browser completed the connection. */
   readonly principalId: string;
   readonly connectorId: string;
   readonly displayName: string;
 };
+
+function hostAgentAddress(
+  settings: Record<string, unknown>,
+  principalId: string,
+): string | undefined {
+  return participantsOf(settings).find(
+    (participant) =>
+      isAgentAddress(participant.address) &&
+      localPartOf(participant.address) !== principalId,
+  )?.address;
+}
+
+function arrivalOrder(left: RoomMessage, right: RoomMessage): number {
+  return left.createdAt === right.createdAt
+    ? left.id.localeCompare(right.id)
+    : left.createdAt.localeCompare(right.createdAt);
+}
+
+async function existingRequestMessageIds(
+  roomMessages: Pick<RoomMessageStore, "listMessages">,
+  input: { readonly tenantId: string; readonly workbenchId: string },
+): Promise<readonly string[]> {
+  const listed = await roomMessages.listMessages(input);
+  const lastUser = listed.items.find(
+    (message) => message.senderPrincipalId !== null,
+  );
+  const lastAgent = listed.items.find((message) => message.runId !== null);
+  return [lastUser, lastAgent]
+    .filter((message): message is RoomMessage => message !== undefined)
+    .sort(arrivalOrder)
+    .filter(
+      (message, index, messages) =>
+        messages.findIndex((other) => other.id === message.id) === index,
+    )
+    .map((message) => message.id);
+}
 
 export async function settleConnectedService(
   deps: SettleConnectedServiceDeps,
@@ -142,20 +177,26 @@ export async function settleConnectedService(
       type: "chat.settings",
       data: { updatedBy: input.principalId, settings: updated.settings },
     });
-    await sendWorkbenchMessage(deps, {
+
+    const agentAddress = hostAgentAddress(updated.settings, input.principalId);
+    if (agentAddress === undefined) continue;
+
+    const requestMessageIds = await existingRequestMessageIds(
+      deps.roomMessages,
+      { tenantId: input.tenantId, workbenchId: row.workbenchId },
+    );
+    await dispatchTurn(deps, {
       tenantId: input.tenantId,
-      principalId: input.principalId,
-      senderAddress: await deps.senderAddressFor(
-        input.tenantId,
-        input.principalId,
-      ),
       workbenchId: row.workbenchId,
-      messageParts: [
+      principalId: input.principalId,
+      agentAddress,
+      parts: [
         {
           kind: "text",
           text: `${input.displayName} is connected now — go ahead.`,
         },
       ],
+      requestMessageIds,
     });
   }
 }

@@ -1,10 +1,11 @@
-// Tests for the connect-settling half of the in-room connect flow
-// (CL-6393): a connection completing in the browser settles every room
-// that was waiting on it — the pending entry clears, `chat.settings`
-// fires so the card flips, and a message lands in the room so the
-// workbench's agent picks the task back up.
+// Tests for the connect-settling half of the in-room connect flow: a
+// connection completing in the browser settles every room that was waiting
+// on it — the pending entry clears, `chat.settings` fires so the card
+// flips, and the host agent is woken via `dispatchTurn` / `sendMail`
+// without a new timeline row authored as the signed-in user.
 import { expect, test } from "bun:test";
 
+import { createInMemoryAgentTurnStore } from "../src/agent-turns";
 import { createInMemoryChatStore } from "../src/store";
 import { createInMemoryRoomMessageStore } from "../src/room-messages";
 import { createInMemoryTurnClaimStore } from "../src/turn-claims";
@@ -59,26 +60,29 @@ async function seedTemplateWorkbench(
 function buildDeps() {
   const store = createInMemoryChatStore();
   const roomMessages = createInMemoryRoomMessageStore();
+  const agentTurns = createInMemoryAgentTurnStore();
+  const platform = fakePlatform();
   const published: { workbenchId: string; event: { type?: string } }[] = [];
   const publish = (workbenchId: string, event: unknown) => {
     published.push({ workbenchId, event: event as { type?: string } });
   };
   const deps = {
     store,
-    platform: fakePlatform(),
+    platform,
     roomMessages,
     publish,
+    agentTurns,
     turnQueue: createWorkbenchTurnQueue({
       claims: createInMemoryTurnClaimStore({ ttlMs: 60_000 }),
       publish,
     }),
-    senderAddressFor: () => HUMAN_ADDRESS,
   };
-  return { store, roomMessages, published, deps };
+  return { store, roomMessages, published, platform, agentTurns, deps };
 }
 
-test("settles every room waiting on the connector: clears pending, publishes chat.settings, posts the resume message", async () => {
-  const { store, roomMessages, published, deps } = buildDeps();
+test("After connect, no new timeline row is authored as the signed-in user by the product", async () => {
+  const { store, roomMessages, published, platform, agentTurns, deps } =
+    buildDeps();
   await seedWorkbench(store, "chan_waiting", ["gmail", "exa"]);
   await seedWorkbench(store, "chan_other", undefined);
 
@@ -98,14 +102,29 @@ test("settles every room waiting on the connector: clears pending, publishes cha
         entry.event.type === "chat.settings",
     ),
   ).toBe(true);
+  expect(published.some((entry) => entry.event.type === "chat.message")).toBe(
+    false,
+  );
 
   const listed = await roomMessages.listMessages({
     tenantId: TENANT.id,
     workbenchId: "chan_waiting",
   });
-  expect(listed.items).toHaveLength(1);
-  const text = JSON.stringify(listed.items[0]?.parts);
-  expect(text).toContain("Gmail");
+  expect(listed.items).toHaveLength(0);
+
+  expect(platform.sentMail).toHaveLength(1);
+  expect(platform.sentMail[0]?.workbenchId).toBe("ins_myra");
+  expect(platform.sentMail[0]?.fromWorkbenchId).toBe("chan_waiting");
+  expect(platform.sentMail[0]?.principalId).toBe("prn_owner");
+  expect(platform.sentMail[0]?.content.content).toContain("Gmail");
+
+  const turns = await agentTurns.listTurns({
+    tenantId: TENANT.id,
+    workbenchId: "chan_waiting",
+  });
+  expect(turns).toHaveLength(1);
+  expect(turns[0]?.agentAddress).toBe(AGENT_ADDRESS);
+  expect(turns[0]?.requestMessageIds).toEqual([]);
 
   const untouched = await store.getWorkbenchSettings(TENANT.id, "chan_other");
   expect(untouched?.settings["connections/pending"]).toBeUndefined();
@@ -116,8 +135,75 @@ test("settles every room waiting on the connector: clears pending, publishes cha
   expect(otherMessages.items).toHaveLength(0);
 });
 
+test("Connect card flips in place; agent wakes without a forged user message", async () => {
+  const { store, roomMessages, published, platform, agentTurns, deps } =
+    buildDeps();
+  await seedWorkbench(store, "chan_waiting", ["gmail"]);
+  await roomMessages.insertMessage({
+    id: "msg_1",
+    tenantId: TENANT.id,
+    workbenchId: "chan_waiting",
+    sender: { name: "owner", address: HUMAN_ADDRESS },
+    senderPrincipalId: "prn_owner",
+    parts: [{ kind: "text", text: "send that email" }],
+  });
+  await roomMessages.insertMessage({
+    id: "msg_2",
+    tenantId: TENANT.id,
+    workbenchId: "chan_waiting",
+    sender: { name: "myra", address: AGENT_ADDRESS },
+    runId: "ins_myra",
+    parts: [{ kind: "text", text: "connect Gmail so I can send it" }],
+  });
+
+  await settleConnectedService(deps, {
+    tenantId: TENANT.id,
+    principalId: "prn_owner",
+    connectorId: "gmail",
+    displayName: "Gmail",
+  });
+
+  const settled = await store.getWorkbenchSettings(TENANT.id, "chan_waiting");
+  expect(settled?.settings["connections/pending"]).toEqual([]);
+  expect(
+    published.some(
+      (entry) =>
+        entry.workbenchId === "chan_waiting" &&
+        entry.event.type === "chat.settings",
+    ),
+  ).toBe(true);
+  expect(published.some((entry) => entry.event.type === "chat.message")).toBe(
+    false,
+  );
+
+  const listed = await roomMessages.listMessages({
+    tenantId: TENANT.id,
+    workbenchId: "chan_waiting",
+  });
+  expect(listed.items).toHaveLength(2);
+  expect(listed.items.map((item) => item.id).toSorted()).toEqual([
+    "msg_1",
+    "msg_2",
+  ]);
+  expect(
+    listed.items.some((item) =>
+      JSON.stringify(item.parts).includes("is connected now"),
+    ),
+  ).toBe(false);
+
+  expect(platform.sentMail).toHaveLength(1);
+  expect(platform.sentMail[0]?.workbenchId).toBe("ins_myra");
+
+  const turns = await agentTurns.listTurns({
+    tenantId: TENANT.id,
+    workbenchId: "chan_waiting",
+  });
+  expect(turns[0]?.agentAddress).toBe(AGENT_ADDRESS);
+  expect(turns[0]?.requestMessageIds).toEqual(["msg_1", "msg_2"]);
+});
+
 test("matches a pending mcp-prefixed entry when the preset connects under its bare slug", async () => {
-  const { store, deps } = buildDeps();
+  const { store, roomMessages, deps } = buildDeps();
   await seedWorkbench(store, "chan_waiting", ["mcp:notion"]);
 
   await settleConnectedService(deps, {
@@ -129,10 +215,16 @@ test("matches a pending mcp-prefixed entry when the preset connects under its ba
 
   const settled = await store.getWorkbenchSettings(TENANT.id, "chan_waiting");
   expect(settled?.settings["connections/pending"]).toEqual([]);
+  const listed = await roomMessages.listMessages({
+    tenantId: TENANT.id,
+    workbenchId: "chan_waiting",
+  });
+  expect(listed.items).toHaveLength(0);
 });
 
 test("settles a room whose GitHub card is pending under the code-review template's own key — a credential created out of band (not through that card's own submit) still reaches it", async () => {
-  const { store, roomMessages, published, deps } = buildDeps();
+  const { store, roomMessages, published, platform, agentTurns, deps } =
+    buildDeps();
   await seedTemplateWorkbench(store, "chan_template", ["github"]);
 
   await settleConnectedService(deps, {
@@ -152,17 +244,54 @@ test("settles a room whose GitHub card is pending under the code-review template
         entry.event.type === "chat.settings",
     ),
   ).toBe(true);
+  expect(published.some((entry) => entry.event.type === "chat.message")).toBe(
+    false,
+  );
 
   const listed = await roomMessages.listMessages({
     tenantId: TENANT.id,
     workbenchId: "chan_template",
   });
-  expect(listed.items).toHaveLength(1);
-  expect(JSON.stringify(listed.items[0]?.parts)).toContain("GitHub");
+  expect(listed.items).toHaveLength(0);
+
+  expect(platform.sentMail).toHaveLength(1);
+  expect(platform.sentMail[0]?.workbenchId).toBe("ins_myra");
+  expect(platform.sentMail[0]?.fromWorkbenchId).toBe("chan_template");
+  expect(platform.sentMail[0]?.content.content).toContain("GitHub");
+
+  const turns = await agentTurns.listTurns({
+    tenantId: TENANT.id,
+    workbenchId: "chan_template",
+  });
+  expect(turns[0]?.agentAddress).toBe(AGENT_ADDRESS);
+  expect(turns[0]?.requestMessageIds).toEqual([]);
+});
+
+test("System / settle notices are not presented as the human's messages", async () => {
+  const { store, roomMessages, deps } = buildDeps();
+  await seedWorkbench(store, "chan_waiting", ["github"]);
+
+  await settleConnectedService(deps, {
+    tenantId: TENANT.id,
+    principalId: "prn_owner",
+    connectorId: "github",
+    displayName: "GitHub",
+  });
+
+  const listed = await roomMessages.listMessages({
+    tenantId: TENANT.id,
+    workbenchId: "chan_waiting",
+  });
+  expect(
+    listed.items.filter((item) => item.sender.address === HUMAN_ADDRESS),
+  ).toHaveLength(0);
+  expect(
+    listed.items.filter((item) => item.senderPrincipalId === "prn_owner"),
+  ).toHaveLength(0);
 });
 
 test("a connector no room is waiting on settles nothing", async () => {
-  const { store, roomMessages, published, deps } = buildDeps();
+  const { store, roomMessages, published, platform, deps } = buildDeps();
   await seedWorkbench(store, "chan_1", ["exa"]);
 
   await settleConnectedService(deps, {
@@ -180,4 +309,5 @@ test("a connector no room is waiting on settles nothing", async () => {
     workbenchId: "chan_1",
   });
   expect(listed.items).toHaveLength(0);
+  expect(platform.sentMail).toHaveLength(0);
 });
