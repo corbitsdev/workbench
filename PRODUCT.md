@@ -69,6 +69,16 @@ A bench that already has one or more workbenches skips create and lands
 in an existing conversation instead (see
 `apps/web/src/pages/home-page.tsx`).
 
+### Code review's first minute
+
+Code review is the product scene for the template path: Connect GitHub
+with a personal access token (the shipped path today) → the connect card
+flips in place to pick repositories → reviewers introduce themselves as
+left-aligned messages with avatars. A GitHub App / hosted OAuth welcome
+mat is future work (CL-6343), not current product. Never: a stale Connect
+after success; the product posting as the signed-in user; an agent 401
+after GitHub already succeeded.
+
 ## Plugins and Skills
 
 A **Skill** is a named, reusable capability — instructions an agent can

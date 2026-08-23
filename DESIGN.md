@@ -260,6 +260,17 @@ short tags or a card, and mirroring them to the right would land next to
 the composer and break the one consistent place a reader looks for
 approvals and tool activity.
 
+## Connect cards
+
+In-thread cards flip in place: disconnected → connected → next step. The
+card never unmounts and remounts as a new row, and a connected card never
+still says Connect.
+
+GitHub for Code review is PAT-first today: Connect opens a guided
+personal-access-token paste, then the same card flips to pick
+repositories. A GitHub App / hosted OAuth Connect as the welcome mat is
+CL-6343 (out of scope), not the shipped card.
+
 ## State Pills
 
 Status indicators (ok / warn / error / running) use semantic colors that

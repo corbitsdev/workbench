@@ -39,6 +39,24 @@ the agent — no settings page round-trip, no "report back when done".
   is woken via `dispatchTurn` / `sendMail` — never by posting a timeline
   row as the connecting person.
 
+## GitHub (Code review)
+
+GitHub for Code review is **PAT-first** today (`connect-github` block +
+`packages/chat-ui` card, CL-6345): Connect opens a guided personal-access-
+token paste (create a token with the `repo` scope, paste it, store
+encrypted). After Connect succeeds, the same card flips in place to pick
+repositories — Code review needs a repo pick before reviewers are
+watching. Reviewers then introduce themselves as left-aligned messages.
+
+A GitHub App / hosted OAuth Connect as the welcome mat is CL-6343, out of
+scope for the shipped card — do not document OAuth-first GitHub connect
+as current. A stale Connect after success, or an agent 401 after GitHub
+already connected, is still a broken first minute (PRODUCT.md).
+
+The generic `connect-service` card (above) still offers one-click hosted
+OAuth for connectors that are actually OAuth-only (e.g. Gmail); GitHub's
+own template card does not ride that path.
+
 ## Gmail
 
 `gmail` is a pure hosted-OAuth connector
