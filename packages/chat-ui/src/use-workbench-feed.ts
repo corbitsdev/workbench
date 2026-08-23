@@ -19,12 +19,14 @@ import {
   listMessages,
   listPinnedMessages,
   listThreads,
+  workbenchesQueryKey,
 } from "./api";
 import type {
   MessageItem,
   MessagesResponse,
   PinnedMessage,
   ReactionSummary,
+  Workbench,
   WorkbenchThreadRow,
 } from "./api";
 
@@ -90,6 +92,79 @@ export function chatPinsQueryKey(tenantId: string, workbenchId: string | null) {
   return [...chatFeedQueryKeyPrefix(tenantId, workbenchId), "pins"] as const;
 }
 
+/** Cap matching `packages/chat/src/room-messages.ts`'s bench-list preview. */
+const LIST_PREVIEW_MAX_LENGTH = 80;
+
+/**
+ * Person-facing text for a sidebar list-row preview from one stream
+ * message's parts (CL-6795). Text parts only — join/event/attachment-only
+ * rows contribute nothing so the prior readable preview is kept rather
+ * than blanked. Truncation matches the server's `previewOf`.
+ */
+function streamListPreview(parts: MessageItem["parts"]): string {
+  const text = parts
+    .filter(
+      (part): part is Extract<MessageItem["parts"][number], { kind: "text" }> =>
+        part.kind === "text",
+    )
+    .map((part) => part.text)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text.length === 0) return "";
+  return text.length > LIST_PREVIEW_MAX_LENGTH
+    ? `${text.slice(0, LIST_PREVIEW_MAX_LENGTH).trimEnd()}…`
+    : text;
+}
+
+/**
+ * Settles the workbench/chat list-cache row for a streamed message
+ * (CL-6795): bump `lastActivityAt` when the message is at least as new as
+ * the cached activity, replace `preview` only when this message carries
+ * person-facing text, and never blank a prior readable preview on a
+ * join/event/attachment-only row. Touches both kind caches — the row
+ * lives in exactly one — so the sidebar updates without a list refetch.
+ */
+function settleWorkbenchListRow(
+  queryClient: QueryClient,
+  tenantId: string,
+  workbenchId: string,
+  message: MessageItem,
+): void {
+  const nextPreview = streamListPreview(message.parts);
+  for (const kind of ["workbench", "chat"] as const) {
+    queryClient.setQueryData(
+      workbenchesQueryKey(tenantId, kind),
+      (current: readonly Workbench[] | undefined) => {
+        if (current === undefined) return current;
+        let changed = false;
+        const items = current.map((row) => {
+          if (row.id !== workbenchId) return row;
+          const priorActivity = row.lastActivityAt;
+          const isNewerOrEqual =
+            priorActivity === undefined || message.createdAt >= priorActivity;
+          if (!isNewerOrEqual) return row;
+          const lastActivityAt = message.createdAt;
+          const preview = nextPreview.length > 0 ? nextPreview : row.preview;
+          if (
+            lastActivityAt === row.lastActivityAt &&
+            preview === row.preview
+          ) {
+            return row;
+          }
+          changed = true;
+          return {
+            ...row,
+            lastActivityAt,
+            ...(preview !== undefined ? { preview } : {}),
+          };
+        });
+        return changed ? items : current;
+      },
+    );
+  }
+}
+
 /**
  * Folds a freshly published `chat.message` row straight into the messages
  * cache (CL-6328) — the §6/1.2 bar is zero refetches triggered by a stream
@@ -100,6 +175,11 @@ export function chatPinsQueryKey(tenantId: string, workbenchId: string | null) {
  * belongs to a thread also bumps that thread's `replyCount`/
  * `lastActivityAt` row in the threads cache — the one piece of thread
  * metadata `MessageItem` itself doesn't carry (see `./thread-feed.ts`).
+ * The workbench list-cache row settles its preview/`lastActivityAt` here
+ * too (CL-6795) so the sidebar tracks the latest person-facing text
+ * without waiting for a list refetch — including when the messages
+ * append was a no-op because this connection's optimistic send already
+ * wrote the row.
  */
 export function applyStreamMessage(
   queryClient: QueryClient,
@@ -121,6 +201,7 @@ export function applyStreamMessage(
       return { ...current, items: [...current.items, message] };
     },
   );
+  settleWorkbenchListRow(queryClient, tenantId, workbenchId, message);
   if (message.threadId === undefined) return;
   queryClient.setQueryData(
     chatThreadsQueryKey(tenantId, workbenchId),
