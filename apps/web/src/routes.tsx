@@ -36,7 +36,6 @@ import { lazy, useEffect, type ReactElement, type ReactNode } from "react";
 import {
   AGENTS_PATH_PREFIX,
   EVALS_PATH_PREFIX,
-  PLUGINS_PATH_PREFIX,
   SKILLS_PATH_PREFIX,
   ROUTINES_PATH_PREFIX,
   detailSlugFromPath,
@@ -96,10 +95,6 @@ const AgentDetailRoute = lazy(async () => ({
 const SkillDetailRoute = lazy(async () => ({
   default: (await import("./pages/skill-detail-page")).SkillDetailRoute,
 }));
-const PluginDetailPlaceholder = lazy(async () => ({
-  default: (await import("./pages/detail-placeholders"))
-    .PluginDetailPlaceholder,
-}));
 const RoutineDetailRoute = lazy(async () => ({
   default: (await import("./pages/routine-detail-page")).RoutineDetailRoute,
 }));
@@ -143,7 +138,9 @@ const SLUG_SEGMENT = "/:slug";
 
 export const AGENT_DETAIL_PATH = `${AGENTS_PATH_PREFIX}${SLUG_SEGMENT}`;
 export const SKILL_DETAIL_PATH = `${SKILLS_PATH_PREFIX}${SLUG_SEGMENT}`;
-export const PLUGIN_DETAIL_PATH = `${PLUGINS_PATH_PREFIX}${SLUG_SEGMENT}`;
+// Plugin detail (`/plugins/:slug`) is parked with CL-6417. CL-6817 removed
+// the "still being built" stub so gallery/palette click-throughs do not
+// promise a page that is only a placeholder.
 
 /**
  * Routines are addressed by id, not by slug. DESIGN.md allows a slug in a
@@ -208,10 +205,9 @@ export type AppRoute = {
  * conversation deep links (which also match when Myra land `/` is active)
  * and the slug-addressed detail routes (`/agents/:slug`). Other routes are
  * exact path matches. A roster prefix still matches its own nested paths,
- * so the sidebar footer row stays lit on a detail screen — except Plugins,
- * whose roster consumes no path segment of its own: there, only the bare
- * path and a slug detail resolve, and any other nested path is unroutable
- * rather than quietly showing the roster.
+ * so the sidebar footer row stays lit on a detail screen. Plugins is exact
+ * only: until CL-6417 lands a real detail page, a slug under `/plugins` is
+ * unroutable rather than a stub (CL-6817).
  */
 export function matchesRoute(routePath: string, path: string): boolean {
   if (routePath === WORKBENCH_PATH_PREFIX) {
@@ -223,9 +219,6 @@ export function matchesRoute(routePath: string, path: string): boolean {
   }
   if (routePath.endsWith(SLUG_SEGMENT)) {
     return slugForDetailRoute(routePath, path) !== null;
-  }
-  if (routePath === PLUGINS_PATH_PREFIX) {
-    return path === routePath || detailSlugFromPath(path, routePath) !== null;
   }
   if (
     routePath === "/routines" ||
@@ -401,18 +394,9 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: (path: string) => <EvalsRoute path={path} />,
   },
   {
-    path: PLUGIN_DETAIL_PATH,
-    label: "Plugin",
-    icon: <SquaresFour />,
-    render: (path: string) => (
-      <PluginDetailPlaceholder
-        slug={detailRouteSlug(PLUGIN_DETAIL_PATH, path)}
-      />
-    ),
-  },
-  {
     // Reached by deep link and the command palette's Pages group — never
-    // from the first-run footer rail.
+    // from the first-run footer rail. No `/plugins/:slug` until CL-6417
+    // (CL-6817 unlinked the stub).
     path: "/plugins",
     label: "Plugins",
     icon: <SquaresFour />,

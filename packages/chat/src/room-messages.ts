@@ -181,8 +181,9 @@ function isFailurePreviewParts(parts: readonly Part[]): boolean {
  * Pick bench-list preview text from newest-first messages: skip failed
  * turns and classified failure paragraphs, keep the last good human/agent
  * text, and fall back to the short consumer notice when nothing else
- * qualifies (CL-6735). Does not skip ordinary user/agent replies
- * (CL-6795 is separate).
+ * qualifies (CL-6735). Event / attachment-only rows contribute no text and
+ * are walked past so a join notice never blanks a prior readable preview
+ * (CL-6795). Ordinary user/agent replies are never skipped.
  */
 function activityPreviewFromNewestFirst(
   newestFirst: readonly RoomMessage[],
@@ -197,6 +198,12 @@ function activityPreviewFromNewestFirst(
     return CONSUMER_INFERENCE_FAILURE_NOTICE;
   }
   return "";
+}
+
+/** True when listActivity must walk back past the newest row for a preview
+ * (CL-6735 failures; CL-6795 empty event/attachment-only newest). */
+function needsPreviewLookback(parts: readonly Part[]): boolean {
+  return isFailurePreviewParts(parts) || previewOf(parts).length === 0;
 }
 
 function summaryOf(
@@ -430,7 +437,7 @@ export function createDrizzleRoomMessageStore(
         const newest = toRoomMessage(row as MessageRow);
         const unreadCount = unreadByWorkbenchId.get(newest.workbenchId) ?? 0;
         let newestFirstForPreview: readonly RoomMessage[] = [newest];
-        if (isFailurePreviewParts(newest.parts)) {
+        if (needsPreviewLookback(newest.parts)) {
           const recentRows = await db
             .select()
             .from(workbenchMessages)

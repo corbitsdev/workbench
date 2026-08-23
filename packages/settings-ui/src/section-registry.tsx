@@ -46,8 +46,8 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
   {
     id: "account",
     label: SETTINGS_STRINGS.groupAccountLabel,
-    // No "Your agent" section here: it has no preference store to back it —
-    // see agent-section.tsx's header comment for the re-add condition.
+    // No "Your agent" section here: it has no preference store to back it.
+    // Re-add only once a hub preference store exists and save actually persists.
     // No Notifications ("chat") section either: toggles with no per-user
     // preference store are fake controls — see notifications-section.tsx
     // for the re-add condition (CL-6843). Account (General) is the sole

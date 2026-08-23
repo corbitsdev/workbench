@@ -3,12 +3,24 @@
 // resolves for a given `{ kind, id }`. Both `@corbits/skills`' skill assets
 // and `@corbits/agent-directory`'s workflow-kind definition assets read
 // their history through this one walk.
+//
+// Consumer history omits the hub's genesis commit — every `createAsset` →
+// `initRepo` path writes an "Initialize repository" scaffolding commit
+// authored as interchange-hub. That is substrate, not a person-saved
+// version, so it never surfaces in the version list a saver reads back.
 import fs from "node:fs";
 import git from "isomorphic-git";
 
 import type { RepoId, RepoStore } from "@intx/hub-sessions";
 
 import type { SkillCommit } from "./asset-store";
+
+/** The hub genesis commit message — substrate scaffolding, not a save. */
+export const ASSET_GENESIS_COMMIT_MESSAGE = "Initialize repository";
+
+export function isAssetGenesisCommit(message: string): boolean {
+  return message.trim() === ASSET_GENESIS_COMMIT_MESSAGE;
+}
 
 export async function readAssetCommitHistory(input: {
   readonly repoStore: RepoStore;
@@ -28,9 +40,11 @@ export async function readAssetCommitHistory(input: {
   }
   const commits: SkillCommit[] = [];
   for (const entry of entries) {
+    const message = entry.commit.message.trim();
+    if (isAssetGenesisCommit(message)) continue;
     commits.push({
       commitSha: entry.oid,
-      message: entry.commit.message.trim(),
+      message,
       author: entry.commit.author.name,
       committedAtIso: new Date(
         entry.commit.author.timestamp * 1000,

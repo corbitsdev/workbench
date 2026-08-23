@@ -167,6 +167,18 @@ describe("PluginsGallery", () => {
       '[aria-label="Connect Hugging Face"]',
     );
     expect(connectButton).not.toBeNull();
+    // Visible label stays the single verb (CL-6794).
+    expect(connectButton?.textContent?.trim()).toBe("Connect");
+  });
+
+  test("a connected tool connector's Manage button includes the plugin name in its accessible name (CL-6794)", () => {
+    const { container } = renderGallery();
+
+    const manageButton = container.querySelector(
+      '[aria-label="Manage GitHub"]',
+    );
+    expect(manageButton).not.toBeNull();
+    expect(manageButton?.textContent?.trim()).toBe("Manage");
   });
 
   test("filters out the old registry card for a connector an MCP preset now fronts", () => {

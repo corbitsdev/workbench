@@ -158,12 +158,23 @@ export function createHubSkillAssetStore(
     },
 
     async history(assetId) {
-      return readAssetCommitHistory({
+      // RepoStore always commits as `interchange-hub` (fixed git identity).
+      // Only the skill's author may save, so attribute every consumer-visible
+      // version to that principal — never the machine account.
+      const commits = await readAssetCommitHistory({
         repoStore,
         kind: SKILL_ASSET_KIND,
         assetId,
         ref: DEFAULT_ASSET_REF,
       });
+      const row = await db.query.asset.findFirst({
+        where: eq(assetTable.id, assetId),
+      });
+      const author = row?.creatorPrincipalId;
+      if (author === undefined || author === null || author === "") {
+        return commits;
+      }
+      return commits.map((commit) => ({ ...commit, author }));
     },
   };
 }

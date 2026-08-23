@@ -304,6 +304,7 @@ export {
   createDrizzleRoomMessageStore,
   createInMemoryRoomMessageStore,
   postRoomMessage,
+  previewOf,
 } from "./room-messages";
 export type {
   RoomMessage,

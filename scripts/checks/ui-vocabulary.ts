@@ -63,12 +63,14 @@ const BANNED_TERMS: readonly { name: string; pattern: RegExp }[] = [
   // this cannot false-positive on the legal word the same way "bench"
   // above does not match inside "workbench".
   { name: "workspace", pattern: /\bworkspaces?\b/i },
-  // CL-6138: one creation verb. "agent" alone stays legal copy — it's a
-  // starting point you pick, not something you mint ("Search or create
-  // agents", "No agents available") — but the two-and-three-word
-  // creation-verb phrases below are banned outright: "New workbench" is
-  // the only mint action a person ever sees, so nothing may offer "New
-  // agent" or "Create new agent" as a second one.
+  // CL-6138: one creation verb for minting a workbench. "agent" alone stays
+  // legal copy — it's a starting point you pick, not something you mint
+  // ("Search or create agents", "No agents available") — but the
+  // two-and-three-word creation-verb phrases below are banned from
+  // workbench-mint surfaces: "New workbench" is the only mint action a
+  // person ever sees there. CL-6745 restores "New agent" on the
+  // create-agent *definition* dialog (allowlisted below) — that path drafts
+  // an agent template, not a workbench.
   { name: "new agent", pattern: /\bnew agent\b/i },
   { name: "create new agent", pattern: /\bcreate new agent\b/i },
 ];
@@ -96,7 +98,11 @@ const BAND_LABEL_PATTERN =
  * phrase landing in a different file still fails — an allowlist entry
  * is a ruling about one spot, never a blanket exemption for a phrase.
  */
-const ALLOWLIST: readonly { relPath: string; text: string }[] = [];
+const ALLOWLIST: readonly { relPath: string; text: string }[] = [
+  // CL-6745: create-agent dialog drafts an agent definition; avatar
+  // fallback label uses the agent noun (title is JSX text, unscanned).
+  { relPath: "apps/web/src/pages/create-agent-panel.tsx", text: "New agent" },
+];
 
 /** Strips comments and console/logger calls so log lines and
  * documentation never count as user-facing copy. Deliberately simple —

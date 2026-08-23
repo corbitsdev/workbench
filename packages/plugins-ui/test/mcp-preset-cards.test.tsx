@@ -93,6 +93,49 @@ describe("McpPresetCardsSection", () => {
     ).toBe("0 0 151 182");
   });
 
+  // CL-6794: Connect's accessible name must name the preset so a gallery of
+  // identical "Connect" verbs is distinguishable to a screen reader; the
+  // visible label stays the single verb.
+  test("Connect's accessible name includes the preset display name (CL-6794)", async () => {
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({ data: PRESETS }),
+      )) as unknown as typeof fetch;
+
+    const container = mountSection();
+    await settle();
+
+    const connectExa = container.querySelector('[aria-label="Connect Exa"]');
+    expect(connectExa).not.toBeNull();
+    expect(connectExa?.textContent?.trim()).toBe("Connect");
+
+    const connectGranola = container.querySelector(
+      '[aria-label="Connect Granola"]',
+    );
+    expect(connectGranola).not.toBeNull();
+    expect(connectGranola?.textContent?.trim()).toBe("Connect");
+  });
+
+  test("Disconnect's accessible name includes the preset display name (CL-6794)", async () => {
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          data: PRESETS.map((p) =>
+            p.slug === "exa" ? { ...p, connected: true } : p,
+          ),
+        }),
+      )) as unknown as typeof fetch;
+
+    const container = mountSection();
+    await settle();
+
+    const disconnectExa = container.querySelector(
+      '[aria-label="Disconnect Exa"]',
+    );
+    expect(disconnectExa).not.toBeNull();
+    expect(disconnectExa?.textContent?.trim()).toBe("Disconnect");
+  });
+
   test("connect calls the preset connect route with the preset's slug", async () => {
     const calls: { url: string; init?: RequestInit }[] = [];
     let connected = false;

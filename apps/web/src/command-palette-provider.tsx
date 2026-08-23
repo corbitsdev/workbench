@@ -274,11 +274,9 @@ export function CommandPaletteProvider({
     open && selectedTenantId !== null,
     () => listSkills(selectedTenantId ?? ""),
   );
-  // Plugins, as far as this bench has any: its connected MCP servers, each
-  // already carrying the immutable slug `/plugins/<slug>` is addressed by.
-  // The gallery's presets and catalog entries are not connected things and
-  // have no detail route of their own yet — a follow-up, not a second
-  // search.
+  // Connected MCP servers for this bench. Until CL-6417 lands a real
+  // `/plugins/<slug>` page, selecting one opens the Plugins gallery
+  // (CL-6817) rather than a "still being built" stub.
   const mcpServersQuery = useTenantQuery(
     tenantKeys.mcpServers(selectedTenantId ?? ""),
     open && selectedTenantId !== null,
@@ -578,7 +576,9 @@ export function CommandPaletteProvider({
       } else if (id.startsWith("entity:plugins:")) {
         const slug = id.slice("entity:plugins:".length);
         const title = pluginItems.find((item) => item.id === id)?.title ?? slug;
-        navigate(detailPath(PLUGINS_PATH_PREFIX, { slug, id: slug }));
+        // No plugin detail page yet (CL-6417 parked). Land on the gallery
+        // instead of the removed stub (CL-6817).
+        navigate(PLUGINS_PATH_PREFIX);
         pushRecent({ kind: "plugins", id, title, subtitle: "Plugin" });
       } else if (id.startsWith("entity:library:")) {
         const artifactId = id.slice("entity:library:".length);

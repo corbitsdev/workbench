@@ -12,32 +12,6 @@ export const SETTINGS_STRINGS = {
   advancedSectionsSummary: "Advanced",
   advancedSectionsHint: "Roles, granular permissions, and activity history.",
 
-  agentSectionTitle: "Your agent",
-  agentSectionDescription:
-    "How your default agent works for you on this workbench.",
-  agentAutonomyHeading: "Autonomy",
-  agentAutonomyLabel: "Default behavior",
-  agentAutonomyPrepare: "Prepare only — draft, never send",
-  agentAutonomyGated: "Execute with gates — ask before side effects",
-  agentAutonomyAutonomous: "Autonomous in approved spaces",
-  agentBriefLabel: "Morning brief",
-  agentBriefOff: "Off",
-  agentBrief0730: "07:30 local",
-  agentBrief0900: "09:00 local",
-  agentInstructionsHeading: "Standing instructions",
-  agentInstructionsLabel: "Applied to every chat",
-  agentInstructionsDefault:
-    "Concise, multiplayer-aware. Prefer canvas for artifacts. End turns with a clear next step.",
-  agentPinnedHeading: "Pinned skills",
-  agentPinnedHint:
-    "Pinning edits the skill library when that store is wired; chips here are draft-only for now.",
-  agentInferenceHeading: "Inference",
-  agentCreativityLabel: "Creativity",
-  agentThinkingLabel: "Thinking budget",
-  agentSaveAction: "Save",
-  agentSaveHonesty:
-    "Draft only — personal agent prefs are not stored on the hub yet.",
-
   notificationsSectionTitle: "Notifications",
   notificationsSectionDescription: "How activity reaches you.",
   notificationsMentions: "Mentions & DMs",
@@ -213,34 +187,6 @@ export const SETTINGS_STRINGS = {
   grantCreatedToast: "Rule created",
   grantRevokedToast: "Rule revoked",
 
-  credentialsSectionTitle: "Keys",
-  credentialsSectionDescription:
-    "API keys and tokens this workbench stores for providers. Secrets are write-only — they are never shown again after create.",
-  credentialsLoadError: "this workbench's keys",
-  credentialsEmptyTitle: "No keys yet",
-  credentialsEmptyDescription:
-    "Add a key so your agents can reach this service.",
-  credentialsCreateAction: "New key",
-  credentialsCreateDialogTitle: "New key",
-  credentialsCreateDialogDescription:
-    "Store a secret against a provider. The secret is encrypted and never returned on later reads.",
-  credentialsProviderLabel: "Provider",
-  credentialsNoProviders: "No providers configured yet",
-  credentialsNameLabel: "Name",
-  credentialsNamePlaceholder: "e.g. OpenAI production",
-  credentialsTypeLabel: "Type",
-  credentialsSecretLabel: "Secret",
-  credentialsDescriptionLabel: "Description (optional)",
-  credentialsCreateSubmit: "Store",
-  credentialsCreateSubmitting: "Storing…",
-  credentialsCreateCancel: "Cancel",
-  credentialsCreateError: "Couldn't store that key — try again.",
-  credentialsDelete: "Revoke",
-  credentialsDeleting: "Revoking…",
-  credentialsDeleteConfirm: "Revoke for good?",
-  credentialsDeleteError: "Couldn't revoke that key — try again.",
-  credentialsRemovedProvider: "Removed provider",
-  credentialSavedToast: "Key saved · value hidden",
   credentialRevokedToast: "Key revoked",
 
   connectionsSectionTitle: "AI providers",

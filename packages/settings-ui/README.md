@@ -25,11 +25,11 @@ toggles).
 - `section-registry.tsx` — the Account/Everyone grouping, ordering, icons,
   and tenancy gates
 - `people-section.tsx` / `roles-section.tsx` / `grants-section.tsx` /
-  `credentials-section.tsx` / `connections-section.tsx` — the Everyone-group
-  and account-scoped management surfaces, each with its own API module
+  `connections-section.tsx` — the Everyone-group and account-scoped
+  management surfaces, each with its own API module
 - `account-section.tsx` / `audit-section.tsx` — the Account-group and
-  Advanced surfaces (`notifications-section.tsx` / `agent-section.tsx`
-  remain as dormant drafts until a preference store exists)
+  Advanced surfaces (`notifications-section.tsx` remains as a dormant
+  draft until a preference store exists)
 - `access.ts` / `tenancy-api.ts` — tenancy-gate resolution and the
   principals/roles/grants HTTP client
 - `access-policy.tsx` — the grant preview/editor shared by roles and grants

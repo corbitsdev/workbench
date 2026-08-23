@@ -41,11 +41,6 @@ export {
   CreateGrantDialog,
 } from "./grants-section";
 export {
-  CredentialsSection,
-  CredentialsTable,
-  CreateCredentialDialog,
-} from "./credentials-section";
-export {
   ConnectionsSection,
   ConnectorRowList,
   ConnectorCredentialDialog,

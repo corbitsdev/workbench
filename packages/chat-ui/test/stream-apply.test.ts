@@ -15,7 +15,13 @@ import {
   chatPinsQueryKey,
   chatThreadsQueryKey,
 } from "../src/use-workbench-feed";
-import type { MessageItem, MessagesResponse, PinnedMessage } from "../src/api";
+import type {
+  MessageItem,
+  MessagesResponse,
+  PinnedMessage,
+  Workbench,
+} from "../src/api";
+import { workbenchesQueryKey } from "../src/api";
 
 const TENANT = "tnt_1";
 const WORKBENCH = "wb_1";
@@ -32,6 +38,14 @@ const baseMessage: MessageItem = {
   parts: [{ kind: "text", text: "hello" }],
   sender: { name: "Alice", address: "prn_alice@acme.example" },
 };
+
+function seedList(
+  qc: QueryClient,
+  kind: "workbench" | "chat",
+  row: Workbench,
+): void {
+  qc.setQueryData(workbenchesQueryKey(TENANT, kind), [row] as Workbench[]);
+}
 
 describe("applyStreamMessage", () => {
   test("appends a freshly published row into the messages cache", () => {
@@ -142,6 +156,73 @@ describe("applyStreamMessage", () => {
         chatThreadsQueryKey(TENANT, WORKBENCH),
       ),
     ).toBe(threadsBefore);
+  });
+
+  // CL-6795: sidebar list cache must settle on stream apply — never keep a
+  // stale greeting after a newer user message, and never blank on join/event.
+  test("a newer user message settles the workbench-list preview over a stale greeting (CL-6795)", () => {
+    const qc = client();
+    qc.setQueryData(chatMessagesQueryKey(TENANT, WORKBENCH), {
+      items: [],
+    } satisfies MessagesResponse);
+    seedList(qc, "chat", {
+      id: WORKBENCH,
+      title: "Myra",
+      kind: "chat",
+      pinned: false,
+      participants: [],
+      lastActivityAt: "2026-01-01T00:00:00.000Z",
+      preview: "Hi — I'm Myra. What are we working on?",
+    });
+
+    applyStreamMessage(qc, TENANT, WORKBENCH, {
+      id: "m_user",
+      createdAt: "2026-01-01T00:01:00.000Z",
+      parts: [{ kind: "text", text: "draft the agenda for Monday" }],
+      sender: { name: null, address: "prn_ada@acme.example" },
+    });
+
+    const list = qc.getQueryData<readonly Workbench[]>(
+      workbenchesQueryKey(TENANT, "chat"),
+    );
+    expect(list?.[0]?.preview).toBe("draft the agenda for Monday");
+    expect(list?.[0]?.lastActivityAt).toBe("2026-01-01T00:01:00.000Z");
+    expect(list?.[0]?.preview).not.toMatch(/I'm Myra/i);
+  });
+
+  test("a join/event row bumps lastActivityAt but keeps the prior preview, never blanks (CL-6795)", () => {
+    const qc = client();
+    qc.setQueryData(chatMessagesQueryKey(TENANT, WORKBENCH), {
+      items: [],
+    } satisfies MessagesResponse);
+    seedList(qc, "workbench", {
+      id: WORKBENCH,
+      title: "Ops",
+      kind: "workbench",
+      pinned: false,
+      participants: [],
+      lastActivityAt: "2026-01-01T00:00:00.000Z",
+      preview: "let's pull Scout in",
+    });
+
+    applyStreamMessage(qc, TENANT, WORKBENCH, {
+      id: "m_join",
+      createdAt: "2026-01-01T00:02:00.000Z",
+      parts: [
+        {
+          kind: "event",
+          event: "workbench.agent-joined",
+          data: { address: "run_scout@acme.example" },
+        },
+      ],
+      sender: { name: null, address: "run_scout@acme.example" },
+    });
+
+    const list = qc.getQueryData<readonly Workbench[]>(
+      workbenchesQueryKey(TENANT, "workbench"),
+    );
+    expect(list?.[0]?.lastActivityAt).toBe("2026-01-01T00:02:00.000Z");
+    expect(list?.[0]?.preview).toBe("let's pull Scout in");
   });
 });
 
