@@ -201,7 +201,9 @@ describe("ConnectorCredentialDialog", () => {
       expect(body).not.toContain(
         SETTINGS_STRINGS.connectionsDialogUrlDescription,
       );
-      expect(document.body.querySelector("input[type=password]")).not.toBeNull();
+      expect(
+        document.body.querySelector("input[type=password]"),
+      ).not.toBeNull();
     } finally {
       act(() => root.unmount());
       container.remove();
