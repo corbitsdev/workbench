@@ -103,6 +103,21 @@ Deployment is explicit via **Pulumi**, targeting **Railway**. CI runs
 tests only — nothing auto-deploys on `main`; a deploy is a deliberate,
 separate action.
 
+## GitHub connect (shipped)
+
+The in-room `connect-github` card and the Plugins/Connections GitHub row
+are **PAT-first** (CL-6345): the person pastes a personal access token;
+the host tests and stores it through `@workbench/connections`' generic
+`github/complete` route. The card then flips in place to pick repos
+(`startReviewingRepos`). A GitHub App / hosted OAuth welcome mat is
+CL-6343 and is not the current product path — do not document OAuth as
+the first Connect step, and do not treat a PAT paste as a defect against
+an OAuth-first welcome mat that has not shipped.
+
+Optional `GITHUB_APP_CLIENT_ID` / `GITHUB_APP_CLIENT_SECRET` exist for
+that future hosted path; leaving them unset is normal. See
+`docs/connect-cards.md` and PRODUCT.md's Code review first minute.
+
 ## Related docs
 
 - [README.md](README.md) — quickstart, local setup, repo layout, e2e detail
