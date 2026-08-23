@@ -1176,9 +1176,12 @@
 .chat-event-line {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 0.5rem;
-  margin: 0.15rem 0;
+  /* CL-6772: same left gutter as failed-turn / gen-ui blocks — system
+     notices sit under the message column, never centered and never on
+     the signed-in user's right edge. */
+  margin: 0.15rem 0 0.15rem 2.9rem;
   padding: 0.2rem 0.5rem;
   font-size: 0.75rem;
   color: var(--muted-foreground);
