@@ -37,7 +37,11 @@ import {
 } from "../workbench-path";
 import { reportWorkbenchNotFound } from "../workbench-not-found-event";
 import { recordLastWorkbenchId } from "../last-workbench";
-import { ONBOARDING_PATH, MISSION_CONTROL_PATH, NEW_WORKBENCH_PATH } from "../routes";
+import {
+  ONBOARDING_PATH,
+  MISSION_CONTROL_PATH,
+  NEW_WORKBENCH_PATH,
+} from "../routes";
 import {
   useProviderHealthBanner,
   useRequestPluginsConnect,
