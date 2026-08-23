@@ -381,12 +381,12 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
     return (
       <OnboardingLayout>
         <div className="onboarding-phase" key="provisioning">
-          <h1 className="onboarding-title">Setting up your workbench</h1>
+          <h1 className="onboarding-title">Preparing your account</h1>
           <p className="onboarding-subtitle">One moment.</p>
           <div className="onboarding-content">
             <WorkbenchLoadingState
               delayMs={0}
-              title="Setting up your workbench…"
+              title="Preparing your account…"
             />
           </div>
         </div>
@@ -398,14 +398,14 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
     return (
       <OnboardingLayout>
         <div className="onboarding-phase" key="finishing-setup">
-          <h1 className="onboarding-title">Setting up your workbench…</h1>
+          <h1 className="onboarding-title">Preparing your agent</h1>
           <p className="onboarding-subtitle">
             Hooking up your agents. This takes about ten seconds.
           </p>
           <div className="onboarding-content">
             <WorkbenchLoadingState
               delayMs={0}
-              title="Setting up your workbench…"
+              title="Preparing your agent…"
             />
           </div>
         </div>
