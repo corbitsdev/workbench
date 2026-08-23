@@ -29,7 +29,10 @@ const socialActions = {
   } satisfies PinActions,
 };
 
-async function mount(items: MessageItem[], extra: { onFixConnection?: () => void } = {}) {
+async function mount(
+  items: MessageItem[],
+  extra: { onFixConnection?: () => void } = {},
+) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
