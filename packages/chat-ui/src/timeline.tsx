@@ -924,6 +924,19 @@ export function offersMessageSocialChrome(item: MessageItem): boolean {
 }
 
 /**
+ * System notices (event-only rows) are never "own" for any viewer —
+ * DESIGN.md Message Alignment and CL-6772. Join / rename / membership
+ * lines often carry the acting principal as `sender`, but they still
+ * align left; treating them as own put them on the signed-in user's
+ * right edge.
+ */
+export function isSystemNoticeItem(item: MessageItem): boolean {
+  return (
+    item.parts.length > 0 && item.parts.every((part) => part.kind === "event")
+  );
+}
+
+/**
  * A failed send's inline recovery row (CL-6251/CL-5879): appended below
  * the bubble text of the exact same message group a confirmed message
  * would render as — never a status line elsewhere on the page,
@@ -1373,9 +1386,12 @@ function MessagePartsInner({
   // `offersMessageSocialChrome`.
   const isPending = item.pendingStatus !== undefined;
   const offersSocialChrome = !isPending && offersMessageSocialChrome(item);
+  // System notices (join / rename / membership) never read as own even when
+  // this viewer triggered them — see `isSystemNoticeItem` (CL-6772).
   const isOwn =
     currentUser !== undefined &&
     item.sender !== undefined &&
+    !isSystemNoticeItem(item) &&
     localPartOf(item.sender.address) === currentUser.principalId;
   const contextMenu = useContextMenuState();
   const menu = offersSocialChrome
