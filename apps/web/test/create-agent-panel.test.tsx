@@ -157,6 +157,20 @@ describe("CreateAgentPanel happy path", () => {
     expect(details?.open).toBe(false);
   });
 
+  // CL-6745: create-agent dialog is an agent-definition mint, not a
+  // workbench mint — title and CTA must use the agent noun.
+  test("dialog title and primary CTA use the agent noun, not workbench", async () => {
+    await mount();
+    const heading = [
+      ...document.body.querySelectorAll("h2, [role='heading']"),
+    ].find((el) => (el.textContent ?? "").trim() === "New agent");
+    expect(heading).toBeDefined();
+    expect(document.body.textContent).not.toContain("New workbench");
+    const cta = findButton("Get started");
+    expect(cta).toBeDefined();
+    expect(cta?.textContent).not.toMatch(/workbench/i);
+  });
+
   test("a name alone is enough — purpose is optional, never a gate", async () => {
     await mount();
     const button = findButton("Get started");

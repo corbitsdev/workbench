@@ -395,7 +395,7 @@ export function CreateAgentPanel({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent side="right">
         <DialogHeader>
-          <DialogTitle>New workbench</DialogTitle>
+          <DialogTitle>New agent</DialogTitle>
           <DialogDescription>
             A name is enough to start — Myra drafts the starting instructions,
             and you teach it the rest in conversation.
@@ -417,7 +417,7 @@ export function CreateAgentPanel({
           <div className="create-agent-identity">
             <Avatar
               initials={initialsFromName(values.name)}
-              label={values.name.trim() === "" ? "New workbench" : values.name}
+              label={values.name.trim() === "" ? "New agent" : values.name}
               tone={tone}
               size="lg"
             />
