@@ -4,6 +4,7 @@ import type { ModelInfo, ModelOfferingResponse } from "@intx/types";
 
 import {
   buildEffectiveInferenceRows,
+  chatCapableModels,
   computeMakeDefaultPatches,
   computeGlobalRoutePatches,
   computeReorderPatches,
@@ -249,6 +250,127 @@ describe("defaultModelForProvider", () => {
     ];
     expect(defaultModelForProvider(models, "ollama")).toBeNull();
   });
+
+  test("CL-6744: an hf.co path never wins the Ollama default when a chat model exists", () => {
+    const models: ModelInfo[] = [
+      model({
+        id: "model-hf",
+        canonicalName: "hf.co/bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M",
+        displayName: "hf.co/bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M",
+        offerings: [
+          {
+            offeringId: "offering-hf",
+            providerId: "provider-ollama",
+            providerName: "ollama",
+            plugin: "openai-compatible",
+            priority: 0,
+            deploymentTags: [],
+            capabilities: ["plain-text"],
+            pricing: [],
+          },
+        ],
+      }),
+      model({
+        id: "model-chat",
+        canonicalName: "qwen3:8b",
+        displayName: "qwen3:8b",
+        offerings: [
+          {
+            offeringId: "offering-chat",
+            providerId: "provider-ollama",
+            providerName: "ollama",
+            plugin: "openai-compatible",
+            priority: 1,
+            deploymentTags: [],
+            capabilities: ["plain-text"],
+            pricing: [],
+          },
+        ],
+      }),
+    ];
+    expect(defaultModelForProvider(models, "ollama")).toEqual({
+      canonicalName: "qwen3:8b",
+      displayName: "qwen3:8b",
+    });
+  });
+});
+
+describe("chatCapableModels", () => {
+  test("CL-6744: drops embedding-named, hf.co, and .gguf models from picker lists", () => {
+    const models: ModelInfo[] = [
+      model({
+        id: "model-embed",
+        canonicalName: "all-minilm",
+        displayName: "all-minilm",
+        offerings: [
+          {
+            offeringId: "offering-embed",
+            providerId: "provider-ollama",
+            providerName: "ollama",
+            plugin: "openai-compatible",
+            priority: 0,
+            deploymentTags: [],
+            capabilities: [],
+            pricing: [],
+          },
+        ],
+      }),
+      model({
+        id: "model-hf",
+        canonicalName: "hf.co/org/repo:Q4_K_M",
+        displayName: "hf.co/org/repo:Q4_K_M",
+        offerings: [
+          {
+            offeringId: "offering-hf",
+            providerId: "provider-ollama",
+            providerName: "ollama",
+            plugin: "openai-compatible",
+            priority: 0,
+            deploymentTags: [],
+            capabilities: ["plain-text"],
+            pricing: [],
+          },
+        ],
+      }),
+      model({
+        id: "model-gguf",
+        canonicalName: "Llama-3.2-3B-Instruct-IQ3_M.gguf",
+        displayName: "Llama-3.2-3B-Instruct-IQ3_M.gguf",
+        offerings: [
+          {
+            offeringId: "offering-gguf",
+            providerId: "provider-ollama",
+            providerName: "ollama",
+            plugin: "openai-compatible",
+            priority: 0,
+            deploymentTags: [],
+            capabilities: [],
+            pricing: [],
+          },
+        ],
+      }),
+      model({
+        id: "model-chat",
+        canonicalName: "qwen3:8b",
+        displayName: "qwen3:8b",
+        offerings: [
+          {
+            offeringId: "offering-chat",
+            providerId: "provider-ollama",
+            providerName: "ollama",
+            plugin: "openai-compatible",
+            priority: 0,
+            deploymentTags: [],
+            capabilities: ["plain-text"],
+            pricing: [],
+          },
+        ],
+      }),
+    ];
+    expect(chatCapableModels(models).map((entry) => entry.canonicalName)).toEqual(
+      ["qwen3:8b"],
+    );
+  });
 });
 
 describe("buildEffectiveInferenceRows", () => {
@@ -297,6 +419,67 @@ describe("buildEffectiveInferenceRows", () => {
 
   test("an empty catalog yields no rows", () => {
     expect(buildEffectiveInferenceRows([], new Set())).toEqual([]);
+  });
+
+  test("CL-6744: omits embedding, hf.co, and .gguf offerings from Settings route rows", () => {
+    const rows = buildEffectiveInferenceRows(
+      [
+        model({
+          id: "model-embed",
+          canonicalName: "nomic-embed-text",
+          displayName: "nomic-embed-text",
+          offerings: [
+            {
+              offeringId: "offering-embed",
+              providerId: "provider-ollama",
+              providerName: "ollama",
+              plugin: "openai-compatible",
+              priority: 0,
+              deploymentTags: [],
+              capabilities: [],
+              pricing: [],
+            },
+          ],
+        }),
+        model({
+          id: "model-hf",
+          canonicalName: "hf.co/bartowski/Llama-3.2-1B-Instruct-GGUF",
+          displayName: "hf.co/bartowski/Llama-3.2-1B-Instruct-GGUF",
+          offerings: [
+            {
+              offeringId: "offering-hf",
+              providerId: "provider-ollama",
+              providerName: "ollama",
+              plugin: "openai-compatible",
+              priority: 0,
+              deploymentTags: [],
+              capabilities: ["plain-text"],
+              pricing: [],
+            },
+          ],
+        }),
+        model({
+          id: "model-chat",
+          canonicalName: "qwen3:8b",
+          displayName: "qwen3:8b",
+          offerings: [
+            {
+              offeringId: "offering-chat",
+              providerId: "provider-ollama",
+              providerName: "ollama",
+              plugin: "openai-compatible",
+              priority: 0,
+              deploymentTags: [],
+              capabilities: ["plain-text"],
+              pricing: [],
+            },
+          ],
+        }),
+      ],
+      new Set(["offering-chat"]),
+    );
+    expect(rows.map((row) => row.canonicalName)).toEqual(["qwen3:8b"]);
+    expect(rows[0]?.provenance).toBe("set-here");
   });
 });
 
