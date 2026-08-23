@@ -203,11 +203,51 @@ type WorkbenchesState =
  * A chat's agent is fixed at creation — the server 409s an invite into one
  * — so the "invite agent" affordance only ever makes sense on a workbench or
  * on a kind this UI doesn't otherwise recognize. Undefined (no workbench
- * resolved yet) defaults to showing it.
+ * resolved yet, or a routed id that isn't a workbench) stays closed: showing
+ * Invite over a missing room is exactly the chrome flash CL-6796 closes.
  */
 export function canInviteAgent(kind: string | undefined): boolean {
-  if (kind === undefined) return true;
+  if (kind === undefined) return false;
   return !isKnownWorkbenchKind(kind) || kind !== "chat";
+}
+
+/**
+ * Recovery controls for a gone / non-workbench id (CL-6796). Prefer the
+ * Mission Control + New workbench pair; fall back to the legacy single
+ * "Back to workbenches" action when a host has not wired the new props.
+ */
+export function workbenchNotFoundRecoveryAction(args: {
+  readonly onGoToMissionControl?: () => void;
+  readonly onNewWorkbench?: () => void;
+  readonly onBackToWorkbenchList?: () => void;
+}): ReactNode | undefined {
+  const { onGoToMissionControl, onNewWorkbench, onBackToWorkbenchList } = args;
+  const hasModernRecovery =
+    onGoToMissionControl !== undefined || onNewWorkbench !== undefined;
+  if (hasModernRecovery) {
+    return (
+      <>
+        {onGoToMissionControl !== undefined ? (
+          <Button variant="outline" onClick={onGoToMissionControl}>
+            {CHAT_STRINGS.workbenchNotFoundMissionControlAction}
+          </Button>
+        ) : null}
+        {onNewWorkbench !== undefined ? (
+          <Button variant="outline" onClick={onNewWorkbench}>
+            {CHAT_STRINGS.workbenchNotFoundNewWorkbenchAction}
+          </Button>
+        ) : null}
+      </>
+    );
+  }
+  if (onBackToWorkbenchList !== undefined) {
+    return (
+      <Button variant="outline" onClick={onBackToWorkbenchList}>
+        {CHAT_STRINGS.workbenchNotFoundAction}
+      </Button>
+    );
+  }
+  return undefined;
 }
 
 /**
@@ -445,6 +485,8 @@ function ChatWorkspaceInner({
   onCreateRoutineInSpace,
   onWorkbenchNotFound,
   onBackToWorkbenchList,
+  onGoToMissionControl,
+  onNewWorkbench,
   onSignIn,
   hasUsableModel,
   onConnectModel,
@@ -457,7 +499,7 @@ function ChatWorkspaceInner({
   /** Whether the routed workbench's settings surface should replace the
    * conversation stage (mock § Workbench settings — a full surface, never a
    * dialog). Host-controlled the same way `workbenchId` is: driven from the
-   * URL (`/c/:id/settings`). */
+   * URL (`/w/:id/settings`). */
   readonly settingsOpen?: boolean;
   /** Fired when the settings surface should open or close. `section` is
    * only passed on open — the section the opener meant to land on (the
@@ -470,7 +512,7 @@ function ChatWorkspaceInner({
   ) => void;
   /** Which workbench settings tab is active while the surface is open —
    * host-controlled the same way `settingsOpen` is, driven from the URL
-   * (`/c/:id/settings/:section`). */
+   * (`/w/:id/settings/:section`). */
   readonly settingsSection?: WorkbenchSettingsSectionId;
   /** Fired when the user switches tabs while the settings surface is
    * already open, so the host can reflect it in the URL. */
@@ -478,39 +520,54 @@ function ChatWorkspaceInner({
     section: WorkbenchSettingsSectionId,
   ) => void;
   /** Section sub-selection while settings are open — host-controlled from
-   * the URL (`/w/:id/settings/:section/:entityId`). */
+   * the URL (`/w/:id/settings/:section/:entityId`). `null` means the
+   * section's own list (or a section with no list). */
   readonly settingsEntityId?: string | null;
   /** Fired when a settings section opens or closes its own detail, so the
    * host can deepen or clear the entity segment in the URL. */
   readonly onSettingsEntityIdChange?: (entityId: string | null) => void;
+  /** Open a message's artifact chip — see `WorkbenchTimeline`'s `onOpenArtifact`. */
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
+  /** The chip's "Open in Library" affordance — see `WorkbenchTimeline`'s
+   * `onOpenArtifactInLibrary`. */
   readonly onOpenArtifactInLibrary?: (part: Part & { kind: "file" }) => void;
-  /** See `WorkbenchTimeline`'s `onFixConnection` (CL-6092). */
+  /** The classified-inference-failure text bubble's "Fix this connection"
+   * action — see `WorkbenchTimeline`'s `onFixConnection` (CL-6092). */
   readonly onFixConnection?: () => void;
+  /** The approve block's live round-trip — see `WorkbenchTimeline`'s
+   * `approvalActions`. */
   readonly approvalActions?: ApprovalActions;
+  /** The poll/form blocks' live round-trip — see `WorkbenchTimeline`'s
+   * `blockResponses`. */
   readonly blockResponses?: BlockResponseActions;
+  /** The connect-github block's live round-trip — see `WorkbenchTimeline`'s
+   * `connectGithubActions`. */
   readonly connectGithubActions?: ConnectGithubActions;
   /** Host round-trip for the generic "connect-service" card. Undefined
    * renders every connect-service card in its disconnected framing. */
   readonly connectServiceActions?: ConnectServiceActions;
+  /** Host-supplied control rendered first in the workbench header — the
+   * shell's single col2 toggle, so chat carries the same top-bar chrome as
+   * every other stage surface. */
   readonly headerLeading?: ReactNode;
   /**
-   * Hands the host a function that inserts text into the active workbench's
-   * composer, or `null` while no composer is mounted (loading/error states,
-   * settings surface). The profile card's Mention action (CL-5914) is the
-   * first caller — a shell-level seam, so the host stores the latest
-   * function rather than this component reaching outside its own tree.
+   * Lets the host (command palette, canvas "insert into composer", …) push
+   * text into the live composer. Called with the insert fn when a composer
+   * mounts, and with `null` when it unmounts so the host never holds a
+   * stale handle. Optional: hosts that don't need the insert path omit it.
    */
   readonly registerComposerInsert?: (
     insert: ((text: string) => void) | null,
   ) => void;
-  /** Workspace members the mention popover's "Bring in…" group can
-   * offer — the same reduced listing the shell already fetches for its
-   * People views. Absent, the group only offers invitable agents. */
+  /**
+   * Tenant members the mention popover's "Bring in…" group can offer —
+   * the same reduced listing the shell already fetches for its
+   * people/agents surfaces. Optional: omitting it hides the People group
+   * (a workbench that can't grow its human roster still works).
+   */
   readonly listMembers?: (
     tenantId: string,
   ) => Promise<readonly BringInMember[]>;
-
   /**
    * The composer's `/routine` command: opens the New Routine panel with
    * the active workbench pre-bound as its destination. Host-supplied so
@@ -527,9 +584,13 @@ function ChatWorkspaceInner({
    * Recents entry that outlived it. The host owns Recents (this package
    * never touches localStorage), so it's told rather than reaching out. */
   readonly onWorkbenchNotFound?: (workbenchId: string) => void;
-  /** The dead-workbench empty state's way out — navigate to the bare workbench
-   * list instead of retrying an id that can never resolve. */
+  /** Legacy single recovery for a gone workbench — prefer
+   * `onGoToMissionControl` / `onNewWorkbench` (CL-6796). */
   readonly onBackToWorkbenchList?: () => void;
+  /** Not-found empty state's Mission Control recovery (CL-6796). */
+  readonly onGoToMissionControl?: () => void;
+  /** Not-found empty state's New workbench recovery (CL-6796). */
+  readonly onNewWorkbench?: () => void;
   /** The 401 messages-error state's way out — sign back in instead of a
    * retry that can only ever hit the same 401. Omitted, that state falls
    * back to no action at all (never "Try again" for a session that's gone). */
@@ -954,6 +1015,23 @@ function ChatWorkspaceInner({
     onSettingsOpenChange,
   ]);
 
+  // CL-6796: a routed id missing from the ready workbench list is NOT proof
+  // the room is gone — create→navigate races the React Query list cache, so
+  // a freshly created id is absent until refetch. Only an authoritative
+  // messages/workbench fetch 404 marks the room gone. While the list miss
+  // coincides with messages still loading, hold the loading treatment so we
+  // neither flash not-found nor paint Invite / composer / Untitled chrome.
+  const workbenchMissingFromList =
+    workbenchesState.kind === "ready" &&
+    activeWorkbenchId !== null &&
+    activeWorkbench === undefined;
+  const workbenchGone =
+    messagesState.kind === "error" && messagesState.workbenchNotFound;
+  const awaitingWorkbenchEvidence =
+    workbenchMissingFromList &&
+    !workbenchGone &&
+    messagesState.kind !== "ready";
+
   // Who's live in this workbench right now, beyond the static participants
   // list — derived from this workbench's own `chat.presence`/
   // `chat.presence.snapshot` stream events (CL-6328), never a second
@@ -1067,6 +1145,30 @@ function ChatWorkspaceInner({
               title={CHAT_STRINGS.noChatSelectedTitle}
               description={CHAT_STRINGS.noChatSelectedDescription}
             />
+          ) : workbenchGone ? (
+            // CL-6796: fail closed — never mount Invite / composer / room
+            // header over a missing or 404'd workbench. Recovery is the
+            // whole stage. Authoritative evidence only (messages 404), never
+            // a stale ready-list miss alone.
+            <EmptyState
+              icon={<WarningCircle />}
+              title={CHAT_STRINGS.workbenchNotFoundTitle}
+              description={CHAT_STRINGS.workbenchNotFoundDescription}
+              action={workbenchNotFoundRecoveryAction({
+                ...(onGoToMissionControl !== undefined
+                  ? { onGoToMissionControl }
+                  : {}),
+                ...(onNewWorkbench !== undefined ? { onNewWorkbench } : {}),
+                ...(onBackToWorkbenchList !== undefined
+                  ? { onBackToWorkbenchList }
+                  : {}),
+              })}
+            />
+          ) : awaitingWorkbenchEvidence ? (
+            // List cache is ready but lacks this id — wait for messages to
+            // prove the room exists (create→navigate) or 404 (true miss)
+            // before painting room chrome or the not-found empty state.
+            <WorkbenchLoadingState />
           ) : (
             <>
               <div className="chat-workbench-header">
@@ -1229,20 +1331,6 @@ function ChatWorkspaceInner({
               </div>
               {messagesState.kind === "loading" ? (
                 <WorkbenchLoadingState />
-              ) : messagesState.kind === "error" &&
-                messagesState.workbenchNotFound ? (
-                <EmptyState
-                  icon={<WarningCircle />}
-                  title={CHAT_STRINGS.workbenchNotFoundTitle}
-                  description={CHAT_STRINGS.workbenchNotFoundDescription}
-                  action={
-                    onBackToWorkbenchList !== undefined ? (
-                      <Button variant="outline" onClick={onBackToWorkbenchList}>
-                        {CHAT_STRINGS.workbenchNotFoundAction}
-                      </Button>
-                    ) : undefined
-                  }
-                />
               ) : messagesState.kind === "error" ? (
                 <EmptyState
                   icon={<WarningCircle />}
@@ -1405,7 +1493,9 @@ function ChatWorkspaceInner({
           )}
         </div>
       </div>
-      {activeWorkbenchId !== null ? (
+      {activeWorkbenchId !== null &&
+      !workbenchGone &&
+      !awaitingWorkbenchEvidence ? (
         <InviteAgentDialog
           open={inviteDialogOpen}
           onOpenChange={setInviteDialogOpen}
@@ -1447,6 +1537,8 @@ export function ChatWorkspace({
   onCreateRoutineInSpace,
   onWorkbenchNotFound,
   onBackToWorkbenchList,
+  onGoToMissionControl,
+  onNewWorkbench,
   onSignIn,
   hasUsableModel,
   onConnectModel,
@@ -1528,6 +1620,10 @@ export function ChatWorkspace({
   /** See `ChatWorkspaceInner`'s prop of the same name. */
   readonly onBackToWorkbenchList?: () => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
+  readonly onGoToMissionControl?: () => void;
+  /** See `ChatWorkspaceInner`'s prop of the same name. */
+  readonly onNewWorkbench?: () => void;
+  /** See `ChatWorkspaceInner`'s prop of the same name. */
   readonly onSignIn?: () => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
   readonly hasUsableModel?: boolean;
@@ -1584,6 +1680,10 @@ export function ChatWorkspace({
           {...(onBackToWorkbenchList !== undefined
             ? { onBackToWorkbenchList }
             : {})}
+          {...(onGoToMissionControl !== undefined
+            ? { onGoToMissionControl }
+            : {})}
+          {...(onNewWorkbench !== undefined ? { onNewWorkbench } : {})}
           {...(onSignIn !== undefined ? { onSignIn } : {})}
           {...(hasUsableModel !== undefined ? { hasUsableModel } : {})}
           {...(onConnectModel !== undefined ? { onConnectModel } : {})}

@@ -170,22 +170,75 @@ describe("ChatWorkspace settings surface", () => {
     harness.unmount();
   });
 
-  test("settingsOpen for a workbench id absent from the resolved list falls back to the ordinary chat view and corrects the URL", async () => {
-    stubFetch();
+  test("settingsOpen for a workbench id that 404s closes settings and shows not-found, never room chrome", async () => {
+    // Authoritative miss is the messages/workbench fetch 404 — not mere
+    // absence from a ready list (that alone is the create→navigate stale-
+    // cache race CL-6796 must not treat as gone).
+    globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
+        return json({ items: [WORKBENCH_WIRE] });
+      }
+      if (/\/chat\/workbenches\?kind=chat$/.test(path))
+        return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
+        return json({ rootThreadId: "", items: [] });
+      }
+      if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
+        return new Response(JSON.stringify({ error: "not found" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
+      if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
+        return json({ items: [] });
+      }
+      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path))
+        return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
+        return json({
+          ...WORKBENCH_WIRE,
+          settings: {},
+          contextWindow: { value: 20, source: "inherit" },
+        });
+      }
+      if (/\/chat\/bench\/settings$/.test(path)) {
+        return json({ settings: {}, contextWindow: 20 });
+      }
+      throw new Error(`unstubbed fetch: ${path}`);
+    }) as typeof fetch;
     const settingsOpenChanges: boolean[] = [];
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       workbenchId: "ch_missing",
       settingsOpen: true,
       onSettingsOpenChange: (open: boolean) => settingsOpenChanges.push(open),
+      onGoToMissionControl: () => undefined,
+      onNewWorkbench: () => undefined,
     });
     await harness.settle();
 
     expect(
       harness.container.querySelector(".workbench-settings-stage"),
     ).toBeNull();
-    expect(harness.container.querySelector(".chat-main")).not.toBeNull();
     expect(settingsOpenChanges).toEqual([false]);
+    expect(harness.container.textContent).toContain(
+      "This workbench isn't here anymore",
+    );
+    expect(
+      harness.container.querySelector(".chat-workbench-header"),
+    ).toBeNull();
+    expect(harness.container.textContent).not.toContain("Invite agent");
+    expect(harness.container.textContent).not.toContain(
+      "Untitled conversation",
+    );
     harness.unmount();
   });
 
@@ -921,7 +974,11 @@ describe("a workbench-level 404 offers a way out instead of retrying forever", (
   // a Recents entry that outlived it), not a transient load failure — a
   // dead-end "Try again" button would just re-request the same gone
   // workbench forever. The workspace tells the host (so it can drop the
-  // stale Recents entry) and offers "Back to workbenches" instead of retry.
+  // stale Recents entry) and offers recovery instead of retry.
+  //
+  // CL-6796: a non-workbench id (a tenant id pasted into `/w/:id`, say) must
+  // never paint Invite / composer / "Untitled conversation" room chrome
+  // before the not-found empty state — fail closed, one honest recovery.
   function stubFetchWithMissingWorkbench() {
     globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
     globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -965,17 +1022,21 @@ describe("a workbench-level 404 offers a way out instead of retrying forever", (
     }) as typeof fetch;
   }
 
-  test("reports the dead id to the host and renders Back to workbenches instead of Try again", async () => {
+  test("reports the dead id to the host and renders recovery instead of Try again", async () => {
     stubFetchWithMissingWorkbench();
     const notFoundIds: string[] = [];
-    let backToSpacesClicks = 0;
+    let missionControlClicks = 0;
+    let newWorkbenchClicks = 0;
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       workbenchId: "ch_1",
       onWorkbenchNotFound: (workbenchId: string) =>
         notFoundIds.push(workbenchId),
-      onBackToWorkbenchList: () => {
-        backToSpacesClicks += 1;
+      onGoToMissionControl: () => {
+        missionControlClicks += 1;
+      },
+      onNewWorkbench: () => {
+        newWorkbenchClicks += 1;
       },
     });
     await harness.settle();
@@ -986,16 +1047,164 @@ describe("a workbench-level 404 offers a way out instead of retrying forever", (
     expect(notFoundIds.length).toBeGreaterThan(0);
     expect(new Set(notFoundIds)).toEqual(new Set(["ch_1"]));
     expect(harness.container.textContent).not.toContain("Try again");
-    expect(harness.container.textContent).toContain("Back to workbenches");
+    expect(harness.container.textContent).toContain(
+      "This workbench isn't here anymore",
+    );
+    expect(harness.container.textContent).toContain("Mission Control");
+    expect(harness.container.textContent).toContain("New workbench");
+    // CL-6796: not-found is the whole stage — never room chrome underneath.
+    expect(
+      harness.container.querySelector(".chat-workbench-header"),
+    ).toBeNull();
+    expect(harness.container.textContent).not.toContain("Invite agent");
+    expect(harness.container.textContent).not.toContain(
+      "Untitled conversation",
+    );
+    expect(harness.container.querySelector("textarea")).toBeNull();
 
-    const backButton = Array.from(
+    const missionControlButton = Array.from(
       harness.container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.includes("Back to workbenches"));
-    expect(backButton).toBeDefined();
+    ).find((button) => button.textContent?.includes("Mission Control"));
+    expect(missionControlButton).toBeDefined();
     act(() => {
-      backButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      missionControlButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
     });
-    expect(backToSpacesClicks).toBe(1);
+    expect(missionControlClicks).toBe(1);
+
+    const newWorkbenchButton = Array.from(
+      harness.container.querySelectorAll("button"),
+    ).find((button) => button.textContent?.includes("New workbench"));
+    expect(newWorkbenchButton).toBeDefined();
+    act(() => {
+      newWorkbenchButton?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    expect(newWorkbenchClicks).toBe(1);
+
+    harness.unmount();
+  });
+
+  test("a non-workbench id never mounts Invite, composer, or Untitled chrome before not-found", async () => {
+    // CL-6796: opening a tenant id as `/w/:id` — messages 404 is the
+    // authoritative miss, so the room must fail closed to the empty state
+    // without ever painting conversation chrome.
+    stubFetchWithMissingWorkbench();
+    const notFoundIds: string[] = [];
+    const harness = await mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "tnt_not_a_workbench",
+      onWorkbenchNotFound: (workbenchId: string) =>
+        notFoundIds.push(workbenchId),
+      onGoToMissionControl: () => undefined,
+      onNewWorkbench: () => undefined,
+    });
+    await harness.settle();
+
+    expect(notFoundIds).toContain("tnt_not_a_workbench");
+    expect(harness.container.textContent).toContain(
+      "This workbench isn't here anymore",
+    );
+    expect(
+      harness.container.querySelector(".chat-workbench-header"),
+    ).toBeNull();
+    expect(harness.container.textContent).not.toContain("Invite agent");
+    expect(harness.container.textContent).not.toContain(
+      "Untitled conversation",
+    );
+    expect(harness.container.querySelector("textarea")).toBeNull();
+    expect(harness.container.textContent).toContain("Mission Control");
+    expect(harness.container.textContent).toContain("New workbench");
+
+    harness.unmount();
+  });
+
+  test("a ready list lacking the routed id does not flash not-found while messages are still loading", async () => {
+    // CL-6796 critique: create→navigate leaves the React Query workbench
+    // list ready but stale — the new id is absent until refetch. That alone
+    // must not paint the not-found empty state; loading is fine until the
+    // messages fetch proves presence or 404s.
+    let resolveMessages: ((response: Response) => void) | undefined;
+    const messagesGate = new Promise<Response>((resolve) => {
+      resolveMessages = resolve;
+    });
+    globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
+        // Stale ready cache: existing workbench only — not the routed id.
+        return json({ items: [WORKBENCH_WIRE] });
+      }
+      if (/\/chat\/workbenches\?kind=chat$/.test(path))
+        return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
+        return json({ rootThreadId: "", items: [] });
+      }
+      if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
+        return messagesGate;
+      }
+      if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
+      if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
+        return json({ items: [] });
+      }
+      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path))
+        return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
+        return json({
+          id: "ch_fresh",
+          title: "Fresh room",
+          kind: "workbench",
+          pinned: false,
+          participants: [],
+          settings: {},
+          contextWindow: { value: 20, source: "inherit" },
+        });
+      }
+      if (/\/chat\/bench\/settings$/.test(path)) {
+        return json({ settings: {}, contextWindow: 20 });
+      }
+      throw new Error(`unstubbed fetch: ${path}`);
+    }) as typeof fetch;
+
+    const notFoundIds: string[] = [];
+    const harness = await mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "ch_fresh",
+      onWorkbenchNotFound: (workbenchId: string) =>
+        notFoundIds.push(workbenchId),
+      onGoToMissionControl: () => undefined,
+      onNewWorkbench: () => undefined,
+    });
+    await harness.settle();
+
+    expect(harness.container.textContent).not.toContain(
+      "This workbench isn't here anymore",
+    );
+    expect(notFoundIds).toEqual([]);
+    expect(harness.container.textContent).not.toContain("Invite agent");
+    expect(harness.container.querySelector("textarea")).toBeNull();
+
+    await act(async () => {
+      resolveMessages?.(
+        new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      await sleep(30);
+    });
+
+    expect(harness.container.textContent).not.toContain(
+      "This workbench isn't here anymore",
+    );
+    expect(notFoundIds).toEqual([]);
 
     harness.unmount();
   });

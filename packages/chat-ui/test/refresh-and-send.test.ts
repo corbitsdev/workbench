@@ -230,8 +230,8 @@ describe("canInviteAgent (a chat's agent is fixed at creation; the server 409s a
     expect(canInviteAgent("workbench")).toBe(true);
   });
 
-  test("defaults true with no resolved workbench yet", () => {
-    expect(canInviteAgent(undefined)).toBe(true);
+  test("defaults false with no resolved workbench yet (CL-6796 fail-closed)", () => {
+    expect(canInviteAgent(undefined)).toBe(false);
   });
 
   test("is true for a kind this UI doesn't otherwise recognize", () => {
