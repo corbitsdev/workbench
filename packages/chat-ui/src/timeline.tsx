@@ -896,6 +896,34 @@ function messageText(item: MessageItem): string {
 }
 
 /**
+ * Whether a timeline row should expose message social chrome (CL-6739) —
+ * add-reaction, reply-in-thread, overflow/ellipsis, reaction chips, and the
+ * thread-summary affordance. System event lines, failed-turn strips,
+ * connect cards, and classified inference-failure bubbles are not
+ * conversational messages; reacting to "Scout joined" or pinning a
+ * connect-github card is noise. Fix-this-connection recovery on a
+ * classified failure lives on the bubble itself (`TextBubble`) and is
+ * independent of this gate.
+ */
+export function offersMessageSocialChrome(item: MessageItem): boolean {
+  if (item.parts.length === 0) return false;
+  return !item.parts.every((part) => {
+    if (part.kind === "event") return true;
+    if (part.kind === "text" && part.turnFailed === true) return true;
+    if (part.kind === "text" && isClassifiedInferenceFailureText(part.text)) {
+      return true;
+    }
+    if (part.kind === "block") {
+      return (
+        part.block.type === "connect-github" ||
+        part.block.type === "connect-service"
+      );
+    }
+    return false;
+  });
+}
+
+/**
  * A failed send's inline recovery row (CL-6251/CL-5879): appended below
  * the bubble text of the exact same message group a confirmed message
  * would render as — never a status line elsewhere on the page,
@@ -1340,21 +1368,24 @@ function MessagePartsInner({
   // issued an id for yet (see `TimelineMessageItem.pendingStatus`) offers
   // none of the round-trips below — reactions, pin, thread, context menu —
   // since every one of them targets a server-issued message id that
-  // doesn't exist yet for this item.
+  // doesn't exist yet for this item. System / error / connect rows
+  // (CL-6739) likewise offer none of the social chrome — see
+  // `offersMessageSocialChrome`.
   const isPending = item.pendingStatus !== undefined;
+  const offersSocialChrome = !isPending && offersMessageSocialChrome(item);
   const isOwn =
     currentUser !== undefined &&
     item.sender !== undefined &&
     localPartOf(item.sender.address) === currentUser.principalId;
   const contextMenu = useContextMenuState();
-  const menu = isPending
-    ? { entries: [] }
-    : buildMessageMenu({
+  const menu = offersSocialChrome
+    ? buildMessageMenu({
         item,
         threadAffordanceMode,
         onOpenThread,
         pinActions,
-      });
+      })
+    : { entries: [] };
   const replyCount = threadMeta?.replyCount ?? 0;
   const pendingNonce = item.pendingNonce ?? item.id;
   // Same identity `WorkbenchTimeline`'s render loop keys this whole group
@@ -1366,7 +1397,7 @@ function MessagePartsInner({
   const groupKey = item.clientId ?? item.id;
 
   function handleContextMenu(event: ReactMouseEvent<HTMLDivElement>) {
-    if (isPending || isContextMenuEmpty(menu)) return;
+    if (!offersSocialChrome || isContextMenuEmpty(menu)) return;
     event.preventDefault();
     contextMenu.show(event.clientX, event.clientY, menu, event.currentTarget);
   }
@@ -1479,7 +1510,9 @@ function MessagePartsInner({
         })}
         {(() => {
           const hasReactions =
-            reactionActions !== undefined && (item.reactions?.length ?? 0) > 0;
+            offersSocialChrome &&
+            reactionActions !== undefined &&
+            (item.reactions?.length ?? 0) > 0;
           // Unpinned messages offer no persistent glyph here — pinning
           // itself stays reachable through the ellipsis menu's own
           // "Pin"/"Unpin" entry (`buildMessageMenu`); this row only shows
@@ -1487,9 +1520,13 @@ function MessagePartsInner({
           // already pinned, which needs a visible way to unpin). Before
           // this, a pin toggle mounted for every message the moment a host
           // wired `pinActions` at all, CSS-hidden until hover but present
-          // in the DOM under every line, greeting included.
-          const isPinned = pinActions !== undefined && item.pinned === true;
-          if (isPending || (!hasReactions && !isPinned)) return null;
+          // in the DOM under every line, greeting included. System / error
+          // / connect rows (CL-6739) never show this cluster either.
+          const isPinned =
+            offersSocialChrome &&
+            pinActions !== undefined &&
+            item.pinned === true;
+          if (!hasReactions && !isPinned) return null;
           return (
             <div className="chat-message-actions">
               {hasReactions && reactionActions !== undefined ? (
@@ -1509,7 +1546,7 @@ function MessagePartsInner({
             </div>
           );
         })()}
-        {!isPending && onOpenThread !== undefined && replyCount > 0 ? (
+        {offersSocialChrome && onOpenThread !== undefined && replyCount > 0 ? (
           <ThreadAffordance
             messageId={item.id}
             meta={threadMeta}
@@ -1518,7 +1555,7 @@ function MessagePartsInner({
             onOpen={() => onOpenThread(item.id)}
           />
         ) : null}
-        {!isPending ? (
+        {offersSocialChrome ? (
           <MessageHoverToolbar
             messageId={item.id}
             menu={menu}
