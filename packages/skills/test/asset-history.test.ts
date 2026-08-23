@@ -28,7 +28,7 @@ function tempDir(): string {
 function repoStoreFor(dir: string): RepoStore {
   return {
     getRepoDir: async (_id: RepoId) => dir,
-  } as RepoStore;
+  } as unknown as RepoStore;
 }
 
 describe("readAssetCommitHistory", () => {
