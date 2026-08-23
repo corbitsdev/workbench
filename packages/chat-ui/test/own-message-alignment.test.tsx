@@ -95,14 +95,35 @@ describe("own-message alignment is per viewer, not per message", () => {
       },
     ];
     const el = await mount(items, { principalId: "sawyer" });
-    // The acting principal IS this reader, so the group itself reads as
-    // "own" — but an event line has no bubble/avatar to align, and the
-    // rendered `.chat-event-line` carries no own/alignment styling of its
-    // own kind, so a system notice always reads the same regardless of
-    // who triggered it.
+    // System notices align left for every viewer (CL-6772 / DESIGN.md) —
+    // even when this reader caused the event. Marking the group as own
+    // would put them on the signed-in user's right edge.
     expect(
       el.querySelector(".chat-message-group")?.getAttribute("data-own"),
-    ).toBe("true");
+    ).toBe("false");
+    expect(el.querySelector(".chat-event-line")).not.toBeNull();
+    expect(el.querySelector(".chat-bubble-row")).toBeNull();
+  });
+
+  test("a join event posted under the viewing user's address stays left-aligned, never own", async () => {
+    const items: MessageItem[] = [
+      {
+        id: "join_1",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        sender: { name: null, address: "sawyer@agents.example" },
+        parts: [
+          {
+            kind: "event",
+            event: "workbench.agent-joined",
+            data: { address: "ins_scout@agents.example" },
+          },
+        ],
+      },
+    ];
+    const el = await mount(items, { principalId: "sawyer" });
+    expect(
+      el.querySelector(".chat-message-group")?.getAttribute("data-own"),
+    ).toBe("false");
     expect(el.querySelector(".chat-event-line")).not.toBeNull();
     expect(el.querySelector(".chat-bubble-row")).toBeNull();
   });
