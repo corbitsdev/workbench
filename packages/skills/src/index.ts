@@ -8,7 +8,7 @@ export {
   type SkillCaller,
 } from "./access";
 export { createDrizzleSkillAccessStore } from "./access-store";
-export { readAssetCommitHistory } from "./asset-history";
+export { readAssetCommitHistory, isAssetGenesisCommit } from "./asset-history";
 export {
   skillMdPath,
   type SkillAssetRow,
