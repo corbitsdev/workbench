@@ -239,6 +239,17 @@ describe("versions", () => {
     expect(versions[0]?.message).toBe("Create triage");
   });
 
+  test("after create, consumer history is one real version authored by the saver", async () => {
+    await publish("tenant");
+    const versions = await registry.versions(AUTHOR, "triage");
+    expect(versions).toHaveLength(1);
+    expect(versions[0]?.message).toBe("Create triage");
+    expect(versions[0]?.author).toBe(AUTHOR.principalId);
+    expect(
+      versions.some((version) => version.message === "Initialize repository"),
+    ).toBe(false);
+  });
+
   test("restore re-commits an older version and marks it current", async () => {
     await publish("tenant");
     const first = (await registry.versions(AUTHOR, "triage"))[0];
