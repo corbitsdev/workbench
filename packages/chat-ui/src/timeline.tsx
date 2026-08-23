@@ -57,7 +57,10 @@ import type { BlockResponseActions } from "./blocks/block-responses";
 import type { ConnectGithubActions } from "./blocks/connect-github-actions";
 import type { ConnectServiceActions } from "./blocks/connect-service-actions";
 import { BlockPartView } from "./blocks/registry";
-import { isClassifiedInferenceFailureText } from "./inference-failure";
+import {
+  consumerFacingInferenceText,
+  isClassifiedInferenceFailureText,
+} from "./inference-failure";
 import { WorkbenchLoadingState } from "./loading-state";
 import { Markdown } from "./markdown";
 import type { ProfileSubject } from "./profile-subject";
@@ -455,6 +458,7 @@ function TextBubble({
   pendingNonce?: string;
   pendingActions?: PendingActions;
 }) {
+  const consumerText = consumerFacingInferenceText(text);
   const display = senderDisplay(sender, participants, currentUser);
   const isOwn =
     currentUser !== undefined &&
@@ -545,10 +549,10 @@ function TextBubble({
           </>
         )}
         <div className="chat-bubble-text">
-          <Markdown text={text} />
+          <Markdown text={consumerText} />
         </div>
         {onFixConnection !== undefined &&
-          isClassifiedInferenceFailureText(text) && (
+          isClassifiedInferenceFailureText(consumerText) && (
             <Button
               type="button"
               variant="outline"
@@ -710,6 +714,7 @@ function FailedTurnStrip({
 }) {
   const display = senderDisplay(item.sender, participants, currentUser);
   const sender = display?.label ?? CHAT_STRINGS.senderFallbackMember;
+  const consumerDetail = consumerFacingInferenceText(detailText);
   const [expanded, setExpanded] = useState(false);
   // Guards the resend itself against a double-click firing two sends —
   // not composer state, since Retry never touches the composer any more.
@@ -748,7 +753,9 @@ function FailedTurnStrip({
       </button>
       {expanded ? (
         <span className="chat-turn-failed-detail">
-          {detailText.length > 0 ? detailText : CHAT_STRINGS.turnFailedSub}
+          {consumerDetail.length > 0
+            ? consumerDetail
+            : CHAT_STRINGS.turnFailedSub}
         </span>
       ) : null}
     </div>

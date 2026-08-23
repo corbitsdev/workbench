@@ -14,6 +14,7 @@ import { and, asc, count, desc, eq, gt, inArray, lt, or } from "drizzle-orm";
 import type { Part } from "./parts";
 import { workbenchMessages } from "./schema";
 import type { ChatDb } from "./store";
+import { consumerFacingInferenceText } from "./consumer-inference-text";
 import { ChatMessageEventData } from "./stream-events";
 import type { WorkbenchSubscriberRegistry } from "./workbench-events";
 
@@ -130,14 +131,16 @@ function newMessageId(): string {
  * previews as nothing rather than a fabricated placeholder.
  */
 export function previewOf(parts: readonly Part[]): string {
-  const text = parts
-    .filter((part): part is Extract<Part, { kind: "text" }> => {
-      return part.kind === "text";
-    })
-    .map((part) => part.text)
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
+  const text = consumerFacingInferenceText(
+    parts
+      .filter((part): part is Extract<Part, { kind: "text" }> => {
+        return part.kind === "text";
+      })
+      .map((part) => part.text)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
   return text.length > PREVIEW_MAX_LENGTH
     ? `${text.slice(0, PREVIEW_MAX_LENGTH).trimEnd()}…`
     : text;
@@ -155,6 +158,15 @@ export function previewOf(parts: readonly Part[]): string {
  * `ChatMessageEventData` is the wire contract this shape is asserted
  * against before it ever reaches `publish`.
  */
+function consumerFacingParts(parts: readonly Part[]): Part[] {
+  return parts.map((part) => {
+    if (part.kind !== "text") return part;
+    const text = consumerFacingInferenceText(part.text);
+    if (text === part.text) return part;
+    return { ...part, text };
+  });
+}
+
 export async function postRoomMessage(
   deps: {
     readonly roomMessages: RoomMessageStore;
@@ -162,8 +174,10 @@ export async function postRoomMessage(
   },
   input: PostRoomMessageInput,
 ): Promise<RoomMessage> {
+  const parts = consumerFacingParts(input.parts);
   const message = await deps.roomMessages.insertMessage({
     ...input,
+    parts,
     id: newMessageId(),
   });
   const data = ChatMessageEventData.assert({

@@ -15,6 +15,7 @@
     "./stream-events": "./src/stream-events.ts",
     "./blocks": "./src/blocks.ts",
     "./agent-address": "./src/agent-address.ts",
+    "./consumer-inference-text": "./src/consumer-inference-text.ts",
     "./workbench-host-naming": "./src/workbench-host-naming.ts",
     "./display-name": "./src/display-name.ts",
     "./id-leak-guard": "./src/id-leak-guard.ts"

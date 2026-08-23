@@ -1,12 +1,58 @@
 import { describe, expect, test } from "bun:test";
 
-import { isClassifiedInferenceFailureText } from "./inference-failure";
+import {
+  consumerFacingInferenceText,
+  isClassifiedInferenceFailureText,
+} from "./inference-failure";
+
+describe("consumerFacingInferenceText", () => {
+  test("keeps the vendor preamble and drops [HTTP …] plus the raw provider message", () => {
+    expect(
+      consumerFacingInferenceText(
+        "This agent could not complete your request due to a credential error [HTTP 401]: API key is invalid",
+      ),
+    ).toBe(
+      "This agent could not complete your request due to a credential error",
+    );
+    expect(
+      consumerFacingInferenceText(
+        "This agent could not complete your request because the API quota has been exhausted [HTTP 429]: rate limited",
+      ),
+    ).toBe(
+      "This agent could not complete your request because the API quota has been exhausted",
+    );
+  });
+
+  test("a forced [HTTP 401] dump is not consumer copy", () => {
+    const leaked = "[HTTP 401]: API key is invalid";
+    const facing = consumerFacingInferenceText(leaked);
+    expect(facing).not.toContain("[HTTP");
+    expect(facing).not.toContain("401");
+    expect(facing).not.toContain("API key is invalid");
+  });
+
+  test("leaves cause-aware undelivered-notice copy untouched", () => {
+    const notice =
+      "I can't reach a model right now — add or check your model key in Settings, then I'll pick this up.";
+    expect(consumerFacingInferenceText(notice)).toBe(notice);
+  });
+});
 
 describe("isClassifiedInferenceFailureText", () => {
   test("matches a credential_failure reply, status code included", () => {
     expect(
       isClassifiedInferenceFailureText(
         "This agent could not complete your request due to a credential error [HTTP 401]: invalid api key",
+      ),
+    ).toBe(true);
+  });
+
+  test("matches a credential_failure reply after HTTP/raw is stripped", () => {
+    expect(
+      isClassifiedInferenceFailureText(
+        consumerFacingInferenceText(
+          "This agent could not complete your request due to a credential error [HTTP 401]: invalid api key",
+        ),
       ),
     ).toBe(true);
   });

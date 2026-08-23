@@ -33,6 +33,10 @@ export type {
   SettleConnectedServiceInput,
 } from "./connect-pending";
 export { encodeParts, decodeParts, decodeMail, senderOf } from "./codec";
+export {
+  CONSUMER_INFERENCE_FAILURE_NOTICE,
+  consumerFacingInferenceText,
+} from "./consumer-inference-text";
 export type {
   MailContent,
   MailReadContent,

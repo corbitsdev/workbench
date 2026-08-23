@@ -29,6 +29,8 @@ export const CLASSIFIED_INFERENCE_FAILURE_PREAMBLES: readonly string[] = [
   "This agent could not complete your request because the API quota has been exhausted",
 ];
 
+export { consumerFacingInferenceText } from "@corbits/chat/consumer-inference-text";
+
 export function isClassifiedInferenceFailureText(text: string): boolean {
   return CLASSIFIED_INFERENCE_FAILURE_PREAMBLES.some((preamble) =>
     text.startsWith(preamble),

@@ -58,6 +58,43 @@ describe("postRoomMessage", () => {
     ]);
   });
 
+  test("persists a consumer sentence, not HTTP status or a raw provider dump", async () => {
+    const roomMessages = createInMemoryRoomMessageStore();
+    const publisher = recordingPublisher();
+
+    const posted = await postRoomMessage(
+      { roomMessages, publish: publisher.publish },
+      {
+        tenantId: TENANT,
+        workbenchId: WORKBENCH,
+        sender: { name: null, address: "run_myra@acme.example" },
+        runId: "run_myra",
+        parts: [
+          {
+            kind: "text",
+            text: "This agent could not complete your request due to a credential error [HTTP 401]: API key is invalid.",
+          },
+        ],
+      },
+    );
+
+    expect(posted.parts).toEqual([
+      {
+        kind: "text",
+        text: "This agent could not complete your request due to a credential error",
+      },
+    ]);
+    const listed = await roomMessages.listMessages({
+      tenantId: TENANT,
+      workbenchId: WORKBENCH,
+    });
+    expect(listed.items[0]?.parts).toEqual(posted.parts);
+    expect(JSON.stringify(publisher.published)).not.toMatch(/\[HTTP/);
+    expect(JSON.stringify(publisher.published)).not.toContain(
+      "API key is invalid",
+    );
+  });
+
   test("an agent's message carries its run, a human's carries its principal", async () => {
     const roomMessages = createInMemoryRoomMessageStore();
     const publisher = recordingPublisher();
@@ -201,5 +238,18 @@ describe("previewOf", () => {
         },
       ]),
     ).toBe("");
+  });
+
+  test("does not preview HTTP status or raw provider dumps", () => {
+    expect(
+      previewOf([
+        {
+          kind: "text",
+          text: "This agent could not complete your request due to a credential error [HTTP 401]: API key is invalid.",
+        },
+      ]),
+    ).toBe(
+      "This agent could not complete your request due to a credential error",
+    );
   });
 });
