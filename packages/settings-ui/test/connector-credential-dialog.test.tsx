@@ -3,6 +3,9 @@
 // client-driven "test" round-trip before it: `/complete` itself proves
 // the key against the connector's own probe and only stores it once that
 // probe accepts, so a rejected key never gets sealed.
+//
+// CL-6793: Ollama's field is a base URL, not a sealed secret — the same
+// dialog swaps copy when `credentialInputKind` is `"url"`.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -11,6 +14,7 @@ import type { Root } from "react-dom/client";
 import type { ConnectorDescriptor } from "@workbench/connections/registry";
 
 import { ConnectorCredentialDialog } from "../src/connections-section";
+import { SETTINGS_STRINGS } from "../src/strings";
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
@@ -26,6 +30,17 @@ const descriptor: ConnectorDescriptor = {
   feedsTools: ["linear"],
 };
 
+const ollamaDescriptor: ConnectorDescriptor = {
+  id: "ollama",
+  displayName: "Ollama",
+  authKind: "api-key",
+  docsUrl: "https://example.com/docs",
+  credentialPlugin: "http",
+  feedsTools: [],
+  credentialInputKind: "url",
+  credentialPlaceholder: "http://localhost:11434",
+};
+
 const nativeSetter = Object.getOwnPropertyDescriptor(
   window.HTMLInputElement.prototype,
   "value",
@@ -39,7 +54,10 @@ function typeInto(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-function mount(onConnected: () => void = () => undefined): {
+function mount(
+  onConnected: () => void = () => undefined,
+  next: ConnectorDescriptor = descriptor,
+): {
   container: HTMLDivElement;
   root: Root;
 } {
@@ -49,7 +67,7 @@ function mount(onConnected: () => void = () => undefined): {
   act(() => {
     root.render(
       <ConnectorCredentialDialog
-        descriptor={descriptor}
+        descriptor={next}
         mode="connect"
         tenantId="ten_1"
         onClose={() => undefined}
@@ -145,6 +163,45 @@ describe("ConnectorCredentialDialog", () => {
 
       expect(document.body.textContent).toContain("That key doesn't work.");
       expect(calls).toEqual(["/api/tenants/ten_1/connections/linear/complete"]);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("Ollama connect dialog copy matches a URL / base-address field, not a sealed secret key", () => {
+    const { container, root } = mount(() => undefined, ollamaDescriptor);
+    try {
+      const body = document.body.textContent ?? "";
+      expect(body).toContain(SETTINGS_STRINGS.connectionsUrlLabel);
+      expect(body).toContain(SETTINGS_STRINGS.connectionsDialogUrlDescription);
+      expect(body).not.toContain(SETTINGS_STRINGS.connectionsDialogDescription);
+      expect(body).not.toContain(SETTINGS_STRINGS.connectionsKeyLabel);
+      expect(body).not.toContain("Sealed on save");
+      expect(body).not.toContain("this key is never shown again");
+      expect(body).not.toContain("A bad key never gets saved");
+      expect(document.body.querySelector("input[type=password]")).toBeNull();
+      expect(
+        (document.body.querySelector("input[type=text]") as HTMLInputElement)
+          .placeholder,
+      ).toBe("http://localhost:11434");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("Sealed-key wording is reserved for actual secret fields", () => {
+    const { container, root } = mount();
+    try {
+      const body = document.body.textContent ?? "";
+      expect(body).toContain(SETTINGS_STRINGS.connectionsDialogDescription);
+      expect(body).toContain(SETTINGS_STRINGS.connectionsKeyLabel);
+      expect(body).toContain("Sealed on save");
+      expect(body).not.toContain(
+        SETTINGS_STRINGS.connectionsDialogUrlDescription,
+      );
+      expect(document.body.querySelector("input[type=password]")).not.toBeNull();
     } finally {
       act(() => root.unmount());
       container.remove();
