@@ -23,8 +23,8 @@ alongside these.
 - `section-registry.tsx` — the Account/Everyone grouping, ordering, icons,
   and tenancy gates
 - `people-section.tsx` / `roles-section.tsx` / `grants-section.tsx` /
-  `credentials-section.tsx` / `connections-section.tsx` — the Everyone-group
-  and account-scoped management surfaces, each with its own API module
+  `connections-section.tsx` — the Everyone-group and account-scoped
+  management surfaces, each with its own API module
 - `account-section.tsx` / `notifications-section.tsx` / `audit-section.tsx`
   — the Account-group surfaces
 - `access.ts` / `tenancy-api.ts` — tenancy-gate resolution and the
