@@ -66,6 +66,7 @@ function ConnectedMcpServerRow({
           size="sm"
           confirmLabel="Disconnect"
           disabled={busy}
+          aria-label={`Disconnect ${server.name}`}
           onConfirm={handleDisconnect}
         >
           {busy ? "Disconnecting…" : "Disconnect"}

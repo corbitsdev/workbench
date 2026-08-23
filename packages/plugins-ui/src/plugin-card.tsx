@@ -69,7 +69,13 @@ export function PluginCard({
           Connect
         </Button>
       ) : (
-        <Button type="button" size="sm" variant="ghost" onClick={onOpen}>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          aria-label={`Manage ${plugin.descriptor.displayName}`}
+          onClick={onOpen}
+        >
           Manage
         </Button>
       )}
