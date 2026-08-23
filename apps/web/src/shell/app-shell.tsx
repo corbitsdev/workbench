@@ -171,7 +171,7 @@ export function AppShell({
       />
       <div className="shell-main" ref={mainRef}>
         <div className="shell-main-content">
-          <ProviderHealthBanner />
+          <ProviderHealthBanner path={path} />
           {routeHasNoStageTopBar(path) ? (
             <StageTopBar
               crumbs={[{ label: routeLabel(path) }]}
