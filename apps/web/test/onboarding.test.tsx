@@ -404,7 +404,10 @@ describe("App at the onboarding path", () => {
     // default name derived from the account, before the credential step.
     // Onboarding is down to a single screen at this point (CL-6104) — no
     // stepper needed for one step.
-    expect(markup).toContain("Setting up your workbench");
+    // CL-6780: this prepares the account; no workbench exists yet.
+    expect(markup).toContain("Preparing your account");
+    expect(markup).not.toContain("Getting your workbench ready");
+    expect(markup).not.toContain("Setting up your workbench");
   });
 });
 
@@ -754,11 +757,14 @@ describe("the OpenRouter connect card", () => {
     // OAuth callback only stored the key, so the checklist showing
     // "confirmed running" before the deploy step even started would be
     // a lie.
+    // CL-6780: finishing-setup prepares the agent; no workbench exists yet.
     const markup = renderOnboardingAt(
       "/onboarding?connect=openrouter&outcome=connected&tenantSlug=ada-user1",
     );
 
-    expect(markup).toContain("Setting up your workbench");
+    expect(markup).toContain("Preparing your agent");
+    expect(markup).not.toContain("Getting your workbench ready");
+    expect(markup).not.toContain("Setting up your workbench");
     expect(markup).not.toContain("Your workbench is ready");
   });
 
@@ -1045,7 +1051,10 @@ describe("the Hugging Face connect card", () => {
       "/onboarding?connect=huggingface&outcome=connected&tenantSlug=ada-user1",
     );
 
-    expect(markup).toContain("Setting up your workbench");
+    // CL-6780: finishing-setup prepares the agent; no workbench exists yet.
+    expect(markup).toContain("Preparing your agent");
+    expect(markup).not.toContain("Getting your workbench ready");
+    expect(markup).not.toContain("Setting up your workbench");
     expect(markup).not.toContain("Your workbench is ready");
   });
 

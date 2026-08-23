@@ -21,6 +21,11 @@
 // behind us. Readiness is read only to tell a wait from a genuine failure,
 // never to draw a progress number: a seed count is an implementation
 // detail, and "0 of 5" told a waiting person nothing.
+//
+// CL-6780: that wait is for the agent, never a workbench that does not
+// exist yet — so the loader says "Preparing your agent", and a skip with
+// no credential stops pretending anything is "getting ready" and offers
+// the honest next step (connect a provider) instead of spinning forever.
 
 import { Button, EmptyState, PageShell } from "@corbits/react-ui";
 import { Clock, WarningCircle } from "@corbits/icons";
@@ -29,25 +34,36 @@ import { useEffect, useState } from "react";
 import { listAllWorkbenches, WorkbenchLoadingState } from "@corbits/chat-ui";
 import { describeApiError } from "@corbits/api-query";
 
-import { fetchAgentReadiness } from "../onboarding";
+import { fetchAgentReadiness, hasActiveCredential } from "../onboarding";
 import { useBench } from "../bench-context";
 import { workbenchPath } from "../workbench-path";
 import { ensureMyraWorkbench } from "../myra-workbench";
 import { useNavigate } from "../navigation";
-import { NEW_WORKBENCH_PATH } from "../routes";
+import { NEW_WORKBENCH_PATH, ONBOARDING_PATH } from "../routes";
 
 type LandState =
   /** Working on it: the warm loader, whether we are reading the bench's
    * workbenches or waiting for Myra to finish coming online. Both are
    * the same thing to the person waiting. */
   | { readonly kind: "opening" }
+  /** Zero workbenches, credential present, Myra not ready yet — the
+   * post-connect wait. Headline names the agent, never a workbench that
+   * does not exist (CL-6780). */
+  | { readonly kind: "waiting-for-agent" }
   /** Myra has taken long enough that silence would read as a hang. Says
    * so plainly and offers another go — never a frozen number. */
   | { readonly kind: "slow" }
+  /** Zero workbenches and no active credential: the drain never starts,
+   * so waiting on "ready" would spin forever. Offer the connect step. */
+  | { readonly kind: "needs-provider" }
   | { readonly kind: "error"; readonly message: string };
 
 const LAND_RETRY_MS = 3_000;
 const LAND_STALL_MS = 45_000;
+
+/** Warm-loader headline for the post-onboarding wait on `/` when no
+ * workbench exists yet — Myra is coming online, not a workbench. */
+const PREPARING_AGENT_TITLE = "Preparing your agent";
 
 export function HomeRoute({
   retryMs = LAND_RETRY_MS,
@@ -105,7 +121,9 @@ export function HomeRoute({
     // the person to the picker rather than minting anything ourselves —
     // "she can't start yet" and "here, go create your first workbench"
     // are different messages, and only the readiness check tells them
-    // apart.
+    // apart. Without a credential the drain never starts (CL-6780), so a
+    // not-ready status with no credential is an honest next step, not a
+    // forever spin on "getting ready".
     const awaitFirstWorkbench = () => {
       void fetchAgentReadiness().then((readiness) => {
         if (cancelled) return;
@@ -113,7 +131,17 @@ export function HomeRoute({
           navigate(NEW_WORKBENCH_PATH);
           return;
         }
-        waitAndRetry();
+        void hasActiveCredential(selectedTenantId).then((hasCredential) => {
+          if (cancelled) return;
+          if (!hasCredential) {
+            setState({ kind: "needs-provider" });
+            return;
+          }
+          setState((current) =>
+            current.kind === "slow" ? current : { kind: "waiting-for-agent" },
+          );
+          waitAndRetry();
+        });
       });
     };
 
@@ -202,6 +230,23 @@ export function HomeRoute({
     );
   }
 
+  if (state.kind === "needs-provider") {
+    return (
+      <PageShell width="full" className="page-fill">
+        <EmptyState
+          icon={<WarningCircle />}
+          title="Connect a provider"
+          description="Agents need a provider before they can come online. Connect one to finish setup."
+          action={
+            <Button variant="primary" onClick={() => navigate(ONBOARDING_PATH)}>
+              Connect a provider
+            </Button>
+          }
+        />
+      </PageShell>
+    );
+  }
+
   if (state.kind === "slow") {
     return (
       <PageShell width="full" className="page-fill">
@@ -221,7 +266,7 @@ export function HomeRoute({
 
   return (
     <div className="page-fill shell-route-loading">
-      <WorkbenchLoadingState delayMs={0} />
+      <WorkbenchLoadingState delayMs={0} title={PREPARING_AGENT_TITLE} />
     </div>
   );
 }
