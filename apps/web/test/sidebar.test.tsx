@@ -9,6 +9,7 @@ import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { BenchProvider } from "../src/bench-context";
+import { APP_ROUTES, NAV_ROUTES } from "../src/routes";
 import { Sidebar } from "../src/shell/sidebar";
 import { TestQueryProvider } from "./test-query-provider";
 
@@ -45,14 +46,48 @@ const membership = {
   nextCursor: null,
 };
 
-function json(body: unknown): Response {
+function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
-    status: 200,
+    status,
     headers: { "content-type": "application/json" },
   });
 }
 
-function stubFetch(): void {
+const emptyTokens = {
+  input: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  output: 0,
+  thinking: 0,
+  total: 0,
+};
+
+function usageBody(turns: number): unknown {
+  return {
+    turns,
+    tokens: { ...emptyTokens, total: turns },
+    costUsd: turns > 0 ? 1.25 : 0,
+    byModel: [],
+  };
+}
+
+const oneEvalRun = {
+  id: "evalrun_1",
+  evalName: "factory",
+  evalDescription: null,
+  configName: "default",
+  startedAt: "2026-01-01T00:00:00.000Z",
+  finishedAt: "2026-01-01T00:02:00.000Z",
+  stepCount: 1,
+  scorerTally: { passed: 1, failed: 0, skipped: 0 },
+};
+
+function stubFetch(options?: {
+  readonly usageTurns?: number;
+  readonly evalRuns?: boolean;
+  readonly failUsage?: boolean;
+  readonly failEvals?: boolean;
+}): void {
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const path = typeof input === "string" ? input : String(input);
     if (path.includes("/api/me/principals"))
@@ -61,8 +96,70 @@ function stubFetch(): void {
       return Promise.resolve(json({ data: [], nextCursor: null }));
     if (path.includes("/agent-definitions/visible"))
       return Promise.resolve(json({ definitions: [] }));
+    if (path.includes("/insights/usage")) {
+      if (options?.failUsage === true)
+        return Promise.resolve(json({ error: "unavailable" }, 500));
+      return Promise.resolve(json(usageBody(options?.usageTurns ?? 0)));
+    }
+    if (path.includes("/eval-runs/runs")) {
+      if (options?.failEvals === true)
+        return Promise.resolve(json({ error: "unavailable" }, 500));
+      return Promise.resolve(
+        json({ runs: options?.evalRuns === true ? [oneEvalRun] : [] }),
+      );
+    }
     return Promise.resolve(json({ items: [] }));
   }) as typeof fetch;
+}
+
+function footerRowLabelsFromMarkup(markup: string): string[] {
+  return [
+    ...markup.matchAll(
+      /shell-sidebar-footer-row[\s\S]*?<span>([^<]*)<\/span>/g,
+    ),
+  ].map((match) => match[1] ?? "");
+}
+
+function footerRowLabelsFromDom(container: HTMLElement): string[] {
+  return [...container.querySelectorAll(".shell-sidebar-footer-row")].map(
+    (row) => row.querySelector("span")?.textContent ?? "",
+  );
+}
+
+async function flush(ticks = 40): Promise<void> {
+  for (let i = 0; i < ticks; i++) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+}
+
+async function mountSidebar(
+  path: string,
+  onNavigate: (to: string) => void = noop,
+): Promise<{
+  container: HTMLDivElement;
+  root: ReturnType<typeof createRoot>;
+}> {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(
+      <TestQueryProvider>
+        <BenchProvider>
+          <Sidebar
+            path={path}
+            user={user}
+            onNavigate={onNavigate}
+            onSignOut={noop}
+          />
+        </BenchProvider>
+      </TestQueryProvider>,
+    );
+  });
+  await flush(60);
+  return { container, root };
 }
 
 describe("Sidebar", () => {
@@ -120,26 +217,70 @@ describe("Sidebar", () => {
     expect(markup).not.toContain("shell-rail-item");
   });
 
-  test("footer is Routines, Files, Skills, Agents, Plugins, Insights, then the account row — no Inbox", () => {
+  test("first-run footer rail is Routines, Files, Skills, Agents, then the account row — no Plugins, Insights, Evals, or Inbox", () => {
     const markup = renderSidebar("/w");
-    expect(markup).toContain("shell-sidebar-footer-row");
-    expect(markup).toContain(">Routines<");
-    expect(markup).toContain(">Files<");
-    expect(markup).toContain(">Skills<");
-    expect(markup).toContain(">Agents<");
-    expect(markup).toContain(">Plugins<");
-    expect(markup).toContain(">Insights<");
+    expect(footerRowLabelsFromMarkup(markup)).toEqual([
+      "Routines",
+      "Files",
+      "Skills",
+      "Agents",
+    ]);
     expect(markup).toContain("data-ctx-account");
     expect(markup).not.toContain(">Inbox<");
     expect(markup).not.toContain('aria-label="Notifications"');
     // Settings is its own direct control beside the account row (one
     // click, not buried in the account menu).
     expect(markup).toContain('aria-label="Settings"');
-    // Routines is first — CL-6362 gives it the same top-level rail slot
-    // as every other global surface.
+    // Mission Control stays pinned above the rail — not a new footer
+    // destination.
+    expect(markup).toContain(">Mission Control<");
+    expect(markup).toContain("shell-sidebar-mission-control");
+    expect(markup.indexOf("shell-sidebar-mission-control")).toBeLessThan(
+      markup.indexOf("shell-sidebar-footer-row"),
+    );
     expect(markup.indexOf(">Routines<")).toBeLessThan(
       markup.indexOf(">Files<"),
     );
+    expect(markup.indexOf(">Files<")).toBeLessThan(markup.indexOf(">Skills<"));
+    expect(markup.indexOf(">Skills<")).toBeLessThan(markup.indexOf(">Agents<"));
+  });
+
+  test("first-run footer rail does not list Evals or Insights before there is honest usage", async () => {
+    stubFetch({ usageTurns: 0, evalRuns: false });
+    const { container, root } = await mountSidebar("/w");
+    expect(footerRowLabelsFromDom(container)).toEqual([
+      "Routines",
+      "Files",
+      "Skills",
+      "Agents",
+    ]);
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  test("Plugins is not presented as a first-run tour destination", () => {
+    const onPlugins = renderSidebar("/plugins");
+    expect(footerRowLabelsFromMarkup(onPlugins)).toEqual([
+      "Routines",
+      "Files",
+      "Skills",
+      "Agents",
+    ]);
+    expect(onPlugins).not.toContain(">Plugins<");
+    expect(onPlugins).not.toMatch(
+      /shell-sidebar-footer-row"[^>]*aria-current="page"/,
+    );
+  });
+
+  test("Evals, Insights, and Plugins remain reachable by URL and command palette", () => {
+    const palettePaths = NAV_ROUTES.map((route) => route.path);
+    const routedPaths = APP_ROUTES.map((route) => route.path);
+    expect(palettePaths).toContain("/evals");
+    expect(palettePaths).toContain("/insights");
+    expect(palettePaths).toContain("/plugins");
+    expect(routedPaths).toContain("/evals");
+    expect(routedPaths).toContain("/insights");
+    expect(routedPaths).toContain("/plugins");
   });
 
   test("marks the Routines row current for its own route only", () => {
@@ -151,15 +292,53 @@ describe("Sidebar", () => {
     expect(elsewhere).not.toMatch(/>Routines<[\s\S]{0,80}aria-current="page"/);
   });
 
-  test("marks the Plugins row current for its own route only", () => {
-    const onPlugins = renderSidebar("/plugins");
-    expect(onPlugins).toMatch(
-      /shell-sidebar-footer-row"[^>]*aria-current="page"/,
-    );
-    const elsewhere = renderSidebar("/w");
-    expect(elsewhere).not.toMatch(
-      /shell-sidebar-footer-row"[^>]*aria-current="page"/,
-    );
+  test("Insights joins the footer rail only when usage has turns", async () => {
+    stubFetch({ usageTurns: 4, evalRuns: false });
+    const { container, root } = await mountSidebar("/insights");
+    expect(footerRowLabelsFromDom(container)).toEqual([
+      "Routines",
+      "Files",
+      "Skills",
+      "Agents",
+      "Insights",
+    ]);
+    const insights = [
+      ...container.querySelectorAll(".shell-sidebar-footer-row"),
+    ].find((row) => row.textContent?.includes("Insights") === true);
+    expect(insights?.getAttribute("aria-current")).toBe("page");
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  test("Evals joins the footer rail only when eval runs exist", async () => {
+    stubFetch({ usageTurns: 0, evalRuns: true });
+    const { container, root } = await mountSidebar("/evals");
+    expect(footerRowLabelsFromDom(container)).toEqual([
+      "Routines",
+      "Files",
+      "Skills",
+      "Agents",
+      "Evals",
+    ]);
+    const evals = [
+      ...container.querySelectorAll(".shell-sidebar-footer-row"),
+    ].find((row) => row.textContent?.includes("Evals") === true);
+    expect(evals?.getAttribute("aria-current")).toBe("page");
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  test("a failed usage or evals probe omits the row rather than claiming usage", async () => {
+    stubFetch({ failUsage: true, failEvals: true });
+    const { container, root } = await mountSidebar("/w");
+    expect(footerRowLabelsFromDom(container)).toEqual([
+      "Routines",
+      "Files",
+      "Skills",
+      "Agents",
+    ]);
+    act(() => root.unmount());
+    container.remove();
   });
 
   // CL-6178: the global pages (Plugins, Insights) used to be the one place

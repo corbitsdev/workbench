@@ -1,13 +1,14 @@
 // The route table: one entry per screen, consumed by the command palette
 // (label) and the route switch (render), so navigation and pages cannot
 // drift apart. The sidebar itself lists workbenches (conversations), not
-// routes — Files, Skills, Agents, Plugins, Insights, and Settings are
-// reached from its footer, and everything here also stays reachable by
-// deep link and the palette. Conversation deep links (`/w/:workbenchId`)
-// stay routable; `/` is the Myra land hop (ensure + open her conversation)
-// for a bench with a workbench already, or the guided first-workbench
-// describe screen for a bench with none (CL-6104) — never a Home
-// dashboard.
+// routes — the first-run footer reaches Routines, Files, Skills, and
+// Agents; Insights and Evals join that rail only given honest usage.
+// Plugins, Insights, Evals, and Settings stay reachable by deep link and
+// the palette even when they are off the rail. Conversation deep links
+// (`/w/:workbenchId`) stay routable; `/` is the Myra land hop (ensure +
+// open her conversation) for a bench with a workbench already, or the
+// guided first-workbench describe screen for a bench with none (CL-6104)
+// — never a Home dashboard.
 // Approvals has no page — the Activity band owns them. Agents (CL-6354)
 // and Skills (CL-6355) are their own rail destinations again — they spent
 // a stretch as Settings sections (CL-5990) and `/settings/agents[/:id]` /
@@ -124,7 +125,7 @@ export const SETTINGS_PATH = "/settings";
  * Navigation section), reachable by direct URL and the command palette
  * like everything else, but deliberately off `NAV_ROUTES`: it isn't a
  * roster to browse, it's the one destination the sidebar always pins in
- * view, the same way Plugins stays reachable without joining that list. */
+ * view. */
 export const MISSION_CONTROL_PATH = "/mission-control";
 
 /** The template picker (CL-6342) — every "+ New workbench" affordance
@@ -410,9 +411,8 @@ export const APP_ROUTES: readonly AppRoute[] = [
     ),
   },
   {
-    // Reached from the sidebar footer and by deep link, never from
-    // `NAV_ROUTES` — Plugins is deliberately absent from the palette's
-    // Pages group.
+    // Reached by deep link and the command palette's Pages group — never
+    // from the first-run footer rail.
     path: "/plugins",
     label: "Plugins",
     icon: <SquaresFour />,
@@ -440,15 +440,17 @@ function routesInOrder(paths: readonly string[]): readonly AppRoute[] {
 
 /**
  * Everything the command palette treats as a product destination (its
- * "Pages" group). The sidebar footer reaches Files / Skills / Agents /
- * Plugins / Insights / Settings directly; the rest are palette- and
- * deep-link-reachable.
+ * "Pages" group). The first-run sidebar footer reaches Routines / Files /
+ * Skills / Agents (and Insights / Evals only given honest usage);
+ * Plugins, Insights, Evals, and Settings stay palette- and
+ * deep-link-reachable even when they are off the rail.
  */
 export const NAV_ROUTES: readonly AppRoute[] = routesInOrder([
   "/routines",
   "/files",
   "/skills",
   "/agents",
+  "/plugins",
   "/insights",
   EVALS_PATH_PREFIX,
   SETTINGS_PATH,

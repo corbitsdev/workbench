@@ -1,16 +1,17 @@
 // The one sidebar. Header: the brand mark, then create + search. Body: the
 // workbench list — nothing page-scoped ever renders here. Footer: the
-// utility icon row (Files, Skills, Agents, Plugins, Insights, Evals —
-// CL-6353/CL-6354/CL-6355 moved the first three out of Settings and onto
-// this row; CL-6465 added Evals alongside Insights), and below it the
-// account row —
-// avatar + name, the whole row is the trigger for a menu that pops upward
-// with weekly usage, settings, feedback, and log out. Always present;
-// there is no collapse affordance and no second nav column. Approvals
-// belong in the conversation, not as a standing band here.
+// first-run rail is Routines, Files, Skills, Agents; Insights and Evals
+// join only when the existing usage / eval-run reads return real items
+// (never a fabricated row, never a new analytics store). Plugins is
+// reachable by URL and the command palette, not as a first-run tour
+// destination. Below the rail: the account row — avatar + name, the whole
+// row is the trigger for a menu that pops upward with weekly usage,
+// settings, feedback, and log out. Always present; there is no collapse
+// affordance and no second nav column. Approvals belong in the
+// conversation, not as a standing band here.
 //
 // Inbox is gone (CL-6151, owner decision: tasks + approvals don't flow
-// into workbenches) — Insights took its footer slot instead.
+// into workbenches).
 //
 // No bench switcher (CL-6089): a workbench IS an agent conversation now,
 // one per account, so there is nothing to switch between in the common
@@ -40,7 +41,6 @@ import {
   Lightning,
   ListBullets,
   Plus,
-  PuzzlePiece,
   Robot,
   SignOut,
   Repeat,
@@ -60,6 +60,7 @@ import {
 import webPackage from "../../package.json";
 import { useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
+import { EvalRunsResponseSchema, evalRunsPath } from "../evals-api";
 import { OverallUsageSchema, insightsUsagePath } from "../insights-api";
 import {
   matchesRoute,
@@ -124,6 +125,20 @@ export function Sidebar({
   readonly onNavigate: (to: string) => void;
   readonly onSignOut: () => void;
 }) {
+  const { selectedTenantId } = useBench();
+  const range = useMemo(() => createInsightsWindow(), []);
+  const usageQuery = useAPIQuery(
+    selectedTenantId === null ? "" : insightsUsagePath(selectedTenantId, range),
+    OverallUsageSchema,
+  );
+  const evalsQuery = useAPIQuery(
+    selectedTenantId === null ? "" : evalRunsPath(selectedTenantId, null),
+    EvalRunsResponseSchema,
+  );
+  const showInsights = usageQuery.kind === "ready" && usageQuery.data.turns > 0;
+  const showEvals =
+    evalsQuery.kind === "ready" && evalsQuery.data.runs.length > 0;
+
   return (
     <SidebarPanel
       className="shell-sidebar"
@@ -153,9 +168,8 @@ export function Sidebar({
       </SidebarPanelBody>
 
       {/* Mission Control is pinned above the footer rail as its own row
-          (DESIGN.md's Shell & Navigation) — not a 7th button inside the
-          rail below, which stays Routines/Files/Skills/Agents/Plugins/
-          Insights exactly as it was. */}
+          (DESIGN.md's Shell & Navigation) — not a button inside the
+          first-run rail, which stays Routines/Files/Skills/Agents. */}
       <div className="shell-sidebar-mission-control">
         <button
           type="button"
@@ -174,11 +188,12 @@ export function Sidebar({
       </div>
 
       <SidebarPanelFooter>
-        {/* Footer order: Routines, Files, Skills, Agents, Plugins, Insights,
-            Evals, then the account row anchors everything else (weekly
-            usage, Settings, Log out) in its pop-up menu — a single footer,
-            never two stacked rows. Routines (CL-6362) is global-only here —
-            no per-workbench routines chrome remains. */}
+        {/* Footer order: Routines, Files, Skills, Agents, then Insights and
+            Evals only when those existing reads prove real items, then the
+            account row anchors everything else (weekly usage, Settings,
+            Log out) in its pop-up menu — a single footer, never two stacked
+            rows. Routines (CL-6362) is global-only here — no per-workbench
+            routines chrome remains. */}
         <button
           type="button"
           className="shell-sidebar-footer-row"
@@ -219,36 +234,30 @@ export function Sidebar({
           <Robot />
           <span>Agents</span>
         </button>
-        <button
-          type="button"
-          className="shell-sidebar-footer-row"
-          data-active={matchesRoute("/plugins", path) ? "true" : undefined}
-          aria-current={matchesRoute("/plugins", path) ? "page" : undefined}
-          onClick={() => onNavigate("/plugins")}
-        >
-          <PuzzlePiece />
-          <span>Plugins</span>
-        </button>
-        <button
-          type="button"
-          className="shell-sidebar-footer-row"
-          data-active={matchesRoute("/insights", path) ? "true" : undefined}
-          aria-current={matchesRoute("/insights", path) ? "page" : undefined}
-          onClick={() => onNavigate("/insights")}
-        >
-          <ChartBar />
-          <span>Insights</span>
-        </button>
-        <button
-          type="button"
-          className="shell-sidebar-footer-row"
-          data-active={matchesRoute("/evals", path) ? "true" : undefined}
-          aria-current={matchesRoute("/evals", path) ? "page" : undefined}
-          onClick={() => onNavigate("/evals")}
-        >
-          <ListBullets />
-          <span>Evals</span>
-        </button>
+        {showInsights ? (
+          <button
+            type="button"
+            className="shell-sidebar-footer-row"
+            data-active={matchesRoute("/insights", path) ? "true" : undefined}
+            aria-current={matchesRoute("/insights", path) ? "page" : undefined}
+            onClick={() => onNavigate("/insights")}
+          >
+            <ChartBar />
+            <span>Insights</span>
+          </button>
+        ) : null}
+        {showEvals ? (
+          <button
+            type="button"
+            className="shell-sidebar-footer-row"
+            data-active={matchesRoute("/evals", path) ? "true" : undefined}
+            aria-current={matchesRoute("/evals", path) ? "page" : undefined}
+            onClick={() => onNavigate("/evals")}
+          >
+            <ListBullets />
+            <span>Evals</span>
+          </button>
+        ) : null}
 
         <div className="shell-sidebar-account-row">
           <Menu>
