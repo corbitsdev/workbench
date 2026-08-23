@@ -198,8 +198,7 @@ export function listCatalogModels(
     ModelsPage,
   ).then((page) =>
     page.data.filter(
-      (model) =>
-        !model.disabled && isChatPickerModelName(model.canonicalName),
+      (model) => !model.disabled && isChatPickerModelName(model.canonicalName),
     ),
   );
 }

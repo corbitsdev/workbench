@@ -48,8 +48,7 @@
 const EMBEDDING_MODEL_NAME_PATTERN =
   /(^|[-_/])embed(ding)?|(^|[-_/])(minilm|bge|gte|e5|arctic-embed)(-|_|:|$)/i;
 
-const HUGGING_FACE_OR_GGUF_NAME_PATTERN =
-  /(^|\/)(hf\.co|huggingface\.co)\//i;
+const HUGGING_FACE_OR_GGUF_NAME_PATTERN = /(^|\/)(hf\.co|huggingface\.co)\//i;
 
 function isEmbeddingModelName(canonicalName: string): boolean {
   return EMBEDDING_MODEL_NAME_PATTERN.test(canonicalName);

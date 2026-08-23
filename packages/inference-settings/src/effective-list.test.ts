@@ -367,9 +367,9 @@ describe("chatCapableModels", () => {
         ],
       }),
     ];
-    expect(chatCapableModels(models).map((entry) => entry.canonicalName)).toEqual(
-      ["qwen3:8b"],
-    );
+    expect(
+      chatCapableModels(models).map((entry) => entry.canonicalName),
+    ).toEqual(["qwen3:8b"]);
   });
 });
 

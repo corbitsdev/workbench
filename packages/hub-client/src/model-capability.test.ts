@@ -139,7 +139,9 @@ describe("isChatPickerModelName / isGgufOrHuggingFacePath", () => {
     expect(isChatPickerModelName("qwen3-embedding")).toBe(false);
     expect(isChatPickerModelName("snowflake-arctic-embed")).toBe(false);
     expect(
-      isChatPickerModelName("hf.co/bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M"),
+      isChatPickerModelName(
+        "hf.co/bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M",
+      ),
     ).toBe(false);
     expect(isChatPickerModelName("model.Q4_K_M.gguf")).toBe(false);
     expect(isGgufOrHuggingFacePath("hf.co/org/repo")).toBe(true);
