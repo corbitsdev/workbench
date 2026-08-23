@@ -123,6 +123,7 @@ function McpPresetCard({
             size="sm"
             confirmLabel="Disconnect"
             disabled={busy}
+            aria-label={`Disconnect ${preset.displayName}`}
             onConfirm={handleDisconnect}
           >
             {busy ? "Disconnecting…" : "Disconnect"}
@@ -133,6 +134,7 @@ function McpPresetCard({
             size="sm"
             variant="ghost"
             disabled={busy}
+            aria-label={`Connect ${preset.displayName}`}
             onClick={handleConnect}
           >
             {busy ? "Connecting…" : "Connect"}
@@ -172,6 +174,7 @@ function McpPresetCard({
               type="button"
               size="sm"
               disabled={busy || token.trim() === ""}
+              aria-label={`Connect ${preset.displayName}`}
               onClick={() => {
                 submitConnect(token.trim());
               }}
