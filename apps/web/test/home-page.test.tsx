@@ -215,6 +215,12 @@ describe("the wait right after connecting a provider", () => {
       if (path.endsWith("/chat/workbenches") && method === "GET") {
         return json({ items: [] });
       }
+      // CL-6780: while Myra is still coming online we also confirm a
+      // credential exists — without one the drain never starts, so the
+      // wait must not pretend a workbench is "getting ready".
+      if (path === "/api/tenants/tnt_1/credentials") {
+        return json({ data: [{ status: "active" }], nextCursor: null });
+      }
       if (path === "/api/onboarding/provisioning-status") {
         statusReads += 1;
         state.statusCalls += 1;
@@ -265,10 +271,47 @@ describe("the wait right after connecting a provider", () => {
     }
 
     const text = container?.textContent ?? "";
-    expect(text).toContain("Getting your workbench ready");
+    // CL-6780: zero workbenches yet — this wait is for the agent, not a
+    // workbench that does not exist.
+    expect(text).toContain("Preparing your agent");
+    expect(text).not.toContain("Getting your workbench ready");
     expect(text).toContain("Tip:");
     expect(text).not.toMatch(/\d+ of \d+/);
     expect(text).not.toMatch(/\d/);
+    expect(navigated).toEqual([]);
+  });
+
+  test("skip with no credential lands on an honest next step instead of stuck workbench-ready copy (CL-6780)", async () => {
+    stubFetch((path, method) => {
+      if (path === "/api/me/principals") return json(PRINCIPALS_RESPONSE);
+      if (path.endsWith("/chat/workbenches") && method === "GET") {
+        return json({ items: [] });
+      }
+      if (path === "/api/tenants/tnt_1/credentials") {
+        return json({ data: [], nextCursor: null });
+      }
+      if (path === "/api/onboarding/provisioning-status") {
+        return json({
+          kind: "provisioning",
+          setupAgentReady: false,
+          deployed: [],
+          pending: ["assistant"],
+        });
+      }
+      throw new Error(`unexpected fetch: ${method} ${path}`);
+    });
+
+    const navigated: string[] = [];
+    await renderHome({ retryMs: 10, stallAfterMs: 10_000, navigated });
+    for (let i = 0; i < 40; i++) {
+      await settle();
+      const text = container?.textContent ?? "";
+      if (text.includes("Connect a provider") || navigated.length > 0) break;
+    }
+
+    const text = container?.textContent ?? "";
+    expect(text).not.toContain("Getting your workbench ready");
+    expect(text).toContain("Connect a provider");
     expect(navigated).toEqual([]);
   });
 
