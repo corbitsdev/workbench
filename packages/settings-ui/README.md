@@ -8,14 +8,16 @@ Presentational primitives come from `@corbits/react-ui`
 package holds the workbench-specific section composition, HTTP clients,
 and the domain model of which sections exist and who can see them.
 
-Sections are grouped Account (personal: chat notifications, account,
-connections) and Everyone (account-wide: people, roles, grants, audit) —
-the single-concept collapse of the old Personal/Workspace split, since
+Sections are grouped Account (personal: account) and Everyone
+(account-wide: connections, people, roles, grants, audit) — the
+single-concept collapse of the old Personal/Workspace split, since
 there is one workbench per account today. `resolveSettingsSectionGroups`
 is the one source of truth a host reads for both the settings stage and
 its own section nav, so the two never drift; `insertEveryoneSections` lets
 a host splice in its own account-wide sections (e.g. Agents/Skills)
-alongside these.
+alongside these. Notifications and "Your agent" stay out of the registry
+until a preference store backs them (honest absence over draft-only
+toggles).
 
 ## Key modules
 
@@ -25,8 +27,9 @@ alongside these.
 - `people-section.tsx` / `roles-section.tsx` / `grants-section.tsx` /
   `connections-section.tsx` — the Everyone-group and account-scoped
   management surfaces, each with its own API module
-- `account-section.tsx` / `notifications-section.tsx` / `audit-section.tsx`
-  — the Account-group surfaces
+- `account-section.tsx` / `audit-section.tsx` — the Account-group and
+  Advanced surfaces (`notifications-section.tsx` remains as a dormant
+  draft until a preference store exists)
 - `access.ts` / `tenancy-api.ts` — tenancy-gate resolution and the
   principals/roles/grants HTTP client
 - `access-policy.tsx` — the grant preview/editor shared by roles and grants
