@@ -58,7 +58,6 @@ type LandState =
   | { readonly kind: "needs-provider" }
   | { readonly kind: "error"; readonly message: string };
 
-
 const LAND_RETRY_MS = 3_000;
 const LAND_STALL_MS = 45_000;
 

@@ -403,10 +403,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
             Hooking up your agents. This takes about ten seconds.
           </p>
           <div className="onboarding-content">
-            <WorkbenchLoadingState
-              delayMs={0}
-              title="Preparing your agent…"
-            />
+            <WorkbenchLoadingState delayMs={0} title="Preparing your agent…" />
           </div>
         </div>
       </OnboardingLayout>
