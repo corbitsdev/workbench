@@ -35,10 +35,9 @@ the agent — no settings page round-trip, no "report back when done".
   optional `onConnected` hook (`src/connected-hook.ts`) once the
   credential is durably stored. The hub wires it to
   `settleConnectedService` (`packages/chat`): the pending entry clears,
-  `chat.settings` publishes so the open card flips, and a message posts
-  under the connecting person's own address — which routes to the
-  room's host agent through the ordinary message path, resuming the
-  parked task.
+  `chat.settings` publishes so the open card flips, and the host agent
+  is woken via `dispatchTurn` / `sendMail` — never by posting a timeline
+  row as the connecting person.
 
 ## Gmail
 
