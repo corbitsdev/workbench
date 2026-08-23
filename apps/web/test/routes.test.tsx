@@ -116,12 +116,14 @@ function stagePageTitle(markup: string): string | undefined {
   return /class="stage-crumb-current"[^>]*>([^<]*)</.exec(markup)?.[1];
 }
 
-/** The sidebar footer marks its own destination current: Plugins and
- * Insights are text rows with `aria-current="page"` on the lit one.
- * Settings lives in the account menu, so its route lights nothing in the
- * chrome - the stage title carries it. Returns the active row's label so
- * tests confirm the *right* footer affordance lights, and nothing else
- * does. */
+/** The first-run footer rail marks its own destination current: Routines,
+ * Files, Skills, and Agents are text rows with `aria-current="page"` on
+ * the lit one. Insights and Evals join only given honest usage, and
+ * Plugins is never a first-run tour destination — those three stay
+ * reachable by URL and palette instead. Settings lives beside the
+ * account row, so its route lights nothing in the chrome - the stage
+ * title carries it. Returns the active row's label so tests confirm the
+ * *right* footer affordance lights, and nothing else does. */
 function activeFooterLabel(markup: string): string | undefined {
   const lit =
     /shell-sidebar-footer-row"[^>]*aria-current="page"[^>]*>([\s\S]*?)<\/button>/.exec(
@@ -136,9 +138,6 @@ const FOOTER_LABELS: Record<string, string> = {
   "/files": "Files",
   "/skills": "Skills",
   "/agents": "Agents",
-  "/plugins": "Plugins",
-  "/insights": "Insights",
-  "/evals": "Evals",
 };
 
 describe("route table", () => {
@@ -167,12 +166,13 @@ describe("route table", () => {
     ]);
   });
 
-  test("palette pages are Routines, Files, Skills, Agents, Insights, Evals, Settings", () => {
+  test("palette pages are Routines, Files, Skills, Agents, Plugins, Insights, Evals, Settings", () => {
     expect(NAV_ROUTES.map((route) => route.label)).toEqual([
       "Routines",
       "Files",
       "Skills",
       "Agents",
+      "Plugins",
       "Insights",
       "Evals",
       "Settings",
@@ -369,12 +369,12 @@ describe("routes render", () => {
   });
 
   test.each([["/plugins/linear", "linear", "Plugins"]])(
-    "%s titles the detail placeholder %s with its roster row lit",
-    async (path, slug, footerLabel) => {
+    "%s titles the detail placeholder %s without lighting a Plugins footer row",
+    async (path, slug, rosterLabel) => {
       const markup = await renderApp(path);
       expect(stagePageTitle(markup)).toBe(slug);
-      expect(markup).toContain(`Back to ${footerLabel}`);
-      expect(activeFooterLabel(markup)).toBe(footerLabel);
+      expect(markup).toContain(`Back to ${rosterLabel}`);
+      expect(activeFooterLabel(markup)).toBeUndefined();
     },
   );
 
