@@ -296,6 +296,82 @@ describe("listActivity", () => {
     expect(activity[WORKBENCH]?.preview).not.toMatch(/model key/i);
     expect(activity[WORKBENCH]?.preview).not.toMatch(/ref /i);
   });
+
+  // CL-6795: bench-list preview settles on the latest person-facing text —
+  // never a blank title-only row while readable messages exist, and never a
+  // stale greeting preferred over a newer human message.
+  test("a newer user message previews over a stale agent greeting", async () => {
+    const roomMessages = createInMemoryRoomMessageStore();
+    const publisher = recordingPublisher();
+    await postRoomMessage(
+      { roomMessages, publish: publisher.publish },
+      {
+        tenantId: TENANT,
+        workbenchId: WORKBENCH,
+        sender: { name: "Myra", address: "run_myra@acme.example" },
+        runId: "run_myra",
+        parts: [{ kind: "text", text: "Hi — I'm Myra. What are we working on?" }],
+      },
+    );
+    await Bun.sleep(2);
+    const user = await postRoomMessage(
+      { roomMessages, publish: publisher.publish },
+      {
+        tenantId: TENANT,
+        workbenchId: WORKBENCH,
+        sender: { name: null, address: "prn_ada@acme.example" },
+        parts: [{ kind: "text", text: "draft the agenda for Monday" }],
+      },
+    );
+
+    const activity = await roomMessages.listActivity({
+      tenantId: TENANT,
+      workbenches: [{ workbenchId: WORKBENCH }],
+    });
+
+    expect(activity[WORKBENCH]?.lastActivityAt).toBe(user.createdAt);
+    expect(activity[WORKBENCH]?.preview).toBe("draft the agenda for Monday");
+    expect(activity[WORKBENCH]?.preview).not.toMatch(/I'm Myra/i);
+  });
+
+  test("a join notice after readable text keeps the prior preview, never blanks", async () => {
+    const roomMessages = createInMemoryRoomMessageStore();
+    const publisher = recordingPublisher();
+    await postRoomMessage(
+      { roomMessages, publish: publisher.publish },
+      {
+        tenantId: TENANT,
+        workbenchId: WORKBENCH,
+        sender: { name: null, address: "prn_ada@acme.example" },
+        parts: [{ kind: "text", text: "let's pull Scout in" }],
+      },
+    );
+    await Bun.sleep(2);
+    const joined = await postRoomMessage(
+      { roomMessages, publish: publisher.publish },
+      {
+        tenantId: TENANT,
+        workbenchId: WORKBENCH,
+        sender: { name: null, address: "run_scout@acme.example" },
+        runId: "run_scout",
+        parts: [
+          {
+            kind: "event",
+            event: "workbench.agent-joined",
+            data: { address: "run_scout@acme.example" },
+          },
+        ],
+      },
+    );
+
+    const activity = await roomMessages.listActivity({
+      tenantId: TENANT,
+      workbenches: [{ workbenchId: WORKBENCH }],
+    });
+
+    expect(activity[WORKBENCH]?.lastActivityAt).toBe(joined.createdAt);
+    expect(activity[WORKBENCH]?.preview).toBe("let's pull Scout in");
+  });
 });
 
 describe("previewOf", () => {
