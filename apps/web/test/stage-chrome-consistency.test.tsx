@@ -123,6 +123,6 @@ describe("stage chrome consistency (CL-6368)", () => {
     });
 
     expect(container.querySelector('[data-slot="table"]')).not.toBeNull();
-    expect(container.textContent).toContain("triage");
+    expect(container.textContent).toContain("Triage");
   });
 });
