@@ -106,7 +106,6 @@ async function mount(onNavigate: (to: string) => void = () => undefined) {
     // parallel needs-you query settles — breaking on it races the chip.
     if (
       container.innerHTML.includes("shell-ch-row-wrap") ||
-      container.innerHTML.includes("No workbenches yet") ||
       container.innerHTML.includes("waiting on you")
     ) {
       break;
@@ -144,21 +143,39 @@ describe("WorkbenchList — needs-you signal", () => {
 });
 
 describe("WorkbenchList — pin visibility and order (CL-6657)", () => {
-  test("shows a pin glyph only on pinned rows and floats them above unpinned", async () => {
+  test("pin glyph floats within Agents and within Channels, never across", async () => {
     stubFetch({
       chats: [
         {
-          id: "ch_recent",
-          title: "Recent chat",
+          id: "ch_recent_dm",
+          title: "Recent agent",
           kind: "chat",
           pinned: false,
           participants: [],
           lastActivityAt: "2026-08-10T00:00:00.000Z",
         },
         {
-          id: "ch_pinned",
-          title: "Pinned chat",
+          id: "ch_pinned_dm",
+          title: "Pinned agent",
           kind: "chat",
+          pinned: true,
+          participants: [],
+          lastActivityAt: "2026-08-01T00:00:00.000Z",
+        },
+      ],
+      workbenches: [
+        {
+          id: "ch_recent_room",
+          title: "Recent channel",
+          kind: "workbench",
+          pinned: false,
+          participants: [],
+          lastActivityAt: "2026-08-10T00:00:00.000Z",
+        },
+        {
+          id: "ch_pinned_room",
+          title: "Pinned channel",
+          kind: "workbench",
           pinned: true,
           participants: [],
           lastActivityAt: "2026-08-01T00:00:00.000Z",
@@ -166,14 +183,23 @@ describe("WorkbenchList — pin visibility and order (CL-6657)", () => {
       ],
     });
     const el = await mount();
+    expect(
+      [...el.querySelectorAll(".shell-panel-list-label")].map(
+        (heading) => heading.textContent,
+      ),
+    ).toEqual(["Agents", "Channels"]);
+    expect(el.textContent).not.toContain("Workbenches");
     const wraps = [...el.querySelectorAll(".shell-ch-row-wrap")];
     expect(wraps.map((row) => row.getAttribute("data-ctx-workbench"))).toEqual([
-      "ch_pinned",
-      "ch_recent",
+      "ch_pinned_dm",
+      "ch_recent_dm",
+      "ch_pinned_room",
+      "ch_recent_room",
     ]);
     expect(wraps[0]?.querySelector(".shell-ch-pin")).not.toBeNull();
     expect(wraps[0]?.getAttribute("data-ctx-workbench-pinned")).toBe("true");
     expect(wraps[1]?.querySelector(".shell-ch-pin")).toBeNull();
-    expect(wraps[1]?.getAttribute("data-ctx-workbench-pinned")).toBe("false");
+    expect(wraps[2]?.querySelector(".shell-ch-pin")).not.toBeNull();
+    expect(wraps[3]?.querySelector(".shell-ch-pin")).toBeNull();
   });
 });
