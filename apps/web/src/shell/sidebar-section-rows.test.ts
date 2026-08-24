@@ -67,7 +67,6 @@ describe("buildSidebarSections", () => {
     const humanDm = workbench({
       id: "ch_human",
       kind: "chat",
-      principalId: "prn_2",
     });
 
     expect(buildSidebarSections([], [humanDm], []).agents).toEqual([]);
