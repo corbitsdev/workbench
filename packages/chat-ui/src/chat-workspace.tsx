@@ -53,6 +53,8 @@ import {
 } from "./mentions";
 import type { BringInListFailure, BringInMember } from "./mentions";
 import { PinnedStrip } from "./pinned-strip";
+import { SLASH_COMMANDS } from "./slash-commands";
+
 import { CHAT_STRINGS } from "./strings";
 import { displayWorkbenchTitle } from "./workbench-display-title";
 import { useStreamingReply, typingAgentNames } from "./streaming-reply";
@@ -279,6 +281,25 @@ export function bringInLoadErrorMessage(
 }
 
 /**
+ * CL-6781: the header Invite control must not open an empty "who to invite"
+ * dead end. Hide while the invitable listing is still in flight (or errored),
+ * and hide once a successful listing proves nobody — agent or person — is
+ * left to bring in. Kind gating stays with `canInviteAgent`.
+ */
+export function shouldOfferInviteControl(args: {
+  readonly kind: string | undefined;
+  /** Successful invitable-definitions listing; `undefined` while loading/errored. */
+  readonly invitableAgents: readonly unknown[] | undefined;
+  /** Successful bring-in people listing when the host wired `listMembers`. */
+  readonly bringInMembers?: readonly unknown[];
+}): boolean {
+  if (!canInviteAgent(args.kind)) return false;
+  if (args.invitableAgents === undefined) return false;
+  if (args.invitableAgents.length > 0) return true;
+  return (args.bringInMembers?.length ?? 0) > 0;
+}
+
+/**
  * Recovery controls for a gone / non-workbench id (CL-6796). Prefer the
  * Mission Control + New workbench pair; fall back to the legacy single
  * "Back to workbenches" action when a host has not wired the new props.
@@ -324,6 +345,9 @@ export function workbenchNotFoundRecoveryAction(args: {
  * `POST /workbenches`), so it's always the right word here even when the
  * counterpart is a person, not an agent. A workbench (or a surface that
  * hasn't resolved yet) keeps the generic, mention-driven copy.
+ *
+ * CL-6740: only advertise "/ for commands" when the slash catalog actually
+ * has commands — an empty/disabled catalog must not promise a dead hop.
  */
 export function composerPlaceholderFor(
   workbench:
@@ -332,15 +356,21 @@ export function composerPlaceholderFor(
         readonly title: string;
       }
     | undefined,
+  options?: { readonly slashCommandCount?: number },
 ): string {
+  const slashAvailable =
+    (options?.slashCommandCount ?? SLASH_COMMANDS.length) > 0;
   if (workbench === undefined || workbench.kind !== "chat") {
-    return CHAT_STRINGS.composerPlaceholder;
+    return slashAvailable
+      ? `${CHAT_STRINGS.composerPlaceholder}, / for commands`
+      : CHAT_STRINGS.composerPlaceholder;
   }
   const counterpart =
     workbench.title.trim().length > 0
       ? workbench.title
       : CHAT_STRINGS.unnamedWorkbench;
-  return CHAT_STRINGS.composerPlaceholderChat(counterpart);
+  const base = CHAT_STRINGS.composerPlaceholderChat(counterpart);
+  return slashAvailable ? `${base} / for commands` : base;
 }
 
 /**
@@ -1097,6 +1127,16 @@ function ChatWorkspaceInner({
     bringInLists.firstError,
   );
 
+  const offerInviteControl = shouldOfferInviteControl({
+    kind: activeWorkbench?.kind,
+    invitableAgents: invitableAgentsQuery.isSuccess
+      ? (invitableAgentsQuery.data ?? [])
+      : undefined,
+    ...(bringInMembersQuery.isSuccess
+      ? { bringInMembers: bringInMembersQuery.data ?? [] }
+      : {}),
+  });
+
   // A settings URL for a workbench id that resolved workbenches don't contain
   // (deleted, mistyped, cross-tenant) would otherwise leave the surface
   // silently showing the ordinary chat view under a lying /settings URL —
@@ -1407,7 +1447,7 @@ function ChatWorkspaceInner({
                       ) : null}
                     </div>
                   ) : null}
-                  {canInviteAgent(activeWorkbench?.kind) ? (
+                  {offerInviteControl ? (
                     <Button
                       variant="outline"
                       size="sm"
