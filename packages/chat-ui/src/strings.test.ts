@@ -15,6 +15,12 @@ describe("toast confirmation copy", () => {
     );
   });
 
+  test("rename failure tells the person to try again", () => {
+    expect(CHAT_STRINGS.workbenchRenameError).toBe(
+      "Couldn't rename that workbench — try again.",
+    );
+  });
+
   test("pin copy follows the state the workbench just entered", () => {
     expect(CHAT_STRINGS.workbenchPinnedToast(true, "Deploy notes")).toBe(
       "Pinned Deploy notes",
