@@ -109,9 +109,7 @@ async function flushForHealthMarker(marker: string): Promise<void> {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
-    if (
-      document.querySelector(`[data-provider-health="${marker}"]`) !== null
-    ) {
+    if (document.querySelector(`[data-provider-health="${marker}"]`) !== null) {
       return;
     }
   }

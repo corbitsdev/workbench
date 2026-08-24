@@ -97,8 +97,7 @@ export function ProviderHealthBanner({ path }: { readonly path: string }) {
   // render, so depending on it would loop (setState → re-render → new
   // object → effect again).
   const visibleKind = visible?.kind ?? null;
-  const unhealthyBanner =
-    chrome.kind === "unhealthy" ? chrome.banner : null;
+  const unhealthyBanner = chrome.kind === "unhealthy" ? chrome.banner : null;
 
   // Keeps the banner's last-known content mounted for a moment after
   // `visible` goes null, so the collapse/fade-out transition below has
