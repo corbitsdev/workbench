@@ -5,9 +5,8 @@
 // autosaves and is serialized through one queue (`saveState` shows
 // "Saving…"/"Saved"/an honest error). A routine created from the panel
 // always targets the conversation it was opened beside — that workbench's
-// own host agent and its own id as the delivery destination — or, with no
-// workbench in scope, this workbench's existing Myra workbench; never a
-// newly minted one.
+// own host agent and its own id as the delivery destination. A panel with
+// no workbench in scope cannot invent a Myra conversation.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
@@ -390,7 +389,7 @@ describe("RoutinePanel", () => {
       expect(toastMock).toHaveBeenCalled();
     });
 
-    test("no workbench in scope: falls back to the workbench's existing Myra workbench, never minting a new one", async () => {
+    test("no workbench in scope: does not mint a Myra conversation", async () => {
       chatWorkbenches = [
         {
           id: "ch_myra",
@@ -418,10 +417,11 @@ describe("RoutinePanel", () => {
       fillAndBlur(name, "Nightly summary");
       await settle();
 
-      expect(createRoutineCalls).toHaveLength(1);
-      expect(createRoutineCalls[0]?.["deliveryWorkbenchId"]).toBe("ch_myra");
-      expect(createRoutineCalls[0]?.["definitionId"]).toBe("wfd_myra");
+      expect(createRoutineCalls).toHaveLength(0);
       expect(createWorkbenchCalls).toHaveLength(0);
+      expect(container.textContent).toContain(
+        "Open a conversation to create this routine.",
+      );
     });
 
     test("rapid Name and Instruction blur in the same tick serialize into one create, then one update — never two creates", async () => {

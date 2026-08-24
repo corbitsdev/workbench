@@ -880,10 +880,10 @@ const MoveWorkbenchBody = type({
 
 /**
  * Finds an existing chat with the given agent, for the one caller that
- * deliberately wants find-or-create semantics: the home-workbench
- * land-hop (`ensureMyraWorkbench`, via `default-agent-workbench.ts`), which
- * passes `reuseExisting: true` so returning to "Myra" always reopens the
- * same conversation rather than minting a fresh one on every visit.
+ * deliberately wants find-or-create semantics: opening an agent's
+ * direct chat (`openAgentDm` / `openAgentDmChat`), which passes
+ * `reuseExisting: true` so a later click reopens the same conversation
+ * rather than minting a fresh one on every visit.
  *
  * Every other caller — "+ New Workbench" picking an agent as a
  * template, or a freshly drafted agent's own launch — always creates
@@ -1063,10 +1063,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // "+ New Workbench" always creates (CL-6089): picking an agent in
       // the picker uses it as a template, minting a fresh workbench
       // every time, not reopening a prior conversation. The one
-      // exception is the deliberate land-hop to the account's home
-      // workbench (`ensureMyraWorkbench`), which opts in with
-      // `reuseExisting: true` so landing on "Myra" always finds the
-      // same conversation instead of forking a new one on every visit.
+      // exception is opening an agent's direct chat (`openAgentDm`),
+      // which opts in with `reuseExisting: true` so a later click finds
+      // the same conversation instead of forking a new one on every
+      // visit.
       // Checked before anything is minted, and before the (cheaper,
       // in-memory) principal-self-chat validation below, since a found
       // match short-circuits the whole handler.

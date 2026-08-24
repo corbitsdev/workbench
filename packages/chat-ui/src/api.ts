@@ -335,9 +335,7 @@ export function listAllWorkbenches(
 //
 // An agent chat always mints a new workbench (CL-6089) — the agent is a
 // template, not a conversation being reopened — unless the caller opts
-// into `reuseExisting: true`, reserved for the one deliberate
-// find-or-create caller: the home-workbench land-hop
-// (`default-agent-workbench.ts`'s `ensure`).
+// into `reuseExisting: true` on `POST /workbenches`.
 export type CreateWorkbenchInput =
   | { readonly kind: "workbench"; readonly name: string }
   | {
@@ -855,8 +853,8 @@ export function listVisibleAgentDefinitions(
  * Opens a direct chat with an agent, minting it on first open and
  * reusing the same workbench on every later open — `packages/chat/src/
  * routes.ts`'s `POST /workbenches` with `reuseExisting: true` already
- * finds-or-creates by `chat/definitionId` (`findExistingAgentChat`), the
- * same seam the home-workbench land-hop uses. `tenantId` must be the
+ * finds-or-creates by `chat/definitionId` (`findExistingAgentChat`).
+ * `tenantId` must be the
  * definition's OWNING tenant (see `VisibleAgentDefinition.tenantId`),
  * never the caller's own tenant when the agent was reached through
  * ancestor inheritance — the DM workbench lives where the agent lives.

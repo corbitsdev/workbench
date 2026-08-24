@@ -35,7 +35,7 @@ function context(overrides: {
   const ctx = {
     path: overrides.path,
     navigate: (to: string) => navigated.push(to),
-    tenantId: overrides.tenantId ?? "tenant-1",
+    tenantId: overrides.tenantId === undefined ? "tenant-1" : overrides.tenantId,
     cycleTheme: () => {
       themeCycled = true;
     },
@@ -152,9 +152,81 @@ describe("runActionCommand", () => {
   });
 
   test("talk-to-myra does nothing without a selected bench", async () => {
+    let fetches = 0;
+    globalThis.fetch = (() => {
+      fetches += 1;
+      throw new Error("null tenant must not fall back to a default tenant");
+    }) as typeof fetch;
     const { ctx, navigated } = context({ path: "/", tenantId: null });
+    expect(ctx.tenantId).toBeNull();
     await runActionCommand("talk-to-myra", ctx);
     expect(navigated).toEqual([]);
+    expect(fetches).toBe(0);
+  });
+
+  test("talk-to-myra opens the generic agent DM, not a land-hop", async () => {
+    const posts: Array<{ path: string; body: unknown }> = [];
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const path =
+        typeof input === "string" ? input : new URL(String(input)).pathname;
+      if (path.includes("/workflows/definitions")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: [
+                {
+                  id: "def-assistant",
+                  tenantId: "tenant-1",
+                  name: "assistant",
+                  currentVersion: "1",
+                  status: "deployed",
+                  createdAt: "2026-01-01T00:00:00.000Z",
+                  updatedAt: "2026-01-01T00:00:00.000Z",
+                  skills: [],
+                },
+              ],
+              nextCursor: null,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        );
+      }
+      if (path.endsWith("/chat/workbenches") && init?.method === "POST") {
+        posts.push({
+          path,
+          body: JSON.parse(String(init.body)),
+        });
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: "chan-dm-myra",
+              title: "Myra",
+              kind: "chat",
+              pinned: false,
+              participants: [],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        );
+      }
+      throw new Error(`unexpected fetch: ${init?.method ?? "GET"} ${path}`);
+    }) as typeof fetch;
+
+    const { ctx, navigated } = context({ path: "/" });
+    await runActionCommand("talk-to-myra", ctx);
+
+    expect(posts).toEqual([
+      {
+        path: "/api/tenants/tenant-1/chat/workbenches",
+        body: {
+          kind: "chat",
+          definitionId: "def-assistant",
+          reuseExisting: true,
+        },
+      },
+    ]);
+    expect(navigated).toEqual(["/w/chan-dm-myra"]);
+    expect(navigated).not.toContain("/");
   });
 });
 

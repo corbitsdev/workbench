@@ -219,18 +219,6 @@ export { sharedWorkbenchesWith } from "./shared-workbenches";
 export type { SharedWorkbenchSummary } from "./shared-workbenches";
 export { findDirectWorkbenchWith } from "./direct-workbench";
 
-export {
-  createDefaultAgentWorkbench,
-  findWorkbenchByTitle,
-  findDefinitionByAssetName,
-  isWorkbenchTitleMatch,
-} from "./default-agent-workbench";
-export type {
-  DefaultAgentWorkbench,
-  DefaultAgentWorkbenchConfig,
-  EnsureDefaultAgentWorkbenchResult,
-} from "./default-agent-workbench";
-
 export { ArtifactChip } from "./artifact-chip";
 
 export {

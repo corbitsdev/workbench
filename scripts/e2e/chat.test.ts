@@ -848,7 +848,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   // Runs after the echo chat above so its own create call — same
   // tenant, same agent — proves the deliberate reuse path (CL-6089):
   // "+ New Workbench" always creates, so reuse is opt-in via
-  // `reuseExisting: true` (the land-hop `ensureMyraWorkbench` uses),
+  // `reuseExisting: true` (agent DMs via `openAgentDm` use this),
   // which reopens the existing chat with 200 and the same id back,
   // never a fresh 201.
   test("kind filter excludes and includes by kind, and re-creating an existing agent chat reuses it", async () => {

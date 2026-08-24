@@ -24,8 +24,8 @@ only the row-menu helpers the shell's panel calls into).
 - `blocks/` — typed rendering for approval, poll, and form message parts
 - `api.ts` — the chat HTTP client: workbenches, messages, threads, reactions,
   pins, runs, and invitable agent definitions
-- `default-agent-workbench.ts` / `shared-workbenches.ts` / `direct-workbench.ts` —
-  pure lookup and workbench-provisioning helpers
+- `shared-workbenches.ts` / `direct-workbench.ts` —
+  pure lookup helpers
 - `use-workbench-stream.ts` — the live-update hook for an open workbench
 
 ## Running tests

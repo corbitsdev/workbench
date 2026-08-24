@@ -573,7 +573,7 @@ describe("POST /workbenches", () => {
   });
 });
 
-describe("POST /workbenches — reuseExisting: true reopens the land-hop's chat, not create (CL-6089)", () => {
+describe("POST /workbenches — reuseExisting: true reopens the agent's DM, not create (CL-6089)", () => {
   test("creating a chat with the same agent twice, reuseExisting: true both times, reuses the first chat instead of forking a duplicate", async () => {
     const deps = buildDeps({
       platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),

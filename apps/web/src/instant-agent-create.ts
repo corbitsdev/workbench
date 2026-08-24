@@ -4,9 +4,9 @@
 // picker (`pages/new-workbench-picker.tsx`, CL-6342) and calls
 // `createWorkbenchFromTemplate` below once a row is chosen. It mints a
 // fresh workbench against the account's default setup template (the same
-// seeded `assistant` definition backing the home Myra workbench, which
-// already opens with the setup greeting: "what do you want me around
-// for?"). The conversation itself is what specializes the agent into
+// seeded `assistant` definition backing Myra, which already opens with
+// the setup greeting: "what do you want me around for?"). The conversation
+// itself is what specializes the agent into
 // whatever the person wants; the drafting and capability machinery already
 // listens for that in-chat, so no definition is drafted or created up
 // front here. Explicitly defining a brand-new agent template, with its own

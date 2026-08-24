@@ -22,11 +22,9 @@
 // workbench's own agent" resolves to that workbench's host agent
 // (`listWorkbenchAgents`), and the routine delivers back into that same
 // workbench — never a new one. A panel opened with no workbench in scope (a
-// deliberate `/routines` visit) falls back to the workbench's own default
-// Myra workbench (`ensureMyraWorkbench`, the one deliberate find-or-create
-// path in the product) rather than the old tenant-wide "assistant"
-// definition lookup, which had no workbench to deliver into at all and
-// silently minted a fresh one server-side whenever delivery was required.
+// deliberate `/routines` visit) cannot invent a delivery conversation: Myra
+// is an agent row, not a home-slot find-or-create. The create needs a
+// conversation already in scope.
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -49,7 +47,6 @@ import { Clock, X } from "@corbits/icons";
 
 import { useBench } from "../bench-context";
 import { useNavigate } from "../navigation";
-import { ensureMyraWorkbench } from "../myra-workbench";
 import { routineScheduleSentence } from "@corbits/routines/client";
 import { ScheduleEditor } from "../routine-schedule";
 import {
@@ -269,35 +266,24 @@ function RoutineEditorPanel({
 
   /** This routine's own agent + delivery workbench: the conversation the
    * panel was opened beside (its host participant — every workbench's
-   * host is Myra), or, with no conversation in scope, this workbench's
-   * own default Myra workbench. Never mints a new workbench — `ensureMyraWorkbench`
-   * finds-or-creates the one singleton Myra conversation this tenant
-   * already has. */
+   * host is Myra). A panel with no conversation in scope cannot invent
+   * one — Myra is not a home-slot find-or-create. */
   const resolveCreateTarget = async (): Promise<CreateTarget> => {
     if (tenantId === null) {
       throw new Error("No workbench to create this in yet");
     }
-    if (subject.workbenchId !== undefined) {
-      const workbenchId = subject.workbenchId;
-      const agents = await listWorkbenchAgents(tenantId, workbenchId);
-      const definitionId = agents[0]?.definitionId;
-      if (definitionId === undefined) {
-        throw new Error(
-          "This conversation has no agent to run this routine yet.",
-        );
-      }
-      return { definitionId, deliveryWorkbenchId: workbenchId };
+    if (subject.workbenchId === undefined) {
+      throw new Error("Open a conversation to create this routine.");
     }
-    const result = await ensureMyraWorkbench(tenantId);
-    if (result.kind === "error") throw new Error(result.message);
-    const agents = await listWorkbenchAgents(tenantId, result.workbenchId);
+    const workbenchId = subject.workbenchId;
+    const agents = await listWorkbenchAgents(tenantId, workbenchId);
     const definitionId = agents[0]?.definitionId;
     if (definitionId === undefined) {
       throw new Error(
-        "This workbench has no assistant to run this routine yet.",
+        "This conversation has no agent to run this routine yet.",
       );
     }
-    return { definitionId, deliveryWorkbenchId: result.workbenchId };
+    return { definitionId, deliveryWorkbenchId: workbenchId };
   };
 
   /** Every create/update this panel makes funnels through this one chain —
