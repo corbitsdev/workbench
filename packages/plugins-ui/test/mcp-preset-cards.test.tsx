@@ -132,7 +132,10 @@ describe("McpPresetCardsSection", () => {
     Object.defineProperty(window.location, "href", {
       configurable: true,
       get() {
-        return hrefDescriptor?.get?.call(window.location) ?? "https://workbench.test/";
+        return (
+          hrefDescriptor?.get?.call(window.location) ??
+          "https://workbench.test/"
+        );
       },
       set(value: string) {
         assigned.push(value);
