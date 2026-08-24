@@ -275,3 +275,47 @@ export function insertMention(
     caret: before.length + inserted.length,
   };
 }
+
+/** Which bring-in query failed — callers map these to user-facing copy. */
+export type BringInListFailure = "members" | "invitableAgents";
+
+type BringInQuerySlice<T> = {
+  readonly data: T | undefined;
+  readonly isError: boolean;
+  readonly error: unknown;
+};
+
+/**
+ * Resolve the mention popover's bring-in candidate lists from their React
+ * Query slices. A failed query must never collapse to an honest-looking
+ * empty roster (`data ?? []` alone) — callers surface `failures` /
+ * `firstError` instead of rendering "no one to bring in".
+ */
+export function resolveBringInLists(input: {
+  readonly members: BringInQuerySlice<readonly BringInMember[]>;
+  readonly invitableAgents: BringInQuerySlice<
+    readonly BringInAgentDefinition[]
+  >;
+}): {
+  readonly members: readonly BringInMember[];
+  readonly invitableAgents: readonly BringInAgentDefinition[];
+  readonly failures: readonly BringInListFailure[];
+  readonly firstError: unknown | null;
+} {
+  const failures: BringInListFailure[] = [];
+  if (input.members.isError) failures.push("members");
+  if (input.invitableAgents.isError) failures.push("invitableAgents");
+  return {
+    members: input.members.isError ? [] : (input.members.data ?? []),
+    invitableAgents: input.invitableAgents.isError
+      ? []
+      : (input.invitableAgents.data ?? []),
+    failures,
+    firstError:
+      failures[0] === "members"
+        ? input.members.error
+        : failures[0] === "invitableAgents"
+          ? input.invitableAgents.error
+          : null,
+  };
+}

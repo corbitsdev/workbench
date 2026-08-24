@@ -67,6 +67,9 @@ export const CHAT_STRINGS = {
   mentionAgentsGroupLabel: "Agents",
   mentionPeopleGroupLabel: "People",
   mentionForbidden: "You can't add people to this workbench",
+  mentionBringInLoadError: "Couldn't load people and agents to bring in",
+  mentionMembersLoadError: "Couldn't load people to bring in",
+  mentionInvitableLoadError: "Couldn't load agents to bring in",
   composerSlashEmpty: "No matching commands",
   composerSummarizeNoAgentError:
     "No agent in this conversation to summarize for — invite one first.",

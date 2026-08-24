@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { buildTeamAvatarStack } from "./chat-workspace";
+import {
+  bringInLoadErrorMessage,
+  buildTeamAvatarStack,
+} from "./chat-workspace";
 import type { ParticipantRecord } from "./api";
+import { CHAT_STRINGS } from "./strings";
 
 describe("buildTeamAvatarStack (CL-6594)", () => {
   test("gives every agent participant its own initial and its own generated color, never a shared fallback", () => {
@@ -84,5 +88,29 @@ describe("buildTeamAvatarStack (CL-6594)", () => {
 
     expect(stack.map((entry) => entry.label)).toEqual(["myra", "Dana Live"]);
     expect(stack[1]?.color).toBe("hsl(10 70% 60%)");
+  });
+});
+
+describe("bringInLoadErrorMessage (CL-6839)", () => {
+  test("no failures yields null — honest empty stays empty", () => {
+    expect(bringInLoadErrorMessage([], null)).toBeNull();
+  });
+
+  test("members-only failure uses the people copy", () => {
+    expect(bringInLoadErrorMessage(["members"], new Error("x"))).toBe(
+      CHAT_STRINGS.mentionMembersLoadError,
+    );
+  });
+
+  test("invitable-agents-only failure uses the agents copy", () => {
+    expect(bringInLoadErrorMessage(["invitableAgents"], new Error("x"))).toBe(
+      CHAT_STRINGS.mentionInvitableLoadError,
+    );
+  });
+
+  test("both failures use the combined copy", () => {
+    expect(
+      bringInLoadErrorMessage(["members", "invitableAgents"], new Error("x")),
+    ).toBe(CHAT_STRINGS.mentionBringInLoadError);
   });
 });
