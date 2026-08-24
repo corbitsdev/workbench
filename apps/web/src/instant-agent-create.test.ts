@@ -69,7 +69,7 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
         return json({
           id: `chan-${nextId}`,
           title: NEW_WORKBENCH_TITLE,
-          kind: "chat",
+          kind: "workbench",
           pinned: false,
           participants: [],
         });
@@ -104,7 +104,48 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
     expect(body.name).toBe(NEW_WORKBENCH_TITLE);
   });
 
-  // CL-6387 follow-up: picking a named template threw its own name away
+  // CL-6982: the + / picker create path mints a `kind: "workbench"`
+  // channel, never a Myra DM clone (`kind: "chat"` + `definitionId`).
+  test("blank create POSTs kind=workbench with no definitionId and invites nobody (CL-6982)", async () => {
+    const calls = stubFetch((path) => {
+      if (path.includes("/workflows/definitions")) {
+        return json({ data: [assistantDefinitionWire], nextCursor: null });
+      }
+      if (path.endsWith("/chat/workbenches")) {
+        return json({
+          id: "chan-1",
+          title: NEW_WORKBENCH_TITLE,
+          kind: "workbench",
+          pinned: true,
+          participants: [],
+        });
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    });
+
+    await createWorkbenchFromTemplate(
+      "tnt_1",
+      "blank",
+      () => undefined,
+      newQueryClient(),
+    );
+
+    const createCall = calls.find((call) =>
+      call.path.endsWith("/chat/workbenches"),
+    );
+    const body = JSON.parse(String(createCall?.init?.body)) as {
+      readonly kind?: string;
+      readonly definitionId?: string;
+      readonly reuseExisting?: boolean;
+      readonly name?: string;
+    };
+    expect(body.kind).toBe("workbench");
+    expect(body.definitionId).toBeUndefined();
+    expect(body.reuseExisting).toBeUndefined();
+    expect(body.name).toBe(NEW_WORKBENCH_TITLE);
+    expect(calls.some((call) => call.path.includes("/invite"))).toBe(false);
+  });
+
   // and left the reviewer roster its greeting promises out of the room
   // (every bench looked like every other "New Workbench", and Myra's
   // "Three reviewers read every pull request" greeting described a team
@@ -126,7 +167,7 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
         return json({
           id: "chan-1",
           title: "Code review",
-          kind: "chat",
+          kind: "workbench",
           pinned: false,
           participants: [],
         });
@@ -148,7 +189,7 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
         return json({
           id: "chan-1",
           title: "Code review",
-          kind: "chat",
+          kind: "workbench",
           pinned: false,
           participants: [],
           settings: {},
@@ -195,7 +236,7 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
     const createdIds = createAgentCalls.map(
       (_, index) => `def-reviewer-${index + 1}`,
     );
-    expect(invitedIds.sort()).toEqual(createdIds.sort());
+    expect(invitedIds.sort()).toEqual(["def-assistant", ...createdIds].sort());
     expect(navigated).toEqual(["/w/chan-1"]);
 
     // CL-6594: a room this function navigates to must never carry a
