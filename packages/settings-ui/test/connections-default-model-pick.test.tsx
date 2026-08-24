@@ -10,6 +10,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import { ConnectionsSection } from "../src/connections-section";
+import { SETTINGS_STRINGS } from "../src/strings";
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
@@ -115,6 +116,41 @@ const OWN_OFFERINGS = [
   },
 ];
 
+function mockFetch(options?: {
+  readonly models?: ReturnType<typeof resolvedModels>;
+  readonly onPatch?: (url: string) => void;
+}) {
+  globalThis.fetch = ((url: string, _init?: RequestInit) => {
+    if (url === "/api/tenants/ten_1/credentials") {
+      return Promise.resolve(
+        json({ data: [ANTHROPIC_CREDENTIAL], nextCursor: null }),
+      );
+    }
+    if (url === "/api/tenants/ten_1/providers") {
+      return Promise.resolve(
+        json({ data: [ANTHROPIC_PROVIDER], nextCursor: null }),
+      );
+    }
+    if (url === "/api/tenants/ten_1/connections/oauth-configured") {
+      return Promise.resolve(json({}));
+    }
+    if (url === "/api/tenants/ten_1/models") {
+      return Promise.resolve(json(options?.models ?? resolvedModels(0, 1)));
+    }
+    if (url === "/api/tenants/ten_1/catalog/offerings") {
+      return Promise.resolve(json({ data: OWN_OFFERINGS, nextCursor: null }));
+    }
+    if (
+      typeof url === "string" &&
+      url.startsWith("/api/tenants/ten_1/catalog/offerings/")
+    ) {
+      options?.onPatch?.(url);
+      return Promise.resolve(json({ id: "patched", priority: -1 }));
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  }) as unknown as typeof fetch;
+}
+
 function renderSection() {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -172,7 +208,7 @@ describe("Global model route", () => {
       expect(container.textContent).toContain("Fallback order");
 
       const defaultModel = container.querySelector(
-        'select[aria-label="Default model"]',
+        `select[aria-label="${SETTINGS_STRINGS.connectionsDefaultModelLabel}"]`,
       ) as HTMLSelectElement | null;
       expect(defaultModel?.value).toBe("claude-sonnet-5");
 
@@ -194,9 +230,80 @@ describe("Global model route", () => {
       expect(JSON.parse(patchCall?.body ?? "{}")).toEqual({ priority: -1 });
 
       const updatedDefault = container.querySelector(
-        'select[aria-label="Default model"]',
+        `select[aria-label="${SETTINGS_STRINGS.connectionsDefaultModelLabel}"]`,
       ) as HTMLSelectElement | null;
       expect(updatedDefault?.value).toBe("claude-haiku-5");
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("panel title is the only AI providers heading; subsection is Connected providers", async () => {
+    mockFetch();
+    const { container, root } = renderSection();
+    try {
+      await settle();
+
+      expect(container.textContent).toContain(
+        SETTINGS_STRINGS.connectionsSectionTitle,
+      );
+      expect(container.textContent).toContain("Connected providers");
+
+      const headings = [...container.querySelectorAll("h1, h2, h3, h4")];
+      const aiProvidersHeadings = headings.filter(
+        (el) => el.textContent?.trim() === "AI providers",
+      );
+      expect(aiProvidersHeadings).toHaveLength(1);
+
+      const connectedProviders = headings.filter(
+        (el) => el.textContent?.trim() === "Connected providers",
+      );
+      expect(connectedProviders).toHaveLength(1);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("default model field label and aria-label come from SETTINGS_STRINGS", async () => {
+    mockFetch();
+    const { container, root } = renderSection();
+    try {
+      await settle();
+
+      const select = container.querySelector(
+        `select[aria-label="${SETTINGS_STRINGS.connectionsDefaultModelLabel}"]`,
+      );
+      expect(select).not.toBeNull();
+
+      const field = container.querySelector(".settings-model-default-field");
+      expect(field?.textContent).toContain(
+        SETTINGS_STRINGS.connectionsDefaultModelLabel,
+      );
+      expect(SETTINGS_STRINGS.connectionsDefaultModelLabel).not.toMatch(/:$/);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("Move up/down controls are absent when the route has fewer than two rows", async () => {
+    // One offering for the winning model → route.length === 1.
+    mockFetch({ models: resolvedModels(0, 1) });
+    const { container, root } = renderSection();
+    try {
+      await settle();
+
+      const moveButtons = [
+        ...container.querySelectorAll(
+          'button[aria-label^="Move "][aria-label$=" up"], button[aria-label^="Move "][aria-label$=" down"]',
+        ),
+      ];
+      expect(moveButtons).toHaveLength(0);
+      expect(
+        container.querySelector(".settings-model-route-actions"),
+      ).toBeNull();
     } finally {
       act(() => root.unmount());
       container.remove();

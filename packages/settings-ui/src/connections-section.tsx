@@ -340,7 +340,7 @@ export function ConnectionsSection({
                   <Plugs />
                 </span>
                 <div>
-                  <h3>AI providers</h3>
+                  <h3>Connected providers</h3>
                   <p>Connect the services that can run your models.</p>
                 </div>
               </div>
@@ -465,9 +465,9 @@ function ModelRoutePanel({
       ) : (
         <>
           <label className="settings-model-default-field">
-            <span>Default model</span>
+            <span>{SETTINGS_STRINGS.connectionsDefaultModelLabel}</span>
             <select
-              aria-label="Default model"
+              aria-label={SETTINGS_STRINGS.connectionsDefaultModelLabel}
               value={currentModel}
               onChange={(event) => chooseModel(event.target.value)}
             >
@@ -494,41 +494,47 @@ function ModelRoutePanel({
                 <span className="settings-model-route-provenance">
                   {row.provenance === "set-here" ? "Set here" : "Inherited"}
                 </span>
-                <div className="settings-model-route-actions">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Move ${providerDisplayName(row.providerName)} up`}
-                    disabled={index === 0 || row.provenance === "inherited"}
-                    onClick={() =>
-                      applyPatches(
-                        computeGlobalRoutePatches(route, row.offeringId, "up"),
-                      )
-                    }
-                  >
-                    <ArrowUp />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Move ${providerDisplayName(row.providerName)} down`}
-                    disabled={
-                      index === route.length - 1 ||
-                      row.provenance === "inherited"
-                    }
-                    onClick={() =>
-                      applyPatches(
-                        computeGlobalRoutePatches(
-                          route,
-                          row.offeringId,
-                          "down",
-                        ),
-                      )
-                    }
-                  >
-                    <ArrowDown />
-                  </Button>
-                </div>
+                {route.length >= 2 ? (
+                  <div className="settings-model-route-actions">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Move ${providerDisplayName(row.providerName)} up`}
+                      disabled={index === 0 || row.provenance === "inherited"}
+                      onClick={() =>
+                        applyPatches(
+                          computeGlobalRoutePatches(
+                            route,
+                            row.offeringId,
+                            "up",
+                          ),
+                        )
+                      }
+                    >
+                      <ArrowUp />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Move ${providerDisplayName(row.providerName)} down`}
+                      disabled={
+                        index === route.length - 1 ||
+                        row.provenance === "inherited"
+                      }
+                      onClick={() =>
+                        applyPatches(
+                          computeGlobalRoutePatches(
+                            route,
+                            row.offeringId,
+                            "down",
+                          ),
+                        )
+                      }
+                    >
+                      <ArrowDown />
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
