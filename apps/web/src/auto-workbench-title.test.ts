@@ -30,8 +30,9 @@ describe("titleFromFirstMessage (CL-6656)", () => {
       "Help me write a detailed competitive analysis of every agent coding tool shipping this quarter";
     const title = titleFromFirstMessage(long);
     expect(title).toBeDefined();
-    expect(title!.endsWith("…")).toBe(true);
-    expect(title!.length).toBeLessThanOrEqual(AUTO_WORKBENCH_TITLE_MAX + 1);
+    if (title === undefined) return;
+    expect(title.endsWith("…")).toBe(true);
+    expect(title.length).toBeLessThanOrEqual(AUTO_WORKBENCH_TITLE_MAX + 1);
     expect(title).not.toContain("shipping");
   });
 });
@@ -53,6 +54,8 @@ describe("autoNameFromFirstMessage (CL-6656)", () => {
   });
 
   test("returns undefined when the first message has no usable text", () => {
-    expect(autoNameFromFirstMessage(NEW_WORKBENCH_TITLE, "   ")).toBeUndefined();
+    expect(
+      autoNameFromFirstMessage(NEW_WORKBENCH_TITLE, "   "),
+    ).toBeUndefined();
   });
 });

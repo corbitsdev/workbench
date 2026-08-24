@@ -334,7 +334,10 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
         return json({ ...assistantDefinitionWire, id: "def-reviewer-1" });
       }
       if (path.endsWith("/chat/workbenches/chan-1/invite")) {
-        return json({ address: "agent:invited", definitionId: "def-reviewer-1" });
+        return json({
+          address: "agent:invited",
+          definitionId: "def-reviewer-1",
+        });
       }
       if (path.endsWith("/chat/workbenches/chan-1/settings")) {
         return json({
