@@ -14,12 +14,14 @@ import {
   chatMessagesQueryKey,
   chatPinsQueryKey,
   chatThreadsQueryKey,
+  ensureReplyThreadRow,
 } from "../src/use-workbench-feed";
 import type {
   MessageItem,
   MessagesResponse,
   PinnedMessage,
   Workbench,
+  WorkbenchThreadRow,
 } from "../src/api";
 import { workbenchesQueryKey } from "../src/api";
 
@@ -223,6 +225,131 @@ describe("applyStreamMessage", () => {
     );
     expect(list?.[0]?.lastActivityAt).toBe("2026-01-01T00:02:00.000Z");
     expect(list?.[0]?.preview).toBe("let's pull Scout in");
+  });
+
+  test("patches threadId onto an already-cached optimistic confirm (CL-6660)", () => {
+    const qc = client();
+    const optimistic: MessageItem = {
+      ...baseMessage,
+      id: "m_server",
+      clientId: "pending_1",
+    };
+    qc.setQueryData(chatMessagesQueryKey(TENANT, WORKBENCH), {
+      items: [optimistic],
+    } satisfies MessagesResponse);
+    qc.setQueryData(chatThreadsQueryKey(TENANT, WORKBENCH), {
+      rootThreadId: "root",
+      items: [] as WorkbenchThreadRow[],
+    });
+
+    applyStreamMessage(qc, TENANT, WORKBENCH, {
+      ...optimistic,
+      threadId: "thr_reply",
+      createdAt: "2026-01-01T00:05:00.000Z",
+    });
+
+    const messages = qc.getQueryData<MessagesResponse>(
+      chatMessagesQueryKey(TENANT, WORKBENCH),
+    );
+    expect(messages?.items).toHaveLength(1);
+    expect(messages?.items[0]?.threadId).toBe("thr_reply");
+
+    const threads = qc.getQueryData<{
+      readonly items: readonly WorkbenchThreadRow[];
+    }>(chatThreadsQueryKey(TENANT, WORKBENCH));
+    expect(threads?.items).toHaveLength(1);
+    expect(threads?.items[0]?.id).toBe("thr_reply");
+    expect(threads?.items[0]?.replyCount).toBe(1);
+  });
+
+  test("an echo of an already-threaded optimistic write does not double replyCount (CL-6660)", () => {
+    const qc = client();
+    const confirmed: MessageItem = {
+      ...baseMessage,
+      id: "m_server",
+      clientId: "pending_1",
+      threadId: "thr_reply",
+    };
+    qc.setQueryData(chatMessagesQueryKey(TENANT, WORKBENCH), {
+      items: [confirmed],
+    } satisfies MessagesResponse);
+    qc.setQueryData(chatThreadsQueryKey(TENANT, WORKBENCH), {
+      rootThreadId: "root",
+      items: [
+        {
+          id: "thr_reply",
+          kind: "reply" as const,
+          parentMessageId: "m_parent",
+          parentThreadId: "root",
+          runRef: null,
+          title: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          replyCount: 1,
+          lastActivityAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    applyStreamMessage(qc, TENANT, WORKBENCH, confirmed);
+
+    const threads = qc.getQueryData<{
+      readonly items: readonly { replyCount: number }[];
+    }>(chatThreadsQueryKey(TENANT, WORKBENCH));
+    expect(threads?.items[0]?.replyCount).toBe(1);
+  });
+});
+
+describe("ensureReplyThreadRow (CL-6660)", () => {
+  const empty: {
+    readonly rootThreadId: string;
+    readonly items: readonly WorkbenchThreadRow[];
+  } = { rootThreadId: "root", items: [] };
+
+  test("seeds a missing reply-thread row with parentMessageId and replyCount 1", () => {
+    const next = ensureReplyThreadRow(empty, {
+      threadId: "thr_new",
+      createdAt: "2026-01-01T00:01:00.000Z",
+      parentMessageId: "m_parent",
+    });
+    expect(next.items).toEqual([
+      {
+        id: "thr_new",
+        kind: "reply",
+        parentMessageId: "m_parent",
+        parentThreadId: "root",
+        runRef: null,
+        title: null,
+        createdAt: "2026-01-01T00:01:00.000Z",
+        replyCount: 1,
+        lastActivityAt: "2026-01-01T00:01:00.000Z",
+      },
+    ]);
+  });
+
+  test("fills a null parentMessageId on an existing stub without overwriting a real parent", () => {
+    const withStub = ensureReplyThreadRow(empty, {
+      threadId: "thr_new",
+      createdAt: "2026-01-01T00:01:00.000Z",
+      bumpReplyCount: false,
+    });
+    expect(withStub.items[0]?.parentMessageId).toBeNull();
+    expect(withStub.items[0]?.replyCount).toBe(0);
+
+    const filled = ensureReplyThreadRow(withStub, {
+      threadId: "thr_new",
+      createdAt: "2026-01-01T00:02:00.000Z",
+      parentMessageId: "m_parent",
+      bumpReplyCount: false,
+    });
+    expect(filled.items[0]?.parentMessageId).toBe("m_parent");
+
+    const kept = ensureReplyThreadRow(filled, {
+      threadId: "thr_new",
+      createdAt: "2026-01-01T00:03:00.000Z",
+      parentMessageId: "m_other",
+      bumpReplyCount: false,
+    });
+    expect(kept.items[0]?.parentMessageId).toBe("m_parent");
   });
 });
 

@@ -166,20 +166,99 @@ function settleWorkbenchListRow(
 }
 
 /**
+ * The `GET /threads` cache shape — shared by stream apply and the
+ * optimistic-send path that seeds a just-created reply thread before
+ * `openThreadById` runs (CL-6660).
+ */
+export type ThreadsQueryData = {
+  readonly rootThreadId: string;
+  readonly items: readonly WorkbenchThreadRow[];
+};
+
+/**
+ * Ensures a reply-thread row exists for `threadId`, and optionally bumps
+ * its activity. A first in-reply-to send uses this to seed the row with
+ * `parentMessageId` before navigation opens the thread; a stream echo
+ * uses it when the row is still missing so "N replies" and open-by-id
+ * have something to hang onto without a refetch (CL-6660).
+ *
+ * When the row already exists, `parentMessageId` fills in only if the
+ * cached row still has `null` (a stream-seeded stub catching up to the
+ * sender's known parent) — never overwrites a real parent.
+ */
+export function ensureReplyThreadRow(
+  current: ThreadsQueryData,
+  args: {
+    readonly threadId: string;
+    readonly createdAt: string;
+    readonly parentMessageId?: string | null;
+    /** When false, only insert-or-fill — never increment replyCount. */
+    readonly bumpReplyCount?: boolean;
+  },
+): ThreadsQueryData {
+  const bump = args.bumpReplyCount ?? true;
+  const existing = current.items.find((row) => row.id === args.threadId);
+  if (existing !== undefined) {
+    const filledParent =
+      args.parentMessageId !== undefined &&
+      args.parentMessageId !== null &&
+      existing.parentMessageId === null
+        ? args.parentMessageId
+        : existing.parentMessageId;
+    const replyCount = bump ? existing.replyCount + 1 : existing.replyCount;
+    const lastActivityAt = bump ? args.createdAt : existing.lastActivityAt;
+    if (
+      filledParent === existing.parentMessageId &&
+      replyCount === existing.replyCount &&
+      lastActivityAt === existing.lastActivityAt
+    ) {
+      return current;
+    }
+    return {
+      ...current,
+      items: current.items.map((row) =>
+        row.id === args.threadId
+          ? {
+              ...row,
+              parentMessageId: filledParent,
+              replyCount,
+              lastActivityAt,
+            }
+          : row,
+      ),
+    };
+  }
+  const newRow: WorkbenchThreadRow = {
+    id: args.threadId,
+    kind: "reply",
+    parentMessageId: args.parentMessageId ?? null,
+    parentThreadId: current.rootThreadId === "" ? null : current.rootThreadId,
+    runRef: null,
+    title: null,
+    createdAt: args.createdAt,
+    replyCount: bump ? 1 : 0,
+    lastActivityAt: bump ? args.createdAt : null,
+  };
+  return { ...current, items: [...current.items, newRow] };
+}
+
+/**
  * Folds a freshly published `chat.message` row straight into the messages
  * cache (CL-6328) — the §6/1.2 bar is zero refetches triggered by a stream
  * event, and this event already carries everything a `GET .../messages`
  * page item would. Deduped by `id` or `clientId` so the row this reader's
  * own optimistic send already wrote (`use-optimistic-sends.ts`) is never
- * doubled when its own echo arrives back over the stream. A message that
- * belongs to a thread also bumps that thread's `replyCount`/
- * `lastActivityAt` row in the threads cache — the one piece of thread
- * metadata `MessageItem` itself doesn't carry (see `./thread-feed.ts`).
- * The workbench list-cache row settles its preview/`lastActivityAt` here
- * too (CL-6795) so the sidebar tracks the latest person-facing text
- * without waiting for a list refetch — including when the messages
- * append was a no-op because this connection's optimistic send already
- * wrote the row.
+ * doubled when its own echo arrives back over the stream.
+ *
+ * When the matching row is already present but lacks `threadId` and the
+ * stream carries one, the cached row is patched in place (CL-6660) — an
+ * optimistic confirm that raced ahead of thread assignment used to leave
+ * the message stuck on the root feed. A message that belongs to a thread
+ * also bumps (or seeds) that thread's `replyCount`/`lastActivityAt` row
+ * in the threads cache — only when this apply newly scopes the message
+ * into the thread, so an echo of an already-counted optimistic write is
+ * a no-op on replyCount. The workbench list-cache row settles its
+ * preview/`lastActivityAt` here too (CL-6795).
  */
 export function applyStreamMessage(
   queryClient: QueryClient,
@@ -187,43 +266,47 @@ export function applyStreamMessage(
   workbenchId: string,
   message: MessageItem,
 ): void {
+  let threadActivityDelta = 0;
   queryClient.setQueryData(
     chatMessagesQueryKey(tenantId, workbenchId),
     (current: MessagesResponse | undefined) => {
       if (current === undefined) return current;
-      const alreadyPresent = current.items.some(
+      const matchIndex = current.items.findIndex(
         (item) =>
           item.id === message.id ||
           (message.clientId !== undefined &&
             item.clientId === message.clientId),
       );
-      if (alreadyPresent) return current;
+      if (matchIndex >= 0) {
+        const existing = current.items[matchIndex];
+        if (existing === undefined) return current;
+        if (
+          message.threadId !== undefined &&
+          existing.threadId !== message.threadId
+        ) {
+          threadActivityDelta = 1;
+          const items = current.items.slice();
+          items[matchIndex] = { ...existing, threadId: message.threadId };
+          return { ...current, items };
+        }
+        return current;
+      }
+      if (message.threadId !== undefined) threadActivityDelta = 1;
       return { ...current, items: [...current.items, message] };
     },
   );
   settleWorkbenchListRow(queryClient, tenantId, workbenchId, message);
   if (message.threadId === undefined) return;
+  const threadId = message.threadId;
   queryClient.setQueryData(
     chatThreadsQueryKey(tenantId, workbenchId),
-    (
-      current:
-        | {
-            readonly rootThreadId: string;
-            readonly items: readonly WorkbenchThreadRow[];
-          }
-        | undefined,
-    ) => {
+    (current: ThreadsQueryData | undefined) => {
       if (current === undefined) return current;
-      const items = current.items.map((row) =>
-        row.id === message.threadId
-          ? {
-              ...row,
-              replyCount: row.replyCount + 1,
-              lastActivityAt: message.createdAt,
-            }
-          : row,
-      );
-      return { ...current, items };
+      return ensureReplyThreadRow(current, {
+        threadId,
+        createdAt: message.createdAt,
+        bumpReplyCount: threadActivityDelta > 0,
+      });
     },
   );
 }

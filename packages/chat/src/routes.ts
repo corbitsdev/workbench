@@ -2154,6 +2154,44 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         return c.json({ command: commandResult }, 201);
       }
 
+      // Resolve the target thread *before* publish so the `chat.message`
+      // SSE payload carries `threadId` (CL-6660). Assignment still runs
+      // after the insert — membership needs the new message id — but
+      // subscribers must not see a root-feed echo of a reply send.
+      let targetThreadId: string | undefined;
+      if (deps.threads !== undefined) {
+        const root = await deps.threads.ensureRootThread(
+          ownerTenantId,
+          workbenchId,
+        );
+        targetThreadId = root.id;
+        if (parsed.threadId !== undefined) {
+          const existing = await deps.threads.getThread(
+            ownerTenantId,
+            parsed.threadId,
+          );
+          if (existing === undefined || existing.workbenchId !== workbenchId) {
+            return c.json(ErrorEnvelope("not_found", "thread not found"), 404);
+          }
+          targetThreadId = existing.id;
+        } else if (parsed.inReplyToMessageId !== undefined) {
+          let reply;
+          try {
+            reply = await deps.threads.openReplyThread({
+              tenantId: ownerTenantId,
+              workbenchId,
+              parentMessageId: parsed.inReplyToMessageId,
+            });
+          } catch (cause) {
+            if (cause instanceof ThreadDepthCapError) {
+              return c.json(ErrorEnvelope("conflict", cause.message), 409);
+            }
+            throw cause;
+          }
+          targetThreadId = reply.id;
+        }
+      }
+
       // No unreachable-agent branch: the message is a room write, and
       // reaching an agent happens off this path — an agent that cannot
       // be reached answers with a notice on the timeline in its own
@@ -2182,6 +2220,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           ...(parsed.inReplyToMessageId !== undefined
             ? { inReplyToMessageId: parsed.inReplyToMessageId }
             : {}),
+          ...(targetThreadId !== undefined ? { threadId: targetThreadId } : {}),
           ...(commandDecision !== undefined &&
           "routeToParticipant" in commandDecision
             ? { forcedRecipientAddress: commandDecision.routeToParticipant }
@@ -2199,37 +2238,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         });
       }
 
-      if (deps.threads !== undefined) {
-        const root = await deps.threads.ensureRootThread(
-          ownerTenantId,
-          workbenchId,
-        );
-        let targetThreadId = root.id;
-        if (parsed.threadId !== undefined) {
-          const existing = await deps.threads.getThread(
-            ownerTenantId,
-            parsed.threadId,
-          );
-          if (existing === undefined || existing.workbenchId !== workbenchId) {
-            return c.json(ErrorEnvelope("not_found", "thread not found"), 404);
-          }
-          targetThreadId = existing.id;
-        } else if (parsed.inReplyToMessageId !== undefined) {
-          let reply;
-          try {
-            reply = await deps.threads.openReplyThread({
-              tenantId: ownerTenantId,
-              workbenchId,
-              parentMessageId: parsed.inReplyToMessageId,
-            });
-          } catch (cause) {
-            if (cause instanceof ThreadDepthCapError) {
-              return c.json(ErrorEnvelope("conflict", cause.message), 409);
-            }
-            throw cause;
-          }
-          targetThreadId = reply.id;
-        }
+      if (deps.threads !== undefined && targetThreadId !== undefined) {
         await deps.threads.assignMessage({
           tenantId: ownerTenantId,
           workbenchId,

@@ -22,7 +22,12 @@ import type { MentionInviteIntent } from "./mentions";
 import { CHAT_STRINGS } from "./strings";
 import type { PendingMessageStatus, TimelineMessageItem } from "./timeline";
 import { toast } from "@corbits/react-ui";
-import { chatMessagesQueryKey } from "./use-workbench-feed";
+import {
+  chatMessagesQueryKey,
+  chatThreadsQueryKey,
+  ensureReplyThreadRow,
+  type ThreadsQueryData,
+} from "./use-workbench-feed";
 
 export type PendingSend = {
   readonly nonce: string;
@@ -203,9 +208,6 @@ export function useOptimisticSends(args: {
           clientId: nonce,
           ...inviteOption,
         });
-        if (sent.threadId !== undefined) {
-          openThreadById(sent.threadId);
-        }
       } else {
         sent = await sendMessage(tenantId, activeWorkbenchId, parts, {
           clientId: nonce,
@@ -221,6 +223,12 @@ export function useOptimisticSends(args: {
           address: pendingSenderAddress(currentUserPrincipalId),
         },
         clientId: sent.clientId ?? nonce,
+        // Stamp the server-assigned thread so the confirmed row scopes into
+        // the reply feed immediately (CL-6660). The stream echo may still
+        // arrive without threadId when assignment raced publish; keeping
+        // this stamp means that echo's dedupe path is a no-op rather than
+        // leaving the message stuck on the root feed.
+        ...(sent.threadId !== undefined ? { threadId: sent.threadId } : {}),
       };
       // A refresh already in flight was issued before this send and will
       // report a mailbox without it — letting it resolve into the cache
@@ -234,19 +242,58 @@ export function useOptimisticSends(args: {
       // where it has vanished from both while a refetch is still in
       // flight. A refresh may have folded it in already (refresh-first
       // interleaving); appending unconditionally would render it twice
-      // under one key.
+      // under one key. When the row is already present but still lacks
+      // `threadId`, patch it in place so a racing stream echo without a
+      // thread cannot leave the confirm stranded on the root feed.
       queryClient.setQueryData(
         chatMessagesQueryKey(tenantId, activeWorkbenchId),
         (current: MessagesResponse | undefined) => {
           if (current === undefined) return current;
-          const alreadyPresent = current.items.some(
+          const matchIndex = current.items.findIndex(
             (item) =>
               item.id === confirmed.id || item.clientId === confirmed.clientId,
           );
-          if (alreadyPresent) return current;
+          if (matchIndex >= 0) {
+            const existing = current.items[matchIndex];
+            if (existing === undefined) return current;
+            if (
+              confirmed.threadId !== undefined &&
+              existing.threadId !== confirmed.threadId
+            ) {
+              const items = current.items.slice();
+              items[matchIndex] = {
+                ...existing,
+                threadId: confirmed.threadId,
+              };
+              return { ...current, items };
+            }
+            return current;
+          }
           return { ...current, items: [...current.items, confirmed] };
         },
       );
+      // Seed / bump the threads cache before navigation opens the just-
+      // created id (CL-6660). Without the row, `useThreadNavigation`'s
+      // stale-id effect would drop `openThreadId` the moment it was set.
+      if (sent.threadId !== undefined) {
+        const threadId = sent.threadId;
+        const parentMessageId = pendingParentMessageId;
+        queryClient.setQueryData(
+          chatThreadsQueryKey(tenantId, activeWorkbenchId),
+          (current: ThreadsQueryData | undefined) => {
+            if (current === undefined) return current;
+            return ensureReplyThreadRow(current, {
+              threadId,
+              createdAt: sent.createdAt,
+              ...(parentMessageId !== null ? { parentMessageId } : {}),
+              bumpReplyCount: true,
+            });
+          },
+        );
+        if (pendingParentMessageId !== null) {
+          openThreadById(threadId);
+        }
+      }
       setPendingSends((current) => current.filter((p) => p.nonce !== nonce));
       // A message just landed in a workbench with an agent in it: a reply
       // is owed, so show the typing indicator now rather than sitting
