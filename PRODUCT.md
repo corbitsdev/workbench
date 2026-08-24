@@ -7,16 +7,18 @@ Platform, built on [Interchange](https://github.com/faremeter/interchange).
 
 ## The one concept
 
-Everything in Workbench collapses to a single idea: **a workbench is an
-agent conversation.** Opening a workbench means opening a conversation —
-with one agent, or with a group of people and agents — and that
-conversation is also its own tenant, so its membership and grants are its
-own. There is no separate "project" or "space" object sitting above the
-conversation; the conversation is the unit of work.
+Everything in Workbench collapses to a single idea: **a workbench is a
+conversation tenant.** People and agents are both principals
+(Interchange). Opening an agent opens the one 1:1 DM with that agent
+(`kind: chat`) — two clicks never clone a second DM. Opening a channel
+opens a multi-principal room (`kind: workbench`). There is no separate
+"project" or "space" object sitting above the conversation; the
+conversation is the unit of work.
 
-This is why the sidebar is one list of workbenches, not sections split by
-kind — every workbench a person has, agent conversation or group
-conversation alike, shows up the same way. See
+This is why the sidebar is Agents then Channels, not one recency list
+titled Workbenches. The same Interchange agent can sit in its DM and in
+many channels; product reopens or invites, and does not clone the
+definition or mint a sibling instance per room. See
 [docs/GLOSSARY.md](docs/GLOSSARY.md) for the full term mapping and
 [docs/CHAT.md](docs/CHAT.md) for how a conversation is built underneath.
 
@@ -32,19 +34,18 @@ team spaces); within a bench, they open, create, and work in workbenches.
 Workbench is intentionally not a multi-pane IDE. The product surface is one
 column at a time:
 
-- **A sidebar of workbenches** lists every conversation in the selected
-  bench, flat, most-recently-active first. There is no separate "channels"
-  vs. "chats" grouping the sidebar exposes to a person — every row is a
-  workbench.
-- **"+ New Workbench" always creates.** It opens `/new` — the shipped
+- **A sidebar of Agents then Channels** lists conversations in the
+  selected bench. Agent rows are DMs (`kind: chat`); channel rows are
+  rooms (`kind: workbench`). There is no one recency list titled
+  Workbenches.
+- **"New workbench" always creates.** It opens `/new` — the shipped
   prompt-primary picker — never a picker of existing things to join.
-  Starting a new workbench is the one way in, whether the result is a
-  one-on-one conversation with an agent or a group conversation
-  with people and agents together.
-- **Agents are templates.** Starting a new agent conversation means picking
-  an agent definition (a named, reusable capability) as the starting point
-  — the same definition can be launched into any number of separate
-  conversations, each with its own history and its own tenant.
+  Plus mints an empty channel. Nobody is auto-hosted.
+- **Agents are principals, not templates.** Opening Sales opens Sales —
+  the one 1:1 tenant with that agent. The same agent can sit in its DM
+  and in many channels. Product reopens or invites; it does not clone
+  the definition or mint a sibling instance per room. Myra is an agent
+  row, not a special home slot.
 - The active workbench occupies the main column; a contextual panel beside
   it carries account-wide surfaces (approvals, recent activity) that stay
   visible regardless of which workbench is open.
@@ -57,17 +58,19 @@ lands on the create surface rather than an empty shell:
 1. **Login.**
 2. **Credential** — connect a model provider (one-click OAuth for
    supported providers, or a pasted API key); see `packages/onboarding`.
-3. **Create** — `/` hops an empty bench to `/new`, the prompt-primary
-   picker (`apps/web/src/pages/new-workbench-picker.tsx`). A prompt box is
-   the primary act: typing a goal and submitting creates a blank
-   workbench and sends that text as the first message. Prefab template
-   rows underneath are one-click shortcuts, not a kind-then-Create
-   second step. There is no Describe door and no
+3. **Create** — `/` hops an empty bench (zero workbenches) to `/new`, the
+   prompt-primary picker (`apps/web/src/pages/new-workbench-picker.tsx`).
+   A prompt box is the primary act: typing a goal and submitting mints an
+   empty channel and sends that text as the first message; blank plus
+   invites nobody. Named-template rows underneath mint that same empty
+   channel, then invite existing principals (including Myra as a
+   participant, never as mint `definitionId`) — one-click shortcuts, not
+   a kind-then-Create second step. There is no Describe door and no
    `describe-first-workbench.tsx`.
 
 A bench that already has one or more workbenches skips create and lands
-in an existing conversation instead (see
-`apps/web/src/pages/home-page.tsx`).
+on `workbenches[0]` (see `apps/web/src/pages/home-page.tsx`). Myra is an
+agent row, not a home slot.
 
 The shell's first-run destinations stay small on purpose (CL-6765):
 Mission Control is pinned above the footer rail; the rail itself is
@@ -154,23 +157,24 @@ as an explicit absence, never a fabricated zero. See `packages/insights`.
 
 User-facing surfaces (UI, docs, support) use exactly these nouns:
 
-- **Workbench** — a single conversation, one-on-one with an agent or a
-  group of people and agents. Never "channel" or "bench" in user-facing
-  copy.
-- **Space** — the user-facing name for a group conversation surface (a
-  workbench with more than one counterpart).
-- **Chat** — the user-facing name for a one-on-one conversation (with an
-  agent or with a person).
+- **Workbench** — the product name, and the mint verb ("New workbench").
+  A workbench is a conversation tenant: a DM or a channel.
+- **Agent** — a coworker identity in the sidebar's Agents list. Opening
+  the row reopens that agent's one DM. Never "template."
+- **DM** — the one 1:1 conversation with an agent. Never cloned by a
+  second open.
+- **Channel** — a multi-party room. Plus mints an empty one; nobody is
+  auto-hosted. Named templates invite existing agents into that room.
 - **Bench** — the shared team scope a person signs into and switches
   between; shown in the bench switcher, never called a "workspace" or
   "org" in copy.
 
-Internally these map onto platform primitives (tenant, DM) — see
-[docs/GLOSSARY.md](docs/GLOSSARY.md) for the authoritative table. Code and
-API paths generally keep the platform's own names; "workbench" is the one
-exception (CL-6260), since its package (`@corbits/chat`) is ours, not the
-platform's — only user-facing surfaces use the rest of the product
-vocabulary above.
+Internally these map onto platform primitives (principal, tenant, kind:
+chat vs kind: workbench) — see [docs/GLOSSARY.md](docs/GLOSSARY.md) for
+the authoritative table. Code and API paths generally keep the
+platform's own names; "workbench" is the one exception (CL-6260), since
+its package (`@corbits/chat`) is ours, not the platform's — only
+user-facing surfaces use the rest of the product vocabulary above.
 
 ## Open questions
 
@@ -179,10 +183,6 @@ vocabulary above.
   succeeded) stays **target** until CL-6737 and CL-6738 land — see
   IMPLEMENTATION.md open questions; do not document those guarantees as
   shipped.
-- Whether "Space" and "Chat" as user-facing labels are fully rolled out
-  across the UI or still landing incrementally is not settled in the
-  docs reviewed for this pass — treat the sidebar and conversation-header
-  copy as the source of truth over this document if they disagree.
 - The precise boundary of what Insights surfaces to a non-admin bench
   member (all tenant activity vs. only their own) is not spelled out in
   `packages/insights`'s own docs as of this writing.

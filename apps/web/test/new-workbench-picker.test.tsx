@@ -230,6 +230,9 @@ describe("NewWorkbenchPickerRoute", () => {
     expect(cards.length).toBe(2);
     expect(container?.textContent).toContain("Code review");
     expect(container?.textContent).toContain("Just start talking");
+    expect(container?.textContent).toContain(
+      "An empty channel. Nobody is hosted.",
+    );
   });
 
   // The library seeds every shipped template (`createTemplateLibrarySeeder`),
