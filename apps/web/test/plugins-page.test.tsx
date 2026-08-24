@@ -58,9 +58,36 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+function nativeValueSetter(
+  proto: HTMLInputElement | HTMLTextAreaElement,
+): (this: HTMLInputElement | HTMLTextAreaElement, value: string) => void {
+  const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+  if (setter === undefined) {
+    throw new Error("native value setter unavailable in this DOM");
+  }
+  return setter;
+}
+
+function fillField(id: string, value: string, textarea = false) {
+  const el = document.getElementById(id) as
+    | HTMLInputElement
+    | HTMLTextAreaElement
+    | null;
+  expect(el).not.toBeNull();
+  if (el === null) return;
+  const setter = nativeValueSetter(
+    textarea
+      ? window.HTMLTextAreaElement.prototype
+      : window.HTMLInputElement.prototype,
+  );
+  setter.call(el, value);
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 function stubFetch(): void {
-  globalThis.fetch = ((input: RequestInfo | URL) => {
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const path = typeof input === "string" ? input : String(input);
+    const method = (init?.method ?? "GET").toUpperCase();
     if (path.includes("/api/me/principals"))
       return Promise.resolve(json(membership));
     if (path.includes("/api/workbench-tenancies/kinds"))
@@ -91,7 +118,25 @@ function stubFetch(): void {
       );
     if (path.includes("/credentials/resolve/"))
       return Promise.resolve(json(null, 404));
-    if (path.includes("/api/tenants/tnt_1/skills"))
+    if (path.includes("/api/tenants/tnt_1/skills")) {
+      if (method === "POST") {
+        const parsed =
+          init?.body === undefined
+            ? {}
+            : (JSON.parse(String(init.body)) as { name?: string });
+        return Promise.resolve(
+          json({
+            skill: {
+              assetId: "skill_created",
+              name: parsed.name ?? "summarize",
+              description: "Condenses.",
+              scope: "private",
+              creatorPrincipalId: "prn_1",
+              updatedAtIso: "2026-01-01T00:00:00.000Z",
+            },
+          }),
+        );
+      }
       return Promise.resolve(
         json({
           skills: [
@@ -106,11 +151,14 @@ function stubFetch(): void {
           ],
         }),
       );
+    }
     return Promise.resolve(json({ data: [], nextCursor: null }));
   }) as typeof fetch;
 }
 
-async function mount() {
+async function mount(
+  props: { readonly navigate?: (to: string) => void } = {},
+) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -120,7 +168,10 @@ async function mount() {
         <NavigationProvider navigate={() => undefined}>
           <BenchProvider>
             <ProviderHealthProvider>
-              <PluginsRoute path="/plugins" />
+              <PluginsRoute
+                path="/plugins"
+                navigate={props.navigate ?? (() => undefined)}
+              />
             </ProviderHealthProvider>
           </BenchProvider>
         </NavigationProvider>
@@ -163,7 +214,7 @@ async function mountWithDeepLink(provider: string) {
           <BenchProvider>
             <ProviderHealthProvider>
               <DeepLinkProbe provider={provider} />
-              <PluginsRoute path="/plugins" />
+              <PluginsRoute path="/plugins" navigate={() => undefined} />
             </ProviderHealthProvider>
           </BenchProvider>
         </NavigationProvider>
@@ -302,5 +353,67 @@ describe("PluginsRoute", () => {
     expect(el.textContent).toContain(
       "Couldn't find that connection — pick it below.",
     );
+  });
+
+  test("clicking a skill card navigates to that skill's page", async () => {
+    stubFetch();
+    const navigated: string[] = [];
+    const el = await mount({ navigate: (to) => navigated.push(to) });
+
+    const skillsTab = [...el.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Skills") === true,
+    );
+    act(() => {
+      skillsTab?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const card = [...el.querySelectorAll('[role="button"]')].find(
+      (node) => node.textContent?.includes("weekly-digest") === true,
+    );
+    act(() => {
+      card?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(navigated).toContain("/skills/weekly-digest");
+  });
+
+  test("Create skill posts to the registry and opens the new skill's page", async () => {
+    stubFetch();
+    const navigated: string[] = [];
+    const el = await mount({ navigate: (to) => navigated.push(to) });
+
+    const skillsTab = [...el.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Skills") === true,
+    );
+    act(() => {
+      skillsTab?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const newSkill = [...el.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("New skill"),
+    );
+    await act(async () => {
+      newSkill?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await act(async () => {
+      fillField("create-skill-name", "summarize");
+      fillField("create-skill-description", "Condenses.", true);
+      fillField("create-skill-body", "Do it.", true);
+    });
+
+    const create = [...document.body.querySelectorAll("button")].find(
+      (button) => button.textContent === "Create skill",
+    );
+    await act(async () => {
+      create?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    for (let i = 0; i < 10; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    expect(navigated).toContain("/skills/summarize");
   });
 });
