@@ -196,20 +196,39 @@ export function PluginConnectPanel({
   readonly onChanged: () => void;
 }) {
   const open = plugin !== null;
-  const [oauthConfigured, setOauthConfigured] = useState<
-    Record<string, boolean>
-  >({});
+  // CL-6830: probe is tri-state — never fold a failure into `{}`, which
+  // reads as "hosted app absent" and hides one-click connect behind the
+  // not-configured token paste.
+  const [oauthProbe, setOauthProbe] = useState<
+    | { readonly status: "loading" }
+    | {
+        readonly status: "ready";
+        readonly configured: Readonly<Record<string, boolean>>;
+      }
+    | { readonly status: "error" }
+  >({ status: "loading" });
+  const [oauthProbeKey, setOauthProbeKey] = useState(0);
 
   useEffect(() => {
     if (!open) return;
+    let cancelled = false;
+    setOauthProbe({ status: "loading" });
     fetchOAuthConfigured(tenantId)
-      .then(setOauthConfigured)
-      .catch(() => setOauthConfigured({}));
-  }, [open, tenantId]);
+      .then((configured) => {
+        if (!cancelled) setOauthProbe({ status: "ready", configured });
+      })
+      .catch(() => {
+        if (!cancelled) setOauthProbe({ status: "error" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, tenantId, oauthProbeKey]);
 
   const hostedAppAvailable =
     plugin?.descriptor.oauth !== undefined &&
-    oauthConfigured[plugin.descriptor.id] === true;
+    oauthProbe.status === "ready" &&
+    oauthProbe.configured[plugin.descriptor.id] === true;
 
   return (
     <Dialog
@@ -253,28 +272,43 @@ export function PluginConnectPanel({
                 </a>
               </Button>
             ) : plugin.descriptor.oauth !== undefined ? (
-              <div className="flex flex-col gap-3">
-                <p className="text-sm text-muted-foreground">
-                  This workbench isn&apos;t set up with the one-click GitHub
-                  app, so connect with a token instead. Create a token with{" "}
-                  <code className="text-xs">repo</code> scope at{" "}
-                  <a
-                    className="underline"
-                    href={plugin.descriptor.docsUrl}
-                    target="_blank"
-                    rel="noreferrer"
+              oauthProbe.status === "error" ? (
+                <div className="flex flex-col gap-3">
+                  <p className="text-sm text-destructive" role="alert">
+                    Couldn&apos;t check whether one-click connect is available.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setOauthProbeKey((value) => value + 1)}
                   >
-                    github.com/settings/tokens
-                  </a>{" "}
-                  and paste it below.
-                </p>
-                <ApiKeyConnectForm
-                  tenantId={tenantId}
-                  connectorId={plugin.descriptor.id}
-                  displayName={plugin.descriptor.displayName}
-                  onConnected={onChanged}
-                />
-              </div>
+                    Try again
+                  </Button>
+                </div>
+              ) : oauthProbe.status === "loading" ? null : (
+                <div className="flex flex-col gap-3">
+                  <p className="text-sm text-muted-foreground">
+                    This workbench isn&apos;t set up with the one-click GitHub
+                    app, so connect with a token instead. Create a token with{" "}
+                    <code className="text-xs">repo</code> scope at{" "}
+                    <a
+                      className="underline"
+                      href={plugin.descriptor.docsUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      github.com/settings/tokens
+                    </a>{" "}
+                    and paste it below.
+                  </p>
+                  <ApiKeyConnectForm
+                    tenantId={tenantId}
+                    connectorId={plugin.descriptor.id}
+                    displayName={plugin.descriptor.displayName}
+                    onConnected={onChanged}
+                  />
+                </div>
+              )
             ) : plugin.descriptor.credentialInputKind === "url" ? (
               <ApiKeyConnectForm
                 tenantId={tenantId}
