@@ -51,11 +51,10 @@ key its bindings shape through. Two are registered in the sidecar's
   mirror the same origin-pinning and `redirect: "manual"` protections;
   only the injected header value differs.
 
-`packages/connections` (the Connections-surface registry, landing on a
-separate branch) is the other place this plugin id needs to be correct:
-whatever seeds or registers a Linear provider row there must set
-`plugin: "http-raw-authorization"`, matching this doc, not the
-`"http"` default other connectors use.
+`packages/connections` (the Connections-surface registry) is the other
+place this plugin id needs to be correct: whatever seeds or registers a
+Linear provider row there must set `plugin: "http-raw-authorization"`,
+matching this doc, not the `"http"` default other connectors use.
 
 ## Trust boundary
 
