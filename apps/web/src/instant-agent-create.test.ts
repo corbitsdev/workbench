@@ -114,13 +114,10 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
     });
     expect(body).not.toHaveProperty("definitionId");
 
-    const inviteBodies = calls
-      .filter((call) => /\/chat\/workbenches\/chan-\d+\/invite$/.test(call.path))
-      .map((call) => JSON.parse(String(call.init?.body)));
-    expect(inviteBodies).toEqual([
-      { definitionId: "def-assistant" },
-      { definitionId: "def-assistant" },
-    ]);
+    const inviteBodies = calls.filter((call) =>
+      /\/chat\/workbenches\/chan-\d+\/invite$/.test(call.path),
+    );
+    expect(inviteBodies).toHaveLength(0);
   });
 
   // CL-6387 follow-up: picking a named template threw its own name away
@@ -215,12 +212,10 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
     const invitedIds = inviteCalls.map(
       (call) => JSON.parse(String(call.init?.body)).definitionId,
     );
-    // Myra first (post-mint invite), then each reviewer from instantiate.
     const createdIds = createAgentCalls.map(
       (_, index) => `def-reviewer-${index + 1}`,
     );
-    expect(invitedIds[0]).toBe("def-assistant");
-    expect(invitedIds.slice(1).sort()).toEqual(createdIds.sort());
+    expect(invitedIds.sort()).toEqual(createdIds.sort());
     expect(navigated).toEqual(["/w/chan-1"]);
 
     // CL-6594: a room this function navigates to must never carry a
