@@ -208,11 +208,12 @@ describe("Sidebar", () => {
     container.remove();
   });
 
-  test("titles itself Workbenches and never renders a page-nav list", () => {
+  test("titles itself Agents and Channels and never renders a page-nav list", () => {
     const markup = renderSidebar("/settings/agents");
-    // The visible "Workbenches" label lives inside the list (below its
-    // search box); the panel keeps the accessible name.
-    expect(markup).toContain('aria-label="Workbenches"');
+    // Section labels live inside the list (below its search box); the
+    // panel keeps the accessible name for both groups.
+    expect(markup).toContain('aria-label="Agents and Channels"');
+    expect(markup).not.toContain('aria-label="Workbenches"');
     expect(markup).not.toContain(">Pages<");
     expect(markup).not.toContain("shell-rail-item");
   });
@@ -238,11 +239,6 @@ describe("Sidebar", () => {
     expect(markup.indexOf("shell-sidebar-mission-control")).toBeLessThan(
       markup.indexOf("shell-sidebar-footer-row"),
     );
-    expect(markup.indexOf(">Routines<")).toBeLessThan(
-      markup.indexOf(">Files<"),
-    );
-    expect(markup.indexOf(">Files<")).toBeLessThan(markup.indexOf(">Skills<"));
-    expect(markup.indexOf(">Skills<")).toBeLessThan(markup.indexOf(">Agents<"));
   });
 
   test("first-run footer rail does not list Evals or Insights before there is honest usage", async () => {
@@ -414,7 +410,7 @@ describe("Sidebar", () => {
         const { container, root } = await mountAt(path);
 
         expect(
-          container.querySelector('[aria-label="Search workbenches"]'),
+          container.querySelector('[aria-label="Search agents and channels"]'),
         ).not.toBeNull();
         const row = container.querySelector(".shell-ch-row");
         expect(row).not.toBeNull();
@@ -445,7 +441,7 @@ describe("Sidebar", () => {
     });
   });
 
-  // Sidebar = workbenches + conversational DMs only. Visible agent
+  // Sidebar = opened DMs (Agents) + rooms (Channels). Visible agent
   // definitions that have never been opened do not get a synthetic row.
   describe("agent DM rows", () => {
     const workbench = {
@@ -543,6 +539,77 @@ describe("Sidebar", () => {
     });
   });
 
+  test("renders Agents then Channels, without mixing a newer room above DMs", async () => {
+    const channel = {
+      id: "ch_room",
+      title: "Launch plan",
+      kind: "workbench",
+      pinned: false,
+      participants: [],
+      lastActivityAt: "2026-01-10T00:00:00.000Z",
+    };
+    const dm = {
+      id: "ch_dm",
+      title: "Myra",
+      kind: "chat",
+      pinned: false,
+      participants: [],
+      lastActivityAt: "2026-01-01T00:00:00.000Z",
+    };
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      if (path.includes("/api/me/principals"))
+        return Promise.resolve(json(membership));
+      if (path.includes("/chat/workbenches?kind=workbench"))
+        return Promise.resolve(json({ items: [channel] }));
+      if (path.includes("/chat/workbenches?kind=chat"))
+        return Promise.resolve(json({ items: [dm] }));
+      if (path.includes("/approvals/needs-you"))
+        return Promise.resolve(json({ items: [] }));
+      if (path.includes("/top-level-runs"))
+        return Promise.resolve(json({ data: [], nextCursor: null }));
+      if (path.includes("/agent-definitions/visible"))
+        return Promise.resolve(json({ definitions: [] }));
+      return Promise.resolve(json({ items: [] }));
+    }) as typeof fetch;
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <TestQueryProvider>
+          <BenchProvider>
+            <Sidebar path="/w" user={user} onNavigate={noop} onSignOut={noop} />
+          </BenchProvider>
+        </TestQueryProvider>,
+      );
+    });
+    for (let i = 0; i < 40; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      if (container.textContent?.includes("Launch plan")) break;
+    }
+
+    const agentsHeading = container.querySelector("#sidebar-agents-heading");
+    const channelsHeading = container.querySelector(
+      "#sidebar-channels-heading",
+    );
+    expect(agentsHeading?.textContent).toBe("Agents");
+    expect(channelsHeading?.textContent).toBe("Channels");
+    expect(container.innerHTML.indexOf("sidebar-agents-heading")).toBeLessThan(
+      container.innerHTML.indexOf("sidebar-channels-heading"),
+    );
+    expect(container.innerHTML.indexOf("Myra")).toBeLessThan(
+      container.innerHTML.indexOf("Launch plan"),
+    );
+    expect(container.innerHTML).not.toContain("No workbenches yet");
+
+    act(() => root.unmount());
+    container.remove();
+  });
+
   test("does not render the activity or approvals band", () => {
     const markup = renderSidebar("/w");
     expect(markup).not.toContain("panel-activity-slot");
@@ -569,9 +636,11 @@ describe("Sidebar", () => {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
-      if (container.innerHTML.includes("No workbenches yet")) break;
+      if (container.innerHTML.includes("No agents yet")) break;
     }
-    expect(container.innerHTML).toContain("No workbenches yet");
+    expect(container.innerHTML).toContain("No agents yet");
+    expect(container.innerHTML).toContain("No channels yet");
+    expect(container.innerHTML).not.toContain("No workbenches yet");
     act(() => root.unmount());
     container.remove();
   });
