@@ -834,6 +834,15 @@ describe("typingLabel", () => {
   test("falls back to the deterministic Member label with no matching participant", () => {
     expect(typingLabel("prn_unknown1", [])).toBe("Member");
   });
+
+  test("prefers currentUser.name for the signed-in principal (CL-6655)", () => {
+    expect(
+      typingLabel("prn_self", [], {
+        principalId: "prn_self",
+        name: "sawyer",
+      }),
+    ).toBe("sawyer");
+  });
 });
 
 describe("TypingIndicator", () => {

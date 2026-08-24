@@ -103,7 +103,7 @@ function Shell({
   );
   return (
     <QueryClientProvider client={queryClient}>
-      <NavigationProvider navigate={navigate} onSignOut={onSignOut}>
+      <NavigationProvider navigate={navigate} onSignOut={onSignOut} user={user}>
         <BenchProvider>
           <ProviderHealthProvider>
             <ComposerInsertionProvider>

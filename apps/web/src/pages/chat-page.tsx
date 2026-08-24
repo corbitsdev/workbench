@@ -20,7 +20,8 @@ import { createChatBlockResponseActions } from "../block-response-actions";
 import { createChatConnectGithubActions } from "../connect-github-actions";
 import { createChatConnectServiceActions } from "../connect-service-actions";
 import { useBench } from "../bench-context";
-import { useSignOut } from "../navigation";
+import { useSignOut, useSessionUser } from "../navigation";
+
 import {
   artifactContentFromBlob,
   artifactContentFromBlobError,
@@ -63,7 +64,9 @@ export function ChatPage({
 }) {
   const bench = useBench();
   const onSignIn = useSignOut();
+  const sessionUser = useSessionUser();
   const workbenchId = workbenchIdFromPath(path);
+
   const settingsOpen = isWorkbenchSettingsPath(path);
   const settingsSection = workbenchSettingsSectionFromPath(path) ?? "general";
   const settingsEntityId = settingsOpen
@@ -77,6 +80,26 @@ export function ChatPage({
   const principalId = bench.selectedPrincipalId ?? undefined;
   const queryClient = useQueryClient();
   const tenantId = bench.selectedTenantId;
+
+  // Same display name the sidebar account row already shows (CL-6655): the
+  // auth session's name, which sign-up seeds from the email local-part when
+  // no profile name was typed. Without this, chat-ui falls back to "Member"
+  // for the reader's own presence/message avatar.
+  const currentUser =
+    principalId === undefined
+      ? undefined
+      : {
+          principalId,
+          ...(sessionUser !== undefined
+            ? {
+                name:
+                  sessionUser.name.trim().length > 0
+                    ? sessionUser.name.trim()
+                    : (sessionUser.email.split("@")[0] ?? sessionUser.email),
+                handle: sessionUser.email,
+              }
+            : {}),
+        };
 
   // Files' workbench-first lens (CL-6353) reads this back to default to
   // "this workbench" when the person just came from one.
@@ -230,7 +253,7 @@ export function ChatPage({
   const workspace = (
     <ChatWorkspace
       tenant={tenant}
-      {...(principalId !== undefined ? { currentUser: { principalId } } : {})}
+      {...(currentUser !== undefined ? { currentUser } : {})}
       workbenchId={workbenchId}
       onWorkbenchChange={(nextWorkbenchId) =>
         navigate(workbenchPath(nextWorkbenchId))

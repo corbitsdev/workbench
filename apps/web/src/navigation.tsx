@@ -7,6 +7,8 @@
 import { createContext, useContext } from "react";
 import type { ComponentProps, MouseEvent, ReactNode } from "react";
 
+import type { SessionUser } from "./session";
+
 export type Navigate = (to: string) => void;
 
 const NavigateContext = createContext<Navigate>(() => {
@@ -20,19 +22,28 @@ const NavigateContext = createContext<Navigate>(() => {
  * crashing. */
 const SignOutContext = createContext<(() => void) | undefined>(undefined);
 
+/** Same availability rule as `SignOutContext`: present in the signed-in
+ * shell so surfaces like `ChatPage` can label the reader's own avatar from
+ * the auth account (CL-6655), undefined outside that shell. */
+const SessionUserContext = createContext<SessionUser | undefined>(undefined);
+
 export function NavigationProvider({
   navigate,
   onSignOut,
+  user,
   children,
 }: {
   readonly navigate: Navigate;
   readonly onSignOut?: () => void;
+  readonly user?: SessionUser;
   readonly children: ReactNode;
 }) {
   return (
     <NavigateContext.Provider value={navigate}>
       <SignOutContext.Provider value={onSignOut}>
-        {children}
+        <SessionUserContext.Provider value={user}>
+          {children}
+        </SessionUserContext.Provider>
       </SignOutContext.Provider>
     </NavigateContext.Provider>
   );
@@ -46,6 +57,12 @@ export function useNavigate(): Navigate {
  * where no `onSignOut` was given to `NavigationProvider` (onboarding). */
 export function useSignOut(): (() => void) | undefined {
   return useContext(SignOutContext);
+}
+
+/** The signed-in account from the shell session probe — `undefined` outside
+ * a signed-in `NavigationProvider` (onboarding, package tests). */
+export function useSessionUser(): SessionUser | undefined {
+  return useContext(SessionUserContext);
 }
 
 /**
