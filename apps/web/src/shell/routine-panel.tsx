@@ -69,6 +69,7 @@ import {
   DEFAULT_WEBHOOK_INPUT_TEMPLATE,
 } from "../webhook-triggers-api";
 import { useDeploymentCapabilities } from "../deployment-capabilities-api";
+import { useGranolaPluginConnected } from "../granola-plugin-availability";
 import { tenantKeys } from "../query-client";
 import { useCanvasColumnRoutine, useCloseCanvas } from "./canvas-availability";
 import type { RoutinePanelSubject } from "./canvas-availability";
@@ -93,20 +94,22 @@ function triggerRowSummary(
 
 /**
  * `+ Add trigger` popover contents: schedule is always offered; Granola
- * call notes is a plain inbound webhook binding (no external credential —
- * Granola pushes to us), so it's always offered too; Slack is offered only
- * when this deployment's Slack tag ingress is actually mounted (see
- * `deployment-capabilities-api.ts`) — an unconfigured deployment must never
- * offer a trigger that can't honestly fire.
+ * call notes is offered only when this tenant has Granola connected (CL-6759)
+ * — an unconnected plugin must never look like a working trigger; Slack is
+ * offered only when this deployment's Slack tag ingress is actually mounted
+ * (see `deployment-capabilities-api.ts`) — an unconfigured deployment must
+ * never offer a trigger that can't honestly fire.
  */
 function AddTriggerMenu({
   slackAvailable,
+  granolaAvailable,
   onSchedule,
   onGranola,
   onSlack,
   disabled,
 }: {
   readonly slackAvailable: boolean;
+  readonly granolaAvailable: boolean;
   readonly onSchedule: () => void;
   readonly onGranola: () => void;
   readonly onSlack: () => void;
@@ -121,7 +124,9 @@ function AddTriggerMenu({
       </MenuTrigger>
       <MenuContent>
         <MenuItem onSelect={onSchedule}>On a schedule ›</MenuItem>
-        <MenuItem onSelect={onGranola}>Granola call notes</MenuItem>
+        {granolaAvailable ? (
+          <MenuItem onSelect={onGranola}>Granola call notes</MenuItem>
+        ) : null}
         {slackAvailable ? <MenuItem onSelect={onSlack}>Slack</MenuItem> : null}
       </MenuContent>
     </Menu>
@@ -166,6 +171,7 @@ function RoutineEditorPanel({
   const navigate = useNavigate();
   const { selectedTenantId: tenantId } = useBench();
   const { slackConfigured } = useDeploymentCapabilities();
+  const granolaConnected = useGranolaPluginConnected(tenantId);
   const queryClient = useQueryClient();
 
   const invalidateRoutines = () => {
@@ -562,6 +568,7 @@ function RoutineEditorPanel({
           {trigger === null && !addingSchedule ? (
             <AddTriggerMenu
               slackAvailable={slackConfigured}
+              granolaAvailable={granolaConnected}
               disabled={busy}
               onSchedule={() => setAddingSchedule(true)}
               onGranola={() => addWebhookTrigger("Granola call notes")}
