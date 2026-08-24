@@ -451,9 +451,10 @@ export function CommandPaletteProvider({
     [artifactsQuery],
   );
 
-  // Order matches the mock's buildCmdkEntries: Commands, Workbenches,
-  // Pages, then the unscoped catalogs (Runs, Routines, Skills, Library),
-  // with People & agents last among the palette's groups.
+  // Order matches the mock's buildCmdkEntries: Commands, Agents &
+  // Channels, Pages, then the unscoped catalogs (Runs, Routines,
+  // Skills, Library), with People & agents last among the palette's
+  // groups.
   const sources = useMemo<readonly PaletteSource[]>(
     () => [
       {
@@ -464,7 +465,7 @@ export function CommandPaletteProvider({
       },
       {
         id: "workbenches",
-        heading: "Workbenches",
+        heading: "Agents & Channels",
         kind: "workbenches",
         items: workbenchItems,
       },

@@ -35,7 +35,8 @@ function context(overrides: {
   const ctx = {
     path: overrides.path,
     navigate: (to: string) => navigated.push(to),
-    tenantId: overrides.tenantId ?? "tenant-1",
+    tenantId:
+      overrides.tenantId !== undefined ? overrides.tenantId : "tenant-1",
     cycleTheme: () => {
       themeCycled = true;
     },
@@ -73,8 +74,8 @@ describe("ACTION_COMMANDS", () => {
   test("new-workbench and new-agent speak consumer language, not mint", () => {
     const workbench = ACTION_COMMANDS.find((c) => c.id === "new-workbench");
     const agent = ACTION_COMMANDS.find((c) => c.id === "new-agent");
-    expect(workbench?.subtitle).toBe("Start a new workbench with Myra");
-    expect(agent?.subtitle).toBe("Start a new workbench with Myra");
+    expect(workbench?.subtitle).toBe("Start a new workbench");
+    expect(agent?.subtitle).toBe("Start a new workbench");
     expect(workbench?.subtitle.toLowerCase()).not.toContain("mint");
     expect(agent?.subtitle.toLowerCase()).not.toContain("mint");
   });
@@ -155,6 +156,65 @@ describe("runActionCommand", () => {
     const { ctx, navigated } = context({ path: "/", tenantId: null });
     await runActionCommand("talk-to-myra", ctx);
     expect(navigated).toEqual([]);
+  });
+
+  test("talk-to-myra opens Myra's DM via kind=chat + definitionId, not a title-match mint", async () => {
+    const calls: { readonly path: string; readonly init?: RequestInit }[] = [];
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const path =
+        typeof input === "string" ? input : new URL(String(input)).pathname;
+      calls.push(init === undefined ? { path } : { path, init });
+      if (path.includes("/workflows/definitions")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: [
+                {
+                  id: "wfd_assistant",
+                  tenantId: "tenant-1",
+                  name: "assistant",
+                  currentVersion: "1",
+                  status: "deployed",
+                  createdAt: "2026-01-01T00:00:00.000Z",
+                  updatedAt: "2026-01-01T00:00:00.000Z",
+                },
+              ],
+              nextCursor: null,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        );
+      }
+      if (path.endsWith("/chat/workbenches")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: "chan_myra_dm",
+              title: "Myra",
+              kind: "chat",
+              pinned: false,
+              participants: [],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        );
+      }
+      throw new Error(`unexpected fetch: ${init?.method ?? "GET"} ${path}`);
+    }) as typeof fetch;
+
+    const { ctx, navigated } = context({ path: "/" });
+    await runActionCommand("talk-to-myra", ctx);
+
+    const createCall = calls.find((call) =>
+      call.path.endsWith("/chat/workbenches"),
+    );
+    expect(createCall?.init?.method).toBe("POST");
+    expect(JSON.parse(String(createCall?.init?.body))).toEqual({
+      kind: "chat",
+      definitionId: "wfd_assistant",
+      reuseExisting: true,
+    });
+    expect(navigated).toEqual(["/w/chan_myra_dm"]);
   });
 });
 

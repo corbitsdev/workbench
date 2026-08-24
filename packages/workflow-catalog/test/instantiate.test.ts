@@ -112,11 +112,12 @@ test("instantiating the code-review template invites every reviewer into the roo
   expect(ports.invited).toHaveLength(3);
 });
 
-test("instantiating the code-review template never invites Myra — she is already the room's own agent", async () => {
-  const ports = fakePorts();
+test("instantiating the code-review template invites existing Myra, never creates her", async () => {
+  const ports = fakePorts(["assistant"]);
   await instantiateWorkbenchTemplate(CODE_REVIEW_TEMPLATE, ports);
-  expect(ports.invited).not.toContain("def-myra");
-  expect(ports.invited).toHaveLength(CODE_REVIEW_REVIEWERS.length);
+  expect(ports.invited).toContain("def-assistant");
+  expect(ports.created).not.toContain("myra");
+  expect(ports.created).not.toContain("assistant");
 });
 
 test("instantiating the code-review template names an honest pending note for its not-yet-scoped webhook trigger", async () => {

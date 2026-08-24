@@ -75,9 +75,9 @@ export interface WorkbenchTemplateInstantiationPorts {
    * workbench's room (`POST /workbenches/:id/invite` —
    * `@corbits/chat-ui`'s `inviteAgent`), or a fake of it in tests. This
    * is what makes a template's roster actually present in the room
-   * rather than merely registered in the agent directory. Never called
-   * for Myra: she joins the room at workbench creation as its own
-   * `definitionId`. */
+   * rather than merely registered in the agent directory. Called for
+   * Myra too: she is an existing principal invited after mint, not
+   * the room's host `definitionId`. */
   inviteParticipantAgent(id: string): Promise<void>;
   /** Persists the room's still-needed connections — the workbench
    * settings `template/pendingConnections` key today; see
@@ -128,11 +128,11 @@ function webhookTriggerTodo(
 /**
  * Resolves `manifest` against the bench: creates the participant agent
  * definitions that don't already exist (Myra is never re-created — she
- * is the bench's seeded default setup agent, reused as-is), and
- * records the manifest's required connections as still pending. Never
- * registers a live webhook trigger — see `webhookTriggerTodos` and
- * `./connect-github-setup.ts`, which is what actually creates one, once
- * the person has picked repos.
+ * is the bench's seeded default setup agent, reused as-is and invited
+ * into the new channel), and records the manifest's required
+ * connections as still pending. Never registers a live webhook trigger
+ * — see `webhookTriggerTodos` and `./connect-github-setup.ts`, which is
+ * what actually creates one, once the person has picked repos.
  */
 export async function instantiateWorkbenchTemplate(
   manifest: WorkbenchTemplateManifest,
@@ -141,6 +141,10 @@ export async function instantiateWorkbenchTemplate(
   const existingIdsByHandle = new Map(
     (await ports.listAgentHandles()).map((agent) => [agent.handle, agent.id]),
   );
+  const assistantId = existingIdsByHandle.get("assistant");
+  if (assistantId !== undefined && !existingIdsByHandle.has("myra")) {
+    existingIdsByHandle.set("myra", assistantId);
+  }
   const requestsByHandle = new Map<string, ParticipantAgentRequest>(
     [
       ...codeReviewAgentRequests(),
@@ -167,12 +171,16 @@ export async function instantiateWorkbenchTemplate(
   const skippedHandles: string[] = [];
   const invitedHandles: string[] = [];
   for (const participant of manifest.participants) {
-    if (participant.handle === "myra") continue;
     const existingId = existingIdsByHandle.get(participant.handle);
     let participantId: string;
     if (existingId !== undefined) {
       skippedHandles.push(participant.handle);
       participantId = existingId;
+    } else if (participant.handle === "myra") {
+      // Seeded principal (`name: "assistant"`), never minted from a
+      // template roster. The create path already gates on
+      // `findMyraDefinition`; skip rather than throw.
+      continue;
     } else {
       const request = requestsByHandle.get(participant.handle);
       if (request === undefined) {

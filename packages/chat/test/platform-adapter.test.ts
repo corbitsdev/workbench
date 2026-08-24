@@ -87,17 +87,19 @@ mock.module("@intx/db", () => ({
 
 const { createHubChatPlatform } = await import("../src/platform-adapter");
 
-type SelectChain = {
+type SelectChain = PromiseLike<unknown[]> & {
   where(...args: unknown[]): SelectChain;
   orderBy(...args: unknown[]): SelectChain;
   limit(n?: number): Promise<unknown[]>;
 };
 
 function selectChain(rows: unknown[]): SelectChain {
+  const result = Promise.resolve(rows);
   const chain: SelectChain = {
     where: () => chain,
     orderBy: () => chain,
-    limit: () => Promise.resolve(rows),
+    limit: () => result,
+    then: (onFulfilled, onRejected) => result.then(onFulfilled, onRejected),
   };
   return chain;
 }
@@ -1102,6 +1104,66 @@ describe("createHubChatPlatform", () => {
     expect(rendered.steps[AGENT_RUNTIME_SECTION_ID]).toMatchObject({
       onBodyFailure: "continue",
     });
+  });
+
+  test("launchInvite reuses the standing workbench_launch for the same definition", async () => {
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "workbench-1",
+        displayName: null,
+      },
+      definitionId: "wfd_workbench1",
+      workflowDefinitionRow: {
+        id: "wfd_echo",
+        tenantId: "ten_1",
+        status: "deployed",
+        origin: "authored",
+        assetId: "asst_echo",
+      },
+      tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
+      wireProjectionsByDefinitionId: {
+        wfd_echo: inertProjection({ id: "wfd_echo" }),
+      },
+    });
+    const platform = createHubChatPlatform({
+      toolGrantsForPins: () => [],
+      db: db as never,
+      sessionService: createFakeSessionService(),
+      assetService: createFakeAssetService(),
+      sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
+      eventCollectors: createFakeEventCollectors(),
+    });
+
+    const first = await platform.launchInvite({
+      tenantId: "ten_1",
+      creatorPrincipalId: "prin_creator",
+      definitionId: "wfd_echo",
+    });
+    const launchInsertsAfterFirst = db.inserted.filter(
+      (row) => row.table === workbenchLaunch,
+    ).length;
+    const runInsertsAfterFirst = db.inserted.filter(
+      (row) => row.table === workflowRun,
+    ).length;
+    expect(launchInsertsAfterFirst).toBe(1);
+    expect(runInsertsAfterFirst).toBe(1);
+
+    const second = await platform.launchInvite({
+      tenantId: "ten_1",
+      creatorPrincipalId: "prin_creator",
+      definitionId: "wfd_echo",
+    });
+
+    expect(second.instanceId).toBe(first.instanceId);
+    expect(second.address).toBe(first.address);
+    expect(
+      db.inserted.filter((row) => row.table === workbenchLaunch),
+    ).toHaveLength(launchInsertsAfterFirst);
+    expect(db.inserted.filter((row) => row.table === workflowRun)).toHaveLength(
+      runInsertsAfterFirst,
+    );
   });
 
   // An invited agent's credential secret must be decrypted with the same

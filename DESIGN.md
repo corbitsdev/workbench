@@ -16,10 +16,11 @@ Top to bottom:
 
 1. **Brand row** — logo mark and a "New workbench" button (`+`) that
    opens `/new`.
-2. **Bench list** — the "Workbenches" label, then rows of workbench
-   conversations, with search built into the list itself. Nothing
-   page-scoped ever renders in this body; it lists conversations, not
-   product sections.
+2. **Bench list** — **Agents**, then **Channels**. Agent rows are
+   `kind: chat` DMs (one per agent). Channel rows are `kind: workbench`
+   rooms. Search is built into the list itself. Nothing page-scoped
+   ever renders in this body; it lists conversations, not product
+   sections.
 3. **Footer rail** — Mission Control is pinned above the rail as its own
    row. The first-run rail below it is Routines, Files, Skills, Agents, in
    that order (CL-6765). Insights and Evals join that rail only when
@@ -35,13 +36,14 @@ Top to bottom:
    direct one-click control to Settings, not a menu item — Settings
    never cost two clicks to reach.
 
-A workbench is an agent conversation, and the bench list IS the switcher —
-its rows are the primary way to move between workbenches, with no separate
-"switcher" control layered on top. The command palette's hidden "Switch
-workbench" action is a second door onto the same list, reachable by search
-rather than by scanning rows; it does not replace the sidebar as the
-switching mechanism. Approvals render inside the conversation, never as a
-standing band in the shell.
+A workbench is a conversation tenant — a DM with one agent, or a
+channel with many people and agents. The bench list IS the switcher —
+its rows are the primary way to move between those conversations, with
+no separate "switcher" control layered on top. The command palette's
+hidden "Switch workbench" action is a second door onto the same list,
+reachable by search rather than by scanning rows; it does not replace
+the sidebar as the switching mechanism. Approvals render inside the
+conversation, never as a standing band in the shell.
 
 ## Pages & Routing
 
@@ -59,8 +61,11 @@ behind at its old path — old links and bookmarks always land somewhere
 real, never a 404.
 
 **`/new` is the shipped create surface** (`NewWorkbenchPickerRoute`). The
-primary act is a prompt: say what the workbench should do, or pick a
-template shortcut underneath. The sidebar `+` and an empty-bench land on
+primary act is a prompt: say what the channel should do, or pick a
+named-template shortcut underneath. Blank `+` / prompt mint an empty
+channel and invite nobody. Named templates mint that same empty
+channel, then invite existing agents (including Myra as a participant,
+never as the mint host). The sidebar `+` and an empty-bench land on
 `/` both open this route — there is no Describe door.
 
 **`/inbox` is gone as a page** (CL-6151). The path stays as a redirect

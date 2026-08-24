@@ -29,6 +29,7 @@ import {
   type SendFoldedMailParams,
 } from "@corbits/folded-runs";
 import {
+  findStandingLaunchByDefinition,
   isBeyondWake,
   listLaunchesBeyondWake,
   readBindingByAddress,
@@ -758,6 +759,15 @@ export function createHubChatPlatform(
     return { row, projection: resolved.projection };
   }
 
+  async function resolveDefinitionAssetId(
+    definitionId: string,
+  ): Promise<string | undefined> {
+    const row = await deps.db.query.workflowDefinition.findFirst({
+      where: eq(workflowDefinition.id, definitionId),
+    });
+    return row?.assetId ?? undefined;
+  }
+
   const platform: ChatPlatform = {
     async launchInvite(input): Promise<LaunchedInvite> {
       const definitionRow = await deps.db.query.workflowDefinition.findFirst({
@@ -788,6 +798,15 @@ export function createHubChatPlatform(
       });
       if (tenantRow === undefined) {
         throw new Error(`No tenant "${input.tenantId}"`);
+      }
+
+      const standing = await findStandingLaunchByDefinition(deps.db, {
+        tenantId: input.tenantId,
+        definitionId: input.definitionId,
+        resolveDefinitionAssetId,
+      });
+      if (standing !== undefined) {
+        return { instanceId: standing.stableId, address: standing.roomAddress };
       }
 
       const { row: resolvedDefinitionRow, projection } =
@@ -873,10 +892,7 @@ export function createHubChatPlatform(
     },
 
     async resolveDefinitionAssetId(definitionId): Promise<string | undefined> {
-      const row = await deps.db.query.workflowDefinition.findFirst({
-        where: eq(workflowDefinition.id, definitionId),
-      });
-      return row?.assetId ?? undefined;
+      return resolveDefinitionAssetId(definitionId);
     },
 
     async resolveDefinitionNameSource(definitionId) {

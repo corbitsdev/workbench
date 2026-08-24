@@ -333,13 +333,26 @@ export function listAllWorkbenches(
 // counterpart attached at creation. See `packages/chat/src/routes.ts`
 // `POST /workbenches` for the server side of this union.
 //
-// An agent chat always mints a new workbench (CL-6089) — the agent is a
-// template, not a conversation being reopened — unless the caller opts
-// into `reuseExisting: true`, reserved for the one deliberate
-// find-or-create caller: the home-workbench land-hop
-// (`default-agent-workbench.ts`'s `ensure`).
+// `kind: "chat"` + `definitionId` always find-or-reopens the one DM
+// for that agent (CL-6981). `reuseExisting` is still accepted on the
+// wire and ignored. `kind: "workbench"` mints an empty channel; named
+// templates may send `templatePromise` / `connectGithubRequiredFor` so
+// the opener and GitHub card can follow the roster invite.
 export type CreateWorkbenchInput =
-  | { readonly kind: "workbench"; readonly name: string }
+  | {
+      readonly kind: "workbench";
+      readonly name: string;
+      /** Named-template opener line. The server currently posts the
+       * canned greeting only on `kind: "chat"` + `definitionId`; this
+       * field is still sent so a follow-up can honor it on channel
+       * mint / first invite without dropping the promise from the
+       * create body. Omitted for a blank channel. */
+      readonly templatePromise?: string;
+      /** Template display name when GitHub must be connected before
+       * the roster can run. Omitted when the template does not
+       * require GitHub. */
+      readonly connectGithubRequiredFor?: string;
+    }
   | {
       readonly kind: "chat";
       readonly definitionId: string;

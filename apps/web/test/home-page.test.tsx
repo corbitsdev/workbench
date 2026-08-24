@@ -1,18 +1,20 @@
 // The land-hop every entry point funnels through: `/` (HomeRoute)
 // resolves to one of two places depending on whether the bench has any
-// workbenches yet. A bench with one or more ensures Myra's workbench exists
-// and opens it — the same land-hop CL-6081 wired up. A brand-new bench
-// with zero workbenches waits for Myra's own definition to exist, then
-// sends the person to the guided picker (`/new`, CL-6486) instead of
-// auto-minting an unlabeled workbench and landing straight in it — no
-// separate first-run form, no second creation path, just the same picker
-// every other "+ New workbench" control already opens. All three entries
-// CL-6081 asks for (a direct visit to `/`, `main.tsx`'s post-login
-// `navigate("/")`, and the onboarding wizard's post-credential hand-off)
-// resolve through this exact hop, so proving HomeRoute itself lands
-// correctly in both cases proves the direct-`/` case fully; the other two
-// are proven by the narrower source assertions below, which pin the exact
-// call each entry point makes onto this same route.
+// workbenches yet. `/` is a hop onto the most-recent existing workbench
+// or `/new`, never a parallel Myra home. A bench with one or more hops
+// onto `workbenches[0]` — the listing's first row — without minting or
+// ensuring Myra. A brand-new bench with zero workbenches waits for
+// Myra's own definition to exist, then sends the person to the guided
+// picker (`/new`, CL-6486) instead of auto-minting an unlabeled
+// workbench and landing straight in it — no separate first-run form, no
+// second creation path, just the same picker every other "+ New
+// workbench" control already opens. All three entries CL-6081 asks for
+// (a direct visit to `/`, `main.tsx`'s post-login `navigate("/")`, and
+// the onboarding wizard's post-credential hand-off) resolve through this
+// exact hop, so proving HomeRoute itself lands correctly in both cases
+// proves the direct-`/` case fully; the other two are proven by the
+// narrower source assertions below, which pin the exact call each entry
+// point makes onto this same route.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -23,14 +25,12 @@ import type { Root } from "react-dom/client";
 import { BenchProvider } from "../src/bench-context";
 import { NavigationProvider } from "../src/navigation";
 import { HomeRoute } from "../src/pages/home-page";
-import { resetMyraWorkbenchCache } from "../src/myra-workbench";
 import { TestQueryProvider } from "./test-query-provider";
 
 const realFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = realFetch;
-  resetMyraWorkbenchCache();
 });
 
 const json = (body: unknown, status = 200) =>
@@ -80,14 +80,15 @@ const PRINCIPALS_RESPONSE = {
 };
 
 describe("HomeRoute (the `/` land hop every entry point funnels through)", () => {
-  test("a bench with an existing workbench ensures Myra's workbench and navigates straight into it", async () => {
+  test("a bench with an existing workbench hops onto the first listed workbench, never minting Myra", async () => {
     stubFetch((path, method) => {
       if (path === "/api/me/principals") {
         return json(PRINCIPALS_RESPONSE);
       }
       if (path.endsWith("/chat/workbenches") && method === "GET") {
         // The all-kinds emptiness check (`listAllWorkbenches`) finds an
-        // existing workbench, so the ensure+redirect hop below runs.
+        // existing workbench, so the hop lands on that row — not a
+        // hidden Myra DM.
         return json({
           items: [
             {
@@ -100,36 +101,10 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
           ],
         });
       }
-      if (path.endsWith("/chat/workbenches?kind=workbench")) {
-        return json({ items: [] });
-      }
-      if (path.endsWith("/chat/workbenches?kind=chat")) {
-        return json({ items: [] });
-      }
-      if (path.includes("/workflows/definitions")) {
-        return json({
-          data: [
-            {
-              id: "wfd_assistant",
-              tenantId: "tnt_1",
-              name: "assistant",
-              currentVersion: "1",
-              status: "deployed",
-              createdAt: "2026-01-01T00:00:00.000Z",
-              updatedAt: "2026-01-01T00:00:00.000Z",
-            },
-          ],
-          nextCursor: null,
-        });
-      }
       if (path.endsWith("/chat/workbenches") && method === "POST") {
-        return json({
-          id: "chan_myra",
-          title: "Myra",
-          kind: "chat",
-          pinned: false,
-          participants: [],
-        });
+        throw new Error(
+          `unexpected POST ${path} — HomeRoute must not mint a Myra workbench`,
+        );
       }
       throw new Error(`unexpected fetch: ${method} ${path}`);
     });
@@ -154,7 +129,7 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
       if (navigated.length > 0) break;
     }
 
-    expect(navigated).toEqual(["/w/chan_myra"]);
+    expect(navigated).toEqual(["/w/chan_existing"]);
   });
 
   test("a brand-new bench with zero workbenches sends the person to the guided picker, not an auto-minted workbench", async () => {

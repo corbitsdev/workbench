@@ -1,7 +1,6 @@
-// The sidebar's one list: every workbench (an agent conversation, each its
-// own tenancy under the hood) as a flat run of rows — no kind sections, no
-// per-page variants. Pinned rows float to the top; everything else keeps
-// the order the platform returns.
+// The sidebar's two lists: Agents (opened DMs) and Channels (multi-principal
+// rooms). Search filters both. Pinned rows float to the top of their own
+// section; recency never mixes the two.
 
 import {
   Badge,
@@ -25,7 +24,7 @@ import type { Workbench } from "@corbits/chat-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChatCircle, DotsThree, Hash, MagnifyingGlass } from "@corbits/icons";
 import { useEffect, useState } from "react";
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 
 import { useNeedsYouCount } from "../api";
 import { useBench } from "../bench-context";
@@ -36,7 +35,12 @@ import {
 } from "../workbench-rename-events";
 import { useBenchActivity } from "./bench-activity";
 import { Chip } from "./chip";
-import { buildSidebarRows, type SidebarRow } from "./sidebar-rows";
+import {
+  buildSidebarSections,
+  type SidebarRow,
+  type SidebarSection,
+  type SidebarSectionId,
+} from "./sidebar-rows";
 
 /**
  * The bench-wide "something needs you" signal above the row list. The
@@ -159,10 +163,10 @@ export function workbenchRowSignals(
 }
 
 /**
- * Flat ordering for the one list: pinned rows first, then most-recent
+ * Flat ordering for one section: pinned rows first, then most-recent
  * activity first within each half. Missing timestamps sort last but keep
- * their given relative order (stable sort). Pure so the "no kind sections"
- * and "recency, not insertion order" rules are testable.
+ * their given relative order (stable sort). Kind grouping is
+ * `buildSidebarSections`, not this helper.
  */
 export function orderWorkbenchRows(
   workbenches: readonly Workbench[],
@@ -198,6 +202,28 @@ export function filterSidebarRows(
     const preview = row.workbench.preview ?? "";
     return preview.toLowerCase().includes(needle);
   });
+}
+
+/**
+ * Empty-section copy shown when a group has no opened rows. Agents and
+ * Channels each speak for themselves — never a single "No workbenches yet".
+ */
+export function sidebarSectionEmptyCopy(id: SidebarSectionId): string {
+  return id === "agents" ? "No agents yet" : "No channels yet";
+}
+
+/**
+ * Apply the sidebar search to both sections independently. Empty query
+ * keeps every row; a miss in one section does not hide the other.
+ */
+export function filterSidebarSections(
+  sections: readonly SidebarSection[],
+  query: string,
+): readonly SidebarSection[] {
+  return sections.map((section) => ({
+    ...section,
+    rows: filterSidebarRows(section.rows, query),
+  }));
 }
 
 /**
@@ -326,9 +352,9 @@ function WorkbenchRow({
         data-active={active ? "true" : undefined}
         onClick={onSelect}
       >
-        {/* The workbench's own initial, not its agent's — every bench
-            hosts Myra, so an agent monogram renders an identical "M"
-            column that says nothing. */}
+        {/* The workbench's own initial, not its agent's — a DM and a
+            channel can share an agent, so an agent monogram would
+            collapse both rows into the same letter. */}
         <span className="shell-ch-stack" aria-hidden="true">
           <span>{displayTitle.slice(0, 1).toUpperCase()}</span>
         </span>
@@ -379,6 +405,38 @@ function WorkbenchRow({
   );
 }
 
+function SidebarSectionBlock({
+  section,
+  empty,
+  searching,
+  children,
+}: {
+  readonly section: SidebarSection;
+  readonly empty?: boolean;
+  readonly searching: boolean;
+  readonly children?: ReactNode;
+}) {
+  const headingId = `sidebar-${section.id}-heading`;
+  const hasChildren = children !== undefined && children !== null;
+  if (searching && section.rows.length === 0 && !hasChildren) return null;
+  const showEmpty =
+    empty === true || (section.rows.length === 0 && !searching && !hasChildren);
+  return (
+    <section aria-labelledby={headingId}>
+      <h2 id={headingId} className="shell-panel-list-label">
+        {section.label}
+      </h2>
+      {showEmpty ? (
+        <p className="shell-panel-list-empty">
+          {sidebarSectionEmptyCopy(section.id)}
+        </p>
+      ) : (
+        children
+      )}
+    </section>
+  );
+}
+
 export function WorkbenchList({
   path,
   onNavigate,
@@ -402,77 +460,110 @@ export function WorkbenchList({
     );
   }
   if (activity.kind === "empty") {
+    const emptySections = buildSidebarSections([], []);
     return (
-      <EmptyState
-        icon={<Hash />}
-        title="No workbenches yet"
-        description="Start a new one with the + above."
-      />
+      <div className="panel-stack" aria-label="Agents and Channels">
+        {emptySections.map((section) => (
+          <SidebarSectionBlock
+            key={section.id}
+            section={section}
+            empty
+            searching={false}
+          />
+        ))}
+      </div>
     );
   }
   if (activity.kind === "error") {
     return (
       <EmptyState
         icon={<Hash />}
-        title="Couldn't load workbenches"
+        title="Couldn't load agents and channels"
         description={activity.message}
       />
     );
   }
 
-  const all = buildSidebarRows(activity.workbenches, activity.chats);
+  const sections = buildSidebarSections(activity.workbenches, activity.chats);
+  const total = sections.reduce(
+    (count, section) => count + section.rows.length,
+    0,
+  );
 
-  if (all.length === 0) {
+  if (total === 0) {
     return (
-      <div className="panel-stack" aria-label="Workbenches">
+      <div className="panel-stack" aria-label="Agents and Channels">
         <NeedsYouSignal tenantId={selectedTenantId} />
-        <h2 className="shell-panel-list-label">Workbenches</h2>
-        <div className="panel-stack-group">
-          <NewWorkbenchStubRow />
-        </div>
+        {sections.map((section) => (
+          <SidebarSectionBlock
+            key={section.id}
+            section={section}
+            empty={section.id !== "agents"}
+            searching={false}
+          >
+            {section.id === "agents" ? (
+              <div className="panel-stack-group">
+                <NewWorkbenchStubRow />
+              </div>
+            ) : null}
+          </SidebarSectionBlock>
+        ))}
       </div>
     );
   }
 
-  const filtered = filterSidebarRows(all, query);
-
+  const filtered = filterSidebarSections(sections, query);
+  const matchCount = filtered.reduce(
+    (count, section) => count + section.rows.length,
+    0,
+  );
+  const searching = query.trim() !== "";
   const tenantId = selectedTenantId ?? "";
 
   return (
-    <div className="panel-stack" aria-label="Workbenches">
+    <div className="panel-stack" aria-label="Agents and Channels">
       <label className="shell-panel-search">
         <MagnifyingGlass aria-hidden="true" />
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search…"
-          aria-label="Search workbenches"
+          aria-label="Search agents and channels"
         />
       </label>
       <NeedsYouSignal tenantId={selectedTenantId} />
-      <h2 className="shell-panel-list-label">Workbenches</h2>
-      {filtered.length === 0 ? (
+      {matchCount === 0 ? (
         <EmptyState
           icon={<ChatCircle />}
           title="No matches"
           description={`Nothing matches “${query.trim()}”.`}
         />
       ) : (
-        <div className="panel-stack-group">
-          {filtered.map((row) => (
-            <WorkbenchRow
-              key={row.workbench.id}
-              workbench={row.workbench}
-              active={row.workbench.id === activeId}
-              tenantId={tenantId}
-              onSelect={() => onNavigate(workbenchPath(row.workbench.id))}
-              signals={workbenchRowSignals(
-                row.workbench,
-                row.workbench.id === activeId,
-              )}
-            />
-          ))}
-        </div>
+        filtered.map((section) => (
+          <SidebarSectionBlock
+            key={section.id}
+            section={section}
+            searching={searching}
+          >
+            {section.rows.length === 0 ? null : (
+              <div className="panel-stack-group">
+                {section.rows.map((row) => (
+                  <WorkbenchRow
+                    key={row.workbench.id}
+                    workbench={row.workbench}
+                    active={row.workbench.id === activeId}
+                    tenantId={tenantId}
+                    onSelect={() => onNavigate(workbenchPath(row.workbench.id))}
+                    signals={workbenchRowSignals(
+                      row.workbench,
+                      row.workbench.id === activeId,
+                    )}
+                  />
+                ))}
+              </div>
+            )}
+          </SidebarSectionBlock>
+        ))
       )}
     </div>
   );

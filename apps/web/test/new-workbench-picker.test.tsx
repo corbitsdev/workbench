@@ -189,7 +189,7 @@ function stubBlankCreate(
       return json({
         id: "chan_new",
         title: "New Workbench",
-        kind: "chat",
+        kind: "workbench",
         pinned: false,
         participants: [],
       });
@@ -230,6 +230,9 @@ describe("NewWorkbenchPickerRoute", () => {
     expect(cards.length).toBe(2);
     expect(container?.textContent).toContain("Code review");
     expect(container?.textContent).toContain("Just start talking");
+    expect(container?.textContent).toContain(
+      "An empty channel. Nobody is hosted.",
+    );
   });
 
   // The library seeds every shipped template (`createTemplateLibrarySeeder`),
@@ -346,9 +349,11 @@ describe("NewWorkbenchPickerRoute", () => {
         call.path.endsWith("/chat/workbenches") && call.init?.method === "POST",
     );
     expect(JSON.parse(String(createWorkbenchCall?.init?.body))).toMatchObject({
-      kind: "chat",
-      definitionId: "wfd_assistant",
+      kind: "workbench",
     });
+    expect(
+      JSON.parse(String(createWorkbenchCall?.init?.body)).definitionId,
+    ).toBeUndefined();
 
     const sendMessageCall = calls.find((call) =>
       call.path.endsWith("/chat/workbenches/chan_new/messages"),
@@ -460,7 +465,7 @@ describe("NewWorkbenchPickerRoute", () => {
         return json({
           id: "chan_new",
           title: "New Workbench",
-          kind: "chat",
+          kind: "workbench",
           pinned: false,
           participants: [],
         });
@@ -501,7 +506,7 @@ describe("NewWorkbenchPickerRoute", () => {
         return json({
           id: "chan_new",
           title: "New Workbench",
-          kind: "chat",
+          kind: "workbench",
           pinned: false,
           participants: [],
           settings: {
@@ -543,11 +548,13 @@ describe("NewWorkbenchPickerRoute", () => {
         call.path.endsWith("/chat/workbenches") && call.init?.method === "POST",
     );
     expect(JSON.parse(String(createWorkbenchCall?.init?.body))).toMatchObject({
-      kind: "chat",
-      definitionId: "wfd_assistant",
+      kind: "workbench",
       templatePromise:
         "Three reviewers read every pull request and post what they'd change.",
     });
+    expect(
+      JSON.parse(String(createWorkbenchCall?.init?.body)).definitionId,
+    ).toBeUndefined();
 
     expect(createdAgentHandles).toEqual([
       "correctness-reviewer",
@@ -595,7 +602,7 @@ describe("NewWorkbenchPickerRoute", () => {
         return json({
           id: "chan_new",
           title: "New Workbench",
-          kind: "chat",
+          kind: "workbench",
           pinned: false,
           participants: [],
         });
@@ -635,7 +642,7 @@ describe("NewWorkbenchPickerRoute", () => {
         return json({
           id: "chan_new",
           title: "New Workbench",
-          kind: "chat",
+          kind: "workbench",
           pinned: false,
           participants: [],
           settings: {

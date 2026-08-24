@@ -2,12 +2,15 @@ import { describe, expect, test } from "bun:test";
 
 import type { Workbench } from "@corbits/chat-ui";
 
-import type { SidebarRow } from "./sidebar-rows";
+import type { SidebarRow, SidebarSection } from "./sidebar-rows";
+import { buildSidebarSections } from "./sidebar-rows";
 import {
   filterSidebarRows,
+  filterSidebarSections,
   orderWorkbenchRows,
   renamePayload,
   rowMenuLabels,
+  sidebarSectionEmptyCopy,
   workbenchRowSignals,
 } from "./workbench-list";
 
@@ -184,5 +187,53 @@ describe("filterSidebarRows", () => {
     expect(
       filterSidebarRows(rows, "launch").map((r) => r.workbench.id),
     ).toEqual(["ch_1"]);
+  });
+});
+
+describe("sidebarSectionEmptyCopy", () => {
+  test("names the empty group, never a single workbenches list", () => {
+    expect(sidebarSectionEmptyCopy("agents")).toBe("No agents yet");
+    expect(sidebarSectionEmptyCopy("channels")).toBe("No channels yet");
+  });
+});
+
+describe("filterSidebarSections", () => {
+  test("filters Agents and Channels independently without mixing them", () => {
+    const sections = buildSidebarSections(
+      [
+        workbench({
+          id: "ch_room",
+          kind: "workbench",
+          title: "Launch plan",
+        }),
+      ],
+      [
+        workbench({
+          id: "ch_dm",
+          kind: "chat",
+          title: "Myra",
+          preview: "Drafted the Solvora outreach email",
+        }),
+      ],
+    );
+    const byTitle = filterSidebarSections(sections, "launch");
+    expect(byTitle.map((section) => section.id)).toEqual([
+      "agents",
+      "channels",
+    ]);
+    expect(byTitle[0]?.rows.map((r) => r.workbench.id)).toEqual([]);
+    expect(byTitle[1]?.rows.map((r) => r.workbench.id)).toEqual(["ch_room"]);
+
+    const byPreview = filterSidebarSections(sections, "Solvora");
+    expect(byPreview[0]?.rows.map((r) => r.workbench.id)).toEqual(["ch_dm"]);
+    expect(byPreview[1]?.rows.map((r) => r.workbench.id)).toEqual([]);
+  });
+
+  test("an empty query keeps both sections intact", () => {
+    const sections: readonly SidebarSection[] = buildSidebarSections(
+      [workbench({ id: "ch_room", kind: "workbench", title: "Launch" })],
+      [workbench({ id: "ch_dm", kind: "chat", title: "Myra" })],
+    );
+    expect(filterSidebarSections(sections, "")).toEqual(sections);
   });
 });
