@@ -68,7 +68,10 @@ import {
   createWebhookTrigger,
   DEFAULT_WEBHOOK_INPUT_TEMPLATE,
 } from "../webhook-triggers-api";
-import { useDeploymentCapabilities } from "../deployment-capabilities-api";
+import {
+  useDeploymentCapabilities,
+  slackTriggerOffered,
+} from "../deployment-capabilities-api";
 import { useGranolaPluginConnected } from "../granola-plugin-availability";
 import { tenantKeys } from "../query-client";
 import { useCanvasColumnRoutine, useCloseCanvas } from "./canvas-availability";
@@ -98,7 +101,9 @@ function triggerRowSummary(
  * — an unconnected plugin must never look like a working trigger; Slack is
  * offered only when this deployment's Slack tag ingress is actually mounted
  * (see `deployment-capabilities-api.ts`) — an unconfigured deployment must
- * never offer a trigger that can't honestly fire.
+ * never offer a trigger that can't honestly fire. A probe failure is not the
+ * same as unconfigured (CL-6835): the affordance stays offered rather than
+ * vanishing with no error.
  */
 function AddTriggerMenu({
   slackAvailable,
@@ -170,7 +175,8 @@ function RoutineEditorPanel({
 }) {
   const navigate = useNavigate();
   const { selectedTenantId: tenantId } = useBench();
-  const { slackConfigured } = useDeploymentCapabilities();
+  const capabilities = useDeploymentCapabilities();
+  const slackAvailable = slackTriggerOffered(capabilities);
   const granolaConnected = useGranolaPluginConnected(tenantId);
   const queryClient = useQueryClient();
 
@@ -567,7 +573,7 @@ function RoutineEditorPanel({
           <span className="text-xs font-medium">When to run</span>
           {trigger === null && !addingSchedule ? (
             <AddTriggerMenu
-              slackAvailable={slackConfigured}
+              slackAvailable={slackAvailable}
               granolaAvailable={granolaConnected}
               disabled={busy}
               onSchedule={() => setAddingSchedule(true)}
