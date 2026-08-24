@@ -117,8 +117,8 @@ export function createChatApprovalActions(
       return resolve(
         () => rejectApproval(tenantId, approvalId),
         "rejected",
-        CHAT_STRINGS.blockApproveActionForbidden,
-        CHAT_STRINGS.blockApproveActionError,
+        CHAT_STRINGS.blockDenyActionForbidden,
+        CHAT_STRINGS.blockDenyActionError,
       );
     },
   };

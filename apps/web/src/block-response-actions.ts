@@ -32,7 +32,7 @@ export function createChatBlockResponseActions(
       if (cause instanceof ChatApiError && cause.status === 403) {
         return {
           kind: "forbidden",
-          message: CHAT_STRINGS.blockApproveActionForbidden,
+          message: CHAT_STRINGS.blockFormSubmitForbidden,
         };
       }
       return {
