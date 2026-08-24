@@ -24,6 +24,25 @@ describe("empty states", () => {
       "Upload a file, or let your agents drop their work here",
     );
   });
+
+  // CL-6750 — empty Files must tell one story: invite to add files. A
+  // "0 files" count beside the poster reads as a second empty announcement,
+  // and a labeled ghost file input twins the visible Upload button.
+  test("empty library is one invitation, not count + poster + twin uploads", () => {
+    const markup = renderToStaticMarkup(
+      <LibraryPage artifacts={[]} onUpload={() => undefined} />,
+    );
+    expect(markup).toContain("No files yet");
+    expect(markup).not.toContain("0 files");
+    // One visible Upload in the top bar.
+    expect(markup).toMatch(/stage-top-bar-actions[\s\S]*?>Upload</);
+    // Hidden picker exists for the button, but is not a second labeled control.
+    expect(markup).toContain('type="file"');
+    expect(markup).toContain("sr-only");
+    expect(markup).not.toContain('aria-label="Upload files"');
+    expect(markup).toMatch(/type="file"[^>]*aria-hidden/);
+    expect(markup).toMatch(/type="file"[^>]*tabindex="-1"/);
+  });
 });
 
 describe("live data", () => {
@@ -55,14 +74,18 @@ describe("live data", () => {
       <LibraryPage artifacts={[reportArtifact]} onUpload={() => undefined} />,
     );
     // Hidden file input behind the top-bar Upload action and
-    // workbench:library:upload.
+    // workbench:library:upload — unlabeled so it is not a twin control.
     expect(markup).toContain('type="file"');
-    expect(markup).toContain('aria-label="Upload files"');
     expect(markup).toContain("sr-only");
+    expect(markup).not.toContain('aria-label="Upload files"');
+    expect(markup).toMatch(/type="file"[^>]*aria-hidden/);
+    expect(markup).toMatch(/type="file"[^>]*tabindex="-1"/);
     // Upload is a top-bar action (mock: primary chip in `.top`).
     expect(markup).toMatch(/stage-top-bar-actions[\s\S]*?>Upload</);
     // Sort is icon-only with an accessible name.
     expect(markup).toContain('aria-label="Newest first"');
+    // With files present, the count subtitle is the honest inventory.
+    expect(markup).toContain("1 files");
   });
 });
 
