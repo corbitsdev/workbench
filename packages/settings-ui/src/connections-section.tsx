@@ -503,7 +503,11 @@ function ModelRoutePanel({
                       disabled={index === 0 || row.provenance === "inherited"}
                       onClick={() =>
                         applyPatches(
-                          computeGlobalRoutePatches(route, row.offeringId, "up"),
+                          computeGlobalRoutePatches(
+                            route,
+                            row.offeringId,
+                            "up",
+                          ),
                         )
                       }
                     >
