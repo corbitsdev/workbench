@@ -1047,12 +1047,13 @@ function ChatWorkspaceInner({
           displayName: typingLabel(
             member.principalId,
             activeWorkbench?.participants ?? [],
+            currentUser,
           ),
           color: style["--avatar-identity-bg"],
           textColor: style["--avatar-identity-fg"],
         };
       }),
-    [presenceRoster, activeWorkbench?.participants],
+    [presenceRoster, activeWorkbench?.participants, currentUser],
   );
 
   // Team stack: every active agent + live human for the top bar.
@@ -1442,6 +1443,7 @@ function ChatWorkspaceInner({
                           label={typingLabel(
                             typingState.principalId,
                             activeWorkbench?.participants ?? [],
+                            currentUser,
                           )}
                         />
                       ) : (

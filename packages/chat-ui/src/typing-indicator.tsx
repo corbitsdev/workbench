@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { ParticipantRecord } from "./api";
-import { localPartOf } from "./timeline";
+import { localPartOf, type CurrentUser } from "./timeline";
 import { CHAT_STRINGS } from "./strings";
 
 /** How long a `chat.typing` ping stays reflected in the banner before it's
@@ -64,12 +64,23 @@ export function isTypingStateExpired(state: TypingState, now: number): boolean {
   return state !== null && state.expiresAt <= now;
 }
 
-/** A typing principal's friendly handle — falls back to the same
- * deterministic "Member" label the timeline uses, never a raw address. */
+/** A typing/presence principal's friendly label — prefers the signed-in
+ * reader's own `currentUser.name` when the principal is self (CL-6655),
+ * else the participant handle, else the same deterministic "Member"
+ * fallback the timeline uses. Never a raw address. */
 export function typingLabel(
   principalId: string,
   participants: readonly ParticipantRecord[],
+  currentUser?: CurrentUser,
 ): string {
+  if (
+    currentUser !== undefined &&
+    currentUser.principalId === principalId &&
+    currentUser.name !== undefined &&
+    currentUser.name.trim().length > 0
+  ) {
+    return currentUser.name.trim();
+  }
   const match = participants.find(
     (participant) => localPartOf(participant.address) === principalId,
   );

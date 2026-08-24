@@ -243,4 +243,36 @@ describe("workbench header team avatar stack", () => {
     expect(overflow?.textContent).toBe("+1");
     harness.unmount();
   });
+
+  test("own presence avatar uses currentUser.name, never Member (CL-6655)", async () => {
+    // The signed-in reader is live in presence but not yet on the workbench
+    // participants list (or has no handle there) — without currentUser.name
+    // the stack title falls back to "Member".
+    stubFetch({
+      participants: [{ address: "myra@agents.example", handle: "Myra" }],
+    });
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "ch_1",
+      currentUser: { principalId: "prn_self", name: "sawyer" },
+    });
+    await harness.settle();
+    act(() => {
+      firstStream().emit("chat.presence.snapshot", {
+        members: [
+          { principalId: "prn_self", lastActiveAt: "2026-01-01T00:00:00Z" },
+        ],
+      });
+    });
+    await harness.settle();
+
+    const presenceAvatars = harness.container.querySelectorAll(
+      ".chat-presence-avatar:not([data-agent])",
+    );
+    expect(presenceAvatars).toHaveLength(1);
+    expect((presenceAvatars[0] as HTMLElement).title).toBe("sawyer");
+    expect((presenceAvatars[0] as HTMLElement).title).not.toBe("Member");
+    expect(presenceAvatars[0]?.textContent).toBe("S");
+    harness.unmount();
+  });
 });
