@@ -316,6 +316,12 @@ export const Composer = forwardRef<
     /** Invitable agent definitions — the "Bring in…" group's agent
      * half. Defaults to empty (no group rendered). */
     readonly invitableAgents?: readonly BringInAgentDefinition[];
+    /**
+     * Bring-in members/invitable queries failed — show this instead of an
+     * honest-looking empty "No matches" / missing bring-in roster
+     * (CL-6839). Null/omitted means those queries succeeded or are idle.
+     */
+    readonly bringInLoadError?: string | null;
     /** Resolves to whether the send succeeded; the composer decides draft/attachment cleanup from that. */
     readonly onSend: (payload: ComposerSendPayload) => Promise<boolean>;
     /** `/invite` — opens the invite-agent dialog. */
@@ -334,6 +340,7 @@ export const Composer = forwardRef<
     participants = [],
     members = [],
     invitableAgents = [],
+    bringInLoadError = null,
     onSend,
     onInviteAgent,
     onOpenAgentsSettings,
@@ -692,11 +699,19 @@ export const Composer = forwardRef<
       {slash === null && mention !== null && (
         <div className="chat-mention-popover chat-popover-enter" role="listbox">
           {mentionOptions.length === 0 ? (
-            <div className="chat-mention-empty">
-              {CHAT_STRINGS.mentionEmpty}
+            <div
+              className="chat-mention-empty"
+              {...(bringInLoadError !== null ? { role: "alert" as const } : {})}
+            >
+              {bringInLoadError ?? CHAT_STRINGS.mentionEmpty}
             </div>
           ) : (
             <div className="chat-mention-list">
+              {bringInLoadError !== null ? (
+                <div className="chat-mention-empty" role="alert">
+                  {bringInLoadError}
+                </div>
+              ) : null}
               {mentionOptions.map((option, index) => {
                 const prev = mentionOptions[index - 1];
                 const showSection =

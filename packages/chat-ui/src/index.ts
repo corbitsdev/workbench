@@ -62,9 +62,11 @@ export {
   insertMention,
   mentionCandidatesFromParticipants,
   mentionOptionsFromWorkbench,
+  resolveBringInLists,
 } from "./mentions";
 export type {
   BringInAgentDefinition,
+  BringInListFailure,
   BringInMember,
   MentionCandidate,
   MentionInviteIntent,

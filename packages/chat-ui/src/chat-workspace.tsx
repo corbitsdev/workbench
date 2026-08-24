@@ -46,8 +46,8 @@ import { Composer } from "./composer";
 import type { ComposerHandle } from "./composer";
 import { InviteAgentDialog } from "./invite-agent-dialog";
 import { WorkbenchLoadingState } from "./loading-state";
-import { mentionCandidatesFromParticipants } from "./mentions";
-import type { BringInMember } from "./mentions";
+import { mentionCandidatesFromParticipants, resolveBringInLists } from "./mentions";
+import type { BringInListFailure, BringInMember } from "./mentions";
 import { PinnedStrip } from "./pinned-strip";
 import { CHAT_STRINGS } from "./strings";
 import { displayWorkbenchTitle } from "./workbench-display-title";
@@ -209,6 +209,24 @@ type WorkbenchesState =
 export function canInviteAgent(kind: string | undefined): boolean {
   if (kind === undefined) return false;
   return !isKnownWorkbenchKind(kind) || kind !== "chat";
+}
+
+/**
+ * User-facing copy when the mention popover's bring-in queries fail
+ * (CL-6839) — never collapse those failures into an honest empty list.
+ */
+export function bringInLoadErrorMessage(
+  failures: readonly BringInListFailure[],
+  firstError: unknown | null,
+): string | null {
+  if (failures.length === 0) return null;
+  const fallback =
+    failures.length === 2
+      ? CHAT_STRINGS.mentionBringInLoadError
+      : failures[0] === "members"
+        ? CHAT_STRINGS.mentionMembersLoadError
+        : CHAT_STRINGS.mentionInvitableLoadError;
+  return describeChatError(firstError, fallback);
 }
 
 /**
@@ -996,6 +1014,14 @@ function ChatWorkspaceInner({
       listMembers !== undefined ? listMembers(tenantId) : Promise.resolve([]),
     enabled: bringInEnabled && listMembers !== undefined,
   });
+  const bringInLists = resolveBringInLists({
+    members: bringInMembersQuery,
+    invitableAgents: invitableAgentsQuery,
+  });
+  const bringInLoadError = bringInLoadErrorMessage(
+    bringInLists.failures,
+    bringInLists.firstError,
+  );
 
   // A settings URL for a workbench id that resolved workbenches don't contain
   // (deleted, mistyped, cross-tenant) would otherwise leave the surface
@@ -1467,8 +1493,9 @@ function ChatWorkspaceInner({
                         activeWorkbench?.participants ?? [],
                       )}
                       participants={activeWorkbench?.participants ?? []}
-                      members={bringInMembersQuery.data ?? []}
-                      invitableAgents={invitableAgentsQuery.data ?? []}
+                      members={bringInLists.members}
+                      invitableAgents={bringInLists.invitableAgents}
+                      bringInLoadError={bringInLoadError}
                       placeholder={composerPlaceholderFor(activeWorkbench)}
                       onSend={handleSend}
                       onInviteAgent={() => setInviteDialogOpen(true)}
