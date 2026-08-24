@@ -124,7 +124,6 @@ async function mount(onNavigate: (to: string) => void = () => undefined) {
   return container;
 }
 
-
 describe("WorkbenchList — needs-you signal", () => {
   test("hides the signal when nothing is pending", async () => {
     stubFetch({ needsYou: [] });

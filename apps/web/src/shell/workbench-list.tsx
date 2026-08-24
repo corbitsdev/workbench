@@ -22,7 +22,13 @@ import {
 } from "@corbits/chat-ui";
 import type { Workbench } from "@corbits/chat-ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChatCircle, DotsThree, Hash, MagnifyingGlass, PushPin } from "@corbits/icons";
+import {
+  ChatCircle,
+  DotsThree,
+  Hash,
+  MagnifyingGlass,
+  PushPin,
+} from "@corbits/icons";
 import { useEffect, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 
