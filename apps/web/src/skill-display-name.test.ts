@@ -20,8 +20,8 @@ describe("skillDisplayName", () => {
   });
 
   test("treats a whitespace-only displayTitle as absent", () => {
-    expect(
-      skillDisplayName({ name: "triage", displayTitle: "   " }),
-    ).toBe("Triage");
+    expect(skillDisplayName({ name: "triage", displayTitle: "   " })).toBe(
+      "Triage",
+    );
   });
 });
