@@ -38,9 +38,7 @@ export async function fetchGranolaPluginConnected(
 
 /** Absent (still fetching) never claims Granola is connected — the trigger
  * popover's own "hide when not available" default. */
-export function useGranolaPluginConnected(
-  tenantId: string | null,
-): boolean {
+export function useGranolaPluginConnected(tenantId: string | null): boolean {
   const { data } = useQuery({
     queryKey:
       tenantId === null
