@@ -27,8 +27,7 @@ const MCP_OAUTH_ERROR_COPY: Readonly<Record<string, string>> = {
   state_expired:
     "The connection took too long or was already used. Try connecting again.",
   state_mismatch: "The connection was interrupted. Try connecting again.",
-  exchange_failed:
-    "That app didn't hand back a token. Try connecting again.",
+  exchange_failed: "That app didn't hand back a token. Try connecting again.",
   connect_failed: "Couldn't finish connecting. Try connecting again.",
   setup_failed:
     "The sign-in worked, but storing the connection failed. Try connecting again.",
