@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { deriveProviderHealthBanner } from "./provider-health-context";
+import {
+  deriveProviderHealthBanner,
+  deriveProviderHealthChrome,
+  nextProviderHealthPollStatus,
+} from "./provider-health-context";
 
 const RECORD = {
   status: "needs_attention" as const,
@@ -75,5 +79,61 @@ describe("deriveProviderHealthBanner", () => {
     expect(deriveProviderHealthBanner(providers, {}, 2)?.provider).toBe(
       "openai",
     );
+  });
+});
+
+describe("nextProviderHealthPollStatus (CL-6834)", () => {
+  test("a successful poll always lands on ready", () => {
+    expect(nextProviderHealthPollStatus("unknown", "ok")).toBe("ready");
+    expect(nextProviderHealthPollStatus("error", "ok")).toBe("ready");
+    expect(nextProviderHealthPollStatus("ready", "ok")).toBe("ready");
+  });
+
+  test("first-load failure (unknown → fail) becomes error, not ready", () => {
+    expect(nextProviderHealthPollStatus("unknown", "fail")).toBe("error");
+  });
+
+  test("a failed poll after an error stays error until a success", () => {
+    expect(nextProviderHealthPollStatus("error", "fail")).toBe("error");
+  });
+
+  test("a failed poll after ready keeps ready so last-known state stays on screen", () => {
+    expect(nextProviderHealthPollStatus("ready", "fail")).toBe("ready");
+  });
+});
+
+describe("deriveProviderHealthChrome (CL-6834)", () => {
+  const unhealthyBanner = {
+    provider: "anthropic",
+    category: "credential_failure" as const,
+    zeroWorkingProviders: false,
+  };
+
+  test("unknown status is never healthy — empty providers are not 'all clear'", () => {
+    expect(deriveProviderHealthChrome("unknown", null)).toEqual({
+      kind: "unknown",
+    });
+    expect(deriveProviderHealthChrome("unknown", unhealthyBanner)).toEqual({
+      kind: "unknown",
+    });
+  });
+
+  test("error status is never healthy — first-load poll failure is not 'all clear'", () => {
+    expect(deriveProviderHealthChrome("error", null)).toEqual({
+      kind: "error",
+    });
+  });
+
+  test("ready with no banner is healthy", () => {
+    expect(deriveProviderHealthChrome("ready", null)).toEqual({
+      kind: "healthy",
+    });
+  });
+
+  test("ready with an undismissed incident is unhealthy", () => {
+    expect(deriveProviderHealthChrome("ready", unhealthyBanner)).toEqual({
+      kind: "unhealthy",
+      banner: unhealthyBanner,
+    });
   });
 });

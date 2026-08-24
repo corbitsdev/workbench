@@ -101,6 +101,22 @@ async function flush(): Promise<void> {
   }
 }
 
+/** Same flush loop, but waits for a specific `data-provider-health` marker
+ * (CL-6834) — used when the chrome settles without an alert (healthy) or
+ * with an error marker rather than an unhealthy-provider alert. */
+async function flushForHealthMarker(marker: string): Promise<void> {
+  for (let i = 0; i < 20; i += 1) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    if (
+      document.querySelector(`[data-provider-health="${marker}"]`) !== null
+    ) {
+      return;
+    }
+  }
+}
+
 function findByText(
   container: HTMLElement,
   text: string,
@@ -247,9 +263,41 @@ describe("ProviderHealthBanner (CL-6092)", () => {
   test("renders nothing when no provider is unhealthy", async () => {
     stubFetch({ providers: {}, connectedProviderCount: 2 });
     await mount(() => undefined);
-    await flush();
+    await flushForHealthMarker("healthy");
 
     expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(
+      container.querySelector('[data-provider-health="healthy"]'),
+    ).not.toBeNull();
+  });
+
+  // CL-6834: a failed first poll used to leave providers at {}, which the
+  // chrome treated the same as "ready and nothing unhealthy" — so an
+  // unreachable health endpoint looked like every provider was fine.
+  test("first-load poll failure shows error chrome, not a silent healthy state", async () => {
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      if (path.includes("/api/me/principals"))
+        return Promise.resolve(json(membership));
+      if (path.includes("/connections/provider-health"))
+        return Promise.reject(new Error("network down"));
+      return Promise.resolve(json({ items: [] }));
+    }) as typeof fetch;
+
+    await mount(() => undefined);
+    await flushForHealthMarker("error");
+
+    expect(
+      container.querySelector('[data-provider-health="error"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(container.textContent).toContain("Couldn't check provider health");
+    // Not the guided unhealthy-provider copy — there is no incident to fix.
+    expect(container.textContent).not.toContain("turned down your key.");
+    expect(findByText(container, "Fix it")).toBeUndefined();
+    expect(
+      container.querySelector('[data-provider-health="healthy"]'),
+    ).toBeNull();
   });
 });
 
