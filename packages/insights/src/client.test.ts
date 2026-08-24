@@ -7,7 +7,9 @@ import {
   formatCount,
   formatUsd,
   INSIGHTS_WINDOW_DAYS,
+  tokensLabel,
   topModelsByCost,
+  usageChromeLabel,
 } from "./client";
 
 // Fixed clock so range math is deterministic regardless of suite time.
@@ -118,5 +120,48 @@ describe("empty usage defaults", () => {
     expect(formatUsd(null)).toBe("—");
     expect(formatUsd(0)).toBe("$0.00");
     expect(formatUsd(1.5)).toBe("$1.50");
+  });
+});
+
+// CL-6877: chrome must never invent "0 tok". Zero spend is `$0.00`; zero
+// tokens omit the tok segment entirely. tokensLabel and usageChromeLabel
+// are the single consumer-safe path sidebar / insights share.
+describe("CL-6877 usage chrome labels", () => {
+  const zeroTokens = {
+    input: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    output: 0,
+    thinking: 0,
+  };
+
+  const someTokens = {
+    input: 1000,
+    cacheRead: 200,
+    cacheWrite: 0,
+    output: 50,
+    thinking: 0,
+  };
+
+  test("tokensLabel omits null and zero totals — never returns 0 tok", () => {
+    expect(tokensLabel(null)).toBeUndefined();
+    expect(tokensLabel(zeroTokens)).toBeUndefined();
+    expect(tokensLabel(EMPTY_OVERALL_USAGE.tokens)).toBeUndefined();
+    expect(tokensLabel(someTokens)).toBe("1,250 tok");
+  });
+
+  test("usageChromeLabel is cost-only at zero tokens, cost · tok when nonzero", () => {
+    expect(usageChromeLabel({ costUsd: 0, tokens: zeroTokens })).toBe("$0.00");
+    expect(
+      usageChromeLabel({ costUsd: 0, tokens: EMPTY_OVERALL_USAGE.tokens }),
+    ).toBe("$0.00");
+    expect(usageChromeLabel({ costUsd: 0, tokens: null })).toBe("$0.00");
+    expect(usageChromeLabel({ costUsd: 1.5, tokens: someTokens })).toBe(
+      "$1.50 · 1,250 tok",
+    );
+    expect(usageChromeLabel({ costUsd: null, tokens: someTokens })).toBe(
+      "— · 1,250 tok",
+    );
+    expect(usageChromeLabel(EMPTY_OVERALL_USAGE)).not.toContain("0 tok");
   });
 });

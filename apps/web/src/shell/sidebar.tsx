@@ -53,8 +53,7 @@ import { useMemo } from "react";
 import { AVATAR_IDENTITY_CLASS, generatedAvatarStyle } from "@corbits/chat-ui";
 import {
   createInsightsWindow,
-  formatUsd,
-  tokensLabel,
+  usageChromeLabel,
 } from "@corbits/insights/client";
 
 import webPackage from "../../package.json";
@@ -81,7 +80,8 @@ const FEEDBACK_URL = `${webPackage.repository.url}/issues`;
  * One-line 7-day cost/token summary, read off the same cheap `/usage`
  * route the Insights landing tiles already use (CL-6132). No tenant, no
  * data yet, or a load error all render the same honest fallback — a plain
- * "Weekly usage" link with no number — never a fabricated figure.
+ * "Weekly usage" link with no number — never a fabricated figure. Ready
+ * zero usage uses `usageChromeLabel` (`$0.00`, never `$0.00 · 0 tok`).
  */
 function WeeklyUsageMenuItem({
   onNavigate,
@@ -95,10 +95,7 @@ function WeeklyUsageMenuItem({
     OverallUsageSchema,
   );
   const usage = usageQuery.kind === "ready" ? usageQuery.data : null;
-  const summary =
-    usage === null
-      ? null
-      : `${formatUsd(usage.costUsd)} · ${tokensLabel(usage.tokens) ?? "0 tok"}`;
+  const summary = usage === null ? null : usageChromeLabel(usage);
 
   return (
     <MenuItem

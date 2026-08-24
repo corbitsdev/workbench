@@ -773,6 +773,34 @@ describe("Sidebar", () => {
       container.remove();
     });
 
+    // CL-6877: empty weekly usage is `$0.00`, never `$0.00 · 0 tok`.
+    test("Weekly usage at zero spend shows $0.00 without 0 tok chrome", async () => {
+      stubFetch({ usageTurns: 0 });
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      const root = await openAccountMenu(container);
+
+      // Wait for the usage query to settle into the menu value.
+      for (let i = 0; i < 20; i++) {
+        const value = document.querySelector(
+          ".shell-sidebar-account-menu-usage-value",
+        );
+        if (value?.textContent?.includes("$0.00") === true) break;
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+      }
+
+      const value = document.querySelector(
+        ".shell-sidebar-account-menu-usage-value",
+      );
+      expect(value?.textContent).toContain("$0.00");
+      expect(value?.textContent).not.toContain("0 tok");
+
+      act(() => root.unmount());
+      container.remove();
+    });
+
     test("Log out is danger-styled and calls onSignOut", async () => {
       stubFetch();
       const container = document.createElement("div");

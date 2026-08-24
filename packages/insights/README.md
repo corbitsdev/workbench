@@ -14,8 +14,8 @@ and routes so a browser bundle never drags in postgres, drizzle, or hono
 (see `client.test.ts`, which asserts no such import reaches this module).
 
 **Owns:** `formatUsd`, `formatCount`, `formatRate`, `durationLabel`,
-`tokensLabel`, `modelsWithMissingRates` — pure formatting; `InsightsRange`,
-`createInsightsWindow`, `activitySeriesForWindow`,
+`tokensLabel`, `usageChromeLabel`, `modelsWithMissingRates` — pure formatting;
+`InsightsRange`, `createInsightsWindow`, `activitySeriesForWindow`,
 `INSIGHTS_WINDOW_DAYS` — the fixed day-window math every Insights chart
 uses; `EMPTY_TOKEN_TOTALS`, `EMPTY_OVERALL_USAGE` — the single empty-state
 default so no caller invents its own zero object; and the plain `TokenTotals`
