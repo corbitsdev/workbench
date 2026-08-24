@@ -3,12 +3,12 @@
 // "tenant", "instance", "deploy(ed)", "definition", "DATABASE_URL", and
 // "asset" are all names for things from the operator/platform side of
 // the fence; the product word for a workspace is "workbench" and its
-// switching control is the "switcher". "Channel", "space(s)", and "chat(s)"
-// are banned too. The rule, after the single-concept collapse: a WORKBENCH
-// IS an agent conversation (each already its own tenancy under the hood),
-// so user-facing copy uses "workbench"/"workbenches" as the noun for that
-// surface — never "chat", "space", or "channel". "Conversation" stays
-// legal as the generic word for the exchange itself ("Untitled
+// switching control is the "switcher". "Space(s)" and "chat(s)" stay
+// banned. CL-6977 restored "channel(s)" as the rail section noun
+// alongside "Agents" — a WORKBENCH is still the product noun for a
+// conversation, but the sidebar lists those conversations under
+// Agents and Channels, never a flat "Workbenches" band. "Conversation"
+// stays legal as the generic word for the exchange itself ("Untitled
 // conversation", "invite an agent into this conversation"), and verb-ish
 // message copy ("Send a message…", "talk to") needs no noun at all — the
 // sweep prefers rephrasing over allowlisting, so the ALLOWLIST below stays
@@ -16,8 +16,8 @@
 // words stay legal as the underlying platform/API vocabulary:
 // `kind: "chat"`, route paths, event names, and other non-prose
 // identifiers, none of which this check's prose filter treats as copy
-// anyway — see docs/GLOSSARY.md and the CL-6016, CL-6071, and CL-6081
-// copy sweeps this check guards.
+// anyway — see docs/GLOSSARY.md and the CL-6016, CL-6071, CL-6081, and
+// CL-6977 copy sweeps this check guards.
 //
 // This scans string and template literals in apps/web/src and
 // packages/chat-ui/src (excluding *.test.ts(x)) for the banned terms.
@@ -54,7 +54,6 @@ const BANNED_TERMS: readonly { name: string; pattern: RegExp }[] = [
   { name: "definition", pattern: /\bdefinitions?\b/i },
   { name: "DATABASE_URL", pattern: /\bDATABASE_URL\b/ },
   { name: "asset", pattern: /\bassets?\b/i },
-  { name: "channel", pattern: /\bchannels?\b/i },
   { name: "space", pattern: /\bspaces?\b/i },
   { name: "chat", pattern: /\bchats?\b/i },
   // CL-6089: "workspace" is a synonym the teardown deliberately keeps out
@@ -78,19 +77,23 @@ const BANNED_TERMS: readonly { name: string; pattern: RegExp }[] = [
 /**
  * The surface's label renamed "Channels" → "Spaces" (CL-6054), "Spaces" →
  * "Chats" (CL-6081), and "Chats"/"Chat" → "Workbenches" (the
- * single-concept collapse: the sidebar lists workbenches). A single-word
- * label value like `"Chats"` has no whitespace, so `isProseLiteral`'s
- * space-heuristic never even hands it to the `BANNED_TERMS` scan below —
- * this pattern is the dedicated regression guard for exactly that gap,
- * matching the shape a reintroduced label would take for any retired
- * name: a `label`/`title` object property (`title: "Chats"`), the same
- * as a JSX attribute (`title="Chat"`), or an `aria-label` attribute set
- * to precisely one of those words — so it never trips on legitimate
- * copy that merely contains one (prose is the term scan's job, and a
- * palette `heading:` or a different single-word value never matches).
+ * single-concept collapse). CL-6977 then split that one sidebar list
+ * into Agents and Channels, so a flat "Workbenches" band is the
+ * retired label this guard still rejects — "Channels" is legal rail
+ * copy again. A single-word label value like `"Workbenches"` has no
+ * whitespace, so `isProseLiteral`'s space-heuristic never even hands
+ * it to the `BANNED_TERMS` scan below — this pattern is the dedicated
+ * regression guard for exactly that gap, matching the shape a
+ * reintroduced label would take for any retired name: a `label`/`title`
+ * object property (`title: "Workbenches"`), the same as a JSX
+ * attribute (`title="Chat"`), an `aria-label` attribute set to
+ * precisely one of those words, or JSX text in `.shell-panel-list-label`
+ * — so it never trips on legitimate copy that merely contains one
+ * (prose is the term scan's job, and a palette `heading:` or a
+ * different single-word value never matches).
  */
 const BAND_LABEL_PATTERN =
-  /\b(?:label|title)\s*[:=]\s*"(?:Channels|Spaces|Chats|Chat)"|aria-label\s*=\s*"(?:Channels|Spaces|Chats|Chat)"/g;
+  /\b(?:label|title)\s*[:=]\s*"(?:Workbenches|Spaces|Chats|Chat)"|aria-label\s*=\s*"(?:Workbenches|Spaces|Chats|Chat)"|shell-panel-list-label"[^>]*>\s*Workbenches/g;
 
 /**
  * Exact strings that legitimately contain a banned term as UI copy.
@@ -234,7 +237,7 @@ export function findViolations(files: readonly ScannedFile[]): Violation[] {
       violations.push({
         relPath,
         line,
-        term: "Channels/Spaces/Chats (retired surface label)",
+        term: "Workbenches/Spaces/Chats (retired surface label)",
         literal: lines[line - 1] ?? match[0],
       });
     }

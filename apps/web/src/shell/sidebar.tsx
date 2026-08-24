@@ -1,5 +1,5 @@
 // The one sidebar. Header: the brand mark, then create + search. Body: the
-// workbench list — nothing page-scoped ever renders here. Footer: the
+// Agents and Channels lists — nothing page-scoped ever renders here. Footer: the
 // first-run rail is Routines, Files, Skills, Agents; Insights and Evals
 // join only when the existing usage / eval-run reads return real items
 // (never a fabricated row, never a new analytics store). Plugins is
@@ -71,7 +71,7 @@ import {
 import type { SessionUser } from "../session";
 import { SidebarBrandMark } from "./brand-mark";
 import { initialsOf } from "./docks";
-import { WorkbenchList } from "./workbench-list";
+import { SidebarSections } from "./workbench-list";
 
 /** The repo's own issue tracker — read off this package's manifest (set
  * from `git remote`) rather than a hardcoded org/repo guess. */
@@ -143,11 +143,9 @@ export function Sidebar({
     <SidebarPanel
       className="shell-sidebar"
       data-testid="shell-sidebar"
-      aria-label="Workbenches"
+      aria-label="Conversations"
     >
-      {/* Owner's shape: logo with "+" on the first row, the search box
-          (inside the list) below, then the plain "Workbenches" label. No
-          header icon cluster — search is the box. */}
+      {/* Logo and creation stay above the shared Agents/Channels search. */}
       <div className="shell-sidebar-brand-row">
         <SidebarBrandMark />
         <Button
@@ -160,11 +158,8 @@ export function Sidebar({
           <Plus />
         </Button>
       </div>
-      {/* The "Workbenches" label renders inside the list, below its search
-          box (owner's order: logo · search · Workbenches · rows). */}
-
       <SidebarPanelBody>
-        <WorkbenchList path={path} onNavigate={onNavigate} />
+        <SidebarSections path={path} onNavigate={onNavigate} />
       </SidebarPanelBody>
 
       {/* Mission Control is pinned above the footer rail as its own row

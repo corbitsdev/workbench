@@ -151,67 +151,84 @@ test("multi-line template literals are still scanned", () => {
   expect(report.violations).toHaveLength(1);
 });
 
-test("a reintroduced Channels nav band label is a violation", () => {
+test("Agents and Channels rail list labels are clean (CL-6977)", () => {
   const report = auditUiVocabulary([
     {
-      relPath: "apps/web/src/routes.tsx",
-      contents: `label: "Channels",`,
+      relPath: "apps/web/src/shell/workbench-list.tsx",
+      contents: [
+        `<h2 className="shell-panel-list-label">Agents</h2>`,
+        `<h2 className="shell-panel-list-label">Channels</h2>`,
+      ].join("\n"),
     },
   ]);
-  expect(report.violations).toHaveLength(1);
-  expect(report.violations[0]).toContain("apps/web/src/routes.tsx");
-  expect(report.violations[0]).toContain("Channels");
+  expect(report.violations).toEqual([]);
 });
 
-test("a reintroduced Channels page band title is a violation", () => {
+test("Agents/Channels label properties are clean rail copy (CL-6977)", () => {
   const report = auditUiVocabulary([
     {
-      relPath: "apps/web/src/shell/panel-contributions.tsx",
-      contents: `title: "Channels",`,
+      relPath: "apps/web/src/shell/workbench-list.tsx",
+      contents: [`label: "Agents",`, `label: "Channels",`].join("\n"),
     },
   ]);
-  expect(report.violations).toHaveLength(1);
+  expect(report.violations).toEqual([]);
 });
 
-test("a reintroduced Channels aria-label is a violation", () => {
+test("an Agents/Channels JSX title attribute is clean", () => {
+  const report = auditUiVocabulary([
+    {
+      relPath: "apps/web/src/shell/rail.tsx",
+      contents: [
+        `<SidebarPanelHeader title="Agents" />`,
+        `<SidebarPanelHeader title="Channels" />`,
+      ].join("\n"),
+    },
+  ]);
+  expect(report.violations).toEqual([]);
+});
+
+test("an Agents/Channels aria-label is clean", () => {
   const report = auditUiVocabulary([
     {
       relPath: "apps/web/src/shell/panel-contributions.tsx",
       contents: `<div className="panel-stack" aria-label="Channels">`,
     },
   ]);
-  expect(report.violations).toHaveLength(1);
+  expect(report.violations).toEqual([]);
 });
 
-test("a reintroduced Channels JSX title attribute is a violation", () => {
+test("a flat Workbenches shell-panel-list-label is a violation (CL-6977)", () => {
   const report = auditUiVocabulary([
     {
-      relPath: "apps/web/src/shell/rail.tsx",
-      contents: `<SidebarPanelHeader title="Channels" />`,
+      relPath: "apps/web/src/shell/workbench-list.tsx",
+      contents: `<h2 className="shell-panel-list-label">Workbenches</h2>`,
     },
   ]);
   expect(report.violations).toHaveLength(1);
+  expect(report.violations[0]).toContain("apps/web/src/shell/workbench-list.tsx");
+  expect(report.violations[0]).toContain("Workbenches");
 });
 
-test("a reintroduced Channels JSX label attribute is a violation", () => {
+test("a reintroduced Workbenches nav band label is a violation", () => {
   const report = auditUiVocabulary([
     {
-      relPath: "apps/web/src/shell/rail.tsx",
-      contents: `<NavItem label="Channels" />`,
+      relPath: "apps/web/src/routes.tsx",
+      contents: `label: "Workbenches",`,
     },
   ]);
   expect(report.violations).toHaveLength(1);
+  expect(report.violations[0]).toContain("apps/web/src/routes.tsx");
+  expect(report.violations[0]).toContain("Workbenches");
 });
 
-test("prose mentioning Channels is now a plain banned-term violation, not just a band-label one (CL-6071)", () => {
+test("Channels prose is legal copy again, not a banned-term violation (CL-6977)", () => {
   const report = auditUiVocabulary([
     {
       relPath: "apps/web/src/shell/panel-contributions.tsx",
       contents: `description="Channels and running routines for this workbench will appear here."`,
     },
   ]);
-  expect(report.violations).toHaveLength(1);
-  expect(report.violations[0]).toContain("channel");
+  expect(report.violations).toEqual([]);
 });
 
 test("a reintroduced 'chat' in user-facing prose is a violation (workbench is the noun)", () => {
@@ -319,18 +336,17 @@ test("chat-ui's channel-kind section label is not a band-label violation", () =>
   expect(report.violations).toEqual([]);
 });
 
-test("a reintroduced 'channel' in user-facing prose is a violation (CL-6071: channel is now space/chat)", () => {
+test("'channel' in user-facing prose is legal copy again (CL-6977)", () => {
   const report = auditUiVocabulary([
     {
       relPath: "packages/chat-ui/src/strings.ts",
       contents: `noChannelsTitle: "No channel yet",`,
     },
   ]);
-  expect(report.violations).toHaveLength(1);
-  expect(report.violations[0]).toContain("channel");
+  expect(report.violations).toEqual([]);
 });
 
-test("reports a 'channel' violation alongside other banned terms in the same file", () => {
+test("a remaining banned term is still reported when channel copy sits beside it", () => {
   const report = auditUiVocabulary([
     {
       relPath: "apps/web/src/pages/agents-settings-section.tsx",
@@ -340,7 +356,8 @@ test("reports a 'channel' violation alongside other banned terms in the same fil
       ].join("\n"),
     },
   ]);
-  expect(report.violations.length).toBeGreaterThanOrEqual(2);
+  expect(report.violations).toHaveLength(1);
+  expect(report.violations[0]).toContain("bench");
 });
 
 test("'kind: \"channel\"' internal type literals never false-match — no space, not prose", () => {
@@ -367,11 +384,11 @@ test("the same template literal still catches a banned term outside any interpol
   const report = auditUiVocabulary([
     {
       relPath: "apps/web/src/pages/routines-page.tsx",
-      contents: "`${when}, delivers to a channel named ${title}.`",
+      contents: "`${when}, delivers to a space named ${title}.`",
     },
   ]);
   expect(report.violations).toHaveLength(1);
-  expect(report.violations[0]).toContain("channel");
+  expect(report.violations[0]).toContain("space");
 });
 
 test("stripNonUserFacing preserves line and column positions", () => {

@@ -1,7 +1,7 @@
 // CL-6045: the shell used to fire the same listing 4-5x per navigation
 // because independent components each fetched independently instead of
 // sharing a cache. Every mount of `useBenchActivity` (the sidebar's
-// `WorkbenchList`, and any second subscriber) shares the same TanStack
+// `SidebarSections`, and any second subscriber) shares the same TanStack
 // Query keys (`tenantKeys.workbenches`, `.topLevelRuns` — see
 // `../src/query-client.ts`) under one `QueryClient`, so two mounts fetch
 // each listing exactly once.
@@ -12,7 +12,7 @@ import type { Root } from "react-dom/client";
 
 import { BenchProvider } from "../src/bench-context";
 import { requestWorkbenchRename } from "../src/workbench-rename-events";
-import { WorkbenchList } from "../src/shell/workbench-list";
+import { SidebarSections } from "../src/shell/workbench-list";
 import {
   createTestQueryClient,
   TestQueryProvider,
@@ -87,7 +87,7 @@ function countsByMatch(
 }
 
 describe("shell listing dedupe (CL-6045)", () => {
-  test("two WorkbenchList mounts together fetch each listing exactly once", async () => {
+  test("two SidebarSections mounts together fetch each listing exactly once", async () => {
     const calls: string[] = [];
     stubFetch(calls);
     const queryClient = createTestQueryClient();
@@ -99,8 +99,8 @@ describe("shell listing dedupe (CL-6045)", () => {
       root?.render(
         <TestQueryProvider client={queryClient}>
           <BenchProvider>
-            <WorkbenchList path="/w" onNavigate={() => undefined} />
-            <WorkbenchList path="/w" onNavigate={() => undefined} />
+            <SidebarSections path="/w" onNavigate={() => undefined} />
+            <SidebarSections path="/w" onNavigate={() => undefined} />
           </BenchProvider>
         </TestQueryProvider>,
       );
@@ -156,7 +156,7 @@ describe("shell listing dedupe (CL-6045)", () => {
       root?.render(
         <TestQueryProvider client={queryClient}>
           <BenchProvider>
-            <WorkbenchList path="/w" onNavigate={() => undefined} />
+            <SidebarSections path="/w" onNavigate={() => undefined} />
           </BenchProvider>
         </TestQueryProvider>,
       );

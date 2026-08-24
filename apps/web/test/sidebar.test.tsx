@@ -208,11 +208,9 @@ describe("Sidebar", () => {
     container.remove();
   });
 
-  test("titles itself Workbenches and never renders a page-nav list", () => {
+  test("titles itself Conversations and never renders a page-nav list", () => {
     const markup = renderSidebar("/settings/agents");
-    // The visible "Workbenches" label lives inside the list (below its
-    // search box); the panel keeps the accessible name.
-    expect(markup).toContain('aria-label="Workbenches"');
+    expect(markup).toContain('aria-label="Conversations"');
     expect(markup).not.toContain(">Pages<");
     expect(markup).not.toContain("shell-rail-item");
   });
@@ -414,7 +412,7 @@ describe("Sidebar", () => {
         const { container, root } = await mountAt(path);
 
         expect(
-          container.querySelector('[aria-label="Search workbenches"]'),
+          container.querySelector('[aria-label="Search agents and channels"]'),
         ).not.toBeNull();
         const row = container.querySelector(".shell-ch-row");
         expect(row).not.toBeNull();
@@ -445,9 +443,7 @@ describe("Sidebar", () => {
     });
   });
 
-  // Sidebar = workbenches + conversational DMs only. Visible agent
-  // definitions that have never been opened do not get a synthetic row.
-  describe("agent DM rows", () => {
+  describe("agent rows", () => {
     const workbench = {
       id: "ch_1",
       title: "Research brief",
@@ -524,7 +520,7 @@ describe("Sidebar", () => {
       return { container, root };
     }
 
-    test("does not render a synthetic row for an unopened agent", async () => {
+    test("renders unopened local and inherited agent definitions", async () => {
       stubAgentSidebar();
       const { container, root } = await mountSidebar();
 
@@ -534,9 +530,8 @@ describe("Sidebar", () => {
       expect(labels.some((label) => label.includes("Research brief"))).toBe(
         true,
       );
-      expect(labels.some((label) => label.includes("Outreach"))).toBe(false);
-      expect(labels.some((label) => label.includes("Researcher"))).toBe(false);
-      expect(container.querySelector("[data-ctx-agent]")).toBeNull();
+      expect(labels.some((label) => label.includes("Outreach"))).toBe(true);
+      expect(labels.some((label) => label.includes("Researcher"))).toBe(true);
 
       act(() => root.unmount());
       container.remove();
@@ -569,16 +564,16 @@ describe("Sidebar", () => {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
-      if (container.innerHTML.includes("No workbenches yet")) break;
+      if (container.innerHTML.includes("No conversations yet")) break;
     }
-    expect(container.innerHTML).toContain("No workbenches yet");
+    expect(container.innerHTML).toContain("No conversations yet");
     act(() => root.unmount());
     container.remove();
   });
 
   // CL-6124: a bench with zero workbenches lands on the first-run chat
   // (`/`), and the sidebar names it as a single active row — never the
-  // icon "No workbenches yet" empty state, since the create-a-workbench
+  // icon "No conversations yet" empty state, since the create-a-workbench
   // surface IS this screen now.
   test("zero workbenches: a single New Workbench row, styled active, not an icon empty state", async () => {
     stubFetch();

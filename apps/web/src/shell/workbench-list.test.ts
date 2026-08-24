@@ -3,7 +3,6 @@ import { describe, expect, test } from "bun:test";
 import type { Workbench } from "@corbits/chat-ui";
 
 import {
-  orderWorkbenchRows,
   renamePayload,
   rowMenuLabels,
   workbenchRowSignals,
@@ -57,58 +56,5 @@ describe("workbenchRowSignals", () => {
     expect(
       workbenchRowSignals(workbench({ unreadCount: 5 }), true).unread,
     ).toBe(0);
-  });
-});
-
-describe("orderWorkbenchRows", () => {
-  test("floats pinned rows to the top, keeping each half's given order", () => {
-    const rows = [
-      workbench({ id: "a" }),
-      workbench({ id: "b", pinned: true }),
-      workbench({ id: "c" }),
-      workbench({ id: "d", pinned: true }),
-    ];
-    expect(orderWorkbenchRows(rows).map((row) => row.id)).toEqual([
-      "b",
-      "d",
-      "a",
-      "c",
-    ]);
-  });
-
-  test("orders most-recent activity first within each half", () => {
-    const rows = [
-      workbench({ id: "old", lastActivityAt: "2026-08-01T00:00:00Z" }),
-      workbench({ id: "new", lastActivityAt: "2026-08-10T00:00:00Z" }),
-      workbench({
-        id: "pinned-old",
-        pinned: true,
-        lastActivityAt: "2026-08-01T00:00:00Z",
-      }),
-      workbench({
-        id: "pinned-new",
-        pinned: true,
-        lastActivityAt: "2026-08-10T00:00:00Z",
-      }),
-    ];
-    expect(orderWorkbenchRows(rows).map((row) => row.id)).toEqual([
-      "pinned-new",
-      "pinned-old",
-      "new",
-      "old",
-    ]);
-  });
-
-  test("never groups by kind — a flat list in, a flat list out", () => {
-    const rows = [
-      workbench({ id: "a", kind: "chat" }),
-      workbench({ id: "b", kind: "workbench" }),
-      workbench({ id: "c", kind: "chat" }),
-    ];
-    expect(orderWorkbenchRows(rows).map((row) => row.id)).toEqual([
-      "a",
-      "b",
-      "c",
-    ]);
   });
 });

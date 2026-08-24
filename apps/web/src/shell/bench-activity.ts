@@ -7,7 +7,7 @@
 // query with nowhere to point.
 //
 // `useBenchActivity` may be mounted more than once per navigation (the
-// sidebar's `WorkbenchList` in `./workbench-list.tsx`), so every listing
+// sidebar's `SidebarSections` in `./workbench-list.tsx`), so every listing
 // below goes through `useQuery` keyed with the shared `tenantKeys`
 // factories — both mounts subscribe to the same cached queries instead of
 // each firing its own fetch. This uses `useQuery` directly rather than the

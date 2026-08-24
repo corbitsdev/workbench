@@ -1,7 +1,6 @@
-// The sidebar's one list: every workbench (an agent conversation, each its
-// own tenancy under the hood) as a flat run of rows — no kind sections, no
-// per-page variants. Pinned rows float to the top; everything else keeps
-// the order the platform returns.
+// The sidebar projects bench activity into two stable navigation sections:
+// persisted and unopened agent conversations under Agents, and rooms under
+// Channels. One search filters both without merging their ordering.
 
 import {
   Badge,
@@ -21,12 +20,13 @@ import {
   workbenchesQueryKeyPrefix,
   patchWorkbenchSettings,
 } from "@corbits/chat-ui";
-import type { Workbench } from "@corbits/chat-ui";
+import type { VisibleAgentDefinition, Workbench } from "@corbits/chat-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChatCircle, DotsThree, Hash, MagnifyingGlass } from "@corbits/icons";
 import { useEffect, useState } from "react";
 import type { KeyboardEvent } from "react";
 
+import { openAgentDmChat } from "../agent-dm-launch";
 import { useNeedsYouCount } from "../api";
 import { useBench } from "../bench-context";
 import { workbenchIdFromPath, workbenchPath } from "../workbench-path";
@@ -36,7 +36,10 @@ import {
 } from "../workbench-rename-events";
 import { useBenchActivity } from "./bench-activity";
 import { Chip } from "./chip";
-import { buildSidebarRows, type SidebarRow } from "./sidebar-rows";
+import {
+  buildSidebarSections,
+  type AgentSidebarRow,
+} from "./sidebar-section-rows";
 
 /**
  * The bench-wide "something needs you" signal above the row list. The
@@ -156,26 +159,6 @@ export function workbenchRowSignals(
       ? { unread: isOpen ? 0 : workbench.unreadCount }
       : {}),
   };
-}
-
-/**
- * Flat ordering for the one list: pinned rows first, then most-recent
- * activity first within each half. Missing timestamps sort last but keep
- * their given relative order (stable sort). Pure so the "no kind sections"
- * and "recency, not insertion order" rules are testable.
- */
-export function orderWorkbenchRows(
-  workbenches: readonly Workbench[],
-): readonly Workbench[] {
-  const byRecency = (a: Workbench, b: Workbench) => {
-    const at = a.lastActivityAt ? Date.parse(a.lastActivityAt) : 0;
-    const bt = b.lastActivityAt ? Date.parse(b.lastActivityAt) : 0;
-    return bt - at;
-  };
-  return [
-    ...workbenches.filter((workbench) => workbench.pinned).sort(byRecency),
-    ...workbenches.filter((workbench) => !workbench.pinned).sort(byRecency),
-  ];
 }
 
 /**
@@ -357,7 +340,43 @@ function WorkbenchRow({
   );
 }
 
-export function WorkbenchList({
+function DefinitionRow({
+  definition,
+  onSelect,
+}: {
+  readonly definition: VisibleAgentDefinition;
+  readonly onSelect: () => void;
+}) {
+  return (
+    <button type="button" className="shell-ch-row" onClick={onSelect}>
+      <span className="shell-ch-stack" aria-hidden="true">
+        <span>{definition.name.slice(0, 1).toUpperCase()}</span>
+      </span>
+      <span className="shell-ch-meta">
+        <span className="shell-ch-name-row">
+          <span className="shell-ch-name">{definition.name}</span>
+        </span>
+        <span className="shell-ch-preview">{definition.tenantName}</span>
+      </span>
+      <span className="shell-ch-right" />
+    </button>
+  );
+}
+
+function persistedRowName(workbench: Workbench): string {
+  return (
+    displayWorkbenchTitle(workbench.title, workbench.id) ||
+    CHAT_STRINGS.unnamedWorkbench
+  );
+}
+
+function agentRowName(row: AgentSidebarRow): string {
+  return row.kind === "persisted"
+    ? persistedRowName(row.workbench)
+    : row.definition.name;
+}
+
+export function SidebarSections({
   path,
   onNavigate,
 }: {
@@ -383,7 +402,7 @@ export function WorkbenchList({
     return (
       <EmptyState
         icon={<Hash />}
-        title="No workbenches yet"
+        title="No conversations yet"
         description="Start a new one with the + above."
       />
     );
@@ -392,60 +411,52 @@ export function WorkbenchList({
     return (
       <EmptyState
         icon={<Hash />}
-        title="Couldn't load workbenches"
+        title="Couldn't load conversations"
         description={activity.message}
       />
     );
   }
 
-  const all = buildSidebarRows(activity.workbenches, activity.chats);
-
-  if (all.length === 0) {
-    return (
-      <div className="panel-stack" aria-label="Workbenches">
-        <NeedsYouSignal tenantId={selectedTenantId} />
-        <h2 className="shell-panel-list-label">Workbenches</h2>
-        <div className="panel-stack-group">
-          <NewWorkbenchStubRow />
-        </div>
-      </div>
-    );
-  }
-
-  const rowName = (row: SidebarRow): string =>
-    displayWorkbenchTitle(row.workbench.title, row.workbench.id) ||
-    CHAT_STRINGS.unnamedWorkbench;
-
+  const sections = buildSidebarSections(
+    activity.workbenches,
+    activity.chats,
+    activity.agents,
+  );
+  const hasRows = sections.agents.length > 0 || sections.channels.length > 0;
   const q = query.trim().toLowerCase();
-  const filtered =
+  const agents =
     q === ""
-      ? all
-      : all.filter((row) => rowName(row).toLowerCase().includes(q));
-
+      ? sections.agents
+      : sections.agents.filter((row) =>
+          agentRowName(row).toLowerCase().includes(q),
+        );
+  const channels =
+    q === ""
+      ? sections.channels
+      : sections.channels.filter((row) =>
+          persistedRowName(row).toLowerCase().includes(q),
+        );
+  const noMatches = q !== "" && agents.length === 0 && channels.length === 0;
   const tenantId = selectedTenantId ?? "";
 
   return (
-    <div className="panel-stack" aria-label="Workbenches">
-      <label className="shell-panel-search">
-        <MagnifyingGlass aria-hidden="true" />
-        <Input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search…"
-          aria-label="Search workbenches"
-        />
-      </label>
+    <div className="panel-stack" aria-label="Conversations">
+      {hasRows ? (
+        <label className="shell-panel-search">
+          <MagnifyingGlass aria-hidden="true" />
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search…"
+            aria-label="Search agents and channels"
+          />
+        </label>
+      ) : null}
       <NeedsYouSignal tenantId={selectedTenantId} />
-      <h2 className="shell-panel-list-label">Workbenches</h2>
-      {filtered.length === 0 ? (
-        <EmptyState
-          icon={<ChatCircle />}
-          title="No matches"
-          description={`Nothing matches “${query.trim()}”.`}
-        />
-      ) : (
-        <div className="panel-stack-group">
-          {filtered.map((row) => (
+      <h2 className="shell-panel-list-label">Agents</h2>
+      <div className="panel-stack-group">
+        {agents.map((row) =>
+          row.kind === "persisted" ? (
             <WorkbenchRow
               key={row.workbench.id}
               workbench={row.workbench}
@@ -457,9 +468,42 @@ export function WorkbenchList({
                 row.workbench.id === activeId,
               )}
             />
-          ))}
-        </div>
-      )}
+          ) : (
+            <DefinitionRow
+              key={row.definition.id}
+              definition={row.definition}
+              onSelect={() =>
+                void openAgentDmChat(
+                  row.definition.tenantId,
+                  row.definition.id,
+                  onNavigate,
+                )
+              }
+            />
+          ),
+        )}
+      </div>
+      <h2 className="shell-panel-list-label">Channels</h2>
+      <div className="panel-stack-group">
+        {channels.map((workbench) => (
+          <WorkbenchRow
+            key={workbench.id}
+            workbench={workbench}
+            active={workbench.id === activeId}
+            tenantId={tenantId}
+            onSelect={() => onNavigate(workbenchPath(workbench.id))}
+            signals={workbenchRowSignals(workbench, workbench.id === activeId)}
+          />
+        ))}
+        {!hasRows ? <NewWorkbenchStubRow /> : null}
+      </div>
+      {noMatches ? (
+        <EmptyState
+          icon={<ChatCircle />}
+          title="No matches"
+          description={`Nothing matches “${query.trim()}”.`}
+        />
+      ) : null}
     </div>
   );
 }

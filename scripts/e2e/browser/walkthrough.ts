@@ -653,29 +653,47 @@ async function run(): Promise<void> {
           timeout: 15_000,
         });
         // A hard navigation re-mounts `BenchProvider` from scratch — the
-        // sidebar's "+" renders unconditionally, but the list's own label
-        // (and the rest of the list) only replaces its "Nothing selected"
+        // sidebar's "+" renders unconditionally, but the list's own labels
+        // (and the rest of the list) only replace the "Nothing selected"
         // empty state once `/api/me/principals` resolves and picks a
         // tenant. Poll rather than reading once, so this never flakes on
         // that ordinary reload race. The owner's sidebar reshape dropped
-        // the old header-bar slot entirely (logo · search · label · rows,
+        // the old header-bar slot entirely (logo · search · labels · rows,
         // no separate title bar) — `.shell-panel-list-label` is the
-        // "Workbenches" text that actually renders now.
-        let sidebarTitle: string | null = null;
-        for (let attempt = 0; attempt < 15; attempt += 1) {
-          sidebarTitle = await page.evaluate(
-            () =>
-              document
-                .querySelector(".shell-panel-list-label")
-                ?.textContent?.trim() ?? null,
+        // "Agents" and "Channels" text that actually renders now.
+        const readListLabels = () =>
+          page.evaluate(() =>
+            Array.from(
+              document.querySelectorAll(".shell-panel-list-label"),
+            ).map((el) => el.textContent?.trim() ?? ""),
           );
-          if (sidebarTitle === "Workbenches") break;
+        const hasAgentsAndChannels = (labels: readonly string[]) =>
+          labels.includes("Agents") && labels.includes("Channels");
+        let sidebarLabels: string[] = [];
+        for (let attempt = 0; attempt < 15; attempt += 1) {
+          sidebarLabels = await readListLabels();
+          if (hasAgentsAndChannels(sidebarLabels)) break;
           await new Promise((resolve) => setTimeout(resolve, 500));
         }
-        if (sidebarTitle !== "Workbenches") {
+        if (!hasAgentsAndChannels(sidebarLabels)) {
           return {
             status: "fail",
-            detail: `expected the sidebar title "Workbenches", got ${JSON.stringify(sidebarTitle)}`,
+            detail: `expected sidebar list labels "Agents" and "Channels", got ${JSON.stringify(sidebarLabels)}`,
+          };
+        }
+        const search = await page.$('input[aria-label="Search agents and channels"]');
+        if (search === null) {
+          return {
+            status: "fail",
+            detail: "expected a Search agents and channels field before checking labels after search",
+          };
+        }
+        await search.type("zzz-no-match");
+        sidebarLabels = await readListLabels();
+        if (!hasAgentsAndChannels(sidebarLabels)) {
+          return {
+            status: "fail",
+            detail: `after search, expected sidebar list labels "Agents" and "Channels", got ${JSON.stringify(sidebarLabels)}`,
           };
         }
         const createButtons = await countMatching(
@@ -691,7 +709,7 @@ async function run(): Promise<void> {
         return {
           status: "pass",
           detail:
-            'single always-visible sidebar: titled "Workbenches", one "+ New workbench" affordance',
+            'single always-visible sidebar: "Agents" and "Channels" list labels, one "+ New workbench" affordance',
         };
       },
     );

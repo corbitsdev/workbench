@@ -416,6 +416,12 @@ bench to talk to and the current user, and mirrors the active workbench into
 its own routing. Each sidebar row also carries a hover-revealed ellipsis
 menu (Rename, Pin/Unpin, Workbench settings).
 
+The host shell's left rail (`apps/web/src/shell/workbench-list.tsx`) is not a
+flat Workbenches list. It is two labeled sections: **Agents** (persisted
+agent conversations plus unopened conversational definitions) and
+**Channels** (rooms). Pinning stays inside each section. One search filters
+both without dropping either label. Human DMs do not appear under Agents.
+
 Workbenches are tenants, so their settings are never a dialog: the gear icon
 in the workbench header routes to a full stage surface,
 `WorkbenchSettingsSurface` (`packages/chat-ui/src/workbench-settings/`) —

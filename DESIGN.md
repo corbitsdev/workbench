@@ -16,10 +16,12 @@ Top to bottom:
 
 1. **Brand row** — logo mark and a "New workbench" button (`+`) that
    opens `/new`.
-2. **Bench list** — the "Workbenches" label, then rows of workbench
-   conversations, with search built into the list itself. Nothing
-   page-scoped ever renders in this body; it lists conversations, not
-   product sections.
+2. **Bench list** — two labels, Agents then Channels, with search built
+   into the list itself. Agent conversations and unopened conversational
+   definitions sit under Agents; rooms sit under Channels. Pinning is
+   local to each section. One search filters both without dropping either
+   label. Nothing page-scoped ever renders in this body; it lists
+   conversations, not product sections.
 3. **Footer rail** — Mission Control is pinned above the rail as its own
    row. The first-run rail below it is Routines, Files, Skills, Agents, in
    that order (CL-6765). Insights and Evals join that rail only when
@@ -35,13 +37,13 @@ Top to bottom:
    direct one-click control to Settings, not a menu item — Settings
    never cost two clicks to reach.
 
-A workbench is an agent conversation, and the bench list IS the switcher —
-its rows are the primary way to move between workbenches, with no separate
-"switcher" control layered on top. The command palette's hidden "Switch
-workbench" action is a second door onto the same list, reachable by search
-rather than by scanning rows; it does not replace the sidebar as the
-switching mechanism. Approvals render inside the conversation, never as a
-standing band in the shell.
+A workbench is an agent conversation or a room, and the bench list IS the
+switcher — its Agents and Channels rows are the primary way to move between
+them, with no separate "switcher" control layered on top. The command
+palette's hidden "Switch workbench" action is a second door onto the same
+conversations, reachable by search rather than by scanning rows; it does
+not replace the sidebar as the switching mechanism. Approvals render
+inside the conversation, never as a standing band in the shell.
 
 ## Pages & Routing
 
