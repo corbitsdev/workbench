@@ -35,13 +35,17 @@ import {
 } from "./workbench-templates-api";
 
 import { createAgentDefinition, listAgentDefinitions } from "./agents-api";
+import {
+  autoNameFromFirstMessage,
+  NEW_WORKBENCH_TITLE,
+} from "./auto-workbench-title";
 import { findMyraDefinition } from "./myra-workbench";
 import { workbenchPath } from "./workbench-path";
 
 const log = getLogger("web.instant-agent-create");
 import type { WorkbenchTemplateId } from "./workbench-templates";
 
-export const NEW_WORKBENCH_TITLE = "New Workbench";
+export { NEW_WORKBENCH_TITLE };
 
 /**
  * Marks the two precondition failures below as intentionally
@@ -127,7 +131,10 @@ export type PickGithubRepos = (args: {
  * signed-in person's own opening message once the room and its
  * template participants exist, so it lands after the setup/template
  * greeting rather than racing it — Myra reads the room's actual intent
- * as the next line, not the first.
+ * as the next line, not the first. For a blank / ad-hoc mint (CL-6656)
+ * that same text also renames the room off `NEW_WORKBENCH_TITLE` via
+ * `patchWorkbenchSettings` (`chat/name`), matching the sidebar rename
+ * path; prefab titles are left alone.
  */
 export async function createWorkbenchFromTemplate(
   tenantId: string,
@@ -242,6 +249,19 @@ export async function createWorkbenchFromTemplate(
 
   if (firstMessage !== undefined && firstMessage.trim() !== "") {
     await sendMessage(tenantId, workbench.id, partsForSend(firstMessage, []));
+    // CL-6656: blank / ad-hoc mints stay "New Workbench" until named. When the
+    // prompt box already supplied the opening message, rename via the same
+    // `chat/name` settings PATCH the sidebar rename uses — prefab titles
+    // (`manifest?.title`) are left alone by `autoNameFromFirstMessage`.
+    const autoTitle = autoNameFromFirstMessage(workbench.title, firstMessage);
+    if (autoTitle !== undefined) {
+      await patchWorkbenchSettings(tenantId, workbench.id, {
+        "chat/name": autoTitle,
+      });
+      await queryClient.invalidateQueries({
+        queryKey: workbenchesQueryKeyPrefix(tenantId),
+      });
+    }
   }
 
   navigate(workbenchPath(workbench.id));

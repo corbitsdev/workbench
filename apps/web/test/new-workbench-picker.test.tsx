@@ -204,6 +204,20 @@ function stubBlankCreate(
       onSendMessage?.(body);
       return json({ id: "msg_1", createdAt: "2026-01-01T00:00:00.000Z" });
     }
+    if (
+      path.endsWith("/chat/workbenches/chan_new/settings") &&
+      init?.method === "PATCH"
+    ) {
+      return json({
+        id: "chan_new",
+        title: "Get our onboarding docs into shape",
+        kind: "workbench",
+        pinned: false,
+        participants: [],
+        settings: {},
+        contextWindow: { value: 0, source: "inherit" },
+      });
+    }
     return undefined;
   });
 }
