@@ -8,6 +8,10 @@
 // consumption) — or, when the tenant has zero working providers,
 // routes to onboarding's credential step instead, since there is no
 // provider gallery worth opening yet.
+//
+// Chrome kinds (CL-6834): `unknown` (still polling), `error` (first-load
+// poll failed — not the same silence as healthy), `healthy` (ready and
+// nothing unhealthy), and `unhealthy` (guided Fix-it banner).
 
 import { Button } from "@corbits/react-ui";
 import { connectorDescriptors } from "@workbench/connections/registry";
@@ -20,9 +24,10 @@ import { matchesRoute, ONBOARDING_PATH, SETTINGS_PATH } from "../routes";
 import { WORKBENCH_PATH_PREFIX } from "../workbench-path";
 import {
   useDismissProviderHealthBanner,
-  useProviderHealthBanner,
+  useProviderHealthChrome,
   useRequestPluginsConnect,
   type ProviderHealthBannerState,
+  type ProviderHealthChrome,
 } from "./provider-health-context";
 
 const PLUGINS_PATH = "/plugins";
@@ -41,6 +46,8 @@ export function isProviderHealthRecoverySurface(path: string): boolean {
 // in `app.css`. Kept as one constant both sides agree on rather than a
 // magic number repeated in two files.
 const COLLAPSE_TRANSITION_MS = 220;
+
+const POLL_ERROR_COPY = "Couldn't check provider health. Try again shortly.";
 
 // The connector registry's own `displayName` (`@workbench/connections/registry`,
 // the same browser-safe subpath `plugins.ts` already reads) — never a
@@ -69,73 +76,114 @@ function bannerMessage(banner: ProviderHealthBannerState): string {
   return `${providerDisplayName(banner.provider)} ${CATEGORY_COPY[banner.category]}`;
 }
 
+type VisibleChrome =
+  | { readonly kind: "error" }
+  | { readonly kind: "unhealthy"; readonly banner: ProviderHealthBannerState };
+
+function visibleFromChrome(chrome: ProviderHealthChrome): VisibleChrome | null {
+  if (chrome.kind === "error") return { kind: "error" };
+  if (chrome.kind === "unhealthy") return chrome;
+  return null;
+}
+
 export function ProviderHealthBanner({ path }: { readonly path: string }) {
-  const banner = useProviderHealthBanner();
+  const chrome = useProviderHealthChrome();
   const dismiss = useDismissProviderHealthBanner();
   const requestPluginsConnect = useRequestPluginsConnect();
   const navigate = useNavigate();
 
+  const visible = visibleFromChrome(chrome);
+  // Stable deps for the cache effect — `visible` is a fresh object each
+  // render, so depending on it would loop (setState → re-render → new
+  // object → effect again).
+  const visibleKind = visible?.kind ?? null;
+  const unhealthyBanner =
+    chrome.kind === "unhealthy" ? chrome.banner : null;
+
   // Keeps the banner's last-known content mounted for a moment after
-  // `banner` goes null, so the collapse/fade-out transition below has
+  // `visible` goes null, so the collapse/fade-out transition below has
   // something to animate away rather than the stage snapping shut
   // instantly — see the module comment on hard-shoving the stage this
-  // replaces. The `role="alert"` below still comes off the LIVE `banner`,
+  // replaces. The `role="alert"` below still comes off the LIVE chrome,
   // not this cache, so a screen reader never sees a stale alert linger.
-  const [cachedBanner, setCachedBanner] =
-    useState<ProviderHealthBannerState | null>(banner);
+  const [cachedVisible, setCachedVisible] = useState<VisibleChrome | null>(
+    visible,
+  );
   useEffect(() => {
-    if (banner !== null) {
-      setCachedBanner(banner);
+    if (visibleKind === "error") {
+      setCachedVisible({ kind: "error" });
+      return;
+    }
+    if (visibleKind === "unhealthy" && unhealthyBanner !== null) {
+      setCachedVisible({ kind: "unhealthy", banner: unhealthyBanner });
       return;
     }
     const timeout = setTimeout(
-      () => setCachedBanner(null),
+      () => setCachedVisible(null),
       COLLAPSE_TRANSITION_MS,
     );
     return () => clearTimeout(timeout);
-  }, [banner]);
+  }, [visibleKind, unhealthyBanner]);
 
-  const isOpen = banner !== null;
+  const isOpen = visible !== null;
 
   if (!isProviderHealthRecoverySurface(path)) {
     return null;
   }
 
   const handleFix = () => {
-    if (banner === null) return;
-    if (banner.zeroWorkingProviders) {
+    if (chrome.kind !== "unhealthy") return;
+    if (chrome.banner.zeroWorkingProviders) {
       navigate(ONBOARDING_PATH);
       return;
     }
-    requestPluginsConnect(banner.provider);
+    requestPluginsConnect(chrome.banner.provider);
     navigate(PLUGINS_PATH);
   };
+
+  // A ready all-clear still mounts a zero-size marker so tests (and any
+  // future chrome) can tell "actually healthy" from "unknown / not yet
+  // polled" without treating empty DOM as healthy (CL-6834).
+  if (chrome.kind === "healthy" && cachedVisible === null) {
+    return <div data-provider-health="healthy" hidden />;
+  }
+
+  if (chrome.kind === "unknown" && cachedVisible === null) {
+    return <div data-provider-health="unknown" hidden />;
+  }
 
   return (
     <div
       className={`provider-health-banner-collapse${isOpen ? " is-open" : ""}`}
+      data-provider-health={chrome.kind}
     >
       <div className="provider-health-banner-collapse-inner">
-        {cachedBanner !== null ? (
+        {cachedVisible !== null ? (
           <div
             className="provider-health-banner"
             role={isOpen ? "alert" : undefined}
           >
             <Warning className="provider-health-banner-icon" aria-hidden />
             <p className="provider-health-banner-text">
-              {bannerMessage(cachedBanner)}
+              {cachedVisible.kind === "error"
+                ? POLL_ERROR_COPY
+                : bannerMessage(cachedVisible.banner)}
             </p>
-            <Button size="sm" variant="primary" onClick={handleFix}>
-              Fix it
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={dismiss}
-              aria-label="Dismiss"
-            >
-              <X aria-hidden />
-            </Button>
+            {cachedVisible.kind === "unhealthy" ? (
+              <>
+                <Button size="sm" variant="primary" onClick={handleFix}>
+                  Fix it
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={dismiss}
+                  aria-label="Dismiss"
+                >
+                  <X aria-hidden />
+                </Button>
+              </>
+            ) : null}
           </div>
         ) : null}
       </div>
