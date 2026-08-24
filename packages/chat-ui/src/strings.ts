@@ -29,9 +29,9 @@ export const CHAT_STRINGS = {
   workbenchNotFoundAction: "Back to workbenches",
   workbenchNotFoundMissionControlAction: "Mission Control",
   workbenchNotFoundNewWorkbenchAction: "New workbench",
-  composerPlaceholder:
-    "Send a message… use @ to mention an agent, / for commands",
-  composerPlaceholderChat: (name: string) => `Message ${name}… / for commands`,
+  composerPlaceholder: "Send a message… use @ to mention an agent",
+  composerPlaceholderChat: (name: string) => `Message ${name}…`,
+
   composerSend: "Send",
   composerSending: "Sending…",
   composerKeyboardHint: "Enter to send",
