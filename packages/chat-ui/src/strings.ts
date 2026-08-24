@@ -133,6 +133,7 @@ export const CHAT_STRINGS = {
   forkThreadOriginBanner: "Forked from a message in",
   workbenchCreatedToast: (title: string) => `Created · ${title}`,
   workbenchRenamedToast: (title: string) => `Renamed to ${title}`,
+  workbenchRenameError: "Couldn't rename that workbench — try again.",
   workbenchPinnedToast: (pinned: boolean, title: string) =>
     pinned ? `Pinned ${title}` : `Unpinned ${title}`,
   workbenchPinToggleError: (pinned: boolean) =>

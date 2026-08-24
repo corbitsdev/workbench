@@ -301,6 +301,7 @@ function WorkbenchRow({
       // Revert the optimistic title on failure; the list will refetch on
       // the next scope selection and reconcile either way.
       setTitle(workbench.title);
+      toast(CHAT_STRINGS.workbenchRenameError);
     }
   }
 
