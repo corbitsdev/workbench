@@ -205,4 +205,53 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
     // owner reported it from.
     expect(queryClient.getQueryState(staleQueryKey)?.isInvalidated).toBe(true);
   });
+
+  // CL-6979: a blank / new-room create must mint a chat with no setup
+  // agent as host — Myra is not auto-invited and her definitionId is
+  // not sent on the create body. Routing is mention/reply/explicit host;
+  // new rooms stay empty until someone invites.
+  test("new room create does not auto-invite Myra (CL-6979)", async () => {
+    const navigated: string[] = [];
+    const myraDefinitionId = "def-assistant";
+    const calls = stubFetch((path) => {
+      if (path.includes("/workflows/definitions")) {
+        return json({ data: [assistantDefinitionWire], nextCursor: null });
+      }
+      if (path.endsWith("/chat/workbenches")) {
+        return json({
+          id: "chan-blank",
+          title: NEW_WORKBENCH_TITLE,
+          kind: "chat",
+          pinned: false,
+          participants: [],
+        });
+      }
+      if (path.endsWith("/chat/workbenches/chan-blank/invite")) {
+        return json({ address: "agent:myra", definitionId: myraDefinitionId });
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    });
+
+    await createWorkbenchFromTemplate(
+      "tnt_1",
+      "blank",
+      (to) => navigated.push(to),
+      newQueryClient(),
+    );
+
+    const createCall = calls.find((call) =>
+      call.path.endsWith("/chat/workbenches"),
+    );
+    expect(createCall).toBeDefined();
+    const body = JSON.parse(String(createCall?.init?.body));
+    expect(body.definitionId).toBeUndefined();
+    expect(body.kind).toBe("workbench");
+    expect(body.name).toBe(NEW_WORKBENCH_TITLE);
+
+    const inviteCalls = calls.filter((call) =>
+      call.path.endsWith("/chat/workbenches/chan-blank/invite"),
+    );
+    expect(inviteCalls).toHaveLength(0);
+    expect(navigated).toEqual(["/w/chan-blank"]);
+  });
 });
