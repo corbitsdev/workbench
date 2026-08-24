@@ -1,8 +1,10 @@
 // Insights over packages/insights: cost KPIs, activity bars, token mosaic,
 // cost-by-model, calls-by-tool, recent purpose runs, runs history, and
-// run-trace detail. Absent usage is zero metrics + zero day series
-// (EMPTY_OVERALL_USAGE / activitySeriesForWindow). Null cost/rate still
-// means "rate unknown" when turns exist — em-dash, not a fabricated cost.
+// run-trace detail. Data may still be EMPTY_OVERALL_USAGE /
+// activitySeriesForWindow at the client boundary; zero-turn landings hide
+// Cost / Activity / Tokens chrome rather than showing zero KPI tiles. Null
+// cost/rate still means "rate unknown" when turns exist — em-dash, not a
+// fabricated cost.
 // Stage layout mirrors the shell mock: KPI row → chart/card grid → recent runs.
 
 import {
@@ -687,6 +689,9 @@ function InsightsLanding({
   const hitRate = cacheHitRate(usage);
   const missingRates = modelsWithMissingRates(usage);
   const activityDays = activitySeriesForWindow(activity ?? [], range);
+  const activityWindowEmpty = recentActivityDays(activityDays).every(
+    (d) => d.turns === 0,
+  );
   const models = byModel !== null && byModel.length > 0 ? byModel : null;
   const tools = byTool !== null && byTool.length > 0 ? byTool : null;
   const recent = purposeRuns.slice(0, 12);
@@ -704,35 +709,41 @@ function InsightsLanding({
   return (
     <div className="insights-layout">
       <StatGrid columns={4}>
-        <InsightsStat
-          label="Cost"
-          value={tileValue(formatUsd(usage.costUsd), loading)}
-          detail={`${formatCount(usage.tokens.total)} tokens`}
-          loading={loading}
-          sparklineLabel="Cost per day this week"
-          {...(costSparkline === undefined
-            ? {}
-            : { sparklineValues: costSparkline })}
-        />
-        <InsightsStat
-          label="Activity"
-          value={tileValue(formatCount(usage.turns), loading)}
-          detail="turns"
-          loading={loading}
-          sparklineValues={turnsSparkline}
-          sparklineLabel="Turns per day this week"
-        />
-        <InsightsStat
-          label="Tokens in / out"
-          value={tileValue(
-            `${formatCount(usage.tokens.input)} / ${formatCount(usage.tokens.output)}`,
-            loading,
-          )}
-          detail="input / output"
-          loading={loading}
-          sparklineValues={tokensSparkline}
-          sparklineLabel="Tokens per day this week"
-        />
+        {noUsageInWindow ? null : (
+          <InsightsStat
+            label="Cost"
+            value={tileValue(formatUsd(usage.costUsd), loading)}
+            detail={`${formatCount(usage.tokens.total)} tokens`}
+            loading={loading}
+            sparklineLabel="Cost per day this week"
+            {...(costSparkline === undefined
+              ? {}
+              : { sparklineValues: costSparkline })}
+          />
+        )}
+        {noUsageInWindow ? null : (
+          <InsightsStat
+            label="Activity"
+            value={tileValue(formatCount(usage.turns), loading)}
+            detail="turns"
+            loading={loading}
+            sparklineValues={turnsSparkline}
+            sparklineLabel="Turns per day this week"
+          />
+        )}
+        {noUsageInWindow ? null : (
+          <InsightsStat
+            label="Tokens in / out"
+            value={tileValue(
+              `${formatCount(usage.tokens.input)} / ${formatCount(usage.tokens.output)}`,
+              loading,
+            )}
+            detail="input / output"
+            loading={loading}
+            sparklineValues={tokensSparkline}
+            sparklineLabel="Tokens per day this week"
+          />
+        )}
         <InsightsStat
           label="Runs"
           value={tileValue(formatCount(stats.totalRuns), loading)}
@@ -776,7 +787,7 @@ function InsightsLanding({
           <InsightsStat
             label="To first token (p50 / p95)"
             value={latencyStatValue(latency.toFirstToken)}
-            detail="inference start → first token"
+            detail="wait until first token"
             loading={loading}
           />
           <InsightsStat
@@ -789,14 +800,14 @@ function InsightsLanding({
             <InsightsStat
               label="Cold start (p50 / p95)"
               value={latencyStatValue(latency.toReactorStart)}
-              detail="message received → reactor start"
+              detail="wait before the model starts"
               loading={loading}
             />
           ) : null}
         </StatGrid>
       ) : null}
 
-      {noUsageInWindow ? (
+      {noUsageInWindow && !activityWindowEmpty ? (
         <p className="insights-note">No usage recorded yet in this window.</p>
       ) : null}
 
@@ -824,7 +835,19 @@ function InsightsLanding({
 
       <div className="insights-grid">
         <section className="insights-panel">
-          <ActivityBars days={activityDays} />
+          {activityWindowEmpty ? (
+            <RichEmptyState
+              icon={<ChartBar />}
+              title="No activity yet"
+              description={
+                noUsageInWindow
+                  ? "No usage recorded yet in this window."
+                  : "Activity shows up here once there are turns in this window."
+              }
+            />
+          ) : (
+            <ActivityBars days={activityDays} />
+          )}
         </section>
 
         {mosaicParts.length > 0 ? (
@@ -1325,9 +1348,10 @@ export function InsightsPage({
     runs.kind === "loading" ||
     routines.kind === "loading";
 
-  // Usage/activity/tools errors must surface. Loading (and ready-empty /
-  // no-tenant ready zeros from InsightsRoute) still render zero defaults so
-  // the dashboard never invents spend. Runs/routines soft-empty on landing.
+  // Usage/activity/tools errors must surface. Loading and ready-empty /
+  // no-tenant still use EMPTY_OVERALL_USAGE at the data boundary so the
+  // dashboard never invents spend; zero-turn chrome hides usage tiles.
+  // Runs/routines soft-empty on landing.
   const usageErrorRetry =
     summary.kind === "error"
       ? summary.retry
@@ -1676,10 +1700,10 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
     effectiveTenantId === null
       ? { kind: "ready", data: EMPTY_OVERALL_USAGE }
       : summary;
-  const emptyList = <T,>(q: APIQuery<T>): APIQuery<T> =>
-    effectiveTenantId === null
-      ? ({ kind: "ready", data: [] as unknown as T } as APIQuery<T>)
-      : q;
+  const activityForPage: APIQuery<readonly DayActivity[]> =
+    effectiveTenantId === null ? { kind: "ready", data: [] } : activity;
+  const byToolForPage: APIQuery<readonly ToolCall[]> =
+    effectiveTenantId === null ? { kind: "ready", data: [] } : byTool;
   const runsForPage: APIQuery<{
     data: readonly InsightsRun[];
     nextCursor: string | null;
@@ -1710,8 +1734,8 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
     <InsightsPage
       path={currentPath}
       summary={emptySummary}
-      activity={emptyList(activity)}
-      byTool={emptyList(byTool)}
+      activity={activityForPage}
+      byTool={byToolForPage}
       runs={runsForPage}
       routines={routinesForPage}
       workbenches={workbenches}
