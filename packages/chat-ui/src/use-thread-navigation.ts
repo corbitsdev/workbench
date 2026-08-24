@@ -12,7 +12,7 @@
 // inside a sub-thread), so nothing here reasons about nesting beyond
 // grouping what it is handed.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "@corbits/react-ui";
 import { forkThread } from "./api";
 import type { WorkbenchThreadRow } from "./api";
@@ -62,10 +62,17 @@ export function useThreadNavigation(args: {
   const [pendingParentMessageId, setPendingParentMessageId] = useState<
     string | null
   >(null);
+  // A thread id `openThreadById` just set (first reply create, CL-6660)
+  // can land one render before the seeded `GET /threads` row is visible
+  // to this hook. Hold it so the stale-id effect below does not drop a
+  // brand-new open back to the root feed; clear once the row appears or
+  // the workbench changes.
+  const heldOpenThreadIdRef = useRef<string | null>(null);
 
   // Switching workbenches resets the view: a thread id belongs to the
   // workbench it came from.
   useEffect(() => {
+    heldOpenThreadIdRef.current = null;
     setOpenThreadId(null);
     setPendingParentMessageId(null);
   }, [activeWorkbenchId]);
@@ -74,12 +81,18 @@ export function useThreadNavigation(args: {
   // restart the reconnect-ownership challenge treats the run as dead and
   // every id under it disappears. That is a stale reference, not a
   // failure: drop it and fall back to the workbench's live feed rather
-  // than leaving the reader staring at an empty thread.
+  // than leaving the reader staring at an empty thread. A just-created
+  // id still waiting for its seeded row is held, not stale.
   useEffect(() => {
     if (openThreadId === null || !threadsLoaded) return;
-    if (!threads.some((thread) => thread.id === openThreadId)) {
-      setOpenThreadId(null);
+    if (threads.some((thread) => thread.id === openThreadId)) {
+      if (heldOpenThreadIdRef.current === openThreadId) {
+        heldOpenThreadIdRef.current = null;
+      }
+      return;
     }
+    if (heldOpenThreadIdRef.current === openThreadId) return;
+    setOpenThreadId(null);
   }, [openThreadId, threads, threadsLoaded]);
 
   const replyThreadFor = useCallback(
@@ -135,11 +148,13 @@ export function useThreadNavigation(args: {
   /** Open a thread that already exists — from the threads menu, a
    * breadcrumb, or a send that just created one. */
   const openThreadById = useCallback((threadId: string) => {
+    heldOpenThreadIdRef.current = threadId;
     setPendingParentMessageId(null);
     setOpenThreadId(threadId);
   }, []);
 
   const closeThread = useCallback(() => {
+    heldOpenThreadIdRef.current = null;
     setOpenThreadId(null);
     setPendingParentMessageId(null);
   }, []);

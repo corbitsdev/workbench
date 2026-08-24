@@ -973,6 +973,14 @@ export type SendWorkbenchMessageInput = {
    */
   readonly inReplyToMessageId?: string;
   /**
+   * Thread membership stamped onto the published `chat.message` so
+   * stream subscribers see the same scope the POST response returns
+   * (CL-6660). Assignment into `workbench_thread_messages` still happens
+   * in the route after the insert — this field only fills the row and
+   * the SSE payload.
+   */
+  readonly threadId?: string;
+  /**
    * A participant this message must reach regardless of what its text
    * mentions (CL-6451): an `@name` typed as a definition's wire name
    * ("assistant") resolves to a participant whose handle derives from
@@ -1061,6 +1069,7 @@ export async function sendWorkbenchMessage(
     sender: { name: null, address: input.senderAddress },
     senderPrincipalId: input.principalId,
     parts: input.messageParts,
+    ...(input.threadId !== undefined ? { threadId: input.threadId } : {}),
   });
 
   return {
