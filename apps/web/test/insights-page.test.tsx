@@ -91,15 +91,74 @@ function renderLanding(args: {
 }
 
 describe("InsightsPage usage honesty", () => {
-  test("ready-empty usage renders zero KPIs, not a load error", () => {
+  test("ready-empty usage hides usage KPI chrome, keeps Runs, not a load error", () => {
     const markup = renderLanding({
       summary: { kind: "ready", data: EMPTY_OVERALL_USAGE },
       activity: { kind: "ready", data: [] },
       byTool: { kind: "ready", data: [] },
     });
     expect(markup).not.toContain("load insights");
-    expect(markup).toContain("$0.00");
+    expect(markup).not.toContain("$0.00");
+    expect(markup).not.toContain("Tokens in / out");
+    expect(markup).toContain("Runs");
     expect(markup).toContain("Insights");
+  });
+
+  test("zero-turn landing does not render a padded empty activity chart", () => {
+    const markup = renderLanding({
+      summary: { kind: "ready", data: EMPTY_OVERALL_USAGE },
+      activity: { kind: "ready", data: [] },
+      byTool: { kind: "ready", data: [] },
+    });
+    expect(markup).not.toContain("Axis to");
+  });
+
+  test("all-zero activity days do not render a chart even when the raw series is non-empty", () => {
+    const markup = renderLanding({
+      summary: { kind: "ready", data: EMPTY_OVERALL_USAGE },
+      activity: {
+        kind: "ready",
+        data: [
+          { day: "2026-01-09", turns: 0, tokens: 0, byModel: [] },
+          { day: "2026-01-10", turns: 0, tokens: 0, byModel: [] },
+          { day: "2026-01-11", turns: 0, tokens: 0, byModel: [] },
+          { day: "2026-01-12", turns: 0, tokens: 0, byModel: [] },
+          { day: "2026-01-13", turns: 0, tokens: 0, byModel: [] },
+          { day: "2026-01-14", turns: 0, tokens: 0, byModel: [] },
+          { day: "2026-01-15", turns: 0, tokens: 0, byModel: [] },
+        ],
+      },
+      byTool: { kind: "ready", data: [] },
+    });
+    expect(markup).not.toContain("Axis to");
+  });
+
+  test("turns with a true zero cost still show $0.00", () => {
+    const markup = renderLanding({
+      summary: {
+        kind: "ready",
+        data: {
+          turns: 4,
+          tokens: {
+            input: 20,
+            cacheRead: 0,
+            cacheWrite: 0,
+            output: 10,
+            thinking: 0,
+            total: 30,
+          },
+          costUsd: 0,
+          byModel: [],
+        },
+      },
+      activity: {
+        kind: "ready",
+        data: [{ day: "2026-01-15", turns: 4, tokens: 30, byModel: [] }],
+      },
+      byTool: { kind: "ready", data: [] },
+    });
+    expect(markup).toContain("$0.00");
+    expect(markup).toContain("Tokens in / out");
   });
 
   test("summary API error surfaces load failure instead of zeros", () => {
@@ -791,6 +850,10 @@ describe("InsightsPage global landing — turn latency tiles (CL-6257)", () => {
     expect(el.textContent).toContain("3.4s / 8.0s");
     expect(el.textContent).toContain("To first token (p50 / p95)");
     expect(el.textContent).toContain("1.2s / 3.4s");
+    expect(el.textContent).toContain("wait until first token");
+    expect(el.textContent).toContain("first token → reply posted");
+    expect(el.textContent).not.toContain("inference start");
+    expect(el.textContent).not.toContain("reactor");
     // No cold starts this window — that stage tile does not render at all.
     expect(el.textContent).not.toContain("Cold start");
   });
@@ -808,5 +871,8 @@ describe("InsightsPage global landing — turn latency tiles (CL-6257)", () => {
     });
     expect(el.textContent).toContain("Cold start (p50 / p95)");
     expect(el.textContent).toContain("30.0s / 45.0s");
+    expect(el.textContent).toContain("wait before the model starts");
+    expect(el.textContent).not.toContain("reactor");
+    expect(el.textContent).not.toContain("inference start");
   });
 });
