@@ -371,6 +371,7 @@ export function AgentsPage({
   onCreateOpenChange,
   onCreated,
   onArchiveSelected,
+  skillsError,
 }: {
   readonly tenantId: string | null;
   readonly definitions: readonly AgentDefinitionWithDisplayName[];
@@ -386,6 +387,9 @@ export function AgentsPage({
   readonly onCreateOpenChange: (open: boolean) => void;
   readonly onCreated: (definition: AgentDefinition) => void;
   readonly onArchiveSelected: (ids: readonly string[]) => void;
+  /** Set when the directory's attached-skills batch failed; distinct from
+   * agents that simply have no skills pinned. */
+  readonly skillsError?: string;
 }) {
   const selected = definitions.find((d) => d.id === selectedId) ?? null;
   const definitionIds = useMemo(
@@ -422,6 +426,14 @@ export function AgentsPage({
       <div className="flex min-h-0 flex-1">
         <div className="min-h-0 min-w-0 flex-1 overflow-auto">
           <PageShell width="full" className="page-fill">
+            {skillsError !== undefined ? (
+              <p
+                className="px-4 pb-3 text-sm text-destructive sm:px-7"
+                role="alert"
+              >
+                Could not load agent skills: {skillsError}
+              </p>
+            ) : null}
             {definitions.length === 0 ? (
               <RichEmptyState
                 icon={<Robot />}
@@ -702,6 +714,9 @@ export function AgentsRoute({
           toast(archiveResultToast(result));
         });
       }}
+      {...(directory.data.skillsError !== undefined
+        ? { skillsError: directory.data.skillsError }
+        : {})}
     />
   );
 }

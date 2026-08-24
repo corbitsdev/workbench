@@ -203,6 +203,13 @@ describe("AgentDetailPage render", () => {
     expect(markup).toContain("skills");
     expect(markup).toContain("The registry is unreachable.");
   });
+
+  test("CL-6836: skillsError is an alert above Skills, never silent empty pins", () => {
+    const markup = renderPage({ skillsError: "500: down" });
+    expect(markup).toContain('role="alert"');
+    expect(markup).toContain("Could not load agent skills");
+    expect(markup).toContain("500: down");
+  });
 });
 
 describe("describeSaveReport", () => {

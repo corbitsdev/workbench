@@ -396,8 +396,8 @@ export function setAgentDefinitionStatus(
 const DefinitionSkillsMap = type({ skills: { "[string]": "string[]" } });
 
 /** Every attached-skill list for the given definitions, keyed by definition
- * id. Best-effort at the call site — a bench with no skills backed asset
- * yet just gets `[]` for everything, never an error that blanks the page. */
+ * id. Call sites treat failure as its own outcome (`skillsError`) rather than
+ * coercing to `{}` — empty attachments and a failed read are different. */
 export function listAgentSkills(
   tenantId: string,
   definitionIds: readonly string[],
@@ -435,20 +435,32 @@ export type AgentDirectoryData = {
   /** Set when the model catalog failed independently; definitions and
    * instances still load so the page stays usable. */
   readonly modelsError?: string;
+  /** Set when the attached-skills batch failed independently; definitions
+   * and instances still load. Distinct from an empty `definitionSkills`
+   * map — failure must never read as "no skills attached". */
+  readonly skillsError?: string;
 };
 
 type ModelsOutcome =
   | { readonly ok: true; readonly models: readonly CatalogModel[] }
   | { readonly ok: false; readonly message: string };
 
+type SkillsOutcome =
+  | {
+      readonly ok: true;
+      readonly definitionSkills: Record<string, readonly string[]>;
+    }
+  | { readonly ok: false; readonly message: string };
+
 /**
  * Loads a bench's agent directory. Definitions and instances are required;
  * the model catalog and each definition's attached skills are best-effort
- * so either failing alone never blanks the page. `instances` comes from
- * `listTopLevelRuns`, which already excludes every folded run (workbench
- * host, invited agent) server-side — see `@corbits/folded-runs`'s
- * `scope-routes.ts` — so this page never has to derive that exclusion
- * itself from a tenant's workbenches.
+ * so either failing alone never blanks the page. Failures surface as
+ * `modelsError` / `skillsError` rather than silent empty collections.
+ * `instances` comes from `listTopLevelRuns`, which already excludes every
+ * folded run (workbench host, invited agent) server-side — see
+ * `@corbits/folded-runs`'s `scope-routes.ts` — so this page never has to
+ * derive that exclusion itself from a tenant's workbenches.
  */
 export async function loadAgentDirectory(
   tenantId: string,
@@ -465,34 +477,33 @@ export async function loadAgentDirectory(
     ),
   ]);
 
-  const definitionSkills = await listAgentSkills(
+  const skillsOutcome = await listAgentSkills(
     tenantId,
     definitions.map((definition) => definition.id),
-  ).catch(() => ({}) as Record<string, readonly string[]>);
+  ).then(
+    (definitionSkills): SkillsOutcome => ({ ok: true, definitionSkills }),
+    (cause: unknown): SkillsOutcome => ({
+      ok: false,
+      message: cause instanceof Error ? cause.message : String(cause),
+    }),
+  );
 
-  if (modelsOutcome.ok) {
-    return {
-      tenantId,
-      definitions,
-      instances,
-      models: modelsOutcome.models,
-      definitionSkills,
-    };
-  }
   return {
     tenantId,
     definitions,
     instances,
-    models: [],
-    definitionSkills,
-    modelsError: modelsOutcome.message,
+    models: modelsOutcome.ok ? modelsOutcome.models : [],
+    definitionSkills: skillsOutcome.ok ? skillsOutcome.definitionSkills : {},
+    ...(modelsOutcome.ok ? {} : { modelsError: modelsOutcome.message }),
+    ...(skillsOutcome.ok ? {} : { skillsError: skillsOutcome.message }),
   };
 }
 
 /**
  * Loads a bench's full agent directory. One query owns definitions +
- * instances + models (models are best-effort inside `loadAgentDirectory`) so
- * the page keeps a single loading/error envelope. Pass no reloadKey —
+ * instances + models + skills (models and skills are best-effort inside
+ * `loadAgentDirectory`, surfacing `modelsError` / `skillsError`) so the
+ * page keeps a single loading/error envelope. Pass no reloadKey —
  * invalidate `tenantKeys.agentDirectory(tenantId)` after create.
  */
 export function useAgentDirectory(

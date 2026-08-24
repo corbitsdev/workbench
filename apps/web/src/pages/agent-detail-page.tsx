@@ -179,6 +179,7 @@ export function AgentDetailPage({
   onSaved,
   onDuplicated,
   onStatusChanged,
+  skillsError,
 }: {
   readonly tenantId: string;
   readonly definition: AgentDefinitionWithDisplayName;
@@ -191,6 +192,9 @@ export function AgentDetailPage({
   readonly onSaved: (report: SaveReport) => void;
   readonly onDuplicated: (slug: string) => Promise<void>;
   readonly onStatusChanged: () => void;
+  /** Set when the bench directory's attached-skills batch failed. Distinct
+   * from an agent that simply has no pins. */
+  readonly skillsError?: string;
 }) {
   const [displayName, setDisplayName] = useState(definition.displayName);
   const [systemPrompt, setSystemPrompt] = useState(detail.systemPrompt);
@@ -477,6 +481,11 @@ export function AgentDetailPage({
               title="Skills"
               description="Pinned skills this agent can load while it works."
             >
+              {skillsError !== undefined ? (
+                <p className="mb-3 text-sm text-destructive" role="alert">
+                  Could not load agent skills: {skillsError}
+                </p>
+              ) : null}
               <AgentSkillsPicker
                 tenantId={tenantId}
                 selected={[...skills]}
@@ -692,6 +701,9 @@ export function AgentDetailRoute({
         setReloadKey((key) => key + 1);
         void refreshDirectory();
       }}
+      {...(directory.data.skillsError !== undefined
+        ? { skillsError: directory.data.skillsError }
+        : {})}
     />
   );
 }
