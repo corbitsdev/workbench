@@ -52,6 +52,7 @@ let createWorkbenchCalls: Record<string, unknown>[] = [];
 let runNowCalls = 0;
 let slackConfigured = false;
 let granolaConnected = false;
+let capabilitiesProbeFails = false;
 let networkDelayMs = 0;
 let workbenchAgentsByWorkbench: Record<
   string,
@@ -104,6 +105,12 @@ async function routeFetch(
     return jsonResponse({ workbenchTenantIds: [] });
   }
   if (url.includes("/api/deployment-capabilities")) {
+    if (capabilitiesProbeFails) {
+      return new Response(JSON.stringify({ message: "boom" }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      });
+    }
     return jsonResponse({ slackConfigured });
   }
   if (url.includes("/credentials/resolve/Granola")) {
@@ -272,6 +279,7 @@ describe("RoutinePanel", () => {
     runNowCalls = 0;
     slackConfigured = false;
     granolaConnected = false;
+    capabilitiesProbeFails = false;
     networkDelayMs = 0;
     chatWorkbenches = [];
     runsByRoutineId = {};
@@ -603,6 +611,17 @@ describe("RoutinePanel", () => {
         el.textContent?.trim(),
       );
       expect(items).toContain("Granola call notes");
+    });
+
+    test("a failed capabilities probe still offers Slack — never hides solely because the probe failed (CL-6835)", async () => {
+      capabilitiesProbeFails = true;
+      await renderPanel({ routineId: null, workbenchId: "ch_1" });
+      act(() => openMenu(buttonWithText("+ Add trigger")));
+      await settle();
+      const items = [...document.querySelectorAll('[role="menuitem"]')].map(
+        (el) => el.textContent?.trim(),
+      );
+      expect(items).toContain("Slack");
     });
 
     test("picking a schedule preset commits the trigger in one click — no sub-menu chain", async () => {
