@@ -19,7 +19,7 @@
 // erased; it stays readable through the platform's own run routes,
 // which is the whole audit-trail argument for relaunching rather than
 // resurrecting.
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { type } from "arktype";
 import type { DB } from "@intx/db";
 import { workflowRun } from "@intx/db/schema";
@@ -186,6 +186,47 @@ export async function resolveLiveByStableId(
   const run = await readRun(db, row.currentRunId);
   if (run === undefined || run.address === null) return undefined;
   return { binding: bindingFrom(row, requireDomain(run.address)), run };
+}
+
+/**
+ * The oldest standing `workbench_launch` in this tenant whose live run
+ * is the same agent as `definitionId` — row-id match first, else the
+ * definition's asset (a re-projected authored row over the same asset
+ * is the same principal, not a sibling). Invite reuses this binding
+ * instead of minting Sales-2.
+ */
+export async function findStandingLaunchByDefinition(
+  db: DB["db"],
+  input: {
+    readonly tenantId: string;
+    readonly definitionId: string;
+    readonly resolveDefinitionAssetId: (
+      definitionId: string,
+    ) => Promise<string | undefined>;
+  },
+): Promise<AgentBinding | undefined> {
+  const rows = await db
+    .select()
+    .from(workbenchLaunch)
+    .where(eq(workbenchLaunch.tenantId, input.tenantId))
+    .orderBy(asc(workbenchLaunch.createdAt));
+  const invitedAssetId = await input.resolveDefinitionAssetId(
+    input.definitionId,
+  );
+  for (const row of rows) {
+    const run = await readRun(db, row.currentRunId);
+    if (run === undefined || run.address === null) continue;
+    const liveDefinitionId = run.definitionId;
+    if (liveDefinitionId === input.definitionId) {
+      return bindingFrom(row, requireDomain(run.address));
+    }
+    if (invitedAssetId === undefined || liveDefinitionId === null) continue;
+    const liveAssetId = await input.resolveDefinitionAssetId(liveDefinitionId);
+    if (liveAssetId === invitedAssetId) {
+      return bindingFrom(row, requireDomain(run.address));
+    }
+  }
+  return undefined;
 }
 
 /**

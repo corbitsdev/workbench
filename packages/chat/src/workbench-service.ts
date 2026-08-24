@@ -257,25 +257,47 @@ export async function resolveInvitedDisplayName(
 }
 
 /**
- * The invite core: launches the definition's own instance, derives
- * its friendly mention handle, appends the participant record, posts
- * the join event onto the workbench's timeline, and arms the reply
- * bridge. Shared by `POST .../invite` and chat creation (a chat's
- * single agent is invited exactly this way, at creation) so the two
- * paths can never drift.
+ * The invite core: launches the definition's own instance (or reuses
+ * the tenant's standing run for that agent), derives its friendly
+ * mention handle, appends the participant record, posts the join
+ * event onto the workbench's timeline, and arms the reply bridge.
+ * Shared by `POST .../invite` and chat creation (a chat's single
+ * agent is invited exactly this way, at creation) so the two paths
+ * can never drift.
  *
- * Always launches: an explicit invite deliberately CAN place a second
- * instance of one definition in a room (that is what handle
- * de-duplication — "echo", "echo-2" — exists for). "One room
- * participant = one live run" (CL-6451) is enforced where the sibling
- * was never asked for: the message pipeline's command intercept and
- * `startWorkflowCommand` resolve residency via
- * `findResidentAgentForDefinition` before ever reaching this launch.
+ * Room-local first (CL-6978): if this room already holds a participant
+ * launched from the definition, return that handle/address without
+ * launching and without appending a second row — `addParticipant` does
+ * not de-dupe addresses. Tenant-wide, `launchInvite` reuses the
+ * standing `workbench_launch` so the same principal can sit in its DM
+ * and many channels without a sibling instance.
  */
 export async function launchAndJoinAgent(
   deps: LaunchAndJoinAgentDeps,
   input: LaunchAndJoinAgentInput,
 ): Promise<LaunchAndJoinAgentResult> {
+  const participants = participantsOf(input.existingSettings);
+  const resident = await findResidentAgentForDefinition(
+    deps.platform,
+    participants,
+    input.definitionId,
+  );
+  if (resident !== undefined) {
+    const displayName = await resolveInvitedDisplayName(
+      deps.platform,
+      input.invitable,
+      input.definitionId,
+    );
+    return {
+      address: resident.address,
+      definitionId: input.definitionId,
+      handle: resident.handle,
+      displayName,
+      settings: input.existingSettings,
+      joinEventDelivered: Promise.resolve(),
+    };
+  }
+
   const launched = await deps.platform.launchInvite({
     tenantId: input.tenantId,
     creatorPrincipalId: input.principalId,
@@ -299,7 +321,6 @@ export async function launchAndJoinAgent(
   // the settings PATCH route's record-then-mail ordering: the
   // participant list is the durable source of truth, so a failure
   // below never leaves it unwritten.
-  const participants = participantsOf(input.existingSettings);
   const row = await deps.store.updateWorkbenchSettings({
     tenantId: input.tenantId,
     workbenchId: input.workbenchId,
@@ -826,12 +847,11 @@ export type StartWorkflowCommandResult = {
  * starts the run, mirroring corbits-code's own workflow dispatch: no
  * args is "Continue.", not "nothing to do".
  *
- * One room participant = one live run (CL-6451): a command naming a
- * definition already resident in the room delivers into the existing
- * participant's run — the same anti-sibling rule the message
- * pipeline's `@name` intercept enforces — instead of launching again.
- * A deliberate second instance stays possible through the explicit
- * invite affordance, which always launches.
+ * One room participant = one live run (CL-6451 / CL-6978): a command
+ * naming a definition already resident in the room delivers into the
+ * existing participant's run — the same anti-sibling rule the message
+ * pipeline's `@name` intercept and explicit invite both enforce —
+ * instead of launching again.
  */
 export async function startWorkflowCommand(
   deps: StartWorkflowCommandDeps,
