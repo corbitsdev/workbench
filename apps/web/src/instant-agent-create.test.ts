@@ -246,4 +246,138 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
     // owner reported it from.
     expect(queryClient.getQueryState(staleQueryKey)?.isInvalidated).toBe(true);
   });
+
+  // CL-6656: the prompt-box path mints a blank "New Workbench" and used to
+  // leave that placeholder in the sidebar forever. With a known first
+  // message, create renames via the same `chat/name` settings PATCH the
+  // sidebar rename uses.
+  test("blank create with a first message renames off New Workbench via chat/name", async () => {
+    const navigated: string[] = [];
+    const calls = stubFetch((path) => {
+      if (path.includes("/workflows/definitions")) {
+        return json({ data: [assistantDefinitionWire], nextCursor: null });
+      }
+      if (path.endsWith("/chat/workbenches")) {
+        return json({
+          id: "chan-adhoc",
+          title: NEW_WORKBENCH_TITLE,
+          kind: "chat",
+          pinned: false,
+          participants: [],
+        });
+      }
+      if (path.endsWith("/chat/workbenches/chan-adhoc/messages")) {
+        return json({
+          id: "msg-1",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          sender: { name: "Sawyer", address: "principal-1" },
+          parts: [{ kind: "text", text: "Plan the Q3 launch" }],
+        });
+      }
+      if (path.endsWith("/chat/workbenches/chan-adhoc/settings")) {
+        return json({
+          id: "chan-adhoc",
+          title: "Plan the Q3 launch",
+          kind: "chat",
+          pinned: false,
+          participants: [],
+          settings: { "chat/name": "Plan the Q3 launch" },
+          contextWindow: { value: 0, source: "inherit" },
+        });
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    });
+
+    await createWorkbenchFromTemplate(
+      "tnt_1",
+      "blank",
+      (to) => navigated.push(to),
+      newQueryClient(),
+      undefined,
+      "Plan the Q3 launch",
+    );
+
+    const settingsCall = calls.find((call) =>
+      call.path.endsWith("/chat/workbenches/chan-adhoc/settings"),
+    );
+    expect(settingsCall).toBeDefined();
+    expect(JSON.parse(String(settingsCall?.init?.body))).toEqual({
+      "chat/name": "Plan the Q3 launch",
+    });
+    expect(navigated).toEqual(["/w/chan-adhoc"]);
+  });
+
+  test("prefab create with a first message does not overwrite the template title", async () => {
+    const calls = stubFetch((path) => {
+      if (path.includes("/workflows/definitions")) {
+        return json({ data: [assistantDefinitionWire], nextCursor: null });
+      }
+      if (path.endsWith("/library/templates/code-review")) {
+        return json({
+          id: "code-review",
+          content: serializeWorkbenchTemplateManifest(CODE_REVIEW_TEMPLATE),
+        });
+      }
+      if (path.endsWith("/chat/workbenches")) {
+        return json({
+          id: "chan-1",
+          title: "Code review",
+          kind: "chat",
+          pinned: false,
+          participants: [],
+        });
+      }
+      if (path.endsWith("/template-blocks/code-review/deploy")) {
+        return json({ id: "def-code-review-block", created: true });
+      }
+      if (path.endsWith("/agent-definitions")) {
+        return json({ ...assistantDefinitionWire, id: "def-reviewer-1" });
+      }
+      if (path.endsWith("/chat/workbenches/chan-1/invite")) {
+        return json({ address: "agent:invited", definitionId: "def-reviewer-1" });
+      }
+      if (path.endsWith("/chat/workbenches/chan-1/settings")) {
+        return json({
+          id: "chan-1",
+          title: "Code review",
+          kind: "chat",
+          pinned: false,
+          participants: [],
+          settings: {},
+          contextWindow: { value: 0, source: "inherit" },
+        });
+      }
+      if (path.endsWith("/chat/workbenches/chan-1/messages")) {
+        return json({
+          id: "msg-1",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          sender: { name: "Sawyer", address: "principal-1" },
+          parts: [{ kind: "text", text: "Review the auth PR" }],
+        });
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    });
+
+    await createWorkbenchFromTemplate(
+      "tnt_1",
+      "code-review",
+      () => {},
+      newQueryClient(),
+      undefined,
+      "Review the auth PR",
+    );
+
+    const settingsBodies = calls
+      .filter((call) => call.path.endsWith("/chat/workbenches/chan-1/settings"))
+      .map((call) => JSON.parse(String(call.init?.body)));
+    expect(
+      settingsBodies.some(
+        (body) =>
+          typeof body === "object" &&
+          body !== null &&
+          "chat/name" in body &&
+          body["chat/name"] === "Review the auth PR",
+      ),
+    ).toBe(false);
+  });
 });
