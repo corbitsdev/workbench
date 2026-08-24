@@ -664,10 +664,7 @@ function RoutineEditorPanel({
               onSlack={() => addWebhookTrigger("Slack")}
             />
           ) : trigger === null && addingSchedule ? (
-            <ScheduleEditor
-              value={null}
-              onChange={commitSchedule}
-            />
+            <ScheduleEditor value={null} onChange={commitSchedule} />
           ) : trigger !== null && trigger.kind === "webhook" ? (
             <div className="flex items-center justify-between gap-2 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] px-2.5 py-1.5 text-sm">
               <span>{triggerRowSummary(trigger, triggerSourceLabel)}</span>
@@ -683,10 +680,7 @@ function RoutineEditorPanel({
             </div>
           ) : trigger !== null ? (
             <div className="flex flex-col gap-2">
-              <ScheduleEditor
-                value={trigger}
-                onChange={commitSchedule}
-              />
+              <ScheduleEditor value={trigger} onChange={commitSchedule} />
               <div className="flex justify-end">
                 <Button
                   type="button"
