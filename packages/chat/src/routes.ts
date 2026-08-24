@@ -322,6 +322,12 @@ const CreateWorkbenchBody = type({
   "participants?": "string[]",
   "definitionId?": "string",
   "principalId?": "string",
+  /**
+   * Accepted and ignored. `kind: "chat"` + `definitionId` always
+   * find-or-reopens via `findExistingAgentChat` (CL-6981); this flag is
+   * no longer an opt-in. Callers that still send it (Myra land-hop,
+   * `openAgentDm`) are not 400'd.
+   */
   "reuseExisting?": "boolean",
   /**
    * The picked template's own promise line
@@ -879,18 +885,10 @@ const MoveWorkbenchBody = type({
 });
 
 /**
- * Finds an existing chat with the given agent, for the one caller that
- * deliberately wants find-or-create semantics: the home-workbench
- * land-hop (`ensureMyraWorkbench`, via `default-agent-workbench.ts`), which
- * passes `reuseExisting: true` so returning to "Myra" always reopens the
- * same conversation rather than minting a fresh one on every visit.
- *
- * Every other caller — "+ New Workbench" picking an agent as a
- * template, or a freshly drafted agent's own launch — always creates
- * (CL-6089): the same agent picked twice from the picker is two
- * independent workbenches, each with its own workbench tenant and its own
- * launched agent instance, not the same conversation reopened. `POST
- * /workbenches` only calls this lookup when `reuseExisting` is set.
+ * Finds an existing chat with the given agent. `POST /workbenches` with
+ * `kind: "chat"` + `definitionId` always find-or-reopens this way
+ * (CL-6981): a DM is the one 1:1 tenant with that agent. Uniqueness is
+ * per (bench, definitionId). Product reopens; it does not clone.
  *
  * Matches forward, by the `chat/definitionId` every agent chat has
  * carried in its settings since this landed, and falls back to
@@ -1060,17 +1058,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
 
-      // "+ New Workbench" always creates (CL-6089): picking an agent in
-      // the picker uses it as a template, minting a fresh workbench
-      // every time, not reopening a prior conversation. The one
-      // exception is the deliberate land-hop to the account's home
-      // workbench (`ensureMyraWorkbench`), which opts in with
-      // `reuseExisting: true` so landing on "Myra" always finds the
-      // same conversation instead of forking a new one on every visit.
+      // kind: chat + definitionId always find-or-reopens (CL-6981): a DM
+      // is the one 1:1 tenant with that agent. `reuseExisting` is accepted
+      // and ignored — omitted and `false` reopen the same as `true`.
       // Checked before anything is minted, and before the (cheaper,
       // in-memory) principal-self-chat validation below, since a found
       // match short-circuits the whole handler.
-      if (isChatWithDefinition(body) && body.reuseExisting === true) {
+      if (isChatWithDefinition(body)) {
         const existing = await findExistingAgentChat(
           deps,
           tenant.id,

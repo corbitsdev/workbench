@@ -573,7 +573,7 @@ describe("POST /workbenches", () => {
   });
 });
 
-describe("POST /workbenches — reuseExisting: true reopens the land-hop's chat, not create (CL-6089)", () => {
+describe("POST /workbenches — kind: chat + definitionId always find-or-reopens (CL-6981)", () => {
   test("creating a chat with the same agent twice, reuseExisting: true both times, reuses the first chat instead of forking a duplicate", async () => {
     const deps = buildDeps({
       platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
@@ -782,8 +782,8 @@ describe("POST /workbenches — reuseExisting: true reopens the land-hop's chat,
   });
 });
 
-describe("POST /workbenches — agent chat always creates by default (CL-6089)", () => {
-  test("creating a chat with the same agent twice, reuseExisting omitted both times, mints two independent workbenches", async () => {
+describe("POST /workbenches — reuseExisting no longer opts out of find-or-reopen (CL-6981)", () => {
+  test("creating a chat with the same agent twice, reuseExisting omitted both times, reopens the first chat", async () => {
     const deps = buildDeps({
       platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
     });
@@ -800,28 +800,24 @@ describe("POST /workbenches — agent chat always creates by default (CL-6089)",
       definitionId: "wfd_echo",
     });
 
-    expect(second.response.status).toBe(201);
-    expect(second.body.id).not.toBe(first.body.id);
+    expect(second.response.status).toBe(200);
+    expect(second.body.id).toBe(first.body.id);
     expect(second.body.kind).toBe("chat");
 
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    expect(platform.launchInviteCalls).toHaveLength(2);
+    expect(platform.launchInviteCalls).toHaveLength(1);
     const chats = await deps.store.listWorkbenchSettings(TENANT.id, "chat");
-    expect(chats).toHaveLength(2);
+    expect(chats).toHaveLength(1);
 
-    // CL-6387: "mints two independent workbenches" must mean two genuinely
-    // distinct child tenants — not two workbench rows sharing one tenant
-    // (which would alias participants/grants across both chats).
     const firstTenancy = await deps.tenancy.getWorkbenchTenancy(first.body.id);
     const secondTenancy = await deps.tenancy.getWorkbenchTenancy(
       second.body.id,
     );
     expect(firstTenancy?.tenantId).toBeDefined();
-    expect(secondTenancy?.tenantId).toBeDefined();
-    expect(secondTenancy?.tenantId).not.toBe(firstTenancy?.tenantId);
+    expect(secondTenancy?.tenantId).toBe(firstTenancy?.tenantId);
   });
 
-  test("creating a chat with the same agent twice, reuseExisting: false explicitly, still mints two workbenches", async () => {
+  test("creating a chat with the same agent twice, reuseExisting: false explicitly, still reopens the first chat", async () => {
     const deps = buildDeps({
       platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
     });
@@ -839,11 +835,11 @@ describe("POST /workbenches — agent chat always creates by default (CL-6089)",
     });
 
     expect(first.response.status).toBe(201);
-    expect(second.response.status).toBe(201);
-    expect(second.body.id).not.toBe(first.body.id);
+    expect(second.response.status).toBe(200);
+    expect(second.body.id).toBe(first.body.id);
   });
 
-  test("a pre-existing chat for the same agent (from an earlier find-or-create call) doesn't stop a later always-create call from minting its own", async () => {
+  test("a pre-existing chat for the same agent is reopened even when reuseExisting is omitted", async () => {
     const deps = buildDeps({
       platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
     });
@@ -861,10 +857,10 @@ describe("POST /workbenches — agent chat always creates by default (CL-6089)",
       definitionId: "wfd_echo",
     });
 
-    expect(picked.response.status).toBe(201);
-    expect(picked.body.id).not.toBe(landHop.body.id);
+    expect(picked.response.status).toBe(200);
+    expect(picked.body.id).toBe(landHop.body.id);
     const chats = await deps.store.listWorkbenchSettings(TENANT.id, "chat");
-    expect(chats).toHaveLength(2);
+    expect(chats).toHaveLength(1);
   });
 });
 
