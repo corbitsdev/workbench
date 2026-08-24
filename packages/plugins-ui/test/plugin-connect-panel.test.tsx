@@ -13,6 +13,7 @@ import type { ConnectorDescriptor } from "@workbench/connections/registry";
 import type { ResolvedPlugin } from "@workbench/connections/plugins";
 
 import { PluginConnectPanel } from "../src/plugin-connect-panel";
+import { PLUGINS_STRINGS } from "../src/strings";
 
 const realFetch = globalThis.fetch;
 let mountedRoots: Root[] = [];
@@ -169,7 +170,7 @@ describe("PluginConnectPanel", () => {
     });
     await settle();
 
-    expect(container.textContent).toContain("Couldn't disconnect");
+    expect(container.textContent).toContain(PLUGINS_STRINGS.disconnectError);
   });
 
   function githubDescriptor(): ConnectorDescriptor {

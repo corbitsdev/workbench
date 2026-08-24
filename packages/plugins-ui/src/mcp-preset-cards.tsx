@@ -15,9 +15,36 @@ import {
   type McpPreset,
 } from "./mcp-servers-api";
 import { PluginLogo } from "./plugin-logo";
+import { PLUGINS_STRINGS } from "./strings";
 
 function messageOf(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
+}
+
+const MCP_OAUTH_ERROR_COPY: Readonly<Record<string, string>> = {
+  discovery_failed: "Couldn't reach that app's sign-in. Try connecting again.",
+  no_authorization_needed:
+    "That app didn't start a sign-in. Try connecting again.",
+  state_expired:
+    "The connection took too long or was already used. Try connecting again.",
+  state_mismatch: "The connection was interrupted. Try connecting again.",
+  exchange_failed: "That app didn't hand back a token. Try connecting again.",
+  connect_failed: "Couldn't finish connecting. Try connecting again.",
+  setup_failed:
+    "The sign-in worked, but storing the connection failed. Try connecting again.",
+  not_found: "That app isn't in this catalog.",
+  bad_request: "This app doesn't connect with a sign-in here.",
+};
+
+function mcpOauthReturnError(slug: string): string | null {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("mcpOauth") !== slug) return null;
+  if (params.get("outcome") !== "error") return null;
+  const code = params.get("code");
+  return (
+    (code !== null ? MCP_OAUTH_ERROR_COPY[code] : undefined) ??
+    "The connection did not finish. Try connecting again."
+  );
 }
 
 function McpPresetCard({
@@ -32,7 +59,9 @@ function McpPresetCard({
   readonly onChanged: (toolCount?: number) => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() =>
+    mcpOauthReturnError(preset.slug),
+  );
   const [tokenFieldOpen, setTokenFieldOpen] = useState(false);
   const [token, setToken] = useState("");
 
@@ -72,7 +101,7 @@ function McpPresetCard({
         toast(`${preset.displayName} disconnected.`);
         onChanged();
       })
-      .catch(() => setError("Couldn't disconnect — try again."))
+      .catch(() => setError(PLUGINS_STRINGS.disconnectError))
       .finally(() => setBusy(false));
   }
 

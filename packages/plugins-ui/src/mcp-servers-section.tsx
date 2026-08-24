@@ -18,6 +18,7 @@ import {
   listMcpServers,
   type McpServer,
 } from "./mcp-servers-api";
+import { PLUGINS_STRINGS } from "./strings";
 
 function messageOf(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
@@ -43,7 +44,7 @@ function ConnectedMcpServerRow({
         toast(`${server.name} disconnected.`);
         onChanged();
       })
-      .catch(() => setError("Couldn't disconnect — try again."))
+      .catch(() => setError(PLUGINS_STRINGS.disconnectError))
       .finally(() => setBusy(false));
   }
 

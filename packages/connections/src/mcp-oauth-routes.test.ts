@@ -443,7 +443,7 @@ describe("MCP OAuth connect flow", () => {
     }
   });
 
-  test("an unknown slug with no url override is a 404", async () => {
+  test("an unknown slug with no url override redirects as an error", async () => {
     const hub = fakeHub();
     const routes = createMcpOAuthRoutes({
       hubUrl: "http://hub.test",
@@ -453,8 +453,13 @@ describe("MCP OAuth connect flow", () => {
       apiCall: hub.apiCall,
     });
     const app = mountAs(routes);
-    const response = await app.request("/not-a-preset/start");
-    expect(response.status).toBe(404);
+    const response = await app.request("/not-a-preset/start", {
+      redirect: "manual",
+    });
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(
+      "/plugins?mcpOauth=not-a-preset&outcome=error&code=not_found",
+    );
   });
 
   test("a preset that doesn't connect with OAuth is refused at start, not mid-dance", async () => {
@@ -470,8 +475,13 @@ describe("MCP OAuth connect flow", () => {
     // github-mcp is a token preset (GitHub offers no dynamic client
     // registration) and exa is keyless — neither has an OAuth dance.
     for (const slug of ["github-mcp", "exa"]) {
-      const response = await app.request(`/${slug}/start`);
-      expect(response.status).toBe(400);
+      const response = await app.request(`/${slug}/start`, {
+        redirect: "manual",
+      });
+      expect(response.status).toBe(302);
+      expect(response.headers.get("location")).toBe(
+        `/plugins?mcpOauth=${slug}&outcome=error&code=bad_request`,
+      );
     }
   });
 
