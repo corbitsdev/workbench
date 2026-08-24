@@ -53,6 +53,7 @@ const WORKBENCH_WIRE = {
 function stubFetch(
   sentMessages?: unknown[],
   workbench: typeof WORKBENCH_WIRE = WORKBENCH_WIRE,
+  options: { readonly turnsFail?: boolean } = {},
 ) {
   globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -79,6 +80,18 @@ function stubFetch(
     }
     if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
     if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
+      return json({ items: [] });
+    }
+    // CL-6380 catch-up: empty list = nothing running. Returning this by
+    // default keeps agent-participant mounts from treating an unstubbed
+    // turns path as a resume failure (CL-6833).
+    if (/\/chat\/workbenches\/[^/]+\/turns(?:\/|$|\?)/.test(path)) {
+      if (options.turnsFail === true) {
+        return new Response(JSON.stringify({ error: "turns unavailable" }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        });
+      }
       return json({ items: [] });
     }
     if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
@@ -1725,6 +1738,93 @@ describe("Workbench header polish (CL-6106)", () => {
 
     const actions = harness.container.querySelector(".chat-workbench-actions");
     expect(actions?.lastElementChild?.contains(button)).toBe(true);
+    harness.unmount();
+  });
+});
+
+describe("CL-6833: running-turn resume failure is visible, never silent idle", () => {
+  test("a failed catch-up fetch shows the resume-failed banner with Retry", async () => {
+    stubFetch(undefined, WORKBENCH_WITH_AGENT_WIRE, { turnsFail: true });
+    const harness = await mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "ch_1",
+    });
+    await harness.settle();
+    await harness.settle();
+
+    const banner = harness.container.querySelector(
+      ".chat-resume-failed-banner",
+    );
+    expect(banner).not.toBeNull();
+    expect(banner?.getAttribute("role")).toBe("alert");
+    expect(harness.container.textContent).toContain(
+      "Couldn't resume the running reply",
+    );
+    expect(
+      [...harness.container.querySelectorAll("button")].some(
+        (button) => button.textContent?.trim() === "Retry",
+      ),
+    ).toBe(true);
+    harness.unmount();
+  });
+
+  test("a successful empty catch-up leaves the room without a resume banner", async () => {
+    stubFetch(undefined, WORKBENCH_WITH_AGENT_WIRE);
+    const harness = await mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "ch_1",
+    });
+    await harness.settle();
+    await harness.settle();
+
+    expect(
+      harness.container.querySelector(".chat-resume-failed-banner"),
+    ).toBeNull();
+    harness.unmount();
+  });
+
+  test("Retry re-asks the turns endpoint after a resume failure", async () => {
+    let turnsCalls = 0;
+    stubFetch(undefined, WORKBENCH_WITH_AGENT_WIRE, { turnsFail: true });
+    const failingFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = typeof input === "string" ? input : String(input);
+      if (/\/chat\/workbenches\/[^/]+\/turns(?:\/|$|\?)/.test(path)) {
+        turnsCalls += 1;
+        if (turnsCalls >= 2) {
+          return new Response(JSON.stringify({ items: [] }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+      }
+      return failingFetch(input, init);
+    }) as typeof fetch;
+
+    const harness = await mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "ch_1",
+    });
+    await harness.settle();
+    await harness.settle();
+
+    expect(
+      harness.container.querySelector(".chat-resume-failed-banner"),
+    ).not.toBeNull();
+
+    const retry = [...harness.container.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Retry",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      retry.click();
+      await sleep(30);
+    });
+    await harness.settle();
+
+    expect(turnsCalls).toBeGreaterThanOrEqual(2);
+    expect(
+      harness.container.querySelector(".chat-resume-failed-banner"),
+    ).toBeNull();
     harness.unmount();
   });
 });
