@@ -51,6 +51,7 @@ let createRoutineCalls: Record<string, unknown>[] = [];
 let createWorkbenchCalls: Record<string, unknown>[] = [];
 let runNowCalls = 0;
 let slackConfigured = false;
+let granolaConnected = false;
 let networkDelayMs = 0;
 let workbenchAgentsByWorkbench: Record<
   string,
@@ -104,6 +105,20 @@ async function routeFetch(
   }
   if (url.includes("/api/deployment-capabilities")) {
     return jsonResponse({ slackConfigured });
+  }
+  if (url.includes("/credentials/resolve/Granola")) {
+    if (!granolaConnected) {
+      return new Response(null, { status: 404 });
+    }
+    return jsonResponse({
+      id: "cred_granola",
+      tenantId: "tnt_1",
+      name: "Granola",
+      status: "active",
+    });
+  }
+  if (url.includes("/credentials/resolve/")) {
+    return new Response(null, { status: 404 });
   }
   if (url.includes("/workflows/definitions")) {
     return jsonResponse({
@@ -256,6 +271,7 @@ describe("RoutinePanel", () => {
     createWorkbenchCalls = [];
     runNowCalls = 0;
     slackConfigured = false;
+    granolaConnected = false;
     networkDelayMs = 0;
     chatWorkbenches = [];
     runsByRoutineId = {};
@@ -536,6 +552,7 @@ describe("RoutinePanel", () => {
 
     test("the trigger popover lists only honestly-working triggers — Slack hidden when not configured, shown when it is", async () => {
       slackConfigured = false;
+      granolaConnected = true;
       await renderPanel({ routineId: null, workbenchId: "ch_1" });
       act(() => openMenu(buttonWithText("+ Add trigger")));
       await settle();
@@ -559,6 +576,33 @@ describe("RoutinePanel", () => {
         el.textContent?.trim(),
       );
       expect(items).toContain("Slack");
+    });
+
+    test("the trigger popover hides Granola call notes when Granola is not connected (CL-6759)", async () => {
+      granolaConnected = false;
+      await renderPanel({ routineId: null, workbenchId: "ch_1" });
+      act(() => openMenu(buttonWithText("+ Add trigger")));
+      await settle();
+      let items = [...document.querySelectorAll('[role="menuitem"]')].map(
+        (el) => el.textContent?.trim(),
+      );
+      expect(items).toContain("On a schedule ›");
+      expect(items).not.toContain("Granola call notes");
+      expect(items.every((label) => !label?.includes("Granola"))).toBe(true);
+
+      act(() => root.unmount());
+      container.remove();
+      container = document.createElement("div");
+      document.body.appendChild(container);
+      root = createRoot(container);
+      granolaConnected = true;
+      await renderPanel({ routineId: null, workbenchId: "ch_1" });
+      act(() => openMenu(buttonWithText("+ Add trigger")));
+      await settle();
+      items = [...document.querySelectorAll('[role="menuitem"]')].map((el) =>
+        el.textContent?.trim(),
+      );
+      expect(items).toContain("Granola call notes");
     });
 
     test("picking a schedule preset commits the trigger in one click — no sub-menu chain", async () => {
