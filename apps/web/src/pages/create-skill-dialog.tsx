@@ -87,7 +87,7 @@ const FIELDS: readonly IntakeField[] = [
     type: "textarea",
     required: true,
     placeholder: "What this skill does and when to use it",
-    help: "Agents see this line — and only this line — when deciding whether to load the skill.",
+    help: "A short summary of what this skill does and when to use it.",
   },
   {
     name: "body",
