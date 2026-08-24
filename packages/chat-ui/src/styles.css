@@ -1187,6 +1187,12 @@
   color: var(--muted-foreground);
 }
 
+.chat-event-line a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}
+
 .chat-event-time {
   font-size: 0.6875rem;
   opacity: 0.85;

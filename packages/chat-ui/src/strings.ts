@@ -91,7 +91,15 @@ export const CHAT_STRINGS = {
   eventWorkbenchRenamedTo: (to: string): string => `Renamed to "${to}"`,
   eventBlockResponsePoll: "A vote was recorded",
   eventBlockResponseForm: "A form was submitted",
+  /** Plain-text form of the settle notice (CL-6741). EventLine renders
+   * the same copy with "Plugins" as a `/plugins` link. */
+  eventConnectionConnected: (displayName: string): string =>
+    `${displayName} connected successfully. Manage in Plugins`,
+  eventConnectionConnectedBeforePlugins: (displayName: string): string =>
+    `${displayName} connected successfully. Manage in `,
+  eventConnectionConnectedPlugins: "Plugins",
   eventGeneric: (event: string) => event.replace(/[.\-_]+/g, " "),
+
   inviteAgentAction: "Invite agent",
   workbenchMembersLabel: "Members",
   teamStackOverflow: (count: number) =>

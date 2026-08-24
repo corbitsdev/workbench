@@ -14,6 +14,12 @@
 // `settleConnectedService`, which clears this room's own
 // `template/pendingConnections` entry — so this card's next mount already
 // reads connected without needing a push while it sits open.
+//
+// CL-6741: once a card has read connected, a later loading/error fold
+// (or a remount that starts on loading) must keep the last connected
+// snapshot — never flash DisconnectedBody / "Connect" again over a
+// known-good connection. An explicit `disconnected` result clears the
+// snapshot so a real disconnect still shows Connect.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConnectGithubBlockData } from "@corbits/chat/blocks";
 
@@ -23,6 +29,36 @@ import type {
 } from "./connect-github-actions";
 import { ConnectGithubBlockView } from "./connect-github-block";
 
+type ConnectedGithubQuery = Extract<ConnectGithubQuery, { kind: "connected" }>;
+
+/** Survives container remounts so a post-connect loading flash never
+ * resets the card to Connect (CL-6741). Cleared only on an explicit
+ * disconnected result. */
+const lastConnectedByMessageId = new Map<string, ConnectedGithubQuery>();
+
+function rememberConnected(messageId: string, query: ConnectedGithubQuery) {
+  lastConnectedByMessageId.set(messageId, query);
+}
+
+function forgetConnected(messageId: string) {
+  lastConnectedByMessageId.delete(messageId);
+}
+
+function lastConnectedOf(messageId: string): ConnectedGithubQuery | undefined {
+  return lastConnectedByMessageId.get(messageId);
+}
+
+function displayQueryOf(
+  messageId: string,
+  query: ConnectGithubQuery,
+): ConnectGithubQuery {
+  if (query.kind === "connected" || query.kind === "disconnected") {
+    return query;
+  }
+  const prior = lastConnectedOf(messageId);
+  return prior ?? query;
+}
+
 export function ConnectGithubBlockContainer({
   messageId,
   actions,
@@ -31,15 +67,27 @@ export function ConnectGithubBlockContainer({
   readonly messageId: string;
   readonly actions?: ConnectGithubActions;
 }) {
-  const [query, setQuery] = useState<ConnectGithubQuery>({ kind: "loading" });
-  const [selectedRepoIds, setSelectedRepoIds] = useState<readonly string[]>([]);
+  const [query, setQuery] = useState<ConnectGithubQuery>(() => {
+    return lastConnectedOf(messageId) ?? { kind: "loading" };
+  });
+  const [selectedRepoIds, setSelectedRepoIds] = useState<readonly string[]>(
+    () => lastConnectedOf(messageId)?.selectedRepoIds ?? [],
+  );
   const mountedRef = useRef(true);
 
-  const applyQuery = useCallback((result: ConnectGithubQuery) => {
-    if (!mountedRef.current) return;
-    setQuery(result);
-    if (result.kind === "connected") setSelectedRepoIds(result.selectedRepoIds);
-  }, []);
+  const applyQuery = useCallback(
+    (result: ConnectGithubQuery) => {
+      if (!mountedRef.current) return;
+      if (result.kind === "connected") {
+        rememberConnected(messageId, result);
+        setSelectedRepoIds(result.selectedRepoIds);
+      } else if (result.kind === "disconnected") {
+        forgetConnected(messageId);
+      }
+      setQuery(result);
+    },
+    [messageId],
+  );
 
   useEffect(() => {
     mountedRef.current = true;
@@ -74,7 +122,9 @@ export function ConnectGithubBlockContainer({
     [actions, messageId, applyQuery],
   );
 
-  if (actions === undefined || query.kind !== "connected") {
+  const displayQuery = displayQueryOf(messageId, query);
+
+  if (actions === undefined || displayQuery.kind !== "connected") {
     return (
       <ConnectGithubBlockView
         kind="disconnected"
@@ -95,11 +145,13 @@ export function ConnectGithubBlockContainer({
   return (
     <ConnectGithubBlockView
       kind="connected"
-      orgName={query.orgName}
-      repos={query.repos}
+      orgName={displayQuery.orgName}
+      repos={displayQuery.repos}
       selectedRepoIds={selectedRepoIds}
       onToggleRepo={toggleRepo}
-      onSelectAll={() => setSelectedRepoIds(query.repos.map((repo) => repo.id))}
+      onSelectAll={() =>
+        setSelectedRepoIds(displayQuery.repos.map((repo) => repo.id))
+      }
       onChangeConnection={actions.requestConnect}
       onStartReviewing={(repoIds) => {
         void actions.startReviewing(repoIds);
