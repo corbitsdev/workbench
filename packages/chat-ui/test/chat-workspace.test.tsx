@@ -1832,6 +1832,74 @@ describe("CL-6833: running-turn resume failure is visible, never silent idle", (
   });
 });
 
+describe("Invite control visibility (CL-6781)", () => {
+  test("hides Invite agent when the invitable listing succeeds empty", async () => {
+    stubFetch();
+    const harness = await mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "ch_1",
+    });
+    await harness.settle();
+    await harness.settle();
+
+    expect(harness.container.textContent).not.toContain("Invite agent");
+    harness.unmount();
+  });
+
+  test("shows Invite agent once at least one definition is invitable", async () => {
+    globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = typeof input === "string" ? input : String(input);
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
+        return json({ items: [WORKBENCH_WIRE] });
+      }
+      if (/\/chat\/workbenches\?kind=chat$/.test(path)) return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
+        return json({ rootThreadId: "", items: [] });
+      }
+      if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
+        if (init?.method === "POST") {
+          return json({ id: "msg_new", createdAt: "2026-01-01T00:00:00.000Z" });
+        }
+        return json({ items: [] });
+      }
+      if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
+      if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
+        return json({
+          items: [{ id: "wfd_echo", name: "echo", description: "Echo" }],
+        });
+      }
+      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path)) return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
+        return json({
+          ...WORKBENCH_WIRE,
+          settings: {},
+          contextWindow: { value: 20, source: "inherit" },
+        });
+      }
+      if (/\/chat\/bench\/settings$/.test(path)) {
+        return json({ settings: {}, contextWindow: 20 });
+      }
+      throw new Error(`unstubbed fetch: ${path}`);
+    }) as typeof fetch;
+
+    const harness = await mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "ch_1",
+    });
+    await harness.settle();
+    await harness.settle();
+
+    expect(harness.container.textContent).toContain("Invite agent");
+    harness.unmount();
+  });
+});
+
 describe("switching workbenches never carries a stale root-thread id across", () => {
   // CL-6067/6069 regression, still guarded after CL-6313 made it
   // structurally impossible: the timeline no longer fetches by thread id
