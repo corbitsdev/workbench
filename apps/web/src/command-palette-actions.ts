@@ -95,13 +95,13 @@ export type ActionCommand = {
 export const ACTION_COMMANDS: readonly ActionCommand[] = [
   {
     id: "new-workbench",
-    title: "New workbench",
-    subtitle: "Start a new workbench with Myra",
+    title: "New room",
+    subtitle: "Start a new room",
   },
   {
     id: "new-agent",
-    title: "New workbench",
-    subtitle: "Start a new workbench with Myra",
+    title: "New room",
+    subtitle: "Start a new room",
   },
   {
     id: "new-routine",

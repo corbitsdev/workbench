@@ -346,9 +346,11 @@ describe("NewWorkbenchPickerRoute", () => {
         call.path.endsWith("/chat/workbenches") && call.init?.method === "POST",
     );
     expect(JSON.parse(String(createWorkbenchCall?.init?.body))).toMatchObject({
-      kind: "chat",
-      definitionId: "wfd_assistant",
+      kind: "workbench",
     });
+    expect(
+      JSON.parse(String(createWorkbenchCall?.init?.body)).definitionId,
+    ).toBeUndefined();
 
     const sendMessageCall = calls.find((call) =>
       call.path.endsWith("/chat/workbenches/chan_new/messages"),
@@ -543,11 +545,14 @@ describe("NewWorkbenchPickerRoute", () => {
         call.path.endsWith("/chat/workbenches") && call.init?.method === "POST",
     );
     expect(JSON.parse(String(createWorkbenchCall?.init?.body))).toMatchObject({
-      kind: "chat",
-      definitionId: "wfd_assistant",
-      templatePromise:
-        "Three reviewers read every pull request and post what they'd change.",
+      kind: "workbench",
     });
+    expect(
+      JSON.parse(String(createWorkbenchCall?.init?.body)).definitionId,
+    ).toBeUndefined();
+    expect(
+      JSON.parse(String(createWorkbenchCall?.init?.body)).templatePromise,
+    ).toBeUndefined();
 
     expect(createdAgentHandles).toEqual([
       "correctness-reviewer",

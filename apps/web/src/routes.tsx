@@ -123,7 +123,7 @@ export const SETTINGS_PATH = "/settings";
  * view. */
 export const MISSION_CONTROL_PATH = "/mission-control";
 
-/** The template picker (CL-6342) — every "+ New workbench" affordance
+/** The template picker (CL-6342) — every "+ New room" affordance
  * (sidebar, command palette) hops here first; picking a row is what
  * actually mints the workbench. Not in `NAV_ROUTES`: it has no sidebar
  * row of its own, only the "+" control and the palette reach it. */
@@ -253,7 +253,7 @@ function InboxRedirect({
 export const APP_ROUTES: readonly AppRoute[] = [
   {
     path: "/",
-    label: "New Workbench",
+    label: "New room",
     icon: <ChatCircle />,
     render: () => <HomeRoute />,
     hasStageTopBar: false,
@@ -268,7 +268,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
   },
   {
     path: NEW_WORKBENCH_PATH,
-    label: "New workbench",
+    label: "New room",
     icon: <ChatCircle />,
     render: () => <NewWorkbenchPickerRoute />,
   },

@@ -57,36 +57,6 @@ function NeedsYouSignal({ tenantId }: { readonly tenantId: string | null }) {
 }
 
 /**
- * The always-active, no-op row naming the current screen as "where the
- * person already is" (CL-6124) while a brand-new bench's zero-workbench
- * `/` land is auto-minting its first Myra workbench (CL-6138) — a
- * transient state, but one that still deserves an honest sidebar row
- * rather than an empty list. Styled as the already-active row per house
- * rule (grey structure, orange edge for "here"); selecting it is a no-op
- * since it names the current screen, not a destination.
- */
-function NewWorkbenchStubRow() {
-  return (
-    <button
-      type="button"
-      className="shell-ch-row"
-      data-active="true"
-      aria-current="true"
-    >
-      <span className="shell-ch-stack" aria-hidden="true">
-        <span>N</span>
-      </span>
-      <span className="shell-ch-meta">
-        <span className="shell-ch-name-row">
-          <span className="shell-ch-name">New Workbench</span>
-        </span>
-      </span>
-      <span className="shell-ch-right" />
-    </button>
-  );
-}
-
-/**
  * The ellipsis-menu item labels for a workbench row: rename and the
  * pin/unpin toggle — a strict subset of the conversation's own settings.
  * Pure so the pinned-state wording ("Pin" vs "Unpin") is testable without
@@ -404,10 +374,11 @@ export function WorkbenchList({
     return (
       <div className="panel-stack" aria-label="Workbenches">
         <NeedsYouSignal tenantId={selectedTenantId} />
-        <h2 className="shell-panel-list-label">Workbenches</h2>
-        <div className="panel-stack-group">
-          <NewWorkbenchStubRow />
-        </div>
+        <EmptyState
+          icon={<Hash />}
+          title="No workbenches yet"
+          description="Start a new one with the + above."
+        />
       </div>
     );
   }

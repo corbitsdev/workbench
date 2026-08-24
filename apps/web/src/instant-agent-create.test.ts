@@ -104,6 +104,47 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
     expect(body.name).toBe(NEW_WORKBENCH_TITLE);
   });
 
+  // CL-6982: the + / picker create path mints a `kind: "workbench"` room,
+  // never a Myra DM clone (`kind: "chat"` + `definitionId`).
+  test("blank create POSTs kind=workbench — a room, not a Myra DM clone (CL-6982)", async () => {
+    const calls = stubFetch((path) => {
+      if (path.includes("/workflows/definitions")) {
+        return json({ data: [assistantDefinitionWire], nextCursor: null });
+      }
+      if (path.endsWith("/chat/workbenches")) {
+        return json({
+          id: "chan-1",
+          title: NEW_WORKBENCH_TITLE,
+          kind: "workbench",
+          pinned: true,
+          participants: [],
+        });
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    });
+
+    await createWorkbenchFromTemplate(
+      "tnt_1",
+      "blank",
+      () => {},
+      newQueryClient(),
+    );
+
+    const createCall = calls.find((call) =>
+      call.path.endsWith("/chat/workbenches"),
+    );
+    const body = JSON.parse(String(createCall?.init?.body)) as {
+      readonly kind?: string;
+      readonly definitionId?: string;
+      readonly reuseExisting?: boolean;
+      readonly name?: string;
+    };
+    expect(body.kind).toBe("workbench");
+    expect(body.definitionId).toBeUndefined();
+    expect(body.reuseExisting).toBeUndefined();
+    expect(body.name).toBe(NEW_WORKBENCH_TITLE);
+  });
+
   // CL-6387 follow-up: picking a named template threw its own name away
   // and left the reviewer roster its greeting promises out of the room
   // (every bench looked like every other "New Workbench", and Myra's

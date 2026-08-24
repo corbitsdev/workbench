@@ -165,7 +165,7 @@ async function mountSidebar(
 describe("Sidebar", () => {
   test("header offers create + search; there is no collapse affordance", () => {
     const markup = renderSidebar("/w");
-    expect(markup).toContain('aria-label="New workbench"');
+    expect(markup).toContain('aria-label="New room"');
     // Search is the box inside the list (below the brand row), never a
     // header icon — the box itself is covered by the workbench-list tests.
     expect(markup).not.toContain('aria-label="Search"');
@@ -197,7 +197,7 @@ describe("Sidebar", () => {
     });
 
     const newButton = container.querySelector<HTMLButtonElement>(
-      '[aria-label="New workbench"]',
+      '[aria-label="New room"]',
     );
     await act(async () => {
       newButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -576,11 +576,10 @@ describe("Sidebar", () => {
     container.remove();
   });
 
-  // CL-6124: a bench with zero workbenches lands on the first-run chat
-  // (`/`), and the sidebar names it as a single active row — never the
-  // icon "No workbenches yet" empty state, since the create-a-workbench
-  // surface IS this screen now.
-  test("zero workbenches: a single New Workbench row, styled active, not an icon empty state", async () => {
+  // CL-6982: a bench with zero workbenches shows the honest empty state —
+  // never a fake "New Workbench" row that looked like a clone already
+  // existed. The + above is the mint verb ("New room").
+  test("zero workbenches: honest empty state, no stub New Workbench row", async () => {
     stubFetch();
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -598,12 +597,11 @@ describe("Sidebar", () => {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
-      if (container.innerHTML.includes("shell-ch-row")) break;
+      if (container.innerHTML.includes("No workbenches yet")) break;
     }
-    const row = container.querySelector('.shell-ch-row[data-active="true"]');
-    expect(row).not.toBeNull();
-    expect(row?.textContent).toContain("New Workbench");
-    expect(container.innerHTML).not.toContain("No workbenches yet");
+    expect(container.innerHTML).toContain("No workbenches yet");
+    expect(container.innerHTML).not.toContain("New Workbench");
+    expect(container.querySelector('.shell-ch-row[data-active="true"]')).toBeNull();
     act(() => root.unmount());
     container.remove();
   });

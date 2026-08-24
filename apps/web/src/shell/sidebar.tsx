@@ -153,8 +153,8 @@ export function Sidebar({
         <Button
           variant="ghost"
           size="sm"
-          aria-label="New workbench"
-          title="New workbench"
+          aria-label="New room"
+          title="New room"
           onClick={() => onNavigate(NEW_WORKBENCH_PATH)}
         >
           <Plus />
