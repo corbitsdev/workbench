@@ -205,7 +205,9 @@ test("a flat Workbenches shell-panel-list-label is a violation (CL-6977)", () =>
     },
   ]);
   expect(report.violations).toHaveLength(1);
-  expect(report.violations[0]).toContain("apps/web/src/shell/workbench-list.tsx");
+  expect(report.violations[0]).toContain(
+    "apps/web/src/shell/workbench-list.tsx",
+  );
   expect(report.violations[0]).toContain("Workbenches");
 });
 

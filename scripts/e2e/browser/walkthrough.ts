@@ -681,11 +681,14 @@ async function run(): Promise<void> {
             detail: `expected sidebar list labels "Agents" and "Channels", got ${JSON.stringify(sidebarLabels)}`,
           };
         }
-        const search = await page.$('input[aria-label="Search agents and channels"]');
+        const search = await page.$(
+          'input[aria-label="Search agents and channels"]',
+        );
         if (search === null) {
           return {
             status: "fail",
-            detail: "expected a Search agents and channels field before checking labels after search",
+            detail:
+              "expected a Search agents and channels field before checking labels after search",
           };
         }
         await search.type("zzz-no-match");
