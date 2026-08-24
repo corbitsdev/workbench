@@ -644,6 +644,15 @@ export function friendlyEventText(
         ? CHAT_STRINGS.eventBlockResponsePoll
         : CHAT_STRINGS.eventBlockResponseForm;
     }
+    case "connection.connected": {
+      const displayName =
+        data !== undefined && typeof data.displayName === "string"
+          ? data.displayName
+          : undefined;
+      return displayName !== undefined
+        ? CHAT_STRINGS.eventConnectionConnected(displayName)
+        : CHAT_STRINGS.eventGeneric(part.event);
+    }
     default:
       return CHAT_STRINGS.eventGeneric(part.event);
   }
@@ -658,9 +667,33 @@ function EventLine({
   createdAt: string;
   participants: readonly ParticipantRecord[];
 }) {
+  const data =
+    typeof part.data === "object" && part.data !== null
+      ? (part.data as Record<string, unknown>)
+      : undefined;
+  const connectedDisplayName =
+    part.event === "connection.connected" &&
+    data !== undefined &&
+    typeof data.displayName === "string"
+      ? data.displayName
+      : undefined;
+
   return (
     <div className="chat-event-line">
-      <span>{friendlyEventText(part, participants)}</span>
+      <span>
+        {connectedDisplayName !== undefined ? (
+          <>
+            {CHAT_STRINGS.eventConnectionConnectedBeforePlugins(
+              connectedDisplayName,
+            )}
+            <a href="/plugins">
+              {CHAT_STRINGS.eventConnectionConnectedPlugins}
+            </a>
+          </>
+        ) : (
+          friendlyEventText(part, participants)
+        )}
+      </span>
       <span className="chat-event-time">{formatTimestamp(createdAt)}</span>
     </div>
   );

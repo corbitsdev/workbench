@@ -46,3 +46,16 @@ describe("friendlyEventText — workbench.agent-joined (CL-6594)", () => {
     expect(friendlyEventText(part, [])).toBe("An agent joined");
   });
 });
+
+describe("friendlyEventText — connection.connected (CL-6741)", () => {
+  test("names the connected service and points at Plugins", () => {
+    const part: Part & { kind: "event" } = {
+      kind: "event",
+      event: "connection.connected",
+      data: { connectorId: "github", displayName: "GitHub" },
+    };
+    expect(friendlyEventText(part, [])).toBe(
+      "GitHub connected successfully. Manage in Plugins",
+    );
+  });
+});

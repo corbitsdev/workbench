@@ -3,9 +3,10 @@
 // the room's own settings under `connections/pending`; when the
 // connection completes in the browser, `settleConnectedService` finds
 // every room in the tenant still waiting on that connector, clears the
-// entry (publishing `chat.settings` so the open card flips), and wakes
-// the room's host agent via `dispatchTurn` — never by posting a timeline
-// row as the connecting person.
+// entry (publishing `chat.settings` so the open card flips), posts an
+// event-only system notice onto the room timeline, and wakes the room's
+// host agent via `dispatchTurn` — never by posting a human text bubble
+// as the connecting person.
 //
 // The code-review template's own GitHub connect card registers
 // under a second, template-owned key (`@corbits/workflow-catalog`'s
@@ -21,7 +22,11 @@ import { localPartOf } from "./agent-address";
 import { ConnectServiceBlockData } from "./blocks";
 import { isAgentAddress } from "./mentions";
 import type { Part as PartType } from "./parts";
-import type { RoomMessage, RoomMessageStore } from "./room-messages";
+import {
+  postRoomMessage,
+  type RoomMessage,
+  type RoomMessageStore,
+} from "./room-messages";
 import type { ChatStore } from "./store";
 import {
   dispatchTurn,
@@ -30,6 +35,10 @@ import {
 import { participantsOf } from "./workbench-settings";
 
 export const CONNECTIONS_PENDING_KEY = "connections/pending";
+
+/** Timeline event name for the settle notice `settleConnectedService`
+ * posts (CL-6741) — event-only, never a human text bubble. */
+export const CONNECTION_CONNECTED_EVENT = "connection.connected";
 
 /** The code-review template's own pending-connections key
  * (`@corbits/workflow-catalog`'s `templateSettingsPatch`/
@@ -179,6 +188,28 @@ export async function settleConnectedService(
     });
 
     const agentAddress = hostAgentAddress(updated.settings, input.principalId);
+    // CL-6741: event-only system row — never a signed-in user text bubble.
+    // Sender is the host agent when one exists; otherwise a synthetic
+    // system address so the row never attributes to the connecting person.
+    await postRoomMessage(deps, {
+      tenantId: input.tenantId,
+      workbenchId: row.workbenchId,
+      sender: {
+        name: null,
+        address: agentAddress ?? `system@${row.workbenchId}`,
+      },
+      parts: [
+        {
+          kind: "event",
+          event: CONNECTION_CONNECTED_EVENT,
+          data: {
+            connectorId: input.connectorId,
+            displayName: input.displayName,
+          },
+        },
+      ],
+    });
+
     if (agentAddress === undefined) continue;
 
     const requestMessageIds = await existingRequestMessageIds(

@@ -162,3 +162,100 @@ describe("ConnectGithubBlockContainer post-submit refresh (CL-6463)", () => {
     expect(tokenField.disabled).toBe(false);
   });
 });
+
+describe("ConnectGithubBlockContainer keeps connected across loading (CL-6741)", () => {
+  test("a loading remount after connected keeps ConnectedBody — never flashes Connect", async () => {
+    let state: ConnectGithubQuery = {
+      kind: "connected",
+      orgName: "octocat",
+      repos: REPOS,
+      selectedRepoIds: [],
+    };
+    let subscriber: ((next: ConnectGithubQuery) => void) | undefined;
+
+    const actions: ConnectGithubActions = {
+      getConnectState: () => Promise.resolve(state),
+      subscribeConnectState: (_messageId, onUpdate) => {
+        subscriber = onUpdate;
+        return () => {
+          subscriber = undefined;
+        };
+      },
+      requestConnect: () => {},
+      submitAccessToken: async () => ({ ok: true as const }),
+      startReviewing: async () => ({ startedTriggerCount: 0 }),
+      skip: async () => {},
+    };
+
+    const el = await mount(actions);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(el.textContent).toContain("Connected to GitHub as octocat");
+    expect(el.textContent).not.toContain("Connect GitHub");
+
+    await act(async () => {
+      state = { kind: "loading" };
+      subscriber?.({ kind: "loading" });
+    });
+    expect(el.textContent).toContain("Connected to GitHub as octocat");
+    expect(el.textContent).not.toContain("Connect GitHub");
+    expect(el.querySelectorAll(".chat-block-connect-repo-row")).toHaveLength(
+      REPOS.length,
+    );
+
+    // Remount while the host still reports loading — the last connected
+    // snapshot must survive so Connect never flashes.
+    if (root !== null) {
+      await act(async () => {
+        root?.unmount();
+      });
+      root = null;
+    }
+    container?.remove();
+    container = null;
+
+    const remounted = await mount(actions);
+    expect(remounted.textContent).toContain("Connected to GitHub as octocat");
+    expect(remounted.textContent).not.toContain("Connect GitHub");
+  });
+
+  test("an explicit disconnected result after connected does show Connect again", async () => {
+    let state: ConnectGithubQuery = {
+      kind: "connected",
+      orgName: "octocat",
+      repos: REPOS,
+      selectedRepoIds: [],
+    };
+    let subscriber: ((next: ConnectGithubQuery) => void) | undefined;
+
+    const actions: ConnectGithubActions = {
+      getConnectState: () => Promise.resolve(state),
+      subscribeConnectState: (_messageId, onUpdate) => {
+        subscriber = onUpdate;
+        return () => {
+          subscriber = undefined;
+        };
+      },
+      requestConnect: () => {},
+      submitAccessToken: async () => ({ ok: true as const }),
+      startReviewing: async () => ({ startedTriggerCount: 0 }),
+      skip: async () => {},
+    };
+
+    const el = await mount(actions);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(el.textContent).toContain("Connected to GitHub as octocat");
+
+    await act(async () => {
+      state = { kind: "disconnected" };
+      subscriber?.({ kind: "disconnected" });
+    });
+    expect(el.textContent).toContain("Connect GitHub");
+    expect(el.textContent).not.toContain("Connected to GitHub as");
+  });
+});

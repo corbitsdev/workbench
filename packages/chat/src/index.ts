@@ -23,11 +23,13 @@ export {
 } from "./blocks";
 export type { Block, BlockParseResult } from "./blocks";
 export {
+  CONNECTION_CONNECTED_EVENT,
   CONNECTIONS_PENDING_KEY,
   pendingConnectionsOf,
   connectServiceConnectorIds,
   settleConnectedService,
 } from "./connect-pending";
+
 export type {
   SettleConnectedServiceDeps,
   SettleConnectedServiceInput,

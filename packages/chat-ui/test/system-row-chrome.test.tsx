@@ -82,6 +82,33 @@ describe("CL-6739: system / error / connect rows hide social chrome", () => {
     expectNoSocialChrome(el);
   });
 
+  test("connection.connected settle notice links Plugins to /plugins (CL-6741)", async () => {
+    const el = await mount([
+      {
+        id: "settle_1",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        parts: [
+          {
+            kind: "event",
+            event: "connection.connected",
+            data: { connectorId: "github", displayName: "GitHub" },
+          },
+        ],
+        sender: { name: null, address: "system@agents.example" },
+      } as MessageItem,
+    ]);
+
+    const line = el.querySelector(".chat-event-line");
+    expect(line).not.toBeNull();
+    expect(line?.textContent).toContain(
+      "GitHub connected successfully. Manage in Plugins",
+    );
+    const pluginsLink = line?.querySelector('a[href="/plugins"]');
+    expect(pluginsLink).not.toBeNull();
+    expect(pluginsLink?.textContent).toBe("Plugins");
+    expectNoSocialChrome(el);
+  });
+
   test("a generic system event row has no reaction, reply, or overflow", async () => {
     const el = await mount([
       {
