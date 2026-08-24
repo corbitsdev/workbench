@@ -28,9 +28,11 @@
 // never hops to `/routines` first the way this used to.
 
 import { createPendingDialogRequest } from "@corbits/shell-layout";
-import { WORKBENCH_PATH_PREFIX, workbenchPath } from "./workbench-path";
+import { WORKBENCH_PATH_PREFIX } from "./workbench-path";
 import { NEW_WORKBENCH_PATH } from "./routes";
-import { ensureMyraWorkbench } from "./myra-workbench";
+import { listAgentDefinitions } from "./agents-api";
+import { openAgentDmChat } from "./agent-dm-launch";
+import { findMyraDefinition } from "./myra-workbench";
 import { requestLibraryUpload } from "./library-upload";
 import type { RoutinePanelSubject } from "./shell/canvas-availability";
 
@@ -194,9 +196,9 @@ export async function runActionCommand(
     }
     case "talk-to-myra": {
       if (ctx.tenantId === null) return;
-      const result = await ensureMyraWorkbench(ctx.tenantId);
-      if (result.kind === "ready")
-        ctx.navigate(workbenchPath(result.workbenchId));
+      const myra = findMyraDefinition(await listAgentDefinitions(ctx.tenantId));
+      if (myra === undefined) return;
+      await openAgentDmChat(ctx.tenantId, myra.id, ctx.navigate);
       return;
     }
     case "go-workbenches": {

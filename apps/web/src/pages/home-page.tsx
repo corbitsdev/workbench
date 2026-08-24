@@ -1,11 +1,13 @@
-// Default land: a bench that already has one or more workbenches lands in
-// (or creates) the Myra workbench in the main stage. A brand-new bench with
-// zero workbenches has nothing to land in yet, so this hop sends it to the
-// guided create surface (`NewWorkbenchPickerRoute`, CL-6342) instead of
-// auto-minting an unlabeled "New Workbench" and dropping the person straight
-// into it — that auto-mint (CL-6138) is exactly the confusing empty-bench
-// landing this hop used to produce. Home as a dashboard does not earn its
-// keep — `/` only exists as this hop onto `/w/:workbenchId` or `/new`. Deep
+// Default land: `/` is a hop onto the most-recent existing workbench or
+// `/new`, never a parallel Myra home. A bench that already has one or
+// more workbenches lands in the first listed row (`workbenches[0]`) in
+// the main stage. A brand-new bench with zero workbenches has nothing to
+// land in yet, so this hop sends it to the guided create surface
+// (`NewWorkbenchPickerRoute`, CL-6342) instead of auto-minting an
+// unlabeled "New Workbench" and dropping the person straight into it —
+// that auto-mint (CL-6138) is exactly the confusing empty-bench landing
+// this hop used to produce. Home as a dashboard does not earn its keep —
+// `/` only exists as this hop onto `/w/:workbenchId` or `/new`. Deep
 // links to other pages are unchanged.
 //
 // Right after a provider connect this hop is also the wait (CL-6457's
@@ -37,7 +39,6 @@ import { describeApiError } from "@corbits/api-query";
 import { fetchAgentReadiness, hasActiveCredential } from "../onboarding";
 import { useBench } from "../bench-context";
 import { workbenchPath } from "../workbench-path";
-import { ensureMyraWorkbench } from "../myra-workbench";
 import { useNavigate } from "../navigation";
 import { NEW_WORKBENCH_PATH, ONBOARDING_PATH } from "../routes";
 
@@ -101,22 +102,6 @@ export function HomeRoute({
       retryTimer = setTimeout(() => setAttempt((count) => count + 1), retryMs);
     };
 
-    // A land that failed is either "she isn't up yet" or a real problem,
-    // and only the bench itself can say which.
-    const classify = (cause: unknown) => {
-      void fetchAgentReadiness().then((readiness) => {
-        if (cancelled) return;
-        if (readiness.kind === "ready" || readiness.kind === "chat-ready") {
-          setState({
-            kind: "error",
-            message: describeApiError(cause, "opening Myra"),
-          });
-          return;
-        }
-        waitAndRetry();
-      });
-    };
-
     // Zero workbenches: wait for Myra's own definition to exist, then send
     // the person to the picker rather than minting anything ourselves —
     // "she can't start yet" and "here, go create your first workbench"
@@ -148,24 +133,18 @@ export function HomeRoute({
     void listAllWorkbenches(selectedTenantId).then(
       (workbenches) => {
         if (cancelled) return;
-        if (workbenches.length === 0) {
+        const first = workbenches[0];
+        if (first === undefined) {
           awaitFirstWorkbench();
           return;
         }
-        void ensureMyraWorkbench(selectedTenantId).then((result) => {
-          if (cancelled) return;
-          if (result.kind === "ready") {
-            navigate(workbenchPath(result.workbenchId));
-            return;
-          }
-          classify(new Error(result.message));
-        });
+        navigate(workbenchPath(first.id));
       },
       (cause: unknown) => {
         if (cancelled) return;
         setState({
           kind: "error",
-          message: describeApiError(cause, "opening Myra"),
+          message: describeApiError(cause, "opening the workbench"),
         });
       },
     );
@@ -218,7 +197,7 @@ export function HomeRoute({
       <PageShell width="full" className="page-fill">
         <EmptyState
           icon={<WarningCircle />}
-          title="Couldn't open Myra"
+          title="Couldn't open the workbench"
           description={state.message}
           action={
             <Button variant="outline" onClick={startOver}>
