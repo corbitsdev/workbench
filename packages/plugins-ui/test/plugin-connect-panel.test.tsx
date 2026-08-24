@@ -218,6 +218,54 @@ describe("PluginConnectPanel", () => {
     expect(container.querySelector('input[type="password"]')).not.toBeNull();
   });
 
+  // CL-6830: a failed oauth-configured probe must not collapse into `{}`
+  // (which reads as "hosted app absent" and hides one-click connect).
+  test("GitHub when the oauth-configured probe fails shows error and retry, not the not-configured token paste", async () => {
+    globalThis.fetch = (() =>
+      Promise.reject(new Error("network down"))) as unknown as typeof fetch;
+
+    const container = render(notConnected(githubDescriptor()));
+    await settle();
+
+    expect(container.textContent).toContain("Couldn't check");
+    expect(container.textContent).toContain("Try again");
+    expect(container.textContent).not.toContain(
+      "This workbench isn't set up with the one-click GitHub app",
+    );
+    expect(container.querySelector('input[type="password"]')).toBeNull();
+  });
+
+  test("retrying after an oauth-configured probe failure can reveal hosted connect", async () => {
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      if (calls === 1) {
+        return Promise.reject(new Error("network down"));
+      }
+      return new Response(JSON.stringify({ github: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+
+    const container = render(notConnected(githubDescriptor()));
+    await settle();
+
+    const retry = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Try again") === true,
+    );
+    expect(retry).not.toBeUndefined();
+
+    act(() => {
+      retry?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await settle();
+
+    const link = container.querySelector("a");
+    expect(link?.textContent).toContain("Connect with GitHub");
+    expect(container.querySelector('input[type="password"]')).toBeNull();
+  });
+
   test("nothing renders when no plugin is selected", () => {
     const container = render(null);
     expect(container.querySelector('input[type="password"]')).toBeNull();
