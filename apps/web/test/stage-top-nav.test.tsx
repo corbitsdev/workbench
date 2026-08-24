@@ -309,7 +309,7 @@ describe("Plugins declares its nav through the top-bar contract", () => {
         <NavigationProvider navigate={noop}>
           <BenchProvider>
             <ProviderHealthProvider>
-              <PluginsRoute path="/plugins" />
+              <PluginsRoute path="/plugins" navigate={noop} />
             </ProviderHealthProvider>
           </BenchProvider>
         </NavigationProvider>

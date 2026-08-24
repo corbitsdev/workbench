@@ -10,9 +10,9 @@
 // Connections surface. See this ticket's report for the full grounding.
 //
 // Skills gets the same gallery treatment as plugins (owner ruling): cards,
-// not the Settings section's list rows — reusing `../skills-api.ts`'s data
-// and mutations through `PluginSkillDetailPanel`, never forking
-// `SkillsPage` itself.
+// not the Skills roster's list rows. Opening a card (or creating a skill)
+// navigates to `/skills/<name>` — the same path `SkillsPage.open` already
+// uses. Mutations live there; this gallery never mounts a twin editor.
 
 import { Button, PageShell, RichEmptyState } from "@corbits/react-ui";
 import { WorkbenchLoadingState } from "@corbits/chat-ui";
@@ -27,6 +27,7 @@ import { Plus, SquaresFour, Warning } from "@corbits/icons";
 import { useCallback, useEffect, useState } from "react";
 
 import { useBench } from "../bench-context";
+import { SKILLS_PATH_PREFIX } from "../path-ids";
 import {
   useClearPendingConnectProvider,
   usePendingConnectProvider,
@@ -42,7 +43,6 @@ import {
   CreateSkillDialog,
   type SkillCreateInput,
 } from "./create-skill-dialog";
-import { PluginSkillDetailPanel } from "./plugin-skill-detail-panel";
 
 type PluginsState =
   | { readonly status: "loading" }
@@ -64,9 +64,10 @@ function canOpenPluginPanel(plugin: ResolvedPlugin): boolean {
 
 export function PluginsRoute({
   path: _path,
+  navigate,
 }: {
   readonly path: string;
-  readonly navigate?: (to: string) => void;
+  readonly navigate: (to: string) => void;
 }) {
   const { selectedTenantId } = useBench();
   const [pluginsState, setPluginsState] = useState<PluginsState>({
@@ -76,7 +77,6 @@ export function PluginsRoute({
     status: "loading",
   });
   const [openPlugin, setOpenPlugin] = useState<ResolvedPlugin | null>(null);
-  const [openSkillName, setOpenSkillName] = useState<string | null>(null);
   const [createSkillOpen, setCreateSkillOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<PluginsGalleryTab>("plugins");
   const [galleryQuery, setGalleryQuery] = useState("");
@@ -143,6 +143,10 @@ export function PluginsRoute({
     openPluginPanel,
   ]);
 
+  function openSkill(name: string) {
+    navigate(`${SKILLS_PATH_PREFIX}/${encodeURIComponent(name)}`);
+  }
+
   async function handleCreateSkill(input: SkillCreateInput) {
     if (selectedTenantId === null) return;
     const skill =
@@ -155,7 +159,7 @@ export function PluginsRoute({
           });
     setCreateSkillOpen(false);
     reloadSkills();
-    setOpenSkillName(skill.name);
+    openSkill(skill.name);
   }
 
   if (selectedTenantId === null) {
@@ -248,7 +252,7 @@ export function PluginsRoute({
           plugins={pluginsState.plugins}
           skills={skillCards}
           onOpenPlugin={openPluginPanel}
-          onOpenSkill={(skill) => setOpenSkillName(skill.name)}
+          onOpenSkill={(skill) => openSkill(skill.name)}
           activeTab={activeTab}
           onTabChange={setActiveTab}
           query={galleryQuery}
@@ -259,12 +263,6 @@ export function PluginsRoute({
         plugin={openPlugin}
         onClose={() => setOpenPlugin(null)}
         onChanged={reloadPlugins}
-      />
-      <PluginSkillDetailPanel
-        tenantId={tenantId}
-        skillName={openSkillName}
-        onClose={() => setOpenSkillName(null)}
-        onChanged={reloadSkills}
       />
       <CreateSkillDialog
         open={createSkillOpen}
