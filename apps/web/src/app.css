@@ -1566,7 +1566,15 @@ select:disabled,
   white-space: nowrap;
 }
 
-/* Mock .live — activity pulse; only when live signal exists and no unread. */
+/* Persistent pin glyph on pinned sidebar rows (CL-6657) — pinning must be
+   visible in the list itself, not only as a toast / settings bit. */
+.shell-ch-pin {
+  flex-shrink: 0;
+  width: 0.75rem;
+  height: 0.75rem;
+  color: var(--muted-foreground, var(--ui-fg-muted));
+}
+
 .shell-ch-live {
   width: 0.4rem;
   height: 0.4rem;

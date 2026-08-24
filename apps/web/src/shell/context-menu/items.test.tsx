@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 
 import { spyOnReactUiToast } from "../../../test/react-ui-toast-mock";
 import type { ContextMenuEntry } from "@corbits/context-menu";
+import { WORKBENCHES_MUTATED_EVENT } from "@corbits/chat-ui";
 
 const toastMock = spyOnReactUiToast();
 
@@ -72,6 +73,51 @@ describe("shellContextMenuFor: workbench", () => {
   test("drops the pin item without a selected tenant", () => {
     const menu = shellContextMenuFor(target, actions({ tenantId: null }));
     expect(itemIds(menu.entries)).toEqual(["rename", "copy-link"]);
+  });
+
+  test("pin dispatches WORKBENCHES_MUTATED_EVENT so the sidebar list refetches (CL-6657)", async () => {
+    const realFetch = globalThis.fetch;
+    // `patchWorkbenchSettings` validates against WorkbenchSettingsResponse —
+    // a partial body rejects and the success path (event + toast) never runs.
+    globalThis.fetch = mock(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: "ch-1",
+            title: "Launch Planning",
+            kind: "workbench",
+            pinned: true,
+            participants: [],
+            settings: { "chat/pinned": true },
+            contextWindow: { value: 0, source: "inherit" },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    ) as unknown as typeof fetch;
+    const events: Event[] = [];
+    const listener = (event: Event) => events.push(event);
+    window.addEventListener(WORKBENCHES_MUTATED_EVENT, listener);
+    try {
+      const menu = shellContextMenuFor(target, actions());
+      findItem(menu.entries, "pin").onSelect();
+      // request() awaits fetch then response.json() before the success
+      // .then (event + toast) runs — a few microtasks alone fall short.
+      for (let i = 0; i < 10 && events.length === 0; i++) {
+        await Promise.resolve();
+      }
+      if (events.length === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      expect(events).toHaveLength(1);
+      expect((events[0] as CustomEvent<{ tenantId: string }>).detail).toEqual({
+        tenantId: "tenant-1",
+      });
+      expect(toastMock).toHaveBeenCalledWith("Workbench pinned");
+    } finally {
+      window.removeEventListener(WORKBENCHES_MUTATED_EVENT, listener);
+      globalThis.fetch = realFetch;
+    }
   });
 
   test("copy-link writes the workbench's canonical URL to the clipboard", async () => {

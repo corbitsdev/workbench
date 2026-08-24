@@ -6,6 +6,7 @@
 import {
   patchWorkbenchSettings,
   profileSubjectFromParticipant,
+  WORKBENCHES_MUTATED_EVENT,
 } from "@corbits/chat-ui";
 import type { ProfileSubject } from "@corbits/chat-ui";
 import { contextMenuItem, contextMenuSeparator } from "@corbits/context-menu";
@@ -79,8 +80,17 @@ function workbenchMenu(
           void patchWorkbenchSettings(tenantId, target.id, {
             "chat/pinned": !target.pinned,
           }).then(
-            () =>
-              toast(target.pinned ? "Workbench unpinned" : "Workbench pinned"),
+            () => {
+              // Settings persist without this, but the sidebar list caches
+              // its workbench fetch — without a mutation signal the pin
+              // has zero visible effect (no reorder, no glyph refresh).
+              window.dispatchEvent(
+                new CustomEvent(WORKBENCHES_MUTATED_EVENT, {
+                  detail: { tenantId },
+                }),
+              );
+              toast(target.pinned ? "Workbench unpinned" : "Workbench pinned");
+            },
             () => toast("Couldn't update the workbench"),
           );
         },
