@@ -258,24 +258,24 @@ describe("SkillDetailPage", () => {
     expect(buttonNamed(el, "Make it private to me")).toBeDefined();
   });
 
-  test("Save… is offered only once the editor differs from the published version", async () => {
+  test("Review is offered only once the editor differs from the published version", async () => {
     const el = await mount();
     const bar = el.querySelector('[data-testid="stage-top-bar-actions"]');
     if (bar === null) throw new Error("no action slot");
-    expect(buttonNamed(bar, "Save…").disabled).toBe(true);
+    expect(buttonNamed(bar, "Review").disabled).toBe(true);
 
     await act(async () => {
       typeInto("skill-body", `${HEAD_BODY}\nEscalate anything on fire.`);
     });
-    expect(buttonNamed(bar, "Save…").disabled).toBe(false);
+    expect(buttonNamed(bar, "Review").disabled).toBe(false);
   });
 
-  test("Save… opens a confirmation showing the diff, and writes nothing yet", async () => {
+  test("Review opens a confirmation showing the diff, and writes nothing yet", async () => {
     const el = await mount();
     await act(async () => {
       typeInto("skill-body", "Read the report.\nPick two labels.");
     });
-    await click(buttonNamed(el, "Save…"));
+    await click(buttonNamed(el, "Review"));
 
     expect(document.body.textContent).toContain("Review this save");
     const diff = document.body.querySelector('[data-testid="diff-view"]');
@@ -289,7 +289,7 @@ describe("SkillDetailPage", () => {
     await act(async () => {
       typeInto("skill-body", "Read the report.\nPick two labels.");
     });
-    await click(buttonNamed(el, "Save…"));
+    await click(buttonNamed(el, "Review"));
     await click(buttonNamed(document.body, "Keep editing"));
 
     expect(document.body.textContent).not.toContain("Review this save");
@@ -304,7 +304,7 @@ describe("SkillDetailPage", () => {
     await act(async () => {
       typeInto("skill-body", "Read the report.\nPick two labels.");
     });
-    await click(buttonNamed(el, "Save…"));
+    await click(buttonNamed(el, "Review"));
     await click(buttonNamed(document.body, "Confirm & save"));
 
     expect(saves()).toHaveLength(1);
@@ -320,7 +320,7 @@ describe("SkillDetailPage", () => {
     await act(async () => {
       typeInto("skill-description", "  Sorts inbound issues by severity.  ");
     });
-    await click(buttonNamed(el, "Save…"));
+    await click(buttonNamed(el, "Review"));
     const diff = document.body.querySelector('[data-testid="diff-view"]');
     expect(diff?.textContent).toContain("Sorts inbound issues by severity.");
     await click(buttonNamed(document.body, "Confirm & save"));
@@ -340,12 +340,12 @@ describe("SkillDetailPage", () => {
     // Same text, different newline convention: nothing to save.
     const bar = el.querySelector('[data-testid="stage-top-bar-actions"]');
     if (bar === null) throw new Error("no action slot");
-    expect(buttonNamed(bar, "Save…").disabled).toBe(true);
+    expect(buttonNamed(bar, "Review").disabled).toBe(true);
 
     await act(async () => {
       typeInto("skill-body", "Read the report.\r\nPick two labels.\r");
     });
-    await click(buttonNamed(el, "Save…"));
+    await click(buttonNamed(el, "Review"));
     await click(buttonNamed(document.body, "Confirm & save"));
     expect(saves()[0]?.body).toEqual({
       description: "Sorts inbound issues.",
@@ -385,7 +385,7 @@ describe("SkillDetailPage", () => {
     await act(async () => {
       typeInto("skill-body", "Read the report.\nMy new line.");
     });
-    await click(buttonNamed(el, "Save…"));
+    await click(buttonNamed(el, "Review"));
     await click(buttonNamed(document.body, "Confirm & save"));
 
     // The review is still open, saying what happened, now diffing against
@@ -509,7 +509,7 @@ describe("SkillDetailPage", () => {
     await act(async () => {
       typeInto("skill-body", huge);
     });
-    await click(buttonNamed(el, "Save…"));
+    await click(buttonNamed(el, "Review"));
 
     const summary = document.body.querySelector(
       '[data-testid="diff-too-large"]',

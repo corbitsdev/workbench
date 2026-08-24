@@ -238,7 +238,7 @@ function shellMenu(actions: ShellContextMenuActions): ContextMenu {
     entries: [
       contextMenuItem({
         id: "search",
-        label: "Search…",
+        label: "Search",
         icon: <MagnifyingGlass />,
         onSelect: () => openCommandPalette(),
       }),
