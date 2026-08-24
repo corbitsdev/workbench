@@ -145,7 +145,7 @@ function EvalsList({
       <RichEmptyState
         icon={<ListBullets />}
         title="No eval runs yet"
-        description="Runs recorded by `bun run eval` show up here — each one a full step-by-step transcript with scorer verdicts."
+        description="When an eval run finishes, it shows up here — a step-by-step transcript with scorer verdicts."
       />
     );
   }
