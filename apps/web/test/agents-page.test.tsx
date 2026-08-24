@@ -265,6 +265,29 @@ describe("AgentsPage", () => {
     expect(markup).toContain(">Support<");
   });
 
+  // CL-6875: the roster's quick-peek panel must hop to the agent's own page
+  // at `/agents/<slug>` — panels preview enough to decide whether to open
+  // the full page (DESIGN.md), never substitute for one.
+  test("selected definition's panel offers a hop to /agents/<slug>", () => {
+    const markup = renderToStaticMarkup(
+      <AgentsPage
+        tenantId="tnt_1"
+        definitions={[triage]}
+        workbenches={new Map()}
+        instances={[]}
+        now={NOW}
+        selectedId="wfd_1"
+        onSelect={noop}
+        createOpen={false}
+        onCreateOpenChange={noop}
+        onCreated={noop}
+        onArchiveSelected={noop}
+      />,
+    );
+    expect(markup).toContain('href="/agents/triage-bot"');
+    expect(markup).toContain("Open");
+  });
+
   test("offers New agent as the top-bar create action, per the top-nav page-action contract", () => {
     const markup = renderToStaticMarkup(
       <AgentsPage

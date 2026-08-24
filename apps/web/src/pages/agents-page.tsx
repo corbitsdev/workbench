@@ -28,7 +28,8 @@ import {
   useListSelection,
 } from "@corbits/react-ui";
 import type { BadgeTone, SelectionCheckboxState } from "@corbits/react-ui";
-import { Archive, Plus, Robot } from "@corbits/icons";
+import { Archive, ArrowSquareOut, Plus, Robot } from "@corbits/icons";
+import { detailPath } from "@corbits/command-palette";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -340,6 +341,17 @@ function AgentDetailPanel({
           </dd>
         </div>
       </dl>
+      <Button asChild variant="outline" size="sm" className="w-full">
+        <Link
+          to={detailPath(AGENTS_PATH_PREFIX, {
+            slug: definition.name,
+            id: definition.id,
+          })}
+        >
+          <ArrowSquareOut aria-hidden="true" />
+          Open
+        </Link>
+      </Button>
     </aside>
   );
 }
@@ -348,7 +360,8 @@ function AgentDetailPanel({
  * The roster stage: a flat table of every definition this bench owns —
  * name, status, model, and how often it has run in the last week — rows,
  * never cards, per the owner's "rows over grids" rule for this slice.
- * Selecting a row opens its detail alongside the table; "New agent" opens
+ * Selecting a row opens its detail alongside the table; the panel's Open
+ * control hops to `/agents/<slug>` for the full page. "New agent" opens
  * `CreateAgentPanel`. Rows are also bulk-selectable (checkbox + shift/cmd
  * range select, `useListSelection`) with a floating `BulkActionBar` for
  * Archive — the only bulk action with a real backend primitive
