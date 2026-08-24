@@ -453,7 +453,11 @@ export function LibraryPage({
         }
         subtitle={
           selectedSummary === null
-            ? `${artifacts.length} files`
+            ? // Empty Files already has a poster invitation — a "0 files"
+              // count beside it is a second empty announcement (CL-6750).
+              artifacts.length === 0
+              ? undefined
+              : `${artifacts.length} files`
             : artifactKindLabel(selectedSummary.kind)
         }
         filter={{
@@ -543,7 +547,8 @@ export function LibraryPage({
           type="file"
           multiple
           className="sr-only"
-          aria-label="Upload files"
+          tabIndex={-1}
+          aria-hidden="true"
           onChange={(event) => {
             const list = event.target.files;
             if (list !== null && list.length > 0) {
