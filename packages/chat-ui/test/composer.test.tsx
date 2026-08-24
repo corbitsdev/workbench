@@ -340,3 +340,71 @@ describe("Composer hit targets (CL-6250)", () => {
     expect(buttons?.length).toBe(2);
   });
 });
+
+describe("Composer mention bring-in load error (CL-6839)", () => {
+  function mountWithBringInError(bringInLoadError: string) {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => {
+      root?.render(
+        createElement(Composer, {
+          agents: [],
+          participants: [],
+          members: [],
+          invitableAgents: [],
+          bringInLoadError,
+          onSend: () => Promise.resolve(true),
+          onInviteAgent: () => undefined,
+          onOpenAgentsSettings: () => undefined,
+          onCreateRoutineInSpace: () => undefined,
+        }),
+      );
+    });
+  }
+
+  test("shows the load error instead of an honest empty 'No matches' list", async () => {
+    mountWithBringInError("Couldn't load people and agents to bring in");
+    typeInto(textarea(), "@");
+    await settle();
+
+    const empty = container?.querySelector(".chat-mention-empty");
+    expect(empty?.getAttribute("role")).toBe("alert");
+    expect(empty?.textContent).toBe(
+      "Couldn't load people and agents to bring in",
+    );
+    expect(container?.textContent).not.toContain("No matches");
+  });
+
+  test("keeps in-workbench matches visible and still surfaces the bring-in error", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => {
+      root?.render(
+        createElement(Composer, {
+          agents: [],
+          participants: [
+            { address: "researcher@agents.example", handle: "researcher" },
+          ],
+          members: [],
+          invitableAgents: [],
+          bringInLoadError: "Couldn't load agents to bring in",
+          onSend: () => Promise.resolve(true),
+          onInviteAgent: () => undefined,
+          onOpenAgentsSettings: () => undefined,
+          onCreateRoutineInSpace: () => undefined,
+        }),
+      );
+    });
+    typeInto(textarea(), "@");
+    await settle();
+
+    const alert = container?.querySelector('.chat-mention-empty[role="alert"]');
+    expect(alert?.textContent).toBe("Couldn't load agents to bring in");
+    const handles = Array.from(
+      container?.querySelectorAll(".chat-mention-handle") ?? [],
+    ).map((node) => node.textContent);
+    expect(handles).toEqual(["@researcher"]);
+  });
+});

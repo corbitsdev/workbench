@@ -8,6 +8,7 @@ import {
   insertMention,
   mentionCandidatesFromParticipants,
   mentionOptionsFromWorkbench,
+  resolveBringInLists,
 } from "../src/mentions";
 
 describe("activeMentionQuery", () => {
@@ -199,5 +200,75 @@ describe("insertMention", () => {
       "researcher",
     );
     expect(result.text).toBe("hi @researcher  please");
+  });
+});
+
+describe("resolveBringInLists (CL-6839)", () => {
+  const members = [{ id: "prn_bob", displayName: "Bob" }];
+  const agents = [{ id: "wfd_echo", name: "echo" }];
+
+  test("successful queries pass their data through", () => {
+    expect(
+      resolveBringInLists({
+        members: { data: members, isError: false, error: null },
+        invitableAgents: { data: agents, isError: false, error: null },
+      }),
+    ).toEqual({
+      members,
+      invitableAgents: agents,
+      failures: [],
+      firstError: null,
+    });
+  });
+
+  test("undefined data while idle/loading is an empty list, not a failure", () => {
+    expect(
+      resolveBringInLists({
+        members: { data: undefined, isError: false, error: null },
+        invitableAgents: { data: undefined, isError: false, error: null },
+      }),
+    ).toEqual({
+      members: [],
+      invitableAgents: [],
+      failures: [],
+      firstError: null,
+    });
+  });
+
+  test("a members query error is a failure, never an honest empty members list", () => {
+    const err = new Error("members boom");
+    const resolved = resolveBringInLists({
+      members: { data: undefined, isError: true, error: err },
+      invitableAgents: { data: agents, isError: false, error: null },
+    });
+    expect(resolved.members).toEqual([]);
+    expect(resolved.invitableAgents).toEqual(agents);
+    expect(resolved.failures).toEqual(["members"]);
+    expect(resolved.firstError).toBe(err);
+  });
+
+  test("an invitable-agents query error is a failure, never an honest empty agents list", () => {
+    const err = new Error("agents boom");
+    const resolved = resolveBringInLists({
+      members: { data: members, isError: false, error: null },
+      invitableAgents: { data: undefined, isError: true, error: err },
+    });
+    expect(resolved.members).toEqual(members);
+    expect(resolved.invitableAgents).toEqual([]);
+    expect(resolved.failures).toEqual(["invitableAgents"]);
+    expect(resolved.firstError).toBe(err);
+  });
+
+  test("both query errors surface both failures without inventing empty success", () => {
+    const membersErr = new Error("members boom");
+    const agentsErr = new Error("agents boom");
+    const resolved = resolveBringInLists({
+      members: { data: undefined, isError: true, error: membersErr },
+      invitableAgents: { data: undefined, isError: true, error: agentsErr },
+    });
+    expect(resolved.members).toEqual([]);
+    expect(resolved.invitableAgents).toEqual([]);
+    expect(resolved.failures).toEqual(["members", "invitableAgents"]);
+    expect(resolved.firstError).toBe(membersErr);
   });
 });
