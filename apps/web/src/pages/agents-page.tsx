@@ -169,8 +169,53 @@ export function archiveResultToast({
 
 /** The short model name for a definition's capabilities — fetched lazily,
  * per row, the same route (and the same plain fetch-effect, no react-query
- * client required) `AgentDetailPanel` below already uses; a load or fetch
- * failure degrades to a dash rather than blocking the row. */
+ * client required) `AgentDetailPanel` below already uses. A fetch failure
+ * must not reuse the muted em-dash empty fields use (CL-6848). */
+export type AgentModelCellState =
+  | { readonly status: "loading" }
+  | { readonly status: "ready"; readonly data: AgentCapabilities }
+  | { readonly status: "error"; readonly message: string };
+
+/** Settled Model-column content — an unset model reads as "Default"; a
+ * fetch failure is a distinct error, never the same label. */
+export function agentModelSettledContent(
+  state:
+    | { readonly status: "ready"; readonly data: AgentCapabilities }
+    | { readonly status: "error"; readonly message: string },
+):
+  | { readonly kind: "model"; readonly label: string }
+  | { readonly kind: "error"; readonly message: string } {
+  if (state.status === "error") {
+    return { kind: "error", message: state.message };
+  }
+  return { kind: "model", label: state.data.model ?? "Default" };
+}
+
+/** Presentational half of the Model column — exported so tests can assert
+ * the failure glyph without waiting on the per-row fetch effect. */
+export function AgentModelCellView({
+  state,
+}: {
+  readonly state: AgentModelCellState;
+}) {
+  if (state.status === "loading") {
+    return <Skeleton className="h-4 w-14" />;
+  }
+  const settled = agentModelSettledContent(state);
+  if (settled.kind === "error") {
+    return (
+      <span className="text-xs text-destructive" role="alert">
+        {settled.message}
+      </span>
+    );
+  }
+  return (
+    <span className="font-mono text-xs text-muted-foreground">
+      {settled.label}
+    </span>
+  );
+}
+
 function AgentModelCell({
   tenantId,
   definitionId,
@@ -178,11 +223,9 @@ function AgentModelCell({
   readonly tenantId: string;
   readonly definitionId: string;
 }) {
-  const [capabilities, setCapabilities] = useState<
-    | { readonly status: "loading" }
-    | { readonly status: "ready"; readonly data: AgentCapabilities }
-    | { readonly status: "error" }
-  >({ status: "loading" });
+  const [capabilities, setCapabilities] = useState<AgentModelCellState>({
+    status: "loading",
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -191,25 +234,39 @@ function AgentModelCell({
       .then((data) => {
         if (!cancelled) setCapabilities({ status: "ready", data });
       })
-      .catch(() => {
-        if (!cancelled) setCapabilities({ status: "error" });
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          setCapabilities({
+            status: "error",
+            message: describeApiError(cause, "loading this agent's model"),
+          });
+        }
       });
     return () => {
       cancelled = true;
     };
   }, [tenantId, definitionId]);
 
-  if (capabilities.status === "loading") {
-    return <Skeleton className="h-4 w-14" />;
+  return <AgentModelCellView state={capabilities} />;
+}
+
+/** Settled Runs · 7d content — a failed top-level-runs fetch is never the
+ * same as an honest count of zero (CL-6842). */
+export function agentRunsSettledContent(
+  definitionId: string,
+  instances: readonly AgentInstance[],
+  now: number,
+  instancesError: string | null,
+):
+  | { readonly kind: "count"; readonly value: number }
+  | { readonly kind: "error"; readonly message: string } {
+  if (instancesError !== null) {
+    return { kind: "error", message: instancesError };
   }
-  if (capabilities.status === "error") {
-    return <span className="text-muted-foreground">—</span>;
-  }
-  return (
-    <span className="font-mono text-xs text-muted-foreground">
-      {capabilities.data.model ?? "Default"}
-    </span>
-  );
+  return {
+    kind: "count",
+    value: runsInLast7Days(definitionId, instances, now),
+  };
 }
 
 /** A workbench instance running a given agent definition — just enough to
@@ -377,6 +434,7 @@ export function AgentsPage({
   definitions,
   workbenches,
   instances,
+  instancesError = null,
   now = Date.now(),
   selectedId,
   onSelect,
@@ -393,6 +451,9 @@ export function AgentsPage({
     readonly DefinitionWorkbenchInstance[]
   >;
   readonly instances: readonly AgentInstance[];
+  /** When the top-level-runs fetch failed — Status/Runs · 7d must not pretend
+   * the history is empty (CL-6842). */
+  readonly instancesError?: string | null;
   readonly now?: number;
   readonly selectedId: string | null;
   readonly onSelect: (id: string | null) => void;
@@ -455,6 +516,11 @@ export function AgentsPage({
               />
             ) : (
               <div className="px-4 pb-5 sm:px-7">
+                {instancesError !== null ? (
+                  <p className="mb-3 text-sm text-destructive" role="alert">
+                    {instancesError}
+                  </p>
+                ) : null}
                 <Table aria-label="Agents">
                   <TableHeader>
                     <TableRow>
@@ -487,7 +553,16 @@ export function AgentsPage({
                   <TableBody>
                     {definitions.map((definition) => {
                       const isSelected = selection.isSelected(definition.id);
-                      const status = agentRosterStatus(definition, instances);
+                      const runs = agentRunsSettledContent(
+                        definition.id,
+                        instances,
+                        now,
+                        instancesError,
+                      );
+                      const status =
+                        runs.kind === "error"
+                          ? null
+                          : agentRosterStatus(definition, instances);
                       return (
                         <TableRow
                           key={definition.id}
@@ -556,19 +631,23 @@ export function AgentsPage({
                               : "—"}
                           </TableCell>
                           <TableCell>
-                            <span className="inline-flex items-center gap-1.5">
-                              {status === "running" ? (
-                                <StatusDot
-                                  label="Live"
-                                  live
-                                  tone="emphasis"
-                                  size="xs"
-                                />
-                              ) : null}
-                              <Badge tone={AGENT_ROSTER_STATUS_TONE[status]}>
-                                {AGENT_ROSTER_STATUS_LABEL[status]}
-                              </Badge>
-                            </span>
+                            {status === null ? (
+                              <span className="text-destructive">—</span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5">
+                                {status === "running" ? (
+                                  <StatusDot
+                                    label="Live"
+                                    live
+                                    tone="emphasis"
+                                    size="xs"
+                                  />
+                                ) : null}
+                                <Badge tone={AGENT_ROSTER_STATUS_TONE[status]}>
+                                  {AGENT_ROSTER_STATUS_LABEL[status]}
+                                </Badge>
+                              </span>
+                            )}
                           </TableCell>
                           <TableCell className="hidden lg:table-cell">
                             {tenantId !== null ? (
@@ -581,7 +660,11 @@ export function AgentsPage({
                             )}
                           </TableCell>
                           <TableCell className="hidden text-right tabular-nums text-muted-foreground lg:table-cell">
-                            {runsInLast7Days(definition.id, instances, now)}
+                            {runs.kind === "error" ? (
+                              <span className="text-destructive">—</span>
+                            ) : (
+                              runs.value
+                            )}
                           </TableCell>
                         </TableRow>
                       );
@@ -645,9 +728,9 @@ export function AgentsRoute({
   const queryClient = useQueryClient();
   const directory = useAgentDirectory(selectedTenantId ?? undefined);
   const activity = useBenchActivity(selectedTenantId);
-  // Powers the roster's Status and "Runs · 7d" columns; a failed fetch here
-  // degrades those two columns to Idle/0 rather than blocking the page —
-  // the definitions listing above is what makes the page usable at all.
+  // Powers the roster's Status and "Runs · 7d" columns. A failed fetch must
+  // not degrade those columns to Idle/0 (CL-6842) — the definitions listing
+  // still makes the page usable, but Status/Runs admit the load failed.
   const runsQuery = useQuery({
     queryKey: ["agent-top-level-runs", selectedTenantId],
     queryFn: () => listTopLevelRuns(selectedTenantId as string),
@@ -695,6 +778,11 @@ export function AgentsRoute({
       definitions={definitions}
       workbenches={workbenches}
       instances={runsQuery.data ?? []}
+      instancesError={
+        runsQuery.isError
+          ? describeApiError(runsQuery.error, "loading run history")
+          : null
+      }
       selectedId={selectedId}
       onSelect={(id) =>
         navigate(

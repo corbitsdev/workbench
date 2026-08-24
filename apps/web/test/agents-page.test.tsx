@@ -9,7 +9,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import {
   AgentsPage,
+  AgentModelCellView,
+  agentModelSettledContent,
   agentRosterStatus,
+  agentRunsSettledContent,
   archiveDefinitions,
   archiveResultToast,
   runsInLast7Days,
@@ -99,6 +102,98 @@ describe("runsInLast7Days", () => {
       }),
     ];
     expect(runsInLast7Days("wfd_1", instances, NOW)).toBe(1);
+  });
+});
+
+describe("agentModelSettledContent (CL-6848)", () => {
+  test("a fetch failure is an error, never the same label as an unset model", () => {
+    expect(
+      agentModelSettledContent({
+        status: "error",
+        message: "Something went wrong loading this agent's model. Try again.",
+      }),
+    ).toEqual({
+      kind: "error",
+      message: "Something went wrong loading this agent's model. Try again.",
+    });
+    expect(
+      agentModelSettledContent({
+        status: "ready",
+        data: { name: "triage-bot" },
+      }),
+    ).toEqual({ kind: "model", label: "Default" });
+  });
+
+  test("a ready model name passes through", () => {
+    expect(
+      agentModelSettledContent({
+        status: "ready",
+        data: { name: "triage-bot", model: "claude-sonnet-4" },
+      }),
+    ).toEqual({ kind: "model", label: "claude-sonnet-4" });
+  });
+});
+
+describe("AgentModelCellView (CL-6848)", () => {
+  test("a capabilities fetch error is visually distinct from an unset model", () => {
+    const errorMarkup = renderToStaticMarkup(
+      <AgentModelCellView
+        state={{
+          status: "error",
+          message:
+            "Something went wrong loading this agent's model. Try again.",
+        }}
+      />,
+    );
+    const unsetMarkup = renderToStaticMarkup(
+      <AgentModelCellView
+        state={{
+          status: "ready",
+          data: { name: "triage-bot" },
+        }}
+      />,
+    );
+    expect(errorMarkup).toContain("text-destructive");
+    expect(errorMarkup).toContain('role="alert"');
+    expect(errorMarkup).toContain("loading this agent&#x27;s model");
+    expect(errorMarkup).not.toContain("text-muted-foreground");
+    expect(unsetMarkup).toContain("Default");
+    expect(unsetMarkup).toContain("text-muted-foreground");
+    expect(unsetMarkup).not.toContain("text-destructive");
+    // The muted em-dash is the absent-value glyph elsewhere on the page —
+    // a fetch failure must not reuse it.
+    expect(errorMarkup).not.toContain(">—<");
+  });
+});
+
+describe("agentRunsSettledContent (CL-6842)", () => {
+  test("a runs fetch failure is not the same as an honest empty history", () => {
+    expect(
+      agentRunsSettledContent("wfd_1", [], NOW, "Couldn't load run history"),
+    ).toEqual({
+      kind: "error",
+      message: "Couldn't load run history",
+    });
+    expect(agentRunsSettledContent("wfd_1", [], NOW, null)).toEqual({
+      kind: "count",
+      value: 0,
+    });
+  });
+
+  test("a successful fetch still reports the trailing-week count", () => {
+    expect(
+      agentRunsSettledContent(
+        "wfd_1",
+        [
+          instance({
+            definitionId: "wfd_1",
+            createdAt: "2026-08-19T00:00:00.000Z",
+          }),
+        ],
+        NOW,
+        null,
+      ),
+    ).toEqual({ kind: "count", value: 1 });
   });
 });
 
@@ -392,5 +487,54 @@ describe("AgentsPage", () => {
       />,
     );
     expect(markup).not.toContain("Could not load agent skills");
+  });
+
+  test("an honest empty run history shows 0, not a load-failure marker (CL-6842)", () => {
+    const markup = renderToStaticMarkup(
+      <AgentsPage
+        tenantId="tnt_1"
+        definitions={[triage]}
+        workbenches={new Map()}
+        instances={[]}
+        now={NOW}
+        selectedId={null}
+        onSelect={noop}
+        createOpen={false}
+        onCreateOpenChange={noop}
+        onCreated={noop}
+        onArchiveSelected={noop}
+      />,
+    );
+    expect(markup).toContain("Idle");
+    expect(markup).toContain(">0<");
+    expect(markup).not.toContain("Couldn't load run history");
+  });
+
+  test("a runs fetch failure is distinguishable from zero instances (CL-6842)", () => {
+    const markup = renderToStaticMarkup(
+      <AgentsPage
+        tenantId="tnt_1"
+        definitions={[triage]}
+        workbenches={new Map()}
+        instances={[]}
+        instancesError="Something went wrong loading run history. Try again."
+        now={NOW}
+        selectedId={null}
+        onSelect={noop}
+        createOpen={false}
+        onCreateOpenChange={noop}
+        onCreated={noop}
+        onArchiveSelected={noop}
+      />,
+    );
+    expect(markup).toContain("text-destructive");
+    expect(markup).toContain('role="alert"');
+    expect(markup).toContain(
+      "Something went wrong loading run history. Try again.",
+    );
+    // Must not claim an Idle status or a literal zero off fabricated empty
+    // instances — that is the dishonest path `runsQuery.data ?? []` produced.
+    expect(markup).not.toContain("Idle");
+    expect(markup).not.toContain(">0<");
   });
 });
