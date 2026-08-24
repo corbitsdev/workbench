@@ -30,6 +30,7 @@ import {
   SlidersHorizontal,
   SquaresFour,
 } from "@corbits/icons";
+import { CHAT_STRINGS } from "@corbits/chat-ui";
 import type { Slug } from "@corbits/slug";
 import { lazy, useEffect, type ReactElement, type ReactNode } from "react";
 
@@ -253,7 +254,7 @@ function InboxRedirect({
 export const APP_ROUTES: readonly AppRoute[] = [
   {
     path: "/",
-    label: "New Workbench",
+    label: CHAT_STRINGS.newWorkbenchAction,
     icon: <ChatCircle />,
     render: () => <HomeRoute />,
     hasStageTopBar: false,
@@ -268,7 +269,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
   },
   {
     path: NEW_WORKBENCH_PATH,
-    label: "New workbench",
+    label: CHAT_STRINGS.newWorkbenchAction,
     icon: <ChatCircle />,
     render: () => <NewWorkbenchPickerRoute />,
   },

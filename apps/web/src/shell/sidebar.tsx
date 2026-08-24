@@ -50,7 +50,11 @@ import {
 import type { CSSProperties } from "react";
 import { useMemo } from "react";
 
-import { AVATAR_IDENTITY_CLASS, generatedAvatarStyle } from "@corbits/chat-ui";
+import {
+  AVATAR_IDENTITY_CLASS,
+  CHAT_STRINGS,
+  generatedAvatarStyle,
+} from "@corbits/chat-ui";
 import {
   createInsightsWindow,
   usageChromeLabel,
@@ -150,8 +154,8 @@ export function Sidebar({
         <Button
           variant="ghost"
           size="sm"
-          aria-label="New workbench"
-          title="New workbench"
+          aria-label={CHAT_STRINGS.newWorkbenchAction}
+          title={CHAT_STRINGS.newWorkbenchAction}
           onClick={() => onNavigate(NEW_WORKBENCH_PATH)}
         >
           <Plus />

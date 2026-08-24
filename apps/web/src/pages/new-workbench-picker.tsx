@@ -17,6 +17,7 @@ import {
 } from "@corbits/icons";
 import {
   ChatApiError,
+  CHAT_STRINGS,
   describeChatError,
   WorkbenchLoadingState,
 } from "@corbits/chat-ui";
@@ -216,7 +217,7 @@ export function NewWorkbenchPickerRoute() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
-        crumbs={[{ label: "New workbench" }]}
+        crumbs={[{ label: CHAT_STRINGS.newWorkbenchAction }]}
         actions={
           <Button
             type="button"

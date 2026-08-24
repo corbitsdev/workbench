@@ -231,6 +231,8 @@ describe("MissionControlRoute", () => {
       });
     }
     expect(container.textContent).toContain("Mission Control");
+    expect(container.textContent).toContain("New workbench");
+    expect(container.textContent).not.toContain("New bench");
     expect(container.textContent).toContain("Nothing waiting on you");
     expect(container.textContent).toContain("Nothing running right now");
     expect(container.textContent).toContain("Nothing recent yet.");
