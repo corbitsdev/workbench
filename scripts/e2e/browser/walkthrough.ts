@@ -653,29 +653,33 @@ async function run(): Promise<void> {
           timeout: 15_000,
         });
         // A hard navigation re-mounts `BenchProvider` from scratch — the
-        // sidebar's "+" renders unconditionally, but the list's own label
-        // (and the rest of the list) only replaces its "Nothing selected"
+        // sidebar's "+" renders unconditionally, but the list's own labels
+        // (and the rest of the list) only replace the "Nothing selected"
         // empty state once `/api/me/principals` resolves and picks a
         // tenant. Poll rather than reading once, so this never flakes on
         // that ordinary reload race. The owner's sidebar reshape dropped
-        // the old header-bar slot entirely (logo · search · label · rows,
-        // no separate title bar) — `.shell-panel-list-label` is the
-        // "Workbenches" text that actually renders now.
-        let sidebarTitle: string | null = null;
+        // the old header-bar slot entirely (logo · search · labels · rows,
+        // no separate title bar) — `.shell-panel-list-label` is Agents,
+        // then Channels (CL-6977).
+        let sidebarTitles: string[] = [];
         for (let attempt = 0; attempt < 15; attempt += 1) {
-          sidebarTitle = await page.evaluate(
-            () =>
-              document
-                .querySelector(".shell-panel-list-label")
-                ?.textContent?.trim() ?? null,
+          sidebarTitles = await page.evaluate(() =>
+            [...document.querySelectorAll(".shell-panel-list-label")].map(
+              (el) => el.textContent?.trim() ?? "",
+            ),
           );
-          if (sidebarTitle === "Workbenches") break;
+          if (
+            sidebarTitles[0] === "Agents" &&
+            sidebarTitles[1] === "Channels"
+          ) {
+            break;
+          }
           await new Promise((resolve) => setTimeout(resolve, 500));
         }
-        if (sidebarTitle !== "Workbenches") {
+        if (sidebarTitles[0] !== "Agents" || sidebarTitles[1] !== "Channels") {
           return {
             status: "fail",
-            detail: `expected the sidebar title "Workbenches", got ${JSON.stringify(sidebarTitle)}`,
+            detail: `expected sidebar titles ["Agents","Channels"], got ${JSON.stringify(sidebarTitles)}`,
           };
         }
         const createButtons = await countMatching(
@@ -691,7 +695,7 @@ async function run(): Promise<void> {
         return {
           status: "pass",
           detail:
-            'single always-visible sidebar: titled "Workbenches", one "+ New workbench" affordance',
+            'single always-visible sidebar: titled Agents then Channels, one "+ New workbench" affordance',
         };
       },
     );

@@ -1,5 +1,5 @@
-// The one sidebar. Header: the brand mark, then create + search. Body: the
-// workbench list — nothing page-scoped ever renders here. Footer: the
+// The one sidebar. Header: the brand mark, then create + search. Body:
+// Agents and Channels — nothing page-scoped ever renders here. Footer: the
 // first-run rail is Routines, Files, Skills, Agents; Insights and Evals
 // join only when the existing usage / eval-run reads return real items
 // (never a fabricated row, never a new analytics store). Plugins is
@@ -143,10 +143,10 @@ export function Sidebar({
     <SidebarPanel
       className="shell-sidebar"
       data-testid="shell-sidebar"
-      aria-label="Workbenches"
+      aria-label="Agents and Channels"
     >
       {/* Owner's shape: logo with "+" on the first row, the search box
-          (inside the list) below, then the plain "Workbenches" label. No
+          (inside the list) below, then Agents and Channels. No
           header icon cluster — search is the box. */}
       <div className="shell-sidebar-brand-row">
         <SidebarBrandMark />
@@ -160,8 +160,8 @@ export function Sidebar({
           <Plus />
         </Button>
       </div>
-      {/* The "Workbenches" label renders inside the list, below its search
-          box (owner's order: logo · search · Workbenches · rows). */}
+      {/* Agents and Channels labels render inside the list, below its
+          search box (owner's order: logo · search · sections · rows). */}
 
       <SidebarPanelBody>
         <WorkbenchList path={path} onNavigate={onNavigate} />
