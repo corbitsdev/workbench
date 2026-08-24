@@ -2,7 +2,9 @@ import { describe, expect, test } from "bun:test";
 
 import type { Workbench } from "@corbits/chat-ui";
 
+import type { SidebarRow } from "./sidebar-rows";
 import {
+  filterSidebarRows,
   orderWorkbenchRows,
   renamePayload,
   rowMenuLabels,
@@ -18,6 +20,10 @@ function workbench(overrides: Partial<Workbench> = {}): Workbench {
     participants: [],
     ...overrides,
   } as Workbench;
+}
+
+function row(overrides: Partial<Workbench> = {}): SidebarRow {
+  return { kind: "workbench", workbench: workbench(overrides) };
 }
 
 describe("rowMenuLabels", () => {
@@ -110,5 +116,75 @@ describe("orderWorkbenchRows", () => {
       "b",
       "c",
     ]);
+  });
+});
+
+describe("filterSidebarRows", () => {
+  // CL-6662: the row shows title + preview; search must match either, or a
+  // query visible in the preview (e.g. "Solvora") falsely returns no matches.
+  test("matches the displayed title", () => {
+    const rows = [
+      row({ id: "ch_a", title: "Launch plan" }),
+      row({ id: "ch_b", title: "Research brief" }),
+    ];
+    expect(filterSidebarRows(rows, "launch").map((r) => r.workbench.id)).toEqual(
+      ["ch_a"],
+    );
+  });
+
+  test("matches preview text even when the title does not (CL-6662)", () => {
+    const rows = [
+      row({
+        id: "ch_solvora",
+        title: "Myra",
+        preview: "Drafted the Solvora outreach email",
+      }),
+      row({
+        id: "ch_other",
+        title: "Scout",
+        preview: "Weekly digest ready",
+      }),
+    ];
+    expect(
+      filterSidebarRows(rows, "Solvora").map((r) => r.workbench.id),
+    ).toEqual(["ch_solvora"]);
+  });
+
+  test("is case-insensitive across title and preview", () => {
+    const rows = [
+      row({ id: "ch_1", title: "Myra", preview: "Talked about Acme pricing" }),
+    ];
+    expect(filterSidebarRows(rows, "ACME").map((r) => r.workbench.id)).toEqual([
+      "ch_1",
+    ]);
+    expect(filterSidebarRows(rows, "myra").map((r) => r.workbench.id)).toEqual([
+      "ch_1",
+    ]);
+  });
+
+  test("an empty or whitespace-only query returns every row", () => {
+    const rows = [row({ id: "ch_a" }), row({ id: "ch_b", title: "Other" })];
+    expect(filterSidebarRows(rows, "").map((r) => r.workbench.id)).toEqual([
+      "ch_a",
+      "ch_b",
+    ]);
+    expect(filterSidebarRows(rows, "   ").map((r) => r.workbench.id)).toEqual([
+      "ch_a",
+      "ch_b",
+    ]);
+  });
+
+  test("returns no rows when neither title nor preview matches", () => {
+    const rows = [
+      row({ id: "ch_1", title: "Myra", preview: "Hello there" }),
+    ];
+    expect(filterSidebarRows(rows, "zzz")).toEqual([]);
+  });
+
+  test("a missing preview still matches on title alone", () => {
+    const rows = [row({ id: "ch_1", title: "Launch plan" })];
+    expect(
+      filterSidebarRows(rows, "launch").map((r) => r.workbench.id),
+    ).toEqual(["ch_1"]);
   });
 });

@@ -179,6 +179,28 @@ export function orderWorkbenchRows(
 }
 
 /**
+ * Sidebar search over what the row actually shows: the displayed title and
+ * the preview snippet. Title-only matching left people staring at a visible
+ * preview word (CL-6662) and a "No matches" empty state. Case-insensitive
+ * substring; empty/whitespace query keeps every row.
+ */
+export function filterSidebarRows(
+  rows: readonly SidebarRow[],
+  query: string,
+): readonly SidebarRow[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") return rows;
+  return rows.filter((row) => {
+    const title =
+      displayWorkbenchTitle(row.workbench.title, row.workbench.id) ||
+      CHAT_STRINGS.unnamedWorkbench;
+    if (title.toLowerCase().includes(needle)) return true;
+    const preview = row.workbench.preview ?? "";
+    return preview.toLowerCase().includes(needle);
+  });
+}
+
+/**
  * One workbench row — avatar, name (the agent's for an agent conversation,
  * the row's own title for a multi-party one), optional shared/live, optional
  * time + unread badge, hover menu for rename / pin. Mutations go through
@@ -412,15 +434,7 @@ export function WorkbenchList({
     );
   }
 
-  const rowName = (row: SidebarRow): string =>
-    displayWorkbenchTitle(row.workbench.title, row.workbench.id) ||
-    CHAT_STRINGS.unnamedWorkbench;
-
-  const q = query.trim().toLowerCase();
-  const filtered =
-    q === ""
-      ? all
-      : all.filter((row) => rowName(row).toLowerCase().includes(q));
+  const filtered = filterSidebarRows(all, query);
 
   const tenantId = selectedTenantId ?? "";
 
