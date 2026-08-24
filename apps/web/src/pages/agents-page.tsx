@@ -517,10 +517,7 @@ export function AgentsPage({
             ) : (
               <div className="px-4 pb-5 sm:px-7">
                 {instancesError !== null ? (
-                  <p
-                    className="mb-3 text-sm text-destructive"
-                    role="alert"
-                  >
+                  <p className="mb-3 text-sm text-destructive" role="alert">
                     {instancesError}
                   </p>
                 ) : null}

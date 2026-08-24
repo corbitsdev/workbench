@@ -140,7 +140,8 @@ describe("AgentModelCellView (CL-6848)", () => {
       <AgentModelCellView
         state={{
           status: "error",
-          message: "Something went wrong loading this agent's model. Try again.",
+          message:
+            "Something went wrong loading this agent's model. Try again.",
         }}
       />,
     );
