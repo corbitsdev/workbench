@@ -1429,6 +1429,7 @@ function MessagePartsInner({
     >
       {showDayDivider && <DayDivider createdAt={item.createdAt} />}
       <div className="chat-message-row">
+        <div className="chat-message-body">
         {groupTimelineParts(item.parts, groupKey).map((group) => {
           const key = group.key;
           if (group.kind === "tool-activity") {
@@ -1562,6 +1563,7 @@ function MessagePartsInner({
             </div>
           );
         })()}
+        </div>
         {offersSocialChrome && onOpenThread !== undefined && replyCount > 0 ? (
           <ThreadAffordance
             messageId={item.id}

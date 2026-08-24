@@ -77,6 +77,22 @@ describe("reaction chip row", () => {
     expect(chip.dataset["reacted"]).toBe("false");
   });
 
+  test("reaction row sits under the bubble inside the message body column", async () => {
+    const el = await mount(messageWithReactions(), {
+      onToggle: () => {},
+    });
+
+    const body = el.querySelector(".chat-message-body");
+    expect(body).not.toBeNull();
+    const bubble = body!.querySelector(".chat-bubble");
+    const actions = body!.querySelector(".chat-message-actions");
+    expect(bubble).not.toBeNull();
+    expect(actions).not.toBeNull();
+    // DOM order: bubble precedes the reaction row within the same body column.
+    const following = bubble!.compareDocumentPosition(actions!);
+    expect(following & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   test("clicking an existing chip toggles it — the host's onToggle, not local state", async () => {
     const calls: { messageId: string; emoji: string }[] = [];
     const el = await mount(messageWithReactions(), {
