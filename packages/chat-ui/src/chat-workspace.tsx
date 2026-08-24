@@ -153,8 +153,12 @@ export const TEAM_AVATAR_STACK_LIMIT = 6;
  * Every currently-active member of the workbench, for the header's
  * overlapping avatar stack: every agent participant on the workbench (agents
  * are always "active" — they have no presence concept of their own) plus
- * every human currently reflected in live presence. Agents first since
- * they're a workbench's stable roster; humans are who's here right now.
+ * every human on the roster and every human currently reflected in live
+ * presence. Agents first since they're a workbench's stable roster; humans
+ * follow. Roster humans are included even when presence is empty
+ * (CL-6779) — onboarding/template rooms often have the signed-in human as
+ * a participant before any `chat.presence.snapshot` arrives, and omitting
+ * them left the stack agent-only.
  *
  * Each agent gets its own `generatedAvatarStyle` fill keyed by address
  * (CL-6594) — the same deterministic-per-principal machinery humans
@@ -179,15 +183,55 @@ export function buildTeamAvatarStack(
         textColor: style["--avatar-identity-fg"],
       };
     });
-  const humans = presenceMembers.map((member) => ({
-    key: member.principalId,
-    initials: member.displayName.slice(0, 1).toUpperCase(),
-    label: member.displayName,
-    tone: "neutral" as const,
-    color: member.color,
-    textColor: member.textColor,
-  }));
-  return [...agents, ...humans];
+
+  const presenceById = new Map(
+    presenceMembers.map((member) => [member.principalId, member] as const),
+  );
+  const rosterHumans = participants.filter(
+    (participant) => !isAgentAddress(participant.address),
+  );
+  const rosterHumanIds = new Set(
+    rosterHumans.map((participant) => participant.address),
+  );
+
+  // Prefer live-presence display name/color when the roster human is also
+  // present; otherwise fall back to the participant handle + generated fill
+  // so onboarding/template rooms still show the signed-in human.
+  const humansFromRoster = rosterHumans.map((participant) => {
+    const live = presenceById.get(participant.address);
+    if (live !== undefined) {
+      return {
+        key: live.principalId,
+        initials: live.displayName.slice(0, 1).toUpperCase(),
+        label: live.displayName,
+        tone: "neutral" as const,
+        color: live.color,
+        textColor: live.textColor,
+      };
+    }
+    const style = generatedAvatarStyle(participant.address);
+    return {
+      key: participant.address,
+      initials: participant.handle.slice(0, 1).toUpperCase(),
+      label: participant.handle,
+      tone: "neutral" as const,
+      color: style["--avatar-identity-bg"],
+      textColor: style["--avatar-identity-fg"],
+    };
+  });
+
+  const humansFromPresenceOnly = presenceMembers
+    .filter((member) => !rosterHumanIds.has(member.principalId))
+    .map((member) => ({
+      key: member.principalId,
+      initials: member.displayName.slice(0, 1).toUpperCase(),
+      label: member.displayName,
+      tone: "neutral" as const,
+      color: member.color,
+      textColor: member.textColor,
+    }));
+
+  return [...agents, ...humansFromRoster, ...humansFromPresenceOnly];
 }
 
 type WorkbenchesState =

@@ -48,4 +48,41 @@ describe("buildTeamAvatarStack (CL-6594)", () => {
       "Dana",
     ]);
   });
+
+  test("includes the signed-in human from the roster even with empty presence (CL-6779)", () => {
+    // Onboarding/template rooms list the human as a participant before any
+    // presence snapshot arrives — the stack must not be agent-only.
+    const participants: readonly ParticipantRecord[] = [
+      { address: "run_myra@dana.localhost", handle: "myra" },
+      { address: "prn_dana", handle: "Dana" },
+    ];
+
+    const stack = buildTeamAvatarStack(participants, []);
+
+    expect(stack.map((entry) => entry.label)).toEqual(["myra", "Dana"]);
+    expect(stack.map((entry) => entry.tone)).toEqual(["agent", "neutral"]);
+    const human = stack[1];
+    expect(human?.key).toBe("prn_dana");
+    expect(human?.initials).toBe("D");
+    expect(human?.color).toBeDefined();
+  });
+
+  test("dedupes a roster human who is also live in presence", () => {
+    const participants: readonly ParticipantRecord[] = [
+      { address: "run_myra@dana.localhost", handle: "myra" },
+      { address: "prn_dana", handle: "Dana" },
+    ];
+
+    const stack = buildTeamAvatarStack(participants, [
+      {
+        principalId: "prn_dana",
+        displayName: "Dana Live",
+        color: "hsl(10 70% 60%)",
+        textColor: "#000000",
+      },
+    ]);
+
+    expect(stack.map((entry) => entry.label)).toEqual(["myra", "Dana Live"]);
+    expect(stack[1]?.color).toBe("hsl(10 70% 60%)");
+  });
 });
