@@ -641,7 +641,7 @@ function ChatWorkspaceInner({
     activeWorkbenchId,
     ...(onWorkbenchNotFound !== undefined ? { onWorkbenchNotFound } : {}),
   });
-  const { threads, rootThreadId, pinnedMessages, refreshFeed } = feed;
+  const { threads, rootThreadId, pinsStatus, refreshFeed } = feed;
 
   const navigation = useThreadNavigation({
     tenantId,
@@ -1357,7 +1357,7 @@ function ChatWorkspaceInner({
                 <>
                   {!inThreadView ? (
                     <PinnedStrip
-                      items={pinnedMessages}
+                      status={pinsStatus}
                       onJump={jumpToMessage}
                     />
                   ) : null}

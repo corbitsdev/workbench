@@ -103,7 +103,8 @@ function stubFetch() {
       }
       return json({ items: [] });
     }
-    if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path)) return json([]);
+    if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path))
+      return json({ items: [] });
     if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
     if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path))
       return json({ items: [] });

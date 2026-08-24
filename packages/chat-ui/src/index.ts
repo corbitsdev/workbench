@@ -22,6 +22,7 @@ export {
 export type { AvatarFill, GeneratedAvatarStyle } from "./avatar-identity";
 
 export { PinnedStrip } from "./pinned-strip";
+export type { PinsStatus } from "./use-workbench-feed";
 export {
   Composer,
   draftAfterSend,

@@ -3156,6 +3156,16 @@
   color: var(--foreground);
 }
 
+.chat-pinned-strip-error {
+  color: var(--muted-foreground);
+}
+
+.chat-pinned-strip-error-message {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
 .chat-thread-affordance {
   display: flex;
   align-items: center;

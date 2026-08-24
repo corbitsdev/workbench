@@ -143,6 +143,7 @@ export const CHAT_STRINGS = {
   pinnedStripLabel: "Pinned messages",
   pinnedStripEmptyPreview: "Pinned message",
   pinnedStripJumpAction: (preview: string) => `Jump to: ${preview}`,
+  pinnedStripLoadError: "Couldn't load pinned messages.",
   pendingSendLabel: "Sending…",
   pendingSendFailedLabel: "Not sent",
   pendingSendRetryAction: "Retry",

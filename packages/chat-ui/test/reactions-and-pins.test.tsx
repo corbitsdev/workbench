@@ -199,14 +199,54 @@ describe("pinned strip", () => {
 
   test("renders nothing with no pinned messages", () => {
     const markup = renderToStaticMarkup(
-      <PinnedStrip items={[]} onJump={() => undefined} />,
+      <PinnedStrip
+        status={{ kind: "ready", items: [] }}
+        onJump={() => undefined}
+      />,
     );
     expect(markup).toBe("");
   });
 
+  test("renders nothing while loading or when pins are unavailable on this host", () => {
+    expect(
+      renderToStaticMarkup(
+        <PinnedStrip status={{ kind: "loading" }} onJump={() => undefined} />,
+      ),
+    ).toBe("");
+    expect(
+      renderToStaticMarkup(
+        <PinnedStrip
+          status={{ kind: "unavailable" }}
+          onJump={() => undefined}
+        />,
+      ),
+    ).toBe("");
+  });
+
+  test("a load failure renders an error strip — never the honest-empty silence (CL-6832)", () => {
+    const markup = renderToStaticMarkup(
+      <PinnedStrip
+        status={{
+          kind: "error",
+          message: "Couldn't load pinned messages.",
+        }}
+        onJump={() => undefined}
+      />,
+    );
+    // Static markup escapes the apostrophe; the alert role is the
+    // empty-vs-error distinction the strip must keep.
+    expect(markup).toContain("Couldn&#x27;t load pinned messages.");
+    expect(markup).toContain('role="alert"');
+    expect(markup).toContain("chat-pinned-strip-error");
+    expect(markup).not.toContain("chat-pinned-strip-item");
+  });
+
   test("renders a jump chip previewing the pinned message's text", () => {
     const markup = renderToStaticMarkup(
-      <PinnedStrip items={pins} onJump={() => undefined} />,
+      <PinnedStrip
+        status={{ kind: "ready", items: pins }}
+        onJump={() => undefined}
+      />,
     );
     expect(markup).toContain("important announcement here");
   });
@@ -218,7 +258,10 @@ describe("pinned strip", () => {
     root = createRoot(container);
     await act(async () => {
       root?.render(
-        <PinnedStrip items={pins} onJump={(id) => jumped.push(id)} />,
+        <PinnedStrip
+          status={{ kind: "ready", items: pins }}
+          onJump={(id) => jumped.push(id)}
+        />,
       );
     });
 

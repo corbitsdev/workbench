@@ -3,11 +3,16 @@
 // nothing when there are no pins — an empty strip is chrome nobody
 // asked to see, the same "no items, no surface" rule the timeline's own
 // empty state follows for the reverse case (see `WorkbenchTimeline`).
+//
+// A load failure is distinct from honest empty (CL-6832): the strip
+// surfaces an alert instead of disappearing. A host with no pins store
+// (`unavailable`) still renders nothing — absent feature, absent chrome.
 
 import { PushPin } from "@corbits/icons";
 
 import type { PinnedMessage } from "./api";
 import { CHAT_STRINGS } from "./strings";
+import type { PinsStatus } from "./use-workbench-feed";
 
 /**
  * A short, single-line preview of a pinned message's content — its
@@ -28,16 +33,31 @@ function previewOf(item: PinnedMessage): string {
 }
 
 export function PinnedStrip({
-  items,
+  status,
   onJump,
 }: {
-  readonly items: readonly PinnedMessage[];
+  readonly status: PinsStatus;
   /** Scrolls the timeline to the pinned message's own row — the host
    * owns nothing here beyond calling this; `PinnedStrip` resolves the
    * DOM id itself via `messageDomId`. */
   readonly onJump: (messageId: string) => void;
 }) {
-  if (items.length === 0) return null;
+  if (status.kind === "loading" || status.kind === "unavailable") return null;
+
+  if (status.kind === "error") {
+    return (
+      <div
+        className="chat-pinned-strip chat-pinned-strip-error"
+        role="alert"
+        aria-label={CHAT_STRINGS.pinnedStripLabel}
+      >
+        <PushPin className="chat-pinned-strip-icon" aria-hidden="true" />
+        <p className="chat-pinned-strip-error-message">{status.message}</p>
+      </div>
+    );
+  }
+
+  if (status.items.length === 0) return null;
 
   return (
     <div
@@ -47,7 +67,7 @@ export function PinnedStrip({
     >
       <PushPin className="chat-pinned-strip-icon" aria-hidden="true" />
       <div className="chat-pinned-strip-row">
-        {items.map((item) => {
+        {status.items.map((item) => {
           const preview = previewOf(item);
           return (
             <button
