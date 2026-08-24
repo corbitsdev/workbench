@@ -274,7 +274,7 @@ export const APP_ROUTES: readonly AppRoute[] = [
   },
   {
     path: WORKBENCH_PATH_PREFIX,
-    label: "Workbenches",
+    label: "Workbench",
     icon: <ChatCircle />,
     render: (path: string, navigate: (to: string) => void) => (
       <ChatPage path={path} navigate={navigate} />

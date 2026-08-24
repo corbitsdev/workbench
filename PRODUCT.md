@@ -14,9 +14,10 @@ conversation is also its own tenant, so its membership and grants are its
 own. There is no separate "project" or "space" object sitting above the
 conversation; the conversation is the unit of work.
 
-This is why the sidebar is one list of workbenches, not sections split by
-kind — every workbench a person has, agent conversation or group
-conversation alike, shows up the same way. See
+This is why the sidebar lists workbenches under two labeled sections —
+**Agents** (agent conversations) and **Channels** (rooms) — rather than
+one undifferentiated list. Every row is still a workbench; the sections
+are how a person finds the right one. See
 [docs/GLOSSARY.md](docs/GLOSSARY.md) for the full term mapping and
 [docs/CHAT.md](docs/CHAT.md) for how a conversation is built underneath.
 
@@ -32,10 +33,10 @@ team spaces); within a bench, they open, create, and work in workbenches.
 Workbench is intentionally not a multi-pane IDE. The product surface is one
 column at a time:
 
-- **A sidebar of workbenches** lists every conversation in the selected
-  bench, flat, most-recently-active first. There is no separate "channels"
-  vs. "chats" grouping the sidebar exposes to a person — every row is a
-  workbench.
+- **A sidebar of Agents and Channels** lists every conversation in the
+  selected bench under those two labeled sections, most-recently-active
+  first within each. Pinning stays inside a section; one search filters
+  both without dropping either label. Every row is a workbench.
 - **"+ New Workbench" always creates.** It opens `/new` — the shipped
   prompt-primary picker — never a picker of existing things to join.
   Starting a new workbench is the one way in, whether the result is a
