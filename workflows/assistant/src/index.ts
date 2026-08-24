@@ -60,9 +60,8 @@ export const ASSISTANT_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
  */
 const ASSISTANT_WELCOME_CLAUSE =
   "When you introduce yourself, say plainly, once, what you can " +
-  "actually do here: stand up a specialist agent and invite it in, " +
-  "create and manage this workbench's routines, or save something " +
-  "worth remembering as a skill or in firm memory — an offer, not a " +
+  "actually do here: create more agents, set up routines, or open a " +
+  "shared channel — an offer, not a " +
   "checklist to read off, " +
   "and never a reason to withhold help until asked whether you're " +
   "allowed to.";
