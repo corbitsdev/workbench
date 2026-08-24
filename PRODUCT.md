@@ -83,9 +83,15 @@ Code review is the product scene for the template path: Connect GitHub
 with a personal access token (the shipped path today) → the connect card
 flips in place to pick repositories → reviewers introduce themselves as
 left-aligned messages with avatars. A GitHub App / hosted OAuth welcome
-mat is future work (CL-6343), not current product. Never: a stale Connect
-after success; the product posting as the signed-in user; an agent 401
-after GitHub already succeeded.
+mat is future work (CL-6343), not current product.
+
+Connected/settle honesty — no stale Connect after success; settle never
+posting as the signed-in user; no agent 401 after GitHub already
+succeeded — is the **target**, not shipped end-to-end. What ships today
+is narrower: live credential reads that resolve at call, and a GitHub
+settle path that can still attribute as the connecting user. Point
+implementers at IMPLEMENTATION.md open questions, CL-6737, and CL-6738;
+do not treat those three guarantees as current product law.
 
 ## Plugins and Skills
 
@@ -168,6 +174,11 @@ vocabulary above.
 
 ## Open questions
 
+- Connected/settle honesty (no stale Connect after success; settle never
+  posting as the signed-in user; no agent 401 after GitHub already
+  succeeded) stays **target** until CL-6737 and CL-6738 land — see
+  IMPLEMENTATION.md open questions; do not document those guarantees as
+  shipped.
 - Whether "Space" and "Chat" as user-facing labels are fully rolled out
   across the UI or still landing incrementally is not settled in the
   docs reviewed for this pass — treat the sidebar and conversation-header
