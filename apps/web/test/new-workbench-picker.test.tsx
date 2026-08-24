@@ -169,27 +169,11 @@ function stubBlankCreate(
   onSendMessage?: (body: { parts: readonly { kind: string }[] }) => void,
 ): RecordedCall[] {
   return stubFetch((path, init) => {
-    if (path.includes("/workflows/definitions")) {
-      return json({
-        data: [
-          {
-            id: "wfd_assistant",
-            tenantId: "tnt_1",
-            name: "assistant",
-            currentVersion: "1",
-            status: "deployed",
-            createdAt: "2026-01-01T00:00:00.000Z",
-            updatedAt: "2026-01-01T00:00:00.000Z",
-          },
-        ],
-        nextCursor: null,
-      });
-    }
     if (path.endsWith("/chat/workbenches") && init?.method === "POST") {
       return json({
         id: "chan_new",
         title: "New Workbench",
-        kind: "chat",
+        kind: "workbench",
         pinned: false,
         participants: [],
       });
@@ -346,9 +330,12 @@ describe("NewWorkbenchPickerRoute", () => {
         call.path.endsWith("/chat/workbenches") && call.init?.method === "POST",
     );
     expect(JSON.parse(String(createWorkbenchCall?.init?.body))).toMatchObject({
-      kind: "chat",
-      definitionId: "wfd_assistant",
+      kind: "workbench",
+      name: "New Workbench",
     });
+    expect(
+      JSON.parse(String(createWorkbenchCall?.init?.body)).definitionId,
+    ).toBeUndefined();
 
     const sendMessageCall = calls.find((call) =>
       call.path.endsWith("/chat/workbenches/chan_new/messages"),
