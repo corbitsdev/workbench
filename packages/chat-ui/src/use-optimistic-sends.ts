@@ -285,9 +285,7 @@ export function useOptimisticSends(args: {
             return ensureReplyThreadRow(current, {
               threadId,
               createdAt: sent.createdAt,
-              ...(parentMessageId !== null
-                ? { parentMessageId }
-                : {}),
+              ...(parentMessageId !== null ? { parentMessageId } : {}),
               bumpReplyCount: true,
             });
           },
