@@ -37,6 +37,7 @@ import type { ResolvedPlugin } from "@workbench/connections/plugins";
 import { useEffect, useState } from "react";
 
 import { pluginOutcome } from "./plugin-meta";
+import { PLUGINS_STRINGS } from "./strings";
 
 const PLUGINS_RETURN_PATH = "/plugins";
 
@@ -142,7 +143,7 @@ function ConnectedSummary({
         toast(`${plugin.descriptor.displayName} disconnected.`);
         onChanged();
       })
-      .catch(() => setError("Couldn't disconnect — try again."))
+      .catch(() => setError(PLUGINS_STRINGS.disconnectError))
       .finally(() => setBusy(false));
   }
 
