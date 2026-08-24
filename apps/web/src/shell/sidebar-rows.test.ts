@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 
 import type { Workbench } from "@corbits/chat-ui";
 
-import { buildSidebarSections } from "./sidebar-rows";
-import type { SidebarSection } from "./sidebar-rows";
+import { buildSidebarRows } from "./sidebar-rows";
+import type { SidebarRow } from "./sidebar-rows";
 
 function workbench(overrides: Partial<Workbench> = {}): Workbench {
   return {
@@ -16,12 +16,19 @@ function workbench(overrides: Partial<Workbench> = {}): Workbench {
   } as Workbench;
 }
 
-function idsOf(section: SidebarSection | undefined): readonly string[] {
-  return section?.rows.map((row) => row.workbench.id) ?? [];
+function idsOf(rows: readonly SidebarRow[]): readonly string[] {
+  return rows.map((row) => row.workbench.id);
 }
 
-describe("buildSidebarSections", () => {
-  test("kind:chat rows land in Agents, kind:workbench in Channels", () => {
+function mix(
+  workbenches: readonly Workbench[],
+  chats: readonly Workbench[],
+): readonly SidebarRow[] {
+  return buildSidebarRows([...workbenches, ...chats]);
+}
+
+describe("buildSidebarRows", () => {
+  test("kind:chat and kind:workbench share one list, with kind kept on each workbench", () => {
     const channel = workbench({
       id: "ch_room",
       kind: "workbench",
@@ -33,24 +40,17 @@ describe("buildSidebarSections", () => {
       lastActivityAt: "2026-01-02T00:00:00.000Z",
     });
 
-    const sections = buildSidebarSections([channel], [dm]);
+    const rows = mix([channel], [dm]);
 
-    expect(sections.map((section) => section.id)).toEqual([
-      "agents",
-      "channels",
+    expect(idsOf(rows)).toEqual(["ch_dm", "ch_room"]);
+    expect(rows.map((row) => row.workbench.kind)).toEqual([
+      "chat",
+      "workbench",
     ]);
-    expect(sections.map((section) => section.label)).toEqual([
-      "Agents",
-      "Channels",
-    ]);
-    expect(idsOf(sections[0])).toEqual(["ch_dm"]);
-    expect(idsOf(sections[1])).toEqual(["ch_room"]);
-    expect(sections[0]?.rows.every((row) => row.kind === "workbench")).toBe(
-      true,
-    );
+    expect(rows.every((row) => row.kind === "workbench")).toBe(true);
   });
 
-  test("mixed recency does not interleave sections — a newer channel stays below Agents", () => {
+  test("mixed recency interleaves — a newer channel sits above an older DM", () => {
     const olderDm = workbench({
       id: "ch_dm",
       kind: "chat",
@@ -62,14 +62,9 @@ describe("buildSidebarSections", () => {
       lastActivityAt: "2026-01-05T00:00:00.000Z",
     });
 
-    const sections = buildSidebarSections([newerChannel], [olderDm]);
+    const rows = mix([newerChannel], [olderDm]);
 
-    expect(sections.map((section) => section.id)).toEqual([
-      "agents",
-      "channels",
-    ]);
-    expect(idsOf(sections[0])).toEqual(["ch_dm"]);
-    expect(idsOf(sections[1])).toEqual(["ch_room"]);
+    expect(idsOf(rows)).toEqual(["ch_room", "ch_dm"]);
   });
 
   test("never synthesizes a row for an agent that has not been opened as a DM", () => {
@@ -78,15 +73,13 @@ describe("buildSidebarSections", () => {
       lastActivityAt: "2026-01-01T00:00:00.000Z",
     });
 
-    const sections = buildSidebarSections([older], []);
+    const rows = mix([older], []);
 
-    expect(idsOf(sections[0])).toEqual([]);
-    expect(sections[1]?.rows).toEqual([
-      { kind: "workbench", workbench: older },
-    ]);
+    expect(idsOf(rows)).toEqual(["ch_old"]);
+    expect(rows).toEqual([{ kind: "workbench", workbench: older }]);
   });
 
-  test("pinned floats within its section, not above the other section", () => {
+  test("pinned floats across the mixed list, not within a kind", () => {
     const pinnedChannel = workbench({
       id: "ch_pinned_room",
       kind: "workbench",
@@ -102,21 +95,22 @@ describe("buildSidebarSections", () => {
       id: "ch_pinned_dm",
       kind: "chat",
       pinned: true,
-      lastActivityAt: "2026-01-01T00:00:00.000Z",
+      lastActivityAt: "2026-01-02T00:00:00.000Z",
     });
     const recentDm = workbench({
       id: "ch_recent_dm",
       kind: "chat",
-      lastActivityAt: "2026-01-05T00:00:00.000Z",
+      lastActivityAt: "2026-01-04T00:00:00.000Z",
     });
 
-    const sections = buildSidebarSections(
-      [pinnedChannel, recentChannel],
-      [recentDm, pinnedDm],
-    );
+    const rows = mix([pinnedChannel, recentChannel], [recentDm, pinnedDm]);
 
-    expect(idsOf(sections[0])).toEqual(["ch_pinned_dm", "ch_recent_dm"]);
-    expect(idsOf(sections[1])).toEqual(["ch_pinned_room", "ch_recent_room"]);
+    expect(idsOf(rows)).toEqual([
+      "ch_pinned_dm",
+      "ch_pinned_room",
+      "ch_recent_room",
+      "ch_recent_dm",
+    ]);
   });
 
   test("an agent already opened as a DM appears once, as its workbench row", () => {
@@ -127,10 +121,9 @@ describe("buildSidebarSections", () => {
       lastActivityAt: "2026-01-01T00:00:00.000Z",
     });
 
-    const sections = buildSidebarSections([], [dm]);
+    const rows = mix([], [dm]);
 
-    expect(sections[0]?.rows).toEqual([{ kind: "workbench", workbench: dm }]);
-    expect(idsOf(sections[1])).toEqual([]);
+    expect(rows).toEqual([{ kind: "workbench", workbench: dm }]);
   });
 
   test("every created workbench keeps its row even when each minted its own definition (CL-6621)", () => {
@@ -150,9 +143,9 @@ describe("buildSidebarSections", () => {
       }),
     );
 
-    const sections = buildSidebarSections([], created);
+    const rows = mix([], created);
 
-    expect(idsOf(sections[0])).toEqual(["ch_new_3", "ch_new_2", "ch_new_1"]);
+    expect(idsOf(rows)).toEqual(["ch_new_3", "ch_new_2", "ch_new_1"]);
   });
 
   test("two distinct agents whose slugs humanize to the same title never collapse into one row (CL-6413)", () => {
@@ -183,12 +176,9 @@ describe("buildSidebarSections", () => {
       lastActivityAt: "2026-01-02T00:00:00.000Z",
     });
 
-    const sections = buildSidebarSections(
-      [],
-      [researchAnalystHyphen, researchAnalystUnderscore],
-    );
+    const rows = mix([], [researchAnalystHyphen, researchAnalystUnderscore]);
 
-    expect([...idsOf(sections[0])].sort()).toEqual([
+    expect([...idsOf(rows)].sort()).toEqual([
       "ch_research_analyst_hyphen",
       "ch_research_analyst_underscore",
     ]);
@@ -210,24 +200,21 @@ describe("buildSidebarSections", () => {
       lastActivityAt: "2026-01-05T00:00:00.000Z",
     });
 
-    const sections = buildSidebarSections([], [olderDm, newerDm]);
+    const rows = mix([], [olderDm, newerDm]);
 
-    expect(idsOf(sections[0])).toEqual([
-      "ch_legacy_leaf",
-      "ch_legacy_ancestor",
-    ]);
+    expect(idsOf(rows)).toEqual(["ch_legacy_leaf", "ch_legacy_ancestor"]);
   });
 
   test("group workbenches with identical titles each keep their row", () => {
     const groupOne = workbench({ id: "ch_group_1", title: "Launch plan" });
     const groupTwo = workbench({ id: "ch_group_2", title: "Launch plan" });
 
-    const sections = buildSidebarSections([groupOne, groupTwo], []);
+    const rows = mix([groupOne, groupTwo], []);
 
-    expect(idsOf(sections[1])).toEqual(["ch_group_1", "ch_group_2"]);
+    expect(idsOf(rows)).toEqual(["ch_group_1", "ch_group_2"]);
   });
 
-  test("buckets by workbench.kind even if a row arrived in the other list", () => {
+  test("concatenates both fetches without re-bucketing by kind", () => {
     const misplacedChannel = workbench({
       id: "ch_room",
       kind: "workbench",
@@ -237,9 +224,10 @@ describe("buildSidebarSections", () => {
       kind: "chat",
     });
 
-    const sections = buildSidebarSections([misplacedDm], [misplacedChannel]);
+    const rows = mix([misplacedDm], [misplacedChannel]);
 
-    expect(idsOf(sections[0])).toEqual(["ch_dm"]);
-    expect(idsOf(sections[1])).toEqual(["ch_room"]);
+    expect(idsOf(rows)).toEqual(["ch_dm", "ch_room"]);
+    expect(rows[0]?.workbench.kind).toBe("chat");
+    expect(rows[1]?.workbench.kind).toBe("workbench");
   });
 });

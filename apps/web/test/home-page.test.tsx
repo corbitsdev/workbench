@@ -1,20 +1,18 @@
 // The land-hop every entry point funnels through: `/` (HomeRoute)
 // resolves to one of two places depending on whether the bench has any
 // workbenches yet. `/` is a hop onto the most-recent existing workbench
-// or `/new`, never a parallel Myra home. A bench with one or more hops
+// or Myra's one DM, never the picker. A bench with one or more hops
 // onto `workbenches[0]` — the listing's first row — without minting or
 // ensuring Myra. A brand-new bench with zero workbenches waits for
-// Myra's own definition to exist, then sends the person to the guided
-// picker (`/new`, CL-6486) instead of auto-minting an unlabeled
-// workbench and landing straight in it — no separate first-run form, no
-// second creation path, just the same picker every other "+ New
-// workbench" control already opens. All three entries CL-6081 asks for
-// (a direct visit to `/`, `main.tsx`'s post-login `navigate("/")`, and
-// the onboarding wizard's post-credential hand-off) resolve through this
-// exact hop, so proving HomeRoute itself lands correctly in both cases
-// proves the direct-`/` case fully; the other two are proven by the
-// narrower source assertions below, which pin the exact call each entry
-// point makes onto this same route.
+// Myra's own definition to exist, then opens her DM the same way
+// "Talk to Myra" does (`openAgentDmChat`) — never `/new`, no
+// `ensureMyraWorkbench`, no second creation path. All three entries
+// CL-6081 asks for (a direct visit to `/`, `main.tsx`'s post-login
+// `navigate("/")`, and the onboarding wizard's post-credential hand-off)
+// resolve through this exact hop, so proving HomeRoute itself lands
+// correctly in both cases proves the direct-`/` case fully; the other
+// two are proven by the narrower source assertions below, which pin the
+// exact call each entry point makes onto this same route.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
@@ -39,11 +37,13 @@ const json = (body: unknown, status = 200) =>
     headers: { "content-type": "application/json" },
   });
 
-function stubFetch(respond: (path: string, method: string) => Response) {
+function stubFetch(
+  respond: (path: string, method: string, init?: RequestInit) => Response,
+) {
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const path =
       typeof input === "string" ? input : new URL(String(input)).pathname;
-    return Promise.resolve(respond(path, init?.method ?? "GET"));
+    return Promise.resolve(respond(path, init?.method ?? "GET", init));
   }) as typeof fetch;
 }
 
@@ -78,6 +78,34 @@ const PRINCIPALS_RESPONSE = {
   ],
   nextCursor: null,
 };
+
+const MYRA_DEFINITION = {
+  id: "wfd_assistant",
+  tenantId: "tnt_1",
+  name: "assistant",
+  currentVersion: "1",
+  status: "deployed",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+};
+
+const MYRA_DM = {
+  id: "chan_myra_dm",
+  title: "Myra",
+  kind: "chat",
+  pinned: false,
+  participants: [],
+};
+
+function respondMyraDmLaunch(path: string, method: string) {
+  if (path.includes("/workflows/definitions")) {
+    return json({ data: [MYRA_DEFINITION], nextCursor: null });
+  }
+  if (path === "/api/tenants/tnt_1/chat/workbenches" && method === "POST") {
+    return json(MYRA_DM);
+  }
+  return null;
+}
 
 describe("HomeRoute (the `/` land hop every entry point funnels through)", () => {
   test("a bench with an existing workbench hops onto the first listed workbench, never minting Myra", async () => {
@@ -132,19 +160,27 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
     expect(navigated).toEqual(["/w/chan_existing"]);
   });
 
-  test("a brand-new bench with zero workbenches sends the person to the guided picker, not an auto-minted workbench", async () => {
-    stubFetch((path, method) => {
+  test("a brand-new bench with zero workbenches opens Myra's one DM, not the guided picker", async () => {
+    let posted: unknown;
+    stubFetch((path, method, init) => {
       if (path === "/api/me/principals") {
         return json(PRINCIPALS_RESPONSE);
       }
       if (path.endsWith("/chat/workbenches") && method === "GET") {
         // listAllWorkbenches finds nothing — this bench has no workbenches
-        // yet, so HomeRoute waits for Myra's readiness and redirects to
-        // the picker rather than minting anything itself.
+        // yet, so HomeRoute waits for Myra's readiness and opens her DM
+        // rather than sending anyone to `/new`.
         return json({ items: [] });
       }
       if (path === "/api/onboarding/provisioning-status") {
         return json({ kind: "ready", setupAgentReady: true });
+      }
+      if (path.includes("/workflows/definitions")) {
+        return json({ data: [MYRA_DEFINITION], nextCursor: null });
+      }
+      if (path === "/api/tenants/tnt_1/chat/workbenches" && method === "POST") {
+        posted = JSON.parse(String(init?.body));
+        return json(MYRA_DM);
       }
       throw new Error(`unexpected fetch: ${method} ${path}`);
     });
@@ -169,7 +205,12 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
       if (navigated.length > 0) break;
     }
 
-    expect(navigated).toEqual(["/new"]);
+    expect(posted).toEqual({
+      kind: "chat",
+      definitionId: "wfd_assistant",
+      reuseExisting: true,
+    });
+    expect(navigated).toEqual(["/w/chan_myra_dm"]);
   });
 });
 
@@ -207,6 +248,8 @@ describe("the wait right after connecting a provider", () => {
           pending: ["assistant"],
         });
       }
+      const myraLaunch = respondMyraDmLaunch(path, method);
+      if (myraLaunch !== null) return myraLaunch;
       throw new Error(`unexpected fetch: ${method} ${path}`);
     });
     return state;
@@ -301,7 +344,7 @@ describe("the wait right after connecting a provider", () => {
       if (navigated.length > 0) break;
     }
 
-    expect(navigated).toEqual(["/new"]);
+    expect(navigated).toEqual(["/w/chan_myra_dm"]);
     expect(state.statusCalls).toBeGreaterThan(0);
   });
 
@@ -343,7 +386,7 @@ describe("the wait right after connecting a provider", () => {
       if (navigated.length > 0) break;
     }
 
-    expect(navigated).toEqual(["/new"]);
+    expect(navigated).toEqual(["/w/chan_myra_dm"]);
   });
 });
 
