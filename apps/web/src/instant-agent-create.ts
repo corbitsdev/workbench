@@ -4,8 +4,9 @@
 // picker (`pages/new-workbench-picker.tsx`, CL-6342) and calls
 // `createWorkbenchFromTemplate` below once a row is chosen. It mints a
 // fresh `kind: "workbench"` room (CL-6982), not a Myra DM clone
-// (`kind: "chat"` + `definitionId`). Named templates still instantiate
-// their participant roster after the room exists. Explicitly defining a
+// (`kind: "chat"` + `definitionId`). Rooms do not auto-host Myra: a blank
+// mint is an empty room; named templates still instantiate their
+// non-Myra participant roster after the room exists. Explicitly defining a
 // brand-new agent template, with its own name/purpose/model/skills
 // chosen up front, stays `CreateAgentPanel`'s job (Settings → Agents),
 // unchanged.
@@ -35,7 +36,6 @@ import {
 } from "./workbench-templates-api";
 
 import { createAgentDefinition, listAgentDefinitions } from "./agents-api";
-import { findMyraDefinition } from "./myra-workbench";
 import { workbenchPath } from "./workbench-path";
 
 const log = getLogger("web.instant-agent-create");
@@ -44,22 +44,17 @@ import type { WorkbenchTemplateId } from "./workbench-templates";
 export const NEW_WORKBENCH_TITLE = "New room";
 
 /**
- * Marks the two precondition failures below as intentionally
- * user-facing: their `message` is authored copy, never a raw request
- * path or schema summary, so a caller can show it verbatim. Every
- * other throw on this path (`ApiQueryError`, `ChatApiError`, or a
- * plain `Error` from a package that hasn't opted in) must go through
- * that error type's own describer instead — allow-listing safe
- * throws, rather than denylisting unsafe ones, so a new error type
- * added later fails safe (masked) instead of leaking by default.
+ * Marks the precondition failure below as intentionally user-facing: its
+ * `message` is authored copy, never a raw request path or schema summary,
+ * so a caller can show it verbatim. Every other throw on this path
+ * (`ApiQueryError`, `ChatApiError`, or a plain `Error` from a package that
+ * hasn't opted in) must go through that error type's own describer instead
+ * — allow-listing safe throws, rather than denylisting unsafe ones, so a
+ * new error type added later fails safe (masked) instead of leaking by
+ * default.
  *
- * `kind` lets a caller tell "the setup agent isn't deployed yet" apart
- * from "this template genuinely doesn't exist here" without parsing
- * `message` text: the first is very often a still-provisioning bench
- * (CL-6457's background deploy hasn't finished, or never started
- * without a credential) that the caller should check
- * `fetchAgentReadiness` over before treating as a dead end; the second
- * never resolves itself and should surface as-is.
+ * `kind` lets a caller tell "this template genuinely doesn't exist here"
+ * apart from other failures without parsing `message` text.
  */
 export class WorkbenchPreconditionError extends Error {
   readonly kind: "setup-agent-missing" | "template-unavailable";
@@ -71,15 +66,6 @@ export class WorkbenchPreconditionError extends Error {
     this.kind = kind;
   }
 }
-
-/**
- * Consumer-language stand-in for the system precondition this bench
- * hit: "no deployed setup agent" describes an internal implementation
- * detail, never something a person signing in for the first time
- * should have to parse.
- */
-const SETUP_AGENT_MISSING_MESSAGE =
-  "Your workbench is still finishing setup. Try again in a moment.";
 
 /**
  * Presents the connected org's repo list for the person to pick from once
@@ -97,18 +83,19 @@ export type PickGithubRepos = (args: {
 /**
  * The template picker's create action (CL-6344, CL-6982): mints a fresh
  * `kind: "workbench"` room, named after the picked template, with no
- * `definitionId` — a room, not a Myra DM clone. When the id names a real
- * manifest (`workbenchTemplate`), this also creates its participant agent
- * definitions, invites each into the room so the roster the greeting
- * promises is the roster actually there (see
- * `instantiateWorkbenchTemplate`'s own doc), and records its required
- * connections as pending. A template id with no manifest yet (`blank`,
- * "Just start talking") mints a plain untagged room under the generic
- * `NEW_WORKBENCH_TITLE`, exactly like before templates existed — there
- * is no better name to give it. When `pickGithubRepos` is supplied and
+ * `definitionId` — a room, not a Myra DM clone, and not auto-hosting Myra.
+ * When the id names a real manifest (`workbenchTemplate`), this also
+ * creates its non-Myra participant agent definitions, invites each into
+ * the room so the roster the greeting promises is the roster actually
+ * there (see `instantiateWorkbenchTemplate`'s own doc), and records its
+ * required connections as pending. A template id with no manifest yet
+ * (`blank`, "Just start talking") mints a plain empty room under the
+ * generic `NEW_WORKBENCH_TITLE`. When `pickGithubRepos` is supplied and
  * GitHub is already connected for this tenant, this also drives
  * CL-6386's "select on new-workbench" step — see `PickGithubRepos`'s
- * own doc.
+ * own doc. When GitHub is still required and not yet connected, the mint
+ * carries `connectGithubRequiredFor` so the room opens with the
+ * connect-github card.
  *
  * `queryClient` invalidates the workbenches list once every template
  * participant has been invited (CL-6594) — `ChatWorkspace`'s own
@@ -122,9 +109,8 @@ export type PickGithubRepos = (args: {
  *
  * `firstMessage`, when given (CL-6628's prompt box), is sent as the
  * signed-in person's own opening message once the room and its
- * template participants exist, so it lands after the setup/template
- * greeting rather than racing it — Myra reads the room's actual intent
- * as the next line, not the first.
+ * template participants exist, so it lands after any template
+ * greeting rather than racing it.
  */
 export async function createWorkbenchFromTemplate(
   tenantId: string,
@@ -134,13 +120,6 @@ export async function createWorkbenchFromTemplate(
   pickGithubRepos?: PickGithubRepos,
   firstMessage?: string,
 ): Promise<void> {
-  const definitions = await listAgentDefinitions(tenantId);
-  if (findMyraDefinition(definitions) === undefined) {
-    throw new WorkbenchPreconditionError(
-      SETUP_AGENT_MISSING_MESSAGE,
-      "setup-agent-missing",
-    );
-  }
   // The manifest comes from the bench library (CL-6344), never from a
   // hardcoded catalog import; reading it is what seeds the shelf
   // (CL-6458). `blank` is the one id with no manifest by design; any
@@ -178,6 +157,9 @@ export async function createWorkbenchFromTemplate(
   const workbench = await createWorkbench(tenantId, {
     kind: "workbench",
     name: manifest?.title ?? NEW_WORKBENCH_TITLE,
+    ...(requiresGithub && !githubAlreadyConnected
+      ? { connectGithubRequiredFor: manifest?.title ?? "" }
+      : {}),
   });
 
   if (githubAlreadyConnected && pickGithubRepos !== undefined) {

@@ -112,7 +112,10 @@ test("instantiating the code-review template invites every reviewer into the roo
   expect(ports.invited).toHaveLength(3);
 });
 
-test("instantiating the code-review template never invites Myra — she is already the room's own agent", async () => {
+// Rooms do not auto-host Myra (CL-6982). Instantiation skips her handle
+// rather than inviting her into an empty room; other template agents
+// still get invited.
+test("instantiating the code-review template never invites Myra — rooms do not auto-host her", async () => {
   const ports = fakePorts();
   await instantiateWorkbenchTemplate(CODE_REVIEW_TEMPLATE, ports);
   expect(ports.invited).not.toContain("def-myra");

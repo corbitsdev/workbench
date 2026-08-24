@@ -339,7 +339,17 @@ export function listAllWorkbenches(
 // find-or-create caller: the home-workbench land-hop
 // (`default-agent-workbench.ts`'s `ensure`).
 export type CreateWorkbenchInput =
-  | { readonly kind: "workbench"; readonly name: string }
+  | {
+      readonly kind: "workbench";
+      readonly name: string;
+      /** The template's own display name, present exactly when the
+       * template needs a GitHub connection before it can run — posts one
+       * `connect-github` block on the empty room
+       * (`packages/chat/src/routes.ts`'s `POST /workbenches`). Omitted
+       * for a template with no such requirement, or when GitHub is
+       * already connected and the create flow picks repos inline. */
+      readonly connectGithubRequiredFor?: string;
+    }
   | {
       readonly kind: "chat";
       readonly definitionId: string;

@@ -35,6 +35,6 @@ export const WORKBENCH_TEMPLATES: readonly WorkbenchTemplate[] = [
     id: "blank",
     title: "Just start talking",
     promise:
-      "An empty room with Myra in it. Bring your own work, connect things as you go.",
+      "An empty room. Bring your own work, connect things as you go.",
   },
 ];

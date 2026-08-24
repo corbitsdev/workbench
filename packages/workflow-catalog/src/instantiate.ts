@@ -76,8 +76,9 @@ export interface WorkbenchTemplateInstantiationPorts {
    * `@corbits/chat-ui`'s `inviteAgent`), or a fake of it in tests. This
    * is what makes a template's roster actually present in the room
    * rather than merely registered in the agent directory. Never called
-   * for Myra: she joins the room at workbench creation as its own
-   * `definitionId`. */
+   * for Myra: rooms do not auto-host her (CL-6982), and a template that
+   * lists her handle is skipped rather than inviting her into an empty
+   * room. */
   inviteParticipantAgent(id: string): Promise<void>;
   /** Persists the room's still-needed connections — the workbench
    * settings `template/pendingConnections` key today; see
@@ -127,11 +128,11 @@ function webhookTriggerTodo(
 
 /**
  * Resolves `manifest` against the bench: creates the participant agent
- * definitions that don't already exist (Myra is never re-created — she
- * is the bench's seeded default setup agent, reused as-is), and
- * records the manifest's required connections as still pending. Never
- * registers a live webhook trigger — see `webhookTriggerTodos` and
- * `./connect-github-setup.ts`, which is what actually creates one, once
+ * definitions that don't already exist (Myra is never created or invited —
+ * rooms do not auto-host her; templates that list other agents still invite
+ * those agents), and records the manifest's required connections as still
+ * pending. Never registers a live webhook trigger — see `webhookTriggerTodos`
+ * and `./connect-github-setup.ts`, which is what actually creates one, once
  * the person has picked repos.
  */
 export async function instantiateWorkbenchTemplate(

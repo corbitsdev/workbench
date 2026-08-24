@@ -601,7 +601,9 @@ describe("Sidebar", () => {
     }
     expect(container.innerHTML).toContain("No workbenches yet");
     expect(container.innerHTML).not.toContain("New Workbench");
-    expect(container.querySelector('.shell-ch-row[data-active="true"]')).toBeNull();
+    expect(
+      container.querySelector('.shell-ch-row[data-active="true"]'),
+    ).toBeNull();
     act(() => root.unmount());
     container.remove();
   });
