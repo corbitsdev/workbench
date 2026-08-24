@@ -19,7 +19,7 @@ export const SETTINGS_STRINGS = {
   notificationsRoutineFail: "Failed deliveries",
   notificationsSaveAction: "Save",
   notificationsSaveHonesty:
-    "Draft only — per-user notification prefs are not stored on the hub yet.",
+    "Draft only — notification choices aren't saved yet.",
 
   settingsSavedToast: "Settings saved",
 
@@ -27,12 +27,12 @@ export const SETTINGS_STRINGS = {
   benchNoneSelectedDescription: "Choose a workbench from the switcher first.",
 
   accountSectionTitle: "General",
-  accountSectionDescription: "How the hub identifies you.",
+  accountSectionDescription: "Your name and email on this workbench.",
   accountNameLabel: "Name",
   accountEmailLabel: "Email",
   accountLoadError: "your account",
   accountReadOnlyNote:
-    "Managed through the authentication API; editing from this screen has not been built yet.",
+    "These details come from how you sign in. Editing them here isn't available yet.",
   accountSignOutAction: "Sign out",
   accountDetailsHeading: "Account details",
   accountCopyEmailAction: "Copy email",
@@ -75,9 +75,9 @@ export const SETTINGS_STRINGS = {
   peopleRemoveError: "Couldn't remove that person — try again.",
   peopleUnnamedAgent: "Unnamed agent",
   peopleRoleNone: "none",
-  peopleKindUser: "user",
-  peopleKindAgent: "agent",
-  peopleKindWorkflow: "workflow",
+  peopleKindUser: "Person",
+  peopleKindAgent: "Agent",
+  peopleKindWorkflow: "Workflow",
   peopleRoleChangeError: "Couldn't change that person's role — try again.",
   peopleLastOwnerError:
     "This workbench needs at least one owner — make someone else an owner first.",
@@ -112,7 +112,7 @@ export const SETTINGS_STRINGS = {
   accessPolicyNote:
     "Closed by default: no open signup, no self-serve sub-workbenches. These settings apply to this workbench.",
   accessPolicyEnvOverrideNotice:
-    "The operator has sign-up switched off at the server level, so people still can't create an account yet — even though this setting would otherwise allow it. Ask whoever manages this deployment to enable self-signup.",
+    "Sign-up is switched off at a higher level, so people still can't create an account yet — even though this setting would otherwise allow it. Ask whoever controls this install's environment to enable self-signup.",
 
   rolesSectionTitle: "Roles",
   rolesSectionDescription:
@@ -198,7 +198,7 @@ export const SETTINGS_STRINGS = {
   connectionsStatusNeedsAttention: "Needs attention",
   connectionsStatusNotConfigured: "Needs setup",
   connectionsNotConfiguredHint:
-    "An operator needs to register an OAuth app for this connector before anyone can connect it.",
+    "An OAuth app needs to be registered for this connector before anyone can connect it.",
   connectionsConnectAction: "Connect",
   connectionsReconnectAction: "Reconnect",
   connectionsDisconnectAction: "Disconnect",
@@ -208,16 +208,16 @@ export const SETTINGS_STRINGS = {
   connectionsDefaultModelLabel: "Default model:",
   connectionsSetDefaultModelError:
     "Couldn't set the default model — try again.",
-  connectionsPinnedByPrefix: "Used by workflows: ",
-  connectionsPinnedByNone: "Available to any workflow",
+  connectionsPinnedByPrefix: "Used by: ",
+  connectionsPinnedByNone: "Not pinned by any workflow",
   connectionsPinnedByApproximationNote:
-    "Based on each workflow's declared tool-package pins, not a live query against deployed definitions — may lag a workflow's actual tool usage.",
+    "Based on declared pins, not live usage — may lag actual tool usage.",
   connectionsDialogConnectTitle: (name: string) => `Connect ${name}`,
   connectionsDialogReconnectTitle: (name: string) => `Reconnect ${name}`,
   connectionsDialogDescription:
     "Sealed on save — this key is never shown again after create. A bad key never gets saved; connecting surfaces the problem right here.",
   connectionsDialogUrlDescription:
-    "The base address of the instance to connect. A bad address never gets saved; connecting surfaces the problem right here.",
+    "The base address of the service to connect. A bad address never gets saved; connecting surfaces the problem right here.",
   connectionsKeyLabel: "API key",
   connectionsUrlLabel: "Base URL",
   connectionsConnectDialogAction: "Connect",

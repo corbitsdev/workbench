@@ -53,10 +53,13 @@ describe("principalLabel", () => {
 // person's account. Every picker groups or annotates by this shared label.
 describe("PRINCIPAL_KIND_LABEL", () => {
   test("covers every kind in PRINCIPAL_KIND_ORDER with a distinct, honest label", () => {
+    expect(PRINCIPAL_KIND_ORDER).toEqual(["user", "agent", "workflow"]);
     const labels = PRINCIPAL_KIND_ORDER.map(
       (kind) => PRINCIPAL_KIND_LABEL[kind],
     );
-    expect(labels).toEqual(["user", "agent", "workflow"]);
+    expect(labels).toHaveLength(PRINCIPAL_KIND_ORDER.length);
     expect(new Set(labels).size).toBe(labels.length);
+    expect(labels).toEqual(["Person", "Agent", "Workflow"]);
+    expect(labels).not.toEqual([...PRINCIPAL_KIND_ORDER]);
   });
 });
