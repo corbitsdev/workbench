@@ -387,7 +387,9 @@ describe("NewWorkbenchPickerRoute", () => {
   // (CL-6457's background drain still running, or never started without a
   // credential) must never dead-end the person on the raw internal
   // precondition message — the picker checks readiness first and shows an
-  // honest, retryable "still setting up" state instead.
+  // honest, retryable "still setting up" state instead. Blank create no
+  // longer needs Myra (CL-6979); named templates still do, so this
+  // exercises Code review.
   test("when the setup agent isn't deployed yet, creating shows an honest still-setting-up state, not the raw precondition error", async () => {
     stubFetch((path) => {
       if (path.includes("/workflows/definitions")) {
@@ -407,11 +409,11 @@ describe("NewWorkbenchPickerRoute", () => {
     });
     await renderPicker();
 
-    const justTalk = prefabCards().find((card) =>
-      card.textContent?.includes("Just start talking"),
+    const codeReview = prefabCards().find((card) =>
+      card.textContent?.includes("Code review"),
     );
     await act(async () => {
-      justTalk?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      codeReview?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     for (let i = 0; i < 20; i++) {
       await settle();

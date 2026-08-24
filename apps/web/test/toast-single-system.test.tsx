@@ -9,6 +9,10 @@
 // the house styling, and clears itself.
 
 import { toast, Toaster } from "@corbits/react-ui";
+import {
+  CODE_REVIEW_TEMPLATE,
+  serializeWorkbenchTemplateManifest,
+} from "@corbits/workflow-catalog";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -149,6 +153,14 @@ function justStartTalkingCard(): HTMLButtonElement | undefined {
   ).find((card) => card.textContent?.includes("Just start talking"));
 }
 
+function codeReviewCard(): HTMLButtonElement | undefined {
+  return Array.from(
+    container?.querySelectorAll<HTMLButtonElement>(
+      "button.new-workbench-prefab-card",
+    ) ?? [],
+  ).find((card) => card.textContent?.includes("Code review"));
+}
+
 describe("the one toast system (CL-6372)", () => {
   // The store outlives this file too: a sibling suite that raised a toast
   // before bun loaded this one leaves it queued, and it would render into
@@ -183,15 +195,36 @@ describe("the one toast system (CL-6372)", () => {
     await waitForClear();
   });
 
-  // CL-6510: the new contract this file's own change introduced — a
-  // missing setup agent no longer fires a toast at all, since the
-  // picker now shows a retryable "still setting up" panel instead of
-  // treating that precondition as a dead end.
+  // CL-6510: a missing setup agent no longer fires a toast at all, since
+  // the picker now shows a retryable "still setting up" panel instead of
+  // treating that precondition as a dead end. Blank create no longer needs
+  // Myra (CL-6979); named templates still do, so this exercises Code review.
   test("a missing setup agent shows the retry panel and fires no toast", async () => {
     globalThis.fetch = ((input: RequestInfo | URL) => {
       const path = typeof input === "string" ? input : String(input);
       if (path.includes("/api/me/principals")) {
         return Promise.resolve(json(MEMBERSHIP));
+      }
+      if (path.endsWith("/library/templates")) {
+        return Promise.resolve(
+          json({
+            data: [
+              {
+                id: "code-review",
+                content:
+                  serializeWorkbenchTemplateManifest(CODE_REVIEW_TEMPLATE),
+              },
+            ],
+          }),
+        );
+      }
+      if (path.endsWith("/library/templates/code-review")) {
+        return Promise.resolve(
+          json({
+            id: "code-review",
+            content: serializeWorkbenchTemplateManifest(CODE_REVIEW_TEMPLATE),
+          }),
+        );
       }
       if (path.includes("/workflows/definitions")) {
         return Promise.resolve(json({ data: [], nextCursor: null }));
@@ -213,7 +246,7 @@ describe("the one toast system (CL-6372)", () => {
     await renderPickerWithToaster();
 
     await act(async () => {
-      justStartTalkingCard()?.dispatchEvent(
+      codeReviewCard()?.dispatchEvent(
         new MouseEvent("click", { bubbles: true }),
       );
     });
