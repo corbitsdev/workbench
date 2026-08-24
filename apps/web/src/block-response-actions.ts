@@ -10,6 +10,7 @@ import type {
   BlockResponseSubmitResult,
 } from "@corbits/chat-ui";
 import {
+  CHAT_STRINGS,
   ChatApiError,
   getBlockResponses,
   submitFormResponse,
@@ -31,13 +32,15 @@ export function createChatBlockResponseActions(
       if (cause instanceof ChatApiError && cause.status === 403) {
         return {
           kind: "forbidden",
-          message:
-            "You do not have permission to respond in this conversation.",
+          message: CHAT_STRINGS.blockApproveActionForbidden,
         };
       }
       return {
         kind: "error",
-        message: cause instanceof Error ? cause.message : "Couldn't submit.",
+        message:
+          cause instanceof Error
+            ? cause.message
+            : CHAT_STRINGS.blockFormSubmitError,
       };
     }
   }
