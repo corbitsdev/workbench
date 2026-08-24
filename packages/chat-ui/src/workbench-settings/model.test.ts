@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  capacitySectionVisible,
   isWorkbenchSettingsSectionId,
   workbenchSettingsSections,
   WORKBENCH_SETTINGS_SECTION_IDS,
@@ -16,6 +17,20 @@ describe("isWorkbenchSettingsSectionId", () => {
   test("is false for a value that isn't a section id", () => {
     expect(isWorkbenchSettingsSectionId("not-a-real-section")).toBe(false);
     expect(isWorkbenchSettingsSectionId("")).toBe(false);
+  });
+});
+
+describe("capacitySectionVisible", () => {
+  test("hides Capacity only when the probe confirmed unavailable", () => {
+    expect(capacitySectionVisible("unavailable")).toBe(false);
+  });
+
+  test("shows Capacity when the provisioner is available", () => {
+    expect(capacitySectionVisible("available")).toBe(true);
+  });
+
+  test("shows Capacity when the probe failed — unknown is not unavailable", () => {
+    expect(capacitySectionVisible("unknown")).toBe(true);
   });
 });
 
@@ -86,7 +101,9 @@ describe("workbenchSettingsSections", () => {
 
   test("Capacity appears, after Notifications, when this server offers it", () => {
     expect(
-      workbenchSettingsSections("workbench", false, true).map((s) => s.id),
+      workbenchSettingsSections("workbench", false, "available").map(
+        (s) => s.id,
+      ),
     ).toEqual([
       "general",
       "members",
@@ -95,6 +112,20 @@ describe("workbenchSettingsSections", () => {
       "capacity",
       "danger",
     ]);
+  });
+
+  test("Capacity appears when the probe is unknown — a failed probe is not unavailable", () => {
+    expect(
+      workbenchSettingsSections("workbench", false, "unknown").map((s) => s.id),
+    ).toContain("capacity");
+  });
+
+  test("Capacity stays hidden when the probe confirmed unavailable", () => {
+    expect(
+      workbenchSettingsSections("workbench", false, "unavailable").map(
+        (s) => s.id,
+      ),
+    ).not.toContain("capacity");
   });
 
   test("groups sections Shared / Personal / Danger for the nav", () => {
@@ -109,7 +140,11 @@ describe("workbenchSettingsSections", () => {
   });
 
   test("Capacity is grouped Shared even though it sits after Notifications in the list", () => {
-    const withCapacity = workbenchSettingsSections("workbench", false, true);
+    const withCapacity = workbenchSettingsSections(
+      "workbench",
+      false,
+      "available",
+    );
     const capacity = withCapacity.find((s) => s.id === "capacity");
     expect(capacity?.group).toBe("shared");
   });
