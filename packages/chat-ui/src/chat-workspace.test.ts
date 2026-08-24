@@ -73,10 +73,7 @@ describe("bringInLoadErrorMessage (CL-6839)", () => {
 
   test("both failures use the combined copy", () => {
     expect(
-      bringInLoadErrorMessage(
-        ["members", "invitableAgents"],
-        new Error("x"),
-      ),
+      bringInLoadErrorMessage(["members", "invitableAgents"], new Error("x")),
     ).toBe(CHAT_STRINGS.mentionBringInLoadError);
   });
 });

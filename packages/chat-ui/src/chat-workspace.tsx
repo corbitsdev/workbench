@@ -46,7 +46,10 @@ import { Composer } from "./composer";
 import type { ComposerHandle } from "./composer";
 import { InviteAgentDialog } from "./invite-agent-dialog";
 import { WorkbenchLoadingState } from "./loading-state";
-import { mentionCandidatesFromParticipants, resolveBringInLists } from "./mentions";
+import {
+  mentionCandidatesFromParticipants,
+  resolveBringInLists,
+} from "./mentions";
 import type { BringInListFailure, BringInMember } from "./mentions";
 import { PinnedStrip } from "./pinned-strip";
 import { CHAT_STRINGS } from "./strings";
