@@ -43,6 +43,22 @@ export type WorkbenchSettingsSection = {
 };
 
 /**
+ * Outcome of asking this server whether it can offer dedicated capacity.
+ *
+ * - `"available"` — provisioner confirmed present; show Capacity.
+ * - `"unavailable"` — provisioner confirmed absent; hide Capacity.
+ * - `"unknown"` — probe failed or has not resolved; must not be treated
+ *   as `"unavailable"` (CL-6828). A transient miss would permanently
+ *   omit the section if folded to false.
+ */
+export type CapacityProbeState = "unknown" | "available" | "unavailable";
+
+/** Capacity stays in the nav unless the probe confirmed no provisioner. */
+export function capacitySectionVisible(probe: CapacityProbeState): boolean {
+  return probe !== "unavailable";
+}
+
+/**
  * Sections available for a workbench kind, in nav order. 1:1 chats drop
  * Members and Danger zone so the surface stays short (owner decision /
  * mock) — the same trim `workbenchSettingsTabs` applied before this file's
@@ -56,16 +72,15 @@ export type WorkbenchSettingsSection = {
  * Defaults to `false` so every existing call site (agent chats,
  * workbenches) keeps exactly the section list it already had.
  *
- * `hasCapacity` gates Capacity the same way: this server's provisioner
- * either can or cannot run a workbench's agents on their own machine —
- * a fact this server decides once for everyone, never per conversation
- * — so a server without one has nothing here to configure. Defaults to
- * `false`, hidden until the caller confirms the feature is live.
+ * `capacityProbe` gates Capacity: hide only when the probe confirmed
+ * this server has no provisioner. Defaults to `"unavailable"` (hidden)
+ * until the caller supplies a real probe outcome — never fold a failed
+ * probe into that default.
  */
 export function workbenchSettingsSections(
   workbenchKind: string,
   isDm = false,
-  hasCapacity = false,
+  capacityProbe: CapacityProbeState = "unavailable",
 ): readonly WorkbenchSettingsSection[] {
   const sections: WorkbenchSettingsSection[] = [
     {
@@ -93,7 +108,7 @@ export function workbenchSettingsSections(
     label: CHAT_STRINGS.workbenchSettingsSectionNotifications,
     group: "personal",
   });
-  if (hasCapacity) {
+  if (capacitySectionVisible(capacityProbe)) {
     sections.push({
       id: "capacity",
       label: CHAT_STRINGS.workbenchSettingsSectionCapacity,
