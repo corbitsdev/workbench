@@ -84,12 +84,14 @@ describe("reaction chip row", () => {
 
     const body = el.querySelector(".chat-message-body");
     expect(body).not.toBeNull();
-    const bubble = body!.querySelector(".chat-bubble");
-    const actions = body!.querySelector(".chat-message-actions");
+    if (body === null) return;
+    const bubble = body.querySelector(".chat-bubble");
+    const actions = body.querySelector(".chat-message-actions");
     expect(bubble).not.toBeNull();
     expect(actions).not.toBeNull();
+    if (bubble === null || actions === null) return;
     // DOM order: bubble precedes the reaction row within the same body column.
-    const following = bubble!.compareDocumentPosition(actions!);
+    const following = bubble.compareDocumentPosition(actions);
     expect(following & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
