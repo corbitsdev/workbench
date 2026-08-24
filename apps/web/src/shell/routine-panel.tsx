@@ -15,7 +15,10 @@
 // second write's create-vs-update decision is made only once the first
 // has actually finished, not from a state snapshot taken before either
 // ran. `saveState` ("saving…" / "saved" / an honest inline error) reflects
-// that same queue, not any individual field's own fetch.
+// that same queue, not any individual field's own fetch. A write ack
+// never clobbers dirty draft fields (CL-6755): typing instruction or
+// picking a schedule while another field's save is in flight keeps the
+// in-progress values.
 //
 // A routine created from this panel always targets the conversation it
 // was opened beside: every workbench's host participant is Myra, so "this
@@ -79,6 +82,23 @@ function instructionFromInput(input: Record<string, unknown>): string {
   const value = input["instruction"];
   return typeof value === "string" ? value : "";
 }
+
+function triggersEqual(a: RoutineTrigger, b: RoutineTrigger): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** Live draft + last-acked server values — `ackRoutine` reads this ref (not a
+ * render closure) so a write that resolves after the user kept typing still
+ * sees the current dirty state (CL-6755). */
+type DraftSnapshot = {
+  name: string;
+  savedName: string;
+  instruction: string;
+  savedInstruction: string;
+  trigger: RoutineTrigger;
+  savedTrigger: RoutineTrigger;
+  enabled: boolean;
+};
 
 /** A trigger's row summary — `sourceLabel` (this panel session's own memory
  * of which "+ Add trigger" option minted a webhook trigger) wins over the
@@ -192,6 +212,7 @@ function RoutineEditorPanel({
   const [instruction, setInstruction] = useState("");
   const [savedInstruction, setSavedInstruction] = useState("");
   const [trigger, setTrigger] = useState<RoutineTrigger>(null);
+  const [savedTrigger, setSavedTrigger] = useState<RoutineTrigger>(null);
   const [triggerSourceLabel, setTriggerSourceLabel] = useState<string | null>(
     null,
   );
@@ -208,6 +229,24 @@ function RoutineEditorPanel({
   // *post*-first-write id, not a stale snapshot from before either ran.
   const routineIdRef = useRef<string | null>(routineId);
   const writeChainRef = useRef<Promise<void>>(Promise.resolve());
+  const draftRef = useRef<DraftSnapshot>({
+    name: "",
+    savedName: "",
+    instruction: "",
+    savedInstruction: "",
+    trigger: null,
+    savedTrigger: null,
+    enabled: false,
+  });
+  draftRef.current = {
+    name,
+    savedName,
+    instruction,
+    savedInstruction,
+    trigger,
+    savedTrigger,
+    enabled,
+  };
 
   // A new subject (a different routine, or a fresh "New routine") replaces
   // this pane's entire local draft — nothing from the last session leaks
@@ -223,6 +262,7 @@ function RoutineEditorPanel({
     );
     setSavedInstruction("");
     setTrigger(null);
+    setSavedTrigger(null);
     setTriggerSourceLabel(null);
     setAddingSchedule(false);
     setEnabled(false);
@@ -239,7 +279,8 @@ function RoutineEditorPanel({
     );
   };
 
-  const applyRoutine = (routine: Routine) => {
+  /** First load of an existing routine — replace the whole draft. */
+  const hydrateRoutine = (routine: Routine) => {
     setRoutineId(routine.id);
     routineIdRef.current = routine.id;
     setName(routine.name);
@@ -248,7 +289,51 @@ function RoutineEditorPanel({
     setInstruction(loadedInstruction);
     setSavedInstruction(loadedInstruction);
     setTrigger(routine.trigger);
+    setSavedTrigger(routine.trigger);
     setEnabled(routine.enabled);
+    draftRef.current = {
+      name: routine.name,
+      savedName: routine.name,
+      instruction: loadedInstruction,
+      savedInstruction: loadedInstruction,
+      trigger: routine.trigger,
+      savedTrigger: routine.trigger,
+      enabled: routine.enabled,
+    };
+  };
+
+  /** After a create/update resolves: refresh saved-* bookkeeping and the
+   * routine id, but leave any still-dirty draft field alone so an in-flight
+   * name create cannot wipe instruction/schedule the user typed meanwhile
+   * (CL-6755). */
+  const ackRoutine = (routine: Routine) => {
+    const draft = draftRef.current;
+    const loadedInstruction = instructionFromInput(routine.input);
+
+    setRoutineId(routine.id);
+    routineIdRef.current = routine.id;
+
+    if (draft.name.trim() === draft.savedName) {
+      setName(routine.name);
+      draft.name = routine.name;
+    }
+    if (draft.instruction.trim() === draft.savedInstruction) {
+      setInstruction(loadedInstruction);
+      draft.instruction = loadedInstruction;
+    }
+    if (triggersEqual(draft.trigger, draft.savedTrigger)) {
+      setTrigger(routine.trigger);
+      draft.trigger = routine.trigger;
+    }
+
+    setSavedName(routine.name);
+    setSavedInstruction(loadedInstruction);
+    setSavedTrigger(routine.trigger);
+    setEnabled(routine.enabled);
+    draft.savedName = routine.name;
+    draft.savedInstruction = loadedInstruction;
+    draft.savedTrigger = routine.trigger;
+    draft.enabled = routine.enabled;
   };
 
   // Loads an existing routine's real fields once the tenant resolves —
@@ -259,7 +344,7 @@ function RoutineEditorPanel({
     void getRoutine(tenantId, subject.routineId).then(
       (routine) => {
         if (cancelled) return;
-        applyRoutine(routine);
+        hydrateRoutine(routine);
         loadRuns(routine.id);
       },
       (cause: unknown) => {
@@ -318,7 +403,7 @@ function RoutineEditorPanel({
       setError(null);
       try {
         const routine = await task(routineIdRef.current);
-        applyRoutine(routine);
+        ackRoutine(routine);
         invalidateRoutines();
         setSaveState("saved");
       } catch (cause) {
@@ -387,6 +472,7 @@ function RoutineEditorPanel({
 
   const commitSchedule = (next: Exclude<RoutineTrigger, null>) => {
     setTrigger(next);
+    draftRef.current.trigger = next;
     setTriggerSourceLabel(null);
     setAddingSchedule(false);
     void runWrite((id) => {
@@ -403,6 +489,7 @@ function RoutineEditorPanel({
 
   const removeTrigger = () => {
     setTrigger(null);
+    draftRef.current.trigger = null;
     setTriggerSourceLabel(null);
     void runWrite((id) => {
       if (id === null) {
@@ -532,8 +619,10 @@ function RoutineEditorPanel({
           <Input
             id="routine-panel-name"
             value={name}
-            disabled={busy}
-            onChange={(event) => setName(event.target.value)}
+            onChange={(event) => {
+              setName(event.target.value);
+              draftRef.current.name = event.target.value;
+            }}
             onBlur={commitName}
           />
         </div>
@@ -549,10 +638,10 @@ function RoutineEditorPanel({
             id="routine-panel-instruction"
             className="min-h-20"
             value={instruction}
-            disabled={busy}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
-              setInstruction(event.target.value)
-            }
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => {
+              setInstruction(event.target.value);
+              draftRef.current.instruction = event.target.value;
+            }}
             onBlur={commitInstruction}
           />
         </div>
@@ -569,17 +658,13 @@ function RoutineEditorPanel({
             <AddTriggerMenu
               slackAvailable={slackConfigured}
               granolaAvailable={granolaConnected}
-              disabled={busy}
+              disabled={false}
               onSchedule={() => setAddingSchedule(true)}
               onGranola={() => addWebhookTrigger("Granola call notes")}
               onSlack={() => addWebhookTrigger("Slack")}
             />
           ) : trigger === null && addingSchedule ? (
-            <ScheduleEditor
-              value={null}
-              onChange={commitSchedule}
-              disabled={busy}
-            />
+            <ScheduleEditor value={null} onChange={commitSchedule} />
           ) : trigger !== null && trigger.kind === "webhook" ? (
             <div className="flex items-center justify-between gap-2 rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] px-2.5 py-1.5 text-sm">
               <span>{triggerRowSummary(trigger, triggerSourceLabel)}</span>
@@ -595,11 +680,7 @@ function RoutineEditorPanel({
             </div>
           ) : trigger !== null ? (
             <div className="flex flex-col gap-2">
-              <ScheduleEditor
-                value={trigger}
-                onChange={commitSchedule}
-                disabled={busy}
-              />
+              <ScheduleEditor value={trigger} onChange={commitSchedule} />
               <div className="flex justify-end">
                 <Button
                   type="button"

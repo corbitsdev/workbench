@@ -634,5 +634,85 @@ describe("RoutinePanel", () => {
       ).toBe(true);
       expect(container.textContent).toContain("At 09:00 (UTC)");
     });
+
+    // CL-6755: a write's apply-from-server must not clobber draft fields the
+    // user has typed but not yet committed (instruction still focused, or a
+    // schedule picked while instruction was mid-edit).
+    test("committing a schedule does not wipe an in-progress instruction that was never blurred", async () => {
+      await renderPanel({ routineId: null, workbenchId: "ch_1" });
+
+      const name = fieldByLabel("Name this routine") as HTMLInputElement;
+      fillAndBlur(name, "Morning digest");
+      await settle();
+
+      const instruction = fieldByLabel(
+        "What should this routine do each time it runs?",
+      ) as HTMLTextAreaElement;
+      const textareaSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value",
+      )?.set as (this: HTMLTextAreaElement, v: string) => void;
+      act(() => {
+        textareaSetter.call(instruction, "Summarize overnight activity");
+        instruction.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      expect(instruction.value).toBe("Summarize overnight activity");
+
+      act(() => openMenu(buttonWithText("+ Add trigger")));
+      await settle();
+      const onSchedule = [
+        ...document.querySelectorAll('[role="menuitem"]'),
+      ].find((el) => el.textContent?.includes("On a schedule"));
+      act(() => (onSchedule as HTMLElement).click());
+      await settle();
+      act(() => buttonWithText("Daily 9:00")?.click());
+      await settle();
+
+      const instructionAfter = fieldByLabel(
+        "What should this routine do each time it runs?",
+      ) as HTMLTextAreaElement;
+      expect(instructionAfter.value).toBe("Summarize overnight activity");
+      expect(container.textContent).toContain("At 09:00 (UTC)");
+    });
+
+    test("typing instruction while name create is in flight survives the create ack", async () => {
+      networkDelayMs = 40;
+      await renderPanel({ routineId: null, workbenchId: "ch_1" });
+
+      const name = fieldByLabel("Name this routine") as HTMLInputElement;
+      const instruction = fieldByLabel(
+        "What should this routine do each time it runs?",
+      ) as HTMLTextAreaElement;
+      const nameSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      )?.set as (this: HTMLInputElement, v: string) => void;
+      const textareaSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value",
+      )?.set as (this: HTMLTextAreaElement, v: string) => void;
+
+      act(() => {
+        nameSetter.call(name, "Morning digest");
+        name.dispatchEvent(new Event("input", { bubbles: true }));
+        name.dispatchEvent(new Event("focusout", { bubbles: true }));
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      });
+      expect(container.textContent).toContain("Saving…");
+
+      act(() => {
+        textareaSetter.call(instruction, "Summarize overnight activity");
+        instruction.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await settle();
+
+      const instructionAfter = fieldByLabel(
+        "What should this routine do each time it runs?",
+      ) as HTMLTextAreaElement;
+      expect(instructionAfter.value).toBe("Summarize overnight activity");
+      expect(createRoutineCalls).toHaveLength(1);
+    });
   });
 });
