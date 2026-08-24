@@ -98,10 +98,14 @@ function expectEventOnlySettleNotice(
       item.parts.every((part) => part.kind === "event"),
   );
   expect(notices.length).toBeGreaterThanOrEqual(1);
-  const notice = notices[0]!;
+  const notice = notices[0];
+  expect(notice).toBeDefined();
+  if (notice === undefined) return;
   expect(notice.senderPrincipalId).toBeNull();
   expect(notice.sender.address).not.toBe(HUMAN_ADDRESS);
-  const part = notice.parts[0]!;
+  const part = notice.parts[0];
+  expect(part).toBeDefined();
+  if (part === undefined) return;
   expect(part.kind).toBe("event");
   if (part.kind !== "event") return;
   expect(part.event).toBe(CONNECTION_CONNECTED_EVENT);
