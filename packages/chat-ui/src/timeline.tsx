@@ -1430,139 +1430,143 @@ function MessagePartsInner({
       {showDayDivider && <DayDivider createdAt={item.createdAt} />}
       <div className="chat-message-row">
         <div className="chat-message-body">
-        {groupTimelineParts(item.parts, groupKey).map((group) => {
-          const key = group.key;
-          if (group.kind === "tool-activity") {
-            return <ToolActivityGroup key={key} rows={group.rows} />;
-          }
-          const part = group.part;
-          if (part.kind === "text" && part.turnFailed === true) {
-            const retryText = findRetryText(items, item);
-            return (
-              <FailedTurnStrip
-                key={key}
-                item={item}
-                detailText={part.text}
-                participants={participants}
-                currentUser={currentUser}
-                {...(retryText !== undefined ? { retryText } : {})}
-                {...(onRetryFailedTurn !== undefined
-                  ? { onRetryFailedTurn }
-                  : {})}
-                {...(onWhatHappenedFailedTurn !== undefined
-                  ? { onWhatHappenedFailedTurn }
-                  : {})}
-              />
-            );
-          }
-          if (part.kind === "text") {
-            return (
-              <TextBubble
-                key={key}
-                text={part.text}
-                createdAt={item.createdAt}
-                sender={item.sender}
-                participants={participants}
-                currentUser={currentUser}
-                showHeader={showHeader}
-                {...(item.pendingStatus !== undefined
-                  ? { pendingStatus: item.pendingStatus, pendingNonce }
-                  : {})}
-                {...(pendingActions !== undefined ? { pendingActions } : {})}
-                {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
-                {...(onFixConnection !== undefined ? { onFixConnection } : {})}
-              />
-            );
-          }
-          if (part.kind === "event") {
-            return (
-              <EventLine
-                key={key}
-                part={part}
-                createdAt={item.createdAt}
-                participants={participants}
-              />
-            );
-          }
-          if (part.kind === "file") {
-            return (
-              <FilePartView
-                key={key}
-                part={part}
-                {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
-                {...(onOpenArtifactInLibrary !== undefined
-                  ? { onOpenArtifactInLibrary }
-                  : {})}
-              />
-            );
-          }
-          // The agent's own thinking still renders through react-ui, which
-          // owns the reasoning disclosure. Tool calls no longer do: they
-          // arrive here already folded into rounds by `groupTimelineParts`
-          // above, and react-ui's `ToolBlock` renders one call at a time
-          // with its arguments and result as `JSON.stringify` output.
-          if (part.kind === "reasoning") {
-            return (
-              <PartsRenderer key={key} parts={[toReactUiReasoning(part)]} />
-            );
-          }
-          if (part.kind === "block") {
-            return (
-              <BlockPartView
-                key={key}
-                block={part.block}
-                messageId={item.id}
-                {...(approvalActions !== undefined ? { approvalActions } : {})}
-                {...(blockResponses !== undefined ? { blockResponses } : {})}
-                {...(connectGithubActions !== undefined
-                  ? { connectGithubActions }
-                  : {})}
-                {...(connectServiceActions !== undefined
-                  ? { connectServiceActions }
-                  : {})}
-              />
-            );
-          }
-          return <FallbackPart key={key} part={part} />;
-        })}
-        {(() => {
-          const hasReactions =
-            offersSocialChrome &&
-            reactionActions !== undefined &&
-            (item.reactions?.length ?? 0) > 0;
-          // Unpinned messages offer no persistent glyph here — pinning
-          // itself stays reachable through the ellipsis menu's own
-          // "Pin"/"Unpin" entry (`buildMessageMenu`); this row only shows
-          // once there's something to show (a reaction, or a message
-          // already pinned, which needs a visible way to unpin). Before
-          // this, a pin toggle mounted for every message the moment a host
-          // wired `pinActions` at all, CSS-hidden until hover but present
-          // in the DOM under every line, greeting included. System / error
-          // / connect rows (CL-6739) never show this cluster either.
-          const isPinned =
-            offersSocialChrome &&
-            pinActions !== undefined &&
-            item.pinned === true;
-          if (!hasReactions && !isPinned) return null;
-          return (
-            <div className="chat-message-actions">
-              {hasReactions && reactionActions !== undefined ? (
-                <ReactionChips
-                  messageId={item.id}
-                  reactions={item.reactions ?? []}
-                  reactionActions={reactionActions}
+          {groupTimelineParts(item.parts, groupKey).map((group) => {
+            const key = group.key;
+            if (group.kind === "tool-activity") {
+              return <ToolActivityGroup key={key} rows={group.rows} />;
+            }
+            const part = group.part;
+            if (part.kind === "text" && part.turnFailed === true) {
+              const retryText = findRetryText(items, item);
+              return (
+                <FailedTurnStrip
+                  key={key}
+                  item={item}
+                  detailText={part.text}
+                  participants={participants}
+                  currentUser={currentUser}
+                  {...(retryText !== undefined ? { retryText } : {})}
+                  {...(onRetryFailedTurn !== undefined
+                    ? { onRetryFailedTurn }
+                    : {})}
+                  {...(onWhatHappenedFailedTurn !== undefined
+                    ? { onWhatHappenedFailedTurn }
+                    : {})}
                 />
-              ) : null}
-              {isPinned && pinActions !== undefined ? (
-                <PinToggleButton
-                  messageId={item.id}
-                  pinned={true}
-                  pinActions={pinActions}
+              );
+            }
+            if (part.kind === "text") {
+              return (
+                <TextBubble
+                  key={key}
+                  text={part.text}
+                  createdAt={item.createdAt}
+                  sender={item.sender}
+                  participants={participants}
+                  currentUser={currentUser}
+                  showHeader={showHeader}
+                  {...(item.pendingStatus !== undefined
+                    ? { pendingStatus: item.pendingStatus, pendingNonce }
+                    : {})}
+                  {...(pendingActions !== undefined ? { pendingActions } : {})}
+                  {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
+                  {...(onFixConnection !== undefined
+                    ? { onFixConnection }
+                    : {})}
                 />
-              ) : null}
-            </div>
-          );
-        })()}
+              );
+            }
+            if (part.kind === "event") {
+              return (
+                <EventLine
+                  key={key}
+                  part={part}
+                  createdAt={item.createdAt}
+                  participants={participants}
+                />
+              );
+            }
+            if (part.kind === "file") {
+              return (
+                <FilePartView
+                  key={key}
+                  part={part}
+                  {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
+                  {...(onOpenArtifactInLibrary !== undefined
+                    ? { onOpenArtifactInLibrary }
+                    : {})}
+                />
+              );
+            }
+            // The agent's own thinking still renders through react-ui, which
+            // owns the reasoning disclosure. Tool calls no longer do: they
+            // arrive here already folded into rounds by `groupTimelineParts`
+            // above, and react-ui's `ToolBlock` renders one call at a time
+            // with its arguments and result as `JSON.stringify` output.
+            if (part.kind === "reasoning") {
+              return (
+                <PartsRenderer key={key} parts={[toReactUiReasoning(part)]} />
+              );
+            }
+            if (part.kind === "block") {
+              return (
+                <BlockPartView
+                  key={key}
+                  block={part.block}
+                  messageId={item.id}
+                  {...(approvalActions !== undefined
+                    ? { approvalActions }
+                    : {})}
+                  {...(blockResponses !== undefined ? { blockResponses } : {})}
+                  {...(connectGithubActions !== undefined
+                    ? { connectGithubActions }
+                    : {})}
+                  {...(connectServiceActions !== undefined
+                    ? { connectServiceActions }
+                    : {})}
+                />
+              );
+            }
+            return <FallbackPart key={key} part={part} />;
+          })}
+          {(() => {
+            const hasReactions =
+              offersSocialChrome &&
+              reactionActions !== undefined &&
+              (item.reactions?.length ?? 0) > 0;
+            // Unpinned messages offer no persistent glyph here — pinning
+            // itself stays reachable through the ellipsis menu's own
+            // "Pin"/"Unpin" entry (`buildMessageMenu`); this row only shows
+            // once there's something to show (a reaction, or a message
+            // already pinned, which needs a visible way to unpin). Before
+            // this, a pin toggle mounted for every message the moment a host
+            // wired `pinActions` at all, CSS-hidden until hover but present
+            // in the DOM under every line, greeting included. System / error
+            // / connect rows (CL-6739) never show this cluster either.
+            const isPinned =
+              offersSocialChrome &&
+              pinActions !== undefined &&
+              item.pinned === true;
+            if (!hasReactions && !isPinned) return null;
+            return (
+              <div className="chat-message-actions">
+                {hasReactions && reactionActions !== undefined ? (
+                  <ReactionChips
+                    messageId={item.id}
+                    reactions={item.reactions ?? []}
+                    reactionActions={reactionActions}
+                  />
+                ) : null}
+                {isPinned && pinActions !== undefined ? (
+                  <PinToggleButton
+                    messageId={item.id}
+                    pinned={true}
+                    pinActions={pinActions}
+                  />
+                ) : null}
+              </div>
+            );
+          })()}
         </div>
         {offersSocialChrome && onOpenThread !== undefined && replyCount > 0 ? (
           <ThreadAffordance
