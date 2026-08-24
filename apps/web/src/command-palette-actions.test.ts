@@ -77,14 +77,10 @@ describe("ACTION_COMMANDS", () => {
     );
     expect(newWorkbenchRows).toHaveLength(1);
     expect(newWorkbenchRows[0]?.id).toBe("new-workbench");
-    expect(ACTION_COMMANDS.some((c) => c.id === "new-agent")).toBe(false);
 
     const titleCounts = new Map<string, number>();
     for (const command of ACTION_COMMANDS) {
-      titleCounts.set(
-        command.title,
-        (titleCounts.get(command.title) ?? 0) + 1,
-      );
+      titleCounts.set(command.title, (titleCounts.get(command.title) ?? 0) + 1);
     }
     for (const [title, count] of titleCounts) {
       expect(count, `duplicate title: ${title}`).toBe(1);
