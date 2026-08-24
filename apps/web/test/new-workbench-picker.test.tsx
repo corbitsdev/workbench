@@ -211,7 +211,7 @@ function stubBlankCreate(
       return json({
         id: "chan_new",
         title: "Get our onboarding docs into shape",
-        kind: "chat",
+        kind: "workbench",
         pinned: false,
         participants: [],
         settings: {},

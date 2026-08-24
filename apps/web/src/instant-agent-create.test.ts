@@ -261,7 +261,7 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
         return json({
           id: "chan-adhoc",
           title: NEW_WORKBENCH_TITLE,
-          kind: "chat",
+          kind: "workbench",
           pinned: false,
           participants: [],
         });
@@ -278,7 +278,7 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
         return json({
           id: "chan-adhoc",
           title: "Plan the Q3 launch",
-          kind: "chat",
+          kind: "workbench",
           pinned: false,
           participants: [],
           settings: { "chat/name": "Plan the Q3 launch" },
@@ -322,7 +322,7 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
         return json({
           id: "chan-1",
           title: "Code review",
-          kind: "chat",
+          kind: "workbench",
           pinned: false,
           participants: [],
         });
@@ -343,7 +343,7 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
         return json({
           id: "chan-1",
           title: "Code review",
-          kind: "chat",
+          kind: "workbench",
           pinned: false,
           participants: [],
           settings: {},
