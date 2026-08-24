@@ -6,6 +6,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { PRINCIPAL_KIND_LABEL, PRINCIPAL_KIND_ORDER } from "../src/identity";
 import { RoleAssignments } from "../src/roles-section";
 
 const timestamps = {
@@ -56,7 +57,10 @@ describe("RoleAssignments picker", () => {
     const groupOrder = [...markup.matchAll(/<optgroup label="([^"]+)"/g)].map(
       (match) => match[1],
     );
-    expect(groupOrder).toEqual(["user", "agent", "workflow"]);
+    expect(groupOrder).toEqual(
+      PRINCIPAL_KIND_ORDER.map((kind) => PRINCIPAL_KIND_LABEL[kind]),
+    );
+    expect(groupOrder).not.toEqual([...PRINCIPAL_KIND_ORDER]);
   });
 
   test("omits an empty kind group entirely rather than an empty optgroup", () => {
@@ -71,6 +75,7 @@ describe("RoleAssignments picker", () => {
     const groupOrder = [...markup.matchAll(/<optgroup label="([^"]+)"/g)].map(
       (match) => match[1],
     );
-    expect(groupOrder).toEqual(["user"]);
+    expect(groupOrder).toEqual([PRINCIPAL_KIND_LABEL.user]);
+    expect(groupOrder).not.toEqual(["user"]);
   });
 });

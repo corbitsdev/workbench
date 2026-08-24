@@ -16,6 +16,7 @@ import type { Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { CreateGrantDialog, GrantsTable } from "../src/grants-section";
+import { PRINCIPAL_KIND_LABEL, PRINCIPAL_KIND_ORDER } from "../src/identity";
 
 const timestamps = {
   createdAt: "2026-01-01T00:00:00.000Z",
@@ -130,10 +131,11 @@ describe("CreateGrantDialog", () => {
       act(() => (principalCard as HTMLButtonElement).click());
 
       const optgroups = [...document.body.querySelectorAll("optgroup")];
-      expect(optgroups.map((group) => group.label)).toEqual([
-        "user",
-        "agent",
-        "workflow",
+      expect(optgroups.map((group) => group.label)).toEqual(
+        PRINCIPAL_KIND_ORDER.map((kind) => PRINCIPAL_KIND_LABEL[kind]),
+      );
+      expect(optgroups.map((group) => group.label)).not.toEqual([
+        ...PRINCIPAL_KIND_ORDER,
       ]);
     } finally {
       act(() => root.unmount());
