@@ -1018,15 +1018,16 @@ describe("POST /workbenches/:id/invite", () => {
     ]);
   });
 
-  // The explicit invite affordance deliberately CAN place a second
-  // instance of one definition in a room — proven live by the CL-6329
-  // turn-swap proof and the reason handle de-duplication exists.
-  // CL-6451's anti-sibling rule lives on the command/mention paths,
-  // never here.
-  test("an explicit re-invite of the same definition mints a second instance", async () => {
+  // One room participant = one standing principal (CL-6978): an
+  // explicit re-invite of a definition this room already holds returns
+  // the resident handle rather than minting a sibling or appending a
+  // second participant row. `addParticipant` does not de-dupe addresses.
+  test("an explicit re-invite of the same definition does not mint a second instance", async () => {
     let launches = 0;
     const platform = fakePlatform({
       invitable: [{ id: "wfd_echo", name: "echo" }],
+      resolveDefinitionIdByAddress: async (address) =>
+        address === "ins_invited1@acme.example" ? "wfd_echo" : undefined,
       launchInvite: async () => {
         launches += 1;
         return {
@@ -1050,14 +1051,53 @@ describe("POST /workbenches/:id/invite", () => {
     expect((await invite()).status).toBe(201);
     expect((await invite()).status).toBe(201);
 
-    expect(platform.launchInviteCalls).toHaveLength(2);
+    expect(platform.launchInviteCalls).toHaveLength(1);
     const settingsRow = await deps.store.getWorkbenchSettings(
       TENANT.id,
       workbench.id,
     );
     expect(settingsRow?.settings["chat/participants"]).toEqual([
       { address: "ins_invited1@acme.example", handle: "echo" },
-      { address: "ins_invited2@acme.example", handle: "echo-2" },
+    ]);
+  });
+
+  test("inviting the same definition into a second workbench reuses the standing address", async () => {
+    const standing = {
+      instanceId: "ins_sales",
+      address: "ins_sales@acme.example",
+    };
+    const platform = fakePlatform({
+      invitable: [{ id: "wfd_sales", name: "Sales" }],
+      launchInvite: async () => standing,
+    });
+    const deps = buildDeps({ platform });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: first } = await createWorkbench(app, { kind: "workbench" });
+    const { body: second } = await createWorkbench(app, { kind: "workbench" });
+
+    const invite = (workbenchId: string) =>
+      app.request(`/workbenches/${workbenchId}/invite`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ definitionId: "wfd_sales" }),
+      });
+    expect((await invite(first.id)).status).toBe(201);
+    expect((await invite(second.id)).status).toBe(201);
+
+    expect(platform.launchInviteCalls).toHaveLength(2);
+    const firstSettings = await deps.store.getWorkbenchSettings(
+      TENANT.id,
+      first.id,
+    );
+    const secondSettings = await deps.store.getWorkbenchSettings(
+      TENANT.id,
+      second.id,
+    );
+    expect(firstSettings?.settings["chat/participants"]).toEqual([
+      { address: "ins_sales@acme.example", handle: "sales" },
+    ]);
+    expect(secondSettings?.settings["chat/participants"]).toEqual([
+      { address: "ins_sales@acme.example", handle: "sales" },
     ]);
   });
 
