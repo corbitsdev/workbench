@@ -1848,7 +1848,10 @@ describe("Invite control visibility (CL-6781)", () => {
 
   test("shows Invite agent once at least one definition is invitable", async () => {
     globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
       const path = typeof input === "string" ? input : String(input);
       const json = (body: unknown) =>
         new Response(JSON.stringify(body), {
@@ -1858,7 +1861,8 @@ describe("Invite control visibility (CL-6781)", () => {
       if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
         return json({ items: [WORKBENCH_WIRE] });
       }
-      if (/\/chat\/workbenches\?kind=chat$/.test(path)) return json({ items: [] });
+      if (/\/chat\/workbenches\?kind=chat$/.test(path))
+        return json({ items: [] });
       if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
         return json({ rootThreadId: "", items: [] });
       }
@@ -1874,7 +1878,8 @@ describe("Invite control visibility (CL-6781)", () => {
           items: [{ id: "wfd_echo", name: "echo", description: "Echo" }],
         });
       }
-      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path)) return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/pins$/.test(path))
+        return json({ items: [] });
       if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
         return json({
           ...WORKBENCH_WIRE,

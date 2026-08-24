@@ -298,9 +298,9 @@ describe("composerPlaceholderFor (CL-6070 / CL-6740: names the open recipient; n
     expect(composerPlaceholderFor({ kind: "chat", title: "Scout" })).toBe(
       `${CHAT_STRINGS.composerPlaceholderChat("Scout")} / for commands`,
     );
-    expect(composerPlaceholderFor({ kind: "chat", title: "Scout" })).not.toContain(
-      "Myra",
-    );
+    expect(
+      composerPlaceholderFor({ kind: "chat", title: "Scout" }),
+    ).not.toContain("Myra");
   });
 
   test("names the counterpart for a person chat too — a chat's title is always its counterpart's name", () => {
@@ -329,9 +329,9 @@ describe("composerPlaceholderFor (CL-6070 / CL-6740: names the open recipient; n
 
   test("advertises / for commands only when the slash catalog is non-empty", () => {
     expect(SLASH_COMMANDS.length).toBeGreaterThan(0);
-    expect(composerPlaceholderFor({ kind: "workbench", title: "General" })).toContain(
-      "/ for commands",
-    );
+    expect(
+      composerPlaceholderFor({ kind: "workbench", title: "General" }),
+    ).toContain("/ for commands");
     expect(
       composerPlaceholderFor(
         { kind: "workbench", title: "General" },
