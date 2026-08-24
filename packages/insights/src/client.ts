@@ -198,7 +198,30 @@ export function tokensLabel(
     tokens.cacheWrite +
     tokens.output +
     tokens.thinking;
+  // Zero total is real empty usage — omit chrome entirely. Never invent
+  // "0 tok" (CL-6877 / DESIGN empty-zero).
+  if (total === 0) return undefined;
   return `${total.toLocaleString()} tok`;
+}
+
+/**
+ * Consumer-safe cost · tokens chrome for sidebar / compact usage lines.
+ * Zero spend stays `$0.00`; zero or absent tokens omit the tok segment —
+ * never `$0.00 · 0 tok`. Callers must not invent a `"0 tok"` fallback.
+ */
+export function usageChromeLabel(usage: {
+  readonly costUsd: number | null | undefined;
+  readonly tokens: {
+    readonly input: number;
+    readonly cacheRead: number;
+    readonly cacheWrite: number;
+    readonly output: number;
+    readonly thinking: number;
+  } | null;
+}): string {
+  const cost = formatUsd(usage.costUsd);
+  const tok = tokensLabel(usage.tokens);
+  return tok === undefined ? cost : `${cost} · ${tok}`;
 }
 
 /** Models with tokens but no known rate (costUsd null). */
