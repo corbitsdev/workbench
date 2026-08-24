@@ -29,6 +29,7 @@ import type {
   Workbench,
   WorkbenchThreadRow,
 } from "./api";
+import { CHAT_STRINGS } from "./strings";
 
 /** Whether this workbench's mailbox has loaded, and why not if it hasn't.
  * The items themselves are a separate question — which slice of the
@@ -49,6 +50,40 @@ export type FeedStatus =
     }
   | { readonly kind: "ready" };
 
+/** Whether this workbench's pinned strip has loaded, and why not if it
+ * hasn't (CL-6832). A successful empty list is `ready` with no items; a
+ * read failure is `error`; a 404 (pins store not wired on this host) is
+ * `unavailable` — the same "absent store, absent surface" contract the
+ * wire's own `pinned` field follows. Never coerce a failure into `[]`. */
+export type PinsStatus =
+  | { readonly kind: "loading" }
+  | { readonly kind: "ready"; readonly items: readonly PinnedMessage[] }
+  | { readonly kind: "unavailable" }
+  | { readonly kind: "error"; readonly message: string };
+
+/** Pure fold over the pins query — kept free of React so the empty-vs-error
+ * distinction is unit-testable without mounting the feed hook. */
+export function pinsStatusFor(args: {
+  readonly activeWorkbenchId: string | null;
+  readonly data: readonly PinnedMessage[] | undefined;
+  readonly error: unknown;
+}): PinsStatus {
+  if (args.activeWorkbenchId === null) return { kind: "loading" };
+  // React Query keeps the last successful data through a failed refetch, so
+  // a background failure leaves the strip exactly as it was.
+  if (args.data !== undefined) return { kind: "ready", items: args.data };
+  if (args.error != null) {
+    if (args.error instanceof ChatApiError && args.error.status === 404) {
+      return { kind: "unavailable" };
+    }
+    return {
+      kind: "error",
+      message: describeChatError(args.error, CHAT_STRINGS.pinnedStripLoadError),
+    };
+  }
+  return { kind: "loading" };
+}
+
 /** How long a loaded feed counts as fresh. An agent turn emits dozens of
  * stream events in under a second; with a stale window every one of them
  * after the first is served from cache instead of hitting the hub. */
@@ -63,7 +98,6 @@ const CHAT_FEED_COALESCE_MS = 250;
  * hand the memos below a new array identity on every render. */
 const NO_THREADS: readonly WorkbenchThreadRow[] = [];
 const NO_MESSAGES: readonly MessageItem[] = [];
-const NO_PINNED_MESSAGES: readonly PinnedMessage[] = [];
 
 /** The three reads that make up one workbench's feed. They share a
  * prefix so a single `invalidateQueries` refreshes all of them. */
@@ -447,7 +481,9 @@ export function applyStreamPin(
 export interface WorkbenchFeed {
   readonly threads: readonly WorkbenchThreadRow[];
   readonly rootThreadId: string;
-  readonly pinnedMessages: readonly PinnedMessage[];
+  /** Pins load state — empty success, error, and unavailable stay distinct
+   * (CL-6832). Prefer this over inventing an empty list on failure. */
+  readonly pinsStatus: PinsStatus;
   /** Every message in the workbench, unfiltered. What thread a reader is
    * looking at selects a slice of this — see `./thread-feed.ts`. */
   readonly loadedMessages: readonly MessageItem[];
@@ -489,20 +525,22 @@ export function useWorkbenchFeed(args: {
   });
   const pinsQuery = useQuery({
     queryKey: chatPinsQueryKey(tenantId, activeWorkbenchId),
-    // No `pins` store on this host, or a transient read failure — either
-    // way the strip just doesn't show, the same "absent store, absent
-    // surface" contract the wire's own `pinned` field follows.
-    queryFn: () =>
-      listPinnedMessages(tenantId, activeWorkbenchId ?? "").catch(
-        () => [] as readonly PinnedMessage[],
-      ),
+    queryFn: () => listPinnedMessages(tenantId, activeWorkbenchId ?? ""),
     enabled: activeWorkbenchId !== null,
     staleTime: CHAT_FEED_STALE_MS,
   });
 
   const threads = threadsQuery.data?.items ?? NO_THREADS;
   const rootThreadId = threadsQuery.data?.rootThreadId ?? "";
-  const pinnedMessages = pinsQuery.data ?? NO_PINNED_MESSAGES;
+  const pinsStatus = useMemo(
+    () =>
+      pinsStatusFor({
+        activeWorkbenchId,
+        data: pinsQuery.data,
+        error: pinsQuery.error,
+      }),
+    [activeWorkbenchId, pinsQuery.data, pinsQuery.error],
+  );
   const loadedMessages = messagesQuery.data?.items ?? NO_MESSAGES;
 
   // The parent a thread hangs off comes from the thread itself once it
@@ -582,7 +620,7 @@ export function useWorkbenchFeed(args: {
   return {
     threads,
     rootThreadId,
-    pinnedMessages,
+    pinsStatus,
     loadedMessages,
     feedStatus,
     threadsLoaded: threadsQuery.data !== undefined,
