@@ -28,6 +28,7 @@
 // never hops to `/routines` first the way this used to.
 
 import { createPendingDialogRequest } from "@corbits/shell-layout";
+import { CHAT_STRINGS } from "@corbits/chat-ui";
 import { WORKBENCH_PATH_PREFIX } from "./workbench-path";
 import { NEW_WORKBENCH_PATH } from "./routes";
 import { listAgentDefinitions } from "./agents-api";
@@ -97,12 +98,12 @@ export type ActionCommand = {
 export const ACTION_COMMANDS: readonly ActionCommand[] = [
   {
     id: "new-workbench",
-    title: "New workbench",
+    title: CHAT_STRINGS.newWorkbenchAction,
     subtitle: "Start a new workbench",
   },
   {
     id: "new-agent",
-    title: "New workbench",
+    title: CHAT_STRINGS.newWorkbenchAction,
     subtitle: "Start a new workbench",
   },
   {

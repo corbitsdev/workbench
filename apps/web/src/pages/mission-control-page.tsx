@@ -31,7 +31,7 @@ import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { formatUsd } from "@corbits/insights/client";
-import type { Workbench } from "@corbits/chat-ui";
+import { CHAT_STRINGS, type Workbench } from "@corbits/chat-ui";
 
 import {
   approveApproval,
@@ -278,7 +278,7 @@ export function MissionControlRoute({
             size="sm"
             onClick={() => navigate(NEW_WORKBENCH_PATH)}
           >
-            <Plus /> New bench
+            <Plus /> {CHAT_STRINGS.newWorkbenchAction}
           </Button>
         }
       />

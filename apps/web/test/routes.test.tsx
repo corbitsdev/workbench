@@ -327,7 +327,7 @@ describe("routes render", () => {
       const markup = await renderApp(route.path);
       expect(markup).toContain('data-testid="shell-sidebar"');
       if (route.path === "/") {
-        expect(stagePageTitle(markup)).toBe("New Workbench");
+        expect(stagePageTitle(markup)).toBe("New workbench");
         return;
       }
       if (route.path === "/w") {

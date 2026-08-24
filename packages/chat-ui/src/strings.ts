@@ -12,6 +12,9 @@ function joinWithAnd(names: readonly string[]): string {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
+/** Canonical create-workbench CTA and untitled-mint label (CL-6767). */
+const NEW_WORKBENCH_LABEL = "New workbench";
+
 export const CHAT_STRINGS = {
   workbenchesSectionLabel: "Pinned",
   chatsSectionLabel: "Workbenches",
@@ -28,10 +31,11 @@ export const CHAT_STRINGS = {
   /** @deprecated Prefer Mission Control / New workbench recovery (CL-6796). */
   workbenchNotFoundAction: "Back to workbenches",
   workbenchNotFoundMissionControlAction: "Mission Control",
-  workbenchNotFoundNewWorkbenchAction: "New workbench",
+  workbenchNotFoundNewWorkbenchAction: NEW_WORKBENCH_LABEL,
+  /** Create-workbench CTA on every mint surface (CL-6767). */
+  newWorkbenchAction: NEW_WORKBENCH_LABEL,
   composerPlaceholder: "Send a message… use @ to mention an agent",
   composerPlaceholderChat: (name: string) => `Message ${name}…`,
-
   composerSend: "Send",
   composerSending: "Sending…",
   composerKeyboardHint: "Enter to send",
@@ -78,7 +82,7 @@ export const CHAT_STRINGS = {
   composerHelpClose: "Close",
   runRoutineUnavailable: "Open Routines to create one",
   unnamedWorkbench: "Untitled conversation",
-  newWorkbenchTitle: "New workbench",
+  newWorkbenchTitle: NEW_WORKBENCH_LABEL,
   unnamedRun: "Untitled agent",
   fallbackPartLabel: (kind: string) => `[${kind}]`,
   senderYou: "You",
