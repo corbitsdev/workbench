@@ -289,6 +289,9 @@ export const CHAT_STRINGS = {
   turnActivityThinking: "Thinking…",
   turnActivityRetry: (attempt: number) => `Retrying (attempt ${attempt})…`,
   replyTimedOutNotice: "No reply arrived — the agent may be unavailable.",
+  resumeFailedNotice: (refId: string) =>
+    `Couldn't resume the running reply — try again. (ref ${refId})`,
+  resumeFailedRetryAction: "Retry",
   turnFailedTitle: (sender: string) => `${sender} didn't reply`,
   turnFailedSub: "No reply arrived — the agent may be unavailable.",
   noUsableModelBannerText:

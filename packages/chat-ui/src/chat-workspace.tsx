@@ -13,6 +13,7 @@
 
 import { isAgentAddress } from "@corbits/chat/mentions";
 import { Button, EmptyState, toast } from "@corbits/react-ui";
+import { reportError } from "@corbits/error-sink";
 import {
   CaretDown,
   ChatCircle,
@@ -56,6 +57,7 @@ import { useTurnActivity, TurnActivityStrip } from "./turn-activity";
 import type { StreamingReplyState } from "./streaming-reply";
 import { AgentBadge, WorkbenchTimeline, messageDomId } from "./timeline";
 import { NoUsableModelBanner } from "./no-usable-model-banner";
+import { ResumeFailedBanner } from "./resume-failed-banner";
 import type {
   CurrentUser,
   PinActions,
@@ -669,6 +671,12 @@ function ChatWorkspaceInner({
     onWorkbenchChange?.(id);
   };
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  // CL-6833: catch-up `fetchRunningTurn` failure must surface a banner with
+  // Retry — never look idle. `resumeAttempt` re-arms the effect on Retry.
+  const [resumeFailedRefId, setResumeFailedRefId] = useState<string | null>(
+    null,
+  );
+  const [resumeAttempt, setResumeAttempt] = useState(0);
   // null = workbench root feed. A concrete id opens that thread in the same
   // geometry (timeline + composer). pendingParentMessageId is set when the
   // user opens a reply on a message that has no thread yet.
@@ -976,20 +984,39 @@ function ChatWorkspaceInner({
   // rather than showing nothing until the next live token arrives. Any
   // live event that beats this fetch back always wins — see
   // `resumeFromTurn`'s own guard.
+  // CL-6833: a failed catch-up must not swallow into idle — report a ref
+  // and keep `ResumeFailedBanner` visible until Retry succeeds (or the
+  // workbench changes).
   useEffect(() => {
     if (activeWorkbenchId === null || resumeAgentAddress === undefined) {
+      setResumeFailedRefId(null);
       return;
     }
     let cancelled = false;
     fetchRunningTurn(tenantId, activeWorkbenchId, resumeAgentAddress)
       .then((runningTurn) => {
-        if (!cancelled) resumeFromTurn(runningTurn);
+        if (cancelled) return;
+        setResumeFailedRefId(null);
+        resumeFromTurn(runningTurn);
       })
-      .catch(() => undefined);
+      .catch((cause) => {
+        if (cancelled) return;
+        const refId = reportError(cause, {
+          operation: "chat.resumeRunningTurn",
+          tenantId,
+          roomId: activeWorkbenchId,
+          agentId: resumeAgentAddress,
+        });
+        setResumeFailedRefId(refId);
+      });
     return () => {
       cancelled = true;
     };
-  }, [tenantId, activeWorkbenchId, resumeAgentAddress]);
+  }, [tenantId, activeWorkbenchId, resumeAgentAddress, resumeAttempt]);
+
+  const handleRetryResume = useCallback(() => {
+    setResumeAttempt((attempt) => attempt + 1);
+  }, []);
 
   const { pendingSends, handleSend, retryPendingSend, discardPendingSend } =
     useOptimisticSends({
@@ -1502,6 +1529,12 @@ function ChatWorkspaceInner({
                   />
                   <TurnActivityStrip activity={turnActivity} />
                   <div className="chat-composer-stack">
+                    {resumeFailedRefId !== null ? (
+                      <ResumeFailedBanner
+                        refId={resumeFailedRefId}
+                        onRetry={handleRetryResume}
+                      />
+                    ) : null}
                     {hasUsableModel === false && hasAgentParticipant ? (
                       <NoUsableModelBanner
                         onConnectModel={() => onConnectModel?.()}
