@@ -120,7 +120,7 @@ function mockFetch(options?: {
   readonly models?: ReturnType<typeof resolvedModels>;
   readonly onPatch?: (url: string) => void;
 }) {
-  globalThis.fetch = ((url: string, init?: RequestInit) => {
+  globalThis.fetch = ((url: string, _init?: RequestInit) => {
     if (url === "/api/tenants/ten_1/credentials") {
       return Promise.resolve(
         json({ data: [ANTHROPIC_CREDENTIAL], nextCursor: null }),
