@@ -37,6 +37,7 @@ import { OLLAMA_PLACEHOLDER_SECRET } from "@workbench/hub-client/credential-test
 import { useNavigate } from "../navigation";
 import {
   completeSetup,
+  CREDENTIAL_PROBE_FAILURE_MESSAGE,
   CREDENTIAL_PROVIDERS,
   hasActiveCredential,
   HUGGINGFACE_CONNECT_START_PATH,
@@ -224,11 +225,21 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
           // Confirm one independently (a cheap credentials read) before
           // handing off; no tenantId (should not happen alongside
           // seeded: true) falls through to the credential step too.
-          const confirmed =
-            result.tenantId !== undefined &&
-            (await hasActiveCredential(result.tenantId));
-          if (confirmed) {
+          // A probe that cannot complete stays on this setup step with
+          // Retry (CL-6868) — never opens paste-a-key as if none exists.
+          if (result.tenantId === undefined) {
+            setResumingUnseeded(false);
+            setState({ phase: "credential", error: null });
+            return;
+          }
+          const probe = await hasActiveCredential(result.tenantId);
+          if (probe.kind === "active") {
             navigate("/");
+          } else if (probe.kind === "error") {
+            setState({
+              phase: "provisioning-error",
+              message: CREDENTIAL_PROBE_FAILURE_MESSAGE,
+            });
           } else {
             setResumingUnseeded(false);
             setState({ phase: "credential", error: null });
@@ -245,11 +256,17 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
         } else if (result.kind === "provisioned" && result.seeded) {
           // The seed run's validation trigger only proves a workflow run
           // started, never that it succeeded against a real credential.
-          // Confirm one independently before handing off.
-          const confirmed = await hasActiveCredential(result.tenantId);
-          if (confirmed) {
+          // Confirm one independently before handing off. Probe failure
+          // stays here with Retry (CL-6868) — never paste-a-key as none.
+          const probe = await hasActiveCredential(result.tenantId);
+          if (probe.kind === "active") {
             setResumingUnseeded(false);
             navigate("/");
+          } else if (probe.kind === "error") {
+            setState({
+              phase: "provisioning-error",
+              message: CREDENTIAL_PROBE_FAILURE_MESSAGE,
+            });
           } else {
             setResumingUnseeded(false);
             setState({ phase: "credential", error: null });

@@ -19,6 +19,7 @@ import { App } from "../src/app";
 import { NavigationProvider } from "../src/navigation";
 import {
   CREDENTIAL_PROVIDERS,
+  hasActiveCredential,
   PRIMARY_CREDENTIAL_PROVIDERS,
   readHuggingFaceConnectReturn,
   readOpenRouterConnectReturn,
@@ -250,6 +251,50 @@ describe("triggerFirstLoginProvisioning", () => {
 
     const result = await triggerFirstLoginProvisioning();
     expect(result).toEqual({ kind: "existing-member" });
+  });
+});
+
+describe("hasActiveCredential", () => {
+  // CL-6868: a transient credentials read must never coerce to "no key" —
+  // that path opens paste-a-key as if none exists when one may already be
+  // connected. Probe failures are a distinct outcome from a confirmed miss.
+  test("an active credential is reported as active", async () => {
+    globalThis.fetch = (async () =>
+      json({
+        data: [{ id: "cred_1", status: "active" }],
+        nextCursor: null,
+      })) as unknown as typeof fetch;
+
+    expect(await hasActiveCredential("ten_1")).toEqual({ kind: "active" });
+  });
+
+  test("an empty credentials page is a confirmed none, not a probe failure", async () => {
+    globalThis.fetch = (async () =>
+      json({ data: [], nextCursor: null })) as unknown as typeof fetch;
+
+    expect(await hasActiveCredential("ten_1")).toEqual({ kind: "none" });
+  });
+
+  test("a network failure is a probe error, never coerced to none", async () => {
+    globalThis.fetch = (async () => {
+      throw new Error("connection refused");
+    }) as unknown as typeof fetch;
+
+    expect(await hasActiveCredential("ten_1")).toEqual({ kind: "error" });
+  });
+
+  test("a non-OK credentials response is a probe error, never coerced to none", async () => {
+    globalThis.fetch = (async () =>
+      json({ error: "boom" }, 500)) as unknown as typeof fetch;
+
+    expect(await hasActiveCredential("ten_1")).toEqual({ kind: "error" });
+  });
+
+  test("an unparseable credentials body is a probe error, never coerced to none", async () => {
+    globalThis.fetch = (async () =>
+      json({ not: "credentials" })) as unknown as typeof fetch;
+
+    expect(await hasActiveCredential("ten_1")).toEqual({ kind: "error" });
   });
 });
 
@@ -562,6 +607,116 @@ describe("App landing fresh on a hub-seeded workbench", () => {
       });
 
       expect(container.textContent).toContain("Bring your own AI");
+      expect(calls).toEqual([]);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("provisioned, seeded: true stays on setup with Retry when the credential probe fails (CL-6868)", async () => {
+    // Transient credentials-read failure must not open paste-a-key as if
+    // none exists — the key may already be connected. Stay on the setup
+    // step with one consumer sentence and Retry.
+    globalThis.fetch = (async (url: string) => {
+      if (url === "/api/onboarding/provision") {
+        return json({
+          kind: "provisioned",
+          tenantId: "ten_1",
+          tenantSlug: "ada-user1",
+          seeded: true,
+        });
+      }
+      if (url === "/api/tenants/ten_1/credentials") {
+        throw new Error("connection refused");
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const { navigate, calls } = trackedNavigate();
+    try {
+      act(() => {
+        root.render(
+          <App
+            path={ONBOARDING_PATH}
+            navigate={navigate}
+            session={signedIn}
+            onSignedIn={noop}
+            onSignOut={noop}
+            onRetry={noop}
+          />,
+        );
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+
+      const text = container.textContent ?? "";
+      expect(text).not.toContain("Bring your own AI");
+      expect(text).not.toContain("or paste a provider API key");
+      expect(text).toContain(
+        "Checking for a connected key hit a snag. Try again in a moment.",
+      );
+      const retry = Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent === "Try again",
+      );
+      expect(retry).not.toBeUndefined();
+      expect(calls).toEqual([]);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("existing-member, seeded: true stays on setup with Retry when the credential probe fails (CL-6868)", async () => {
+    globalThis.fetch = (async (url: string) => {
+      if (url === "/api/onboarding/provision") {
+        return json({
+          kind: "existing-member",
+          seeded: true,
+          tenantId: "ten_1",
+        });
+      }
+      if (url === "/api/tenants/ten_1/credentials") {
+        return json({ error: "boom" }, 500);
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const { navigate, calls } = trackedNavigate();
+    try {
+      act(() => {
+        root.render(
+          <App
+            path={ONBOARDING_PATH}
+            navigate={navigate}
+            session={signedIn}
+            onSignedIn={noop}
+            onSignOut={noop}
+            onRetry={noop}
+          />,
+        );
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+
+      const text = container.textContent ?? "";
+      expect(text).not.toContain("Bring your own AI");
+      expect(text).not.toContain("or paste a provider API key");
+      expect(text).toContain(
+        "Checking for a connected key hit a snag. Try again in a moment.",
+      );
+      const retry = Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent === "Try again",
+      );
+      expect(retry).not.toBeUndefined();
       expect(calls).toEqual([]);
     } finally {
       act(() => root.unmount());
