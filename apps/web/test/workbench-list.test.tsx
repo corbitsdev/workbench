@@ -46,7 +46,13 @@ function json(body: unknown): Response {
   });
 }
 
-function stubFetch(data: { readonly needsYou?: readonly unknown[] }): void {
+function stubFetch(
+  data: {
+    readonly needsYou?: readonly unknown[];
+    readonly workbenches?: readonly unknown[];
+    readonly chats?: readonly unknown[];
+  } = {},
+): void {
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const path = typeof input === "string" ? input : String(input);
     if (path.includes("/api/me/principals"))
@@ -57,6 +63,10 @@ function stubFetch(data: { readonly needsYou?: readonly unknown[] }): void {
       return Promise.resolve(json({ items: data.needsYou ?? [] }));
     if (path.includes("/agent-definitions/visible"))
       return Promise.resolve(json({ definitions: [] }));
+    if (path.includes("/chat/workbenches?kind=workbench"))
+      return Promise.resolve(json({ items: data.workbenches ?? [] }));
+    if (path.includes("/chat/workbenches?kind=chat"))
+      return Promise.resolve(json({ items: data.chats ?? [] }));
     return Promise.resolve(json({ items: [] }));
   }) as typeof fetch;
 }
@@ -87,13 +97,33 @@ async function mount(onNavigate: (to: string) => void = () => undefined) {
       </TestQueryProvider>,
     );
   });
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 40; i++) {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
+    // Prefer `shell-ch-row-wrap` over bare `shell-ch-row`: the minting stub
+    // ("New Workbench") uses the row class alone and paints before the
+    // parallel needs-you query settles — breaking on it races the chip.
+    if (
+      container.innerHTML.includes("shell-ch-row-wrap") ||
+      container.innerHTML.includes("No workbenches yet") ||
+      container.innerHTML.includes("waiting on you")
+    ) {
+      break;
+    }
+    // Stub-only list: keep spinning until needs-you resolves (chip text) or
+    // enough ticks have passed for an empty needs-you to settle as null.
+    if (
+      container.innerHTML.includes("New Workbench") &&
+      !container.innerHTML.includes("shell-activity-skeleton") &&
+      i >= 15
+    ) {
+      break;
+    }
   }
   return container;
 }
+
 
 describe("WorkbenchList — needs-you signal", () => {
   test("hides the signal when nothing is pending", async () => {
@@ -111,5 +141,40 @@ describe("WorkbenchList — needs-you signal", () => {
     const chip = el.querySelector('.chip[data-tone="needs-you"]');
     expect(chip).not.toBeNull();
     expect(chip?.textContent).toBe("Needs you");
+  });
+});
+
+describe("WorkbenchList — pin visibility and order (CL-6657)", () => {
+  test("shows a pin glyph only on pinned rows and floats them above unpinned", async () => {
+    stubFetch({
+      chats: [
+        {
+          id: "ch_recent",
+          title: "Recent chat",
+          kind: "chat",
+          pinned: false,
+          participants: [],
+          lastActivityAt: "2026-08-10T00:00:00.000Z",
+        },
+        {
+          id: "ch_pinned",
+          title: "Pinned chat",
+          kind: "chat",
+          pinned: true,
+          participants: [],
+          lastActivityAt: "2026-08-01T00:00:00.000Z",
+        },
+      ],
+    });
+    const el = await mount();
+    const wraps = [...el.querySelectorAll(".shell-ch-row-wrap")];
+    expect(wraps.map((row) => row.getAttribute("data-ctx-workbench"))).toEqual([
+      "ch_pinned",
+      "ch_recent",
+    ]);
+    expect(wraps[0]?.querySelector(".shell-ch-pin")).not.toBeNull();
+    expect(wraps[0]?.getAttribute("data-ctx-workbench-pinned")).toBe("true");
+    expect(wraps[1]?.querySelector(".shell-ch-pin")).toBeNull();
+    expect(wraps[1]?.getAttribute("data-ctx-workbench-pinned")).toBe("false");
   });
 });

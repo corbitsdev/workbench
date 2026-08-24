@@ -22,7 +22,7 @@ import {
 } from "@corbits/chat-ui";
 import type { Workbench } from "@corbits/chat-ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChatCircle, DotsThree, Hash, MagnifyingGlass } from "@corbits/icons";
+import { ChatCircle, DotsThree, Hash, MagnifyingGlass, PushPin } from "@corbits/icons";
 import { useEffect, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 
@@ -247,13 +247,19 @@ function WorkbenchRow({
 }) {
   const queryClient = useQueryClient();
   const [title, setTitle] = useState(workbench.title);
-  // The workbench prop only reconciles on a scope change, so the effective
-  // pinned state lives here: without it a second toggle would re-send and
-  // re-announce the first one's transition.
+  // The workbench prop only reconciles on a scope change / list refetch, so
+  // the effective pinned state lives here: without it a second toggle would
+  // re-send and re-announce the first one's transition. Prop sync keeps the
+  // glyph + context-menu attr honest after an external pin (row menu's
+  // invalidate, or WORKBENCHES_MUTATED_EVENT from the shell context menu).
   const [pinned, setPinned] = useState(workbench.pinned);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(workbench.title);
   const [renameLabel, pinToggleLabel] = rowMenuLabels({ pinned });
+
+  useEffect(() => {
+    setPinned(workbench.pinned);
+  }, [workbench.pinned]);
 
   function startRename() {
     setRenameValue(title);
@@ -304,6 +310,7 @@ function WorkbenchRow({
 
   async function togglePinned() {
     const next = !pinned;
+    setPinned(next);
     try {
       await patchWorkbenchSettings(tenantId, workbench.id, {
         "chat/pinned": next,
@@ -311,9 +318,9 @@ function WorkbenchRow({
       void queryClient.invalidateQueries({
         queryKey: workbenchesQueryKeyPrefix(tenantId),
       });
-      setPinned(next);
       toast(CHAT_STRINGS.workbenchPinnedToast(next, title));
     } catch {
+      setPinned(!next);
       toast(CHAT_STRINGS.workbenchPinToggleError(next));
     }
   }
@@ -343,7 +350,7 @@ function WorkbenchRow({
       className="shell-ch-row-wrap"
       data-ctx-workbench={workbench.id}
       data-ctx-workbench-title={displayTitle}
-      data-ctx-workbench-pinned={workbench.pinned ? "true" : "false"}
+      data-ctx-workbench-pinned={pinned ? "true" : "false"}
     >
       <button
         type="button"
@@ -361,6 +368,12 @@ function WorkbenchRow({
         <span className="shell-ch-meta">
           <span className="shell-ch-name-row">
             <span className="shell-ch-name">{displayTitle}</span>
+            {pinned ? (
+              <PushPin
+                className="shell-ch-pin"
+                aria-label={CHAT_STRINGS.rowMenuPin}
+              />
+            ) : null}
             {sharedLabel !== undefined && sharedLabel !== "" ? (
               <Badge tone="shared" title={sharedLabel}>
                 shared
