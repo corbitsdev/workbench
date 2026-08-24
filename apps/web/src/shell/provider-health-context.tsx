@@ -13,6 +13,13 @@
 // provider's banner remembers the record's own `at` timestamp, so a
 // *new* failure for the same provider (a later `at`) shows the banner
 // again — matching CL-6092's "reappears on a new failure" rule.
+//
+// Poll status (CL-6834): empty `providers` alone is not "all healthy".
+// The chrome distinguishes `unknown` (no successful poll yet), `error`
+// (first-load / never-ready poll failure), and `ready` (a snapshot has
+// landed). A failed poll after `ready` keeps last-known providers on
+// screen; a failed poll before any success becomes `error` so the
+// chrome can show unknown/error rather than a silent all-clear.
 
 import {
   createContext,
@@ -43,7 +50,24 @@ export type ProviderHealthBannerState = {
   readonly zeroWorkingProviders: boolean;
 };
 
+/** Whether the shell has a usable health snapshot yet (CL-6834). */
+export type ProviderHealthPollStatus = "unknown" | "ready" | "error";
+
+/**
+ * What health chrome should present — never collapse "no snapshot yet"
+ * or "poll failed" into the same silence as "ready and nothing unhealthy".
+ */
+export type ProviderHealthChrome =
+  | { readonly kind: "unknown" }
+  | { readonly kind: "error" }
+  | { readonly kind: "healthy" }
+  | {
+      readonly kind: "unhealthy";
+      readonly banner: ProviderHealthBannerState;
+    };
+
 type ProviderHealthContextValue = {
+  readonly status: ProviderHealthPollStatus;
   readonly banner: ProviderHealthBannerState | null;
   readonly dismissBanner: () => void;
   readonly pendingConnectProvider: string | null;
@@ -93,6 +117,36 @@ export function deriveProviderHealthBanner(
   };
 }
 
+/**
+ * Next poll-status after one fetch outcome (CL-6834). Success always
+ * becomes `ready`. Failure before any success becomes `error` (so empty
+ * providers are not read as healthy). Failure after `ready` stays
+ * `ready` so last-known state remains on screen for the next retry.
+ */
+export function nextProviderHealthPollStatus(
+  current: ProviderHealthPollStatus,
+  outcome: "ok" | "fail",
+): ProviderHealthPollStatus {
+  if (outcome === "ok") return "ready";
+  if (current === "ready") return "ready";
+  return "error";
+}
+
+/**
+ * Maps poll status + the (possibly null) unhealthy banner into chrome
+ * the shell can render. Empty providers under `unknown`/`error` are
+ * never `healthy` (CL-6834).
+ */
+export function deriveProviderHealthChrome(
+  status: ProviderHealthPollStatus,
+  banner: ProviderHealthBannerState | null,
+): ProviderHealthChrome {
+  if (status === "unknown") return { kind: "unknown" };
+  if (status === "error") return { kind: "error" };
+  if (banner === null) return { kind: "healthy" };
+  return { kind: "unhealthy", banner };
+}
+
 export function ProviderHealthProvider({
   children,
 }: {
@@ -105,6 +159,7 @@ export function ProviderHealthProvider({
   const [connectedProviderCount, setConnectedProviderCount] = useState<
     number | undefined
   >(undefined);
+  const [status, setStatus] = useState<ProviderHealthPollStatus>("unknown");
   // Keyed by provider, remembers the `at` of the incident a person last
   // dismissed — so a later `at` for the same provider is a NEW incident,
   // not a re-show of one already acknowledged.
@@ -117,24 +172,40 @@ export function ProviderHealthProvider({
 
   const tenantIdRef = useRef(selectedTenantId);
   tenantIdRef.current = selectedTenantId;
+  const statusRef = useRef(status);
+  statusRef.current = status;
 
   useEffect(() => {
     if (selectedTenantId === null) {
       setProviders({});
       setConnectedProviderCount(undefined);
+      setStatus("unknown");
+      statusRef.current = "unknown";
       return;
     }
     let cancelled = false;
+    setStatus("unknown");
+    statusRef.current = "unknown";
+    setProviders({});
+    setConnectedProviderCount(undefined);
     const poll = () => {
       fetchProviderHealth(selectedTenantId)
         .then((snapshot) => {
           if (cancelled || tenantIdRef.current !== selectedTenantId) return;
           setProviders(snapshot.providers);
           setConnectedProviderCount(snapshot.connectedProviderCount);
+          const next = nextProviderHealthPollStatus(statusRef.current, "ok");
+          statusRef.current = next;
+          setStatus(next);
         })
         .catch(() => {
-          // A failed poll leaves the last-known state on screen rather
-          // than flashing the banner away — the next poll retries.
+          if (cancelled || tenantIdRef.current !== selectedTenantId) return;
+          // First-load failure → error (empty providers must not look
+          // healthy). After a successful poll, leave last-known providers
+          // and stay ready — the next interval retries.
+          const next = nextProviderHealthPollStatus(statusRef.current, "fail");
+          statusRef.current = next;
+          setStatus(next);
         });
     };
     poll();
@@ -162,15 +233,19 @@ export function ProviderHealthProvider({
     setPendingConnectProvider(null);
   }, []);
 
-  const banner = deriveProviderHealthBanner(
-    providers,
-    dismissedAt,
-    connectedProviderCount,
-  );
+  const banner =
+    status === "ready"
+      ? deriveProviderHealthBanner(
+          providers,
+          dismissedAt,
+          connectedProviderCount,
+        )
+      : null;
 
   return (
     <ProviderHealthContext.Provider
       value={{
+        status,
         banner,
         dismissBanner,
         pendingConnectProvider,
@@ -195,6 +270,18 @@ function useProviderHealthContext(): ProviderHealthContextValue {
 
 export function useProviderHealthBanner(): ProviderHealthBannerState | null {
   return useProviderHealthContext().banner;
+}
+
+/** Poll readiness (CL-6834) — consumers that used to treat a null banner
+ * as "all healthy" must check this: `unknown`/`error` are not healthy. */
+export function useProviderHealthStatus(): ProviderHealthPollStatus {
+  return useProviderHealthContext().status;
+}
+
+/** Chrome discriminant (CL-6834) — unknown / error / healthy / unhealthy. */
+export function useProviderHealthChrome(): ProviderHealthChrome {
+  const { status, banner } = useProviderHealthContext();
+  return deriveProviderHealthChrome(status, banner);
 }
 
 export function useDismissProviderHealthBanner(): () => void {
