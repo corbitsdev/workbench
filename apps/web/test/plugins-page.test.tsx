@@ -70,9 +70,7 @@ function nativeValueSetter(
 
 function fillField(id: string, value: string, textarea = false) {
   const el = document.getElementById(id) as
-    | HTMLInputElement
-    | HTMLTextAreaElement
-    | null;
+    HTMLInputElement | HTMLTextAreaElement | null;
   expect(el).not.toBeNull();
   if (el === null) return;
   const setter = nativeValueSetter(
@@ -156,9 +154,7 @@ function stubFetch(): void {
   }) as typeof fetch;
 }
 
-async function mount(
-  props: { readonly navigate?: (to: string) => void } = {},
-) {
+async function mount(props: { readonly navigate?: (to: string) => void } = {}) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
