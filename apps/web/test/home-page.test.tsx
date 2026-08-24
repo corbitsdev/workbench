@@ -77,7 +77,7 @@ const PRINCIPALS_RESPONSE = {
 
 describe("HomeRoute (the `/` land hop every entry point funnels through)", () => {
   test("`/` does not ensure a Myra conversation — existing rooms stay, no create POST", async () => {
-    const workbenchCreatePosts: Array<{ path: string; method: string }> = [];
+    const workbenchCreatePosts: { path: string; method: string }[] = [];
     stubFetch((path, method) => {
       if (isWorkbenchCreatePost(path, method)) {
         workbenchCreatePosts.push({ path, method });
@@ -141,7 +141,7 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
   });
 
   test("zero-conversation first-run lands on the rail, not Preparing your agent", async () => {
-    const workbenchCreatePosts: Array<{ path: string; method: string }> = [];
+    const workbenchCreatePosts: { path: string; method: string }[] = [];
     stubFetch((path, method) => {
       if (isWorkbenchCreatePost(path, method)) {
         workbenchCreatePosts.push({ path, method });

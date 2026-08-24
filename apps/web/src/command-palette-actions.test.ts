@@ -166,7 +166,7 @@ describe("runActionCommand", () => {
   });
 
   test("talk-to-myra opens the generic agent DM, not a land-hop", async () => {
-    const posts: Array<{ path: string; body: unknown }> = [];
+    const posts: { path: string; body: unknown }[] = [];
     globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
       const path =
         typeof input === "string" ? input : new URL(String(input)).pathname;
