@@ -2,16 +2,13 @@
 // palette's "New workbench", and the zero-workbench land-hop on `/`
 // (CL-6486, superseding CL-6138's silent auto-mint) — opens the template
 // picker (`pages/new-workbench-picker.tsx`, CL-6342) and calls
-// `createWorkbenchFromTemplate` below once a row is chosen. It mints a
-// fresh workbench against the account's default setup template (the same
-// seeded `assistant` definition backing the home Myra workbench, which
-// already opens with the setup greeting: "what do you want me around
-// for?"). The conversation itself is what specializes the agent into
-// whatever the person wants; the drafting and capability machinery already
-// listens for that in-chat, so no definition is drafted or created up
-// front here. Explicitly defining a brand-new agent template, with its own
-// name/purpose/model/skills chosen up front, stays `CreateAgentPanel`'s job
-// (Settings → Agents), unchanged.
+// `createWorkbenchFromTemplate` below once a row is chosen. Blank `+`
+// mints an empty `kind: "workbench"` channel (no host, no definitionId).
+// Named templates mint that same empty channel, then invite existing
+// principals — including Myra — so the room is a multi-principal
+// channel, never a second agent DM. Explicitly defining a brand-new
+// agent, with its own name/purpose/model/skills chosen up front, stays
+// `CreateAgentPanel`'s job (Settings → Agents), unchanged.
 
 import { getLogger } from "@corbits/client-log";
 import type { QueryClient } from "@tanstack/react-query";
@@ -98,23 +95,23 @@ export type PickGithubRepos = (args: {
 }) => Promise<readonly string[] | null>;
 
 /**
- * The template picker's "Create workbench" action (CL-6344): mints a
- * fresh chat, named after the picked template, against the account's
- * default setup template (the seeded `assistant`/Myra definition),
- * passing the picked row's id through as `templateId` so the room opens
- * with that template's own intro (`packages/chat/src/routes.ts`'s
- * `POST /workbenches` resolves it into the canned greeting). When the id
- * names a real manifest (`workbenchTemplate`), this also creates its
- * participant agent definitions, invites each into the room so the
- * roster the greeting promises is the roster actually there (see
- * `instantiateWorkbenchTemplate`'s own doc), and records its required
- * connections as pending. A template id with no manifest yet (`blank`,
- * "Just start talking") mints a plain untagged chat under the generic
- * `NEW_WORKBENCH_TITLE`, exactly like before templates existed — there
- * is no better name to give it. When `pickGithubRepos` is supplied and
- * GitHub is already connected for this tenant, this also drives
- * CL-6386's "select on new-workbench" step — see `PickGithubRepos`'s
- * own doc.
+ * The template picker's "Create workbench" action (CL-6344 / CL-6982):
+ * mints an empty `kind: "workbench"` channel with no host and no
+ * `definitionId`. A named template (code-review, due-diligence, GTM)
+ * still mints that empty channel, then instantiates its roster —
+ * existing principals, including Myra, are invited after mint rather
+ * than skipped as "already hosted." Talking to an agent is clicking
+ * that agent (find-or-reopen its one DM). This function is the create
+ * verb for a room, not a clone of Myra.
+ *
+ * Setup still has to have seeded the default assistant definition; if
+ * it hasn't, we fail with `WorkbenchPreconditionError` rather than
+ * minting a hostless room that then can't invite anyone. A template id
+ * with no manifest yet (`blank`, "Just start talking") mints a plain
+ * untagged channel under the generic `NEW_WORKBENCH_TITLE`. When
+ * `pickGithubRepos` is supplied and GitHub is already connected for
+ * this tenant, this also drives CL-6386's "select on new-workbench"
+ * step — see `PickGithubRepos`'s own doc.
  *
  * `queryClient` invalidates the workbenches list once every template
  * participant has been invited (CL-6594) — `ChatWorkspace`'s own
@@ -183,12 +180,11 @@ export async function createWorkbenchFromTemplate(
       : false;
 
   const workbench = await createWorkbench(tenantId, {
-    kind: "chat",
-    definitionId: setupTemplate.id,
+    kind: "workbench",
     name: manifest?.title ?? NEW_WORKBENCH_TITLE,
     ...(manifest !== undefined ? { templatePromise: manifest.promise } : {}),
-    ...(requiresGithub && !githubAlreadyConnected
-      ? { connectGithubRequiredFor: manifest?.title ?? "" }
+    ...(requiresGithub && !githubAlreadyConnected && manifest !== undefined
+      ? { connectGithubRequiredFor: manifest.title }
       : {}),
   });
 
