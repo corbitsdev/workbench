@@ -47,10 +47,6 @@ import {
   sanitizeReturnPath,
 } from "./oauth-routes";
 
-const ErrorEnvelope = (code: string, message: string) => ({
-  error: { code, message },
-});
-
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
 // One provider label for the whole MCP connect surface — the sealed
@@ -156,12 +152,13 @@ export function createMcpOAuthRoutes(
         returnPathAllowlist,
       );
       if (target === undefined) {
-        return c.json(
-          ErrorEnvelope(
-            "not_found",
-            `Unknown MCP server preset: "${slugParam}"`,
-          ),
-          404,
+        return c.redirect(
+          redirectPath(returnPath, {
+            mcpOauth: slugParam,
+            outcome: "error",
+            code: "not_found",
+          }),
+          302,
         );
       }
       const queryUrl = c.req.query("url");
@@ -173,12 +170,13 @@ export function createMcpOAuthRoutes(
         // A keyless or token preset has no OAuth dance to start — refuse
         // here rather than failing mid-dance at the provider (GitHub's
         // MCP server, for one, offers no dynamic client registration).
-        return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            `${preset.displayName} doesn't connect with a sign-in here — connect it from Plugins instead.`,
-          ),
-          400,
+        return c.redirect(
+          redirectPath(returnPath, {
+            mcpOauth: preset.slug,
+            outcome: "error",
+            code: "bad_request",
+          }),
+          302,
         );
       }
 
