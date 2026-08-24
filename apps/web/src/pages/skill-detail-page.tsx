@@ -365,7 +365,7 @@ export function SkillDetailPage({
       <div className="flex min-w-0 flex-col gap-6">
         <Section
           title="Description"
-          description="Agents see this line — and only this line — when deciding whether to load the skill."
+          description="A short summary of what this skill does and when to use it."
         >
           <Textarea
             id="skill-description"
