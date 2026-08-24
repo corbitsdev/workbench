@@ -2868,6 +2868,16 @@
   margin-left: 0;
 }
 
+/* Message body column: bubble/parts + reaction/pin row share one flex
+   column so chips sit under the bubble instead of as a loose sibling of
+   the whole header+bubble cluster (CL-6661). */
+.chat-message-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 100%;
+}
+
 /* Existing reaction chips + pin toggle, indented to align under the bubble
    text the same way `.chat-thread-affordance` does. Chips are content —
    they always show once a reaction exists. The pin toggle fades in on
@@ -2878,7 +2888,7 @@
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  margin: -0.1rem 0 0.2rem 2.9rem;
+  margin: 0.05rem 0 0.15rem 2.9rem;
   max-width: 100%;
 }
 
