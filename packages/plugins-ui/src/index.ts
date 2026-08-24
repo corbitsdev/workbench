@@ -9,6 +9,8 @@ export { PluginConnectPanel } from "./plugin-connect-panel";
 export { McpServersSection } from "./mcp-servers-section";
 export { McpPresetCardsSection } from "./mcp-preset-cards";
 
+export { PLUGINS_STRINGS } from "./strings";
+
 export {
   McpServersApiError,
   listMcpServers,

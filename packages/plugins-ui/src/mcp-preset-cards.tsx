@@ -15,6 +15,7 @@ import {
   type McpPreset,
 } from "./mcp-servers-api";
 import { PluginLogo } from "./plugin-logo";
+import { PLUGINS_STRINGS } from "./strings";
 
 function messageOf(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
@@ -101,7 +102,7 @@ function McpPresetCard({
         toast(`${preset.displayName} disconnected.`);
         onChanged();
       })
-      .catch(() => setError("Couldn't disconnect — try again."))
+      .catch(() => setError(PLUGINS_STRINGS.disconnectError))
       .finally(() => setBusy(false));
   }
 
