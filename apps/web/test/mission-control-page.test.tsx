@@ -236,6 +236,76 @@ describe("MissionControlRoute", () => {
     expect(container.textContent).toContain("Nothing recent yet.");
   });
 
+  test("ready activity with no today row shows 0 / $0.00, not double em-dash (CL-6798)", async () => {
+    stubEmptyBenchFetch();
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root?.render(
+        <TestQueryProvider>
+          <NavigationProvider navigate={() => undefined}>
+            <BenchContext.Provider value={benchState}>
+              <MissionControlRoute navigate={() => undefined} />
+            </BenchContext.Provider>
+          </NavigationProvider>
+        </TestQueryProvider>,
+      );
+    });
+    for (let count = 0; count < 5; count += 1) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+    const text = container.textContent ?? "";
+    // Ready + missing today is zero, not unknown — one empty treatment, not
+    // value em-dash stacked on sub em-dash.
+    expect(text).toContain("Runs today");
+    expect(text).not.toMatch(/Runs today—/);
+    expect(text).toMatch(/Runs today0/);
+    expect(text).toContain("Spend today");
+    expect(text).toContain("$0.00");
+    expect(text).not.toContain("7-day activity");
+    expect(text).toContain("so far today");
+  });
+
+  test("Spend today keeps em-dash when today's cost rate is unknown (CL-6798)", async () => {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    stubBenchFetchWithActivity([
+      {
+        day: todayKey,
+        turns: 3,
+        tokens: 50,
+        byModel: [{ model: "m", tokens: 50, costUsd: null }],
+      },
+    ]);
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root?.render(
+        <TestQueryProvider>
+          <NavigationProvider navigate={() => undefined}>
+            <BenchContext.Provider value={benchState}>
+              <MissionControlRoute navigate={() => undefined} />
+            </BenchContext.Provider>
+          </NavigationProvider>
+        </TestQueryProvider>,
+      );
+    });
+    for (let count = 0; count < 5; count += 1) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+    const text = container.textContent ?? "";
+    expect(text).toMatch(/Runs today3/);
+    expect(text).toContain("so far today");
+    expect(text).not.toContain("7-day activity");
+    // Cost unknown → em-dash for spend value; subcopy still names today.
+    expect(text).toMatch(/Spend today—so far today/);
+  });
+
   test("This week's run count includes today, so it is never less than runs today (CL-6667)", async () => {
     const todayKey = new Date().toISOString().slice(0, 10);
     const yesterdayKey = new Date(Date.now() - 24 * 60 * 60 * 1000)
