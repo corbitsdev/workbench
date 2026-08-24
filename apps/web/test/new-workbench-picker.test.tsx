@@ -405,6 +405,9 @@ describe("NewWorkbenchPickerRoute", () => {
           pending: ["assistant"],
         });
       }
+      if (path.includes("/credentials/resolve/")) {
+        return json({ error: "not_found" }, 404);
+      }
       return undefined;
     });
     await renderPicker();

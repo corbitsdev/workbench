@@ -241,6 +241,9 @@ describe("the one toast system (CL-6372)", () => {
           }),
         );
       }
+      if (path.includes("/credentials/resolve/")) {
+        return Promise.resolve(json({ error: "not_found" }, 404));
+      }
       return Promise.resolve(json({ error: "boom" }, 500));
     }) as typeof fetch;
     await renderPickerWithToaster();
