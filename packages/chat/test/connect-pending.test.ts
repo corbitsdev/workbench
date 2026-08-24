@@ -86,7 +86,9 @@ function buildDeps() {
 
 function expectEventOnlySettleNotice(
   items: Awaited<
-    ReturnType<ReturnType<typeof createInMemoryRoomMessageStore>["listMessages"]>
+    ReturnType<
+      ReturnType<typeof createInMemoryRoomMessageStore>["listMessages"]
+    >
   >["items"],
   displayName: string,
 ) {
