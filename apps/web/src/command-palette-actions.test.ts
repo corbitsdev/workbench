@@ -71,15 +71,31 @@ describe("ACTION_COMMANDS", () => {
     }
   });
 
-  test("new-workbench and new-agent speak consumer language, not mint", () => {
+  test("exactly one New workbench create row — no duplicate title+destination (CL-6820)", () => {
+    const newWorkbenchRows = ACTION_COMMANDS.filter(
+      (c) => c.title === "New workbench",
+    );
+    expect(newWorkbenchRows).toHaveLength(1);
+    expect(newWorkbenchRows[0]?.id).toBe("new-workbench");
+    expect(ACTION_COMMANDS.some((c) => c.id === "new-agent")).toBe(false);
+
+    const titleCounts = new Map<string, number>();
+    for (const command of ACTION_COMMANDS) {
+      titleCounts.set(
+        command.title,
+        (titleCounts.get(command.title) ?? 0) + 1,
+      );
+    }
+    for (const [title, count] of titleCounts) {
+      expect(count, `duplicate title: ${title}`).toBe(1);
+    }
+  });
+
+  test("new-workbench speaks consumer language, not mint", () => {
     const workbench = ACTION_COMMANDS.find((c) => c.id === "new-workbench");
-    const agent = ACTION_COMMANDS.find((c) => c.id === "new-agent");
     expect(workbench?.title).toBe("New workbench");
-    expect(agent?.title).toBe("New workbench");
     expect(workbench?.subtitle).toBe("Start a new workbench");
-    expect(agent?.subtitle).toBe("Start a new workbench");
     expect(workbench?.subtitle.toLowerCase()).not.toContain("mint");
-    expect(agent?.subtitle.toLowerCase()).not.toContain("mint");
   });
 
   test("labels 'New skill' to match the app's authoring model, not 'Install skill'", () => {
@@ -92,13 +108,6 @@ describe("runActionCommand", () => {
   test("new-workbench opens the template picker — no dialog, no pending flag, no instant mint (CL-6342)", async () => {
     const { ctx, navigated, dispatched } = context({ path: "/library" });
     await runActionCommand("new-workbench", ctx);
-    expect(dispatched).toEqual([]);
-    expect(navigated).toEqual([NEW_WORKBENCH_PATH]);
-  });
-
-  test("new-agent is the same entry point as new-workbench — opens the template picker", async () => {
-    const { ctx, navigated, dispatched } = context({ path: "/w/abc" });
-    await runActionCommand("new-agent", ctx);
     expect(dispatched).toEqual([]);
     expect(navigated).toEqual([NEW_WORKBENCH_PATH]);
   });

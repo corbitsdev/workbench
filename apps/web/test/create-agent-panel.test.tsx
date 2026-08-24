@@ -362,7 +362,7 @@ describe("agent creation entry points", () => {
     expect(chatPageSource).not.toContain("instant-agent-create");
   });
 
-  test("the command palette's new-workbench/new-agent open the template picker, not an instant mint (CL-6342)", () => {
+  test("the command palette's new-workbench opens the template picker, not an instant mint (CL-6342)", () => {
     const commandPaletteActionsSource = readFileSync(
       new URL("../src/command-palette-actions.ts", import.meta.url),
       "utf8",
