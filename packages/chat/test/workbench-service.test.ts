@@ -9,7 +9,6 @@ import { decodeParts } from "../src/codec";
 import type { Part } from "../src/parts";
 import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
 import { AgentUnreachableError } from "../src/platform-port";
-import { workbenchTemplate } from "@corbits/workflow-catalog";
 import { cannedGreeting, postCannedGreeting } from "../src/workbench-service";
 import {
   buildDeps,
@@ -78,26 +77,27 @@ describe("postCannedGreeting (CL-6126)", () => {
     expect(greeting).not.toContain("undefined");
   });
 
-  test("a blank room's greeting names the templates read live off the catalog, never a frozen string", () => {
-    const codeReviewTitle = workbenchTemplate("code-review")?.title;
-    const dueDiligenceTitle = workbenchTemplate("due-diligence")?.title;
-    if (codeReviewTitle === undefined || dueDiligenceTitle === undefined) {
-      throw new Error("expected both offer templates to carry a title");
-    }
-
+  test("a blank room's greeting offers agents, routines, and a shared channel, not catalog templates", () => {
     for (const workbenchId of ["chan_0", "chan_1", "chan_2", "chan_3"]) {
       const greeting = cannedGreeting({ workbenchId, agentName: "Myra" });
-      expect(greeting).toContain(codeReviewTitle);
-      expect(greeting).toContain(dueDiligenceTitle);
+      expect(greeting).toMatch(/create more agents/i);
+      expect(greeting).toMatch(/routines/i);
+      expect(greeting).toMatch(/shared channel/i);
+      expect(greeting).not.toMatch(/code[- ]review/i);
+      expect(greeting).not.toMatch(/due[- ]diligence/i);
+      expect(greeting).not.toMatch(/what do you want your Workbench to do/i);
     }
   });
 
-  test("a blank room's greeting points at the templates rather than claiming to build one", () => {
+  test("a blank room's greeting talks like a teammate offering next steps", () => {
     const greeting = cannedGreeting({
       workbenchId: "chan_1",
       agentName: "Myra",
     });
-    expect(greeting).not.toMatch(/I('ll| will) (set up|spin up|create|build)/i);
+    expect(greeting).toMatch(/teammate|together|ours to work in/i);
+    expect(greeting).toMatch(/create more agents/i);
+    expect(greeting).toMatch(/set up routines/i);
+    expect(greeting).toMatch(/open a shared channel/i);
   });
 
   test("the same chat always gets the same variation", () => {

@@ -11,6 +11,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { BenchProvider } from "../src/bench-context";
 import { APP_ROUTES, NAV_ROUTES } from "../src/routes";
 import { Sidebar } from "../src/shell/sidebar";
+import { SIDEBAR_EMPTY_COPY } from "../src/shell/workbench-list";
 import { TestQueryProvider } from "./test-query-provider";
 
 const noop = () => undefined;
@@ -539,7 +540,7 @@ describe("Sidebar", () => {
     });
   });
 
-  test("renders Agents then Channels, without mixing a newer room above DMs", async () => {
+  test("renders one mixed recency list, interleaving a newer room above an older DM", async () => {
     const channel = {
       id: "ch_room",
       title: "Launch plan",
@@ -596,13 +597,18 @@ describe("Sidebar", () => {
     const channelsHeading = container.querySelector(
       "#sidebar-channels-heading",
     );
-    expect(agentsHeading?.textContent).toBe("Agents");
-    expect(channelsHeading?.textContent).toBe("Channels");
-    expect(container.innerHTML.indexOf("sidebar-agents-heading")).toBeLessThan(
-      container.innerHTML.indexOf("sidebar-channels-heading"),
+    expect(agentsHeading).toBeNull();
+    expect(channelsHeading).toBeNull();
+    expect(container.querySelectorAll(".shell-panel-list-label")).toHaveLength(
+      0,
     );
-    expect(container.innerHTML.indexOf("Myra")).toBeLessThan(
-      container.innerHTML.indexOf("Launch plan"),
+    const wraps = [...container.querySelectorAll(".shell-ch-row-wrap")];
+    expect(wraps.map((row) => row.getAttribute("data-ctx-workbench"))).toEqual([
+      "ch_room",
+      "ch_dm",
+    ]);
+    expect(container.innerHTML.indexOf("Launch plan")).toBeLessThan(
+      container.innerHTML.indexOf("Myra"),
     );
     expect(container.innerHTML).not.toContain("No workbenches yet");
 
@@ -636,20 +642,20 @@ describe("Sidebar", () => {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
-      if (container.innerHTML.includes("No agents yet")) break;
+      if (container.innerHTML.includes(SIDEBAR_EMPTY_COPY)) break;
     }
-    expect(container.innerHTML).toContain("No agents yet");
-    expect(container.innerHTML).toContain("No channels yet");
+    expect(container.innerHTML).toContain(SIDEBAR_EMPTY_COPY);
+    expect(container.innerHTML).not.toContain("No agents yet");
+    expect(container.innerHTML).not.toContain("No channels yet");
     expect(container.innerHTML).not.toContain("No workbenches yet");
     act(() => root.unmount());
     container.remove();
   });
 
-  // CL-6124: a bench with zero workbenches lands on the first-run chat
-  // (`/`), and the sidebar names it as a single active row — never the
-  // icon "No workbenches yet" empty state, since the create-a-workbench
-  // surface IS this screen now.
-  test("zero workbenches: a single New Workbench row, styled active, not an icon empty state", async () => {
+  // Zero opened conversations: the mixed list speaks honestly — never a
+  // fake New Workbench stub, and never the icon "No workbenches yet"
+  // empty state. Create still lives on the + control (`/new`).
+  test("zero workbenches: honest mixed-list empty copy, not a New Workbench stub", async () => {
     stubFetch();
     const container = document.createElement("div");
     document.body.appendChild(container);
@@ -667,11 +673,11 @@ describe("Sidebar", () => {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
-      if (container.innerHTML.includes("shell-ch-row")) break;
+      if (container.innerHTML.includes(SIDEBAR_EMPTY_COPY)) break;
     }
-    const row = container.querySelector('.shell-ch-row[data-active="true"]');
-    expect(row).not.toBeNull();
-    expect(row?.textContent).toContain("New Workbench");
+    expect(container.innerHTML).toContain(SIDEBAR_EMPTY_COPY);
+    expect(container.querySelector(".shell-ch-row")).toBeNull();
+    expect(container.innerHTML).not.toContain("New Workbench");
     expect(container.innerHTML).not.toContain("No workbenches yet");
     act(() => root.unmount());
     container.remove();

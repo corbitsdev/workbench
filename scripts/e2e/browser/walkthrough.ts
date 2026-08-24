@@ -288,16 +288,15 @@ async function countMatching(page: Page, selector: string): Promise<number> {
 
 // --- the walkthrough -----------------------------------------------------
 
-/** The picker row that mints a plain Myra room (`workbench-templates.ts`). */
+/** The picker card that mints a plain empty channel (`workbench-templates.ts`). */
 const BLANK_TEMPLATE_TITLE = "Just start talking";
 
 /**
  * Drives the one creation flow a person actually walks: the sidebar's "+"
- * opens the new-workbench picker (CL-6342 — "+" no longer mints on the
- * spot), a kind is chosen, and "Create workbench" mints it and navigates
- * in. Waits for the URL to actually land on a fresh `/w/:id` distinct from
- * wherever the click started, rather than assuming a fixed delay covers
- * the mint + navigate round trip.
+ * opens `/new` (prompt-primary picker). Clicking a prefab card mints
+ * immediately — no kind radiogroup, no second "Create workbench" step.
+ * Waits for the URL to land on a fresh `/w/:id` distinct from wherever
+ * the click started.
  */
 async function createMyraChat(page: Page): Promise<void> {
   const before = await page.evaluate(() => window.location.pathname);
@@ -308,15 +307,14 @@ async function createMyraChat(page: Page): Promise<void> {
   let landed = false;
   for (let attempt = 0; attempt < 3 && !landed; attempt += 1) {
     await clickStable(page, 'button[aria-label="New workbench"]');
-    await page.waitForSelector(
-      '[role="radiogroup"][aria-label="Workbench kind"]',
-      {
-        timeout: 15_000,
-      },
-    );
+    await page.waitForSelector(".new-workbench-prefab-grid", {
+      timeout: 15_000,
+    });
     const picked = await page.evaluate((title: string) => {
       const rows = Array.from(
-        document.querySelectorAll<HTMLButtonElement>('[role="radio"]'),
+        document.querySelectorAll<HTMLButtonElement>(
+          "button.new-workbench-prefab-card",
+        ),
       );
       const row = rows.find((candidate) =>
         (candidate.textContent ?? "").includes(title),
@@ -327,10 +325,9 @@ async function createMyraChat(page: Page): Promise<void> {
     }, BLANK_TEMPLATE_TITLE);
     if (!picked) {
       throw new Error(
-        `the new-workbench picker offered no "${BLANK_TEMPLATE_TITLE}" row`,
+        `the new-workbench picker offered no "${BLANK_TEMPLATE_TITLE}" card`,
       );
     }
-    await clickStable(page, ".new-workbench-picker-foot button");
     landed = await page
       .waitForFunction(
         (previous: string) => {
@@ -610,22 +607,21 @@ async function run(): Promise<void> {
       },
     );
 
-    // --- Step 2: CL-6138 — the one creation verb. A brand-new account's
-    // bare root auto-mints its first Myra workbench and lands straight in
-    // it — no describe screen, no separate first-run form. The account's
-    // very first workbench comes from the exact same
-    // `instant-agent-create.ts` mint every later "+ New workbench" click
-    // uses (proven again below in 05-second-create-mints-new-workbench).
+    // --- Step 2: CL-7053 — `/` opens Myra's DM (kind chat, titled Myra).
+    // A brand-new account's bare root lands in that DM — not an auto-minted
+    // empty workbench, not `/new`, no describe screen. Plus/picker still
+    // mints empty "New Workbench" channels (step 05). Keep waiting for `/w/`
+    // plus the composer; only the comments and later row titles change.
     let firstWorkbenchPath = "";
     await step(
       () => page,
       "04-bare-root-lands-in-myra-conversation",
       async () => {
         // `testAndPersistCredential`/`ensureSeeded` above deployed the
-        // default workflows but never created a single chat workbench —
-        // this account has zero workbenches at this point, so `/` (bare
-        // root, `HomeRoute`) must auto-mint the first one and land in it
-        // rather than stranding the account on a spinner.
+        // default workflows but never opened Myra's DM — this account has
+        // zero conversations at this point, so `/` (bare root, `HomeRoute`)
+        // must land in Myra's DM rather than stranding the account on a
+        // spinner or bouncing to `/new`.
         await page.goto(webBaseUrl, { waitUntil: "domcontentloaded" });
         await page.waitForFunction(
           () => window.location.pathname.startsWith("/w/"),
@@ -639,7 +635,7 @@ async function run(): Promise<void> {
         });
         return {
           status: "pass",
-          detail: `bare root with zero workbenches auto-minted Myra's workbench and landed at ${firstWorkbenchPath}`,
+          detail: `bare root landed in Myra's DM at ${firstWorkbenchPath}`,
         };
       },
     );
@@ -653,33 +649,26 @@ async function run(): Promise<void> {
           timeout: 15_000,
         });
         // A hard navigation re-mounts `BenchProvider` from scratch — the
-        // sidebar's "+" renders unconditionally, but the list's own labels
-        // (and the rest of the list) only replace the "Nothing selected"
-        // empty state once `/api/me/principals` resolves and picks a
-        // tenant. Poll rather than reading once, so this never flakes on
-        // that ordinary reload race. The owner's sidebar reshape dropped
-        // the old header-bar slot entirely (logo · search · labels · rows,
-        // no separate title bar) — `.shell-panel-list-label` is Agents,
-        // then Channels (CL-6977).
-        let sidebarTitles: string[] = [];
+        // sidebar's "+" renders unconditionally, but the conversation list
+        // only replaces the empty state once `/api/me/principals` resolves
+        // and picks a tenant. Poll rather than reading once, so this never
+        // flakes on that ordinary reload race. The rail is one mixed list
+        // of agent DMs and channels (CL-7053) — do not require labeled
+        // "Agents" / "Channels" headings. Presence of Myra's row is the
+        // mixed-list signal.
+        let myraRows = 0;
         for (let attempt = 0; attempt < 15; attempt += 1) {
-          sidebarTitles = await page.evaluate(() =>
-            [...document.querySelectorAll(".shell-panel-list-label")].map(
-              (el) => el.textContent?.trim() ?? "",
-            ),
+          myraRows = await countMatching(
+            page,
+            '.shell-ch-row-wrap[data-ctx-workbench-title="Myra"]',
           );
-          if (
-            sidebarTitles[0] === "Agents" &&
-            sidebarTitles[1] === "Channels"
-          ) {
-            break;
-          }
+          if (myraRows >= 1) break;
           await new Promise((resolve) => setTimeout(resolve, 500));
         }
-        if (sidebarTitles[0] !== "Agents" || sidebarTitles[1] !== "Channels") {
+        if (myraRows < 1) {
           return {
             status: "fail",
-            detail: `expected sidebar titles ["Agents","Channels"], got ${JSON.stringify(sidebarTitles)}`,
+            detail: `expected a mixed conversation list with a Myra row, found ${myraRows}`,
           };
         }
         const createButtons = await countMatching(
@@ -695,16 +684,15 @@ async function run(): Promise<void> {
         return {
           status: "pass",
           detail:
-            'single always-visible sidebar: titled Agents then Channels, one "+ New workbench" affordance',
+            'mixed conversation list includes Myra; one "+ New workbench" affordance',
         };
       },
     );
 
-    // --- Step 3: CL-6342 — the sidebar's "+" opens the new-workbench
-    // picker, and a workbench is minted only once a kind is chosen and
-    // "Create workbench" is pressed. The create must land somewhere NEW,
-    // distinct from the auto-minted first one; only the initial land-hop
-    // ever reopens an existing conversation.
+    // --- Step 3: CL-6342 — the sidebar's "+" opens `/new`. Clicking
+    // "Just start talking" mints an empty channel immediately (no kind
+    // radio, no Create step). The mint must land somewhere NEW, distinct
+    // from Myra's DM.
     await step(
       () => page,
       "05-second-create-mints-new-workbench",
@@ -732,40 +720,50 @@ async function run(): Promise<void> {
       () => page,
       "06-sidebar-lists-each-minted-workbench",
       async () => {
-        // The always-visible sidebar already lists every workbench — the
-        // rows are just there, no navigation or priming needed. Two rows
-        // titled "New Workbench" are expected here: the bare-root
-        // auto-mint (04) and the "+" mint (05) — `instant-agent-create.ts`
-        // titles every mint "New Workbench" regardless of which template
-        // backs it (CL-6089/CL-6138), so this is the one creation verb's
-        // own name, not the agent's. The list is a cache invalidated by
-        // the create event, so give the refetch a bounded moment to land
-        // before judging.
+        // The always-visible sidebar already lists every conversation —
+        // the rows are just there, no navigation or priming needed. First
+        // land is Myra's DM (titled Myra). The picker mint (05) is the one
+        // empty "New Workbench" channel — plus does not clone the DM
+        // (CL-7053). The list is a cache invalidated by the create event,
+        // so give the refetch a bounded moment to land before judging.
         await page.waitForSelector(".shell-ch-row-wrap", { timeout: 15_000 });
         let mintedRows = 0;
+        let myraRows = 0;
         for (let attempt = 0; attempt < 10; attempt += 1) {
           mintedRows = await countMatching(
             page,
             '.shell-ch-row-wrap[data-ctx-workbench-title="New Workbench"]',
           );
-          if (mintedRows === 2) break;
+          myraRows = await countMatching(
+            page,
+            '.shell-ch-row-wrap[data-ctx-workbench-title="Myra"]',
+          );
+          if (mintedRows === 1 && myraRows >= 1) break;
           await new Promise((resolve) => setTimeout(resolve, 800));
         }
-        if (mintedRows !== 2) {
+        if (myraRows < 1) {
           return {
             status: "fail",
-            detail: `expected 2 "New Workbench" sidebar rows (the two mints), found ${mintedRows}`,
+            detail: `expected Myra's DM row still in the mixed list, found ${myraRows}`,
+          };
+        }
+        if (mintedRows !== 1) {
+          return {
+            status: "fail",
+            detail: `expected 1 "New Workbench" sidebar row (the picker mint), found ${mintedRows}`,
           };
         }
         return {
           status: "pass",
           detail:
-            'sidebar lists 2 "New Workbench" rows — both mints, one row per conversation',
+            'sidebar lists Myra plus 1 "New Workbench" row from the picker mint',
         };
       },
     );
 
-    // --- Step 4: send "hi" in the Myra chat, expect *some* reply bubble
+    // --- Step 4: send "hi" in the picker-minted New Workbench, expect
+    // *some* reply bubble. Click that row by title — first land is Myra,
+    // not another "New Workbench".
     await step(
       () => page,
       "07-send-hi-to-myra",
@@ -968,6 +966,8 @@ async function run(): Promise<void> {
           waitUntil: "domcontentloaded",
           timeout: 20_000,
         });
+        // Reopen the picker-minted "New Workbench" channel, not Myra's DM
+        // (first land is titled Myra).
         const rowAppeared = await page
           .waitForSelector(
             '.shell-ch-row-wrap[data-ctx-workbench-title="New Workbench"]',
@@ -981,7 +981,7 @@ async function run(): Promise<void> {
           return {
             status: "repro-confirmed",
             detail:
-              "after restart, the reloaded shell never regained a Myra sidebar row within 15s " +
+              "after restart, the reloaded shell never regained the picker-minted New Workbench row within 15s " +
               "(stuck disconnected) — CL-6067 reproduced",
           };
         }

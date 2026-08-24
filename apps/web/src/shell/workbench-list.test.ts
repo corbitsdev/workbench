@@ -2,15 +2,13 @@ import { describe, expect, test } from "bun:test";
 
 import type { Workbench } from "@corbits/chat-ui";
 
-import type { SidebarRow, SidebarSection } from "./sidebar-rows";
-import { buildSidebarSections } from "./sidebar-rows";
+import type { SidebarRow } from "./sidebar-rows";
 import {
   filterSidebarRows,
-  filterSidebarSections,
   orderWorkbenchRows,
   renamePayload,
   rowMenuLabels,
-  sidebarSectionEmptyCopy,
+  SIDEBAR_EMPTY_COPY,
   workbenchRowSignals,
 } from "./workbench-list";
 
@@ -188,52 +186,39 @@ describe("filterSidebarRows", () => {
       filterSidebarRows(rows, "launch").map((r) => r.workbench.id),
     ).toEqual(["ch_1"]);
   });
-});
 
-describe("sidebarSectionEmptyCopy", () => {
-  test("names the empty group, never a single workbenches list", () => {
-    expect(sidebarSectionEmptyCopy("agents")).toBe("No agents yet");
-    expect(sidebarSectionEmptyCopy("channels")).toBe("No channels yet");
-  });
-});
-
-describe("filterSidebarSections", () => {
-  test("filters Agents and Channels independently without mixing them", () => {
-    const sections = buildSidebarSections(
-      [
-        workbench({
-          id: "ch_room",
-          kind: "workbench",
-          title: "Launch plan",
-        }),
-      ],
-      [
-        workbench({
-          id: "ch_dm",
-          kind: "chat",
-          title: "Myra",
-          preview: "Drafted the Solvora outreach email",
-        }),
-      ],
-    );
-    const byTitle = filterSidebarSections(sections, "launch");
-    expect(byTitle.map((section) => section.id)).toEqual([
-      "agents",
-      "channels",
+  test("filters a mixed list without splitting by kind", () => {
+    const rows = [
+      row({
+        id: "ch_dm",
+        kind: "chat",
+        title: "Myra",
+        preview: "Drafted the Solvora outreach email",
+      }),
+      row({
+        id: "ch_room",
+        kind: "workbench",
+        title: "Launch plan",
+      }),
+    ];
+    expect(
+      filterSidebarRows(rows, "launch").map((r) => r.workbench.id),
+    ).toEqual(["ch_room"]);
+    expect(
+      filterSidebarRows(rows, "Solvora").map((r) => r.workbench.id),
+    ).toEqual(["ch_dm"]);
+    expect(filterSidebarRows(rows, "").map((r) => r.workbench.id)).toEqual([
+      "ch_dm",
+      "ch_room",
     ]);
-    expect(byTitle[0]?.rows.map((r) => r.workbench.id)).toEqual([]);
-    expect(byTitle[1]?.rows.map((r) => r.workbench.id)).toEqual(["ch_room"]);
-
-    const byPreview = filterSidebarSections(sections, "Solvora");
-    expect(byPreview[0]?.rows.map((r) => r.workbench.id)).toEqual(["ch_dm"]);
-    expect(byPreview[1]?.rows.map((r) => r.workbench.id)).toEqual([]);
   });
+});
 
-  test("an empty query keeps both sections intact", () => {
-    const sections: readonly SidebarSection[] = buildSidebarSections(
-      [workbench({ id: "ch_room", kind: "workbench", title: "Launch" })],
-      [workbench({ id: "ch_dm", kind: "chat", title: "Myra" })],
-    );
-    expect(filterSidebarSections(sections, "")).toEqual(sections);
+describe("SIDEBAR_EMPTY_COPY", () => {
+  test("is one mixed-list empty, never per-section Agents/Channels copy", () => {
+    expect(SIDEBAR_EMPTY_COPY).toBe("No conversations yet");
+    expect(SIDEBAR_EMPTY_COPY).not.toBe("No agents yet");
+    expect(SIDEBAR_EMPTY_COPY).not.toBe("No channels yet");
+    expect(SIDEBAR_EMPTY_COPY).not.toBe("No workbenches yet");
   });
 });

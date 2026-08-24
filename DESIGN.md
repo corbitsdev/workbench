@@ -16,11 +16,12 @@ Top to bottom:
 
 1. **Brand row** — logo mark and a "New workbench" button (`+`) that
    opens `/new`.
-2. **Bench list** — **Agents**, then **Channels**. Agent rows are
-   `kind: chat` DMs (one per agent). Channel rows are `kind: workbench`
-   rooms. Search is built into the list itself. Nothing page-scoped
-   ever renders in this body; it lists conversations, not product
-   sections.
+2. **Bench list** — one recency list of conversations, pins first.
+   Agent DMs (`kind: chat`, one per agent) mix with channels
+   (`kind: workbench` rooms). Not two labeled empty sections, and not
+   a list titled Workbenches. Search is built into the list itself.
+   Nothing page-scoped ever renders in this body; it lists
+   conversations, not product sections.
 3. **Footer rail** — Mission Control is pinned above the rail as its own
    row. The first-run rail below it is Routines, Files, Skills, Agents, in
    that order (CL-6765). Insights and Evals join that rail only when
@@ -60,13 +61,15 @@ consumed by both). A route that gets renamed or relocated leaves a redirect
 behind at its old path — old links and bookmarks always land somewhere
 real, never a 404.
 
-**`/new` is the shipped create surface** (`NewWorkbenchPickerRoute`). The
-primary act is a prompt: say what the channel should do, or pick a
-named-template shortcut underneath. Blank `+` / prompt mint an empty
-channel and invite nobody. Named templates mint that same empty
-channel, then invite existing agents (including Myra as a participant,
-never as the mint host). The sidebar `+` and an empty-bench land on
-`/` both open this route — there is no Describe door.
+**`/new` is the shipped create surface** (`NewWorkbenchPickerRoute`),
+not home. The primary act is a prompt: say what the channel should do,
+or pick a named-template shortcut underneath. Blank `+` / prompt mint
+an empty channel and invite nobody. Named templates mint that same
+empty channel, then invite existing agents (including Myra as a
+participant, never as the mint host). The sidebar `+` opens this
+route. First-run after credential does not: `/` hops to Myra's one
+DM (`openAgentDm` / find-or-reopen). There is no parallel Myra home
+route and no Describe door.
 
 **`/inbox` is gone as a page** (CL-6151). The path stays as a redirect
 home so old links still resolve; it is not a live groups inbox.
