@@ -159,7 +159,6 @@ describe("ensureMyraWorkbench", () => {
       kind: "chat",
       definitionId: "def-assistant",
       name: "Myra",
-      reuseExisting: true,
     });
     expect(isMyraWorkbenchId("chat-1")).toBe(true);
   });

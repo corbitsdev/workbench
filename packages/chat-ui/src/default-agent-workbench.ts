@@ -13,18 +13,11 @@
 // participant is a husk that can't answer under either kind, so it is
 // left alone and the real chat is created.
 //
-// This is the one deliberate find-or-create path in the product (CL-6089):
-// the account's home-workbench land-hop (Myra), where landing twice must
-// mean the same conversation, never two. Every other agent-chat creation
-// — "+ New Workbench" picking an agent as a template, a freshly drafted
-// agent's own launch — always mints a new workbench instead. The dedup
-// here is `ensure`'s own title match above, not the server's
-// `reuseExisting` flag on `POST /workbenches` (see `packages/chat/src/routes.ts`
-// `findExistingAgentChat`): by the time `createWorkbench` below is reached,
-// `ensure` has already exhausted its own by-title lookup and found no
-// match, so a further server-side reuse pass here would only matter for
-// a chat renamed away from the agent's title — an edge case this ticket
-// leaves as-is rather than threading `reuseExisting` through here too.
+// The account's home-workbench land-hop (Myra) still uses this module's
+// title match for a fast local reopen. The create at the end does not
+// pass a reuse flag: `POST /workbenches` with kind=chat + definitionId
+// always find-or-reopens by the definition's asset (CL-6981), so a chat
+// renamed away from the agent's title is still the same conversation.
 
 import { isAgentAddress } from "@corbits/chat/mentions";
 
@@ -133,14 +126,13 @@ export function createDefaultAgentWorkbench(
           message: `No "${config.title}" agent found for this workbench.`,
         };
       }
-      // The home workbench is the one deliberate reopen: the server's
-      // definitionId dedup catches it even after a rename, where this
-      // module's own title lookup above would miss and mint a second.
+      // The home workbench still titles the mint; the server's
+      // definitionId/asset dedup catches a rename, where this module's
+      // own title lookup above would miss.
       const created = await createWorkbench(tenantId, {
         kind: "chat",
         definitionId: definition.id,
         name: config.title,
-        reuseExisting: true,
       });
       cachedWorkbenchId = created.id;
       return { kind: "ready", workbenchId: created.id };

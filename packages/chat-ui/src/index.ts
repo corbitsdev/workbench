@@ -151,6 +151,7 @@ export {
   listInvitableDefinitions,
   listTenantInvitableDefinitions,
   listVisibleAgentDefinitions,
+  openAgentConversation,
   openAgentDm,
   inviteAgent,
   workbenchStreamUrl,

@@ -122,7 +122,6 @@ describe("createDefaultAgentWorkbench", () => {
       kind: "chat",
       definitionId: "def-assistant",
       name: "Myra",
-      reuseExisting: true,
     });
     expect(agent.isCachedWorkbenchId("chat-1")).toBe(true);
   });

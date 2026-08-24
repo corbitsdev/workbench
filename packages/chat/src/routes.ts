@@ -322,7 +322,6 @@ const CreateWorkbenchBody = type({
   "participants?": "string[]",
   "definitionId?": "string",
   "principalId?": "string",
-  "reuseExisting?": "boolean",
   /**
    * The picked template's own promise line
    * (`WorkbenchTemplateManifest.promise`, see `@corbits/workflow-catalog`),
@@ -345,6 +344,7 @@ const CreateWorkbenchBody = type({
    * so the caller supplies the one line the card is allowed to show.
    */
   "connectGithubRequiredFor?": "string",
+  "+": "reject",
 });
 type CreateWorkbenchBodyT = typeof CreateWorkbenchBody.infer;
 
@@ -879,18 +879,10 @@ const MoveWorkbenchBody = type({
 });
 
 /**
- * Finds an existing chat with the given agent, for the one caller that
- * deliberately wants find-or-create semantics: the home-workbench
- * land-hop (`ensureMyraWorkbench`, via `default-agent-workbench.ts`), which
- * passes `reuseExisting: true` so returning to "Myra" always reopens the
- * same conversation rather than minting a fresh one on every visit.
- *
- * Every other caller — "+ New Workbench" picking an agent as a
- * template, or a freshly drafted agent's own launch — always creates
- * (CL-6089): the same agent picked twice from the picker is two
- * independent workbenches, each with its own workbench tenant and its own
- * launched agent instance, not the same conversation reopened. `POST
- * /workbenches` only calls this lookup when `reuseExisting` is set.
+ * Finds an existing chat with the given agent. `POST /workbenches` with
+ * `kind: "chat"` and a `definitionId` always find-or-reopens (CL-6981):
+ * identity is the definition's ASSET via `resolveDefinitionAssetId`, and
+ * the oldest workbench-tenancy `createdAt` wins. No title match.
  *
  * Matches forward, by the `chat/definitionId` every agent chat has
  * carried in its settings since this landed, and falls back to
@@ -1060,17 +1052,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const tenant = c.get("tenant");
       const principal = c.get("principal");
 
-      // "+ New Workbench" always creates (CL-6089): picking an agent in
-      // the picker uses it as a template, minting a fresh workbench
-      // every time, not reopening a prior conversation. The one
-      // exception is the deliberate land-hop to the account's home
-      // workbench (`ensureMyraWorkbench`), which opts in with
-      // `reuseExisting: true` so landing on "Myra" always finds the
-      // same conversation instead of forking a new one on every visit.
-      // Checked before anything is minted, and before the (cheaper,
+      // Opening an agent always find-or-reopens its one conversation
+      // (CL-6981): identity is the definition's asset, oldest createdAt
+      // wins. Checked before anything is minted, and before the (cheaper,
       // in-memory) principal-self-chat validation below, since a found
-      // match short-circuits the whole handler.
-      if (isChatWithDefinition(body) && body.reuseExisting === true) {
+      // match short-circuits the whole handler — a reopen must not launch
+      // again.
+      if (isChatWithDefinition(body)) {
         const existing = await findExistingAgentChat(
           deps,
           tenant.id,

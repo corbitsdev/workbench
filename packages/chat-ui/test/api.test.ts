@@ -17,7 +17,7 @@ import {
   listInvitableDefinitions,
   listTenantInvitableDefinitions,
   listVisibleAgentDefinitions,
-  openAgentDm,
+  openAgentConversation,
   listMessages,
   listPinnedMessages,
   quickCreateJimmy,
@@ -458,8 +458,8 @@ describe("listVisibleAgentDefinitions", () => {
   });
 });
 
-describe("openAgentDm", () => {
-  test("creates a chat workbench with reuseExisting so a second open finds the same workbench", async () => {
+describe("openAgentConversation", () => {
+  test("creates a chat workbench so a second open finds the same workbench", async () => {
     const calls = stubFetch(() =>
       json(
         {
@@ -472,12 +472,11 @@ describe("openAgentDm", () => {
         201,
       ),
     );
-    const workbench = await openAgentDm("tnt_root", "wfd_outreach");
+    const workbench = await openAgentConversation("tnt_root", "wfd_outreach");
     expect(calls[0]?.path).toBe("/api/tenants/tnt_root/chat/workbenches");
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
       kind: "chat",
       definitionId: "wfd_outreach",
-      reuseExisting: true,
     });
     expect(workbench.id).toBe("c_dm");
   });

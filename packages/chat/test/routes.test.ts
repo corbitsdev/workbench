@@ -573,8 +573,8 @@ describe("POST /workbenches", () => {
   });
 });
 
-describe("POST /workbenches — reuseExisting: true reopens the land-hop's chat, not create (CL-6089)", () => {
-  test("creating a chat with the same agent twice, reuseExisting: true both times, reuses the first chat instead of forking a duplicate", async () => {
+describe("POST /workbenches — opening an agent reopens its one conversation (CL-6981)", () => {
+  test("POST {kind:chat, definitionId} twice returns the same workbench id (201 then 200)", async () => {
     const deps = buildDeps({
       platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
     });
@@ -583,14 +583,12 @@ describe("POST /workbenches — reuseExisting: true reopens the land-hop's chat,
     const first = await createWorkbench(app, {
       kind: "chat",
       definitionId: "wfd_echo",
-      reuseExisting: true,
     });
     expect(first.response.status).toBe(201);
 
     const second = await createWorkbench(app, {
       kind: "chat",
       definitionId: "wfd_echo",
-      reuseExisting: true,
     });
 
     expect(second.response.status).toBe(200);
@@ -601,6 +599,13 @@ describe("POST /workbenches — reuseExisting: true reopens the land-hop's chat,
     expect(platform.launchInviteCalls).toHaveLength(1);
     const chats = await deps.store.listWorkbenchSettings(TENANT.id, "chat");
     expect(chats).toHaveLength(1);
+
+    const firstTenancy = await deps.tenancy.getWorkbenchTenancy(first.body.id);
+    const secondTenancy = await deps.tenancy.getWorkbenchTenancy(
+      second.body.id,
+    );
+    expect(firstTenancy?.tenantId).toBeDefined();
+    expect(secondTenancy?.tenantId).toBe(firstTenancy?.tenantId);
   });
 
   test("reuses the chat when the agent's definition was re-projected under a new id over the same asset", async () => {
@@ -619,14 +624,12 @@ describe("POST /workbenches — reuseExisting: true reopens the land-hop's chat,
     const first = await createWorkbench(app, {
       kind: "chat",
       definitionId: "wfd_echo_v1",
-      reuseExisting: true,
     });
     expect(first.response.status).toBe(201);
 
     const second = await createWorkbench(app, {
       kind: "chat",
       definitionId: "wfd_echo_v2",
-      reuseExisting: true,
     });
 
     expect(second.response.status).toBe(200);
@@ -682,7 +685,6 @@ describe("POST /workbenches — reuseExisting: true reopens the land-hop's chat,
     const { response, body } = await createWorkbench(app, {
       kind: "chat",
       definitionId: "wfd_echo",
-      reuseExisting: true,
     });
 
     expect(response.status).toBe(200);
@@ -746,7 +748,6 @@ describe("POST /workbenches — reuseExisting: true reopens the land-hop's chat,
     const { response, body } = await createWorkbench(app, {
       kind: "chat",
       definitionId: "wfd_echo",
-      reuseExisting: true,
     });
 
     expect(response.status).toBe(200);
@@ -762,12 +763,10 @@ describe("POST /workbenches — reuseExisting: true reopens the land-hop's chat,
     const first = await createWorkbench(app, {
       kind: "chat",
       definitionId: "wfd_echo",
-      reuseExisting: true,
     });
     const second = await createWorkbench(app, {
       kind: "chat",
       definitionId: "wfd_echo",
-      reuseExisting: true,
     });
     expect(second.response.status).toBe(200);
 
@@ -780,91 +779,23 @@ describe("POST /workbenches — reuseExisting: true reopens the land-hop's chat,
     expect(fanOut?.workbenchId).toBe("ins_invited1");
     expect(fanOut?.fromWorkbenchId).toBe(first.body.id);
   });
-});
 
-describe("POST /workbenches — agent chat always creates by default (CL-6089)", () => {
-  test("creating a chat with the same agent twice, reuseExisting omitted both times, mints two independent workbenches", async () => {
+  test("sending reuseExisting is rejected", async () => {
     const deps = buildDeps({
       platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
 
-    const first = await createWorkbench(app, {
-      kind: "chat",
-      definitionId: "wfd_echo",
-    });
-    expect(first.response.status).toBe(201);
-
-    const second = await createWorkbench(app, {
-      kind: "chat",
-      definitionId: "wfd_echo",
-    });
-
-    expect(second.response.status).toBe(201);
-    expect(second.body.id).not.toBe(first.body.id);
-    expect(second.body.kind).toBe("chat");
-
-    const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    expect(platform.launchInviteCalls).toHaveLength(2);
-    const chats = await deps.store.listWorkbenchSettings(TENANT.id, "chat");
-    expect(chats).toHaveLength(2);
-
-    // CL-6387: "mints two independent workbenches" must mean two genuinely
-    // distinct child tenants — not two workbench rows sharing one tenant
-    // (which would alias participants/grants across both chats).
-    const firstTenancy = await deps.tenancy.getWorkbenchTenancy(first.body.id);
-    const secondTenancy = await deps.tenancy.getWorkbenchTenancy(
-      second.body.id,
-    );
-    expect(firstTenancy?.tenantId).toBeDefined();
-    expect(secondTenancy?.tenantId).toBeDefined();
-    expect(secondTenancy?.tenantId).not.toBe(firstTenancy?.tenantId);
-  });
-
-  test("creating a chat with the same agent twice, reuseExisting: false explicitly, still mints two workbenches", async () => {
-    const deps = buildDeps({
-      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
-    });
-    const app = mountAs(createChatRoutes(deps), "prn_alice");
-
-    const first = await createWorkbench(app, {
-      kind: "chat",
-      definitionId: "wfd_echo",
-      reuseExisting: false,
-    });
-    const second = await createWorkbench(app, {
+    const { response, body } = await createWorkbench(app, {
       kind: "chat",
       definitionId: "wfd_echo",
       reuseExisting: false,
     });
 
-    expect(first.response.status).toBe(201);
-    expect(second.response.status).toBe(201);
-    expect(second.body.id).not.toBe(first.body.id);
-  });
-
-  test("a pre-existing chat for the same agent (from an earlier find-or-create call) doesn't stop a later always-create call from minting its own", async () => {
-    const deps = buildDeps({
-      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+    expect(response.status).toBe(400);
+    expect(body).toMatchObject({
+      error: { code: "bad_request" },
     });
-    const app = mountAs(createChatRoutes(deps), "prn_alice");
-
-    const landHop = await createWorkbench(app, {
-      kind: "chat",
-      definitionId: "wfd_echo",
-      reuseExisting: true,
-    });
-    expect(landHop.response.status).toBe(201);
-
-    const picked = await createWorkbench(app, {
-      kind: "chat",
-      definitionId: "wfd_echo",
-    });
-
-    expect(picked.response.status).toBe(201);
-    expect(picked.body.id).not.toBe(landHop.body.id);
-    const chats = await deps.store.listWorkbenchSettings(TENANT.id, "chat");
-    expect(chats).toHaveLength(2);
   });
 });
 

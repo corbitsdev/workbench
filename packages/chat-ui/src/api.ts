@@ -333,18 +333,15 @@ export function listAllWorkbenches(
 // counterpart attached at creation. See `packages/chat/src/routes.ts`
 // `POST /workbenches` for the server side of this union.
 //
-// An agent chat always mints a new workbench (CL-6089) — the agent is a
-// template, not a conversation being reopened — unless the caller opts
-// into `reuseExisting: true`, reserved for the one deliberate
-// find-or-create caller: the home-workbench land-hop
-// (`default-agent-workbench.ts`'s `ensure`).
+// An agent chat (`kind: "chat"` + `definitionId`) always find-or-reopens
+// the one conversation for that agent (CL-6981). Callers that just want
+// to open it use `openAgentConversation`.
 export type CreateWorkbenchInput =
   | { readonly kind: "workbench"; readonly name: string }
   | {
       readonly kind: "chat";
       readonly definitionId: string;
       readonly name?: string;
-      readonly reuseExisting?: boolean;
       /** The picked template's own promise line
        * (`WorkbenchTemplateManifest.promise`, see `@corbits/workflow-catalog`)
        * — replaces the room's random canned opener with one naming its
@@ -854,22 +851,27 @@ export function listVisibleAgentDefinitions(
 /**
  * Opens a direct chat with an agent, minting it on first open and
  * reusing the same workbench on every later open — `packages/chat/src/
- * routes.ts`'s `POST /workbenches` with `reuseExisting: true` already
- * finds-or-creates by `chat/definitionId` (`findExistingAgentChat`), the
- * same seam the home-workbench land-hop uses. `tenantId` must be the
+ * routes.ts`'s `POST /workbenches` always finds-or-creates by
+ * `chat/definitionId` (`findExistingAgentChat`). `tenantId` must be the
  * definition's OWNING tenant (see `VisibleAgentDefinition.tenantId`),
  * never the caller's own tenant when the agent was reached through
- * ancestor inheritance — the DM workbench lives where the agent lives.
+ * ancestor inheritance — the conversation lives where the agent lives.
  */
-export function openAgentDm(
+export function openAgentConversation(
   tenantId: string,
   definitionId: string,
 ): Promise<Workbench> {
   return createWorkbench(tenantId, {
     kind: "chat",
     definitionId,
-    reuseExisting: true,
   });
+}
+
+export function openAgentDm(
+  tenantId: string,
+  definitionId: string,
+): Promise<Workbench> {
+  return openAgentConversation(tenantId, definitionId);
 }
 
 export function getAgentInstructions(

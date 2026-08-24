@@ -28,7 +28,7 @@ describe("openAgentDmChat", () => {
       headers: { "content-type": "application/json" },
     });
 
-  test("opens the agent's DM with reuseExisting and navigates to it", async () => {
+  test("opens the agent's conversation and navigates to it", async () => {
     const navigated: string[] = [];
     const calls = stubFetch((path) => {
       if (path.endsWith("/chat/workbenches")) {
@@ -52,7 +52,6 @@ describe("openAgentDmChat", () => {
     expect(JSON.parse(String(call?.init?.body))).toEqual({
       kind: "chat",
       definitionId: "wfd_outreach",
-      reuseExisting: true,
     });
     expect(navigated).toEqual(["/w/chan-dm-1"]);
   });

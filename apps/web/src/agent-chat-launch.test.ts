@@ -28,7 +28,7 @@ describe("launchAgentChat", () => {
       headers: { "content-type": "application/json" },
     });
 
-  test("creates a chat for the given definitionId with no reuseExisting flag, and navigates to it", async () => {
+  test("opens a chat for the given definitionId and navigates to it", async () => {
     const navigated: string[] = [];
     const calls = stubFetch((path) => {
       if (path.endsWith("/chat/workbenches")) {
