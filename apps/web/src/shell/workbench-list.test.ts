@@ -127,9 +127,9 @@ describe("filterSidebarRows", () => {
       row({ id: "ch_a", title: "Launch plan" }),
       row({ id: "ch_b", title: "Research brief" }),
     ];
-    expect(filterSidebarRows(rows, "launch").map((r) => r.workbench.id)).toEqual(
-      ["ch_a"],
-    );
+    expect(
+      filterSidebarRows(rows, "launch").map((r) => r.workbench.id),
+    ).toEqual(["ch_a"]);
   });
 
   test("matches preview text even when the title does not (CL-6662)", () => {
@@ -175,9 +175,7 @@ describe("filterSidebarRows", () => {
   });
 
   test("returns no rows when neither title nor preview matches", () => {
-    const rows = [
-      row({ id: "ch_1", title: "Myra", preview: "Hello there" }),
-    ];
+    const rows = [row({ id: "ch_1", title: "Myra", preview: "Hello there" })];
     expect(filterSidebarRows(rows, "zzz")).toEqual([]);
   });
 
