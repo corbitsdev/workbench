@@ -94,7 +94,7 @@ describe("shellContextMenuFor: workbench", () => {
           { status: 200, headers: { "content-type": "application/json" } },
         ),
       ),
-    ) as typeof fetch;
+    ) as unknown as typeof fetch;
     const events: Event[] = [];
     const listener = (event: Event) => events.push(event);
     window.addEventListener(WORKBENCHES_MUTATED_EVENT, listener);
