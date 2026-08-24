@@ -35,7 +35,8 @@ function context(overrides: {
   const ctx = {
     path: overrides.path,
     navigate: (to: string) => navigated.push(to),
-    tenantId: overrides.tenantId === undefined ? "tenant-1" : overrides.tenantId,
+    tenantId:
+      overrides.tenantId === undefined ? "tenant-1" : overrides.tenantId,
     cycleTheme: () => {
       themeCycled = true;
     },
@@ -156,7 +157,7 @@ describe("runActionCommand", () => {
     globalThis.fetch = (() => {
       fetches += 1;
       throw new Error("null tenant must not fall back to a default tenant");
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     const { ctx, navigated } = context({ path: "/", tenantId: null });
     expect(ctx.tenantId).toBeNull();
     await runActionCommand("talk-to-myra", ctx);
@@ -210,7 +211,7 @@ describe("runActionCommand", () => {
         );
       }
       throw new Error(`unexpected fetch: ${init?.method ?? "GET"} ${path}`);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const { ctx, navigated } = context({ path: "/" });
     await runActionCommand("talk-to-myra", ctx);
