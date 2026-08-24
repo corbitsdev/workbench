@@ -142,9 +142,52 @@ describe("SkillsPage", () => {
       [`GET /api/tenants/${TENANT}/skills`]: { skills: [TRIAGE] },
     });
     const el = await mount();
-    expect(el.textContent).toContain("triage");
+    // Name slot is a display title, never the raw kebab slug (CL-6747).
+    expect(el.textContent).toContain("Triage");
     expect(el.textContent).toContain("Sorts inbound issues.");
     expect(el.textContent).toContain("Only me");
+    // Badge must not shout via CSS uppercase (CL-6747).
+    const badge = Array.from(el.querySelectorAll('[data-slot="badge"]')).find(
+      (node) => node.textContent === "Only me",
+    );
+    expect(badge?.className).toContain("normal-case");
+  });
+
+  test("a kebab skill name is shown title-cased in the Name column", async () => {
+    stubRoutes({
+      ...EMPTY_REGISTRY,
+      [`GET /api/tenants/${TENANT}/skills`]: {
+        skills: [
+          {
+            ...TRIAGE,
+            name: "writing-system-prompts",
+            description: "Prompt craft.",
+          },
+        ],
+      },
+    });
+    const el = await mount();
+    expect(el.textContent).toContain("Writing System Prompts");
+    const nameCell = Array.from(el.querySelectorAll("td")).find((cell) =>
+      cell.textContent?.includes("Writing System Prompts"),
+    );
+    expect(nameCell?.textContent?.trim()).toBe("Writing System Prompts");
+  });
+
+  test("a shared skill's visibility badge stays sentence case", async () => {
+    stubRoutes({
+      ...EMPTY_REGISTRY,
+      [`GET /api/tenants/${TENANT}/skills`]: {
+        skills: [{ ...TRIAGE, scope: "tenant" }],
+      },
+    });
+    const el = await mount();
+    const badge = Array.from(el.querySelectorAll('[data-slot="badge"]')).find(
+      (node) => node.textContent === "Everyone",
+    );
+    expect(badge).toBeDefined();
+    expect(badge?.className).toContain("normal-case");
+    expect(badge?.textContent).toBe("Everyone");
   });
 
   test("Create skill posts directly to the registry and opens the new skill's page", async () => {
@@ -401,7 +444,7 @@ describe("SkillsPage", () => {
     });
     const el = await mount({ navigate: () => undefined });
     const row = Array.from(el.querySelectorAll("tr")).find((tr) =>
-      tr.textContent?.includes("triage"),
+      tr.textContent?.includes("Triage"),
     );
     await act(async () => {
       row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -421,7 +464,7 @@ describe("SkillsPage", () => {
     const navigated: string[] = [];
     const el = await mount({ navigate: (to) => navigated.push(to) });
     const row = Array.from(el.querySelectorAll("tr")).find((tr) =>
-      tr.textContent?.includes("triage"),
+      tr.textContent?.includes("Triage"),
     );
     await act(async () => {
       row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -439,7 +482,7 @@ describe("CreateSkillDialog validation", () => {
     ]);
   });
 
-  test("a name the registry could never carry is rejected before submit", () => {
+  test("a slug the registry could never carry is rejected before submit", () => {
     expect(
       validationIssues({
         name: "Summarize Transcript",

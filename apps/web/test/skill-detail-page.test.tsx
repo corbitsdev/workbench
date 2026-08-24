@@ -129,7 +129,9 @@ async function settle() {
   });
 }
 
-async function mount(): Promise<HTMLDivElement> {
+async function mount(
+  props: { readonly name?: string } = {},
+): Promise<HTMLDivElement> {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -138,14 +140,14 @@ async function mount(): Promise<HTMLDivElement> {
       <TestQueryProvider>
         <SkillDetailPage
           tenantId={TENANT}
-          name={NAME}
+          name={props.name ?? NAME}
           now={Date.parse("2026-08-05T12:00:00.000Z")}
         />
       </TestQueryProvider>,
     );
   });
   await settle();
-  if (container === null) throw new Error("container went away");
+  if (container === null) throw new Error("mount left no container");
   return container;
 }
 
@@ -210,6 +212,26 @@ describe("SkillDetailPage", () => {
     const el = await mount();
     expect(field("skill-body").value).toBe(HEAD_BODY);
     expect(el.textContent).toContain("Research Buddy");
+    // Title is the display name, not the raw kebab slug (CL-6747).
+    expect(el.querySelector("h1")?.textContent?.trim()).toBe("Triage");
+  });
+
+  test("a kebab skill title is shown title-cased on the detail page", async () => {
+    const kebab = "writing-system-prompts";
+    stubs = {
+      ...defaultStubs(),
+      [`GET /api/tenants/${TENANT}/skills/${kebab}`]: ok({
+        skill: { ...SKILL, name: kebab },
+        pinnedBy: [],
+      }),
+      [`GET /api/tenants/${TENANT}/skills/${kebab}/versions`]: ok({
+        versions: VERSIONS,
+      }),
+    };
+    const el = await mount({ name: kebab });
+    expect(el.querySelector("h1")?.textContent?.trim()).toBe(
+      "Writing System Prompts",
+    );
   });
 
   test("the version list renders each commit's note, author, and when", async () => {

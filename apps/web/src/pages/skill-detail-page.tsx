@@ -57,6 +57,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { useBench } from "../bench-context";
 import { SKILLS_PATH_PREFIX, skillIdFromPath } from "../path-ids";
+import { skillDisplayName } from "../skill-display-name";
 import { skillVersionSavedBy } from "../skill-version-author";
 import { StageTopBar } from "../shell/stage-top-bar";
 import {
@@ -324,7 +325,7 @@ export function SkillDetailPage({
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="truncate text-lg font-semibold tracking-tight">
-            {skill.name}
+            {skillDisplayName(skill)}
           </h1>
           <p className="mt-1 text-xs text-muted-foreground">
             Updated {formatRelativeTime(skill.updatedAtIso, now)}

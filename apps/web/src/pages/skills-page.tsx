@@ -46,6 +46,7 @@ import {
 } from "./create-skill-dialog";
 import { useBench } from "../bench-context";
 import { SKILLS_PATH_PREFIX } from "../path-ids";
+import { skillDisplayName } from "../skill-display-name";
 import { StageTopBar } from "../shell/stage-top-bar";
 
 type RegistryState =
@@ -244,13 +245,16 @@ export function SkillsPage({
                   {...rowActivationProps(() => open(skill.name))}
                 >
                   <TableCell className="w-48 font-medium">
-                    {skill.name}
+                    {skillDisplayName(skill)}
                   </TableCell>
                   <TableCell className="max-w-sm truncate text-muted-foreground">
                     {skill.description}
                   </TableCell>
                   <TableCell className="w-36">
-                    <Badge tone={skill.scope === "tenant" ? "info" : "neutral"}>
+                    <Badge
+                      tone={skill.scope === "tenant" ? "info" : "neutral"}
+                      className="normal-case"
+                    >
                       {skill.scope === "tenant" ? "Everyone" : "Only me"}
                     </Badge>
                   </TableCell>

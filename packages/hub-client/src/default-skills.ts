@@ -13,7 +13,7 @@ export interface DefaultSkill {
   readonly body: string;
 }
 
-const WRITING_SYSTEM_PROMPTS_BODY = `Load this before writing or editing any agent's system prompt or a routine's instructions. These rules are how strong lab and product teams write prompts today.
+const WRITING_SYSTEM_PROMPTS_BODY = `Load this before writing or editing any agent's system prompt or a routine's instructions. These rules are how strong product teams write prompts today.
 
 ## Shape
 
@@ -57,10 +57,9 @@ export const DEFAULT_SKILLS: readonly DefaultSkill[] = [
   {
     name: "writing-system-prompts",
     description:
-      "How to write system prompts for agents: structure, behavior " +
-      "contracts, tool doctrine, and model-fit rules distilled from " +
-      "current lab guidance. Load before authoring or editing any " +
-      "agent's prompt.",
+      "How to write clear system prompts for agents — structure, " +
+      "behavior, tools, and fitting the prompt to the model. Load " +
+      "before authoring or editing any agent's prompt.",
     body: WRITING_SYSTEM_PROMPTS_BODY,
   },
 ];
