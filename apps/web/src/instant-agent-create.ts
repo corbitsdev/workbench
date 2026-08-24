@@ -3,13 +3,11 @@
 // (CL-6486, superseding CL-6138's silent auto-mint) — opens the template
 // picker (`pages/new-workbench-picker.tsx`, CL-6342) and calls
 // `createWorkbenchFromTemplate` below once a row is chosen. It mints a
-// fresh workbench against the account's default setup template (the same
-// seeded `assistant` definition backing the home Myra workbench, which
-// already opens with the setup greeting: "what do you want me around
-// for?"). The conversation itself is what specializes the agent into
-// whatever the person wants; the drafting and capability machinery already
-// listens for that in-chat, so no definition is drafted or created up
-// front here. Explicitly defining a brand-new agent template, with its own
+// fresh `kind: "workbench"` room (never `kind: "chat"` + Myra's
+// definitionId — that always find-or-reopens the one agent conversation,
+// CL-6981), then invites Myra in as a participant. Named templates also
+// create their roster and invite each non-Myra agent after the mint.
+// Explicitly defining a brand-new agent template, with its own
 // name/purpose/model/skills chosen up front, stays `CreateAgentPanel`'s job
 // (Settings → Agents), unchanged.
 
@@ -99,22 +97,22 @@ export type PickGithubRepos = (args: {
 
 /**
  * The template picker's "Create workbench" action (CL-6344): mints a
- * fresh chat, named after the picked template, against the account's
- * default setup template (the seeded `assistant`/Myra definition),
- * passing the picked row's id through as `templateId` so the room opens
- * with that template's own intro (`packages/chat/src/routes.ts`'s
- * `POST /workbenches` resolves it into the canned greeting). When the id
- * names a real manifest (`workbenchTemplate`), this also creates its
- * participant agent definitions, invites each into the room so the
+ * fresh `kind: "workbench"` room, named after the picked template (or
+ * `NEW_WORKBENCH_TITLE` for blank), then invites Myra in as a participant.
+ * Opening an agent via `kind: "chat"` + definitionId always find-or-reopens
+ * that agent's one conversation (CL-6981), so "+" must never mint that way —
+ * a second "+" would reopen Myra instead of creating another room.
+ *
+ * When the id names a real manifest (`workbenchTemplate`), this also creates
+ * its participant agent definitions, invites each into the room so the
  * roster the greeting promises is the roster actually there (see
  * `instantiateWorkbenchTemplate`'s own doc), and records its required
  * connections as pending. A template id with no manifest yet (`blank`,
- * "Just start talking") mints a plain untagged chat under the generic
- * `NEW_WORKBENCH_TITLE`, exactly like before templates existed — there
- * is no better name to give it. When `pickGithubRepos` is supplied and
- * GitHub is already connected for this tenant, this also drives
- * CL-6386's "select on new-workbench" step — see `PickGithubRepos`'s
- * own doc.
+ * "Just start talking") mints a plain room under the generic
+ * `NEW_WORKBENCH_TITLE`, then invites Myra — there is no better name to
+ * give it. When `pickGithubRepos` is supplied and GitHub is already
+ * connected for this tenant, this also drives CL-6386's "select on
+ * new-workbench" step — see `PickGithubRepos`'s own doc.
  *
  * `queryClient` invalidates the workbenches list once every template
  * participant has been invited (CL-6594) — `ChatWorkspace`'s own
@@ -170,10 +168,12 @@ export async function createWorkbenchFromTemplate(
     manifest?.requiredConnections.includes("github") ?? false;
 
   // GitHub already connected (established from the Plugins page, CL-6386)
-  // means this create flow can skip the in-room connect card entirely and
-  // go straight to repo selection once the workbench exists. Not yet
-  // connected keeps today's exact behaviour: the in-room card stays the
-  // just-in-time fallback.
+  // means this create flow can skip waiting on an in-room connect card
+  // and go straight to repo selection once the workbench exists. Not yet
+  // connected keeps the Plugins path as the just-in-time connect step;
+  // a room mint no longer auto-hosts Myra as `definitionId`, so the
+  // create-time `connectGithubRequiredFor` block (chat-mint only) is
+  // not posted here.
   const githubAlreadyConnected =
     requiresGithub && pickGithubRepos !== undefined
       ? (await listPluginsForTenant(tenantId)).some(
@@ -182,15 +182,15 @@ export async function createWorkbenchFromTemplate(
         )
       : false;
 
+  // A room, not a Myra DM reopen (CL-6981): `kind: "chat"` + definitionId
+  // always find-or-reopens that agent's one conversation.
   const workbench = await createWorkbench(tenantId, {
-    kind: "chat",
-    definitionId: setupTemplate.id,
+    kind: "workbench",
     name: manifest?.title ?? NEW_WORKBENCH_TITLE,
-    ...(manifest !== undefined ? { templatePromise: manifest.promise } : {}),
-    ...(requiresGithub && !githubAlreadyConnected
-      ? { connectGithubRequiredFor: manifest?.title ?? "" }
-      : {}),
   });
+
+  // Myra joins as an invited participant — never as the mint identity.
+  await inviteAgent(tenantId, workbench.id, setupTemplate.id);
 
   if (githubAlreadyConnected && pickGithubRepos !== undefined) {
     const state = await getConnectGithubState(tenantId, workbench.id);
@@ -239,10 +239,11 @@ export async function createWorkbenchFromTemplate(
     for (const todo of result.webhookTriggerTodos) {
       log.error(todo);
     }
-    await queryClient.invalidateQueries({
-      queryKey: workbenchesQueryKeyPrefix(tenantId),
-    });
   }
+
+  await queryClient.invalidateQueries({
+    queryKey: workbenchesQueryKeyPrefix(tenantId),
+  });
 
   if (firstMessage !== undefined && firstMessage.trim() !== "") {
     await sendMessage(tenantId, workbench.id, partsForSend(firstMessage, []));

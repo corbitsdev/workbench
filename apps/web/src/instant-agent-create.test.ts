@@ -56,7 +56,8 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
   // The picker's "Create workbench" is clickable more than once per
   // session (a second visit, a second row) — each click must mint its
   // own, genuinely distinct workbench, never reopen or alias the last
-  // one it created.
+  // one it created. CL-6981: blank must POST kind=workbench without
+  // Myra's definitionId, or a second "+" would find-or-reopen her DM.
   test("picking the same row twice in a row mints two distinct workbenches, not one reused", async () => {
     let nextId = 0;
     const navigated: string[] = [];
@@ -69,9 +70,15 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
         return json({
           id: `chan-${nextId}`,
           title: NEW_WORKBENCH_TITLE,
-          kind: "chat",
+          kind: "workbench",
           pinned: false,
           participants: [],
+        });
+      }
+      if (/\/chat\/workbenches\/chan-\d+\/invite$/.test(path)) {
+        return json({
+          address: "agent:myra@room",
+          definitionId: "def-assistant",
         });
       }
       throw new Error(`unexpected fetch: ${path}`);
@@ -99,9 +106,21 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
 
     // Blank ("Just start talking") has no template to name the bench
     // after, so it keeps the generic title rather than something
-    // invented.
+    // invented. CL-6981: a room mint, never a Myra chat reopen.
     const body = JSON.parse(String(createCalls[0]?.init?.body));
-    expect(body.name).toBe(NEW_WORKBENCH_TITLE);
+    expect(body).toEqual({
+      kind: "workbench",
+      name: NEW_WORKBENCH_TITLE,
+    });
+    expect(body).not.toHaveProperty("definitionId");
+
+    const inviteBodies = calls
+      .filter((call) => /\/chat\/workbenches\/chan-\d+\/invite$/.test(call.path))
+      .map((call) => JSON.parse(String(call.init?.body)));
+    expect(inviteBodies).toEqual([
+      { definitionId: "def-assistant" },
+      { definitionId: "def-assistant" },
+    ]);
   });
 
   // CL-6387 follow-up: picking a named template threw its own name away
@@ -126,7 +145,7 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
         return json({
           id: "chan-1",
           title: "Code review",
-          kind: "chat",
+          kind: "workbench",
           pinned: false,
           participants: [],
         });
@@ -148,7 +167,7 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
         return json({
           id: "chan-1",
           title: "Code review",
-          kind: "chat",
+          kind: "workbench",
           pinned: false,
           participants: [],
           settings: {},
@@ -176,7 +195,11 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
       call.path.endsWith("/chat/workbenches"),
     );
     const createBody = JSON.parse(String(createCall?.init?.body));
-    expect(createBody.name).toBe(CODE_REVIEW_TEMPLATE.title);
+    expect(createBody).toEqual({
+      kind: "workbench",
+      name: CODE_REVIEW_TEMPLATE.title,
+    });
+    expect(createBody).not.toHaveProperty("definitionId");
 
     const createAgentCalls = calls.filter((call) =>
       call.path.endsWith("/agent-definitions"),
@@ -192,10 +215,12 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
     const invitedIds = inviteCalls.map(
       (call) => JSON.parse(String(call.init?.body)).definitionId,
     );
+    // Myra first (post-mint invite), then each reviewer from instantiate.
     const createdIds = createAgentCalls.map(
       (_, index) => `def-reviewer-${index + 1}`,
     );
-    expect(invitedIds.sort()).toEqual(createdIds.sort());
+    expect(invitedIds[0]).toBe("def-assistant");
+    expect(invitedIds.slice(1).sort()).toEqual(createdIds.sort());
     expect(navigated).toEqual(["/w/chan-1"]);
 
     // CL-6594: a room this function navigates to must never carry a

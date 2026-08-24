@@ -163,8 +163,8 @@ function prefabCards(): HTMLButtonElement[] {
 }
 
 /** The standard fixture for a create that mints against `blank` (no
- * manifest, no participants, no settings patch) — shared by every test
- * exercising the prompt box's blank-plus-first-message path. */
+ * manifest, no participants beyond Myra, no settings patch) — shared by
+ * every test exercising the prompt box's blank-plus-first-message path. */
 function stubBlankCreate(
   onSendMessage?: (body: { parts: readonly { kind: string }[] }) => void,
 ): RecordedCall[] {
@@ -189,9 +189,19 @@ function stubBlankCreate(
       return json({
         id: "chan_new",
         title: "New Workbench",
-        kind: "chat",
+        kind: "workbench",
         pinned: false,
         participants: [],
+      });
+    }
+    if (
+      path.endsWith("/chat/workbenches/chan_new/invite") &&
+      init?.method === "POST"
+    ) {
+      const body = JSON.parse(String(init.body)) as { definitionId: string };
+      return json({
+        address: `${body.definitionId}@chan_new`,
+        definitionId: body.definitionId,
       });
     }
     if (
@@ -346,9 +356,12 @@ describe("NewWorkbenchPickerRoute", () => {
         call.path.endsWith("/chat/workbenches") && call.init?.method === "POST",
     );
     expect(JSON.parse(String(createWorkbenchCall?.init?.body))).toMatchObject({
-      kind: "chat",
-      definitionId: "wfd_assistant",
+      kind: "workbench",
+      name: "New Workbench",
     });
+    expect(
+      JSON.parse(String(createWorkbenchCall?.init?.body)),
+    ).not.toHaveProperty("definitionId");
 
     const sendMessageCall = calls.find((call) =>
       call.path.endsWith("/chat/workbenches/chan_new/messages"),
@@ -460,7 +473,7 @@ describe("NewWorkbenchPickerRoute", () => {
         return json({
           id: "chan_new",
           title: "New Workbench",
-          kind: "chat",
+          kind: "workbench",
           pinned: false,
           participants: [],
         });
@@ -501,7 +514,7 @@ describe("NewWorkbenchPickerRoute", () => {
         return json({
           id: "chan_new",
           title: "New Workbench",
-          kind: "chat",
+          kind: "workbench",
           pinned: false,
           participants: [],
           settings: {
@@ -543,11 +556,15 @@ describe("NewWorkbenchPickerRoute", () => {
         call.path.endsWith("/chat/workbenches") && call.init?.method === "POST",
     );
     expect(JSON.parse(String(createWorkbenchCall?.init?.body))).toMatchObject({
-      kind: "chat",
-      definitionId: "wfd_assistant",
-      templatePromise:
-        "Three reviewers read every pull request and post what they'd change.",
+      kind: "workbench",
+      name: "Code review",
     });
+    expect(
+      JSON.parse(String(createWorkbenchCall?.init?.body)),
+    ).not.toHaveProperty("definitionId");
+    expect(
+      JSON.parse(String(createWorkbenchCall?.init?.body)),
+    ).not.toHaveProperty("templatePromise");
 
     expect(createdAgentHandles).toEqual([
       "correctness-reviewer",
@@ -595,7 +612,7 @@ describe("NewWorkbenchPickerRoute", () => {
         return json({
           id: "chan_new",
           title: "New Workbench",
-          kind: "chat",
+          kind: "workbench",
           pinned: false,
           participants: [],
         });
@@ -635,7 +652,7 @@ describe("NewWorkbenchPickerRoute", () => {
         return json({
           id: "chan_new",
           title: "New Workbench",
-          kind: "chat",
+          kind: "workbench",
           pinned: false,
           participants: [],
           settings: {

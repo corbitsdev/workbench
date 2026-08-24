@@ -76,8 +76,9 @@ export interface WorkbenchTemplateInstantiationPorts {
    * `@corbits/chat-ui`'s `inviteAgent`), or a fake of it in tests. This
    * is what makes a template's roster actually present in the room
    * rather than merely registered in the agent directory. Never called
-   * for Myra: she joins the room at workbench creation as its own
-   * `definitionId`. */
+   * for Myra: the host invites her separately after minting the room
+   * (CL-6981 — she must not be the mint `definitionId`, which would
+   * find-or-reopen her one agent conversation). */
   inviteParticipantAgent(id: string): Promise<void>;
   /** Persists the room's still-needed connections — the workbench
    * settings `template/pendingConnections` key today; see

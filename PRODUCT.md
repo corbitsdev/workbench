@@ -36,15 +36,15 @@ column at a time:
   bench, flat, most-recently-active first. There is no separate "channels"
   vs. "chats" grouping the sidebar exposes to a person — every row is a
   workbench.
-- **"+ New Workbench" always creates.** It opens `/new` — the shipped
-  prompt-primary picker — never a picker of existing things to join.
-  Starting a new workbench is the one way in, whether the result is a
-  one-on-one conversation with an agent or a group conversation
-  with people and agents together.
-- **Agents are templates.** Starting a new agent conversation means picking
-  an agent definition (a named, reusable capability) as the starting point
-  — the same definition can be launched into any number of separate
-  conversations, each with its own history and its own tenant.
+- **"+ New Workbench" always creates a room.** It opens `/new` — the shipped
+  prompt-primary picker — never a picker of existing things to join, and
+  never reopens an agent's one conversation. Starting a new workbench mints
+  a fresh room; opening an agent (from Agents, Talk to Myra, and so on)
+  find-or-reopens that agent's existing conversation.
+- **Agents are templates.** An agent definition is a named, reusable
+  capability. Opening an agent always find-or-reopens its one conversation
+  for this bench; "+" creates a separate room and invites participants into
+  it — including Myra — rather than minting another agent DM.
 - The active workbench occupies the main column; a contextual panel beside
   it carries account-wide surfaces (approvals, recent activity) that stay
   visible regardless of which workbench is open.
