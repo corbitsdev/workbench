@@ -16,6 +16,7 @@ const realFetch = globalThis.fetch;
 let mountedRoots: Root[] = [];
 afterEach(() => {
   globalThis.fetch = realFetch;
+  window.history.replaceState(null, "", "https://workbench.test/");
   for (const root of mountedRoots) act(() => root.unmount());
   mountedRoots = [];
 });
@@ -114,6 +115,89 @@ describe("McpPresetCardsSection", () => {
     );
     expect(connectGranola).not.toBeNull();
     expect(connectGranola?.textContent?.trim()).toBe("Connect");
+  });
+
+  test("Connect Granola navigates to /start via location href, never fetch", async () => {
+    const calls: string[] = [];
+    globalThis.fetch = (async (url: string) => {
+      calls.push(String(url));
+      return new Response(JSON.stringify({ data: PRESETS }));
+    }) as unknown as typeof fetch;
+
+    const assigned: string[] = [];
+    const hrefDescriptor = Object.getOwnPropertyDescriptor(
+      window.location,
+      "href",
+    );
+    Object.defineProperty(window.location, "href", {
+      configurable: true,
+      get() {
+        return hrefDescriptor?.get?.call(window.location) ?? "https://workbench.test/";
+      },
+      set(value: string) {
+        assigned.push(value);
+      },
+    });
+
+    try {
+      const container = mountSection();
+      await settle();
+
+      const granolaCard = container.querySelector(
+        '[data-plugin-slug="granola"]',
+      ) as HTMLElement;
+      const connectButton = [...granolaCard.querySelectorAll("button")].find(
+        (button) => button.textContent?.includes("Connect"),
+      ) as HTMLButtonElement;
+
+      await act(async () => {
+        connectButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+
+      expect(assigned).toEqual([
+        "/api/tenants/tenant_test/mcp-servers/oauth/granola/start",
+      ]);
+      expect(calls.some((url) => url.includes("/start"))).toBe(false);
+    } finally {
+      if (hrefDescriptor !== undefined) {
+        Object.defineProperty(window.location, "href", hrefDescriptor);
+      } else {
+        delete (window.location as { href?: string }).href;
+      }
+    }
+  });
+
+  test("an OAuth error return surfaces a sentence on that preset row and leaves Connect as retry", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?mcpOauth=granola&outcome=error&code=discovery_failed",
+    );
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({ data: PRESETS }),
+      )) as unknown as typeof fetch;
+
+    const container = mountSection();
+    await settle();
+
+    const granolaCard = container.querySelector(
+      '[data-plugin-slug="granola"]',
+    ) as HTMLElement;
+    expect(granolaCard.textContent).toContain(
+      "Couldn't reach that app's sign-in. Try connecting again.",
+    );
+    expect(
+      granolaCard.querySelector('[aria-label="Connect Granola"]'),
+    ).not.toBeNull();
+
+    const exaCard = container.querySelector(
+      '[data-plugin-slug="exa"]',
+    ) as HTMLElement;
+    expect(exaCard.textContent).not.toContain(
+      "Couldn't reach that app's sign-in. Try connecting again.",
+    );
   });
 
   test("Disconnect's accessible name includes the preset display name (CL-6794)", async () => {
