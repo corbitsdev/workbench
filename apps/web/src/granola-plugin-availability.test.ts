@@ -11,7 +11,7 @@ afterEach(() => {
 describe("fetchGranolaPluginConnected", () => {
   test("false on 404 — Granola not connected", async () => {
     globalThis.fetch = (async () =>
-      new Response(null, { status: 404 })) as typeof fetch;
+      new Response(null, { status: 404 })) as unknown as typeof fetch;
     expect(await fetchGranolaPluginConnected("tnt_1")).toBe(false);
   });
 
@@ -25,7 +25,7 @@ describe("fetchGranolaPluginConnected", () => {
           status: "active",
         }),
         { status: 200, headers: { "content-type": "application/json" } },
-      )) as typeof fetch;
+      )) as unknown as typeof fetch;
     expect(await fetchGranolaPluginConnected("tnt_1")).toBe(true);
   });
 
@@ -39,7 +39,7 @@ describe("fetchGranolaPluginConnected", () => {
           status: "expired",
         }),
         { status: 200, headers: { "content-type": "application/json" } },
-      )) as typeof fetch;
+      )) as unknown as typeof fetch;
     expect(await fetchGranolaPluginConnected("tnt_1")).toBe(true);
   });
 
@@ -53,14 +53,14 @@ describe("fetchGranolaPluginConnected", () => {
           status: "revoked",
         }),
         { status: 200, headers: { "content-type": "application/json" } },
-      )) as typeof fetch;
+      )) as unknown as typeof fetch;
     expect(await fetchGranolaPluginConnected("tnt_1")).toBe(false);
   });
 
   test("false on network failure — never claim connected", async () => {
     globalThis.fetch = (async () => {
       throw new Error("offline");
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     expect(await fetchGranolaPluginConnected("tnt_1")).toBe(false);
   });
 });
