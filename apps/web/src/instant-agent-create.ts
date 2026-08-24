@@ -3,10 +3,10 @@
 // (CL-6486, superseding CL-6138's silent auto-mint) — opens the template
 // picker (`pages/new-workbench-picker.tsx`, CL-6342) and calls
 // `createWorkbenchFromTemplate` below once a row is chosen. It mints a
-// fresh `kind: "workbench"` room (never `kind: "chat"` + an agent
+// fresh `kind: "workbench"` room (never `kind: "chat"` + Myra's
 // definitionId — that always find-or-reopens the one agent conversation,
-// CL-6981). Named templates create their roster and invite those agents
-// after the room mint.
+// CL-6981), then invites Myra in as a participant. Named templates also
+// create their roster and invite each non-Myra agent after the mint.
 // Explicitly defining a brand-new agent template, with its own
 // name/purpose/model/skills chosen up front, stays `CreateAgentPanel`'s job
 // (Settings → Agents), unchanged.
@@ -36,6 +36,7 @@ import {
 } from "./workbench-templates-api";
 
 import { createAgentDefinition, listAgentDefinitions } from "./agents-api";
+import { findMyraDefinition } from "./myra-workbench";
 import { workbenchPath } from "./workbench-path";
 
 const log = getLogger("web.instant-agent-create");
@@ -62,12 +63,24 @@ export const NEW_WORKBENCH_TITLE = "New Workbench";
  * never resolves itself and should surface as-is.
  */
 export class WorkbenchPreconditionError extends Error {
-  readonly kind: "template-unavailable";
-  constructor(message: string, kind: "template-unavailable") {
+  readonly kind: "setup-agent-missing" | "template-unavailable";
+  constructor(
+    message: string,
+    kind: "setup-agent-missing" | "template-unavailable",
+  ) {
     super(message);
     this.kind = kind;
   }
 }
+
+/**
+ * Consumer-language stand-in for the system precondition this bench
+ * hit: "no deployed setup agent" describes an internal implementation
+ * detail, never something a person signing in for the first time
+ * should have to parse.
+ */
+const SETUP_AGENT_MISSING_MESSAGE =
+  "Your workbench is still finishing setup. Try again in a moment.";
 
 /**
  * Presents the connected org's repo list for the person to pick from once
@@ -125,6 +138,14 @@ export async function createWorkbenchFromTemplate(
   pickGithubRepos?: PickGithubRepos,
   firstMessage?: string,
 ): Promise<void> {
+  const definitions = await listAgentDefinitions(tenantId);
+  const setupTemplate = findMyraDefinition(definitions);
+  if (setupTemplate === undefined) {
+    throw new WorkbenchPreconditionError(
+      SETUP_AGENT_MISSING_MESSAGE,
+      "setup-agent-missing",
+    );
+  }
   // The manifest comes from the bench library (CL-6344), never from a
   // hardcoded catalog import; reading it is what seeds the shelf
   // (CL-6458). `blank` is the one id with no manifest by design; any
@@ -167,6 +188,9 @@ export async function createWorkbenchFromTemplate(
     kind: "workbench",
     name: manifest?.title ?? NEW_WORKBENCH_TITLE,
   });
+
+  // Myra joins as an invited participant — never as the mint identity.
+  await inviteAgent(tenantId, workbench.id, setupTemplate.id);
 
   if (githubAlreadyConnected && pickGithubRepos !== undefined) {
     const state = await getConnectGithubState(tenantId, workbench.id);
