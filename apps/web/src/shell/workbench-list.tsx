@@ -352,9 +352,9 @@ function WorkbenchRow({
         data-active={active ? "true" : undefined}
         onClick={onSelect}
       >
-        {/* The workbench's own initial, not its agent's — every bench
-            hosts Myra, so an agent monogram renders an identical "M"
-            column that says nothing. */}
+        {/* The workbench's own initial, not its agent's — a DM and a
+            channel can share an agent, so an agent monogram would
+            collapse both rows into the same letter. */}
         <span className="shell-ch-stack" aria-hidden="true">
           <span>{displayTitle.slice(0, 1).toUpperCase()}</span>
         </span>

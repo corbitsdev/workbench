@@ -1158,9 +1158,9 @@ describe("createHubChatPlatform", () => {
 
     expect(second.instanceId).toBe(first.instanceId);
     expect(second.address).toBe(first.address);
-    expect(db.inserted.filter((row) => row.table === workbenchLaunch)).toHaveLength(
-      launchInsertsAfterFirst,
-    );
+    expect(
+      db.inserted.filter((row) => row.table === workbenchLaunch),
+    ).toHaveLength(launchInsertsAfterFirst);
     expect(db.inserted.filter((row) => row.table === workflowRun)).toHaveLength(
       runInsertsAfterFirst,
     );
