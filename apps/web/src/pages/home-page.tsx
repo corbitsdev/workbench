@@ -116,9 +116,12 @@ export function HomeRoute({
           navigate(NEW_WORKBENCH_PATH);
           return;
         }
-        void hasActiveCredential(selectedTenantId).then((hasCredential) => {
+        void hasActiveCredential(selectedTenantId).then((probe) => {
           if (cancelled) return;
-          if (!hasCredential) {
+          // Only a confirmed miss means "connect a provider". A probe
+          // failure must not pretend no key exists (CL-6868) — keep
+          // waiting and retry; the key may already be connected.
+          if (probe.kind === "none") {
             setState({ kind: "needs-provider" });
             return;
           }

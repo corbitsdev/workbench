@@ -25,6 +25,17 @@ const CredentialsPage = type({
 });
 
 /**
+ * Outcome of the cheap credentials read used before trusting a
+ * `seeded: true` hard-skip. A probe that cannot complete is never
+ * collapsed into `none` (CL-6868): that would open paste-a-key as if no
+ * key exists when one may already be connected.
+ */
+export type ActiveCredentialProbe =
+  | { readonly kind: "active" }
+  | { readonly kind: "none" }
+  | { readonly kind: "error" };
+
+/**
  * Whether `tenantId` has at least one credential in the `active`
  * status. A cheap, single read — no provider/catalog chain resolution —
  * so this is deliberately the weaker of the two checks the onboarding
@@ -32,16 +43,20 @@ const CredentialsPage = type({
  * without adding a second round trip's worth of catalog/provider
  * plumbing to the browser bundle.
  */
-export async function hasActiveCredential(tenantId: string): Promise<boolean> {
+export async function hasActiveCredential(
+  tenantId: string,
+): Promise<ActiveCredentialProbe> {
   try {
     const response = await fetch(`/api/tenants/${tenantId}/credentials`);
-    if (!response.ok) return false;
+    if (!response.ok) return { kind: "error" };
     const body: unknown = await response.json().catch(() => null);
     const parsed = CredentialsPage(body);
-    if (parsed instanceof type.errors) return false;
-    return parsed.data.some((c) => c.status === "active");
+    if (parsed instanceof type.errors) return { kind: "error" };
+    return parsed.data.some((c) => c.status === "active")
+      ? { kind: "active" }
+      : { kind: "none" };
   } catch {
-    return false;
+    return { kind: "error" };
   }
 }
 
@@ -55,6 +70,12 @@ const ErrorEnvelope = type({
 
 const FALLBACK_ERROR_MESSAGE =
   "Setting up your workbench hit a snag — we're on it. Try again in a moment.";
+
+/** Consumer sentence when the pre-skip credentials probe cannot complete
+ * (CL-6868). Paired with Retry on the current setup step — never opens
+ * paste-a-key as if no key exists. */
+export const CREDENTIAL_PROBE_FAILURE_MESSAGE =
+  "Checking for a connected key hit a snag. Try again in a moment.";
 
 export type ProvisionOutcome =
   | {
@@ -72,6 +93,7 @@ export type ProvisionOutcome =
        * personal bench. Lets the onboarding page independently confirm
        * (`hasActiveCredential`) a working credential exists before
        * trusting `seeded: true` enough to skip the credential step.
+       * A probe `error` must not be treated as absent (CL-6868).
        */
       readonly tenantId?: string;
     }
