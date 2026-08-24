@@ -130,9 +130,8 @@ export function WorkbenchSettingsSurface({
       getWorkbenchSettings(tenantId, workbenchId),
       getBenchChatSettings(tenantId),
       getCapacityPlacement(tenantId)
-        .then(
-          (result): CapacityProbeState =>
-            result.provisionerAvailable ? "available" : "unavailable",
+        .then((result): CapacityProbeState =>
+          result.provisionerAvailable ? "available" : "unavailable",
         )
         // A failed probe is `"unknown"`, never `"unavailable"` — folding
         // the miss into false used to hide Capacity permanently (CL-6828).

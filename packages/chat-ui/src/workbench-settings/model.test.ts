@@ -101,7 +101,9 @@ describe("workbenchSettingsSections", () => {
 
   test("Capacity appears, after Notifications, when this server offers it", () => {
     expect(
-      workbenchSettingsSections("workbench", false, "available").map((s) => s.id),
+      workbenchSettingsSections("workbench", false, "available").map(
+        (s) => s.id,
+      ),
     ).toEqual([
       "general",
       "members",
