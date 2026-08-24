@@ -17,7 +17,7 @@ describe("createChatBlockResponseActions copy", () => {
           status,
           headers: { "content-type": "application/json" },
         }),
-      )) as typeof fetch;
+      )) as unknown as typeof fetch;
   }
 
   function actions() {
