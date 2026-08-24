@@ -1356,10 +1356,7 @@ function ChatWorkspaceInner({
               ) : (
                 <>
                   {!inThreadView ? (
-                    <PinnedStrip
-                      status={pinsStatus}
-                      onJump={jumpToMessage}
-                    />
+                    <PinnedStrip status={pinsStatus} onJump={jumpToMessage} />
                   ) : null}
                   {openThreadParent !== undefined ? (
                     <div className="chat-thread-origin-banner">
