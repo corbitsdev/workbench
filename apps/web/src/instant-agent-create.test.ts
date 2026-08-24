@@ -117,7 +117,12 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
     const inviteBodies = calls.filter((call) =>
       /\/chat\/workbenches\/chan-\d+\/invite$/.test(call.path),
     );
-    expect(inviteBodies).toHaveLength(0);
+    expect(inviteBodies).toHaveLength(2);
+    for (const invite of inviteBodies) {
+      expect(JSON.parse(String(invite.init?.body))).toEqual({
+        definitionId: "def-assistant",
+      });
+    }
   });
 
   // CL-6387 follow-up: picking a named template threw its own name away
@@ -215,7 +220,9 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
     const createdIds = createAgentCalls.map(
       (_, index) => `def-reviewer-${index + 1}`,
     );
-    expect(invitedIds.sort()).toEqual(createdIds.sort());
+    expect(invitedIds.sort()).toEqual(
+      ["def-assistant", ...createdIds].sort(),
+    );
     expect(navigated).toEqual(["/w/chan-1"]);
 
     // CL-6594: a room this function navigates to must never carry a
