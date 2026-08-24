@@ -1787,7 +1787,10 @@ describe("CL-6833: running-turn resume failure is visible, never silent idle", (
     let turnsCalls = 0;
     stubFetch(undefined, WORKBENCH_WITH_AGENT_WIRE, { turnsFail: true });
     const failingFetch = globalThis.fetch;
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
       const path = typeof input === "string" ? input : String(input);
       if (/\/chat\/workbenches\/[^/]+\/turns(?:\/|$|\?)/.test(path)) {
         turnsCalls += 1;

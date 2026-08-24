@@ -36,7 +36,9 @@ describe("ResumeFailedBanner (CL-6833)", () => {
     const banner = container.querySelector(".chat-resume-failed-banner");
     expect(banner).not.toBeNull();
     expect(banner?.getAttribute("role")).toBe("alert");
-    expect(container.textContent).toContain("Couldn't resume the running reply");
+    expect(container.textContent).toContain(
+      "Couldn't resume the running reply",
+    );
     expect(container.textContent).toContain("ref mt4ewrje-zvbmti");
 
     act(() => {
