@@ -178,6 +178,8 @@ export const CHAT_STRINGS = {
   blockApproveRejecting: "Denying…",
   blockApproveActionForbidden: "You do not have permission to act on this.",
   blockApproveActionError: "Couldn't reach the approval — try again.",
+  blockDenyActionForbidden: "You do not have permission to deny this.",
+  blockDenyActionError: "Couldn't deny this request.",
   blockApprovePlatformRequestedBy: (agentName: string) =>
     `${agentName} is asking to`,
   blockApproveAgentNoteLabel: "Agent's note",
@@ -192,6 +194,8 @@ export const CHAT_STRINGS = {
   blockFormSubmitted: "Submitted",
   blockFormEdit: "Edit response",
   blockFormSubmitError: "Couldn't submit — try again.",
+  blockFormSubmitForbidden:
+    "You do not have permission to respond in this conversation.",
   blockFormFieldRequired: "This field is required.",
   blockQuestionFreeTextLabel: "Type your own answer",
   blockQuestionFreeTextPlaceholder: "Type your own answer…",

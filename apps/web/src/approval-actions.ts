@@ -9,6 +9,7 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { ApprovalActions, ApprovalDecisionResult } from "@corbits/chat-ui";
+import { CHAT_STRINGS } from "@corbits/chat-ui";
 import { ApiQueryError } from "@corbits/api-query";
 
 import { approveApproval, getApprovalNeedsYou, rejectApproval } from "./api";
@@ -108,16 +109,16 @@ export function createChatApprovalActions(
       return resolve(
         () => approveApproval(tenantId, approvalId),
         "approved",
-        "You do not have permission to approve this.",
-        "Couldn't approve this request.",
+        CHAT_STRINGS.blockApproveActionForbidden,
+        CHAT_STRINGS.blockApproveActionError,
       );
     },
     reject(approvalId) {
       return resolve(
         () => rejectApproval(tenantId, approvalId),
         "rejected",
-        "You do not have permission to deny this.",
-        "Couldn't deny this request.",
+        CHAT_STRINGS.blockDenyActionForbidden,
+        CHAT_STRINGS.blockDenyActionError,
       );
     },
   };

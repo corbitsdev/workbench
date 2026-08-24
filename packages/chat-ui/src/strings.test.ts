@@ -49,3 +49,29 @@ describe("agentsTyping copy", () => {
     expect(CHAT_STRINGS.agentsTyping([])).toBe("");
   });
 });
+
+describe("approve vs deny vs form action copy", () => {
+  test("deny forbidden and error are distinct from approve copy", () => {
+    expect(CHAT_STRINGS.blockDenyActionForbidden).toBe(
+      "You do not have permission to deny this.",
+    );
+    expect(CHAT_STRINGS.blockDenyActionError).toBe(
+      "Couldn't deny this request.",
+    );
+    expect(CHAT_STRINGS.blockDenyActionForbidden).not.toBe(
+      CHAT_STRINGS.blockApproveActionForbidden,
+    );
+    expect(CHAT_STRINGS.blockDenyActionError).not.toBe(
+      CHAT_STRINGS.blockApproveActionError,
+    );
+  });
+
+  test("form submit forbidden is respond copy, not approve copy", () => {
+    expect(CHAT_STRINGS.blockFormSubmitForbidden).toBe(
+      "You do not have permission to respond in this conversation.",
+    );
+    expect(CHAT_STRINGS.blockFormSubmitForbidden).not.toBe(
+      CHAT_STRINGS.blockApproveActionForbidden,
+    );
+  });
+});
