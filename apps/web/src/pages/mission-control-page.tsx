@@ -249,6 +249,7 @@ export function MissionControlRoute({
 
   const days =
     insightsActivity.kind === "ready" ? insightsActivity.data.days : [];
+  const insightsReady = insightsActivity.kind === "ready";
   const todayKey = new Date().toISOString().slice(0, 10);
   const today = days.find((day) => day.day === todayKey) ?? null;
   const priorDays = days.filter((day) => day.day !== todayKey);
@@ -256,9 +257,13 @@ export function MissionControlRoute({
     priorDays.length > 0
       ? priorDays.reduce((sum, day) => sum + day.turns, 0) / priorDays.length
       : null;
-  const todaySpend =
-    today === null
-      ? null
+  // Ready but no today row means zero activity today, not "unknown". Dash
+  // only while the activity query is still settling (or cost rates unknown).
+  const runsToday = insightsReady ? (today?.turns ?? 0) : null;
+  const todaySpend = !insightsReady
+    ? null
+    : today === null
+      ? 0
       : today.byModel.some((model) => model.costUsd === null)
         ? null
         : today.byModel.reduce((sum, model) => sum + (model.costUsd ?? 0), 0);
@@ -302,15 +307,17 @@ export function MissionControlRoute({
               />
               <StatGridItem
                 label="Runs today"
-                value={dash(today === null ? null : today.turns)}
+                value={dash(runsToday)}
                 sub={
-                  avgTurns !== null ? `avg ${Math.round(avgTurns)}/day` : "—"
+                  avgTurns !== null
+                    ? `avg ${Math.round(avgTurns)}/day`
+                    : "quiet so far"
                 }
               />
               <StatGridItem
                 label="Spend today"
                 value={formatUsd(todaySpend)}
-                sub="7-day activity"
+                sub="so far today"
               />
             </StatGrid>
 
