@@ -12,11 +12,11 @@
 // tasks are dispatched by Myra from inside a workbench now.
 //
 // Workbench creation is not one of those — there is no dialog to race, no
-// page to mount first: "new-workbench" and "new-agent" both navigate
-// straight to the template picker (`/new`, CL-6342 — superseding CL-6138's
-// direct mint for these two entry points), the same hop the sidebar's own
-// "+" control uses. "New thread" is out of scope (killed by owner
-// decision).
+// page to mount first: "new-workbench" navigates straight to the template
+// picker (`/new`, CL-6342 — superseding CL-6138's direct mint), the same
+// hop the sidebar's own "+" control uses. A second "new-agent" row that
+// said and did the same thing was dropped (CL-6820). "New thread" is out
+// of scope (killed by owner decision).
 //
 // "New routine" (CL-6125, reworked CL-6139) needs none of that: it opens
 // the canvas column's routine pane, and canvas state lives in
@@ -75,7 +75,6 @@ export function resetPendingDialogRequests(): void {
 
 export type ActionCommandId =
   | "new-workbench"
-  | "new-agent"
   | "new-routine"
   | "new-skill"
   | "upload-artifact"
@@ -98,11 +97,6 @@ export type ActionCommand = {
 export const ACTION_COMMANDS: readonly ActionCommand[] = [
   {
     id: "new-workbench",
-    title: CHAT_STRINGS.newWorkbenchAction,
-    subtitle: "Start a new workbench",
-  },
-  {
-    id: "new-agent",
     title: CHAT_STRINGS.newWorkbenchAction,
     subtitle: "Start a new workbench",
   },
@@ -150,19 +144,18 @@ export type ActionCommandContext = {
 };
 
 /**
- * Runs one action command. "new-workbench" and "new-agent" both open the
- * template picker (see the module doc); "new-skill" still goes through a
- * pending flag when the palette fires it off-route (see the module doc),
- * so the target page's own mount effect opens the dialog instead of a
- * dispatch racing against that page's not-yet-mounted listener.
+ * Runs one action command. "new-workbench" opens the template picker (see
+ * the module doc); "new-skill" still goes through a pending flag when the
+ * palette fires it off-route (see the module doc), so the target page's
+ * own mount effect opens the dialog instead of a dispatch racing against
+ * that page's not-yet-mounted listener.
  */
 export async function runActionCommand(
   id: ActionCommandId,
   ctx: ActionCommandContext,
 ): Promise<void> {
   switch (id) {
-    case "new-workbench":
-    case "new-agent": {
+    case "new-workbench": {
       ctx.navigate(NEW_WORKBENCH_PATH);
       return;
     }
