@@ -220,9 +220,7 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
     const createdIds = createAgentCalls.map(
       (_, index) => `def-reviewer-${index + 1}`,
     );
-    expect(invitedIds.sort()).toEqual(
-      ["def-assistant", ...createdIds].sort(),
-    );
+    expect(invitedIds.sort()).toEqual(["def-assistant", ...createdIds].sort());
     expect(navigated).toEqual(["/w/chan-1"]);
 
     // CL-6594: a room this function navigates to must never carry a
