@@ -10,7 +10,7 @@
 //
 // A save is never silent, and never blind:
 //
-//   * "Save…" opens a review step showing the diff between the published
+//   * "Review" opens a review step showing the diff between the published
 //     version and what is in the editor; the commit happens only on
 //     confirm.
 //   * The save carries the version the editor was seeded from, so if
@@ -314,7 +314,7 @@ export function SkillDetailPage({
         setConfirming(true);
       }}
     >
-      Save…
+      Review
     </Button>
   );
 
@@ -400,7 +400,7 @@ export function SkillDetailPage({
           />
           {edited ? (
             <p className="mt-2 text-xs text-muted-foreground">
-              Unsaved changes — “Save…” shows what will change before it is
+              Unsaved changes — “Review” shows what will change before it is
               published.
             </p>
           ) : null}
