@@ -145,6 +145,7 @@ describe("EvalsRoute", () => {
     stubFetch([]);
     const el = await mount();
     expect(el.textContent).toContain("No eval runs yet");
+    expect(el.textContent).not.toContain("bun run eval");
   });
 
   test("a run's detail page renders its real steps, tool calls, and scorer reports", async () => {
