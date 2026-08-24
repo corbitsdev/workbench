@@ -329,4 +329,45 @@ describe("AgentsPage", () => {
     expect(markup).not.toContain("Delete");
     expect(markup).not.toContain("data-bulk-action");
   });
+
+  test("CL-6836: skillsError is an alert, never silent 'no skills'", () => {
+    const markup = renderToStaticMarkup(
+      <AgentsPage
+        tenantId="tnt_1"
+        definitions={[triage]}
+        workbenches={new Map()}
+        instances={[]}
+        now={NOW}
+        selectedId={null}
+        onSelect={noop}
+        createOpen={false}
+        onCreateOpenChange={noop}
+        onCreated={noop}
+        onArchiveSelected={noop}
+        skillsError="500: down"
+      />,
+    );
+    expect(markup).toContain('role="alert"');
+    expect(markup).toContain("Could not load agent skills");
+    expect(markup).toContain("500: down");
+  });
+
+  test("CL-6836: without skillsError, the skills failure alert is absent", () => {
+    const markup = renderToStaticMarkup(
+      <AgentsPage
+        tenantId="tnt_1"
+        definitions={[triage]}
+        workbenches={new Map()}
+        instances={[]}
+        now={NOW}
+        selectedId={null}
+        onSelect={noop}
+        createOpen={false}
+        onCreateOpenChange={noop}
+        onCreated={noop}
+        onArchiveSelected={noop}
+      />,
+    );
+    expect(markup).not.toContain("Could not load agent skills");
+  });
 });

@@ -217,9 +217,10 @@ describe("loadAgentDirectory", () => {
 
     const directory = await loadAgentDirectory("tnt_1");
     expect(directory.definitionSkills).toEqual({ wfd_1: ["web-research"] });
+    expect(directory.skillsError).toBeUndefined();
   });
 
-  test("a broken skills endpoint degrades to no attachments rather than blanking the page", async () => {
+  test("CL-6836: a broken skills endpoint keeps the page and surfaces skillsError, never silent empty", async () => {
     stubFetch((path) => {
       if (path.includes("/workflows/definitions")) {
         return json({ data: [definitionFixture], nextCursor: null });
@@ -237,7 +238,10 @@ describe("loadAgentDirectory", () => {
     });
 
     const directory = await loadAgentDirectory("tnt_1");
+    expect(directory.definitions).toEqual([definitionFixture]);
+    expect(directory.instances).toEqual([instanceFixture]);
     expect(directory.definitionSkills).toEqual({});
+    expect(directory.skillsError).toMatch(/500|down/i);
   });
 
   test("reads instances from the server-scoped top-level-runs endpoint, never /workflows/runs", async () => {
