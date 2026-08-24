@@ -32,7 +32,7 @@ export async function fetchDeploymentCapabilities(): Promise<DeploymentCapabilit
     if (!response.ok) {
       return {
         kind: "unavailable",
-        message: `The server answered ${response.status} for deployment capabilities.`,
+        message: `The server answered ${response.status} when checking Slack.`,
       };
     }
     const body: unknown = await response.json();
@@ -40,7 +40,7 @@ export async function fetchDeploymentCapabilities(): Promise<DeploymentCapabilit
     if (parsed instanceof type.errors) {
       return {
         kind: "unavailable",
-        message: `Unexpected deployment capabilities shape: ${parsed.summary}`,
+        message: `Unexpected Slack capabilities shape: ${parsed.summary}`,
       };
     }
     return { kind: "ready", slackConfigured: parsed.slackConfigured };

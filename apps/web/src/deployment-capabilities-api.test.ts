@@ -69,19 +69,19 @@ describe("slackTriggerOffered", () => {
   });
 
   test("follows the hub when the probe answered", () => {
-    expect(
-      slackTriggerOffered({ kind: "ready", slackConfigured: false }),
-    ).toBe(false);
-    expect(
-      slackTriggerOffered({ kind: "ready", slackConfigured: true }),
-    ).toBe(true);
+    expect(slackTriggerOffered({ kind: "ready", slackConfigured: false })).toBe(
+      false,
+    );
+    expect(slackTriggerOffered({ kind: "ready", slackConfigured: true })).toBe(
+      true,
+    );
   });
 
   test("keeps Slack offered when the probe failed — never hides solely on failure", () => {
     expect(
       slackTriggerOffered({
         kind: "unavailable",
-        message: "The server answered 500 for deployment capabilities.",
+        message: "The server answered 500 when checking Slack.",
       }),
     ).toBe(true);
   });
