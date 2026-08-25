@@ -116,13 +116,12 @@ function stagePageTitle(markup: string): string | undefined {
 }
 
 /** The first-run footer rail marks its own destination current: Routines,
- * Files, Skills, and Agents are text rows with `aria-current="page"` on
- * the lit one. Insights and Evals join only given honest usage, and
- * Plugins is never a first-run tour destination — those three stay
- * reachable by URL and palette instead. Settings lives beside the
- * account row, so its route lights nothing in the chrome - the stage
- * title carries it. Returns the active row's label so tests confirm the
- * *right* footer affordance lights, and nothing else does. */
+ * Files, Skills, Agents, and Plugins are text rows with `aria-current="page"`
+ * on the lit one. Insights and Evals join only given honest usage, and
+ * stay reachable by URL and palette instead until then. Settings lives
+ * beside the account row, so its route lights nothing in the chrome - the
+ * stage title carries it. Returns the active row's label so tests confirm
+ * the *right* footer affordance lights, and nothing else does. */
 function activeFooterLabel(markup: string): string | undefined {
   const lit =
     /shell-sidebar-footer-row"[^>]*aria-current="page"[^>]*>([\s\S]*?)<\/button>/.exec(
@@ -137,6 +136,7 @@ const FOOTER_LABELS: Record<string, string> = {
   "/files": "Files",
   "/skills": "Skills",
   "/agents": "Agents",
+  "/plugins": "Plugins",
 };
 
 describe("route table", () => {

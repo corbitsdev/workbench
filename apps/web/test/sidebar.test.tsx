@@ -219,13 +219,14 @@ describe("Sidebar", () => {
     expect(markup).not.toContain("shell-rail-item");
   });
 
-  test("first-run footer rail is Routines, Files, Skills, Agents, then the account row — no Plugins, Insights, Evals, or Inbox", () => {
+  test("first-run footer rail is Routines, Files, Skills, Agents, Plugins, then the account row — no Insights, Evals, or Inbox", () => {
     const markup = renderSidebar("/w");
     expect(footerRowLabelsFromMarkup(markup)).toEqual([
       "Routines",
       "Files",
       "Skills",
       "Agents",
+      "Plugins",
     ]);
     expect(markup).toContain("data-ctx-account");
     expect(markup).not.toContain(">Inbox<");
@@ -250,23 +251,26 @@ describe("Sidebar", () => {
       "Files",
       "Skills",
       "Agents",
+      "Plugins",
     ]);
     act(() => root.unmount());
     container.remove();
   });
 
-  test("Plugins is not presented as a first-run tour destination", () => {
+  test("marks the Plugins row current on /plugins", () => {
     const onPlugins = renderSidebar("/plugins");
     expect(footerRowLabelsFromMarkup(onPlugins)).toEqual([
       "Routines",
       "Files",
       "Skills",
       "Agents",
+      "Plugins",
     ]);
-    expect(onPlugins).not.toContain(">Plugins<");
-    expect(onPlugins).not.toMatch(
-      /shell-sidebar-footer-row"[^>]*aria-current="page"/,
+    expect(onPlugins).toMatch(
+      /shell-sidebar-footer-row"[^>]*data-active="true"[^>]*>[\s\S]*?>Plugins</,
     );
+    const elsewhere = renderSidebar("/w");
+    expect(elsewhere).not.toMatch(/>Plugins<[\s\S]{0,80}aria-current="page"/);
   });
 
   test("Evals, Insights, and Plugins remain reachable by URL and command palette", () => {
@@ -297,6 +301,7 @@ describe("Sidebar", () => {
       "Files",
       "Skills",
       "Agents",
+      "Plugins",
       "Insights",
     ]);
     const insights = [
@@ -315,6 +320,7 @@ describe("Sidebar", () => {
       "Files",
       "Skills",
       "Agents",
+      "Plugins",
       "Evals",
     ]);
     const evals = [
@@ -333,6 +339,7 @@ describe("Sidebar", () => {
       "Files",
       "Skills",
       "Agents",
+      "Plugins",
     ]);
     act(() => root.unmount());
     container.remove();
