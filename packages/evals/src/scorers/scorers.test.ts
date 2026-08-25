@@ -178,17 +178,42 @@ describe("memoryWritten", () => {
 });
 
 describe("agentCreatedInWorkbench", () => {
-  test("passes when create_agent succeeded and its result shows an invite", () => {
+  test("passes when create_agent minted the specialist's own chat", () => {
     const transcript = [
       turn("make a researcher", "Done.", [
-        call("create_agent", {}, { result: "invited into this workbench" }),
+        call("create_agent", {}, {
+          result:
+            'Created "Researcher" (use this id for routines/dispatch: def_1). workbenchId=wb_abc minted their own chat.',
+        }),
       ]),
     ];
     const r = agentCreatedInWorkbench()(ctxAt(transcript, 0));
     expect(r.pass).toBe(true);
   });
 
-  test("fails when create_agent succeeded but its result shows no invite", () => {
+  test("passes when the result has a created/workbench id and no invite-into-current fields", () => {
+    const transcript = [
+      turn("make a researcher", "Done.", [
+        call("create_agent", {}, {
+          result: '{"id":"def_1","workbenchId":"wb_abc","created":true}',
+        }),
+      ]),
+    ];
+    const r = agentCreatedInWorkbench()(ctxAt(transcript, 0));
+    expect(r.pass).toBe(true);
+  });
+
+  test("fails when create_agent only invited into the current workbench", () => {
+    const transcript = [
+      turn("make a researcher", "Done.", [
+        call("create_agent", {}, { result: "invited into this workbench" }),
+      ]),
+    ];
+    const r = agentCreatedInWorkbench()(ctxAt(transcript, 0));
+    expect(r.pass).toBe(false);
+  });
+
+  test("fails when create_agent succeeded but its result shows no own chat", () => {
     const transcript = [
       turn("make a researcher", "Done.", [
         call("create_agent", {}, { result: "created" }),

@@ -9,7 +9,8 @@ import { decodeParts } from "../src/codec";
 import type { Part } from "../src/parts";
 import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
 import { AgentUnreachableError } from "../src/platform-port";
-import { cannedGreeting, postCannedGreeting } from "../src/workbench-service";
+import { cannedGreeting, KindIsChatError, launchAndJoinAgent, postCannedGreeting } from "../src/workbench-service";
+import { createInMemoryChatStore } from "../src/store";
 import {
   buildDeps,
   createWorkbench,
@@ -1267,10 +1268,21 @@ describe("POST /workbenches/:id/invite", () => {
     ).toHaveLength(0);
   });
 
-  test("inviting a second agent into a chat grows it — no invite cap", async () => {
-    const deps = buildDeps({
-      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+  test("re-inviting the same definition into a chat reuses the resident — no extra launch", async () => {
+    let launches = 0;
+    const platform = fakePlatform({
+      invitable: [{ id: "wfd_echo", name: "Echo" }],
+      resolveDefinitionIdByAddress: async (address) =>
+        address === "ins_invited1@acme.example" ? "wfd_echo" : undefined,
+      launchInvite: async () => {
+        launches += 1;
+        return {
+          instanceId: `ins_invited${launches}`,
+          address: `ins_invited${launches}@acme.example`,
+        };
+      },
     });
+    const deps = buildDeps({ platform });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const { body: workbench } = await createWorkbench(app, {
       kind: "chat",
@@ -1286,6 +1298,102 @@ describe("POST /workbenches/:id/invite", () => {
     expect(response.status).toBe(201);
     const body = (await response.json()) as { address: string };
     expect(body.address).toBe("ins_invited1@acme.example");
+    expect(platform.launchInviteCalls).toHaveLength(1);
+  });
+
+  test("inviting a different agent into a chat is a 409 kind_is_chat", async () => {
+    const platform = fakePlatform({
+      invitable: [
+        { id: "wfd_echo", name: "Echo" },
+        { id: "wfd_copywriter", name: "Copywriter" },
+      ],
+    });
+    const deps = buildDeps({ platform });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+    expect(platform.launchInviteCalls).toHaveLength(1);
+
+    const response = await app.request(`/workbenches/${workbench.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_copywriter" }),
+    });
+
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("kind_is_chat");
+    expect(platform.launchInviteCalls).toHaveLength(1);
+  });
+});
+
+describe("launchAndJoinAgent 1:1 chats", () => {
+  const invitable = [
+    { id: "wfd_echo", name: "Echo" },
+    { id: "wfd_copywriter", name: "Copywriter" },
+  ];
+
+  test("throws KindIsChatError when a chat already has a different agent", async () => {
+    const platform = fakePlatform({ invitable });
+    await expect(
+      launchAndJoinAgent(
+        {
+          store: createInMemoryChatStore(),
+          platform,
+          roomMessages: createInMemoryRoomMessageStore(),
+          publish: () => undefined,
+        },
+        {
+          tenantId: TENANT.id,
+          principalId: "prn_alice",
+          workbenchId: "chan_1",
+          definitionId: "wfd_copywriter",
+          existingSettings: {
+            "chat/kind": "chat",
+            "chat/definitionId": "wfd_echo",
+            "chat/participants": [
+              { address: "ins_echo@acme.example", handle: "echo" },
+            ],
+          },
+          invitable,
+        },
+      ),
+    ).rejects.toBeInstanceOf(KindIsChatError);
+    expect(platform.launchInviteCalls).toHaveLength(0);
+  });
+
+  test("returns the resident when the chat already holds this definition", async () => {
+    const platform = fakePlatform({
+      invitable,
+      resolveDefinitionIdByAddress: async (address) =>
+        address === "ins_echo@acme.example" ? "wfd_echo" : undefined,
+    });
+    const joined = await launchAndJoinAgent(
+      {
+        store: createInMemoryChatStore(),
+        platform,
+        roomMessages: createInMemoryRoomMessageStore(),
+        publish: () => undefined,
+      },
+      {
+        tenantId: TENANT.id,
+        principalId: "prn_alice",
+        workbenchId: "chan_1",
+        definitionId: "wfd_echo",
+        existingSettings: {
+          "chat/kind": "chat",
+          "chat/definitionId": "wfd_echo",
+          "chat/participants": [
+            { address: "ins_echo@acme.example", handle: "echo" },
+          ],
+        },
+        invitable,
+      },
+    );
+    expect(joined.address).toBe("ins_echo@acme.example");
+    expect(platform.launchInviteCalls).toHaveLength(0);
   });
 });
 

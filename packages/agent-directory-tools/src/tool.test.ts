@@ -144,7 +144,7 @@ test("list_agents reports honestly when the workbench has no other agents", asyn
   }
 });
 
-test("create_agent creates then invites by default, in one call sequence", async () => {
+test("create_agent creates then mints its own DM by default, in one call sequence", async () => {
   const originalFetch = globalThis.fetch;
   const seenUrls: string[] = [];
   globalThis.fetch = (async (url: string | URL) => {
@@ -165,6 +165,7 @@ test("create_agent creates then invites by default, in one call sequence", async
     }
     return new Response(
       JSON.stringify({
+        workbenchId: "wb_1",
         address: "ins_1@acme.example",
         definitionId: "def_1",
         handle: "research-buddy",
@@ -183,17 +184,21 @@ test("create_agent creates then invites by default, in one call sequence", async
     );
     expect(result.isError).toBeFalsy();
     expect(result.content).toMatch(/Created "Research Buddy"/);
-    expect(result.content).toMatch(/invited/);
+    expect(result.content).toMatch(/opened its own chat/);
+    expect(result.content).toMatch(/workbenchId/);
     expect(seenUrls.some((url) => url.endsWith("/definitions"))).toBe(true);
-    expect(seenUrls.some((url) => url.endsWith("/participants/invite"))).toBe(
+    expect(seenUrls.some((url) => url.endsWith("/participants/mint-dm"))).toBe(
       true,
+    );
+    expect(seenUrls.some((url) => url.endsWith("/participants/invite"))).toBe(
+      false,
     );
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test("create_agent with invite: false creates but never calls the invite route", async () => {
+test("create_agent with invite: false creates but never calls mint-dm or invite", async () => {
   const originalFetch = globalThis.fetch;
   const seenUrls: string[] = [];
   globalThis.fetch = (async (url: string | URL) => {
@@ -226,12 +231,15 @@ test("create_agent with invite: false creates but never calls the invite route",
     expect(seenUrls.some((url) => url.endsWith("/participants/invite"))).toBe(
       false,
     );
+    expect(seenUrls.some((url) => url.endsWith("/participants/mint-dm"))).toBe(
+      false,
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test("create_agent reports a create-succeeded/invite-failed half-failure honestly, never as a plain error", async () => {
+test("create_agent reports a create-succeeded/mint-failed half-failure honestly, never as a plain error", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (url: string | URL) => {
     if (String(url).endsWith("/definitions")) {
@@ -249,7 +257,7 @@ test("create_agent reports a create-succeeded/invite-failed half-failure honestl
       );
     }
     return new Response(
-      JSON.stringify({ error: { code: "not_found", message: "no channel" } }),
+      JSON.stringify({ error: { code: "not_found", message: "no workbench" } }),
       { status: 404 },
     );
   }) as unknown as typeof fetch;
@@ -264,7 +272,7 @@ test("create_agent reports a create-succeeded/invite-failed half-failure honestl
     );
     expect(result.isError).toBeFalsy();
     expect(result.content).toMatch(/Created "Research Buddy"/);
-    expect(result.content).toMatch(/could not invite/);
+    expect(result.content).toMatch(/could not open its own chat/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -291,6 +299,7 @@ test("create_agent maps modelPreference to the create route's model field", asyn
     }
     return new Response(
       JSON.stringify({
+        workbenchId: "wb_1",
         address: "ins_1@acme.example",
         definitionId: "def_1",
         handle: "research-buddy",
@@ -316,7 +325,7 @@ test("create_agent maps modelPreference to the create route's model field", asyn
   }
 });
 
-test("create_agent surfaces a model fallback note in its content, and still completes the invite, rather than producing a silently dead agent", async () => {
+test("create_agent surfaces a model fallback note in its content, and still opens the specialist's own chat, rather than producing a silently dead agent", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (url: string | URL) => {
     if (String(url).endsWith("/definitions")) {
@@ -336,6 +345,7 @@ test("create_agent surfaces a model fallback note in its content, and still comp
     }
     return new Response(
       JSON.stringify({
+        workbenchId: "wb_1",
         address: "ins_1@acme.example",
         definitionId: "def_1",
         handle: "research-buddy",
@@ -355,7 +365,8 @@ test("create_agent surfaces a model fallback note in its content, and still comp
     );
     expect(result.isError).toBeFalsy();
     expect(result.content).toMatch(/Created "Research Buddy"/);
-    expect(result.content).toMatch(/invited/);
+    expect(result.content).toMatch(/opened its own chat/);
+    expect(result.content).toMatch(/workbenchId/);
     expect(result.content).toMatch(/gpt-4o/);
     expect(result.content).toMatch(/ollama\/llama3/);
   } finally {
