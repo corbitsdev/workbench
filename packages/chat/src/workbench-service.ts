@@ -31,6 +31,7 @@ import {
 } from "./participants";
 import {
   benchContextWindowOf,
+  kindOf,
   participantsOf,
   resolveContextWindow,
 } from "./workbench-settings";
@@ -138,6 +139,189 @@ export async function provisionSpaceWorkbench(
     compensate: async () => {
       await deps.tenancy.compensateWorkbenchTenant(workbenchTenant.tenantId);
     },
+  };
+}
+
+const mintAgentDmLog = getLogger(["chat", "mint-agent-dm"]);
+
+export type MintAgentDmDeps = {
+  readonly tenancy: Pick<
+    WorkbenchTenancyStore,
+    "createWorkbenchTenant" | "compensateWorkbenchTenant"
+  >;
+  readonly store: Pick<
+    ChatStore,
+    | "createWorkbenchSettings"
+    | "deleteWorkbenchSettings"
+    | "updateWorkbenchSettings"
+  >;
+  readonly platform: LaunchAndJoinAgentDeps["platform"];
+  readonly roomMessages: LaunchAndJoinAgentDeps["roomMessages"];
+  readonly publish: LaunchAndJoinAgentDeps["publish"];
+};
+
+export type MintAgentDmInput = {
+  /** Parent bench tenant id (`scope.tenantId`) — settings and launches
+   * are scoped here, matching `POST /workbenches` agent-DM mint. */
+  readonly tenantId: string;
+  /** Myra's (caller's) workbench id — receives `chat.workbenches-mutated`
+   * so the sidebar refreshes without joining the new agent into this DM. */
+  readonly callerWorkbenchId: string;
+  /** Caller's principal id — settings `updatedBy` / launch creator. */
+  readonly callerPrincipalId: string;
+  /** Human auth user `refId` — required by `createWorkbenchTenant`. */
+  readonly creatorUserId: string;
+  readonly definitionId: string;
+  /** Optional title; else invitable description / definition name. */
+  readonly name?: string;
+};
+
+export type MintAgentDmResult = {
+  readonly workbenchId: string;
+  readonly address: string;
+  readonly definitionId: string;
+  readonly handle: string;
+  readonly displayName: string;
+};
+
+/**
+ * Mints a brand-new `kind: "chat"` 1:1 for `definitionId` under the
+ * caller's bench, launches the agent into THAT workbench (never into
+ * `callerWorkbenchId`), and publishes `chat.workbenches-mutated` on the
+ * caller's workbench so the sidebar picks up the new chat. The
+ * workflow-run counterpart of `POST /workbenches` agent-DM mint —
+ * `create_agent`'s default path uses this instead of inviting into
+ * Myra's own DM (which is itself `kind: chat` and rejects additional
+ * agents via `KindIsChatError`).
+ */
+export async function mintAgentDm(
+  deps: MintAgentDmDeps,
+  input: MintAgentDmInput,
+): Promise<MintAgentDmResult> {
+  const invitable = await deps.platform.listInvitableDefinitions(
+    input.tenantId,
+  );
+  const matched = invitable.find(
+    (definition) => definition.id === input.definitionId,
+  );
+  const chatTitle =
+    input.name ?? matched?.description ?? matched?.name ?? undefined;
+
+  const workbenchId = generateId("workflowRun");
+  const workbenchTenant = await deps.tenancy.createWorkbenchTenant({
+    parentTenantId: input.tenantId,
+    workbenchId,
+    name: chatTitle ?? workbenchId,
+    creatorUserId: input.creatorUserId,
+  });
+
+  async function compensateMint(err: unknown, phase: string): Promise<void> {
+    mintAgentDmLog.error(
+      "Agent DM {phase} failed for {workbenchId} after minting " +
+        "{tenantId}; compensating the orphaned tenant and settings: {cause}",
+      {
+        phase,
+        workbenchId,
+        tenantId: workbenchTenant.tenantId,
+        cause: err instanceof Error ? err.message : String(err),
+        err,
+      },
+    );
+    try {
+      await deps.store.deleteWorkbenchSettings(input.tenantId, workbenchId);
+      await deps.tenancy.compensateWorkbenchTenant(workbenchTenant.tenantId);
+    } catch (compensationErr) {
+      mintAgentDmLog.error(
+        "Compensation failed for orphaned tenant {tenantId} after " +
+          "workbench {workbenchId}'s {phase} failure; this tenant is now " +
+          "a privileged orphan and requires manual cleanup",
+        {
+          phase,
+          workbenchId,
+          tenantId: workbenchTenant.tenantId,
+          compensationErr,
+        },
+      );
+    }
+  }
+
+  const preset = presetForKind("chat");
+  const baseSettings: Record<string, unknown> = {
+    "chat/kind": "chat",
+    "chat/pinned": preset.pinned,
+    "chat/participants": [],
+    "chat/definitionId": input.definitionId,
+  };
+  const settings: Record<string, unknown> =
+    chatTitle !== undefined
+      ? { ...baseSettings, "chat/name": chatTitle }
+      : baseSettings;
+
+  let row;
+  try {
+    row = await deps.store.createWorkbenchSettings({
+      tenantId: input.tenantId,
+      workbenchId,
+      settings,
+      updatedBy: input.callerPrincipalId,
+    });
+  } catch (err) {
+    await compensateMint(err, "settings write");
+    throw err;
+  }
+
+  let joined: LaunchAndJoinAgentResult;
+  try {
+    joined = await launchAndJoinAgent(
+      {
+        store: deps.store,
+        platform: deps.platform,
+        roomMessages: deps.roomMessages,
+        publish: deps.publish,
+      },
+      {
+        tenantId: input.tenantId,
+        principalId: input.callerPrincipalId,
+        workbenchId,
+        definitionId: input.definitionId,
+        existingSettings: row.settings,
+        invitable,
+      },
+    );
+  } catch (err) {
+    await compensateMint(err, "agent mint");
+    throw err;
+  }
+
+  if (chatTitle === undefined) {
+    await deps.store.updateWorkbenchSettings({
+      tenantId: input.tenantId,
+      workbenchId,
+      settings: { ...joined.settings, "chat/name": joined.handle },
+      updatedBy: input.callerPrincipalId,
+    });
+  }
+
+  deps.publish(input.callerWorkbenchId, {
+    type: "chat.workbenches-mutated",
+    data: { tenantId: input.tenantId },
+  });
+
+  // Fire-and-forget pre-warm — never block mint+join+publish on deploy.
+  void deps.platform.ensureAwake(joined.address).catch((err: unknown) => {
+    mintAgentDmLog.error(
+      "Pre-warm deploy failed for minted agent DM {workbenchId}'s agent " +
+        "{address}; the next message to it retries the wake: {err}",
+      { workbenchId, address: joined.address, err },
+    );
+  });
+
+  return {
+    workbenchId,
+    address: joined.address,
+    definitionId: joined.definitionId,
+    handle: joined.handle,
+    displayName: joined.displayName,
   };
 }
 
@@ -256,6 +440,21 @@ export async function resolveInvitedDisplayName(
 }
 
 /**
+ * A `kind: chat` is 1:1. Same-definition invite reuses the resident
+ * (CL-6978) and never reaches this error; a different or additional
+ * agent belongs on a workbench, not a DM.
+ */
+export class KindIsChatError extends Error {
+  readonly code = "kind_is_chat" as const;
+  constructor() {
+    super(
+      "a chat is 1:1; adding another agent is only for workbenches",
+    );
+    this.name = "KindIsChatError";
+  }
+}
+
+/**
  * The invite core: launches the definition's own instance (or reuses
  * the tenant's standing run for that agent), derives its friendly
  * mention handle, appends the participant record, posts the join
@@ -266,10 +465,13 @@ export async function resolveInvitedDisplayName(
  *
  * Room-local first (CL-6978): if this room already holds a participant
  * launched from the definition, return that handle/address without
- * launching and without appending a second row — `addParticipant` does
- * not de-dupe addresses. Tenant-wide, `launchInvite` reuses the
+ * launching and without appending a second row — `addParticipant`
+ * de-dupes the same address by identity. Tenant-wide, `launchInvite`
+ * reuses the
  * standing `workbench_launch` so the same principal can sit in its DM
  * and many channels without a sibling instance.
+ *
+ * A `kind: chat` cannot gain a different agent after that first join.
  */
 export async function launchAndJoinAgent(
   deps: LaunchAndJoinAgentDeps,
@@ -295,6 +497,20 @@ export async function launchAndJoinAgent(
       settings: input.existingSettings,
       joinEventDelivered: Promise.resolve(),
     };
+  }
+
+  if (kindOf(input.existingSettings) === "chat") {
+    const boundDefinitionId = input.existingSettings["chat/definitionId"];
+    const alreadyHasAgent = participants.some((participant) =>
+      isAgentAddress(participant.address),
+    );
+    const isThisChatMint =
+      typeof boundDefinitionId === "string" &&
+      boundDefinitionId === input.definitionId &&
+      !alreadyHasAgent;
+    if (!isThisChatMint) {
+      throw new KindIsChatError();
+    }
   }
 
   const launched = await deps.platform.launchInvite({

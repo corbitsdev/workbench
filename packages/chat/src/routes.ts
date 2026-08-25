@@ -70,6 +70,7 @@ import {
   findResidentAgentForDefinition,
   postCannedGreeting,
   joinHumanParticipant,
+  KindIsChatError,
   launchAndJoinAgent,
   removeWorkbenchParticipant,
   sendWorkbenchMessage,
@@ -2031,6 +2032,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                   409,
                 );
               }
+              if (err instanceof KindIsChatError) {
+                return c.json(ErrorEnvelope(err.code, err.message), 409);
+              }
               throw err;
             }
             continue;
@@ -2082,12 +2086,24 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // resolving it against the registry only runs once it is
       // confirmed not to name a known handle, so that mention keeps
       // its ordinary fan-out behavior exactly as before.
-      const commandDecision = await dispatchWorkbenchCommand(deps, {
-        tenantId: ownerTenantId,
-        principalId: principal.id,
-        workbenchId,
-        text: textOf(messageParts),
-      });
+      const commandDecision = await (async () => {
+        try {
+          return await dispatchWorkbenchCommand(deps, {
+            tenantId: ownerTenantId,
+            principalId: principal.id,
+            workbenchId,
+            text: textOf(messageParts),
+          });
+        } catch (err) {
+          if (err instanceof KindIsChatError) {
+            return c.json(ErrorEnvelope(err.code, err.message), 409);
+          }
+          throw err;
+        }
+      })();
+      if (commandDecision instanceof Response) {
+        return commandDecision;
+      }
       if (commandDecision !== undefined && "command" in commandDecision) {
         const commandResult = commandDecision.command;
         const resultText = textForCommandResult(commandResult);
@@ -2828,6 +2844,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         if (err instanceof DefinitionProjectionMissingError) {
           return c.json(ErrorEnvelope("not_launchable", err.guidance), 409);
         }
+        if (err instanceof KindIsChatError) {
+          return c.json(ErrorEnvelope(err.code, err.message), 409);
+        }
         throw err;
       }
     },
@@ -2889,10 +2908,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   // The removal counterpart to `POST .../invite` (and to the inline
   // join a chat's own creation runs): drops a participant record and,
   // for an invited agent, releases its launched instance — see
-  // `workbench-service.ts`'s `removeWorkbenchParticipant`. A chat's
-  // participants are fixed at creation exactly as `POST .../invite`
-  // already refuses to grow them, so removal from a `kind: "chat"`
-  // workbench is refused the same way, with the same 409 shape.
+  // `workbench-service.ts`'s `removeWorkbenchParticipant`. A chat is
+  // 1:1: `launchAndJoinAgent` reuses the same definition and refuses
+  // a different agent, so removal from a `kind: "chat"` workbench is
+  // refused the same way.
   app.delete(
     "/workbenches/:id/participants/:address",
     deps.requireGrant(idResource("workflow-run", "id"), "manage"),
@@ -3398,6 +3417,14 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           return c.json(ErrorEnvelope("bad_request", err.message), 400);
         }
         throw err;
+      }
+
+      if (
+        kindOf(existing.settings) === "chat" &&
+        patch["chat/participants"] !== undefined
+      ) {
+        const refusal = new KindIsChatError();
+        return c.json(ErrorEnvelope(refusal.code, refusal.message), 409);
       }
 
       // `chat/participants` is normalized to records on write even when

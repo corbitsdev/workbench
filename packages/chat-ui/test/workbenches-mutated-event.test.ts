@@ -7,7 +7,9 @@ import {
   createWorkbench,
 } from "../src/api";
 
-GlobalRegistrator.register();
+if (typeof document === "undefined") {
+  GlobalRegistrator.register();
+}
 
 const realFetch = globalThis.fetch;
 afterEach(() => {

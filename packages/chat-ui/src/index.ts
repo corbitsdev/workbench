@@ -146,6 +146,8 @@ export {
   workbenchesQueryKey,
   workbenchesQueryKeyPrefix,
   WORKBENCHES_MUTATED_EVENT,
+  WORKBENCHES_MUTATED_STREAM_TYPE,
+  applyStreamWorkbenchesMutated,
   createWorkbench,
   listMessages,
   sendMessage,

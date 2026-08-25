@@ -39,6 +39,8 @@ import {
   unpinMessage,
   workbenchStreamUrl,
   isKnownWorkbenchKind,
+  WORKBENCHES_MUTATED_STREAM_TYPE,
+  applyStreamWorkbenchesMutated,
 } from "./api";
 import type { Workbench, ParticipantRecord, Part } from "./api";
 import { WorkbenchSettingsSurface } from "./workbench-settings";
@@ -954,6 +956,10 @@ function ChatWorkspaceInner({
           if (!(parsed instanceof type.errors)) {
             applyStreamPin(queryClient, tenantId, activeWorkbenchId, parsed);
           }
+          break;
+        }
+        case WORKBENCHES_MUTATED_STREAM_TYPE: {
+          applyStreamWorkbenchesMutated(data);
           break;
         }
       }

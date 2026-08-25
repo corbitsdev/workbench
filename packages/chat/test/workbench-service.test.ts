@@ -990,7 +990,7 @@ describe("POST /workbenches/:id/invite", () => {
   // One room participant = one standing principal (CL-6978): an
   // explicit re-invite of a definition this room already holds returns
   // the resident handle rather than minting a sibling or appending a
-  // second participant row. `addParticipant` does not de-dupe addresses.
+  // second participant row. `addParticipant` de-dupes the same address.
   test("an explicit re-invite of the same definition does not mint a second instance", async () => {
     let launches = 0;
     const platform = fakePlatform({

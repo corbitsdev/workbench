@@ -67,6 +67,15 @@ export interface InvitedParticipant {
   readonly handle: string;
 }
 
+/** Response from `POST .../participants/mint-dm` — the specialist's own
+ * 1:1 chat workbench plus the launched participant identity. */
+export interface MintedAgentDm {
+  readonly workbenchId: string;
+  readonly address: string;
+  readonly definitionId: string;
+  readonly handle: string;
+}
+
 function authHeaders(
   config: AgentDirectoryToolClientConfig,
 ): Record<string, string> {
@@ -226,6 +235,56 @@ export async function inviteParticipant(
   if (parsed instanceof type.errors) {
     throw new Error(
       `Invite response did not match the expected shape: ${parsed.summary}`,
+    );
+  }
+  return parsed;
+}
+
+/** Thrown when the caller's run has no own workbench to mint a DM
+ * against — the workflow-participant mint-dm route's 404 — distinct
+ * from a bare transport/HTTP failure so `create_agent` can report the
+ * created-but-not-minted half-failure honestly rather than a generic
+ * error. */
+export class NoOwnWorkbenchError extends Error {}
+
+const MintedAgentDmResponse = type({
+  workbenchId: "string",
+  address: "string",
+  definitionId: "string",
+  handle: "string",
+});
+
+export async function mintAgentDm(
+  config: AgentDirectoryToolClientConfig,
+  definitionId: string,
+): Promise<MintedAgentDm> {
+  const doFetch = config.fetchImpl ?? fetch;
+  const response = await doFetch(
+    `${config.hubChatUrl}/api/workflow-chat/participants/mint-dm`,
+    {
+      method: "POST",
+      headers: { ...authHeaders(config), "content-type": "application/json" },
+      body: JSON.stringify({ definitionId }),
+    },
+  );
+  if (response.status === 404) {
+    throw new NoOwnWorkbenchError(
+      await readErrorMessage(
+        response,
+        "The caller has no own workbench to mint a DM against",
+      ),
+    );
+  }
+  if (!response.ok) {
+    throw new Error(
+      `Minting the agent DM failed: ${response.status} ${response.statusText}`,
+    );
+  }
+  const body: unknown = await response.json();
+  const parsed = MintedAgentDmResponse(body);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Mint-DM response did not match the expected shape: ${parsed.summary}`,
     );
   }
   return parsed;

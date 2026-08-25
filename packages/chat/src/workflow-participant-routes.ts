@@ -1,12 +1,16 @@
-// The sanctioned path for a workflow-process child to invite an
-// already-created agent definition into the workbench it is itself
-// messaging in — the execution half of `@corbits/agent-directory-tools`'
-// `create_agent`'s `invite: true` default (Myra's manager tools):
-// after creating a definition through `@corbits/agent-directory`'s
-// `createWorkflowAgentCreateRoutes`, the tool calls this surface to
-// drop the new agent into the caller's own workbench, reusing
-// `./workbench-service.ts`'s `launchAndJoinAgent` directly rather than
-// reimplementing invite. Mirrors `@corbits/agent-directory`'s
+// Workflow-run-authenticated surfaces for a child process that is itself
+// messaging in a workbench:
+//
+// - `POST /participants/mint-dm` — `create_agent`'s default path: mint a
+//   brand-new `kind: chat` 1:1 for a just-created definition and launch
+//   the agent into THAT workbench (never into Myra's own DM).
+// - `POST /participants/invite` — invite an already-created definition
+//   into a non-chat workbench the caller already participates in.
+// - `POST /participants/messages` — post a message (e.g. ask_user block)
+//   into the caller's own workbench.
+//
+// Invite reuses `./workbench-service.ts`'s `launchAndJoinAgent`; mint-dm
+// reuses `mintAgentDm`. Mirrors `@corbits/agent-directory`'s
 // `workflow-capability-routes.ts`/`workflow-create-routes.ts`: a
 // workflow child has no browser session, only its sidecar bearer token
 // and its own run address, so it authenticates through a
@@ -33,7 +37,7 @@
 // The calling tool (`@corbits/agent-directory-tools`' `create_agent`)
 // declares `approval: "ask"` (`@intx/agent`'s native per-invocation
 // gate), so a human already had to approve the specific agent being
-// created (and, by extension, invited) before this route ever runs.
+// created (and, by extension, minted/invited) before this route ever runs.
 // This route still enforces, unconditionally: (1) the caller's run
 // must resolve to a live tenant/principal/run via the sidecar-token +
 // run-address check below, and (2) the resolved workbench must actually
@@ -44,7 +48,9 @@ import { type } from "arktype";
 import { DefinitionProjectionMissingError } from "@corbits/folded-runs";
 
 import {
+  KindIsChatError,
   launchAndJoinAgent,
+  mintAgentDm,
   sendWorkbenchMessage,
   type LaunchAndJoinAgentDeps,
   type SendWorkbenchMessageDeps,
@@ -56,6 +62,7 @@ import {
   connectServiceConnectorIds,
   pendingConnectionsOf,
 } from "./connect-pending";
+import type { WorkbenchTenancyStore } from "./workbench-tenancy";
 
 function errorEnvelope(code: string, message: string) {
   return { error: { code, message } };
@@ -95,13 +102,17 @@ export type WorkflowParticipantEnv = {
 };
 
 const InviteParticipantInput = type({ definitionId: "string > 0" });
+const MintDmInput = type({ definitionId: "string > 0" });
 
 const PostMessageInput = type({ parts: Part.array() });
 
 export type CreateWorkflowParticipantRoutesDeps = {
   readonly store: Pick<
     ChatStore,
-    "findWorkbenchByParticipantAddress" | "updateWorkbenchSettings"
+    | "findWorkbenchByParticipantAddress"
+    | "updateWorkbenchSettings"
+    | "createWorkbenchSettings"
+    | "deleteWorkbenchSettings"
   > &
     SendWorkbenchMessageDeps["store"];
   readonly platform: LaunchAndJoinAgentDeps["platform"] &
@@ -114,6 +125,13 @@ export type CreateWorkflowParticipantRoutesDeps = {
    * workbench serialize against each other too. */
   readonly turnQueue: SendWorkbenchMessageDeps["turnQueue"];
   readonly authenticator: WorkflowRunAuthenticator;
+  readonly tenancy: Pick<
+    WorkbenchTenancyStore,
+    | "createWorkbenchTenant"
+    | "compensateWorkbenchTenant"
+    | "getWorkbenchTenancy"
+    | "getWorkbenchOwnerUserId"
+  >;
 };
 
 export function createWorkflowParticipantRoutes(
@@ -194,6 +212,9 @@ export function createWorkflowParticipantRoutes(
       if (err instanceof DefinitionProjectionMissingError) {
         return c.json(errorEnvelope("not_launchable", err.guidance), 409);
       }
+      if (err instanceof KindIsChatError) {
+        return c.json(errorEnvelope(err.code, err.message), 409);
+      }
       throw err;
     }
 
@@ -202,6 +223,87 @@ export function createWorkflowParticipantRoutes(
         address: joined.address,
         definitionId: joined.definitionId,
         handle: joined.handle,
+      },
+      201,
+    );
+  });
+
+  // create_agent's default path: mint the specialist its own kind:chat
+  // 1:1 under the caller's bench. Never invites into the caller's DM.
+  app.post("/participants/mint-dm", async (c) => {
+    const scope = c.get("workflowParticipantScope");
+    const body = MintDmInput(await c.req.json().catch(() => undefined));
+    if (body instanceof type.errors) {
+      return c.json(
+        errorEnvelope("bad_request", `invalid mint-dm body: ${body.summary}`),
+        400,
+      );
+    }
+
+    const workbench = await deps.store.findWorkbenchByParticipantAddress(
+      scope.tenantId,
+      scope.address,
+    );
+    if (workbench === undefined) {
+      return c.json(
+        errorEnvelope(
+          "not_found",
+          `The calling run "${scope.address}" is not a participant of any workbench in this workbench`,
+        ),
+        404,
+      );
+    }
+
+    // Prefer the human owner of the parent bench: Myra's DM is itself a
+    // child workbench whose parentTenantId is the bench.
+    const link = await deps.tenancy.getWorkbenchTenancy(workbench.workbenchId);
+    const ownerTenantId = link?.parentTenantId ?? scope.tenantId;
+    const creatorUserId =
+      await deps.tenancy.getWorkbenchOwnerUserId(ownerTenantId);
+    if (creatorUserId === undefined) {
+      return c.json(
+        errorEnvelope(
+          "owner_unresolved",
+          `No owner user id for tenant "${ownerTenantId}" — cannot mint an agent DM`,
+        ),
+        500,
+      );
+    }
+
+    let minted: Awaited<ReturnType<typeof mintAgentDm>>;
+    try {
+      minted = await mintAgentDm(
+        {
+          tenancy: deps.tenancy,
+          store: deps.store,
+          platform: deps.platform,
+          roomMessages: deps.roomMessages,
+          publish: deps.publish,
+        },
+        {
+          tenantId: scope.tenantId,
+          callerWorkbenchId: workbench.workbenchId,
+          callerPrincipalId: scope.principalId,
+          creatorUserId,
+          definitionId: body.definitionId,
+        },
+      );
+    } catch (err) {
+      if (err instanceof DefinitionProjectionMissingError) {
+        return c.json(errorEnvelope("not_launchable", err.guidance), 409);
+      }
+      if (err instanceof KindIsChatError) {
+        return c.json(errorEnvelope(err.code, err.message), 409);
+      }
+      throw err;
+    }
+
+    return c.json(
+      {
+        workbenchId: minted.workbenchId,
+        address: minted.address,
+        definitionId: minted.definitionId,
+        handle: minted.handle,
       },
       201,
     );
