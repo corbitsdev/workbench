@@ -142,12 +142,40 @@ describe("ToolActivityGroup", () => {
     expect(el.textContent).toContain("Repository not found");
   });
 
-  test("every chip carries a provider tile", () => {
+  test("a known-provider chip uses brand initials, not a dash", () => {
     const el = mount([
       trace({ name: "slack__post_message", input: { channel: "general" } }),
     ]);
     expect(el.querySelector(".chat-tool-activity-tile")?.textContent).toBe(
       "Sl",
     );
+  });
+
+  test("a qualified memory search chip is a layman sentence, not a package path", () => {
+    const el = mount([
+      trace({
+        name: "@corbits/memory-tools/memory:memory_search",
+        input: { query: "outbound" },
+      }),
+    ]);
+    expect(el.textContent).toContain("Searched memory");
+    expect(el.textContent).not.toContain("@corbits");
+    expect(el.textContent).not.toContain("memory-tools");
+    expect(el.innerHTML).not.toContain("—");
+    expect(el.querySelector('[data-status="success"]')).not.toBeNull();
+    expect(el.querySelector(".chat-tool-activity-tile svg")).not.toBeNull();
+  });
+
+  test("a local tool still running keeps a status of running and a leading glyph", () => {
+    const el = mount([
+      trace({
+        name: "memory_search",
+        input: {},
+        status: "running",
+      }),
+    ]);
+    expect(el.querySelector('[data-status="running"]')).not.toBeNull();
+    expect(el.innerHTML).not.toContain("—");
+    expect(el.querySelector(".chat-tool-activity-tile svg")).not.toBeNull();
   });
 });
