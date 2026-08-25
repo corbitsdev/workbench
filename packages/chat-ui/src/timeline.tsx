@@ -507,11 +507,7 @@ function TextBubble({
           />
         </button>
       )}
-      <div
-        className="chat-bubble"
-        data-own={isOwn}
-        data-pending={pendingStatus}
-      >
+      <div className="chat-bubble" data-pending={pendingStatus}>
         {showHeader ? (
           <div className="chat-bubble-head">
             {display !== undefined && (
@@ -1045,7 +1041,7 @@ function StreamingMessageGroup({
             isAgent={display.isAgent}
           />
         )}
-        <div className="chat-bubble" data-own="false">
+        <div className="chat-bubble">
           {display !== undefined && (
             <div className="chat-bubble-head">
               <span className="chat-bubble-sender">
