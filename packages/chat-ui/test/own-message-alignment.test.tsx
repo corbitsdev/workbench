@@ -61,7 +61,7 @@ describe("own-message alignment is per viewer, not per message", () => {
     const bubble = el.querySelector(".chat-bubble");
     expect(group?.getAttribute("data-own")).toBe("true");
     expect(row?.getAttribute("data-own")).toBe("true");
-    expect(bubble?.getAttribute("data-own")).toBe("true");
+    expect(bubble?.hasAttribute("data-own")).toBe(false);
   });
 
   test("the same message viewed by a different user renders left-aligned", async () => {
@@ -73,7 +73,7 @@ describe("own-message alignment is per viewer, not per message", () => {
     const bubble = el.querySelector(".chat-bubble");
     expect(group?.getAttribute("data-own")).toBe("false");
     expect(row?.getAttribute("data-own")).toBe("false");
-    expect(bubble?.getAttribute("data-own")).toBe("false");
+    expect(bubble?.hasAttribute("data-own")).toBe(false);
   });
 
   test("a system event line never gets own-message alignment, even when the current user caused it", async () => {
@@ -133,5 +133,49 @@ describe("own-message alignment is per viewer, not per message", () => {
     expect(
       el.querySelector(".chat-message-group")?.getAttribute("data-own"),
     ).toBe("false");
+  });
+
+  test("own-authored text plus tool activity plus a gen-UI block keeps tools and the block outside the bubble", async () => {
+    const items: MessageItem[] = [
+      {
+        id: "m1",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        sender: { name: "Sawyer", address: "sawyer@agents.example" },
+        parts: [
+          { kind: "text", text: "ship it" },
+          {
+            kind: "tool-trace",
+            name: "search",
+            input: { q: "x" },
+            status: "success",
+          },
+          {
+            kind: "block",
+            block: {
+              type: "steps",
+              data: {
+                title: "Migration",
+                steps: [{ label: "Snapshot", state: "done" }],
+              },
+            },
+          },
+        ],
+      },
+    ];
+    const el = await mount(items, { principalId: "sawyer" });
+    const group = el.querySelector(".chat-message-group");
+    const row = el.querySelector(".chat-bubble-row");
+    const bubble = el.querySelector(".chat-bubble");
+    const tool = el.querySelector(".chat-tool-activity");
+    const block = el.querySelector(".chat-block");
+    expect(group?.getAttribute("data-own")).toBe("true");
+    expect(row?.getAttribute("data-own")).toBe("true");
+    expect(bubble?.hasAttribute("data-own")).toBe(false);
+    expect(tool).not.toBeNull();
+    expect(block).not.toBeNull();
+    expect(bubble?.contains(tool)).toBe(false);
+    expect(bubble?.contains(block)).toBe(false);
+    expect(group?.contains(tool)).toBe(true);
+    expect(group?.contains(block)).toBe(true);
   });
 });
