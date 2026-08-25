@@ -4,11 +4,15 @@
 // whatever the tool handed back (`ToolTracePart` in `@corbits/chat/parts`,
 // assembled by the chat orchestrator from `inferenceDoneBlocks` /
 // `toolDoneResult`). None of those three is fit to show anyone: the
-// identifier is a symbol (`slack__post_message`), the arguments are JSON,
-// and the result is usually a content-block array. This module is the one
-// place that translates all three into plain sentences — "Posted a message
-// in Slack", "Found 8 results", "Couldn't reach GitHub" — so no surface
-// downstream ever has to reach for `JSON.stringify` to say what happened.
+// identifier is a symbol (`slack__post_message`, or an Interchange qualified
+// id `@scope/package/export:tool`), the arguments are JSON, and the result
+// is usually a content-block array. This module is the one place that
+// translates all three into plain sentences — "Posted a message in Slack",
+// "Searched memory for "outbound"" — so no surface downstream ever has to
+// reach for `JSON.stringify` to say what happened. The phrase uses the
+// segment after the last colon (the end tool name); a leftover path is a
+// provider only when it maps onto a known brand, never `@corbits` or a
+// package stem like `memory-tools`.
 //
 // Both the live strip (`turn-activity.tsx`, mid-turn) and the persisted
 // transcript (`timeline.tsx`) render through here, which is why a phrase
@@ -20,15 +24,25 @@ import type { Part, ToolTracePart } from "@corbits/chat/parts";
 
 export type ToolActivityStatus = "pending" | "running" | "success" | "failed";
 
+export type ToolActivityGlyph =
+  | "search"
+  | "list"
+  | "ask"
+  | "memory"
+  | "agents"
+  | "write"
+  | "generic";
+
 /** One tool call, ready to render: no identifiers, no JSON, no tense
  * mismatch with its own status. */
 export type ToolActivityRow = {
   readonly key: string;
-  /** The raw tool identifier. Never rendered — carried so a row keeps its
-   * provenance for tests and debugging. */
+  /** The end tool name (`memory_search`), used as the chip's hover title. */
   readonly toolName: string;
+  /** Action glyph for a local tool. Known brand providers use a tile instead. */
+  readonly glyph: ToolActivityGlyph;
   /** The provider namespace a call belongs to, e.g. `"slack"` — undefined
-   * for a bare local tool. Feeds the chip's leading tile. */
+   * for a bare local tool. Feeds the chip's leading brand tile when known. */
   readonly provider: string | undefined;
   readonly phrase: string;
   /** The on-demand detail, already plain text. Undefined when the tool
@@ -44,16 +58,18 @@ export type ToolActivityRow = {
 const MAX_PHRASE_ARGUMENT = 48;
 const MAX_FAILURE_DETAIL = 240;
 const MAX_SUCCESS_DETAIL = 600;
+const MAX_SHORT_FIELD = 240;
 
 type Tense = "past" | "present";
 
 type Conjugation = { readonly past: string; readonly present: string };
 
-/** The verbs tool names actually start with, in the two forms a transcript
- * needs. Irregulars are why this is a table and not a suffix rule. */
+/** The verbs tool names actually start (or end) with, in the two forms a
+ * transcript needs. Irregulars are why this is a table and not a suffix rule. */
 const VERBS: Record<string, Conjugation> = {
   add: { past: "Added", present: "Adding" },
   archive: { past: "Archived", present: "Archiving" },
+  ask: { past: "Asked", present: "Asking" },
   browse: { past: "Browsed", present: "Browsing" },
   build: { past: "Built", present: "Building" },
   call: { past: "Called", present: "Calling" },
@@ -107,7 +123,7 @@ export type ProviderTile = {
 /** Brand mark for the chip's leading tile — two letters and the provider's
  * own color, the way the mock's `[Li #5E6AD2]` / `[GH #24292f]` read. Only
  * providers a person would recognise on sight get a fixed brand color;
- * anything else falls back to a neutral tile rather than guessing a color. */
+ * anything else is not a brand — the chip uses an action glyph. */
 const PROVIDER_TILES: Record<string, ProviderTile> = {
   github: { initials: "GH", color: "#24292f" },
   gitlab: { initials: "GL", color: "#fc6d26" },
@@ -117,26 +133,19 @@ const PROVIDER_TILES: Record<string, ProviderTile> = {
   slack: { initials: "Sl", color: "#4a154b" },
 };
 
-const FALLBACK_TILE_COLOR = "var(--muted-foreground)";
+/** Path segments that look like a namespace but are not a brand provider. */
+const NOT_PROVIDERS = new Set([
+  "memory",
+  "ad",
+  "ask-user",
+  "corbits",
+  "@corbits",
+]);
 
-function fallbackInitials(provider: string): string {
-  const word = provider.replace(/[_-]+/g, "").trim();
-  if (word.length >= 2) {
-    return `${word.charAt(0).toUpperCase()}${word.charAt(1).toLowerCase()}`;
-  }
-  return word.toUpperCase() || "?";
-}
-
-/** The tile a tool-use chip leads with. `undefined` (a bare local tool,
- * no provider namespace) reads as a neutral "-" tile rather than nothing —
- * the anatomy always has a tile. */
-export function providerTile(provider: string | undefined): ProviderTile {
-  if (provider === undefined) {
-    return { initials: "—", color: FALLBACK_TILE_COLOR };
-  }
-  const known = PROVIDER_TILES[provider.toLowerCase()];
-  if (known !== undefined) return known;
-  return { initials: fallbackInitials(provider), color: FALLBACK_TILE_COLOR };
+/** Brand mark for a known provider. Unknown leftovers are not brands —
+ * the chip uses an action glyph instead of inventing initials. */
+export function providerTile(provider: string): ProviderTile | undefined {
+  return PROVIDER_TILES[provider.toLowerCase()];
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -172,10 +181,80 @@ function providerDisplayName(provider: string): string {
   return titleCase(provider.replace(/[_-]+/g, " "));
 }
 
-type ToolIdentity = {
+export type ToolIdentity = {
   readonly provider: string | undefined;
   readonly words: readonly string[];
+  readonly toolName: string;
 };
+
+function splitToolWords(name: string): readonly string[] {
+  const spaced = name.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
+  return spaced
+    .split(/[_\-.\s]+/)
+    .map((word) => word.toLowerCase())
+    .filter((word) => word !== "");
+}
+
+function packageStem(segment: string): string {
+  const id = segment.replace(/^@/, "").toLowerCase();
+  return id.endsWith("-tools") ? id.slice(0, -"-tools".length) : id;
+}
+
+function knownBrandId(candidate: string): string | undefined {
+  const stemmed = packageStem(candidate);
+  if (stemmed === "" || NOT_PROVIDERS.has(stemmed)) return undefined;
+  if (
+    PROVIDER_NAMES[stemmed] !== undefined ||
+    PROVIDER_TILES[stemmed] !== undefined
+  ) {
+    return stemmed;
+  }
+  return undefined;
+}
+
+function providerFromLeftover(leftover: string | undefined): string | undefined {
+  if (leftover === undefined || leftover === "") return undefined;
+  const interchange = leftover.includes("/") || leftover.startsWith("@");
+  if (interchange) {
+    const segments = leftover.split("/").filter((segment) => segment !== "");
+    for (const segment of segments) {
+      const known = knownBrandId(segment);
+      if (known !== undefined) return known;
+    }
+    return undefined;
+  }
+  const known = knownBrandId(leftover);
+  if (known !== undefined) return known;
+  return undefined;
+}
+
+function splitQualifiedName(name: string): {
+  leftover: string | undefined;
+  toolName: string;
+} {
+  const colon = name.lastIndexOf(":");
+  if (colon !== -1) {
+    return {
+      leftover: name.slice(0, colon) || undefined,
+      toolName: name.slice(colon + 1),
+    };
+  }
+  const namespaced = name.split("__");
+  if (namespaced.length > 1 && namespaced[0] !== undefined) {
+    return {
+      leftover: namespaced[0],
+      toolName: namespaced.slice(1).join("_"),
+    };
+  }
+  const dotted = name.split(".");
+  if (dotted.length > 1 && dotted[0] !== undefined) {
+    return {
+      leftover: dotted[0],
+      toolName: dotted.slice(1).join("_"),
+    };
+  }
+  return { leftover: undefined, toolName: name };
+}
 
 /**
  * Splits a tool identifier into the provider it belongs to and the words
@@ -186,6 +265,11 @@ type ToolIdentity = {
  * one of those two names, with the tool it actually invoked sitting in its
  * `{server, tool}` arguments — so those are read first, or a whole
  * conversation's worth of calls would all read alike.
+ *
+ * Interchange qualified ids (`@scope/package/export:tool`) take the
+ * segment after the last `:`. A leftover path is a provider only when a
+ * segment or `-tools` stem is a known brand; `memory`, `ad`, and
+ * `ask-user` never are.
  */
 export function resolveToolIdentity(
   name: string,
@@ -196,32 +280,33 @@ export function resolveToolIdentity(
     const server = readString(args, "server");
     const tool = readString(args, "tool");
     if (server !== undefined && tool !== undefined) {
-      return { provider: server, words: splitToolWords(tool) };
+      return {
+        provider: providerFromLeftover(server) ?? server,
+        words: splitToolWords(tool),
+        toolName: tool,
+      };
     }
   }
-  const namespaced = name.split("__");
-  if (namespaced.length > 1 && namespaced[0] !== undefined) {
-    return {
-      provider: namespaced[0],
-      words: splitToolWords(namespaced.slice(1).join("_")),
-    };
-  }
-  const dotted = name.split(".");
-  if (dotted.length > 1 && dotted[0] !== undefined) {
-    return {
-      provider: dotted[0],
-      words: splitToolWords(dotted.slice(1).join("_")),
-    };
-  }
-  return { provider: undefined, words: splitToolWords(name) };
+  const split = splitQualifiedName(name);
+  return {
+    provider: providerFromLeftover(split.leftover),
+    words: splitToolWords(split.toolName),
+    toolName: split.toolName,
+  };
 }
 
-function splitToolWords(name: string): readonly string[] {
-  const spaced = name.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
-  return spaced
-    .split(/[_\-.\s]+/)
-    .map((word) => word.toLowerCase())
-    .filter((word) => word !== "");
+export function toolActivityGlyph(
+  words: readonly string[],
+): ToolActivityGlyph {
+  const has = (candidates: readonly string[]) =>
+    words.some((word) => candidates.includes(word));
+  if (has(["search", "find", "query", "grep", "glob"])) return "search";
+  if (has(["list"])) return "list";
+  if (has(["ask"])) return "ask";
+  if (has(["memory"])) return "memory";
+  if (has(["agent", "agents"])) return "agents";
+  if (has(["write", "edit", "create", "add"])) return "write";
+  return "generic";
 }
 
 /** A file path's last segment — the part a person recognises. */
@@ -291,20 +376,47 @@ function argumentClause(input: unknown): string | undefined {
   return undefined;
 }
 
-function isWebSearch(identity: ToolIdentity): boolean {
-  const hasSearchVerb =
-    identity.words.includes("search") || identity.words.includes("browse");
-  const hasWebObject =
-    identity.words.includes("web") || identity.words.includes("internet");
-  return hasSearchVerb && hasWebObject;
+function pickVerb(words: readonly string[]): {
+  verb: string | undefined;
+  objectWords: readonly string[];
+} {
+  const first = words[0];
+  const last = words.length > 1 ? words[words.length - 1] : undefined;
+  if (first !== undefined && VERBS[first] !== undefined) {
+    return { verb: first, objectWords: words.slice(1) };
+  }
+  if (last !== undefined && VERBS[last] !== undefined) {
+    return { verb: last, objectWords: words.slice(0, -1) };
+  }
+  return { verb: undefined, objectWords: words };
 }
 
-function objectPhrase(words: readonly string[]): string | undefined {
+function isPluralWord(word: string): boolean {
+  return word.endsWith("s") && !word.endsWith("ss");
+}
+
+function pluralize(word: string): string {
+  if (isPluralWord(word)) return word;
+  if (word.length > 1 && word.endsWith("y")) {
+    const beforeY = word.charAt(word.length - 2);
+    if (!"aeiou".includes(beforeY)) return `${word.slice(0, -1)}ies`;
+  }
+  return `${word}s`;
+}
+
+function objectPhrase(
+  words: readonly string[],
+  verb: string | undefined,
+): string | undefined {
   if (words.length === 0) return undefined;
-  const joined = words.join(" ");
   const lastWord = words[words.length - 1] ?? "";
-  const isPlural = lastWord.endsWith("s") && !lastWord.endsWith("ss");
-  if (isPlural) return joined;
+  const rendered =
+    verb === "list" && !isPluralWord(lastWord)
+      ? [...words.slice(0, -1), pluralize(lastWord)]
+      : words;
+  const joined = rendered.join(" ");
+  const renderedLast = rendered[rendered.length - 1] ?? "";
+  if (isPluralWord(renderedLast)) return joined;
   const startsWithVowel = /^[aeiou]/.test(joined);
   return `${startsWithVowel ? "an" : "a"} ${joined}`;
 }
@@ -320,6 +432,32 @@ function buildClauseSuffix(
   return ` ${clause}`;
 }
 
+function domainHead(
+  words: readonly string[],
+  verb: string,
+  tense: Tense,
+): string | undefined {
+  const has = (word: string) => words.includes(word);
+  const conjugation = VERBS[verb];
+  if (conjugation === undefined) return undefined;
+  if (verb === "search" && (has("web") || has("internet"))) {
+    return tense === "past" ? "Searched the web" : "Searching the web";
+  }
+  if (verb === "search" && has("memory")) {
+    return tense === "past" ? "Searched memory" : "Searching memory";
+  }
+  if (verb === "list" && has("memory")) {
+    return tense === "past" ? "Listed memories" : "Listing memories";
+  }
+  if ((verb === "add" || verb === "create") && has("memory")) {
+    return tense === "past" ? "Saved a memory" : "Saving a memory";
+  }
+  if (verb === "ask" && has("user")) {
+    return tense === "past" ? "Asked a question" : "Asking a question";
+  }
+  return undefined;
+}
+
 /**
  * What this tool call did, as a sentence — in the tense its status calls
  * for. Never contains the tool's identifier, its argument JSON, or an
@@ -332,37 +470,43 @@ export function describeToolCall(
 ): string {
   const identity = resolveToolIdentity(name, input);
   const clause = argumentClause(input);
-
-  if (isWebSearch(identity)) {
-    const verb = tense === "past" ? "Searched" : "Searching";
-    const target = clause ?? "";
-    return `${verb} the web ${target}`.trim();
-  }
-
-  const verbWord = identity.words[0];
-  const conjugation = verbWord === undefined ? undefined : VERBS[verbWord];
+  const picked = pickVerb(identity.words);
   const providerSuffix =
     identity.provider === undefined
       ? ""
       : ` in ${providerDisplayName(identity.provider)}`;
 
-  if (conjugation === undefined) {
-    const fallback = identity.words.map((word) => word).join(" ");
-    const sentence = fallback === "" ? "Ran a step" : titleCase(fallback);
-    return `${sentence}${providerSuffix}`;
+  if (picked.verb !== undefined) {
+    const domain = domainHead(identity.words, picked.verb, tense);
+    if (domain !== undefined) {
+      return `${domain}${buildClauseSuffix(clause, false)}`;
+    }
+    const conjugation = VERBS[picked.verb];
+    if (conjugation !== undefined) {
+      const object = objectPhrase(picked.objectWords, picked.verb);
+      const head =
+        object === undefined
+          ? conjugation[tense]
+          : `${conjugation[tense]} ${object}`;
+      const clauseSuffix = buildClauseSuffix(clause, providerSuffix !== "");
+      return `${head}${providerSuffix}${clauseSuffix}`;
+    }
   }
 
-  const object = objectPhrase(identity.words.slice(1));
-  const head =
-    object === undefined
-      ? conjugation[tense]
-      : `${conjugation[tense]} ${object}`;
-  // The provider suffix is itself an "in …" clause, so a clause that is
-  // also locative ("in #general") drops its own preposition rather than
-  // stuttering — "Posted a message in Slack #general", never "… in Slack
-  // in #general".
-  const clauseSuffix = buildClauseSuffix(clause, providerSuffix !== "");
-  return `${head}${providerSuffix}${clauseSuffix}`;
+  const fallback = identity.words.join(" ");
+  const sentence = fallback === "" ? "Ran a step" : titleCase(fallback);
+  return `${sentence}${providerSuffix}`;
+}
+
+function decodeOutput(output: unknown): unknown {
+  if (typeof output !== "string") return output;
+  const trimmed = output.trim();
+  if (trimmed === "") return output;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return output;
+  }
 }
 
 /**
@@ -372,17 +516,18 @@ export function describeToolCall(
  * returns undefined rather than stringifying the third.
  */
 export function plainTextOfOutput(output: unknown): string | undefined {
-  if (typeof output === "string") {
-    const trimmed = output.trim();
+  const decoded = decodeOutput(output);
+  if (typeof decoded === "string") {
+    const trimmed = decoded.trim();
     return trimmed === "" ? undefined : trimmed;
   }
-  if (Array.isArray(output)) {
-    const texts = output
+  if (Array.isArray(decoded)) {
+    const texts = decoded
       .map((entry) => plainTextOfOutput(entry))
       .filter((text): text is string => text !== undefined);
     return texts.length === 0 ? undefined : texts.join("\n");
   }
-  const record = asRecord(output);
+  const record = asRecord(decoded);
   if (record === undefined) return undefined;
   const nested = record.content;
   if (nested !== undefined) {
@@ -396,11 +541,31 @@ export function plainTextOfOutput(output: unknown): string | undefined {
   );
 }
 
+function shortField(record: Record<string, unknown>, key: string): string | undefined {
+  const value = readString(record, key);
+  if (value === undefined) return undefined;
+  if (value.length > MAX_SHORT_FIELD) return truncate(value, MAX_SHORT_FIELD);
+  return value;
+}
+
 /** How many things a result was, when it was a list of them. */
 function countSummary(output: unknown): string | undefined {
-  if (!Array.isArray(output)) return undefined;
-  if (output.length === 0) return "Nothing found.";
-  return output.length === 1 ? "1 result." : `${output.length} results.`;
+  if (Array.isArray(output)) {
+    if (output.length === 0) return "Nothing found.";
+    return output.length === 1 ? "1 result." : `${output.length} results.`;
+  }
+  const record = asRecord(output);
+  const items = record?.items;
+  if (Array.isArray(items)) return countSummary(items);
+  return undefined;
+}
+
+function looksLikeContentBlocks(output: unknown): boolean {
+  if (!Array.isArray(output) || output.length === 0) return false;
+  return output.some((entry) => {
+    const record = asRecord(entry);
+    return record !== undefined && typeof record.type === "string";
+  });
 }
 
 /**
@@ -411,16 +576,47 @@ function countSummary(output: unknown): string | undefined {
 export function summarizeToolOutput(
   status: ToolActivityStatus,
   output: unknown,
+  toolName?: string,
 ): string | undefined {
-  const text = plainTextOfOutput(output);
+  if (toolName === "ask_user" && status !== "failed") return undefined;
+
+  const decoded = decodeOutput(output);
+
   if (status === "failed") {
+    const text = plainTextOfOutput(decoded);
     if (text === undefined) return "No reason given.";
     const firstLine = text.split("\n")[0] ?? text;
     return truncate(firstLine, MAX_FAILURE_DETAIL);
   }
   if (status !== "success") return undefined;
-  if (text !== undefined) return truncate(text, MAX_SUCCESS_DETAIL);
-  return countSummary(output);
+
+  if (!looksLikeContentBlocks(decoded)) {
+    const counted = countSummary(decoded);
+    if (counted !== undefined) return counted;
+  }
+
+  const record = asRecord(decoded);
+  if (record !== undefined && !("content" in record)) {
+    const field = shortField(record, "text") ?? shortField(record, "message");
+    if (field !== undefined) return field;
+    if (countSummary(decoded) === undefined) return undefined;
+  }
+
+  const text = plainTextOfOutput(decoded);
+  if (text === undefined) return countSummary(decoded);
+  const nested = decodeOutput(text);
+  if (typeof nested === "string") return truncate(nested, MAX_SUCCESS_DETAIL);
+  if (!looksLikeContentBlocks(nested)) {
+    const counted = countSummary(nested);
+    if (counted !== undefined) return counted;
+  }
+  const nestedRecord = asRecord(nested);
+  if (nestedRecord !== undefined) {
+    return (
+      shortField(nestedRecord, "text") ?? shortField(nestedRecord, "message")
+    );
+  }
+  return undefined;
 }
 
 function rowStatus(part: ToolTracePart): ToolActivityStatus {
@@ -436,12 +632,14 @@ export function toToolActivityRow(
   const status = rowStatus(part);
   const tense: Tense =
     status === "running" || status === "pending" ? "present" : "past";
+  const identity = resolveToolIdentity(part.name, part.input);
   return {
     key,
-    toolName: part.name,
-    provider: resolveToolIdentity(part.name, part.input).provider,
+    toolName: identity.toolName,
+    glyph: toolActivityGlyph(identity.words),
+    provider: identity.provider,
     phrase: describeToolCall(part.name, part.input, tense),
-    detail: summarizeToolOutput(status, part.output),
+    detail: summarizeToolOutput(status, part.output, identity.toolName),
     status,
   };
 }

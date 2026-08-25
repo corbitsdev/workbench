@@ -3,45 +3,130 @@
 // One presentation serves both the live strip (`turn-activity.tsx`) and the
 // persisted transcript (`timeline.tsx`), so a call that reads one way while
 // it runs doesn't restyle itself the moment the turn ends. Chips, not
-// collapsibles: a provider tile, one sentence, a status marker, and — only
-// when there is something to show — a disclosure onto plain-text detail.
-// Calls stack one per call; nothing here ever folds several into a count.
-// The sentences come from `tool-activity.ts`; nothing here formats a
-// tool's own data.
+// collapsibles: a glyph, one sentence, a status icon, and — only when there
+// is something to show — a disclosure onto plain-text detail. Calls stack
+// one per call; nothing here ever folds several into a count. The sentences
+// come from `tool-activity.ts`; nothing here formats a tool's own data.
 
-import { CaretRight } from "@corbits/icons";
+import {
+  BookBookmark,
+  CaretRight,
+  ChatCircleDots,
+  Check,
+  CircleNotch,
+  Lightning,
+  ListBullets,
+  MagnifyingGlass,
+  PencilSimple,
+  Users,
+  WarningCircle,
+} from "@corbits/icons";
+import type { ReactNode } from "react";
 import { useState } from "react";
 
 import { CHAT_STRINGS } from "./strings";
 import {
   providerTile,
+  type ToolActivityGlyph,
   type ToolActivityRow,
   type ToolActivityStatus,
 } from "./tool-activity";
 
 function StatusMarker({ status }: { readonly status: ToolActivityStatus }) {
+  const icon =
+    status === "failed" ? (
+      <WarningCircle />
+    ) : status === "running" || status === "pending" ? (
+      <CircleNotch />
+    ) : (
+      <Check />
+    );
   return (
     <span
       className="chat-tool-activity-marker"
       data-status={status}
       aria-hidden="true"
-    />
+    >
+      {icon}
+    </span>
   );
 }
 
-/** The chip's leading brand mark — 22×22, provider-colored, two letters.
- * Present on every chip, per §12.3's anatomy; a bare local tool gets the
- * neutral fallback tile rather than no tile at all. */
-function ProviderTile({ provider }: { readonly provider: string | undefined }) {
-  const tile = providerTile(provider);
+function ActionGlyph({ glyph }: { readonly glyph: ToolActivityGlyph }) {
+  let icon: ReactNode;
+  switch (glyph) {
+    case "search":
+      icon = <MagnifyingGlass />;
+      break;
+    case "list":
+      icon = <ListBullets />;
+      break;
+    case "ask":
+      icon = <ChatCircleDots />;
+      break;
+    case "memory":
+      icon = <BookBookmark />;
+      break;
+    case "agents":
+      icon = <Users />;
+      break;
+    case "write":
+      icon = <PencilSimple />;
+      break;
+    default:
+      icon = <Lightning />;
+      break;
+  }
   return (
     <span
-      className="chat-tool-activity-tile"
-      style={{ background: tile.color }}
+      className="chat-tool-activity-tile chat-tool-activity-glyph"
       aria-hidden="true"
     >
-      {tile.initials}
+      {icon}
     </span>
+  );
+}
+
+function LeadingMark({ row }: { readonly row: ToolActivityRow }) {
+  const tile =
+    row.provider === undefined ? undefined : providerTile(row.provider);
+  if (tile !== undefined) {
+    return (
+      <span
+        className="chat-tool-activity-tile"
+        style={{ background: tile.color }}
+        aria-hidden="true"
+      >
+        {tile.initials}
+      </span>
+    );
+  }
+  return <ActionGlyph glyph={row.glyph} />;
+}
+
+function ChipBody({
+  row,
+  open,
+}: {
+  readonly row: ToolActivityRow;
+  readonly open: boolean;
+}) {
+  return (
+    <>
+      <LeadingMark row={row} />
+      <span className="chat-tool-activity-phrase">{row.phrase}</span>
+      {row.meta === undefined ? null : (
+        <span className="chat-tool-activity-meta">{row.meta}</span>
+      )}
+      <StatusMarker status={row.status} />
+      {row.detail === undefined ? null : (
+        <CaretRight
+          className="chat-tool-activity-caret"
+          data-open={open}
+          aria-hidden="true"
+        />
+      )}
+    </>
   );
 }
 
@@ -62,12 +147,9 @@ function ToolActivityLine({
         data-status={row.status}
         data-indented={indented}
       >
-        <ProviderTile provider={row.provider} />
-        <span className="chat-tool-activity-phrase">{row.phrase}</span>
-        {row.meta === undefined ? null : (
-          <span className="chat-tool-activity-meta">{row.meta}</span>
-        )}
-        <StatusMarker status={row.status} />
+        <div className="chat-tool-activity-chip" title={row.toolName}>
+          <ChipBody row={row} open={false} />
+        </div>
       </div>
     );
   }
@@ -80,21 +162,12 @@ function ToolActivityLine({
     >
       <button
         type="button"
-        className="chat-tool-activity-trigger"
+        className="chat-tool-activity-chip chat-tool-activity-trigger"
         aria-expanded={open}
+        title={row.toolName}
         onClick={() => setOpen((value) => !value)}
       >
-        <ProviderTile provider={row.provider} />
-        <span className="chat-tool-activity-phrase">{row.phrase}</span>
-        {row.meta === undefined ? null : (
-          <span className="chat-tool-activity-meta">{row.meta}</span>
-        )}
-        <StatusMarker status={row.status} />
-        <CaretRight
-          className="chat-tool-activity-caret"
-          data-open={open}
-          aria-hidden="true"
-        />
+        <ChipBody row={row} open={open} />
       </button>
       {open ? <p className="chat-tool-activity-detail">{row.detail}</p> : null}
     </div>
@@ -114,7 +187,7 @@ export function ToolActivityGroup({
 }) {
   if (rows.length === 0) return null;
   return (
-    <div className="chat-tool-activity">
+    <div className="chat-tool-activity" data-slot="tool-activity">
       {rows.map((row) => (
         <ToolActivityLine key={row.key} row={row} indented={false} />
       ))}
@@ -137,7 +210,11 @@ export function LiveToolActivity({
 }) {
   if (rows.length === 0 && !thinking && retryCount === 0) return null;
   return (
-    <div className="chat-tool-activity chat-tool-activity-live" role="status">
+    <div
+      className="chat-tool-activity chat-tool-activity-live"
+      data-slot="tool-activity"
+      role="status"
+    >
       {rows.map((row) => (
         <ToolActivityLine key={row.key} row={row} indented={false} />
       ))}

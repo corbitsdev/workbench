@@ -2146,18 +2146,16 @@
 
 /* Tool-use chips (CL-6466, conforming to mock-spec §12.3): inline chips
    stacked under the agent's prose, one per call — never collapsibles.
-   `.chat-tool-activity` is the stack; each `.chat-tool-activity-row` is one
-   chip, `width:max-content` so a wall of calls reads as short tags, not a
-   list. Radius uses the shared `--radius` token (§1's 8px base), matching
-   every other chip in the app instead of the zero-radius the old
-   generative-UI framing called for. */
+   `.chat-tool-activity` is the stack; each `.chat-tool-activity-row` wraps
+   one chip plus optional detail. The chip hugs its content so a wall of
+   calls reads as short tags, not a list. Radius follows `--radius`. */
 .chat-tool-activity {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 0.5rem;
   padding: 0.15rem 0;
-  font-size: 0.72rem;
+  font-size: 0.8125rem;
   color: var(--muted-foreground);
 }
 
@@ -2168,9 +2166,7 @@
 }
 
 /* The row is the outer wrapper — chip on top, its optional detail
-   underneath. The chip itself (this selector plus `.chat-tool-activity-
-   trigger`) is what's `width:max-content`: it hugs its content so a wall
-   of calls reads as a stack of short tags, never spanning the column. */
+   underneath. `.chat-tool-activity-chip` is what's `width:max-content`. */
 .chat-tool-activity-row {
   display: flex;
   flex-direction: column;
@@ -2182,19 +2178,23 @@
   margin-left: 0.18rem;
 }
 
-.chat-tool-activity-row:not(:has(.chat-tool-activity-trigger)),
-.chat-tool-activity-trigger {
+.chat-tool-activity-chip {
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 0.5rem;
   width: max-content;
   max-width: 100%;
-  flex-wrap: wrap;
-  border: 1px solid var(--border);
-  background: var(--card, var(--background));
+  flex-wrap: nowrap;
+  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--muted) 72%, transparent);
   border-radius: var(--radius);
-  padding: 0.4rem 0.65rem;
+  padding: 0.35rem 0.75rem 0.35rem 0.4rem;
+  transition:
+    transform var(--duration-standard, 180ms) var(--ease-out, cubic-bezier(0.2, 0.8, 0.3, 1)),
+    background-color var(--duration-standard, 180ms) var(--ease-out, cubic-bezier(0.2, 0.8, 0.3, 1)),
+    border-color var(--duration-standard, 180ms) var(--ease-out, cubic-bezier(0.2, 0.8, 0.3, 1)),
+    color var(--duration-standard, 180ms) var(--ease-out, cubic-bezier(0.2, 0.8, 0.3, 1));
 }
 
 .chat-tool-activity-trigger {
@@ -2225,6 +2225,10 @@
   outline-offset: 2px;
 }
 
+.chat-tool-activity-trigger:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
 .chat-tool-activity-tile {
   display: inline-flex;
   flex: none;
@@ -2232,43 +2236,95 @@
   justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   font-size: 10px;
   font-weight: 800;
   color: #fff;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, white 22%, transparent);
+}
+
+.chat-tool-activity-glyph {
+  background: color-mix(in srgb, var(--muted) 88%, var(--foreground) 6%);
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-weight: 400;
+  box-shadow: none;
+}
+
+.chat-tool-activity-glyph svg {
+  width: 1em;
+  height: 1em;
 }
 
 .chat-tool-activity-marker {
-  width: 0.4rem;
-  height: 0.4rem;
+  display: inline-flex;
   flex: none;
-  border-radius: 99px;
-  background: var(--muted-foreground);
-  opacity: 0.6;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  color: var(--muted-foreground);
+}
+
+.chat-tool-activity-marker svg {
+  width: 12px;
+  height: 12px;
 }
 
 .chat-tool-activity-marker[data-status="running"],
 .chat-tool-activity-marker[data-status="pending"] {
-  background: var(--muted-foreground);
-  opacity: 1;
-  animation: chat-block-pulse 1.6s ease infinite;
+  animation: chat-tool-activity-spin 0.8s linear infinite;
 }
 
-/* A failure is the one state that earns colour here — everything else in
-   this strip is deliberately quiet chrome. */
 .chat-tool-activity-marker[data-status="failed"] {
-  background: var(--destructive, #b42318);
-  opacity: 1;
+  color: var(--destructive, #b42318);
+}
+
+@keyframes chat-tool-activity-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-tool-activity-chip,
+  .chat-tool-activity-trigger,
+  .chat-tool-activity-caret {
+    transition: none;
+  }
+
+  .chat-tool-activity-trigger:active:not(:disabled) {
+    transform: none;
+  }
+
+  .chat-tool-activity-marker[data-status="running"],
+  .chat-tool-activity-marker[data-status="pending"] {
+    animation: none;
+  }
 }
 
 .chat-tool-activity-row[data-status="failed"] .chat-tool-activity-phrase {
   color: var(--destructive, #b42318);
+  opacity: 1;
+}
+
+.chat-tool-activity-row[data-status="running"] .chat-tool-activity-phrase,
+.chat-tool-activity-row[data-status="pending"] .chat-tool-activity-phrase {
+  color: var(--foreground);
+  opacity: 0.7;
 }
 
 .chat-tool-activity-phrase {
   min-width: 0;
   flex: 1 1 auto;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  font-weight: 450;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+  opacity: 0.82;
 }
 
 .chat-tool-activity-meta {
@@ -2283,8 +2339,10 @@
   flex: none;
   width: 1em;
   height: 1em;
-  font-size: 0.75rem;
-  transition: transform 0.15s ease-out;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  transition: transform var(--duration-standard, 180ms)
+    var(--ease-out, cubic-bezier(0.2, 0.8, 0.3, 1));
 }
 
 .chat-tool-activity-caret[data-open="true"] {
@@ -2293,14 +2351,20 @@
 
 .chat-tool-activity-detail {
   margin: 0;
-  padding: 0.5rem 0.65rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  padding: 0.1rem 0.75rem 0.15rem 2.15rem;
   max-width: 100%;
   max-height: 12rem;
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.chat-tool-activity-thinking,
+.chat-tool-activity-retry {
+  padding: 0.15rem 0.15rem 0.15rem 2.15rem;
+  font-size: 0.8125rem;
   color: var(--muted-foreground);
 }
 
@@ -2328,8 +2392,7 @@
     }
   }
 
-  .chat-tool-activity-row:not(:has(.chat-tool-activity-trigger)),
-  .chat-tool-activity-trigger {
+  .chat-tool-activity-chip {
     animation: chat-tool-activity-in 160ms var(--chat-ease);
   }
 }
