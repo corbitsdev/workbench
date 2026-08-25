@@ -79,13 +79,12 @@ A bench that already has one or more workbenches skips first-run and
 lands on `workbenches[0]` (see `apps/web/src/pages/home-page.tsx`). Myra
 is the first-run guide in her DM, not a home slot.
 
-The shell's first-run destinations stay small on purpose (CL-6765):
+The shell's first-run destinations stay small on purpose:
 Mission Control is pinned above the footer rail; the rail itself is
-Routines, Files, Skills, and Agents. Insights and Evals appear on that
-rail only after honest usage exists; Plugins stays reachable by deep
-link and the command palette, not as a first-run rail item. New benches
-should not meet an empty Plugins / Insights / Evals gallery before they
-have anything to put there.
+Routines, Files, Skills, Agents, and Plugins. Insights and Evals appear
+on that rail only after honest usage exists. New benches should not
+meet an empty Insights / Evals gallery before they have anything to
+put there.
 
 ### Code review's first minute
 
