@@ -1,10 +1,10 @@
 // The route table: one entry per screen, consumed by the command palette
 // (label) and the route switch (render), so navigation and pages cannot
 // drift apart. The sidebar itself lists workbenches (conversations), not
-// routes — the first-run footer reaches Routines, Files, Skills, and
-// Agents; Insights and Evals join that rail only given honest usage.
-// Plugins, Insights, Evals, and Settings stay reachable by deep link and
-// the palette even when they are off the rail. Conversation deep links
+// routes — the first-run footer reaches Routines, Files, Skills, Agents,
+// and Plugins; Insights and Evals join that rail only given honest usage.
+// Insights, Evals, and Settings stay reachable by deep link and the
+// palette even when they are off the rail. Conversation deep links
 // (`/w/:workbenchId`) stay routable; `/` is the Myra land hop (ensure +
 // open her conversation) for a bench with a workbench already, or the
 // guided first-workbench describe screen for a bench with none (CL-6104)
@@ -26,6 +26,7 @@ import {
   FolderOpen,
   Lightning,
   ListBullets,
+  PuzzlePiece,
   Robot,
   SlidersHorizontal,
   SquaresFour,
@@ -395,12 +396,11 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: (path: string) => <EvalsRoute path={path} />,
   },
   {
-    // Reached by deep link and the command palette's Pages group — never
-    // from the first-run footer rail. No `/plugins/:slug` until CL-6417
-    // (CL-6817 unlinked the stub).
+    // First-run footer rail destination. No `/plugins/:slug` until
+    // CL-6417 (CL-6817 unlinked the stub).
     path: "/plugins",
     label: "Plugins",
-    icon: <SquaresFour />,
+    icon: <PuzzlePiece />,
     render: (path: string, navigate: (to: string) => void) => (
       <PluginsRoute path={path} navigate={navigate} />
     ),
@@ -426,8 +426,8 @@ function routesInOrder(paths: readonly string[]): readonly AppRoute[] {
 /**
  * Everything the command palette treats as a product destination (its
  * "Pages" group). The first-run sidebar footer reaches Routines / Files /
- * Skills / Agents (and Insights / Evals only given honest usage);
- * Plugins, Insights, Evals, and Settings stay palette- and
+ * Skills / Agents / Plugins (and Insights / Evals only given honest
+ * usage); Insights, Evals, and Settings stay palette- and
  * deep-link-reachable even when they are off the rail.
  */
 export const NAV_ROUTES: readonly AppRoute[] = routesInOrder([

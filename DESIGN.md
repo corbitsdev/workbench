@@ -23,14 +23,12 @@ Top to bottom:
    Nothing page-scoped ever renders in this body; it lists
    conversations, not product sections.
 3. **Footer rail** — Mission Control is pinned above the rail as its own
-   row. The first-run rail below it is Routines, Files, Skills, Agents, in
-   that order (CL-6765). Insights and Evals join that rail only when
-   existing reads prove real usage (turns > 0 / at least one eval run);
-   Plugins stays off the rail entirely and is reached by deep link or the
-   command palette. These are utility destinations, not workbenches, and
-   each is its own top-level route (`/mission-control`, `/routines`,
-   `/files`, `/skills`, `/agents`; plus `/insights`, `/evals`, `/plugins`
-   when reached).
+   row. The first-run rail below it is Routines, Files, Skills, Agents,
+   Plugins, in that order. Insights and Evals join that rail only when
+   existing reads prove real usage (turns > 0 / at least one eval run).
+   These are utility destinations, not workbenches, and each is its own
+   top-level route (`/mission-control`, `/routines`, `/files`, `/skills`,
+   `/agents`, `/plugins`; plus `/insights`, `/evals` when reached).
 4. **Account row** — avatar and name, anchoring the rail, plus a separate
    settings icon beside it. The avatar+name half is a menu trigger
    (weekly usage, feedback, log out) that pops upward; the gear is a

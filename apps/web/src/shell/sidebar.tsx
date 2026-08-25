@@ -1,14 +1,12 @@
 // The one sidebar. Header: the brand mark, then create + search. Body:
 // Agents and Channels — nothing page-scoped ever renders here. Footer: the
-// first-run rail is Routines, Files, Skills, Agents; Insights and Evals
-// join only when the existing usage / eval-run reads return real items
-// (never a fabricated row, never a new analytics store). Plugins is
-// reachable by URL and the command palette, not as a first-run tour
-// destination. Below the rail: the account row — avatar + name, the whole
-// row is the trigger for a menu that pops upward with weekly usage,
-// settings, feedback, and log out. Always present; there is no collapse
-// affordance and no second nav column. Approvals belong in the
-// conversation, not as a standing band here.
+// first-run rail is Routines, Files, Skills, Agents, Plugins; Insights and
+// Evals join only when the existing usage / eval-run reads return real items
+// (never a fabricated row, never a new analytics store). Below the rail:
+// the account row — avatar + name, the whole row is the trigger for a menu
+// that pops upward with weekly usage, settings, feedback, and log out.
+// Always present; there is no collapse affordance and no second nav column.
+// Approvals belong in the conversation, not as a standing band here.
 //
 // Inbox is gone (CL-6151, owner decision: tasks + approvals don't flow
 // into workbenches).
@@ -41,6 +39,7 @@ import {
   Lightning,
   ListBullets,
   Plus,
+  PuzzlePiece,
   Robot,
   SignOut,
   Repeat,
@@ -170,7 +169,7 @@ export function Sidebar({
 
       {/* Mission Control is pinned above the footer rail as its own row
           (DESIGN.md's Shell & Navigation) — not a button inside the
-          first-run rail, which stays Routines/Files/Skills/Agents. */}
+          first-run rail, which stays Routines/Files/Skills/Agents/Plugins. */}
       <div className="shell-sidebar-mission-control">
         <button
           type="button"
@@ -189,12 +188,12 @@ export function Sidebar({
       </div>
 
       <SidebarPanelFooter>
-        {/* Footer order: Routines, Files, Skills, Agents, then Insights and
-            Evals only when those existing reads prove real items, then the
-            account row anchors everything else (weekly usage, Settings,
-            Log out) in its pop-up menu — a single footer, never two stacked
-            rows. Routines (CL-6362) is global-only here — no per-workbench
-            routines chrome remains. */}
+        {/* Footer order: Routines, Files, Skills, Agents, Plugins, then
+            Insights and Evals only when those existing reads prove real
+            items, then the account row anchors everything else (weekly
+            usage, Settings, Log out) in its pop-up menu — a single footer,
+            never two stacked rows. Routines (CL-6362) is global-only here
+            — no per-workbench routines chrome remains. */}
         <button
           type="button"
           className="shell-sidebar-footer-row"
@@ -234,6 +233,16 @@ export function Sidebar({
         >
           <Robot />
           <span>Agents</span>
+        </button>
+        <button
+          type="button"
+          className="shell-sidebar-footer-row"
+          data-active={matchesRoute("/plugins", path) ? "true" : undefined}
+          aria-current={matchesRoute("/plugins", path) ? "page" : undefined}
+          onClick={() => onNavigate("/plugins")}
+        >
+          <PuzzlePiece />
+          <span>Plugins</span>
         </button>
         {showInsights ? (
           <button
