@@ -40,6 +40,10 @@ const migrationNames = [
   "0017_message_client_ids",
   "0018_rename_channel_to_workbench",
   "0019_workbench_messages",
+  "0020_workbench_launch_current_run",
+  "0021_workbench_launch_prior_runs",
+  "0022_agent_turns",
+  "0023_drop_workbench_host_arm",
 ];
 
 describeIfDb("applyChatMigrations", () => {
@@ -91,7 +95,7 @@ describeIfDb("applyChatMigrations", () => {
       const tables = await sql.unsafe(
         `SELECT table_name FROM information_schema.tables ` +
           `WHERE table_schema = 'chat' AND table_name IN ` +
-          `('workbench_settings', 'workbench_read_state', 'workbench_launch', 'workbench_tenancy', 'chat_bench_settings', 'workbench_threads', 'workbench_thread_messages', 'message_reactions', 'pinned_messages', 'finalized_turn_write_claim', 'workbench_messages')`,
+          `('workbench_settings', 'workbench_read_state', 'workbench_launch', 'workbench_tenancy', 'chat_bench_settings', 'workbench_threads', 'workbench_thread_messages', 'message_reactions', 'pinned_messages', 'finalized_turn_write_claim', 'workbench_messages', 'agent_turns')`,
       );
       expect(tables.map((row) => String(row["table_name"])).sort()).toEqual(
         [
@@ -106,6 +110,7 @@ describeIfDb("applyChatMigrations", () => {
           "pinned_messages",
           "finalized_turn_write_claim",
           "workbench_messages",
+          "agent_turns",
         ].sort(),
       );
 
