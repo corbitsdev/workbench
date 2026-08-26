@@ -22,4 +22,5 @@ export const CONNECTOR_PINNED_WORKFLOWS: Readonly<
   attio: ["attio-task-agent"],
   scrapecreators: ["reddit-opportunity-scanner"],
   github: ["code-review"],
+  manus: ["assistant"],
 };

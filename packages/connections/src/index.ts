@@ -31,6 +31,7 @@ export {
   testGitHubCredential,
   testGranolaCredential,
   testLinearCredential,
+  testManusCredential,
   testScrapeCreatorsCredential,
 } from "./probes";
 export {

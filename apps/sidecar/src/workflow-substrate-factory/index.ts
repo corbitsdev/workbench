@@ -38,6 +38,7 @@ import {
 import {
   createHttpRawAuthorizationCredentialProvider,
   createHttpXApiKeyCredentialProvider,
+  createHttpXManusApiKeyCredentialProvider,
   createMcpStreamableHttpCredentialProvider,
 } from "@corbits/credential-providers";
 import { loadAdapterRegistry } from "@intx/inference/providers";
@@ -409,15 +410,17 @@ export function createSidecarSubstrateFactory(
     // with no `Bearer ` prefix -- Linear's convention) and
     // `http-x-api-key` plugin (for a provider row whose API expects the
     // secret in an `x-api-key` header -- Exa's and ScrapeCreators'
-    // convention), both from `@corbits/credential-providers` rather than
-    // forking or reaching around the vendored plugin. Fixed for the
-    // child's lifetime -- unlike the per-step wiring below, the set of
-    // provider plugins is not something a rotation or
+    // convention) and `http-x-manus-api-key` plugin (for Manus, which
+    // expects `x-manus-api-key`), all from `@corbits/credential-providers`
+    // rather than forking or reaching around the vendored plugin. Fixed
+    // for the child's lifetime -- unlike the per-step wiring below, the
+    // set of provider plugins is not something a rotation or
     // `credentials-updated` frame changes.
     const credentialProviders = createCredentialProviderRegistry([
       ...builtinCredentialProviders(),
       createHttpRawAuthorizationCredentialProvider(),
       createHttpXApiKeyCredentialProvider(),
+      createHttpXManusApiKeyCredentialProvider(),
       createMcpStreamableHttpCredentialProvider(),
     ]);
 
