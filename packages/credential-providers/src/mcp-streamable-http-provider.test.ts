@@ -2,7 +2,9 @@
 // NO authorization header at all for the keyless sentinel (a public MCP
 // server like Exa accepts an absent header but 401s a bogus bearer), and
 // the same origin-pinning + manual-redirect protections its sibling
-// providers enforce.
+// providers enforce. Canva's MCP protocol origin `https://canva.ai` is an
+// explicit extra first hop when the credential is pinned to
+// `https://mcp.canva.com` — never a host-suffix, never followed via 3xx.
 import { describe, expect, test } from "bun:test";
 import type { CredentialShapeContext } from "@intx/types";
 
@@ -12,14 +14,19 @@ import {
   MCP_STREAMABLE_HTTP_PROVIDER_KEY,
 } from "./mcp-streamable-http-provider";
 
-function contextWith(secret: string): CredentialShapeContext {
+function contextWith(
+  secret: string,
+  origin = "https://mcp.example.test/mcp",
+): CredentialShapeContext {
   return {
-    origin: "https://mcp.example.test/mcp",
+    origin,
     readCurrentMaterial: () => ({ secret }),
   } as CredentialShapeContext;
 }
 
-function capturingFetch() {
+function capturingFetch(
+  respond?: (input: string | URL | Request, init?: RequestInit) => Response,
+) {
   const seen: { url: string; headers: Headers; redirect?: string }[] = [];
   const fetchImpl = async (
     input: string | URL | Request,
@@ -38,7 +45,7 @@ function capturingFetch() {
         ...(init?.redirect !== undefined ? { redirect: init.redirect } : {}),
       });
     }
-    return new Response("ok");
+    return respond?.(input, init) ?? new Response("ok");
   };
   return { seen, fetchImpl };
 }
@@ -94,5 +101,110 @@ describe(MCP_STREAMABLE_HTTP_PROVIDER_KEY, () => {
     );
     expect(seen[0]?.headers.get("content-type")).toBe("application/json");
     expect(seen[0]?.headers.get("authorization")).toBe("Bearer tok-9");
+  });
+
+  test("https://canva.ai is allowed as a first hop when pinned to https://mcp.canva.com", async () => {
+    const { seen, fetchImpl } = capturingFetch();
+    const provider = createMcpStreamableHttpCredentialProvider({
+      fetch: fetchImpl,
+    });
+    const shaped = provider.shape(
+      contextWith("tok-canva", "https://mcp.canva.com/mcp"),
+    );
+    if (shaped.kind !== "http") throw new Error("expected http");
+    await shaped.fetch("https://canva.ai/mcp");
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.url).toBe("https://canva.ai/mcp");
+    expect(seen[0]?.headers.get("authorization")).toBe("Bearer tok-canva");
+    expect(seen[0]?.redirect).toBe("manual");
+  });
+
+  test("https://evil.example is refused when pinned to https://mcp.canva.com", async () => {
+    const { seen, fetchImpl } = capturingFetch();
+    const provider = createMcpStreamableHttpCredentialProvider({
+      fetch: fetchImpl,
+    });
+    const shaped = provider.shape(
+      contextWith("tok-canva", "https://mcp.canva.com/mcp"),
+    );
+    if (shaped.kind !== "http") throw new Error("expected http");
+    await expect(shaped.fetch("https://evil.example/steal")).rejects.toThrow(
+      "mcp-streamable-http credential is pinned to https://mcp.canva.com; refusing cross-origin request to https://evil.example",
+    );
+    expect(seen).toHaveLength(0);
+  });
+
+  test("https://notcanva.com is refused when pinned to https://mcp.canva.com", async () => {
+    const { seen, fetchImpl } = capturingFetch();
+    const provider = createMcpStreamableHttpCredentialProvider({
+      fetch: fetchImpl,
+    });
+    const shaped = provider.shape(
+      contextWith("tok-canva", "https://mcp.canva.com/mcp"),
+    );
+    if (shaped.kind !== "http") throw new Error("expected http");
+    await expect(shaped.fetch("https://notcanva.com/mcp")).rejects.toThrow(
+      "mcp-streamable-http credential is pinned to https://mcp.canva.com; refusing cross-origin request to https://notcanva.com",
+    );
+    expect(seen).toHaveLength(0);
+  });
+
+  test("unlisted Canva sibling https://media.canva.com is refused", async () => {
+    const { seen, fetchImpl } = capturingFetch();
+    const provider = createMcpStreamableHttpCredentialProvider({
+      fetch: fetchImpl,
+    });
+    const shaped = provider.shape(
+      contextWith("tok-canva", "https://mcp.canva.com/mcp"),
+    );
+    if (shaped.kind !== "http") throw new Error("expected http");
+    await expect(shaped.fetch("https://media.canva.com/mcp")).rejects.toThrow(
+      "mcp-streamable-http credential is pinned to https://mcp.canva.com; refusing cross-origin request to https://media.canva.com",
+    );
+    expect(seen).toHaveLength(0);
+  });
+
+  test("a 302 Location to https://canva.ai is not followed", async () => {
+    const { seen, fetchImpl } = capturingFetch(
+      () =>
+        new Response(null, {
+          status: 302,
+          headers: { Location: "https://canva.ai/mcp" },
+        }),
+    );
+    const provider = createMcpStreamableHttpCredentialProvider({
+      fetch: fetchImpl,
+    });
+    const shaped = provider.shape(
+      contextWith("tok-canva", "https://mcp.canva.com/mcp"),
+    );
+    if (shaped.kind !== "http") throw new Error("expected http");
+    const response = await shaped.fetch("https://mcp.canva.com/mcp");
+    expect(response.status).toBe(302);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.url).toBe("https://mcp.canva.com/mcp");
+    expect(seen[0]?.redirect).toBe("manual");
+  });
+
+  test("a 302 Location off the allowlist is not followed", async () => {
+    const { seen, fetchImpl } = capturingFetch(
+      () =>
+        new Response(null, {
+          status: 302,
+          headers: { Location: "https://evil.example/steal" },
+        }),
+    );
+    const provider = createMcpStreamableHttpCredentialProvider({
+      fetch: fetchImpl,
+    });
+    const shaped = provider.shape(
+      contextWith("tok-canva", "https://mcp.canva.com/mcp"),
+    );
+    if (shaped.kind !== "http") throw new Error("expected http");
+    const response = await shaped.fetch("https://mcp.canva.com/mcp");
+    expect(response.status).toBe(302);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.url).toBe("https://mcp.canva.com/mcp");
+    expect(seen[0]?.redirect).toBe("manual");
   });
 });
