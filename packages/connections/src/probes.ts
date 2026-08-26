@@ -120,3 +120,13 @@ export function testLinearCredential(
     body: JSON.stringify({ query: "{ viewer { id } } " }),
   });
 }
+
+export function testManusCredential(
+  apiKey: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<CredentialTestResult> {
+  return probe("Manus", fetchImpl, "https://api.manus.ai/v2/skill.list", {
+    method: "GET",
+    headers: { "x-manus-api-key": apiKey },
+  });
+}

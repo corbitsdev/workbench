@@ -78,6 +78,7 @@ import {
   testGitHubCredential,
   testGranolaCredential,
   testLinearCredential,
+  testManusCredential,
   testScrapeCreatorsCredential,
 } from "./probes";
 
@@ -272,6 +273,17 @@ export const CONNECTOR_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> =
       feedsTools: ["@corbits/granola-tools"],
       probe: (apiKey) => testGranolaCredential(apiKey),
       description: "Pull meeting notes and transcripts into your agents.",
+    },
+    manus: {
+      id: "manus",
+      credentialPlugin: "http-x-manus-api-key",
+      displayName: "Manus",
+      authKind: "api-key",
+      docsUrl: "https://open.manus.ai/docs/v2/introduction",
+      feedsTools: ["@corbits/manus-tools"],
+      probe: (apiKey) => testManusCredential(apiKey),
+      description:
+        "Have Manus run tasks and produce files — including slide decks.",
     },
     exa: {
       id: "exa",
