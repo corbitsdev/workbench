@@ -21,7 +21,6 @@ import {
   seedTenant,
   type ApiCall,
   type ModelSource,
-  type ToolRegistryPublisher,
   type WorkflowPusher,
   isLiveDeploymentStatus,
 } from "@workbench/hub-client";
@@ -107,8 +106,6 @@ export type ProvisionArgs = {
   operatorTenantId?: string;
   seedModel?: ModelSource;
   pushWorkflow: WorkflowPusher;
-  /** Passed through to `seedTenant`; a test double replaces the real corbits-tools publish the same way `pushWorkflow` replaces the real git push. */
-  publishToolRegistry?: ToolRegistryPublisher;
   log: (line: string) => void;
   /** The closed-by-default access-policy gate. Absent means this hub
    * runs with no access-policy package wired in at all — never a valid
@@ -341,14 +338,7 @@ export async function provisionPersonalTenantIfNeeded(
       log: args.log,
       workflows: DEFAULT_WORKFLOWS,
     };
-    await seedTenant(
-      args.publishToolRegistry !== undefined
-        ? {
-            ...existingMemberSeedArgs,
-            publishToolRegistry: args.publishToolRegistry,
-          }
-        : existingMemberSeedArgs,
-    );
+    await seedTenant(existingMemberSeedArgs);
     return { kind: "existing-member", seeded: true, tenantId: own.tenantId };
   }
 
@@ -475,14 +465,7 @@ export async function provisionPersonalTenantIfNeeded(
     log: args.log,
     workflows: DEFAULT_WORKFLOWS,
   };
-  await seedTenant(
-    args.publishToolRegistry !== undefined
-      ? {
-          ...provisionedSeedArgs,
-          publishToolRegistry: args.publishToolRegistry,
-        }
-      : provisionedSeedArgs,
-  );
+  await seedTenant(provisionedSeedArgs);
 
   return {
     kind: "provisioned",

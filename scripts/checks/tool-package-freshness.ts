@@ -2,10 +2,11 @@
 // a version bump in the same change.
 //
 // Tool resolution keys on `name@version`. New source under an unchanged
-// version never reaches a running or freshly-launched agent, and the hub's
-// publish step rejects it at seed time — which aborts seeding partway and
-// leaves the tenant without its `assistant` definition, so every workbench
-// template then fails with "No default setup agent found for this workbench".
+// version never reaches a running or freshly-launched agent, and
+// `publishCorbitsToolsRegistry` (`workbench setup`) rejects it at
+// publish time — a publish/build failure, not a bench-create failure.
+// Signup/`seedTenant` do not pack, so a dirty `src/` cannot abort
+// minting a bench.
 //
 // `check:tool-package-pins` is the other half of this class: it compares a
 // `{ name, version }` pin literal against that package's manifest. It passes

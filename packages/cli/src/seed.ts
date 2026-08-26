@@ -1,7 +1,8 @@
 // `workbench seed`: authenticate as the administrator, resolve the
-// configured bench by slug, and seed it with the default workflow set
-// through `@workbench/hub-client`'s `seedTenant`. Safe to re-run; every
-// skipped step says so.
+// configured bench by slug, and deploy the default workflow set
+// through `@workbench/hub-client`'s `seedTenant`. Does not pack
+// tarballs — `workbench setup` publishes `corbits-tools` onto the
+// root. Safe to re-run; every skipped step says so.
 
 import { paginatedSchema, PrincipalSummary, TenantResponse } from "@intx/types";
 import {
@@ -13,7 +14,6 @@ import {
   DEFAULT_WORKFLOWS,
   type ApiCall,
   type DefaultWorkflow,
-  type ToolRegistryPublisher,
   type WorkflowPusher,
 } from "@workbench/hub-client";
 import { CliError } from "@workbench/hub-client";
@@ -23,8 +23,6 @@ export type SeedDeps = {
   config: SeedConfig;
   api: ApiCall;
   pushWorkflow: WorkflowPusher;
-  /** Passed through to `seedTenant`; a test double replaces the real corbits-tools publish the same way `pushWorkflow` replaces the real git push. */
-  publishToolRegistry?: ToolRegistryPublisher;
   log: (line: string) => void;
   sleep?: (ms: number) => Promise<void>;
   runStartTimeoutMs?: number;
@@ -128,8 +126,6 @@ export async function runSeed(
     log,
     workflows: resolvedWorkflows,
   };
-  if (deps.publishToolRegistry !== undefined)
-    seedArgs.publishToolRegistry = deps.publishToolRegistry;
   if (deps.sleep !== undefined) seedArgs.sleep = deps.sleep;
   if (deps.runStartTimeoutMs !== undefined)
     seedArgs.runStartTimeoutMs = deps.runStartTimeoutMs;
