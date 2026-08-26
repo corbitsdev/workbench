@@ -251,6 +251,84 @@ describe("McpPresetCardsSection", () => {
     );
   });
 
+  test("an OAuth connected return shows the probe tool count on that preset row", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?mcpOauth=canva&outcome=connected&toolCount=40",
+    );
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          data: [
+            ...PRESETS,
+            {
+              slug: "canva",
+              displayName: "Canva",
+              description: "Design with Canva — via MCP.",
+              url: "https://mcp.canva.com/mcp",
+              connectionMode: "oauth",
+              docsUrl: "https://www.canva.com",
+              connected: true,
+            },
+          ],
+        }),
+      )) as unknown as typeof fetch;
+
+    const container = mountSection();
+    await settle();
+
+    const canvaCard = container.querySelector(
+      '[data-plugin-slug="canva"]',
+    ) as HTMLElement;
+    expect(canvaCard.textContent).toContain("40 tools");
+    expect(canvaCard.textContent).not.toContain("Not connected");
+    expect(
+      canvaCard.querySelector('[aria-label="Disconnect Canva"]'),
+    ).not.toBeNull();
+
+    const granolaCard = container.querySelector(
+      '[data-plugin-slug="granola"]',
+    ) as HTMLElement;
+    expect(granolaCard.textContent).not.toContain("40 tools");
+  });
+
+  test("an OAuth connected return with a non-integer toolCount stays a bare Connected", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?mcpOauth=canva&outcome=connected&toolCount=abc",
+    );
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          data: [
+            ...PRESETS,
+            {
+              slug: "canva",
+              displayName: "Canva",
+              description: "Design with Canva — via MCP.",
+              url: "https://mcp.canva.com/mcp",
+              connectionMode: "oauth",
+              docsUrl: "https://www.canva.com",
+              connected: true,
+            },
+          ],
+        }),
+      )) as unknown as typeof fetch;
+
+    const container = mountSection();
+    await settle();
+
+    const canvaCard = container.querySelector(
+      '[data-plugin-slug="canva"]',
+    ) as HTMLElement;
+    expect(canvaCard.textContent).toContain("Connected");
+    expect(canvaCard.textContent).not.toContain("abc");
+    expect(canvaCard.textContent).not.toContain("NaN");
+    expect(canvaCard.textContent).not.toContain("tools");
+  });
+
   test("Disconnect's accessible name includes the preset display name (CL-6794)", async () => {
     globalThis.fetch = (async () =>
       new Response(

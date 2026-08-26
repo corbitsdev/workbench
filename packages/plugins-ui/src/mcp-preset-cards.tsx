@@ -49,6 +49,21 @@ function mcpOauthReturnError(slug: string): string | null {
   );
 }
 
+function mcpOauthConnectedReturn():
+  | { readonly slug: string; readonly toolCount: number }
+  | undefined {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("outcome") !== "connected") return undefined;
+  const slug = params.get("mcpOauth");
+  const raw = params.get("toolCount");
+  if (slug === null || slug === "" || raw === null || raw === "") {
+    return undefined;
+  }
+  const toolCount = Number(raw);
+  if (!Number.isInteger(toolCount) || toolCount < 0) return undefined;
+  return { slug, toolCount };
+}
+
 function McpPresetCard({
   tenantId,
   preset,
@@ -250,7 +265,12 @@ export function McpPresetCardsSection({
 }) {
   const [presets, setPresets] = useState<readonly McpPreset[]>([]);
   const [toolCounts, setToolCounts] = useState<ReadonlyMap<string, number>>(
-    new Map(),
+    () => {
+      const returned = mcpOauthConnectedReturn();
+      return returned === undefined
+        ? new Map()
+        : new Map([[returned.slug, returned.toolCount]]);
+    },
   );
   const [loadError, setLoadError] = useState<string | null>(null);
   // Whether the presets fetch has resolved at least once — distinct from
