@@ -408,3 +408,40 @@ describe("Composer mention bring-in load error (CL-6839)", () => {
     expect(handles).toEqual(["@researcher"]);
   });
 });
+
+describe("ComposerHandle.setText", () => {
+  test("replaces the existing draft and focuses with the caret at the end", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const ref = createRef<ComposerHandle>();
+    act(() => {
+      root?.render(
+        createElement(Composer, {
+          ref,
+          agents: [],
+          onSend: () => Promise.resolve(true),
+          onInviteAgent: () => undefined,
+          onOpenAgentsSettings: () => undefined,
+          onCreateRoutineInSpace: () => undefined,
+        }),
+      );
+    });
+
+    typeInto(textarea(), "unsent draft");
+    await settle();
+    expect(textarea().value).toBe("unsent draft");
+
+    await act(async () => {
+      ref.current?.setText("previous prompt");
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      });
+    });
+
+    expect(textarea().value).toBe("previous prompt");
+    expect(document.activeElement).toBe(textarea());
+    expect(textarea().selectionStart).toBe("previous prompt".length);
+    expect(textarea().selectionEnd).toBe("previous prompt".length);
+  });
+});

@@ -8,9 +8,13 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import type { MessageItem } from "../src/api";
 import { WorkbenchTimeline } from "../src/timeline";
-import type { PinActions, ReactionActions } from "../src/timeline";
+import type {
+  CurrentUser,
+  PinActions,
+  ReactionActions,
+  TimelineMessageItem,
+} from "../src/timeline";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -24,7 +28,9 @@ async function flush(): Promise<void> {
   });
 }
 
-function textMessage(overrides: Partial<MessageItem> = {}): MessageItem[] {
+function textMessage(
+  overrides: Partial<TimelineMessageItem> = {},
+): TimelineMessageItem[] {
   return [
     {
       id: "m1",
@@ -32,7 +38,7 @@ function textMessage(overrides: Partial<MessageItem> = {}): MessageItem[] {
       parts: [{ kind: "text", text: "ship it" }],
       sender: { name: "Researcher", address: "researcher@agents.example" },
       ...overrides,
-    } as MessageItem,
+    },
   ];
 }
 
@@ -47,8 +53,10 @@ afterEach(() => {
 });
 
 async function mount(props: {
-  items: MessageItem[];
+  items: TimelineMessageItem[];
   onOpenThread?: (messageId: string) => void;
+  onEditMessage?: (messageId: string) => void;
+  currentUser?: CurrentUser;
   reactionActions?: ReactionActions;
   pinActions?: PinActions;
 }) {
@@ -61,6 +69,12 @@ async function mount(props: {
         items={props.items}
         {...(props.onOpenThread !== undefined
           ? { onOpenThread: props.onOpenThread }
+          : {})}
+        {...(props.onEditMessage !== undefined
+          ? { onEditMessage: props.onEditMessage }
+          : {})}
+        {...(props.currentUser !== undefined
+          ? { currentUser: props.currentUser }
           : {})}
         {...(props.reactionActions !== undefined
           ? { reactionActions: props.reactionActions }
@@ -109,6 +123,89 @@ describe("message hover toolbar", () => {
     await act(async () => reply.click());
 
     expect(opened).toEqual(["m1"]);
+  });
+});
+
+describe("hover Edit on own prompts", () => {
+  test("Edit appears only when the row is the signed-in user's own prompt", async () => {
+    const el = await mount({
+      items: textMessage(),
+      currentUser: { principalId: "researcher" },
+      onEditMessage: () => undefined,
+    });
+
+    const group = el.querySelector(".chat-message-group");
+    expect(group?.getAttribute("data-own")).toBe("true");
+    expect(el.querySelector(".chat-hover-edit")).not.toBeNull();
+  });
+
+  test("Edit is absent on someone else's prompt even when onEditMessage is wired", async () => {
+    const el = await mount({
+      items: textMessage(),
+      currentUser: { principalId: "someone-else" },
+      onEditMessage: () => undefined,
+    });
+
+    expect(el.querySelector(".chat-message-group")?.getAttribute("data-own")).toBe(
+      "false",
+    );
+    expect(el.querySelector(".chat-hover-edit")).toBeNull();
+  });
+
+  test("Edit is absent on a pending own send", async () => {
+    const el = await mount({
+      items: textMessage({ pendingStatus: "sending" }),
+      currentUser: { principalId: "researcher" },
+      onEditMessage: () => undefined,
+    });
+
+    expect(el.querySelector(".chat-hover-toolbar")).toBeNull();
+    expect(el.querySelector(".chat-hover-edit")).toBeNull();
+  });
+
+  test("Edit is absent on a streaming row", async () => {
+    const el = await mount({
+      items: textMessage({ streaming: true }),
+      currentUser: { principalId: "researcher" },
+      onEditMessage: () => undefined,
+    });
+
+    expect(el.querySelector(".chat-hover-toolbar")).toBeNull();
+    expect(el.querySelector(".chat-hover-edit")).toBeNull();
+  });
+
+  test("clicking Edit calls onEditMessage with the message id and does not open a thread", async () => {
+    const edited: string[] = [];
+    const opened: string[] = [];
+    const el = await mount({
+      items: textMessage(),
+      currentUser: { principalId: "researcher" },
+      onEditMessage: (id) => edited.push(id),
+      onOpenThread: (id) => opened.push(id),
+    });
+
+    const edit = el.querySelector(".chat-hover-edit") as HTMLButtonElement;
+    await act(async () => edit.click());
+
+    expect(edited).toEqual(["m1"]);
+    expect(opened).toEqual([]);
+  });
+
+  test("the hover reply button still only opens a thread", async () => {
+    const edited: string[] = [];
+    const opened: string[] = [];
+    const el = await mount({
+      items: textMessage(),
+      currentUser: { principalId: "researcher" },
+      onEditMessage: (id) => edited.push(id),
+      onOpenThread: (id) => opened.push(id),
+    });
+
+    const reply = el.querySelector(".chat-hover-reply") as HTMLButtonElement;
+    await act(async () => reply.click());
+
+    expect(opened).toEqual(["m1"]);
+    expect(edited).toEqual([]);
   });
 });
 

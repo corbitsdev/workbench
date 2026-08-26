@@ -651,6 +651,136 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
   });
 });
 
+describe("hover Edit copies an own prompt into the composer", () => {
+  const OWN_PROMPT = "rewrite this prompt";
+
+  function stubFetchWithOwnPrompt(
+    sentMessages: unknown[],
+    forkCalls: string[],
+  ) {
+    globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = typeof input === "string" ? input : String(input);
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
+        return json({ items: [WORKBENCH_WIRE] });
+      }
+      if (/\/chat\/workbenches\?kind=chat$/.test(path))
+        return json({ items: [] });
+      if (/\/chat\/workbenches\/[^/]+\/threads\/fork$/.test(path)) {
+        forkCalls.push(path);
+        return json({ id: "thr_should_not_fork" });
+      }
+      if (/\/chat\/workbenches\/[^/]+\/threads$/.test(path)) {
+        return json({ rootThreadId: "", items: [] });
+      }
+      if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
+        if (init?.method === "POST") {
+          sentMessages.push(JSON.parse(String(init.body)));
+          return json({ id: "msg_new", createdAt: "2026-01-01T00:00:00.000Z" });
+        }
+        return json({
+          items: [
+            {
+              id: "msg_own",
+              createdAt: "2026-01-01T00:00:00.000Z",
+              parts: [{ kind: "text", text: OWN_PROMPT }],
+              sender: { name: null, address: "prn_alice@acme.example" },
+            },
+            {
+              id: "msg_agent",
+              createdAt: "2026-01-01T00:00:01.000Z",
+              parts: [{ kind: "text", text: "agent reply" }],
+              sender: {
+                name: "Researcher",
+                address: "researcher@agents.example",
+              },
+            },
+          ],
+        });
+      }
+      if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
+      if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
+        return json({ items: [] });
+      }
+      if (/\/chat\/workbenches\/[^/]+\/turns(?:\/|$|\?)/.test(path)) {
+        return json({ items: [] });
+      }
+      if (/\/chat\/workbenches\/[^/]+\/settings$/.test(path)) {
+        return json({
+          ...WORKBENCH_WIRE,
+          settings: {},
+          contextWindow: { value: 20, source: "inherit" },
+        });
+      }
+      if (/\/chat\/bench\/settings$/.test(path)) {
+        return json({ settings: {}, contextWindow: 20 });
+      }
+      throw new Error(`unstubbed fetch: ${path}`);
+    }) as typeof fetch;
+  }
+
+  test("clicking Edit fills the composer; send posts a new message and does not fork", async () => {
+    const sentMessages: unknown[] = [];
+    const forkCalls: string[] = [];
+    stubFetchWithOwnPrompt(sentMessages, forkCalls);
+    const harness = await mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "ch_1",
+      currentUser: { principalId: "prn_alice" },
+    });
+    await harness.settle();
+
+    const ownGroup = harness.container.querySelector("#chat-message-msg_own");
+    const agentGroup = harness.container.querySelector(
+      "#chat-message-msg_agent",
+    );
+    expect(ownGroup?.getAttribute("data-own")).toBe("true");
+    expect(agentGroup?.querySelector(".chat-hover-edit")).toBeNull();
+
+    typeInComposer(harness.container, "unsent draft");
+    const edit = ownGroup?.querySelector(
+      ".chat-hover-edit",
+    ) as HTMLButtonElement;
+    expect(edit).not.toBeNull();
+    await act(async () => {
+      edit.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await sleep(30);
+    });
+
+    const composer = harness.container.querySelector(
+      ".chat-composer-input",
+    ) as HTMLTextAreaElement;
+    expect(composer.value).toBe(OWN_PROMPT);
+    expect(ownGroup?.textContent).toContain(OWN_PROMPT);
+
+    const sendButton = harness.container.querySelector(
+      'button[aria-label="Send"]',
+    ) as HTMLButtonElement;
+    await act(async () => {
+      sendButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await sleep(30);
+    });
+
+    expect(forkCalls).toEqual([]);
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0]).toMatchObject({
+      parts: [{ kind: "text", text: OWN_PROMPT }],
+    });
+    expect(
+      harness.container.querySelector("#chat-message-msg_own"),
+    ).not.toBeNull();
+    expect(
+      harness.container.querySelector("#chat-message-msg_own")?.textContent,
+    ).toContain(OWN_PROMPT);
+    harness.unmount();
+  });
+});
+
 const WORKBENCH_WITH_AGENT_WIRE = {
   ...WORKBENCH_WIRE,
   participants: [
