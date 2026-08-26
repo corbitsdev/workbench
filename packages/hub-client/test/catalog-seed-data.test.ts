@@ -1,9 +1,10 @@
 // CATALOG_SEEDS is pure data consumed by seedCatalog (seed.ts) to give
 // every supported credential provider a browsable, launchable model
 // catalog. These tests guard the shape every entry must hold — one seed
-// per SupportedCredentialProvider, 2-4 curated models, and a provider
-// spec whose adapter plugin matches credential-test.ts's own mapping —
-// so a newly added provider (like xAI) can't silently drift out of sync.
+// per SupportedCredentialProvider, a small curated model set (Anthropic
+// has six; others typically 2–5), and a provider spec whose adapter
+// plugin matches credential-test.ts's own mapping — so a newly added
+// provider (like xAI) can't silently drift out of sync.
 import { describe, expect, test } from "bun:test";
 
 import {
@@ -24,11 +25,14 @@ describe("CATALOG_SEEDS", () => {
     expect(seededProviders).toEqual(supportedProviders);
   });
 
-  test("every seed lists between 2 and 4 curated models", () => {
+  test("every non-exception seed stays inside the generic curated-size bound", () => {
     for (const [provider, seed] of Object.entries(CATALOG_SEEDS) as [
       SupportedCredentialProvider,
       (typeof CATALOG_SEEDS)[SupportedCredentialProvider],
     ][]) {
+      // Anthropic is the curated six-model set (Sonnet 5 first); openai and
+      // google-genai keep their smaller curated lists. Everyone else stays
+      // inside the generic 2–5 bound.
       if (provider === "anthropic" || provider === "openai") continue;
       if (provider === "google-genai") continue;
       expect(seed.models.length).toBeGreaterThanOrEqual(2);
@@ -40,6 +44,26 @@ describe("CATALOG_SEEDS", () => {
     for (const seed of Object.values(CATALOG_SEEDS)) {
       const names = seed.models.map((m) => m.canonicalName);
       expect(new Set(names).size).toBe(names.length);
+    }
+  });
+
+  test("anthropic seeds Claude models behind the anthropic adapter", () => {
+    const seed = CATALOG_SEEDS.anthropic;
+    expect(seed.provider).toEqual({
+      name: "anthropic",
+      plugin: "anthropic",
+      baseURL: "https://api.anthropic.com",
+    });
+    expect(seed.models.map((m) => m.canonicalName)).toEqual([
+      "claude-sonnet-5",
+      "claude-opus-5",
+      "claude-opus-4-8",
+      "claude-haiku-4-5-20251001",
+      "claude-fable-5",
+      "claude-sonnet-4-6",
+    ]);
+    for (const model of seed.models) {
+      expect(model.displayName.length).toBeGreaterThan(0);
     }
   });
 

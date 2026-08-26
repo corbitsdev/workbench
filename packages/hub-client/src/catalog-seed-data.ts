@@ -39,8 +39,9 @@ export type CatalogProviderSpec = {
 
 export type CatalogProviderSeed = {
   readonly provider: CatalogProviderSpec;
-  /** 2-4 sensible defaults: enough to make the model picker useful,
-   * never the provider's entire model list. */
+  /** Curated defaults for the model picker — enough to be useful, never the
+   * provider's entire list. Anthropic ships six; other providers typically
+   * stay in a small 2–5 band. */
   readonly models: readonly CatalogModelSpec[];
 };
 
@@ -55,6 +56,14 @@ export const CATALOG_SEEDS: Readonly<
     },
     models: [
       { canonicalName: "claude-sonnet-5", displayName: "Claude Sonnet 5" },
+      { canonicalName: "claude-opus-5", displayName: "Claude Opus 5" },
+      { canonicalName: "claude-opus-4-8", displayName: "Claude Opus 4.8" },
+      {
+        canonicalName: "claude-haiku-4-5-20251001",
+        displayName: "Claude Haiku 4.5",
+      },
+      { canonicalName: "claude-fable-5", displayName: "Claude Fable 5" },
+      { canonicalName: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6" },
     ],
   },
   openai: {

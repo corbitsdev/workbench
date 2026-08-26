@@ -5,6 +5,7 @@ import type {
   WorkflowPusher,
 } from "@workbench/hub-client";
 import {
+  CATALOG_SEEDS,
   SETUP_AGENT_ASSET_NAME,
   SidecarUnavailableError,
 } from "@workbench/hub-client";
@@ -1293,12 +1294,15 @@ describe("completeCredentialSetup", () => {
 
     // Every ensure-then-create helper hit its 409 branch on the second
     // pass and listed the row it already created on the first — nothing
-    // was ever created twice.
+    // was ever created twice. Anthropic's curated seed is several models
+    // (one POST each for model and offering); the rest of the chain is
+    // still a single provider/credential row.
+    const anthropicCatalogSize = CATALOG_SEEDS.anthropic.models.length;
     expect(assetCreatePosts).toBe(4);
     expect(deploymentCreatePosts).toBe(4);
-    expect(catalogModelCreatePosts).toBe(1);
+    expect(catalogModelCreatePosts).toBe(anthropicCatalogSize);
     expect(catalogProviderCreatePosts).toBe(1);
-    expect(catalogOfferingCreatePosts).toBe(1);
+    expect(catalogOfferingCreatePosts).toBe(anthropicCatalogSize);
     expect(credentialCreatePosts).toBe(1);
     // The second pass is itself an explicit submission and rotates the
     // existing row rather than leaving it untouched (the CL-6103 fix,

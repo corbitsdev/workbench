@@ -14,8 +14,9 @@
 // `@workbench/hub-client` functions `completeCredentialSetup` calls),
 // reused here exactly as onboarding's own guided step uses them. This
 // module's only job is the env-map-to-provider translation, the
-// idempotency check that skips a provider already carrying a working
-// credential (never overwriting a rotated or renamed key), and folding
+// idempotency check that skips overwriting a provider already carrying
+// a working credential (never rotating a renamed key), backfills that
+// provider's curated catalog additively on every hub boot, and folding
 // a single provider's failure into a log line instead of an exception —
 // one bad or rate-limited key must never stop every other provider from
 // planting, and must never stop the hub itself from starting.
@@ -159,7 +160,7 @@ async function findActiveCredential(
   cookies: string[],
   tenantId: string,
   provider: SupportedCredentialProvider,
-): Promise<boolean> {
+): Promise<{ id: string } | undefined> {
   const name = inferenceCredentialName(provider);
   let cursor: string | undefined;
   do {
@@ -173,11 +174,13 @@ async function findActiveCredential(
       listed.data,
       "credentials response",
     );
-    if (page.data.some((c) => c.name === name && c.status === "active"))
-      return true;
+    const match = page.data.find(
+      (c) => c.name === name && c.status === "active",
+    );
+    if (match !== undefined) return { id: match.id };
     cursor = page.nextCursor ?? undefined;
   } while (cursor !== undefined);
-  return false;
+  return undefined;
 }
 
 /**
@@ -185,9 +188,12 @@ async function findActiveCredential(
  * present in `envProviderKeys`, at the given tenant, idempotently:
  *
  * - A provider already carrying an active credential of that name is
- *   skipped outright — no live probe, no `seedCatalog` call — so an
- *   already-rotated or hand-renamed key is never touched, and a hub
- *   restart never re-probes a provider that already works.
+ *   not probed and its key is not overwritten — an already-rotated or
+ *   hand-renamed key stays put. `seedCatalog` still runs against that
+ *   existing credential (`existingCredentialId`, no `apiKey`) so a
+ *   hub restart backfills newly curated models additively. `seedCatalog`
+ *   is ensure-then-create: missing rows are planted, existing ones
+ *   409-skip, nothing is deleted.
  * - A provider with no existing credential is proven with a real,
  *   free call (`testProviderCredential`) before anything is persisted;
  *   a failed probe is reported and skipped, never thrown, so one bad
@@ -201,10 +207,9 @@ async function findActiveCredential(
  *   proven key, and this is reported honestly as `"blocked"` — never
  *   logged as planted.
  *
- * Calling this twice with the same env plants nothing the second time:
- * every provider it planted on the first call now has an active
- * credential, so the second call's per-provider check short-circuits
- * to "skipped" before any probe or plant runs.
+ * Calling this twice with the same env plants the credential once: the
+ * second call's per-provider check skips probe and key write, then
+ * backfills the curated catalog against the already-active row.
  */
 export async function plantEnvProviderCredentials(
   args: PlantEnvProviderCredentialsArgs,
@@ -212,6 +217,29 @@ export async function plantEnvProviderCredentials(
   const testCredential = args.testCredential ?? testProviderCredential;
   const runSeedCatalog = args.seedCatalogFn ?? seedCatalog;
   const outcomes: PlantEnvProviderCredentialsOutcome[] = [];
+  const suppressedLog = () => {
+    // seedCatalog's own step-by-step log is suppressed here: this
+    // module reports exactly one summary line per provider below,
+    // never the per-row created/skipped detail seedCatalog logs for
+    // its other callers (`workbench seed`, the guided step).
+  };
+
+  function catalogSeedArgs(
+    provider: SupportedCredentialProvider,
+    extra:
+      { readonly apiKey: string } | { readonly existingCredentialId: string },
+  ): SeedCatalogArgs {
+    const baseURL = args.envProviderBaseUrls?.[provider];
+    return {
+      api: args.api,
+      cookies: args.cookies,
+      tenantId: args.tenantId,
+      provider,
+      log: suppressedLog,
+      ...extra,
+      ...(baseURL !== undefined ? { baseURLOverride: baseURL } : {}),
+    };
+  }
 
   for (const [provider, apiKey] of Object.entries(args.envProviderKeys) as [
     SupportedCredentialProvider,
@@ -225,8 +253,22 @@ export async function plantEnvProviderCredentials(
     );
     if (alreadyActive) {
       const name = inferenceCredentialName(provider);
+      try {
+        await runSeedCatalog(
+          catalogSeedArgs(provider, {
+            existingCredentialId: alreadyActive.id,
+          }),
+        );
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        args.log(
+          `env credential plant: ${provider} failed to backfill catalog: ${message}`,
+        );
+        outcomes.push({ provider, status: "failed", message });
+        continue;
+      }
       args.log(
-        `env credential plant: ${provider} already has an active credential named ${name} (skipped) — the env key was not planted; rotate the existing ${name} credential in Plugins if you meant to replace it`,
+        `env credential plant: ${provider} already has an active credential named ${name} (skipped) — the env key was not planted; rotate the existing ${name} credential in Plugins if you meant to replace it. Curated catalog models were backfilled additively.`,
       );
       outcomes.push({ provider, status: "skipped" });
       continue;
@@ -245,33 +287,8 @@ export async function plantEnvProviderCredentials(
       continue;
     }
 
-    const suppressedLog = () => {
-      // seedCatalog's own step-by-step log is suppressed here: this
-      // module reports exactly one summary line per provider below,
-      // never the per-row created/skipped detail seedCatalog logs for
-      // its other callers (`workbench seed`, the guided step).
-    };
-    const seedCatalogArgs: SeedCatalogArgs =
-      baseURL !== undefined
-        ? {
-            api: args.api,
-            cookies: args.cookies,
-            tenantId: args.tenantId,
-            provider,
-            apiKey,
-            baseURLOverride: baseURL,
-            log: suppressedLog,
-          }
-        : {
-            api: args.api,
-            cookies: args.cookies,
-            tenantId: args.tenantId,
-            provider,
-            apiKey,
-            log: suppressedLog,
-          };
     try {
-      await runSeedCatalog(seedCatalogArgs);
+      await runSeedCatalog(catalogSeedArgs(provider, { apiKey }));
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       args.log(`env credential plant: ${provider} failed to plant: ${message}`);

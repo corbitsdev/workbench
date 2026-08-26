@@ -207,10 +207,10 @@ describe("plantEnvProviderCredentials", () => {
     expect(lines[0]).not.toContain("sk-ant-real");
   });
 
-  test("skips a provider that already has an active credential, without probing or seeding", async () => {
+  test("an already-active credential skips probe and key rotation, but backfills the curated catalog", async () => {
     const { log, lines } = collector();
     let probed = false;
-    let seeded = false;
+    const seedCatalogCalls: SeedCatalogArgs[] = [];
     const outcomes = await plantEnvProviderCredentials({
       api: credentialsApi(new Set(["anthropic-default"])),
       cookies: [],
@@ -221,23 +221,54 @@ describe("plantEnvProviderCredentials", () => {
         probed = true;
         return { ok: true };
       },
-      seedCatalogFn: async () => {
-        seeded = true;
+      seedCatalogFn: async (args) => {
+        seedCatalogCalls.push(args);
         return { hasCompletionCapableModel: true };
       },
     });
 
     expect(outcomes).toEqual([{ provider: "anthropic", status: "skipped" }]);
     expect(probed).toBe(false);
-    expect(seeded).toBe(false);
+    expect(seedCatalogCalls).toHaveLength(1);
+    expect(seedCatalogCalls[0]?.existingCredentialId).toBe(
+      "cred_anthropic-default",
+    );
+    expect(seedCatalogCalls[0]?.apiKey).toBeUndefined();
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("skipped");
-    // The rotated env key was never planted, and the message says where
-    // to fix that.
     expect(lines[0]).toContain("was not planted");
+    expect(lines[0]).toContain("backfilled");
     expect(lines[0]).toContain("rotate");
     expect(lines[0]).toContain("Plugins");
     expect(lines[0]).not.toContain("sk-ant-rotated");
+  });
+
+  test("a catalog backfill failure on an already-active credential is reported, never thrown", async () => {
+    const { log, lines } = collector();
+    const outcomes = await plantEnvProviderCredentials({
+      api: credentialsApi(new Set(["anthropic-default"])),
+      cookies: [],
+      tenantId: TENANT_ID,
+      envProviderKeys: { anthropic: "sk-ant-real" },
+      log,
+      testCredential: async () => {
+        throw new Error("must not probe an already-active credential");
+      },
+      seedCatalogFn: async () => {
+        throw new Error("catalog POST failed");
+      },
+    });
+
+    expect(outcomes).toEqual([
+      {
+        provider: "anthropic",
+        status: "failed",
+        message: "catalog POST failed",
+      },
+    ]);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("failed to backfill catalog");
+    expect(lines[0]).toContain("catalog POST failed");
   });
 
   test("a failed probe is reported, never persisted, and never thrown", async () => {
@@ -301,6 +332,35 @@ describe("plantEnvProviderCredentials", () => {
     );
   });
 
+  test("an already-active ollama credential still threads its base URL into the catalog backfill", async () => {
+    const { log } = collector();
+    const seedCatalogCalls: SeedCatalogArgs[] = [];
+    const outcomes = await plantEnvProviderCredentials({
+      api: credentialsApi(new Set(["ollama-default"])),
+      cookies: [],
+      tenantId: TENANT_ID,
+      envProviderKeys: { ollama: "ollama" },
+      envProviderBaseUrls: { ollama: "https://home-mac.example.ts.net" },
+      log,
+      testCredential: async () => {
+        throw new Error("must not probe an already-active credential");
+      },
+      seedCatalogFn: async (args) => {
+        seedCatalogCalls.push(args);
+        return { hasCompletionCapableModel: true };
+      },
+    });
+
+    expect(outcomes).toEqual([{ provider: "ollama", status: "skipped" }]);
+    expect(seedCatalogCalls[0]?.existingCredentialId).toBe(
+      "cred_ollama-default",
+    );
+    expect(seedCatalogCalls[0]?.apiKey).toBeUndefined();
+    expect(seedCatalogCalls[0]?.baseURLOverride).toBe(
+      "https://home-mac.example.ts.net",
+    );
+  });
+
   test("one provider's failed probe never blocks another provider's plant", async () => {
     const { log } = collector();
     const active = new Set<string>();
@@ -329,12 +389,12 @@ describe("plantEnvProviderCredentials", () => {
     expect(planted).toEqual(["openai"]);
   });
 
-  test("calling twice plants once — the second call finds the credential already active", async () => {
+  test("calling twice plants the credential once and backfills the catalog on every boot", async () => {
     const { log } = collector();
     const active = new Set<string>();
     const api = credentialsApi(active);
     let probeCount = 0;
-    let seedCount = 0;
+    const seedCalls: SeedCatalogArgs[] = [];
     const args = {
       api,
       cookies: [],
@@ -345,8 +405,8 @@ describe("plantEnvProviderCredentials", () => {
         probeCount += 1;
         return { ok: true as const };
       },
-      seedCatalogFn: async () => {
-        seedCount += 1;
+      seedCatalogFn: async (seedArgs: SeedCatalogArgs) => {
+        seedCalls.push(seedArgs);
         // A real `seedCatalog` call is what makes the credential active;
         // the fake mirrors that side effect so the second call's
         // pre-check sees it.
@@ -361,7 +421,10 @@ describe("plantEnvProviderCredentials", () => {
     expect(first).toEqual([{ provider: "anthropic", status: "planted" }]);
     expect(second).toEqual([{ provider: "anthropic", status: "skipped" }]);
     expect(probeCount).toBe(1);
-    expect(seedCount).toBe(1);
+    expect(seedCalls).toHaveLength(2);
+    expect(seedCalls[0]?.apiKey).toBe("sk-ant-real");
+    expect(seedCalls[1]?.existingCredentialId).toBe("cred_anthropic-default");
+    expect(seedCalls[1]?.apiKey).toBeUndefined();
   });
 
   test("a revoked existing credential of the same name blocks the plant instead of being reported as planted", async () => {
@@ -420,6 +483,7 @@ describe("plantEnvProviderCredentials", () => {
   test("findActiveCredential follows nextCursor instead of reading only page one", async () => {
     const { log } = collector();
     let probed = false;
+    const seedCatalogCalls: SeedCatalogArgs[] = [];
     const outcomes = await plantEnvProviderCredentials({
       // The active "anthropic-default" row lives on page two only.
       api: paginatedCredentialsApi([
@@ -434,9 +498,16 @@ describe("plantEnvProviderCredentials", () => {
         probed = true;
         return { ok: true as const };
       },
+      seedCatalogFn: async (args) => {
+        seedCatalogCalls.push(args);
+        return { hasCompletionCapableModel: true };
+      },
     });
 
     expect(outcomes).toEqual([{ provider: "anthropic", status: "skipped" }]);
     expect(probed).toBe(false);
+    expect(seedCatalogCalls[0]?.existingCredentialId).toBe(
+      "cred_anthropic-default",
+    );
   });
 });
