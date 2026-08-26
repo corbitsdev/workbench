@@ -100,12 +100,12 @@ The **assistant** default workflow pins the `@corbits/memory-tools` tool
 package (`workflows/assistant/src/index.ts`), and that pin only resolves
 once a `package-registry`-kind asset named `corbits-tools` carries its
 tarball (see `apps/hub/src/index.ts`'s `CORBITS_TOOLS_REGISTRY` comment).
-`seedTenant` (`packages/hub-client/src/seed.ts`) publishes that asset
-itself — via `@corbits/tool-registry-publish`, which bundles
-`@corbits/memory-tools` into a self-contained tarball (every dependency
-inlined, so the closure resolver has nothing further to fetch) and pushes
-it through the hub's native asset REST routes — ahead of deploying any
-workflow, so this step needs nothing from you: **echo**,
+`workbench setup` publishes that asset onto the root tenant via
+`@corbits/tool-registry-publish` (bundles `@corbits/memory-tools` into a
+self-contained tarball and pushes it through the hub's native asset REST
+routes). Descendants inherit it; `seedTenant` does not pack. This
+walkthrough's personal bench is the root (`OPERATOR_TENANT_ID` unset),
+so the same publish happens once onto that bench — then **echo**,
 **workbench-digest**, and **assistant** all come up live.
 `scripts/e2e/local-rip.test.ts` asserts exactly that.
 
