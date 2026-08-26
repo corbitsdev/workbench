@@ -1551,7 +1551,9 @@ function MessagePartsInner({
     !isSystemSenderItem(item) &&
     localPartOf(item.sender.address) === currentUser.principalId;
   const ownEdit =
-    isOwn && onEditMessage !== undefined ? onEditMessage : undefined;
+    isOwn && onEditMessage !== undefined && messageText(item).length > 0
+      ? onEditMessage
+      : undefined;
   const contextMenu = useContextMenuState();
   const menu = offersSocialChrome
     ? buildMessageMenu({

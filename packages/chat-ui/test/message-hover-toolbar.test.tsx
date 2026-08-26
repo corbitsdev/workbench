@@ -174,6 +174,28 @@ describe("hover Edit on own prompts", () => {
     expect(el.querySelector(".chat-hover-edit")).toBeNull();
   });
 
+  test("Edit is absent on a file-only own row", async () => {
+    const el = await mount({
+      items: textMessage({
+        parts: [
+          {
+            kind: "file",
+            name: "report.pdf",
+            mediaType: "application/pdf",
+            data: "JVBERi0xLjQK",
+          },
+        ],
+      }),
+      currentUser: { principalId: "researcher" },
+      onEditMessage: () => undefined,
+    });
+
+    expect(
+      el.querySelector(".chat-message-group")?.getAttribute("data-own"),
+    ).toBe("true");
+    expect(el.querySelector(".chat-hover-edit")).toBeNull();
+  });
+
   test("clicking Edit calls onEditMessage with the message id and does not open a thread", async () => {
     const edited: string[] = [];
     const opened: string[] = [];

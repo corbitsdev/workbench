@@ -444,4 +444,189 @@ describe("ComposerHandle.setText", () => {
     expect(textarea().selectionStart).toBe("previous prompt".length);
     expect(textarea().selectionEnd).toBe("previous prompt".length);
   });
+
+  test("Enter after setText sends the copied prompt instead of running a slash command", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const ref = createRef<ComposerHandle>();
+    const sent: ComposerSendPayload[] = [];
+    let inviteAgentCalls = 0;
+    act(() => {
+      root?.render(
+        createElement(Composer, {
+          ref,
+          agents: [],
+          onSend: (payload) => {
+            sent.push(payload);
+            return Promise.resolve(true);
+          },
+          onInviteAgent: () => {
+            inviteAgentCalls += 1;
+          },
+          onOpenAgentsSettings: () => undefined,
+          onCreateRoutineInSpace: () => undefined,
+        }),
+      );
+    });
+
+    typeInto(textarea(), "/");
+    await settle();
+    expect(container?.querySelector(".chat-mention-popover")).not.toBeNull();
+
+    await act(async () => {
+      ref.current?.setText("copied prompt");
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      });
+    });
+    await settle();
+
+    expect(textarea().value).toBe("copied prompt");
+    expect(container?.querySelector(".chat-mention-popover")).toBeNull();
+
+    act(() => {
+      textarea().dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+    await settle();
+
+    expect(inviteAgentCalls).toBe(0);
+    expect(sent).toEqual([{ text: "copied prompt", attachments: [] }]);
+  });
+
+  test("Send after setText does not carry leftover bring-in invite intent", async () => {
+    const sent: { payload: ComposerSendPayload | null } = { payload: null };
+    const ref = createRef<ComposerHandle>();
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => {
+      root?.render(
+        createElement(Composer, {
+          ref,
+          agents: [],
+          participants: [
+            { address: "researcher@agents.example", handle: "researcher" },
+          ],
+          members: [{ id: "prn_bob", displayName: "Bob" }],
+          invitableAgents: [
+            { id: "wfd_echo", name: "echo", description: "Echo" },
+          ],
+          onSend: (payload) => {
+            sent.payload = payload;
+            return Promise.resolve(true);
+          },
+          onInviteAgent: () => undefined,
+          onOpenAgentsSettings: () => undefined,
+          onCreateRoutineInSpace: () => undefined,
+        }),
+      );
+    });
+
+    typeInto(textarea(), "@bo");
+    await settle();
+    const options = Array.from(
+      container?.querySelectorAll<HTMLButtonElement>(".chat-mention-option") ??
+        [],
+    );
+    const bobOption = options.find(
+      (option) =>
+        option.querySelector(".chat-mention-handle")?.textContent === "@bob",
+    );
+    if (bobOption === undefined) throw new Error("bob option not found");
+    act(() => {
+      bobOption.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+      );
+    });
+    await settle();
+    expect(textarea().value).toBe("@bob ");
+
+    await act(async () => {
+      ref.current?.setText("copied prompt");
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      });
+    });
+    await settle();
+
+    act(() => {
+      sendButton().click();
+    });
+    await settle();
+
+    if (sent.payload === null) throw new Error("payload not sent");
+    expect(sent.payload.text).toBe("copied prompt");
+    expect(sent.payload.invite).toBeUndefined();
+  });
+
+  test("Send after setText does not carry leftover attachments", async () => {
+    const sent: ComposerSendPayload[] = [];
+    const ref = createRef<ComposerHandle>();
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => {
+      root?.render(
+        createElement(Composer, {
+          ref,
+          agents: [],
+          onSend: (payload) => {
+            sent.push(payload);
+            return Promise.resolve(true);
+          },
+          onInviteAgent: () => undefined,
+          onOpenAgentsSettings: () => undefined,
+          onCreateRoutineInSpace: () => undefined,
+        }),
+      );
+    });
+
+    const fileInput = container.querySelector<HTMLInputElement>(
+      ".chat-composer-file-input",
+    );
+    if (fileInput === null) throw new Error("file input not found");
+
+    const file = new File(["hello"], "notes.txt", { type: "text/plain" });
+    Object.defineProperty(fileInput, "files", {
+      configurable: true,
+      value: {
+        0: file,
+        length: 1,
+        item: (index: number) => (index === 0 ? file : null),
+        [Symbol.iterator]: function* () {
+          yield file;
+        },
+      },
+    });
+    act(() => {
+      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await settle();
+    await settle();
+    expect(container.querySelector(".chat-composer-attachments")).not.toBeNull();
+
+    await act(async () => {
+      ref.current?.setText("copied prompt");
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      });
+    });
+    await settle();
+
+    expect(container.querySelector(".chat-composer-attachments")).toBeNull();
+
+    act(() => {
+      sendButton().click();
+    });
+    await settle();
+
+    expect(sent).toEqual([{ text: "copied prompt", attachments: [] }]);
+  });
 });

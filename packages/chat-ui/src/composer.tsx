@@ -368,6 +368,7 @@ export const Composer = forwardRef<
   const [focused, setFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachGenerationRef = useRef(0);
 
   /** Auto-grow: the textarea reports its own content height, so the
    * measurement resets to the CSS-declared min-height before reading
@@ -380,6 +381,21 @@ export const Composer = forwardRef<
     textarea.style.height = "auto";
     textarea.style.height = `${textarea.scrollHeight}px`;
   }, [value]);
+
+  function syncComposerSuggestState(text: string, caret: number) {
+    setHelpOpen(false);
+    const openSlash = activeSlashQuery(text, caret);
+    if (openSlash !== null) {
+      setSlash(openSlash);
+      setSlashHighlight(0);
+      setMention(null);
+      return;
+    }
+    setSlash(null);
+    const openMention = activeMentionQuery(text, caret);
+    setMention(openMention);
+    setHighlight(0);
+  }
 
   useImperativeHandle(
     ref,
@@ -395,7 +411,15 @@ export const Composer = forwardRef<
         });
       },
       setText: (text: string) => {
+        attachGenerationRef.current += 1;
         setValue(text);
+        setMention(null);
+        setSlash(null);
+        setPendingInvites([]);
+        setAttachments([]);
+        setErrorMessage(null);
+        setPreparing(false);
+        syncComposerSuggestState(text, text.length);
         requestAnimationFrame(() => {
           const textarea = textareaRef.current;
           textarea?.focus();
@@ -421,21 +445,6 @@ export const Composer = forwardRef<
   const sendVisualState = composerSendVisualState(value, attachments, {
     sending,
   });
-
-  function syncComposerSuggestState(text: string, caret: number) {
-    setHelpOpen(false);
-    const openSlash = activeSlashQuery(text, caret);
-    if (openSlash !== null) {
-      setSlash(openSlash);
-      setSlashHighlight(0);
-      setMention(null);
-      return;
-    }
-    setSlash(null);
-    const openMention = activeMentionQuery(text, caret);
-    setMention(openMention);
-    setHighlight(0);
-  }
 
   /**
    * Fires the send and tracks its flight for the button's spinner —
@@ -546,6 +555,7 @@ export const Composer = forwardRef<
     if (!canAttachComposer({ sending, preparing })) return;
 
     const files = Array.from(fileList);
+    const generation = attachGenerationRef.current;
     const validation = validateAttachmentPick(
       attachments.length,
       attachmentBytesOnComposer(attachments),
@@ -572,11 +582,15 @@ export const Composer = forwardRef<
         });
       }
       // All-or-nothing: only commit once every file in the pick has read.
+      if (attachGenerationRef.current !== generation) return;
       setAttachments((previous) => [...previous, ...next]);
     } catch {
+      if (attachGenerationRef.current !== generation) return;
       setErrorMessage(CHAT_STRINGS.composerAttachmentReadError);
     } finally {
-      setPreparing(false);
+      if (attachGenerationRef.current === generation) {
+        setPreparing(false);
+      }
       resetFileInput();
     }
   }
