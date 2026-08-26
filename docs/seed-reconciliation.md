@@ -129,7 +129,10 @@ A genuine redeploy is the only honest repair.
 `apps/hub/src/env-credential-plant.ts` delegates to
 `plantEnvProviderCredentials` (`packages/onboarding`): keyed by the
 provider's stable credential name, a provider already carrying an
-active credential is skipped outright — a rotated or hand-renamed key
-is never touched. Removing an env var never deletes the planted
-credential: credentials are operator data once planted, not seeds to
-garbage-collect.
+active credential is not probed and its key is not overwritten — a
+rotated or hand-renamed key is never touched. `seedCatalog` still
+runs against that existing credential (`existingCredentialId`, no
+`apiKey`) so a hub restart backfills newly curated models additively:
+missing rows are planted, existing ones 409-skip, nothing is deleted.
+Removing an env var never deletes the planted credential: credentials
+are operator data once planted, not seeds to garbage-collect.
