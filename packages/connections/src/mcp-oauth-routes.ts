@@ -196,6 +196,9 @@ export function createMcpOAuthRoutes(
         callbackUrl,
         clientName: "Corbits Workbench",
         session,
+        ...(preset?.oauthScopes === undefined
+          ? {}
+          : { scope: preset.oauthScopes.join(" ") }),
       });
 
       let result: Awaited<ReturnType<typeof auth>>;
@@ -344,10 +347,14 @@ export function createMcpOAuthRoutes(
             }
           : {}),
       };
+      const callbackPreset = mcpPresetBySlug(payload.slug);
       const provider = createMcpOAuthProvider({
         callbackUrl,
         clientName: "Corbits Workbench",
         session,
+        ...(callbackPreset?.oauthScopes === undefined
+          ? {}
+          : { scope: callbackPreset.oauthScopes.join(" ") }),
       });
 
       let result: Awaited<ReturnType<typeof auth>>;

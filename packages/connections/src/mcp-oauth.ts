@@ -51,6 +51,7 @@ export function createMcpOAuthProvider(args: {
   readonly callbackUrl: string;
   readonly clientName: string;
   readonly session: McpOAuthSession;
+  readonly scope?: string;
 }): OAuthClientProvider {
   const { session } = args;
   let authorizationUrl: URL | undefined;
@@ -66,6 +67,7 @@ export function createMcpOAuthProvider(args: {
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
         token_endpoint_auth_method: "none",
+        ...(args.scope === undefined ? {} : { scope: args.scope }),
       };
     },
     state(): string {
