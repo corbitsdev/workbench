@@ -7,6 +7,7 @@ import { expect, test } from "bun:test";
 import type { StepPrimitive, WorkflowDefinition } from "@intx/workflow";
 
 import {
+  ASSISTANT_CREDENTIAL_BINDINGS,
   ASSISTANT_STEP_ID,
   ASSISTANT_SYSTEM_PROMPT,
   ASSISTANT_TOOL_PACKAGE_PINS,
@@ -125,6 +126,7 @@ test("the agent pins memory, capability, and the manager-tools bundles at the ve
     "@corbits/skills-tools",
     "@corbits/mcp-tools",
     "@corbits/interaction-tools",
+    "@corbits/manus-tools",
   ]);
   // A pin the registry cannot resolve fails every assistant deploy, so
   // each one must name a version the workspace actually publishes.
@@ -147,6 +149,19 @@ test("the prompt tells Myra to discover an MCP server's tools before calling one
   expect(ASSISTANT_SYSTEM_PROMPT).toContain("mcp_list_tools");
   expect(ASSISTANT_SYSTEM_PROMPT).toContain("mcp_call");
   expect(ASSISTANT_SYSTEM_PROMPT).toContain("never guess a tool name");
+});
+
+test("the workflow binds the Manus credential handle to a tenant-owned provider", () => {
+  const definition = buildAssistantWorkflow(INPUT);
+  expect(definition.credentialBindings).toEqual(ASSISTANT_CREDENTIAL_BINDINGS);
+  expect(ASSISTANT_CREDENTIAL_BINDINGS).toEqual([
+    {
+      package: "@corbits/manus-tools",
+      handle: "manus",
+      provider: "manus",
+      locator: "tenant",
+    },
+  ]);
 });
 
 test("the definition survives the workflow-asset JSON round-trip", () => {
