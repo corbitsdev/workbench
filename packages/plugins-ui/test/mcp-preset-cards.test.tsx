@@ -203,6 +203,54 @@ describe("McpPresetCardsSection", () => {
     );
   });
 
+  test("a client_rejected OAuth return names the registration failure, not unreachable sign-in", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?mcpOauth=canva&outcome=error&code=client_rejected",
+    );
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          data: [
+            ...PRESETS,
+            {
+              slug: "canva",
+              displayName: "Canva",
+              description: "Design with Canva — via MCP.",
+              url: "https://mcp.canva.com/mcp",
+              connectionMode: "oauth",
+              docsUrl: "https://www.canva.com",
+              connected: false,
+            },
+          ],
+        }),
+      )) as unknown as typeof fetch;
+
+    const container = mountSection();
+    await settle();
+
+    const canvaCard = container.querySelector(
+      '[data-plugin-slug="canva"]',
+    ) as HTMLElement;
+    expect(canvaCard.textContent).toContain(
+      "That app didn't accept Workbench as a client (redirect URL or registration). Try connecting again.",
+    );
+    expect(canvaCard.textContent).not.toContain(
+      "Couldn't reach that app's sign-in. Try connecting again.",
+    );
+    expect(
+      canvaCard.querySelector('[aria-label="Connect Canva"]'),
+    ).not.toBeNull();
+
+    const granolaCard = container.querySelector(
+      '[data-plugin-slug="granola"]',
+    ) as HTMLElement;
+    expect(granolaCard.textContent).not.toContain(
+      "That app didn't accept Workbench as a client (redirect URL or registration). Try connecting again.",
+    );
+  });
+
   test("Disconnect's accessible name includes the preset display name (CL-6794)", async () => {
     globalThis.fetch = (async () =>
       new Response(

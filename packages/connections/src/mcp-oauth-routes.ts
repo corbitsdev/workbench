@@ -80,6 +80,60 @@ function cookieName(slug: string): string {
   return `workbench_mcp_oauth_${slug}`;
 }
 
+const CLIENT_REJECTED_OAUTH_CODES = new Set([
+  "invalid_client_metadata",
+  "invalid_redirect_uri",
+  "invalid_client",
+  "unauthorized_client",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
+
+function readString(value: unknown, key: string): string | undefined {
+  if (!isRecord(value)) return undefined;
+  const candidate = value[key];
+  return typeof candidate === "string" && candidate.length > 0
+    ? candidate
+    : undefined;
+}
+
+/** Classify `/start` `auth()` throws: DCR/client rejection vs unreachable
+ * discovery. Prefer `errorCode`/`error`; fall back to registration wording
+ * in the message. The SDK maps unknown RFC 7591 codes to `ServerError`
+ * (`errorCode` `server_error`) and drops HTTP status, leaving only the
+ * description — "redirect URI is not allowlisted" must still count. */
+function mcpOAuthStartErrorCode(
+  cause: unknown,
+): "discovery_failed" | "client_rejected" {
+  const oauthCode =
+    readString(cause, "errorCode") ?? readString(cause, "error");
+  if (oauthCode !== undefined && CLIENT_REJECTED_OAUTH_CODES.has(oauthCode)) {
+    return "client_rejected";
+  }
+
+  const message = cause instanceof Error ? cause.message : String(cause);
+  const lower = message.toLowerCase();
+  for (const code of CLIENT_REJECTED_OAUTH_CODES) {
+    if (lower.includes(code)) {
+      return "client_rejected";
+    }
+  }
+
+  if (
+    lower.includes("client metadata") ||
+    lower.includes("redirect uri") ||
+    lower.includes("redirect_uri") ||
+    lower.includes("redirection uri") ||
+    lower.includes("redirection_uri") ||
+    lower.includes("client registration")
+  ) {
+    return "client_rejected";
+  }
+  return "discovery_failed";
+}
+
 export type CreateMcpOAuthRoutesDeps = {
   hubUrl: string;
   requireGrant: RequireGrant;
@@ -211,7 +265,7 @@ export function createMcpOAuthRoutes(
           redirectPath(returnPath, {
             mcpOauth: target.slug,
             outcome: "error",
-            code: "discovery_failed",
+            code: mcpOAuthStartErrorCode(cause),
           }),
           302,
         );

@@ -23,6 +23,8 @@ function messageOf(cause: unknown): string {
 
 const MCP_OAUTH_ERROR_COPY: Readonly<Record<string, string>> = {
   discovery_failed: "Couldn't reach that app's sign-in. Try connecting again.",
+  client_rejected:
+    "That app didn't accept Workbench as a client (redirect URL or registration). Try connecting again.",
   no_authorization_needed:
     "That app didn't start a sign-in. Try connecting again.",
   state_expired:
