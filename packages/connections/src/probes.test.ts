@@ -9,6 +9,7 @@ import {
   testGitHubCredential,
   testGranolaCredential,
   testLinearCredential,
+  testManusCredential,
   testScrapeCreatorsCredential,
 } from "./probes";
 
@@ -124,5 +125,38 @@ describe("testLinearCredential", () => {
       fakeFetch(200, JSON.stringify({ data: { viewer: { id: "usr_1" } } })),
     );
     expect(result.ok).toBe(true);
+  });
+});
+
+describe("testManusCredential", () => {
+  test("rejects a 401", async () => {
+    const result = await testManusCredential("test-key", fakeFetch(401));
+    expect(result.ok).toBe(false);
+  });
+
+  test("accepts a 200", async () => {
+    const result = await testManusCredential(
+      "test-key",
+      fakeFetch(200, JSON.stringify({ ok: true, skills: [] })),
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  test("sends x-manus-api-key to skill.list", async () => {
+    const requested: { url: string; key: string | null }[] = [];
+    const fetchImpl: FetchLike = async (input, init) => {
+      requested.push({
+        url: String(input),
+        key:
+          (init?.headers as Headers | undefined)?.get("x-manus-api-key") ??
+          null,
+      });
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    };
+    const result = await testManusCredential("manus_key", fetchImpl);
+    expect(result.ok).toBe(true);
+    expect(requested).toEqual([
+      { url: "https://api.manus.ai/v2/skill.list", key: "manus_key" },
+    ]);
   });
 });
