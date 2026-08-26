@@ -659,7 +659,10 @@ describe("hover Edit copies an own prompt into the composer", () => {
     forkCalls: string[],
   ) {
     globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
       const path = typeof input === "string" ? input : String(input);
       const json = (body: unknown) =>
         new Response(JSON.stringify(body), {

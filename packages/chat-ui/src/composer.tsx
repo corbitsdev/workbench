@@ -60,10 +60,11 @@ export type ComposerSendPayload = {
 };
 
 /** Imperative seam a host can grab a ref to, so content from outside the
- * composer's own tree — the profile card's Mention action (CL-5914) — can
- * land in the active draft at the caret. */
+ * composer's own tree — the profile card's Mention action (CL-5914) or
+ * hover-edit of a previous prompt — can land in the active draft. */
 export type ComposerHandle = {
   readonly insertText: (text: string) => void;
+  readonly setText: (text: string) => void;
 };
 
 /** Splice `insertion` in at `caret`, pure and independent of any DOM state
@@ -391,6 +392,14 @@ export const Composer = forwardRef<
         requestAnimationFrame(() => {
           textarea?.focus();
           textarea?.setSelectionRange(result.caret, result.caret);
+        });
+      },
+      setText: (text: string) => {
+        setValue(text);
+        requestAnimationFrame(() => {
+          const textarea = textareaRef.current;
+          textarea?.focus();
+          textarea?.setSelectionRange(text.length, text.length);
         });
       },
     }),

@@ -3171,6 +3171,7 @@
 
 .chat-hover-toolbar .chat-reaction-add,
 .chat-hover-reply,
+.chat-hover-edit,
 .chat-hover-ellipsis {
   position: relative;
   display: inline-flex;
@@ -3191,6 +3192,7 @@
 
 .chat-hover-toolbar .chat-reaction-add::after,
 .chat-hover-reply::after,
+.chat-hover-edit::after,
 .chat-hover-ellipsis::after {
   content: "";
   position: absolute;
@@ -3199,6 +3201,7 @@
 
 .chat-hover-toolbar .chat-reaction-add svg,
 .chat-hover-reply svg,
+.chat-hover-edit svg,
 .chat-hover-ellipsis svg {
   width: 0.9rem;
   height: 0.9rem;
@@ -3206,6 +3209,7 @@
 
 .chat-hover-toolbar .chat-reaction-add:hover,
 .chat-hover-reply:hover,
+.chat-hover-edit:hover,
 .chat-hover-ellipsis:hover,
 .chat-hover-toolbar .chat-reaction-add[aria-expanded="true"],
 .chat-hover-ellipsis[aria-expanded="true"] {

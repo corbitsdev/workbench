@@ -146,9 +146,9 @@ describe("hover Edit on own prompts", () => {
       onEditMessage: () => undefined,
     });
 
-    expect(el.querySelector(".chat-message-group")?.getAttribute("data-own")).toBe(
-      "false",
-    );
+    expect(
+      el.querySelector(".chat-message-group")?.getAttribute("data-own"),
+    ).toBe("false");
     expect(el.querySelector(".chat-hover-edit")).toBeNull();
   });
 
