@@ -23,6 +23,7 @@ const CONFIG: SetupConfig = {
 };
 
 const okDbSetup = async () => {};
+const noopPublishToolRegistry = async () => undefined;
 
 describe("runSetup", () => {
   test("fresh run initializes, provisions, and reports what remains", async () => {
@@ -49,6 +50,7 @@ describe("runSetup", () => {
       runDbSetup: async () => {
         dbSetupRuns += 1;
       },
+      publishToolRegistry: noopPublishToolRegistry,
       log,
     });
 
@@ -56,6 +58,9 @@ describe("runSetup", () => {
     const output = lines.join("\n");
     expect(output).toContain("created administrator admin@example.com");
     expect(output).toContain("created bench workbench");
+    expect(output).toContain(
+      `published the platform corbits-tools registry onto bench workbench (${TENANT_ID})`,
+    );
     expect(output).toContain("role defaults in place: admin, member, owner");
     expect(output).toContain("ANTHROPIC_API_KEY");
     expect(output).toContain("workbench seed");
@@ -63,6 +68,7 @@ describe("runSetup", () => {
 
   test("re-run reports skips instead of duplicating", async () => {
     const { lines, log } = collector();
+    const publishCalls: { tenantId: string }[] = [];
     const api = fakeAPI((method, path) => {
       if (method === "POST" && path === "/api/auth/sign-in/email")
         return signUpResponse();
@@ -78,13 +84,27 @@ describe("runSetup", () => {
       return undefined;
     });
 
-    await runSetup({ config: CONFIG, api, runDbSetup: okDbSetup, log });
+    await runSetup({
+      config: CONFIG,
+      api,
+      runDbSetup: okDbSetup,
+      publishToolRegistry: async (args) => {
+        publishCalls.push({ tenantId: args.tenantId });
+        return [];
+      },
+      log,
+    });
+
+    expect(publishCalls).toEqual([{ tenantId: TENANT_ID }]);
 
     const output = lines.join("\n");
     expect(output).toContain(
       "administrator admin@example.com already exists (skipped)",
     );
     expect(output).toContain("bench workbench already exists (skipped)");
+    expect(output).toContain(
+      "platform corbits-tools registry already on bench workbench (skipped)",
+    );
   });
 
   test("a database initialization failure stops the run before any hub call", async () => {
@@ -96,7 +116,13 @@ describe("runSetup", () => {
       throw new CliError("database initialization failed", "start Postgres");
     };
     expect(
-      runSetup({ config: CONFIG, api, runDbSetup: failing, log }),
+      runSetup({
+        config: CONFIG,
+        api,
+        runDbSetup: failing,
+        publishToolRegistry: noopPublishToolRegistry,
+        log,
+      }),
     ).rejects.toThrow("database initialization failed");
   });
 
@@ -118,7 +144,13 @@ describe("runSetup", () => {
     });
 
     expect(
-      runSetup({ config: CONFIG, api, runDbSetup: okDbSetup, log }),
+      runSetup({
+        config: CONFIG,
+        api,
+        runDbSetup: okDbSetup,
+        publishToolRegistry: noopPublishToolRegistry,
+        log,
+      }),
     ).rejects.toThrow(/zero roles/);
   });
 
@@ -134,7 +166,13 @@ describe("runSetup", () => {
 
     let caught: unknown;
     try {
-      await runSetup({ config: CONFIG, api, runDbSetup: okDbSetup, log });
+      await runSetup({
+        config: CONFIG,
+        api,
+        runDbSetup: okDbSetup,
+        publishToolRegistry: noopPublishToolRegistry,
+        log,
+      });
     } catch (error) {
       caught = error;
     }
@@ -167,7 +205,13 @@ describe("runSetup", () => {
 
     let caught: unknown;
     try {
-      await runSetup({ config: CONFIG, api, runDbSetup: okDbSetup, log });
+      await runSetup({
+        config: CONFIG,
+        api,
+        runDbSetup: okDbSetup,
+        publishToolRegistry: noopPublishToolRegistry,
+        log,
+      });
     } catch (error) {
       caught = error;
     }
@@ -191,7 +235,90 @@ describe("runSetup", () => {
     });
 
     expect(
-      runSetup({ config: CONFIG, api, runDbSetup: okDbSetup, log }),
+      runSetup({
+        config: CONFIG,
+        api,
+        runDbSetup: okDbSetup,
+        publishToolRegistry: noopPublishToolRegistry,
+        log,
+      }),
     ).rejects.toThrow(/status 409/);
+  });
+
+  test("publishes corbits-tools onto the created tenant", async () => {
+    const { log } = collector();
+    const calls: { tenantId: string; hubUrl: string }[] = [];
+    const api = fakeAPI((method, path) => {
+      if (method === "POST" && path === "/api/auth/sign-in/email")
+        return signInMissing();
+      if (method === "POST" && path === "/api/auth/sign-up/email")
+        return signUpResponse();
+      if (method === "POST" && path === "/api/tenants")
+        return { status: 201, data: tenantRow() };
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/roles`)
+      )
+        return rolesResponse(["owner", "admin", "member"]);
+      return undefined;
+    });
+
+    await runSetup({
+      config: CONFIG,
+      api,
+      runDbSetup: okDbSetup,
+      publishToolRegistry: async (args) => {
+        calls.push({ tenantId: args.tenantId, hubUrl: args.hubUrl });
+        return [
+          {
+            filename: "memory-tools-0.0.0.tgz",
+            commit: "c",
+            integrity: "i",
+          },
+        ];
+      },
+      log,
+    });
+
+    expect(calls).toEqual([{ tenantId: TENANT_ID, hubUrl: CONFIG.hubUrl }]);
+  });
+
+  test("a publisher throw is a setup CliError, not a seed error", async () => {
+    const { log } = collector();
+    const api = fakeAPI((method, path) => {
+      if (method === "POST" && path === "/api/auth/sign-in/email")
+        return signInMissing();
+      if (method === "POST" && path === "/api/auth/sign-up/email")
+        return signUpResponse();
+      if (method === "POST" && path === "/api/tenants")
+        return { status: 201, data: tenantRow() };
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/roles`)
+      )
+        return rolesResponse(["owner", "admin", "member"]);
+      return undefined;
+    });
+
+    let caught: unknown;
+    try {
+      await runSetup({
+        config: CONFIG,
+        api,
+        runDbSetup: okDbSetup,
+        publishToolRegistry: async () => {
+          throw new Error("src/ changed without bumping version");
+        },
+        log,
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(CliError);
+    expect((caught as CliError).message).toContain(
+      "publishing the corbits-tools package-registry asset failed",
+    );
+    expect((caught as CliError).fix).toContain("workbench setup");
+    expect((caught as CliError).fix).not.toContain("workbench seed");
   });
 });
