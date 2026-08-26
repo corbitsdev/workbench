@@ -19,6 +19,14 @@ import type {
 export const MCP_CLIENT_NAME = "corbits-workbench";
 export const MCP_CLIENT_VERSION = "0.0.1";
 
+/** Per-request MCP timeout. The SDK default is 60s — the documented
+ * duration of long tools such as Canva `generate-design`. Chat turns
+ * are 5 minutes; two minutes sits in between so a slow tool can finish
+ * without a hung call outliving the turn. */
+export const MCP_REQUEST_TIMEOUT_MS = 2 * 60 * 1000;
+
+const MCP_REQUEST_OPTIONS = { timeout: MCP_REQUEST_TIMEOUT_MS } as const;
+
 export interface McpToolAnnotations {
   readonly title?: string | undefined;
   readonly readOnlyHint?: boolean | undefined;
@@ -74,7 +82,7 @@ export async function withMcpConnection<T>(
 export async function listMcpTools(
   client: Client,
 ): Promise<readonly McpToolInfo[]> {
-  const result = await client.listTools();
+  const result = await client.listTools(undefined, MCP_REQUEST_OPTIONS);
   return result.tools.map((tool) => {
     const base: McpToolInfo = {
       name: tool.name,
@@ -96,10 +104,14 @@ export async function callMcpTool(
   client: Client,
   args: { name: string; arguments: Record<string, unknown> },
 ): Promise<McpCallResult> {
-  const result = await client.callTool({
-    name: args.name,
-    arguments: args.arguments,
-  });
+  const result = await client.callTool(
+    {
+      name: args.name,
+      arguments: args.arguments,
+    },
+    undefined,
+    MCP_REQUEST_OPTIONS,
+  );
   return {
     isError: result.isError === true,
     content: result.content,

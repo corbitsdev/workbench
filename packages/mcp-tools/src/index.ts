@@ -4,6 +4,7 @@ export {
   withMcpConnection,
   MCP_CLIENT_NAME,
   MCP_CLIENT_VERSION,
+  MCP_REQUEST_TIMEOUT_MS,
 } from "./mcp-client";
 export type {
   McpCallResult,
