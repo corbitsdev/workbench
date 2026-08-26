@@ -1982,6 +1982,14 @@ describe("seedCatalog", () => {
     let modelPosts = 0;
     let catalogProviderPosts = 0;
     let offeringPosts = 0;
+    const anthropicModels = [
+      "claude-sonnet-5",
+      "claude-opus-5",
+      "claude-opus-4-8",
+      "claude-haiku-4-5-20251001",
+      "claude-fable-5",
+      "claude-sonnet-4-6",
+    ];
     const handler: FakeHandler = (method, path) => {
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`) {
         providerPosts += 1;
@@ -2024,7 +2032,9 @@ describe("seedCatalog", () => {
         return {
           status: 200,
           data: {
-            data: [catalogModelRow("mdl_1", "claude-sonnet-5")],
+            data: anthropicModels.map((name, index) =>
+              catalogModelRow(`mdl_${index + 1}`, name),
+            ),
             nextCursor: null,
           },
         };
@@ -2066,9 +2076,9 @@ describe("seedCatalog", () => {
 
     expect(providerPosts).toBe(1);
     expect(credentialPosts).toBe(1);
-    expect(modelPosts).toBe(1);
+    expect(modelPosts).toBe(6);
     expect(catalogProviderPosts).toBe(1);
-    expect(offeringPosts).toBe(1);
+    expect(offeringPosts).toBe(6);
 
     const output = lines.join("\n");
     expect(output).toContain("provider anthropic already exists (skipped)");
