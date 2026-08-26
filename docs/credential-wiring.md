@@ -1,7 +1,7 @@
 # Credential wiring: from connect to tool call (CL-6032)
 
 How a tenant's connected credential (Settings · Connections) reaches the
-tool call a workflow step makes, and the two `CredentialProvider` plugins
+tool call a workflow step makes, and the `CredentialProvider` plugins
 that shape it.
 
 ## The chain
@@ -36,8 +36,8 @@ step-agent-tools.ts`) derives each tool factory's consumer identity
 ## Provider plugins
 
 A credential's `provider` row names a `plugin` -- the `CredentialProvider`
-key its bindings shape through. Two are registered in the sidecar's
-`CredentialProviderRegistry`:
+key its bindings shape through. The sidecar's `CredentialProviderRegistry`
+registers:
 
 - **`http`** -- `@intx/harness`'s vendored `createHttpCredentialProvider`.
   Sends `authorization: Bearer <secret>`. The default for any bearer-token
@@ -47,14 +47,24 @@ key its bindings shape through. Two are registered in the sidecar's
   verbatim in `authorization`, no `Bearer ` prefix. Linear's API expects
   this raw-key convention, not a bearer token, so a Linear provider row
   MUST set `plugin: "http-raw-authorization"` -- seeding it as `"http"`
-  sends the wrong header shape and Linear rejects the call. Both plugins
-  mirror the same origin-pinning and `redirect: "manual"` protections;
-  only the injected header value differs.
+  sends the wrong header shape and Linear rejects the call.
+- **`http-x-api-key`** -- `@corbits/credential-providers`'s
+  `createHttpXApiKeyCredentialProvider`. Sends the secret in `x-api-key`.
+  Exa and ScrapeCreators expect this header, not `authorization`.
+- **`http-x-manus-api-key`** -- `@corbits/credential-providers`'s
+  `createHttpXManusApiKeyCredentialProvider`. Sends the secret in
+  `x-manus-api-key`. A Manus provider row MUST set this plugin -- seeding
+  it as `"http"` or `"http-x-api-key"` sends the wrong header name and
+  Manus rejects the call.
+
+All four plugins mirror the same origin-pinning and `redirect: "manual"`
+protections; only the injected header differs.
 
 `packages/connections` (the Connections-surface registry) is the other
 place this plugin id needs to be correct: whatever seeds or registers a
 Linear provider row there must set `plugin: "http-raw-authorization"`,
-matching this doc, not the `"http"` default other connectors use.
+and a Manus row must set `plugin: "http-x-manus-api-key"`, matching this
+doc, not the `"http"` default other connectors use.
 
 ## Trust boundary
 
