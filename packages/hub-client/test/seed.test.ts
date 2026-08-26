@@ -1461,6 +1461,8 @@ describe("seedCatalog", () => {
 
   test("fresh run creates the full provider-to-offering chain", async () => {
     const { lines, log } = collector();
+    const modelPosts: string[] = [];
+    const offeringPosts: { modelId: string; providerId: string }[] = [];
     const handler: FakeHandler = (method, path, body) => {
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
         return { status: 201, data: providerRow("prv_1", "anthropic") };
@@ -1472,11 +1474,14 @@ describe("seedCatalog", () => {
       if (
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/catalog/models`
-      )
+      ) {
+        const canonicalName = (body as { canonicalName: string }).canonicalName;
+        modelPosts.push(canonicalName);
         return {
           status: 201,
-          data: catalogModelRow("mdl_1", "claude-sonnet-5"),
+          data: catalogModelRow(`mdl_${modelPosts.length}`, canonicalName),
         };
+      }
       if (
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/catalog/providers`
@@ -1489,25 +1494,30 @@ describe("seedCatalog", () => {
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/catalog/offerings`
       ) {
-        // Anthropic Direct's claude-sonnet-5 is a probed deployment in the
-        // pinned catalog, so the offering is created carrying what that
-        // probe observed rather than an empty capability list.
+        // Every Anthropic Direct model in the curated six is an
+        // exact-deployment probe in the pinned catalog, so each offering
+        // carries what that probe observed rather than an empty list.
         const offeringBody = body as {
           modelId: string;
           providerId: string;
           priority: number;
           capabilities: string[];
         };
-        expect(offeringBody.modelId).toBe("mdl_1");
         expect(offeringBody.providerId).toBe("cpv_1");
         expect(offeringBody.priority).toBe(0);
+        expect(offeringBody.capabilities.length).toBeGreaterThan(0);
         expect(offeringBody.capabilities).toContain("plain-text");
         expect(offeringBody.capabilities).toContain(
           "function-calling-multi-turn",
         );
+        offeringPosts.push(offeringBody);
         return {
           status: 201,
-          data: catalogOfferingRow("off_1", "mdl_1", "cpv_1"),
+          data: catalogOfferingRow(
+            `off_${offeringPosts.length}`,
+            offeringBody.modelId,
+            offeringBody.providerId,
+          ),
         };
       }
       return undefined;
@@ -1521,13 +1531,32 @@ describe("seedCatalog", () => {
       log,
     });
 
+    expect(modelPosts).toEqual([
+      "claude-sonnet-5",
+      "claude-opus-5",
+      "claude-opus-4-8",
+      "claude-haiku-4-5-20251001",
+      "claude-fable-5",
+      "claude-sonnet-4-6",
+    ]);
+    expect(offeringPosts.map((o) => o.modelId)).toEqual([
+      "mdl_1",
+      "mdl_2",
+      "mdl_3",
+      "mdl_4",
+      "mdl_5",
+      "mdl_6",
+    ]);
+
     const output = lines.join("\n");
     expect(output).toContain("created provider anthropic");
     expect(output).toContain("created credential anthropic-default");
     expect(output).toContain("created catalog model claude-sonnet-5");
     expect(output).toContain("created catalog provider anthropic");
     expect(output).toContain("created catalog offering");
-    expect(output).toContain("catalog ready: anthropic/claude-sonnet-5");
+    expect(output).toContain(
+      "catalog ready: anthropic/claude-sonnet-5, claude-opus-5, claude-opus-4-8, claude-haiku-4-5-20251001, claude-fable-5, claude-sonnet-4-6",
+    );
   });
 
   test("an Ollama offering's quirks carry that model's real context-window ceiling, not the built-in 4096 default", async () => {
