@@ -43,7 +43,7 @@ export type TaskAttachment = typeof TaskAttachment.infer;
 const TaskEvent = type({
   "id?": "string",
   "type?": "string",
-  "timestamp?": "number",
+  "timestamp?": "number | string",
   "assistant_message?": {
     "content?": "string",
     "attachments?": TaskAttachment.array(),
