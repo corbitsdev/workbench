@@ -42,10 +42,56 @@ test("createTask posts to /v2/task.create and parses the ok envelope", async () 
   expect(captured.headers?.get("authorization")).toBeNull();
   expect(captured.headers?.get("x-api-key")).toBeNull();
   expect(JSON.parse(captured.body)).toEqual({
-    message: { content: "Make slides" },
+    message: { content: [{ type: "text", text: "Make slides" }] },
   });
   expect(created.task_id).toBe("task_1");
   expect(created.task_url).toBe("https://manus.im/app/task_1");
+});
+
+test("createTask posts skill, connector, and schema fields only when set", async () => {
+  const captured: { body: string } = { body: "" };
+  const fetchImpl = (async (_input: URL | string, init?: RequestInit) => {
+    captured.body = typeof init?.body === "string" ? init.body : "";
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        task_id: "task_2",
+      }),
+      { status: 200 },
+    );
+  }) as unknown as typeof fetch;
+
+  await createTask(
+    { fetchImpl },
+    {
+      content: "Use the listed skill",
+      enable_skills: ["skill_abc"],
+      force_skills: ["skill_abc"],
+      connectors: ["conn_1"],
+      task_references: ["task_ref_1"],
+      structured_output_schema: {
+        type: "object",
+        properties: { title: { type: "string" } },
+        required: ["title"],
+        additionalProperties: false,
+      },
+    },
+  );
+  expect(JSON.parse(captured.body)).toEqual({
+    message: {
+      content: [{ type: "text", text: "Use the listed skill" }],
+      enable_skills: ["skill_abc"],
+      force_skills: ["skill_abc"],
+      connectors: ["conn_1"],
+      task_references: ["task_ref_1"],
+    },
+    structured_output_schema: {
+      type: "object",
+      properties: { title: { type: "string" } },
+      required: ["title"],
+      additionalProperties: false,
+    },
+  });
 });
 
 test("listTaskMessages GETs /v2/task.listMessages without an auth header", async () => {
@@ -128,8 +174,13 @@ test("createSlideDeck treats mixed [stopped, running] desc as terminal", async (
         JSON.parse(typeof init?.body === "string" ? init.body : ""),
       ).toEqual({
         message: {
-          content:
-            "Create a slide presentation in pptx format. Produce a presentation deck, not a document. Topic and requirements:\n\nOnboarding",
+          content: [
+            {
+              type: "text",
+              text:
+                "Create a slide presentation in pptx format. Produce a presentation deck, not a document. Topic and requirements:\n\nOnboarding",
+            },
+          ],
         },
       });
       return new Response(JSON.stringify({ ok: true, task_id: "task_1" }), {
@@ -276,4 +327,49 @@ test("default slide-deck wait is several minutes", () => {
   expect(DEFAULT_SLIDE_MAX_POLLS * DEFAULT_SLIDE_POLL_INTERVAL_MS).toBe(
     5 * 60 * 1000,
   );
+});
+
+test("createSlideDeck forwards optional skill fields on create", async () => {
+  let createBody = "";
+  const fetchImpl = (async (input: URL | string, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/v2/task.create")) {
+      createBody = typeof init?.body === "string" ? init.body : "";
+      return new Response(JSON.stringify({ ok: true, task_id: "task_1" }), {
+        status: 200,
+      });
+    }
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        task_id: "task_1",
+        messages: [
+          {
+            type: "status_update",
+            status_update: { agent_status: "stopped" },
+          },
+        ],
+      }),
+      { status: 200 },
+    );
+  }) as unknown as typeof fetch;
+
+  await createSlideDeck(
+    { fetchImpl },
+    {
+      content: "Onboarding",
+      enable_skills: ["skill_slides"],
+      force_skills: ["skill_slides"],
+      pollIntervalMs: 0,
+      maxPolls: 1,
+    },
+  );
+  const body = JSON.parse(createBody) as {
+    message: {
+      enable_skills?: string[];
+      force_skills?: string[];
+    };
+  };
+  expect(body.message.enable_skills).toEqual(["skill_slides"]);
+  expect(body.message.force_skills).toEqual(["skill_slides"]);
 });
