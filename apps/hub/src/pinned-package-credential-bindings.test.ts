@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { bindingsForConnectedPins } from "./pinned-package-credential-bindings";
+import {
+  bindingsForConnectedPins,
+  createPinnedPackageCredentialBindingsFor,
+} from "./pinned-package-credential-bindings";
 
 const MANUS_PIN = { name: "@corbits/manus-tools", version: "*" };
 const GRANOLA_PIN = { name: "@corbits/granola-tools", version: "*" };
@@ -37,5 +40,28 @@ describe("bindingsForConnectedPins", () => {
 
   test("returns none for empty pins even when connectors are connected", () => {
     expect(bindingsForConnectedPins([], ["manus", "granola"])).toEqual([]);
+  });
+});
+
+describe("createPinnedPackageCredentialBindingsFor", () => {
+  test("emits a manus tenant binding when isConnectorConnected is true for manus", async () => {
+    const bindingsFor = createPinnedPackageCredentialBindingsFor(
+      async (_tenantId, connectorId) => connectorId === "manus",
+    );
+    expect(await bindingsFor("tenant-1", [MANUS_PIN])).toEqual([
+      {
+        package: "@corbits/manus-tools",
+        handle: "manus",
+        provider: "manus",
+        locator: "tenant",
+      },
+    ]);
+  });
+
+  test("emits none when only a catalog-style inference connector is connected", async () => {
+    const bindingsFor = createPinnedPackageCredentialBindingsFor(
+      async (_tenantId, connectorId) => connectorId === "anthropic",
+    );
+    expect(await bindingsFor("tenant-1", [MANUS_PIN])).toEqual([]);
   });
 });
