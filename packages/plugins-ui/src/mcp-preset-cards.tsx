@@ -50,8 +50,7 @@ function mcpOauthReturnError(slug: string): string | null {
 }
 
 function mcpOauthConnectedReturn():
-  | { readonly slug: string; readonly toolCount: number }
-  | undefined {
+  { readonly slug: string; readonly toolCount: number } | undefined {
   const params = new URLSearchParams(window.location.search);
   if (params.get("outcome") !== "connected") return undefined;
   const slug = params.get("mcpOauth");
