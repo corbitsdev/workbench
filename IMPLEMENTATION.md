@@ -139,6 +139,23 @@ the current product path — do not document OAuth as the first Connect
 step, and do not treat a PAT paste as a defect against an OAuth-first
 welcome mat that has not shipped.
 
+The room posts that card from `system@<workbenchId>`
+(`POST /workbenches/:id/onboarding` in `packages/chat/src/routes.ts`).
+`packages/chat-ui` renders a system-sender `connect-github` block as a
+scene: no author row, no avatar, no "Member" label; the job title and
+optional promise stay put while the body flips. Step labels come from
+the block's `steps` array — an empty or omitted array does not draw a
+step list. The current-step marker ("You're here") is applied only when
+there are exactly three steps (connect / pick / review); `data-state` on
+the step is colour, never the only signal. After the server has recorded
+repos, the body is the reviewing state (repo names plus a `change repos`
+control). Clicking `change repos` is client-local in
+`connect-github-block-container` and does not mutate the recorded
+selection. `onReviewingStarted` posts canned introductions from
+`packages/code-review/src/introductions.ts` under each reviewer's own
+address in roster order. Consecutive `workbench.agent-joined` rows
+collapse to one line in `packages/chat-ui/src/timeline.tsx`.
+
 Optional `GITHUB_APP_CLIENT_ID` / `GITHUB_APP_CLIENT_SECRET` exist for
 that future hosted path; leaving them unset is normal. See
 `docs/connect-cards.md` and PRODUCT.md's Code review first minute.

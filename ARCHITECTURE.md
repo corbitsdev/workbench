@@ -88,6 +88,18 @@ settings") are composition on top of this tenant and its settings rows,
 not a separate object; the surface lives in `packages/chat-ui`'s
 `workbench-settings`.
 
+**In-room onboarding scene.** A named template's first-minute walkthrough
+is one timeline card posted in the room's own voice, not a member's
+message and not a side effect of hosting an agent. The card keeps a
+stable header — the job, the promise, the ordered steps — and flips its
+body in place through connect, pick-repos, and reviewing. Change-repos
+returns the body to the picker without rewriting what the room already
+recorded. An empty step list is omitted, not rendered as an empty rail.
+The current step is named in words; colour is additive, never the only
+signal. Consecutive agent-joined events collapse into one line so the
+scene and the reviewers' own introductions are what a person reads
+first.
+
 **Streaming a reply.** An agent's live reply reaches the timeline through
 one path, deltas to pixels:
 
