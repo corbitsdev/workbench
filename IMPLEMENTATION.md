@@ -103,16 +103,41 @@ Deployment is explicit via **Pulumi**, targeting **Railway**. CI runs
 tests only — nothing auto-deploys on `main`; a deploy is a deliberate,
 separate action.
 
+## Workbench Definition (shipped)
+
+`WorkbenchDefinition` (`WorkbenchDefinitionSchema` in
+`@corbits/workflow-catalog`) is the one type for a named picker row:
+default agents, routines, tools, plugins `{required, optional}`, and
+ordered `onboardingSteps`. A template is a shipped definition, not a
+second kind. `instantiateWorkbenchTemplate` resolves the definition
+against a bench over injected ports, including `beginOnboarding(steps)`.
+
+Create (`apps/web`'s `instant-agent-create.ts`) mints an empty
+`kind: "workbench"` channel with no host and no `definitionId`,
+instantiates, then `POST /workbenches/:id/onboarding`
+(`packages/chat/src/routes.ts`) posts the walkthrough from
+`system@<workbenchId>` — a `connect-github` block carrying the
+definition's title, promise, and step labels. The card is not posted as
+a side effect of hosting an agent.
+
+`settleConnectedService` (`packages/chat/src/connect-pending.ts`)
+clears both `connections/pending` and `template/pendingConnections`. A
+template-key-only match posts `connection.connected` from the system
+address and does not `dispatchTurn`. A generic pending match still
+wakes the asking agent.
+
 ## GitHub connect (shipped)
 
 The in-room `connect-github` card and the Plugins/Connections GitHub row
 are **PAT-first** (CL-6345): the person pastes a personal access token;
 the host tests and stores it through `@workbench/connections`' generic
 `github/complete` route. The card then flips in place to pick repos
-(`startReviewingRepos`). A GitHub App / hosted OAuth welcome mat is
-CL-6343 and is not the current product path — do not document OAuth as
-the first Connect step, and do not treat a PAT paste as a defect against
-an OAuth-first welcome mat that has not shipped.
+(`startReviewingRepos`), including when GitHub is already connected —
+the in-room card reads live state; there is no `/new` already-connected
+dialog. A GitHub App / hosted OAuth welcome mat is CL-6343 and is not
+the current product path — do not document OAuth as the first Connect
+step, and do not treat a PAT paste as a defect against an OAuth-first
+welcome mat that has not shipped.
 
 Optional `GITHUB_APP_CLIENT_ID` / `GITHUB_APP_CLIENT_SECRET` exist for
 that future hosted path; leaving them unset is normal. See
