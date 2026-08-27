@@ -156,7 +156,7 @@ export const MANUS_ENDPOINTS: readonly EndpointSpec[] = [
       cursor: STRING("Pagination cursor."),
       order: STRING("Sort order."),
       verbose: BOOLEAN("Include tool/plan events."),
-      slides_format: STRING("Preferred slides download format, e.g. pdf."),
+      slides_format: STRING("Preferred slides download format: pptx or html."),
     },
   },
   {
@@ -622,6 +622,7 @@ function optionalListMessageFields(call: ToolCall): {
 async function runCreateSlides(
   env: ManusEnv,
   call: ToolCall,
+  signal: AbortSignal,
 ): Promise<ToolResult> {
   const credential = await resolveManusCredential(env);
   if (credential === null) return notConnectedResult(call.id);
@@ -638,6 +639,7 @@ async function runCreateSlides(
     const result = await createSlideDeck(asClientConfig(credential), {
       content: prompt,
       ...(title !== undefined ? { title } : {}),
+      signal,
     });
     return { callId: call.id, content: JSON.stringify(result) };
   } catch (err) {
@@ -690,8 +692,10 @@ export const manusTools = defineTool<ManusEnv>({
         },
       })),
     ],
-    run: (call, _signal) => {
-      if (call.name === CREATE_SLIDES_TOOL) return runCreateSlides(env, call);
+    run: (call, signal) => {
+      if (call.name === CREATE_SLIDES_TOOL) {
+        return runCreateSlides(env, call, signal);
+      }
       const spec = MANUS_ENDPOINTS.find((entry) => entry.name === call.name);
       if (spec === undefined) {
         return Promise.resolve({

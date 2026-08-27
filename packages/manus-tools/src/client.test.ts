@@ -1,6 +1,15 @@
 import { expect, test } from "bun:test";
 
-import { createTask, listTaskMessages, manusRequest } from "./client";
+import {
+  createSlideDeck,
+  createTask,
+  DEFAULT_SLIDE_MAX_POLLS,
+  DEFAULT_SLIDE_POLL_INTERVAL_MS,
+  latestAgentStatus,
+  listTaskMessages,
+  manusRequest,
+  SLIDES_FORMAT_PPTX,
+} from "./client";
 
 test("createTask posts to /v2/task.create and parses the ok envelope", async () => {
   const captured: { url: string; headers: Headers | null; body: string } = {
@@ -99,4 +108,172 @@ test("throws when a 200 body is not an ok envelope", async () => {
   await expect(
     manusRequest({ fetchImpl }, { method: "GET", path: "/v2/skill.list" }),
   ).rejects.toThrow(/did not match the expected shape/);
+});
+
+test("latestAgentStatus uses the first status_update under default desc order", () => {
+  expect(
+    latestAgentStatus([
+      { type: "status_update", status_update: { agent_status: "stopped" } },
+      { type: "status_update", status_update: { agent_status: "running" } },
+    ]),
+  ).toBe("stopped");
+});
+
+test("createSlideDeck treats mixed [stopped, running] desc as terminal", async () => {
+  const listUrls: string[] = [];
+  const fetchImpl = (async (input: URL | string, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/v2/task.create")) {
+      expect(
+        JSON.parse(typeof init?.body === "string" ? init.body : ""),
+      ).toEqual({
+        message: {
+          content:
+            "Create a slide presentation in pptx format. Produce a presentation deck, not a document. Topic and requirements:\n\nOnboarding",
+        },
+      });
+      return new Response(JSON.stringify({ ok: true, task_id: "task_1" }), {
+        status: 200,
+      });
+    }
+    if (url.includes("/v2/task.listMessages")) {
+      listUrls.push(url);
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          task_id: "task_1",
+          messages: [
+            {
+              type: "status_update",
+              status_update: { agent_status: "stopped" },
+            },
+            {
+              type: "status_update",
+              status_update: { agent_status: "running" },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    }
+    return new Response("unexpected", { status: 500 });
+  }) as unknown as typeof fetch;
+
+  const result = await createSlideDeck(
+    { fetchImpl },
+    { content: "Onboarding", pollIntervalMs: 0, maxPolls: 3 },
+  );
+  expect(result.agent_status).toBe("stopped");
+  expect(listUrls).toHaveLength(1);
+  expect(listUrls[0]).toContain(`slides_format=${SLIDES_FORMAT_PPTX}`);
+  expect(listUrls[0]).not.toContain("slides_format=pdf");
+  expect(SLIDES_FORMAT_PPTX).toBe("pptx");
+});
+
+test("createSlideDeck throws when the agent is still running after the poll budget", async () => {
+  const fetchImpl = (async (input: URL | string) => {
+    const url = String(input);
+    if (url.includes("/v2/task.create")) {
+      return new Response(JSON.stringify({ ok: true, task_id: "task_1" }), {
+        status: 200,
+      });
+    }
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        task_id: "task_1",
+        messages: [
+          {
+            type: "status_update",
+            status_update: { agent_status: "running" },
+          },
+        ],
+      }),
+      { status: 200 },
+    );
+  }) as unknown as typeof fetch;
+
+  await expect(
+    createSlideDeck(
+      { fetchImpl },
+      { content: "Onboarding", pollIntervalMs: 0, maxPolls: 2 },
+    ),
+  ).rejects.toThrow(/did not stop in time \(agent_status: running\)/);
+});
+
+test("createSlideDeck throws when the agent is waiting", async () => {
+  const fetchImpl = (async (input: URL | string) => {
+    const url = String(input);
+    if (url.includes("/v2/task.create")) {
+      return new Response(JSON.stringify({ ok: true, task_id: "task_1" }), {
+        status: 200,
+      });
+    }
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        task_id: "task_1",
+        messages: [
+          {
+            type: "status_update",
+            status_update: { agent_status: "waiting" },
+          },
+        ],
+      }),
+      { status: 200 },
+    );
+  }) as unknown as typeof fetch;
+
+  await expect(
+    createSlideDeck(
+      { fetchImpl },
+      { content: "Onboarding", pollIntervalMs: 0, maxPolls: 5 },
+    ),
+  ).rejects.toThrow(/waiting for confirmation/);
+});
+
+test("createSlideDeck aborts polling instead of waiting out the timeout", async () => {
+  const controller = new AbortController();
+  const fetchImpl = (async (input: URL | string) => {
+    const url = String(input);
+    if (url.includes("/v2/task.create")) {
+      return new Response(JSON.stringify({ ok: true, task_id: "task_1" }), {
+        status: 200,
+      });
+    }
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        task_id: "task_1",
+        messages: [
+          {
+            type: "status_update",
+            status_update: { agent_status: "running" },
+          },
+        ],
+      }),
+      { status: 200 },
+    );
+  }) as unknown as typeof fetch;
+
+  const pending = createSlideDeck(
+    { fetchImpl },
+    {
+      content: "Onboarding",
+      pollIntervalMs: 30_000,
+      maxPolls: 10,
+      signal: controller.signal,
+    },
+  );
+  queueMicrotask(() => controller.abort());
+  await expect(pending).rejects.toThrow(/cancelled/);
+});
+
+test("default slide-deck wait is several minutes", () => {
+  expect(
+    DEFAULT_SLIDE_MAX_POLLS * DEFAULT_SLIDE_POLL_INTERVAL_MS,
+  ).toBeGreaterThan(60_000);
+  expect(DEFAULT_SLIDE_MAX_POLLS * DEFAULT_SLIDE_POLL_INTERVAL_MS).toBe(
+    5 * 60 * 1000,
+  );
 });

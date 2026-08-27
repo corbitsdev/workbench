@@ -8,6 +8,9 @@ export {
   listTaskMessages,
   manusRequest,
   DEFAULT_MANUS_BASE_URL,
+  DEFAULT_SLIDE_MAX_POLLS,
+  DEFAULT_SLIDE_POLL_INTERVAL_MS,
+  SLIDES_FORMAT_PPTX,
 } from "./client";
 export type {
   CreateSlideDeckParams,

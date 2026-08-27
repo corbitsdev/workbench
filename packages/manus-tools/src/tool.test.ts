@@ -52,10 +52,11 @@ const STOPPED_WITH_DECK = {
         attachments: [
           {
             type: "slides",
-            filename: "onboarding.pdf",
-            url: "https://files.manus.ai/onboarding.pdf",
+            filename: "onboarding.pptx",
+            url: "https://files.manus.ai/onboarding.pptx",
             id: "file_deck_1",
-            content_type: "application/pdf",
+            content_type:
+              "application/vnd.openxmlformats-officedocument.presentationml.presentation",
           },
         ],
       },
@@ -79,6 +80,17 @@ test("declares create_slides plus thin tools covering the v2 surface", () => {
   expect(names).toContain("browser_online");
   expect(names).toContain("website_status");
   expect(names.length).toBe(MANUS_ENDPOINTS.length + 1);
+});
+
+test("task_list_msgs describes slides_format as pptx or html, never pdf", () => {
+  const listMsgs = MANUS_ENDPOINTS.find(
+    (spec) => spec.name === "task_list_msgs",
+  );
+  expect(listMsgs?.properties["slides_format"]?.description).toContain("pptx");
+  expect(listMsgs?.properties["slides_format"]?.description).toContain("html");
+  expect(listMsgs?.properties["slides_format"]?.description).not.toMatch(
+    /pdf/i,
+  );
 });
 
 test("degrades to a non-throwing 'not connected' error when no credential is bound", async () => {
@@ -109,6 +121,12 @@ test("create_slides creates a task, polls messages, and surfaces the presentatio
     urls.push(url);
     if (url.includes("/v2/task.create")) {
       expect(init?.method).toBe("POST");
+      const body = JSON.parse(typeof init?.body === "string" ? init.body : "");
+      expect(body.message.content).toContain("slide presentation");
+      expect(body.message.content).toContain("pptx");
+      expect(body.message.content).toContain(
+        "Make a five-slide deck about onboarding",
+      );
       return new Response(
         JSON.stringify({
           ok: true,
@@ -120,6 +138,8 @@ test("create_slides creates a task, polls messages, and surfaces the presentatio
       );
     }
     if (url.includes("/v2/task.listMessages")) {
+      expect(url).toContain("slides_format=pptx");
+      expect(url).not.toContain("slides_format=pdf");
       return new Response(JSON.stringify(STOPPED_WITH_DECK), { status: 200 });
     }
     return new Response("unexpected", { status: 500 });
@@ -146,17 +166,54 @@ test("create_slides creates a task, polls messages, and surfaces the presentatio
     expect(parsed.agent_status).toBe("stopped");
     expect(parsed.files).toEqual([
       {
-        filename: "onboarding.pdf",
-        url: "https://files.manus.ai/onboarding.pdf",
+        filename: "onboarding.pptx",
+        url: "https://files.manus.ai/onboarding.pptx",
         id: "file_deck_1",
         type: "slides",
-        content_type: "application/pdf",
+        content_type:
+          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       },
     ]);
     expect(urls.some((url) => url.includes("/v2/task.create"))).toBe(true);
     expect(urls.some((url) => url.includes("/v2/task.listMessages"))).toBe(
       true,
     );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("create_slides returns isError when the agent is waiting", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: unknown) => {
+    const url = String(input);
+    if (url.includes("/v2/task.create")) {
+      return new Response(JSON.stringify({ ok: true, task_id: "task_1" }), {
+        status: 200,
+      });
+    }
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        task_id: "task_1",
+        messages: [
+          {
+            type: "status_update",
+            status_update: { agent_status: "waiting" },
+          },
+        ],
+      }),
+      { status: 200 },
+    );
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = manusTools(fakeEnv(fakeCredentials("key")));
+    const result = await bundle.run(
+      CREATE_SLIDES_CALL,
+      new AbortController().signal,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toMatch(/waiting for confirmation/);
   } finally {
     globalThis.fetch = originalFetch;
   }
