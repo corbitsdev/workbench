@@ -198,14 +198,67 @@ export type CreateTaskParams = {
   readonly hide_in_task_list?: boolean;
   readonly share_visibility?: string;
   readonly agent_profile?: string;
+  readonly enable_skills?: readonly string[];
+  readonly force_skills?: readonly string[];
+  readonly connectors?: readonly string[];
+  readonly task_references?: readonly string[];
+  readonly structured_output_schema?: Readonly<Record<string, unknown>>;
 };
+
+export type TaskTextContentPart = {
+  readonly type: "text";
+  readonly text: string;
+};
+
+export type TaskMessageSkillFields = {
+  readonly enable_skills?: readonly string[];
+  readonly force_skills?: readonly string[];
+  readonly connectors?: readonly string[];
+  readonly task_references?: readonly string[];
+};
+
+export type TaskMessageBody = {
+  readonly content: readonly TaskTextContentPart[];
+} & TaskMessageSkillFields;
+
+/**
+ * Builds the v2 `message` object: prompt as a ContentPart array, with
+ * skill/connector/reference arrays omitted when unset.
+ */
+export function buildTaskMessage(
+  content: string,
+  fields?: TaskMessageSkillFields,
+): TaskMessageBody {
+  const message: {
+    content: readonly TaskTextContentPart[];
+    enable_skills?: readonly string[];
+    force_skills?: readonly string[];
+    connectors?: readonly string[];
+    task_references?: readonly string[];
+  } = {
+    content: [{ type: "text", text: content }],
+  };
+  if (fields?.enable_skills !== undefined) {
+    message.enable_skills = fields.enable_skills;
+  }
+  if (fields?.force_skills !== undefined) {
+    message.force_skills = fields.force_skills;
+  }
+  if (fields?.connectors !== undefined) {
+    message.connectors = fields.connectors;
+  }
+  if (fields?.task_references !== undefined) {
+    message.task_references = fields.task_references;
+  }
+  return message;
+}
 
 export async function createTask(
   config: ManusClientConfig,
   params: CreateTaskParams,
 ): Promise<CreateTaskResponse> {
   const body: Record<string, unknown> = {
-    message: { content: params.content },
+    message: buildTaskMessage(params.content, params),
   };
   if (params.title !== undefined) body["title"] = params.title;
   if (params.project_id !== undefined) body["project_id"] = params.project_id;
@@ -221,6 +274,9 @@ export async function createTask(
   }
   if (params.agent_profile !== undefined) {
     body["agent_profile"] = params.agent_profile;
+  }
+  if (params.structured_output_schema !== undefined) {
+    body["structured_output_schema"] = params.structured_output_schema;
   }
   const raw = await manusRequest(config, {
     method: "POST",
