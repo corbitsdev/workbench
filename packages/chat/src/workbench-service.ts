@@ -447,9 +447,7 @@ export async function resolveInvitedDisplayName(
 export class KindIsChatError extends Error {
   readonly code = "kind_is_chat" as const;
   constructor() {
-    super(
-      "a chat is 1:1; adding another agent is only for workbenches",
-    );
+    super("a chat is 1:1; adding another agent is only for workbenches");
     this.name = "KindIsChatError";
   }
 }

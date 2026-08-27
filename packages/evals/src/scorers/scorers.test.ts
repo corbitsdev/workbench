@@ -181,10 +181,14 @@ describe("agentCreatedInWorkbench", () => {
   test("passes when create_agent minted the specialist's own chat", () => {
     const transcript = [
       turn("make a researcher", "Done.", [
-        call("create_agent", {}, {
-          result:
-            'Created "Researcher" (use this id for routines/dispatch: def_1). workbenchId=wb_abc minted their own chat.',
-        }),
+        call(
+          "create_agent",
+          {},
+          {
+            result:
+              'Created "Researcher" (use this id for routines/dispatch: def_1). workbenchId=wb_abc minted their own chat.',
+          },
+        ),
       ]),
     ];
     const r = agentCreatedInWorkbench()(ctxAt(transcript, 0));
@@ -194,9 +198,13 @@ describe("agentCreatedInWorkbench", () => {
   test("passes when the result has a created/workbench id and no invite-into-current fields", () => {
     const transcript = [
       turn("make a researcher", "Done.", [
-        call("create_agent", {}, {
-          result: '{"id":"def_1","workbenchId":"wb_abc","created":true}',
-        }),
+        call(
+          "create_agent",
+          {},
+          {
+            result: '{"id":"def_1","workbenchId":"wb_abc","created":true}',
+          },
+        ),
       ]),
     ];
     const r = agentCreatedInWorkbench()(ctxAt(transcript, 0));

@@ -3,7 +3,10 @@
 // workflow-command registrar: invite-then-send, sharing the same
 // `launchAndJoinAgent` core as `POST .../invite`.
 import { describe, expect, test } from "bun:test";
-import { KindIsChatError, startWorkflowCommand } from "../src/workbench-service";
+import {
+  KindIsChatError,
+  startWorkflowCommand,
+} from "../src/workbench-service";
 import { createInMemoryChatStore } from "../src/store";
 import { createInMemoryRoomMessageStore } from "../src/room-messages";
 import { fakePlatform, TENANT } from "./test-support";

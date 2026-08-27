@@ -9,7 +9,12 @@ import { decodeParts } from "../src/codec";
 import type { Part } from "../src/parts";
 import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
 import { AgentUnreachableError } from "../src/platform-port";
-import { cannedGreeting, KindIsChatError, launchAndJoinAgent, postCannedGreeting } from "../src/workbench-service";
+import {
+  cannedGreeting,
+  KindIsChatError,
+  launchAndJoinAgent,
+  postCannedGreeting,
+} from "../src/workbench-service";
 import { createInMemoryChatStore } from "../src/store";
 import {
   buildDeps,

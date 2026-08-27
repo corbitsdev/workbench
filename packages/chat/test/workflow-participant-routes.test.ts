@@ -508,8 +508,7 @@ describe("POST /participants/mint-dm", () => {
     const mutated = published.filter(
       (entry) =>
         (entry.event as { type?: string }).type ===
-          "chat.workbenches-mutated" &&
-        entry.workbenchId === callerWorkbenchId,
+          "chat.workbenches-mutated" && entry.workbenchId === callerWorkbenchId,
     );
     expect(mutated).toHaveLength(1);
     expect(
