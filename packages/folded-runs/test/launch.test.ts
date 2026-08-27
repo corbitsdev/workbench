@@ -1403,6 +1403,274 @@ describe("deployAtHead — mcp credential bindings", () => {
   });
 });
 
+describe("deployAtHead — pinned-package credential bindings", () => {
+  const MANUS_BINDING = {
+    package: "@corbits/manus-tools",
+    handle: "manus",
+    provider: "manus",
+    locator: "tenant" as const,
+  };
+
+  function catalogSources(): DefinitionSourceResolution {
+    return {
+      ok: true,
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          apiKey: "placeholder",
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+  }
+
+  test("folds a connected manus binding into delivery and runtimeConfig when manus-tools is pinned", async () => {
+    resolveDefinitionSourcesCalls.length = 0;
+    resolveDefinitionSourcesResult = catalogSources();
+    buildCredentialDeliveryCalls.length = 0;
+    buildCredentialDeliveryResult = {
+      ok: true,
+      delivery: {
+        bindings: [
+          {
+            handle: "manus",
+            credentialId: "cred_manus_1",
+            consumer: "tool:@corbits/manus-tools",
+          },
+        ],
+        materials: [
+          {
+            credentialId: "cred_manus_1",
+            providerKey: "manus",
+            origin: "https://api.manus.ai",
+            secret: "n/a",
+          },
+        ],
+      },
+    };
+
+    const db = createFakeDb();
+    const sessionService = createFakeSessionService();
+    const assetService = createFakeAssetService();
+    const eventCollectors = createFakeEventCollectors();
+    const pinnedPackageCalls: { tenantId: string; pins: unknown }[] = [];
+
+    await deployAtHead(
+      {
+        db: db as never,
+        sidecarRouter: createFakeSidecarRouter(),
+        assetService,
+        sessionService,
+        eventCollectors,
+        credentialCipher: {} as never,
+        toolGrantsForPins: () => [],
+        pinnedPackageCredentialBindingsFor: async (tenantId, pins) => {
+          pinnedPackageCalls.push({ tenantId, pins });
+          return [MANUS_BINDING];
+        },
+      },
+      {
+        tenantId: "ten_1",
+        instanceId: "ins_1",
+        triggerAddress: "ins_1@ten1.workbench.test",
+        principalId: "prn_1",
+        sessionId: "ses_1",
+        foldedBody: {
+          ...FOLDED_BODY,
+          toolPackagePins: [{ name: "@corbits/manus-tools", version: "*" }],
+        },
+        launchLabel: "myra",
+      },
+    );
+
+    expect(pinnedPackageCalls).toEqual([
+      {
+        tenantId: "ten_1",
+        pins: [{ name: "@corbits/manus-tools", version: "*" }],
+      },
+    ]);
+    expect(buildCredentialDeliveryCalls).toHaveLength(1);
+    expect(buildCredentialDeliveryCalls[0]).toMatchObject({
+      tenantId: "ten_1",
+      bindings: [MANUS_BINDING],
+    });
+
+    const deployed = onlyCall(sessionService.adoptedDeployCalls);
+    expect(deployed.credentialCipher).toBeDefined();
+    expect(deployed.config.grants).toContainEqual(
+      expect.objectContaining({
+        resource: "credential:cred_manus_1",
+        action: "use",
+        conditions: { tool: "tool:@corbits/manus-tools" },
+      }),
+    );
+    const entry =
+      assetService.populateAssetCalls[0]?.tree.files["workflow.js"] ?? "";
+    expect(entryDefinition(entry)["credentialBindings"]).toEqual([
+      MANUS_BINDING,
+    ]);
+  });
+
+  test("succeeds with no manus binding when the port returns none", async () => {
+    resolveDefinitionSourcesCalls.length = 0;
+    resolveDefinitionSourcesResult = catalogSources();
+    buildCredentialDeliveryCalls.length = 0;
+
+    const db = createFakeDb();
+    const sessionService = createFakeSessionService();
+    const assetService = createFakeAssetService();
+    const eventCollectors = createFakeEventCollectors();
+
+    await deployAtHead(
+      {
+        db: db as never,
+        sidecarRouter: createFakeSidecarRouter(),
+        assetService,
+        sessionService,
+        eventCollectors,
+        credentialCipher: {} as never,
+        toolGrantsForPins: () => [],
+        pinnedPackageCredentialBindingsFor: async () => [],
+      },
+      {
+        tenantId: "ten_1",
+        instanceId: "ins_2",
+        triggerAddress: "ins_2@ten1.workbench.test",
+        principalId: "prn_2",
+        sessionId: "ses_2",
+        foldedBody: {
+          ...FOLDED_BODY,
+          toolPackagePins: [{ name: "@corbits/manus-tools", version: "*" }],
+        },
+        launchLabel: "myra",
+      },
+    );
+
+    expect(buildCredentialDeliveryCalls).toHaveLength(0);
+    const deployed = sessionService.adoptedDeployCalls[0] as {
+      credentials?: unknown;
+    };
+    expect(deployed.credentials).toBeUndefined();
+    const entry =
+      assetService.populateAssetCalls[0]?.tree.files["workflow.js"] ?? "";
+    expect(entryDefinition(entry)["credentialBindings"] ?? []).toEqual([]);
+  });
+
+  test("does not add a manus binding when manus-tools is not pinned", async () => {
+    resolveDefinitionSourcesCalls.length = 0;
+    resolveDefinitionSourcesResult = catalogSources();
+    buildCredentialDeliveryCalls.length = 0;
+    const db = createFakeDb();
+    const sessionService = createFakeSessionService();
+    const assetService = createFakeAssetService();
+    const eventCollectors = createFakeEventCollectors();
+    const pinnedPackageCalls: { tenantId: string; pins: unknown }[] = [];
+
+    await deployAtHead(
+      {
+        db: db as never,
+        sidecarRouter: createFakeSidecarRouter(),
+        assetService,
+        sessionService,
+        eventCollectors,
+        credentialCipher: {} as never,
+        toolGrantsForPins: () => [],
+        pinnedPackageCredentialBindingsFor: async (tenantId, pins) => {
+          pinnedPackageCalls.push({ tenantId, pins });
+          return [];
+        },
+      },
+      {
+        tenantId: "ten_1",
+        instanceId: "ins_3",
+        triggerAddress: "ins_3@ten1.workbench.test",
+        principalId: "prn_3",
+        sessionId: "ses_3",
+        foldedBody: FOLDED_BODY,
+        launchLabel: "myra",
+      },
+    );
+
+    expect(pinnedPackageCalls).toEqual([
+      { tenantId: "ten_1", pins: FOLDED_BODY.toolPackagePins },
+    ]);
+    expect(buildCredentialDeliveryCalls).toHaveLength(0);
+    const entry =
+      assetService.populateAssetCalls[0]?.tree.files["workflow.js"] ?? "";
+    expect(entryDefinition(entry)["credentialBindings"] ?? []).toEqual([]);
+  });
+
+  test("skips a pinned-package handle the definition already binds", async () => {
+    resolveDefinitionSourcesCalls.length = 0;
+    resolveDefinitionSourcesResult = catalogSources();
+    buildCredentialDeliveryCalls.length = 0;
+    buildCredentialDeliveryResult = {
+      ok: true,
+      delivery: {
+        bindings: [
+          {
+            handle: "manus",
+            credentialId: "cred_manus_1",
+            consumer: "tool:@corbits/manus-tools",
+          },
+        ],
+        materials: [
+          {
+            credentialId: "cred_manus_1",
+            providerKey: "manus",
+            origin: "https://api.manus.ai",
+            secret: "n/a",
+          },
+        ],
+      },
+    };
+
+    const db = createFakeDb();
+    const sessionService = createFakeSessionService();
+    const assetService = createFakeAssetService();
+    const eventCollectors = createFakeEventCollectors();
+
+    await deployAtHead(
+      {
+        db: db as never,
+        sidecarRouter: createFakeSidecarRouter(),
+        assetService,
+        sessionService,
+        eventCollectors,
+        credentialCipher: {} as never,
+        toolGrantsForPins: () => [],
+        pinnedPackageCredentialBindingsFor: async () => [MANUS_BINDING],
+      },
+      {
+        tenantId: "ten_1",
+        instanceId: "ins_4",
+        triggerAddress: "ins_4@ten1.workbench.test",
+        principalId: "prn_4",
+        sessionId: "ses_4",
+        foldedBody: {
+          ...FOLDED_BODY,
+          toolPackagePins: [{ name: "@corbits/manus-tools", version: "*" }],
+          credentialBindings: [MANUS_BINDING],
+        },
+        launchLabel: "myra",
+      },
+    );
+
+    expect(buildCredentialDeliveryCalls).toHaveLength(1);
+    expect(buildCredentialDeliveryCalls[0]).toMatchObject({
+      bindings: [MANUS_BINDING],
+    });
+    const entry =
+      assetService.populateAssetCalls[0]?.tree.files["workflow.js"] ?? "";
+    expect(entryDefinition(entry)["credentialBindings"]).toEqual([
+      MANUS_BINDING,
+    ]);
+  });
+});
+
 // CL-6452: a folded run's deployed bytes carry per-run values, so their
 // wire hash is unique to the run and the deploy's freeze ensures a fresh
 // definition row over the agent's asset, then repoints the run at it.
