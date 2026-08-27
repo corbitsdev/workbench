@@ -427,7 +427,13 @@ const THREADED_MESSAGES = [
   },
 ];
 
-function stubThreadedFetch() {
+function stubThreadedFetch({
+  sentMessages = [],
+  forkCalls = [],
+}: {
+  sentMessages?: unknown[];
+  forkCalls?: string[];
+} = {}) {
   globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
   let forked = false;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -443,6 +449,7 @@ function stubThreadedFetch() {
     if (/\/chat\/workbenches\?kind=chat$/.test(path))
       return json({ items: [] });
     if (/\/chat\/workbenches\/[^/]+\/threads\/fork$/.test(path)) {
+      forkCalls.push(path);
       forked = true;
       const body = JSON.parse(String(init?.body)) as {
         parentMessageId: string;
@@ -495,6 +502,7 @@ function stubThreadedFetch() {
     }
     if (/\/chat\/workbenches\/[^/]+\/messages/.test(path)) {
       if (init?.method === "POST") {
+        sentMessages.push(JSON.parse(String(init.body)));
         return json({ id: "msg_new", createdAt: "2026-01-01T00:00:00.000Z" });
       }
       return json({ items: THREADED_MESSAGES });
@@ -569,6 +577,58 @@ describe("Thread breadcrumb and fork (CL-5908, CL-5948)", () => {
     expect(parentAt).toBeGreaterThan(-1);
     expect(replyAt).toBeGreaterThan(-1);
     expect(parentAt).toBeLessThan(replyAt);
+    harness.unmount();
+  });
+
+  test("editing an own prompt in an open reply thread resends into that thread without replacing history", async () => {
+    const sentMessages: unknown[] = [];
+    const forkCalls: string[] = [];
+    stubThreadedFetch({ sentMessages, forkCalls });
+    const harness = await mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "ch_1",
+      currentUser: { principalId: "prn_alice" },
+    });
+    await harness.settle();
+
+    const openButton = harness.container.querySelector(
+      ".chat-thread-open",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      openButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await sleep(30);
+    });
+
+    const originalRow = harness.container.querySelector("#chat-message-msg_2");
+    expect(originalRow?.textContent).toContain("inside the thread");
+    const editButton = originalRow?.querySelector(
+      ".chat-hover-edit",
+    ) as HTMLButtonElement;
+    expect(editButton).not.toBeNull();
+    await act(async () => {
+      editButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await sleep(30);
+    });
+
+    const editedPrompt = "inside the thread, revised";
+    typeInComposer(harness.container, editedPrompt);
+    const sendButton = harness.container.querySelector(
+      'button[aria-label="Send"]',
+    ) as HTMLButtonElement;
+    await act(async () => {
+      sendButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await sleep(30);
+    });
+
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0]).toMatchObject({
+      threadId: DEPTH1_THREAD.id,
+      parts: [{ kind: "text", text: editedPrompt }],
+    });
+    expect(forkCalls).toEqual([]);
+    expect(
+      harness.container.querySelector("#chat-message-msg_2")?.textContent,
+    ).toContain("inside the thread");
     harness.unmount();
   });
 
