@@ -245,6 +245,7 @@ export async function deployAtHead(
     | "assetService"
     | "toolGrantsForPins"
     | "mcpCredentialBindingsFor"
+    | "pinnedPackageCredentialBindingsFor"
   >,
   params: {
     tenantId: string;
@@ -397,9 +398,29 @@ export async function deployAtHead(
     isMcpToolsPin && deps.mcpCredentialBindingsFor !== undefined
       ? await deps.mcpCredentialBindingsFor(params.tenantId)
       : [];
+  // Static-handle packages (`@corbits/manus-tools`, granola-tools, …) declare
+  // `interchange.credentials`, but the assistant does not require those
+  // bindings — a required bind would throw MissingCredentialError on first
+  // chat. When this port is supplied, fold in only the bindings for pins
+  // whose connector the tenant already has, skipping handles the definition
+  // itself already bound.
+  const pinnedPackageBindings: readonly CredentialBinding[] =
+    deps.pinnedPackageCredentialBindingsFor !== undefined
+      ? await deps.pinnedPackageCredentialBindingsFor(
+          params.tenantId,
+          params.foldedBody.toolPackagePins,
+        )
+      : [];
+  const definedHandles = new Set(
+    params.foldedBody.credentialBindings.map((binding) => binding.handle),
+  );
+  const extraPinnedBindings = pinnedPackageBindings.filter(
+    (binding) => !definedHandles.has(binding.handle),
+  );
   const credentialBindings = [
     ...params.foldedBody.credentialBindings,
     ...mcpBindings,
+    ...extraPinnedBindings,
   ];
 
   // The deploy front resolves the credential MATERIAL itself from the
@@ -464,9 +485,10 @@ export async function deployAtHead(
   // The definition's own `credentialBindings` are what the workflow
   // host's per-step credential snapshot
   // (`vendor/intx/workflow-host/src/supervisor/credentials.ts`) derives
-  // its consumer bindings from, which is why the pinned-package MCP
-  // bindings folded in above have to reach the rendered config and not
-  // just the delivery: without them `env.credentials.resolve("mcp.<slug>")`
+  // its consumer bindings from, which is why the pinned-package bindings
+  // folded in above — MCP `mcp.<slug>` handles and static connector
+  // handles such as `manus` — have to reach the rendered config and not
+  // just the delivery: without them `env.credentials.resolve(...)`
   // fails "not connected" even when the material was delivered.
   const runtimeConfig: AgentRuntimeConfig = {
     workflowId: `wf_${params.instanceId}`,

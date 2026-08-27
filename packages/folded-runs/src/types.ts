@@ -80,6 +80,28 @@ export type McpCredentialBindingsFor = (
   tenantId: string,
 ) => Promise<readonly CredentialBinding[]>;
 
+/**
+ * Derives extra credential bindings for a folded run's pinned tool packages
+ * whose handles are static (known at package-publish time) but whose
+ * workflow definition does not require them. A required assistant binding
+ * would throw `MissingCredentialError` on signup / first chat when the
+ * tenant has not connected the provider; a pin with no matching binding is
+ * otherwise inert at tool time (`env.credentials.resolve(handle)` fails
+ * "not connected" even when Settings already has the key).
+ *
+ * `deployAtHead` calls this whenever it is supplied, with the launch's
+ * `toolPackagePins`, and concatenates the result onto the definition's own
+ * bindings (skipping handles already present). The composition root
+ * (`apps/hub`) supplies the real implementation from
+ * `CONNECTOR_REGISTRY.feedsTools` plus the tenant's connected providers —
+ * `folded-runs` never imports that registry itself. Optional: a caller that
+ * never pins a connector-fed package has no need to supply it.
+ */
+export type PinnedPackageCredentialBindingsFor = (
+  tenantId: string,
+  pins: readonly ToolPackagePin[],
+) => Promise<readonly CredentialBinding[]>;
+
 export type FoldedRunsDeps = {
   db: DB["db"];
   /**
@@ -112,6 +134,12 @@ export type FoldedRunsDeps = {
    * composition today) has no need to supply it.
    */
   mcpCredentialBindingsFor?: McpCredentialBindingsFor;
+  /**
+   * See `PinnedPackageCredentialBindingsFor`'s own doc. Optional: a caller
+   * that never pins a connector-fed package (granola-tools, manus-tools, …)
+   * has no need to supply it.
+   */
+  pinnedPackageCredentialBindingsFor?: PinnedPackageCredentialBindingsFor;
 };
 
 export type SentFoldedMail = {
