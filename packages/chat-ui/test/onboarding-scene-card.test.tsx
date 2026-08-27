@@ -86,6 +86,15 @@ function currentStepTitle(el: HTMLElement): string | undefined {
   );
 }
 
+function currentStepAria(el: HTMLElement): string | null {
+  const current = stepRows(el).find(
+    (row) => row.getAttribute("aria-current") === "step",
+  );
+  return (
+    current?.querySelector(".chat-block-scene-step-title")?.textContent ?? null
+  );
+}
+
 /** A host whose live state is whatever the test says it is, pushed once
  * on mount — the same read-then-subscribe contract the real
  * `createChatConnectGithubActions` binds. */
@@ -219,9 +228,13 @@ describe("the walkthrough marker follows the live connect state", () => {
   test("nothing connected yet marks Connect GitHub and explains why that step matters", async () => {
     const el = await mountAt("m_step1", { kind: "disconnected" });
     expect(currentStepTitle(el)).toBe("Connect GitHub");
+    expect(currentStepAria(el)).toBe("Connect GitHub");
     expect(el.querySelector(".chat-block-scene-why")?.textContent).toBe(
       STEPS[0]?.why,
     );
+    expect(
+      el.querySelector(".chat-block-scene-body")?.getAttribute("aria-live"),
+    ).toBe("polite");
   });
 
   test("connected with nothing recorded yet marks Pick your repos", async () => {
@@ -232,6 +245,7 @@ describe("the walkthrough marker follows the live connect state", () => {
       selectedRepoIds: [],
     });
     expect(currentStepTitle(el)).toBe("Pick your repos");
+    expect(currentStepAria(el)).toBe("Pick your repos");
     expect(el.querySelector(".chat-block-scene-why")?.textContent).toBe(
       STEPS[1]?.why,
     );
@@ -246,6 +260,7 @@ describe("the walkthrough marker follows the live connect state", () => {
       selectedRepoIds: ["1", "2"],
     });
     expect(currentStepTitle(el)).toBe("Start reviewing");
+    expect(currentStepAria(el)).toBe("Start reviewing");
     const done = el.querySelector(".chat-block-scene-reviewing");
     expect(done?.textContent).toContain("Reviewing");
     const names = [
@@ -319,9 +334,47 @@ describe("the walkthrough marker follows the live connect state", () => {
     expect(el.querySelector(".chat-block-scene-reviewing")).toBeNull();
     expect(el.textContent).toContain("2 repos found · 1 picked");
     expect(currentStepTitle(el)).toBe("Pick your repos");
+    const alert = el.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert?.textContent).toContain("Couldn't start reviewing");
     expect(report).toHaveBeenCalled();
     expect(report.mock.calls[0]?.[1]).toMatchObject({
       operation: "connect-github.startReviewing",
     });
+  });
+
+  test("a successful start reviewing after change repos moves focus onto the reviewing scene", async () => {
+    const el = await mount(
+      <ConnectGithubBlockContainer
+        data={DATA}
+        messageId="m_step_focus"
+        actions={fixedStateActions({
+          kind: "connected",
+          orgName: "acme",
+          repos: REPOS,
+          selectedRepoIds: ["1"],
+        })}
+      />,
+    );
+    const changeRepos = [...el.querySelectorAll("button")].find(
+      (button) => button.textContent === "change repos",
+    );
+    await act(async () => {
+      changeRepos?.click();
+    });
+    const start = [...el.querySelectorAll("button")].find((button) =>
+      button.textContent?.startsWith("Start reviewing"),
+    );
+    await act(async () => {
+      start?.focus();
+      start?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const reviewing = el.querySelector(".chat-block-scene-reviewing");
+    expect(reviewing).not.toBeNull();
+    expect(currentStepAria(el)).toBe("Start reviewing");
+    expect(reviewing?.contains(document.activeElement)).toBe(true);
   });
 });
