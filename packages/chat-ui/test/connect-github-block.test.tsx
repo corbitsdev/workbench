@@ -432,7 +432,12 @@ describe("connect GitHub card — accessibility", () => {
     }
 
     const group = el.querySelector('[role="group"]');
-    expect(group?.getAttribute("aria-label")).toBe("Pick your repos");
+    expect(
+      el.querySelector(".chat-block-scene-pick-heading")?.textContent,
+    ).toBe("Pick your repos");
+    expect(group?.getAttribute("aria-labelledby")).toBe(
+      "connect-github-pick-heading",
+    );
 
     const firstCheckbox = checkboxes[0];
     if (firstCheckbox === undefined) {
@@ -442,7 +447,7 @@ describe("connect GitHub card — accessibility", () => {
     expect(document.activeElement).toBe(firstCheckbox);
   });
 
-  test("the current walkthrough step is marked aria-current=step and the scene body is a live region", async () => {
+  test("the current walkthrough step is marked aria-current=step and a sibling status live region names it", async () => {
     const el = await mount({
       kind: "disconnected",
       onConnect: () => undefined,
@@ -458,9 +463,126 @@ describe("connect GitHub card — accessibility", () => {
         (row) => row.getAttribute("aria-current") === "step",
       ),
     ).toHaveLength(1);
+    const status = el.querySelector(".chat-block-scene-status");
+    const body = el.querySelector(".chat-block-scene-body");
+    expect(body?.getAttribute("aria-live")).toBeNull();
+    expect(status?.getAttribute("aria-live")).toBe("polite");
+    expect(status?.getAttribute("aria-atomic")).toBe("true");
+    expect(status?.textContent).toBe("Connect GitHub");
+    expect(body?.contains(status)).toBe(false);
     expect(
-      el.querySelector(".chat-block-scene-body")?.getAttribute("aria-live"),
-    ).toBe("polite");
+      el.querySelector("#connect-github-token") ??
+        el.querySelector('input[type="password"]'),
+    ).toBeNull();
+  });
+
+  test("a token error is an alert beside the status live region, not nested inside it", async () => {
+    const el = await mount({
+      kind: "disconnected",
+      onConnect: () => undefined,
+      onSubmitAccessToken: () =>
+        Promise.resolve({ ok: false, message: "Bad token." }),
+    });
+
+    const openLink = [...el.querySelectorAll("button")].find(
+      (button) => button.textContent === "Connect GitHub",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      openLink.click();
+    });
+
+    const field = el.querySelector("#connect-github-token") as HTMLInputElement;
+    await act(async () => {
+      typeInto(field, "ghp_bad");
+    });
+    const submit = [...el.querySelectorAll("button")].find(
+      (button) => button.textContent === "Connect",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      submit.click();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const status = el.querySelector(".chat-block-scene-status");
+    const alert = el.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain("Bad token.");
+    expect(status?.contains(alert)).toBe(false);
+    expect(status?.textContent).toBe("Connect GitHub");
+    expect(el.querySelector(".chat-block-scene-body")?.contains(field)).toBe(
+      true,
+    );
+  });
+
+  test("a start-reviewing error is an alert beside the status live region, not nested inside it", async () => {
+    const el = await mountElement(
+      <ConnectGithubBlockView
+        scene={{ ...SCENE, currentStepIndex: 1 }}
+        kind="connected"
+        orgName="acme"
+        repos={REPOS}
+        selectedRepoIds={["checkout"]}
+        onToggleRepo={() => undefined}
+        onSelectAll={() => undefined}
+        onChangeConnection={() => undefined}
+        onStartReviewing={() => undefined}
+        onSkip={() => undefined}
+        error="Couldn't start reviewing — try again."
+      />,
+    );
+
+    const status = el.querySelector(".chat-block-scene-status");
+    const alert = el.querySelector('[role="alert"]');
+    expect(status?.textContent).toBe("Pick your repos");
+    expect(alert?.textContent).toContain("Couldn't start reviewing");
+    expect(status?.contains(alert)).toBe(false);
+    expect(
+      el
+        .querySelector(".chat-block-scene-body")
+        ?.contains(el.querySelector('input[type="checkbox"]')),
+    ).toBe(true);
+  });
+
+  test("toggling a repo checkbox does not change the status live region", async () => {
+    const el = await mountElement(
+      <PickReposHarness
+        initiallySelected={["checkout"]}
+        onStartReviewing={() => undefined}
+      />,
+    );
+    const status = el.querySelector(".chat-block-scene-status");
+    expect(status?.textContent).toBe("Connect GitHub");
+
+    const mobileCheckbox = [
+      ...el.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+    ][3];
+    await act(async () => {
+      mobileCheckbox?.click();
+    });
+
+    expect(status?.textContent).toBe("Connect GitHub");
+    expect(el.textContent).toContain("6 repos found · 2 picked");
+  });
+
+  test("autoFocus on the pick-repos scene moves focus onto the pick heading", async () => {
+    const el = await mount({
+      kind: "connected",
+      orgName: "acme",
+      repos: REPOS,
+      selectedRepoIds: [],
+      onToggleRepo: () => undefined,
+      onSelectAll: () => undefined,
+      onChangeConnection: () => undefined,
+      onStartReviewing: () => undefined,
+      onSkip: () => undefined,
+      autoFocus: true,
+    });
+
+    const heading = el.querySelector(".chat-block-scene-pick-heading");
+    expect(heading?.textContent).toBe("Pick your repos");
+    expect(heading?.getAttribute("tabindex")).toBe("-1");
+    expect(document.activeElement).toBe(heading);
   });
 
   test("the disconnected state's actions are real buttons, not divs", async () => {

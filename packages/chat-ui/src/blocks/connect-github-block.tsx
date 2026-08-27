@@ -86,6 +86,9 @@ export type ConnectGithubCardBody =
       /** Set when `onStartReviewing` rejected — the picker stays up and
        * this is the card's own alert, never a toast-only failure. */
       readonly error?: string;
+      /** Move focus onto the pick-repos heading after Connect succeeded,
+       * so it does not stay on a control that unmounted. */
+      readonly autoFocus?: boolean;
     }
   | {
       readonly kind: "reviewing";
@@ -341,10 +344,23 @@ function ConnectedBody({
   onStartReviewing,
   onSkip,
   error,
+  autoFocus,
 }: Extract<ConnectGithubCardProps, { kind: "connected" }>) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (autoFocus === true) headingRef.current?.focus();
+  }, [autoFocus]);
   const pickedCount = selectedRepoIds.length;
   return (
     <>
+      <h2
+        id="connect-github-pick-heading"
+        className="chat-block-scene-pick-heading"
+        ref={headingRef}
+        {...(autoFocus === true ? { tabIndex: -1 } : {})}
+      >
+        {CHAT_STRINGS.blockConnectGithubPickHeadline}
+      </h2>
       <p className="chat-block-connect-line">
         <span className="chat-block-connect-tick" aria-hidden="true">
           <Check />
@@ -367,7 +383,7 @@ function ConnectedBody({
       <div
         className="chat-block-connect-repo-list"
         role="group"
-        aria-label={CHAT_STRINGS.blockConnectGithubPickHeadline}
+        aria-labelledby="connect-github-pick-heading"
       >
         {repos.map((repo) => {
           const selected = selectedRepoIds.includes(repo.id);
@@ -423,10 +439,19 @@ function ConnectedBody({
 }
 
 export function ConnectGithubBlockView(props: ConnectGithubCardProps) {
+  const currentStepTitle =
+    props.scene.steps?.[props.scene.currentStepIndex]?.title;
   return (
     <BlockCard title={props.scene.title}>
       <SceneHeader scene={props.scene} />
-      <div className="chat-block-scene-body" aria-live="polite">
+      <div
+        className="chat-block-scene-status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {currentStepTitle ?? null}
+      </div>
+      <div className="chat-block-scene-body">
         {props.kind === "disconnected" ? (
           <DisconnectedBody
             onConnect={props.onConnect}

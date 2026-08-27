@@ -232,9 +232,15 @@ describe("the walkthrough marker follows the live connect state", () => {
     expect(el.querySelector(".chat-block-scene-why")?.textContent).toBe(
       STEPS[0]?.why,
     );
+    const status = el.querySelector(".chat-block-scene-status");
+    expect(status?.getAttribute("aria-live")).toBe("polite");
+    expect(status?.textContent).toBe("Connect GitHub");
     expect(
       el.querySelector(".chat-block-scene-body")?.getAttribute("aria-live"),
-    ).toBe("polite");
+    ).toBeNull();
+    expect(el.querySelector(".chat-block-scene-body")?.contains(status)).toBe(
+      false,
+    );
   });
 
   test("connected with nothing recorded yet marks Pick your repos", async () => {
@@ -337,6 +343,9 @@ describe("the walkthrough marker follows the live connect state", () => {
     const alert = el.querySelector('[role="alert"]');
     expect(alert).not.toBeNull();
     expect(alert?.textContent).toContain("Couldn't start reviewing");
+    const status = el.querySelector(".chat-block-scene-status");
+    expect(status?.textContent).toBe("Pick your repos");
+    expect(status?.contains(alert)).toBe(false);
     expect(report).toHaveBeenCalled();
     expect(report.mock.calls[0]?.[1]).toMatchObject({
       operation: "connect-github.startReviewing",

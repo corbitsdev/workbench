@@ -1768,6 +1768,25 @@
   margin: 0 0 0.65rem;
 }
 
+.chat-block-scene-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.chat-block-scene-pick-heading {
+  margin: 0 0 0.7rem;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
 .chat-block-scene-repo-names {
   margin: 0 0 0.55rem;
   padding: 0;
