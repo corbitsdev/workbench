@@ -34,6 +34,178 @@ function collector() {
   return { lines, log: (line: string) => lines.push(line) };
 }
 
+function firstLoginSeedHub(args: { expectedParentId?: string }) {
+  let principalsCalls = 0;
+  const startedRuns: string[] = [];
+  const tarballPuts: string[] = [];
+  const api: ApiCall = async (method, path, body) => {
+    if (path.includes("/tarballs/")) {
+      tarballPuts.push(`${method} ${path}`);
+      throw new Error(`signup must not pack: ${method} ${path}`);
+    }
+    if (method === "GET" && path === "/api/me/principals") {
+      principalsCalls += 1;
+      if (principalsCalls === 1) {
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
+      }
+      return {
+        status: 200,
+        data: {
+          data: [
+            {
+              principalId: PRINCIPAL_ID,
+              tenantId: TENANT_ID,
+              tenantName: "alice's workbench",
+              tenantSlug: TENANT_SLUG,
+              kind: "user",
+              status: "active",
+              roles: [{ id: "rol_owner", name: "owner" }],
+            },
+          ],
+          nextCursor: null,
+        },
+        cookies: [],
+      };
+    }
+    if (method === "POST" && path === "/api/tenants") {
+      const parsed = body as {
+        parentId?: string;
+        slug: string;
+        name: string;
+      };
+      expect(parsed.parentId).toBe(args.expectedParentId);
+      expect(parsed.name).toBe("Alice's Lab");
+      return {
+        status: 201,
+        data: {
+          id: TENANT_ID,
+          name: parsed.name,
+          slug: parsed.slug,
+          domain: `${parsed.slug}.localhost`,
+          ...(args.expectedParentId !== undefined
+            ? { parentId: args.expectedParentId }
+            : {}),
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+        cookies: [],
+      };
+    }
+    if (
+      method === "GET" &&
+      path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)
+    ) {
+      return {
+        status: 200,
+        data: { data: [], nextCursor: null },
+        cookies: [],
+      };
+    }
+    if (method === "POST" && path === `/api/tenants/${TENANT_ID}/grants`) {
+      return { status: 201, data: {}, cookies: [] };
+    }
+    if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`) {
+      return {
+        status: 201,
+        data: {
+          id: "ast_1",
+          tenantId: TENANT_ID,
+          kind: "workflow",
+          name: "echo",
+          displayName: null,
+          creatorPrincipalId: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+        cookies: [],
+      };
+    }
+    if (method === "POST" && path === `/api/tenants/${TENANT_ID}/git-tokens`) {
+      return {
+        status: 201,
+        data: { id: "tok_1", secret: "s3cret" },
+        cookies: [],
+      };
+    }
+    if (
+      method === "GET" &&
+      path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+    ) {
+      return { status: 404, data: {}, cookies: [] };
+    }
+    if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
+      return { status: 201, data: {}, cookies: [] };
+    }
+    if (
+      method === "GET" &&
+      path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+    ) {
+      return {
+        status: 200,
+        data: { data: [], nextCursor: null },
+        cookies: [],
+      };
+    }
+    if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
+      return { status: 200, data: { items: [] }, cookies: [] };
+    }
+    if (
+      method === "GET" &&
+      path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+    ) {
+      return { status: 200, data: [], cookies: [] };
+    }
+    if (
+      method === "POST" &&
+      path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+    ) {
+      return {
+        status: 201,
+        data: {
+          id: DEPLOYMENT_ID,
+          tenantId: TENANT_ID,
+          definitionAssetId: "ast_1",
+          status: "deployed",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+        cookies: [],
+      };
+    }
+    if (
+      method === "GET" &&
+      path === `/api/tenants/${TENANT_ID}/workflows/${DEPLOYMENT_ID}/runs`
+    ) {
+      return {
+        status: 200,
+        data: { runIds: [...startedRuns] },
+        cookies: [],
+      };
+    }
+    if (
+      method === "POST" &&
+      path === `/api/tenants/${TENANT_ID}/workflows/${DEPLOYMENT_ID}/mail`
+    ) {
+      const runId = `run_${startedRuns.length + 1}`;
+      startedRuns.push(runId);
+      return {
+        status: 202,
+        data: {
+          runId: DEPLOYMENT_ID,
+          address: "echo@x",
+          messageId: `m${startedRuns.length}`,
+        },
+        cookies: [],
+      };
+    }
+    throw new Error(`unexpected call: ${method} ${path}`);
+  };
+  return { api, tarballPuts };
+}
+
 describe("personalTenantSlug", () => {
   test("derives a lowercase-kebab slug from the email and a user-id fragment", () => {
     expect(personalTenantSlug("Alice.Smith@example.com", "user_id_1")).toBe(
@@ -294,176 +466,9 @@ describe("provisionPersonalTenantIfNeeded", () => {
   });
 
   test("zero principals with a seed model configured: provisions under the operator tenant and seeds the default workflow", async () => {
-    let principalsCalls = 0;
-    const startedRuns: string[] = [];
-    const tarballPuts: string[] = [];
-    const api: ApiCall = async (method, path, body) => {
-      if (path.includes("/tarballs/")) {
-        tarballPuts.push(`${method} ${path}`);
-        throw new Error(`signup must not pack: ${method} ${path}`);
-      }
-      if (method === "GET" && path === "/api/me/principals") {
-        principalsCalls += 1;
-        if (principalsCalls === 1) {
-          return {
-            status: 200,
-            data: { data: [], nextCursor: null },
-            cookies: [],
-          };
-        }
-        return {
-          status: 200,
-          data: {
-            data: [
-              {
-                principalId: PRINCIPAL_ID,
-                tenantId: TENANT_ID,
-                tenantName: "alice's workbench",
-                tenantSlug: TENANT_SLUG,
-                kind: "user",
-                status: "active",
-                roles: [{ id: "rol_owner", name: "owner" }],
-              },
-            ],
-            nextCursor: null,
-          },
-          cookies: [],
-        };
-      }
-      if (method === "POST" && path === "/api/tenants") {
-        const parsed = body as {
-          parentId?: string;
-          slug: string;
-          name: string;
-        };
-        expect(parsed.parentId).toBe("ten_operator");
-        expect(parsed.name).toBe("Alice's Lab");
-        return {
-          status: 201,
-          data: {
-            id: TENANT_ID,
-            name: parsed.name,
-            slug: parsed.slug,
-            domain: `${parsed.slug}.localhost`,
-            parentId: "ten_operator",
-            createdAt: "2026-01-01T00:00:00.000Z",
-            updatedAt: "2026-01-01T00:00:00.000Z",
-          },
-          cookies: [],
-        };
-      }
-      if (
-        method === "GET" &&
-        path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)
-      ) {
-        return {
-          status: 200,
-          data: { data: [], nextCursor: null },
-          cookies: [],
-        };
-      }
-      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/grants`) {
-        return { status: 201, data: {}, cookies: [] };
-      }
-      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`) {
-        return {
-          status: 201,
-          data: {
-            id: "ast_1",
-            tenantId: TENANT_ID,
-            kind: "workflow",
-            name: "echo",
-            displayName: null,
-            creatorPrincipalId: null,
-            createdAt: "2026-01-01T00:00:00.000Z",
-            updatedAt: "2026-01-01T00:00:00.000Z",
-          },
-          cookies: [],
-        };
-      }
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/git-tokens`
-      ) {
-        return {
-          status: 201,
-          data: { id: "tok_1", secret: "s3cret" },
-          cookies: [],
-        };
-      }
-      if (
-        method === "GET" &&
-        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
-      ) {
-        return { status: 404, data: {}, cookies: [] };
-      }
-      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
-        return { status: 201, data: {}, cookies: [] };
-      }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
-      ) {
-        return {
-          status: 200,
-          data: { data: [], nextCursor: null },
-          cookies: [],
-        };
-      }
-      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
-        return { status: 200, data: { items: [] }, cookies: [] };
-      }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
-      ) {
-        return { status: 200, data: [], cookies: [] };
-      }
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
-      ) {
-        return {
-          status: 201,
-          data: {
-            id: DEPLOYMENT_ID,
-            tenantId: TENANT_ID,
-            definitionAssetId: "ast_1",
-            status: "deployed",
-            createdAt: "2026-01-01T00:00:00.000Z",
-          },
-          cookies: [],
-        };
-      }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/${DEPLOYMENT_ID}/runs`
-      ) {
-        return {
-          status: 200,
-          data: { runIds: [...startedRuns] },
-          cookies: [],
-        };
-      }
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/${DEPLOYMENT_ID}/mail`
-      ) {
-        const runId = `run_${startedRuns.length + 1}`;
-        startedRuns.push(runId);
-        return {
-          status: 202,
-          data: {
-            runId: DEPLOYMENT_ID,
-            address: "echo@x",
-            messageId: `m${startedRuns.length}`,
-          },
-          cookies: [],
-        };
-      }
-      throw new Error(`unexpected call: ${method} ${path}`);
-    };
-
+    const { api, tarballPuts } = firstLoginSeedHub({
+      expectedParentId: "ten_operator",
+    });
     const { log } = collector();
     const result = await provisionPersonalTenantIfNeeded({
       api,
@@ -474,6 +479,31 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmailVerified: true,
       displayName: "Alice's Lab",
       operatorTenantId: "ten_operator",
+      seedModel: MODEL,
+      pushWorkflow: noopPush,
+      log,
+    });
+
+    expect(result).toEqual({
+      kind: "provisioned",
+      tenantId: TENANT_ID,
+      tenantSlug: TENANT_SLUG,
+      seeded: true,
+    });
+    expect(tarballPuts).toEqual([]);
+  });
+
+  test("an unparented personal bench still does not pack corbits-tools as a fallback", async () => {
+    const { api, tarballPuts } = firstLoginSeedHub({});
+    const { log } = collector();
+    const result = await provisionPersonalTenantIfNeeded({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      userEmailVerified: true,
+      displayName: "Alice's Lab",
       seedModel: MODEL,
       pushWorkflow: noopPush,
       log,
