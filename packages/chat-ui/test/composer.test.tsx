@@ -105,7 +105,9 @@ describe("Composer send button", () => {
 test("labels the icon-only attachment action in the composer rail", () => {
   mount(() => Promise.resolve(true));
 
-  expect(container?.querySelector('[aria-label="Attach files"]')?.textContent).toBe("");
+  expect(
+    container?.querySelector('[aria-label="Attach files"]')?.textContent,
+  ).toBe("");
 });
 
 function textarea(): HTMLTextAreaElement {
@@ -275,9 +277,9 @@ describe("Composer keyboard hint", () => {
     expect(
       container?.querySelectorAll(".chat-composer-actions > button").length,
     ).toBe(2);
-    expect(
-      container?.querySelector(".chat-composer-row > textarea"),
-    ).toBe(textarea());
+    expect(container?.querySelector(".chat-composer-row > textarea")).toBe(
+      textarea(),
+    );
   });
 
   test("hides when the focused draft is cleared", async () => {
