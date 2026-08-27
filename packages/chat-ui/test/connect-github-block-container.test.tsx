@@ -294,3 +294,34 @@ describe("ConnectGithubBlockContainer keeps connected across loading (CL-6741)",
     expect(el.textContent).not.toContain("Connected to GitHub as");
   });
 });
+
+describe("ConnectGithubBlockContainer names a kind:error state (PR 422)", () => {
+  test("query kind error shows the state message as an alert, not a silent Connect GitHub primary", async () => {
+    const message =
+      "Couldn't read your GitHub repositories. Try reconnecting.";
+    const actions: ConnectGithubActions = {
+      getConnectState: () =>
+        Promise.resolve({ kind: "error", message }),
+      subscribeConnectState: () => () => {},
+      requestConnect: () => {},
+      submitAccessToken: async () => ({ ok: true as const }),
+      startReviewing: async () => ({ startedTriggerCount: 0 }),
+      skip: async () => {},
+    };
+
+    const el = await mount(actions, "m_state_error");
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const alert = el.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert?.textContent).toBe(message);
+
+    const connectPrimary = [...el.querySelectorAll("button")].find(
+      (button) => button.textContent === "Connect GitHub",
+    );
+    expect(connectPrimary).toBeUndefined();
+  });
+});
