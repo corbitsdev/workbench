@@ -199,6 +199,30 @@ sidecar a given run lands on) rather than reimplementing execution.
 Provisioning and allocation follow Interchange's own contracts; workbench
 does not maintain a parallel scheduler.
 
+## MCP connect
+
+Remote MCP servers connect through Plugins (curated presets and
+add-by-URL). The connect-time probe and later tool calls share one
+origin-pinned fetch: every first hop must be the stored origin or an
+explicit extra origin for that pin — not a host-suffix match — and a 3xx
+is never followed, even to an allowlisted origin. Canva is the one
+shipped extra: the stored MCP origin may also first-hop the protocol
+origin that is not the stored `apiBaseUrl`.
+
+OAuth presets that list advertised scopes send those scopes on RFC 7591
+dynamic client registration; presets that omit the list stay on the SDK's
+protected-resource metadata fallback. When `/start` fails, the return
+distinguishes `client_rejected` (the authorization server refused
+Workbench as a client — including RFC 7591 `invalid_redirect_uri` and
+sibling client-metadata codes, even when the SDK maps an unknown code
+onto a generic server error) from `discovery_failed` (the authorization
+server could not be reached). A successful callback re-probes with the
+new token and may put that probe's tool count on the Plugins return so
+the row can show it.
+
+Live Canva OAuth against Canva's own servers is not verified; this is
+the shipped control flow, not a proven live handshake.
+
 ## Related docs
 
 - [docs/GLOSSARY.md](docs/GLOSSARY.md) — product-term to platform-term
