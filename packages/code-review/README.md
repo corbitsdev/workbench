@@ -18,6 +18,13 @@ Three reviewers, each a lens rather than a whole opinion:
 requests, so the roster a review fans out to is the roster a person can
 see and edit in the workbench.
 
+Each reviewer also carries a canned `introduction` — one or two sentences
+in its own voice, naming the job and the repos it will watch.
+`reviewerIntroductions(repoNames)` (`src/introductions.ts`,
+`@corbits/code-review/introductions`) renders all three in roster order;
+a host posts them once a person starts reviewing, so the room shows who
+just came online without running any inference.
+
 ## The report contract
 
 Every reviewer replies under `REVIEWER_REPORT_CONTRACT`

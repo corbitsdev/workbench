@@ -62,6 +62,12 @@ function mountAs(routes: Hono<TenantEnv>): Hono<TenantEnv> {
 function buildApp(overrides: Partial<ConnectGithubRoutesDeps> = {}) {
   const grants: { tenantId: string; repo: GitHubRepoSummary }[] = [];
   const triggers: { tenantId: string; repo: GitHubRepoSummary }[] = [];
+  const introductionCalls: {
+    tenantId: string;
+    workbenchId: string;
+    principalId: string;
+    introductions: readonly { handle: string; text: string }[];
+  }[] = [];
   let settings: {
     pendingConnections: readonly string[];
     selectedRepos: readonly string[];
@@ -97,6 +103,19 @@ function buildApp(overrides: Partial<ConnectGithubRoutesDeps> = {}) {
         selectedRepos: patch["template/selectedRepos"],
       };
     },
+    onReviewingStarted: async (
+      tenantId,
+      workbenchId,
+      principalId,
+      introductions,
+    ) => {
+      introductionCalls.push({
+        tenantId,
+        workbenchId,
+        principalId,
+        introductions,
+      });
+    },
     listReposFn: async () => REPOS,
     fetchAuthenticatedLoginFn: async () => "octocat",
     ...overrides,
@@ -107,6 +126,7 @@ function buildApp(overrides: Partial<ConnectGithubRoutesDeps> = {}) {
     app: mountAs(routes),
     grants,
     triggers,
+    introductionCalls,
     settingsNow: () => settings,
   };
 }
@@ -172,6 +192,47 @@ describe("POST /:workbenchId/github/start-reviewing", () => {
     });
   });
 
+  test("posts each reviewer's introduction once, naming the selected repos, after success", async () => {
+    const harness = buildApp();
+    const response = await harness.app.request("/wb_1/github/start-reviewing", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ repoIds: ["1", "2"] }),
+    });
+    expect(response.status).toBe(200);
+    expect(harness.introductionCalls.length).toBe(1);
+    const [call] = harness.introductionCalls;
+    if (call === undefined) throw new Error("expected one introduction call");
+    expect(call.tenantId).toBe("tnt_1");
+    expect(call.workbenchId).toBe("wb_1");
+    expect(call.principalId).toBe("prn_alice");
+    expect(call.introductions.length).toBe(3);
+    for (const introduction of call.introductions) {
+      expect(
+        ["acme/widgets", "acme/gadgets"].some((name) =>
+          introduction.text.includes(name),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  test("a rejecting introduction port still yields 200 and logs the failure", async () => {
+    const logs: string[] = [];
+    const harness = buildApp({
+      log: (line) => logs.push(line),
+      onReviewingStarted: async () => {
+        throw new Error("boom");
+      },
+    });
+    const response = await harness.app.request("/wb_1/github/start-reviewing", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ repoIds: ["1"] }),
+    });
+    expect(response.status).toBe(200);
+    expect(logs.some((line) => line.includes("boom"))).toBe(true);
+  });
+
   test("400s on a malformed body without leaking raw parser text", async () => {
     const harness = buildApp();
     const response = await harness.app.request("/wb_1/github/start-reviewing", {
@@ -182,6 +243,7 @@ describe("POST /:workbenchId/github/start-reviewing", () => {
     expect(response.status).toBe(400);
     const body = (await response.json()) as { error: { code: string } };
     expect(body.error.code).toBe("bad_request");
+    expect(harness.introductionCalls).toEqual([]);
   });
 
   test("409s when the tenant has no github credential yet", async () => {
@@ -193,6 +255,24 @@ describe("POST /:workbenchId/github/start-reviewing", () => {
     });
     expect(response.status).toBe(409);
     expect(harness.grants).toEqual([]);
+    expect(harness.introductionCalls).toEqual([]);
+  });
+
+  test("502s when GitHub cannot be read, without posting introductions", async () => {
+    const harness = buildApp({
+      listReposFn: async () => {
+        throw new Error(
+          "GitHub request to /user/repos failed: 401 Bad credentials",
+        );
+      },
+    });
+    const response = await harness.app.request("/wb_1/github/start-reviewing", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ repoIds: ["1"] }),
+    });
+    expect(response.status).toBe(502);
+    expect(harness.introductionCalls).toEqual([]);
   });
 
   test("404s when the code-review workflow isn't deployed in this tenant", async () => {
@@ -206,5 +286,6 @@ describe("POST /:workbenchId/github/start-reviewing", () => {
     });
     expect(response.status).toBe(404);
     expect(harness.grants).toEqual([]);
+    expect(harness.introductionCalls).toEqual([]);
   });
 });
