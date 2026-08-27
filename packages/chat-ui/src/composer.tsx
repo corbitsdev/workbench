@@ -7,7 +7,7 @@
 // does not compose with an inline mention popover.
 
 import { Avatar, Button } from "@corbits/react-ui";
-import { CircleNotch, Paperclip, PaperPlaneRight, X } from "@corbits/icons";
+import { ArrowUp, CircleNotch, Paperclip, X } from "@corbits/icons";
 import {
   forwardRef,
   useImperativeHandle,
@@ -240,7 +240,7 @@ export function attachmentValidationMessage(
   }
 }
 
-/** PaperPlaneRight/Enter stay blocked while a send or file read is in flight. */
+/** ArrowUp/Enter stay blocked while a send or file read is in flight. */
 export function canSendComposerAction(
   text: string,
   attachments: readonly ComposerAttachment[],
@@ -803,26 +803,6 @@ export const Composer = forwardRef<
           </div>
         </div>
       )}
-      {attachments.length > 0 && (
-        <ul
-          className="chat-composer-attachments"
-          aria-label={CHAT_STRINGS.composerAttachmentsLabel}
-        >
-          {attachments.map((file) => (
-            <li key={file.id} className="chat-composer-attachment">
-              <span className="chat-composer-attachment-name">{file.name}</span>
-              <button
-                type="button"
-                className="chat-composer-attachment-remove"
-                aria-label={CHAT_STRINGS.composerRemoveAttachment(file.name)}
-                onClick={() => removeAttachment(file.id)}
-              >
-                <X aria-hidden="true" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
       <div className="chat-composer-row">
         <input
           ref={fileInputRef}
@@ -833,6 +813,28 @@ export const Composer = forwardRef<
           tabIndex={-1}
           aria-hidden="true"
         />
+        {attachments.length > 0 && (
+          <ul
+            className="chat-composer-attachments"
+            aria-label={CHAT_STRINGS.composerAttachmentsLabel}
+          >
+            {attachments.map((file) => (
+              <li key={file.id} className="chat-composer-attachment">
+                <span className="chat-composer-attachment-name">
+                  {file.name}
+                </span>
+                <button
+                  type="button"
+                  className="chat-composer-attachment-remove"
+                  aria-label={CHAT_STRINGS.composerRemoveAttachment(file.name)}
+                  onClick={() => removeAttachment(file.id)}
+                >
+                  <X aria-hidden="true" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         <textarea
           ref={textareaRef}
           className="chat-composer-input"
@@ -888,9 +890,9 @@ export const Composer = forwardRef<
                 className="chat-composer-send-spinner"
                 aria-hidden="true"
               />
-            ) : (
-              <PaperPlaneRight aria-hidden="true" />
-            )}
+          ) : (
+            <ArrowUp aria-hidden="true" />
+          )}
           </Button>
         </div>
       </div>
