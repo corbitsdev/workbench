@@ -1,6 +1,7 @@
 export {
   CreateTaskResponse,
   ListMessagesResponse,
+  buildTaskMessage,
   createSlideDeck,
   createTask,
   extractOutputFiles,
@@ -20,6 +21,9 @@ export type {
   OutputFile,
   TaskAttachment,
   TaskEvent,
+  TaskMessageBody,
+  TaskMessageSkillFields,
+  TaskTextContentPart,
 } from "./client";
 export {
   CREATE_SLIDES_TOOL,

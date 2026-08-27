@@ -7,6 +7,7 @@ import type { CredentialCapability } from "@intx/types";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
 
 import {
+  buildTaskMessage,
   createSlideDeck,
   createTask,
   listTaskMessages,
@@ -25,6 +26,7 @@ export const CREATE_SLIDES_TOOL = "create_slides";
 type JsonSchemaProperty = {
   readonly type: string;
   readonly description: string;
+  readonly items?: { readonly type: string };
 };
 
 type EndpointSpec = {
@@ -52,6 +54,26 @@ const OBJECT = (description: string): JsonSchemaProperty => ({
   type: "object",
   description,
 });
+const STRING_ARRAY = (description: string): JsonSchemaProperty => ({
+  type: "array",
+  description,
+  items: { type: "string" },
+});
+
+const MESSAGE_SKILL_PROPERTIES = {
+  enable_skills: STRING_ARRAY(
+    "Skill ids from skill_list to make available. If omitted, the account default skills are used.",
+  ),
+  force_skills: STRING_ARRAY(
+    "Skill ids the agent must invoke. Forced skills are available even when not listed in enable_skills.",
+  ),
+  connectors: STRING_ARRAY(
+    "Connector ids from connector_list to attach to this message.",
+  ),
+  task_references: STRING_ARRAY(
+    "Task ids (up to 20) the agent may browse. Pass the 22-character id, not a URL.",
+  ),
+} as const;
 
 export const MANUS_ENDPOINTS: readonly EndpointSpec[] = [
   {
@@ -59,7 +81,7 @@ export const MANUS_ENDPOINTS: readonly EndpointSpec[] = [
     method: "POST",
     path: "/v2/task.create",
     description:
-      "Creates a Manus task. Pass content as the prompt text (sent as message.content). Poll task_list_msgs for progress.",
+      "Creates a Manus task. Pass content as the prompt text (sent as message.content ContentPart text). Poll task_list_msgs for progress. Pass skill ids from skill_list via enable_skills or force_skills.",
     required: ["content"],
     properties: {
       content: STRING("Prompt text that starts the task."),
@@ -74,6 +96,10 @@ export const MANUS_ENDPOINTS: readonly EndpointSpec[] = [
       ),
       share_visibility: STRING("private, team, or public."),
       agent_profile: STRING("manus-1.6, manus-1.6-lite, or manus-1.6-max."),
+      ...MESSAGE_SKILL_PROPERTIES,
+      structured_output_schema: OBJECT(
+        "JSON Schema for structured output extraction. Sent on the create body, not inside message.",
+      ),
     },
   },
   {
@@ -135,12 +161,16 @@ export const MANUS_ENDPOINTS: readonly EndpointSpec[] = [
     name: "task_send_msg",
     method: "POST",
     path: "/v2/task.sendMessage",
-    description: "Sends a follow-up message to an existing Manus task.",
+    description:
+      "Sends a follow-up message to an existing Manus task. Pass skill ids from skill_list via enable_skills or force_skills.",
     required: ["task_id", "content"],
     properties: {
       task_id: STRING("Task id."),
-      content: STRING("Follow-up prompt text (sent as message.content)."),
+      content: STRING(
+        "Follow-up prompt text (sent as message.content ContentPart text).",
+      ),
       agent_profile: STRING("Optional agent profile override."),
+      ...MESSAGE_SKILL_PROPERTIES,
     },
   },
   {
@@ -507,7 +537,7 @@ async function runEndpoint(
     }
     const body: Record<string, unknown> = {
       task_id: taskId,
-      message: { content },
+      message: buildTaskMessage(content, messageSkillFields(call)),
     };
     const profile = stringArg(call, "agent_profile");
     if (profile !== undefined) body["agent_profile"] = profile;
@@ -561,6 +591,11 @@ function optionalCreateFields(call: ToolCall): {
   hide_in_task_list?: boolean;
   share_visibility?: string;
   agent_profile?: string;
+  enable_skills?: readonly string[];
+  force_skills?: readonly string[];
+  connectors?: readonly string[];
+  task_references?: readonly string[];
+  structured_output_schema?: Readonly<Record<string, unknown>>;
 } {
   const fields: {
     title?: string;
@@ -570,6 +605,11 @@ function optionalCreateFields(call: ToolCall): {
     hide_in_task_list?: boolean;
     share_visibility?: string;
     agent_profile?: string;
+    enable_skills?: readonly string[];
+    force_skills?: readonly string[];
+    connectors?: readonly string[];
+    task_references?: readonly string[];
+    structured_output_schema?: Readonly<Record<string, unknown>>;
   } = {};
   const title = stringArg(call, "title");
   if (title !== undefined) fields.title = title;
@@ -587,6 +627,69 @@ function optionalCreateFields(call: ToolCall): {
   if (visibility !== undefined) fields.share_visibility = visibility;
   const profile = stringArg(call, "agent_profile");
   if (profile !== undefined) fields.agent_profile = profile;
+  const skills = messageSkillFields(call);
+  if (skills.enable_skills !== undefined) {
+    fields.enable_skills = skills.enable_skills;
+  }
+  if (skills.force_skills !== undefined) {
+    fields.force_skills = skills.force_skills;
+  }
+  if (skills.connectors !== undefined) {
+    fields.connectors = skills.connectors;
+  }
+  if (skills.task_references !== undefined) {
+    fields.task_references = skills.task_references;
+  }
+  const schema = objectArg(call, "structured_output_schema");
+  if (schema !== undefined) fields.structured_output_schema = schema;
+  return fields;
+}
+
+function stringArrayArg(
+  call: ToolCall,
+  key: string,
+): readonly string[] | undefined {
+  const value = call.arguments[key];
+  if (!Array.isArray(value)) return undefined;
+  if (!value.every((item) => typeof item === "string")) return undefined;
+  return value;
+}
+
+function objectArg(
+  call: ToolCall,
+  key: string,
+): Readonly<Record<string, unknown>> | undefined {
+  const value = call.arguments[key];
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const record: Record<string, unknown> = {};
+  for (const [field, fieldValue] of Object.entries(value)) {
+    record[field] = fieldValue;
+  }
+  return record;
+}
+
+function messageSkillFields(call: ToolCall): {
+  enable_skills?: readonly string[];
+  force_skills?: readonly string[];
+  connectors?: readonly string[];
+  task_references?: readonly string[];
+} {
+  const fields: {
+    enable_skills?: readonly string[];
+    force_skills?: readonly string[];
+    connectors?: readonly string[];
+    task_references?: readonly string[];
+  } = {};
+  const enableSkills = stringArrayArg(call, "enable_skills");
+  if (enableSkills !== undefined) fields.enable_skills = enableSkills;
+  const forceSkills = stringArrayArg(call, "force_skills");
+  if (forceSkills !== undefined) fields.force_skills = forceSkills;
+  const connectors = stringArrayArg(call, "connectors");
+  if (connectors !== undefined) fields.connectors = connectors;
+  const taskReferences = stringArrayArg(call, "task_references");
+  if (taskReferences !== undefined) fields.task_references = taskReferences;
   return fields;
 }
 
