@@ -76,6 +76,8 @@ export type CreateHubChatPlatformDeps = {
   toolGrantsForPins: FoldedRunsDeps["toolGrantsForPins"];
   /** See `FoldedRunsDeps.mcpCredentialBindingsFor`. */
   mcpCredentialBindingsFor?: FoldedRunsDeps["mcpCredentialBindingsFor"];
+  /** See `FoldedRunsDeps.pinnedPackageCredentialBindingsFor`. */
+  pinnedPackageCredentialBindingsFor?: FoldedRunsDeps["pinnedPackageCredentialBindingsFor"];
   /**
    * Decrypts credential secrets when an invited agent's launch resolves
    * inference sources against the tenant catalog — see
@@ -206,6 +208,12 @@ export function createHubChatPlatform(
       : {}),
     ...(deps.mcpCredentialBindingsFor !== undefined
       ? { mcpCredentialBindingsFor: deps.mcpCredentialBindingsFor }
+      : {}),
+    ...(deps.pinnedPackageCredentialBindingsFor !== undefined
+      ? {
+          pinnedPackageCredentialBindingsFor:
+            deps.pinnedPackageCredentialBindingsFor,
+        }
       : {}),
   };
 

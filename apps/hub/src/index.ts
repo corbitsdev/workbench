@@ -352,6 +352,7 @@ import { createBootAssetWiring, REGISTRIES } from "./asset-service-factory";
 import { createRoutineScheduler } from "./routine-scheduler";
 import { createToolGrantsForPins } from "./tool-grants";
 import { createMcpCredentialBindingsFor } from "./mcp-credential-bindings";
+import { createPinnedPackageCredentialBindingsFor } from "./pinned-package-credential-bindings";
 
 // Host policy constants, not configuration.
 const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
@@ -710,6 +711,9 @@ export async function createHub(config: HubConfig) {
   );
   // See `./mcp-credential-bindings.ts`'s own doc.
   const mcpCredentialBindingsFor = createMcpCredentialBindingsFor(db);
+  // See `./pinned-package-credential-bindings.ts`'s own doc.
+  const pinnedPackageCredentialBindingsFor =
+    createPinnedPackageCredentialBindingsFor(db);
   const sidecarRouter = createSidecarRouter({
     hubPublicKey,
     authenticateSidecar: createSidecarTokenAuthenticator({ db }),
@@ -1291,6 +1295,7 @@ export async function createHub(config: HubConfig) {
     credentialCipher,
     toolGrantsForPins,
     mcpCredentialBindingsFor,
+    pinnedPackageCredentialBindingsFor,
     // Chat residents are undeployed on idle again (see the comment above
     // this function): `chatIdleReapMs` (env-overridable via
     // `WORKBENCH_CHAT_IDLE_REAP_MS`, default 30 minutes) is
@@ -1997,6 +2002,7 @@ export async function createHub(config: HubConfig) {
             eventCollectors,
             toolGrantsForPins,
             mcpCredentialBindingsFor,
+            pinnedPackageCredentialBindingsFor,
             cryptoProviderCache: foldedRunCryptoProviders,
             launchMode: AGENT_SECTION_MODE,
             persistLaunch: workbenchLaunchPersistExtra,
@@ -2478,6 +2484,7 @@ export async function createHub(config: HubConfig) {
     hubPublicKey,
     toolGrantsForPins,
     mcpCredentialBindingsFor,
+    pinnedPackageCredentialBindingsFor,
   };
 
   // Every genuine top-level deployment run, folded runs (workbench hosts,
@@ -2668,6 +2675,7 @@ export async function createHub(config: HubConfig) {
     credentialCipher,
     toolGrantsForPins,
     mcpCredentialBindingsFor,
+    pinnedPackageCredentialBindingsFor,
     cryptoProviderCache: foldedRunCryptoProviders,
     joinDeliveryWorkbench: (input) =>
       joinRunParticipant({ store: chatStore }, input),
