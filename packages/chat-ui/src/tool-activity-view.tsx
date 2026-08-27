@@ -52,6 +52,12 @@ function StatusMarker({ status }: { readonly status: ToolActivityStatus }) {
   );
 }
 
+function chipAccessibleName(row: ToolActivityRow): string {
+  return row.status === "failed"
+    ? `${CHAT_STRINGS.toolActivityFailed}. ${row.phrase}`
+    : row.phrase;
+}
+
 function ActionGlyph({ glyph }: { readonly glyph: ToolActivityGlyph }) {
   let icon: ReactNode;
   switch (glyph) {
@@ -114,9 +120,16 @@ function ChipBody({
   return (
     <>
       <LeadingMark row={row} />
+      {row.status === "failed" ? (
+        <span className="chat-tool-activity-status-word">
+          {CHAT_STRINGS.toolActivityFailed}.{" "}
+        </span>
+      ) : null}
       <span className="chat-tool-activity-phrase">{row.phrase}</span>
       {row.meta === undefined ? null : (
-        <span className="chat-tool-activity-meta">{row.meta}</span>
+        <span className="chat-tool-activity-meta" aria-hidden="true">
+          {row.meta}
+        </span>
       )}
       <StatusMarker status={row.status} />
       {row.detail === undefined ? null : (
@@ -164,6 +177,7 @@ function ToolActivityLine({
         type="button"
         className="chat-tool-activity-chip chat-tool-activity-trigger"
         aria-expanded={open}
+        aria-label={chipAccessibleName(row)}
         title={row.toolName}
         onClick={() => setOpen((value) => !value)}
       >
@@ -213,7 +227,6 @@ export function LiveToolActivity({
     <div
       className="chat-tool-activity chat-tool-activity-live"
       data-slot="tool-activity"
-      role="status"
     >
       {rows.map((row) => (
         <ToolActivityLine key={row.key} row={row} indented={false} />

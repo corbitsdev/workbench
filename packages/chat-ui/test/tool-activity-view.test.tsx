@@ -9,8 +9,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
 import type { ToolTracePart } from "@corbits/chat/parts";
-import { toToolActivityRow } from "../src/tool-activity";
-import { ToolActivityGroup } from "../src/tool-activity-view";
+import { toToolActivityRow, type ToolActivityRow } from "../src/tool-activity";
+import { LiveToolActivity, ToolActivityGroup } from "../src/tool-activity-view";
 
 function trace(part: Partial<ToolTracePart>): ToolTracePart {
   return {
@@ -37,6 +37,39 @@ function click(element: Element | null) {
   act(() => {
     (element as HTMLElement).click();
   });
+}
+
+/** Name a screen reader would get: aria-label, else text excluding aria-hidden. */
+function accessibleName(element: Element | null): string {
+  if (element === null) return "";
+  const labelled = element.getAttribute("aria-label");
+  if (labelled !== null && labelled.trim() !== "") return labelled.trim();
+  const walk = (node: Node): string => {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
+    if (!(node instanceof Element)) return "";
+    if (node.getAttribute("aria-hidden") === "true") return "";
+    return Array.from(node.childNodes).map(walk).join("");
+  };
+  return walk(element).replace(/\s+/g, " ").trim();
+}
+
+function mountLive(
+  rows: readonly ToolActivityRow[],
+  extra?: { readonly thinking?: boolean; readonly retryCount?: number },
+): HTMLDivElement {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root: Root = createRoot(container);
+  act(() => {
+    root.render(
+      <LiveToolActivity
+        rows={rows}
+        thinking={extra?.thinking ?? false}
+        retryCount={extra?.retryCount ?? 0}
+      />,
+    );
+  });
+  return container;
 }
 
 beforeEach(() => {
@@ -145,6 +178,40 @@ describe("ToolActivityGroup", () => {
     expect(el.textContent).toContain("Repository not found");
   });
 
+  test("a failed chip's accessible name includes failure", () => {
+    const el = mount([
+      trace({
+        name: "github__get_issue",
+        input: { repo: "corbitsdev/workbench" },
+        status: "error",
+        output: [{ type: "text", text: "Repository not found" }],
+      }),
+    ]);
+    const chip = el.querySelector(".chat-tool-activity-chip");
+    const name = accessibleName(chip);
+    expect(name).toMatch(/fail|couldn't/i);
+    expect(name).toContain("Retrieved an issue in GitHub");
+    expect(el.querySelector('[data-status="failed"]')).not.toBeNull();
+    expect(
+      el
+        .querySelector(".chat-tool-activity-marker")
+        ?.getAttribute("aria-hidden"),
+    ).toBe("true");
+  });
+
+  test("a disclosure chip has an accessible name", () => {
+    const el = mount([
+      trace({
+        name: "web_search",
+        input: { query: "bench pricing" },
+        output: [{ type: "text", text: "Eight matching pages." }],
+      }),
+    ]);
+    const trigger = el.querySelector(".chat-tool-activity-trigger");
+    expect(trigger).not.toBeNull();
+    expect(accessibleName(trigger).length).toBeGreaterThan(0);
+  });
+
   test("a known-provider chip uses brand initials, not a dash", () => {
     const el = mount([
       trace({ name: "slack__post_message", input: { channel: "general" } }),
@@ -193,6 +260,37 @@ describe("ToolActivityGroup", () => {
     expect(el.querySelector(".chat-tool-activity-tile")?.textContent).toBe(
       "Li",
     );
+  });
+});
+
+describe("LiveToolActivity", () => {
+  test("elapsed ticks are not inside an atomic live region", () => {
+    const el = mountLive([
+      {
+        key: "k0",
+        toolName: "web_search",
+        glyph: "search",
+        provider: undefined,
+        phrase: 'Searching the web for "x"',
+        detail: undefined,
+        status: "running",
+        meta: "3s",
+      },
+    ]);
+    const live = el.querySelector(".chat-tool-activity-live");
+    const meta = el.querySelector(".chat-tool-activity-meta");
+    expect(live).not.toBeNull();
+    expect(meta?.textContent).toBe("3s");
+    expect(meta?.closest('[role="status"]')).toBeNull();
+    expect(live?.getAttribute("role")).not.toBe("status");
+  });
+
+  test("the transcript group stays non-live", () => {
+    const el = mount([trace({ name: "web_search", input: { query: "x" } })]);
+    const group = el.querySelector(".chat-tool-activity");
+    expect(group?.classList.contains("chat-tool-activity-live")).toBe(false);
+    expect(group?.getAttribute("role")).toBeNull();
+    expect(group?.getAttribute("aria-live")).toBeNull();
   });
 });
 
