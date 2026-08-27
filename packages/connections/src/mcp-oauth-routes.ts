@@ -100,17 +100,24 @@ function readString(value: unknown, key: string): string | undefined {
 }
 
 /** Classify `/start` `auth()` throws: DCR/client rejection vs unreachable
- * discovery. Prefer `errorCode`/`error`; fall back to registration wording
- * in the message. The SDK maps unknown RFC 7591 codes to `ServerError`
- * (`errorCode` `server_error`) and drops HTTP status, leaving only the
- * description — "redirect URI is not allowlisted" must still count. */
+ * discovery. Prefer the RFC 7591 `error` captured from the HTTP body —
+ * SDK 1.30.0 maps unknown codes such as `invalid_redirect_uri` to
+ * `ServerError` (`errorCode` `server_error`) and drops the original.
+ * Then `errorCode`/`error` on the thrown object. Fall back to
+ * registration wording in the message so "redirect URI is not
+ * allowlisted" still counts when the body was not JSON. */
 function mcpOAuthStartErrorCode(
   cause: unknown,
+  capturedCode: string | undefined,
 ): "discovery_failed" | "client_rejected" {
-  const oauthCode =
-    readString(cause, "errorCode") ?? readString(cause, "error");
-  if (oauthCode !== undefined && CLIENT_REJECTED_OAUTH_CODES.has(oauthCode)) {
-    return "client_rejected";
+  for (const code of [
+    capturedCode,
+    readString(cause, "errorCode"),
+    readString(cause, "error"),
+  ]) {
+    if (code !== undefined && CLIENT_REJECTED_OAUTH_CODES.has(code)) {
+      return "client_rejected";
+    }
   }
 
   const message = cause instanceof Error ? cause.message : String(cause);
@@ -132,6 +139,29 @@ function mcpOAuthStartErrorCode(
     return "client_rejected";
   }
   return "discovery_failed";
+}
+
+/** Clone 4xx/5xx JSON before the SDK's `parseErrorResponse` consumes the
+ * body and maps unknown RFC 7591 codes onto `ServerError`. */
+async function fetchCapturingOAuthError(
+  captured: { code: string | undefined },
+  url: string | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  const response = await fetch(url, init);
+  if (response.status < 400) return response;
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("json")) return response;
+  try {
+    const body: unknown = await response.clone().json();
+    const code = readString(body, "error");
+    if (code !== undefined) {
+      captured.code = code;
+    }
+  } catch {
+    // malformed JSON on an error response; classifier uses the thrown error
+  }
+  return response;
 }
 
 export type CreateMcpOAuthRoutesDeps = {
@@ -256,8 +286,15 @@ export function createMcpOAuthRoutes(
       });
 
       let result: Awaited<ReturnType<typeof auth>>;
+      const capturedOAuthError: { code: string | undefined } = {
+        code: undefined,
+      };
       try {
-        result = await auth(provider, { serverUrl: target.url });
+        result = await auth(provider, {
+          serverUrl: target.url,
+          fetchFn: (url, init) =>
+            fetchCapturingOAuthError(capturedOAuthError, url, init),
+        });
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause);
         deps.log(`mcp oauth start failed for "${target.slug}": ${message}`);
@@ -265,7 +302,7 @@ export function createMcpOAuthRoutes(
           redirectPath(returnPath, {
             mcpOauth: target.slug,
             outcome: "error",
-            code: mcpOAuthStartErrorCode(cause),
+            code: mcpOAuthStartErrorCode(cause, capturedOAuthError.code),
           }),
           302,
         );

@@ -555,6 +555,71 @@ describe("MCP OAuth connect flow", () => {
     }
   });
 
+  test("start redirects client_rejected when DCR returns invalid_redirect_uri with no description", async () => {
+    const as = startStubAuthorizationServer({
+      registrationError: {
+        status: 400,
+        body: {
+          error: "invalid_redirect_uri",
+        },
+      },
+    });
+    const originalFetch = globalThis.fetch;
+    const canvaOrigin = "https://mcp.canva.com";
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request, init?: RequestInit) => {
+        const href =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        if (!href.startsWith(canvaOrigin)) {
+          return originalFetch(input, init);
+        }
+        const rewritten = href.replace(canvaOrigin, as.origin);
+        const response =
+          input instanceof Request
+            ? await originalFetch(new Request(rewritten, input), init)
+            : await originalFetch(rewritten, init);
+        const contentType = response.headers.get("content-type") ?? "";
+        if (!contentType.includes("json")) {
+          return response;
+        }
+        const body = (await response.text()).replaceAll(as.origin, canvaOrigin);
+        return new Response(body, {
+          status: response.status,
+          headers: response.headers,
+        });
+      },
+      originalFetch,
+    );
+    try {
+      const hub = fakeHub();
+      const routes = createMcpOAuthRoutes({
+        hubUrl: "http://hub.test",
+        requireGrant: allowAll,
+        log: () => {},
+        credentialCipher: createNoopCredentialCipher(),
+        apiCall: hub.apiCall,
+      });
+      const app = mountAs(routes);
+
+      const response = await app.request("/canva/start", {
+        redirect: "manual",
+      });
+
+      expect(response.status).toBe(302);
+      expect(response.headers.get("location")).toBe(
+        "/plugins?mcpOauth=canva&outcome=error&code=client_rejected",
+      );
+      expect(as.registrationBodies).toHaveLength(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+      as.stop();
+    }
+  });
+
   test("start redirects discovery_failed when the authorization server is unreachable", async () => {
     const hub = fakeHub();
     const routes = createMcpOAuthRoutes({
