@@ -8,7 +8,7 @@ import { isAgentAddress } from "@corbits/chat/mentions";
 import { localPartOf } from "@corbits/chat/agent-address";
 import type { WorkbenchThread, MessageItem } from "@corbits/chat-ui";
 
-import type { NeedsYouItem } from "./api";
+import type { PendingApproval } from "./pending-approvals";
 import type { Routine, RoutineRun } from "./routines-api";
 
 export type TimelineMessageEvent = {
@@ -165,12 +165,12 @@ export function toRoutineRunEvents(
 }
 
 /**
- * `needs-you` carries no workbench/workbench id (a known v1 gap — see
+ * An approval carries no workbench id (a known v1 gap — see
  * workbench-timeline.tsx), so every pending approval for the owning bench
  * shows up here, not just this workbench's own.
  */
 export function toApprovalEvents(
-  items: readonly NeedsYouItem[],
+  items: readonly PendingApproval[],
 ): readonly TimelineApprovalEvent[] {
   return items.map((item) => ({
     kind: "approval",

@@ -119,7 +119,7 @@ describe("mountMemory", () => {
 
 // DB-gated: skipped when DATABASE_URL is unreachable, matching this repo's
 // existing convention for tests that talk to a real Postgres (see
-// packages/approvals/test/needs-you.test.ts). Proves the actual cutover:
+// apps/hub/test/artifact-doc-persistence.test.ts). Proves the actual cutover:
 // mounting with only DATABASE_URL (no second memory-plane URL) lands the
 // memory engine's tables in its own `memory` schema, never `public`.
 const databaseUrl = process.env["DATABASE_URL"];

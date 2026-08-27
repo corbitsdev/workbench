@@ -120,9 +120,9 @@ const benchState: BenchState = {
 function stubEmptyBenchFetch(): void {
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input.toString();
-    if (url.includes("/approvals/needs-you")) {
+    if (url.includes("/approvals")) {
       return Promise.resolve(
-        new Response(JSON.stringify({ items: [] }), {
+        new Response(JSON.stringify({ data: [], nextCursor: null }), {
           status: 200,
           headers: { "content-type": "application/json" },
         }),
@@ -163,9 +163,9 @@ function stubBenchFetchWithActivity(
 ): void {
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input.toString();
-    if (url.includes("/approvals/needs-you")) {
+    if (url.includes("/approvals")) {
       return Promise.resolve(
-        new Response(JSON.stringify({ items: [] }), {
+        new Response(JSON.stringify({ data: [], nextCursor: null }), {
           status: 200,
           headers: { "content-type": "application/json" },
         }),

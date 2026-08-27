@@ -1,7 +1,7 @@
 // DB-gated: skipped when DATABASE_URL is unreachable, matching this repo's
 // existing convention for tests that talk to a real Postgres (see
-// `packages/approvals/test/needs-you.test.ts`). Runs against the caller's
-// own database and deletes every row it wrote in `afterAll`.
+// `apps/hub/src/memory-mount.test.ts`). Runs against the caller's own
+// database and deletes every row it wrote in `afterAll`.
 //
 // This suite proves the bearer mirror (`createWorkflowRunDeployAuth`) reaches
 // the EXACT SAME `createWorkflowRoutes` deploy handler a human session does

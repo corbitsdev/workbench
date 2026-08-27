@@ -66,6 +66,10 @@ export const ENTRIES: readonly BrowserSafeEntry[] = [
   // subpaths precisely so a browser package never pulls that in.
   { package: "@corbits/presence", subpath: "./client" },
   { package: "@corbits/presence", subpath: "./color" },
+  // @corbits/approvals' root reaches @intx/authz for the grant-allowance
+  // gate; `headlineFor` is pure string work over a tool snapshot, so the
+  // browser composes an approval's headline through this subpath.
+  { package: "@corbits/approvals", subpath: "./headline" },
 ];
 
 const DENYLIST_PATTERNS: readonly RegExp[] = [

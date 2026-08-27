@@ -234,7 +234,6 @@ import { wireMailRedelivery } from "./mail-redelivery";
 import { getLogger, setup } from "@intx/log";
 import { hexEncode } from "@intx/types";
 import {
-  createNeedsYouRoutes,
   createToolAllowanceRegistry,
   withGrantAllowance,
 } from "@corbits/approvals";
@@ -1127,20 +1126,6 @@ export async function createHub(config: HubConfig) {
   // artifacts plane never mounts.
   let artifactSeedOnJoin:
     ((key: PresenceRoomKey, principalId: string) => Promise<void>) | undefined;
-
-  // The "needs you" list: the same `approval:*`/"resolve" grant Interchange's
-  // own approve/reject routes require, layered with the agent/bench names
-  // this tenant's approvals don't carry on their own. Approving and
-  // rejecting still go straight to Interchange's native routes below --
-  // this route only ever reads.
-  app.route(
-    `${TENANT_PREFIX}/approvals/needs-you`,
-    createNeedsYouRoutes({
-      db,
-      grantStore: createGrantStore(db),
-      conditionRegistry: { time_window: timeWindowEvaluator },
-    }),
-  );
 
   // Chat's own grant store/condition registry, built the same way
   // `createApp` builds its default when none is supplied (see

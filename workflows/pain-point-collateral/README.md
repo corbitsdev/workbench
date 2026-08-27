@@ -72,7 +72,7 @@ means for deploys today.
 gate — not a workflow-DSL `awaitSignal`, and not anything invented for
 this port. Calling it suspends the run: the sidecar co-writes a real
 `approval` row (`vendor/intx/db/src/schema/approvals.ts`), visible in
-the inbox via `@corbits/approvals`' "needs-you" list, and the run parks
+the native pending-approvals list the web client reads, and the run parks
 until a human approves or rejects it
 (`@intx/inference/src/reactor.ts`). On approval the parked call
 re-dispatches and the tool actually runs, exactly once. On rejection the

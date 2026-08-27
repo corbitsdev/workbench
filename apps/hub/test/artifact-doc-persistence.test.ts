@@ -1,6 +1,6 @@
 // DB-gated: skipped when DATABASE_URL is unreachable, matching this repo's
 // existing convention for tests that talk to a real Postgres (see
-// packages/approvals/test/needs-you.test.ts). Proves the exact wiring
+// apps/hub/src/memory-mount.test.ts). Proves the exact wiring
 // `src/index.ts` composes between `@corbits/presence`'s
 // `createArtifactDocPersistence` and `@corbits/artifacts`' own
 // `getArtifact`/`writeArtifactVersion` seam actually lands a new artifact

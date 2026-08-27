@@ -1,34 +1,30 @@
 # @corbits/approvals
 
-Resolves a tenant's pending approvals — Interchange's own "needs you"
-state — into a display-safe view model, and exposes it as a Hono route
-factory the hub mounts alongside Interchange's native approve/reject
-routes. This package never creates, resolves, or claims anything:
-approving and rejecting stay on Interchange's own
-`/api/tenants/:tenantId/approvals/:approvalId/{approve,reject}` routes,
-whose authorize + claimTerminal + resolve transaction is already
-exactly-once and grant-scoped. The one net-new concept here is naming —
-turning raw approval rows into something safe to render.
+Decides when a tenant's standing grants already authorize a tool call, so
+an agent is only stopped for a decision a human has not already made — and
+names an approval in words a person can act on. This package never creates,
+resolves, or claims anything: listing, reading, approving and rejecting all
+live on Interchange's own
+`/api/tenants/:tenantId/approvals` routes, whose authorize +
+claimTerminal + resolve transaction is already exactly-once and
+grant-scoped.
 
 ## Composition over Interchange
 
-- Reads through `@intx/db`'s `schema` and `parseApprovalRow`, and
-  authorizes with `@intx/authz`'s `authorize` against the same grant and
-  action (`approval:*` / `resolve`) the native list/resolve routes
-  require, so the two surfaces never drift apart.
-- Adds no parallel approval store or state machine — every identifier on
-  an approval row is resolved into a name before `hydrateNeedsYou` (the
-  view model's only producer) ever constructs a result, so nothing
-  downstream can render a raw id even by accident.
+- The allowance gate evaluates the tenant's own grant rules through
+  `@intx/authz`'s `evaluateGrants` — no parallel policy engine, and no
+  approval store or state machine of its own.
+- Names and statuses are read straight off Interchange's native approval
+  and run views by whoever renders them; nothing here mirrors those rows.
 
 ## Key modules
 
-- `routes.ts` — `createNeedsYouRoutes`: the tenant-scoped "needs you"
-  list/detail surface, grant-checked before it queries.
-- `view-model.ts` — `hydrateNeedsYou`, `headlineFor`, and the
-  `NeedsYouItem` shape approvals hydrate into; carries the full
-  `approval.status` union so a detail read can render
-  approved/rejected/etc., not just pending.
+- `allowance.ts` — `createToolAllowanceRegistry`, `evaluateToolAllowance`,
+  `withGrantAllowance`: the gate that auto-approves a call an existing
+  grant already covers.
+- `headline.ts` — `headlineFor`: the pure headline builder, exported at
+  `@corbits/approvals/headline` for browser callers (the root entry reaches
+  server-only dependencies).
 - `index.ts` — package entry point.
 
 ## Tests
@@ -36,6 +32,3 @@ turning raw approval rows into something safe to render.
 ```
 cd packages/approvals && bun test
 ```
-
-`test/needs-you.test.ts` needs a real database:
-`DATABASE_URL=postgres://localhost:5432/workbench_e2e bun test`.

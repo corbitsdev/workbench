@@ -16,7 +16,7 @@ import { listMessages, listThreads } from "@corbits/chat-ui";
 import { Clock } from "@corbits/icons";
 import { useMemo, useState } from "react";
 
-import { useAPIQuery, NeedsYouSchema } from "../api";
+import { usePendingApprovals } from "../pending-approvals";
 import {
   listRoutineRuns,
   listRoutines,
@@ -356,12 +356,7 @@ export function WorkbenchTimelineRoute({
       return new Map(entries);
     },
   );
-  const approvalsQuery = useAPIQuery(
-    benchTenantId === null
-      ? ""
-      : `/api/tenants/${benchTenantId}/approvals/needs-you`,
-    NeedsYouSchema,
-  );
+  const approvalsQuery = usePendingApprovals(benchTenantId);
 
   const loading =
     messagesQuery.kind === "loading" ||
@@ -373,11 +368,10 @@ export function WorkbenchTimelineRoute({
   const threads = threadsQuery.kind === "ready" ? threadsQuery.data : [];
   const routineRunsByRoutineId =
     routineRunsQuery.kind === "ready" ? routineRunsQuery.data : new Map();
-  // needs-you carries no workbench/workbench id (a known v1 gap — see
+  // An approval carries no workbench id (a known v1 gap — see
   // workbench-timeline-merge.ts's toApprovalEvents), so this is every
   // pending approval on the owning bench, not just this workbench's own.
-  const approvals =
-    approvalsQuery.kind === "ready" ? approvalsQuery.data.items : [];
+  const approvals = approvalsQuery.kind === "ready" ? approvalsQuery.data : [];
 
   const events = mergeTimelineEvents({
     messages: toMessageEvents(messages),

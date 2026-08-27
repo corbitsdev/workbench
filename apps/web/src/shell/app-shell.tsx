@@ -24,7 +24,7 @@ import type { ArtifactSaveState } from "@corbits/artifact-ui";
 
 import { WorkbenchLoadingState } from "@corbits/chat-ui";
 
-import { useNeedsYouCount } from "../api";
+import { usePendingApprovalCount } from "../pending-approvals";
 import { useBench } from "../bench-context";
 import { useNavigate } from "../navigation";
 import { usePresenceRoom } from "../presence/use-presence-room";
@@ -150,14 +150,14 @@ export function AppShell({
   const mainRef = useRef<HTMLDivElement>(null);
   // Route changes must not inherit the previous page's scroll position.
   useScrollReset(mainRef, path);
-  const needsYouCount = useNeedsYouCount(tenantId);
-  const needsYouChip =
-    needsYouCount === null
+  const pendingCount = usePendingApprovalCount(tenantId);
+  const pendingChip =
+    pendingCount === null
       ? undefined
-      : needsYouCount > 0
+      : pendingCount > 0
         ? {
             tone: "needs-you" as const,
-            label: `${String(needsYouCount)} waiting on you`,
+            label: `${String(pendingCount)} waiting on you`,
           }
         : { tone: "ok" as const, label: "All caught up" };
 
@@ -175,7 +175,7 @@ export function AppShell({
           {routeHasNoStageTopBar(path) ? (
             <StageTopBar
               crumbs={[{ label: routeLabel(path) }]}
-              {...(needsYouChip !== undefined ? { chip: needsYouChip } : {})}
+              {...(pendingChip !== undefined ? { chip: pendingChip } : {})}
             />
           ) : null}
           <Suspense

@@ -84,8 +84,12 @@ export const meKeys = {
 /** Tenant-scoped keys — removed wholesale when the user leaves a bench. */
 export const tenantKeys = {
   all: (tenantId: string) => ["tenant", tenantId] as const,
-  needsYou: (tenantId: string) =>
-    ["tenant", tenantId, "approvals", "needs-you"] as const,
+  pendingApprovals: (tenantId: string) =>
+    ["tenant", tenantId, "approvals"] as const,
+  /** One agent-name read per run, shared by every approval that run raised
+   * (see `pending-approvals.ts`). */
+  runView: (tenantId: string, runId: string) =>
+    ["tenant", tenantId, "runs", runId] as const,
   routines: (tenantId: string) => ["tenant", tenantId, "routines"] as const,
   skills: (tenantId: string) => ["tenant", tenantId, "skills"] as const,
   mcpServers: (tenantId: string) =>
@@ -163,8 +167,10 @@ export const tenantKeys = {
 export function pathToQueryKey(path: string): readonly unknown[] {
   if (path === "/api/me") return meKeys.profile;
   if (path === "/api/me/principals") return meKeys.principals;
-  const needsYou = /^\/api\/tenants\/([^/]+)\/approvals\/needs-you$/.exec(path);
-  if (needsYou?.[1] !== undefined) return tenantKeys.needsYou(needsYou[1]);
+  const approvals = /^\/api\/tenants\/([^/]+)\/approvals$/.exec(path);
+  if (approvals?.[1] !== undefined) {
+    return tenantKeys.pendingApprovals(approvals[1]);
+  }
   const assets = /^\/api\/tenants\/([^/]+)\/assets$/.exec(path);
   if (assets?.[1] !== undefined) return tenantKeys.assets(assets[1]);
   const artifactCounts = /^\/api\/tenants\/([^/]+)\/artifacts\/counts$/.exec(

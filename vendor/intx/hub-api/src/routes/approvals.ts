@@ -404,7 +404,7 @@ export function createApprovalRoutes(
   );
 
   app.get(
-    "/:approvalId{^(?!needs-you$)[^/]+}",
+    "/:approvalId",
     describeRoute({
       tags: ["Approvals"],
       summary: "Get approval details",
@@ -475,7 +475,7 @@ export function createApprovalRoutes(
   );
 
   app.post(
-    "/:approvalId{^(?!needs-you$)[^/]+}/approve",
+    "/:approvalId/approve",
     describeRoute({
       tags: ["Approvals"],
       summary: "Approve an action",
@@ -555,7 +555,7 @@ export function createApprovalRoutes(
   );
 
   app.post(
-    "/:approvalId{^(?!needs-you$)[^/]+}/reject",
+    "/:approvalId/reject",
     describeRoute({
       tags: ["Approvals"],
       summary: "Reject an action",
