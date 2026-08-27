@@ -100,6 +100,21 @@ signal. Consecutive agent-joined events collapse into one line so the
 scene and the reviewers' own introductions are what a person reads
 first.
 
+**A `kind: chat` is 1:1.** It is the one DM with its agent. Inviting a
+different or additional agent into that conversation is a conflict
+(HTTP 409 `kind_is_chat`); extra agents belong on a `kind: workbench`
+channel. A same-definition invite reuses the resident principal and
+does not clone a sibling instance.
+
+**Default specialist creation mints or reopens that DM.** Myra's
+`create_agent` path does not invite the new definition into the
+caller's conversation — Myra's DM is itself `kind: chat` and would
+reject the extra agent. It mints a `kind: chat` for the definition
+under the bench, or reopens the existing one for that (bench,
+definition) pair, matching the product-surface find-or-reopen rule.
+The specialist launches into that chat, never into Myra's.
+
+
 **Streaming a reply.** An agent's live reply reaches the timeline through
 one path, deltas to pixels:
 

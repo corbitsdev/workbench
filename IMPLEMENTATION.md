@@ -160,6 +160,28 @@ Optional `GITHUB_APP_CLIENT_ID` / `GITHUB_APP_CLIENT_SECRET` exist for
 that future hosted path; leaving them unset is normal. See
 `docs/connect-cards.md` and PRODUCT.md's Code review first minute.
 
+## create_agent and specialist DMs
+
+`@corbits/agent-directory-tools`' `create_agent` creates a specialist
+definition in the caller's tenant and, by default, opens that
+specialist's own 1:1 — never an invite into Myra's DM.
+
+- **Default** (`invite` omitted or true): POST
+  `/api/workflow-chat/participants/mint-dm` (`mintAgentDm` in
+  `@corbits/chat`). That find-or-reopens the `kind: chat` for
+  `(bench, definition)`, matching `POST /workbenches`. The agent
+  launches into that chat, not the caller's.
+- **`invite: false`**: create the definition only — no mint-dm and no
+  invite.
+- **Extra agent into `kind: chat`**: POST
+  `/api/workflow-chat/participants/invite` (and the session invite
+  path) returns **409** `kind_is_chat` when the target is a DM and the
+  definition is not that chat's first/same agent. Same-definition
+  retry reuses the resident.
+
+A create-succeeded / mint-failed split is a completed tool result that
+names both halves, not a bare error.
+
 ## Related docs
 
 - [README.md](README.md) — quickstart, local setup, repo layout, e2e detail
