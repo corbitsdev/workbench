@@ -25,7 +25,6 @@ import type { AgentDefinition, InferencePreference } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
-import type { CredentialBinding } from "@intx/types";
 
 export const ASSISTANT_WORKFLOW_ID = "wf_assistant";
 export const ASSISTANT_STEP_ID = "assistant";
@@ -52,22 +51,6 @@ export const ASSISTANT_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
   { name: "@corbits/mcp-tools", version: "0.0.8" },
   { name: "@corbits/interaction-tools", version: "0.0.2" },
   { name: "@corbits/manus-tools", version: "0.0.1" },
-];
-
-/**
- * Binds `@corbits/manus-tools`' declared "manus" handle to a tenant-owned
- * Manus credential. The launch resolves this against
- * `buildCredentialDelivery`, materializing a consumer-scoped grant for
- * the pinned package so Myra can call Manus when the connector is
- * connected.
- */
-export const ASSISTANT_CREDENTIAL_BINDINGS: readonly CredentialBinding[] = [
-  {
-    package: "@corbits/manus-tools",
-    handle: "manus",
-    provider: "manus",
-    locator: "tenant",
-  },
 ];
 
 /**
@@ -286,7 +269,6 @@ export function buildAssistantWorkflow(
   return defineWorkflow({
     id: ASSISTANT_WORKFLOW_ID,
     trigger: { type: "mail", to: input.triggerAddress },
-    credentialBindings: ASSISTANT_CREDENTIAL_BINDINGS,
     steps: {
       assistant: step({
         agent: {
