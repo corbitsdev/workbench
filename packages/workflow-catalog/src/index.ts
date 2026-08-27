@@ -13,19 +13,20 @@ export {
   DUE_DILIGENCE_TEMPLATE,
   GTM_TEMPLATE,
   WORKBENCH_TEMPLATES,
+  WorkbenchDefinitionAgent,
+  WorkbenchDefinitionSchema,
+  WorkbenchOnboardingStep,
   WorkbenchTemplateBlock,
   WorkbenchTemplateOpenInput,
-  WorkbenchTemplateParticipant,
   WorkbenchTemplateRoutine,
   WorkbenchTemplateWebhookTrigger,
-  WorkbenchTemplateManifestSchema,
-  parseWorkbenchTemplateManifest,
-  serializeWorkbenchTemplateManifest,
+  parseWorkbenchDefinition,
+  serializeWorkbenchDefinition,
   templateBlockAssetNames,
   workbenchTemplate,
   workbenchTemplateLibraryEntries,
 } from "./templates";
-export type { WorkbenchTemplateManifest } from "./templates";
+export type { WorkbenchDefinition } from "./templates";
 export {
   instantiateWorkbenchTemplate,
   type ParticipantAgentRequest,
