@@ -17,8 +17,9 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import type {
-  ConnectGithubCardProps,
+  ConnectGithubCardBody,
   ConnectGithubRepo,
+  OnboardingScene,
 } from "../src/blocks/connect-github-block";
 import { ConnectGithubBlockView } from "../src/blocks/connect-github-block";
 
@@ -30,6 +31,20 @@ const REPOS: readonly ConnectGithubRepo[] = [
   { id: "design-tokens", name: "acme/design-tokens", openPullRequestCount: 0 },
   { id: "handbook", name: "acme/handbook", openPullRequestCount: 0 },
 ];
+
+/** The framing the room's onboarding card always carries. Individual
+ * tests override `currentStepIndex` where the marker is what's under
+ * test. */
+const SCENE: OnboardingScene = {
+  title: "Code review",
+  promise: "Every new pull request gets reviewed before you merge it.",
+  steps: [
+    { title: "Connect GitHub", why: "Reviewers need to read your code." },
+    { title: "Pick your repos", why: "Only the repos you pick are watched." },
+    { title: "Start reviewing", why: "Reviews land right here in this room." },
+  ],
+  currentStepIndex: 0,
+};
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -51,8 +66,8 @@ async function mountElement(element: ReactElement) {
   return container;
 }
 
-async function mount(props: ConnectGithubCardProps) {
-  return mountElement(<ConnectGithubBlockView {...props} />);
+async function mount(props: ConnectGithubCardBody) {
+  return mountElement(<ConnectGithubBlockView scene={SCENE} {...props} />);
 }
 
 function typeInto(element: HTMLInputElement, text: string) {
@@ -80,6 +95,7 @@ function PickReposHarness({
     useState<readonly string[]>(initiallySelected);
   return (
     <ConnectGithubBlockView
+      scene={SCENE}
       kind="connected"
       orgName="acme"
       repos={REPOS}
@@ -147,7 +163,7 @@ describe("connect GitHub card — 2a disconnected", () => {
       connect?.click();
     });
 
-    const steps = [...el.querySelectorAll("ol li")].map(
+    const steps = [...el.querySelectorAll(".chat-block-connect-steps li")].map(
       (item) => item.textContent,
     );
     expect(steps).toHaveLength(3);

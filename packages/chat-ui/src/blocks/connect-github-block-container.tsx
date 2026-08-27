@@ -27,7 +27,16 @@ import type {
   ConnectGithubActions,
   ConnectGithubQuery,
 } from "./connect-github-actions";
+import type { OnboardingScene } from "./connect-github-block";
 import { ConnectGithubBlockView } from "./connect-github-block";
+
+/** Positions in the room's three-step walkthrough. Which one is current
+ * is read off the live connect state, never off the card's own data:
+ * disconnected means connect, connected with nothing recorded means pick,
+ * and repos the server actually recorded means reviewing. */
+const STEP_CONNECT = 0;
+const STEP_PICK = 1;
+const STEP_REVIEWING = 2;
 
 type ConnectedGithubQuery = Extract<ConnectGithubQuery, { kind: "connected" }>;
 
@@ -60,6 +69,7 @@ function displayQueryOf(
 }
 
 export function ConnectGithubBlockContainer({
+  data,
   messageId,
   actions,
 }: {
@@ -73,6 +83,10 @@ export function ConnectGithubBlockContainer({
   const [selectedRepoIds, setSelectedRepoIds] = useState<readonly string[]>(
     () => lastConnectedOf(messageId)?.selectedRepoIds ?? [],
   );
+  /** A person who pressed "change repos" on the done state gets the
+   * picker back without the server's recorded selection changing — only
+   * pressing "Start reviewing" again writes anything. */
+  const [repickRequested, setRepickRequested] = useState(false);
   const mountedRef = useRef(true);
 
   const applyQuery = useCallback(
@@ -123,13 +137,41 @@ export function ConnectGithubBlockContainer({
   );
 
   const displayQuery = displayQueryOf(messageId, query);
+  const recordedRepoIds =
+    displayQuery.kind === "connected" ? displayQuery.selectedRepoIds : [];
+  const currentStepIndex =
+    displayQuery.kind !== "connected"
+      ? STEP_CONNECT
+      : recordedRepoIds.length === 0
+        ? STEP_PICK
+        : STEP_REVIEWING;
+  const scene: OnboardingScene = {
+    title: data.requiredForTemplate,
+    currentStepIndex,
+    ...(data.promise !== undefined ? { promise: data.promise } : {}),
+    ...(data.steps !== undefined ? { steps: data.steps } : {}),
+  };
 
   if (actions === undefined || displayQuery.kind !== "connected") {
     return (
       <ConnectGithubBlockView
+        scene={scene}
         kind="disconnected"
         onConnect={() => actions?.requestConnect()}
         onSubmitAccessToken={submitAccessTokenAndRefresh}
+      />
+    );
+  }
+
+  if (currentStepIndex === STEP_REVIEWING && !repickRequested) {
+    return (
+      <ConnectGithubBlockView
+        scene={scene}
+        kind="reviewing"
+        repoNames={displayQuery.repos
+          .filter((repo) => recordedRepoIds.includes(repo.id))
+          .map((repo) => repo.name)}
+        onChangeRepos={() => setRepickRequested(true)}
       />
     );
   }
@@ -144,6 +186,7 @@ export function ConnectGithubBlockContainer({
 
   return (
     <ConnectGithubBlockView
+      scene={scene}
       kind="connected"
       orgName={displayQuery.orgName}
       repos={displayQuery.repos}
@@ -154,6 +197,7 @@ export function ConnectGithubBlockContainer({
       }
       onChangeConnection={actions.requestConnect}
       onStartReviewing={(repoIds) => {
+        setRepickRequested(false);
         void actions.startReviewing(repoIds);
       }}
       onSkip={() => {
