@@ -1,12 +1,13 @@
 {
   "name": "@corbits/approvals",
   "private": true,
-  "description": "Resolves the tenant's pending approvals (Interchange's own \"needs you\" state) into a display-safe view model, and exposes it as a Hono route factory the hub mounts alongside Interchange's native approve/reject routes",
+  "description": "The grant-allowance gate that decides when a tenant's standing grants already authorize a tool call, plus the pure headline builder that names an approval for a human",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./headline": "./src/headline.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

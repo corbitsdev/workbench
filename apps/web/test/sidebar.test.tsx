@@ -369,8 +369,8 @@ describe("Sidebar", () => {
           return Promise.resolve(json({ items: [workbench] }));
         if (path.includes("/chat/workbenches?kind=chat"))
           return Promise.resolve(json({ items: [] }));
-        if (path.includes("/approvals/needs-you"))
-          return Promise.resolve(json({ items: [] }));
+        if (path.includes("/approvals"))
+          return Promise.resolve(json({ data: [], nextCursor: null }));
         if (path.includes("/top-level-runs"))
           return Promise.resolve(json({ data: [], nextCursor: null }));
         if (path.includes("/agent-definitions/visible"))
@@ -488,8 +488,8 @@ describe("Sidebar", () => {
           return Promise.resolve(
             json({ definitions: [ownAgent, inheritedAgent] }),
           );
-        if (path.includes("/approvals/needs-you"))
-          return Promise.resolve(json({ items: [] }));
+        if (path.includes("/approvals"))
+          return Promise.resolve(json({ data: [], nextCursor: null }));
         if (path.includes("/top-level-runs"))
           return Promise.resolve(json({ data: [], nextCursor: null }));
         return Promise.resolve(json({ items: [] }));
@@ -572,8 +572,8 @@ describe("Sidebar", () => {
         return Promise.resolve(json({ items: [channel] }));
       if (path.includes("/chat/workbenches?kind=chat"))
         return Promise.resolve(json({ items: [dm] }));
-      if (path.includes("/approvals/needs-you"))
-        return Promise.resolve(json({ items: [] }));
+      if (path.includes("/approvals"))
+        return Promise.resolve(json({ data: [], nextCursor: null }));
       if (path.includes("/top-level-runs"))
         return Promise.resolve(json({ data: [], nextCursor: null }));
       if (path.includes("/agent-definitions/visible"))

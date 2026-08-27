@@ -10,7 +10,10 @@
 //
 // PLAY_DUMP=1 also prints filtered sidecar output at the end.
 import { expect } from "bun:test";
+import { ApprovalResponse, paginatedSchema } from "@intx/types";
+import { type } from "arktype";
 
+import { headlineFor } from "../../packages/approvals/src/headline.ts";
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
   createGitWorkflowPusher,
@@ -513,40 +516,55 @@ async function main(): Promise<void> {
   // `postApproveBlock`) that a real bench user would click. An
   // `approval: "ask"` tool (every pinned mutating tool -- routine
   // create/update/run-now, task dispatch, request_capability, ...)
-  // parks on the tenant's `GET .../approvals/needs-you` inbox instead
-  // of ever completing, so this polls that inbox and approves every
-  // pending item with scope "once", printing what it approved. Without
-  // this, a turn that needs an approval-gated tool never finishes and
-  // the play loop times out waiting for a reply that can never come.
+  // parks on the platform's native `GET .../approvals` pending list
+  // instead of ever completing, so this pages through that list and
+  // approves every pending row with scope "once", printing what it
+  // approved. Without this, a turn that needs an approval-gated tool
+  // never finishes and the play loop times out waiting for a reply that
+  // can never come.
+  const TenantApprovalsSchema = paginatedSchema(ApprovalResponse);
   async function autoApproveAll(): Promise<void> {
-    const res = await api(
-      hub.baseUrl,
-      "GET",
-      `/api/tenants/${tenant.tenantId}/approvals/needs-you`,
-      undefined,
-      user.cookies,
-    );
-    if (res.status !== 200) return;
-    const items = arrayField(res.data, "items", "needs-you") as {
-      id: string;
-      agentName: string;
-      headline: string;
-    }[];
-    for (const item of items) {
-      const approved = await api(
+    let cursor: string | undefined;
+    for (;;) {
+      const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+      const res = await api(
         hub.baseUrl,
-        "POST",
-        `/api/tenants/${tenant.tenantId}/approvals/${item.id}/approve`,
-        { scope: "once" },
+        "GET",
+        `/api/tenants/${tenant.tenantId}/approvals${query}`,
+        undefined,
         user.cookies,
       );
-      if (approved.status === 200) {
-        console.log(`  [auto-approved] ${item.agentName}: ${item.headline}`);
-      } else {
-        console.log(
-          `  [auto-approve FAILED ${String(approved.status)}] ${item.agentName}: ${item.headline}`,
+      if (res.status !== 200) {
+        throw new Error(
+          `auto-approve: listing pending approvals failed with HTTP ` +
+            `${String(res.status)}: ${JSON.stringify(res.data)}`,
         );
       }
+      const page = TenantApprovalsSchema(res.data);
+      if (page instanceof type.errors) {
+        throw new Error(
+          `auto-approve: malformed pending approvals list: ${page.summary}`,
+        );
+      }
+      for (const item of page.data) {
+        const approved = await api(
+          hub.baseUrl,
+          "POST",
+          `/api/tenants/${tenant.tenantId}/approvals/${item.id}/approve`,
+          { scope: "once" },
+          user.cookies,
+        );
+        const headline = headlineFor(item.toolDefinition, item.toolArguments);
+        if (approved.status === 200) {
+          console.log(`  [auto-approved] ${headline}`);
+        } else {
+          console.log(
+            `  [auto-approve FAILED ${String(approved.status)}] ${headline}`,
+          );
+        }
+      }
+      if (page.nextCursor === null) break;
+      cursor = page.nextCursor;
     }
   }
 

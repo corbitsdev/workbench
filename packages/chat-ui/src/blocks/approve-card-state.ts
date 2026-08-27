@@ -1,7 +1,7 @@
 // Pure state mapping for the approve card: turns the live status read plus
 // any in-flight decision into exactly what the view renders. Kept free of
 // React so the branch logic (actable vs. spectator vs. resolved vs. the
-// undeterminable-403 fallback) is unit-testable without a DOM.
+// forbidden-read branch) is unit-testable without a DOM.
 
 import type {
   ApprovalLiveStatus,
@@ -29,12 +29,13 @@ export type ApproveCardView =
       readonly status: ApprovalLiveStatus;
       readonly detail: PlatformApprovalDetail;
     }
-  /** The read itself was forbidden: actionability -- and the platform's own
-   * detail -- could not be determined. Buttons render anyway; a real 403
-   * from approve/reject surfaces inline instead of being guessed in
-   * advance. There is deliberately no `detail` here: this is the one case
-   * where buttons show without it, so the view must never let the block's
-   * agent-authored `body`/`title` stand in as if it were that detail. */
+  /** The read itself was forbidden, so the platform's own detail never
+   * arrived. Buttons render anyway: the refusal a person needs to see is
+   * the one their own decision earns, surfaced inline from approve/reject,
+   * not a disabled card they cannot ask about. There is deliberately no
+   * `detail` here: this is the one case where buttons show without it, so
+   * the view must never let the block's agent-authored `body`/`title`
+   * stand in as if it were that detail. */
   | {
       readonly kind: "undetermined";
       readonly deciding: DecisionInFlight;

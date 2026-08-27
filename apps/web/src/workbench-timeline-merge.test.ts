@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { WorkbenchThread, MessageItem } from "@corbits/chat-ui";
 
-import type { NeedsYouItem } from "./api";
+import type { PendingApproval } from "./pending-approvals";
 import type { Routine, RoutineRun } from "./routines-api";
 import {
   computeTimelineDayKpis,
@@ -73,7 +73,7 @@ function routineRun(overrides: Partial<RoutineRun> = {}): RoutineRun {
   } as RoutineRun;
 }
 
-function approval(overrides: Partial<NeedsYouItem> = {}): NeedsYouItem {
+function approval(overrides: Partial<PendingApproval> = {}): PendingApproval {
   return {
     id: "approval-1",
     agentName: "Researcher",
@@ -83,7 +83,7 @@ function approval(overrides: Partial<NeedsYouItem> = {}): NeedsYouItem {
     status: "pending",
     createdAt: "2026-08-17T12:00:00.000Z",
     ...overrides,
-  } as NeedsYouItem;
+  } as PendingApproval;
 }
 
 describe("toMessageEvents", () => {

@@ -2,7 +2,7 @@
 // decision, what's running, and a way back into recent context. A new
 // top-level route (`/mission-control`), never `/` — `/` stays the Myra
 // land-hop redirect (see routes.tsx's header comment). Every panel here is
-// backed by a query already used elsewhere in this app (needs-you
+// backed by a query already used elsewhere in this app (pending
 // approvals, top-level runs, insights activity); nothing on this page is
 // invented. A panel with no honest data source renders an empty state
 // naming what's missing instead of a fabricated number.
@@ -33,16 +33,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { formatUsd } from "@corbits/insights/client";
 import { CHAT_STRINGS, type Workbench } from "@corbits/chat-ui";
 
-import {
-  approveApproval,
-  NeedsYouSchema,
-  rejectApproval,
-  useAPIQuery,
-  type NeedsYouItem,
-} from "../api";
+import { approveApproval, rejectApproval, useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
 import { ActivityResponseSchema, insightsActivityPath } from "../insights-api";
 import { Link } from "../navigation";
+import {
+  usePendingApprovals,
+  type PendingApproval,
+} from "../pending-approvals";
 import { tenantKeys } from "../query-client";
 import { NEW_WORKBENCH_PATH } from "../routes";
 import { useBenchActivity } from "../shell/bench-activity";
@@ -137,7 +135,7 @@ function ApprovalRow({
   item,
   tenantId,
 }: {
-  readonly item: NeedsYouItem;
+  readonly item: PendingApproval;
   readonly tenantId: string;
 }) {
   const queryClient = useQueryClient();
@@ -149,7 +147,7 @@ function ApprovalRow({
       if (action === "approve") await approveApproval(tenantId, item.id);
       else await rejectApproval(tenantId, item.id);
       await queryClient.invalidateQueries({
-        queryKey: tenantKeys.needsYou(tenantId),
+        queryKey: tenantKeys.pendingApprovals(tenantId),
       });
     } catch (cause) {
       toast(
@@ -201,10 +199,7 @@ export function MissionControlRoute({
   readonly navigate: (to: string) => void;
 }) {
   const { selectedTenantId: tenantId } = useBench();
-  const needsYouQuery = useAPIQuery(
-    tenantId === null ? "" : `/api/tenants/${tenantId}/approvals/needs-you`,
-    NeedsYouSchema,
-  );
+  const approvalsQuery = usePendingApprovals(tenantId);
   const activity = useBenchActivity(tenantId);
   const activityRange = useMemo(
     () => ({
@@ -218,11 +213,11 @@ export function MissionControlRoute({
     ActivityResponseSchema,
   );
 
-  const needsYouItems =
-    needsYouQuery.kind === "ready" ? needsYouQuery.data.items : null;
+  const pendingApprovals =
+    approvalsQuery.kind === "ready" ? approvalsQuery.data : null;
   const oldestWaitingAt =
-    needsYouItems !== null && needsYouItems.length > 0
-      ? needsYouItems.reduce((oldest, item) =>
+    pendingApprovals !== null && pendingApprovals.length > 0
+      ? pendingApprovals.reduce((oldest, item) =>
           Date.parse(item.createdAt) < Date.parse(oldest.createdAt)
             ? item
             : oldest,
@@ -297,8 +292,10 @@ export function MissionControlRoute({
               />
               <StatGridItem
                 label="Waiting on you"
-                value={dash(needsYouItems?.length ?? null)}
-                danger={needsYouItems !== null && needsYouItems.length > 0}
+                value={dash(pendingApprovals?.length ?? null)}
+                danger={
+                  pendingApprovals !== null && pendingApprovals.length > 0
+                }
                 sub={
                   oldestWaitingAt !== null
                     ? `oldest ${formatRelativeTime(oldestWaitingAt)}`
@@ -328,28 +325,28 @@ export function MissionControlRoute({
                   approvals block agents until you act
                 </span>
               </div>
-              {needsYouQuery.kind === "loading" ? (
+              {approvalsQuery.kind === "loading" ? (
                 <Skeleton className="h-24 w-full" />
               ) : null}
-              {needsYouQuery.kind === "error" ? (
+              {approvalsQuery.kind === "error" ? (
                 <RichEmptyState
                   title="Couldn't load approvals"
-                  description={needsYouQuery.message}
+                  description={approvalsQuery.message}
                 />
               ) : null}
-              {needsYouQuery.kind === "unauthenticated" ? (
+              {approvalsQuery.kind === "unauthenticated" ? (
                 <RichEmptyState
                   title="Sign in to see approvals"
                   description="Your session expired — sign back in to review what's waiting."
                 />
               ) : null}
-              {needsYouItems !== null && needsYouItems.length === 0 ? (
+              {pendingApprovals !== null && pendingApprovals.length === 0 ? (
                 <RichEmptyState
                   title="Nothing waiting on you"
                   description="Approvals will show up here the moment an agent needs a decision."
                 />
               ) : null}
-              {needsYouItems !== null && needsYouItems.length > 0 ? (
+              {pendingApprovals !== null && pendingApprovals.length > 0 ? (
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -365,7 +362,7 @@ export function MissionControlRoute({
                   </TableHeader>
                   <TableBody>
                     {tenantId !== null &&
-                      needsYouItems.map((item) => (
+                      pendingApprovals.map((item) => (
                         <ApprovalRow
                           key={item.id}
                           item={item}

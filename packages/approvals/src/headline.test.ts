@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { headlineFor } from "./view-model";
+import { headlineFor } from "./headline";
 
 test("falls back to a generic label when the tool definition carries neither", () => {
   expect(headlineFor({}, {})).toBe("Run a tool");

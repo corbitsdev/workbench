@@ -120,10 +120,11 @@ installed globally rather than per bench or workbench (CL-6272.2). Every
 external side effect — anything leaving the
 platform's own boundary — sits behind a human approval gate. Approval
 itself is native Interchange state (an `approval` row backed by a
-`signal_correlation` row); workbench's own `@corbits/approvals` package
-only resolves the names on top of it (which agent, which bench) so a
-person can read what they're being asked to approve — see
-[docs/needs-you.md](docs/needs-you.md).
+`signal_correlation` row); the web client composes the names on top of it
+(which agent, which bench) from the native pending-approvals list and run
+view, and `@corbits/approvals` supplies the grant-allowance gate and the
+human-readable headline, so a person can read what they're being asked to
+approve — see [docs/needs-you.md](docs/needs-you.md).
 
 ## Sidecar allocation and the provisioner model
 

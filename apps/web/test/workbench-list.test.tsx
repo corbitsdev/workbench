@@ -48,7 +48,7 @@ function json(body: unknown): Response {
 
 function stubFetch(
   data: {
-    readonly needsYou?: readonly unknown[];
+    readonly pendingApprovals?: readonly unknown[];
     readonly workbenches?: readonly unknown[];
     readonly chats?: readonly unknown[];
   } = {},
@@ -59,8 +59,10 @@ function stubFetch(
       return Promise.resolve(json(membership));
     if (path.includes("/top-level-runs"))
       return Promise.resolve(json({ data: [], nextCursor: null }));
-    if (path.includes("/approvals/needs-you"))
-      return Promise.resolve(json({ items: data.needsYou ?? [] }));
+    if (path.includes("/approvals"))
+      return Promise.resolve(
+        json({ data: data.pendingApprovals ?? [], nextCursor: null }),
+      );
     if (path.includes("/agent-definitions/visible"))
       return Promise.resolve(json({ definitions: [] }));
     if (path.includes("/chat/workbenches?kind=workbench"))
@@ -71,15 +73,22 @@ function stubFetch(
   }) as typeof fetch;
 }
 
-function needsYouItem(overrides: Record<string, unknown> = {}) {
+function pendingApproval(overrides: Record<string, unknown> = {}) {
   return {
     id: "apr_1",
-    agentName: "Myra",
-    benchName: "Corbits Bench",
-    headline: "Merge the checkout fix",
-    arguments: {},
+    tenantId: "tnt_1",
+    anchorRunId: "run_1",
+    runId: "run_1",
+    agentAddress: "agent@bench",
+    correlationId: "cor_1",
+    toolDefinition: { name: "merge_pr", description: "Merge the checkout fix" },
+    toolArguments: {},
+    scope: null,
     status: "pending",
+    timeoutAt: null,
+    resolvedAt: null,
     createdAt: "2026-08-14T00:00:00.000Z",
+    updatedAt: "2026-08-14T00:00:00.000Z",
     ...overrides,
   };
 }
@@ -102,15 +111,15 @@ async function mount(onNavigate: (to: string) => void = () => undefined) {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     // Prefer `shell-ch-row-wrap` over bare `shell-ch-row`: a loading
-    // skeleton can paint before the parallel needs-you query settles.
+    // skeleton can paint before the parallel approvals query settles.
     if (
       container.innerHTML.includes("shell-ch-row-wrap") ||
       container.innerHTML.includes("waiting on you")
     ) {
       break;
     }
-    // Empty mixed list: keep spinning until needs-you resolves (chip text)
-    // or enough ticks have passed for an empty needs-you to settle as null.
+    // Empty mixed list: keep spinning until the approvals read resolves
+    // (chip text) or enough ticks have passed for an empty list to settle.
     if (
       container.innerHTML.includes(SIDEBAR_EMPTY_COPY) &&
       !container.innerHTML.includes("shell-activity-skeleton") &&
@@ -122,16 +131,16 @@ async function mount(onNavigate: (to: string) => void = () => undefined) {
   return container;
 }
 
-describe("WorkbenchList — needs-you signal", () => {
+describe("WorkbenchList — pending-approvals signal", () => {
   test("hides the signal when nothing is pending", async () => {
-    stubFetch({ needsYou: [] });
+    stubFetch({ pendingApprovals: [] });
     const el = await mount();
     expect(el.textContent).not.toContain("waiting on you");
   });
 
   test("shows a filled needs-you chip with the real pending count", async () => {
     stubFetch({
-      needsYou: [needsYouItem(), needsYouItem({ id: "apr_2" })],
+      pendingApprovals: [pendingApproval(), pendingApproval({ id: "apr_2" })],
     });
     const el = await mount();
     expect(el.textContent).toContain("2 waiting on you");

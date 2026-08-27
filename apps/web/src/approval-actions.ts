@@ -1,9 +1,9 @@
 // Builds the `ApprovalActions` port `ChatWorkspace` (`@corbits/chat-ui`)
-// calls for its in-chat approve card. Reuses the exact functions the
-// Activity band already uses -- `getApprovalNeedsYou`, `approveApproval`,
-// `rejectApproval` in `api.ts` -- and invalidates the same query keys it
-// invalidates, so approving in chat updates the Activity band's count
-// live, and vice versa. This is the one place that logic belongs: chat-ui
+// calls for its in-chat approve card. Reuses the exact reads and writes
+// every other approval surface uses -- `getApprovalDetail` in
+// `pending-approvals.ts`, `approveApproval`/`rejectApproval` in `api.ts` --
+// and invalidates the same query keys they invalidate, so approving in chat
+// updates the shell's pending count live, and vice versa. This is the one place that logic belongs: chat-ui
 // owns no `QueryClient`, so the invalidation the design calls for can only
 // run here.
 
@@ -12,8 +12,9 @@ import type { ApprovalActions, ApprovalDecisionResult } from "@corbits/chat-ui";
 import { CHAT_STRINGS } from "@corbits/chat-ui";
 import { ApiQueryError } from "@corbits/api-query";
 
-import { approveApproval, getApprovalNeedsYou, rejectApproval } from "./api";
+import { approveApproval, rejectApproval } from "./api";
 import type { Approval } from "./api";
+import { getApprovalDetail } from "./pending-approvals";
 import { tenantKeys } from "./query-client";
 
 export function createChatApprovalActions(
@@ -22,7 +23,7 @@ export function createChatApprovalActions(
 ): ApprovalActions {
   function invalidate() {
     void queryClient.invalidateQueries({
-      queryKey: tenantKeys.needsYou(tenantId),
+      queryKey: tenantKeys.pendingApprovals(tenantId),
     });
     // Any cached query keyed under this tenant's inbox API paths (list,
     // detail, counts) — the tasks backend still owns these routes even
@@ -80,13 +81,12 @@ export function createChatApprovalActions(
 
   return {
     async getStatus(approvalId) {
-      const result = await getApprovalNeedsYou(tenantId, approvalId);
+      const result = await getApprovalDetail(tenantId, approvalId);
       switch (result.kind) {
         case "ready":
-          // A successful read against the tenant-wide `approval:*` grant
-          // implies the native per-deployment grant too (the pattern the
-          // wider grant is checked against subsumes it) -- pending here is
-          // always actionable. See `packages/approvals/src/routes.ts`.
+          // This read is gated on the very grant approve and reject are
+          // gated on, so a pending approval that could be read is one this
+          // viewer can act on.
           return {
             kind: "ready",
             status: result.item.status,
@@ -94,7 +94,7 @@ export function createChatApprovalActions(
             detail: {
               agentName: result.item.agentName,
               headline: result.item.headline,
-              arguments: result.item.arguments as Record<string, unknown>,
+              arguments: result.item.arguments,
             },
           };
         case "forbidden":
