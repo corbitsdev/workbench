@@ -162,6 +162,18 @@ export function ConnectGithubBlockContainer({
     ...(data.steps !== undefined ? { steps: data.steps } : {}),
   };
 
+  if (displayQuery.kind === "error") {
+    return (
+      <ConnectGithubBlockView
+        scene={scene}
+        kind="error"
+        message={displayQuery.message}
+        onConnect={() => actions?.requestConnect()}
+        onSubmitAccessToken={submitAccessTokenAndRefresh}
+      />
+    );
+  }
+
   if (actions === undefined || displayQuery.kind !== "connected") {
     return (
       <ConnectGithubBlockView

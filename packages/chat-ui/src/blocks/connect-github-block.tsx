@@ -74,6 +74,16 @@ export type ConnectGithubCardBody =
       >;
     }
   | {
+      readonly kind: "error";
+      readonly message: string;
+      readonly onConnect: () => void;
+      readonly onSubmitAccessToken: (
+        token: string,
+      ) => Promise<
+        { readonly ok: true } | { readonly ok: false; readonly message: string }
+      >;
+    }
+  | {
       readonly kind: "connected";
       readonly orgName: string;
       readonly repos: readonly ConnectGithubRepo[];
@@ -215,6 +225,8 @@ function ReviewingBody({
 function DisconnectedBody({
   onConnect,
   onSubmitAccessToken,
+  error: stateError,
+  actionLabel,
 }: {
   readonly onConnect: () => void;
   readonly onSubmitAccessToken: (
@@ -222,11 +234,13 @@ function DisconnectedBody({
   ) => Promise<
     { readonly ok: true } | { readonly ok: false; readonly message: string }
   >;
+  readonly error?: string;
+  readonly actionLabel?: string;
 }) {
   const [fieldOpen, setFieldOpen] = useState(false);
   const [token, setToken] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<string | undefined>(stateError);
 
   function openField() {
     onConnect();
@@ -309,7 +323,7 @@ function DisconnectedBody({
             onClick={() => {
               setFieldOpen(false);
               setToken("");
-              setError(undefined);
+              setError(stateError);
             }}
           >
             {CHAT_STRINGS.blockConnectGithubTokenCancel}
@@ -321,10 +335,18 @@ function DisconnectedBody({
 
   return (
     <>
+      {error !== undefined ? (
+        <p
+          className="chat-block-text chat-block-connect-token-error"
+          role="alert"
+        >
+          {error}
+        </p>
+      ) : null}
       <p className="chat-block-text">{CHAT_STRINGS.blockConnectGithubIntro}</p>
       <div className="chat-block-actions">
         <Button type="button" variant="primary" onClick={openField}>
-          {CHAT_STRINGS.blockConnectGithubAction}
+          {actionLabel ?? CHAT_STRINGS.blockConnectGithubAction}
         </Button>
       </div>
       <p className="chat-block-text chat-block-connect-helper">
@@ -456,6 +478,14 @@ export function ConnectGithubBlockView(props: ConnectGithubCardProps) {
           <DisconnectedBody
             onConnect={props.onConnect}
             onSubmitAccessToken={props.onSubmitAccessToken}
+          />
+        ) : null}
+        {props.kind === "error" ? (
+          <DisconnectedBody
+            onConnect={props.onConnect}
+            onSubmitAccessToken={props.onSubmitAccessToken}
+            error={props.message}
+            actionLabel={CHAT_STRINGS.blockConnectGithubReconnect}
           />
         ) : null}
         {props.kind === "connected" ? <ConnectedBody {...props} /> : null}

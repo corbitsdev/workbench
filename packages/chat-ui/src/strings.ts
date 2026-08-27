@@ -224,6 +224,7 @@ export const CHAT_STRINGS = {
   blockConnectGithubIntro:
     "Connect GitHub with a personal access token — three quick steps, about a minute.",
   blockConnectGithubAction: "Connect GitHub",
+  blockConnectGithubReconnect: "Reconnect",
   blockConnectGithubTokenSteps: [
     "Open github.com/settings/tokens and generate a new token.",
     "Give it the repo scope — that lets agents read code, issues, and pull requests.",
