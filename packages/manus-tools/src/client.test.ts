@@ -560,6 +560,51 @@ test("createSlideDeck retries listMessages not_found then succeeds when the task
   expect(listCalls).toBe(2);
 });
 
+test("createSlideDeck retries listMessages not_found with lowercase task not found", async () => {
+  let listCalls = 0;
+  const fetchImpl = (async (input: URL | string) => {
+    const url = String(input);
+    if (url.includes("/v2/task.create")) {
+      return new Response(JSON.stringify({ ok: true, task_id: "task_1" }), {
+        status: 200,
+      });
+    }
+    if (url.includes("/v2/task.listMessages")) {
+      listCalls += 1;
+      if (listCalls === 1) {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: { code: "not_found", message: "task not found" },
+          }),
+          { status: 404 },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          task_id: "task_1",
+          messages: [
+            {
+              type: "status_update",
+              status_update: { agent_status: "stopped" },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    }
+    return new Response("unexpected", { status: 500 });
+  }) as unknown as typeof fetch;
+
+  const result = await createSlideDeck(
+    { fetchImpl },
+    { content: "Onboarding", pollIntervalMs: 0, maxPolls: 3 },
+  );
+  expect(result.agent_status).toBe("stopped");
+  expect(listCalls).toBe(2);
+});
+
 test("createSlideDeck still throws unrelated listMessages errors", async () => {
   let listCalls = 0;
   const fetchImpl = (async (input: URL | string) => {
