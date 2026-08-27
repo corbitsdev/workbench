@@ -95,7 +95,9 @@ export const MANUS_ENDPOINTS: readonly EndpointSpec[] = [
         "When true, hide the task from the Manus task list.",
       ),
       share_visibility: STRING("private, team, or public."),
-      agent_profile: STRING("manus-1.6, manus-1.6-lite, or manus-1.6-max."),
+      agent_profile: STRING(
+        "Defaults to manus-1.6-lite. Other values: manus-1.6, manus-1.6-max.",
+      ),
       ...MESSAGE_SKILL_PROPERTIES,
       structured_output_schema: OBJECT(
         "JSON Schema for structured output extraction. Sent on the create body, not inside message.",
