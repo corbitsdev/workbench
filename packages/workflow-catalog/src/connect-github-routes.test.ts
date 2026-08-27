@@ -3,10 +3,11 @@
 // mounted the same way `packages/connections/src/routes.test.ts` mounts
 // its own routes: a bare `Hono` with a tenant-injecting middleware, no
 // real network, no real database — every port is a plain fake.
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
+import * as errorSink from "@corbits/error-sink";
 import type {
   GitHubClientConfig,
   GitHubRepoSummary,
@@ -131,6 +132,10 @@ function buildApp(overrides: Partial<ConnectGithubRoutesDeps> = {}) {
   };
 }
 
+afterEach(() => {
+  mock.restore();
+});
+
 describe("GET /:workbenchId/github/state", () => {
   test("reports disconnected with no github credential", async () => {
     const { app } = buildApp({ resolveGithubConfig: async () => undefined });
@@ -216,10 +221,9 @@ describe("POST /:workbenchId/github/start-reviewing", () => {
     }
   });
 
-  test("a rejecting introduction port still yields 200 and logs the failure", async () => {
-    const logs: string[] = [];
+  test("a rejecting introduction port still yields 200 and reports the failure", async () => {
+    const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
     const harness = buildApp({
-      log: (line) => logs.push(line),
       onReviewingStarted: async () => {
         throw new Error("boom");
       },
@@ -230,7 +234,29 @@ describe("POST /:workbenchId/github/start-reviewing", () => {
       body: JSON.stringify({ repoIds: ["1"] }),
     });
     expect(response.status).toBe(200);
-    expect(logs.some((line) => line.includes("boom"))).toBe(true);
+    expect(report).toHaveBeenCalled();
+    expect(report.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+    expect(report.mock.calls[0]?.[1]).toMatchObject({
+      operation: "connect-github.reviewerIntroductions",
+      tenantId: "tnt_1",
+      roomId: "wb_1",
+    });
+  });
+
+  test("a second start-reviewing does not re-post introductions already landed for the room", async () => {
+    const harness = buildApp();
+    const startReviewing = (repoIds: readonly string[]) =>
+      harness.app.request("/wb_1/github/start-reviewing", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ repoIds }),
+      });
+    const first = await startReviewing(["1"]);
+    expect(first.status).toBe(200);
+    expect(harness.introductionCalls).toHaveLength(1);
+    const second = await startReviewing(["1", "2"]);
+    expect(second.status).toBe(200);
+    expect(harness.introductionCalls).toHaveLength(1);
   });
 
   test("400s on a malformed body without leaking raw parser text", async () => {
