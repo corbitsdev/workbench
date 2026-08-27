@@ -95,8 +95,13 @@ its Workbench Definition names three reviewers and no Myra. The room
 itself posts the onboarding card: Connect GitHub with a personal access
 token (the shipped path today). The same in-room card reads live
 connection state and flips in place to pick repositories — already
-connected GitHub is that card, not a `/new` dialog. A GitHub App /
-hosted OAuth welcome mat is future work (CL-6343), not current product.
+connected GitHub is that card, not a `/new` dialog — then Start
+reviewing. Once reviewing starts, each reviewer posts its own canned
+introduction under its own address, in roster order — the first thing
+a person reads is who is reviewing and what for, never a join dump. A
+GitHub App / hosted OAuth welcome mat is future work (CL-6343), not
+current product. Inviting teammates into the room is a later slice,
+not part of this first minute.
 
 Settle for a template-key-only wait posts from a system sender and
 does not wake an agent. Generic `connections/pending` still wakes the

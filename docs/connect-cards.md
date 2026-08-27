@@ -54,9 +54,13 @@ the walkthrough. Connect opens a guided personal-access-token paste
 (create a token with the `repo` scope, paste it, store encrypted).
 After Connect succeeds — or when GitHub is already connected — the
 same in-room card flips in place to pick repositories; there is no
-`/new` already-connected dialog. Settling a credential a template room
-is waiting on posts the connected notice from the system address and
-never wakes an agent (`packages/chat/src/connect-pending.ts`).
+`/new` already-connected dialog. Code review needs a repo pick before
+reviewers are watching, then Start reviewing. Settling a credential a
+template room is waiting on posts the connected notice from the system
+address and never wakes an agent (`packages/chat/src/connect-pending.ts`)
+— a reviewer roster has no host to answer. Once reviewing starts, each
+reviewer posts its own canned introduction under its own address, in
+roster order (`packages/code-review/src/introductions.ts`).
 
 A GitHub App / hosted OAuth Connect as the welcome mat is CL-6343, out of
 scope for the shipped card — do not document OAuth-first GitHub connect
