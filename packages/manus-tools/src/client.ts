@@ -399,6 +399,13 @@ export type CreateSlideDeckParams = CreateTaskParams & {
   readonly signal?: AbortSignal;
 };
 
+function isManusTaskNotFoundError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.message.includes("Manus request failed: not_found: Task not found")
+  );
+}
+
 function throwIfSlideWaitAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) {
     throw new Error("Manus slide-deck wait was cancelled");
@@ -460,10 +467,18 @@ export async function createSlideDeck(
   let messages: ListMessagesResponse | undefined;
   for (let i = 0; i < polls; i += 1) {
     throwIfSlideWaitAborted(signal);
-    messages = await listTaskMessages(config, {
-      task_id: created.task_id,
-      slides_format: SLIDES_FORMAT_PPTX,
-    });
+    try {
+      messages = await listTaskMessages(config, {
+        task_id: created.task_id,
+        slides_format: SLIDES_FORMAT_PPTX,
+      });
+    } catch (error) {
+      if (!isManusTaskNotFoundError(error)) throw error;
+      if (i < polls - 1) {
+        await sleep(intervalMs, signal);
+      }
+      continue;
+    }
     const status = latestAgentStatus(messages.messages);
     if (status !== undefined && TERMINAL_STATUSES.has(status)) break;
     if (status === "waiting") {
