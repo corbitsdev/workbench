@@ -483,9 +483,10 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 
 /**
  * Creates a task whose prompt asks Manus to produce a slide deck, then
- * polls `task.listMessages` until the agent stops (or errors) and returns
- * any output files so a caller can retrieve them. A timeout, a still-running
- * or waiting agent, or an abort is a thrown error — never a successful deck.
+ * polls `task.listMessages` until the agent stops and returns any output
+ * files so a caller can retrieve them. A timeout, a still-running or
+ * waiting agent, an `error` status, or an abort is a thrown error —
+ * never a successful deck.
  */
 export async function createSlideDeck(
   config: ManusClientConfig,
@@ -540,6 +541,14 @@ export async function createSlideDeck(
     throw new Error(
       `Manus task ${created.task_id} did not stop in time` +
         (status !== undefined ? ` (agent_status: ${status})` : ""),
+    );
+  }
+  if (status === "error") {
+    const errorEvent = messages?.messages?.find((event) => event.error_message);
+    const detail = errorEvent?.error_message?.content;
+    throw new Error(
+      `Manus task ${created.task_id} ended with agent_status error` +
+        (detail !== undefined ? `: ${detail}` : ""),
     );
   }
   const files = extractOutputFiles(messages?.messages);

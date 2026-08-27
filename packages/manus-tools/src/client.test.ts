@@ -365,6 +365,37 @@ test("createSlideDeck throws when the agent is waiting", async () => {
   ).rejects.toThrow(/waiting for confirmation/);
 });
 
+test("createSlideDeck throws when the agent_status is error", async () => {
+  const fetchImpl = (async (input: URL | string) => {
+    const url = String(input);
+    if (url.includes("/v2/task.create")) {
+      return new Response(JSON.stringify({ ok: true, task_id: "task_1" }), {
+        status: 200,
+      });
+    }
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        task_id: "task_1",
+        messages: [
+          {
+            type: "status_update",
+            status_update: { agent_status: "error" },
+          },
+        ],
+      }),
+      { status: 200 },
+    );
+  }) as unknown as typeof fetch;
+
+  await expect(
+    createSlideDeck(
+      { fetchImpl },
+      { content: "Onboarding", pollIntervalMs: 0, maxPolls: 5 },
+    ),
+  ).rejects.toThrow(/agent_status error/);
+});
+
 test("createSlideDeck aborts polling instead of waiting out the timeout", async () => {
   const controller = new AbortController();
   const fetchImpl = (async (input: URL | string) => {
