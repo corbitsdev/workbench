@@ -39,7 +39,7 @@ afterEach(() => {
   root = null;
 });
 
-async function mount(actions: ConnectGithubActions) {
+async function mount(actions: ConnectGithubActions, messageId = "m1") {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -47,7 +47,7 @@ async function mount(actions: ConnectGithubActions) {
     root?.render(
       <ConnectGithubBlockContainer
         data={DATA}
-        messageId="m1"
+        messageId={messageId}
         actions={actions}
       />,
     );
@@ -138,6 +138,41 @@ describe("ConnectGithubBlockContainer post-submit refresh (CL-6463)", () => {
     expect(el.querySelectorAll(".chat-block-connect-repo-row")).toHaveLength(
       REPOS.length,
     );
+  });
+
+  test("a successful PAT submit moves focus onto the pick-repos heading", async () => {
+    const harness = buildNeverNotifiesHarness();
+    const el = await mount(harness.actions, "m_pat_focus");
+
+    const connectButton = [...el.querySelectorAll("button")].find(
+      (button) => button.textContent === "Connect GitHub",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      connectButton.click();
+    });
+    const tokenField = el.querySelector(
+      "#connect-github-token",
+    ) as HTMLInputElement;
+    await act(async () => {
+      typeInto(tokenField, "ghp_test123");
+    });
+    const submitButton = [...el.querySelectorAll("button")].find(
+      (button) => button.textContent === "Connect",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      submitButton.focus();
+      submitButton.click();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const heading = el.querySelector(".chat-block-scene-pick-heading");
+    expect(heading?.textContent).toBe("Pick your repos");
+    expect(heading?.getAttribute("tabindex")).toBe("-1");
+    expect(document.activeElement).toBe(heading);
+    expect(el.querySelector("#connect-github-token")).toBeNull();
   });
 
   test("a rejected token shows what went wrong and leaves a working submit button, never a dead card", async () => {

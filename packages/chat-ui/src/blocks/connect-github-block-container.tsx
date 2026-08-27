@@ -95,6 +95,7 @@ export function ConnectGithubBlockContainer({
   >(undefined);
   const mountedRef = useRef(true);
   const hadPickerRef = useRef(false);
+  const hadConnectRef = useRef(false);
 
   const applyQuery = useCallback(
     (result: ConnectGithubQuery) => {
@@ -152,6 +153,7 @@ export function ConnectGithubBlockContainer({
       : recordedRepoIds.length === 0 || repickRequested
         ? STEP_PICK
         : STEP_REVIEWING;
+  if (currentStepIndex === STEP_CONNECT) hadConnectRef.current = true;
   if (currentStepIndex === STEP_PICK) hadPickerRef.current = true;
   const scene: OnboardingScene = {
     title: data.requiredForTemplate,
@@ -231,6 +233,7 @@ export function ConnectGithubBlockContainer({
       {...(startReviewingError !== undefined
         ? { error: startReviewingError }
         : {})}
+      {...(hadConnectRef.current ? { autoFocus: true } : {})}
     />
   );
 }
