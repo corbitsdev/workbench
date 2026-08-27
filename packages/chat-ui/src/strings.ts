@@ -247,6 +247,8 @@ export const CHAT_STRINGS = {
   blockConnectGithubStartReviewing: (count: number) =>
     `Start reviewing ${count} repo${count === 1 ? "" : "s"}`,
   blockConnectGithubSkip: "skip for now",
+  blockConnectGithubStartReviewingError:
+    "Couldn't start reviewing — try again.",
   blockConnectGithubTokenFieldLabel: "Personal access token",
   blockConnectGithubTokenFieldPlaceholder: "ghp_...",
   blockConnectGithubTokenSubmit: "Connect",

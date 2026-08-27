@@ -24,6 +24,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConnectGithubBlockData } from "@corbits/chat/blocks";
 import { reportError } from "@corbits/error-sink";
 
+import { CHAT_STRINGS } from "../strings";
 import type {
   ConnectGithubActions,
   ConnectGithubQuery,
@@ -89,7 +90,11 @@ export function ConnectGithubBlockContainer({
    * picker back without the server's recorded selection changing — only
    * pressing "Start reviewing" again writes anything. */
   const [repickRequested, setRepickRequested] = useState(false);
+  const [startReviewingError, setStartReviewingError] = useState<
+    string | undefined
+  >(undefined);
   const mountedRef = useRef(true);
+  const hadPickerRef = useRef(false);
 
   const applyQuery = useCallback(
     (result: ConnectGithubQuery) => {
@@ -147,6 +152,7 @@ export function ConnectGithubBlockContainer({
       : recordedRepoIds.length === 0 || repickRequested
         ? STEP_PICK
         : STEP_REVIEWING;
+  if (currentStepIndex === STEP_PICK) hadPickerRef.current = true;
   const scene: OnboardingScene = {
     title: data.requiredForTemplate,
     currentStepIndex,
@@ -174,6 +180,7 @@ export function ConnectGithubBlockContainer({
           .filter((repo) => recordedRepoIds.includes(repo.id))
           .map((repo) => repo.name)}
         onChangeRepos={() => setRepickRequested(true)}
+        {...(hadPickerRef.current ? { autoFocus: true } : {})}
       />
     );
   }
@@ -190,10 +197,16 @@ export function ConnectGithubBlockContainer({
 
   async function startReviewing(repoIds: readonly string[]) {
     try {
+      setStartReviewingError(undefined);
       await connectedActions.startReviewing(repoIds);
       if (mountedRef.current) setRepickRequested(false);
     } catch (cause) {
       reportError(cause, { operation: "connect-github.startReviewing" });
+      if (mountedRef.current) {
+        setStartReviewingError(
+          CHAT_STRINGS.blockConnectGithubStartReviewingError,
+        );
+      }
     }
   }
 
@@ -215,6 +228,9 @@ export function ConnectGithubBlockContainer({
       onSkip={() => {
         void connectedActions.skip();
       }}
+      {...(startReviewingError !== undefined
+        ? { error: startReviewingError }
+        : {})}
     />
   );
 }

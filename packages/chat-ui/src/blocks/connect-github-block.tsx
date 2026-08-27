@@ -17,7 +17,7 @@
 // layout around it (name left, open-PR count right) is workbench-specific
 // composition and stays local.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Checkbox, Input } from "@corbits/react-ui";
 import { Check } from "@corbits/icons";
 
@@ -83,11 +83,17 @@ export type ConnectGithubCardBody =
       readonly onChangeConnection: () => void;
       readonly onStartReviewing: (repoIds: readonly string[]) => void;
       readonly onSkip: () => void;
+      /** Set when `onStartReviewing` rejected — the picker stays up and
+       * this is the card's own alert, never a toast-only failure. */
+      readonly error?: string;
     }
   | {
       readonly kind: "reviewing";
       readonly repoNames: readonly string[];
       readonly onChangeRepos: () => void;
+      /** Move focus onto the reviewing scene after Start reviewing
+       * succeeded, so it does not stay on a control that unmounted. */
+      readonly autoFocus?: boolean;
     };
 
 export type ConnectGithubCardProps = ConnectGithubCardBody & {
@@ -136,6 +142,9 @@ function SceneHeader({ scene }: { readonly scene: OnboardingScene }) {
                 key={step.title}
                 className="chat-block-scene-step"
                 {...(marked ? { "data-state": state } : {})}
+                aria-current={
+                  marked && state === "current" ? "step" : undefined
+                }
               >
                 <span className="chat-block-scene-step-title">
                   {step.title}
@@ -161,12 +170,22 @@ function SceneHeader({ scene }: { readonly scene: OnboardingScene }) {
 function ReviewingBody({
   repoNames,
   onChangeRepos,
+  autoFocus,
 }: {
   readonly repoNames: readonly string[];
   readonly onChangeRepos: () => void;
+  readonly autoFocus?: boolean;
 }) {
+  const sceneRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (autoFocus === true) sceneRef.current?.focus();
+  }, [autoFocus]);
   return (
-    <div className="chat-block-scene-reviewing">
+    <div
+      className="chat-block-scene-reviewing"
+      ref={sceneRef}
+      {...(autoFocus === true ? { tabIndex: -1 } : {})}
+    >
       <p className="chat-block-connect-line">
         <span className="chat-block-connect-tick" aria-hidden="true">
           <Check />
@@ -260,9 +279,13 @@ function DisconnectedBody({
             setToken(event.target.value);
           }}
           disabled={submitting}
+          {...(error !== undefined ? { "aria-invalid": true } : {})}
         />
         {error !== undefined ? (
-          <p className="chat-block-text chat-block-connect-token-error">
+          <p
+            className="chat-block-text chat-block-connect-token-error"
+            role="alert"
+          >
             {error}
           </p>
         ) : null}
@@ -317,6 +340,7 @@ function ConnectedBody({
   onChangeConnection,
   onStartReviewing,
   onSkip,
+  error,
 }: Extract<ConnectGithubCardProps, { kind: "connected" }>) {
   const pickedCount = selectedRepoIds.length;
   return (
@@ -375,11 +399,18 @@ function ConnectedBody({
         {CHAT_STRINGS.blockConnectGithubPermissionHelper}
       </p>
 
+      {error !== undefined ? (
+        <p className="chat-block-text" role="alert">
+          {error}
+        </p>
+      ) : null}
+
       <div className="chat-block-actions">
         <Button
           type="button"
           variant="primary"
           onClick={() => onStartReviewing(selectedRepoIds)}
+          disabled={pickedCount === 0}
         >
           {CHAT_STRINGS.blockConnectGithubStartReviewing(pickedCount)}
         </Button>
@@ -395,19 +426,22 @@ export function ConnectGithubBlockView(props: ConnectGithubCardProps) {
   return (
     <BlockCard title={props.scene.title}>
       <SceneHeader scene={props.scene} />
-      {props.kind === "disconnected" ? (
-        <DisconnectedBody
-          onConnect={props.onConnect}
-          onSubmitAccessToken={props.onSubmitAccessToken}
-        />
-      ) : null}
-      {props.kind === "connected" ? <ConnectedBody {...props} /> : null}
-      {props.kind === "reviewing" ? (
-        <ReviewingBody
-          repoNames={props.repoNames}
-          onChangeRepos={props.onChangeRepos}
-        />
-      ) : null}
+      <div className="chat-block-scene-body" aria-live="polite">
+        {props.kind === "disconnected" ? (
+          <DisconnectedBody
+            onConnect={props.onConnect}
+            onSubmitAccessToken={props.onSubmitAccessToken}
+          />
+        ) : null}
+        {props.kind === "connected" ? <ConnectedBody {...props} /> : null}
+        {props.kind === "reviewing" ? (
+          <ReviewingBody
+            repoNames={props.repoNames}
+            onChangeRepos={props.onChangeRepos}
+            {...(props.autoFocus === true ? { autoFocus: true } : {})}
+          />
+        ) : null}
+      </div>
     </BlockCard>
   );
 }
