@@ -321,4 +321,109 @@ describe("runSetup", () => {
     expect((caught as CliError).fix).toContain("workbench setup");
     expect((caught as CliError).fix).not.toContain("workbench seed");
   });
+
+  test("writes OPERATOR_TENANT_ID for the org tenant it created", async () => {
+    const { log } = collector();
+    const persisted: { key: string; value: string }[] = [];
+    const api = fakeAPI((method, path) => {
+      if (method === "POST" && path === "/api/auth/sign-in/email")
+        return signInMissing();
+      if (method === "POST" && path === "/api/auth/sign-up/email")
+        return signUpResponse();
+      if (method === "POST" && path === "/api/tenants")
+        return { status: 201, data: tenantRow() };
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/roles`)
+      )
+        return rolesResponse(["owner", "admin", "member"]);
+      return undefined;
+    });
+
+    await runSetup({
+      config: CONFIG,
+      api,
+      runDbSetup: okDbSetup,
+      publishToolRegistry: noopPublishToolRegistry,
+      persistEnv: async (args) => {
+        persisted.push(args);
+      },
+      log,
+    });
+
+    expect(persisted).toEqual([
+      { key: "OPERATOR_TENANT_ID", value: TENANT_ID },
+    ]);
+  });
+
+  test("a re-run still writes OPERATOR_TENANT_ID for the existing org tenant", async () => {
+    const { log } = collector();
+    const persisted: { key: string; value: string }[] = [];
+    const api = fakeAPI((method, path) => {
+      if (method === "POST" && path === "/api/auth/sign-in/email")
+        return signUpResponse();
+      if (method === "POST" && path === "/api/tenants")
+        return { status: 409, data: { error: "slug taken" } };
+      if (method === "GET" && path === "/api/me/principals")
+        return principalsResponse();
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/roles`)
+      )
+        return rolesResponse(["owner", "admin", "member"]);
+      return undefined;
+    });
+
+    await runSetup({
+      config: CONFIG,
+      api,
+      runDbSetup: okDbSetup,
+      publishToolRegistry: async () => [],
+      persistEnv: async (args) => {
+        persisted.push(args);
+      },
+      log,
+    });
+
+    expect(persisted).toEqual([
+      { key: "OPERATOR_TENANT_ID", value: TENANT_ID },
+    ]);
+  });
+
+  test("a persistEnv failure is a setup CliError", async () => {
+    const { log } = collector();
+    const api = fakeAPI((method, path) => {
+      if (method === "POST" && path === "/api/auth/sign-in/email")
+        return signInMissing();
+      if (method === "POST" && path === "/api/auth/sign-up/email")
+        return signUpResponse();
+      if (method === "POST" && path === "/api/tenants")
+        return { status: 201, data: tenantRow() };
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/roles`)
+      )
+        return rolesResponse(["owner", "admin", "member"]);
+      return undefined;
+    });
+
+    let caught: unknown;
+    try {
+      await runSetup({
+        config: CONFIG,
+        api,
+        runDbSetup: okDbSetup,
+        publishToolRegistry: noopPublishToolRegistry,
+        persistEnv: async () => {
+          throw new Error(".env is not writable");
+        },
+        log,
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(CliError);
+    expect((caught as CliError).message).toContain("OPERATOR_TENANT_ID");
+    expect((caught as CliError).fix).toContain(".env");
+  });
 });
