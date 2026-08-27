@@ -189,6 +189,9 @@ export async function manusRequest(
   return parseOkBody(body);
 }
 
+/** Free/personal accounts persist tasks only on the lite profile. */
+export const DEFAULT_AGENT_PROFILE = "manus-1.6-lite";
+
 export type CreateTaskParams = {
   readonly content: string;
   readonly title?: string;
@@ -272,9 +275,7 @@ export async function createTask(
   if (params.share_visibility !== undefined) {
     body["share_visibility"] = params.share_visibility;
   }
-  if (params.agent_profile !== undefined) {
-    body["agent_profile"] = params.agent_profile;
-  }
+  body["agent_profile"] = params.agent_profile ?? DEFAULT_AGENT_PROFILE;
   if (params.structured_output_schema !== undefined) {
     body["structured_output_schema"] = params.structured_output_schema;
   }
@@ -386,8 +387,7 @@ export const DEFAULT_SLIDE_POLL_INTERVAL_MS = 2_000;
 /** 5 minutes at the default interval — a real deck takes longer than 60s. */
 export const DEFAULT_SLIDE_MAX_POLLS = 150;
 
-/** Free/personal accounts persist tasks only on the lite profile. */
-export const SLIDE_DECK_AGENT_PROFILE = "manus-1.6-lite";
+export const SLIDE_DECK_AGENT_PROFILE = DEFAULT_AGENT_PROFILE;
 
 const SLIDE_DECK_PROMPT_PREFIX =
   "Create a slide presentation in pptx format. Produce a presentation " +
