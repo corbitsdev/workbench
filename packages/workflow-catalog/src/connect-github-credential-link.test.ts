@@ -146,6 +146,7 @@ describe("the room GitHub connect card reads what its own submit writes", () => 
         selectedRepos: [],
       }),
       persistSelectedRepos: async () => {},
+      onReviewingStarted: async () => {},
       listReposFn: async () => [],
       fetchAuthenticatedLoginFn: async () => "octocat",
     });
@@ -188,6 +189,7 @@ describe("the room GitHub connect card reads what its own submit writes", () => 
         selectedRepos: [],
       }),
       persistSelectedRepos: async () => {},
+      onReviewingStarted: async () => {},
       listReposFn: async () => [],
       fetchAuthenticatedLoginFn: async () => "octocat",
     });
