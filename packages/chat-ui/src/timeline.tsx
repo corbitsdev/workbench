@@ -578,10 +578,17 @@ function TextBubble({
  * anything else falls back to the event name with its separators turned
  * into spaces.
  */
-export function friendlyEventText(
+/**
+ * The display name a "workbench.agent-joined" event carries, resolved the
+ * friendly way: the roster's own handle for that address when the roster
+ * knows it, else the address's own local part — never the raw address, and
+ * never the generic "An agent joined", which hides a name the event
+ * already carries. Undefined only when the event names nobody.
+ */
+function joinedAgentName(
   part: Part & { kind: "event" },
   participants: readonly ParticipantRecord[],
-): string {
+): string | undefined {
   const data =
     typeof part.data === "object" && part.data !== null
       ? (part.data as Record<string, unknown>)
@@ -590,22 +597,28 @@ export function friendlyEventText(
     data !== undefined && typeof data.address === "string"
       ? data.address
       : undefined;
-  // The participant record's own handle is the friendly, settings-held
-  // name (see `packages/chat/src/participants.ts`); when the roster
-  // hasn't caught up with this address yet, the address's own local
-  // part (CL-6594) is still a real identifier — never the generic "An
-  // agent joined", which hides a name the event already carries.
+  if (address === undefined) return undefined;
   const handle =
-    address !== undefined
-      ? (participants.find((participant) => participant.address === address)
-          ?.handle ?? localPartOf(address))
-      : undefined;
+    participants.find((participant) => participant.address === address)
+      ?.handle ?? localPartOf(address);
+  return displayNameFromHandle(handle);
+}
 
+export function friendlyEventText(
+  part: Part & { kind: "event" },
+  participants: readonly ParticipantRecord[],
+): string {
+  const data =
+    typeof part.data === "object" && part.data !== null
+      ? (part.data as Record<string, unknown>)
+      : undefined;
   switch (part.event) {
-    case "workbench.agent-joined":
-      return handle !== undefined
-        ? CHAT_STRINGS.eventAgentJoined(displayNameFromHandle(handle))
+    case "workbench.agent-joined": {
+      const name = joinedAgentName(part, participants);
+      return name !== undefined
+        ? CHAT_STRINGS.eventAgentJoined(name)
         : CHAT_STRINGS.eventAgentJoinedUnknown;
+    }
     case "workbench.membership-changed":
       return CHAT_STRINGS.eventMembershipChanged;
     case "workbench.settings-changed": {
@@ -658,10 +671,14 @@ function EventLine({
   part,
   createdAt,
   participants,
+  collapsedText,
 }: {
   part: Part & { kind: "event" };
   createdAt: string;
   participants: readonly ParticipantRecord[];
+  /** The one line that stands in for a whole run of consecutive joins —
+   * see `collapseAgentJoinRuns`. Undefined on every other event row. */
+  collapsedText?: string;
 }) {
   const data =
     typeof part.data === "object" && part.data !== null
@@ -677,7 +694,9 @@ function EventLine({
   return (
     <div className="chat-event-line">
       <span>
-        {connectedDisplayName !== undefined ? (
+        {collapsedText !== undefined ? (
+          collapsedText
+        ) : connectedDisplayName !== undefined ? (
           <>
             {CHAT_STRINGS.eventConnectionConnectedBeforePlugins(
               connectedDisplayName,
@@ -963,6 +982,81 @@ export function isSystemNoticeItem(item: MessageItem): boolean {
   return (
     item.parts.length > 0 && item.parts.every((part) => part.kind === "event")
   );
+}
+
+/**
+ * A message posted in the room's own voice rather than by any member —
+ * the `system@` sender the room's onboarding card arrives under. Such a
+ * row is never "own" for any viewer and never carries author chrome: it
+ * is the room talking, not a person.
+ */
+export function isSystemSenderItem(item: MessageItem): boolean {
+  return (
+    item.sender !== undefined && localPartOf(item.sender.address) === "system"
+  );
+}
+
+/** The display name a lone agent-joined row names, or undefined when the
+ * item is anything else. */
+function agentJoinName(
+  item: TimelineMessageItem,
+  participants: readonly ParticipantRecord[],
+): string | undefined {
+  if (item.parts.length !== 1) return undefined;
+  const part = item.parts[0];
+  if (
+    part === undefined ||
+    part.kind !== "event" ||
+    part.event !== "workbench.agent-joined"
+  ) {
+    return undefined;
+  }
+  return joinedAgentName(part, participants);
+}
+
+/**
+ * A room whose whole team arrives at once used to open on a stack of
+ * "X joined / Y joined / Z joined" — the first thing a person read was a
+ * membership log. Consecutive joins with nothing between them collapse
+ * into a single line naming everyone; joins separated by a real message
+ * stay their own rows, because there the sequence is the point.
+ *
+ * Returns the line to render on each run's first item, and the ids of the
+ * items that line already accounts for.
+ */
+export function collapseAgentJoinRuns(
+  items: readonly TimelineMessageItem[],
+  participants: readonly ParticipantRecord[],
+): {
+  readonly textByLeadId: ReadonlyMap<string, string>;
+  readonly absorbedIds: ReadonlySet<string>;
+} {
+  const textByLeadId = new Map<string, string>();
+  const absorbedIds = new Set<string>();
+  let index = 0;
+  while (index < items.length) {
+    const names: string[] = [];
+    let end = index;
+    while (end < items.length) {
+      const item = items[end];
+      if (item === undefined) break;
+      const name = agentJoinName(item, participants);
+      if (name === undefined) break;
+      names.push(name);
+      end += 1;
+    }
+    if (names.length > 1) {
+      const lead = items[index];
+      if (lead !== undefined) {
+        textByLeadId.set(lead.id, CHAT_STRINGS.eventAgentsJoined(names));
+        for (const absorbed of items.slice(index + 1, end)) {
+          absorbedIds.add(absorbed.id);
+        }
+      }
+    }
+    index = end > index ? end : index + 1;
+  }
+  return { textByLeadId, absorbedIds };
 }
 
 /**
@@ -1339,6 +1433,7 @@ function MessagePartsInner({
   currentUser,
   showDayDivider,
   showHeader,
+  collapsedJoinText,
   threadMeta,
   threadAffordanceMode = "reply",
   onOpenThread,
@@ -1367,6 +1462,9 @@ function MessagePartsInner({
   /** `false` when this message continues an unbroken run from the same
    * author as the item directly above it — see `isGroupedWithPrevious`. */
   readonly showHeader: boolean;
+  /** Set only on the first item of a collapsed run of consecutive agent
+   * joins — see `collapseAgentJoinRuns`. */
+  readonly collapsedJoinText?: string;
   readonly threadMeta?: ThreadAffordanceMeta | undefined;
   readonly threadAffordanceMode?: ThreadAffordanceMode;
   readonly onOpenThread?: (messageId: string) => void;
@@ -1421,6 +1519,7 @@ function MessagePartsInner({
     currentUser !== undefined &&
     item.sender !== undefined &&
     !isSystemNoticeItem(item) &&
+    !isSystemSenderItem(item) &&
     localPartOf(item.sender.address) === currentUser.principalId;
   const contextMenu = useContextMenuState();
   const menu = offersSocialChrome
@@ -1512,6 +1611,9 @@ function MessagePartsInner({
                   part={part}
                   createdAt={item.createdAt}
                   participants={participants}
+                  {...(collapsedJoinText !== undefined
+                    ? { collapsedText: collapsedJoinText }
+                    : {})}
                 />
               );
             }
@@ -1919,6 +2021,8 @@ export function WorkbenchTimeline({
     return () => observer.disconnect();
   }, []);
 
+  const joinRuns = collapseAgentJoinRuns(items, participants);
+
   if (items.length === 0) {
     // A freshly created agent chat answers before it finishes setting up
     // in the background: the agent participant streams in seconds later.
@@ -1965,6 +2069,7 @@ export function WorkbenchTimeline({
   return (
     <div className="chat-timeline" ref={containerRef} onScroll={handleScroll}>
       {items.map((item, index) => {
+        if (joinRuns.absorbedIds.has(item.id)) return null;
         const previous = index > 0 ? items[index - 1] : undefined;
         const showDayDivider =
           previous === undefined ||
@@ -1996,6 +2101,7 @@ export function WorkbenchTimeline({
           previous,
           showDayDivider,
         );
+        const collapsedJoinText = joinRuns.textByLeadId.get(item.id);
         return (
           <MessageParts
             key={key}
@@ -2005,6 +2111,7 @@ export function WorkbenchTimeline({
             currentUser={currentUser}
             showDayDivider={showDayDivider}
             showHeader={showHeader}
+            {...(collapsedJoinText !== undefined ? { collapsedJoinText } : {})}
             threadMeta={threadMetaByMessageId?.get(item.id)}
             threadAffordanceMode={threadAffordanceMode}
             {...(onOpenThread !== undefined ? { onOpenThread } : {})}
