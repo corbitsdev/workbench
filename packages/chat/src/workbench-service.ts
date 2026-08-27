@@ -393,14 +393,6 @@ export type CannedGreetingInput = {
   readonly agentName: string;
   /** The opener's display name, when the host can resolve one. */
   readonly senderName?: string;
-  /**
-   * The picked template's promise line (`WorkbenchTemplateManifest.promise`
-   * — see `@corbits/workflow-catalog`), when this chat was minted from
-   * one. Present, the opener names what the room is actually for
-   * instead of a generic hello; absent, `GREETING_VARIATIONS` picks the
-   * usual random opener.
-   */
-  readonly templatePromise?: string;
 };
 
 export type PostCannedGreetingInput = CannedGreetingInput & {
@@ -458,17 +450,6 @@ function greetingVariationIndex(workbenchId: string): number {
   return sum;
 }
 
-/** The template-flavored opener: names the room's actual job (the
- * manifest's own `promise` line) instead of a generic hello, and asks
- * for the one thing every template needs before it can start —
- * something connected. */
-function templateGreeting(who: string, agent: string, promise: string): string {
-  return (
-    `Hi${who}, I'm ${agent}. ${promise} Connect what I need and tell me ` +
-    "what to watch, and I'll take it from there."
-  );
-}
-
 export function cannedGreeting(input: CannedGreetingInput): string {
   // The agent states its own name here, verbatim — the exact spot
   // CL-6471's "I'm run_737a058d…" leaked from. Guarded at the source
@@ -479,9 +460,6 @@ export function cannedGreeting(input: CannedGreetingInput): string {
     input.senderName !== undefined && input.senderName !== ""
       ? ` ${input.senderName}`
       : "";
-  if (input.templatePromise !== undefined) {
-    return templateGreeting(who, input.agentName, input.templatePromise);
-  }
   const variation =
     GREETING_VARIATIONS[greetingVariationIndex(input.workbenchId)];
   if (variation === undefined) throw new Error("no greeting variations");

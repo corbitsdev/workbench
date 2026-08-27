@@ -2,8 +2,10 @@
 // connection completing in the browser settles every room that was waiting
 // on it — the pending entry clears, `chat.settings` fires so the card
 // flips, an event-only system notice lands on the timeline (CL-6741), and
-// the host agent is woken via `dispatchTurn` / `sendMail` without a new
-// timeline row authored as the signed-in user.
+// the agent that asked for the connector is woken via `dispatchTurn` /
+// `sendMail` without a new timeline row authored as the signed-in user. A
+// room matched only through the template's own pending key settles without
+// waking anyone.
 import { expect, test } from "bun:test";
 
 import { createInMemoryAgentTurnStore } from "../src/agent-turns";
@@ -262,7 +264,7 @@ test("matches a pending mcp-prefixed entry when the preset connects under its ba
   expectEventOnlySettleNotice(listed.items, "Notion");
 });
 
-test("settles a room whose GitHub card is pending under the code-review template's own key — a credential created out of band (not through that card's own submit) still reaches it", async () => {
+test("settles a room whose GitHub card is pending under the code-review template's own key — a credential created out of band (not through that card's own submit) still reaches it, and no agent is woken", async () => {
   const { store, roomMessages, published, platform, agentTurns, deps } =
     buildDeps();
   await seedTemplateWorkbench(store, "chan_template", ["github"]);
@@ -294,18 +296,58 @@ test("settles a room whose GitHub card is pending under the code-review template
   });
   expect(listed.items).toHaveLength(1);
   expectEventOnlySettleNotice(listed.items, "GitHub");
+  // The room's walkthrough was posted by the product, not asked for by an
+  // agent mid-turn: the notice comes from the system address, and the
+  // room's first agent participant is never dispatched a turn.
+  expect(listed.items[0]?.sender.address).toBe("system@chan_template");
 
-  expect(platform.sentMail).toHaveLength(1);
-  expect(platform.sentMail[0]?.workbenchId).toBe("ins_myra");
-  expect(platform.sentMail[0]?.fromWorkbenchId).toBe("chan_template");
-  expect(platform.sentMail[0]?.content.content).toContain("GitHub");
-
+  expect(platform.sentMail).toHaveLength(0);
   const turns = await agentTurns.listTurns({
     tenantId: TENANT.id,
     workbenchId: "chan_template",
   });
+  expect(turns).toHaveLength(0);
+});
+
+test("a room pending under both keys still wakes its host agent", async () => {
+  const { store, roomMessages, platform, agentTurns, deps } = buildDeps();
+  await store.createWorkbenchSettings({
+    tenantId: TENANT.id,
+    workbenchId: "chan_both",
+    settings: {
+      "chat/kind": "workbench",
+      "chat/participants": [
+        { address: HUMAN_ADDRESS, handle: "owner" },
+        { address: AGENT_ADDRESS, handle: "myra" },
+      ],
+      "connections/pending": ["github"],
+      "template/pendingConnections": ["github"],
+    },
+    updatedBy: "prn_owner",
+  });
+
+  await settleConnectedService(deps, {
+    tenantId: TENANT.id,
+    principalId: "prn_owner",
+    connectorId: "github",
+    displayName: "GitHub",
+  });
+
+  const settled = await store.getWorkbenchSettings(TENANT.id, "chan_both");
+  expect(settled?.settings["connections/pending"]).toEqual([]);
+  expect(settled?.settings["template/pendingConnections"]).toEqual([]);
+
+  const listed = await roomMessages.listMessages({
+    tenantId: TENANT.id,
+    workbenchId: "chan_both",
+  });
+  expect(listed.items[0]?.sender.address).toBe(AGENT_ADDRESS);
+  expect(platform.sentMail).toHaveLength(1);
+  const turns = await agentTurns.listTurns({
+    tenantId: TENANT.id,
+    workbenchId: "chan_both",
+  });
   expect(turns[0]?.agentAddress).toBe(AGENT_ADDRESS);
-  expect(turns[0]?.requestMessageIds).toEqual([]);
 });
 
 test("System / settle notices are not presented as the human's messages", async () => {

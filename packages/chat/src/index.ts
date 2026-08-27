@@ -19,6 +19,8 @@ export {
   StreamBlockData,
   QuestionBlockData,
   ConnectServiceBlockData,
+  OnboardingStepLabel,
+  WorkbenchOnboardingStep,
   parseBlock,
 } from "./blocks";
 export type { Block, BlockParseResult } from "./blocks";

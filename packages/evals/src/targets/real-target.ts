@@ -701,11 +701,7 @@ export async function bootMyraTarget(
         kind: "chat",
         definitionId: assistantDefinitionId,
         name: "New Workbench",
-        templatePromise: manifest.promise,
       };
-      if (manifest.requiredConnections.includes("github")) {
-        createBody["connectGithubRequiredFor"] = manifest.title;
-      }
       const createRes = await api(
         hub.baseUrl,
         "POST",

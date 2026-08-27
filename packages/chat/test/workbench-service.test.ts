@@ -127,38 +127,6 @@ describe("postCannedGreeting (CL-6126)", () => {
     },
   );
 
-  test("a template promise replaces the random opener with one naming the room's job", () => {
-    const greeting = cannedGreeting({
-      workbenchId: "chan_1",
-      agentName: "Myra",
-      senderName: "Ada",
-      templatePromise:
-        "Three reviewers read every pull request and post what they'd change.",
-    });
-    expect(greeting).toContain("Ada");
-    expect(greeting).toContain("Myra");
-    expect(greeting).toContain(
-      "Three reviewers read every pull request and post what they'd change.",
-    );
-  });
-
-  test("a template promise is deterministic across workbenches, unlike the random variations", () => {
-    const promise = "Three reviewers read every pull request.";
-    expect(
-      cannedGreeting({
-        workbenchId: "chan_1",
-        agentName: "Myra",
-        templatePromise: promise,
-      }),
-    ).toBe(
-      cannedGreeting({
-        workbenchId: "chan_2",
-        agentName: "Myra",
-        templatePromise: promise,
-      }),
-    );
-  });
-
   test("a post failure is swallowed, never thrown", async () => {
     const roomMessages = createInMemoryRoomMessageStore();
     roomMessages.insertMessage = async () => {

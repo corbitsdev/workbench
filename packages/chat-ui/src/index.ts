@@ -161,6 +161,7 @@ export {
   getWorkbenchSettings,
   patchWorkbenchSettings,
   getConnectGithubState,
+  postWorkbenchOnboardingStep,
   startReviewingGithubRepos,
   type ConnectGithubStateResponse,
   getBenchChatSettings,
@@ -179,6 +180,8 @@ export {
 export type {
   Workbench,
   CreateWorkbenchInput,
+  OnboardingStepLabel,
+  WorkbenchOnboardingStep,
   ParticipantRecord,
   MessageItem,
   MessagesResponse,
