@@ -711,9 +711,20 @@ export async function createHub(config: HubConfig) {
   );
   // See `./mcp-credential-bindings.ts`'s own doc.
   const mcpCredentialBindingsFor = createMcpCredentialBindingsFor(db);
-  // See `./pinned-package-credential-bindings.ts`'s own doc.
+  // Same owning check GET /connections uses — see
+  // `@workbench/connections`' `workflow-connection-routes.ts` and the
+  // `createWorkflowConnectionRoutes` wiring below. Not
+  // `listConnectedProviders` (catalog-only).
+  const isConnectorConnected = async (tenantId: string, connectorId: string) =>
+    (await resolveCredentialRequirement(
+      db,
+      tenantId,
+      { providerName: connectorId, source: "tenant" },
+      null,
+      null,
+    )) !== null;
   const pinnedPackageCredentialBindingsFor =
-    createPinnedPackageCredentialBindingsFor(db);
+    createPinnedPackageCredentialBindingsFor(isConnectorConnected);
   const sidecarRouter = createSidecarRouter({
     hubPublicKey,
     authenticateSidecar: createSidecarTokenAuthenticator({ db }),
@@ -2405,18 +2416,9 @@ export async function createHub(config: HubConfig) {
     "/api/workflow-connections",
     createWorkflowConnectionRoutes({
       authenticator: createWorkflowRunAuthenticator({ db }),
-      // The same resolution `buildCredentialDelivery` uses at agent-launch
-      // time to decide whether a tool actually gets a credential — so
-      // `list_connections` reports exactly what an agent could really use,
-      // for an inference provider and a tool connector alike (CL-6492).
-      isConnectorConnected: async (tenantId, connectorId) =>
-        (await resolveCredentialRequirement(
-          db,
-          tenantId,
-          { providerName: connectorId, source: "tenant" },
-          null,
-          null,
-        )) !== null,
+      // Same `isConnectorConnected` the pinned-package factory is wired
+      // with above (CL-6492).
+      isConnectorConnected,
       listMcpServers: (tenantId) => listMcpServerConnections(db, tenantId),
     }),
   );

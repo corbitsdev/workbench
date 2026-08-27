@@ -7,13 +7,18 @@
 // would throw `MissingCredentialError` on signup / first chat. This
 // factory emits a tenant binding only when a pin names a package a
 // `CONNECTOR_REGISTRY` entry `feedsTools` AND the tenant already has a
-// connected credential for that connector (`listConnectedProviders`).
-import type { DB } from "@intx/db";
+// connected credential for that connector (`isConnectorConnected`, the
+// same owning check `createWorkflowConnectionRoutes` uses — not
+// `@corbits/chat`'s catalog-only `listConnectedProviders`).
 import type { CredentialBinding } from "@intx/types";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
 import type { PinnedPackageCredentialBindingsFor } from "@corbits/folded-runs";
-import { listConnectedProviders } from "@corbits/chat";
 import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
+
+export type IsConnectorConnected = (
+  tenantId: string,
+  connectorId: string,
+) => Promise<boolean>;
 
 export function bindingsForConnectedPins(
   pins: readonly ToolPackagePin[],
@@ -39,10 +44,18 @@ export function bindingsForConnectedPins(
 }
 
 export function createPinnedPackageCredentialBindingsFor(
-  db: DB["db"],
+  isConnectorConnected: IsConnectorConnected,
 ): PinnedPackageCredentialBindingsFor {
   return async (tenantId, pins) => {
-    const connected = await listConnectedProviders(db, tenantId);
-    return bindingsForConnectedPins(pins, connected);
+    const pinNames = new Set(pins.map((pin) => pin.name));
+    if (pinNames.size === 0) return [];
+    const connectedConnectorIds: string[] = [];
+    for (const descriptor of Object.values(CONNECTOR_REGISTRY)) {
+      if (!descriptor.feedsTools.some((name) => pinNames.has(name))) continue;
+      if (await isConnectorConnected(tenantId, descriptor.id)) {
+        connectedConnectorIds.push(descriptor.id);
+      }
+    }
+    return bindingsForConnectedPins(pins, connectedConnectorIds);
   };
 }
