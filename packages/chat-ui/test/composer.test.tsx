@@ -275,6 +275,9 @@ describe("Composer keyboard hint", () => {
     expect(
       container?.querySelectorAll(".chat-composer-actions > button").length,
     ).toBe(2);
+    expect(
+      container?.querySelector(".chat-composer-row > textarea"),
+    ).toBe(textarea());
   });
 
   test("hides when the focused draft is cleared", async () => {
