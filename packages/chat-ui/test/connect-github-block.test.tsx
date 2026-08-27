@@ -249,6 +249,10 @@ describe("connect GitHub card — 2a disconnected", () => {
 
     expect(el.textContent).toContain("Bad token.");
     expect(el.querySelector("#connect-github-token")).not.toBeNull();
+    expect(
+      el.querySelector(".chat-block-connect-token-error")?.getAttribute("role"),
+    ).toBe("alert");
+    expect(field.getAttribute("aria-invalid")).toBe("true");
   });
 });
 
@@ -355,6 +359,11 @@ describe("connect GitHub card — 2b pick your repos", () => {
       button.textContent?.startsWith("Start reviewing"),
     ) as HTMLButtonElement;
     expect(start.textContent).toBe("Start reviewing 0 repos");
+    expect(start.disabled).toBe(true);
+    const skip = [...el.querySelectorAll("button")].find(
+      (button) => button.textContent === "skip for now",
+    ) as HTMLButtonElement;
+    expect(skip.disabled).toBe(false);
 
     const selectAll = [...el.querySelectorAll("button")].find(
       (button) => button.textContent === "Select all",
@@ -368,6 +377,7 @@ describe("connect GitHub card — 2b pick your repos", () => {
       button.textContent?.startsWith("Start reviewing"),
     ) as HTMLButtonElement;
     expect(startAfter.textContent).toBe("Start reviewing 6 repos");
+    expect(startAfter.disabled).toBe(false);
   });
 
   test("skip fires its own quiet callback, distinct from starting", async () => {
@@ -430,6 +440,27 @@ describe("connect GitHub card — accessibility", () => {
     }
     firstCheckbox.focus();
     expect(document.activeElement).toBe(firstCheckbox);
+  });
+
+  test("the current walkthrough step is marked aria-current=step and the scene body is a live region", async () => {
+    const el = await mount({
+      kind: "disconnected",
+      onConnect: () => undefined,
+      onSubmitAccessToken: () => Promise.resolve({ ok: true }),
+    });
+
+    const current = [...el.querySelectorAll(".chat-block-scene-step")].find(
+      (row) => row.getAttribute("data-state") === "current",
+    );
+    expect(current?.getAttribute("aria-current")).toBe("step");
+    expect(
+      [...el.querySelectorAll(".chat-block-scene-step")].filter(
+        (row) => row.getAttribute("aria-current") === "step",
+      ),
+    ).toHaveLength(1);
+    expect(
+      el.querySelector(".chat-block-scene-body")?.getAttribute("aria-live"),
+    ).toBe("polite");
   });
 
   test("the disconnected state's actions are real buttons, not divs", async () => {
