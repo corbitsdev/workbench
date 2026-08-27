@@ -5,6 +5,7 @@ import {
   createTask,
   DEFAULT_SLIDE_MAX_POLLS,
   DEFAULT_SLIDE_POLL_INTERVAL_MS,
+  extractOutputFiles,
   latestAgentStatus,
   listTaskMessages,
   manusRequest,
@@ -130,6 +131,69 @@ test("listTaskMessages GETs /v2/task.listMessages without an auth header", async
   );
   expect(captured.headers?.get("x-manus-api-key") ?? null).toBeNull();
   expect(listed.messages?.[0]?.status_update?.agent_status).toBe("stopped");
+});
+
+test("listTaskMessages parses ISO string timestamps and still extracts status and attachments", async () => {
+  const fetchImpl = (async () =>
+    new Response(
+      JSON.stringify({
+        ok: true,
+        task_id: "task_1",
+        messages: [
+          {
+            type: "status_update",
+            timestamp: "2026-08-26T12:00:00.000Z",
+            status_update: { agent_status: "stopped" },
+          },
+          {
+            type: "assistant_message",
+            timestamp: "2026-08-26T12:00:01.000Z",
+            assistant_message: {
+              content: "Here is the deck.",
+              attachments: [
+                {
+                  filename: "onboarding.pptx",
+                  url: "https://files.manus.ai/onboarding.pptx",
+                },
+              ],
+            },
+          },
+        ],
+      }),
+      { status: 200 },
+    )) as unknown as typeof fetch;
+
+  const listed = await listTaskMessages({ fetchImpl }, { task_id: "task_1" });
+  expect(listed.messages?.[0]?.timestamp).toBe("2026-08-26T12:00:00.000Z");
+  expect(latestAgentStatus(listed.messages)).toBe("stopped");
+  expect(extractOutputFiles(listed.messages)).toEqual([
+    {
+      filename: "onboarding.pptx",
+      url: "https://files.manus.ai/onboarding.pptx",
+    },
+  ]);
+});
+
+test("listTaskMessages parses numeric timestamps", async () => {
+  const fetchImpl = (async () =>
+    new Response(
+      JSON.stringify({
+        ok: true,
+        task_id: "task_1",
+        messages: [
+          {
+            type: "status_update",
+            timestamp: 1756224000,
+            status_update: { agent_status: "running" },
+          },
+        ],
+      }),
+      { status: 200 },
+    )) as unknown as typeof fetch;
+
+  const listed = await listTaskMessages({ fetchImpl }, { task_id: "task_1" });
+  expect(listed.messages?.[0]?.timestamp).toBe(1756224000);
+  expect(listed.messages?.[0]?.status_update?.agent_status).toBe("running");
 });
 
 test("maps a non-ok HTTP body with a Manus error envelope", async () => {
