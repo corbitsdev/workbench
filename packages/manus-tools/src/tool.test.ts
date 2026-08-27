@@ -254,6 +254,36 @@ test("task_create and task_send_msg expose skill and connector fields", () => {
   }
   expect(create?.properties["structured_output_schema"]?.type).toBe("object");
   expect(send?.properties["structured_output_schema"]).toBeUndefined();
+  expect(create?.properties["agent_profile"]?.description).toContain(
+    "manus-1.6-lite",
+  );
+  expect(create?.properties["agent_profile"]?.description).toMatch(/default/i);
+});
+
+test("task_create without agent_profile posts manus-1.6-lite", async () => {
+  const originalFetch = globalThis.fetch;
+  let createBody = "";
+  globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+    createBody = typeof init?.body === "string" ? init.body : "";
+    return new Response(JSON.stringify({ ok: true, task_id: "task_1" }), {
+      status: 200,
+    });
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = manusTools(fakeEnv(fakeCredentials("key")));
+    const result = await bundle.run(
+      {
+        id: "call_create_default_profile",
+        name: "task_create",
+        arguments: { content: "Hello" },
+      },
+      new AbortController().signal,
+    );
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(createBody).agent_profile).toBe("manus-1.6-lite");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("task_create omits skill fields unless the assistant passes ids", async () => {
@@ -279,6 +309,7 @@ test("task_create omits skill fields unless the assistant passes ids", async () 
     expect(omitted.isError).toBeUndefined();
     expect(JSON.parse(createBody)).toEqual({
       message: { content: [{ type: "text", text: "Hello" }] },
+      agent_profile: "manus-1.6-lite",
     });
 
     const present = await bundle.run(
@@ -306,6 +337,7 @@ test("task_create omits skill fields unless the assistant passes ids", async () 
         task_references: ["task_ref_1"],
       },
       structured_output_schema: { type: "object" },
+      agent_profile: "manus-1.6-lite",
     });
   } finally {
     globalThis.fetch = originalFetch;

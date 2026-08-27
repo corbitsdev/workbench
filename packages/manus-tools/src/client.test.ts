@@ -43,6 +43,7 @@ test("createTask posts to /v2/task.create and parses the ok envelope", async () 
   expect(captured.headers?.get("x-api-key")).toBeNull();
   expect(JSON.parse(captured.body)).toEqual({
     message: { content: [{ type: "text", text: "Make slides" }] },
+    agent_profile: "manus-1.6-lite",
   });
   expect(created.task_id).toBe("task_1");
   expect(created.task_url).toBe("https://manus.im/app/task_1");
@@ -91,6 +92,7 @@ test("createTask posts skill, connector, and schema fields only when set", async
       required: ["title"],
       additionalProperties: false,
     },
+    agent_profile: "manus-1.6-lite",
   });
 });
 
@@ -377,7 +379,7 @@ test("createSlideDeck forwards optional skill fields on create", async () => {
   expect(body.agent_profile).toBe("manus-1.6-lite");
 });
 
-test("createTask omits agent_profile unless the caller sets it", async () => {
+test("createTask defaults agent_profile to manus-1.6-lite when omitted", async () => {
   const captured: { body: string } = { body: "" };
   const fetchImpl = (async (_input: URL | string, init?: RequestInit) => {
     captured.body = typeof init?.body === "string" ? init.body : "";
@@ -389,7 +391,18 @@ test("createTask omits agent_profile unless the caller sets it", async () => {
   await createTask({ fetchImpl }, { content: "Hello" });
   expect(JSON.parse(captured.body)).toEqual({
     message: { content: [{ type: "text", text: "Hello" }] },
+    agent_profile: "manus-1.6-lite",
   });
+});
+
+test("createTask keeps a caller-supplied agent_profile", async () => {
+  const captured: { body: string } = { body: "" };
+  const fetchImpl = (async (_input: URL | string, init?: RequestInit) => {
+    captured.body = typeof init?.body === "string" ? init.body : "";
+    return new Response(JSON.stringify({ ok: true, task_id: "task_1" }), {
+      status: 200,
+    });
+  }) as unknown as typeof fetch;
 
   await createTask(
     { fetchImpl },
