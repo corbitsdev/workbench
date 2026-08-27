@@ -1,32 +1,30 @@
 // Every "create a workbench" affordance — the sidebar's "+", the command
-// palette's "New workbench", and the zero-workbench land-hop on `/`
-// (CL-6486, superseding CL-6138's silent auto-mint) — opens the template
-// picker (`pages/new-workbench-picker.tsx`, CL-6342) and calls
+// palette's "New workbench", and the zero-workbench land-hop on `/` —
+// opens the template picker (`pages/new-workbench-picker.tsx`) and calls
 // `createWorkbenchFromTemplate` below once a row is chosen. Blank `+`
 // mints an empty `kind: "workbench"` channel (no host, no definitionId).
-// Named templates mint that same empty channel, then invite existing
-// principals — including Myra — so the room is a multi-principal
-// channel, never a second agent DM. Explicitly defining a brand-new
+// A named workbench definition mints that same empty channel, then
+// instantiates what the definition describes — its agents, its block
+// workflows, its pending plugins — and runs the definition's own
+// onboarding walkthrough in the room. Explicitly defining a brand-new
 // agent, with its own name/purpose/model/skills chosen up front, stays
 // `CreateAgentPanel`'s job (Settings → Agents), unchanged.
 
-import { getLogger } from "@corbits/client-log";
 import type { QueryClient } from "@tanstack/react-query";
 import {
   createWorkbench,
-  getConnectGithubState,
   inviteAgent,
   partsForSend,
   patchWorkbenchSettings,
+  postWorkbenchOnboardingStep,
   sendMessage,
-  startReviewingGithubRepos,
   workbenchesQueryKeyPrefix,
-  type ConnectGithubRepo,
 } from "@corbits/chat-ui";
-import { listPluginsForTenant } from "@workbench/connections/plugins";
 import {
   instantiateWorkbenchTemplate,
   templateSettingsPatch,
+  type WorkbenchDefinition,
+  type WorkbenchOnboardingStep,
 } from "@corbits/workflow-catalog";
 
 import {
@@ -42,7 +40,6 @@ import {
 import { findMyraDefinition } from "./myra-workbench";
 import { workbenchPath } from "./workbench-path";
 
-const log = getLogger("web.instant-agent-create");
 import type { WorkbenchTemplateId } from "./workbench-templates";
 
 export { NEW_WORKBENCH_TITLE };
@@ -86,39 +83,57 @@ const SETUP_AGENT_MISSING_MESSAGE =
   "Your workbench is still finishing setup. Try again in a moment.";
 
 /**
- * Presents the connected org's repo list for the person to pick from once
- * the workbench exists — the create flow's own "select" half of CL-6386
- * ("connect in Plugins; select on new-workbench"). Resolving `null` means
- * "skip" (the person closed the picker without choosing); an empty array
- * is a legitimate "review nothing yet" choice, distinct from skipping.
+ * Raises the walkthrough's first card in the room. Only a
+ * `connect-plugin github` step has an in-room card today; the steps
+ * after it (`pick-github-repos`, `start-webhook-trigger`) are driven by
+ * that same card as the person works through it, so they need no client
+ * action here. The whole ordered walkthrough rides along in the card's
+ * body, so its step rail renders the definition's own copy.
  */
-export type PickGithubRepos = (args: {
-  readonly orgName: string;
-  readonly repos: readonly ConnectGithubRepo[];
-  readonly selectedRepoIds: readonly string[];
-}) => Promise<readonly string[] | null>;
+async function postOnboardingWalkthrough(
+  tenantId: string,
+  workbenchId: string,
+  definition: WorkbenchDefinition,
+  steps: readonly WorkbenchOnboardingStep[],
+): Promise<void> {
+  const labels = steps.map(({ title, why }) => ({ title, why }));
+  for (const step of steps) {
+    if (step.kind !== "connect-plugin") continue;
+    if (step.connectorId !== "github") {
+      throw new Error(
+        `workbench template "${definition.id}" asks to connect ` +
+          `"${step.connectorId}", which has no in-room onboarding card yet`,
+      );
+    }
+    await postWorkbenchOnboardingStep(tenantId, workbenchId, {
+      kind: "connect-github",
+      requiredForTemplate: definition.title,
+      promise: definition.promise,
+      steps: labels,
+    });
+  }
+}
 
 /**
- * The template picker's "Create workbench" action (CL-6344 / CL-6982):
- * mints an empty `kind: "workbench"` channel with no host and no
- * `definitionId`. A named template (code-review, due-diligence, GTM)
- * still mints that empty channel, then instantiates its roster —
- * existing principals, including Myra, are invited after mint rather
- * than skipped as "already hosted." Talking to an agent is clicking
- * that agent (find-or-reopen its one DM). This function is the create
- * verb for a room, not a clone of Myra.
+ * The template picker's "Create workbench" action: mints an empty
+ * `kind: "workbench"` channel with no host and no `definitionId`, then
+ * instantiates the picked definition into it — its agents (existing
+ * principals invited after mint, new ones created first), its block
+ * workflows, its pending plugins — and posts the first step of the
+ * definition's onboarding walkthrough as a card in the room. Talking to
+ * an agent is clicking that agent (find-or-reopen its one DM); this
+ * function is the create verb for a room.
  *
- * Setup still has to have seeded the default assistant definition; if
- * it hasn't, we fail with `WorkbenchPreconditionError` rather than
- * minting a hostless room that then can't invite anyone. A template id
- * with no manifest yet (`blank`, "Just start talking") mints a plain
- * untagged channel under the generic `NEW_WORKBENCH_TITLE`. When
- * `pickGithubRepos` is supplied and GitHub is already connected for
- * this tenant, this also drives CL-6386's "select on new-workbench"
- * step — see `PickGithubRepos`'s own doc.
+ * The bench has to be past setup — its default assistant definition
+ * deployed — before a room can invite anyone into it, so a bench that
+ * isn't fails with `WorkbenchPreconditionError` rather than minting a
+ * room nobody can join. That definition is the readiness gate only: no
+ * definition names it as a host, and none invites it. A template id
+ * with no definition (`blank`, "Just start talking") mints a plain
+ * untagged channel under the generic `NEW_WORKBENCH_TITLE`.
  *
- * `queryClient` invalidates the workbenches list once every template
- * participant has been invited (CL-6594) — `ChatWorkspace`'s own
+ * `queryClient` invalidates the workbenches list once every agent the
+ * definition names has been invited — `ChatWorkspace`'s own
  * in-room "Invite agent" dialog does the same
  * (`workbenchesQueryKeyPrefix`, `chat-workspace.tsx`'s
  * `refreshWorkbenchLists`) so the room the invite landed in never
@@ -127,12 +142,11 @@ export type PickGithubRepos = (args: {
  * holding a `workbenches` query cached from before the last invite
  * resolved.
  *
- * `firstMessage`, when given (CL-6628's prompt box), is sent as the
- * signed-in person's own opening message once the room and its
- * template participants exist, so it lands after the setup/template
- * greeting rather than racing it — Myra reads the room's actual intent
- * as the next line, not the first. For a blank / ad-hoc mint (CL-6656)
- * that same text also renames the room off `NEW_WORKBENCH_TITLE` via
+ * `firstMessage`, when given (the picker's prompt box), is sent as the
+ * signed-in person's own opening message once the room and the
+ * definition's agents exist, so it lands after the onboarding card
+ * rather than racing it. For a blank / ad-hoc mint that same text also
+ * renames the room off `NEW_WORKBENCH_TITLE` via
  * `patchWorkbenchSettings` (`chat/name`), matching the sidebar rename
  * path; prefab titles are left alone.
  */
@@ -141,7 +155,6 @@ export async function createWorkbenchFromTemplate(
   templateId: WorkbenchTemplateId,
   navigate: (to: string) => void,
   queryClient: QueryClient,
-  pickGithubRepos?: PickGithubRepos,
   firstMessage?: string,
 ): Promise<void> {
   const definitions = await listAgentDefinitions(tenantId);
@@ -152,61 +165,31 @@ export async function createWorkbenchFromTemplate(
       "setup-agent-missing",
     );
   }
-  // The manifest comes from the bench library (CL-6344), never from a
-  // hardcoded catalog import; reading it is what seeds the shelf
-  // (CL-6458). `blank` is the one id with no manifest by design; any
+  // The definition comes from the bench library, never from a
+  // hardcoded catalog import; reading it is what seeds the shelf.
+  // `blank` is the one id with no definition by design; any
   // other id resolving to nothing means this build ships no such
   // template — fail loud rather than mint a workbench missing its
   // agents. The picker only offers ids the library listed, so this is
   // the race-loser's message, not the everyday path.
-  const manifest =
+  const definition =
     templateId === "blank"
       ? undefined
       : ((await fetchWorkbenchTemplateManifest(tenantId, templateId)) ??
         undefined);
-  if (templateId !== "blank" && manifest === undefined) {
+  if (templateId !== "blank" && definition === undefined) {
     throw new WorkbenchPreconditionError(
       `A ${templateId} workbench isn't available here yet.`,
       "template-unavailable",
     );
   }
-  const requiresGithub =
-    manifest?.requiredConnections.includes("github") ?? false;
-
-  // GitHub already connected (established from the Plugins page, CL-6386)
-  // means this create flow can skip the in-room connect card entirely and
-  // go straight to repo selection once the workbench exists. Not yet
-  // connected keeps today's exact behaviour: the in-room card stays the
-  // just-in-time fallback.
-  const githubAlreadyConnected =
-    requiresGithub && pickGithubRepos !== undefined
-      ? (await listPluginsForTenant(tenantId)).some(
-          (plugin) =>
-            plugin.descriptor.id === "github" && plugin.status === "connected",
-        )
-      : false;
-
   const workbench = await createWorkbench(tenantId, {
     kind: "workbench",
-    name: manifest?.title ?? NEW_WORKBENCH_TITLE,
+    name: definition?.title ?? NEW_WORKBENCH_TITLE,
   });
 
-  if (githubAlreadyConnected && pickGithubRepos !== undefined) {
-    const state = await getConnectGithubState(tenantId, workbench.id);
-    if (state.kind === "connected" && state.repos.length > 0) {
-      const repoIds = await pickGithubRepos({
-        orgName: state.orgName,
-        repos: state.repos,
-        selectedRepoIds: state.selectedRepoIds,
-      });
-      if (repoIds !== null && repoIds.length > 0) {
-        await startReviewingGithubRepos(tenantId, workbench.id, repoIds);
-      }
-    }
-  }
-
-  if (manifest !== undefined) {
-    const result = await instantiateWorkbenchTemplate(manifest, {
+  if (definition !== undefined) {
+    await instantiateWorkbenchTemplate(definition, {
       async listAgentHandles() {
         const current = await listAgentDefinitions(tenantId);
         return current.map((definition) => ({
@@ -228,16 +211,18 @@ export async function createWorkbenchFromTemplate(
         await patchWorkbenchSettings(
           tenantId,
           workbench.id,
-          templateSettingsPatch(manifest.id, pendingConnections),
+          templateSettingsPatch(definition.id, pendingConnections),
+        );
+      },
+      async beginOnboarding(steps) {
+        await postOnboardingWalkthrough(
+          tenantId,
+          workbench.id,
+          definition,
+          steps,
         );
       },
     });
-    // Honest setup-gap notes, not silent stubs — see
-    // `instantiateWorkbenchTemplate`'s own doc on what these mean and why
-    // no live webhook trigger exists yet.
-    for (const todo of result.webhookTriggerTodos) {
-      log.error(todo);
-    }
     await queryClient.invalidateQueries({
       queryKey: workbenchesQueryKeyPrefix(tenantId),
     });
@@ -245,10 +230,10 @@ export async function createWorkbenchFromTemplate(
 
   if (firstMessage !== undefined && firstMessage.trim() !== "") {
     await sendMessage(tenantId, workbench.id, partsForSend(firstMessage, []));
-    // CL-6656: blank / ad-hoc mints stay "New Workbench" until named. When the
+    // Blank / ad-hoc mints stay "New Workbench" until named. When the
     // prompt box already supplied the opening message, rename via the same
     // `chat/name` settings PATCH the sidebar rename uses — prefab titles
-    // (`manifest?.title`) are left alone by `autoNameFromFirstMessage`.
+    // (`definition?.title`) are left alone by `autoNameFromFirstMessage`.
     const autoTitle = autoNameFromFirstMessage(workbench.title, firstMessage);
     if (autoTitle !== undefined) {
       await patchWorkbenchSettings(tenantId, workbench.id, {

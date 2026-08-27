@@ -3,14 +3,14 @@
 // from a hardcoded `@corbits/workflow-catalog` import. The read itself
 // is what converges the shelf (CL-6458), so these routes answer for a
 // bench of any age. The wire shape is the library's `{id, content}`
-// entry; the content string re-enters through the catalog's own manifest
-// schema, so a corrupt or stale library row fails loud here rather than
-// half-instantiating a workbench.
+// entry; the content string re-enters through the catalog's own
+// `WorkbenchDefinition` schema, so a corrupt or stale library row fails
+// loud here rather than half-instantiating a workbench.
 
 import { type } from "arktype";
 import {
-  parseWorkbenchTemplateManifest,
-  type WorkbenchTemplateManifest,
+  parseWorkbenchDefinition,
+  type WorkbenchDefinition,
 } from "@corbits/workflow-catalog";
 import { ApiQueryError } from "@corbits/api-query";
 
@@ -79,7 +79,7 @@ export async function deployWorkbenchTemplateBlock(
 export async function fetchWorkbenchTemplateManifest(
   tenantId: string,
   templateId: string,
-): Promise<WorkbenchTemplateManifest | null> {
+): Promise<WorkbenchDefinition | null> {
   const path = `/api/tenants/${tenantId}/library/templates/${templateId}`;
   let response: Response;
   try {
@@ -109,5 +109,5 @@ export async function fetchWorkbenchTemplateManifest(
       path,
     );
   }
-  return parseWorkbenchTemplateManifest(entry.content);
+  return parseWorkbenchDefinition(entry.content);
 }

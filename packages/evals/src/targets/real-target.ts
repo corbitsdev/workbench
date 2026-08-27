@@ -31,7 +31,7 @@ import { completeCredentialSetup } from "@workbench/onboarding";
 import { OLLAMA_PLACEHOLDER_SECRET } from "@workbench/hub-client";
 import {
   instantiateWorkbenchTemplate,
-  parseWorkbenchTemplateManifest,
+  parseWorkbenchDefinition,
   templateSettingsPatch,
 } from "@corbits/workflow-catalog";
 import {
@@ -679,7 +679,7 @@ export async function bootMyraTarget(
 
     // The REAL install path (#140): the exact surfaces
     // `apps/web/src/instant-agent-create.ts`'s
-    // `createWorkbenchFromTemplate` drives — seeded-library manifest
+    // `createWorkbenchFromTemplate` drives — seeded-library definition
     // read, workbench mint, `instantiateWorkbenchTemplate` over
     // HTTP-bound ports — never an eval-only instantiation mechanism.
     // The library read is also what seeds this scratch tenant's shelf
@@ -693,14 +693,15 @@ export async function bootMyraTarget(
         cookies,
       );
       expectStatus(`fetch seeded template "${templateId}"`, entryRes, 200);
-      const manifest = parseWorkbenchTemplateManifest(
+      const definition = parseWorkbenchDefinition(
         stringField(entryRes.data, "content", `template "${templateId}"`),
       );
 
+      // Hostless, exactly as the web create flow mints it: a template
+      // room has no `definitionId` and nobody is hosted in it.
       const createBody: Record<string, unknown> = {
-        kind: "chat",
-        definitionId: assistantDefinitionId,
-        name: "New Workbench",
+        kind: "workbench",
+        name: definition.title,
       };
       const createRes = await api(
         hub.baseUrl,
@@ -716,7 +717,7 @@ export async function bootMyraTarget(
         `create workbench from "${templateId}"`,
       );
 
-      const result = await instantiateWorkbenchTemplate(manifest, {
+      const result = await instantiateWorkbenchTemplate(definition, {
         async listAgentHandles() {
           const res = await api(
             hub.baseUrl,
@@ -787,21 +788,38 @@ export async function bootMyraTarget(
             hub.baseUrl,
             "PATCH",
             `/api/tenants/${seeded.tenantId}/chat/workbenches/${workbenchId}/settings`,
-            templateSettingsPatch(manifest.id, pendingConnections),
+            templateSettingsPatch(definition.id, pendingConnections),
             cookies,
           );
           expectStatus("record pending connections", res, 200);
         },
+        async beginOnboarding(steps) {
+          for (const step of steps) {
+            if (step.kind !== "connect-plugin") continue;
+            const res = await api(
+              hub.baseUrl,
+              "POST",
+              `/api/tenants/${seeded.tenantId}/chat/workbenches/${workbenchId}/onboarding`,
+              {
+                kind: "connect-github",
+                requiredForTemplate: definition.title,
+                promise: definition.promise,
+                steps: steps.map(({ title, why }) => ({ title, why })),
+              },
+              cookies,
+            );
+            expectStatus("post the onboarding walkthrough card", res, 201);
+          }
+        },
       });
 
-      // The repo-selection half of the create flow (CL-6386's "select on
-      // new-workbench", the same sequence `createWorkbenchFromTemplate`
-      // drives when GitHub is already connected): read the connect
-      // card's live state, then start reviewing every listed repo —
+      // The rest of the definition's onboarding walkthrough, driven
+      // here rather than by a person clicking the in-room card: read the
+      // connect card's live state, then start reviewing every listed repo —
       // which mints the per-repo grant and `webhook_trigger` row the
       // fire-webhook step needs.
       let startedTriggerCount = 0;
-      if (manifest.requiredConnections.includes("github")) {
+      if (definition.plugins.required.includes("github")) {
         const stateRes = await api(
           hub.baseUrl,
           "GET",
