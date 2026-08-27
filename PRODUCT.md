@@ -92,16 +92,23 @@ put there.
 Code review is the product scene for the definition-driven path:
 minting the Code review workbench opens an empty room with no host —
 its Workbench Definition names three reviewers and no Myra. The room
-itself posts the onboarding card: Connect GitHub with a personal access
-token (the shipped path today). The same in-room card reads live
-connection state and flips in place to pick repositories — already
-connected GitHub is that card, not a `/new` dialog — then Start
-reviewing. Once reviewing starts, each reviewer posts its own canned
-introduction under its own address, in roster order — the first thing
-a person reads is who is reviewing and what for, never a join dump. A
-GitHub App / hosted OAuth welcome mat is future work (CL-6343), not
-current product. Inviting teammates into the room is a later slice,
-not part of this first minute.
+itself posts the onboarding card as a scene, not a member's message:
+no author row, the job as its title, the promise beneath, and the
+walkthrough's steps listed with the current one marked in words. A
+walkthrough with no steps hides the step list rather than drawing an
+empty one. Connect GitHub with a personal access token (the shipped
+path today). The same in-room card reads live connection state and
+flips in place to pick repositories — already connected GitHub is
+that card, not a `/new` dialog — then Start reviewing. Once repos are
+recorded the same card shows what it is reviewing, with a change-repos
+link back to the picker — a reviewing card never still says Connect.
+Once reviewing starts, each reviewer posts its own canned introduction
+under its own address, in roster order — the first thing a person
+reads is who is reviewing and what for, never a join dump. Consecutive
+agent-joined rows collapse into one line naming everyone. A GitHub App
+/ hosted OAuth welcome mat is future work (CL-6343), not current
+product. Inviting teammates into the room is a later slice, not part
+of this first minute.
 
 Settle for a template-key-only wait posts from a system sender and
 does not wake an agent. Generic `connections/pending` still wakes the
