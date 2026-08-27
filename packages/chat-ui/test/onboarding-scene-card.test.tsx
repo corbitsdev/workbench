@@ -5,10 +5,11 @@
 // every state, and the walkthrough marker each live connect state puts on
 // it.
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
+import * as errorSink from "@corbits/error-sink";
 
 import type { MessageItem } from "../src/api";
 import type {
@@ -40,6 +41,7 @@ afterEach(() => {
   container?.remove();
   container = null;
   root = null;
+  mock.restore();
 });
 
 async function mount(element: React.ReactElement) {
@@ -162,6 +164,23 @@ describe("the room's onboarding card is a scene, not a member's message", () => 
     expect(el.querySelector(".chat-block-scene-why")).toBeNull();
   });
 
+  test("an empty steps list does not render the step list", async () => {
+    const el = await mount(
+      <WorkbenchTimeline
+        items={onboardingCardItem({
+          requiredForTemplate: "Code review",
+          state: "disconnected",
+          promise: PROMISE,
+          steps: [],
+        })}
+      />,
+    );
+    expect(el.querySelector(".chat-block-scene-promise")?.textContent).toBe(
+      PROMISE,
+    );
+    expect(el.querySelector(".chat-block-scene-steps")).toBeNull();
+  });
+
   test("a walkthrough of some other length still shows its labels, but marks no step", async () => {
     const el = await mount(
       <WorkbenchTimeline
@@ -256,5 +275,53 @@ describe("the walkthrough marker follows the live connect state", () => {
     expect(el.querySelector(".chat-block-title")?.textContent).toBe(
       "Code review",
     );
+    expect(currentStepTitle(el)).toBe("Pick your repos");
+    expect(el.querySelector(".chat-block-scene-why")?.textContent).toBe(
+      STEPS[1]?.why,
+    );
+  });
+
+  test("a rejected start reviewing after change repos keeps the picker and reports the error", async () => {
+    const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
+    const actions: ConnectGithubActions = {
+      ...fixedStateActions({
+        kind: "connected",
+        orgName: "acme",
+        repos: REPOS,
+        selectedRepoIds: ["1"],
+      }),
+      startReviewing: () => Promise.reject(new Error("could not start")),
+    };
+    const el = await mount(
+      <ConnectGithubBlockContainer
+        data={DATA}
+        messageId="m_step_reject"
+        actions={actions}
+      />,
+    );
+    const changeRepos = [...el.querySelectorAll("button")].find(
+      (button) => button.textContent === "change repos",
+    );
+    await act(async () => {
+      changeRepos?.click();
+    });
+    expect(el.textContent).toContain("2 repos found · 1 picked");
+
+    const start = [...el.querySelectorAll("button")].find((button) =>
+      button.textContent?.startsWith("Start reviewing"),
+    );
+    await act(async () => {
+      start?.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(el.querySelector(".chat-block-scene-reviewing")).toBeNull();
+    expect(el.textContent).toContain("2 repos found · 1 picked");
+    expect(currentStepTitle(el)).toBe("Pick your repos");
+    expect(report).toHaveBeenCalled();
+    expect(report.mock.calls[0]?.[1]).toMatchObject({
+      operation: "connect-github.startReviewing",
+    });
   });
 });
