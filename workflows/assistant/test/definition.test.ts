@@ -7,7 +7,6 @@ import { expect, test } from "bun:test";
 import type { StepPrimitive, WorkflowDefinition } from "@intx/workflow";
 
 import {
-  ASSISTANT_CREDENTIAL_BINDINGS,
   ASSISTANT_STEP_ID,
   ASSISTANT_SYSTEM_PROMPT,
   ASSISTANT_TOOL_PACKAGE_PINS,
@@ -151,17 +150,12 @@ test("the prompt tells Myra to discover an MCP server's tools before calling one
   expect(ASSISTANT_SYSTEM_PROMPT).toContain("never guess a tool name");
 });
 
-test("the workflow binds the Manus credential handle to a tenant-owned provider", () => {
+test("the workflow pins manus-tools and does not require a Manus credential binding", () => {
   const definition = buildAssistantWorkflow(INPUT);
-  expect(definition.credentialBindings).toEqual(ASSISTANT_CREDENTIAL_BINDINGS);
-  expect(ASSISTANT_CREDENTIAL_BINDINGS).toEqual([
-    {
-      package: "@corbits/manus-tools",
-      handle: "manus",
-      provider: "manus",
-      locator: "tenant",
-    },
-  ]);
+  expect(ASSISTANT_TOOL_PACKAGE_PINS.map((pin) => pin.name)).toContain(
+    "@corbits/manus-tools",
+  );
+  expect(definition.credentialBindings ?? []).toEqual([]);
 });
 
 test("the definition survives the workflow-asset JSON round-trip", () => {
