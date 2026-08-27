@@ -402,7 +402,7 @@ export type CreateSlideDeckParams = CreateTaskParams & {
 function isManusTaskNotFoundError(error: unknown): boolean {
   return (
     error instanceof Error &&
-    error.message.includes("Manus request failed: not_found: Task not found")
+    error.message.toLowerCase().includes("manus request failed: not_found")
   );
 }
 
