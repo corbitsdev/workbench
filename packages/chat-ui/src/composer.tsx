@@ -833,17 +833,6 @@ export const Composer = forwardRef<
           tabIndex={-1}
           aria-hidden="true"
         />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="chat-composer-icon-button"
-          disabled={!canAttach}
-          onClick={() => fileInputRef.current?.click()}
-          aria-label={CHAT_STRINGS.composerAttach}
-        >
-          <Paperclip />
-        </Button>
         <textarea
           ref={textareaRef}
           className="chat-composer-input"
@@ -861,38 +850,49 @@ export const Composer = forwardRef<
           onBlur={() => setFocused(false)}
           rows={1}
         />
-        <Button
-          type="button"
-          variant={sendVisualState === "empty" ? "ghost" : "primary"}
-          size="icon"
-          className="chat-composer-icon-button"
-          disabled={!canSend}
-          data-send-state={sendVisualState}
-          onClick={() => void send()}
-          aria-label={
-            sending ? CHAT_STRINGS.composerSending : CHAT_STRINGS.composerSend
-          }
-          title={
-            sending ? CHAT_STRINGS.composerSending : CHAT_STRINGS.composerSend
-          }
-        >
-          {sendVisualState === "sending" ? (
-            <CircleNotch
-              className="chat-composer-send-spinner"
-              aria-hidden="true"
-            />
-          ) : (
-            <PaperPlaneRight aria-hidden="true" />
-          )}
-        </Button>
-      </div>
-      {/* Always mounted so its reserved height never toggles the composer's
-       * box size — only opacity/visibility change (CL-6250). */}
-      <div
-        className="chat-composer-hint"
-        data-visible={focused && value.trim().length > 0}
-      >
-        {CHAT_STRINGS.composerKeyboardHint}
+        <div className="chat-composer-actions">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="chat-composer-icon-button"
+            disabled={!canAttach}
+            onClick={() => fileInputRef.current?.click()}
+            aria-label={CHAT_STRINGS.composerAttach}
+          >
+            <Paperclip />
+          </Button>
+          <span
+            className="chat-composer-keyboard-hint"
+            data-visible={focused && value.trim().length > 0}
+          >
+            {CHAT_STRINGS.composerKeyboardHint}
+          </span>
+          <Button
+            type="button"
+            variant={sendVisualState === "empty" ? "ghost" : "primary"}
+            size="sm"
+            className="chat-composer-icon-button"
+            disabled={!canSend}
+            data-send-state={sendVisualState}
+            onClick={() => void send()}
+            aria-label={
+              sending ? CHAT_STRINGS.composerSending : CHAT_STRINGS.composerSend
+            }
+            title={
+              sending ? CHAT_STRINGS.composerSending : CHAT_STRINGS.composerSend
+            }
+          >
+            {sendVisualState === "sending" ? (
+              <CircleNotch
+                className="chat-composer-send-spinner"
+                aria-hidden="true"
+              />
+            ) : (
+              <PaperPlaneRight aria-hidden="true" />
+            )}
+          </Button>
+        </div>
       </div>
       <div
         className="chat-composer-status"
