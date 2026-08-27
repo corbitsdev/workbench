@@ -450,3 +450,110 @@ test("createSlideDeck keeps a caller-supplied agent_profile", async () => {
   );
   expect(JSON.parse(createBody).agent_profile).toBe("manus-1.6-max");
 });
+
+test("createSlideDeck retries listMessages not_found then succeeds when the task is readable", async () => {
+  let listCalls = 0;
+  const fetchImpl = (async (input: URL | string) => {
+    const url = String(input);
+    if (url.includes("/v2/task.create")) {
+      return new Response(JSON.stringify({ ok: true, task_id: "task_1" }), {
+        status: 200,
+      });
+    }
+    if (url.includes("/v2/task.listMessages")) {
+      listCalls += 1;
+      if (listCalls === 1) {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: { code: "not_found", message: "Task not found" },
+          }),
+          { status: 404 },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          task_id: "task_1",
+          messages: [
+            {
+              type: "status_update",
+              status_update: { agent_status: "stopped" },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    }
+    return new Response("unexpected", { status: 500 });
+  }) as unknown as typeof fetch;
+
+  const result = await createSlideDeck(
+    { fetchImpl },
+    { content: "Onboarding", pollIntervalMs: 0, maxPolls: 3 },
+  );
+  expect(result.agent_status).toBe("stopped");
+  expect(listCalls).toBe(2);
+});
+
+test("createSlideDeck still throws unrelated listMessages errors", async () => {
+  let listCalls = 0;
+  const fetchImpl = (async (input: URL | string) => {
+    const url = String(input);
+    if (url.includes("/v2/task.create")) {
+      return new Response(JSON.stringify({ ok: true, task_id: "task_1" }), {
+        status: 200,
+      });
+    }
+    if (url.includes("/v2/task.listMessages")) {
+      listCalls += 1;
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: { code: "permission_denied", message: "bad key" },
+        }),
+        { status: 401 },
+      );
+    }
+    return new Response("unexpected", { status: 500 });
+  }) as unknown as typeof fetch;
+
+  await expect(
+    createSlideDeck(
+      { fetchImpl },
+      { content: "Onboarding", pollIntervalMs: 0, maxPolls: 3 },
+    ),
+  ).rejects.toThrow(/permission_denied: bad key/);
+  expect(listCalls).toBe(1);
+});
+
+test("createSlideDeck throws when listMessages stays not_found through the poll budget", async () => {
+  let listCalls = 0;
+  const fetchImpl = (async (input: URL | string) => {
+    const url = String(input);
+    if (url.includes("/v2/task.create")) {
+      return new Response(JSON.stringify({ ok: true, task_id: "task_1" }), {
+        status: 200,
+      });
+    }
+    if (url.includes("/v2/task.listMessages")) {
+      listCalls += 1;
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: { code: "not_found", message: "Task not found" },
+        }),
+        { status: 404 },
+      );
+    }
+    return new Response("unexpected", { status: 500 });
+  }) as unknown as typeof fetch;
+
+  await expect(
+    createSlideDeck(
+      { fetchImpl },
+      { content: "Onboarding", pollIntervalMs: 0, maxPolls: 2 },
+    ),
+  ).rejects.toThrow(/did not stop in time|not_found: Task not found/);
+  expect(listCalls).toBe(2);
+});
