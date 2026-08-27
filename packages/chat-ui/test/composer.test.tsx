@@ -610,7 +610,9 @@ describe("ComposerHandle.setText", () => {
     });
     await settle();
     await settle();
-    expect(container.querySelector(".chat-composer-attachments")).not.toBeNull();
+    expect(
+      container.querySelector(".chat-composer-attachments"),
+    ).not.toBeNull();
 
     await act(async () => {
       ref.current?.setText("copied prompt");
