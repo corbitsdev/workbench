@@ -10,6 +10,7 @@ import {
   buildTaskMessage,
   createSlideDeck,
   createTask,
+  getTaskDetail,
   listTaskMessages,
   manusRequest,
   type ManusClientConfig,
@@ -523,6 +524,22 @@ async function runEndpoint(
         ...optionalCreateFields(call),
       });
       return { callId: call.id, content: JSON.stringify(created) };
+    } catch (err) {
+      return errorResult(call.id, err);
+    }
+  }
+  if (spec.name === "task_detail") {
+    const taskId = stringArg(call, "task_id");
+    if (taskId === undefined || taskId === "") {
+      return {
+        callId: call.id,
+        content: "task_detail requires a non-empty task_id argument",
+        isError: true,
+      };
+    }
+    try {
+      const detail = await getTaskDetail(asClientConfig(credential), taskId);
+      return { callId: call.id, content: JSON.stringify(detail) };
     } catch (err) {
       return errorResult(call.id, err);
     }

@@ -71,6 +71,33 @@ export const CreateTaskResponse = type({
 });
 export type CreateTaskResponse = typeof CreateTaskResponse.infer;
 
+const TaskCreatorAPIKey = type({
+  id: "string",
+  name: "string",
+});
+
+const TaskDetail = type({
+  id: "string",
+  status: "'running' | 'stopped' | 'waiting' | 'error'",
+  "created_at?": "number",
+  "updated_at?": "number",
+  "task_type?": "'standard' | 'project' | 'agent_subtask'",
+  "share_visibility?": "'private' | 'team' | 'public'",
+  "title?": "string",
+  "credit_usage?": "number",
+  "task_url?": "string",
+  "created_by_api_key?": TaskCreatorAPIKey.or("null"),
+  "agent_profile?": "'manus-1.6' | 'manus-1.6-lite' | 'manus-1.6-max'",
+});
+export type TaskDetail = typeof TaskDetail.infer;
+
+export const TaskDetailResponse = type({
+  ok: "true",
+  "request_id?": "string",
+  task: TaskDetail,
+});
+export type TaskDetailResponse = typeof TaskDetailResponse.infer;
+
 export const ListMessagesResponse = type({
   ok: "true",
   "request_id?": "string",
@@ -288,6 +315,24 @@ export async function createTask(
   if (parsed instanceof type.errors) {
     throw new Error(
       `Manus create-task response did not match the expected shape: ${parsed.summary}`,
+    );
+  }
+  return parsed;
+}
+
+export async function getTaskDetail(
+  config: ManusClientConfig,
+  taskId: string,
+): Promise<TaskDetailResponse> {
+  const raw = await manusRequest(config, {
+    method: "GET",
+    path: "/v2/task.detail",
+    params: { task_id: taskId },
+  });
+  const parsed = TaskDetailResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Manus task-detail response did not match the expected shape: ${parsed.summary}`,
     );
   }
   return parsed;
