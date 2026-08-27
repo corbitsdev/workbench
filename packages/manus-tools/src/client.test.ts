@@ -182,6 +182,7 @@ test("createSlideDeck treats mixed [stopped, running] desc as terminal", async (
             },
           ],
         },
+        agent_profile: "manus-1.6-lite",
       });
       return new Response(JSON.stringify({ ok: true, task_id: "task_1" }), {
         status: 200,
@@ -365,6 +366,7 @@ test("createSlideDeck forwards optional skill fields on create", async () => {
     },
   );
   const body = JSON.parse(createBody) as {
+    agent_profile?: string;
     message: {
       enable_skills?: string[];
       force_skills?: string[];
@@ -372,4 +374,66 @@ test("createSlideDeck forwards optional skill fields on create", async () => {
   };
   expect(body.message.enable_skills).toEqual(["skill_slides"]);
   expect(body.message.force_skills).toEqual(["skill_slides"]);
+  expect(body.agent_profile).toBe("manus-1.6-lite");
+});
+
+test("createTask omits agent_profile unless the caller sets it", async () => {
+  const captured: { body: string } = { body: "" };
+  const fetchImpl = (async (_input: URL | string, init?: RequestInit) => {
+    captured.body = typeof init?.body === "string" ? init.body : "";
+    return new Response(JSON.stringify({ ok: true, task_id: "task_1" }), {
+      status: 200,
+    });
+  }) as unknown as typeof fetch;
+
+  await createTask({ fetchImpl }, { content: "Hello" });
+  expect(JSON.parse(captured.body)).toEqual({
+    message: { content: [{ type: "text", text: "Hello" }] },
+  });
+
+  await createTask(
+    { fetchImpl },
+    { content: "Hello", agent_profile: "manus-1.6-max" },
+  );
+  expect(JSON.parse(captured.body)).toEqual({
+    message: { content: [{ type: "text", text: "Hello" }] },
+    agent_profile: "manus-1.6-max",
+  });
+});
+
+test("createSlideDeck keeps a caller-supplied agent_profile", async () => {
+  let createBody = "";
+  const fetchImpl = (async (input: URL | string, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/v2/task.create")) {
+      createBody = typeof init?.body === "string" ? init.body : "";
+      return new Response(JSON.stringify({ ok: true, task_id: "task_1" }), {
+        status: 200,
+      });
+    }
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        task_id: "task_1",
+        messages: [
+          {
+            type: "status_update",
+            status_update: { agent_status: "stopped" },
+          },
+        ],
+      }),
+      { status: 200 },
+    );
+  }) as unknown as typeof fetch;
+
+  await createSlideDeck(
+    { fetchImpl },
+    {
+      content: "Onboarding",
+      agent_profile: "manus-1.6-max",
+      pollIntervalMs: 0,
+      maxPolls: 1,
+    },
+  );
+  expect(JSON.parse(createBody).agent_profile).toBe("manus-1.6-max");
 });

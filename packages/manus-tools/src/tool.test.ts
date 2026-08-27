@@ -134,6 +134,7 @@ test("create_slides creates a task, polls messages, and surfaces the presentatio
       );
       expect(body.message.enable_skills).toBeUndefined();
       expect(body.message.force_skills).toBeUndefined();
+      expect(body.agent_profile).toBe("manus-1.6-lite");
       return new Response(
         JSON.stringify({
           ok: true,
