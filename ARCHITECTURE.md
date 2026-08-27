@@ -110,6 +110,26 @@ one path, deltas to pixels:
    synthetic in-progress message alongside the persisted timeline, until
    the real message lands and replaces it.
 
+## Workbench Definition and hostless onboarding
+
+A picker "template" is a shipped **Workbench Definition**, not a second
+kind of object: default agents, routines, tools, required and optional
+plugins, and an ordered onboarding walkthrough. Creating from a named
+row mints an empty workbench channel with no host, then instantiates
+that definition into the room. The walkthrough is posted as a system
+timeline card, never as a side effect of hosting an agent — so an
+empty channel can onboard with nobody launched.
+
+Code review's definition names three reviewers and does not name Myra.
+GitHub already connected is the same in-room card: it reads live
+credential state and flips to repository pick. There is no separate
+create-dialog path for the already-connected case.
+
+Settling a connector a template room is waiting on records the
+connected event from a system address and does not wake an agent. A
+generic in-room connect that an agent asked for still wakes that
+agent.
+
 ## Capability growth and approval gates
 
 An agent's capability set grows through what it is granted, not through
@@ -145,6 +165,8 @@ does not maintain a parallel scheduler.
 - [docs/workbench-tenancy.md](docs/workbench-tenancy.md) — workbench tenant
   mint, listing, and move mechanics
 - [docs/needs-you.md](docs/needs-you.md) — the approval surfacing model
+- [docs/connect-cards.md](docs/connect-cards.md) — in-room connect cards
+  and template-room settle
 - [VENDORED.md](VENDORED.md) — the vendoring ledger for `@intx/*`
 
 ## Open questions
