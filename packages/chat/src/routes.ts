@@ -64,6 +64,7 @@ import {
 } from "./workbench-settings";
 import { isRecentlyActive } from "./workbench-activity";
 import { postRoomMessage, type RoomMessageStore } from "./room-messages";
+import { WorkbenchOnboardingStep } from "./blocks";
 import type { ConnectGithubBlockData } from "./blocks";
 import {
   findResidentAgentForDefinition,
@@ -329,28 +330,6 @@ const CreateWorkbenchBody = type({
    * `openAgentDm`) are not 400'd.
    */
   "reuseExisting?": "boolean",
-  /**
-   * The picked template's own promise line
-   * (`WorkbenchTemplateManifest.promise`, see `@corbits/workflow-catalog`),
-   * when this chat was minted from the `/new` picker's template
-   * instantiation flow (`apps/web/src/instant-agent-create.ts`). Passed
-   * through as an opaque string — this package has no notion of a
-   * template — to replace the random canned opener with one naming the
-   * room's actual job. Omitted mints exactly like an untemplated chat.
-   */
-  "templatePromise?": "string",
-  /**
-   * The template's own display name, present exactly when this chat's
-   * template needs a GitHub connection before it can run
-   * (`WorkbenchTemplateManifest.requiredConnections` naming `"github"` —
-   * see `apps/web/src/instant-agent-create.ts`). Posts one
-   * `connect-github` block (`./blocks.ts`) right after the canned
-   * greeting, in `state: "disconnected"` — this package owns the block
-   * vocabulary generically (the same way `chat-orchestrator.ts` posts an
-   * `approve` block), but has no notion of *why* a template needs GitHub,
-   * so the caller supplies the one line the card is allowed to show.
-   */
-  "connectGithubRequiredFor?": "string",
 });
 type CreateWorkbenchBodyT = typeof CreateWorkbenchBody.infer;
 
@@ -1284,8 +1263,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         const agentAddress = joined.address;
         const joinEventDelivered = joined.joinEventDelivered;
         const agentDisplayName = joined.displayName;
-        const templatePromise = body.templatePromise;
-        const connectGithubRequiredFor = body.connectGithubRequiredFor;
         runPostMintDelivery(async () => {
           const senderName =
             deps.resolvePrincipalName !== undefined
@@ -1304,27 +1281,8 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               agentAddress,
               agentName: agentDisplayName,
               ...(senderName !== undefined ? { senderName } : {}),
-              ...(templatePromise !== undefined ? { templatePromise } : {}),
             },
           );
-          if (connectGithubRequiredFor !== undefined) {
-            const data: ConnectGithubBlockData = {
-              requiredForTemplate: connectGithubRequiredFor,
-              state: "disconnected",
-            };
-            await postRoomMessage(
-              { roomMessages: deps.roomMessages, publish },
-              {
-                tenantId: tenant.id,
-                workbenchId,
-                sender: { name: null, address: agentAddress },
-                runId: localPartOf(agentAddress),
-                parts: [
-                  { kind: "block", block: { type: "connect-github", data } },
-                ],
-              },
-            );
-          }
           await deps.platform
             .ensureAwake(agentAddress)
             .catch((err: unknown) => {
@@ -2872,6 +2830,59 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         }
         throw err;
       }
+    },
+  );
+
+  // A room's onboarding walkthrough, posted explicitly by whoever knows
+  // what the room is for — never as a side effect of hosting an agent.
+  // The step lands as a system row (no run, no launch, no wake), so an
+  // empty channel can run its walkthrough with no agent in the room at
+  // all. Only the declared step shapes are accepted: this is not a
+  // general "post any block" hole in the route surface.
+  app.post(
+    "/workbenches/:id/onboarding",
+    deps.requireGrant(idResource("workflow-run", "id"), "create"),
+    async (c) => {
+      const step = WorkbenchOnboardingStep(
+        await c.req.json().catch(() => undefined),
+      );
+      if (step instanceof type.errors) {
+        return c.json(
+          ErrorEnvelope(
+            "bad_request",
+            `invalid onboarding step: ${step.summary}`,
+          ),
+          400,
+        );
+      }
+
+      const tenant = c.get("tenant");
+      const workbenchId = c.req.param("id");
+      const existing = await deps.store.getWorkbenchSettings(
+        tenant.id,
+        workbenchId,
+      );
+      if (existing === undefined) {
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+      }
+
+      const data: ConnectGithubBlockData = {
+        requiredForTemplate: step.requiredForTemplate,
+        promise: step.promise,
+        steps: step.steps,
+        state: "disconnected",
+      };
+      const posted = await postRoomMessage(
+        { roomMessages: deps.roomMessages, publish },
+        {
+          tenantId: tenant.id,
+          workbenchId,
+          sender: { name: null, address: `system@${workbenchId}` },
+          parts: [{ kind: "block", block: { type: "connect-github", data } }],
+        },
+      );
+
+      return c.json({ id: posted.id }, 201);
     },
   );
 

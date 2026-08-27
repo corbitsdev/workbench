@@ -189,10 +189,6 @@ export async function createWorkbenchFromTemplate(
   const workbench = await createWorkbench(tenantId, {
     kind: "workbench",
     name: manifest?.title ?? NEW_WORKBENCH_TITLE,
-    ...(manifest !== undefined ? { templatePromise: manifest.promise } : {}),
-    ...(requiresGithub && !githubAlreadyConnected && manifest !== undefined
-      ? { connectGithubRequiredFor: manifest.title }
-      : {}),
   });
 
   if (githubAlreadyConnected && pickGithubRepos !== undefined) {

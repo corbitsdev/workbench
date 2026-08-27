@@ -128,15 +128,43 @@ export type QuestionBlockData = typeof QuestionBlockData.infer;
 // the connected verdict itself — comes from a host-supplied actions
 // port at render time, resolved against the room's real connection and
 // settings, never from this data.
+// One labelled step of a room's onboarding walkthrough: what the person
+// does, and why it matters to them. The definition that owns the
+// walkthrough owns the copy — the card renders its step rail from these
+// labels rather than holding step text of its own.
+export const OnboardingStepLabel = type({
+  title: "string > 0",
+  why: "string > 0",
+}).onDeepUndeclaredKey("delete");
+export type OnboardingStepLabel = typeof OnboardingStepLabel.infer;
+
+// The body `POST /workbenches/:id/onboarding` parses: one declared
+// onboarding step a host may post into a room, never an arbitrary block.
+// A `.or(...)` here is the extension point when a second kind of step
+// earns one.
+export const WorkbenchOnboardingStep = type({
+  kind: "'connect-github'",
+  requiredForTemplate: "string > 0",
+  promise: "string > 0",
+  steps: OnboardingStepLabel.array(),
+}).onDeepUndeclaredKey("delete");
+export type WorkbenchOnboardingStep = typeof WorkbenchOnboardingStep.infer;
+
+// `promise` and `steps` are optional so cards persisted before the
+// onboarding route existed still parse; the route always writes both.
 const ConnectGithubDisconnectedData = type({
   requiredForTemplate: "string > 0",
   state: "'disconnected'",
+  "promise?": "string > 0",
+  "steps?": OnboardingStepLabel.array(),
 }).onDeepUndeclaredKey("delete");
 
 const ConnectGithubConnectedData = type({
   requiredForTemplate: "string > 0",
   state: "'connected'",
   orgName: "string",
+  "promise?": "string > 0",
+  "steps?": OnboardingStepLabel.array(),
 }).onDeepUndeclaredKey("delete");
 
 export const ConnectGithubBlockData = ConnectGithubDisconnectedData.or(

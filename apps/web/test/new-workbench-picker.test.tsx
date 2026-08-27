@@ -563,8 +563,6 @@ describe("NewWorkbenchPickerRoute", () => {
     );
     expect(JSON.parse(String(createWorkbenchCall?.init?.body))).toMatchObject({
       kind: "workbench",
-      templatePromise:
-        "Three reviewers read every pull request and post what they'd change.",
     });
     expect(
       JSON.parse(String(createWorkbenchCall?.init?.body)).definitionId,
@@ -749,14 +747,6 @@ describe("NewWorkbenchPickerRoute", () => {
     }
 
     expect(navigated).toEqual(["/w/chan_new"]);
-
-    const createWorkbenchCall = calls.find(
-      (call) =>
-        call.path.endsWith("/chat/workbenches") && call.init?.method === "POST",
-    );
-    expect(
-      JSON.parse(String(createWorkbenchCall?.init?.body)),
-    ).not.toHaveProperty("connectGithubRequiredFor");
 
     const startReviewingCall = calls.find((call) =>
       call.path.endsWith("/workbenches/chan_new/github/start-reviewing"),
