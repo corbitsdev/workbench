@@ -275,12 +275,14 @@ export function latestAgentStatus(
   messages: readonly TaskEvent[] | undefined,
 ): string | undefined {
   if (messages === undefined) return undefined;
-  let status: string | undefined;
+  // task.listMessages defaults to desc (newest first). The first
+  // status_update is the current agent_status; walking to the last
+  // event would treat an older running state as current.
   for (const event of messages) {
     const next = event.status_update?.agent_status;
-    if (next !== undefined) status = next;
+    if (next !== undefined) return next;
   }
-  return status;
+  return undefined;
 }
 
 export function extractOutputFiles(
@@ -321,15 +323,58 @@ export function extractOutputFiles(
 
 const TERMINAL_STATUSES = new Set(["stopped", "error"]);
 
+/** Manus `slides_format` accepts pptx or html — never pdf. */
+export const SLIDES_FORMAT_PPTX = "pptx";
+
+export const DEFAULT_SLIDE_POLL_INTERVAL_MS = 2_000;
+/** 5 minutes at the default interval — a real deck takes longer than 60s. */
+export const DEFAULT_SLIDE_MAX_POLLS = 150;
+
+const SLIDE_DECK_PROMPT_PREFIX =
+  "Create a slide presentation in pptx format. Produce a presentation " +
+  "deck, not a document. Topic and requirements:\n\n";
+
 export type CreateSlideDeckParams = CreateTaskParams & {
   readonly pollIntervalMs?: number;
   readonly maxPolls?: number;
+  readonly signal?: AbortSignal;
 };
+
+function throwIfSlideWaitAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    throw new Error("Manus slide-deck wait was cancelled");
+  }
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0) {
+    throwIfSlideWaitAborted(signal);
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new Error("Manus slide-deck wait was cancelled"));
+    };
+    if (signal === undefined) return;
+    if (signal.aborted) {
+      clearTimeout(timer);
+      reject(new Error("Manus slide-deck wait was cancelled"));
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
 
 /**
  * Creates a task whose prompt asks Manus to produce a slide deck, then
  * polls `task.listMessages` until the agent stops (or errors) and returns
- * any output files so a caller can retrieve them.
+ * any output files so a caller can retrieve them. A timeout, a still-running
+ * or waiting agent, or an abort is a thrown error — never a successful deck.
  */
 export async function createSlideDeck(
   config: ManusClientConfig,
@@ -342,22 +387,38 @@ export async function createSlideDeck(
   readonly files: readonly OutputFile[];
   readonly error?: string;
 }> {
-  const created = await createTask(config, params);
-  const pollIntervalMs = params.pollIntervalMs ?? 1500;
-  const maxPolls = params.maxPolls ?? 40;
+  const { pollIntervalMs, maxPolls, signal, ...taskParams } = params;
+  const created = await createTask(config, {
+    ...taskParams,
+    content: `${SLIDE_DECK_PROMPT_PREFIX}${taskParams.content}`,
+  });
+  const intervalMs = pollIntervalMs ?? DEFAULT_SLIDE_POLL_INTERVAL_MS;
+  const polls = maxPolls ?? DEFAULT_SLIDE_MAX_POLLS;
   let messages: ListMessagesResponse | undefined;
-  for (let i = 0; i < maxPolls; i += 1) {
+  for (let i = 0; i < polls; i += 1) {
+    throwIfSlideWaitAborted(signal);
     messages = await listTaskMessages(config, {
       task_id: created.task_id,
-      slides_format: "pdf",
+      slides_format: SLIDES_FORMAT_PPTX,
     });
     const status = latestAgentStatus(messages.messages);
     if (status !== undefined && TERMINAL_STATUSES.has(status)) break;
-    if (i < maxPolls - 1 && pollIntervalMs > 0) {
-      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    if (status === "waiting") {
+      throw new Error(
+        `Manus task ${created.task_id} is waiting for confirmation and cannot finish unattended`,
+      );
+    }
+    if (i < polls - 1) {
+      await sleep(intervalMs, signal);
     }
   }
   const status = latestAgentStatus(messages?.messages);
+  if (status === undefined || !TERMINAL_STATUSES.has(status)) {
+    throw new Error(
+      `Manus task ${created.task_id} did not stop in time` +
+        (status !== undefined ? ` (agent_status: ${status})` : ""),
+    );
+  }
   const files = extractOutputFiles(messages?.messages);
   const errorEvent = messages?.messages?.find((event) => event.error_message);
   const result: {
