@@ -82,6 +82,26 @@ test("declares create_slides plus thin tools covering the v2 surface", () => {
   expect(names.length).toBe(MANUS_ENDPOINTS.length + 1);
 });
 
+test("mutating admin tools declare approval ask; create_slides and read-ish tools stay ungated", () => {
+  const byName = new Map(manusTools.definitions.map((d) => [d.name, d]));
+  for (const name of [
+    "webhook_create",
+    "webhook_delete",
+    "webhook_list",
+    "webhook_pubkey",
+    "website_publish",
+    "website_update",
+    "task_delete",
+    "file_delete",
+  ] as const) {
+    expect(byName.get(name)).toEqual({ name, approval: "ask" });
+  }
+  expect(byName.get(CREATE_SLIDES_TOOL)).toEqual({ name: CREATE_SLIDES_TOOL });
+  expect(byName.get("task_list")).toEqual({ name: "task_list" });
+  expect(byName.get("task_list_msgs")).toEqual({ name: "task_list_msgs" });
+  expect(byName.get("file_detail")).toEqual({ name: "file_detail" });
+});
+
 test("task_list_msgs describes slides_format as pptx or html, never pdf", () => {
   const listMsgs = MANUS_ENDPOINTS.find(
     (spec) => spec.name === "task_list_msgs",
@@ -222,6 +242,42 @@ test("create_slides returns isError when the agent is waiting", async () => {
     );
     expect(result.isError).toBe(true);
     expect(result.content).toMatch(/waiting for confirmation/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("create_slides returns isError when the agent_status is error", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: unknown) => {
+    const url = String(input);
+    if (url.includes("/v2/task.create")) {
+      return new Response(JSON.stringify({ ok: true, task_id: "task_1" }), {
+        status: 200,
+      });
+    }
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        task_id: "task_1",
+        messages: [
+          {
+            type: "status_update",
+            status_update: { agent_status: "error" },
+          },
+        ],
+      }),
+      { status: 200 },
+    );
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = manusTools(fakeEnv(fakeCredentials("key")));
+    const result = await bundle.run(
+      CREATE_SLIDES_CALL,
+      new AbortController().signal,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toMatch(/agent_status error/);
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -37,6 +37,7 @@ type EndpointSpec = {
   readonly description: string;
   readonly required: readonly string[];
   readonly properties: Readonly<Record<string, JsonSchemaProperty>>;
+  readonly approval?: "ask";
 };
 
 const STRING = (description: string): JsonSchemaProperty => ({
@@ -159,6 +160,7 @@ export const MANUS_ENDPOINTS: readonly EndpointSpec[] = [
     description: "Deletes a Manus task.",
     required: ["task_id"],
     properties: { task_id: STRING("Task id.") },
+    approval: "ask",
   },
   {
     name: "task_send_msg",
@@ -284,6 +286,7 @@ export const MANUS_ENDPOINTS: readonly EndpointSpec[] = [
     description: "Deletes a Manus file.",
     required: ["file_id"],
     properties: { file_id: STRING("File id.") },
+    approval: "ask",
   },
   {
     name: "webhook_create",
@@ -292,6 +295,7 @@ export const MANUS_ENDPOINTS: readonly EndpointSpec[] = [
     description: "Creates a Manus webhook.",
     required: ["url"],
     properties: { url: STRING("Webhook callback URL.") },
+    approval: "ask",
   },
   {
     name: "webhook_list",
@@ -300,6 +304,7 @@ export const MANUS_ENDPOINTS: readonly EndpointSpec[] = [
     description: "Lists Manus webhooks.",
     required: [],
     properties: {},
+    approval: "ask",
   },
   {
     name: "webhook_delete",
@@ -308,6 +313,7 @@ export const MANUS_ENDPOINTS: readonly EndpointSpec[] = [
     description: "Deletes a Manus webhook.",
     required: ["webhook_id"],
     properties: { webhook_id: STRING("Webhook id.") },
+    approval: "ask",
   },
   {
     name: "webhook_pubkey",
@@ -316,6 +322,7 @@ export const MANUS_ENDPOINTS: readonly EndpointSpec[] = [
     description: "Returns the Manus webhook signing public key.",
     required: [],
     properties: {},
+    approval: "ask",
   },
   {
     name: "usage_list",
@@ -400,6 +407,7 @@ export const MANUS_ENDPOINTS: readonly EndpointSpec[] = [
       website_id: STRING("Website id."),
       visibility: STRING("Visibility."),
     },
+    approval: "ask",
   },
   {
     name: "website_update",
@@ -413,6 +421,7 @@ export const MANUS_ENDPOINTS: readonly EndpointSpec[] = [
       title: STRING("New title."),
       visibility: STRING("Visibility."),
     },
+    approval: "ask",
   },
   {
     name: "website_ckpts",
@@ -799,7 +808,11 @@ export const manusTools = defineTool<ManusEnv>({
   requires: ["credentials"],
   definitions: [
     { name: CREATE_SLIDES_TOOL },
-    ...MANUS_ENDPOINTS.map((spec) => ({ name: spec.name })),
+    ...MANUS_ENDPOINTS.map((spec) =>
+      spec.approval === "ask"
+        ? { name: spec.name, approval: "ask" as const }
+        : { name: spec.name },
+    ),
   ],
   factory: (env) => ({
     definitions: [
