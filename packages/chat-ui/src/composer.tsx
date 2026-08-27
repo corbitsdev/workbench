@@ -415,11 +415,11 @@ export const Composer = forwardRef<
         setValue(text);
         setMention(null);
         setSlash(null);
+        setHelpOpen(false);
         setPendingInvites([]);
         setAttachments([]);
         setErrorMessage(null);
         setPreparing(false);
-        syncComposerSuggestState(text, text.length);
         requestAnimationFrame(() => {
           const textarea = textareaRef.current;
           textarea?.focus();

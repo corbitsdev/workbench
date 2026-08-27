@@ -500,6 +500,55 @@ describe("ComposerHandle.setText", () => {
     expect(sent).toEqual([{ text: "copied prompt", attachments: [] }]);
   });
 
+  test("Enter after setText of an @handle prompt sends instead of opening mention", async () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const ref = createRef<ComposerHandle>();
+    const sent: ComposerSendPayload[] = [];
+    act(() => {
+      root?.render(
+        createElement(Composer, {
+          ref,
+          agents: [],
+          participants: [
+            { address: "researcher@agents.example", handle: "researcher" },
+          ],
+          onSend: (payload) => {
+            sent.push(payload);
+            return Promise.resolve(true);
+          },
+          onInviteAgent: () => undefined,
+          onOpenAgentsSettings: () => undefined,
+          onCreateRoutineInSpace: () => undefined,
+        }),
+      );
+    });
+
+    await act(async () => {
+      ref.current?.setText("@researcher");
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      });
+    });
+    await settle();
+
+    expect(container?.querySelector(".chat-mention-popover")).toBeNull();
+
+    act(() => {
+      textarea().dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+    await settle();
+
+    expect(sent).toEqual([{ text: "@researcher", attachments: [] }]);
+  });
+
   test("Send after setText does not carry leftover bring-in invite intent", async () => {
     const sent: { payload: ComposerSendPayload | null } = { payload: null };
     const ref = createRef<ComposerHandle>();

@@ -1156,10 +1156,9 @@ function StreamingMessageGroup({
 }
 
 /**
- * The ellipsis/right-click menu for a message: everything that used to be
- * a persistent inline affordance (reply-in-thread) plus copy and pin, all
- * in one place so the two triggers (the hover toolbar's ellipsis button and
- * a right-click anywhere on the message) always offer the same actions.
+ * The ellipsis/right-click menu for a message: reply-in-thread, copy, pin,
+ * and Edit (own prompts) in one place so the hover ellipsis and a
+ * right-click always offer the same actions.
  */
 function buildMessageMenu({
   item,

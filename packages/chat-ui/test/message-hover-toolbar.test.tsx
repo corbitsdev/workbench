@@ -1,8 +1,6 @@
-// DOM tests for the compact hover toolbar (CL-6077): a message's
-// add-reaction / reply-in-thread / ellipsis cluster that only reveals on
-// hover or keyboard focus-within, replacing the old persistent inline
-// "Reply in thread" link. The ellipsis button and a right-click on the
-// message open the same menu — see `buildMessageMenu` in `timeline.tsx`.
+// Hover toolbar: add-reaction / reply-in-thread / Edit (own prompts) /
+// ellipsis. The ellipsis button and a right-click on the message open the
+// same menu — see `buildMessageMenu` in `timeline.tsx`.
 import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
