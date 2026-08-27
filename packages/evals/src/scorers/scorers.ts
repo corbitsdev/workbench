@@ -138,7 +138,9 @@ export function memoryWritten(keys: readonly string[]) {
  * not required. A definition-created signal plus either an own-chat id
  * (`workbenchId` / `chatId` / a `created` field) or explicit minted-chat
  * wording is enough, so this still scores after invite-into-current
- * fields disappear from the tool result.
+ * fields disappear from the tool result. Copy that says the definition
+ * was created but its own chat could not be opened is a fail — the
+ * minted-chat wording would otherwise match `/own chats?/`.
  */
 const DEFINITION_CREATED_SIGNAL =
   /Created\s+"|use this id for routines\/dispatch:|"id"\s*:/i;
@@ -146,9 +148,12 @@ const DEFINITION_CREATED_SIGNAL =
 const MINTED_OWN_CHAT_SIGNAL =
   /workbenchId|chatId|chat_id|"created"\s*:|own chats?|minted|reopened/i;
 
+const COULD_NOT_OPEN_OWN_CHAT_SIGNAL = /could not open its own chats?/i;
+
 function createAgentMintedOwnChat(call: ToolCall): boolean {
   return (
     !call.isError &&
+    !COULD_NOT_OPEN_OWN_CHAT_SIGNAL.test(call.result) &&
     DEFINITION_CREATED_SIGNAL.test(call.result) &&
     MINTED_OWN_CHAT_SIGNAL.test(call.result)
   );

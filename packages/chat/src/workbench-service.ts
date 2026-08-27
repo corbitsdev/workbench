@@ -46,7 +46,7 @@ import { postRoomMessage, type RoomMessageStore } from "./room-messages";
 import type { WorkbenchSubscriberRegistry } from "./workbench-events";
 import type { QueuedTurn, WorkbenchTurnQueue } from "./turn-queue";
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
-import type { ChatStore } from "./store";
+import type { ChatStore, WorkbenchSettingsRow } from "./store";
 import { withTimeout } from "./with-timeout";
 
 const provisionLog = getLogger(["chat", "provision-space"]);
@@ -147,13 +147,16 @@ const mintAgentDmLog = getLogger(["chat", "mint-agent-dm"]);
 export type MintAgentDmDeps = {
   readonly tenancy: Pick<
     WorkbenchTenancyStore,
-    "createWorkbenchTenant" | "compensateWorkbenchTenant"
+    | "createWorkbenchTenant"
+    | "compensateWorkbenchTenant"
+    | "getWorkbenchTenancy"
   >;
   readonly store: Pick<
     ChatStore,
     | "createWorkbenchSettings"
     | "deleteWorkbenchSettings"
     | "updateWorkbenchSettings"
+    | "listWorkbenchSettings"
   >;
   readonly platform: LaunchAndJoinAgentDeps["platform"];
   readonly roomMessages: LaunchAndJoinAgentDeps["roomMessages"];
@@ -184,20 +187,124 @@ export type MintAgentDmResult = {
   readonly displayName: string;
 };
 
+export type FindExistingAgentChatDeps = {
+  readonly store: Pick<ChatStore, "listWorkbenchSettings">;
+  readonly platform: Pick<
+    WorkbenchLauncher,
+    "resolveDefinitionAssetId" | "resolveDefinitionIdByAddress"
+  >;
+  readonly tenancy: Pick<WorkbenchTenancyStore, "getWorkbenchTenancy">;
+};
+
 /**
- * Mints a brand-new `kind: "chat"` 1:1 for `definitionId` under the
- * caller's bench, launches the agent into THAT workbench (never into
- * `callerWorkbenchId`), and publishes `chat.workbenches-mutated` on the
- * caller's workbench so the sidebar picks up the new chat. The
- * workflow-run counterpart of `POST /workbenches` agent-DM mint —
- * `create_agent`'s default path uses this instead of inviting into
- * Myra's own DM (which is itself `kind: chat` and rejects additional
- * agents via `KindIsChatError`).
+ * Finds an existing chat with the given agent. `POST /workbenches` with
+ * `kind: "chat"` + `definitionId` always find-or-reopens this way
+ * (CL-6981), and `mintAgentDm` does the same: a DM is the one 1:1
+ * tenant with that agent. Uniqueness is per (bench, definitionId).
+ * Product reopens; it does not clone.
+ *
+ * Matches forward, by the `chat/definitionId` every agent chat has
+ * carried in its settings since this landed, and falls back to
+ * `matchesLegacyAgentChat` for a chat minted before that key existed.
+ * The comparison is on the definition's ASSET, not the row id: a
+ * code-sourced deploy projects a new `workflow_definition` row per
+ * frozen wire projection, so the id a chat recorded at creation and the
+ * id the picker offers later are routinely different rows over the one
+ * asset that IS the agent.
+ * More than one match (duplicates this same gap already let through)
+ * resolves to the oldest by its workbench-tenancy `createdAt` — the
+ * original conversation, not whichever the caller happens to hit first —
+ * with a workbench that predates workbench tenancy entirely sorting oldest
+ * of all.
+ */
+export async function findExistingAgentChat(
+  deps: FindExistingAgentChatDeps,
+  tenantId: string,
+  definitionId: string,
+): Promise<WorkbenchSettingsRow | undefined> {
+  const chats = await deps.store.listWorkbenchSettings(tenantId, "chat");
+  const assetId = await deps.platform.resolveDefinitionAssetId(definitionId);
+  const matches: { row: WorkbenchSettingsRow; createdAt: Date }[] = [];
+  for (const row of chats) {
+    const storedDefinitionId = row.settings["chat/definitionId"];
+    const isMatch =
+      storedDefinitionId !== undefined
+        ? typeof storedDefinitionId === "string" &&
+          (await sameAgent(deps, storedDefinitionId, definitionId, assetId))
+        : await matchesLegacyAgentChat(deps, row, definitionId);
+    if (!isMatch) continue;
+    const link = await deps.tenancy.getWorkbenchTenancy(row.workbenchId);
+    matches.push({ row, createdAt: link?.createdAt ?? new Date(0) });
+  }
+  if (matches.length === 0) return undefined;
+  matches.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  return matches[0]?.row;
+}
+
+/**
+ * Whether two definition ids name the same agent: the same row, or two
+ * rows projected over the same workflow asset. An unresolvable asset (a
+ * definition row that no longer exists) never matches by asset, so a
+ * stale recorded id falls back to plain id equality alone.
+ */
+async function sameAgent(
+  deps: Pick<FindExistingAgentChatDeps, "platform">,
+  storedDefinitionId: string,
+  definitionId: string,
+  assetId: string | undefined,
+): Promise<boolean> {
+  if (storedDefinitionId === definitionId) return true;
+  if (assetId === undefined) return false;
+  const storedAssetId =
+    await deps.platform.resolveDefinitionAssetId(storedDefinitionId);
+  return storedAssetId === assetId;
+}
+
+/**
+ * A chat minted before `chat/definitionId` was recorded at creation
+ * carries no forward marker naming its agent — the only way back to its
+ * definition is the platform's reverse address lookup, run once per
+ * agent participant the chat has (ordinarily exactly one).
+ */
+async function matchesLegacyAgentChat(
+  deps: Pick<FindExistingAgentChatDeps, "platform">,
+  row: WorkbenchSettingsRow,
+  definitionId: string,
+): Promise<boolean> {
+  const agentAddresses = participantsOf(row.settings)
+    .map((participant) => participant.address)
+    .filter(isAgentAddress);
+  for (const address of agentAddresses) {
+    const resolved = await deps.platform.resolveDefinitionIdByAddress(address);
+    if (resolved === definitionId) return true;
+  }
+  return false;
+}
+
+/**
+ * Mints a `kind: "chat"` 1:1 for `definitionId` under the caller's bench,
+ * or reopens the existing one for that (bench, definition) — never clones
+ * a second DM. Launches the agent into THAT workbench (never into
+ * `callerWorkbenchId`), and on a fresh mint publishes
+ * `chat.workbenches-mutated` on the caller's workbench so the sidebar
+ * picks up the new chat. The workflow-run counterpart of `POST
+ * /workbenches` agent-DM mint — `create_agent`'s default path uses this
+ * instead of inviting into Myra's own DM (which is itself `kind: chat`
+ * and rejects additional agents via `KindIsChatError`).
  */
 export async function mintAgentDm(
   deps: MintAgentDmDeps,
   input: MintAgentDmInput,
 ): Promise<MintAgentDmResult> {
+  const existing = await findExistingAgentChat(
+    deps,
+    input.tenantId,
+    input.definitionId,
+  );
+  if (existing !== undefined) {
+    return reopenAgentDm(deps, input, existing);
+  }
+
   const invitable = await deps.platform.listInvitableDefinitions(
     input.tenantId,
   );
@@ -318,6 +425,52 @@ export async function mintAgentDm(
 
   return {
     workbenchId,
+    address: joined.address,
+    definitionId: joined.definitionId,
+    handle: joined.handle,
+    displayName: joined.displayName,
+  };
+}
+
+async function reopenAgentDm(
+  deps: MintAgentDmDeps,
+  input: MintAgentDmInput,
+  existing: WorkbenchSettingsRow,
+): Promise<MintAgentDmResult> {
+  const agent = participantsOf(existing.settings).find((participant) =>
+    isAgentAddress(participant.address),
+  );
+  if (agent !== undefined) {
+    return {
+      workbenchId: existing.workbenchId,
+      address: agent.address,
+      definitionId: input.definitionId,
+      handle: agent.handle,
+      displayName: agent.handle,
+    };
+  }
+
+  const invitable = await deps.platform.listInvitableDefinitions(
+    input.tenantId,
+  );
+  const joined = await launchAndJoinAgent(
+    {
+      store: deps.store,
+      platform: deps.platform,
+      roomMessages: deps.roomMessages,
+      publish: deps.publish,
+    },
+    {
+      tenantId: input.tenantId,
+      principalId: input.callerPrincipalId,
+      workbenchId: existing.workbenchId,
+      definitionId: input.definitionId,
+      existingSettings: existing.settings,
+      invitable,
+    },
+  );
+  return {
+    workbenchId: existing.workbenchId,
     address: joined.address,
     definitionId: joined.definitionId,
     handle: joined.handle,

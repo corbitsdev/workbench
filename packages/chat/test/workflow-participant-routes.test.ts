@@ -520,4 +520,69 @@ describe("POST /participants/mint-dm", () => {
       ),
     ).toBe(false);
   });
+
+  test("second mint-dm with the same definitionId reopens the existing chat instead of cloning", async () => {
+    const store = createInMemoryChatStore();
+    const callerWorkbenchId = "chan_dm";
+    await store.createWorkbenchSettings({
+      tenantId: TENANT.id,
+      workbenchId: callerWorkbenchId,
+      settings: {
+        "chat/kind": "chat",
+        "chat/definitionId": "wfd_assistant",
+        "chat/participants": [{ address: RUN_ADDRESS, handle: "myra" }],
+      },
+      updatedBy: "prn_1",
+    });
+    const tenancy = createInMemoryWorkbenchTenancyStore();
+    tenancy.registerExistingTenant(TENANT.id);
+    tenancy.grantManageInTenant("usr_alice", TENANT.id);
+    const platform = fakePlatform({
+      invitable: [{ id: "wfd_echo", name: "Echo" }],
+    });
+
+    const app = buildApp({ store, platform, tenancy });
+    const first = await app.request("/participants/mint-dm", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...AUTH_HEADERS },
+      body: JSON.stringify({ definitionId: "wfd_echo" }),
+    });
+    expect(first.status).toBe(201);
+    const firstBody = (await first.json()) as {
+      workbenchId: string;
+      address: string;
+      handle: string;
+    };
+
+    const second = await app.request("/participants/mint-dm", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...AUTH_HEADERS },
+      body: JSON.stringify({ definitionId: "wfd_echo" }),
+    });
+    expect(second.ok).toBe(true);
+    const secondBody = (await second.json()) as {
+      workbenchId: string;
+      address: string;
+      handle: string;
+    };
+
+    expect(secondBody.workbenchId).toBe(firstBody.workbenchId);
+    expect(secondBody.address).toBe(firstBody.address);
+    expect(secondBody.handle).toBe(firstBody.handle);
+    expect(platform.launchInviteCalls).toHaveLength(1);
+
+    const chats = await store.listWorkbenchSettings(TENANT.id, "chat");
+    expect(chats).toHaveLength(2);
+    expect(
+      chats.filter((row) => row.settings["chat/definitionId"] === "wfd_echo"),
+    ).toHaveLength(1);
+
+    const caller = await store.getWorkbenchSettings(
+      TENANT.id,
+      callerWorkbenchId,
+    );
+    expect(caller?.settings["chat/participants"]).toEqual([
+      { address: RUN_ADDRESS, handle: "myra" },
+    ]);
+  });
 });

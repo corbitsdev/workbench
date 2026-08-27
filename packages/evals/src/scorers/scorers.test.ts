@@ -231,6 +231,23 @@ describe("agentCreatedInWorkbench", () => {
     expect(r.pass).toBe(false);
   });
 
+  test("fails when create_agent created the definition but could not open its own chat", () => {
+    const transcript = [
+      turn("make a researcher", "Done.", [
+        call(
+          "create_agent",
+          {},
+          {
+            result:
+              'Created "Researcher" (use this id for routines/dispatch: def_1), but could not open its own chat: this workbench could not be identified as the caller\'s own.',
+          },
+        ),
+      ]),
+    ];
+    const r = agentCreatedInWorkbench()(ctxAt(transcript, 0));
+    expect(r.pass).toBe(false);
+  });
+
   test("fails when no create_agent call happened yet", () => {
     const r = agentCreatedInWorkbench()(ctxAt([turn("hi", "hi")], 0));
     expect(r.pass).toBe(false);

@@ -1,8 +1,8 @@
 // Workflow-run-authenticated surfaces for a child process that is itself
 // messaging in a workbench:
 //
-// - `POST /participants/mint-dm` — `create_agent`'s default path: mint a
-//   brand-new `kind: chat` 1:1 for a just-created definition and launch
+// - `POST /participants/mint-dm` — `create_agent`'s default path: mint or
+//   reopen the specialist's `kind: chat` 1:1 for a definition and launch
 //   the agent into THAT workbench (never into Myra's own DM).
 // - `POST /participants/invite` — invite an already-created definition
 //   into a non-chat workbench the caller already participates in.
@@ -113,6 +113,7 @@ export type CreateWorkflowParticipantRoutesDeps = {
     | "updateWorkbenchSettings"
     | "createWorkbenchSettings"
     | "deleteWorkbenchSettings"
+    | "listWorkbenchSettings"
   > &
     SendWorkbenchMessageDeps["store"];
   readonly platform: LaunchAndJoinAgentDeps["platform"] &
@@ -228,8 +229,9 @@ export function createWorkflowParticipantRoutes(
     );
   });
 
-  // create_agent's default path: mint the specialist its own kind:chat
-  // 1:1 under the caller's bench. Never invites into the caller's DM.
+  // create_agent's default path: mint or reopen the specialist's own
+  // kind:chat 1:1 under the caller's bench. Never invites into the
+  // caller's DM.
   app.post("/participants/mint-dm", async (c) => {
     const scope = c.get("workflowParticipantScope");
     const body = MintDmInput(await c.req.json().catch(() => undefined));

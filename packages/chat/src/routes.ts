@@ -72,6 +72,7 @@ import {
   joinHumanParticipant,
   KindIsChatError,
   launchAndJoinAgent,
+  findExistingAgentChat,
   removeWorkbenchParticipant,
   sendWorkbenchMessage,
 } from "./workbench-service";
@@ -91,7 +92,7 @@ import {
   type WorkbenchTurnQueue,
 } from "./turn-queue";
 import type { ChatPlatform } from "./platform-port";
-import type { WorkbenchSettingsRow, ChatStore } from "./store";
+import type { ChatStore } from "./store";
 import {
   dispatchAtCommand,
   dispatchSlashCommand,
@@ -864,89 +865,7 @@ const MoveWorkbenchBody = type({
   newParentTenantId: "string",
 });
 
-/**
- * Finds an existing chat with the given agent. `POST /workbenches` with
- * `kind: "chat"` + `definitionId` always find-or-reopens this way
- * (CL-6981): a DM is the one 1:1 tenant with that agent. Uniqueness is
- * per (bench, definitionId). Product reopens; it does not clone.
- *
- * Matches forward, by the `chat/definitionId` every agent chat has
- * carried in its settings since this landed, and falls back to
- * `matchesLegacyAgentChat` for a chat minted before that key existed.
- * The comparison is on the definition's ASSET, not the row id: a
- * code-sourced deploy projects a new `workflow_definition` row per
- * frozen wire projection, so the id a chat recorded at creation and the
- * id the picker offers later are routinely different rows over the one
- * asset that IS the agent.
- * More than one match (duplicates this same gap already let through)
- * resolves to the oldest by its workbench-tenancy `createdAt` — the
- * original conversation, not whichever the caller happens to hit first —
- * with a workbench that predates workbench tenancy entirely sorting oldest
- * of all.
- */
-export async function findExistingAgentChat(
-  deps: Pick<CreateChatRoutesDeps, "store" | "platform" | "tenancy">,
-  tenantId: string,
-  definitionId: string,
-): Promise<WorkbenchSettingsRow | undefined> {
-  const chats = await deps.store.listWorkbenchSettings(tenantId, "chat");
-  const assetId = await deps.platform.resolveDefinitionAssetId(definitionId);
-  const matches: { row: WorkbenchSettingsRow; createdAt: Date }[] = [];
-  for (const row of chats) {
-    const storedDefinitionId = row.settings["chat/definitionId"];
-    const isMatch =
-      storedDefinitionId !== undefined
-        ? typeof storedDefinitionId === "string" &&
-          (await sameAgent(deps, storedDefinitionId, definitionId, assetId))
-        : await matchesLegacyAgentChat(deps, row, definitionId);
-    if (!isMatch) continue;
-    const link = await deps.tenancy.getWorkbenchTenancy(row.workbenchId);
-    matches.push({ row, createdAt: link?.createdAt ?? new Date(0) });
-  }
-  if (matches.length === 0) return undefined;
-  matches.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
-  return matches[0]?.row;
-}
-
-/**
- * Whether two definition ids name the same agent: the same row, or two
- * rows projected over the same workflow asset. An unresolvable asset (a
- * definition row that no longer exists) never matches by asset, so a
- * stale recorded id falls back to plain id equality alone.
- */
-async function sameAgent(
-  deps: Pick<CreateChatRoutesDeps, "platform">,
-  storedDefinitionId: string,
-  definitionId: string,
-  assetId: string | undefined,
-): Promise<boolean> {
-  if (storedDefinitionId === definitionId) return true;
-  if (assetId === undefined) return false;
-  const storedAssetId =
-    await deps.platform.resolveDefinitionAssetId(storedDefinitionId);
-  return storedAssetId === assetId;
-}
-
-/**
- * A chat minted before `chat/definitionId` was recorded at creation
- * carries no forward marker naming its agent — the only way back to its
- * definition is the platform's reverse address lookup, run once per
- * agent participant the chat has (ordinarily exactly one).
- */
-async function matchesLegacyAgentChat(
-  deps: Pick<CreateChatRoutesDeps, "platform">,
-  row: WorkbenchSettingsRow,
-  definitionId: string,
-): Promise<boolean> {
-  const agentAddresses = participantsOf(row.settings)
-    .map((participant) => participant.address)
-    .filter(isAgentAddress);
-  for (const address of agentAddresses) {
-    const resolved = await deps.platform.resolveDefinitionIdByAddress(address);
-    if (resolved === definitionId) return true;
-  }
-  return false;
-}
+export { findExistingAgentChat };
 
 /** Annotates a workbench view with its native child-tenancy — the
  * `tenancy` field every workbench created after this rollout carries,
