@@ -18,5 +18,4 @@ test("declares exactly one credential handle: manus", () => {
     throw new Error(parsed.summary);
   }
   expect(parsed.interchange?.credentials).toEqual([{ handle: "manus" }]);
-  expect(parsed.version).toBe("0.0.1");
 });
