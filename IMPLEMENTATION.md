@@ -41,6 +41,12 @@ core, reusable components live there; only workbench-specific composition
 is pinned to a specific upstream commit rather than a floating version
 range.
 
+`@corbits/chat-ui` owns the conversation surface. The composer's host
+seam is `ComposerHandle`: `insertText` splices at the caret (Mention);
+`setText` replaces the whole draft (Edit a previous prompt) and is the
+layer that clears leftover slash, mention, invite, and attachment state
+so a replaced draft cannot send under the old picker's rules.
+
 ## Vendored `@intx/*`
 
 Interchange capabilities are consumed as published `@intx/*` npm packages

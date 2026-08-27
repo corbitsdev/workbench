@@ -277,6 +277,18 @@ short tags or a card, and mirroring them to the right would land next to
 the composer and break the one consistent place a reader looks for
 approvals and tool activity.
 
+## Message actions
+
+A message's compact action cluster — add reaction, reply in thread (or
+Fork inside a thread), Edit on own prompts, and ellipsis — reveals on
+pointer hover or keyboard focus-within. It is not hover-only and not a
+persistent inline row of links. The ellipsis button and a right-click on
+the message open the same menu; Edit appears there too when the row is
+the signed-in reader's own prompt with text.
+
+Edit copies the prompt into the composer. It is not an in-place rewrite
+of the bubble.
+
 ## Connect cards
 
 In-thread cards flip in place: disconnected → connected → next step. The

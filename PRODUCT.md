@@ -115,6 +115,14 @@ does not wake an agent. Generic `connections/pending` still wakes the
 asking agent. Neither path posts the connected notice as the connecting
 person.
 
+## Reusing an own prompt
+
+A person can **Edit** their own previous prompt. Edit copies that text
+into the composer, replacing any leftover draft — slash command, mention,
+invite, and attachments. Sending posts a new message on the same
+timeline: it does not rewrite the original, and it does not fork a
+thread. Other people's prompts have no Edit.
+
 ## Plugins and Skills
 
 A **Skill** is a named, reusable capability — instructions an agent can
