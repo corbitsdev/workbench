@@ -56,9 +56,15 @@ registers:
   `x-manus-api-key`. A Manus provider row MUST set this plugin -- seeding
   it as `"http"` or `"http-x-api-key"` sends the wrong header name and
   Manus rejects the call.
+- **`mcp-streamable-http`** -- `@corbits/credential-providers`'s
+  `createMcpStreamableHttpCredentialProvider`. For a token-bearing MCP
+  server it sends `authorization: Bearer <token>`; for a keyless one
+  (`MCP_NO_TOKEN_SENTINEL`) it sends no authorization header. The vendored
+  `http` plugin cannot express the keyless case.
 
-All four plugins mirror the same origin-pinning and `redirect: "manual"`
-protections; only the injected header differs.
+All five plugins the sidecar registers mirror the same origin-pinning and
+`redirect: "manual"` protections; only the injected header (or its
+absence, for keyless MCP) differs.
 
 `packages/connections` (the Connections-surface registry) is the other
 place this plugin id needs to be correct: whatever seeds or registers a
