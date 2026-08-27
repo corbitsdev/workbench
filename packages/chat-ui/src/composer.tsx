@@ -890,9 +890,9 @@ export const Composer = forwardRef<
                 className="chat-composer-send-spinner"
                 aria-hidden="true"
               />
-          ) : (
-            <ArrowUp aria-hidden="true" />
-          )}
+            ) : (
+              <ArrowUp aria-hidden="true" />
+            )}
           </Button>
         </div>
       </div>
