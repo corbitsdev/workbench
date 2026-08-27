@@ -386,6 +386,9 @@ export const DEFAULT_SLIDE_POLL_INTERVAL_MS = 2_000;
 /** 5 minutes at the default interval — a real deck takes longer than 60s. */
 export const DEFAULT_SLIDE_MAX_POLLS = 150;
 
+/** Free/personal accounts persist tasks only on the lite profile. */
+export const SLIDE_DECK_AGENT_PROFILE = "manus-1.6-lite";
+
 const SLIDE_DECK_PROMPT_PREFIX =
   "Create a slide presentation in pptx format. Produce a presentation " +
   "deck, not a document. Topic and requirements:\n\n";
@@ -447,6 +450,10 @@ export async function createSlideDeck(
   const created = await createTask(config, {
     ...taskParams,
     content: `${SLIDE_DECK_PROMPT_PREFIX}${taskParams.content}`,
+    agent_profile:
+      taskParams.agent_profile !== undefined
+        ? taskParams.agent_profile
+        : SLIDE_DECK_AGENT_PROFILE,
   });
   const intervalMs = pollIntervalMs ?? DEFAULT_SLIDE_POLL_INTERVAL_MS;
   const polls = maxPolls ?? DEFAULT_SLIDE_MAX_POLLS;
