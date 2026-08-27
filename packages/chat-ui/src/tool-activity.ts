@@ -25,13 +25,7 @@ import type { Part, ToolTracePart } from "@corbits/chat/parts";
 export type ToolActivityStatus = "pending" | "running" | "success" | "failed";
 
 export type ToolActivityGlyph =
-  | "search"
-  | "list"
-  | "ask"
-  | "memory"
-  | "agents"
-  | "write"
-  | "generic";
+  "search" | "list" | "ask" | "memory" | "agents" | "write" | "generic";
 
 /** One tool call, ready to render: no identifiers, no JSON, no tense
  * mismatch with its own status. */
@@ -212,7 +206,9 @@ function knownBrandId(candidate: string): string | undefined {
   return undefined;
 }
 
-function providerFromLeftover(leftover: string | undefined): string | undefined {
+function providerFromLeftover(
+  leftover: string | undefined,
+): string | undefined {
   if (leftover === undefined || leftover === "") return undefined;
   const interchange = leftover.includes("/") || leftover.startsWith("@");
   if (interchange) {
@@ -295,9 +291,7 @@ export function resolveToolIdentity(
   };
 }
 
-export function toolActivityGlyph(
-  words: readonly string[],
-): ToolActivityGlyph {
+export function toolActivityGlyph(words: readonly string[]): ToolActivityGlyph {
   const has = (candidates: readonly string[]) =>
     words.some((word) => candidates.includes(word));
   if (has(["search", "find", "query", "grep", "glob"])) return "search";
@@ -541,7 +535,10 @@ export function plainTextOfOutput(output: unknown): string | undefined {
   );
 }
 
-function shortField(record: Record<string, unknown>, key: string): string | undefined {
+function shortField(
+  record: Record<string, unknown>,
+  key: string,
+): string | undefined {
   const value = readString(record, key);
   if (value === undefined) return undefined;
   if (value.length > MAX_SHORT_FIELD) return truncate(value, MAX_SHORT_FIELD);

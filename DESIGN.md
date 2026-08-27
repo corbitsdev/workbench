@@ -235,7 +235,7 @@ the one call among many that might matter. Each chip is
 column, so a wall of calls reads as a stack of short tags, not a wall of
 prose.
 
-**Phrase.** A sentence in tense, derived from the tool's *end name* —
+**Phrase.** A sentence in tense, derived from the tool's _end name_ —
 the segment after the last `:` in an Interchange qualified id, or after
 `__` in an MCP id — plus a few argument clauses (`for "…"`, `in #42`).
 Present while running or pending ("Searching memory"), past when done
@@ -287,7 +287,6 @@ Don't:
 - Copy Vercel AI Elements' full Parameters/Result collapsible — take the
   status glyph and the quiet header, not the inspector.
 - Fold consecutive chips into "Used 3 tools".
-
 
 ## Message Alignment
 
