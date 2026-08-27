@@ -2,6 +2,9 @@
 // ellipsis. The ellipsis button and a right-click on the message open the
 // same menu — see `buildMessageMenu` in `timeline.tsx`.
 import { afterEach, describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
@@ -15,6 +18,20 @@ import type {
 } from "../src/timeline";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const chatUiCss = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../src/styles.css"),
+  "utf8",
+);
+
+function cssRuleBodies(selector: string): string[] {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return [
+    ...chatUiCss.matchAll(
+      new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([^}]+)\\}`, "g"),
+    ),
+  ].map((match) => match[1] ?? "");
+}
 
 /** Radix's exit-animation handling runs through a couple of microtasks even
  * with no real CSS animation configured — see the identical helper in
@@ -134,7 +151,10 @@ describe("hover Edit on own prompts", () => {
 
     const group = el.querySelector(".chat-message-group");
     expect(group?.getAttribute("data-own")).toBe("true");
-    expect(el.querySelector(".chat-hover-edit")).not.toBeNull();
+    const edit = el.querySelector(".chat-hover-edit");
+    expect(edit).not.toBeNull();
+    expect(edit?.tagName).toBe("BUTTON");
+    expect(edit?.getAttribute("aria-label")).toBe("Edit");
   });
 
   test("Edit is absent on someone else's prompt even when onEditMessage is wired", async () => {
@@ -226,6 +246,36 @@ describe("hover Edit on own prompts", () => {
 
     expect(opened).toEqual(["m1"]);
     expect(edited).toEqual([]);
+  });
+});
+
+describe("own-prompt hover toolbar is mirrored off the prompt", () => {
+  test("own rows pin the toolbar to the inboard (left) edge", () => {
+    const bodies = cssRuleBodies(
+      '.chat-message-group[data-own="true"] .chat-hover-toolbar',
+    );
+    expect(bodies.length).toBeGreaterThan(0);
+    const body = bodies[0] ?? "";
+    expect(body).toMatch(/right:\s*auto/);
+    expect(body).toMatch(/left:\s*0\.4rem/);
+  });
+
+  test("other rows keep the default trailing (right) edge", () => {
+    const bodies = cssRuleBodies(".chat-hover-toolbar");
+    expect(bodies.length).toBeGreaterThan(0);
+    const body = bodies[0] ?? "";
+    expect(body).toMatch(/right:\s*0\.4rem/);
+    expect(body).not.toMatch(/left:/);
+  });
+
+  test("hover, focus-within, and data-open still reveal the toolbar", () => {
+    expect(chatUiCss).toMatch(
+      /\.chat-message-group:hover\s+\.chat-hover-toolbar/,
+    );
+    expect(chatUiCss).toMatch(
+      /\.chat-message-group:focus-within\s+\.chat-hover-toolbar/,
+    );
+    expect(chatUiCss).toMatch(/\.chat-hover-toolbar\[data-open="true"\]/);
   });
 });
 

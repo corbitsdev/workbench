@@ -3105,9 +3105,11 @@
 /* Mock's hover toolbar: the compact trailing-edge cluster (add-reaction,
    reply-in-thread, ellipsis) that replaces the old persistent inline
    "Reply in thread" link and the standalone add-reaction trigger. Floats
-   over the message's top-right corner, fading in on hover/focus-within
-   like `.chat-pin-toggle` above, plus `data-open` so it stays put while its
-   own picker or menu is open even if focus moves into a portaled menu.
+   over the inboard (trailing) corner — top-right on others' left-aligned
+   rows, top-left on own right-aligned rows so Edit does not sit on the
+   prompt — fading in on hover/focus-within like `.chat-pin-toggle` above,
+   plus `data-open` so it stays put while its own picker or menu is open
+   even if focus moves into a portaled menu.
    Positioned relative to `.chat-message-row` (CL-6376) — the wrapper
    around this one message's own content, siblings-with but excluding its
    optional `.chat-day-divider` — rather than `.chat-message-group` as a
@@ -3160,6 +3162,13 @@
   pointer-events: none;
   box-shadow: 0 2px 10px color-mix(in srgb, black 14%, transparent);
   transition: opacity 120ms var(--chat-ease);
+}
+
+/* Own (right-aligned) rows: inboard edge is the left of the row, matching
+   how `[data-own="true"] .chat-artifact-chip` already mirrors. */
+.chat-message-group[data-own="true"] .chat-hover-toolbar {
+  right: auto;
+  left: 0.4rem;
 }
 
 .chat-message-group:hover .chat-hover-toolbar,
