@@ -194,6 +194,36 @@ describe("describeToolCall", () => {
       ),
     ).toBe("Asked a question");
   });
+
+  test("a verb in the middle of the leftover name still tenses, without repeating Linear", () => {
+    const phrase = describeToolCall(
+      "@corbits/linear-tools/li:linear_list_recent_issues",
+      {},
+      "past",
+    );
+    expect(phrase).toBe("Listed recent issues in Linear");
+    expect(phrase).not.toBe("Linear list recent issues in Linear");
+    expect(
+      describeToolCall(
+        "@corbits/linear-tools/li:linear_list_recent_issues",
+        {},
+        "present",
+      ),
+    ).toBe("Listing recent issues in Linear");
+  });
+
+  test("a nameless-verb tool still tenses its query clause", () => {
+    expect(
+      describeToolCall("github_activity", { query: "bench pricing" }, "past"),
+    ).toBe('Ran github activity for "bench pricing"');
+    expect(
+      describeToolCall(
+        "github_activity",
+        { query: "bench pricing" },
+        "present",
+      ),
+    ).toBe('Running github activity for "bench pricing"');
+  });
 });
 
 describe("plainTextOfOutput", () => {
@@ -346,6 +376,23 @@ describe("toToolActivityRow", () => {
     );
     expect(row.provider).toBeUndefined();
     expect(row.phrase).toBe("Frobnicate widget");
+  });
+
+  test("an Interchange Linear list carries a Linear tile and a tensed sentence", () => {
+    const row = toToolActivityRow(
+      trace({
+        name: "@corbits/linear-tools/li:linear_list_recent_issues",
+        status: "success",
+      }),
+      "k",
+    );
+    expect(row.phrase).toBe("Listed recent issues in Linear");
+    expect(row.provider).toBe("linear");
+    expect(row.toolName).toBe("linear_list_recent_issues");
+    expect(providerTile(row.provider ?? "")).toEqual({
+      initials: "Li",
+      color: "#5e6ad2",
+    });
   });
 });
 

@@ -2,6 +2,9 @@
 // on the text a reader sees. The standing rule under test is that no
 // argument bag or tool result ever reaches the DOM as JSON, in any state.
 import { beforeEach, describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
@@ -177,5 +180,57 @@ describe("ToolActivityGroup", () => {
     expect(el.querySelector('[data-status="running"]')).not.toBeNull();
     expect(el.innerHTML).not.toContain("—");
     expect(el.querySelector(".chat-tool-activity-tile svg")).not.toBeNull();
+  });
+
+  test("a Linear list chip uses the Linear tile and a tensed sentence, never the tautology", () => {
+    const el = mount([
+      trace({
+        name: "@corbits/linear-tools/li:linear_list_recent_issues",
+      }),
+    ]);
+    expect(el.textContent).toContain("Listed recent issues in Linear");
+    expect(el.textContent).not.toContain("Linear list recent issues");
+    expect(el.querySelector(".chat-tool-activity-tile")?.textContent).toBe(
+      "Li",
+    );
+  });
+});
+
+const css = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "../src/styles.css"),
+  "utf8",
+);
+
+function ruleBody(selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([^}]+)\\}`).exec(
+    css,
+  );
+  return match?.[1] ?? "";
+}
+
+describe("tool-activity chip layout", () => {
+  test("a long chip ellipsizes against the message column, not a shrink-wrapped cycle", () => {
+    const stack = ruleBody(".chat-tool-activity");
+    expect(stack).toMatch(/width:\s*100%/);
+    expect(stack).toMatch(/min-width:\s*0/);
+    expect(stack).toMatch(/max-width:\s*100%/);
+
+    const row = ruleBody(".chat-tool-activity-row");
+    expect(row).toMatch(/width:\s*100%/);
+    expect(row).toMatch(/min-width:\s*0/);
+    expect(row).toMatch(/max-width:\s*100%/);
+
+    const chip = ruleBody(".chat-tool-activity-chip");
+    expect(chip).toMatch(/width:\s*fit-content/);
+    expect(chip).toMatch(/min-width:\s*0/);
+    expect(chip).toMatch(/max-width:\s*100%/);
+    expect(chip).not.toMatch(/width:\s*max-content/);
+
+    const phrase = ruleBody(".chat-tool-activity-phrase");
+    expect(phrase).toMatch(/overflow:\s*hidden/);
+    expect(phrase).toMatch(/text-overflow:\s*ellipsis/);
+    expect(phrase).toMatch(/white-space:\s*nowrap/);
+    expect(phrase).toMatch(/min-width:\s*0/);
   });
 });

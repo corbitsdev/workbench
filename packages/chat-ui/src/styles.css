@@ -2155,6 +2155,10 @@
   align-items: flex-start;
   gap: 0.5rem;
   padding: 0.15rem 0;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   font-size: 0.8125rem;
   color: var(--muted-foreground);
 }
@@ -2166,12 +2170,17 @@
 }
 
 /* The row is the outer wrapper — chip on top, its optional detail
-   underneath. `.chat-tool-activity-chip` is what's `width:max-content`. */
+   underneath. It takes the message column so a long chip can ellipsize
+   against a real width instead of a shrink-wrapped max-content cycle. */
 .chat-tool-activity-row {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 0.3rem;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .chat-tool-activity-row[data-indented="true"] {
@@ -2183,7 +2192,9 @@
   flex-direction: row;
   align-items: center;
   gap: 0.5rem;
-  width: max-content;
+  box-sizing: border-box;
+  width: fit-content;
+  min-width: 0;
   max-width: 100%;
   flex-wrap: nowrap;
   border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);

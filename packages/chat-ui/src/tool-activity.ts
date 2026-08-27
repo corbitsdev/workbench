@@ -58,7 +58,7 @@ type Tense = "past" | "present";
 
 type Conjugation = { readonly past: string; readonly present: string };
 
-/** The verbs tool names actually start (or end) with, in the two forms a
+/** The verbs tool names actually contain, in the two forms a
  * transcript needs. Irregulars are why this is a table and not a suffix rule. */
 const VERBS: Record<string, Conjugation> = {
   add: { past: "Added", present: "Adding" },
@@ -374,15 +374,14 @@ function pickVerb(words: readonly string[]): {
   verb: string | undefined;
   objectWords: readonly string[];
 } {
-  const first = words[0];
-  const last = words.length > 1 ? words[words.length - 1] : undefined;
-  if (first !== undefined && VERBS[first] !== undefined) {
-    return { verb: first, objectWords: words.slice(1) };
+  const index = words.findIndex((word) => VERBS[word] !== undefined);
+  if (index === -1) {
+    return { verb: undefined, objectWords: words };
   }
-  if (last !== undefined && VERBS[last] !== undefined) {
-    return { verb: last, objectWords: words.slice(0, -1) };
-  }
-  return { verb: undefined, objectWords: words };
+  return {
+    verb: words[index],
+    objectWords: [...words.slice(0, index), ...words.slice(index + 1)],
+  };
 }
 
 function isPluralWord(word: string): boolean {
@@ -465,6 +464,10 @@ export function describeToolCall(
   const identity = resolveToolIdentity(name, input);
   const clause = argumentClause(input);
   const picked = pickVerb(identity.words);
+  const objectWords =
+    identity.provider === undefined
+      ? picked.objectWords
+      : picked.objectWords.filter((word) => word !== identity.provider);
   const providerSuffix =
     identity.provider === undefined
       ? ""
@@ -477,7 +480,7 @@ export function describeToolCall(
     }
     const conjugation = VERBS[picked.verb];
     if (conjugation !== undefined) {
-      const object = objectPhrase(picked.objectWords, picked.verb);
+      const object = objectPhrase(objectWords, picked.verb);
       const head =
         object === undefined
           ? conjugation[tense]
@@ -488,6 +491,12 @@ export function describeToolCall(
   }
 
   const fallback = identity.words.join(" ");
+  const clauseSuffix = buildClauseSuffix(clause, providerSuffix !== "");
+  if (clause !== undefined) {
+    const head = tense === "past" ? "Ran" : "Running";
+    const body = fallback === "" ? "a step" : fallback;
+    return `${head} ${body}${providerSuffix}${clauseSuffix}`;
+  }
   const sentence = fallback === "" ? "Ran a step" : titleCase(fallback);
   return `${sentence}${providerSuffix}`;
 }
