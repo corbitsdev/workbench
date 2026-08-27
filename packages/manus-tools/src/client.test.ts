@@ -6,6 +6,7 @@ import {
   DEFAULT_SLIDE_MAX_POLLS,
   DEFAULT_SLIDE_POLL_INTERVAL_MS,
   extractOutputFiles,
+  getTaskDetail,
   latestAgentStatus,
   listTaskMessages,
   manusRequest,
@@ -95,6 +96,21 @@ test("createTask posts skill, connector, and schema fields only when set", async
     },
     agent_profile: "manus-1.6-lite",
   });
+});
+
+test("getTaskDetail rejects a malformed successful task payload", async () => {
+  const fetchImpl = (async () =>
+    new Response(
+      JSON.stringify({
+        ok: true,
+        task: { id: "task_1", status: "completed" },
+      }),
+      { status: 200 },
+    )) as unknown as typeof fetch;
+
+  await expect(getTaskDetail({ fetchImpl }, "task_1")).rejects.toThrow(
+    /task-detail response did not match the expected shape/,
+  );
 });
 
 test("listTaskMessages GETs /v2/task.listMessages without an auth header", async () => {
@@ -243,8 +259,7 @@ test("createSlideDeck treats mixed [stopped, running] desc as terminal", async (
           content: [
             {
               type: "text",
-              text:
-                "Create a slide presentation in pptx format. Produce a presentation deck, not a document. Topic and requirements:\n\nOnboarding",
+              text: "Create a slide presentation in pptx format. Produce a presentation deck, not a document. Topic and requirements:\n\nOnboarding",
             },
           ],
         },

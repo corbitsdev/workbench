@@ -286,15 +286,86 @@ test("task_create without agent_profile posts manus-1.6-lite", async () => {
   }
 });
 
+test("task_create result feeds task_detail through the validated GET boundary", async () => {
+  const originalFetch = globalThis.fetch;
+  const createdTaskId = "task_created_42";
+  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+    const url = String(input);
+    if (url === "https://api.manus.ai/v2/task.create") {
+      return new Response(
+        JSON.stringify({ ok: true, task_id: createdTaskId }),
+        { status: 200 },
+      );
+    }
+    expect(url).toBe(
+      `https://api.manus.ai/v2/task.detail?task_id=${createdTaskId}`,
+    );
+    expect(init?.method).toBe("GET");
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        request_id: "req_detail_1",
+        task: {
+          id: createdTaskId,
+          status: "running",
+          title: "Deterministic read",
+          task_type: "standard",
+          share_visibility: "private",
+          agent_profile: "manus-1.6-lite",
+        },
+      }),
+      { status: 200 },
+    );
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = manusTools(fakeEnv(fakeCredentials("key")));
+    const created = await bundle.run(
+      {
+        id: "call_create_then_read",
+        name: "task_create",
+        arguments: { content: "Create a deterministic task" },
+      },
+      new AbortController().signal,
+    );
+    expect(created.isError).toBeUndefined();
+    const createResult = JSON.parse(created.content as string) as {
+      task_id: string;
+    };
+
+    const detail = await bundle.run(
+      {
+        id: "call_task_detail",
+        name: "task_detail",
+        arguments: { task_id: createResult.task_id },
+      },
+      new AbortController().signal,
+    );
+    expect(detail.isError).toBeUndefined();
+    expect(JSON.parse(detail.content as string)).toEqual({
+      ok: true,
+      request_id: "req_detail_1",
+      task: {
+        id: createdTaskId,
+        status: "running",
+        title: "Deterministic read",
+        task_type: "standard",
+        share_visibility: "private",
+        agent_profile: "manus-1.6-lite",
+      },
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("task_create omits skill fields unless the assistant passes ids", async () => {
   const originalFetch = globalThis.fetch;
   let createBody = "";
   globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
     createBody = typeof init?.body === "string" ? init.body : "";
-    return new Response(
-      JSON.stringify({ ok: true, task_id: "task_1" }),
-      { status: 200 },
-    );
+    return new Response(JSON.stringify({ ok: true, task_id: "task_1" }), {
+      status: 200,
+    });
   }) as unknown as typeof fetch;
   try {
     const bundle = manusTools(fakeEnv(fakeCredentials("key")));

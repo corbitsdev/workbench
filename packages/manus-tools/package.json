@@ -2,7 +2,7 @@
   "name": "@corbits/manus-tools",
   "private": true,
   "description": "Manus integration: a v2 API client and an @intx/agent tool bundle for running tasks and retrieving files",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
