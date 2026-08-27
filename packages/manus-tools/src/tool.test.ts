@@ -122,11 +122,18 @@ test("create_slides creates a task, polls messages, and surfaces the presentatio
     if (url.includes("/v2/task.create")) {
       expect(init?.method).toBe("POST");
       const body = JSON.parse(typeof init?.body === "string" ? init.body : "");
-      expect(body.message.content).toContain("slide presentation");
-      expect(body.message.content).toContain("pptx");
-      expect(body.message.content).toContain(
+      expect(body.message.content).toEqual([
+        expect.objectContaining({
+          type: "text",
+        }),
+      ]);
+      expect(body.message.content[0].text).toContain("slide presentation");
+      expect(body.message.content[0].text).toContain("pptx");
+      expect(body.message.content[0].text).toContain(
         "Make a five-slide deck about onboarding",
       );
+      expect(body.message.enable_skills).toBeUndefined();
+      expect(body.message.force_skills).toBeUndefined();
       return new Response(
         JSON.stringify({
           ok: true,
@@ -230,6 +237,127 @@ test("degrades to an error result (never throws) when the underlying call fails"
       new AbortController().signal,
     );
     expect(result.isError).toBe(true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("task_create and task_send_msg expose skill and connector fields", () => {
+  const create = MANUS_ENDPOINTS.find((spec) => spec.name === "task_create");
+  const send = MANUS_ENDPOINTS.find((spec) => spec.name === "task_send_msg");
+  for (const spec of [create, send]) {
+    expect(spec?.properties["enable_skills"]?.type).toBe("array");
+    expect(spec?.properties["force_skills"]?.type).toBe("array");
+    expect(spec?.properties["connectors"]?.type).toBe("array");
+    expect(spec?.properties["task_references"]?.type).toBe("array");
+  }
+  expect(create?.properties["structured_output_schema"]?.type).toBe("object");
+  expect(send?.properties["structured_output_schema"]).toBeUndefined();
+});
+
+test("task_create omits skill fields unless the assistant passes ids", async () => {
+  const originalFetch = globalThis.fetch;
+  let createBody = "";
+  globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+    createBody = typeof init?.body === "string" ? init.body : "";
+    return new Response(
+      JSON.stringify({ ok: true, task_id: "task_1" }),
+      { status: 200 },
+    );
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = manusTools(fakeEnv(fakeCredentials("key")));
+    const omitted = await bundle.run(
+      {
+        id: "call_create",
+        name: "task_create",
+        arguments: { content: "Hello" },
+      },
+      new AbortController().signal,
+    );
+    expect(omitted.isError).toBeUndefined();
+    expect(JSON.parse(createBody)).toEqual({
+      message: { content: [{ type: "text", text: "Hello" }] },
+    });
+
+    const present = await bundle.run(
+      {
+        id: "call_create_skills",
+        name: "task_create",
+        arguments: {
+          content: "Hello with skills",
+          enable_skills: ["skill_abc"],
+          force_skills: ["skill_abc"],
+          connectors: ["conn_1"],
+          task_references: ["task_ref_1"],
+          structured_output_schema: { type: "object" },
+        },
+      },
+      new AbortController().signal,
+    );
+    expect(present.isError).toBeUndefined();
+    expect(JSON.parse(createBody)).toEqual({
+      message: {
+        content: [{ type: "text", text: "Hello with skills" }],
+        enable_skills: ["skill_abc"],
+        force_skills: ["skill_abc"],
+        connectors: ["conn_1"],
+        task_references: ["task_ref_1"],
+      },
+      structured_output_schema: { type: "object" },
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("task_send_msg posts ContentPart content and optional skill fields", async () => {
+  const originalFetch = globalThis.fetch;
+  let sendBody = "";
+  globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+    sendBody = typeof init?.body === "string" ? init.body : "";
+    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = manusTools(fakeEnv(fakeCredentials("key")));
+    const omitted = await bundle.run(
+      {
+        id: "call_send",
+        name: "task_send_msg",
+        arguments: { task_id: "task_1", content: "Follow up" },
+      },
+      new AbortController().signal,
+    );
+    expect(omitted.isError).toBeUndefined();
+    expect(JSON.parse(sendBody)).toEqual({
+      task_id: "task_1",
+      message: { content: [{ type: "text", text: "Follow up" }] },
+    });
+
+    const present = await bundle.run(
+      {
+        id: "call_send_skills",
+        name: "task_send_msg",
+        arguments: {
+          task_id: "task_1",
+          content: "Follow up with skills",
+          enable_skills: ["skill_abc"],
+          connectors: ["conn_1"],
+          task_references: ["task_ref_1"],
+        },
+      },
+      new AbortController().signal,
+    );
+    expect(present.isError).toBeUndefined();
+    expect(JSON.parse(sendBody)).toEqual({
+      task_id: "task_1",
+      message: {
+        content: [{ type: "text", text: "Follow up with skills" }],
+        enable_skills: ["skill_abc"],
+        connectors: ["conn_1"],
+        task_references: ["task_ref_1"],
+      },
+    });
   } finally {
     globalThis.fetch = originalFetch;
   }
