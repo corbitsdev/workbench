@@ -1,5 +1,5 @@
 // Real, free credential probes for the tool connectors this ticket
-// adds — Granola, Exa, ScrapeCreators, Linear, and GitHub — each hitting the
+// adds — Granola, Exa, ScrapeCreators, Linear, GitHub, and Manus — each hitting the
 // same production endpoint its tool client (`packages/*-tools/src/
 // client.ts`) already calls, authenticated with the real key. This
 // mirrors `@workbench/hub-client/credential-test`'s
