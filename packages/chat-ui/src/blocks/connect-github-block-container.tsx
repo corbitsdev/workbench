@@ -22,6 +22,7 @@
 // snapshot so a real disconnect still shows Connect.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConnectGithubBlockData } from "@corbits/chat/blocks";
+import { reportError } from "@corbits/error-sink";
 
 import type {
   ConnectGithubActions,
@@ -32,8 +33,9 @@ import { ConnectGithubBlockView } from "./connect-github-block";
 
 /** Positions in the room's three-step walkthrough. Which one is current
  * is read off the live connect state, never off the card's own data:
- * disconnected means connect, connected with nothing recorded means pick,
- * and repos the server actually recorded means reviewing. */
+ * disconnected means connect, connected with nothing recorded (or a
+ * person who pressed "change repos") means pick, and repos the server
+ * actually recorded means reviewing. */
 const STEP_CONNECT = 0;
 const STEP_PICK = 1;
 const STEP_REVIEWING = 2;
@@ -142,7 +144,7 @@ export function ConnectGithubBlockContainer({
   const currentStepIndex =
     displayQuery.kind !== "connected"
       ? STEP_CONNECT
-      : recordedRepoIds.length === 0
+      : recordedRepoIds.length === 0 || repickRequested
         ? STEP_PICK
         : STEP_REVIEWING;
   const scene: OnboardingScene = {
@@ -163,7 +165,7 @@ export function ConnectGithubBlockContainer({
     );
   }
 
-  if (currentStepIndex === STEP_REVIEWING && !repickRequested) {
+  if (currentStepIndex === STEP_REVIEWING) {
     return (
       <ConnectGithubBlockView
         scene={scene}
@@ -176,12 +178,23 @@ export function ConnectGithubBlockContainer({
     );
   }
 
+  const connectedActions = actions;
+
   function toggleRepo(repoId: string) {
     setSelectedRepoIds((current) =>
       current.includes(repoId)
         ? current.filter((id) => id !== repoId)
         : [...current, repoId],
     );
+  }
+
+  async function startReviewing(repoIds: readonly string[]) {
+    try {
+      await connectedActions.startReviewing(repoIds);
+      if (mountedRef.current) setRepickRequested(false);
+    } catch (cause) {
+      reportError(cause, { operation: "connect-github.startReviewing" });
+    }
   }
 
   return (
@@ -195,13 +208,12 @@ export function ConnectGithubBlockContainer({
       onSelectAll={() =>
         setSelectedRepoIds(displayQuery.repos.map((repo) => repo.id))
       }
-      onChangeConnection={actions.requestConnect}
+      onChangeConnection={connectedActions.requestConnect}
       onStartReviewing={(repoIds) => {
-        setRepickRequested(false);
-        void actions.startReviewing(repoIds);
+        void startReviewing(repoIds);
       }}
       onSkip={() => {
-        void actions.skip();
+        void connectedActions.skip();
       }}
     />
   );
