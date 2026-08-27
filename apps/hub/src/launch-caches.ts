@@ -158,7 +158,11 @@ export function createLaunchCaches(deps: {
     params: ListAssetBlobsParams,
   ): Promise<string[]> {
     const sha = await resolvePackageRegistryHeadSha(params.assetId, params.ref);
-    if (sha === null) return assetService.listAssetBlobs(params);
+    // No resolvable `main` means no tarballs yet. Match the tarball REST
+    // list, which returns [] on this same not_found rather than failing
+    // the launch. Pins against a missing tarball still fail as unknown
+    // package.
+    if (sha === null) return [];
     const key = `${params.assetId}:${sha}:${params.dir}`;
     const cached = listCache.get(key);
     if (cached !== undefined) return cached;
