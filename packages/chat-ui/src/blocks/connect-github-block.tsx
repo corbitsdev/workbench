@@ -126,7 +126,7 @@ function SceneHeader({ scene }: { readonly scene: OnboardingScene }) {
       {scene.promise !== undefined ? (
         <p className="chat-block-scene-promise">{scene.promise}</p>
       ) : null}
-      {steps !== undefined ? (
+      {steps !== undefined && steps.length > 0 ? (
         <ol className="chat-block-scene-steps">
           {steps.map((step, index) => {
             const state = stepStateAt(index, scene.currentStepIndex);

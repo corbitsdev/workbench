@@ -26,6 +26,7 @@ import { Hono } from "hono";
 import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { makeErrorEnvelope } from "@workbench/hub-client";
+import { reportError } from "@corbits/error-sink";
 
 import {
   fetchAuthenticatedLogin,
@@ -117,10 +118,11 @@ export type ConnectGithubRoutesDeps = {
   /** Posts each reviewer's canned introduction to the room once
    * `startReviewingRepos` succeeds — the identity beat of the first
    * minute a person sees after picking repos. Called once, after the
-   * repos are recorded and before the 200 response; a rejection is
-   * logged through `deps.log` and never fails the response — the
-   * webhook triggers already exist, so a person must not see an error
-   * for a missed introduction. */
+   * repos are recorded and before the 200 response; a later
+   * `start-reviewing` (change repos) does not call this again. A
+   * rejection is reported through `reportError` and never fails the
+   * response — the webhook triggers already exist, so a person must
+   * not see an error for a missed introduction. */
   onReviewingStarted(
     tenantId: string,
     workbenchId: string,
@@ -263,6 +265,12 @@ export function createConnectGithubRoutes(
       }
 
       try {
+        const settingsBefore = await deps.getTemplateSettings(
+          tenant.id,
+          workbenchId,
+        );
+        const introductionsAlreadyPosted =
+          settingsBefore.selectedRepos.length > 0;
         const result = await startReviewingRepos(body.repoIds, state.repos, {
           mintRepoGrant: (repo) => deps.mintRepoGrant(tenant.id, repo),
           createWebhookTrigger: (repo) =>
@@ -295,19 +303,21 @@ export function createConnectGithubRoutes(
         const repoNames = body.repoIds
           .map((repoId) => reposById.get(repoId)?.name)
           .filter((name): name is string => name !== undefined);
-        try {
-          await deps.onReviewingStarted(
-            tenant.id,
-            workbenchId,
-            principal.id,
-            reviewerIntroductions(repoNames),
-          );
-        } catch (cause) {
-          const message =
-            cause instanceof Error ? cause.message : String(cause);
-          deps.log(
-            `connect-github: reviewer introductions failed for tenant ${tenant.id}, workbench ${workbenchId}: ${message}`,
-          );
+        if (!introductionsAlreadyPosted) {
+          try {
+            await deps.onReviewingStarted(
+              tenant.id,
+              workbenchId,
+              principal.id,
+              reviewerIntroductions(repoNames),
+            );
+          } catch (cause) {
+            reportError(cause, {
+              operation: "connect-github.reviewerIntroductions",
+              tenantId: tenant.id,
+              roomId: workbenchId,
+            });
+          }
         }
 
         return c.json(
