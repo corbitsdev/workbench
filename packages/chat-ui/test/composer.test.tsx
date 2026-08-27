@@ -1,8 +1,3 @@
-// The composer's Send button, in-flight: standardized on the same
-// label-swap/disabled pattern the create-agent and invite-agent dialogs
-// already use (CL-6019) — previously the icon-only button gave no visible
-// signal that a send was in progress beyond being disabled.
-
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, createElement, createRef } from "react";
 import { createRoot } from "react-dom/client";
@@ -11,6 +6,8 @@ import type { Root } from "react-dom/client";
 import { Composer } from "../src/composer";
 import type { ComposerHandle, ComposerSendPayload } from "../src/composer";
 
+// The in-flight send contract survives the icon-only UI: its accessible name
+// announces progress and the action remains unavailable until sending ends.
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 
@@ -58,8 +55,12 @@ function sendButton(): HTMLButtonElement {
   return button;
 }
 
+function keyboardHint(): Element | null {
+  return container?.querySelector(".chat-composer-keyboard-hint") ?? null;
+}
+
 describe("Composer send button", () => {
-  test("shows a Sending… label and stays disabled while the send promise is unresolved", async () => {
+  test("updates its accessible label and stays disabled while sending", async () => {
     let resolveSend: (value: boolean) => void = () => undefined;
     const onSend = () =>
       new Promise<boolean>((resolve) => {
@@ -101,9 +102,11 @@ describe("Composer send button", () => {
   });
 });
 
-function hint(): Element | null {
-  return container?.querySelector(".chat-composer-hint") ?? null;
-}
+test("labels the icon-only attachment action in the composer rail", () => {
+  mount(() => Promise.resolve(true));
+
+  expect(container?.querySelector('[aria-label="Attach files"]')?.textContent).toBe("");
+});
 
 function textarea(): HTMLTextAreaElement {
   const element = container?.querySelector("textarea");
@@ -255,49 +258,37 @@ describe("Composer mention popover — Agents and People (CL-5879)", () => {
   });
 });
 
-// The hint used to mount/unmount with its condition, which added and
-// removed a line from the composer's box on every focus/blur and
-// keystroke. It is now always in the DOM with a reserved height; only
-// `data-visible` (and the opacity/visibility CSS it drives) toggles, so
-// asserting on that attribute — never on presence/absence — is the
-// honest way to test the new mechanism (CL-6250).
 describe("Composer keyboard hint", () => {
-  test("is always mounted and stays visibility-hidden until focused with a non-empty draft", async () => {
+  test("uses the existing action rail and appears only for a focused non-empty draft", async () => {
     mount(() => Promise.resolve(true));
-    expect(hint()).not.toBeNull();
-    expect(hint()?.getAttribute("data-visible")).toBe("false");
+    expect(keyboardHint()).not.toBeNull();
+    expect(keyboardHint()?.getAttribute("data-visible")).toBe("false");
 
     act(() => {
       textarea().focus();
     });
-    await settle();
-    expect(hint()?.getAttribute("data-visible")).toBe("false");
-
     typeInto(textarea(), "hello");
     await settle();
-    expect(hint()?.getAttribute("data-visible")).toBe("true");
-    expect(hint()?.textContent).toBe("Enter to send");
 
-    act(() => {
-      textarea().blur();
-    });
-    await settle();
-    expect(hint()?.getAttribute("data-visible")).toBe("false");
+    expect(keyboardHint()?.getAttribute("data-visible")).toBe("true");
+    expect(keyboardHint()?.textContent).toBe("Enter to send");
+    expect(
+      container?.querySelectorAll(".chat-composer-actions > button").length,
+    ).toBe(2);
   });
 
-  test("hides again once the draft is cleared while still focused, without unmounting", async () => {
+  test("hides when the focused draft is cleared", async () => {
     mount(() => Promise.resolve(true));
     act(() => {
       textarea().focus();
     });
-    typeInto(textarea(), "hi");
+    typeInto(textarea(), "hello");
     await settle();
-    expect(hint()?.getAttribute("data-visible")).toBe("true");
+    expect(keyboardHint()?.getAttribute("data-visible")).toBe("true");
 
     typeInto(textarea(), "");
     await settle();
-    expect(hint()).not.toBeNull();
-    expect(hint()?.getAttribute("data-visible")).toBe("false");
+    expect(keyboardHint()?.getAttribute("data-visible")).toBe("false");
   });
 });
 
