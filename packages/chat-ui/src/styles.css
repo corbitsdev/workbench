@@ -1247,7 +1247,12 @@
   height: 0.4rem;
   border-radius: 0;
   background: currentColor;
-  animation: chat-block-pulse 1.6s ease infinite;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .chat-block-pulse {
+    animation: chat-block-pulse 1.6s ease infinite;
+  }
 }
 
 @keyframes chat-block-pulse {
