@@ -17,7 +17,11 @@
 // always is.
 //
 // New browser-safe subpaths need an explicit ruling in ENTRIES below —
-// this check only walks what it's told to.
+// this check only walks what it's told to. A package.json declaring the
+// conventional `./client` subpath with no matching ENTRIES ruling is
+// itself a violation, so a new client can't be silently forgotten; a
+// non-conventional browser-safe subpath (like api-query's `./envelope`)
+// still needs to be added to ENTRIES by hand.
 import { Glob } from "bun";
 import path from "node:path";
 import {
@@ -50,6 +54,8 @@ export const ENTRIES: readonly BrowserSafeEntry[] = [
   { package: "@corbits/inbox", subpath: "./client" },
   { package: "@corbits/insights", subpath: "./client" },
   { package: "@corbits/agent-directory", subpath: "./client" },
+  { package: "@corbits/bench", subpath: "./client" },
+  { package: "@corbits/preferences", subpath: "./client" },
   { package: "@corbits/api-query", subpath: "." },
   // The envelope alone (UnauthenticatedError, ApiQueryError, toAPIQuery) has
   // no React/JSX dependency, so packages without `jsx` configured (e.g.
@@ -77,6 +83,7 @@ const DENYLIST_PATTERNS: readonly RegExp[] = [
   /^hono(\/|$)/,
   /^postgres(\/|$)/,
   /^drizzle-orm(\/|$)/,
+  /^node:/,
 ];
 
 function isDenylisted(specifier: string): boolean {
@@ -165,6 +172,36 @@ function splitPackageSpecifier(specifier: string): {
 }
 
 /**
+ * `./client` is this repo's naming convention for a browser-safe subpath
+ * (routines, inbox, insights, agent-directory, presence, bench,
+ * preferences all use it) — a package that declares one is making the same
+ * "nothing server-only reaches here" promise ENTRIES exists to check, so a
+ * declared `./client` with no ENTRIES ruling is itself a violation, not a
+ * silent skip.
+ */
+const CONVENTIONAL_SUBPATH = "./client";
+
+function findUnruledClientExports(
+  entries: readonly BrowserSafeEntry[],
+  packages: readonly PackageManifest[],
+): string[] {
+  const ruled = new Set(
+    entries.map((entry) => `${entry.package}${entry.subpath}`),
+  );
+  const violations: string[] = [];
+  for (const pkg of packages) {
+    if (pkg.exports[CONVENTIONAL_SUBPATH] === undefined) continue;
+    if (ruled.has(`${pkg.name}${CONVENTIONAL_SUBPATH}`)) continue;
+    violations.push(
+      `${pkg.name} declares a "${CONVENTIONAL_SUBPATH}" export with no ` +
+        `ENTRIES ruling in scripts/checks/browser-safe-subpaths.ts — add ` +
+        `{ package: "${pkg.name}", subpath: "${CONVENTIONAL_SUBPATH}" } to ENTRIES.`,
+    );
+  }
+  return violations;
+}
+
+/**
  * Walks the transitive import graph of every declared entry and reports
  * a violation for each denylisted import reached, and for any import
  * this check cannot resolve (a broken relative import, or a workspace
@@ -178,6 +215,8 @@ export function auditBrowserSafeSubpaths(
   files: ReadonlyMap<string, string>,
 ): CheckReport {
   const report = emptyReport();
+
+  report.violations.push(...findUnruledClientExports(entries, packages));
 
   for (const entry of entries) {
     const label = entryLabel(entry);
