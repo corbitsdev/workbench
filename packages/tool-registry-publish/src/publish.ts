@@ -208,7 +208,12 @@ async function putTarball(
   if (cookies.length > 0) headers["Cookie"] = cookies.join("; ");
   const response = await fetchImpl(
     `${hubUrl}/api/tenants/${tenantId}/assets/${assetId}/tarballs/${tarball.filename}`,
-    { method: "PUT", headers, body: tarball.bytes, redirect: "manual" },
+    {
+      method: "PUT",
+      headers,
+      body: Uint8Array.from(tarball.bytes),
+      redirect: "manual",
+    },
   );
   if (response.status !== 200) {
     const text = await response.text();
