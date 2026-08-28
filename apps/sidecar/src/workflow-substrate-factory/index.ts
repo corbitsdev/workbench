@@ -70,8 +70,10 @@ import {
 } from "../step-agent-tools";
 import {
   createDurableConversationRegistry,
+  prepareConversationForOriginatingWorkbench,
   type DurableConversationRegistry,
 } from "../conversation-state";
+import { readOriginatingWorkbenchId } from "../originating-workbench";
 import { parseToolRegistries } from "../tool-materialization";
 import {
   deriveHubHttpUrl,
@@ -483,6 +485,17 @@ export function createSidecarSubstrateFactory(
       credentialWiring,
       mailPartReader,
     ) => {
+      const bodyStepId = req.authzContext.stepId;
+      if (durableConversation !== undefined && bodyStepId !== undefined) {
+        await prepareConversationForOriginatingWorkbench({
+          registry: durableConversation,
+          agentKey: bodyStepId,
+          originatingWorkbenchId: await readOriginatingWorkbenchId({
+            dataDir: validated.SIDECAR_DATA_DIR,
+            mailboxAddress: env.spawn.mailboxAddress,
+          }),
+        });
+      }
       try {
         return await createWorkflowStepInvoker({
           workflowAuthorize: authorize,
@@ -494,11 +507,10 @@ export function createSidecarSubstrateFactory(
           ...(mailPartReader !== undefined ? { mailPartReader } : {}),
         })(req);
       } finally {
-        const bodyStepId = req.authzContext.stepId;
         if (durableConversation !== undefined && bodyStepId !== undefined) {
           // `peek`, not `get`: a build failure before the env's acquire
           // must surface as itself, not as the registry's missing-store
-          // throw.
+          // throw. Flushes the currently bound workbench prefix.
           await durableConversation.peek(bodyStepId)?.mirrorToSubstrate();
         }
       }
@@ -541,10 +553,10 @@ export function createSidecarSubstrateFactory(
     // lifecycle.
     // Run-boundary durability flush. When the deployment is
     // warm-kept, mirror the warm agent's conversation snapshot to the
-    // workflow-run substrate after each message's send settles. The key
-    // is the step identity, the same key the env builder filed the
-    // durable store under, so the hook resolves the right per-agent
-    // store. Absent for a multi-step deploy (no durable registry).
+    // currently bound originating-workbench prefix after each message's
+    // send settles. The registry key is still the step identity (one warm
+    // agent); the store flushes `agent-state/<stepId>/<workbenchId>/`.
+    // Absent for a multi-step deploy (no durable registry).
     const onRunBoundary: ((key: string) => Promise<void>) | undefined =
       durableConversation !== undefined
         ? async (key: string) => {
@@ -603,8 +615,20 @@ export function createSidecarSubstrateFactory(
       sourcesRef,
       credentialWiring,
       mailPartReader,
-    ) =>
-      createWorkflowStepInvoker({
+    ) => {
+      const stepId = req.authzContext.stepId;
+      if (durableConversation !== undefined && stepId !== undefined) {
+        await prepareConversationForOriginatingWorkbench({
+          registry: durableConversation,
+          agentKey: stepId,
+          originatingWorkbenchId: await readOriginatingWorkbenchId({
+            dataDir: validated.SIDECAR_DATA_DIR,
+            mailboxAddress: env.spawn.mailboxAddress,
+          }),
+          ...(warmCache !== undefined ? { warmCache } : {}),
+        });
+      }
+      return createWorkflowStepInvoker({
         workflowAuthorize: authorize,
         buildEnv: (buildReq: Parameters<typeof buildStepEnv>[0]) =>
           buildStepEnv(buildReq, sourcesRef, credentialWiring),
@@ -617,6 +641,7 @@ export function createSidecarSubstrateFactory(
         ...(seedInbound !== undefined ? { seedInbound } : {}),
         ...(driveReplies !== undefined ? { driveReplies } : {}),
       })(req);
+    };
 
     const evaluateGrantsAdapter: GrantEvaluator = async ({
       resource,
