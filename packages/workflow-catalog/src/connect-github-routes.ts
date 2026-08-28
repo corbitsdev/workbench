@@ -84,6 +84,11 @@ export type ConnectGithubRoutesDeps = {
    * `undefined` when the template's own workflow was never deployed for
    * this tenant (a create-flow bug, not something this route can fix). */
   resolveCodeReviewDefinitionId(tenantId: string): Promise<string | undefined>;
+  /** True once this repo already has the `repo:<owner/name>` grant — see
+   * `./connect-github-setup.ts`'s `ConnectGithubSetupPorts.hasRepoGrant`
+   * for why this makes a retry between minting the grant and creating
+   * the trigger safe. */
+  hasRepoGrant(tenantId: string, repo: GitHubRepoSummary): Promise<boolean>;
   /** Mints the `repo:<owner/name>`-scoped grant a launched review run
    * needs to read this repo — see `./connect-github-setup.ts`'s
    * `ConnectGithubSetupPorts.mintRepoGrant` for the exact resource shape. */
@@ -281,6 +286,7 @@ export function createConnectGithubRoutes(
         const introductionsAlreadyPosted =
           settingsBefore.selectedRepos.length > 0;
         const result = await startReviewingRepos(body.repoIds, state.repos, {
+          hasRepoGrant: (repo) => deps.hasRepoGrant(tenant.id, repo),
           mintRepoGrant: (repo) => deps.mintRepoGrant(tenant.id, repo),
           createWebhookTrigger: (repo) =>
             deps.createWebhookTrigger(

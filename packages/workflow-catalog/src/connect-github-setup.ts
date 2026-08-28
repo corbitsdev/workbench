@@ -9,6 +9,17 @@ import type { GitHubRepoSummary } from "@corbits/github-tools";
 
 export interface ConnectGithubSetupPorts {
   /**
+   * True once this repo already has the `repo:<repo.name>` grant —
+   * checked before minting one, so a retry after a failure between
+   * minting the grant and creating the trigger never mints a second
+   * grant for a repo that already has one. The `grant` table
+   * (`vendor/intx/db`) carries no unique constraint over
+   * tenant/resource/action, so this read is the only thing standing
+   * between a retry and a duplicate row. A host binds this to a read
+   * against the same `grant` table `mintRepoGrant` inserts into.
+   */
+  hasRepoGrant(repo: GitHubRepoSummary): Promise<boolean>;
+  /**
    * Mints one grant scoped to `repo:<repo.name>` (the `owner/name` full
    * name — the same `"<type>:<id>"` resource-string shape
    * `idResource("room", "id")` builds in `@intx/hub-api`'s grant
@@ -28,11 +39,15 @@ export interface ConnectGithubSetupPorts {
   ): Promise<{ readonly id: string }>;
   /**
    * True once this repo already has a live webhook trigger — checked
-   * before minting anything for it, so a retry after a mid-loop failure
-   * (a repo 1..N-1 already set up, N onward not) never mints a second
-   * grant or trigger for the repos a prior attempt already finished. A
-   * host binds this to a read against `@corbits/webhook-triggers`'
-   * `WebhookTriggerStore.list`.
+   * before creating one, so a retry after a mid-loop failure (a repo
+   * 1..N-1 already set up, N onward not) never mints a second trigger
+   * for a repo a prior attempt already finished. A host binds this to a
+   * read against `@corbits/webhook-triggers`' `WebhookTriggerStore.list`.
+   *
+   * This is never cleared on GitHub disconnect: nothing here disables or
+   * deletes a trigger, so re-adding a repo after a reconnect finds its
+   * old trigger still live and skips it rather than minting a new one —
+   * intentional, not a gap this module owns closing.
    */
   hasWebhookTrigger(repo: GitHubRepoSummary): Promise<boolean>;
   /**
@@ -57,9 +72,13 @@ export interface StartReviewingReposResult {
  * is a bug in how the connect card's own selection state was built, not
  * something to silently drop.
  *
- * Idempotent by construction: a repo `ports.hasWebhookTrigger` already
- * reports true for is skipped entirely, so retrying after a mid-loop
- * failure only mints for the repos the failed attempt never reached.
+ * Idempotent by construction: the grant and the trigger are each gated
+ * on their own existence check, independently, rather than one check
+ * guarding both — a retry after a failure between minting the grant and
+ * creating the trigger must still create the trigger without re-minting
+ * the grant, and a retry after a failure before the grant was minted
+ * must still mint it. A repo both checks already report true for is
+ * skipped entirely.
  */
 export async function startReviewingRepos(
   repoIds: readonly string[],
@@ -79,10 +98,12 @@ export async function startReviewingRepos(
 
   const createdTriggerIds: string[] = [];
   for (const repo of selected) {
+    if (!(await ports.hasRepoGrant(repo))) {
+      await ports.mintRepoGrant(repo);
+    }
     if (await ports.hasWebhookTrigger(repo)) {
       continue;
     }
-    await ports.mintRepoGrant(repo);
     const trigger = await ports.createWebhookTrigger(repo);
     createdTriggerIds.push(trigger.id);
   }
@@ -90,4 +111,15 @@ export async function startReviewingRepos(
   await ports.persistSelectedRepos(repoIds);
 
   return { createdTriggerIds };
+}
+
+/**
+ * The one place the `webhook_trigger.name` convention for a repo's
+ * pull-request-opened trigger is spelled out — both
+ * `createWebhookTrigger`'s insert and `hasWebhookTrigger`'s lookup bind
+ * against this, in `apps/hub`, so the two can never drift into matching
+ * different strings.
+ */
+export function webhookTriggerName(repo: GitHubRepoSummary): string {
+  return `${repo.name} pull-request-opened`;
 }
