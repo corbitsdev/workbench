@@ -36,6 +36,7 @@ import {
   UnauthenticatedError,
   describeQueryError,
 } from "@corbits/api-query";
+import { reportError } from "@corbits/error-sink";
 import { PRINCIPAL_KIND_LABEL, principalLabel } from "./identity";
 import { AccessPolicyBlock } from "./access-policy";
 import {
@@ -171,7 +172,10 @@ export function PeopleSection({
         setInviteOpen(false);
         reload();
       })
-      .catch(() => setInviteError(SETTINGS_STRINGS.peopleInviteError))
+      .catch((cause: unknown) => {
+        reportError(cause, { operation: "settings.people.invite", tenantId });
+        setInviteError(SETTINGS_STRINGS.peopleInviteError);
+      })
       .finally(() => setInviting(false));
   }
 
@@ -180,7 +184,13 @@ export function PeopleSection({
     setRowError(null);
     deletePendingInvite(tenantId, invite.id)
       .then(reload)
-      .catch(() => setRowError(SETTINGS_STRINGS.pendingInviteCancelError));
+      .catch((cause: unknown) => {
+        reportError(cause, {
+          operation: "settings.people.cancelInvite",
+          tenantId,
+        });
+        setRowError(SETTINGS_STRINGS.pendingInviteCancelError);
+      });
   }
 
   function handleStatusChange(
@@ -191,7 +201,13 @@ export function PeopleSection({
     setRowError(null);
     updatePrincipalStatus(tenantId, principal.id, status)
       .then(reload)
-      .catch(() => setRowError(SETTINGS_STRINGS.peopleStatusUpdateError));
+      .catch((cause: unknown) => {
+        reportError(cause, {
+          operation: "settings.people.updateStatus",
+          tenantId,
+        });
+        setRowError(SETTINGS_STRINGS.peopleStatusUpdateError);
+      });
   }
 
   function handleRemove(principal: Principal) {
@@ -199,7 +215,10 @@ export function PeopleSection({
     setRowError(null);
     removePrincipal(tenantId, principal.id)
       .then(reload)
-      .catch(() => setRowError(SETTINGS_STRINGS.peopleRemoveError));
+      .catch((cause: unknown) => {
+        reportError(cause, { operation: "settings.people.remove", tenantId });
+        setRowError(SETTINGS_STRINGS.peopleRemoveError);
+      });
   }
 
   function handleRoleChange(
@@ -232,7 +251,13 @@ export function PeopleSection({
     )
       .then(() => assignRole(tenantId, principal.id, newRoleId))
       .then(reload)
-      .catch(() => setRowError(SETTINGS_STRINGS.peopleRoleChangeError));
+      .catch((cause: unknown) => {
+        reportError(cause, {
+          operation: "settings.people.changeRole",
+          tenantId,
+        });
+        setRowError(SETTINGS_STRINGS.peopleRoleChangeError);
+      });
   }
 
   return (
