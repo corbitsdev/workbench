@@ -75,8 +75,11 @@ import { RepoId, type CredentialDelivery } from "@intx/types/sidecar";
 import type {
   ApprovalSnapshot,
   InferenceSource,
+  Mail,
+  MessageHeaders,
   OutboundMessage,
 } from "@intx/types/runtime";
+import type { StoredEnvelope } from "@intx/mailbox";
 import type { CancelOrigin } from "@intx/workflow";
 
 import {
@@ -99,10 +102,14 @@ import { commitCancelRequested } from "./cancel-signing";
 import { commitRunFailed } from "./terminal-commit";
 import { buildChildSpawnEnv } from "./spawn-env";
 import { compactRunEvents } from "./run-event-compaction";
+import { recoverInterruptedCompactions } from "./run-event-recovery";
+import { decodeMail } from "@intx/mime";
+import { commitMail, InvalidMailError } from "../adapters/mail-part-store";
 import {
-  extractConversationText,
-  hasConversationText,
-} from "../conversation-text";
+  createSubstrateMailboxStore,
+  MAILBOX_INBOX_DIR,
+  type SubstrateMailboxStore,
+} from "../adapters/substrate-mailbox-store";
 import {
   createDrainTimeoutAccumulator,
   DEFAULT_DRAIN_TIMEOUT_MS,
@@ -141,6 +148,20 @@ import {
 } from "./child-termination";
 
 const logger = getLogger(["workflow-host", "supervisor"]);
+
+/** IMAP system flag marking a dispatched mailbox entry as read. */
+const MAILBOX_FLAG_SEEN = "\\Seen";
+/**
+ * Interchange keyword flag marking a mailbox entry the supervisor has dispatched
+ * as a workflow turn (a `trigger.fire` or `signal.deliver`).
+ */
+const MAILBOX_FLAG_PROCESSED = "$Processed";
+/**
+ * IMAP system flag marking a mailbox entry for expunge. The warm agent sets it
+ * (via `mail_flag`) to consume a processed message; a subsequent `expunge`
+ * sweeps every entry carrying it out of the live INBOX.
+ */
+const MAILBOX_FLAG_DELETED = "\\Deleted";
 
 /**
  * Default crash-loop bound: the supervisor stops respawning and latches
@@ -279,6 +300,19 @@ export interface WorkflowSupervisor {
    * credential is delivered by omitting its material so the child evicts it.
    */
   deliverCredentials(opts: DeliverCredentialsOpts): Promise<void>;
+  /**
+   * Refresh a live run's grant floor mid-run by re-reading its durable
+   * `runs/<runId>/grants.json` and pushing it as a `grants-updated` frame. The
+   * enforcement path for a standing (`scope: "always"`) approval that lowers a
+   * tool's `ask` to `allow` in that file. Unlike `deliverSignal`/
+   * `deliverSources`, a refresh for a non-live child is normal, so this
+   * NO-OPS (`skipped`) instead of throwing, and a send failure to a live child
+   * is logged loudly but stays non-fatal -- the durable file governs the next
+   * barrier/respawn. It pushes only that file's contents, never caller-supplied
+   * grants, so it can only tighten or refresh a floor. Returns whether a live
+   * push happened.
+   */
+  deliverGrants(runId: string): Promise<"pushed" | "skipped">;
   /**
    * Re-register every correlation the child is currently parked on by
    * querying it for its parked correlations and re-emitting each through
@@ -810,12 +844,21 @@ export function createWorkflowSupervisor(
   // (spawn handshake, recycle reap, shutdown) owns teardown.
   function onChildCrash(reason: string): void {
     if (state.phase === "running") {
-      logger.error`workflow-process channel crash on live cohort; forcing child down to respawn: {reason}`;
+      logger.error`workflow-process channel crash on live cohort; forcing child down to respawn: ${reason}`;
       state.handle.kill();
       return;
     }
-    logger.error`workflow-process channel crash: {reason}`;
-    void shutdownInternal({ reason });
+    logger.error`workflow-process channel crash: ${reason}`;
+    // Only a live, registered supervisor driven down by a channel crash is a
+    // self-termination the host must reclaim, and that is `recycling`:
+    // `running` took the kill branch above (its exit reaches the crash-loop
+    // latch, which carries its own flag), `starting` is the pre-registration
+    // initial spawn handshake whose failure the deploy unwind owns, and
+    // `stopping` is a teardown already in flight (a host `shutdown()`, or a
+    // self-termination already firing). An allowlist, not a denylist, so a
+    // future phase defaults to no self-terminate rather than a spurious one.
+    const selfTerminated = state.phase === "recycling";
+    void shutdownInternal({ reason, selfTerminated });
   }
 
   // Prune crash timestamps older than the sliding window relative to `nowMs`.
@@ -971,6 +1014,7 @@ export function createWorkflowSupervisor(
       await shutdownInternal({
         reason: `crash-loop: ${reason}`,
         terminalPhase: "crash-looping",
+        selfTerminated: true,
       });
       // Commit the RunFailed tombstone AFTER teardown: shutdownInternal has
       // quiesced the drain accumulators (stop + await disposed), so the
@@ -1043,6 +1087,170 @@ export function createWorkflowSupervisor(
     // the crash counter and backoff reset, so a flap followed by stability
     // does not latch on a later, unrelated crash.
     armStableRunResetTimer(childGeneration);
+  }
+
+  // Eager per-run mailbox (§3b inbound). On arrival the supervisor commits each
+  // fresh inbound message into the deployment's substrate-backed INBOX and fires
+  // a one-way `mailbox.notify` to the child, so the warm agent's `watch` /
+  // `mail_wait` observes the arrival mid-turn -- decoupled from the FIFO claim-
+  // check dispatch that resolves a run's step input. The supervisor is the sole
+  // mailbox writer; the store is its long-lived in-memory mirror over the
+  // committed `mailbox/INBOX/` subtree, constructed lazily on the first arrival.
+  const mailboxWritePrincipal: WorkflowRunSupervisorPrincipal = {
+    kind: "supervisor",
+    anchorRunId: bindings.anchorRunId,
+  };
+  let mailboxStore: SubstrateMailboxStore | null = null;
+  // Claim-check messageId -> assigned mailbox uid, so a message dispatched as a
+  // turn can be flagged \Seen/$Processed by uid. In-memory only: a missing entry
+  // (a restart, an arrival whose eager commit failed, or an already-processed
+  // message whose entry was pruned) skips the flag mark, which is a cosmetic
+  // IMAP flag, never a delivery guarantee. `markMailboxProcessed` prunes an
+  // entry once its mark completes, so the map holds only messages awaiting the
+  // flag mark rather than growing for the deployment's life.
+  const mailboxUidByMessageId = new Map<string, number>();
+  // Serializes every mailbox mutation (lazy construction, the arrival
+  // append+flush, the dispatch flag mark) so concurrent arrivals and a fire-and-
+  // forget flag mark never interleave against the shared in-memory mirror.
+  let mailboxTail: Promise<void> = Promise.resolve();
+  function runMailboxExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const run = mailboxTail.then(fn, fn);
+    mailboxTail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+  async function getMailboxStore(): Promise<SubstrateMailboxStore> {
+    if (mailboxStore === null) {
+      mailboxStore = await createSubstrateMailboxStore({
+        substrate: bindings.repoStore,
+        repoId: bindings.workflowRunRepoId,
+        principal: mailboxWritePrincipal,
+        ref: bindings.workflowRunRef,
+      });
+    }
+    return mailboxStore;
+  }
+
+  function storedEnvelopeFromHeaders(
+    headers: MessageHeaders,
+    receivedAt: number,
+  ): StoredEnvelope {
+    // The Date header is unvalidated external input; fall back to the arrival
+    // time when it is absent or unparseable so the store's `toISOString`
+    // serialization cannot throw on an Invalid Date.
+    const parsed = new Date(headers.date);
+    const date = Number.isNaN(parsed.getTime()) ? new Date(receivedAt) : parsed;
+    return {
+      messageId: headers.messageId,
+      from: headers.from,
+      to: headers.to,
+      subject: headers.subject ?? "",
+      date,
+      inReplyTo: headers.inReplyTo,
+      references: headers.references ?? [],
+      interchangeType: headers.interchangeType,
+      interchangeCorrelationId: headers.interchangeCorrelationId,
+    };
+  }
+
+  /**
+   * Eager-commit one freshly-arrived inbound message into the deployment's
+   * substrate mailbox, then notify the child. Runs on the mail-arrival path,
+   * before and independent of FIFO dispatch, so the warm agent's `mail_wait`
+   * observes the message mid-turn. Best-effort: the claim-check inbox is the
+   * durable delivery contract, so a decode or substrate fault here is logged
+   * loudly and never withholds the mail's ack -- the message still reaches the
+   * agent as its turn's step input via `trigger.fire`. The `mailbox.notify` is
+   * sent only AFTER the append is flushed, so the child reads committed state.
+   */
+  async function commitInboundToMailbox(
+    messageId: string,
+    rawMessage: Uint8Array,
+    receivedAt: number,
+  ): Promise<void> {
+    try {
+      await runMailboxExclusive(async () => {
+        // The caller gates on a fresh `enqueued` outcome, so a redelivery never
+        // reaches here; this guard is belt-and-suspenders against a double
+        // append of the same messageId.
+        if (mailboxUidByMessageId.has(messageId)) return;
+        let decoded: ReturnType<typeof decodeMail>;
+        try {
+          decoded = decodeMail(rawMessage);
+        } catch (cause) {
+          const message =
+            cause instanceof Error ? cause.message : String(cause);
+          logger.error`eager mailbox commit: dropping undecodable inbound mail ${messageId}: ${message}`;
+          return;
+        }
+        const store = await getMailboxStore();
+        const uid = store.append(
+          rawMessage,
+          storedEnvelopeFromHeaders(decoded.headers, receivedAt),
+          [],
+        );
+        mailboxUidByMessageId.set(messageId, uid);
+        await store.flush();
+        const commit = await bindings.repoStore.resolveRef(
+          mailboxWritePrincipal,
+          bindings.workflowRunRepoId,
+          bindings.workflowRunRef,
+        );
+        if (commit === null) {
+          logger.error`eager mailbox commit: ${bindings.workflowRunRef} did not resolve after flush; skipping mailbox.notify for ${messageId}`;
+          return;
+        }
+        const sender = activeControlSender();
+        if (sender === null) {
+          logger.info`eager mailbox commit: no active control sender; committed ${messageId} as uid ${String(uid)} without mailbox.notify`;
+          return;
+        }
+        await sender.send({
+          type: "mailbox.notify",
+          data: {
+            runId: deriveWorkflowRunId(bindings.deploymentMailAddress),
+            mailbox: MAILBOX_INBOX_DIR,
+            uid,
+            headers: decoded.headers,
+          },
+        });
+      });
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      logger.error`eager mailbox commit failed for ${messageId}; mail still delivered via claim-check dispatch: ${message}`;
+    }
+  }
+
+  /**
+   * Flag a dispatched message's mailbox entry \Seen/$Processed. Fire-and-forget
+   * off the dispatch critical path: the flag is a cosmetic IMAP marker, so a
+   * missing uid (no eager mailbox entry) or a substrate fault is logged and
+   * dropped, never failing the turn.
+   */
+  function markMailboxProcessed(messageId: string): void {
+    const uid = mailboxUidByMessageId.get(messageId);
+    if (uid === undefined) return;
+    void runMailboxExclusive(async () => {
+      try {
+        const store = await getMailboxStore();
+        if (store.find(uid) === undefined) return;
+        store.addFlags(uid, [MAILBOX_FLAG_SEEN, MAILBOX_FLAG_PROCESSED]);
+        await store.flush();
+      } finally {
+        // The id->uid mapping exists only to flag this message once. After the
+        // mark runs (or the message is already gone), the entry is dead weight,
+        // so drop it to bound the map over a long-lived conversational mailbox.
+        // Redelivery dedup is owned by the durable inbox index, not this map.
+        // The delete runs inside the exclusive section so it never interleaves
+        // with the arrival path's `has(messageId)` check.
+        mailboxUidByMessageId.delete(messageId);
+      }
+    }).catch((cause) => {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      logger.warn`mailbox flag mark failed for ${messageId} (uid ${String(uid)}): ${message}`;
+    });
   }
 
   // Resolves once the inbound mail is durably accepted (its inbox write landed
@@ -1133,6 +1341,11 @@ export function createWorkflowSupervisor(
     // the same messageId already drives dispatch. This resolves for both
     // outcomes: both mean the bytes are durably accounted for, so both ack.
     if (outcome.outcome === "enqueued") {
+      // Eager-commit the fresh message into the per-run mailbox and notify the
+      // child BEFORE waking dispatch, so the warm agent's mail_wait can observe
+      // it committed. Non-fatal by contract: the enqueue above already secured
+      // the durable delivery, so this never withholds the ack.
+      await commitInboundToMailbox(messageId, rawMessage, receivedAt);
       wakeDispatch();
     } else {
       // A redelivery of a message already durably present: the ack still
@@ -1206,6 +1419,19 @@ export function createWorkflowSupervisor(
           const message =
             cause instanceof Error ? cause.message : String(cause);
           logger.error`outbound.message handler crashed: ${message}`;
+        });
+        continue;
+      }
+      if (payload.type === "mailbox.mutate.request") {
+        // INBOUND half of mailbox ownership (§3b). The child asked the
+        // supervisor -- the sole mailbox writer -- to apply a flag write or
+        // expunge. Run it off the iterator's loop so the iterator keeps
+        // draining while the store flushes; the handler owns the
+        // `mailbox.mutate.response` reply that resolves the child's awaiter.
+        void handleMailboxMutation(payload.data).catch((cause) => {
+          const message =
+            cause instanceof Error ? cause.message : String(cause);
+          logger.error`mailbox.mutate.request handler crashed: ${message}`;
         });
         continue;
       }
@@ -1597,6 +1823,112 @@ export function createWorkflowSupervisor(
     }
   }
 
+  /**
+   * Apply a child-requested mailbox mutation to the owned store (INBOUND
+   * half of mailbox ownership, §3b). The supervisor is the sole writer to
+   * the workflow-run mailbox; the child never flushes it. A flag write
+   * (`addFlags` / `removeFlags`) targets one uid; an `expunge` sweeps every
+   * `\Deleted` message out of the live INBOX. The mutation is applied under
+   * `runMailboxExclusive` and flushed before the reply, so the child's next
+   * committed read observes it -- the flush-before-signal ordering
+   * `commitInboundToMailbox` uses. A failure (unknown uid, wrong mailbox,
+   * substrate fault) surfaces back as a structured `{ ok: false, reason }`
+   * so the agent's mail-tool call fails loudly rather than dropping the
+   * mutation silently.
+   */
+  async function handleMailboxMutation(
+    data: Extract<ControlPayload, { type: "mailbox.mutate.request" }>["data"],
+  ): Promise<void> {
+    // Capture the sender once. Re-fetching after the flush could return a
+    // successor cohort's sender and misroute the reply to the wrong child
+    // (see the substrate-write handler's note). A null sender means the
+    // supervisor is mid-recycle or tearing down: there is nothing to reply
+    // on, so drop and warn -- the child's read end is closing alongside, so
+    // its pending awaiter is rejected by the control loop's `cancelAll`.
+    const controlSender = activeControlSender();
+    if (controlSender === null) {
+      logger.warn`mailbox.mutate.request received outside running phase; requestId=${data.requestId} dropped (child awaiter will fail on pipe close)`;
+      return;
+    }
+    // The supervisor owns exactly one mailbox, the substrate INBOX. Reject a
+    // request for any other name rather than silently mutate INBOX under it,
+    // which would be a wrong-target durable write reported as success. The
+    // frame carries an unconstrained mailbox string, so this is validated
+    // here at the owning layer, not trusted from the child transport.
+    if (data.mailbox !== MAILBOX_INBOX_DIR) {
+      await controlSender.send({
+        type: "mailbox.mutate.response",
+        data: {
+          requestId: data.requestId,
+          result: {
+            ok: false,
+            reason: `unknown mailbox "${data.mailbox}"; only ${MAILBOX_INBOX_DIR} is writable`,
+          },
+        },
+      });
+      return;
+    }
+    try {
+      const expungedUids = await runMailboxExclusive(async () => {
+        const store = await getMailboxStore();
+        if (data.op === "expunge") {
+          // Snapshot the \Deleted uids before removing: `store.messages` is
+          // the live array, so `.filter().map()` materializes the targets
+          // before any `remove` splices it. The whole sweep runs
+          // synchronously under the lock, so no snapshotted uid can vanish
+          // before its `remove`.
+          const uids = store.messages
+            .filter((m) => m.flags.has(MAILBOX_FLAG_DELETED))
+            .map((m) => m.uid);
+          for (const uid of uids) {
+            store.remove(uid);
+            // Bound the id->uid map: drop any entry now pointing at a removed
+            // uid. Not load-bearing -- `markMailboxProcessed` guards with
+            // `find` -- but keeps the map from retaining dead uids.
+            for (const [messageId, mappedUid] of mailboxUidByMessageId) {
+              if (mappedUid === uid) mailboxUidByMessageId.delete(messageId);
+            }
+          }
+          await store.flush();
+          return uids;
+        }
+        if (data.op === "addFlags") {
+          store.addFlags(data.uid, data.flags);
+        } else {
+          store.removeFlags(data.uid, data.flags);
+        }
+        await store.flush();
+        return undefined;
+      });
+      await controlSender.send({
+        type: "mailbox.mutate.response",
+        data: {
+          requestId: data.requestId,
+          result:
+            expungedUids === undefined
+              ? { ok: true }
+              : { ok: true, expungedUids },
+        },
+      });
+    } catch (cause) {
+      // Reply on the same captured sender. If this send itself throws (a
+      // broken pipe), it propagates to the pump's `.catch`, and the child's
+      // awaiter is rejected by the control loop's `cancelAll` -- the backstop
+      // `handleOutboundMessage` also relies on. Accepted window: a mutation
+      // can flush durably while its reply is undeliverable, so the agent tool
+      // errors on a mutation that landed. This is inherent to apply-then-reply
+      // across a teardown boundary and identical to `handleOutboundMessage`.
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      await controlSender.send({
+        type: "mailbox.mutate.response",
+        data: {
+          requestId: data.requestId,
+          result: { ok: false, reason },
+        },
+      });
+    }
+  }
+
   async function handleSubstrateWriteRequest(
     data: Extract<ControlPayload, { type: "substrate.write.request" }>["data"],
   ): Promise<void> {
@@ -1939,6 +2271,7 @@ export function createWorkflowSupervisor(
       terminalBroadcaster: createTerminalBroadcaster(),
       dispatchLoop: null,
       replayDone: null,
+      sweepDone: null,
     };
 
     // Everything from here to the successful `return` runs with the state
@@ -1973,10 +2306,15 @@ export function createWorkflowSupervisor(
       // first `dequeueToProcessing` so a fresh inbound mail that lands
       // during the replay window cannot ship ahead of the orphan once
       // the replay completes.
-      const replayDone = scanRunsForBoot(
+      // One scan of `runs/` feeds both spawn-time recovery consumers: the
+      // orphan replay (which gates dispatch) and the compaction sweep (which
+      // does not). Sharing the walk keeps recovery off a second O(total-runs)
+      // scan.
+      const scanDone = scanRunsForBoot(
         bindings.repoStore,
         bindings.workflowRunRepoId,
-      )
+      );
+      const replayDone = scanDone
         .then(({ ownedMessageIds }) =>
           inboxPrimitives.replayProcessingToInbox(
             bindings.repoStore,
@@ -2004,7 +2342,7 @@ export function createWorkflowSupervisor(
           // best-effort until that lands.
           const message =
             cause instanceof Error ? cause.message : String(cause);
-          logger.warn`replayProcessingToInbox on spawn failed: ${message}`;
+          logger.warn`boot recovery scan or processing replay failed on spawn: ${message}`;
         });
       // Hold the replay promise on the active-state record so
       // `shutdownInternal` awaits its settlement before tearing the
@@ -2012,6 +2350,40 @@ export function createWorkflowSupervisor(
       // flight would otherwise leave the substrate write pending past
       // the supervisor's exit.
       state.replayDone = replayDone;
+
+      // Re-seal runs a crash left terminal-but-per-event when their
+      // fire-and-forget fold never ran. Unlike the replay above, this must
+      // NOT gate dispatch: reclaiming leaked per-event files is housekeeping
+      // and cannot be allowed to delay the first dequeue. Best-effort, held
+      // on the active-state record so shutdown awaits its settlement (see the
+      // `sweepDone` field docstring for the teardown-latency tradeoff).
+      const sweepDone = scanDone
+        .then(({ pendingSealRunIds }) =>
+          recoverInterruptedCompactions({
+            substrate: bindings.repoStore,
+            repoId: bindings.workflowRunRepoId,
+            ref: bindings.workflowRunRef,
+            anchorRunId: bindings.anchorRunId,
+            pendingSealRunIds,
+          }),
+        )
+        .then(({ sealed, failed }) => {
+          if (sealed > 0) {
+            logger.info`recovery sweep sealed ${String(sealed)} interrupted run(s)`;
+          }
+          if (failed.length > 0) {
+            const detail = failed
+              .map((f) => `${f.runId} (${f.message})`)
+              .join("; ");
+            logger.warn`recovery sweep left ${String(failed.length)} run(s) unsealed: ${detail}`;
+          }
+        })
+        .catch((cause) => {
+          const message =
+            cause instanceof Error ? cause.message : String(cause);
+          logger.warn`boot recovery scan or compaction sweep failed on spawn: ${message}`;
+        });
+      state.sweepDone = sweepDone;
 
       bindings.mailBus.registerAddress(bindings.deploymentMailAddress);
       const mailUnsubscribe = bindings.mailBus.subscribeMailForAddress(
@@ -2133,6 +2505,7 @@ export function createWorkflowSupervisor(
         terminalBroadcaster: startingPhaseBroadcaster,
         dispatchLoop,
         replayDone,
+        sweepDone,
       };
       // Bump the generation and arm the exit-watcher atomically with the
       // running transition (no await between the swap above and this call)
@@ -2316,15 +2689,17 @@ export function createWorkflowSupervisor(
    * Forward one dequeued inbox entry to the child as `trigger.fire`
    * and record its runId as in-flight. The runId is the local part of the
    * deployment's mail address (see `deriveWorkflowRunId`), identifying its one
-   * top-level run; the `messageId` rides alongside it so the child can
-   * recover the trigger's mail bytes by claim-check. The runId is the
-   * same value the dispatch loop waits on via `terminalEventSource`.
+   * top-level run. The resolved `Mail` (headers plus committed part references)
+   * rides in the frame as the run's trigger payload; the `messageId`
+   * accompanies it for correlation and audit. The runId is the same value the
+   * dispatch loop waits on via `terminalEventSource`.
    */
   async function forwardDispatchedEntry(
     sender: ControlChannelSender,
     messageId: string,
     receivedAt: number,
     runId: string,
+    payload: Mail,
   ): Promise<string> {
     await sender.send({
       type: "trigger.fire",
@@ -2332,10 +2707,84 @@ export function createWorkflowSupervisor(
         runId,
         messageId,
         receivedAt,
+        payload,
       },
     });
     cohortRunIds.add(runId);
     return runId;
+  }
+
+  /**
+   * Resolve a dequeued inbound mail to the run's input: a decoded `Mail`
+   * (headers plus part descriptors that reference the part bytes committed to
+   * the workflow-run substrate). The supervisor is the sole mail owner and
+   * commits the parts here (a direct workflow-run write; the workflow child's
+   * control loop cannot do a synchronous proxied write without deadlock), so
+   * both turns share this one preparation site.
+   *
+   * The two failure modes are deliberately distinct:
+   *   - A DETERMINISTIC input rejection -- missing bytes, unparseable MIME, or
+   *     a messageId that cannot form a path segment -- returns `{ ok: false }`
+   *     so the caller drops the mail. Replaying it would fail identically.
+   *   - A TRANSIENT substrate write failure propagates (thrown), so the caller
+   *     treats it as a dispatch fault and leaves the mail reclaimable rather
+   *     than silently discarding it on an infrastructure hiccup.
+   */
+  async function prepareMail(
+    envelope: { messageId: string; rawMessage?: string },
+    runId: string,
+  ): Promise<
+    | { ok: true; mail: Mail }
+    | { ok: false; rejection: { code: string; message: string } }
+  > {
+    if (envelope.rawMessage === undefined) {
+      return {
+        ok: false,
+        rejection: {
+          code: "malformed_mail",
+          message: `inbound mail ${envelope.messageId} carries no rawMessage bytes`,
+        },
+      };
+    }
+    let decoded: ReturnType<typeof decodeMail>;
+    try {
+      decoded = decodeMail(base64Decode(envelope.rawMessage));
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      return {
+        ok: false,
+        rejection: {
+          code: "malformed_mail",
+          message: `inbound mail ${envelope.messageId} could not be decoded: ${message}`,
+        },
+      };
+    }
+    const writePrincipal: WorkflowRunSupervisorPrincipal = {
+      kind: "supervisor",
+      anchorRunId: bindings.anchorRunId,
+    };
+    try {
+      const mail = await commitMail(
+        {
+          substrate: bindings.repoStore,
+          repoId: bindings.workflowRunRepoId,
+          principal: writePrincipal,
+          runId,
+          ref: bindings.workflowRunRef,
+        },
+        envelope.messageId,
+        decoded,
+      );
+      return { ok: true, mail };
+    } catch (cause) {
+      if (cause instanceof InvalidMailError) {
+        return {
+          ok: false,
+          rejection: { code: "malformed_mail", message: cause.message },
+        };
+      }
+      throw cause;
+    }
   }
 
   /**
@@ -2541,49 +2990,24 @@ export function createWorkflowSupervisor(
           }
           const inputChannel = runInputChannels.get(runId);
           if (inputChannel !== undefined) {
-            // Resolve the inbound mail to conversation text HERE, the single
-            // site that knows this payload's provenance is mail, applying the
-            // SAME extraction the turn-1 trigger does (resolveTriggerPayload).
-            // The signal.deliver frame's payload is the resume decision in FINAL
-            // form; deliverSignal's structured signals ship their own payload
-            // unchanged. Done BEFORE minting the terminal watcher so a failure
-            // here cannot leak an un-finalized iterator.
-            let inputText: string;
-            try {
-              if (envelope.rawMessage === undefined) {
-                throw new Error("inbound mail carries no rawMessage bytes");
-              }
-              inputText = extractConversationText(
-                base64Decode(envelope.rawMessage),
-                envelope.messageId,
-              );
-            } catch (cause) {
-              // A malformed turn-2 mail cannot resume the parked agent. DROP it:
-              // log loudly and consume it (break to the post-loop markConsumed)
-              // rather than throwing -- a throw aborts the dispatch without
-              // consuming, and replay re-delivers the same poison mail forever.
-              // The run stays parked on its current correlation, ready for the
-              // next valid mail; one bad mail must not tear down a long-lived
-              // conversation.
-              const message =
-                cause instanceof Error ? cause.message : String(cause);
-              logger.error`signal.deliver for run ${runId}: dropping malformed inbound mail ${envelope.messageId}: ${message}`;
-              break;
-            }
-            if (!hasConversationText(inputText)) {
-              // Attachments-only mail (a structured event send whose text part
-              // is empty) has no turn to resume the parked agent with. DROP it
-              // for the same reason the malformed branch above does, and record
-              // a rejection so the consumed envelope says why. Delivering the
-              // empty string instead would throw inside `agent.send`, surface as
-              // a `StepFailed` with `retriesExhausted`, and kill a run whose
-              // only fault was being told that someone joined its bench
-              // (workbench-local, CL-6164).
-              rejection = {
-                code: "empty_conversation_content",
-                message: `Inbound mail ${envelope.messageId} carries no conversation text to resume run ${runId}`,
-              };
-              logger.warn`signal.deliver for run ${runId}: dropping inbound mail ${envelope.messageId} with no conversation text`;
+            // Resolve the inbound mail to the run's input HERE, the single site
+            // that knows this payload's provenance is mail, applying the SAME
+            // preparation the turn-1 trigger does. The signal.deliver frame's
+            // payload is the resume decision in FINAL form -- a Mail (headers plus committed part references); deliverSignal's structured signals ship their own
+            // payload unchanged. Done BEFORE minting the terminal watcher so a
+            // failure here cannot leak an un-finalized iterator.
+            const prepared = await prepareMail(envelope, runId);
+            if (!prepared.ok) {
+              // A DETERMINISTICALLY malformed turn-2 mail cannot resume the
+              // parked agent. DROP it: log loudly and consume it (break to the
+              // post-loop markConsumed) rather than throwing -- replay would
+              // re-deliver the same poison mail forever. The run stays parked
+              // on its current correlation, ready for the next valid mail; one
+              // bad mail must not tear down a long-lived conversation. A
+              // TRANSIENT write failure is NOT caught here: `prepareMail`
+              // throws it, so it propagates as a dispatch fault and the mail
+              // stays reclaimable for retry.
+              logger.error`signal.deliver for run ${runId}: dropping malformed inbound mail ${envelope.messageId}: ${prepared.rejection.message}`;
               break;
             }
             // Mint the terminal watcher only now, after the payload resolved, so
@@ -2599,7 +3023,7 @@ export function createWorkflowSupervisor(
                   runId,
                   signalName: signalName(inputChannel.correlationId),
                   signalId: envelope.messageId,
-                  payload: inputText,
+                  payload: prepared.mail,
                 },
               });
               // Invalidate the cached input channel: its correlation is now
@@ -2610,6 +3034,9 @@ export function createWorkflowSupervisor(
               // delivering onto the stale channel. Routing hygiene only -- the
               // wait keys on the park-generation edge, not this level state.
               runInputChannels.delete(runId);
+              // The message was dispatched as a turn: mark its eager mailbox
+              // entry \Seen/$Processed. Fire-and-forget off the dispatch path.
+              markMailboxProcessed(envelope.messageId);
               // Durable-consume contract, mirroring the trigger.fire path: hold
               // markConsumed until the child has durably taken up the signal --
               // the resumed run re-parks or reaches a terminal event. That gate
@@ -2644,6 +3071,22 @@ export function createWorkflowSupervisor(
             break;
           }
           if (!cohortRunIds.has(runId)) {
+            // Resolve the inbound mail to the run's input before firing. A
+            // DETERMINISTICALLY malformed first trigger cannot start the run:
+            // record the rejection on the consumed entry and drop it (break to
+            // the post-loop markConsumed), since replay would fail identically.
+            // A TRANSIENT write failure instead propagates from
+            // `prepareMail` as a dispatch fault, leaving the mail
+            // reclaimable. Unlike a turn-2 parse failure (which leaves a live
+            // run parked), a malformed first trigger produces no run at all --
+            // the rejection surfaces on the consumed entry, not as a RunFailed
+            // terminal event.
+            const prepared = await prepareMail(envelope, runId);
+            if (!prepared.ok) {
+              if (rejection === undefined) rejection = prepared.rejection;
+              logger.error`trigger.fire for run ${runId}: rejecting malformed inbound mail ${envelope.messageId}: ${prepared.rejection.message}`;
+              break;
+            }
             // Subscribe the terminal watcher BEFORE the trigger fires. The
             // broadcaster drops a notify that has no listener (its subscribe-
             // before-fire contract), so a terminal that lands while
@@ -2657,14 +3100,22 @@ export function createWorkflowSupervisor(
                 envelope.messageId,
                 envelope.receivedAt,
                 runId,
+                prepared.mail,
               );
+              // The message was dispatched as a turn: mark its eager mailbox
+              // entry \Seen/$Processed. Fire-and-forget off the dispatch path.
+              markMailboxProcessed(envelope.messageId);
 
-              // Wait for the child to process this trigger before allowing
+              // Wait for the child to durably take up this trigger (RunStarted
+              // committed, then the run parks or terminates) before allowing
               // `markConsumed` to move the claim-check entry out of
-              // `processing/`. The child reads the trigger payload from that
-              // entry; racing `markConsumed` would delete the entry before the
-              // child resolves it. On cohort abort the wait returns and the
-              // post-loop guard skips markConsumed.
+              // `processing/`. The payload now rides the frame, so the child no
+              // longer reads it from the entry -- but the durable-consume
+              // contract still holds markConsumed until the run's uptake is
+              // committed, so a crash before RunStarted leaves the entry in
+              // processing/ for replayProcessingToInbox to re-deliver. On cohort
+              // abort the wait returns and the post-loop guard skips
+              // markConsumed.
               waitEntered = true;
               await waitForRunTerminalOrPark(
                 iter,
@@ -2964,6 +3415,12 @@ export function createWorkflowSupervisor(
     // shutdown); the crash-loop latch passes `crash-looping` so the terminal
     // state records why the deployment is down.
     terminalPhase?: "stopped" | "crash-looping";
+    // True when the supervisor is driving ITSELF to a terminal phase (the
+    // crash-loop latch, a channel crash off `running`, a recycle failure) as
+    // opposed to the host requesting `shutdown()`. Gates the `onSelfTerminate`
+    // fire below. The terminal phase alone cannot carry this: a self-terminated
+    // and a host-requested teardown both land in `stopped`.
+    selfTerminated?: boolean;
   }): Promise<void> {
     if (
       state.phase === "idle" ||
@@ -3071,6 +3528,23 @@ export function createWorkflowSupervisor(
              path only waits for the substrate write to settle. */
         });
       }
+      if (
+        (prior.phase === "starting" ||
+          prior.phase === "running" ||
+          prior.phase === "recycling") &&
+        prior.sweepDone !== null
+      ) {
+        // Await the spawn-time compaction sweep before teardown so an
+        // in-flight fold's substrate commit does not outlive the supervisor
+        // and interleave with the next incarnation's boot. Teardown latency
+        // is bounded by the recovery backlog (see the `sweepDone` field
+        // docstring); a normal boot has zero or one pending fold.
+        await prior.sweepDone.catch(() => {
+          /* swallowed: the sweep's own catch already surfaces failures to
+             the supervisor's warn channel; the shutdown path only waits for
+             the in-flight fold's substrate commit to settle. */
+        });
+      }
       if (recyclePolicy !== null) {
         try {
           recyclePolicy.stop();
@@ -3150,6 +3624,25 @@ export function createWorkflowSupervisor(
         });
       }
       state = { phase: opts.terminalPhase ?? "stopped" };
+    }
+    // Surface a self-termination to the host after the terminal transition is
+    // committed. The already-terminal early-return at the top dedups the common
+    // case, but it does NOT cover the `stopping` window, so two self-terminating
+    // callers interleaving through teardown can each fire (e.g. an onChildCrash
+    // during `recycling` plus the recycle-failure catch). The sink is therefore
+    // idempotent-required, not exactly-once; the reclaim it drives absorbs a
+    // repeat by design. Wrapped so a throwing sink cannot re-escape here and
+    // break the documented shutdown totality.
+    if (opts.selfTerminated === true) {
+      try {
+        bindings.onSelfTerminate?.({
+          phase: opts.terminalPhase ?? "stopped",
+          reason: opts.reason,
+        });
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        logger.warn`onSelfTerminate sink threw: ${message}`;
+      }
     }
     logger.info`supervisor shutdown complete (${opts.reason})`;
   }
@@ -3327,6 +3820,7 @@ export function createWorkflowSupervisor(
       terminalBroadcaster: prior.terminalBroadcaster,
       dispatchLoop: null,
       replayDone: null,
+      sweepDone: prior.sweepDone,
     };
     let attempt: RecycleAttempt;
     try {
@@ -3460,6 +3954,7 @@ export function createWorkflowSupervisor(
               terminalBroadcaster: newBroadcaster,
               dispatchLoop: newDispatchLoop,
               replayDone: null,
+              sweepDone: prior.sweepDone,
             };
             // Bump the generation and arm the exit-watcher for the
             // respawned child atomically with this running transition, so
@@ -3555,6 +4050,7 @@ export function createWorkflowSupervisor(
       logger.error`recycle failed; tearing supervisor down: ${message}`;
       await shutdownInternal({
         reason: `recycle failed: ${message}`,
+        selfTerminated: true,
       }).catch((shutdownCause) => {
         const inner =
           shutdownCause instanceof Error
@@ -3591,6 +4087,29 @@ export function createWorkflowSupervisor(
     if (state.phase !== "running" && state.phase !== "starting") {
       throw new Error(
         `supervisor: deliverSignal called in phase ${state.phase}; expected starting/running`,
+      );
+    }
+    // Refresh the run's grant floor on the SAME control channel immediately
+    // before the signal, so a standing ("always") approval resolved for a
+    // parked run lowers the floor for the resumed run's later calls. Ordering
+    // is structural: both frames ride this single seq-ordered FIFO, so the
+    // `grants-updated` is observed by the child ahead of the `signal.deliver`
+    // -- no dependence on hub-side dispatch timing. Best-effort by design; a
+    // failed refresh is non-fatal (the durable file still governs the next
+    // barrier), and it only re-reads that file, so a signal with no standing
+    // approval just re-pushes the unchanged floor.
+    await deliverGrants(opts.runId);
+    // `deliverGrants` awaits a substrate read, yielding the event loop. A
+    // crash/recycle can land in that window and swap `state` (its
+    // `controlSender` then points at the dying child). Re-assert the phase the
+    // pre-await guard checked, so the signal is never written into a recycling
+    // child's closing pipe; the caller retries once the recycle completes. The
+    // phase is read through the full union type because the pre-await guard
+    // control-flow-narrowed `state`, which the yield may have invalidated.
+    const phaseAfterRefresh: SupervisorState["phase"] = state.phase;
+    if (phaseAfterRefresh !== "running" && phaseAfterRefresh !== "starting") {
+      throw new Error(
+        `supervisor: deliverSignal raced a recycle in phase ${phaseAfterRefresh}; expected starting/running`,
       );
     }
     await state.controlSender.send({
@@ -3644,6 +4163,56 @@ export function createWorkflowSupervisor(
     });
   }
 
+  /**
+   * Refresh a live run's grant floor mid-run: re-read this run's durable
+   * `runs/<runId>/grants.json` (via `onRunStart`, the same read the pre-trigger
+   * barrier uses) and push it to the child as a `grants-updated` frame. The
+   * enforcement path for a standing (`scope: "always"`) approval, which lowers
+   * a tool's `ask` to `allow` in that file: the barrier only runs before a
+   * trigger/signal dispatch, so a run already executing (or being resumed
+   * without a fresh barrier) needs this to observe the change now.
+   *
+   * Distinct from `pushRunGrants` on two axes, both deliberate:
+   * - It NEVER synthesizes a `RunFailed`. A refresh for a run whose child is
+   *   not live is normal (the durable file already carries the change and the
+   *   next barrier or respawn re-reads it), so it no-ops (`skipped`) rather
+   *   than failing the run, and a send failure to a live child is logged
+   *   loudly but stays non-fatal (the file still wins at the next barrier).
+   * - It only ever pushes the durable file's contents through `onRunStart`; it
+   *   accepts no caller-supplied grants, so it can only tighten or refresh a
+   *   floor, never inject one a deploy did not approve.
+   */
+  async function deliverGrants(runId: string): Promise<"pushed" | "skipped"> {
+    if (bindings.onRunStart === undefined) return "skipped";
+    if (state.phase !== "running" && state.phase !== "starting") {
+      return "skipped";
+    }
+    try {
+      const snapshot = await bindings.onRunStart({
+        runId,
+        anchorRunId: bindings.anchorRunId,
+      });
+      await state.controlSender.send({
+        type: "grants-updated",
+        data: {
+          snapshot: {
+            steps: snapshot.steps.map((s) => ({
+              stepId: s.stepId,
+              address: s.address,
+              grants: [...s.grants],
+              contentHash: s.contentHash,
+            })),
+          },
+        },
+      });
+      return "pushed";
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      logger.error`deliverGrants refresh failed for run ${runId}; the durable grants file still governs the next barrier/respawn: ${message}`;
+      return "skipped";
+    }
+  }
+
   function getCredentialsSnapshot(): CredentialsSnapshot | null {
     if (state.phase === "starting" || state.phase === "running") {
       return state.credentialsSnapshot;
@@ -3660,6 +4229,7 @@ export function createWorkflowSupervisor(
     deliverSignal,
     deliverSources,
     deliverCredentials,
+    deliverGrants,
     reEmitParkedCorrelations,
     getCredentialsSnapshot,
   };
@@ -3731,6 +4301,23 @@ type ActiveState = {
    * `installNewChild` transitions back to `running`.
    */
   replayDone: Promise<void> | null;
+  /**
+   * Settles when the spawn-time compaction recovery sweep resolves (or
+   * rejects, swallowed via the supervisor's warn log). Tracked on the
+   * active-state record so `shutdownInternal` awaits its settlement before
+   * tearing the bindings down. Unlike `replayDone`, the dispatch loop does
+   * NOT borrow this promise: re-sealing interrupted folds is housekeeping and
+   * must not gate the first dequeue. The recycle-path ActiveState carries
+   * `prior.sweepDone` forward -- the sweep runs only at spawn, never on
+   * recycle -- so the last incarnation still awaits the original sweep.
+   *
+   * Awaiting full settlement couples teardown latency to the recovery
+   * backlog: the sweep is O(pending) serial substrate commits. This is
+   * acceptable because each fold is an idempotent atomic commit, so a fold
+   * abandoned at shutdown is simply re-proposed on the next boot; a normal
+   * boot has zero or one pending run.
+   */
+  sweepDone: Promise<void> | null;
 };
 
 type SpawnContext = {
@@ -3869,6 +4456,7 @@ function outboundMessageFromPayload(
   if (payload.payload !== undefined) message.payload = payload.payload;
   if (payload.summary !== undefined) message.summary = payload.summary;
   if (payload.inReplyTo !== undefined) message.inReplyTo = payload.inReplyTo;
+  if (payload.references !== undefined) message.references = payload.references;
   if (payload.correlationId !== undefined) {
     message.correlationId = payload.correlationId;
   }

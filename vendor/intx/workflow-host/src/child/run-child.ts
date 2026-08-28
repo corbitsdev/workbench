@@ -51,14 +51,13 @@
 
 import { getLogger } from "@intx/log";
 import { generateKeyPair } from "@intx/crypto";
-import { base64Decode, hexEncode } from "@intx/types";
+import { hexEncode } from "@intx/types";
 
 import type {
   Principal,
   RepoId,
   RepoStore as SubstrateRepoStore,
 } from "@intx/hub-sessions/substrate";
-import { readProcessingEntry } from "@intx/hub-sessions/substrate";
 import type { DirectorRegistry } from "@intx/agent";
 import {
   rewriteInlineOnTriggerBodies,
@@ -76,36 +75,33 @@ import type {
   StepInvoker,
   SpawnChildWorkflow,
   SpawnSuspendableChild,
+  LoopFnRegistry,
   WorkflowAuthorizeFn,
   WorkflowDefinition,
   WorkflowPark,
   WorkflowRun,
   WorkflowRuntimeEnv,
 } from "@intx/workflow";
-import type { LoopFnRegistry } from "@intx/workflow";
 import {
   baseStepId,
+  createDefaultActionInvoker,
+  createInMemoryEffectLedger,
   createLoopIteration,
   emptyState,
   runtimeRun,
 } from "@intx/workflow";
-import {
-  createActionHandlerRegistry,
-  createLoopFnRegistry,
-  createWorkflowActionInvoker,
-  createWorkflowRunEffectLedger,
-} from "@corbits/workflow-host-actions";
 
 import {
   createWorkflowHostDrainController,
   type WorkflowHostDrainController,
 } from "../drain-controller";
 
-import type { InferenceSource } from "@intx/types/runtime";
+import type { InferenceSource, MailPartReader } from "@intx/types/runtime";
 import type { CredentialDelivery } from "@intx/types/sidecar";
 
 import { createWorkflowRunRepoStore } from "../adapters/repo-store";
 import { createWorkflowRunBlobSubstrate } from "../adapters/blob-substrate";
+import { createMailPartReader } from "../adapters/mail-part-store";
 import type {
   HostSpawnSuspendableChild,
   RunSuspendableChild,
@@ -126,20 +122,26 @@ import {
   type NdjsonReader,
   type NdjsonWriter,
 } from "../ipc/index";
+import { runBodyThenCleanup } from "../run-body-then-cleanup";
 import { createWorkflowHostSignalChannel } from "../seams/signal-channel";
-import { extractConversationText } from "../conversation-text";
 import type { CredentialsSnapshot } from "../supervisor/credentials";
 import { hashGrants } from "../supervisor/credentials";
 
 import type { SpawnTimeEnv } from "./env-bootstrap";
 import { loadVerifiedWorkflowDefinitionFromClosure } from "./verified-definition-loader";
-import { loadWorkflowDirectorRegistryFromClosure } from "../workflow-definition-loader";
+import {
+  loadWorkflowActionHandlersFromClosure,
+  loadWorkflowDirectorRegistryFromClosure,
+  loadWorkflowLoopFnsFromClosure,
+} from "../workflow-definition-loader";
 import { discoverInFlightRuns } from "./self-discovery";
 import {
   collectParkedApprovalCorrelations,
   type LoadParkedApproval,
 } from "./parked-correlations";
 import type { ChildOutboundMailBridge } from "./outbound-mail-bridge";
+import type { ChildMailboxMutationBridge } from "./mailbox-mutation-bridge";
+import type { MailboxWatchRegistry } from "./mailbox-watch-registry";
 import { createWarmAgentCache, type WarmAgentCache } from "./warm-agent-cache";
 
 const logger = getLogger(["workflow-host", "child"]);
@@ -253,9 +255,9 @@ export function createCredentialsBackedAuthorize(
  * head collapse for onTrigger body steps (CL-6448): the snapshot is
  * keyed by the PARENT deployment's stepOrder, so a body step's own id
  * (`reply`) never appears in it. For a single-step deployment the sole
- * entry IS the deployment's grant set — the same head/step collapse
+ * entry IS the deployment's grant set -- the same head/step collapse
  * `resolveStepAddress` applies when the body's tools materialize from
- * the head deploy tree — so a missed lookup resolves to that sole
+ * the head deploy tree -- so a missed lookup resolves to that sole
  * entry. A multi-step deployment gets no collapse: an unknown stepId
  * against several entries is ambiguous and stays a miss.
  */
@@ -328,6 +330,7 @@ export type ChildStepInvoker = (
   warmCache: WarmAgentCache | undefined,
   sourcesRef: SourcesSnapshotRef,
   credentialWiring: CredentialWiring,
+  mailPartReader: MailPartReader,
 ) => Promise<StepInvokeResult>;
 
 /**
@@ -433,6 +436,19 @@ export interface RunWorkflowChildBindings {
    * invocation step settles as a terminal failure, the pre-recovery behavior.
    */
   readParkedApprovalOps?: ReadParkedApprovalOps;
+  /**
+   * Mailbox watch registry backing the warm agent's `mail_wait` (INBOUND half
+   * of mailbox ownership, §3b). The host's substrate factory builds ONE
+   * instance at child boot, shares it with the step agent's supervisor-backed
+   * transport (whose `watch` registers callbacks into it), and exposes it here
+   * so the control loop routes each `mailbox.notify` frame to the same
+   * registry's `fire`. Optional: a deploy that wires no mail surface (and the
+   * recursive child-workflow adapter) omits it, and an inbound `mailbox.notify`
+   * frame is then logged and dropped. A test may instead inject a registry
+   * directly through `RunWorkflowChildOpts.mailboxWatchRegistry`, which takes
+   * precedence.
+   */
+  mailboxWatchRegistry?: MailboxWatchRegistry;
   /** Optional clock override; production wires `() => new Date()`. */
   clock?: () => Date;
   /** Optional id generator override; production wires a monotonic one. */
@@ -475,32 +491,6 @@ export interface RunWorkflowChildBindings {
     privateKey: Uint8Array;
     publicKey: Uint8Array;
   }>;
-  /**
-   * CL-6325 (`invokeAction` bind -- see docs/revendor-inventory.md
-   * "CL-6325: invokeAction bind" and VENDORED.md's
-   * `vendor/intx/workflow-host` row; MUST be re-applied after the
-   * concurrent `vendor/intx` re-pin regenerates this file).
-   * Resolve an action step's `handler` ref to a host `ActionHandler`.
-   * Awaited ONCE per child, right after the definition re-verify, with
-   * the resolved `WorkflowDefinition` and the live `CredentialWiring` --
-   * so the app-owned registry (`apps/sidecar/src/action-tool-handler.ts`)
-   * can eagerly materialize every action step's tool closure (failing a
-   * broken deploy at establish, not mid-run) and scope credentials
-   * through the same per-step grant wiring agent steps use. Optional so
-   * a deployment with no `action` steps, and every existing test
-   * bindings object, need not wire it; absent, the fail-closed
-   * `createActionHandlerRegistry({})` default refuses every ref loudly.
-   */
-  resolveActionHandler?: (args: {
-    definition: WorkflowDefinition;
-    credentialWiring: CredentialWiring;
-  }) => Promise<(ref: string) => ActionHandler>;
-  /**
-   * CL-6325: resolve a loop's `while`/`carry` string refs to pure
-   * functions. Optional; absent, the fail-closed
-   * `createLoopFnRegistry({})` default refuses every ref loudly.
-   */
-  loopFns?: LoopFnRegistry;
 }
 
 export interface RunWorkflowChildOpts {
@@ -563,6 +553,33 @@ export interface RunWorkflowChildOpts {
    * but no agent on the child side asked for an outbound send.
    */
   outboundMailBridge?: ChildOutboundMailBridge;
+  /**
+   * Optional mailbox-mutation bridge (INBOUND half of mailbox ownership,
+   * §3b). The step agent's mail tools mutate the INBOX -- flag writes and
+   * `expunge` -- through a transport whose write methods route through
+   * this bridge: it emits a `mailbox.mutate.request` upstream control
+   * frame and resolves once the supervisor's matching
+   * `mailbox.mutate.response` lands. The control loop routes the
+   * downstream response frame to the bridge's `handleResult` and invokes
+   * `cancelAll` on any exit path so a pending mutation does not leak an
+   * awaiter after the supervisor tears the IPC down. When omitted,
+   * inbound `mailbox.mutate.response` frames are logged at warn-level and
+   * dropped -- the wire shape is well-formed but no agent on the child
+   * side asked for a mutation.
+   */
+  mailboxMutationBridge?: ChildMailboxMutationBridge;
+  /**
+   * Optional mailbox watch registry (INBOUND half of mailbox ownership,
+   * design §3b). The supervisor -- the sole mail owner -- commits an arrived
+   * message to the workflow-run substrate mailbox and fires a `mailbox.notify`
+   * control frame; the control loop routes that frame to this registry's
+   * `fire`, which delivers a typed `exists` `MailboxEvent` to the callbacks the
+   * step agent's supervisor-backed transport registered through `watch`
+   * (backing `mail_wait`). When omitted, an inbound `mailbox.notify` frame is
+   * logged at warn-level and dropped -- the wire shape is well-formed but no
+   * watcher on the child side asked for inbound events.
+   */
+  mailboxWatchRegistry?: MailboxWatchRegistry;
 }
 
 /**
@@ -712,20 +729,35 @@ export async function runWorkflowChild(
     packageDir: opts.env.closurePackageDir,
   });
 
-  // CL-6325: resolve the action-handler and loop-fn registries ONCE per
-  // child, against the re-verified definition and the live credential
-  // wiring, so the app seam can eagerly materialize every action step's
-  // tool closure at establish. Absent bindings fall to the fail-closed
-  // empty registries: an `action` (or `loop`) step that nonetheless runs
-  // fails loudly at its ref resolve, never silently.
-  const resolveActionHandler =
-    opts.bindings.resolveActionHandler !== undefined
-      ? await opts.bindings.resolveActionHandler({
-          definition,
-          credentialWiring,
-        })
-      : createActionHandlerRegistry({});
-  const loopFns = opts.bindings.loopFns ?? createLoopFnRegistry({});
+  // Loop `while`/`carry` functions resolve from the pinned closure's
+  // `interchange.loops` module, loaded alongside the directors and OUTSIDE the
+  // definition-hash re-verify for the same reason: the approved hash pins each
+  // ref string and the closure's SRI pins the module bytes. Resolve every loop
+  // ref reachable from the definition (its own loop bodies, and the lifted
+  // onTrigger/childWorkflow bodies, which share this same registry at runtime)
+  // eagerly here, so a deployment that declares a loop whose fn the closure
+  // does not export fails at establish rather than mid-run.
+  const loopFns = await loadWorkflowLoopFnsFromClosure({
+    packageDir: opts.env.closurePackageDir,
+  });
+  eagerlyResolveLoopFns(
+    [definition, ...bodiesMap.values(), ...childBodiesMap.values()],
+    loopFns,
+  );
+
+  // Action handlers resolve from the pinned closure's `interchange.actions`
+  // module, on the same terms as loop fns. Resolve every action handler ref
+  // reachable from the definition eagerly here (recursing into loop bodies,
+  // where an action body is the common case), so a deployment that declares an
+  // action whose handler the closure does not export fails at establish rather
+  // than mid-run.
+  const actionResolver = await loadWorkflowActionHandlersFromClosure({
+    packageDir: opts.env.closurePackageDir,
+  });
+  eagerlyResolveActionHandlers(
+    [definition, ...bodiesMap.values(), ...childBodiesMap.values()],
+    actionResolver,
+  );
 
   // Suspendable-child (onTrigger body) resolver, selected ONCE per deployment:
   // the bodies map is immutable and the per-run `onEvent` is injected later in
@@ -759,6 +791,12 @@ export async function runWorkflowChild(
       runSuspendableChild: executor,
       authorize,
       credentialWiring,
+      mailPartReader: createMailPartReader({
+        substrate: opts.bindings.substrate,
+        repoId: opts.bindings.workflowRunRepoId,
+        principal: opts.bindings.principal,
+        ref: opts.bindings.workflowRunRef,
+      }),
     });
   }
 
@@ -855,6 +893,8 @@ export async function runWorkflowChild(
       directors,
       suspendableChildHost,
       spawnChild,
+      loopFns,
+      actionResolver,
       clock,
       newId,
       drainController,
@@ -867,8 +907,6 @@ export async function runWorkflowChild(
         });
       },
       upstreamSender,
-      resolveActionHandler,
-      loopFns,
     });
     const handle = runtimeRun(definition, env, {
       runId: run.runId,
@@ -938,7 +976,16 @@ export async function runWorkflowChild(
     },
   });
 
-  try {
+  // Resolve the mailbox watch registry the control loop routes `mailbox.notify`
+  // frames to. Production wires it on the bindings (the substrate factory builds
+  // one instance and shares it with the warm agent's supervisor-backed
+  // transport); a test may inject one directly through the opts, which wins.
+  // Both absent leaves inbound `mailbox.notify` frames logged and dropped -- a
+  // deploy with no wired mail surface.
+  const mailboxWatchRegistry =
+    opts.mailboxWatchRegistry ?? opts.bindings.mailboxWatchRegistry;
+
+  const runControlLoop = async (): Promise<void> => {
     for await (const payload of iter) {
       if (
         await handleControlPayload(payload, {
@@ -951,6 +998,8 @@ export async function runWorkflowChild(
           directors,
           suspendableChildHost,
           spawnChild,
+          loopFns,
+          actionResolver,
           clock,
           newId,
           eventSender,
@@ -962,13 +1011,17 @@ export async function runWorkflowChild(
           sourcesRef,
           credentialMaterialRef,
           credentialWiring,
-          resolveActionHandler,
-          loopFns,
           ...(opts.substrateWriteBridge !== undefined
             ? { substrateWriteBridge: opts.substrateWriteBridge }
             : {}),
           ...(opts.outboundMailBridge !== undefined
             ? { outboundMailBridge: opts.outboundMailBridge }
+            : {}),
+          ...(opts.mailboxMutationBridge !== undefined
+            ? { mailboxMutationBridge: opts.mailboxMutationBridge }
+            : {}),
+          ...(mailboxWatchRegistry !== undefined
+            ? { mailboxWatchRegistry }
             : {}),
         })
       ) {
@@ -977,7 +1030,9 @@ export async function runWorkflowChild(
         break;
       }
     }
-  } finally {
+  };
+
+  const cleanupControlLoop = async (): Promise<void> => {
     // Any exit path -- clean (iterator end), dirty (thrown error),
     // shutdown (already cancelled, repeat is a no-op on an empty map)
     // -- cancels every still-pending substrate write so the runtime
@@ -994,6 +1049,15 @@ export async function runWorkflowChild(
     if (opts.outboundMailBridge !== undefined) {
       opts.outboundMailBridge.cancelAll("workflow-child control loop exited");
     }
+    // Same contract for mailbox mutations: a step agent's flag or
+    // `expunge` still awaiting the supervisor's `mailbox.mutate.response`
+    // when the control loop exits must surface a structured rejection
+    // rather than hang on a torn-down channel.
+    if (opts.mailboxMutationBridge !== undefined) {
+      opts.mailboxMutationBridge.cancelAll(
+        "workflow-child control loop exited",
+      );
+    }
     // Evict the warm-agent cache (design §3b) on every exit path:
     // graceful (shutdown frame -> iterator end), dirty (thrown error),
     // or the control channel closing. Eviction runs the wrapped
@@ -1005,7 +1069,18 @@ export async function runWorkflowChild(
     if (warmCache !== undefined) {
       await warmCache.evictAll("workflow-child control loop exited");
     }
-  }
+  };
+
+  // Run the control loop, then always run the cleanup above. A failing
+  // eviction (the wrapped agent close rejects when a plugin/LSP disposer
+  // fails) surfaces on a clean exit, but must not mask a control-loop
+  // error already unwinding -- so it is logged, not rethrown, in that case.
+  await runBodyThenCleanup(
+    runControlLoop,
+    cleanupControlLoop,
+    (cause) =>
+      logger.error`workflow-child: warm-agent eviction failed while unwinding a control-loop error; surfacing the control-loop error, eviction failure: ${cause instanceof Error ? cause.message : String(cause)}`,
+  );
 
   return {
     resumedRunIds,
@@ -1031,6 +1106,8 @@ async function handleControlPayload(
     directors: DirectorRegistry;
     suspendableChildHost: HostSpawnSuspendableChild | undefined;
     spawnChild: SpawnChildWorkflow;
+    loopFns: LoopFnRegistry;
+    actionResolver: (ref: string) => ActionHandler;
     clock: () => Date;
     newId: (prefix: string) => string;
     eventSender: ReturnType<typeof createEventChannelSender>;
@@ -1042,10 +1119,10 @@ async function handleControlPayload(
     sourcesRef: SourcesSnapshotRef;
     credentialMaterialRef: CredentialMaterialRef;
     credentialWiring: CredentialWiring;
-    resolveActionHandler: (ref: string) => ActionHandler;
-    loopFns: LoopFnRegistry;
     substrateWriteBridge?: SubstrateWriteResponseSink;
     outboundMailBridge?: ChildOutboundMailBridge;
+    mailboxMutationBridge?: ChildMailboxMutationBridge;
+    mailboxWatchRegistry?: MailboxWatchRegistry;
   },
 ): Promise<boolean> {
   switch (payload.type) {
@@ -1069,23 +1146,15 @@ async function handleControlPayload(
         ctx.triggeredRunIds.push(payload.data.runId);
         return false;
       }
-      // Resolve the inbound mail bytes for this messageId from the
-      // claim-check processing entry the supervisor created when it
-      // dequeued the message. The bytes become the run's trigger
-      // payload; the one-step workflow's first step defaults its input
-      // selector to `trigger.payload` (defineWorkflow's default-input
-      // convention), so the step input resolves to the inbound message
-      // and `agent.send` receives it. A missing or unreadable entry
-      // surfaces loudly -- the run cannot proceed without its input,
-      // and silently running the agent with empty input would mask a
-      // real mailbox-ownership failure.
-      const triggerPayload = await resolveTriggerPayload({
-        substrate: ctx.bindings.substrate,
-        principal: ctx.bindings.principal,
-        workflowRunRepoId: ctx.bindings.workflowRunRepoId,
-        mailboxAddress: ctx.env.mailboxAddress,
-        messageId: payload.data.messageId,
-      });
+      // The supervisor resolved the inbound mail to the run's input (the
+      // conversation text plus references to attachment bytes it committed to
+      // the workflow-run substrate) and shipped it in the frame. It becomes
+      // the run's trigger payload; the one-step workflow's first step defaults
+      // its input selector to `trigger.payload` (defineWorkflow's default-input
+      // convention), so the step input resolves to the inbound message and
+      // `agent.send` receives it once its attachment references are resolved to
+      // bytes at send time.
+      const triggerPayload = payload.data.payload;
       const env = buildRuntimeEnv({
         runId: payload.data.runId,
         bindings: ctx.bindings,
@@ -1094,6 +1163,8 @@ async function handleControlPayload(
         directors: ctx.directors,
         suspendableChildHost: ctx.suspendableChildHost,
         spawnChild: ctx.spawnChild,
+        loopFns: ctx.loopFns,
+        actionResolver: ctx.actionResolver,
         clock: ctx.clock,
         newId: ctx.newId,
         drainController: ctx.drainController,
@@ -1106,8 +1177,6 @@ async function handleControlPayload(
           });
         },
         upstreamSender: ctx.upstreamSender,
-        resolveActionHandler: ctx.resolveActionHandler,
-        loopFns: ctx.loopFns,
       });
       const handle: WorkflowRun = runtimeRun(ctx.definition, env, {
         runId: payload.data.runId,
@@ -1375,6 +1444,45 @@ async function handleControlPayload(
       ctx.outboundMailBridge.handleResult(payload.data);
       return false;
     }
+    case "mailbox.notify": {
+      // Route the supervisor's new-mail notification to the child's watch
+      // registry so a step agent's `watch`/`mail_wait` observes the arrival.
+      // A notify that lands without a registry means no watcher on the child
+      // side asked for inbound events; log and drop rather than throwing so
+      // the runtime keeps progressing (mirrors the `outbound.result` arm).
+      if (ctx.mailboxWatchRegistry === undefined) {
+        logger.warn`workflow-child mailbox.notify received without a watch registry wired; mailbox=${payload.data.mailbox} uid=${String(payload.data.uid)} dropped`;
+        return false;
+      }
+      ctx.mailboxWatchRegistry.fire(payload.data.mailbox, {
+        type: "exists",
+        uid: payload.data.uid,
+        headers: payload.data.headers,
+      });
+      return false;
+    }
+    case "mailbox.mutate.request": {
+      // `mailbox.mutate.request` is the child->supervisor mailbox-mutation
+      // request frame; receiving one on the child's downstream side is a
+      // protocol violation in the same shape as a downstream
+      // `outbound.message`.
+      throw new Error(
+        "workflow-child received a `mailbox.mutate.request` frame on its inbound control channel; this is a child-only upstream payload",
+      );
+    }
+    case "mailbox.mutate.response": {
+      // Route the supervisor's applied-mutation result to the
+      // mailbox-mutation bridge if one is wired. A response that lands
+      // without an active bridge means a stale supervisor frame for which
+      // no awaiter exists; log and drop rather than throwing so the
+      // runtime keeps progressing (mirrors the `outbound.result` arm).
+      if (ctx.mailboxMutationBridge === undefined) {
+        logger.warn`workflow-child mailbox.mutate.response received without a bridge wired; requestId=${payload.data.requestId} dropped`;
+        return false;
+      }
+      ctx.mailboxMutationBridge.handleResult(payload.data);
+      return false;
+    }
     case "substrate.merge.request": {
       // Route the request to the substrate-write bridge if one is
       // wired. A request that lands without an active bridge means a
@@ -1447,12 +1555,58 @@ async function handleControlPayload(
  * `BlobSubstrate` and `SignalChannel` because both are per-run by
  * shape; the substrate handle and per-deployment `RepoStore` adapter
  * are shared across runs.
- *
- * Exported (CL-6325 delta) so a host's runtime-env-level probe can
- * exercise the production `invokeAction`/`effects`/`loopFns` bind
- * without standing up the full control-channel harness.
  */
-export function buildRuntimeEnv(args: {
+/**
+ * Force-resolve every loop `while`/`carry` ref reachable from these definitions
+ * against the registry, so a missing loop fn surfaces at establish rather than
+ * when the loop is first driven mid-run. Recurses into a loop's inline body (a
+ * nested loop resolves against the same shared registry). The caller passes the
+ * lifted onTrigger/childWorkflow bodies separately, since those are `{ ref }` in
+ * the top-level definition and this walk does not descend into them.
+ */
+function eagerlyResolveLoopFns(
+  definitions: readonly WorkflowDefinition[],
+  loopFns: LoopFnRegistry,
+): void {
+  const visit = (def: WorkflowDefinition): void => {
+    for (const step of Object.values(def.steps)) {
+      if (step.kind === "loop") {
+        // Each call throws (fail closed) if the ref names no export, or an
+        // export that is not a function.
+        loopFns(step.while);
+        loopFns(step.carry);
+        visit(step.body);
+      }
+    }
+  };
+  for (const def of definitions) visit(def);
+}
+
+/**
+ * Force-resolve every `action` handler ref reachable from these definitions
+ * against the resolver, so a missing action handler surfaces at establish
+ * rather than when the action is first invoked mid-run. Recurses into loop
+ * bodies (an action body is the common loop shape). The caller passes the
+ * lifted onTrigger/childWorkflow bodies separately, as with loop fns.
+ */
+function eagerlyResolveActionHandlers(
+  definitions: readonly WorkflowDefinition[],
+  actionResolver: (ref: string) => ActionHandler,
+): void {
+  const visit = (def: WorkflowDefinition): void => {
+    for (const step of Object.values(def.steps)) {
+      if (step.kind === "action") {
+        // Throws (fail closed) if the handler names no export, or a non-function.
+        actionResolver(step.handler);
+      } else if (step.kind === "loop") {
+        visit(step.body);
+      }
+    }
+  };
+  for (const def of definitions) visit(def);
+}
+
+function buildRuntimeEnv(args: {
   runId: string;
   bindings: RunWorkflowChildBindings;
   runtimeRepoStore: ReturnType<typeof createWorkflowRunRepoStore>;
@@ -1460,6 +1614,8 @@ export function buildRuntimeEnv(args: {
   directors: DirectorRegistry;
   suspendableChildHost: HostSpawnSuspendableChild | undefined;
   spawnChild: SpawnChildWorkflow;
+  loopFns: LoopFnRegistry;
+  actionResolver: (ref: string) => ActionHandler;
   clock: () => Date;
   newId: (prefix: string) => string;
   drainController: DrainController;
@@ -1468,15 +1624,6 @@ export function buildRuntimeEnv(args: {
   credentialWiring: CredentialWiring;
   onEvent: (event: EventPayload) => void;
   upstreamSender: ControlChannelSender;
-  /**
-   * CL-6325 (`invokeAction`/`loopFns` bind, re-apply after the concurrent
-   * `vendor/intx` re-pin -- see `RunWorkflowChildBindings.resolveActionHandler`).
-   * Both registries are resolved once per child in `runWorkflowChild`;
-   * this per-run builder binds them into the env alongside the per-run
-   * effect ledger.
-   */
-  resolveActionHandler: (ref: string) => ActionHandler;
-  loopFns: LoopFnRegistry;
 }): WorkflowRuntimeEnv {
   const signalChannel = createWorkflowHostSignalChannel({
     repoStore: args.bindings.substrate,
@@ -1495,6 +1642,17 @@ export function buildRuntimeEnv(args: {
     runId: args.runId,
     ref: args.bindings.workflowRunRef,
   });
+  // Reader for inbound-mail parts, a sibling of `blobs` over the same
+  // workflow-run repo. The step invoker resolves a `Mail` part's `ref` to its
+  // bytes through it at `agent.send` time; the supervisor committed the bytes
+  // before the trigger. Deployment-scoped (the ref encodes the owning run), so
+  // one reader resolves any run's parts.
+  const mailPartReader = createMailPartReader({
+    substrate: args.bindings.substrate,
+    repoId: args.bindings.workflowRunRepoId,
+    principal: args.bindings.principal,
+    ref: args.bindings.workflowRunRef,
+  });
   // Wrap the step invoker so every `InferenceEvent` the harness emits
   // funnels through the per-run `onEvent` closure, which forwards
   // the event up the HMAC-authenticated event channel. The wrap is
@@ -1510,6 +1668,7 @@ export function buildRuntimeEnv(args: {
       args.warmCache,
       args.sourcesRef,
       args.credentialWiring,
+      mailPartReader,
     );
   };
   // Adapt the host binding (which takes the run's `onEvent` sink) down to the
@@ -1523,24 +1682,6 @@ export function buildRuntimeEnv(args: {
     hostSuspendable === undefined
       ? undefined
       : (spawnInput) => hostSuspendable(spawnInput, args.onEvent);
-  // CL-6325: `invokeAction`/`effects`/`loopFns` bind. Mirrors
-  // gtm-workbench's run-child.ts -- wired unconditionally: the registries
-  // are fail-closed, so an action-free deployment resolves nothing and an
-  // undeclared ref fails its run loudly. MUST be re-applied after the
-  // concurrent `vendor/intx` re-pin regenerates this file (see
-  // docs/revendor-inventory.md).
-  const effects = createWorkflowRunEffectLedger({
-    substrate: args.bindings.substrate,
-    repoId: args.bindings.workflowRunRepoId,
-    principal: args.bindings.principal,
-    runId: args.runId,
-    ref: args.bindings.workflowRunRef,
-  });
-  const invokeAction = createWorkflowActionInvoker({
-    authorize: args.authorize,
-    effects,
-    resolveHandler: args.resolveActionHandler,
-  });
   const env: WorkflowRuntimeEnv = {
     repoStore: args.runtimeRepoStore,
     scheduler: args.bindings.scheduler,
@@ -1550,6 +1691,10 @@ export function buildRuntimeEnv(args: {
     authorize: args.authorize,
     invokeStep,
     spawnChild: args.spawnChild,
+    // Resolve a loop's `while`/`carry` refs against the closure's loop module.
+    // Every ref was force-resolved at establish, so a lookup here cannot fail
+    // for a definition that passed startup.
+    loopFns: args.loopFns,
     // Wire the suspendable-child seam only when the host supplied it; a child
     // that never runs an onTrigger section omits the binding, and the runtime
     // body fails loud if a workflow reaches a section the env did not wire.
@@ -1571,15 +1716,30 @@ export function buildRuntimeEnv(args: {
     ...(args.bindings.readParkedApprovalOps !== undefined
       ? { readParkedApprovalOps: args.bindings.readParkedApprovalOps }
       : {}),
-    // CL-6325: bind, re-apply after the concurrent re-pin.
-    effects,
-    invokeAction,
-    loopFns: args.loopFns,
   };
-  // Wired after construction because the loop-iteration runner closes
-  // over the env it belongs to, so each iteration's child run shares
-  // the parent's repoStore, blobs, and effect ledger.
+  // Run one loop iteration as a child run against the shared store. Assigned
+  // AFTER env construction because it closes over `env`, so each iteration's
+  // child run shares this run's repoStore + blobs (mirrors runLocal).
   env.runLoopIteration = createLoopIteration(env);
+
+  // Action handlers run against a per-run effect ledger. The ledger is
+  // IN-MEMORY, and that is correct -- not a shortcut -- on the deployed store:
+  // appends are immediate-durable single-ref commits, `runAction` flushes
+  // StepStarted durably before the effect, and the runtime never re-invokes a
+  // crashed action (a mid-action crash settles the step failed; a loop-body
+  // action leaves a non-empty child log that fails the iteration loud rather
+  // than re-running). So the ledger is never consulted across a crash; its
+  // cross-crash exactly-once rests on that store-consistency invariant, which
+  // the store layer owns. A durable ledger here would re-enforce a constraint
+  // a lower layer already guarantees. Within a single invocation the ledger
+  // still dedups a handler that performs the same effect twice.
+  const effects = createInMemoryEffectLedger();
+  env.effects = effects;
+  env.invokeAction = createDefaultActionInvoker(
+    args.authorize,
+    effects,
+    args.actionResolver,
+  );
   return env;
 }
 
@@ -1749,47 +1909,6 @@ function reclaimRunStorageIfCold(opts: {
     const message = cause instanceof Error ? cause.message : String(cause);
     logger.warn`workflow-step-state cleanup failed for runId=${opts.runId}: ${message}`;
   });
-}
-
-/**
- * Resolve the run's trigger payload from the inbound mail message the
- * supervisor moved to the claim-check processing queue. Reads the
- * processing entry by messageId (a read-only snapshot of the
- * `refs/heads/events` tip that cannot race the supervisor's
- * `markConsumed` write), decodes the inlined raw MIME bytes, and
- * extracts the conversation text the agent's `agent.send` receives.
- *
- * Defensive: a missing processing entry, an entry with no inlined
- * bytes, or unparseable mail all throw. The run cannot proceed without
- * its input, and a placeholder would mask a mailbox-ownership failure.
- */
-async function resolveTriggerPayload(args: {
-  substrate: SubstrateRepoStore;
-  principal: Principal;
-  workflowRunRepoId: RepoId;
-  mailboxAddress: string;
-  messageId: string;
-}): Promise<string> {
-  const entry = await readProcessingEntry(
-    args.substrate,
-    args.principal,
-    args.workflowRunRepoId,
-    args.mailboxAddress,
-    args.messageId,
-  );
-  if (entry === null) {
-    throw new Error(
-      `workflow-child trigger.fire: no claim-check processing entry for messageId ${args.messageId} at ${args.mailboxAddress}; the run has no input to deliver to the agent`,
-    );
-  }
-  const rawMessageBase64 = entry.envelope.rawMessage;
-  if (rawMessageBase64 === undefined) {
-    throw new Error(
-      `workflow-child trigger.fire: processing entry for messageId ${args.messageId} carries no inlined rawMessage; the supervisor must inline the inbound mail bytes for the child to deliver them as the step input`,
-    );
-  }
-  const raw = base64Decode(rawMessageBase64);
-  return extractConversationText(raw, args.messageId);
 }
 
 function defaultClock(): Date {

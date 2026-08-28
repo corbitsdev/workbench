@@ -1,5 +1,4 @@
 export {
-  buildRuntimeEnv,
   createCredentialsBackedAuthorize,
   hashGrants,
   runWorkflowChild,
@@ -28,7 +27,28 @@ export {
   type CreateChildOutboundMailBridgeOpts,
 } from "./outbound-mail-bridge";
 
-export { createSupervisorBackedTransport } from "./supervisor-backed-transport";
+export {
+  createChildMailboxMutationBridge,
+  type ChildMailboxMutationBridge,
+  type CreateChildMailboxMutationBridgeOpts,
+  type MailboxMutation,
+  type MailboxMutationResult,
+} from "./mailbox-mutation-bridge";
+
+export {
+  createSupervisorBackedTransport,
+  type SupervisorBackedTransportInbound,
+} from "./supervisor-backed-transport";
+
+export {
+  createMailboxWatchRegistry,
+  type MailboxWatchRegistry,
+} from "./mailbox-watch-registry";
+
+export {
+  createChildMailboxReader,
+  type ChildMailboxReader,
+} from "./child-mailbox-reader";
 
 export {
   createProxyWorkflowRunRepoStore,

@@ -44,7 +44,7 @@ import {
   type HostCredentialCapability,
   type ResolvedCredentialBinding,
 } from "@intx/harness";
-import { readDeployTree, sanitizeAddress } from "@intx/hub-agent/paths";
+import { readDeployTree, agentDir } from "@intx/hub-agent/paths";
 import { getLogger } from "@intx/log";
 import type { LoadedToolFactory, RegistryConfig } from "@intx/tool-packaging";
 import { resolveStepAddress } from "@intx/workflow-deploy";
@@ -168,13 +168,7 @@ export function attachStepCredentials(
 
 /**
  * Read back the credential context `attachStepCredentials` set on the
- * per-step env. Exported (alongside `packageFromToolId` below) so
- * `action-tool-handler.ts` can shape the same consumer-scoped
- * `credentials` capability for an action's tool dispatch that
- * `createToolBearingAgentFactory` shapes for a deterministic/inference
- * step's tools -- action dispatch has no agent reactor to route
- * through, so it reads this slot directly rather than through the
- * `agentFactory` seam.
+ * per-step env.
  */
 export function getStepCredentialContext(
   env: object,
@@ -235,7 +229,7 @@ export function packageFromToolId(id: string): string {
  * `deploy/asset-mounts.json`) is shipped to the sidecar per step by the
  * hub's `launchSession` deploy-pack push, which lands it in the LEGACY
  * per-agent directory keyed by the step's sanitized mail address (see
- * `@intx/hub-agent` `agentDir` / `sanitizeAddress`). It is NOT in the
+ * `@intx/hub-agent` `agentDir`). It is NOT in the
  * substrate's `agent-state/<id>` layout -- the multi-step deploy path
  * never pushes step `agent-state` packs to the child's substrate.
  *
@@ -267,7 +261,7 @@ export function stepDeployTreeDir(args: {
     domain: parsed.domain,
     stepCount: args.stepCount,
   });
-  return path.join(args.dataDir, sanitizeAddress(stepAddress));
+  return agentDir(args.dataDir, stepAddress);
 }
 
 /**
@@ -570,15 +564,27 @@ export function createToolBearingAgentFactory(deps: {
       // dispose is idempotent. Running both guarantees the LSP
       // subprocess is torn down even for a plugin no tool bundle
       // consumed.
+      // Every disposer runs and failures are collected rather than thrown
+      // mid-loop, so one failing disposer never strands the rest. A leaked
+      // or failing LSP subprocess must surface, not be swallowed: any
+      // collected failure fails the close, so the caller sees it.
+      const failures: unknown[] = [];
       for (const dispose of capturedDisposers) {
         try {
           await dispose();
         } catch (cause) {
-          logger.warn`step tool bundle dispose failed: ${cause instanceof Error ? cause.message : String(cause)}`;
+          logger.error`step tool bundle dispose failed: ${cause instanceof Error ? cause.message : String(cause)}`;
+          failures.push(cause);
         }
       }
-      await disposeAll(pluginInstances, "step teardown");
+      failures.push(...(await disposeAll(pluginInstances, "step teardown")));
       await disposeCredentialCapabilities(credentialCapabilities);
+      if (failures.length > 0) {
+        throw new AggregateError(
+          failures,
+          `step agent close: ${String(failures.length)} disposer(s) failed during teardown; an LSP subprocess may be leaked`,
+        );
+      }
     });
   };
 }
@@ -686,7 +692,8 @@ function wrapAgentClose(agent: Agent, teardown: () => Promise<void>): Agent {
 async function disposeAll(
   instances: readonly unknown[],
   context: string,
-): Promise<void> {
+): Promise<unknown[]> {
+  const failures: unknown[] = [];
   for (const instance of instances) {
     const dispose = pluginDispose(instance);
     if (dispose === undefined) continue;
@@ -695,9 +702,11 @@ async function disposeAll(
       // whether the disposer is sync or async.
       await dispose();
     } catch (cause) {
-      logger.warn`step plugin dispose failed during ${context}: ${cause instanceof Error ? cause.message : String(cause)}`;
+      logger.error`step plugin dispose failed during ${context}: ${cause instanceof Error ? cause.message : String(cause)}`;
+      failures.push(cause);
     }
   }
+  return failures;
 }
 
 /**

@@ -42,6 +42,7 @@ import {
   type RunSuspendableChild,
   type SourcesSnapshotRef,
 } from "@intx/workflow-host";
+import type { MailPartReader } from "@intx/types/runtime";
 
 import {
   parseStepInferenceSources,
@@ -62,8 +63,9 @@ import {
  * workflow-typed `authorize` the spawn seam threaded from the parent child
  * (CL-6448: the credentials-backed authorize, so a body agent's tool calls
  * gate through the same per-step grant snapshot a top-level step's do),
- * and the parent's live `CredentialWiring` for tool bundles that declare a
- * `credentials` capability.
+ * the parent's live `CredentialWiring` for tool bundles that declare a
+ * `credentials` capability, and the parent's `MailPartReader` so a body's
+ * attachments-only inbound mail resolves its parts instead of throwing.
  */
 export type SidecarBodyStepInvoker = (
   req: StepInvokeRequest,
@@ -71,6 +73,7 @@ export type SidecarBodyStepInvoker = (
   sourcesRef: SourcesSnapshotRef,
   onEvent: (event: InferenceEvent) => void,
   credentialWiring?: CredentialWiring,
+  mailPartReader?: MailPartReader,
 ) => Promise<StepInvokeResult>;
 
 /**
@@ -332,6 +335,7 @@ export function createSidecarSpawnSuspendableChild(
       signal,
       authorize: threadedAuthorize,
       credentialWiring,
+      mailPartReader,
     },
     onEvent,
   ) => {
@@ -385,6 +389,7 @@ export function createSidecarSpawnSuspendableChild(
           bodySourcesRef,
           onEvent,
           credentialWiring,
+          mailPartReader,
         );
     }
 

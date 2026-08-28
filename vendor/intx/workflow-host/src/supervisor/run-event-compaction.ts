@@ -14,6 +14,7 @@ import type {
   WorkflowRunSupervisorPrincipal,
 } from "@intx/hub-sessions/substrate";
 import {
+  classifyTerminalEvent,
   WORKFLOW_RUN_EVENTS_FILE,
   encodeCombinedEventLog,
 } from "@intx/hub-sessions/substrate";
@@ -23,11 +24,6 @@ import { SUPERVISOR_PRINCIPAL_KIND } from "./cancel-signing";
 const RUNS_PREFIX = "runs";
 const EVENTS_DIR = "events";
 const EVENT_FILENAME_RE = /^(0|[1-9][0-9]*)\.json$/;
-const TERMINAL_EVENT_TYPES = new Set<string>([
-  "RunCompleted",
-  "RunFailed",
-  "RunCancelled",
-]);
 
 export type CompactRunEventsOpts = {
   /** Substrate handle the supervisor writes through. */
@@ -51,8 +47,8 @@ export type CompactRunEventsOpts = {
  * Idempotent and terminal-only: a run already sealed (no `events/` subtree)
  * or one whose latest event is not terminal is left untouched, so the call
  * is safe to repeat. The live caller invokes it once per run, right after the
- * run terminates; a bounded recovery sweep that would retry the fold for a run
- * whose compaction a crash interrupted is not yet implemented.
+ * run terminates; `recoverInterruptedCompactions` re-runs it for a run whose
+ * fold a crash interrupted before it could seal.
  *
  * The combined file is the verbatim byte concatenation of the per-event
  * blobs in seq order (`encodeCombinedEventLog`), the exact shape the
@@ -100,7 +96,10 @@ export async function compactRunEvents(
     return { compacted: false };
   }
   const lastType = (parsed as { type?: unknown }).type;
-  if (typeof lastType !== "string" || !TERMINAL_EVENT_TYPES.has(lastType)) {
+  if (
+    typeof lastType !== "string" ||
+    !classifyTerminalEvent(lastType).terminal
+  ) {
     return { compacted: false };
   }
 

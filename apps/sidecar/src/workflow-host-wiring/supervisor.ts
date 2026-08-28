@@ -237,6 +237,16 @@ export type CreateSidecarWorkflowSupervisorOpts = {
    */
   onSuspensionRegister?: (registration: SuspensionRegistration) => void;
   /**
+   * Self-termination sink forwarded to the supervisor's `onSelfTerminate`
+   * binding: invoked when the supervisor drives itself to a terminal phase
+   * (crash-loop latch, channel crash, recycle failure). Production wiring
+   * routes it to the deploy router's address reclaim.
+   */
+  onSelfTerminate?: (info: {
+    phase: "stopped" | "crash-looping";
+    reason: string;
+  }) => void;
+  /**
    * Decrypted credential material from the deploy frame's
    * `workflow.credentials`, forwarded verbatim to the supervisor's
    * `credentialDelivery` binding so the child's materialRef is seeded on
@@ -389,6 +399,9 @@ export function createSidecarWorkflowSupervisor(
     deriveMailAuditRef: deriveSidecarMailAuditRef(opts.deploymentId),
     ...(opts.onSuspensionRegister !== undefined
       ? { onSuspensionRegister: opts.onSuspensionRegister }
+      : {}),
+    ...(opts.onSelfTerminate !== undefined
+      ? { onSelfTerminate: opts.onSelfTerminate }
       : {}),
     ...(opts.credentialDelivery !== undefined
       ? { credentialDelivery: opts.credentialDelivery }
