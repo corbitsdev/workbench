@@ -27,13 +27,12 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@intx/agent": "0.3.0",
-    "@intx/inference": "0.3.0",
-    "@intx/types": "0.3.0",
+    "@intx/agent": "workspace:*",
+    "@intx/inference": "workspace:*",
+    "@intx/types": "workspace:*",
     "arktype": "catalog:"
   },
   "devDependencies": {

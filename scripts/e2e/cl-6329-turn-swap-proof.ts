@@ -9,7 +9,7 @@
 //   2. Three rapid messages serialize into ordered turns rather than
 //      racing: occurrences 0,1,2 in arrival order.
 //   3. A turn killed mid-occurrence leaves BOTH the room and the section
-//      alive: `onBodyFailure: "continue"` keeps the section subscribed,
+//      alive: `onBodyFailure: "tolerate"` keeps the section subscribed,
 //      the failed turn is visible rather than silent, and the next
 //      message is still answered.
 //

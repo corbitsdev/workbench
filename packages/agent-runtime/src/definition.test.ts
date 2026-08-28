@@ -151,7 +151,7 @@ describe("buildAgentRuntimeWorkflow — section mode", () => {
     const section =
       buildAgentRuntimeWorkflow(sectionConfig).steps[AGENT_RUNTIME_SECTION_ID];
 
-    expect(section).toMatchObject({ onBodyFailure: "continue" });
+    expect(section).toMatchObject({ onBodyFailure: "tolerate" });
   });
 
   test("the section's failure policy survives the live→inert projection", () => {
@@ -162,7 +162,7 @@ describe("buildAgentRuntimeWorkflow — section mode", () => {
 
     expect(section).toMatchObject({
       kind: "onTrigger",
-      onBodyFailure: "continue",
+      onBodyFailure: "tolerate",
     });
   });
 

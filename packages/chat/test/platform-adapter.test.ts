@@ -1097,12 +1097,12 @@ describe("createHubChatPlatform", () => {
 
     // CL-6329: a room agent deploys as an `onTrigger` section, so every
     // message it is asked to answer is an occurrence with its own child
-    // run — and `onBodyFailure: "continue"` keeps the section subscribed
+    // run — and `onBodyFailure: "tolerate"` keeps the section subscribed
     // after a turn that threw.
     const rendered = deployedDefinition(assetService.populatedTrees);
     expect(Object.keys(rendered.steps)).toEqual([AGENT_RUNTIME_SECTION_ID]);
     expect(rendered.steps[AGENT_RUNTIME_SECTION_ID]).toMatchObject({
-      onBodyFailure: "continue",
+      onBodyFailure: "tolerate",
     });
   });
 

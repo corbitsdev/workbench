@@ -112,7 +112,7 @@ it — one switch feeding both the wake and the relaunch path. The
 workbench itself has no host run and no occurrences to name; only invited
 agents deploy as sections.
 
-`onBodyFailure: "continue"` — authored in the section shape itself — is
+`onBodyFailure: "tolerate"` — authored in the section shape itself — is
 the failure edge: a turn that ends `failed` records the failed occurrence
 and leaves the section subscribed, so one bad turn kills neither the agent
 nor the room. The runtime names an occurrence's child run `turn__<n>`,
