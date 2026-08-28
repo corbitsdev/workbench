@@ -70,3 +70,31 @@ tool package. See the comment on `packageFromToolId`
 (`apps/sidecar/src/step-agent-tools.ts`) for the same note in code; the
 loader-side provenance check this implies for a future untrusted-package
 story is tracked as its own follow-up, not solved here.
+
+## Rotation reaches live agents (CL-6687)
+
+Inference sources -- the decrypted provider key included -- are resolved
+at deploy time and rendered into the run's bytes; nothing re-reads them
+while the run is resident. So a rotated key (Settings > AI providers,
+disconnect + reconnect after a 401) used to reach only the _next_ deploy,
+and an already-open workbench kept sending the dead key until the stack
+restarted.
+
+Every deploy now records `inferenceSourcesDigest` (a SHA-256 over the
+resolved chain, secret included; the secret itself is never stored) on
+the run's `workbench_launch` row. Two paths compare it against today's
+resolution and relaunch the run on a mismatch, the same relaunch a
+definition-content drift triggers (CL-6588):
+
+- `reconcileDriftedRun`, ahead of every send, so the next message in an
+  open room uses the new key even if nothing else fired.
+- `reconcileInferenceSources(tenantId)`, kicked by the hub the moment an
+  inference provider's `/complete` stores a credential, so the fix an
+  operator just applied lands without waiting for a message.
+
+Re-saving the same key produces the same digest and relaunches nothing.
+A run whose row predates the column (`sources_digest IS NULL`) gets
+today's chain recorded as its baseline on its first check and is left
+alone that once. The per-send check is throttled to one resolution per
+participant per 30 seconds; the provider-connect hook is the path that
+reaches live rooms immediately.
