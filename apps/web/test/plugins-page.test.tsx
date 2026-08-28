@@ -6,11 +6,13 @@
 // data into that component correctly.
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { act } from "react";
+import { act, useState } from "react";
+import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import { BenchProvider } from "../src/bench-context";
+import type { BenchState } from "../src/bench-context";
+import { BenchContext, BenchProvider } from "../src/bench-context";
 import { NavigationProvider } from "../src/navigation";
 import { PluginsRoute } from "../src/pages/plugins-page";
 import {
@@ -411,5 +413,142 @@ describe("PluginsRoute", () => {
     }
 
     expect(navigated).toContain("/skills/summarize");
+  });
+
+  // CL-7138: a fast bench switch used to let the previous tenant's
+  // in-flight fetch resolve after the new tenant's, overwriting its data.
+  test("a fast bench switch never lets the previous tenant's late fetch overwrite the new one's data", async () => {
+    function deferredResponse() {
+      let resolve: (response: Response) => void = () => undefined;
+      const promise = new Promise<Response>((res) => {
+        resolve = res;
+      });
+      return { promise, resolve };
+    }
+
+    const skillsDeferred: Record<
+      string,
+      ReturnType<typeof deferredResponse>
+    > = {
+      tnt_a: deferredResponse(),
+      tnt_b: deferredResponse(),
+    };
+
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      if (path.includes("/credentials/resolve/"))
+        return Promise.resolve(json(null, 404));
+      if (path.includes("/connections/provider-health"))
+        return Promise.resolve(
+          json({ providers: {}, connectedProviderCount: 0 }),
+        );
+      const skillsMatch = /\/api\/tenants\/(tnt_[ab])\/skills/.exec(path);
+      if (skillsMatch) {
+        const tenantId = skillsMatch[1] as string;
+        return (
+          skillsDeferred[tenantId]?.promise ??
+          Promise.resolve(json({ skills: [] }))
+        );
+      }
+      return Promise.resolve(json({ data: [], nextCursor: null }));
+    }) as typeof fetch;
+
+    let selectTenant: (tenantId: string) => void = () => undefined;
+
+    function BenchHarness({ children }: { readonly children: ReactNode }) {
+      const [tenantId, setTenantId] = useState("tnt_a");
+      selectTenant = setTenantId;
+      const value: BenchState = {
+        memberships: { kind: "loading" },
+        selectedTenantId: tenantId,
+        selectedPrincipalId: "prn_1",
+        selectTenant: setTenantId,
+        onBenchCreated: () => undefined,
+      };
+      return (
+        <BenchContext.Provider value={value}>{children}</BenchContext.Provider>
+      );
+    }
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root?.render(
+        <TestQueryProvider>
+          <NavigationProvider navigate={() => undefined}>
+            <BenchHarness>
+              <ProviderHealthProvider>
+                <PluginsRoute path="/plugins" navigate={() => undefined} />
+              </ProviderHealthProvider>
+            </BenchHarness>
+          </NavigationProvider>
+        </TestQueryProvider>,
+      );
+    });
+    for (let i = 0; i < 5; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    act(() => {
+      selectTenant("tnt_b");
+    });
+    for (let i = 0; i < 5; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    skillsDeferred.tnt_b?.resolve(
+      json({
+        skills: [
+          {
+            assetId: "skill_b",
+            name: "beta-only",
+            description: "Tenant B's skill.",
+            scope: "tenant",
+            creatorPrincipalId: "prn_1",
+            updatedAtIso: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+    for (let i = 0; i < 10; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    skillsDeferred.tnt_a?.resolve(
+      json({
+        skills: [
+          {
+            assetId: "skill_a",
+            name: "alpha-only",
+            description: "Tenant A's skill.",
+            scope: "tenant",
+            creatorPrincipalId: "prn_1",
+            updatedAtIso: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+    for (let i = 0; i < 10; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    const skillsTab = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Skills") === true,
+    );
+    act(() => {
+      skillsTab?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain("beta-only");
+    expect(container.textContent).not.toContain("alpha-only");
   });
 });
