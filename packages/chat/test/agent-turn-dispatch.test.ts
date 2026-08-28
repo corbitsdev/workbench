@@ -15,6 +15,7 @@ import {
   sendText,
   settleFanout,
   TENANT,
+  timelineOf,
 } from "./test-support";
 
 async function roomWithAgent(
@@ -244,6 +245,60 @@ describe("overlapping turns across agents and messages (CL-6670)", () => {
     expect(
       (deps.platform as ReturnType<typeof fakePlatform>).sentMail,
     ).toHaveLength(2);
+  });
+
+  // CL-7129: the wait this queues behind has to tolerate a prior turn
+  // that is merely slow, not hung — up to the full window a legitimate
+  // turn is allowed to run. A bound narrower than that reintroduces
+  // exactly the drop CL-6670 fixed: the queued send times out and lands
+  // as an undelivered notice instead of dispatching once the agent
+  // frees up. Modeled at test scale: `waitUntilFreeTimeoutMs` stands in
+  // for `CHAT_TURN_TIMEOUT_MS`, and the first turn is held open until
+  // just under that injected budget before closing.
+  test("a prior turn that runs almost the full wait budget still lets the queued send through, not dropped as undelivered", async () => {
+    const { app, deps, workbenchId, agentTurns } = await roomWithAgent({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "echo" }] }),
+      waitUntilFreeTimeoutMs: 200,
+    });
+
+    await sendText(app, workbenchId, "one");
+    const [firstTurn] = await agentTurns.listTurns({
+      tenantId: TENANT.id,
+      workbenchId,
+    });
+
+    const secondSend = sendText(app, workbenchId, "two");
+
+    // Closes the first turn just under the injected wait budget, well
+    // past where a narrower (e.g. halved) bound would already have
+    // timed the wait out.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await agentTurns.finishTurn({
+      tenantId: TENANT.id,
+      turnId: firstTurn?.id ?? "",
+      status: "completed",
+      replyMessageId: "msg_reply1",
+    });
+
+    await secondSend;
+    await settleFanout();
+
+    const timeline = await timelineOf(deps, workbenchId);
+    const undelivered = timeline.find((message) =>
+      message.parts.some(
+        (part) => part.kind === "text" && part.turnFailed === true,
+      ),
+    );
+    expect(undelivered).toBeUndefined();
+
+    const turns = await agentTurns.listTurns({
+      tenantId: TENANT.id,
+      workbenchId,
+    });
+    expect(turns.map((turn) => turn.childRunId).sort()).toEqual([
+      "turn__0",
+      "turn__1",
+    ]);
   });
 });
 
