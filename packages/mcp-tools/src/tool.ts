@@ -6,8 +6,8 @@
 //   mcp_list_tools   -- discover tools: no args for a truncated
 //                        catalog of every server, {pattern} to regex
 //                        search names across all servers, {server} for
-//                        one server's full list, {server, toolName}
-//                        for one tool's full schema.
+//                        one server's truncated list, {server, toolName}
+//                        for one tool's truncated schema.
 //   mcp_call({server, tool, arguments}) -- invoke one of those tools.
 //
 // Credentials: each connected server is a `mcp.<slug>` credential
@@ -182,6 +182,7 @@ const CallInput = type({
 
 const TRUNCATE_LENGTH = 100;
 const TRUNCATE_SUFFIX = "… [truncated]";
+const MCP_READ_MAX_CHARS = 8_000;
 
 function truncateDescription(description: string | undefined): string {
   if (description === undefined) return "";
@@ -189,11 +190,21 @@ function truncateDescription(description: string | undefined): string {
   return description.slice(0, TRUNCATE_LENGTH) + TRUNCATE_SUFFIX;
 }
 
+function truncateSchema(schema: unknown): string {
+  return truncateDescription(JSON.stringify(schema));
+}
+
+function boundReadContent(content: string): string {
+  if (content.length <= MCP_READ_MAX_CHARS) return content;
+  const keep = Math.max(0, MCP_READ_MAX_CHARS - TRUNCATE_SUFFIX.length);
+  return content.slice(0, keep) + TRUNCATE_SUFFIX;
+}
+
 function toolSummary(tool: McpToolInfo) {
   return {
     name: tool.name,
-    description: tool.description,
-    inputSchema: tool.inputSchema,
+    description: truncateDescription(tool.description),
+    inputSchema: truncateSchema(tool.inputSchema),
     readOnly: tool.annotations?.readOnlyHint === true,
   };
 }
@@ -360,6 +371,7 @@ async function runListToolsCatalog(
             tools: loaded.tools.map((tool) => ({
               name: tool.name,
               description: truncateDescription(tool.description),
+              schema: truncateSchema(tool.inputSchema),
             })),
           }),
     });
@@ -477,10 +489,11 @@ async function runRead(env: McpToolsEnv, call: ToolCall): Promise<ToolResult> {
     return {
       callId: call.id,
       isError: result.isError,
-      content:
+      content: boundReadContent(
         typeof result.content === "string"
           ? result.content
           : JSON.stringify(result.content),
+      ),
     };
   } catch (err) {
     return errorResult(call.id, err);

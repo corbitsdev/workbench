@@ -32,6 +32,11 @@ export interface StubMcpServerHandle {
  */
 function buildServer(
   calls: { name: string; args: Record<string, unknown> }[],
+  opts?: {
+    echoDescription?: string;
+    echoInputSchema?: Record<string, unknown>;
+    echoResult?: string;
+  },
 ): Server {
   const server = new Server(
     { name: "stub-mcp-server", version: "0.0.1" },
@@ -42,8 +47,8 @@ function buildServer(
     tools: [
       {
         name: "echo",
-        description: "Echoes back its input.",
-        inputSchema: {
+        description: opts?.echoDescription ?? "Echoes back its input.",
+        inputSchema: opts?.echoInputSchema ?? {
           type: "object",
           properties: { text: { type: "string" } },
           required: ["text"],
@@ -67,7 +72,11 @@ function buildServer(
     const args = (request.params.arguments ?? {}) as Record<string, unknown>;
     calls.push({ name: request.params.name, args });
     if (request.params.name === "echo") {
-      return { content: [{ type: "text", text: String(args["text"]) }] };
+      const text =
+        opts?.echoResult !== undefined
+          ? opts.echoResult
+          : String(args["text"]);
+      return { content: [{ type: "text", text }] };
     }
     if (request.params.name === "write_note") {
       return {
@@ -104,6 +113,9 @@ function buildServer(
  */
 export function startStubMcpServer(opts?: {
   requiredToken?: string;
+  echoDescription?: string;
+  echoInputSchema?: Record<string, unknown>;
+  echoResult?: string;
 }): StubMcpServerHandle {
   const calls: { name: string; args: Record<string, unknown> }[] = [];
   const sessions = new Map<string, WebStandardStreamableHTTPServerTransport>();
@@ -132,7 +144,7 @@ export function startStubMcpServer(opts?: {
             sessions.delete(id);
           },
         });
-      await buildServer(calls).connect(transport);
+      await buildServer(calls, opts).connect(transport);
       return transport.handleRequest(req);
     },
   });
