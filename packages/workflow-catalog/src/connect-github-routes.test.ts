@@ -92,6 +92,8 @@ function buildApp(overrides: Partial<ConnectGithubRoutesDeps> = {}) {
       triggers.push({ tenantId, repo });
       return { id: `trg_${repo.id}` };
     },
+    hasWebhookTrigger: async (_tenantId, _definitionId, repo) =>
+      triggers.some((t) => t.repo.id === repo.id),
     getTemplateSettings: async () => settings,
     persistSelectedRepos: async (
       _tenantId,

@@ -141,6 +141,7 @@ describe("the room GitHub connect card reads what its own submit writes", () => 
       resolveCodeReviewDefinitionId: async () => "wfd_code_review",
       mintRepoGrant: async () => {},
       createWebhookTrigger: async () => ({ id: "trg_1" }),
+      hasWebhookTrigger: async () => false,
       getTemplateSettings: async () => ({
         pendingConnections: [],
         selectedRepos: [],
@@ -184,6 +185,7 @@ describe("the room GitHub connect card reads what its own submit writes", () => 
       resolveCodeReviewDefinitionId: async () => "wfd_code_review",
       mintRepoGrant: async () => {},
       createWebhookTrigger: async () => ({ id: "trg_1" }),
+      hasWebhookTrigger: async () => false,
       getTemplateSettings: async () => ({
         pendingConnections: [],
         selectedRepos: [],

@@ -75,6 +75,9 @@ function buildHarness() {
       createdTriggerRepos.push(repo.name);
       return { id: `trg_${repo.id}` };
     },
+    async hasWebhookTrigger() {
+      return false;
+    },
     async persistSelectedRepos(repoIds) {
       persistedRepoIds = repoIds;
     },
