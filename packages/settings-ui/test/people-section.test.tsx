@@ -428,48 +428,207 @@ describe("PeopleSection", () => {
     }
   });
 
-  test("a failing suspend reports the error with its operation and tenant", async () => {
-    const calls: FetchCall[] = [];
-    reportErrorCalls.length = 0;
-    mockFetch(
-      {
-        "/api/tenants/tnt_1/principals": {
-          data: [humanPrincipal()],
-          nextCursor: null,
-        },
-        "/api/tenants/tnt_1/roles": rolesPage,
-        "/api/tenants/tnt_1/access-policy/pending-invites": noInvites,
+  // CL-7139: every mutation catch must report the failure through
+  // reportError with its own operation, not just set the generic message.
+  const REPORT_ERROR_CASES: {
+    readonly name: string;
+    readonly operation: string;
+    readonly principals: unknown[];
+    readonly invites: { readonly data: unknown[] };
+    readonly failingHandler: Record<string, unknown>;
+    readonly trigger: (container: HTMLDivElement) => Promise<void>;
+  }[] = [
+    {
+      name: "invite",
+      operation: "settings.people.invite",
+      principals: [humanPrincipal()],
+      invites: noInvites,
+      failingHandler: {
+        "POST /api/tenants/tnt_1/access-policy/pending-invites": () =>
+          json(500, { error: "boom" }),
+      },
+      trigger: async (container) => {
+        const inviteButton = Array.from(
+          container.querySelectorAll("button"),
+        ).find((b) => b.textContent === "Invite someone");
+        act(() =>
+          inviteButton?.dispatchEvent(
+            new MouseEvent("click", { bubbles: true }),
+          ),
+        );
+        await settle();
+        const emailInput = document.querySelector(
+          'input[type="email"]',
+        ) as HTMLInputElement;
+        act(() => setNativeValue(emailInput, "bob@example.com"));
+        await settle();
+        const form = document.getElementById(
+          "invite-person-form",
+        ) as HTMLFormElement;
+        act(() => {
+          form.dispatchEvent(
+            new Event("submit", { bubbles: true, cancelable: true }),
+          );
+        });
+        await settle();
+      },
+    },
+    {
+      name: "cancelInvite",
+      operation: "settings.people.cancelInvite",
+      principals: [humanPrincipal()],
+      invites: {
+        data: [
+          {
+            id: "pinv_1",
+            tenantId: "tnt_1",
+            matchType: "email",
+            value: "carol@example.com",
+            roleId: "role_member",
+            createdAt: timestamps.createdAt,
+          },
+        ],
+      },
+      failingHandler: {
+        "DELETE /api/tenants/tnt_1/access-policy/pending-invites/pinv_1": () =>
+          json(500, { error: "boom" }),
+      },
+      trigger: async (container) => {
+        const cancelButton = Array.from(
+          container.querySelectorAll("button"),
+        ).find((b) => b.textContent === "Cancel");
+        act(() =>
+          cancelButton?.dispatchEvent(
+            new MouseEvent("click", { bubbles: true }),
+          ),
+        );
+        await settle();
+        const confirmButton = Array.from(
+          container.querySelectorAll("button"),
+        ).find((b) => b.textContent?.includes("Cancel this invite"));
+        act(() =>
+          confirmButton?.dispatchEvent(
+            new MouseEvent("click", { bubbles: true }),
+          ),
+        );
+        await settle();
+      },
+    },
+    {
+      name: "updateStatus",
+      operation: "settings.people.updateStatus",
+      principals: [humanPrincipal()],
+      invites: noInvites,
+      failingHandler: {
         "PATCH /api/tenants/tnt_1/principals/prn_human_1": () =>
           json(500, { error: "boom" }),
       },
-      calls,
-    );
+      trigger: async (container) => {
+        const suspendButton = Array.from(
+          container.querySelectorAll("button"),
+        ).find((b) => b.textContent === "Suspend");
+        act(() =>
+          suspendButton?.dispatchEvent(
+            new MouseEvent("click", { bubbles: true }),
+          ),
+        );
+        await settle();
+      },
+    },
+    {
+      name: "remove",
+      operation: "settings.people.remove",
+      principals: [humanPrincipal()],
+      invites: noInvites,
+      failingHandler: {
+        "DELETE /api/tenants/tnt_1/principals/prn_human_1": () =>
+          json(500, { error: "boom" }),
+      },
+      trigger: async (container) => {
+        const removeButton = Array.from(
+          container.querySelectorAll("button"),
+        ).find((b) => b.textContent === "Remove");
+        act(() =>
+          removeButton?.dispatchEvent(
+            new MouseEvent("click", { bubbles: true }),
+          ),
+        );
+        await settle();
+        const confirmButton = Array.from(
+          container.querySelectorAll("button"),
+        ).find((b) => b.textContent === "Remove for good?");
+        act(() =>
+          confirmButton?.dispatchEvent(
+            new MouseEvent("click", { bubbles: true }),
+          ),
+        );
+        await settle();
+      },
+    },
+    {
+      name: "changeRole",
+      operation: "settings.people.changeRole",
+      principals: [
+        humanPrincipal(),
+        humanPrincipal({
+          id: "prn_human_2",
+          displayName: "Bob Baker",
+          refId: "user_2",
+          roles: [{ id: MEMBER_ROLE.id, name: MEMBER_ROLE.name }],
+        }),
+      ],
+      invites: noInvites,
+      failingHandler: {
+        "DELETE /api/tenants/tnt_1/principals/prn_human_2/roles/role_member":
+          () => json(500, { error: "boom" }),
+      },
+      trigger: async (container) => {
+        const selects = container.querySelectorAll("tbody select");
+        const bobSelect = Array.from(selects).find(
+          (s) => (s as HTMLSelectElement).value === "role_member",
+        ) as HTMLSelectElement;
+        act(() => {
+          bobSelect.value = "role_owner";
+          bobSelect.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+        await settle();
+      },
+    },
+  ];
 
-    const { container, root } = mount();
-    try {
-      await settle();
-
-      const suspendButton = Array.from(
-        container.querySelectorAll("button"),
-      ).find((b) => b.textContent === "Suspend");
-      expect(suspendButton).toBeDefined();
-      act(() =>
-        suspendButton?.dispatchEvent(
-          new MouseEvent("click", { bubbles: true }),
-        ),
+  for (const testCase of REPORT_ERROR_CASES) {
+    test(`a failing ${testCase.name} reports the error with its operation and tenant`, async () => {
+      const calls: FetchCall[] = [];
+      reportErrorCalls.length = 0;
+      mockFetch(
+        {
+          "/api/tenants/tnt_1/principals": {
+            data: testCase.principals,
+            nextCursor: null,
+          },
+          "/api/tenants/tnt_1/roles": rolesPage,
+          "/api/tenants/tnt_1/access-policy/pending-invites": testCase.invites,
+          ...testCase.failingHandler,
+        },
+        calls,
       );
-      await settle();
 
-      expect(
-        reportErrorCalls.some(
-          (call) =>
-            call.context.operation === "settings.people.updateStatus" &&
-            call.context.tenantId === "tnt_1",
-        ),
-      ).toBe(true);
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
-  });
+      const { container, root } = mount();
+      try {
+        await settle();
+        await testCase.trigger(container);
+
+        expect(
+          reportErrorCalls.some(
+            (call) =>
+              call.context.operation === testCase.operation &&
+              call.context.tenantId === "tnt_1",
+          ),
+        ).toBe(true);
+      } finally {
+        act(() => root.unmount());
+        container.remove();
+      }
+    });
+  }
 });
