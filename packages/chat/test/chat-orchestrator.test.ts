@@ -1,10 +1,10 @@
 // Proves the orchestrator's own wiring: a `connector.reply` on the
 // shared `agent.event` stream resolves the replying address to its
-// folded run, finds every workbench whose participants carry that
-// address (defensively — more than one, if the store ever shows it),
-// and posts the reply onto each one's own timeline via
-// `postRoomMessage`, sent by the replying agent's address and carrying
-// its run id. Non-reply events are ignored for posting but still bump
+// folded run, finds the originating workbench (the room with a running
+// turn, a unique membership, or an explicit from/replyTo/turn hint on
+// the event), and posts the reply onto that timeline via
+// `postRoomMessage`. A host in two rooms never gets one reply sprayed
+// into both. Non-reply events are ignored for posting but still bump
 // activity; an address the store never produced (no folded run) is
 // ignored outright; `dispose` stops the subscription.
 //
