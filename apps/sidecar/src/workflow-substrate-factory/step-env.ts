@@ -291,13 +291,12 @@ export function createSidecarStepBuildEnv(
           });
     // Conversation storage. For the warm single-step agent the
     // conversation must survive child respawn, so it is backed by a
-    // per-agent durable store whose content is mirrored to the
-    // workflow-run substrate; building it here restores the
-    // prior conversation before the agent's reactor loads. A multi-step
-    // deploy (no durable registry) keeps the per-run isogit store: its
-    // per-step agents are not warm/long-lived and have no cross-run
-    // conversation to carry. The workdir + tools stay per-run in both
-    // cases -- only the conversation context is durable across runs.
+    // per-agent durable store (keyed by stepId) whose content is mirrored
+    // to the workflow-run substrate under
+    // `agent-state/<stepId>/<workbenchId>/`. Bind to the originating
+    // workbench happens before this builder runs so restore is already
+    // applied. A multi-step deploy (no durable registry) keeps the
+    // per-run isogit store.
     const storage: ContextStore & AuditStore =
       deps.durableConversation !== undefined
         ? (await deps.durableConversation.acquire(stepId)).storage

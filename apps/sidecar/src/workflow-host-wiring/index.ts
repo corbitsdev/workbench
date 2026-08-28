@@ -70,6 +70,7 @@ import {
   snapshotAgentIdentity,
 } from "../hibernated-agent-identity-vault";
 import { isErrnoNotFound } from "../conversation-state";
+import { recordOriginatingWorkbench } from "../originating-workbench";
 import {
   computeWireDefinitionHash,
   validateWorkflowProjection,
@@ -1042,7 +1043,18 @@ export function createSidecarDeployRouter(deps: {
       // supervisor's mail-bus subscription. Registration happens after
       // `spawn` succeeds so a spawn-time rejection leaves the registry
       // untouched.
-      deps.multistepMailRouter?.register(spec.agentAddress, (message) => {
+      deps.multistepMailRouter?.register(spec.agentAddress, async (message) => {
+        if (stepStateDataDir !== undefined) {
+          try {
+            await recordOriginatingWorkbench({
+              dataDir: stepStateDataDir,
+              mailboxAddress: spec.agentAddress,
+              raw: message,
+            });
+          } catch (cause) {
+            logger.warn`record originating workbench failed for ${spec.agentAddress}: ${cause instanceof Error ? cause.message : String(cause)}`;
+          }
+        }
         return wired.routeInbound(message);
       });
       // Register the signal-delivery handler so a hub `signal.deliver` frame
