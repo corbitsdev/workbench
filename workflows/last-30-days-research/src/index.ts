@@ -145,7 +145,7 @@ export const LAST_30_DAYS_RESEARCH_PENDING_SOURCES = [
 export const LAST_30_DAYS_RESEARCH_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] =
   [
     { name: "@corbits/web-search-tools", version: "0.0.3" },
-    { name: "@corbits/github-tools", version: "0.0.7" },
+    { name: "@corbits/github-tools", version: "0.0.8" },
   ];
 
 const SYSTEM_PROMPT = [

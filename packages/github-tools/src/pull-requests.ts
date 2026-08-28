@@ -17,7 +17,7 @@ import { type } from "arktype";
 import type { GitHubClientConfig } from "./client";
 
 const DEFAULT_BASE_URL = "https://api.github.com";
-const MAX_FILES_PER_PAGE = 100;
+const MAX_ITEMS_PER_PAGE = 100;
 /**
  * Upper bound on how many pages a paginated fetch follows. A pull
  * request with more than 3,000 changed files or review comments is
@@ -167,13 +167,19 @@ function headers(apiKey: string | undefined): Record<string, string> {
   return base;
 }
 
-async function requestJSON(
+/**
+ * Fetches a URL and parses its body as JSON, throwing one consistently
+ * worded error for a non-2xx response. The one seam every GitHub call in
+ * this module goes through, so `requestJSON` and `fetchAllPages` report
+ * a transport failure identically instead of each spelling it out.
+ */
+async function fetchJSON(
   config: GitHubClientConfig,
   url: URL,
   init: { readonly method: string; readonly body?: string },
-): Promise<unknown> {
+): Promise<{ readonly response: Response; readonly body: unknown }> {
   const doFetch = config.fetchImpl ?? fetch;
-  const response = await doFetch(url, {
+  const response: Response = await doFetch(url, {
     method: init.method,
     headers: headers(config.apiKey),
     ...(init.body === undefined ? {} : { body: init.body }),
@@ -184,7 +190,15 @@ async function requestJSON(
         `${String(response.status)} ${response.statusText}`,
     );
   }
-  return response.json();
+  return { response, body: await response.json() };
+}
+
+async function requestJSON(
+  config: GitHubClientConfig,
+  url: URL,
+  init: { readonly method: string; readonly body?: string },
+): Promise<unknown> {
+  return (await fetchJSON(config, url, init)).body;
 }
 
 const NEXT_LINK = /<([^>]+)>\s*;\s*rel="next"/;
@@ -198,7 +212,7 @@ function nextPageUrl(linkHeader: string | null): URL | null {
 
 /** The next page to request when a paginated endpoint sent no `Link`. */
 function fallbackNextPage(url: URL, pageItemCount: number): URL | null {
-  if (pageItemCount < MAX_FILES_PER_PAGE) return null;
+  if (pageItemCount < MAX_ITEMS_PER_PAGE) return null;
   const next = new URL(url);
   const currentPage = Number(next.searchParams.get("page") ?? "1");
   next.searchParams.set("page", String(currentPage + 1));
@@ -219,7 +233,6 @@ async function fetchAllPages(
   readonly items: readonly unknown[];
   readonly truncated: boolean;
 }> {
-  const doFetch = config.fetchImpl ?? fetch;
   const items: unknown[] = [];
   let url: URL | null = initialUrl;
   let pageCount = 0;
@@ -231,16 +244,9 @@ async function fetchAllPages(
       break;
     }
     pageCount += 1;
-    const response: Response = await doFetch(url, {
+    const { response, body: page } = await fetchJSON(config, url, {
       method: "GET",
-      headers: headers(config.apiKey),
     });
-    if (!response.ok) {
-      throw new Error(
-        `GitHub GET ${url.pathname} failed: ${String(response.status)} ${response.statusText}`,
-      );
-    }
-    const page = await response.json();
     if (!Array.isArray(page)) {
       throw new Error(`GitHub GET ${url.pathname} returned a non-array page`);
     }
@@ -288,7 +294,7 @@ export async function fetchPullRequestDiff(
 
   const pullUrl = new URL(`${base}${pullPath(ref)}`);
   const filesUrl = new URL(`${base}${pullPath(ref)}/files`);
-  filesUrl.searchParams.set("per_page", String(MAX_FILES_PER_PAGE));
+  filesUrl.searchParams.set("per_page", String(MAX_ITEMS_PER_PAGE));
 
   const [pullRaw, filesPage] = await Promise.all([
     requestJSON(config, pullUrl, { method: "GET" }),
@@ -334,7 +340,7 @@ export async function fetchPullRequestReviewComments(
   ref: PullRequestRef,
 ): Promise<PullRequestReviewCommentsPage> {
   const url = new URL(`${baseOf(config)}${pullPath(ref)}/comments`);
-  url.searchParams.set("per_page", String(MAX_FILES_PER_PAGE));
+  url.searchParams.set("per_page", String(MAX_ITEMS_PER_PAGE));
   const page = await fetchAllPages(config, url);
   const comments = ReviewCommentsResponse(page.items);
   if (comments instanceof type.errors) {

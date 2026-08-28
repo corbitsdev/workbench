@@ -119,7 +119,12 @@ export async function runPullRequestReview(
   const passes = await Promise.all(
     reviewers.map((reviewer) => runOne(deps, reviewer, prompt)),
   );
-  const review = aggregateReview(passes, diff, alreadyPosted);
+  const review = aggregateReview(
+    passes,
+    diff,
+    alreadyPosted,
+    postedComments.truncated,
+  );
   const posted = await deps.github.postReview(ref, diff.headSha, review);
   return { skipped: false, diff, passes, review, posted };
 }
