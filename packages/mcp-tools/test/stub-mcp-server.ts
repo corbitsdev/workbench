@@ -73,9 +73,7 @@ function buildServer(
     calls.push({ name: request.params.name, args });
     if (request.params.name === "echo") {
       const text =
-        opts?.echoResult !== undefined
-          ? opts.echoResult
-          : String(args["text"]);
+        opts?.echoResult !== undefined ? opts.echoResult : String(args["text"]);
       return { content: [{ type: "text", text }] };
     }
     if (request.params.name === "write_note") {
