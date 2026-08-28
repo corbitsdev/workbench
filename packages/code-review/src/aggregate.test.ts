@@ -23,6 +23,7 @@ const DIFF: PullRequestDiff = {
       changedLines: [1, 2, 3],
     },
   ],
+  truncated: false,
 };
 
 function pass(id: string, report: unknown): ReviewerPass {

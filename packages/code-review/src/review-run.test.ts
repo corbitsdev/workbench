@@ -31,6 +31,7 @@ const DIFF: PullRequestDiff = {
       changedLines: [1, 2],
     },
   ],
+  truncated: false,
 };
 
 interface FakeGitHub {
@@ -69,7 +70,7 @@ function fakeGitHub(
       },
       listPostedComments: (ref) => {
         listedComments.push(ref);
-        return Promise.resolve(postedComments);
+        return Promise.resolve({ comments: postedComments, truncated: false });
       },
     },
   };
