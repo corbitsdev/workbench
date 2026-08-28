@@ -108,12 +108,13 @@
 //
 // Commit granularity. The design calls for connector-state-change-driven
 // commits via the router's
-// `onStateChanged` hook. In the unified-host warm-agent path the agent
-// receives synthesized step inputs and never drives the connector router
-// (the supervisor owns mail), so `onStateChanged` stays dormant and never
-// fires. The commit therefore falls back to the run boundary (per
-// message). The `onStateChanged` wiring is retained so a future path that
-// does drive the router gets change-driven mirrors for free.
+// `onStateChanged` hook. The warm-agent path drives the connector router
+// through `seedInbound`: each mail-derived inbound message routes and
+// commits its thread state before the agent's send, so `onStateChanged`
+// fires and enqueues a change-driven mirror. The run-boundary mirror (per
+// message) still runs unconditionally, so the two triggers are
+// complementary -- the seed persists the connector state promptly, the
+// boundary persists the turn delta.
 //
 // Defensive: a restore that finds a checkpoint or WAL but cannot
 // parse/replay it THROWS (a lost or corrupt conversation on respawn is a
@@ -128,6 +129,7 @@ import { type } from "arktype";
 
 import { getLogger } from "@intx/log";
 import { createConnectorRouter } from "@intx/harness";
+import type { ConnectorReplyParts, RouteDecision } from "@intx/harness";
 import {
   createIsogitStorage,
   createNodeIsogitRuntime,
@@ -144,7 +146,9 @@ import {
   type AuditStore,
   type ContextStore,
   type ConversationTurn,
+  type InboundMessage,
   type PendingOperation,
+  type SendReceipt,
 } from "@intx/types/runtime";
 
 const logger = getLogger(["sidecar", "workflow-child", "conversation-state"]);
@@ -308,6 +312,38 @@ export interface DurableConversationStore {
    * the agent's send settles). A write failure surfaces.
    */
   mirrorToSubstrate(): Promise<void>;
+  /**
+   * Advance the connector router from a received inbound message so the
+   * warm agent's reply path has thread state. Runs the router's pure
+   * `route()` then `commit()`: a `start` seeds threadRoot / lastMessageId /
+   * replyTo from the message; a `continue` advances lastMessageId / replyTo
+   * and carries prior speakers into `cc`. The advanced connector state is
+   * flushed into the local store's metadata so the run-boundary mirror
+   * persists it and a respawn restore re-seeds the router. A `passthrough`
+   * decision -- no active-thread match, or an unparseable sender -- advances
+   * nothing. Called before the warm agent's send so `composeReply()` can
+   * compose a threaded reply. A metadata write failure surfaces.
+   */
+  seedInbound(message: InboundMessage): Promise<void>;
+  /**
+   * Produce the threading headers for a reply on the active connector
+   * thread (the router's `composeReply`). Throws
+   * `NoActiveConnectorThreadError` when no thread has been seeded. The warm
+   * mail loop's reply drain reads this to address its outbound reply.
+   */
+  composeReply(): ConnectorReplyParts;
+  /**
+   * Advance the connector thread after a reply was sent. Forwards to the
+   * router's `onReplySent` (which moves `lastMessageId` to the sent reply's
+   * Message-ID so the next inbound continuation matches) and flushes the
+   * advanced connector state into the local store's metadata the same way
+   * `seedInbound` does, so `lastMessageId` persists across turns and across a
+   * child respawn. Called by the warm mail loop's reply drain after its
+   * outbound send settles. Throws `NoActiveConnectorThreadError` when no
+   * thread is active -- advancing outbound state has no meaning without a
+   * seeded thread. A metadata write failure surfaces.
+   */
+  onReplySent(receipt: SendReceipt): Promise<void>;
 }
 
 export async function createDurableConversationStore(
@@ -321,11 +357,11 @@ export async function createDurableConversationStore(
 
   // Reuse the connector router + the harness storage-override seam. The
   // router's `onStateChanged` is the change-driven commit hook the design
-  // names; in the synthesized-step-input warm path it stays dormant (the
-  // supervisor owns mail, so the agent never routes a connector message),
-  // so the run-boundary mirror is the operative commit trigger. The wiring
-  // is retained verbatim so a future path that drives the router gets
-  // change-driven mirrors with no further work.
+  // names. `seedInbound` drives the router (route + commit) on each inbound
+  // mail, so `onStateChanged` fires and enqueues a change-driven mirror
+  // behind the seed on the shared serialization tail; the run-boundary
+  // mirror still commits every boundary. Both triggers persist state, so a
+  // dropped change-driven mirror is recoverable at the next boundary.
   const connectorRouter = createConnectorRouter({
     onStateChanged: () => {
       void mirrorToSubstrate().catch((cause) => {
@@ -385,6 +421,18 @@ export async function createDurableConversationStore(
 
   function mirrorToSubstrate(): Promise<void> {
     return serializeStateOp(runMirror);
+  }
+
+  function seedInbound(message: InboundMessage): Promise<void> {
+    return serializeStateOp(() => runSeed(message));
+  }
+
+  function composeReply(): ConnectorReplyParts {
+    return connectorRouter.composeReply();
+  }
+
+  function onReplySent(receipt: SendReceipt): Promise<void> {
+    return serializeStateOp(() => runReplySent(receipt));
   }
 
   function substrateAgentStateFsDir(): string {
@@ -614,10 +662,78 @@ export async function createDurableConversationStore(
     }
   }
 
+  // Classify an inbound message, treating a `route()` throw as passthrough.
+  // The router throws when `message.headers.from` is not a parseable bare
+  // addr-spec; per the router contract that is a passthrough (deliver the
+  // message to the agent -- the caller's send is separate -- but do not
+  // advance the thread), not a programmer error, so it must not fail the
+  // seed. A synthesized passthrough decision commits as a no-op.
+  function routeOrPassthrough(message: InboundMessage): RouteDecision {
+    try {
+      return connectorRouter.route(message);
+    } catch (cause) {
+      logger.warn`connector route for ${opts.agentKey} could not parse the inbound sender; leaving the thread unadvanced: ${cause instanceof Error ? cause.message : String(cause)}`;
+      return { kind: "passthrough" };
+    }
+  }
+
+  // Advance the connector router from a received inbound message and flush
+  // the resulting connector state into the local store's metadata. `commit`
+  // fires the router's `onStateChanged`, which enqueues a change-driven
+  // mirror behind this op on the shared serialization tail; because that
+  // mirror reads the connector state from the local store's metadata (not
+  // from the router), the metadata write below is what makes the seeded
+  // state reach the substrate. The write preserves the reactor's staged
+  // pendingOperations / tokenUsage -- a seed advances only connectorState.
+  // A passthrough decision advances nothing and writes nothing.
+  async function runSeed(message: InboundMessage): Promise<void> {
+    const decision = routeOrPassthrough(message);
+    connectorRouter.commit(decision);
+    if (decision.kind === "passthrough") return;
+
+    const metadata = await baseStorage.loadMetadata();
+    baseStorage.setConnectorState(connectorRouter.snapshot());
+    await baseStorage.writeMetadata({
+      pendingOperations: metadata.pendingOperations,
+      tokenUsage: metadata.tokenUsage,
+    });
+    await baseStorage.commit({
+      message: `seed connector thread for ${opts.agentKey}`,
+    });
+  }
+
+  // Advance the connector thread after a reply was sent and flush the
+  // resulting connector state into the local store's metadata. `onReplySent`
+  // moves `lastMessageId` to the reply's Message-ID and fires the router's
+  // `onStateChanged`, which enqueues a change-driven mirror behind this op on
+  // the shared serialization tail; because that mirror reads the connector
+  // state from the local store's metadata (not from the router), the metadata
+  // write below is what makes the advanced state reach the substrate. The
+  // write preserves the reactor's staged pendingOperations / tokenUsage -- an
+  // outbound advance touches only connectorState. `onReplySent` throws when no
+  // thread is active, which surfaces to the reply drain's failure callback
+  // rather than persisting a phantom advance.
+  async function runReplySent(receipt: SendReceipt): Promise<void> {
+    connectorRouter.onReplySent(receipt);
+
+    const metadata = await baseStorage.loadMetadata();
+    baseStorage.setConnectorState(connectorRouter.snapshot());
+    await baseStorage.writeMetadata({
+      pendingOperations: metadata.pendingOperations,
+      tokenUsage: metadata.tokenUsage,
+    });
+    await baseStorage.commit({
+      message: `advance connector thread after reply for ${opts.agentKey}`,
+    });
+  }
+
   return {
     storage: baseStorage,
     restoreFromSubstrate,
     mirrorToSubstrate,
+    seedInbound,
+    composeReply,
+    onReplySent,
   };
 }
 

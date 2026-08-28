@@ -1,28 +1,51 @@
 // Supervisor-backed `MessageTransport` for a unified-host step agent
-// (OUTBOUND half of mailbox ownership, §3a).
+// (both halves of mailbox ownership, §3a OUTBOUND and §3b INBOUND).
 //
 // Under the unified host the supervisor is the sole mail owner: it holds
 // the durable inbox and the host transport against which the agent's
 // address is registered with its signing key. The step agent therefore
-// does NOT subscribe its own transport for inbound mail (the supervisor
-// delivers inputs via the step path) and does NOT hold a signing key to
-// send outbound mail. Its mail tools are backed by this transport:
+// does NOT hold a signing key to send outbound mail, and it does NOT own
+// the host-side inbox directly. Its mail tools are backed by this
+// transport:
 //
-//   - INBOUND is a no-op. `watch` returns a no-op unsubscribe and never
-//     fires; the supervisor delivers the agent's input as the step
-//     input, not through the agent's own mailbox. The IMAP read surface
-//     (`search`, `fetchFull`, `fetchHeaders`, ...) throws: the agent
-//     owns no mailbox in the unified host, so a read against one is a
-//     programming error, surfaced loudly rather than returning a
-//     silently-empty result that would hide the missing inbound surface.
-//   - OUTBOUND (`send` / `append`) routes through the supervisor over
-//     the control IPC via the outbound-mail bridge. The supervisor
-//     performs the actual signed send through the host transport, so the
-//     outbound mail carries the agent's signature with full parity to
-//     the in-process path. The agent never holds the key.
+//   - INBOUND is a functional local IMAP read surface once the sidecar
+//     wires it (the `inbound` constructor argument). The supervisor
+//     commits an arrived message to the deployment's workflow-run
+//     substrate mailbox (`mailbox/INBOX/`) and fires a `mailbox.notify`
+//     control frame. The read surface (`search`, `thread`,
+//     `fetchHeaders`, `fetchStructure`, `fetchPart`, `fetchFull`, `sync`,
+//     `getMailboxStatus`) answers by opening a fresh committed snapshot of
+//     that mailbox through the child mailbox reader and running the
+//     `@intx/mailbox` pure query functions over it -- local, no hub or
+//     IPC round-trip. `watch` registers into the child watch registry, so
+//     `mail_wait` unblocks when the routed `mailbox.notify` fires. The
+//     WRITE methods (`setFlags` / `clearFlags` / `expunge`) do NOT touch
+//     the local read surface: they route up to the supervisor through the
+//     mailbox-mutation bridge (a `mailbox.mutate.request` frame), which
+//     applies the mutation to the supervisor's owned store and replies.
+//     The child never flushes the run ref, so it never races the
+//     supervisor's mirror. The agent owns only the `INBOX`, so every
+//     inbound method rejects a request for any other mailbox rather than
+//     silently serving `INBOX` under the wrong name. When the sidecar
+//     constructs the transport without the `inbound` argument, the inbound
+//     methods throw a clear "not wired" error rather than answer against a
+//     missing surface.
+//   - OUTBOUND (`send`) routes through the supervisor over the control
+//     IPC via the outbound-mail bridge. The supervisor performs the
+//     actual signed send through the host transport, so the outbound mail
+//     carries the agent's signature with full parity to the in-process
+//     path. The agent never holds the key.
+//
+// A handful of methods stay unsupported and throw: they act on a resource
+// the unified-host agent does not own. `append` and the mailbox-management
+// methods (`listMailboxes` / `createMailbox` / `deleteMailbox`) target a
+// mailbox the agent does not own; `move` / `copy` need a second mailbox it
+// does not own; and the distribution-list methods are unimplemented across
+// every transport.
 
 import type {
   BodyStructure,
+  CryptoProvider,
   InboundMessage,
   ListInfo,
   Mailbox,
@@ -41,23 +64,106 @@ import type {
   Unsubscribe,
 } from "@intx/types/runtime";
 
+import {
+  executeSearch,
+  executeThread,
+  fetchFull as doFetchFull,
+  fetchHeaders as doFetchHeaders,
+  fetchPart as doFetchPart,
+  fetchStructure as doFetchStructure,
+} from "@intx/mailbox";
+
+import { deriveWorkflowRunId } from "@intx/types";
+
+import { MAILBOX_INBOX_DIR } from "../adapters/substrate-mailbox-store";
+import type { ChildMailboxReader } from "./child-mailbox-reader";
+import type { ChildMailboxMutationBridge } from "./mailbox-mutation-bridge";
+import type { MailboxWatchRegistry } from "./mailbox-watch-registry";
 import type { ChildOutboundMailBridge } from "./outbound-mail-bridge";
 
 /**
+ * The dependencies backing the transport's whole inbox capability: the local
+ * IMAP READ surface (`reader` / `watchRegistry` / `getCrypto`) that resolves
+ * against the deployment's substrate mailbox, plus the routed-WRITE channel
+ * (`mutationBridge`) that carries flag writes and expunge up to the supervisor.
+ * The sidecar wires the bundle only for a build that owns an inbound mailbox
+ * (the warm agent); a build without it has no inbox and every inbound method
+ * throws a clear "not wired" error. Reads are local; writes route upstream --
+ * the child never flushes the run ref, so it never races the supervisor.
+ */
+export interface SupervisorBackedTransportInbound {
+  /**
+   * Opens a fresh committed snapshot of the deployment's substrate `INBOX`.
+   * Every inbound read opens a new snapshot, so a read taken after a
+   * `mailbox.notify` -- or after a routed write the supervisor flushed before
+   * replying -- observes the committed state.
+   */
+  reader: ChildMailboxReader;
+  /**
+   * The registry the child's control loop fires `mailbox.notify` into. It must
+   * be the same instance `runWorkflowChild` routes the frame to, so a `watch`
+   * installed here observes the supervisor's notification.
+   */
+  watchRegistry: MailboxWatchRegistry;
+  /**
+   * Resolve a sender address to its `CryptoProvider` so `fetchFull` can verify
+   * the message signature. Returns `undefined` when no key is known for the
+   * sender, in which case the signature status is reported as `unknown`.
+   */
+  getCrypto: (fromAddress: string) => CryptoProvider | undefined;
+  /**
+   * The upstream channel the write methods route through. `setFlags` /
+   * `clearFlags` / `expunge` call `mutationBridge.submit`, which emits a
+   * `mailbox.mutate.request` and resolves once the supervisor applies the
+   * mutation to its owned store and replies. Bundled with the read surface
+   * because the write methods and the reads share one presence condition:
+   * this agent owns an inbox, or it owns none.
+   */
+  mutationBridge: ChildMailboxMutationBridge;
+}
+
+/**
  * Construct a `MessageTransport` whose outbound side routes through the
- * supervisor (via `bridge`) and whose inbound side is inert. `address`
- * is the agent's mail address; the supervisor signs the outbound mail as
- * this address through the host transport, so it must be the address the
- * host registered the agent's `CryptoProvider` against.
+ * supervisor (via `bridge`) and whose inbound side is a local IMAP read
+ * surface over `inbound`. `address` is the agent's mail address; the
+ * supervisor signs the outbound mail as this address through the host
+ * transport, so it must be the address the host registered the agent's
+ * `CryptoProvider` against. When `inbound` is omitted, the inbound methods
+ * throw a clear "not wired" error; the sidecar supplies it once the child's
+ * mailbox reader and watch registry are threaded through.
  */
 export function createSupervisorBackedTransport(
   bridge: ChildOutboundMailBridge,
   address: string,
+  inbound?: SupervisorBackedTransportInbound,
 ): MessageTransport {
-  function inboundUnsupported(method: string): never {
+  function unsupported(method: string): never {
     throw new Error(
-      `supervisor-backed transport: ${method} is not supported for unified-host step agent ${address}; the supervisor owns the mailbox and delivers inbound mail as the step input`,
+      `supervisor-backed transport: ${method} is not supported for unified-host step agent ${address}; the supervisor owns the mailbox and the agent owns only its own ${MAILBOX_INBOX_DIR}`,
     );
+  }
+
+  // Return the wired inbound surface, or fail loud when the sidecar
+  // constructed the transport without it -- an inbound read against a missing
+  // surface is a wiring error, not a silently-empty result.
+  function requireInbound(method: string): SupervisorBackedTransportInbound {
+    if (inbound === undefined) {
+      throw new Error(
+        `supervisor-backed transport: ${method} needs the inbound surface, but it is not wired for unified-host step agent ${address}; the sidecar must construct the transport with its mailbox reader, watch registry, and crypto`,
+      );
+    }
+    return inbound;
+  }
+
+  // The unified-host agent owns exactly one mailbox, the substrate `INBOX`
+  // the reader opens. Reject any other name rather than serve `INBOX` under
+  // it, which would return the wrong mailbox's messages mislabeled.
+  function requireInbox(mailbox: string): void {
+    if (mailbox !== MAILBOX_INBOX_DIR) {
+      throw new Error(
+        `supervisor-backed transport: unified-host step agent ${address} owns only the "${MAILBOX_INBOX_DIR}" mailbox; "${mailbox}" is not available`,
+      );
+    }
   }
 
   return {
@@ -77,82 +183,133 @@ export function createSupervisorBackedTransport(
       // `append` writes into a mailbox the agent owns; in the unified
       // host the agent owns none. The mail tools do not append (they
       // `send`), so a reachable `append` is a programming error.
-      return inboundUnsupported("append");
+      return unsupported("append");
     },
 
     async listMailboxes(_signal?: AbortSignal): Promise<Mailbox[]> {
-      return inboundUnsupported("listMailboxes");
+      return unsupported("listMailboxes");
     },
     async createMailbox(
       _name: string,
       _signal?: AbortSignal,
     ): Promise<Mailbox> {
-      return inboundUnsupported("createMailbox");
+      return unsupported("createMailbox");
     },
     async deleteMailbox(_name: string, _signal?: AbortSignal): Promise<void> {
-      return inboundUnsupported("deleteMailbox");
+      return unsupported("deleteMailbox");
     },
     async getMailboxStatus(
-      _name: string,
+      name: string,
       _signal?: AbortSignal,
     ): Promise<MailboxStatus> {
-      return inboundUnsupported("getMailboxStatus");
+      const { reader } = requireInbound("getMailboxStatus");
+      requireInbox(name);
+      const store = await reader.open();
+      const unseen = store.messages.filter(
+        (m) => !m.flags.has("\\Seen"),
+      ).length;
+      return {
+        total: store.messages.length,
+        unseen,
+        recent: 0,
+        uidNext: store.uidNext,
+        uidValidity: store.uidValidity,
+        highestModSeq: store.highestModSeq,
+      };
     },
 
     async search(
-      _mailbox: string,
-      _query: SearchQuery,
+      mailbox: string,
+      query: SearchQuery,
       _signal?: AbortSignal,
     ): Promise<MessageRef[]> {
-      return inboundUnsupported("search");
+      const { reader } = requireInbound("search");
+      requireInbox(mailbox);
+      const store = await reader.open();
+      return await executeSearch(mailbox, store, query);
     },
     async thread(
-      _mailbox: string,
-      _algorithm: "references" | "orderedsubject",
-      _query?: SearchQuery,
+      mailbox: string,
+      algorithm: "references" | "orderedsubject",
+      query?: SearchQuery,
       _signal?: AbortSignal,
     ): Promise<Thread[]> {
-      return inboundUnsupported("thread");
+      const { reader } = requireInbound("thread");
+      requireInbox(mailbox);
+      const store = await reader.open();
+      return await executeThread(mailbox, store, algorithm, query);
     },
     async fetchHeaders(
-      _ref: MessageRef,
+      ref: MessageRef,
       _signal?: AbortSignal,
     ): Promise<MessageHeaders> {
-      return inboundUnsupported("fetchHeaders");
+      const { reader } = requireInbound("fetchHeaders");
+      requireInbox(ref.mailbox);
+      const store = await reader.open();
+      return await doFetchHeaders(ref, store);
     },
     async fetchStructure(
-      _ref: MessageRef,
+      ref: MessageRef,
       _signal?: AbortSignal,
     ): Promise<BodyStructure> {
-      return inboundUnsupported("fetchStructure");
+      const { reader } = requireInbound("fetchStructure");
+      requireInbox(ref.mailbox);
+      const store = await reader.open();
+      return await doFetchStructure(ref, store);
     },
     async fetchPart(
-      _ref: MessageRef,
-      _partPath: string,
+      ref: MessageRef,
+      partPath: string,
       _signal?: AbortSignal,
     ): Promise<MessagePart> {
-      return inboundUnsupported("fetchPart");
+      const { reader } = requireInbound("fetchPart");
+      requireInbox(ref.mailbox);
+      const store = await reader.open();
+      return await doFetchPart(ref, partPath, store);
     },
     async fetchFull(
-      _ref: MessageRef,
+      ref: MessageRef,
       _signal?: AbortSignal,
     ): Promise<InboundMessage> {
-      return inboundUnsupported("fetchFull");
+      const { reader, getCrypto } = requireInbound("fetchFull");
+      requireInbox(ref.mailbox);
+      const store = await reader.open();
+      return await doFetchFull(ref, store, getCrypto);
     },
 
     async setFlags(
-      _ref: MessageRef,
-      _flags: string[],
+      ref: MessageRef,
+      flags: string[],
       _signal?: AbortSignal,
     ): Promise<void> {
-      return inboundUnsupported("setFlags");
+      const { mutationBridge } = requireInbound("setFlags");
+      requireInbox(ref.mailbox);
+      // Route the flag write to the supervisor -- the sole mailbox writer --
+      // rather than flushing a second store against the run ref. `submit`
+      // resolves only after the supervisor flushes, so a subsequent read
+      // observes the flag.
+      await mutationBridge.submit({
+        runId: deriveWorkflowRunId(address),
+        mailbox: ref.mailbox,
+        op: "addFlags",
+        uid: ref.uid,
+        flags,
+      });
     },
     async clearFlags(
-      _ref: MessageRef,
-      _flags: string[],
+      ref: MessageRef,
+      flags: string[],
       _signal?: AbortSignal,
     ): Promise<void> {
-      return inboundUnsupported("clearFlags");
+      const { mutationBridge } = requireInbound("clearFlags");
+      requireInbox(ref.mailbox);
+      await mutationBridge.submit({
+        runId: deriveWorkflowRunId(address),
+        mailbox: ref.mailbox,
+        op: "removeFlags",
+        uid: ref.uid,
+        flags,
+      });
     },
 
     async move(
@@ -160,40 +317,88 @@ export function createSupervisorBackedTransport(
       _toMailbox: string,
       _signal?: AbortSignal,
     ): Promise<void> {
-      return inboundUnsupported("move");
+      return unsupported("move");
     },
     async copy(
       _ref: MessageRef,
       _toMailbox: string,
       _signal?: AbortSignal,
     ): Promise<void> {
-      return inboundUnsupported("copy");
+      return unsupported("copy");
     },
     async expunge(
-      _mailbox: string,
+      mailbox: string,
       _signal?: AbortSignal,
     ): Promise<{ expungedUids: number[] }> {
-      return inboundUnsupported("expunge");
+      const { mutationBridge } = requireInbound("expunge");
+      requireInbox(mailbox);
+      // Route to the supervisor, which sweeps every `\Deleted` message out of
+      // its owned INBOX and returns the swept uids. The expunged bytes survive
+      // in git history (a workflow-run repo's objects are never GC'd), so the
+      // replication check permits the deletion. A caller expunging after a
+      // `setFlags(\Deleted)` MUST await the two in sequence -- the supervisor
+      // applies mutations in arrival order, so an unawaited (concurrent) pair
+      // could let the sweep run before the flag is set and miss the message.
+      const result = await mutationBridge.submit({
+        runId: deriveWorkflowRunId(address),
+        mailbox,
+        op: "expunge",
+      });
+      return { expungedUids: result.expungedUids ?? [] };
     },
 
     watch(
-      _mailbox: string,
-      _callback: (event: MailboxEvent) => void,
+      mailbox: string,
+      callback: (event: MailboxEvent) => void,
     ): Unsubscribe {
-      // Inbound delivery is a no-op: the supervisor delivers the agent's
-      // input as the step input, not through the agent's mailbox. The
-      // watch never fires; return a no-op unsubscribe so a mail tool that
-      // installs a watch (mail_wait) does not throw at install time but
-      // also never observes a spurious event.
-      return () => undefined;
+      const { watchRegistry } = requireInbound("watch");
+      requireInbox(mailbox);
+      // The supervisor -- the sole mail owner -- fires `mailbox.notify` into
+      // the registry when new mail lands; the registry delivers the typed
+      // event to this callback. `mail_wait` installs the watch and unblocks on
+      // the first delivery.
+      return watchRegistry.watch(mailbox, callback);
     },
 
     async sync(
-      _mailbox: string,
-      _knownState: SyncState,
+      mailbox: string,
+      knownState: SyncState,
       _signal?: AbortSignal,
     ): Promise<SyncResult> {
-      return inboundUnsupported("sync");
+      const { reader } = requireInbound("sync");
+      requireInbox(mailbox);
+      const store = await reader.open();
+      const result = store.sync({
+        uidValidity: knownState.uidValidity,
+        highestModSeq: knownState.highestModSeq,
+      });
+      if (result.resync) {
+        return {
+          vanished: [],
+          changed: [],
+          newMessages: result.messages.map((m) => ({ uid: m.uid, mailbox })),
+          fullResyncRequired: true,
+        };
+      }
+      // The backing reports every message whose modseq advanced past the
+      // client's known state as `changed`. Split it against the client's known
+      // `uidNext`: a uid at or beyond it is a new arrival, one below it is a
+      // flag change on a message the client already held.
+      const newMessages: MessageRef[] = [];
+      const changed: { uid: number; flags: string[] }[] = [];
+      for (const m of result.changed) {
+        if (m.uid >= knownState.uidNext) {
+          newMessages.push({ uid: m.uid, mailbox });
+        } else {
+          changed.push({ uid: m.uid, flags: Array.from(m.flags) });
+        }
+      }
+      return {
+        vanished: [...result.vanished],
+        changed,
+        newMessages,
+        fullResyncRequired: false,
+      };
     },
 
     async createList(
@@ -201,27 +406,27 @@ export function createSupervisorBackedTransport(
       _name: string,
       _signal?: AbortSignal,
     ): Promise<ListInfo> {
-      return inboundUnsupported("createList");
+      return unsupported("createList");
     },
     async listMembers(
       _address: string,
       _signal?: AbortSignal,
     ): Promise<string[]> {
-      return inboundUnsupported("listMembers");
+      return unsupported("listMembers");
     },
     async subscribe(
       _listAddress: string,
       _subscriberAddress: string,
       _signal?: AbortSignal,
     ): Promise<void> {
-      return inboundUnsupported("subscribe");
+      return unsupported("subscribe");
     },
     async unsubscribe(
       _listAddress: string,
       _subscriberAddress: string,
       _signal?: AbortSignal,
     ): Promise<void> {
-      return inboundUnsupported("unsubscribe");
+      return unsupported("unsubscribe");
     },
   };
 }

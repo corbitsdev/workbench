@@ -29,7 +29,7 @@
     "@intx/authz": "0.3.0",
     "@intx/crypto": "0.3.0",
     "@intx/db": "workspace:*",
-    "@intx/harness": "0.3.0",
+    "@intx/harness": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   }
