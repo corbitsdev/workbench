@@ -125,6 +125,73 @@ describe("createWorkbenchTurnQueue", () => {
     expect(dispatched).toEqual([[turn("msg_2", "two")]]);
   });
 
+  // CL-7129: the TTL is a crash/hang backstop for a dispatch that never
+  // settles at all, not a license for two loops to drain the same
+  // workbench's queue at once. Reproduces the reported shape: a message
+  // queues normally behind an in-flight turn, the TTL then elapses
+  // while that turn is still open, a second `run()` wins a fresh claim
+  // via the backstop and starts its own loop — and only ONE of the two
+  // loops may ever go on to pop and dispatch the queued message.
+  test("a claim's TTL expiring mid-dispatch stops the old loop from also draining what queued behind it", async () => {
+    let now = 0;
+    const claims = createInMemoryTurnClaimStore({
+      ttlMs: 1_000,
+      now: () => now,
+    });
+    const queue = createWorkbenchTurnQueue({
+      claims,
+      publish: () => undefined,
+    });
+
+    const calls: { batch: readonly QueuedTurn[]; resolve: () => void }[] = [];
+    const dispatch = (batch: readonly QueuedTurn[]) =>
+      new Promise<void>((resolve) => {
+        calls.push({ batch, resolve });
+      });
+
+    // The first run() wins the claim and starts a turn that outlives
+    // the claim TTL while still "in flight" — the crash/hang shape the
+    // TTL backstop exists for.
+    const firstRun = queue.run("wb_1", turn("msg_1", "a"), dispatch);
+    await Promise.resolve();
+    expect(calls).toHaveLength(1);
+
+    // A second message arrives before the TTL elapses: the first loop
+    // is still the valid holder, so this queues normally.
+    await queue.run("wb_1", turn("msg_2", "b"), dispatch);
+
+    // The claim's TTL elapses while the first turn is still open.
+    now += 1_000;
+
+    // A third, unrelated run() for the same workbench now wins a fresh
+    // claim via the TTL backstop and starts its own loop, dispatching
+    // its own turn first.
+    const thirdRun = queue.run("wb_1", turn("msg_3", "c"), dispatch);
+    await Promise.resolve();
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.batch).toEqual([turn("msg_3", "c")]);
+
+    // The first loop's own dispatch finally settles. Before this fix,
+    // it would go on to pop and dispatch "b" itself here — a second,
+    // concurrent drain of the very queue the third loop now owns. The
+    // fix's `holds` check makes it notice it lost the claim and stop.
+    calls[0]?.resolve();
+    await firstRun;
+    expect(calls).toHaveLength(2);
+
+    // The third loop's own dispatch settles next, picks up "b" (still
+    // sitting in the shared queue, untouched by the first loop) exactly
+    // once, and drains it under its own, still-valid claim.
+    calls[1]?.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(calls).toHaveLength(3);
+    expect(calls[2]?.batch).toEqual([turn("msg_2", "b")]);
+
+    calls[2]?.resolve();
+    await thirdRun;
+  });
+
   test("workbenches never contend with each other", async () => {
     const queue = createWorkbenchTurnQueue({
       claims: createInMemoryTurnClaimStore({ ttlMs: 60_000 }),
