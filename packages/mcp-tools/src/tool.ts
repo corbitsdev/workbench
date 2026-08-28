@@ -583,11 +583,11 @@ export const mcpTools = defineTool<McpToolsEnv>({
           "descriptions, for a first skim. `{pattern}` regex-searches " +
           "tool AND server names across every connected server — use " +
           "this when you're not sure which server has the tool you " +
-          "want. `{server}` returns one server's full tool list with " +
-          "full descriptions. `{server, toolName}` returns that one " +
-          "tool's full input schema, once you know exactly which tool " +
-          "you're calling. Never dump a whole server's catalog into a " +
-          "reply to the human.",
+          "want. `{server}` returns one server's tool list with " +
+          "truncated descriptions and schemas. `{server, toolName}` " +
+          "returns that one tool's truncated input schema, once you " +
+          "know exactly which tool you're calling. Never dump a whole " +
+          "server's catalog into a reply to the human.",
         inputSchema: {
           type: "object",
           properties: {
@@ -602,8 +602,8 @@ export const mcpTools = defineTool<McpToolsEnv>({
             toolName: {
               type: "string",
               description:
-                "A specific tool's exact name, to get its full input " +
-                "schema. Requires `server`.",
+                "A specific tool's exact name, to get its truncated " +
+                "input schema. Requires `server`.",
             },
             pattern: {
               type: "string",
@@ -623,7 +623,8 @@ export const mcpTools = defineTool<McpToolsEnv>({
           "marks the tool `readOnlyHint: true`; this is re-checked live " +
           `at call time, never assumed. Use for reads. Call ` +
           `${MCP_LIST_TOOLS_TOOL} once first to find the tool and its ` +
-          `exact name and input schema. If this errors telling you the ` +
+          `exact name and input schema. Payloads over 8k characters ` +
+          `are truncated. If this errors telling you the ` +
           `tool isn't read-only, use ${MCP_CALL_TOOL} instead.`,
         inputSchema: {
           type: "object",
