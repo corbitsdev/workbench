@@ -58,7 +58,7 @@ test("the step carries an explicit per-turn timeout, no inline tools, and the tw
   expect(only.agent.capabilities).toEqual([]);
   expect(LAST_30_DAYS_RESEARCH_TOOL_PACKAGE_PINS).toEqual([
     { name: "@corbits/web-search-tools", version: "0.0.3" },
-    { name: "@corbits/github-tools", version: "0.0.6" },
+    { name: "@corbits/github-tools", version: "0.0.7" },
   ]);
   expect(only.agent.toolPackagePins).toEqual(
     LAST_30_DAYS_RESEARCH_TOOL_PACKAGE_PINS,
