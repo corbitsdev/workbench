@@ -35,6 +35,7 @@ import {
 import { workbenchLaunch } from "../src/schema";
 import {
   foldedRun,
+  inferenceSourcesDigest,
   DefinitionProjectionMissingError,
 } from "@corbits/folded-runs";
 import { IDLE_HIBERNATE_UNDEPLOY_REASON } from "@corbits/agent-lifecycle";
@@ -215,6 +216,7 @@ function createFakeDb(opts: {
         currentRunId?: string;
         foldedBody: unknown;
         noopInference?: boolean;
+        sourcesDigest?: string | null;
       }
     | undefined;
   /**
@@ -2766,6 +2768,16 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
     return { db, platform };
   }
 
+  // A relaunch re-points `currentRunId`; the fixture's rows predate
+  // CL-6687's digest column, so the first check also records a baseline
+  // `sourcesDigest` — a write that is not a relaunch.
+  function repointOf(db: ReturnType<typeof createFakeDb>) {
+    return db.updated
+      .filter((row) => row.table === workbenchLaunch)
+      .map((row) => row.values as { currentRunId?: string })
+      .find((values) => values.currentRunId !== undefined);
+  }
+
   test("a routable run whose deployed content differs from the current authored content is relaunched, not served as-is", async () => {
     const { db, platform } = createDriftFixture({
       deployedSystemPrompt: STALE_SYSTEM_PROMPT,
@@ -2775,8 +2787,7 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
 
     await platform.ensureAwake("run_stale@ten1.workbench.test");
 
-    const repointed = db.updated.find((row) => row.table === workbenchLaunch)
-      ?.values as { currentRunId: string } | undefined;
+    const repointed = repointOf(db);
     expect(repointed?.currentRunId).toBeDefined();
     expect(repointed?.currentRunId).not.toBe("run_stale");
   });
@@ -2797,9 +2808,7 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
 
     await platform.ensureAwake("run_stale@ten1.workbench.test");
 
-    expect(
-      db.updated.find((row) => row.table === workbenchLaunch),
-    ).toBeUndefined();
+    expect(repointOf(db)).toBeUndefined();
   });
 
   test("sendMail redeploys an already-routable-but-drifted target before delivering — lifecycle.ensureAwake's routability check alone would have missed it", async () => {
@@ -3099,5 +3108,198 @@ describe("createHubChatPlatform relaunch sweep", () => {
     });
     expect(sessionService.adoptedDeployCalls).toHaveLength(0);
     expect(notices).toEqual([]);
+  });
+});
+
+// CL-6687: inference sources — the decrypted API key included — are
+// rendered into a run's deployed bytes at deploy time and never re-read.
+// `foldedBody` comparison cannot see a rotated key, so a live agent kept
+// sending the dead one after Settings said the new key was saved. The
+// deploy now records a digest of the chain it pinned; a send (or a
+// provider connect) compares it against today's resolution and relaunches
+// on a mismatch.
+describe("createHubChatPlatform inference-source rotation reconciliation", () => {
+  const FOLDED_BODY = {
+    systemPrompt: "be helpful",
+    toolPackagePins: [],
+    grantRequirements: [],
+    credentialBindings: [],
+    model: null,
+  };
+
+  function sourcesFor(apiKey: string) {
+    return {
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          apiKey,
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+  }
+
+  function createRotationFixture(opts: {
+    deployedWithKey: string | null;
+    catalogKey: string;
+  }) {
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      ...sourcesFor(opts.catalogKey),
+    };
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "workbench-1",
+        displayName: null,
+      },
+      definitionId: "wfd_unused",
+      workflowRunRow: {
+        id: "run_live",
+        address: "run_live@ten1.workbench.test",
+        principalId: "prin_room1",
+        definitionId: "wfd_run_clone",
+        status: "running",
+      },
+      workflowDefinitionRow: {
+        id: "wfd_run_clone",
+        tenantId: "ten_1",
+        status: "deployed",
+        assetId: "asst_myra",
+        name: "myra",
+        origin: "run",
+      },
+      workflowDefinitionRows: [
+        {
+          id: "wfd_run_clone",
+          tenantId: "ten_1",
+          status: "deployed",
+          name: "myra",
+          assetId: "asst_myra",
+          origin: "run",
+        },
+        {
+          id: "wfd_myra_authored",
+          tenantId: "ten_1",
+          status: "deployed",
+          name: "myra",
+          assetId: "asst_myra",
+          origin: "authored",
+        },
+      ],
+      workbenchLaunchRow: {
+        tenantId: "ten_1",
+        instanceId: "run_live",
+        currentRunId: "run_live",
+        foldedBody: FOLDED_BODY,
+        sourcesDigest:
+          opts.deployedWithKey === null
+            ? null
+            : inferenceSourcesDigest(sourcesFor(opts.deployedWithKey)),
+      },
+      wireProjectionsByDefinitionId: {
+        wfd_run_clone: inertProjection({
+          id: "wfd_run_clone",
+          systemPrompt: FOLDED_BODY.systemPrompt,
+          model: null,
+        }),
+        wfd_myra_authored: inertProjection({
+          id: "wfd_myra_authored",
+          systemPrompt: FOLDED_BODY.systemPrompt,
+          model: null,
+        }),
+      },
+    });
+    const platform = createHubChatPlatform({
+      toolGrantsForPins: () => [],
+      db: db as never,
+      sessionService: createFakeSessionService(),
+      assetService: createFakeAssetService(),
+      sidecarRouter: createFakeSidecarRouter({
+        routableAddresses: ["run_live@ten1.workbench.test"],
+      }),
+      eventCollectors: createFakeEventCollectors(),
+    });
+    return { db, platform };
+  }
+
+  function repointedLaunch(db: ReturnType<typeof createFakeDb>) {
+    return db.updated.find((row) => row.table === workbenchLaunch)?.values as
+      { currentRunId: string; sourcesDigest: string } | undefined;
+  }
+
+  test("a routable run deployed with a key the catalog has since rotated is relaunched on the new key", async () => {
+    const { db, platform } = createRotationFixture({
+      deployedWithKey: "sk-ant-expired",
+      catalogKey: "sk-ant-fresh",
+    });
+
+    await platform.ensureAwake("run_live@ten1.workbench.test");
+
+    const repointed = repointedLaunch(db);
+    expect(repointed?.currentRunId).toBeDefined();
+    expect(repointed?.currentRunId).not.toBe("run_live");
+    expect(repointed?.sourcesDigest).toBe(
+      inferenceSourcesDigest(sourcesFor("sk-ant-fresh")),
+    );
+  });
+
+  test("re-saving the same key is not a rotation: the run is left alone", async () => {
+    const { db, platform } = createRotationFixture({
+      deployedWithKey: "sk-ant-same",
+      catalogKey: "sk-ant-same",
+    });
+
+    await platform.ensureAwake("run_live@ten1.workbench.test");
+
+    expect(repointedLaunch(db)).toBeUndefined();
+  });
+
+  test("a run that predates digest recording gets today's chain as its baseline and is left alone", async () => {
+    const { db, platform } = createRotationFixture({
+      deployedWithKey: null,
+      catalogKey: "sk-ant-fresh",
+    });
+
+    await platform.ensureAwake("run_live@ten1.workbench.test");
+
+    const launchWrites = db.updated.filter(
+      (row) => row.table === workbenchLaunch,
+    );
+    expect(launchWrites).toHaveLength(1);
+    expect(launchWrites[0]?.values).toEqual({
+      sourcesDigest: inferenceSourcesDigest(sourcesFor("sk-ant-fresh")),
+    });
+  });
+
+  test("the per-send chain check is throttled: a second send inside the interval resolves nothing", async () => {
+    const { platform } = createRotationFixture({
+      deployedWithKey: "sk-ant-same",
+      catalogKey: "sk-ant-same",
+    });
+    resolveDefinitionSourcesCalls.length = 0;
+
+    await platform.ensureAwake("run_live@ten1.workbench.test");
+    const afterFirst = resolveDefinitionSourcesCalls.length;
+    await platform.ensureAwake("run_live@ten1.workbench.test");
+
+    expect(afterFirst).toBeGreaterThan(0);
+    expect(resolveDefinitionSourcesCalls).toHaveLength(afterFirst);
+  });
+
+  test("reconcileInferenceSources sweeps a tenant's live participants the moment a credential lands", async () => {
+    const { db, platform } = createRotationFixture({
+      deployedWithKey: "sk-ant-expired",
+      catalogKey: "sk-ant-fresh",
+    });
+
+    const swept = await platform.reconcileInferenceSources("ten_1");
+
+    expect(swept).toEqual({ scanned: 1, relaunched: 1 });
+    expect(repointedLaunch(db)?.currentRunId).not.toBe("run_live");
   });
 });

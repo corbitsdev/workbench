@@ -25,6 +25,7 @@ const FOLDED_BODY = {
 const FRAME_HEADER = "Input from this routine's setup:";
 
 let launchFoldedRunCalls: unknown[] = [];
+const launchRowUpdates: unknown[] = [];
 let sendFoldedMailWithRetryCalls: unknown[] = [];
 let sendFoldedMailWithRetryResult: unknown = {
   ok: true,
@@ -50,7 +51,11 @@ mock.module("@corbits/folded-runs", () => ({
   },
   launchFoldedRun: async (...args: unknown[]) => {
     launchFoldedRunCalls.push(args);
-    return { instancePrincipalId: "prn_run1", sessionId: "ses_run1" };
+    return {
+      instancePrincipalId: "prn_run1",
+      sessionId: "ses_run1",
+      sourcesDigest: "digest_run1",
+    };
   },
   sendFoldedMailWithRetry: async (...args: unknown[]) => {
     sendFoldedMailWithRetryCalls.push(args);
@@ -116,6 +121,15 @@ function createFakeDb(
             limit: async () => [NATIVE_ANCHOR_ROW],
           }),
         }),
+      }),
+    }),
+    // `recordSourcesDigest` writes the deployed inference chain's digest
+    // onto the launch row once `launchFoldedRun` returns (CL-6687).
+    update: () => ({
+      set: (values: unknown) => ({
+        where: async () => {
+          launchRowUpdates.push(values);
+        },
       }),
     }),
   };

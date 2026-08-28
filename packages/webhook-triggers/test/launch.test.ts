@@ -29,7 +29,11 @@ mock.module("@corbits/folded-runs", () => ({
   readFoldedBody: () => FOLDED_BODY,
   launchFoldedRun: async (...args: unknown[]) => {
     launchFoldedRunCalls.push(args);
-    return { instancePrincipalId: "prn_run1", sessionId: "ses_run1" };
+    return {
+      instancePrincipalId: "prn_run1",
+      sessionId: "ses_run1",
+      sourcesDigest: "digest_run1",
+    };
   },
   sendFoldedMailWithRetry: async (...args: unknown[]) => {
     sendFoldedMailWithRetryCalls.push(args);
@@ -88,6 +92,7 @@ const TRIGGER = {
 };
 
 let persistLaunchCalls: unknown[] = [];
+let recordLaunchSourcesCalls: unknown[] = [];
 const persistedLaunchExtra = async () => {};
 
 function baseDeps() {
@@ -103,6 +108,9 @@ function baseDeps() {
     persistLaunch: (input: unknown) => {
       persistLaunchCalls.push(input);
       return persistedLaunchExtra;
+    },
+    recordLaunchSources: async (input: unknown) => {
+      recordLaunchSourcesCalls.push(input);
     },
   };
 }
@@ -202,6 +210,7 @@ describe("launchWebhookTrigger", () => {
     launchFoldedRunCalls = [];
     sendFoldedMailWithRetryCalls = [];
     persistLaunchCalls = [];
+    recordLaunchSourcesCalls = [];
     sendFoldedMailWithRetryResult = { ok: true, mail: { id: "m_1" } };
 
     const result = await launchWebhookTrigger(baseDeps(), TRIGGER, {
@@ -220,6 +229,12 @@ describe("launchWebhookTrigger", () => {
         instanceId: result.instanceId,
         foldedBody: FOLDED_BODY,
       },
+    ]);
+    // CL-6687: the mapping row is written before the deploy resolves the
+    // inference chain, so the digest a rotation check compares against
+    // has to land in a second write once the launch returns.
+    expect(recordLaunchSourcesCalls).toEqual([
+      { instanceId: result.instanceId, sourcesDigest: "digest_run1" },
     ]);
   });
 });
