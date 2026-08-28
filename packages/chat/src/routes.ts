@@ -155,6 +155,12 @@ export type CreateChatRoutesDeps = {
    */
   turnDispatchTimeoutMs?: number;
   /**
+   * CL-7129's bound on the CL-6670 wait: see `SendWorkbenchMessageDeps`'s
+   * field of the same name in `./workbench-service.ts`. Omitted,
+   * `dispatchTurnBatch` uses `DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS`.
+   */
+  waitUntilFreeTimeoutMs?: number;
+  /**
    * Resolves a principal to the display name a greeting can use. The
    * hub wires this to its user table; omitted, the canned greeting
    * simply carries no name.
@@ -2162,6 +2168,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           ...(deps.turnDispatchTimeoutMs !== undefined
             ? { turnDispatchTimeoutMs: deps.turnDispatchTimeoutMs }
             : {}),
+          ...(deps.waitUntilFreeTimeoutMs !== undefined
+            ? { waitUntilFreeTimeoutMs: deps.waitUntilFreeTimeoutMs }
+            : {}),
         },
         {
           tenantId: ownerTenantId,
@@ -2307,6 +2316,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             ...(deps.threads !== undefined ? { threads: deps.threads } : {}),
             ...(deps.turnDispatchTimeoutMs !== undefined
               ? { turnDispatchTimeoutMs: deps.turnDispatchTimeoutMs }
+              : {}),
+            ...(deps.waitUntilFreeTimeoutMs !== undefined
+              ? { waitUntilFreeTimeoutMs: deps.waitUntilFreeTimeoutMs }
               : {}),
           },
           {

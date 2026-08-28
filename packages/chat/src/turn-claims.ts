@@ -21,22 +21,42 @@ export type TurnClaim = {
   readonly workbenchId: string;
 };
 
+/**
+ * Proof of having won a `tryClaim` call — opaque to callers, meaningful
+ * only back to the store that issued it. Required by `release` (and by
+ * `turn-queue.ts`'s own `holds` check) so a claim the TTL already
+ * reassigned to a second winner can never be released, or mistaken for
+ * still-held, by the first winner's stale reference (CL-7129).
+ */
+export type TurnClaimToken = string;
+
 export type TurnClaimStore = {
   /**
-   * Atomically claims `workbenchId`: `true` if this call won the claim
-   * (the caller should run the next turn), `false` if a turn is
-   * already in flight for this workbench (the caller must queue
-   * instead, never dispatch).
+   * Atomically claims `workbenchId`: a token if this call won the claim
+   * (the caller should run the next turn, and must present this token
+   * to `release`/`holds`), `false` if a turn is already in flight for
+   * this workbench (the caller must queue instead, never dispatch).
    */
-  tryClaim(claim: TurnClaim): Promise<boolean>;
+  tryClaim(claim: TurnClaim): Promise<TurnClaimToken | false>;
   /**
    * Un-claims `workbenchId` — called once the turn that won the claim
    * has settled, success or failure alike, so the next queued batch (or
-   * a fresh message) can run. Never left un-called on a path that can
-   * still complete; the TTL below is only the backstop for a dispatch
-   * that never settles at all.
+   * a fresh message) can run. A no-op (returns `false`) if `token` is
+   * not the current holder — e.g. the TTL already reassigned the claim
+   * to a second winner, in which case releasing here would free a
+   * claim this caller no longer owns. Never left un-called on a path
+   * that can still complete; the TTL below is only the backstop for a
+   * dispatch that never settles at all.
    */
-  release(claim: TurnClaim): Promise<void>;
+  release(claim: TurnClaim, token: TurnClaimToken): Promise<boolean>;
+  /**
+   * Whether `token` is still the current, unexpired holder of
+   * `workbenchId`'s claim — how a long-running holder notices the TTL
+   * reassigned its claim to someone else without itself calling
+   * `tryClaim` again (which would attempt to *take* the claim, not just
+   * check it).
+   */
+  holds(claim: TurnClaim, token: TurnClaimToken): Promise<boolean>;
 };
 
 /**
@@ -66,18 +86,38 @@ export function createInMemoryTurnClaimStore(options: {
   readonly now?: () => number;
 }): TurnClaimStore {
   const now = options.now ?? Date.now;
-  const claimedAt = new Map<string, number>();
+  const holders = new Map<string, { token: string; claimedAt: number }>();
+  let nextToken = 0;
+
+  function isExpired(holder: { claimedAt: number }): boolean {
+    return now() - holder.claimedAt >= options.ttlMs;
+  }
+
   return {
     async tryClaim(claim) {
-      const existing = claimedAt.get(claim.workbenchId);
-      if (existing !== undefined && now() - existing < options.ttlMs) {
+      const existing = holders.get(claim.workbenchId);
+      if (existing !== undefined && !isExpired(existing)) {
         return false;
       }
-      claimedAt.set(claim.workbenchId, now());
+      const token = String(++nextToken);
+      holders.set(claim.workbenchId, { token, claimedAt: now() });
+      return token;
+    },
+    async release(claim, token) {
+      const existing = holders.get(claim.workbenchId);
+      if (existing === undefined || existing.token !== token) {
+        return false;
+      }
+      holders.delete(claim.workbenchId);
       return true;
     },
-    async release(claim) {
-      claimedAt.delete(claim.workbenchId);
+    async holds(claim, token) {
+      const existing = holders.get(claim.workbenchId);
+      return (
+        existing !== undefined &&
+        existing.token === token &&
+        !isExpired(existing)
+      );
     },
   };
 }
