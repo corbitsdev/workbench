@@ -57,7 +57,7 @@ function sectionProjection(overrides: Partial<Record<string, unknown>> = {}) {
         kind: "onTrigger",
         id: "turn",
         on: { type: "mail", to: "agent@example.com" },
-        onBodyFailure: "continue",
+        onBodyFailure: "tolerate",
         body: {
           inline: {
             id: "wfd_2_body",

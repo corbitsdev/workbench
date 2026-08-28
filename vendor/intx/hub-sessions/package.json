@@ -31,7 +31,7 @@
     "@intx/tool-packaging": "0.3.0",
     "@intx/types": "0.3.0",
     "@intx/workflow": "workspace:*",
-    "@intx/workflow-deploy": "workspace:*",
+    "@intx/workflow-deploy": "0.3.0",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "isomorphic-git": "catalog:",

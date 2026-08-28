@@ -1128,7 +1128,7 @@ async function main(): Promise<void> {
     );
     expectStatus("send the mid-turn message", sent, 201);
     // The section deployment takes the same kill mid-occurrence, so the
-    // restart has to prove `onBodyFailure: "continue"` too: a section
+    // restart has to prove `onBodyFailure: "tolerate"` too: a section
     // that retired on the dead body would never answer again.
     const sectionSent = await api(
       hub.baseUrl,
@@ -1221,7 +1221,7 @@ async function main(): Promise<void> {
 
   // The section deployment rode the same kill. Boot restore replays its
   // pin from the sidecar data dir exactly as it does the folded run's,
-  // and `onBodyFailure: "continue"` is what keeps the section subscribed
+  // and `onBodyFailure: "tolerate"` is what keeps the section subscribed
   // when the killed occurrence died mid-body: a section that retired on
   // that failure would never produce a second occurrence at all.
   //
