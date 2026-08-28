@@ -264,7 +264,7 @@ describeIfDb("0025_workbench_threads_unique_key dedupe", () => {
     }
   }, 20000);
 
-  test("collapses two seeded root threads, repointing thread membership at the kept row", async () => {
+  test("collapses duplicate root and reply threads, repointing thread_id and parent_thread_id references at the kept row", async () => {
     // Replay every migration through 0023 by hand, recording each in
     // the same ledger table `applyChatMigrations` reads, so the two
     // duplicate roots below can be seeded *before* 0025 exists to
@@ -291,15 +291,39 @@ describeIfDb("0025_workbench_threads_unique_key dedupe", () => {
 
       await seed.unsafe(`
         INSERT INTO "chat"."workbench_threads"
-          (id, tenant_id, workbench_id, kind, created_at)
+          (id, tenant_id, workbench_id, kind, parent_message_id, created_at)
         VALUES
-          ('thr_root_old', 'tnt_dedupe', 'wb_dedupe', 'root', now() - interval '1 hour'),
-          ('thr_root_new', 'tnt_dedupe', 'wb_dedupe', 'root', now())
+          ('thr_root_old', 'tnt_dedupe', 'wb_dedupe', 'root', NULL, now() - interval '1 hour'),
+          ('thr_root_new', 'tnt_dedupe', 'wb_dedupe', 'root', NULL, now()),
+          ('thr_reply_old', 'tnt_dedupe', 'wb_dedupe', 'reply', 'msg_parent', now() - interval '1 hour'),
+          ('thr_reply_new', 'tnt_dedupe', 'wb_dedupe', 'reply', 'msg_parent', now())
       `);
       await seed.unsafe(`
         INSERT INTO "chat"."workbench_thread_messages"
           (tenant_id, workbench_id, thread_id, message_id)
         VALUES ('tnt_dedupe', 'wb_dedupe', 'thr_root_new', 'msg_dedupe')
+      `);
+      // A message parked in the dropped reply duplicate — proves
+      // `workbench_messages.thread_id` is repointed, not just
+      // `workbench_thread_messages.thread_id`.
+      await seed.unsafe(`
+        INSERT INTO "chat"."workbench_messages"
+          (id, tenant_id, workbench_id, sender_address, thread_id, parts)
+        VALUES (
+          'msg_in_dropped_reply', 'tnt_dedupe', 'wb_dedupe', 'addr_1',
+          'thr_reply_new', '[]'::jsonb
+        )
+      `);
+      // A depth-2 thread anchored off the dropped root duplicate —
+      // proves `workbench_threads.parent_thread_id` is repointed too,
+      // not just message-facing references.
+      await seed.unsafe(`
+        INSERT INTO "chat"."workbench_threads"
+          (id, tenant_id, workbench_id, kind, parent_message_id, parent_thread_id, created_at)
+        VALUES (
+          'thr_child_of_dropped_root', 'tnt_dedupe', 'wb_dedupe', 'reply',
+          'msg_child', 'thr_root_new', now()
+        )
       `);
     } finally {
       await seed.end();
@@ -320,8 +344,44 @@ describeIfDb("0025_workbench_threads_unique_key dedupe", () => {
         `SELECT thread_id FROM "chat"."workbench_thread_messages" WHERE message_id = 'msg_dedupe'`,
       );
       expect(String(membership[0]?.["thread_id"])).toBe("thr_root_old");
+
+      const replies = await verify.unsafe(
+        `SELECT id FROM "chat"."workbench_threads" ` +
+          `WHERE tenant_id = 'tnt_dedupe' AND workbench_id = 'wb_dedupe' ` +
+          `AND kind = 'reply' AND parent_message_id = 'msg_parent'`,
+      );
+      expect(replies.map((row) => String(row["id"]))).toEqual([
+        "thr_reply_old",
+      ]);
+
+      const messageThreadId = await verify.unsafe(
+        `SELECT thread_id FROM "chat"."workbench_messages" WHERE id = 'msg_in_dropped_reply'`,
+      );
+      expect(String(messageThreadId[0]?.["thread_id"])).toBe("thr_reply_old");
+
+      const childParentThreadId = await verify.unsafe(
+        `SELECT parent_thread_id FROM "chat"."workbench_threads" WHERE id = 'thr_child_of_dropped_root'`,
+      );
+      expect(String(childParentThreadId[0]?.["parent_thread_id"])).toBe(
+        "thr_root_old",
+      );
+
+      // The reply unique index holds: a second reply row for the same
+      // (tenant, workbench, parent_message_id) key is now rejected
+      // rather than silently accepted as a second duplicate.
+      // postgres.js queries are lazy thenables, not Promises; wrap so
+      // `expect(...).rejects` actually runs the statement.
+      await expect(
+        (async () => {
+          await verify.unsafe(
+            `INSERT INTO "chat"."workbench_threads" ` +
+              `(id, tenant_id, workbench_id, kind, parent_message_id) ` +
+              `VALUES ('thr_reply_conflict', 'tnt_dedupe', 'wb_dedupe', 'reply', 'msg_parent')`,
+          );
+        })(),
+      ).rejects.toThrow();
     } finally {
       await verify.end();
     }
-  });
+  }, 120000);
 });
