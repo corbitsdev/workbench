@@ -73,7 +73,7 @@ import {
   prepareConversationForOriginatingWorkbench,
   type DurableConversationRegistry,
 } from "../conversation-state";
-import { readOriginatingWorkbenchId } from "../originating-workbench";
+import { originatingWorkbenchIdFromRequest } from "../originating-workbench";
 import { parseToolRegistries } from "../tool-materialization";
 import {
   deriveHubHttpUrl,
@@ -490,10 +490,7 @@ export function createSidecarSubstrateFactory(
         await prepareConversationForOriginatingWorkbench({
           registry: durableConversation,
           agentKey: bodyStepId,
-          originatingWorkbenchId: await readOriginatingWorkbenchId({
-            dataDir: validated.SIDECAR_DATA_DIR,
-            mailboxAddress: env.spawn.mailboxAddress,
-          }),
+          originatingWorkbenchId: originatingWorkbenchIdFromRequest(req),
         });
       }
       try {
@@ -621,10 +618,7 @@ export function createSidecarSubstrateFactory(
         await prepareConversationForOriginatingWorkbench({
           registry: durableConversation,
           agentKey: stepId,
-          originatingWorkbenchId: await readOriginatingWorkbenchId({
-            dataDir: validated.SIDECAR_DATA_DIR,
-            mailboxAddress: env.spawn.mailboxAddress,
-          }),
+          originatingWorkbenchId: originatingWorkbenchIdFromRequest(req),
           ...(warmCache !== undefined ? { warmCache } : {}),
         });
       }

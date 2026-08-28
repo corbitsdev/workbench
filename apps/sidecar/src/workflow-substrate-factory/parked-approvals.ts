@@ -116,7 +116,9 @@ export async function readWarmParkedPendingOperations(args: {
   );
   let children: fs.Dirent[];
   try {
-    children = await fs.promises.readdir(agentStateDir, { withFileTypes: true });
+    children = await fs.promises.readdir(agentStateDir, {
+      withFileTypes: true,
+    });
   } catch (cause) {
     if (isErrnoNotFound(cause)) return [];
     throw cause;

@@ -143,6 +143,8 @@ import type {
   RepoStore,
 } from "@intx/hub-sessions/substrate";
 import { WORKFLOW_RUN_AGENT_STATE_PREFIX } from "@intx/hub-sessions/substrate";
+
+import { UNSCOPED_ORIGINATING_WORKBENCH_ID } from "./originating-workbench";
 import {
   ConnectorThreadState,
   TokenUsage,
@@ -229,8 +231,8 @@ const SnapshotMetadata = type({
 
 /**
  * On-disk shape of the compacted checkpoint blob committed at
- * `agent-state/<agentKey>/checkpoint.json`. Carries the folded turn
- * history (turns 0..checkpointSeq-1) plus the non-turn reactor metadata.
+ * `agent-state/<agentKey>/<workbenchId>/checkpoint.json`. Carries the folded
+ * turn history (turns 0..checkpointSeq-1) plus the non-turn reactor metadata.
  * Validated on read because it crosses back into the program from the
  * substrate working tree -- a corrupt or partially-written checkpoint must
  * surface at the boundary, never be half-applied into the agent.
@@ -243,8 +245,9 @@ const CheckpointSnapshot = type({
 });
 
 /**
- * On-disk shape of `agent-state/<agentKey>/checkpoint.meta.json`. The
- * checkpoint pointer the restore path reads first to learn the boundary seq
+ * On-disk shape of
+ * `agent-state/<agentKey>/<workbenchId>/checkpoint.meta.json`. The checkpoint
+ * pointer the restore path reads first to learn the boundary seq
  * the checkpoint folded to (`checkpointSeq`) -- and therefore which WAL
  * boundary seqs remain to replay -- plus the folded turn count
  * (`turnCount`, = `checkpoint.json`'s turn array length) and the freshest
@@ -263,8 +266,8 @@ const CheckpointMeta = type({
 
 /**
  * On-disk shape of one WAL entry blob at
- * `agent-state/<agentKey>/wal/<bucket>/<seq>.json`. One entry per MIRROR
- * BOUNDARY (keyed by boundary `seq`, not turn index). Records the 0-or-more
+ * `agent-state/<agentKey>/<workbenchId>/wal/<bucket>/<seq>.json`. One entry
+ * per MIRROR BOUNDARY (keyed by boundary `seq`, not turn index). Records the 0-or-more
  * new turns that boundary added (the O(1) append payload -- it never
  * carries prior turns) plus the latest non-turn metadata snapshot. The
  * append is UNCONDITIONAL: a turnless boundary still writes one entry with
@@ -392,6 +395,8 @@ export interface DurableConversationStore {
    * `reactor.start()` loads the restored turns).
    */
   bindOriginatingWorkbench(originatingWorkbenchId: string): Promise<boolean>;
+  /** Room this store is bound to, or null before the first bind. */
+  boundOriginatingWorkbenchId(): string | null;
 }
 
 export async function createDurableConversationStore(
@@ -627,12 +632,12 @@ export async function createDurableConversationStore(
   }
 
   /**
-   * Fold the full conversation into a fresh checkpoint and truncate the
-   * WAL in one atomic commit at `preservePrefix = agent-state/<key>/`. The
-   * merge returns ONLY the two checkpoint files and NO `wal/...` paths;
-   * because the substrate's `clearPrefix` recursively removes the whole
-   * `agent-state/<key>/` subtree before writing the returned set, omitting
-   * the WAL paths IS the truncate.
+   * Fold the full conversation into a fresh checkpoint and truncate the WAL in
+   * one atomic commit at `preservePrefix = agent-state/<key>/<workbenchId>/`.
+   * The merge returns ONLY the two checkpoint files and NO `wal/...` paths;
+   * because the substrate's `clearPrefix` recursively removes the whole room
+   * subtree before writing the returned set, omitting the WAL paths IS the
+   * truncate.
    */
   async function writeCheckpoint(
     boundarySeq: number,
@@ -831,6 +836,7 @@ export async function createDurableConversationStore(
     composeReply,
     onReplySent,
     bindOriginatingWorkbench,
+    boundOriginatingWorkbenchId: () => originatingWorkbenchId,
   };
 }
 
@@ -942,17 +948,17 @@ export function createDurableConversationRegistry(
 export async function prepareConversationForOriginatingWorkbench(args: {
   registry: DurableConversationRegistry;
   agentKey: string;
-  originatingWorkbenchId: string;
+  /** Room named by this request's mail; undefined keeps the current binding. */
+  originatingWorkbenchId: string | undefined;
   warmCache?: { evictAll: (reason: string) => Promise<void> };
 }): Promise<boolean> {
   const store = await args.registry.acquire(args.agentKey);
-  const swapped = await store.bindOriginatingWorkbench(
-    args.originatingWorkbenchId,
-  );
+  const requested = args.originatingWorkbenchId;
+  const current = store.boundOriginatingWorkbenchId();
+  const target = requested ?? current ?? UNSCOPED_ORIGINATING_WORKBENCH_ID;
+  const swapped = await store.bindOriginatingWorkbench(target);
   if (swapped && args.warmCache !== undefined) {
-    await args.warmCache.evictAll(
-      `originating workbench changed to ${args.originatingWorkbenchId}`,
-    );
+    await args.warmCache.evictAll(`originating workbench changed to ${target}`);
   }
   return swapped;
 }
