@@ -45,6 +45,7 @@ const migrationNames = [
   "0022_agent_turns",
   "0023_drop_workbench_host_arm",
   "0024_workbench_launch_sources_digest",
+  "0025_workbench_threads_unique_key",
 ];
 
 describeIfDb("applyChatMigrations", () => {
@@ -159,6 +160,19 @@ describeIfDb("applyChatMigrations", () => {
       expect(pinIndexes.map((row) => String(row["indexname"]))).toContain(
         "pinned_messages_workbench_idx",
       );
+
+      // CL-7130: `ensureRootThread`/`anchoredReplyThread` insert-then-
+      // reselect on conflict, and these partial unique indexes are
+      // what makes the conflict possible instead of a silent
+      // duplicate row.
+      const threadIndexes = await sql.unsafe(
+        `SELECT indexname FROM pg_indexes WHERE schemaname = 'chat' AND tablename = 'workbench_threads'`,
+      );
+      const threadIndexNames = threadIndexes.map((row) =>
+        String(row["indexname"]),
+      );
+      expect(threadIndexNames).toContain("workbench_threads_root_key");
+      expect(threadIndexNames).toContain("workbench_threads_reply_key");
     } finally {
       await sql.end();
     }
@@ -210,6 +224,104 @@ describeIfDb("applyChatMigrations", () => {
       ).toBe(5);
     } finally {
       await sql.end();
+    }
+  });
+});
+
+describeIfDb("0025_workbench_threads_unique_key dedupe", () => {
+  const scratchUrl = scratchUrlFor(
+    databaseUrl ?? "postgres://localhost:5432/unused",
+  ).replace("_chat_migrations_test", "_chat_migrations_dedupe_test");
+  const scratchTarget = new URL(scratchUrl);
+  const scratchDatabase = scratchTarget.pathname.replace(/^\//, "");
+
+  beforeAll(async () => {
+    const maintenanceUrl = new URL(scratchUrl);
+    maintenanceUrl.pathname = "/postgres";
+    const maintenance = postgres(maintenanceUrl.toString(), {
+      max: 1,
+      onnotice: () => undefined,
+    });
+    try {
+      await maintenance.unsafe(`DROP DATABASE IF EXISTS "${scratchDatabase}"`);
+      await maintenance.unsafe(`CREATE DATABASE "${scratchDatabase}"`);
+    } finally {
+      await maintenance.end();
+    }
+  }, 20000);
+
+  afterAll(async () => {
+    const maintenanceUrl = new URL(scratchUrl);
+    maintenanceUrl.pathname = "/postgres";
+    const maintenance = postgres(maintenanceUrl.toString(), {
+      max: 1,
+      onnotice: () => undefined,
+    });
+    try {
+      await maintenance.unsafe(`DROP DATABASE IF EXISTS "${scratchDatabase}"`);
+    } finally {
+      await maintenance.end();
+    }
+  }, 20000);
+
+  test("collapses two seeded root threads, repointing thread membership at the kept row", async () => {
+    // Replay every migration through 0023 by hand, recording each in
+    // the same ledger table `applyChatMigrations` reads, so the two
+    // duplicate roots below can be seeded *before* 0025 exists to
+    // forbid them — then let `applyChatMigrations` run 0025 for real.
+    const preDedupeMigrations = chatMigrations.filter(
+      (migration) => migration.name !== "0025_workbench_threads_unique_key",
+    );
+    const seed = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
+    try {
+      await seed.unsafe(`CREATE SCHEMA IF NOT EXISTS "chat"`);
+      await seed.unsafe(
+        `CREATE TABLE IF NOT EXISTS "chat"."chat_migrations" ` +
+          `(name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
+      );
+      for (const migration of preDedupeMigrations) {
+        await seed.begin(async (tx) => {
+          await tx.unsafe(migration.sql);
+          await tx.unsafe(
+            `INSERT INTO "chat"."chat_migrations" (name) VALUES ($1)`,
+            [migration.name],
+          );
+        });
+      }
+
+      await seed.unsafe(`
+        INSERT INTO "chat"."workbench_threads"
+          (id, tenant_id, workbench_id, kind, created_at)
+        VALUES
+          ('thr_root_old', 'tnt_dedupe', 'wb_dedupe', 'root', now() - interval '1 hour'),
+          ('thr_root_new', 'tnt_dedupe', 'wb_dedupe', 'root', now())
+      `);
+      await seed.unsafe(`
+        INSERT INTO "chat"."workbench_thread_messages"
+          (tenant_id, workbench_id, thread_id, message_id)
+        VALUES ('tnt_dedupe', 'wb_dedupe', 'thr_root_new', 'msg_dedupe')
+      `);
+    } finally {
+      await seed.end();
+    }
+
+    const report = await applyChatMigrations(scratchUrl);
+    expect(report.applied).toEqual(["0025_workbench_threads_unique_key"]);
+
+    const verify = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
+    try {
+      const roots = await verify.unsafe(
+        `SELECT id FROM "chat"."workbench_threads" ` +
+          `WHERE tenant_id = 'tnt_dedupe' AND workbench_id = 'wb_dedupe' AND kind = 'root'`,
+      );
+      expect(roots.map((row) => String(row["id"]))).toEqual(["thr_root_old"]);
+
+      const membership = await verify.unsafe(
+        `SELECT thread_id FROM "chat"."workbench_thread_messages" WHERE message_id = 'msg_dedupe'`,
+      );
+      expect(String(membership[0]?.["thread_id"])).toBe("thr_root_old");
+    } finally {
+      await verify.end();
     }
   });
 });
