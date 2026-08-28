@@ -169,7 +169,10 @@ export function createSupervisorBackedTransport(
     ): Promise<void> {
       return inboundUnsupported("copy");
     },
-    async expunge(_mailbox: string, _signal?: AbortSignal): Promise<void> {
+    async expunge(
+      _mailbox: string,
+      _signal?: AbortSignal,
+    ): Promise<{ expungedUids: number[] }> {
       return inboundUnsupported("expunge");
     },
 

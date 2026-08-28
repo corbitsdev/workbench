@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@intx/hub-sessions": "workspace:*",
-    "@intx/types": "0.3.0",
+    "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
     "arktype": "catalog:"
   },

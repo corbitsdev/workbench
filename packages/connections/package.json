@@ -24,7 +24,7 @@
     "@intx/crypto": "0.3.0",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
-    "@intx/types": "0.3.0",
+    "@intx/types": "workspace:*",
     "@modelcontextprotocol/sdk": "catalog:",
     "@workbench/hub-client": "workspace:*",
     "arktype": "catalog:",

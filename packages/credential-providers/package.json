@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@intx/harness": "0.3.0",
-    "@intx/types": "0.3.0"
+    "@intx/types": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

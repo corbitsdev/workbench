@@ -25,8 +25,8 @@
     "@corbits/workbench-digest-workflow": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",
     "@corbits/workflow-source": "workspace:*",
-    "@intx/inference": "0.3.0",
-    "@intx/types": "0.3.0",
+    "@intx/inference": "workspace:*",
+    "@intx/types": "workspace:*",
     "arktype": "catalog:"
   },
   "devDependencies": {
