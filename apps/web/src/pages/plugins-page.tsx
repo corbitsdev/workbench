@@ -24,7 +24,7 @@ import {
 import type { ResolvedPlugin } from "@workbench/connections/plugins";
 import { listPluginsForTenant } from "@workbench/connections/plugins";
 import { Plus, SquaresFour, Warning } from "@corbits/icons";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useBench } from "../bench-context";
 import { SKILLS_PATH_PREFIX } from "../path-ids";
@@ -105,11 +105,21 @@ export function PluginsRoute({
 
   // Guarded by `cancelled` (same pattern as settings-ui's `people-section`)
   // so a tenant switch mid-flight can't have the previous tenant's late
-  // response overwrite the newly selected tenant's state.
+  // response overwrite the newly selected tenant's state. The loading
+  // skeleton only shows for a tenant this page hasn't fetched yet — an
+  // imperative reload (a connect/disconnect's `onChanged`, the error
+  // screen's Retry) keeps whatever is already on screen and swaps in the
+  // fresh data once it lands, the same way it worked before cancellation
+  // was added.
+  const pluginsLoadedTenantRef = useRef<string | null>(null);
+  const skillsLoadedTenantRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (selectedTenantId === null) return;
     let cancelled = false;
-    setPluginsState({ status: "loading" });
+    const isTenantChange = pluginsLoadedTenantRef.current !== selectedTenantId;
+    pluginsLoadedTenantRef.current = selectedTenantId;
+    if (isTenantChange) setPluginsState({ status: "loading" });
     listPluginsForTenant(selectedTenantId)
       .then((plugins) => {
         if (!cancelled) setPluginsState({ status: "ready", plugins });
@@ -126,7 +136,9 @@ export function PluginsRoute({
   useEffect(() => {
     if (selectedTenantId === null) return;
     let cancelled = false;
-    setSkillsState({ status: "loading" });
+    const isTenantChange = skillsLoadedTenantRef.current !== selectedTenantId;
+    skillsLoadedTenantRef.current = selectedTenantId;
+    if (isTenantChange) setSkillsState({ status: "loading" });
     listSkills(selectedTenantId)
       .then((skills) => {
         if (!cancelled) setSkillsState({ status: "ready", skills });
