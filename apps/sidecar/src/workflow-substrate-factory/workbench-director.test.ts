@@ -248,7 +248,7 @@ test("context budget: a short conversation under budget is untouched (infers nor
   expect(typesOf(actions)).toEqual(["infer"]);
 });
 
-test("context budget: message.received over budget but under the hard limit compacts instead of inferring", async () => {
+test("context budget: message.received over budget but under the hard limit still infers", async () => {
   const director = createWorkbenchDirector(
     "you are a test agent",
     [],
@@ -270,8 +270,8 @@ test("context budget: message.received over budget but under the hard limit comp
     caps,
   );
 
-  expect(typesOf(actions)).toEqual(["checkpoint", "compact"]);
-  expect(replyOf(actions)).toBeUndefined();
+  expect(typesOf(actions)).toEqual(["infer"]);
+  expect(typesOf(actions)).not.toContain("compact");
 });
 
 test("context budget: tool-heavy history past the hard limit is caught even though every turn's text excerpt is short", async () => {
