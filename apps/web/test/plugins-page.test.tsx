@@ -36,6 +36,7 @@ afterEach(() => {
     container.remove();
     container = null;
   }
+  window.history.replaceState(null, "", "/plugins");
 });
 
 const membership = {
@@ -659,5 +660,36 @@ describe("PluginsRoute", () => {
     }
 
     expect(el.textContent).not.toContain("Connected here");
+  });
+
+  // CL-7141: `request_connection`'s fallback link (`/plugins?connect=<id>`)
+  // hands off through the same `requestPluginsConnect` path the shell
+  // banner's "Fix it" click uses.
+  test("a `?connect=<id>` URL naming a known connector opens that connector's connect panel", async () => {
+    stubFetch();
+    window.history.replaceState(null, "", "/plugins?connect=github");
+
+    const el = await mount();
+
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).toContain("GitHub");
+    expect(window.location.search).toBe("");
+    expect(el).not.toBeNull();
+  });
+
+  // CL-7141: an id the registry doesn't recognize (typo, stale link) is
+  // ignored — no dialog, no "couldn't find that connection" notice.
+  test("a `?connect=<id>` URL naming an unknown connector is ignored", async () => {
+    stubFetch();
+    window.history.replaceState(null, "", "/plugins?connect=bogus");
+
+    const el = await mount();
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(el.textContent).not.toContain(
+      "Couldn't find that connection — pick it below.",
+    );
+    expect(window.location.search).toBe("");
   });
 });
