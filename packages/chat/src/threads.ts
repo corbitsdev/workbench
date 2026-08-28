@@ -385,11 +385,11 @@ function mapThreadRow(
 export function createDrizzleThreadStore<
   TSchema extends Record<string, unknown>,
 >(db: ThreadDb<TSchema>): ThreadStore {
-  async function ensureRootThread(
+  async function selectRootThread(
     tenantId: string,
     workbenchId: string,
-  ): Promise<WorkbenchThread> {
-    const existing = await db
+  ): Promise<WorkbenchThread | undefined> {
+    const rows = await db
       .select()
       .from(workbenchThreads)
       .where(
@@ -399,8 +399,22 @@ export function createDrizzleThreadStore<
           eq(workbenchThreads.kind, "root"),
         ),
       )
+      .orderBy(asc(workbenchThreads.createdAt))
       .limit(1);
-    if (existing[0]) return mapThreadRow(existing[0]);
+    return rows[0] ? mapThreadRow(rows[0]) : undefined;
+  }
+
+  async function ensureRootThread(
+    tenantId: string,
+    workbenchId: string,
+  ): Promise<WorkbenchThread> {
+    const existing = await selectRootThread(tenantId, workbenchId);
+    if (existing) return existing;
+    // Insert-first, not select-then-insert: two concurrent first
+    // writers both attempt the insert, the partial unique index
+    // (tenant_id, workbench_id) WHERE kind = 'root' serializes them,
+    // and the loser gets an empty `returning()` rather than a
+    // duplicate root thread — re-select picks up the winner's row.
     const id = newThreadId();
     const inserted = await db
       .insert(workbenchThreads)
@@ -414,8 +428,18 @@ export function createDrizzleThreadStore<
         runRef: null,
         title: null,
       })
+      .onConflictDoNothing({
+        target: [workbenchThreads.tenantId, workbenchThreads.workbenchId],
+        where: eq(workbenchThreads.kind, "root"),
+      })
       .returning();
-    return mapThreadRow(requireReturningRow(inserted, "root thread"));
+    const row = inserted[0];
+    if (row) return mapThreadRow(row);
+    const reselected = await selectRootThread(tenantId, workbenchId);
+    if (!reselected) {
+      throw new Error("expected root thread row after conflicting insert");
+    }
+    return reselected;
   }
 
   /** The thread a message currently lives in, or `root` if unassigned. */
@@ -451,23 +475,37 @@ export function createDrizzleThreadStore<
     return containerRows[0] ? mapThreadRow(containerRows[0]) : root;
   }
 
-  async function anchoredReplyThread(
-    input: OpenReplyThreadInput,
-    mode: "reply" | "fork",
-  ): Promise<WorkbenchThread> {
-    const existing = await db
+  async function selectReplyThread(
+    tenantId: string,
+    workbenchId: string,
+    parentMessageId: string,
+  ): Promise<WorkbenchThread | undefined> {
+    const rows = await db
       .select()
       .from(workbenchThreads)
       .where(
         and(
-          eq(workbenchThreads.tenantId, input.tenantId),
-          eq(workbenchThreads.workbenchId, input.workbenchId),
+          eq(workbenchThreads.tenantId, tenantId),
+          eq(workbenchThreads.workbenchId, workbenchId),
           eq(workbenchThreads.kind, "reply"),
-          eq(workbenchThreads.parentMessageId, input.parentMessageId),
+          eq(workbenchThreads.parentMessageId, parentMessageId),
         ),
       )
+      .orderBy(asc(workbenchThreads.createdAt))
       .limit(1);
-    if (existing[0]) return mapThreadRow(existing[0]);
+    return rows[0] ? mapThreadRow(rows[0]) : undefined;
+  }
+
+  async function anchoredReplyThread(
+    input: OpenReplyThreadInput,
+    mode: "reply" | "fork",
+  ): Promise<WorkbenchThread> {
+    const existing = await selectReplyThread(
+      input.tenantId,
+      input.workbenchId,
+      input.parentMessageId,
+    );
+    if (existing) return existing;
     const root = await ensureRootThread(input.tenantId, input.workbenchId);
     const container = await containerThreadFor(
       input.tenantId,
@@ -477,6 +515,12 @@ export function createDrizzleThreadStore<
     );
     const anchor = resolveThreadAnchor(root, container);
     if (anchor.blocked && mode === "reply") throw new ThreadDepthCapError();
+    // Insert-first, not select-then-insert: two concurrent first
+    // repliers to the same message both attempt the insert, the
+    // partial unique index (tenant_id, workbench_id,
+    // parent_message_id) WHERE kind = 'reply' serializes them, and
+    // the loser's empty `returning()` re-selects the winner's row
+    // rather than creating a duplicate reply thread.
     const id = newThreadId();
     const inserted = await db
       .insert(workbenchThreads)
@@ -490,8 +534,26 @@ export function createDrizzleThreadStore<
         runRef: null,
         title: input.title ?? null,
       })
+      .onConflictDoNothing({
+        target: [
+          workbenchThreads.tenantId,
+          workbenchThreads.workbenchId,
+          workbenchThreads.parentMessageId,
+        ],
+        where: eq(workbenchThreads.kind, "reply"),
+      })
       .returning();
-    return mapThreadRow(requireReturningRow(inserted, `${mode} thread`));
+    const row = inserted[0];
+    if (row) return mapThreadRow(row);
+    const reselected = await selectReplyThread(
+      input.tenantId,
+      input.workbenchId,
+      input.parentMessageId,
+    );
+    if (!reselected) {
+      throw new Error(`expected ${mode} thread row after conflicting insert`);
+    }
+    return reselected;
   }
 
   return {

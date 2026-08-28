@@ -6,6 +6,7 @@
 // docs/package-migrations.md. `tenantId`/`principalId` are plain text
 // identifiers, not foreign keys, so referencing platform tenant/principal
 // ids works identically from a named schema.
+import { sql } from "drizzle-orm";
 import {
   index,
   integer,
@@ -15,6 +16,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const chatSchema = pgSchema("chat");
@@ -229,6 +231,12 @@ export const workbenchThreads = chatSchema.table(
       table.tenantId,
       table.workbenchId,
     ),
+    uniqueIndex("workbench_threads_root_key")
+      .on(table.tenantId, table.workbenchId)
+      .where(sql`${table.kind} = 'root'`),
+    uniqueIndex("workbench_threads_reply_key")
+      .on(table.tenantId, table.workbenchId, table.parentMessageId)
+      .where(sql`${table.kind} = 'reply'`),
   ],
 );
 
