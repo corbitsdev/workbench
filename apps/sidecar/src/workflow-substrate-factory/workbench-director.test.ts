@@ -248,6 +248,32 @@ test("context budget: a short conversation under budget is untouched (infers nor
   expect(typesOf(actions)).toEqual(["infer"]);
 });
 
+test("context budget: message.received over budget but under the hard limit compacts instead of inferring", async () => {
+  const director = createWorkbenchDirector(
+    "you are a test agent",
+    [],
+    {},
+    {
+      budgetChars: 100,
+      hardLimitChars: 1_000_000,
+      compactorName: "summarize-budgeted-turns",
+    },
+  );
+  const overBudget = stateWithTurns([
+    conversationTurn("a".repeat(200)),
+    conversationTurn("b".repeat(200)),
+  ]);
+
+  const actions = await director.decide(
+    { type: "message.received", message: { id: "m1", content: "hi" } as never },
+    overBudget,
+    caps,
+  );
+
+  expect(typesOf(actions)).toEqual(["checkpoint", "compact"]);
+  expect(replyOf(actions)).toBeUndefined();
+});
+
 test("context budget: tool-heavy history past the hard limit is caught even though every turn's text excerpt is short", async () => {
   // The reviewer's exact repro: 10 turns each carrying a 20,000-char
   // tool_result. Measured by placeholder length this was ~160 chars
