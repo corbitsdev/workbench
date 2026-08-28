@@ -24,6 +24,7 @@ import {
 import type { ResolvedPlugin } from "@workbench/connections/plugins";
 import { listPluginsForTenant } from "@workbench/connections/plugins";
 import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
+import { MCP_PRESETS } from "@workbench/connections/mcp-presets";
 import { Plus, SquaresFour, Warning } from "@corbits/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -87,6 +88,12 @@ export function PluginsRoute({
   // link silently no-oping, this renders a notice pointing back at the
   // gallery itself.
   const [connectDeepLinkNotFound, setConnectDeepLinkNotFound] = useState(false);
+  // A preset deep link's slug (CL-7141), passed to the MCP presets
+  // section so it can focus that preset's own card once its catalog
+  // has loaded — cleared as soon as the section has acted on it.
+  const [autoConnectPresetSlug, setAutoConnectPresetSlug] = useState<
+    string | null
+  >(null);
   const pendingConnectProvider = usePendingConnectProvider();
   const clearPendingConnectProvider = useClearPendingConnectProvider();
   const requestPluginsConnect = useRequestPluginsConnect();
@@ -180,16 +187,35 @@ export function PluginsRoute({
 
   // `request_connection`'s fallback link (CL-7141): `/plugins?connect=<id>`
   // hands the connector id off through the same `requestPluginsConnect`
-  // path the shell banner's "Fix it" click uses, then strips the param so
-  // a reload never replays a stale connect intent. An id this registry
-  // doesn't recognize (typo, stale link) is ignored rather than surfaced
-  // as a notice.
+  // path the shell banner's "Fix it" click uses, then strips only the
+  // `connect` param — any other query param this route is ever opened
+  // with (e.g. an in-flight `mcpOauth` return) must survive the rewrite.
+  // A curated MCP preset (Exa, Granola, Linear, ...) has no fixed
+  // `CONNECTOR_REGISTRY` id, so its own deep link is `mcp:<slug>`
+  // (`presetDeepLink` in `packages/connections-tools/src/tool.ts`) and
+  // is matched against the preset catalog instead. An id neither side
+  // recognizes (typo, stale link) is ignored rather than surfaced as a
+  // notice.
   useEffect(() => {
-    const connectId = new URLSearchParams(window.location.search).get(
-      "connect",
-    );
+    const params = new URLSearchParams(window.location.search);
+    const connectId = params.get("connect");
     if (connectId === null) return;
-    window.history.replaceState(null, "", window.location.pathname);
+    params.delete("connect");
+    const rest = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      rest === ""
+        ? window.location.pathname
+        : `${window.location.pathname}?${rest}`,
+    );
+    if (connectId.startsWith("mcp:")) {
+      const slug = connectId.slice("mcp:".length);
+      if (MCP_PRESETS.some((preset) => preset.slug === slug)) {
+        setAutoConnectPresetSlug(slug);
+      }
+      return;
+    }
     if (CONNECTOR_REGISTRY[connectId] !== undefined) {
       requestPluginsConnect(connectId);
     }
@@ -308,6 +334,8 @@ export function PluginsRoute({
           activeTab={activeTab}
           onTabChange={setActiveTab}
           query={galleryQuery}
+          autoConnectPresetSlug={autoConnectPresetSlug}
+          onAutoConnectPresetHandled={() => setAutoConnectPresetSlug(null)}
         />
       </PageShell>
       <PluginConnectPanel

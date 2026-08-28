@@ -190,6 +190,8 @@ export function PluginsGallery({
   activeTab,
   onTabChange,
   query,
+  autoConnectPresetSlug = null,
+  onAutoConnectPresetHandled,
 }: {
   readonly tenantId: string;
   readonly plugins: readonly ResolvedPlugin[];
@@ -199,6 +201,11 @@ export function PluginsGallery({
   readonly activeTab: PluginsGalleryTab;
   readonly onTabChange: (tab: PluginsGalleryTab) => void;
   readonly query: string;
+  /** A curated MCP preset's slug named by a `/plugins?connect=mcp:<slug>`
+   * deep link (CL-7141) — passed through to the presets section so it can
+   * focus that preset's own card once its catalog has loaded. */
+  readonly autoConnectPresetSlug?: string | null;
+  readonly onAutoConnectPresetHandled?: () => void;
 }) {
   // An inference-provider connector names no tool package it feeds
   // (`feedsTools: []`) — providers live only in Shared Settings'
@@ -237,7 +244,14 @@ export function PluginsGallery({
             {active === "plugins" ? (
               <>
                 <h1 className="text-xl font-extrabold">Plugins</h1>
-                <McpPresetCardsSection tenantId={tenantId} query={query} />
+                <McpPresetCardsSection
+                  tenantId={tenantId}
+                  query={query}
+                  autoConnectSlug={autoConnectPresetSlug}
+                  {...(onAutoConnectPresetHandled !== undefined
+                    ? { onAutoConnectHandled: onAutoConnectPresetHandled }
+                    : {})}
+                />
                 <McpServersSection tenantId={tenantId} />
                 <PluginsTabPanel
                   plugins={installablePlugins}
