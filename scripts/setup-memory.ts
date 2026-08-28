@@ -1,12 +1,9 @@
 // bun run setup:memory — recommends how to turn on the memory plane
 // (embeddings-backed recall) and its optional reranker for this checkout.
-// Advisory only: it probes what's on this machine and prints the env lines
-// and commands to run, in the order the platform actually prefers them —
-// native first, Docker for the pieces with no good native story, a remote
-// endpoint (including an existing Ollama/TEI instance elsewhere) always
-// available as the third option. It never runs Docker or installs
-// anything itself; `bun run dev` already refuses nothing you don't put in
-// `.env` yourself.
+// Advisory for reranking and remote endpoints; for a local embed path it
+// also writes missing EMBED_* keys into `.env` so `bun run dev` actually
+// mounts `@corbits/memory` instead of leaving the plane dark. It never
+// runs Docker or installs anything itself.
 //
 // Embedding is the hard requirement: memory_search/memory_add/memory_list
 // answer with a plain "memory isn't set up on this server yet" note
@@ -16,6 +13,8 @@
 // automatic backfill. Reranking is a pure enhancement: search works
 // without it, just less well-ordered, and a reranker outage degrades
 // search quietly rather than breaking it.
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 export type CapabilityProbe = {
   readonly hasNativeOllama: boolean;
@@ -125,6 +124,48 @@ export function planRerank(probe: CapabilityProbe): SetupPlan {
   };
 }
 
+function nonempty(value: string | undefined): string | undefined {
+  if (value === undefined || value.trim() === "") return undefined;
+  return value;
+}
+
+/**
+ * Env `bun run dev` should inject into the hub process when the operator
+ * has not set `EMBED_BASE_URL` / `OLLAMA_BASE_URL` but native Ollama is
+ * on PATH — a local embed path exists, so the plane should not stay dark.
+ * `OLLAMA_BASE_URL` is left to `mountMemory` (it is already a configured
+ * embed origin).
+ */
+export function localDevMemoryEmbedEnv(
+  env: Record<string, string | undefined>,
+  probe: Pick<CapabilityProbe, "hasNativeOllama">,
+): Record<string, string> | undefined {
+  if (nonempty(env["EMBED_BASE_URL"]) !== undefined) return undefined;
+  if (nonempty(env["OLLAMA_BASE_URL"]) !== undefined) return undefined;
+  if (!probe.hasNativeOllama) return undefined;
+  return planEmbedding({ hasNativeOllama: true, hasDocker: false }).env;
+}
+
+export function dotenvHasActiveKey(text: string, key: string): boolean {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^${escaped}=`, "m").test(text);
+}
+
+export function applyEnvKeysToDotenvContents(
+  existing: string,
+  keys: Record<string, string>,
+): { next: string; added: readonly string[] } {
+  const added: string[] = [];
+  let next = existing;
+  for (const [key, value] of Object.entries(keys)) {
+    if (dotenvHasActiveKey(next, key)) continue;
+    added.push(key);
+    if (next !== "" && !next.endsWith("\n")) next += "\n";
+    next += `${key}=${value}\n`;
+  }
+  return { next, added };
+}
+
 // `docker info` against an unreachable or slow-to-wake daemon (a stopped
 // Docker Desktop, a misconfigured remote context) can hang far longer than
 // a setup script should ever block for, so this probe is bounded by a
@@ -166,14 +207,36 @@ async function main(): Promise<void> {
   );
   console.log(`  Docker: ${probe.hasDocker ? "available" : "not available"}`);
 
+  const embedPlan = planEmbedding(probe);
   printPlan(
     "Embedding (required for memory search to find anything)",
-    planEmbedding(probe),
+    embedPlan,
   );
   printPlan(
     "Reranking (optional — improves result ordering)",
     planRerank(probe),
   );
+
+  const envPath = join(resolve(import.meta.dir, ".."), ".env");
+  if (Object.keys(embedPlan.env).length > 0) {
+    if (!existsSync(envPath)) {
+      console.log(
+        "\nNo .env yet — cp .env.example .env, then re-run to write the embedding keys.",
+      );
+    } else {
+      const current = readFileSync(envPath, "utf8");
+      const { next, added } = applyEnvKeysToDotenvContents(
+        current,
+        embedPlan.env,
+      );
+      if (added.length > 0) {
+        writeFileSync(envPath, next);
+        console.log(`\nWrote ${added.join(", ")} to .env`);
+      } else {
+        console.log("\n.env already has embedding keys — left unchanged.");
+      }
+    }
+  }
 
   console.log(
     "\nAfter editing .env, restart `bun run dev` — it applies memory's migrations\n" +

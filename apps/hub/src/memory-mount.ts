@@ -8,11 +8,13 @@
  * `DATABASE_URL`, and `@corbits/memory`'s own `loadMemoryConfig()` reads it
  * directly, so this module just calls it.
  *
- * Degrades cleanly when unconfigured: missing `EMBED_BASE_URL` means "no
- * memory plane", logged once at boot, never thrown — same optional-engine
- * contract as the artifacts mount. When `EMBED_BASE_URL` is present, boot
- * fails loudly if migrate/create throws so a half-wired deploy is never
- * silent.
+ * Embed resolution: explicit `EMBED_BASE_URL` wins. Otherwise a configured
+ * `OLLAMA_BASE_URL` is a local embed path (same origin the hub already
+ * plants as an inference credential), so local/dev does not leave the plane
+ * dark when Ollama is already wired. Missing both means "no memory plane",
+ * logged once at boot, never thrown — same optional-engine contract as the
+ * artifacts mount. When an embed URL is present, boot fails loudly if
+ * migrate/create throws so a half-wired deploy is never silent.
  *
  * This module lands the mount + factory only. Capture/ingestion glue is a
  * later ticket; agents that want firm memory ask the returned handle.
@@ -101,14 +103,73 @@ function parseMemoryMountEnv(
   return parsed;
 }
 
+const LOCAL_OLLAMA_EMBED_MODEL = "nomic-embed-text";
+const LOCAL_OLLAMA_EMBED_STYLE = "ollama";
+
+export type ResolvedMemoryEmbed = {
+  readonly embedBaseUrl: string;
+  readonly embedModel: string;
+  readonly embedApiStyle: string;
+  readonly source: "EMBED_BASE_URL" | "OLLAMA_BASE_URL";
+};
+
+function nonemptyEnv(
+  env: Record<string, string | undefined>,
+  key: string,
+): string | undefined {
+  const value = env[key];
+  if (value === undefined || value.trim() === "") return undefined;
+  return value;
+}
+
+/**
+ * Explicit `EMBED_BASE_URL` wins. Otherwise `OLLAMA_BASE_URL` is the local
+ * embed path — nomic-embed-text / ollama style, matching `setup:memory`.
+ */
+export function resolveMemoryEmbed(
+  env: Record<string, string | undefined>,
+): ResolvedMemoryEmbed | undefined {
+  const embedBaseUrl = nonemptyEnv(env, "EMBED_BASE_URL");
+  if (embedBaseUrl !== undefined) {
+    return {
+      embedBaseUrl,
+      embedModel: nonemptyEnv(env, "EMBED_MODEL") ?? "",
+      embedApiStyle: nonemptyEnv(env, "EMBED_API_STYLE") ?? "openai",
+      source: "EMBED_BASE_URL",
+    };
+  }
+  const ollamaBaseUrl = nonemptyEnv(env, "OLLAMA_BASE_URL");
+  if (ollamaBaseUrl === undefined) return undefined;
+  return {
+    embedBaseUrl: ollamaBaseUrl,
+    embedModel: nonemptyEnv(env, "EMBED_MODEL") ?? LOCAL_OLLAMA_EMBED_MODEL,
+    embedApiStyle:
+      nonemptyEnv(env, "EMBED_API_STYLE") ?? LOCAL_OLLAMA_EMBED_STYLE,
+    source: "OLLAMA_BASE_URL",
+  };
+}
+
+function applyResolvedEmbedToProcessEnv(resolved: ResolvedMemoryEmbed): void {
+  if (process.env["EMBED_BASE_URL"] === undefined) {
+    process.env["EMBED_BASE_URL"] = resolved.embedBaseUrl;
+  }
+  if (process.env["EMBED_MODEL"] === undefined && resolved.embedModel !== "") {
+    process.env["EMBED_MODEL"] = resolved.embedModel;
+  }
+  if (process.env["EMBED_API_STYLE"] === undefined) {
+    process.env["EMBED_API_STYLE"] = resolved.embedApiStyle;
+  }
+}
+
 export type MountMemoryOptions<E extends object = object> = {
   /** Hub Hono app (routes register under tenant memory paths). */
   app: Hono<E>;
   grantStore: GrantStore;
   conditionRegistry: ConditionRegistry;
   /**
-   * When true (default), skip mount if `EMBED_BASE_URL` is unset. Tests can
-   * force a mount attempt by setting env + `optional: false`.
+   * When true (default), skip mount if neither `EMBED_BASE_URL` nor
+   * `OLLAMA_BASE_URL` is set. Tests can force a mount attempt by setting
+   * env + `optional: false`.
    */
   optional?: boolean;
 };
@@ -119,20 +180,31 @@ export type MemoryMountHandle = {
 
 /**
  * Returns a memory handle when the plane is configured and mounted;
- * `undefined` when optional and `EMBED_BASE_URL` is absent.
+ * `undefined` when optional and neither `EMBED_BASE_URL` nor
+ * `OLLAMA_BASE_URL` is present.
  */
 export async function mountMemory<E extends object = object>(
   options: MountMemoryOptions<E>,
 ): Promise<MemoryMountHandle | undefined> {
   const optional = options.optional !== false;
-  const parsedEnv = parseMemoryMountEnv(process.env);
-  const embedBaseUrl = parsedEnv.EMBED_BASE_URL;
-  if (embedBaseUrl === undefined) {
+  parseMemoryMountEnv(process.env);
+  const resolved = resolveMemoryEmbed(process.env);
+  if (resolved === undefined) {
     if (optional) {
-      log.info("EMBED_BASE_URL not set — memory plane will not be mounted");
+      log.info(
+        "EMBED_BASE_URL / OLLAMA_BASE_URL not set — memory plane will not be mounted",
+      );
       return undefined;
     }
-    throw new Error("EMBED_BASE_URL is required to mount memory");
+    throw new Error(
+      "EMBED_BASE_URL or OLLAMA_BASE_URL is required to mount memory",
+    );
+  }
+  applyResolvedEmbedToProcessEnv(resolved);
+  if (resolved.source === "OLLAMA_BASE_URL") {
+    log.info(
+      `OLLAMA_BASE_URL set — mounting memory plane with embed ${resolved.embedBaseUrl} (${resolved.embedModel})`,
+    );
   }
 
   const config = loadMemoryConfig();

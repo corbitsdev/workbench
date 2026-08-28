@@ -47,11 +47,13 @@ bun run dev
 Recommended: run `bun run setup:memory` for a machine-specific
 recommendation on turning on the memory plane (embeddings-backed recall)
 and its optional reranker — native Ollama, Docker, or a remote endpoint,
-whichever this machine can actually use — then add the env lines it
-prints to `.env`. Skipping this leaves memory off: memory tools answer
-"not set up" instead of erroring, so it's safe to add later, but rows
-written before `EMBED_BASE_URL` is set are never retroactively embedded.
-See [docs/local-dev.md](docs/local-dev.md#memory-plane) for the full
+whichever this machine can actually use. When a local embed path exists,
+that command writes the missing `EMBED_*` keys into `.env`. `bun run dev`
+also mounts `@corbits/memory` when `OLLAMA_BASE_URL` is set, or when
+native Ollama is on PATH even if you skipped setup. Without any of those,
+memory tools answer "not set up" instead of erroring; rows written before
+an embed URL is set are never retroactively embedded. See
+[docs/local-dev.md](docs/local-dev.md#memory-plane) for the full
 degradation story.
 
 `bun run dev` validates your `.env` (reporting every missing or malformed

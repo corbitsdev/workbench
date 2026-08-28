@@ -2,7 +2,7 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { createInMemoryGrantStore } from "@intx/authz";
 
-import { mountMemory } from "./memory-mount";
+import { mountMemory, resolveMemoryEmbed } from "./memory-mount";
 
 const KEYS = [
   "DATABASE_URL",
@@ -12,6 +12,7 @@ const KEYS = [
   "EMBED_API_KEY",
   "RERANK_BASE_URL",
   "RERANK_MODEL",
+  "OLLAMA_BASE_URL",
 ] as const;
 
 type EnvKey = (typeof KEYS)[number];
@@ -43,8 +44,46 @@ function stashEnv(): void {
   }
 }
 
+describe("resolveMemoryEmbed", () => {
+  test("returns undefined when neither EMBED_BASE_URL nor OLLAMA_BASE_URL is set", () => {
+    expect(resolveMemoryEmbed({})).toBeUndefined();
+  });
+
+  test("explicit EMBED_BASE_URL wins over OLLAMA_BASE_URL", () => {
+    expect(
+      resolveMemoryEmbed({
+        EMBED_BASE_URL: "https://api.openai.com/v1",
+        EMBED_MODEL: "text-embedding-3-small",
+        OLLAMA_BASE_URL: "http://localhost:11434",
+      }),
+    ).toEqual({
+      embedBaseUrl: "https://api.openai.com/v1",
+      embedModel: "text-embedding-3-small",
+      embedApiStyle: "openai",
+      source: "EMBED_BASE_URL",
+    });
+  });
+
+  test("OLLAMA_BASE_URL is a local embed path with nomic-embed-text / ollama style", () => {
+    expect(
+      resolveMemoryEmbed({
+        OLLAMA_BASE_URL: "http://localhost:11434",
+      }),
+    ).toEqual({
+      embedBaseUrl: "http://localhost:11434",
+      embedModel: "nomic-embed-text",
+      embedApiStyle: "ollama",
+      source: "OLLAMA_BASE_URL",
+    });
+  });
+
+  test("treats a blank OLLAMA_BASE_URL as unset", () => {
+    expect(resolveMemoryEmbed({ OLLAMA_BASE_URL: "" })).toBeUndefined();
+  });
+});
+
 describe("mountMemory", () => {
-  test("returns undefined when EMBED_BASE_URL is unset (optional)", async () => {
+  test("returns undefined when EMBED_BASE_URL and OLLAMA_BASE_URL are unset (optional)", async () => {
     stashEnv();
     process.env["DATABASE_URL"] = "postgres://localhost:5432/workbench";
     const app = new Hono();
@@ -56,7 +95,7 @@ describe("mountMemory", () => {
     expect(handle).toBeUndefined();
   });
 
-  test("throws when optional is false and EMBED_BASE_URL is missing", async () => {
+  test("throws when optional is false and EMBED_BASE_URL and OLLAMA_BASE_URL are missing", async () => {
     stashEnv();
     process.env["DATABASE_URL"] = "postgres://localhost:5432/workbench";
     const app = new Hono();
@@ -67,7 +106,7 @@ describe("mountMemory", () => {
         conditionRegistry: {},
         optional: false,
       }),
-    ).rejects.toThrow(/EMBED_BASE_URL/);
+    ).rejects.toThrow(/EMBED_BASE_URL or OLLAMA_BASE_URL/);
   });
 
   test("fails loudly at config parse when EMBED_BASE_URL is set but blank, rather than silently treating it as unset", async () => {
@@ -168,5 +207,21 @@ describeIfDb("mountMemory: schema isolation against a real database", () => {
     } finally {
       await sql.end();
     }
+  });
+
+  test("mounts from OLLAMA_BASE_URL when EMBED_BASE_URL is unset", async () => {
+    stashEnv();
+    process.env["DATABASE_URL"] = databaseUrl;
+    process.env["OLLAMA_BASE_URL"] = "http://localhost:9";
+
+    const handle = await mountMemory({
+      app: new Hono(),
+      grantStore: createInMemoryGrantStore([]),
+      conditionRegistry: {},
+    });
+    expect(handle).toBeDefined();
+    expect(process.env["EMBED_BASE_URL"]).toBe("http://localhost:9");
+    expect(process.env["EMBED_MODEL"]).toBe("nomic-embed-text");
+    expect(process.env["EMBED_API_STYLE"]).toBe("ollama");
   });
 });

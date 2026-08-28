@@ -8,6 +8,7 @@ import { createConnection } from "node:net";
 import { join, resolve } from "node:path";
 import { readHubConfig, type HubConfig } from "../apps/hub/src/config.ts";
 import { ensureSidecarIdentity, setupDatabase } from "./db-setup.ts";
+import { localDevMemoryEmbedEnv } from "./setup-memory.ts";
 
 const repoRoot = resolve(import.meta.dir, "..");
 
@@ -170,8 +171,17 @@ const hubApp: App = {
 // mode, open it so seedDevAccount can create alice. Production hub
 // still defaults closed when this script is not the launcher.
 // Explicit WORKBENCH_SIGNUP in .env always wins (bun loads env-file).
+function mergeHubEnv(extra: Record<string, string>): void {
+  hubApp.env = { ...hubApp.env, ...extra };
+}
 if (process.env["WORKBENCH_SIGNUP"] === undefined) {
-  hubApp.env = { WORKBENCH_SIGNUP: "open" };
+  mergeHubEnv({ WORKBENCH_SIGNUP: "open" });
+}
+const localMemoryEmbed = localDevMemoryEmbedEnv(process.env, {
+  hasNativeOllama: Bun.which("ollama") !== null,
+});
+if (localMemoryEmbed !== undefined) {
+  mergeHubEnv(localMemoryEmbed);
 }
 
 const apps: App[] = [
