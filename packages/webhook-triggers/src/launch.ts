@@ -63,6 +63,17 @@ export type LaunchWebhookTriggerDeps = FoldedRunsDeps & {
     readonly instanceId: string;
     readonly foldedBody: LaunchFoldedRunParams["foldedBody"];
   }) => NonNullable<LaunchFoldedRunParams["persistExtra"]>;
+  /**
+   * Records the inference chain the launch just deployed with on that
+   * same mapping row — the host wires this to `@corbits/chat`'s
+   * `recordSourcesDigest`. `persistLaunch` runs before the deploy
+   * resolves the chain, so the digest lands in a second write; without
+   * it a rotated provider key never reaches this run (CL-6687).
+   */
+  recordLaunchSources: (input: {
+    readonly instanceId: string;
+    readonly sourcesDigest: string;
+  }) => Promise<void>;
 };
 
 export type LaunchedWebhookTrigger = {
@@ -146,6 +157,10 @@ export async function launchWebhookTrigger(
       instanceId,
       foldedBody,
     }),
+  });
+  await deps.recordLaunchSources({
+    instanceId,
+    sourcesDigest: launched.sourcesDigest,
   });
 
   const content = renderInputTemplate(trigger.inputTemplate, payload);

@@ -97,12 +97,14 @@ import {
   localPartOf,
   parseParticipants,
   postRoomMessage,
+  recordSourcesDigest,
   startWorkflowCommand,
   sendWorkbenchMessage,
   settleConnectedService,
   workbenchLaunchPersistExtra,
 } from "@corbits/chat";
 import type { RelaunchNoticePort } from "@corbits/chat";
+import { reportError } from "@corbits/error-sink";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
 import { decodedOrNull } from "@corbits/url-path";
 import {
@@ -286,6 +288,7 @@ import {
 } from "@workbench/onboarding";
 import {
   createConnectionRoutes,
+  isInferenceProvider,
   createMcpOAuthRoutes,
   createMcpServerRoutes,
   createOAuthConnectRoutes,
@@ -1987,6 +1990,8 @@ export async function createHub(config: HubConfig) {
             cryptoProviderCache: foldedRunCryptoProviders,
             launchMode: AGENT_SECTION_MODE,
             persistLaunch: workbenchLaunchPersistExtra,
+            recordLaunchSources: ({ instanceId, sourcesDigest }) =>
+              recordSourcesDigest(db, instanceId, sourcesDigest),
           },
           trigger,
           payload,
@@ -1999,8 +2004,15 @@ export async function createHub(config: HubConfig) {
   // clears (flipping the in-room connect card via `chat.settings`), and
   // the host agent is woken via `dispatchTurn` without a forged
   // signed-in-user timeline row.
-  const settleServiceConnection: ServiceConnectedHook = (info) =>
-    settleConnectedService(
+  //
+  // An inference provider's credential landing also re-checks every
+  // live participant's deployed inference chain (CL-6687): a rotated
+  // key only ever reaches an agent at deploy time, so the relaunch has
+  // to be kicked here, not left for the next message. Not awaited — a
+  // relaunch is a sidecar deploy round-trip, and the connect response
+  // must not wait on it.
+  const settleServiceConnection: ServiceConnectedHook = async (info) => {
+    await settleConnectedService(
       {
         store: chatStore,
         platform: chatPlatform,
@@ -2015,6 +2027,19 @@ export async function createHub(config: HubConfig) {
         displayName: info.displayName,
       },
     );
+    if (!isInferenceProvider(info.connectorId)) return;
+    void chatPlatform
+      .reconcileInferenceSources(info.tenantId)
+      .then(({ scanned, relaunched }) => {
+        log.info`inference credential ${info.connectorId} changed on tenant ${info.tenantId}: re-checked ${String(scanned)} live agents, relaunched ${String(relaunched)}`;
+      })
+      .catch((cause: unknown) => {
+        reportError(cause, {
+          operation: "connections.reconcile-inference-sources",
+          tenantId: info.tenantId,
+        });
+      });
+  };
   // Connections: the settings surface's tenant-scoped credential
   // test-and-store, mounted under the same tenant prefix and reusing
   // the same grant store/condition registry every other credential-

@@ -17,10 +17,13 @@ import {
   createCryptoProviderCache,
   DefinitionProjectionMissingError,
   domainOf,
+  inferenceSourcesDigest,
+  InferenceResolutionError,
   launchFoldedRun,
   mintFoldedRun,
   readFoldedBody,
   resolveFoldedRunSessionId,
+  resolveLaunchSources,
   resolveNewestProjectedDefinition,
   sendFoldedMail,
   wakeFoldedRun,
@@ -32,8 +35,10 @@ import {
   findStandingLaunchByDefinition,
   isBeyondWake,
   listLaunchesBeyondWake,
+  listLaunchesForTenant,
   readBindingByAddress,
   readPriorRuns,
+  recordSourcesDigest,
   repointBinding,
   resolveLiveAgent,
   resolveLiveByStableId,
@@ -184,6 +189,19 @@ export type HubChatPlatform = ChatPlatform & {
    * that run's terminal event.
    */
   sweepTerminalRuns(): Promise<{ scanned: number; relaunched: number }>;
+  /**
+   * Re-checks every live participant in `tenantId` against the tenant's
+   * current inference catalog and relaunches the ones whose deployed
+   * chain no longer matches it (CL-6687) — a rotated API key, a moved
+   * Ollama endpoint, a changed default. The host runs this the moment a
+   * provider credential is stored, so the fix an operator just applied
+   * in Settings reaches an already-open workbench without waiting for
+   * its next message. Best-effort per participant: one failed relaunch
+   * is logged and the pass moves on.
+   */
+  reconcileInferenceSources(
+    tenantId: string,
+  ): Promise<{ scanned: number; relaunched: number }>;
 };
 
 /**
@@ -342,7 +360,7 @@ export function createHubChatPlatform(
     );
     wakeLogger.info`relaunching ${binding.roomAddress}: run ${run.id} is terminal (${run.status}); minting fresh run ${newRunId}`;
 
-    await launchFoldedRun(foldedRunsDeps, {
+    const deployed = await launchFoldedRun(foldedRunsDeps, {
       tenantId: binding.tenantId,
       instanceId: newRunId,
       triggerAddress: newAddress,
@@ -356,7 +374,7 @@ export function createHubChatPlatform(
     // outlived a failed launch would leave the room addressing a run
     // `launchFoldedRun` had already rolled back, and the next message
     // would resolve nothing at all.
-    await repointBinding(deps.db, binding, newRunId);
+    await repointBinding(deps.db, binding, newRunId, deployed.sourcesDigest);
     lifecycle?.untrack(binding.liveAddress);
     lifecycle?.track(newAddress);
 
@@ -505,6 +523,60 @@ export function createHubChatPlatform(
   }
 
   /**
+   * How long one participant's inference chain is trusted after a
+   * check. Resolving the chain decrypts every candidate credential, and
+   * `reconcileDriftedRun` runs ahead of every send — a provider connect
+   * reaches live rooms through `reconcileInferenceSources` anyway, so
+   * the per-send check is the backstop and need not run on every
+   * message.
+   */
+  const SOURCES_CHECK_INTERVAL_MS = 30_000;
+  const sourcesCheckedAt = new Map<string, number>();
+
+  /**
+   * Whether the inference chain this run deployed with no longer
+   * matches what the tenant catalog resolves today (CL-6687). The
+   * deployed bytes carry the decrypted secret, so a rotated key is
+   * invisible to `foldedBody` comparison — only the chain's own digest
+   * can see it. A run whose digest was never recorded (a row from before
+   * the column existed) gets today's chain recorded as its baseline and
+   * is left alone this time; a chain that does not resolve at all today
+   * is equally left alone — its next wake fails loud on the same
+   * `InferenceResolutionError` either way, and relaunching it now would
+   * just fail sooner.
+   */
+  async function hasDriftedSources(binding: AgentBinding): Promise<boolean> {
+    const checkedAt = sourcesCheckedAt.get(binding.stableId);
+    const now = Date.now();
+    if (
+      checkedAt !== undefined &&
+      now - checkedAt < SOURCES_CHECK_INTERVAL_MS
+    ) {
+      return false;
+    }
+    const { fallbackModel } = await deployShapeFor(binding);
+    let resolved: Awaited<ReturnType<typeof resolveLaunchSources>>;
+    try {
+      resolved = await resolveLaunchSources(foldedRunsDeps, {
+        tenantId: binding.tenantId,
+        foldedBody: binding.foldedBody,
+        launchLabel: "the inference-source drift check",
+        ...(fallbackModel !== undefined ? { fallbackModel } : {}),
+      });
+    } catch (cause: unknown) {
+      if (cause instanceof InferenceResolutionError) return false;
+      throw cause;
+    }
+    sourcesCheckedAt.set(binding.stableId, now);
+    const digest = inferenceSourcesDigest(resolved);
+    if (binding.sourcesDigest === null) {
+      await recordSourcesDigest(deps.db, binding.stableId, digest);
+      return false;
+    }
+    return digest !== binding.sourcesDigest;
+  }
+
+  /**
    * Brings the run behind `address` back to routable — or, now, current
    * — whichever kind of "not serving what it should" it is in.
    * `address` may be either side of the mapping — the stable address
@@ -567,10 +639,15 @@ export function createHubChatPlatform(
       principalId: live.run.principalId,
       foldedBody: binding.foldedBody,
     };
-    await wakeFoldedRun(foldedRunsDeps, {
+    const deployed = await wakeFoldedRun(foldedRunsDeps, {
       ...wakeParams,
       ...(await deployShapeFor(binding)),
     });
+    await recordSourcesDigest(
+      deps.db,
+      binding.stableId,
+      deployed.sourcesDigest,
+    );
   }
 
   /**
@@ -602,13 +679,13 @@ export function createHubChatPlatform(
    * that never needed waking must not gain a new failure mode from a
    * check that used to never run for it.
    */
-  async function reconcileDriftedRun(address: string): Promise<void> {
+  async function reconcileDriftedRun(address: string): Promise<boolean> {
     const binding = await readBindingByAddress(deps.db, address);
-    if (binding === undefined) return;
+    if (binding === undefined) return false;
     const live = await resolveLiveAgent(deps.db, binding);
-    if (live === undefined || live.run.address === null) return;
-    if (await isBeyondWake(deps.db, live.run)) return;
-    if (!isRoutable(live.run.address)) return;
+    if (live === undefined || live.run.address === null) return false;
+    if (await isBeyondWake(deps.db, live.run)) return false;
+    if (!isRoutable(live.run.address)) return false;
     // Best-effort: a staleness check that cannot resolve the current
     // authored projection (e.g. `DefinitionProjectionMissingError` for
     // a pre-cutover definition with no frozen wire projection at all)
@@ -617,24 +694,58 @@ export function createHubChatPlatform(
     // "nothing to reconcile", the same posture `sweepTerminalRuns`
     // takes for a relaunch failure.
     let driftedFoldedBody: Awaited<ReturnType<typeof resolveDriftedFoldedBody>>;
+    let driftedSources: boolean;
     try {
       driftedFoldedBody = await resolveDriftedFoldedBody(
         binding.tenantId,
         live.run,
         binding.foldedBody,
       );
+      driftedSources = await hasDriftedSources(binding);
     } catch (cause: unknown) {
       wakeLogger.error`drift check for ${binding.roomAddress} (run ${live.run.id}) failed, leaving it as-is: ${
         cause instanceof Error ? cause.message : String(cause)
       }`;
-      return;
+      return false;
     }
-    if (driftedFoldedBody === undefined) return;
-    wakeLogger.info`relaunching ${binding.roomAddress}: run ${live.run.id} is routable but its deployed definition has drifted from the current authored projection; minting a fresh run`;
+    if (driftedFoldedBody === undefined && !driftedSources) return false;
+    const reason =
+      driftedFoldedBody !== undefined
+        ? "its deployed definition has drifted from the current authored projection"
+        : "its deployed inference chain no longer matches the tenant catalog";
+    wakeLogger.info`relaunching ${binding.roomAddress}: run ${live.run.id} is routable but ${reason}; minting a fresh run`;
+    sourcesCheckedAt.delete(binding.stableId);
     await relaunchTerminalRun({
-      binding: { ...binding, foldedBody: driftedFoldedBody },
+      binding: {
+        ...binding,
+        foldedBody: driftedFoldedBody ?? binding.foldedBody,
+      },
       run: live.run,
     });
+    return true;
+  }
+
+  const RECONCILE_SOURCES_LIMIT = 200;
+
+  async function reconcileInferenceSources(
+    tenantId: string,
+  ): Promise<{ scanned: number; relaunched: number }> {
+    const participants = await listLaunchesForTenant(
+      deps.db,
+      tenantId,
+      RECONCILE_SOURCES_LIMIT,
+    );
+    let relaunched = 0;
+    for (const { binding, run } of participants) {
+      try {
+        if (await reconcileDriftedRun(binding.roomAddress)) relaunched++;
+      } catch (cause: unknown) {
+        wakeLogger.error`inference-source reconcile for ${binding.roomAddress} (run ${run.id}) failed, leaving it as-is: ${
+          cause instanceof Error ? cause.message : String(cause)
+        }`;
+      }
+    }
+    return { scanned: participants.length, relaunched };
   }
 
   /**
@@ -1154,5 +1265,6 @@ export function createHubChatPlatform(
   return Object.assign(platform, {
     recordActivity: (address: string) => lifecycle?.recordActivity(address),
     sweepTerminalRuns,
+    reconcileInferenceSources,
   });
 }
