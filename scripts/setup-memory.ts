@@ -151,6 +151,42 @@ export function dotenvHasActiveKey(text: string, key: string): boolean {
   return new RegExp(`^${escaped}=`, "m").test(text);
 }
 
+/** Active `KEY=value` in dotenv text; blank and whitespace-only count as unset. */
+export function dotenvNonemptyValue(
+  text: string,
+  key: string,
+): string | undefined {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(`^${escaped}=(.*)$`, "m").exec(text);
+  if (match === null) return undefined;
+  const value = match[1];
+  if (value === undefined || value.trim() === "") return undefined;
+  return value;
+}
+
+/**
+ * Keys `setup:memory` may append for a local embed path. A non-empty
+ * `OLLAMA_BASE_URL` already is that path (including a tunneled origin);
+ * planting localhost `EMBED_BASE_URL` would win at mount and hide it.
+ */
+export function embedEnvKeysForDotenv(
+  existing: string,
+  keys: Record<string, string>,
+): Record<string, string> {
+  if (
+    dotenvNonemptyValue(existing, "OLLAMA_BASE_URL") === undefined ||
+    dotenvNonemptyValue(existing, "EMBED_BASE_URL") !== undefined
+  ) {
+    return keys;
+  }
+  const next: Record<string, string> = {};
+  for (const [key, value] of Object.entries(keys)) {
+    if (key === "EMBED_BASE_URL") continue;
+    next[key] = value;
+  }
+  return next;
+}
+
 export function applyEnvKeysToDotenvContents(
   existing: string,
   keys: Record<string, string>,
@@ -227,7 +263,7 @@ async function main(): Promise<void> {
       const current = readFileSync(envPath, "utf8");
       const { next, added } = applyEnvKeysToDotenvContents(
         current,
-        embedPlan.env,
+        embedEnvKeysForDotenv(current, embedPlan.env),
       );
       if (added.length > 0) {
         writeFileSync(envPath, next);

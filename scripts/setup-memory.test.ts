@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   applyEnvKeysToDotenvContents,
   dotenvHasActiveKey,
+  embedEnvKeysForDotenv,
   localDevMemoryEmbedEnv,
   planEmbedding,
   planRerank,
@@ -81,6 +82,42 @@ describe("localDevMemoryEmbedEnv", () => {
     expect(
       localDevMemoryEmbedEnv({}, { hasNativeOllama: false }),
     ).toBeUndefined();
+  });
+});
+
+describe("embedEnvKeysForDotenv", () => {
+  const localEmbed = {
+    EMBED_BASE_URL: "http://localhost:11434",
+    EMBED_MODEL: "nomic-embed-text",
+    EMBED_API_STYLE: "ollama",
+  };
+
+  test("omits localhost EMBED_BASE_URL when OLLAMA_BASE_URL is already set", () => {
+    const existing = "OLLAMA_BASE_URL=https://home-mac.example.ts.net\n";
+    const keys = embedEnvKeysForDotenv(existing, localEmbed);
+    expect(keys["EMBED_BASE_URL"]).toBeUndefined();
+    expect(keys["EMBED_MODEL"]).toBe("nomic-embed-text");
+    expect(keys["EMBED_API_STYLE"]).toBe("ollama");
+    const { next, added } = applyEnvKeysToDotenvContents(existing, keys);
+    expect(added).not.toContain("EMBED_BASE_URL");
+    expect(next).not.toContain("EMBED_BASE_URL=http://localhost:11434");
+    expect(next).toContain("OLLAMA_BASE_URL=https://home-mac.example.ts.net");
+  });
+
+  test("still plants localhost EMBED_BASE_URL when OLLAMA_BASE_URL is blank", () => {
+    const existing = "OLLAMA_BASE_URL=\n";
+    const keys = embedEnvKeysForDotenv(existing, localEmbed);
+    expect(keys["EMBED_BASE_URL"]).toBe("http://localhost:11434");
+  });
+
+  test("leaves keys unchanged when EMBED_BASE_URL is already set", () => {
+    const existing =
+      "OLLAMA_BASE_URL=https://home-mac.example.ts.net\nEMBED_BASE_URL=https://api.openai.com/v1\n";
+    expect(embedEnvKeysForDotenv(existing, localEmbed)).toEqual(localEmbed);
+  });
+
+  test("plants localhost EMBED_BASE_URL when OLLAMA_BASE_URL is absent", () => {
+    expect(embedEnvKeysForDotenv("", localEmbed)).toEqual(localEmbed);
   });
 });
 

@@ -2,7 +2,11 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { createInMemoryGrantStore } from "@intx/authz";
 
-import { mountMemory, resolveMemoryEmbed } from "./memory-mount";
+import {
+  applyResolvedEmbedToProcessEnv,
+  mountMemory,
+  resolveMemoryEmbed,
+} from "./memory-mount";
 
 const KEYS = [
   "DATABASE_URL",
@@ -79,6 +83,49 @@ describe("resolveMemoryEmbed", () => {
 
   test("treats a blank OLLAMA_BASE_URL as unset", () => {
     expect(resolveMemoryEmbed({ OLLAMA_BASE_URL: "" })).toBeUndefined();
+  });
+
+  test("blank EMBED_MODEL / EMBED_API_STYLE on OLLAMA path resolve to nomic-embed-text / ollama", () => {
+    expect(
+      resolveMemoryEmbed({
+        OLLAMA_BASE_URL: "http://localhost:11434",
+        EMBED_MODEL: "",
+        EMBED_API_STYLE: "  ",
+      }),
+    ).toEqual({
+      embedBaseUrl: "http://localhost:11434",
+      embedModel: "nomic-embed-text",
+      embedApiStyle: "ollama",
+      source: "OLLAMA_BASE_URL",
+    });
+  });
+});
+
+describe("applyResolvedEmbedToProcessEnv", () => {
+  test("plants OLLAMA defaults when EMBED_MODEL and EMBED_API_STYLE are blank", () => {
+    stashEnv();
+    process.env["OLLAMA_BASE_URL"] = "http://localhost:9";
+    process.env["EMBED_MODEL"] = "";
+    process.env["EMBED_API_STYLE"] = "  ";
+    const resolved = resolveMemoryEmbed(process.env);
+    expect(resolved).toBeDefined();
+    if (resolved === undefined) return;
+    applyResolvedEmbedToProcessEnv(resolved);
+    expect(process.env["EMBED_BASE_URL"]).toBe("http://localhost:9");
+    expect(process.env["EMBED_MODEL"]).toBe("nomic-embed-text");
+    expect(process.env["EMBED_API_STYLE"]).toBe("ollama");
+  });
+
+  test("does not overwrite a non-blank EMBED_MODEL", () => {
+    stashEnv();
+    process.env["OLLAMA_BASE_URL"] = "http://localhost:9";
+    process.env["EMBED_MODEL"] = "custom-embed";
+    const resolved = resolveMemoryEmbed(process.env);
+    expect(resolved).toBeDefined();
+    if (resolved === undefined) return;
+    applyResolvedEmbedToProcessEnv(resolved);
+    expect(process.env["EMBED_MODEL"]).toBe("custom-embed");
+    expect(process.env["EMBED_API_STYLE"]).toBe("ollama");
   });
 });
 

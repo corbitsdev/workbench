@@ -149,14 +149,22 @@ export function resolveMemoryEmbed(
   };
 }
 
-function applyResolvedEmbedToProcessEnv(resolved: ResolvedMemoryEmbed): void {
+export function applyResolvedEmbedToProcessEnv(
+  resolved: ResolvedMemoryEmbed,
+): void {
   if (process.env["EMBED_BASE_URL"] === undefined) {
     process.env["EMBED_BASE_URL"] = resolved.embedBaseUrl;
   }
-  if (process.env["EMBED_MODEL"] === undefined && resolved.embedModel !== "") {
+  // Blank `EMBED_MODEL=` / `EMBED_API_STYLE=` is unset — same as a missing
+  // key — so OLLAMA defaults actually land instead of being skipped as
+  // "already configured".
+  if (
+    nonemptyEnv(process.env, "EMBED_MODEL") === undefined &&
+    resolved.embedModel !== ""
+  ) {
     process.env["EMBED_MODEL"] = resolved.embedModel;
   }
-  if (process.env["EMBED_API_STYLE"] === undefined) {
+  if (nonemptyEnv(process.env, "EMBED_API_STYLE") === undefined) {
     process.env["EMBED_API_STYLE"] = resolved.embedApiStyle;
   }
 }
