@@ -19,7 +19,8 @@ install is tracked separately and is not part of this path.
 
 ## Quickstart
 
-Requires [Bun](https://bun.sh) >= 1.2.
+Requires [Bun](https://bun.sh) >= 1.2. The exact version CI and this repo
+develop against is pinned in [`.bun-version`](.bun-version).
 
 ```sh
 bun install
