@@ -8,12 +8,23 @@
 // native role-assignment routes, the last owner can't be demoted, and a
 // pending invite can be cancelled.
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import { PeopleSection } from "../src/people-section";
+const reportErrorCalls: {
+  error: unknown;
+  context: Record<string, unknown>;
+}[] = [];
+mock.module("@corbits/error-sink", () => ({
+  reportError: (error: unknown, context: Record<string, unknown>) => {
+    reportErrorCalls.push({ error, context });
+    return "ref_test";
+  },
+}));
+
+const { PeopleSection } = await import("../src/people-section");
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
@@ -409,6 +420,51 @@ describe("PeopleSection", () => {
             c.url ===
               "/api/tenants/tnt_1/access-policy/pending-invites/pinv_1" &&
             c.init?.method === "DELETE",
+        ),
+      ).toBe(true);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("a failing suspend reports the error with its operation and tenant", async () => {
+    const calls: FetchCall[] = [];
+    reportErrorCalls.length = 0;
+    mockFetch(
+      {
+        "/api/tenants/tnt_1/principals": {
+          data: [humanPrincipal()],
+          nextCursor: null,
+        },
+        "/api/tenants/tnt_1/roles": rolesPage,
+        "/api/tenants/tnt_1/access-policy/pending-invites": noInvites,
+        "PATCH /api/tenants/tnt_1/principals/prn_human_1": () =>
+          json(500, { error: "boom" }),
+      },
+      calls,
+    );
+
+    const { container, root } = mount();
+    try {
+      await settle();
+
+      const suspendButton = Array.from(
+        container.querySelectorAll("button"),
+      ).find((b) => b.textContent === "Suspend");
+      expect(suspendButton).toBeDefined();
+      act(() =>
+        suspendButton?.dispatchEvent(
+          new MouseEvent("click", { bubbles: true }),
+        ),
+      );
+      await settle();
+
+      expect(
+        reportErrorCalls.some(
+          (call) =>
+            call.context.operation === "settings.people.updateStatus" &&
+            call.context.tenantId === "tnt_1",
         ),
       ).toBe(true);
     } finally {
