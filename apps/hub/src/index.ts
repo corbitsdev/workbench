@@ -3456,14 +3456,17 @@ if (import.meta.main) {
   const log = getLogger(["hub"]);
   log.info`Hub serving on port ${port}`;
   const SHUTDOWN_DRAIN_MS = 10_000;
-  const shutdown = async () => {
-    await server.stop();
-    await shutdownHub({
-      drain: () => hub.close(),
+  // `server.stop()` waits for open connections and websockets by default,
+  // so it sits inside the same bound as the hub's own closes.
+  const shutdown = () =>
+    shutdownHub({
+      drain: async () => {
+        await server.stop();
+        await hub.close();
+      },
       timeoutMs: SHUTDOWN_DRAIN_MS,
       exit: (code) => process.exit(code),
     });
-  };
   process.on("SIGINT", () => void shutdown());
   process.on("SIGTERM", () => void shutdown());
 }
