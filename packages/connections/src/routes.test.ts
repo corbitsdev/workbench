@@ -972,6 +972,72 @@ describe("disconnectConnector", () => {
     expect(result.disconnected).toBe(false);
     expect(calls.some((call) => call.method === "DELETE")).toBe(false);
   });
+
+  test("a concurrent disconnect (catalog provider DELETE 404s because a first call already removed it) resolves instead of throwing", async () => {
+    const { api } = fakeDisconnectAPI(({ method, path }) => {
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      ) {
+        return page([catalogProviderRow("mprv_1", "anthropic")]);
+      }
+      if (
+        method === "DELETE" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers/mprv_1`
+      ) {
+        return { status: 404, data: { error: { code: "not_found" } } };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/providers?inherited=false`
+      ) {
+        return page([]);
+      }
+      return undefined;
+    });
+
+    const result = await disconnectConnector(
+      api,
+      [],
+      { tenantId: TENANT_ID, connectorId: "anthropic" },
+      () => {},
+    );
+
+    expect(result.disconnected).toBe(false);
+  });
+
+  test("a concurrent disconnect (provider DELETE 404s because a first call already removed it) resolves instead of throwing", async () => {
+    const { api } = fakeDisconnectAPI(({ method, path }) => {
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      ) {
+        return page([]);
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/providers?inherited=false`
+      ) {
+        return page([providerRow("prv_1", "anthropic")]);
+      }
+      if (
+        method === "DELETE" &&
+        path === `/api/tenants/${TENANT_ID}/providers/prv_1`
+      ) {
+        return { status: 404, data: { error: { code: "not_found" } } };
+      }
+      return undefined;
+    });
+
+    const result = await disconnectConnector(
+      api,
+      [],
+      { tenantId: TENANT_ID, connectorId: "anthropic" },
+      () => {},
+    );
+
+    expect(result.disconnected).toBe(false);
+  });
 });
 
 describe("DELETE /:connectorId/disconnect", () => {
