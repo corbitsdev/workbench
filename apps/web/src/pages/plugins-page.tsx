@@ -92,33 +92,53 @@ export function PluginsRoute({
     setConnectDeepLinkNotFound(false);
   }, []);
 
+  const [pluginsReloadKey, setPluginsReloadKey] = useState(0);
+  const [skillsReloadKey, setSkillsReloadKey] = useState(0);
+
   const reloadPlugins = useCallback(() => {
-    if (selectedTenantId === null) return;
-    listPluginsForTenant(selectedTenantId)
-      .then((plugins) => setPluginsState({ status: "ready", plugins }))
-      .catch((cause: unknown) =>
-        setPluginsState({ status: "error", message: messageOf(cause) }),
-      );
-  }, [selectedTenantId]);
+    setPluginsReloadKey((key) => key + 1);
+  }, []);
 
   const reloadSkills = useCallback(() => {
+    setSkillsReloadKey((key) => key + 1);
+  }, []);
+
+  // Guarded by `cancelled` (same pattern as settings-ui's `people-section`)
+  // so a tenant switch mid-flight can't have the previous tenant's late
+  // response overwrite the newly selected tenant's state.
+  useEffect(() => {
     if (selectedTenantId === null) return;
-    listSkills(selectedTenantId)
-      .then((skills) => setSkillsState({ status: "ready", skills }))
-      .catch((cause: unknown) =>
-        setSkillsState({ status: "error", message: messageOf(cause) }),
-      );
-  }, [selectedTenantId]);
-
-  useEffect(() => {
+    let cancelled = false;
     setPluginsState({ status: "loading" });
-    reloadPlugins();
-  }, [reloadPlugins]);
+    listPluginsForTenant(selectedTenantId)
+      .then((plugins) => {
+        if (!cancelled) setPluginsState({ status: "ready", plugins });
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled)
+          setPluginsState({ status: "error", message: messageOf(cause) });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTenantId, pluginsReloadKey]);
 
   useEffect(() => {
+    if (selectedTenantId === null) return;
+    let cancelled = false;
     setSkillsState({ status: "loading" });
-    reloadSkills();
-  }, [reloadSkills]);
+    listSkills(selectedTenantId)
+      .then((skills) => {
+        if (!cancelled) setSkillsState({ status: "ready", skills });
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled)
+          setSkillsState({ status: "error", message: messageOf(cause) });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTenantId, skillsReloadKey]);
 
   // The shell banner's "Fix it" deep link (CL-6092): once the gallery has
   // loaded, pick up any pending provider id and open its connect panel —
