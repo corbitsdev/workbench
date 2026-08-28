@@ -3,10 +3,11 @@
 // off a workflow run. This is THE trust boundary — no session cookie,
 // no tenant membership, nothing about the caller is trusted except
 // what the HMAC signature over the raw body proves. Every failure
-// mode here is loud and specific in the log, but deliberately generic
-// (`invalid signature`, `not found`) in the HTTP response, so a probe
-// against a wrong triggerId cannot distinguish "no such trigger" from
-// "wrong secret" from an unlisted host.
+// mode here is loud and specific in the log, but every one of unknown
+// trigger, disabled trigger, and bad/missing signature returns the
+// SAME generic 401 `unauthorized` response, so a probe against a
+// wrong triggerId cannot distinguish "no such trigger" from "disabled"
+// from "wrong secret".
 import { Hono } from "hono";
 import type { Env } from "hono";
 import { getLogger } from "@intx/log";
@@ -21,6 +22,9 @@ const log = getLogger(["webhook-triggers", "ingress"]);
 const ErrorEnvelope = (code: string, message: string) => ({
   error: { code, message },
 });
+
+const unauthorizedResponse = () =>
+  ErrorEnvelope("unauthorized", "invalid or missing signature");
 
 export type CreateWebhookIngressRoutesDeps = {
   store: WebhookTriggerStore;
@@ -56,14 +60,14 @@ export function createWebhookIngressRoutes(
       log.info("Webhook delivery for unknown trigger {triggerId}", {
         triggerId,
       });
-      return c.json(ErrorEnvelope("not_found", "trigger not found"), 404);
+      return c.json(unauthorizedResponse(), 401);
     }
 
     if (!trigger.enabled) {
       log.info("Webhook delivery for disabled trigger {triggerId}", {
         triggerId,
       });
-      return c.json(ErrorEnvelope("forbidden", "trigger is disabled"), 403);
+      return c.json(unauthorizedResponse(), 401);
     }
 
     const rawBody = await c.req.text();
@@ -75,10 +79,7 @@ export function createWebhookIngressRoutes(
           triggerId,
         },
       );
-      return c.json(
-        ErrorEnvelope("unauthorized", "invalid or missing signature"),
-        401,
-      );
+      return c.json(unauthorizedResponse(), 401);
     }
 
     let payload: unknown;
