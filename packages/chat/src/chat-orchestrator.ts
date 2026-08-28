@@ -313,11 +313,9 @@ function flattenReplyText(parts: readonly Part[]): string {
 
 /**
  * Resolves an agent address on the event stream to every chat workbench it is
- * a member of, per the durable `workbench_settings` store. Shared by every
- * poster below rather than assuming "exactly one workbench": an agent is
- * invited to exactly one workbench today by construction, but this resolves
- * defensively so a store that ever showed more than one still gets every
- * member workbench, not a guess at "the" one.
+ * a member of, per the durable `workbench_settings` store. An agent can be
+ * invited to more than one workbench; callers that post a turn's reply must
+ * still pick the originating room rather than spraying every membership.
  */
 async function resolveMemberWorkbenches(
   deps: ChatOrchestratorDeps,
@@ -461,7 +459,23 @@ async function postReply(
   const resolved = await resolveMemberWorkbenches(deps, agentAddress);
   if (resolved === undefined) return;
 
+  const originating: string[] = [];
   for (const workbenchId of resolved.workbenchIds) {
+    const turn = await deps.agentTurns?.findRunningTurn({
+      tenantId: resolved.tenantId,
+      workbenchId,
+      agentAddress: resolved.roomAddress,
+    });
+    if (turn !== undefined) originating.push(workbenchId);
+  }
+  const targetIds =
+    originating.length > 0
+      ? originating
+      : resolved.workbenchIds.length === 1
+        ? resolved.workbenchIds
+        : [];
+
+  for (const workbenchId of targetIds) {
     const turn = await deps.agentTurns?.findRunningTurn({
       tenantId: resolved.tenantId,
       workbenchId,

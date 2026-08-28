@@ -274,6 +274,52 @@ describe("createChatOrchestrator", () => {
     orchestrator.dispose();
   });
 
+  test("a reply for room B does not land in room A when the same agent is in both", async () => {
+    const room = fakeRoom();
+    const agentTurns = createInMemoryAgentTurnStore();
+    await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_room_b",
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      requestMessageIds: ["msg_b"],
+    });
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+      store: {
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_room_a", ["ins_echo1@ten1.workbench.test"]),
+          workbenchRow("ins_room_b", ["ins_echo1@ten1.workbench.test"]),
+        ],
+      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
+      events,
+      agentTurns,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    events.emit("agent.event", {
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      sessionId: "ses_1",
+      event: { type: "connector.reply", data: { content: "reply for room B" } },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(room.posted.map((message) => message.workbenchId)).toEqual([
+      "ins_room_b",
+    ]);
+    expect(room.posted[0]).toMatchObject({
+      workbenchId: "ins_room_b",
+      parts: [{ kind: "text", text: "reply for room B" }],
+    });
+
+    orchestrator.dispose();
+  });
+
   // CL-6378: a turn's `inference.done` events already split the model's
   // output into prose and tool calls (see `event-collector.ts`'s
   // `handleInferenceDone`), and `tool.done` resolves each call's
@@ -561,41 +607,6 @@ describe("createChatOrchestrator", () => {
       workbenchId: "ins_workbench1",
       threadId: "thr_1",
     });
-
-    orchestrator.dispose();
-  });
-
-  test("posts into every workbench when the store shows the address in more than one", async () => {
-    const room = fakeRoom();
-    const events = createSidecarEmitter();
-    const orchestrator = createChatOrchestrator({
-      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
-      store: {
-        listWorkbenchSettings: async () => [
-          workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
-          workbenchRow("ins_workbench2", ["ins_echo1@ten1.workbench.test"]),
-        ],
-      },
-      roomMessages: room.roomMessages,
-      publish: room.publish,
-      platform: fakeMail().platform,
-      events,
-      claims: fakeClaims(),
-      approvals: { findByCorrelationId: async () => null },
-    });
-
-    events.emit("agent.event", {
-      agentAddress: "ins_echo1@ten1.workbench.test",
-      sessionId: "ses_1",
-      event: { type: "connector.reply", data: { content: "hi" } },
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(room.posted.map((message) => message.workbenchId).sort()).toEqual([
-      "ins_workbench1",
-      "ins_workbench2",
-    ]);
 
     orchestrator.dispose();
   });

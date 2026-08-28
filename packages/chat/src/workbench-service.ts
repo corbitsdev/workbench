@@ -1139,9 +1139,9 @@ async function routeToRecipients(
     if (target !== undefined) recipientSet.add(target);
   }
   // No mention and no agent reply target: the default-routing case,
-  // where the host receives every such message unconditionally — the
-  // same standing relationship a chat's one agent has always had, so
-  // it needs no re-situating context either.
+  // where the host receives every such message unconditionally. Assemble
+  // this-room turn context the same way mention fan-out does, so a host
+  // shared across rooms is not asked with another room's rows.
   const isDefaultRouting = recipientSet.size === 0;
   if (isDefaultRouting) {
     const host = participants.find((participant) =>
@@ -1171,7 +1171,7 @@ async function routeToRecipients(
   );
 
   const contextText =
-    !isDefaultRouting && recipients.length > 0
+    recipients.length > 0
       ? await assembleTurnContext({
           roomMessages: deps.roomMessages,
           tenantId: input.tenantId,
