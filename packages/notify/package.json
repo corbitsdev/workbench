@@ -17,7 +17,7 @@
   "dependencies": {
     "@intx/authz": "0.3.0",
     "@intx/hub-common": "0.3.0",
-    "@intx/types": "0.3.0",
+    "@intx/types": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "postgres": "catalog:"

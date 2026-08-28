@@ -15,7 +15,7 @@
   "dependencies": {
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
-    "@intx/types": "0.3.0",
+    "@intx/types": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "hono": "^4.11.9"

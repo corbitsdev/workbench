@@ -20,7 +20,7 @@
     "@intx/hub-api": "workspace:*",
     "@intx/hub-common": "0.3.0",
     "@intx/log": "0.3.0",
-    "@intx/types": "0.3.0",
+    "@intx/types": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "hono": "^4.11.9",
