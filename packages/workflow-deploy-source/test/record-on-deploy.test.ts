@@ -2,14 +2,22 @@
 // successful deploy, forwards the underlying result untouched, and never
 // lets a recording failure fail the deploy call itself -- no DB, no
 // SessionService, both are hand-rolled minimal doubles.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import type {
   AdoptingWorkflowDeployer,
   DeployWorkflowDefinitionResult,
   SessionService,
 } from "@intx/hub-sessions";
 
-import { withDeploySourceRecording } from "../src/record-on-deploy";
+let reportErrorCalls: unknown[] = [];
+mock.module("@corbits/error-sink", () => ({
+  reportError: (...args: unknown[]) => {
+    reportErrorCalls.push(args);
+    return "ref_test";
+  },
+}));
+
+const { withDeploySourceRecording } = await import("../src/record-on-deploy");
 import type {
   WorkflowDeploySourceRecord,
   WorkflowDeploySourceStore,
@@ -117,6 +125,44 @@ describe("withDeploySourceRecording", () => {
 
     const result = await wrapped.deployWorkflowFromSource(baseParams);
     expect(result.anchorRunId).toBe("run_1");
+  });
+
+  test("a recording failure is reported with the run's context", async () => {
+    reportErrorCalls = [];
+    const recordError = new Error("db unreachable");
+    const failingStore: WorkflowDeploySourceStore = {
+      record: async () => {
+        throw recordError;
+      },
+      get: async () => null,
+    };
+    const wrapped = withDeploySourceRecording(fakeDeployer(), failingStore);
+
+    await wrapped.deployWorkflowFromSource(baseParams);
+
+    expect(reportErrorCalls).toHaveLength(1);
+    const [cause, context] = reportErrorCalls[0] as [
+      unknown,
+      {
+        operation: string;
+        tenantId: string;
+        extra: Record<string, unknown>;
+      },
+    ];
+    expect(cause).toBe(recordError);
+    expect(context.operation).toBe("workflowDeploySource.record");
+    expect(context.tenantId).toBe("tenant_1");
+    expect(context.extra).toEqual({ anchorRunId: "run_1" });
+  });
+
+  test("does not report anything when recording succeeds", async () => {
+    reportErrorCalls = [];
+    const store = recordingStore();
+    const wrapped = withDeploySourceRecording(fakeDeployer(), store);
+
+    await wrapped.deployWorkflowFromSource(baseParams);
+
+    expect(reportErrorCalls).toHaveLength(0);
   });
 
   test("other SessionService methods pass through unwrapped", async () => {
