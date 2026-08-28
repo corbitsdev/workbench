@@ -228,6 +228,7 @@ export {
   DEFAULT_TURN_DISPATCH_TIMEOUT_MS,
   turnDispatchTimeoutMessage,
   DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS,
+  DEFAULT_TURN_CLAIM_TTL_MS,
   waitUntilFreeTimeoutMessage,
   launchAndJoinAgent,
   postCannedGreeting,

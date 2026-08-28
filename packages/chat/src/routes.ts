@@ -146,7 +146,14 @@ export type CreateChatRoutesDeps = {
    * schedulable workflows masquerade as chat partners.
    */
   isInvitableDefinition: (definition: InvitableDefinitionRecord) => boolean;
-  /** Per-turn timeout, the default write-claim TTL. */
+  /**
+   * The default turn-claim TTL — see
+   * `./workbench-service.ts`'s `DEFAULT_TURN_CLAIM_TTL_MS` for the
+   * production default and the arithmetic it has to clear
+   * (`waitUntilFreeTimeoutMs` + `turnDispatchTimeoutMs`, with margin)
+   * to stay an unreachable backstop rather than a bound that fires on
+   * a still-legitimate dispatch.
+   */
   turnTimeoutMs: number;
   /**
    * CL-6644's turn-level deadline: see `SendWorkbenchMessageDeps`'s field

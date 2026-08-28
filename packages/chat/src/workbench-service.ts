@@ -931,15 +931,35 @@ export type SendWorkbenchMessageDeps = {
 export const DEFAULT_TURN_DISPATCH_TIMEOUT_MS = 120_000;
 
 /**
- * CL-7129's default bound on `agentTurns.waitUntilFree`: generous enough
- * to cover a genuinely slow prior turn, while leaving enough of
- * `CHAT_TURN_TIMEOUT_MS` (the turn-claim TTL) headroom after it for
- * `DEFAULT_TURN_DISPATCH_TIMEOUT_MS`'s own budget to still run inside
- * the claim's lifetime — the pairing that stops a claim wedging behind
- * a wait that never bounded before.
+ * CL-7129's default bound on `agentTurns.waitUntilFree`: must cover the
+ * longest a legitimate prior turn is allowed to run —
+ * `CHAT_TURN_TIMEOUT_MS`, the same bound the section body's own
+ * per-occurrence timeout enforces — plus a grace margin. A message
+ * queued behind a prior turn that is merely slow, not hung, has to be
+ * delivered once that turn frees up rather than time out here and land
+ * as an undelivered notice (CL-6670's exact case; a bound narrower than
+ * `CHAT_TURN_TIMEOUT_MS` reintroduces the bug CL-6670 fixed for any
+ * prior turn that runs past it).
  */
-export const DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS =
-  CHAT_TURN_TIMEOUT_MS - DEFAULT_TURN_DISPATCH_TIMEOUT_MS - 30_000;
+export const DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS = CHAT_TURN_TIMEOUT_MS + 30_000;
+
+/**
+ * CL-7129's default turn-claim TTL: the backstop for a workbench whose
+ * dispatch loop crashed or hung without ever calling `release` (see
+ * `./turn-claims.ts`'s `createInMemoryTurnClaimStore`). A well-behaved
+ * dispatch runs `DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS`'s wait and
+ * `DEFAULT_TURN_DISPATCH_TIMEOUT_MS`'s dispatch call back-to-back
+ * inside one claim's lifetime, so the TTL has to clear the sum of both
+ * with margin to spare — otherwise the TTL fires on a claim a legitimate
+ * dispatch is still using, letting a second `run()` win it and drain
+ * the same workbench's queue concurrently (the CL-7129 bug this whole
+ * store change exists to close). Kept strictly greater by a 30s margin
+ * so it is unreachable in any well-behaved case.
+ */
+export const DEFAULT_TURN_CLAIM_TTL_MS =
+  DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS +
+  DEFAULT_TURN_DISPATCH_TIMEOUT_MS +
+  30_000;
 
 /** `waitUntilFree`'s own timeout message: names the agent address the
  * wait was blocked on and the budget it exceeded. */

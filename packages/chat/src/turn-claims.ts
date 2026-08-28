@@ -60,12 +60,18 @@ export type TurnClaimStore = {
 };
 
 /**
- * How long one agent turn may run before the room stops waiting on it.
- * One number, two enforcement points that must never drift: the section
- * body's own per-occurrence `timeout` (CL-6329, pinned into a room
- * agent's deployed definition by `./platform-adapter.ts`) and the claim
- * TTL that stops a workbench wedging behind a dispatch that never
- * settles.
+ * How long one agent turn may run before the room stops waiting on it —
+ * the section body's own per-occurrence `timeout` (CL-6329, pinned into
+ * a room agent's deployed definition by `./platform-adapter.ts`).
+ *
+ * CL-7129: this is also the floor `./workbench-service.ts`'s
+ * `DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS` is built from — that wait has to
+ * tolerate a prior turn legitimately running the full length this
+ * constant allows. The claim TTL is no longer this same number (it
+ * used to be); it now has to be strictly longer than that wait bound
+ * plus the dispatch deadline, so see
+ * `./workbench-service.ts`'s `DEFAULT_TURN_CLAIM_TTL_MS` for the actual
+ * TTL callers should use.
  */
 export const CHAT_TURN_TIMEOUT_MS = 5 * 60 * 1000;
 
