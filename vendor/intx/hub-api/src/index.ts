@@ -15,12 +15,6 @@ export {
   type RequireGrant,
 } from "./middleware/grant";
 export {
-  createWorkflowRunDeployAuth,
-  type CreateWorkflowRunDeployAuthDeps,
-  type WorkflowRunAuthenticator,
-  type WorkflowRunDeployScope,
-} from "./middleware/workflow-run-deploy-auth";
-export {
   createResolveTenant,
   requireAuth,
   type CreateResolveTenantDeps,
@@ -32,18 +26,25 @@ export {
   resolveWorkflowPrincipalLabels,
 } from "./routes/workflow-principal-name";
 export {
-  resolveApproval,
-  type CreateApprovalRoutesDeps,
-  type ReadRunLifecycles,
-  type ResolveApprovalArgs,
-  type ResolveApprovalResult,
-} from "./routes/approvals";
-export { readDurableWorkflowRunLifecycles } from "./workflow-run-lifecycle";
-export {
   createMailTriggeredRunGrantsMaterializer,
+  setRunToolGrantEffect,
   type MailTriggeredRunGrantsDeps,
 } from "./run-grant-materialization";
 export {
   resolveDefinitionSources,
   type DefinitionSourceResolution,
 } from "./run-source-resolution";
+export {
+  resolveApproval,
+  type ResolveApprovalRequest,
+  type ResolveApprovalOutcome,
+  type CreateApprovalRoutesDeps,
+  type ReadRunLifecycles,
+} from "./routes/approvals";
+export { readDurableWorkflowRunLifecycles } from "./workflow-run-lifecycle";
+export {
+  createWorkflowRunDeployAuth,
+  type CreateWorkflowRunDeployAuthDeps,
+  type WorkflowRunAuthenticator,
+  type WorkflowRunDeployScope,
+} from "./middleware/workflow-run-deploy-auth";
