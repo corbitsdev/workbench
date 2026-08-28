@@ -128,4 +128,35 @@ describeIfDb("createDrizzleChatStore: putReadState monotonicity", () => {
       await sql.end();
     }
   });
+
+  test("a same-millisecond forward move to a different message still lands", async () => {
+    const sql = postgres(scratchUrl, { max: 5, onnotice: () => undefined });
+    try {
+      const store = createDrizzleChatStore(drizzle(sql));
+      const sameCreatedAt = new Date("2026-01-04T00:00:00.001Z");
+
+      await store.putReadState({
+        tenantId: TENANT,
+        workbenchId: WORKBENCH,
+        principalId: "prn_carol",
+        lastSeenCreatedAt: sameCreatedAt,
+        lastSeenId: "mail_4",
+      });
+
+      const result = await store.putReadState({
+        tenantId: TENANT,
+        workbenchId: WORKBENCH,
+        principalId: "prn_carol",
+        lastSeenCreatedAt: sameCreatedAt,
+        lastSeenId: "mail_5",
+      });
+
+      expect(result.lastSeenId).toBe("mail_5");
+
+      const stored = await store.getReadState(TENANT, WORKBENCH, "prn_carol");
+      expect(stored?.lastSeenId).toBe("mail_5");
+    } finally {
+      await sql.end();
+    }
+  });
 });

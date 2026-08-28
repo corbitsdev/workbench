@@ -149,3 +149,28 @@ test("putReadState never moves the cursor backward when a stale write lands afte
   const alice = await store.getReadState("tnt_1", "chn_1", "prn_alice");
   expect(alice?.lastSeenId).toBe("mail_2");
 });
+
+test("putReadState still lands a same-millisecond forward move to a different message", async () => {
+  const store = createInMemoryChatStore();
+  const sameCreatedAt = new Date("2026-01-02T00:00:00.001Z");
+  await store.putReadState({
+    tenantId: "tnt_1",
+    workbenchId: "chn_1",
+    principalId: "prn_alice",
+    lastSeenCreatedAt: sameCreatedAt,
+    lastSeenId: "mail_2",
+  });
+
+  const result = await store.putReadState({
+    tenantId: "tnt_1",
+    workbenchId: "chn_1",
+    principalId: "prn_alice",
+    lastSeenCreatedAt: sameCreatedAt,
+    lastSeenId: "mail_3",
+  });
+
+  expect(result.lastSeenId).toBe("mail_3");
+
+  const alice = await store.getReadState("tnt_1", "chn_1", "prn_alice");
+  expect(alice?.lastSeenId).toBe("mail_3");
+});
