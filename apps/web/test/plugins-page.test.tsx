@@ -551,4 +551,113 @@ describe("PluginsRoute", () => {
     expect(container.textContent).toContain("beta-only");
     expect(container.textContent).not.toContain("alpha-only");
   });
+
+  // CL-7138: cancellation must not turn every imperative reload (a
+  // connect/disconnect panel's `onChanged`, the error screen's Retry) into
+  // a full teardown to the loading skeleton — only a genuine tenant change
+  // should do that. This drives the real disconnect flow end to end.
+  test("disconnecting a plugin reloads without tearing the gallery down to the loading skeleton", async () => {
+    let deferCredentialResolves = false;
+    const deferredResolvers: (() => void)[] = [];
+    const githubCredential = {
+      id: "cred_1",
+      tenantId: "tnt_1",
+      providerId: "prov_1",
+      principalId: null,
+      oauthClientId: null,
+      name: "GitHub",
+      type: "api_key",
+      description: null,
+      scopes: [],
+      expiresAt: null,
+      status: "active",
+      metadata: {},
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const path = typeof input === "string" ? input : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (method === "DELETE" && path.includes("/credentials/cred_1"))
+        return Promise.resolve(new Response(null, { status: 204 }));
+      if (path.includes("/api/me/principals"))
+        return Promise.resolve(json(membership));
+      if (path.includes("/api/workbench-tenancies/kinds"))
+        return Promise.resolve(json({ workbenchTenantIds: [] }));
+      if (path.includes("/credentials/resolve/GitHub")) {
+        if (deferCredentialResolves) {
+          return new Promise<Response>((resolve) => {
+            deferredResolvers.push(() => resolve(json(null, 404)));
+          });
+        }
+        return Promise.resolve(json(githubCredential));
+      }
+      if (path.includes("/connections/provider-health"))
+        return Promise.resolve(
+          json({ providers: {}, connectedProviderCount: 1 }),
+        );
+      if (path.includes("/credentials/resolve/"))
+        return Promise.resolve(json(null, 404));
+      if (path.includes("/api/tenants/tnt_1/skills"))
+        return Promise.resolve(json({ skills: [] }));
+      return Promise.resolve(json({ data: [], nextCursor: null }));
+    }) as typeof fetch;
+
+    const el = await mount();
+    expect(el.textContent).toContain("Connected here");
+
+    const manageButton = el.querySelector<HTMLButtonElement>(
+      'button[aria-label="Manage GitHub"]',
+    );
+    await act(async () => {
+      manageButton?.click();
+    });
+    for (let i = 0; i < 5; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    const disconnectButton = () =>
+      [...document.body.querySelectorAll("button")].find(
+        (button) => button.textContent?.includes("Disconnect") === true,
+      );
+    expect(disconnectButton()).not.toBeUndefined();
+
+    // From here on, the reload the disconnect triggers must not resolve
+    // until we say so — gives us a window to inspect the mid-reload DOM.
+    deferCredentialResolves = true;
+
+    // First click arms the confirm button, second click fires the delete.
+    await act(async () => {
+      disconnectButton()?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    await act(async () => {
+      disconnectButton()?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    for (let i = 0; i < 5; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    // The delete resolved and `onChanged` fired `reloadPlugins`; its fetch
+    // is now the deferred one above, still pending.
+    expect(el.textContent).not.toContain("Loading plugins…");
+    expect(el.textContent).toContain("GitHub");
+
+    deferredResolvers.forEach((resolve) => resolve());
+    for (let i = 0; i < 10; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    expect(el.textContent).not.toContain("Connected here");
+  });
 });
