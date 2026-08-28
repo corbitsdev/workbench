@@ -97,6 +97,15 @@ export type ConnectGithubRoutesDeps = {
     codeReviewDefinitionId: string,
     repo: GitHubRepoSummary,
   ): Promise<{ readonly id: string }>;
+  /** True once this repo already has a live webhook trigger for the
+   * resolved code-review definition — see
+   * `./connect-github-setup.ts`'s `ConnectGithubSetupPorts.hasWebhookTrigger`
+   * for why this makes a retry after a mid-loop failure safe. */
+  hasWebhookTrigger(
+    tenantId: string,
+    codeReviewDefinitionId: string,
+    repo: GitHubRepoSummary,
+  ): Promise<boolean>;
   /** The room's current `template/*` settings — read before every
    * `start-reviewing` write so the state read and the persisted patch
    * never race a stale pending-connections list. */
@@ -280,6 +289,8 @@ export function createConnectGithubRoutes(
               codeReviewDefinitionId,
               repo,
             ),
+          hasWebhookTrigger: (repo) =>
+            deps.hasWebhookTrigger(tenant.id, codeReviewDefinitionId, repo),
           persistSelectedRepos: async (repoIds) => {
             const settings = await deps.getTemplateSettings(
               tenant.id,

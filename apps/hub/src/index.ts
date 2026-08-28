@@ -2215,6 +2215,15 @@ export async function createHub(config: HubConfig) {
         });
         return { id: row.id };
       },
+      hasWebhookTrigger: async (tenantId, codeReviewDefinitionId, repo) => {
+        const triggers = await webhookTriggerStore.list(tenantId);
+        const triggerName = `${repo.name} pull-request-opened`;
+        return triggers.some(
+          (trigger) =>
+            trigger.workflowDefinitionId === codeReviewDefinitionId &&
+            trigger.name === triggerName,
+        );
+      },
       getTemplateSettings: async (tenantId, workbenchId) => {
         const row = await chatStore.getWorkbenchSettings(tenantId, workbenchId);
         const settings = row?.settings ?? {};

@@ -27,6 +27,15 @@ export interface ConnectGithubSetupPorts {
     repo: GitHubRepoSummary,
   ): Promise<{ readonly id: string }>;
   /**
+   * True once this repo already has a live webhook trigger — checked
+   * before minting anything for it, so a retry after a mid-loop failure
+   * (a repo 1..N-1 already set up, N onward not) never mints a second
+   * grant or trigger for the repos a prior attempt already finished. A
+   * host binds this to a read against `@corbits/webhook-triggers`'
+   * `WebhookTriggerStore.list`.
+   */
+  hasWebhookTrigger(repo: GitHubRepoSummary): Promise<boolean>;
+  /**
    * Records which repos this room is reviewing — the `template/*`
    * settings namespace's `selectedRepos` key (`./settings.ts`'s
    * `templateReposSettingsPatch`). A host binds this to the room's
@@ -42,11 +51,15 @@ export interface StartReviewingReposResult {
 }
 
 /**
- * Mints one grant and one webhook trigger per selected repo, then
- * records the selection. `repoIds` must all resolve against `repos` —
- * a caller passing an id `repos` doesn't carry is a bug in how the
- * connect card's own selection state was built, not something to
- * silently drop.
+ * Mints one grant and one webhook trigger per selected repo that doesn't
+ * already have one, then records the selection. `repoIds` must all
+ * resolve against `repos` — a caller passing an id `repos` doesn't carry
+ * is a bug in how the connect card's own selection state was built, not
+ * something to silently drop.
+ *
+ * Idempotent by construction: a repo `ports.hasWebhookTrigger` already
+ * reports true for is skipped entirely, so retrying after a mid-loop
+ * failure only mints for the repos the failed attempt never reached.
  */
 export async function startReviewingRepos(
   repoIds: readonly string[],
@@ -66,6 +79,9 @@ export async function startReviewingRepos(
 
   const createdTriggerIds: string[] = [];
   for (const repo of selected) {
+    if (await ports.hasWebhookTrigger(repo)) {
+      continue;
+    }
     await ports.mintRepoGrant(repo);
     const trigger = await ports.createWebhookTrigger(repo);
     createdTriggerIds.push(trigger.id);
