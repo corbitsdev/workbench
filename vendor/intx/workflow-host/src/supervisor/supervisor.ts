@@ -55,7 +55,7 @@ import {
   enqueueInbox as defaultEnqueueInbox,
   dequeueToProcessing as defaultDequeueToProcessing,
   markConsumed as defaultMarkConsumed,
-  readOwnedMessageIds,
+  scanRunsForBoot,
   readWorkflowRunLifecycle,
   replayProcessingToInbox as defaultReplayProcessingToInbox,
   StaleInboxEnqueueError,
@@ -1973,11 +1973,11 @@ export function createWorkflowSupervisor(
       // first `dequeueToProcessing` so a fresh inbound mail that lands
       // during the replay window cannot ship ahead of the orphan once
       // the replay completes.
-      const replayDone = readOwnedMessageIds(
+      const replayDone = scanRunsForBoot(
         bindings.repoStore,
         bindings.workflowRunRepoId,
       )
-        .then((ownedMessageIds) =>
+        .then(({ ownedMessageIds }) =>
           inboxPrimitives.replayProcessingToInbox(
             bindings.repoStore,
             inboxWritePrincipal,

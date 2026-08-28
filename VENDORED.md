@@ -28,7 +28,7 @@ never a convenience.
 | `vendor/intx/agent`           | `@intx/agent` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | [faremeter/interchange](https://github.com/faremeter/interchange) @ `a8bc06ae` (origin/main, 2026-08-27) | npm 0.3.0 predates the operator-configurable doom-loop threshold (`afd0c82b`, `c421c092`) the re-vendored `workflow-host` configures; no local delta; retired by the next `@intx/agent` publish                                                                                                                                                                                                                                                                                         | sawyer | 2026-10-26 | `check:killdates` |
 | `vendor/intx/db`              | `@intx/db` source (`src/`, `migrations/`, drizzle config, manifest, tsconfigs)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | [faremeter/interchange](https://github.com/faremeter/interchange) @ `a8bc06ae` (origin/main, 2026-08-27) | npm 0.3.0 covers the base package but not the `wire_projection` column/loader delta (CL-6324) or the `workflow_definition.origin` column separating a definition from the per-run record of one folded run's deploy (CL-6452), shipped as migrations `0086`/`0087` behind upstream's `0085_add_approval_run_idx`, plus `0088` rewriting the retired `onBodyFailure: "continue"` literal to upstream's `"tolerate"` in stored wire projections; retired when upstream absorbs the deltas | sawyer | 2026-10-26 | `check:killdates` |
 | `vendor/intx/hub-api`         | `@intx/hub-api` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | [faremeter/interchange](https://github.com/faremeter/interchange) @ `b5580a02` (v0.3.0)                  | npm 0.3.0 covers the base package but not the exported null-principal `resolveApproval` (CL-6345) or the bearer-authenticated workflow-deploy mirror (`middleware/workflow-run-deploy-auth.ts`, CL-workflow-deploy-bearer); retired when upstream absorbs the deltas                                                                                                                                                                                                                    | sawyer | 2026-09-19 | `check:killdates` |
-| `vendor/intx/hub-sessions`    | `@intx/hub-sessions` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | [faremeter/interchange](https://github.com/faremeter/interchange) @ `b5580a02` (v0.3.0)                  | npm 0.3.0 covers the base package but not the usage forward (CL-5879), pack-acceptance fixes, adopted deploy front, wire-projection writer, event-collector serialization, anchor ordering, or malformed tool-call-name sanitization (CL-6478)                                                                                                                                                                                                                                          | sawyer | 2026-09-19 | `check:killdates` |
+| `vendor/intx/hub-sessions`    | `@intx/hub-sessions` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | [faremeter/interchange](https://github.com/faremeter/interchange) @ `a8bc06ae` (origin/main, 2026-08-27) | npm 0.3.0 covers the base package but not the pack-acceptance fixes (`ownsWorkflowRunRepo`, `anchorAddressForPackSource`, `decideTerminalRunFlip`), the adopted deploy front + `sourceRef` (CL-6324), the wire-projection writer (CL-6324), malformed tool-call-name sanitization (CL-6478) or the sealed-run terminal-status backfill (CL-6595); retired when upstream absorbs the deltas                                                                                              | sawyer | 2026-10-26 | `check:killdates` |
 | `vendor/intx/inference`       | `@intx/inference` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | [faremeter/interchange](https://github.com/faremeter/interchange) @ `a8bc06ae` (origin/main, 2026-08-27) | npm 0.3.0 predates doom-loop detection (`8da4c827`, `afd0c82b`, `c421c092`); one local delta: `providers/google-genai-files.ts` builds its upload body as `new Uint8Array(bytes)` because TS 6's lib.dom `BodyInit` rejects `Uint8Array<ArrayBufferLike>` (upstream compiles ESNext-only under TS 5.9); retired by the next publish                                                                                                                                                     | sawyer | 2026-10-26 | `check:killdates` |
 | `vendor/intx/mail-memory`     | `@intx/mail-memory` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | [faremeter/interchange](https://github.com/faremeter/interchange) @ `a8bc06ae` (origin/main, 2026-08-27) | npm 0.3.0 predates the `@intx/mailbox` extraction (`af03bb90`), on-demand body reads (`54f7c239`) and `expunge` returning the swept uids (`bcabb1f8`) that the re-vendored `workflow-host` binds against; no local delta; retired by the next publish                                                                                                                                                                                                                                   | sawyer | 2026-10-26 | `check:killdates` |
 | `vendor/intx/mailbox`         | `@intx/mailbox` source (`src/`, manifest, tsconfig)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | [faremeter/interchange](https://github.com/faremeter/interchange) @ `a8bc06ae` (origin/main, 2026-08-27) | Never published: a new package at the target pin (`af03bb90`) that `workflow-host`'s substrate mailbox store and supervisor-backed transport import; no local delta; retired by its first publish                                                                                                                                                                                                                                                                                       | sawyer | 2026-10-26 | `check:killdates` |
@@ -47,10 +47,11 @@ published `@intx/harness`, `@intx/hub-agent`, `@intx/tool-packaging`,
 `@intx/authz`, … resolve their own `@intx/*` dependencies onto the vendored
 copies instead of a second npm copy) and keep the unchanged names on `0.3.0`.
 `vendor/intx/workflow-host` (still at `b5580a02` until its own re-pin)
-carries one bridging edit against the re-pinned `@intx/types`: its
-supervisor-backed transport's `expunge` stub returns
-`Promise<{ expungedUids: number[] }>` (upstream `bcabb1f8`); it disappears
-with that tree's re-pin.
+carries two bridging edits against the re-pinned `@intx/types` and
+`@intx/hub-sessions`: its supervisor-backed transport's `expunge` stub
+returns `Promise<{ expungedUids: number[] }>` (upstream `bcabb1f8`), and its
+boot replay reads `ownedMessageIds` from `scanRunsForBoot` (upstream
+`f89bb51b`); both disappear with that tree's re-pin.
 
 The pinned commit `b5580a02` is upstream's `v0.3.0` release tag, 16 commits
 past the previous pin `4ed8baf4`: a workflow-host supervisor
@@ -99,14 +100,7 @@ same asset tenant-scoping (a foreign-tenant asset already read as `not_found`
 before this change and still does), same install/probe/gate/freeze call into
 `sessionService.deployWorkflowFromSource`. A request with no bearer
 credential falls through unchanged to the session path.
-`vendor/intx/hub-sessions` (CL-5879) forwards `inference.usage` events —
-previously matched by `event-collector.ts`'s "not persisted" default and
-dropped — to a new optional `onUsage` callback on `createEventCollector`
-and `createEventCollectorRegistry`, carrying `{turnId, provider, model, usage}` plus
-the registry's own `tenantId`/`sessionId`; no new persistence lands in the
-vendored copy itself, only the forward, and `apps/hub/src/index.ts` wires
-it to `@corbits/insights`' `createUsageSink` so `usage_turn` rows are
-written for the first time. `vendor/intx/hub-sessions` also drops the
+`vendor/intx/hub-sessions` also drops the
 live-status gate on `receiveWorkflowRunPack`'s anchor lookup: the gate is now
 the exported pure helper `ownsWorkflowRunRepo` (a self-anchored `workflow_run`
 row with a routable address), with the allocation fences unchanged. Upstream
@@ -195,42 +189,12 @@ folded run's system prompt, tool pins, model, credential bindings) had
 nowhere to get it. Keyed to the approved wire hash and stored beside it,
 this is one store per concept, not a second copy: the projection and the
 hash that addresses it are written and read together.
-`vendor/intx/hub-sessions` (CL-6379) serializes the event
-collector's `onEvent`/`abandon` through an internal promise chain: the
-registry's dispatch is deliberately fire-and-forget, and without the chain
-two events interleave across their DB awaits — a `connector.reply` finalize
-nulls the current turn while `inference.done` is still inserting parts
-(dropped as "no active turn"), and a finalize processed during the next
-`inference.start`'s begin-insert marks the NEW turn finalized, leaving its
-row "running" forever. The same change classifies an accepted workflow-run
+`vendor/intx/hub-sessions` (CL-6379) classifies an accepted workflow-run
 pack's newly-terminal runs through the new pure `decideTerminalRunFlip`
 before the DB flip: a section occurrence's repo-local child run
 (`turn__<n>`) has no `workflow_run` row by design and is skipped quietly
 instead of being logged as a foreign-deployment violation on every turn.
-`vendor/intx/hub-sessions` (CL-6388) reorders
-`deployCodeSourcedWorkflow`, the SHARED code-sourced deploy front, to
-persist its anchor `workflow_run` row BEFORE emitting the source-ref
-deploy frame. Upstream inserted the row only after the sidecar's deploy
-ack, but the frame spawns the deployment's child, whose first
-`refs/heads/events` pack push races that ack back to the hub —
-`receiveWorkflowRunPack` fails closed (`path_violation`) on a missing
-anchor row, so every fresh deployment's first events pack was rejected
-and the durable event log never bootstrapped. The row is born with a
-null `publicKey` (the reconnect challenge keeps failing closed until the
-ack), the acked supervisor key is stamped afterwards, and a failed frame
-emit deletes the pre-inserted row. The prepared and adopted fronts
-already had their anchor row pre-frame; the shared front now matches
-them. `vendor/intx/hub-sessions` (CL-6395) narrows that failed-emit
-deletion: CL-6388 deleted the pre-inserted anchor on ANY
-`emitSourceRefDeployFrame` rejection, but an ack-timeout or socket-drop
-rejection fires strictly after the `agent.deploy` frame already reached
-the sidecar, so deleting the row could permanently orphan an
-already-spawned child on the missing-anchor `path_violation` path.
-`ws/sidecar-handler.ts` now exports `DeployFrameNotSentError`, thrown only
-where a guard clause or the `conn.send()` call itself fails before the
-frame could have reached the wire; `deployCodeSourcedWorkflow` deletes the
-row only on that error and otherwise keeps the row and logs a
-reconciliation line. `vendor/intx/hub-sessions` (CL-6478) adds a
+`vendor/intx/hub-sessions` (CL-6478) adds a
 `sanitize-tool-name.ts` module and calls it from `event-collector.ts`'s
 `tool_call` handling: `@intx/inference`'s `decodeToolName` is deliberately
 total and returns a hallucinated or provider-mangled function name

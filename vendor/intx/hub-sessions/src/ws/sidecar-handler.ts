@@ -52,22 +52,30 @@ import {
 const logger = getLogger(["hub", "ws", "sidecar"]);
 
 /**
- * A deploy frame failure that PROVABLY never reached the wire: thrown only by
- * a guard clause that runs before `conn.send()`, or by `conn.send()` itself
- * throwing synchronously. A caller that inserted a row anticipating the frame
- * (e.g. `deployCodeSourcedWorkflow`'s pre-inserted anchor `workflow_run`) may
- * safely undo that insert on this error class specifically.
- *
- * Any OTHER deploy rejection (ack timeout, socket drop, reconnect takeover,
- * ack-processing failure) is raised after `conn.send()` already ran -- the
- * frame may have reached and been acted on by the sidecar -- and must NOT be
- * treated as not-sent.
+ * A deploy-frame send failure, tagged with whether the `agent.deploy` frame
+ * reached the wire. `frameSent: false` means the send was refused before
+ * `conn.send` (a guard failed, or the send threw synchronously) -- the deploy
+ * provably never started, so a caller may safely roll back anything it staged.
+ * `frameSent: true` means the frame was sent and the failure came afterward (ack
+ * timeout, sidecar disconnect), so the sidecar may hold a live agent.
  */
-export class DeployFrameNotSentError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "DeployFrameNotSentError";
-  }
+export interface DeployFrameFailure extends Error {
+  readonly frameSent: boolean;
+}
+
+function deployFrameFailure(
+  message: string,
+  frameSent: boolean,
+): DeployFrameFailure {
+  return Object.assign(new Error(message), { frameSent });
+}
+
+export function isDeployFrameFailure(err: unknown): err is DeployFrameFailure {
+  return (
+    err instanceof Error &&
+    "frameSent" in err &&
+    typeof err.frameSent === "boolean"
+  );
 }
 
 export type SidecarConnection = {
@@ -1934,6 +1942,15 @@ export function createSidecarRouter(
       isRunAddress(recipient)
     ) {
       const runId = deriveWorkflowRunId(recipient);
+      // This does NOT let mail mutate a run's authorization. First delivery
+      // reserves and commits the run's grants (the mail IS the trigger);
+      // every later delivery only RE-READS the current committed grants
+      // (`loadCommittedRunGrants`) and re-asserts them ahead of the dispatch.
+      // The committed rows already carry any standing-approval change (an
+      // approve/reject-with-`always` resolution mutates them through its own
+      // path), so this re-send is idempotent -- it re-establishes the run's
+      // current floor on the sidecar, self-healing a `grants.json` a sidecar
+      // may have lost, and never overwrites it with anything staler.
       const result = await lookups.materializeMailTriggeredRunGrants({
         agentAddress: recipient,
         runId,
@@ -3107,26 +3124,30 @@ export function createSidecarRouter(
     workflow?: AgentDeployFrame["workflow"],
   ): Promise<{ publicKey: string }> {
     if (hubPublicKeyHex === undefined) {
-      throw new DeployFrameNotSentError(
+      throw deployFrameFailure(
         "Hub signing key is required for agent deployment",
+        false,
       );
     }
     const ws =
       addressIndex.get(agentAddress) ?? findSidecarForNewAgent(agentAddress);
     if (ws === undefined) {
-      throw new DeployFrameNotSentError(
+      throw deployFrameFailure(
         `No sidecar available for agent "${agentAddress}"`,
+        false,
       );
     }
     const conn = connections.get(ws);
     if (conn === undefined) {
-      throw new DeployFrameNotSentError(
+      throw deployFrameFailure(
         `No sidecar connected for agent "${agentAddress}"`,
+        false,
       );
     }
     if (conn.identity.kind !== "shared") {
-      throw new DeployFrameNotSentError(
+      throw deployFrameFailure(
         `Allocated sidecar ${conn.sidecarId} requires allocation-bound deploy routing`,
+        false,
       );
     }
     return sendAgentDeployOnConnection(
@@ -3146,14 +3167,16 @@ export function createSidecarRouter(
     workflow?: AgentDeployFrame["workflow"],
   ): Promise<{ publicKey: string }> {
     if (hubPublicKeyHex === undefined) {
-      throw new DeployFrameNotSentError(
+      throw deployFrameFailure(
         "Hub signing key is required for agent deployment",
+        false,
       );
     }
 
     if (pendingDeploys.has(agentAddress)) {
-      throw new DeployFrameNotSentError(
+      throw deployFrameFailure(
         `Deploy already in progress for agent "${agentAddress}"`,
+        false,
       );
     }
 
@@ -3172,8 +3195,9 @@ export function createSidecarRouter(
           addressIndex.delete(agentAddress);
         }
         reject(
-          new Error(
+          deployFrameFailure(
             `Deploy of "${agentAddress}" timed out after ${requestTimeoutMs}ms`,
+            true,
           ),
         );
       }, requestTimeoutMs);
@@ -3189,18 +3213,11 @@ export function createSidecarRouter(
             addressSet.delete(agentAddress);
             addressIndex.delete(agentAddress);
           }
-          reject(new Error(error));
+          reject(deployFrameFailure(error, true));
         },
         timer,
       });
 
-      // Once `pendingDeploys` carries this entry, every OTHER rejection path
-      // (timeout, disconnect, reconnect takeover, ack-processing failure) is
-      // reached only through `req.reject()` above -- which fires after this
-      // send, by construction. A synchronous throw HERE is the sole
-      // post-registration case that provably never left the process, so it
-      // is the one case converted to `DeployFrameNotSentError` rather than
-      // rejecting through `req.reject()`.
       try {
         conn.send({
           type: "agent.deploy",
@@ -3211,6 +3228,9 @@ export function createSidecarRouter(
           ...(workflow !== undefined ? { workflow } : {}),
         });
       } catch (err) {
+        // A synchronous send failure means the frame never reached the wire.
+        // Tear down the pending entry and timer we just registered, and reject
+        // as not-sent so a caller may safely roll back what it staged.
         clearTimeout(timer);
         pendingDeploys.delete(agentAddress);
         if (addressIndex.get(agentAddress) === ws) {
@@ -3218,8 +3238,9 @@ export function createSidecarRouter(
           addressIndex.delete(agentAddress);
         }
         reject(
-          new DeployFrameNotSentError(
-            `Failed to send agent.deploy frame to "${agentAddress}": ${err instanceof Error ? err.message : String(err)}`,
+          deployFrameFailure(
+            `Deploy of "${agentAddress}" failed to send: ${err instanceof Error ? err.message : String(err)}`,
+            false,
           ),
         );
       }
@@ -3234,18 +3255,18 @@ export function createSidecarRouter(
   ): Promise<{ publicKey: string }> {
     const { ws, conn } = await getAllocatedConnection(target, "routing");
     if (conn.identity.kind !== "allocated") {
-      throw new DeployFrameNotSentError(
+      throw new Error(
         `Allocation ${target.allocationId} resolved to a shared sidecar`,
       );
     }
     if (agentAddress !== conn.identity.workflowRunAddress) {
-      throw new DeployFrameNotSentError(
+      throw new Error(
         `Allocation ${target.allocationId} cannot deploy unrelated address ${agentAddress}`,
       );
     }
     const existing = addressIndex.get(agentAddress);
     if (existing !== undefined && existing !== ws) {
-      throw new DeployFrameNotSentError(
+      throw new Error(
         `Deployment ${agentAddress} is already routed to another sidecar`,
       );
     }

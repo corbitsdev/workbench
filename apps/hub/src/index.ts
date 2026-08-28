@@ -768,16 +768,13 @@ export async function createHub(config: HubConfig) {
     db: withTurnPartPersistGuard(withTurnPartWriteDefaults(db)),
     onTurnFinalized: (agentAddress, turn) =>
       artifactDeliveryHandlerRef.current?.(agentAddress, turn),
-    // The vendored `onUsage` forward (see VENDORED.md) — the platform
-    // collector accumulates turns per session but never persisted
-    // `inference.usage`; this is the first point tenantId + turnId +
-    // provider + model + tokens are all in scope at once.
-    onUsage: (_agentAddress, tenantId, sessionId, usage) => {
+    // Per-turn usage, emitted once when the collector finalizes a turn.
+    onUsage: (_agentAddress, usage) => {
       void usageSink
         .handle({
           turnId: usage.turnId,
-          tenantId,
-          sessionId,
+          tenantId: usage.tenantId,
+          sessionId: usage.sessionId,
           provider: usage.provider,
           model: usage.model,
           tokens: usage.usage,
@@ -1618,9 +1615,8 @@ export async function createHub(config: HubConfig) {
   // (see @corbits/insights' createDrizzleRunTraceReader) — no new storage,
   // same `db` handle every other platform-table reader in this file uses.
   // The sink itself is constructed earlier, alongside `eventCollectors`
-  // (see the vendored `onUsage` forward on `createEventCollectorRegistry`
-  // above), since that's the only place tenantId/turnId/model land
-  // together on an `inference.usage` event.
+  // (see the `onUsage` hook on `createEventCollectorRegistry` above),
+  // which reports each finalized turn's usage with its run identity.
   app.route(
     `${TENANT_PREFIX}/insights`,
     createInsightsRoutes({
