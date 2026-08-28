@@ -68,6 +68,9 @@ function buildHarness() {
   let subscriber: ((state: ConnectGithubQuery) => void) | undefined;
 
   const setupPorts: ConnectGithubSetupPorts = {
+    async hasRepoGrant() {
+      return false;
+    },
     async mintRepoGrant(repo) {
       grantedRepos.push(repo.name);
     },

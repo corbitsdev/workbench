@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   startReviewingRepos,
+  webhookTriggerName,
   type ConnectGithubSetupPorts,
 } from "./connect-github-setup";
 import type { GitHubRepoSummary } from "@corbits/github-tools";
@@ -17,6 +18,9 @@ function fakePorts() {
   const createdTriggerRepos: string[] = [];
   let persistedRepoIds: readonly string[] | undefined;
   const ports: ConnectGithubSetupPorts = {
+    async hasRepoGrant() {
+      return false;
+    },
     async mintRepoGrant(repo) {
       grantedRepos.push(repo.name);
     },
@@ -40,18 +44,26 @@ function fakePorts() {
 }
 
 /**
- * A `WebhookTriggerStore`-backed fake: `hasWebhookTrigger` reflects
- * whatever `createWebhookTrigger` has actually persisted so far, the
- * same as the real port binds against `WebhookTriggerStore.list`. Used
- * to prove a retry after a mid-loop failure is idempotent.
+ * A grant-store- and `WebhookTriggerStore`-backed fake: `hasRepoGrant`
+ * and `hasWebhookTrigger` each reflect what `mintRepoGrant` and
+ * `createWebhookTrigger` have actually persisted so far — independently
+ * of each other, the same as the real ports bind against the real
+ * `grant` table and `WebhookTriggerStore.list`. Used to prove a retry
+ * after a mid-loop failure is idempotent regardless of exactly where in
+ * a repo's two steps the failure landed.
  */
 function fakeBackedPorts() {
+  const grantedRepoNames = new Set<string>();
   const existingTriggerRepoNames = new Set<string>();
   const grantedRepos: string[] = [];
   const createdTriggerRepos: string[] = [];
   const ports: ConnectGithubSetupPorts = {
+    async hasRepoGrant(repo) {
+      return grantedRepoNames.has(repo.name);
+    },
     async mintRepoGrant(repo) {
       grantedRepos.push(repo.name);
+      grantedRepoNames.add(repo.name);
     },
     async createWebhookTrigger(repo) {
       createdTriggerRepos.push(repo.name);
@@ -134,5 +146,58 @@ describe("startReviewingRepos", () => {
       "acme/sprockets",
     ]);
     expect(result.createdTriggerIds).toEqual(["trg_2", "trg_3"]);
+  });
+
+  test("retrying after a failure between minting the grant and creating the trigger never re-mints the grant", async () => {
+    const fake = fakeBackedPorts();
+    const failingPorts: ConnectGithubSetupPorts = {
+      ...fake.ports,
+      async createWebhookTrigger(repo) {
+        if (repo.name === "acme/gadgets") {
+          throw new Error("trigger create failed");
+        }
+        return fake.ports.createWebhookTrigger(repo);
+      },
+    };
+
+    await expect(
+      startReviewingRepos(["1", "2", "3"], REPOS, failingPorts),
+    ).rejects.toThrow(/trigger create failed/);
+
+    // The failing repo's grant was minted before the trigger create blew
+    // up; the repo after it was never reached at all.
+    expect(fake.grantedRepos).toEqual(["acme/widgets", "acme/gadgets"]);
+    expect(fake.createdTriggerRepos).toEqual(["acme/widgets"]);
+
+    const result = await startReviewingRepos(
+      ["1", "2", "3"],
+      REPOS,
+      fake.ports,
+    );
+
+    // acme/gadgets' grant is not re-minted on retry — only its missing
+    // trigger is created.
+    expect(fake.grantedRepos).toEqual([
+      "acme/widgets",
+      "acme/gadgets",
+      "acme/sprockets",
+    ]);
+    expect(fake.createdTriggerRepos).toEqual([
+      "acme/widgets",
+      "acme/gadgets",
+      "acme/sprockets",
+    ]);
+    expect(result.createdTriggerIds).toEqual(["trg_2", "trg_3"]);
+  });
+});
+
+describe("webhookTriggerName", () => {
+  test("names a repo's trigger consistently, the one convention both the create and the lookup bind against", () => {
+    const repo: GitHubRepoSummary = {
+      id: "1",
+      name: "acme/widgets",
+      openPullRequestCount: 0,
+    };
+    expect(webhookTriggerName(repo)).toBe("acme/widgets pull-request-opened");
   });
 });
