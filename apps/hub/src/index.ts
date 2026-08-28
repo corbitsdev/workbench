@@ -354,6 +354,7 @@ import { createBootAssetWiring, REGISTRIES } from "./asset-service-factory";
 import { createRoutineScheduler } from "./routine-scheduler";
 import { createToolGrantsForPins } from "./tool-grants";
 import { createMcpCredentialBindingsFor } from "./mcp-credential-bindings";
+import { shutdownHub } from "./shutdown";
 
 // Host policy constants, not configuration.
 const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
@@ -3454,10 +3455,14 @@ if (import.meta.main) {
   });
   const log = getLogger(["hub"]);
   log.info`Hub serving on port ${port}`;
+  const SHUTDOWN_DRAIN_MS = 10_000;
   const shutdown = async () => {
     await server.stop();
-    await hub.close();
-    process.exit(0);
+    await shutdownHub({
+      drain: () => hub.close(),
+      timeoutMs: SHUTDOWN_DRAIN_MS,
+      exit: (code) => process.exit(code),
+    });
   };
   process.on("SIGINT", () => void shutdown());
   process.on("SIGTERM", () => void shutdown());
