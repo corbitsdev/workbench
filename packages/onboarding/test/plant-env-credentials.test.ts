@@ -25,6 +25,10 @@ function providerKeyOf(name: string): string {
 type CredentialFixture = {
   readonly name: string;
   readonly providerKey?: string;
+  /** Defaults to "api_key" — the type every fixture in this suite has
+   * used until the non-inference-type test, which sets this to a type
+   * `findActiveCredential` must not recognize as the plant. */
+  readonly type?: "api_key" | "oauth_token" | "certificate" | "other";
 };
 
 function fixture(name: string): CredentialFixture {
@@ -53,7 +57,7 @@ function credentialRow(
     tenantId: TENANT_ID,
     providerId: `prov_${providerKey}`,
     name: fixture.name,
-    type: "api_key",
+    type: fixture.type ?? "api_key",
     status,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -68,15 +72,18 @@ function credentialRow(
  * itself (the plant/probe indirections are always passed as fakes in
  * these tests). */
 function credentialsApi(
-  active: ReadonlySet<string> | readonly CredentialFixture[],
-  revoked: ReadonlySet<string> | readonly CredentialFixture[] = [],
+  active:
+    ReadonlySet<string | CredentialFixture> | readonly CredentialFixture[],
+  revoked:
+    ReadonlySet<string | CredentialFixture> | readonly CredentialFixture[] = [],
 ): ApiCall {
   // Read `active`/`revoked` fresh on every call rather than snapshotting
   // once: several tests mutate the `Set` they passed in (mirroring a
   // real `seedCatalog`'s side effect) after the fake is built, and rely
   // on the next call seeing that mutation.
   function currentFixtures(
-    entries: ReadonlySet<string> | readonly CredentialFixture[],
+    entries:
+      ReadonlySet<string | CredentialFixture> | readonly CredentialFixture[],
   ): CredentialFixture[] {
     return [...entries].map((entry) =>
       typeof entry === "string" ? fixture(entry) : entry,
@@ -164,6 +171,53 @@ function paginatedCredentialsApi(pages: string[][]): ApiCall {
       },
       cookies: [],
     };
+  };
+}
+
+/** A paginated providers-list ApiCall for the findProviderId
+ * follow-nextCursor test: the target provider row lives on page two,
+ * paired with a single active credential already sitting on that
+ * provider so the test can assert the plant is recognized. */
+function paginatedProvidersApi(
+  pages: string[][],
+  activeCredentialName: string,
+): ApiCall {
+  return async (method, path) => {
+    if (
+      method === "GET" &&
+      path.startsWith(`/api/tenants/${TENANT_ID}/providers`)
+    ) {
+      const url = new URL(path, "http://hub.test");
+      const cursor = url.searchParams.get("cursor");
+      const pageIndex = cursor === null ? 0 : Number(cursor);
+      const names = pages[pageIndex] ?? [];
+      const nextCursor =
+        pageIndex + 1 < pages.length ? String(pageIndex + 1) : null;
+      return {
+        status: 200,
+        data: {
+          data: names.map((key) => providerRow(key)),
+          nextCursor,
+        },
+        cookies: [],
+      };
+    }
+    if (
+      method === "GET" &&
+      path.startsWith(`/api/tenants/${TENANT_ID}/credentials`)
+    ) {
+      return {
+        status: 200,
+        data: {
+          data: [
+            credentialRow(fixture(activeCredentialName), "active", "cred_"),
+          ],
+          nextCursor: null,
+        },
+        cookies: [],
+      };
+    }
+    throw new Error(`unexpected call: ${method} ${path}`);
   };
 }
 
@@ -616,5 +670,74 @@ describe("plantEnvProviderCredentials", () => {
     expect(seedCatalogCalls[0]?.existingCredentialId).toBe(
       "cred_anthropic-default",
     );
+  });
+
+  test("findProviderId follows nextCursor instead of reading only page one", async () => {
+    const { log } = collector();
+    let probed = false;
+    const seedCatalogCalls: SeedCatalogArgs[] = [];
+    const outcomes = await plantEnvProviderCredentials({
+      // The "anthropic" provider row lives on page two only.
+      api: paginatedProvidersApi(
+        [["other-provider"], ["anthropic"]],
+        "anthropic-default",
+      ),
+      cookies: [],
+      tenantId: TENANT_ID,
+      envProviderKeys: { anthropic: "sk-ant-real" },
+      log,
+      testCredential: async () => {
+        probed = true;
+        return { ok: true as const };
+      },
+      seedCatalogFn: async (args) => {
+        seedCatalogCalls.push(args);
+        return { hasCompletionCapableModel: true };
+      },
+    });
+
+    expect(outcomes).toEqual([{ provider: "anthropic", status: "skipped" }]);
+    expect(probed).toBe(false);
+    expect(seedCatalogCalls[0]?.existingCredentialId).toBe(
+      "cred_anthropic-default",
+    );
+  });
+
+  test("a non-inference credential type on the same provider is not recognized as the plant", async () => {
+    const { log } = collector();
+    let probed = false;
+    const seedCatalogCalls: SeedCatalogArgs[] = [];
+    // An active "certificate"-typed row already sits on the anthropic
+    // provider — neither write path plants one of these today, but the
+    // match must not be fooled by it into skipping the probe.
+    const active = new Set<CredentialFixture>([
+      {
+        name: "anthropic-legacy-cert",
+        providerKey: "anthropic",
+        type: "certificate",
+      },
+    ]);
+    const outcomes = await plantEnvProviderCredentials({
+      api: credentialsApi(active),
+      cookies: [],
+      tenantId: TENANT_ID,
+      envProviderKeys: { anthropic: "sk-ant-real" },
+      log,
+      testCredential: async () => {
+        probed = true;
+        return { ok: true as const };
+      },
+      seedCatalogFn: async (args) => {
+        seedCatalogCalls.push(args);
+        // Mirrors the real `seedCatalog`'s side effect: a fresh plant
+        // actually stores an active `api_key` credential under this name.
+        active.add({ name: "anthropic-default", providerKey: "anthropic" });
+        return { hasCompletionCapableModel: true };
+      },
+    });
+
+    expect(probed).toBe(true);
+    expect(outcomes).toEqual([{ provider: "anthropic", status: "planted" }]);
+    expect(seedCatalogCalls[0]?.apiKey).toBe("sk-ant-real");
   });
 });

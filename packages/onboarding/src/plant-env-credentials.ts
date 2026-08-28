@@ -168,7 +168,9 @@ export type PlantEnvProviderCredentialsArgs = {
  * provider. Read-only: unlike `ensureProvider`, this never creates the
  * row, so a provider nobody has connected yet correctly reads back as
  * "no active credential" without planting a stub row ahead of a probe
- * that might still fail.
+ * that might still fail. Paginated the same way `findActiveCredential`
+ * is — a tenant with enough providers to span a page must not lose a
+ * match that lands on page two.
  */
 async function findProviderId(
   api: ApiCall,
@@ -176,18 +178,23 @@ async function findProviderId(
   tenantId: string,
   provider: SupportedCredentialProvider,
 ): Promise<string | undefined> {
-  const listed = await api(
-    "GET",
-    `/api/tenants/${tenantId}/providers?inherited=false`,
-    undefined,
-    cookies,
-  );
-  const providers = parseAs(
-    paginatedSchema(ProviderResponse),
-    listed.data,
-    "providers response",
-  ).data;
-  return providers.find((p) => p.name === provider)?.id;
+  let cursor: string | undefined;
+  do {
+    const path =
+      cursor === undefined
+        ? `/api/tenants/${tenantId}/providers?inherited=false`
+        : `/api/tenants/${tenantId}/providers?inherited=false&cursor=${encodeURIComponent(cursor)}`;
+    const listed = await api("GET", path, undefined, cookies);
+    const page = parseAs(
+      paginatedSchema(ProviderResponse),
+      listed.data,
+      "providers response",
+    );
+    const match = page.data.find((p) => p.name === provider);
+    if (match !== undefined) return match.id;
+    cursor = page.nextCursor ?? undefined;
+  } while (cursor !== undefined);
+  return undefined;
 }
 
 /**
@@ -198,7 +205,11 @@ async function findProviderId(
  * `inferenceCredentialName(provider)` ("anthropic-default"). Both
  * resolve to the same provider row (`findProviderId`), so matching on
  * `providerId` recognizes either one instead of only the env-plant's own
- * naming convention.
+ * naming convention. Restricted to the credential types `seedCatalog`
+ * itself ever writes for an inference source (`api_key`, `oauth_token`)
+ * so a non-inference row that happens to share the provider (never
+ * planted by either path today, but not a case this match should ever
+ * be fooled by) can't count as the plant.
  */
 async function findActiveCredential(
   api: ApiCall,
@@ -219,7 +230,10 @@ async function findActiveCredential(
       "credentials response",
     );
     const match = page.data.find(
-      (c) => c.providerId === providerId && c.status === "active",
+      (c) =>
+        c.providerId === providerId &&
+        c.status === "active" &&
+        (c.type === "api_key" || c.type === "oauth_token"),
     );
     if (match !== undefined) return { id: match.id, name: match.name };
     cursor = page.nextCursor ?? undefined;
