@@ -13,43 +13,109 @@ function collector() {
   return { lines, log: (line: string) => lines.push(line) };
 }
 
-/** A minimal credentials-list ApiCall: answers
- * `GET /api/tenants/:id/credentials` with whatever `active` set holds,
- * and 404s everything else — `plantEnvProviderCredentials` never calls
- * anything else through `api` itself (the plant/probe indirections are
- * always passed as fakes in these tests). */
+/** The curated provider key a fake credential row's name belongs to —
+ * every fixture in this suite either uses the env-plant's own
+ * `<provider>-default` naming convention or (for the
+ * Settings-connected-credential tests) supplies its own explicit
+ * `providerKey`, so a bare fixture name is always `<provider>-default`. */
+function providerKeyOf(name: string): string {
+  return name.replace(/-default$/, "");
+}
+
+type CredentialFixture = {
+  readonly name: string;
+  readonly providerKey?: string;
+};
+
+function fixture(name: string): CredentialFixture {
+  return { name };
+}
+
+function providerRow(providerKey: string) {
+  return {
+    id: `prov_${providerKey}`,
+    tenantId: TENANT_ID,
+    name: providerKey,
+    plugin: "http",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+}
+
+function credentialRow(
+  fixture: CredentialFixture,
+  status: "active" | "revoked",
+  idPrefix: string,
+) {
+  const providerKey = fixture.providerKey ?? providerKeyOf(fixture.name);
+  return {
+    id: `${idPrefix}${fixture.name}`,
+    tenantId: TENANT_ID,
+    providerId: `prov_${providerKey}`,
+    name: fixture.name,
+    type: "api_key",
+    status,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+}
+
+/** A minimal credentials-and-providers-list ApiCall: answers
+ * `GET /api/tenants/:id/credentials` with whatever `active`/`revoked`
+ * fixtures hold, `GET /api/tenants/:id/providers` with the provider row
+ * each fixture's `providerKey` belongs to, and 404s everything else —
+ * `plantEnvProviderCredentials` never calls anything else through `api`
+ * itself (the plant/probe indirections are always passed as fakes in
+ * these tests). */
 function credentialsApi(
-  activeNames: Set<string>,
-  revokedNames: Set<string> = new Set<string>(),
+  active: ReadonlySet<string> | readonly CredentialFixture[],
+  revoked: ReadonlySet<string> | readonly CredentialFixture[] = [],
 ): ApiCall {
+  // Read `active`/`revoked` fresh on every call rather than snapshotting
+  // once: several tests mutate the `Set` they passed in (mirroring a
+  // real `seedCatalog`'s side effect) after the fake is built, and rely
+  // on the next call seeing that mutation.
+  function currentFixtures(
+    entries: ReadonlySet<string> | readonly CredentialFixture[],
+  ): CredentialFixture[] {
+    return [...entries].map((entry) =>
+      typeof entry === "string" ? fixture(entry) : entry,
+    );
+  }
   return async (method, path) => {
     if (
       method === "GET" &&
       path.startsWith(`/api/tenants/${TENANT_ID}/credentials`)
     ) {
-      const active = [...activeNames].map((name) => ({
-        id: `cred_${name}`,
-        tenantId: TENANT_ID,
-        providerId: `prov_${name}`,
-        name,
-        type: "api_key",
-        status: "active",
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-      }));
-      const revoked = [...revokedNames].map((name) => ({
-        id: `cred_revoked_${name}`,
-        tenantId: TENANT_ID,
-        providerId: `prov_${name}`,
-        name,
-        type: "api_key",
-        status: "revoked",
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-      }));
+      const rows = [
+        ...currentFixtures(active).map((f) =>
+          credentialRow(f, "active", "cred_"),
+        ),
+        ...currentFixtures(revoked).map((f) =>
+          credentialRow(f, "revoked", "cred_revoked_"),
+        ),
+      ];
       return {
         status: 200,
-        data: { data: [...active, ...revoked], nextCursor: null },
+        data: { data: rows, nextCursor: null },
+        cookies: [],
+      };
+    }
+    if (
+      method === "GET" &&
+      path.startsWith(`/api/tenants/${TENANT_ID}/providers`)
+    ) {
+      const providerKeys = new Set(
+        [...currentFixtures(active), ...currentFixtures(revoked)].map(
+          (f) => f.providerKey ?? providerKeyOf(f.name),
+        ),
+      );
+      return {
+        status: 200,
+        data: {
+          data: [...providerKeys].map((key) => providerRow(key)),
+          nextCursor: null,
+        },
         cookies: [],
       };
     }
@@ -61,7 +127,21 @@ function credentialsApi(
  * the target row lives on page two, so a caller that only reads page
  * one would never see it. */
 function paginatedCredentialsApi(pages: string[][]): ApiCall {
+  const providerKeys = new Set(pages.flat().map(providerKeyOf));
   return async (method, path) => {
+    if (
+      method === "GET" &&
+      path.startsWith(`/api/tenants/${TENANT_ID}/providers`)
+    ) {
+      return {
+        status: 200,
+        data: {
+          data: [...providerKeys].map((key) => providerRow(key)),
+          nextCursor: null,
+        },
+        cookies: [],
+      };
+    }
     if (!(
       method === "GET" &&
       path.startsWith(`/api/tenants/${TENANT_ID}/credentials`)
@@ -77,16 +157,9 @@ function paginatedCredentialsApi(pages: string[][]): ApiCall {
     return {
       status: 200,
       data: {
-        data: names.map((name) => ({
-          id: `cred_${name}`,
-          tenantId: TENANT_ID,
-          providerId: `prov_${name}`,
-          name,
-          type: "api_key",
-          status: "active",
-          createdAt: "2026-01-01T00:00:00.000Z",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-        })),
+        data: names.map((name) =>
+          credentialRow(fixture(name), "active", "cred_"),
+        ),
         nextCursor,
       },
       cookies: [],
@@ -241,6 +314,40 @@ describe("plantEnvProviderCredentials", () => {
     expect(lines[0]).toContain("rotate");
     expect(lines[0]).toContain("Plugins");
     expect(lines[0]).not.toContain("sk-ant-rotated");
+  });
+
+  test("a Settings-connected credential under the same provider is recognized, so booting with the env key skips the probe and never creates a second credential row", async () => {
+    const { log, lines } = collector();
+    let probed = false;
+    const seedCatalogCalls: SeedCatalogArgs[] = [];
+    const outcomes = await plantEnvProviderCredentials({
+      // Named "Anthropic" (the connector's displayName, the way
+      // `persistConnectorCredential` names a Settings-connected
+      // credential) rather than this module's own "anthropic-default" —
+      // both belong to the same `prov_anthropic` provider row.
+      api: credentialsApi([{ name: "Anthropic", providerKey: "anthropic" }]),
+      cookies: [],
+      tenantId: TENANT_ID,
+      envProviderKeys: { anthropic: "sk-ant-from-env" },
+      log,
+      testCredential: async () => {
+        probed = true;
+        return { ok: true };
+      },
+      seedCatalogFn: async (args) => {
+        seedCatalogCalls.push(args);
+        return { hasCompletionCapableModel: true };
+      },
+    });
+
+    expect(outcomes).toEqual([{ provider: "anthropic", status: "skipped" }]);
+    expect(probed).toBe(false);
+    expect(seedCatalogCalls).toHaveLength(1);
+    expect(seedCatalogCalls[0]?.existingCredentialId).toBe("cred_Anthropic");
+    expect(seedCatalogCalls[0]?.apiKey).toBeUndefined();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("Anthropic");
+    expect(lines[0]).not.toContain("sk-ant-from-env");
   });
 
   test("a catalog backfill failure on an already-active credential is reported, never thrown", async () => {
