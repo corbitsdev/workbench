@@ -5,15 +5,9 @@
 // past this function (or `createWebhookIngressRoutes` would reject an
 // already-launched delivery, and a retried webhook client would then
 // mint a duplicate run for the same event).
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 let reportErrorCalls: unknown[] = [];
-mock.module("@corbits/error-sink", () => ({
-  reportError: (...args: unknown[]) => {
-    reportErrorCalls.push(args);
-    return "ref_test";
-  },
-}));
 
 const actualFoldedRuns = await import("@corbits/folded-runs");
 
@@ -42,6 +36,20 @@ mock.module("@corbits/folded-runs", () => ({
     return sendFoldedMailWithRetryResult;
   },
 }));
+
+beforeEach(async () => {
+  reportErrorCalls = [];
+  await mock.module("@corbits/error-sink", () => ({
+    reportError: (...args: unknown[]) => {
+      reportErrorCalls.push(args);
+      return "ref_test";
+    },
+  }));
+});
+
+afterEach(() => {
+  mock.restore();
+});
 
 const { launchWebhookTrigger } = await import("../src/launch");
 

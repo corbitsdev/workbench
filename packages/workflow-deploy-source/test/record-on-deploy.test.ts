@@ -2,7 +2,7 @@
 // successful deploy, forwards the underlying result untouched, and never
 // lets a recording failure fail the deploy call itself -- no DB, no
 // SessionService, both are hand-rolled minimal doubles.
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type {
   AdoptingWorkflowDeployer,
   DeployWorkflowDefinitionResult,
@@ -10,12 +10,18 @@ import type {
 } from "@intx/hub-sessions";
 
 let reportErrorCalls: unknown[] = [];
-mock.module("@corbits/error-sink", () => ({
-  reportError: (...args: unknown[]) => {
-    reportErrorCalls.push(args);
-    return "ref_test";
-  },
-}));
+beforeEach(async () => {
+  reportErrorCalls = [];
+  await mock.module("@corbits/error-sink", () => ({
+    reportError: (...args: unknown[]) => {
+      reportErrorCalls.push(args);
+      return "ref_test";
+    },
+  }));
+});
+afterEach(() => {
+  mock.restore();
+});
 
 const { withDeploySourceRecording } = await import("../src/record-on-deploy");
 import type {
