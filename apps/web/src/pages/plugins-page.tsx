@@ -23,6 +23,7 @@ import {
 } from "@corbits/plugins-ui";
 import type { ResolvedPlugin } from "@workbench/connections/plugins";
 import { listPluginsForTenant } from "@workbench/connections/plugins";
+import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
 import { Plus, SquaresFour, Warning } from "@corbits/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -31,6 +32,7 @@ import { SKILLS_PATH_PREFIX } from "../path-ids";
 import {
   useClearPendingConnectProvider,
   usePendingConnectProvider,
+  useRequestPluginsConnect,
 } from "../shell/provider-health-context";
 import { StageTopBar } from "../shell/stage-top-bar";
 import {
@@ -87,6 +89,7 @@ export function PluginsRoute({
   const [connectDeepLinkNotFound, setConnectDeepLinkNotFound] = useState(false);
   const pendingConnectProvider = usePendingConnectProvider();
   const clearPendingConnectProvider = useClearPendingConnectProvider();
+  const requestPluginsConnect = useRequestPluginsConnect();
   const openPluginPanel = useCallback((plugin: ResolvedPlugin) => {
     setOpenPlugin(plugin);
     setConnectDeepLinkNotFound(false);
@@ -174,6 +177,23 @@ export function PluginsRoute({
     clearPendingConnectProvider,
     openPluginPanel,
   ]);
+
+  // `request_connection`'s fallback link (CL-7141): `/plugins?connect=<id>`
+  // hands the connector id off through the same `requestPluginsConnect`
+  // path the shell banner's "Fix it" click uses, then strips the param so
+  // a reload never replays a stale connect intent. An id this registry
+  // doesn't recognize (typo, stale link) is ignored rather than surfaced
+  // as a notice.
+  useEffect(() => {
+    const connectId = new URLSearchParams(window.location.search).get(
+      "connect",
+    );
+    if (connectId === null) return;
+    window.history.replaceState(null, "", window.location.pathname);
+    if (CONNECTOR_REGISTRY[connectId] !== undefined) {
+      requestPluginsConnect(connectId);
+    }
+  }, [requestPluginsConnect]);
 
   function openSkill(name: string) {
     navigate(`${SKILLS_PATH_PREFIX}/${encodeURIComponent(name)}`);

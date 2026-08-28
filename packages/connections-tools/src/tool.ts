@@ -13,7 +13,7 @@
 // `@corbits/mcp-tools`' own `mcp_list_servers` route) — a tenant-minted
 // `mcp:<slug>` connector has no fixed registry id, so `list_connections`
 // folds it into the connected list by name, and `request_connection`
-// falls back to it (see `ADD_MCP_SERVER_DEEP_LINK`) before reporting an
+// falls back to it (see `ADD_MCP_SERVER_GUIDANCE`) before reporting an
 // unknown connector.
 //
 // Approval: `list_connections` reads only, so it declares no `approval`
@@ -80,27 +80,24 @@ function clientConfig(env: WorkflowConnectionEnv) {
   };
 }
 
-/** `/plugins?connect=<connectorId>` — a plain, honest deep link into
- * the Plugins panel.
- *
- * [Intx/repo gap]: this query param is not yet read by any apps/web
- * page. apps/web/src/shell/provider-health-context.tsx's
- * `requestPluginsConnect` sets `pendingConnectProvider` only via
- * in-app navigation calls (see apps/web/src/pages/chat-page.tsx's use
- * of it), never from a URL param — there is no URL-based deep link
- * today. So this link takes the human to the Plugins panel but does
- * not yet auto-open the specific connector; wiring `?connect=` up is a
- * small follow-up for whoever owns apps/web. */
+/** `/plugins?connect=<connectorId>` — a deep link into the Plugins
+ * panel that auto-opens the named connector's own connect card
+ * (CL-7141: `apps/web/src/pages/plugins-page.tsx` reads this `connect`
+ * query param on mount and hands it to the same
+ * `requestPluginsConnect` path an in-app "Fix it" click uses). */
 function connectDeepLink(connectorId: string): string {
   return `/plugins?connect=${connectorId}`;
 }
 
-/** `/plugins?connect=mcp` — the same deep-link shape `connectDeepLink`
- * builds for a fixed `CONNECTOR_REGISTRY` id, pointed at Plugins'
- * generic "Add MCP server" card instead of one connector's own card,
- * since an MCP server has no fixed id to deep-link to (it is tenant-
- * minted at connect time — see `mcp-server-routes.ts`'s header). */
-const ADD_MCP_SERVER_DEEP_LINK = "/plugins?connect=mcp";
+/** There is no fixed id — and no generic add-custom-MCP-server form at
+ * all — to deep-link to (CL-7141; see
+ * `packages/plugins-ui/src/mcp-servers-section.tsx`'s header for why:
+ * only curated presets are self-serve installable, an MCP server has
+ * no id before it's tenant-minted at connect time). So this stays
+ * plain prose pointed at the Plugins page's own connector list rather
+ * than a link that would land on nothing. */
+const ADD_MCP_SERVER_GUIDANCE =
+  "point them to the Plugins page in this workbench — every connector it can add lives there";
 
 /** `/plugins?connect=mcp:<slug>` — a curated preset's own card
  * (CL-6152). Presets are still tenant-minted `mcp:<slug>` connections
@@ -324,9 +321,7 @@ async function runRequestConnection(
       `This workspace can't connect "${parsed.connector}" yet. Tell the ` +
       `human plainly what you can still do without it, and keep helping ` +
       `with that now — never ask them to go set up servers or report ` +
-      `back. A custom MCP server can be added from ` +
-      `${ADD_MCP_SERVER_DEEP_LINK} if they ever want to wire one up ` +
-      `themselves.`,
+      `back. If they want to add it themselves, ${ADD_MCP_SERVER_GUIDANCE}.`,
   };
 }
 
