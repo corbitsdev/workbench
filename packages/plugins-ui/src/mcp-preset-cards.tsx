@@ -233,9 +233,18 @@ function McpPresetCard({
 export function McpPresetCardsSection({
   tenantId,
   query = "",
+  autoConnectSlug = null,
+  onAutoConnectHandled,
 }: {
   readonly tenantId: string;
   readonly query?: string;
+  /** A preset slug named by a `/plugins?connect=mcp:<slug>` deep link
+   * (CL-7141) — once the catalog has loaded, that preset's row gets
+   * focused so a person lands on the right card without hunting for it.
+   * Never auto-fires the connect action itself: connecting still takes
+   * a person's own click, the same as every other card here. */
+  readonly autoConnectSlug?: string | null;
+  readonly onAutoConnectHandled?: () => void;
 }) {
   const [presets, setPresets] = useState<readonly McpPreset[]>([]);
   const [toolCounts, setToolCounts] = useState<ReadonlyMap<string, number>>(
@@ -264,6 +273,17 @@ export function McpPresetCardsSection({
   useEffect(() => {
     reload();
   }, [tenantId]);
+
+  useEffect(() => {
+    if (!loaded || autoConnectSlug === null) return;
+    if (presets.some((preset) => preset.slug === autoConnectSlug)) {
+      const row = document.querySelector(
+        `[data-plugin-slug="${autoConnectSlug}"] button`,
+      );
+      (row as HTMLButtonElement | null)?.focus();
+    }
+    onAutoConnectHandled?.();
+  }, [loaded, autoConnectSlug, presets, onAutoConnectHandled]);
 
   const needle = query.trim().toLowerCase();
   const visiblePresets = presets.filter(
