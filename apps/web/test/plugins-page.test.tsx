@@ -85,10 +85,15 @@ function fillField(id: string, value: string, textarea = false) {
   el.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-function stubFetch(): void {
+function stubFetch(
+  options: { readonly mcpPresets?: readonly Record<string, unknown>[] } = {},
+): void {
+  const mcpPresets = options.mcpPresets ?? [];
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const path = typeof input === "string" ? input : String(input);
     const method = (init?.method ?? "GET").toUpperCase();
+    if (path.includes("/mcp-servers/presets"))
+      return Promise.resolve(json({ data: mcpPresets }));
     if (path.includes("/api/me/principals"))
       return Promise.resolve(json(membership));
     if (path.includes("/api/workbench-tenancies/kinds"))
@@ -683,6 +688,65 @@ describe("PluginsRoute", () => {
   test("a `?connect=<id>` URL naming an unknown connector is ignored", async () => {
     stubFetch();
     window.history.replaceState(null, "", "/plugins?connect=bogus");
+
+    const el = await mount();
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(el.textContent).not.toContain(
+      "Couldn't find that connection — pick it below.",
+    );
+    expect(window.location.search).toBe("");
+  });
+
+  // CL-7141: `?connect=<id>` strips only the `connect` param — any other
+  // query param this route was opened with must survive.
+  test("a `?connect=<id>` URL keeps every other query param", async () => {
+    stubFetch();
+    window.history.replaceState(null, "", "/plugins?foo=bar&connect=github");
+
+    await mount();
+
+    expect(window.location.search).toBe("?foo=bar");
+  });
+
+  // CL-7141: `presetDeepLink` in `packages/connections-tools/src/tool.ts`
+  // emits `/plugins?connect=mcp:<slug>` for a curated MCP preset (Exa,
+  // Granola, Linear, ...) — this page resolves that against the preset
+  // catalog and focuses the matching card's own Connect button once it
+  // has loaded, rather than matching it against `CONNECTOR_REGISTRY`
+  // (which has no entry for a preset's `mcp:<slug>` id).
+  test("a `?connect=mcp:<slug>` URL naming a known preset focuses that preset's connect button", async () => {
+    stubFetch({
+      mcpPresets: [
+        {
+          slug: "exa",
+          displayName: "Exa",
+          description: "Search and research the live web.",
+          url: "https://mcp.exa.ai/mcp",
+          connectionMode: "keyless",
+          docsUrl: "https://docs.exa.ai/reference/exa-mcp",
+          connected: false,
+        },
+      ],
+    });
+    window.history.replaceState(null, "", "/plugins?connect=mcp:exa");
+
+    const el = await mount();
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    const connectButton = el.querySelector(
+      '[data-plugin-slug="exa"] button[aria-label="Connect Exa"]',
+    );
+    expect(connectButton).not.toBeNull();
+    expect(document.activeElement).toBe(connectButton);
+    expect(window.location.search).toBe("");
+  });
+
+  // CL-7141: a preset slug the catalog doesn't recognize (typo, stale
+  // link) is ignored — no dialog, no notice, no thrown error.
+  test("a `?connect=mcp:<slug>` URL naming an unknown preset is ignored", async () => {
+    stubFetch();
+    window.history.replaceState(null, "", "/plugins?connect=mcp:bogus");
 
     const el = await mount();
 
