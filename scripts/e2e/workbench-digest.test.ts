@@ -73,14 +73,14 @@ function runIds(data: unknown): string[] {
 const { tempDir, track } = createCleanupHarness();
 
 describe.skipIf(databaseUrl === undefined)("workbench-digest workflow", () => {
-  // Skipped: same upstream defect documented in heartbeat.test.ts (see
-  // CL-6004) — the first mail trigger against a freshly deployed
-  // single-step workflow deterministically fails with RunFailed /
-  // "one or more steps failed" regardless of step timeout length. This
-  // confirms the defect is systemic to the mail-triggered single-step
-  // deploy path in vendor/intx/hub-sessions, not heartbeat-specific.
-  // Do not patch vendor; re-enable once fixed upstream.
-  test.skip("launching workbench-digest against the hub's own noop-inference endpoint completes a run", async () => {
+  // Previously skipped (CL-6004): the same upstream defect documented in
+  // heartbeat.test.ts — the first mail trigger against a freshly deployed
+  // single-step workflow deterministically failed with RunFailed / "one or
+  // more steps failed" regardless of step timeout length, confirming the
+  // defect was systemic to the mail-triggered single-step deploy path in
+  // vendor/intx/hub-sessions, not heartbeat-specific. Now fixed in the
+  // vendored tree (see `docs/revendor-inventory.md`).
+  test("launching workbench-digest against the hub's own noop-inference endpoint completes a run", async () => {
     const url = databaseUrl;
     if (url === undefined) throw new Error("unreachable: suite is skipped");
 
