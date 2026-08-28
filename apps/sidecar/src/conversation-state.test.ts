@@ -4,7 +4,11 @@ import path from "node:path";
 
 import { afterEach, expect, test } from "bun:test";
 
-import type { Principal, RepoId, RepoStore } from "@intx/hub-sessions/substrate";
+import type {
+  Principal,
+  RepoId,
+  RepoStore,
+} from "@intx/hub-sessions/substrate";
 import type { ConversationTurn } from "@intx/types/runtime";
 
 import {
@@ -14,6 +18,7 @@ import {
   prepareConversationForOriginatingWorkbench,
   reconstructDurableConversation,
 } from "./conversation-state";
+import { originatingWorkbenchIdFromRequest } from "./originating-workbench";
 
 const tmpDirs: string[] = [];
 
@@ -56,21 +61,21 @@ function fsBackedSubstrate(repoDir: string): RepoStore {
     ) => {
       const prefixDir = path.join(
         repoDir,
-        ...args.preservePrefix.split("/").filter((seg: string) => seg.length > 0),
+        ...args.preservePrefix
+          .split("/")
+          .filter((seg: string) => seg.length > 0),
       );
       const existing = new Map<string, Uint8Array>();
       let names: string[] = [];
       try {
         names = await fs.promises.readdir(prefixDir);
       } catch (cause) {
-        if (
-          !(
-            typeof cause === "object" &&
-            cause !== null &&
-            "code" in cause &&
-            cause.code === "ENOENT"
-          )
-        ) {
+        if (!(
+          typeof cause === "object" &&
+          cause !== null &&
+          "code" in cause &&
+          cause.code === "ENOENT"
+        )) {
           throw cause;
         }
       }
@@ -78,7 +83,10 @@ function fsBackedSubstrate(repoDir: string): RepoStore {
         const full = path.join(prefixDir, name);
         const st = await fs.promises.stat(full);
         if (st.isFile()) {
-          existing.set(`${args.preservePrefix}${name}`, await fs.promises.readFile(full));
+          existing.set(
+            `${args.preservePrefix}${name}`,
+            await fs.promises.readFile(full),
+          );
         }
       }
       const files = await args.merge(existing);
@@ -127,7 +135,11 @@ test("two rooms of one agent keep isolated turns; a new room starts empty", asyn
   await store.storage.writeTurns([userTurn("room A tool result")]);
   await store.mirrorToSubstrate();
 
-  const roomADir = durableConversationAgentStateDir(repoDir, "default", "chan_a");
+  const roomADir = durableConversationAgentStateDir(
+    repoDir,
+    "default",
+    "chan_a",
+  );
   const reconstructedA = await reconstructDurableConversation(
     roomADir,
     "default/chan_a",
@@ -137,7 +149,12 @@ test("two rooms of one agent keep isolated turns; a new room starts empty", asyn
   expect(await store.bindOriginatingWorkbench("chan_b")).toBe(true);
   expect(peekTurns(store)).toEqual([]);
 
-  const mixedLegacy = path.join(repoDir, "agent-state", "default", "checkpoint.json");
+  const mixedLegacy = path.join(
+    repoDir,
+    "agent-state",
+    "default",
+    "checkpoint.json",
+  );
   expect(fs.existsSync(mixedLegacy)).toBe(false);
 
   await store.storage.writeTurns([userTurn("room B first infer")]);
@@ -152,11 +169,62 @@ test("two rooms of one agent keep isolated turns; a new room starts empty", asyn
   expect(await store.bindOriginatingWorkbench("chan_b")).toBe(false);
 });
 
+test("two queued mails bind and mirror under each message's From not a later origin", async () => {
+  const root = tmpDir("conv-queued-");
+  const { store } = await makeStore(root);
+  const registry = {
+    acquire: () => Promise.resolve(store),
+    get: () => store,
+    peek: () => store,
+  };
+  const mailRequest = (from: string) => ({
+    input: {
+      headers: { from, to: ["myra@alice.localhost"] },
+      rawHeaders: {},
+      parts: [],
+    },
+  });
+  // Both inbound mails exist (enqueued) before the first invokeStep. A
+  // latest-wins origin file would now name chan_b for both binds.
+  const fromA = originatingWorkbenchIdFromRequest(
+    mailRequest("chan_a@alice.localhost"),
+  );
+  const fromB = originatingWorkbenchIdFromRequest(
+    mailRequest("chan_b@alice.localhost"),
+  );
+  expect(fromA).toBe("chan_a");
+  expect(fromB).toBe("chan_b");
+
+  await prepareConversationForOriginatingWorkbench({
+    registry: registry as never,
+    agentKey: "default",
+    originatingWorkbenchId: fromA,
+  });
+  await store.storage.writeTurns([userTurn("from A")]);
+  await store.mirrorToSubstrate();
+
+  await prepareConversationForOriginatingWorkbench({
+    registry: registry as never,
+    agentKey: "default",
+    originatingWorkbenchId: fromB,
+  });
+  expect(peekTurns(store)).toEqual([]);
+  await store.storage.writeTurns([userTurn("from B")]);
+  await store.mirrorToSubstrate();
+
+  await prepareConversationForOriginatingWorkbench({
+    registry: registry as never,
+    agentKey: "default",
+    originatingWorkbenchId: fromA,
+  });
+  expect(peekTurns(store)).toEqual([userTurn("from A")]);
+});
+
 test("prepareConversationForOriginatingWorkbench evicts the warm agent on room change only", async () => {
   const evictions: string[] = [];
   const store = {
-    bindOriginatingWorkbench: (id: string) =>
-      Promise.resolve(id === "chan_b"),
+    bindOriginatingWorkbench: (id: string) => Promise.resolve(id === "chan_b"),
+    boundOriginatingWorkbenchId: () => null,
   };
   const registry = {
     acquire: () => Promise.resolve(store),
