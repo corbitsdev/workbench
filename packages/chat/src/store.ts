@@ -311,8 +311,8 @@ export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
             workbenchReadState.principalId,
           ],
           set: {
-            lastSeenCreatedAt: sql`CASE WHEN excluded.last_seen_created_at > ${workbenchReadState.lastSeenCreatedAt} THEN excluded.last_seen_created_at ELSE ${workbenchReadState.lastSeenCreatedAt} END`,
-            lastSeenId: sql`CASE WHEN excluded.last_seen_created_at > ${workbenchReadState.lastSeenCreatedAt} THEN excluded.last_seen_id ELSE ${workbenchReadState.lastSeenId} END`,
+            lastSeenCreatedAt: sql`CASE WHEN excluded.last_seen_created_at >= ${workbenchReadState.lastSeenCreatedAt} THEN excluded.last_seen_created_at ELSE ${workbenchReadState.lastSeenCreatedAt} END`,
+            lastSeenId: sql`CASE WHEN excluded.last_seen_created_at >= ${workbenchReadState.lastSeenCreatedAt} THEN excluded.last_seen_id ELSE ${workbenchReadState.lastSeenId} END`,
           },
         })
         .returning();
@@ -467,7 +467,7 @@ export function createInMemoryChatStore(): ChatStore {
       const existing = readStateByKey.get(key);
       if (
         existing !== undefined &&
-        existing.lastSeenCreatedAt >= input.lastSeenCreatedAt
+        existing.lastSeenCreatedAt > input.lastSeenCreatedAt
       ) {
         return existing;
       }
