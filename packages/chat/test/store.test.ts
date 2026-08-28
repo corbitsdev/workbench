@@ -122,3 +122,30 @@ test("putReadState upserts a per-principal cursor without disturbing other princ
   const bob = await store.getReadState("tnt_1", "chn_1", "prn_bob");
   expect(bob).toBeUndefined();
 });
+
+test("putReadState never moves the cursor backward when a stale write lands after a newer one", async () => {
+  const store = createInMemoryChatStore();
+  await store.putReadState({
+    tenantId: "tnt_1",
+    workbenchId: "chn_1",
+    principalId: "prn_alice",
+    lastSeenCreatedAt: new Date("2026-01-02T00:00:00.000Z"),
+    lastSeenId: "mail_2",
+  });
+
+  const result = await store.putReadState({
+    tenantId: "tnt_1",
+    workbenchId: "chn_1",
+    principalId: "prn_alice",
+    lastSeenCreatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    lastSeenId: "mail_1",
+  });
+
+  expect(result.lastSeenId).toBe("mail_2");
+  expect(result.lastSeenCreatedAt).toEqual(
+    new Date("2026-01-02T00:00:00.000Z"),
+  );
+
+  const alice = await store.getReadState("tnt_1", "chn_1", "prn_alice");
+  expect(alice?.lastSeenId).toBe("mail_2");
+});
