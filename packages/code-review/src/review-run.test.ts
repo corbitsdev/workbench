@@ -48,6 +48,7 @@ interface FakeGitHub {
 function fakeGitHub(
   diff: PullRequestDiff = DIFF,
   postedComments: readonly string[] = [],
+  commentsTruncated = false,
 ): FakeGitHub {
   const posted: FakeGitHub["posted"][number][] = [];
   const diffReads: PullRequestRef[] = [];
@@ -70,7 +71,10 @@ function fakeGitHub(
       },
       listPostedComments: (ref) => {
         listedComments.push(ref);
-        return Promise.resolve({ comments: postedComments, truncated: false });
+        return Promise.resolve({
+          comments: postedComments,
+          truncated: commentsTruncated,
+        });
       },
     },
   };
@@ -221,4 +225,36 @@ test("a finding whose fingerprint was already posted is not raised again", async
   expect(result.review.body).toContain("correctness finding");
   expect(result.review.body).toContain("release-risk finding");
   expect(result.review.body).not.toContain("architecture finding");
+});
+
+test("a truncated diff surfaces an incompleteness note in the posted review", async () => {
+  const github = fakeGitHub({ ...DIFF, truncated: true });
+
+  const result = await runPullRequestReview(
+    {
+      github: github.client,
+      runReviewerTurn: ({ reviewer }) =>
+        Promise.resolve(reportFor(reviewer.id)),
+    },
+    REF,
+  );
+
+  if (result.skipped) throw new Error("expected the review to run");
+  expect(result.review.body).toContain("This review may be incomplete");
+});
+
+test("a truncated already-posted-comments page surfaces the same note", async () => {
+  const github = fakeGitHub(DIFF, [], true);
+
+  const result = await runPullRequestReview(
+    {
+      github: github.client,
+      runReviewerTurn: ({ reviewer }) =>
+        Promise.resolve(reportFor(reviewer.id)),
+    },
+    REF,
+  );
+
+  if (result.skipped) throw new Error("expected the review to run");
+  expect(result.review.body).toContain("This review may be incomplete");
 });
