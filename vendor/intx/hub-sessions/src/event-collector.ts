@@ -12,6 +12,7 @@ import type {
   InferenceEvent,
   ContentBlock,
   TokenUsage,
+  LastCycleSource,
 } from "@intx/types/runtime";
 import { type DB, parseTurnPartType } from "@intx/db";
 
@@ -39,11 +40,13 @@ export type TurnFinalized = {
   toolErrors: { name: string; content: string }[];
 };
 
-// Forwarded on every `inference.usage` event so product-side consumers
-// (see @corbits/insights' createUsageSink) can persist tokens without the
-// collector's private turn-accumulation state. Deliberately as narrow as
-// `TokenUsage` + the turn/source identity needed to attribute it.
-export type UsageForwarded = {
+// Per-turn token usage, emitted once when a turn finalizes. Carries full run
+// identity so a host accounting sink never has to join against a separate
+// address-to-tenant map (which would go stale at run teardown).
+export type TurnUsage = {
+  tenantId: string;
+  sessionId: string;
+  runId: string;
   turnId: string;
   provider: string;
   model: string;
@@ -64,7 +67,7 @@ export type EventCollectorConfig = {
   runId: string;
   tenantId: string;
   onTurnFinalized?: (turn: TurnFinalized) => void;
-  onUsage?: (usage: UsageForwarded) => void;
+  onUsage?: (usage: TurnUsage) => void;
 };
 
 export function createEventCollector(
@@ -81,11 +84,6 @@ export function createEventCollector(
   // after the turn commits but before the collector is removed.
   let lastTurnId: string | null = null;
   let ordinal = 0;
-  // Model of the currently open turn, stamped by beginTurn. Read by
-  // inference.usage forwarding to attribute tokens without re-deriving it
-  // from the event's own `source.model` (both agree; this is the turn's
-  // system of record).
-  let currentModel = "unknown";
   // Prevents double-finalization when reactor.done and abandon() race.
   let finalized = false;
   // Set when inference.error fires so connector.reply knows to persist its
@@ -113,31 +111,14 @@ export function createEventCollector(
   let accumulatedToolCalls: TurnToolCall[] = [];
   // Tool results that reported isError, accumulated for TurnFinalized.
   let accumulatedToolErrors: { name: string; content: string }[] = [];
+  // Final cumulative token usage for the current turn. `inference.usage` events
+  // carry a running cumulative total and fire multiple times per step, so these
+  // are OVERWRITTEN (not summed); the last value before finalize is the
+  // authoritative per-turn total. Both reset on each new turn.
+  let turnUsage: TokenUsage | null = null;
+  let turnSource: LastCycleSource | null = null;
 
-  // Serializes event processing. Callers fire onEvent without awaiting
-  // (the registry's dispatch is deliberately fire-and-forget so it never
-  // blocks the websocket message loop), so without this chain two events
-  // interleave across their DB awaits: a connector.reply's finalize can
-  // null currentTurnId while inference.done is still inserting parts
-  // (dropping them as "no active turn"), and a finalize processed while
-  // the next inference.start's beginTurn is mid-insert marks the NEW
-  // turn finalized, leaving its row "running" forever (CL-6379). Each
-  // event fully settles before the next begins, restoring wire order.
-  let eventTail: Promise<void> = Promise.resolve();
-
-  function enqueue(work: () => Promise<void>): Promise<void> {
-    const run = eventTail.then(work);
-    // A rejected event must not wedge every later event; the caller
-    // still observes the rejection through the returned promise.
-    eventTail = run.catch(() => undefined);
-    return run;
-  }
-
-  function onEvent(event: InferenceEvent): Promise<void> {
-    return enqueue(() => processEvent(event));
-  }
-
-  async function processEvent(event: InferenceEvent): Promise<void> {
+  async function onEvent(event: InferenceEvent): Promise<void> {
     switch (event.type) {
       case "inference.start":
         await beginTurn(event.data.model);
@@ -149,16 +130,8 @@ export function createEventCollector(
       case "inference.done":
         await handleInferenceDone(event.data.turn.content);
         streamingText = "";
-        break;
-      case "inference.usage":
-        if (currentTurnId !== null && onUsage) {
-          onUsage({
-            turnId: currentTurnId,
-            provider: event.data.source.provider,
-            model: currentModel,
-            usage: event.data.usage,
-          });
-        }
+        turnUsage = event.data.usage;
+        turnSource = event.data.source;
         break;
       case "tool.done": {
         const callId = event.data.result.callId;
@@ -243,10 +216,15 @@ export function createEventCollector(
           });
         }
         break;
+      case "inference.usage":
+        // Cumulative running total that fires several times per step; overwrite
+        // so the last value before finalize is the authoritative per-turn
+        // usage, emitted once via onUsage from finalizeTurn.
+        turnUsage = event.data.usage;
+        turnSource = event.data.source;
+        break;
       default:
-        // reactor.start, streaming deltas, and other events are not
-        // persisted. inference.usage is handled above (forwarded, not
-        // persisted here — see UsageForwarded).
+        // reactor.start, streaming deltas, and other events are not persisted.
         break;
     }
   }
@@ -260,7 +238,6 @@ export function createEventCollector(
 
     currentTurnId = generateId("inferenceTurn");
     lastTurnId = currentTurnId;
-    currentModel = model;
     ordinal = 0;
     finalized = false;
     pendingError = false;
@@ -272,6 +249,8 @@ export function createEventCollector(
     callArgs.clear();
     accumulatedToolCalls = [];
     accumulatedToolErrors = [];
+    turnUsage = null;
+    turnSource = null;
 
     await db.insert(inferenceTurn).values({
       id: currentTurnId,
@@ -436,20 +415,33 @@ export function createEventCollector(
       });
     }
 
+    // Report per-turn usage once, alongside the finalize notify. Gated on
+    // turnUsage being present so a turn that ran no inference emits nothing.
+    // NOTE: abandon() finalizes with notify=false, so a turn abandoned
+    // mid-step (e.g. a sidecar disconnect) reports no usage even if the
+    // provider already billed input tokens -- an accepted gap until durable
+    // usage persistence lands on the turn row.
+    if (notify && onUsage && turnUsage !== null && turnSource !== null) {
+      onUsage({
+        tenantId,
+        sessionId,
+        runId,
+        turnId,
+        provider: turnSource.provider,
+        model: turnSource.model,
+        usage: turnUsage,
+      });
+    }
+
     currentTurnId = null;
   }
 
-  function abandon(): Promise<void> {
-    // Chained behind any in-flight events so an abandon issued while a
-    // turn's events are still persisting closes the turn they produce,
-    // not a half-processed intermediate state.
-    return enqueue(async () => {
-      if (currentTurnId === null || finalized) return;
+  async function abandon(): Promise<void> {
+    if (currentTurnId === null || finalized) return;
 
-      log.warn`Abandoning running turn ${currentTurnId} for session ${sessionId}`;
+    log.warn`Abandoning running turn ${currentTurnId} for session ${sessionId}`;
 
-      await finalizeTurn("failed", false, false);
-    });
+    await finalizeTurn("failed", false, false);
   }
 
   async function insertPart(
