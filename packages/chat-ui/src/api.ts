@@ -369,6 +369,34 @@ export type CreateWorkbenchInput =
  * in the sidebar without waiting for an unrelated refetch. */
 export const WORKBENCHES_MUTATED_EVENT = "workbench:chat:workbenches-mutated";
 
+/** SSE `event.type` the chat service publishes onto a workbench stream when
+ * the tenant's workbench list changed (a specialist minted in the
+ * background, a create from another tab). The host sidebar already
+ * invalidates on `WORKBENCHES_MUTATED_EVENT`; `applyStreamWorkbenchesMutated`
+ * is the bridge from this stream payload onto that same CustomEvent. */
+export const WORKBENCHES_MUTATED_STREAM_TYPE = "chat.workbenches-mutated";
+
+const WorkbenchesMutatedStreamData = type({
+  tenantId: "string",
+  "+": "ignore",
+});
+
+/** Parses a `chat.workbenches-mutated` SSE payload and, on success, fires
+ * `WORKBENCHES_MUTATED_EVENT` with `{tenantId}` so the shell sidebar
+ * refetches. Parse failure is a no-op — a malformed stream event must
+ * never throw into the EventSource handler. Extra keys are ignored so
+ * the server can grow the payload without breaking older clients. */
+export function applyStreamWorkbenchesMutated(data: unknown): void {
+  const parsed = WorkbenchesMutatedStreamData(data);
+  if (parsed instanceof type.errors) return;
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(WORKBENCHES_MUTATED_EVENT, {
+      detail: { tenantId: parsed.tenantId },
+    }),
+  );
+}
+
 export function createWorkbench(
   tenantId: string,
   input: CreateWorkbenchInput,

@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { WORKBENCHES_MUTATED_EVENT, createWorkbench } from "../src/api";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import {
+  WORKBENCHES_MUTATED_EVENT,
+  applyStreamWorkbenchesMutated,
+  createWorkbench,
+} from "../src/api";
+
+if (typeof document === "undefined") {
+  GlobalRegistrator.register();
+}
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
@@ -58,5 +67,53 @@ describe("createWorkbench mutation event", () => {
       window.removeEventListener(WORKBENCHES_MUTATED_EVENT, listener);
     }
     expect(fired).toBe(0);
+  });
+});
+
+describe("applyStreamWorkbenchesMutated", () => {
+  test("valid { tenantId } dispatches WORKBENCHES_MUTATED_EVENT with that tenantId", () => {
+    const seen: string[] = [];
+    const listener = (event: Event) => {
+      seen.push((event as CustomEvent<{ tenantId: string }>).detail.tenantId);
+    };
+    window.addEventListener(WORKBENCHES_MUTATED_EVENT, listener);
+    try {
+      applyStreamWorkbenchesMutated({ tenantId: "tnt_1" });
+    } finally {
+      window.removeEventListener(WORKBENCHES_MUTATED_EVENT, listener);
+    }
+    expect(seen).toEqual(["tnt_1"]);
+  });
+
+  test("garbage / missing tenantId does not dispatch", () => {
+    let fired = 0;
+    const listener = () => {
+      fired += 1;
+    };
+    window.addEventListener(WORKBENCHES_MUTATED_EVENT, listener);
+    try {
+      applyStreamWorkbenchesMutated(undefined);
+      applyStreamWorkbenchesMutated(null);
+      applyStreamWorkbenchesMutated({});
+      applyStreamWorkbenchesMutated({ tenantId: 1 });
+      applyStreamWorkbenchesMutated("tnt_1");
+    } finally {
+      window.removeEventListener(WORKBENCHES_MUTATED_EVENT, listener);
+    }
+    expect(fired).toBe(0);
+  });
+
+  test("extra keys in data still dispatch (forward-compatible)", () => {
+    const seen: string[] = [];
+    const listener = (event: Event) => {
+      seen.push((event as CustomEvent<{ tenantId: string }>).detail.tenantId);
+    };
+    window.addEventListener(WORKBENCHES_MUTATED_EVENT, listener);
+    try {
+      applyStreamWorkbenchesMutated({ tenantId: "tnt_1", extra: "ok" });
+    } finally {
+      window.removeEventListener(WORKBENCHES_MUTATED_EVENT, listener);
+    }
+    expect(seen).toEqual(["tnt_1"]);
   });
 });

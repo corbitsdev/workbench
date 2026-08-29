@@ -35,7 +35,8 @@ or `principalId` in a body is parsed and then explicitly discarded, not
 forwarded to the plane.
 
 `createUnavailableWorkflowMemoryRoutes` answers `503` on every route
-when the memory plane isn't mounted (no `EMBED_BASE_URL`).
+when the memory plane isn't mounted (no `EMBED_BASE_URL` /
+`OLLAMA_BASE_URL`, and no native-Ollama inject from `bun run dev`).
 
 ## Tests
 

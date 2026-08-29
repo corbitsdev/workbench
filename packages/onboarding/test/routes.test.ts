@@ -484,10 +484,11 @@ describe("POST /complete", () => {
     expect(body.error.code).toBe("credential_setup_failed");
   });
 
-  // CL-6360: the owner hit exactly this live — a `CliError` wrapping a
-  // package-registry freshness-check failure whose message names an
-  // absolute path on the hub's own disk. That text must never reach the
-  // client; only a fixed consumer sentence and a refId may.
+  // CL-6360: a `CliError` whose message names an absolute path on the
+  // hub's own disk must never reach the client; only a fixed consumer
+  // sentence and a refId may. The payload here is a historical
+  // freshness-check wrap; signup no longer packs, but the redaction
+  // still applies to any seed/setup CliError that names a path.
   test("a CliError naming an absolute file path never reaches the client", async () => {
     const lines: string[] = [];
     const routes = createOnboardingRoutes({

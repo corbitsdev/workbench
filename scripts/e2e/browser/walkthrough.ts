@@ -433,7 +433,9 @@ async function run(): Promise<void> {
 
     function wireDiagnostics(target: Page): void {
       target.on("pageerror", (error) =>
-        console.error(`  [page error] ${error.message}`),
+        console.error(
+          `  [page error] ${error instanceof Error ? error.message : String(error)}`,
+        ),
       );
       target.on("console", (msg) => {
         if (msg.type() === "error")
@@ -595,6 +597,9 @@ async function run(): Promise<void> {
                 ? { ...seedArgs, baseURLOverride: ollamaBaseUrl }
                 : seedArgs,
             );
+            if (seeded.kind === "seeded-pending-agents") {
+              throw new Error(seeded.message);
+            }
             return {
               status: "pass",
               detail: `stub credential stored and every default workflow deployed: ${seeded.workflows.join(", ")}`,

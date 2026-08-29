@@ -33,12 +33,13 @@ applies what hasn't already run.
 A workflow that pins a `@corbits/*` tool package (e.g. **assistant** pinning
 `@corbits/memory-tools`) resolves that pin from a `package-registry` asset
 (`CORBITS_TOOLS_REGISTRY`) carrying the package's tarball, built by
-`@corbits/tool-registry-publish`. `bun run seed` (`packages/hub-client/src/seed.ts`)
-republishes that tarball every time it runs, so after changing a tool
-package's source, republish and redeploy with:
+`@corbits/tool-registry-publish`. `workbench setup` publishes that tarball
+onto the root tenant (descendants inherit it); `workbench seed` does not
+pack. After changing a tool package's source, bump its version, then
+republish with:
 
 ```sh
-bun run seed
+workbench setup
 ```
 
 This is safe to re-run. Changing a tool package's source requires bumping
@@ -51,16 +52,19 @@ exactly this reason.
 
 ## Memory plane
 
-The memory plane (embeddings-backed recall) needs `EMBED_BASE_URL` set;
-without it, `apps/hub/src/memory-mount.ts` skips mounting the memory plane
+The memory plane (embeddings-backed recall) is `@corbits/memory`, mounted
+by `apps/hub/src/memory-mount.ts`. An explicit `EMBED_BASE_URL` wins;
+otherwise `OLLAMA_BASE_URL` is a local embed path, and `bun run dev`
+injects the native-Ollama embed env when Ollama is on PATH and neither
+variable is set. Without any of those, the hub skips mounting the plane
 and logs that it did, rather than failing hub startup — and
 `memory_search`/`memory_add`/`memory_list` answer with a plain "memory
 isn't set up on this server yet" note instead of erroring.
 
 Run `bun run scripts/setup-memory.ts` (or `bun run setup:memory`) for a
 recommendation tailored to this machine — it checks for native Ollama and
-Docker and prints the exact env lines and commands for whichever it finds,
-in the order the platform prefers them:
+Docker, prints the exact env lines and commands, and writes missing
+`EMBED_*` keys into `.env` when a local embed path exists:
 
 1. **Native first.** A local `ollama pull nomic-embed-text` needs no
    container and is the preferred embedding path.
@@ -77,8 +81,9 @@ in the order the platform prefers them:
 Two things degrade on purpose rather than failing loudly, and both are
 worth knowing before you rely on either:
 
-- **No embedding configured (`EMBED_BASE_URL` unset):** memory tools reply
-  with a "not set up" note; search finds nothing. Setting
+- **No embedding configured (`EMBED_BASE_URL` and `OLLAMA_BASE_URL`
+  unset, and no native Ollama for `bun run dev` to inject):** memory
+  tools reply with a "not set up" note; search finds nothing. Setting
   `EMBED_BASE_URL` later does **not** retroactively embed anything written
   while it was unset — migrations create the memory plane's tables either
   way, but there is no automatic backfill.

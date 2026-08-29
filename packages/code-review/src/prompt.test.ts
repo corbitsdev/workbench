@@ -27,6 +27,7 @@ function diffOf(files: readonly PullRequestFileDiff[]): PullRequestDiff {
     headSha: "headsha",
     baseSha: "basesha",
     files,
+    truncated: false,
   };
 }
 

@@ -195,6 +195,16 @@ function commentBody(entry: AggregatedFinding, diff: PullRequestDiff): string {
   );
 }
 
+// GitHub caps a paginated fetch at `fetchAllPages`' page bound; a pull
+// request past it reads back partial. Silence would let this review
+// read as complete when it saw only part of the change, or re-flag a
+// finding whose earlier post fell outside the read page — both worse
+// than saying so plainly.
+const TRUNCATED_NOTE =
+  "_This review may be incomplete: the pull request has more changed " +
+  "files or already-posted comments than one review pass reads, so " +
+  "some results may be partial or repeated._";
+
 function countLine(findings: readonly AggregatedFinding[]): string {
   if (findings.length === 0) {
     return "No findings — the reviewers read the change and had nothing to raise.";
@@ -219,6 +229,7 @@ export function aggregateReview(
   passes: readonly ReviewerPass[],
   diff: PullRequestDiff,
   alreadyPosted: ReadonlySet<string> = new Set(),
+  commentsTruncated = false,
 ): PullRequestReviewDraft {
   const collected = collect(passes, alreadyPosted);
   const sections: string[] = [
@@ -226,6 +237,10 @@ export function aggregateReview(
     "",
     countLine(collected.findings),
   ];
+
+  if (diff.truncated || commentsTruncated) {
+    sections.push("", TRUNCATED_NOTE);
+  }
 
   for (const severity of SEVERITY_ORDER) {
     const forSeverity = collected.findings.filter(

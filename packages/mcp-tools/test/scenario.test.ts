@@ -274,3 +274,110 @@ test("mcp_call against an unconnected server degrades to an honest error, never 
     globalThis.fetch = originalFetch;
   }
 });
+
+test("mcp_list_tools truncates long descriptions and schemas like the catalog", async () => {
+  stub.stop();
+  stub = startStubMcpServer({
+    requiredToken: TOKEN,
+    echoDescription: "d".repeat(250),
+    echoInputSchema: {
+      type: "object",
+      properties: { text: { type: "string", description: "s".repeat(250) } },
+      required: ["text"],
+    },
+  });
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = ((input, init) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.endsWith("/api/workflow-connections/mcp-servers")) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [{ slug: "notion", name: "Notion", url: stub.url }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  try {
+    const bundle = mcpTools(fakeEnv());
+    const result = await bundle.run(
+      {
+        id: "c5",
+        name: MCP_LIST_TOOLS_TOOL,
+        arguments: { server: "notion" },
+      } satisfies ToolCall,
+      new AbortController().signal,
+    );
+    expect(result.isError).toBeFalsy();
+    const body = JSON.parse(result.content as string) as {
+      tools: {
+        name: string;
+        description: string;
+        inputSchema: unknown;
+      }[];
+    };
+    const echo = body.tools.find((tool) => tool.name === "echo");
+    expect(echo).toBeDefined();
+    expect(echo?.description.length ?? 0).toBeLessThanOrEqual(120);
+    expect(echo?.description).toContain("[truncated]");
+    const schemaText =
+      typeof echo?.inputSchema === "string"
+        ? echo.inputSchema
+        : JSON.stringify(echo?.inputSchema);
+    expect(schemaText.length).toBeLessThanOrEqual(120);
+    expect(schemaText).toContain("[truncated]");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("mcp_read bounds a single payload to about 8k characters", async () => {
+  stub.stop();
+  stub = startStubMcpServer({
+    requiredToken: TOKEN,
+    echoResult: "x".repeat(20_000),
+  });
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = ((input, init) => {
+    const url = typeof input === "string" ? input : input.toString();
+    if (url.endsWith("/api/workflow-connections/mcp-servers")) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [{ slug: "notion", name: "Notion", url: stub.url }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
+
+  try {
+    const bundle = mcpTools(fakeEnv());
+    const result = await bundle.run(
+      {
+        id: "r3",
+        name: MCP_READ_TOOL,
+        arguments: {
+          server: "notion",
+          tool: "echo",
+          arguments: { text: "ignored" },
+        },
+      } satisfies ToolCall,
+      new AbortController().signal,
+    );
+    expect(result.isError).toBeFalsy();
+    const content = result.content as string;
+    expect(content.length).toBeLessThanOrEqual(8_200);
+    expect(content).toContain("[truncated]");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

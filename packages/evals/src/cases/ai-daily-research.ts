@@ -2,8 +2,8 @@
 // canonical interview -> tool-map -> memory -> specialist -> routine
 // flow. Expects Myra to: (1) ask a short interview about
 // topics/sources/cadence/delivery rather than building anything first,
-// (2) create a web-search-tools researcher agent invited into this
-// workbench, (3) write the choices to firm memory, and (4) create the
+// (2) create a web-search-tools researcher agent with its own chat,
+// (3) write the choices to firm memory, and (4) create the
 // daily delivery routine only after an explicit go-ahead.
 import { defineEval } from "../define-eval.ts";
 import {

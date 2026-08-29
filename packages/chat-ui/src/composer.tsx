@@ -60,10 +60,11 @@ export type ComposerSendPayload = {
 };
 
 /** Imperative seam a host can grab a ref to, so content from outside the
- * composer's own tree — the profile card's Mention action (CL-5914) — can
- * land in the active draft at the caret. */
+ * composer's own tree — the profile card's Mention action (CL-5914) or
+ * hover-edit of a previous prompt — can land in the active draft. */
 export type ComposerHandle = {
   readonly insertText: (text: string) => void;
+  readonly setText: (text: string) => void;
 };
 
 /** Splice `insertion` in at `caret`, pure and independent of any DOM state
@@ -367,6 +368,7 @@ export const Composer = forwardRef<
   const [focused, setFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachGenerationRef = useRef(0);
 
   /** Auto-grow: the textarea reports its own content height, so the
    * measurement resets to the CSS-declared min-height before reading
@@ -380,6 +382,21 @@ export const Composer = forwardRef<
     textarea.style.height = `${textarea.scrollHeight}px`;
   }, [value]);
 
+  function syncComposerSuggestState(text: string, caret: number) {
+    setHelpOpen(false);
+    const openSlash = activeSlashQuery(text, caret);
+    if (openSlash !== null) {
+      setSlash(openSlash);
+      setSlashHighlight(0);
+      setMention(null);
+      return;
+    }
+    setSlash(null);
+    const openMention = activeMentionQuery(text, caret);
+    setMention(openMention);
+    setHighlight(0);
+  }
+
   useImperativeHandle(
     ref,
     () => ({
@@ -391,6 +408,22 @@ export const Composer = forwardRef<
         requestAnimationFrame(() => {
           textarea?.focus();
           textarea?.setSelectionRange(result.caret, result.caret);
+        });
+      },
+      setText: (text: string) => {
+        attachGenerationRef.current += 1;
+        setValue(text);
+        setMention(null);
+        setSlash(null);
+        setHelpOpen(false);
+        setPendingInvites([]);
+        setAttachments([]);
+        setErrorMessage(null);
+        setPreparing(false);
+        requestAnimationFrame(() => {
+          const textarea = textareaRef.current;
+          textarea?.focus();
+          textarea?.setSelectionRange(text.length, text.length);
         });
       },
     }),
@@ -412,21 +445,6 @@ export const Composer = forwardRef<
   const sendVisualState = composerSendVisualState(value, attachments, {
     sending,
   });
-
-  function syncComposerSuggestState(text: string, caret: number) {
-    setHelpOpen(false);
-    const openSlash = activeSlashQuery(text, caret);
-    if (openSlash !== null) {
-      setSlash(openSlash);
-      setSlashHighlight(0);
-      setMention(null);
-      return;
-    }
-    setSlash(null);
-    const openMention = activeMentionQuery(text, caret);
-    setMention(openMention);
-    setHighlight(0);
-  }
 
   /**
    * Fires the send and tracks its flight for the button's spinner —
@@ -537,6 +555,7 @@ export const Composer = forwardRef<
     if (!canAttachComposer({ sending, preparing })) return;
 
     const files = Array.from(fileList);
+    const generation = attachGenerationRef.current;
     const validation = validateAttachmentPick(
       attachments.length,
       attachmentBytesOnComposer(attachments),
@@ -563,11 +582,15 @@ export const Composer = forwardRef<
         });
       }
       // All-or-nothing: only commit once every file in the pick has read.
+      if (attachGenerationRef.current !== generation) return;
       setAttachments((previous) => [...previous, ...next]);
     } catch {
+      if (attachGenerationRef.current !== generation) return;
       setErrorMessage(CHAT_STRINGS.composerAttachmentReadError);
     } finally {
-      setPreparing(false);
+      if (attachGenerationRef.current === generation) {
+        setPreparing(false);
+      }
       resetFileInput();
     }
   }

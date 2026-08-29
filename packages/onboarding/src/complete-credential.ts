@@ -70,7 +70,6 @@ import {
   type ModelSource,
   type SeedTenantArgs,
   type SupportedCredentialProvider,
-  type ToolRegistryPublisher,
   type WorkflowPusher,
 } from "@workbench/hub-client";
 import { preferCompletionCapable } from "@workbench/hub-client/model-capability";
@@ -157,8 +156,6 @@ type CommonArgs = {
   cookies: string[];
   hubUrl: string;
   pushWorkflow: WorkflowPusher;
-  /** Passed through to `seedTenant`; a test double replaces the real corbits-tools publish the same way `pushWorkflow` replaces the real git push. */
-  publishToolRegistry?: ToolRegistryPublisher;
   log: (line: string) => void;
 };
 
@@ -489,11 +486,7 @@ export async function ensureSeeded(
     confirmDeployments: false,
   };
   try {
-    await runSeedTenant(
-      args.publishToolRegistry !== undefined
-        ? { ...seedTenantArgs, publishToolRegistry: args.publishToolRegistry }
-        : seedTenantArgs,
-    );
+    await runSeedTenant(seedTenantArgs);
   } catch (cause) {
     if (!isSidecarUnavailableError(cause)) throw cause;
     args.log(
@@ -546,14 +539,10 @@ export async function completeCredentialSetup(
     args.baseURLOverride !== undefined
       ? { ...baseEnsureSeededArgs, baseURLOverride: args.baseURLOverride }
       : baseEnsureSeededArgs;
-  const withPublishToolRegistry =
-    args.publishToolRegistry !== undefined
-      ? { ...ensureSeededArgs, publishToolRegistry: args.publishToolRegistry }
-      : ensureSeededArgs;
   const seeded = await ensureSeeded(
     args.seedTenantFn !== undefined
-      ? { ...withPublishToolRegistry, seedTenantFn: args.seedTenantFn }
-      : withPublishToolRegistry,
+      ? { ...ensureSeededArgs, seedTenantFn: args.seedTenantFn }
+      : ensureSeededArgs,
   );
 
   if (seeded.kind === "seeded-pending-agents") {

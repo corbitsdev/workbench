@@ -1252,6 +1252,7 @@
         "@corbits/api-query": "workspace:*",
         "@corbits/bench-ui": "workspace:*",
         "@corbits/chat-ui": "workspace:*",
+        "@corbits/error-sink": "workspace:*",
         "@corbits/icons": "workspace:*",
         "@corbits/inference-settings": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#3b122812a307ccb35be31386f7696020c5a84635",
@@ -1433,6 +1434,7 @@
       "name": "@corbits/webhook-triggers",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/error-sink": "workspace:*",
         "@corbits/folded-runs": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
@@ -1478,8 +1480,8 @@
       "name": "@corbits/workflow-deploy-source",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/error-sink": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
-        "@intx/log": "0.3.0",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",

@@ -61,7 +61,8 @@ function assertNonEmpty<T>(arr: T[]): asserts arr is [T, ...T[]] {
 /**
  * Logs a caught failure's raw detail — the exact text a `CliError` or a
  * generic `Error` carries, which can and does include absolute file
- * paths (see `StaleToolPackageError`) or other internals a user must
+ * paths (a `CliError` wrapping a publish/freshness failure names the
+ * package directory on disk) or other internals a user must
  * never see (CL-6360) — behind a `refId`, then returns the envelope the
  * client actually renders: a fixed consumer-language `userMessage` plus
  * that same `refId` so a person can quote it back for support. Never
@@ -795,11 +796,10 @@ export function createOnboardingRoutes(
       return c.json(status, 200);
     } catch (cause) {
       // Neither `ProvisionError` nor `CliError` messages are safe to show
-      // verbatim: `CliError` in particular wraps failures like
-      // `StaleToolPackageError`, whose text names absolute file paths on
-      // the hub's own disk (CL-6360). The raw detail is logged behind a
-      // refId; the client only ever sees a fixed consumer sentence plus
-      // that refId.
+      // verbatim: `CliError` in particular can wrap a publish/freshness
+      // failure whose text names absolute file paths on the hub's own
+      // disk (CL-6360). The raw detail is logged behind a refId; the
+      // client only ever sees a fixed consumer sentence plus that refId.
       const envelope = reportOnboardingError(deps.logError ?? deps.log, {
         userAction: `credential setup for user ${user.id}`,
         code: "credential_setup_failed",
