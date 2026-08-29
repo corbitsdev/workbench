@@ -358,6 +358,7 @@ import { createBootAssetWiring, REGISTRIES } from "./asset-service-factory";
 import { createRoutineScheduler } from "./routine-scheduler";
 import { createToolGrantsForPins } from "./tool-grants";
 import { createMcpCredentialBindingsFor } from "./mcp-credential-bindings";
+import { createPinnedPackageCredentialBindingsFor } from "./pinned-package-credential-bindings";
 import { shutdownHub } from "./shutdown";
 import { createPinnedPackageCredentialBindingsFor } from "./pinned-package-credential-bindings";
 
