@@ -87,9 +87,12 @@ through picking a provider — Anthropic, OpenAI, Google, OpenRouter, Hugging
 Face, Groq, or another of the curated providers in
 [`packages/hub-client/src/catalog-seed-data.ts`](packages/hub-client/src/catalog-seed-data.ts)
 — and pasting their own key (or, for OpenRouter, completing a PKCE OAuth
-connect), proves it with a real call before storing anything, then deploys
-and confirms the default routines on the spot — no separate `bun run seed`
-step, no docs to read. Whichever provider they connect gets its own curated
+connect), which is stored right away — no separate `bun run seed` step, no
+docs to read. A wrong key isn't caught up front; it surfaces the first time
+it's actually dialed for real inference, through the same in-chat "Fix this
+connection" flow any credential failure uses. The bench's default agents
+deploy in the background — "Your workbench is ready — agents will come
+online shortly," no "Connecting…" wait in the browser. Whichever provider they connect gets its own curated
 catalog entry planted the same way `bun run seed` plants Anthropic's; see
 [docs/model-seeding.md](docs/model-seeding.md) for how that catalog data is
 curated and kept up to date.

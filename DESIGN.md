@@ -125,7 +125,7 @@ as a document, and these are working surfaces.
 ## Search
 
 Two separate surfaces, never merged, and neither opens the other (a
-decision re-litigated more than once — see `docs/DECISIONS.md` → Search):
+decision re-litigated more than once):
 
 - **The magnifier in the stage top bar is a per-page filter.** It scopes to
   whatever page it's on — Files filters files, Skills filters skills — and
