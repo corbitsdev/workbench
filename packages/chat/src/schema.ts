@@ -116,6 +116,14 @@ export const workbenchLaunch = chatSchema.table("workbench_launch", {
    */
   priorRunIds: jsonb("prior_run_ids").notNull().default([]),
   foldedBody: jsonb("folded_body").notNull(),
+  /**
+   * `@corbits/folded-runs`' `inferenceSourcesDigest` of the chain the
+   * current run last deployed with — secret included, hashed. A send
+   * compares it against today's resolution so a rotated API key
+   * reaches a live agent (CL-6687); `null` until the run's first
+   * deploy, and for rows that predate the column.
+   */
+  sourcesDigest: text("sources_digest"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

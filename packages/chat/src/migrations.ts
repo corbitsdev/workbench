@@ -407,6 +407,13 @@ export const chatMigrations: readonly ChatMigration[] = [
         DROP COLUMN IF EXISTS "noop_inference";
     `,
   },
+  {
+    name: "0024_workbench_launch_sources_digest",
+    sql: `
+      ALTER TABLE "chat"."workbench_launch"
+        ADD COLUMN IF NOT EXISTS "sources_digest" text;
+    `,
+  },
 ];
 
 /**

@@ -5,6 +5,7 @@
 // real the suite fails and says which hop, it never fakes the result.
 
 import { afterAll } from "bun:test";
+import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -23,9 +24,17 @@ const SIDECAR_DIR = path.join(REPO_ROOT, "apps", "sidecar");
  * database still runs the unit gates); in CI, E2E_REQUIRED=1 turns
  * that skip into a loud failure so the suite can never silently
  * vanish from the pipeline.
+ *
+ * `bun test` workers do not always inherit process.env.DATABASE_URL
+ * even when the shell sourced `.env`. Fall back to the same repo-root
+ * `.env` file `bun run` would load.
  */
 export function e2eDatabaseUrl(): string | undefined {
-  const url = process.env["DATABASE_URL"];
+  const fromProcess = process.env["DATABASE_URL"];
+  const url =
+    fromProcess !== undefined && fromProcess !== ""
+      ? fromProcess
+      : databaseUrlFromRepoEnvFile();
   if (url !== undefined && url !== "") return baseUrlToE2eUrl(url);
   if (process.env["E2E_REQUIRED"] === "1") {
     throw new Error(
@@ -34,6 +43,51 @@ export function e2eDatabaseUrl(): string | undefined {
     );
   }
   return undefined;
+}
+
+/**
+ * Pull DATABASE_URL from a dotenv-style file body. Ignores blanks and
+ * comments; trims; strips one layer of surrounding quotes. Last match
+ * wins. Does not expand interpolations.
+ */
+export function parseEnvFileDatabaseUrl(text: string): string | undefined {
+  let found: string | undefined;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line === "" || line.startsWith("#")) continue;
+    if (!line.startsWith("DATABASE_URL=")) continue;
+    let value = line.slice("DATABASE_URL=".length).trim();
+    if (value.length >= 2) {
+      const start = value[0];
+      const end = value[value.length - 1];
+      if ((start === '"' && end === '"') || (start === "'" && end === "'")) {
+        value = value.slice(1, -1);
+      }
+    }
+    found = value;
+  }
+  if (found === undefined || found === "") return undefined;
+  return found;
+}
+
+function databaseUrlFromRepoEnvFile(): string | undefined {
+  let text: string;
+  try {
+    text = readFileSync(path.join(REPO_ROOT, ".env"), "utf8");
+  } catch (error) {
+    if (isEnoent(error)) return undefined;
+    throw error;
+  }
+  return parseEnvFileDatabaseUrl(text);
+}
+
+function isEnoent(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "ENOENT"
+  );
 }
 
 /**

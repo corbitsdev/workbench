@@ -44,6 +44,7 @@ const migrationNames = [
   "0021_workbench_launch_prior_runs",
   "0022_agent_turns",
   "0023_drop_workbench_host_arm",
+  "0024_workbench_launch_sources_digest",
 ];
 
 describeIfDb("applyChatMigrations", () => {

@@ -133,6 +133,7 @@ export {
   AGENT_SECTION_MODE,
   workbenchLaunchPersistExtra,
 } from "./standalone-launch";
+export { recordSourcesDigest } from "./agent-binding";
 export { createWorkbenchTurnQueue, TurnQueuedEvent } from "./turn-queue";
 export type {
   DispatchTurnBatch,
