@@ -17,7 +17,7 @@
     "lint": "prettier --check --cache . && eslint --cache .",
     "format": "prettier --write .",
     "build": "bun run scripts/run-all.ts build",
-    "test": "bun test scripts/run-all.test.ts && bun run scripts/run-all.ts test",
+    "test": "bun test ./scripts/*.test.ts && bun run scripts/run-all.ts test",
     "test:e2e": "bun test scripts/e2e",
     "dev": "bun run scripts/dev.ts",
     "setup": "bun packages/cli/src/index.ts setup",
