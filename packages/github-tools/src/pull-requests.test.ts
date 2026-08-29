@@ -176,7 +176,7 @@ test("postPullRequestReview posts one comment-only review at the head sha", asyn
 });
 
 test("fetchPullRequestReviewComments returns each comment's body", async () => {
-  const bodies = await fetchPullRequestReviewComments(
+  const page = await fetchPullRequestReviewComments(
     {
       apiKey: "token",
       baseUrl: BASE,
@@ -186,7 +186,173 @@ test("fetchPullRequestReviewComments returns each comment's body", async () => {
     },
     { owner: "acme", repo: "widgets", number: 7 },
   );
-  expect(bodies).toEqual(["first", "second"]);
+  expect(page).toEqual({ comments: ["first", "second"], truncated: false });
+});
+
+/** A page short enough to end pagination whichever way the caller detects it. */
+function shortPage(bodies: string[], link?: string): Response {
+  return new Response(JSON.stringify(bodies.map((body) => ({ body }))), {
+    status: 200,
+    headers: link === undefined ? {} : { link },
+  });
+}
+
+/** A full (100-item) page, to drive the page-number fallback when no `Link` header is sent. */
+function fullPage(prefix: string): Response {
+  const bodies = Array.from({ length: 100 }, (_, i) => ({
+    body: `${prefix}-${String(i)}`,
+  }));
+  return new Response(JSON.stringify(bodies), { status: 200 });
+}
+
+test('fetchPullRequestReviewComments follows a Link: rel="next" header across pages', async () => {
+  const requestedUrls: string[] = [];
+  const page = await fetchPullRequestReviewComments(
+    {
+      apiKey: "token",
+      baseUrl: BASE,
+      fetchImpl: fakeFetch((input) => {
+        const url = String(input);
+        requestedUrls.push(url);
+        if (url.includes("page=2")) {
+          return Promise.resolve(shortPage(["third", "fourth"]));
+        }
+        return Promise.resolve(
+          shortPage(["first", "second"], `<${BASE}/next?page=2>; rel="next"`),
+        );
+      }),
+    },
+    { owner: "acme", repo: "widgets", number: 7 },
+  );
+  expect(page).toEqual({
+    comments: ["first", "second", "third", "fourth"],
+    truncated: false,
+  });
+  expect(requestedUrls).toHaveLength(2);
+});
+
+test("fetchPullRequestReviewComments falls back to page= when no Link header is sent", async () => {
+  let calls = 0;
+  const page = await fetchPullRequestReviewComments(
+    {
+      apiKey: "token",
+      baseUrl: BASE,
+      fetchImpl: fakeFetch(() => {
+        calls += 1;
+        return Promise.resolve(
+          calls === 1 ? fullPage("p1") : shortPage(["last"]),
+        );
+      }),
+    },
+    { owner: "acme", repo: "widgets", number: 7 },
+  );
+  expect(page.comments).toHaveLength(101);
+  expect(page.comments[100]).toBe("last");
+  expect(page.truncated).toBe(false);
+  expect(calls).toBe(2);
+});
+
+test("fetchPullRequestReviewComments reports truncated when the page bound is hit", async () => {
+  const page = await fetchPullRequestReviewComments(
+    {
+      apiKey: "token",
+      baseUrl: BASE,
+      fetchImpl: fakeFetch(() => Promise.resolve(fullPage("p"))),
+    },
+    { owner: "acme", repo: "widgets", number: 7 },
+  );
+  expect(page.truncated).toBe(true);
+  expect(page.comments).toHaveLength(3000);
+});
+
+test("fetchPullRequestDiff follows pagination for files and reports it unset for one page", async () => {
+  const diff = await fetchPullRequestDiff(
+    {
+      apiKey: "token",
+      baseUrl: BASE,
+      fetchImpl: fakeFetch((input) => {
+        const url = String(input);
+        if (url.includes("/files")) {
+          return Promise.resolve(
+            jsonResponse([
+              {
+                filename: "src/loop.ts",
+                status: "modified",
+                additions: 2,
+                deletions: 1,
+                patch: PATCH,
+              },
+            ]),
+          );
+        }
+        return Promise.resolve(jsonResponse(PULL_BODY));
+      }),
+    },
+    { owner: "acme", repo: "widgets", number: 7 },
+  );
+  expect(diff.truncated).toBe(false);
+  expect(diff.files).toHaveLength(1);
+});
+
+function fileAt(index: number): Record<string, unknown> {
+  return {
+    filename: `src/file-${String(index)}.ts`,
+    status: "modified",
+    additions: 1,
+    deletions: 0,
+  };
+}
+
+test("fetchPullRequestDiff merges every page of changed files", async () => {
+  const diff = await fetchPullRequestDiff(
+    {
+      apiKey: "token",
+      baseUrl: BASE,
+      fetchImpl: fakeFetch((input) => {
+        const url = String(input);
+        if (url.includes("page=2")) {
+          return Promise.resolve(
+            new Response(JSON.stringify([fileAt(100)]), { status: 200 }),
+          );
+        }
+        if (url.includes("/files")) {
+          const files = Array.from({ length: 100 }, (_, i) => fileAt(i));
+          return Promise.resolve(
+            new Response(JSON.stringify(files), {
+              status: 200,
+              headers: {
+                link: `<${BASE}/repos/acme/widgets/pulls/7/files?page=2>; rel="next"`,
+              },
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse(PULL_BODY));
+      }),
+    },
+    { owner: "acme", repo: "widgets", number: 7 },
+  );
+  expect(diff.files).toHaveLength(101);
+  expect(diff.truncated).toBe(false);
+});
+
+test("fetchPullRequestDiff reports truncated when the file-page bound is hit", async () => {
+  const diff = await fetchPullRequestDiff(
+    {
+      apiKey: "token",
+      baseUrl: BASE,
+      fetchImpl: fakeFetch((input) => {
+        const url = String(input);
+        if (url.includes("/files")) {
+          const files = Array.from({ length: 100 }, (_, i) => fileAt(i));
+          return Promise.resolve(jsonResponse(files));
+        }
+        return Promise.resolve(jsonResponse(PULL_BODY));
+      }),
+    },
+    { owner: "acme", repo: "widgets", number: 7 },
+  );
+  expect(diff.truncated).toBe(true);
+  expect(diff.files).toHaveLength(3000);
 });
 
 test("postPullRequestReview refuses an empty body", async () => {
