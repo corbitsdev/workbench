@@ -737,6 +737,11 @@ export function createHubChatPlatform(
     );
     let relaunched = 0;
     for (const { binding, run } of participants) {
+      // A recent send may have stamped `sourcesCheckedAt` so
+      // `hasDriftedSources` would skip this pass. A provider connect is
+      // exactly the catalog change that interval is meant to wait for —
+      // drop the stamp so this sweep (and the next send) can see it.
+      sourcesCheckedAt.delete(binding.stableId);
       try {
         if (await reconcileDriftedRun(binding.roomAddress)) relaunched++;
       } catch (cause: unknown) {
