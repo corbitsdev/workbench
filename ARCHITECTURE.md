@@ -167,6 +167,12 @@ connected event from a system address and does not wake an agent. A
 generic in-room connect that an agent asked for still wakes that
 agent.
 
+Credential bindings for pinned tool packages fold only at deploy.
+Connecting a connector that feeds those packages relaunches live
+assistants that already pin them, so the new credential is on the
+run — not only on the next invite. The pending-room settle and that
+relaunch are separate passes.
+
 ## Capability growth and approval gates
 
 An agent's capability set grows through what it is granted, not through
