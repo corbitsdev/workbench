@@ -179,6 +179,7 @@ jobs:
         run: bun run test:e2e
         env:
           E2E_REQUIRED: "1"
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/workbench
 
       - name: Run the two-org isolation suite
         run: bun test test/isolation
@@ -191,6 +192,7 @@ jobs:
         run: bun test apps/hub/test
         env:
           E2E_REQUIRED: "1"
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/workbench
 
       # Every DB-gated suite under packages/* and apps/hub/src gates on
       # DATABASE_URL and describe.skip's without one, so build-test (no
@@ -203,3 +205,4 @@ jobs:
           bun test $(grep -rl DATABASE_URL --include='*.test.ts' packages apps | grep -v apps/hub/test)
         env:
           E2E_REQUIRED: "1"
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/workbench
