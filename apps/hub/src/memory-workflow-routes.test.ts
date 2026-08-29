@@ -36,6 +36,7 @@ const KEYS = [
   "EMBED_MODEL",
   "EMBED_API_STYLE",
   "EMBED_API_KEY",
+  "OLLAMA_BASE_URL",
 ] as const;
 
 type EnvKey = (typeof KEYS)[number];
