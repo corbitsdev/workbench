@@ -1,10 +1,11 @@
 // Registry drift guard: every `@corbits`-scoped tool-package pin a
-// workflow `seedTenant` actually deploys must be published by
-// `CORBITS_TOOL_PACKAGE_DIRS`, or the closure resolver fails the
-// launch with "unknown registry" the moment a fresh bench seeds. This
-// suite fails loud, naming the exact missing package, so adding a pin
-// to a default workflow without also registering its package dir is
-// caught here instead of at a stranger's first login.
+// workflow `seedTenant` actually deploys must be in
+// `CORBITS_TOOL_PACKAGE_DIRS` so `workbench setup` publishes it onto
+// the root. Missing a dir fails the closure resolver with "unknown
+// registry" the moment a descendant launches. This suite fails loud,
+// naming the exact missing package, so adding a pin to a default
+// workflow without also registering its package dir is caught here
+// instead of at a stranger's first login.
 
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";

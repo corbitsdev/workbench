@@ -222,9 +222,11 @@ test("the prompt asks only for facts Myra can't infer, never permission to use t
 test("the prompt builds the whole team on the person's OK: agents, routines, and memory in one go", () => {
   expect(ASSISTANT_SYSTEM_PROMPT).toContain(
     "On their OK, build the whole thing in one go: create the " +
-      "specialists and invite them in, create the routines, and save " +
-      "the facts they gave you to memory",
+      "specialists (each gets their own chat), create the routines, " +
+      "and save the facts they gave you to memory",
   );
+  expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("invite them in");
+  expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("create_channel");
 });
 
 test("the prompt has a delegated specialist finish its thread with a summary back to the host/main", () => {
@@ -298,4 +300,6 @@ test("the prompt hands a built team off with the exact discovery closing line", 
     "Their own chats for focused work. Here when you want me to run " +
       "the hunt and hand things off.",
   );
+  expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("invite them into this");
+  expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("invite it into this");
 });

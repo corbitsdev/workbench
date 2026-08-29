@@ -136,11 +136,12 @@ async function narrowToAffected(jobs: readonly Job[]): Promise<Job[]> {
   return narrowed;
 }
 
-const script = process.argv[2];
-if (!script) {
+const scriptArg = process.argv[2];
+if (!scriptArg) {
   console.error("usage: bun run scripts/run-all.ts <script-name>");
   process.exit(1);
 }
+const script: string = scriptArg;
 
 let concurrency: number;
 try {

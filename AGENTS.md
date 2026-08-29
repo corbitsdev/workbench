@@ -57,10 +57,10 @@ behind human approval.
   logical change per commit; commit messages are written for a public
   audience.
 - Worktrees live in `.worktrees/<branch>`; branch = `cl-<issue#>-<slug>`.
-- Tests are meaningful red/green tests only — no coverage theater. Merged
-  line coverage floor: 80%. Unit tests for pure modules sit next to the
-  source they cover (`src/**/*.test.ts`); multi-module / DOM / composition
-  suites stay under a package `test/` tree (or top-level e2e).
+- Tests are meaningful red/green tests only — no coverage theater. Unit
+  tests for pure modules sit next to the source they cover
+  (`src/**/*.test.ts`); multi-module / DOM / composition suites stay under
+  a package `test/` tree (or top-level e2e).
 - A fresh worktree has no `node_modules` symlinks until `bun install` runs.
   To check whether a workspace package exists, look in `packages/`, not
   `node_modules` — an absent `node_modules` entry means "not installed
@@ -95,9 +95,14 @@ check:*` script, so a violation fails CI rather than waiting for review.
   import graph from each declared entry point.
 - A `{ name, version }` tool-package pin literal must match the pinned
   package's own `package.json` version — `check:tool-package-pins` catches
-  the mismatch, but **not** a package's `src/` changing without a version
-  bump (needs a merge-base diff, not a working-tree snapshot — currently
-  unchecked; ticket before relying on it).
+  the mismatch. A tool package's `src/` changing without a version bump is
+  the other half of that class, caught separately by
+  `check:tool-package-freshness`: it diffs against the base ref (CI passes
+  `CHECK_BASE_REF`; locally it falls back to the merge base with
+  `origin/main`) and flags any tool package whose `src/` differs from that
+  base while its version stayed the same. With no base ref available
+  (no `origin/main`, no `CHECK_BASE_REF`) it no-ops, deferring to CI as the
+  authoritative run.
 - Every package needs a `LICENSE` file (canonical LGPL-2.1-or-later text,
   copy from any existing `packages/*/LICENSE`) — `check:licenses` fails
   without one.

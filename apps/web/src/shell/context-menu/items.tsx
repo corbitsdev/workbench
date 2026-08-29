@@ -45,6 +45,10 @@ export type ShellContextMenuActions = {
   readonly openProfile: (subject: ProfileSubject) => void;
   readonly cycleTheme: () => void;
   readonly signOut: () => void;
+  /** Called with the tenant id after a routine's Run now succeeds, so the
+   * caller can refresh the routines list and run history that a stale
+   * right-click menu has no other way to know changed. */
+  readonly onRoutineRan: (tenantId: string) => void;
 };
 
 async function copyLink(path: string, label: string): Promise<void> {
@@ -152,7 +156,10 @@ function routineMenu(
         icon: <PlayCircle />,
         onSelect: () => {
           void runRoutineNow(tenantId, target.id).then(
-            () => toast(`${target.name} started`),
+            () => {
+              toast(`${target.name} started`);
+              actions.onRoutineRan(tenantId);
+            },
             () => toast("Couldn't start the routine"),
           );
         },

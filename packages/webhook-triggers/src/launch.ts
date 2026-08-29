@@ -16,7 +16,9 @@
 // `createWebhookIngressRoutes` — that would both hide the run (no
 // `store.recordFired` call) and, if the sender's webhook client retries
 // the same delivery on a 5xx, mint a second, duplicate run for one
-// event. On exhausted retries this only logs, naming the run.
+// event. On exhausted retries this only reports the failure through
+// `@corbits/error-sink`, naming the run.
+import { reportError } from "@corbits/error-sink";
 import { and, eq } from "drizzle-orm";
 import {
   domainOf,
@@ -32,13 +34,10 @@ import {
 import type { DB } from "@intx/db";
 import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
 import { generateId } from "@intx/hub-common";
-import { getLogger } from "@intx/log";
 import { formatRunAddress } from "@intx/types";
 
 import { renderInputTemplate } from "./mapping";
 import type { WebhookTriggerRow } from "./schema";
-
-const log = getLogger(["webhook-triggers", "launch"]);
 
 export type LaunchWebhookTriggerDeps = FoldedRunsDeps & {
   db: DB["db"];
@@ -161,11 +160,16 @@ export async function launchWebhookTrigger(
     cryptoProvider,
   });
   if (!result.ok) {
-    const reason =
-      result.error instanceof Error
-        ? result.error.message
-        : String(result.error);
-    log.error`run ${instanceId} launched from webhook trigger "${trigger.id}" but its input failed to deliver after ${result.attempts} attempts: ${reason}`;
+    reportError(result.error, {
+      operation: "webhookTriggers.launch.deliverInput",
+      tenantId: trigger.tenantId,
+      agentId: triggerAddress,
+      extra: {
+        instanceId,
+        triggerId: trigger.id,
+        attempts: result.attempts,
+      },
+    });
   }
 
   return { instanceId, triggerAddress };

@@ -1,8 +1,8 @@
 {
   "name": "@corbits/agent-directory-tools",
   "private": true,
-  "description": "Myra's manager tools: list_agents and create_agent as an @intx/agent tool bundle — creates a new specialist agent definition in the caller's own tenant and, by default, invites it into the caller's own channel. Creation is free; the reactor never parks the create/invite pair",
-  "version": "0.0.4",
+  "description": "Myra's manager tools: list_agents and create_agent as an @intx/agent tool bundle — creates a new specialist agent definition in the caller's own tenant and, by default, mints or reopens that specialist's own 1:1 chat. Creation is free; the reactor never parks the create/mint pair",
+  "version": "0.0.5",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {

@@ -23,6 +23,7 @@ const DIFF: PullRequestDiff = {
       changedLines: [1, 2, 3],
     },
   ],
+  truncated: false,
 };
 
 function pass(id: string, report: unknown): ReviewerPass {
@@ -278,4 +279,33 @@ test("a fingerprint already posted is skipped on a re-run", () => {
   );
   expect(review.body).not.toContain("already flagged");
   expect(review.comments).toEqual([]);
+});
+
+test("an untruncated diff and comment page post no incompleteness note", () => {
+  const review = aggregateReview(
+    [pass("correctness", { summary: "read it", findings: [] })],
+    DIFF,
+  );
+  expect(review.body).not.toContain("may be incomplete");
+});
+
+test("a truncated diff surfaces an incompleteness note in the review body", () => {
+  const review = aggregateReview(
+    [pass("correctness", { summary: "read it", findings: [] })],
+    { ...DIFF, truncated: true },
+  );
+  expect(review.body).toContain(
+    "This review may be incomplete: the pull request has more changed " +
+      "files or already-posted comments than one review pass reads",
+  );
+});
+
+test("a truncated already-posted-comments page surfaces the same note", () => {
+  const review = aggregateReview(
+    [pass("correctness", { summary: "read it", findings: [] })],
+    DIFF,
+    new Set(),
+    true,
+  );
+  expect(review.body).toContain("This review may be incomplete");
 });

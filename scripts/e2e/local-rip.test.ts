@@ -17,10 +17,12 @@
 // hiding it: the "assistant" default workflow pins
 // `@corbits/memory-tools`, and that pin only resolved once an operator
 // had published a `package-registry`-kind asset named "corbits-tools"
-// carrying its tarball. `seedTenant` now publishes that asset itself
-// (`@corbits/tool-registry-publish`, wired in at
-// `packages/hub-client/src/seed.ts`) ahead of deploying any workflow,
-// so this suite asserts a full seed rather than a documented skip.
+// carrying its tarball. CL-7071 moved that publish off `seedTenant`
+// onto `workbench setup` (the root tenant; descendants inherit). This
+// suite has no operator-root split (`OPERATOR_TENANT_ID` is unset), so
+// the provisioned personal bench *is* the root: an explicit
+// `publishCorbitsToolsRegistry` hop onto that tenant stands in for
+// setup, then `ensureSeeded` deploys without packing.
 //
 // Stubbing note: onboarding's own `POST /api/onboarding/complete` route
 // (`testAndPersistCredential`, from `@workbench/onboarding`'s
@@ -58,6 +60,7 @@ import {
   DEFAULT_WORKFLOWS,
   isLiveDeploymentStatus,
   parseAs,
+  publishCorbitsToolsRegistry,
   seedTenant,
   type ApiCall,
 } from "../../packages/hub-client/src/index.ts";
@@ -369,16 +372,24 @@ describe.skipIf(databaseUrl === undefined)(
         }
       }
 
-      // CL-6057 closed the platform gap the earlier version of this
-      // suite documented: `seedTenant` (via `ensureSeeded`) now
-      // publishes the tenant's `corbits-tools` package-registry asset
-      // — packing `@corbits/memory-tools` into a self-contained
-      // tarball through `@corbits/tool-registry-publish` — ahead of
-      // deploying any workflow, so the "assistant" default workflow's
-      // `@corbits/memory-tools` pin resolves instead of failing the
-      // closure resolver with "unknown registry". This hop proves the
-      // real, unmodified connect flow fully seeds a fresh bench: every
-      // default workflow deploys, with none skipped.
+      // CL-7071: seedTenant/ensureSeeded no longer pack. This suite's
+      // provisioned personal bench is the root (`OPERATOR_TENANT_ID`
+      // unset), so publish `corbits-tools` onto it the same way
+      // `workbench setup` does onto the operator-created bench. Then
+      // ensureSeeded deploys assistant without packing.
+      await hop(
+        "publish corbits-tools onto the provisioned root bench (setup's job, not seed's)",
+        async () => {
+          await publishCorbitsToolsRegistry({
+            api: hubApi,
+            cookies: user.cookies,
+            hubUrl: hub.baseUrl,
+            tenantId: tenant.tenantId,
+            log: () => undefined,
+          });
+        },
+      );
+
       await hop(
         "the real, unmodified connect flow fully seeds every default workflow, including 'assistant'",
         async () => {

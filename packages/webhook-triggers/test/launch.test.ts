@@ -5,7 +5,9 @@
 // past this function (or `createWebhookIngressRoutes` would reject an
 // already-launched delivery, and a retried webhook client would then
 // mint a duplicate run for the same event).
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+
+let reportErrorCalls: unknown[] = [];
 
 const actualFoldedRuns = await import("@corbits/folded-runs");
 
@@ -34,6 +36,20 @@ mock.module("@corbits/folded-runs", () => ({
     return sendFoldedMailWithRetryResult;
   },
 }));
+
+beforeEach(async () => {
+  reportErrorCalls = [];
+  await mock.module("@corbits/error-sink", () => ({
+    reportError: (...args: unknown[]) => {
+      reportErrorCalls.push(args);
+      return "ref_test";
+    },
+  }));
+});
+
+afterEach(() => {
+  mock.restore();
+});
 
 const { launchWebhookTrigger } = await import("../src/launch");
 
@@ -95,9 +111,11 @@ describe("launchWebhookTrigger", () => {
   test("still returns the launched run when input delivery fails after every retry", async () => {
     launchFoldedRunCalls = [];
     sendFoldedMailWithRetryCalls = [];
+    reportErrorCalls = [];
+    const deliveryError = new Error("sidecar unreachable");
     sendFoldedMailWithRetryResult = {
       ok: false,
-      error: new Error("sidecar unreachable"),
+      error: deliveryError,
       attempts: 3,
     };
 
@@ -109,6 +127,53 @@ describe("launchWebhookTrigger", () => {
     expect(result.triggerAddress).toContain(result.instanceId);
     expect(launchFoldedRunCalls).toHaveLength(1);
     expect(sendFoldedMailWithRetryCalls).toHaveLength(1);
+  });
+
+  test("reports the exhausted delivery failure with the run's context", async () => {
+    launchFoldedRunCalls = [];
+    sendFoldedMailWithRetryCalls = [];
+    reportErrorCalls = [];
+    const deliveryError = new Error("sidecar unreachable");
+    sendFoldedMailWithRetryResult = {
+      ok: false,
+      error: deliveryError,
+      attempts: 3,
+    };
+
+    const result = await launchWebhookTrigger(baseDeps(), TRIGGER, {
+      status: "ok",
+    });
+
+    expect(reportErrorCalls).toHaveLength(1);
+    const [cause, context] = reportErrorCalls[0] as [
+      unknown,
+      {
+        operation: string;
+        tenantId: string;
+        agentId: string;
+        extra: Record<string, unknown>;
+      },
+    ];
+    expect(cause).toBe(deliveryError);
+    expect(context.operation).toBe("webhookTriggers.launch.deliverInput");
+    expect(context.tenantId).toBe(TRIGGER.tenantId);
+    expect(context.agentId).toBe(result.triggerAddress);
+    expect(context.extra).toEqual({
+      instanceId: result.instanceId,
+      triggerId: TRIGGER.id,
+      attempts: 3,
+    });
+  });
+
+  test("does not report anything when delivery succeeds", async () => {
+    launchFoldedRunCalls = [];
+    sendFoldedMailWithRetryCalls = [];
+    reportErrorCalls = [];
+    sendFoldedMailWithRetryResult = { ok: true, mail: { id: "m_1" } };
+
+    await launchWebhookTrigger(baseDeps(), TRIGGER, { status: "ok" });
+
+    expect(reportErrorCalls).toHaveLength(0);
   });
 
   test("returns the launched run normally when delivery succeeds", async () => {

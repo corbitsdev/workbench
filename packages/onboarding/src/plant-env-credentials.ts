@@ -21,7 +21,11 @@
 // one bad or rate-limited key must never stop every other provider from
 // planting, and must never stop the hub itself from starting.
 
-import { CredentialResponse, paginatedSchema } from "@intx/types";
+import {
+  CredentialResponse,
+  paginatedSchema,
+  ProviderResponse,
+} from "@intx/types";
 import {
   inferenceCredentialName,
   OLLAMA_PLACEHOLDER_SECRET,
@@ -155,13 +159,64 @@ export type PlantEnvProviderCredentialsArgs = {
   seedCatalogFn?: (args: SeedCatalogArgs) => ReturnType<typeof seedCatalog>;
 };
 
-async function findActiveCredential(
+/**
+ * Looks up the provider row a curated provider's connections (env-plant
+ * and a Settings connect alike) both key their credential to —
+ * `persistConnectorCredential` and `seedCatalog`'s own `plantCredential`
+ * both `ensureProvider` this exact `{ name: provider }` pair, so a
+ * provider row's existence here means some path already connected this
+ * provider. Read-only: unlike `ensureProvider`, this never creates the
+ * row, so a provider nobody has connected yet correctly reads back as
+ * "no active credential" without planting a stub row ahead of a probe
+ * that might still fail. Paginated the same way `findActiveCredential`
+ * is — a tenant with enough providers to span a page must not lose a
+ * match that lands on page two.
+ */
+async function findProviderId(
   api: ApiCall,
   cookies: string[],
   tenantId: string,
   provider: SupportedCredentialProvider,
-): Promise<{ id: string } | undefined> {
-  const name = inferenceCredentialName(provider);
+): Promise<string | undefined> {
+  let cursor: string | undefined;
+  do {
+    const path =
+      cursor === undefined
+        ? `/api/tenants/${tenantId}/providers?inherited=false`
+        : `/api/tenants/${tenantId}/providers?inherited=false&cursor=${encodeURIComponent(cursor)}`;
+    const listed = await api("GET", path, undefined, cookies);
+    const page = parseAs(
+      paginatedSchema(ProviderResponse),
+      listed.data,
+      "providers response",
+    );
+    const match = page.data.find((p) => p.name === provider);
+    if (match !== undefined) return match.id;
+    cursor = page.nextCursor ?? undefined;
+  } while (cursor !== undefined);
+  return undefined;
+}
+
+/**
+ * An active credential is recognized by the provider row it belongs to
+ * (`providerId`), not by the credential's own name — a Settings-connected
+ * credential is named after the connector's `displayName` ("Anthropic"),
+ * while this module's own plant names its row
+ * `inferenceCredentialName(provider)` ("anthropic-default"). Both
+ * resolve to the same provider row (`findProviderId`), so matching on
+ * `providerId` recognizes either one instead of only the env-plant's own
+ * naming convention. Restricted to the credential types `seedCatalog`
+ * itself ever writes for an inference source (`api_key`, `oauth_token`)
+ * so a non-inference row that happens to share the provider (never
+ * planted by either path today, but not a case this match should ever
+ * be fooled by) can't count as the plant.
+ */
+async function findActiveCredential(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+  providerId: string,
+): Promise<{ id: string; name: string } | undefined> {
   let cursor: string | undefined;
   do {
     const path =
@@ -175,9 +230,12 @@ async function findActiveCredential(
       "credentials response",
     );
     const match = page.data.find(
-      (c) => c.name === name && c.status === "active",
+      (c) =>
+        c.providerId === providerId &&
+        c.status === "active" &&
+        (c.type === "api_key" || c.type === "oauth_token"),
     );
-    if (match !== undefined) return { id: match.id };
+    if (match !== undefined) return { id: match.id, name: match.name };
     cursor = page.nextCursor ?? undefined;
   } while (cursor !== undefined);
   return undefined;
@@ -245,14 +303,23 @@ export async function plantEnvProviderCredentials(
     SupportedCredentialProvider,
     string,
   ][]) {
-    const alreadyActive = await findActiveCredential(
+    const providerId = await findProviderId(
       args.api,
       args.cookies,
       args.tenantId,
       provider,
     );
+    const alreadyActive =
+      providerId !== undefined
+        ? await findActiveCredential(
+            args.api,
+            args.cookies,
+            args.tenantId,
+            providerId,
+          )
+        : undefined;
     if (alreadyActive) {
-      const name = inferenceCredentialName(provider);
+      const name = alreadyActive.name;
       try {
         await runSeedCatalog(
           catalogSeedArgs(provider, {
@@ -302,13 +369,24 @@ export async function plantEnvProviderCredentials(
     // same name silently blocks the proven env key from ever being
     // stored. `findActiveCredential` already ruled out an *active*
     // credential before the probe; re-checking now is the only way to
-    // tell "planted" apart from "409-skipped against a dead row".
-    const nowActive = await findActiveCredential(
+    // tell "planted" apart from "409-skipped against a dead row". The
+    // provider row is guaranteed to exist by now — `seedCatalog` just
+    // `ensureProvider`d it while planting.
+    const nowProviderId = await findProviderId(
       args.api,
       args.cookies,
       args.tenantId,
       provider,
     );
+    const nowActive =
+      nowProviderId !== undefined
+        ? await findActiveCredential(
+            args.api,
+            args.cookies,
+            args.tenantId,
+            nowProviderId,
+          )
+        : undefined;
     if (!nowActive) {
       const name = inferenceCredentialName(provider);
       args.log(

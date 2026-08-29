@@ -31,13 +31,18 @@ describe("resolveToolIdentity", () => {
         server: "notion",
         tool: "search_pages",
       }),
-    ).toEqual({ provider: "notion", words: ["search", "pages"] });
+    ).toEqual({
+      provider: "notion",
+      words: ["search", "pages"],
+      toolName: "search_pages",
+    });
   });
 
   test("splits a provider-namespaced tool on its double underscore", () => {
     expect(resolveToolIdentity("slack__post_message", {})).toEqual({
       provider: "slack",
       words: ["post", "message"],
+      toolName: "post_message",
     });
   });
 
@@ -45,6 +50,7 @@ describe("resolveToolIdentity", () => {
     expect(resolveToolIdentity("linear.save_issue", {})).toEqual({
       provider: "linear",
       words: ["save", "issue"],
+      toolName: "save_issue",
     });
   });
 
@@ -52,6 +58,7 @@ describe("resolveToolIdentity", () => {
     expect(resolveToolIdentity("webSearch", {})).toEqual({
       provider: undefined,
       words: ["web", "search"],
+      toolName: "webSearch",
     });
   });
 
@@ -59,6 +66,7 @@ describe("resolveToolIdentity", () => {
     expect(resolveToolIdentity("mcp_read", { server: "notion" })).toEqual({
       provider: undefined,
       words: ["mcp", "read"],
+      toolName: "mcp_read",
     });
   });
 });
@@ -116,12 +124,105 @@ describe("describeToolCall", () => {
 
   test("an unknown verb still loses its underscores rather than leaking raw", () => {
     const phrase = describeToolCall("acme__frobnicate_widget", {}, "past");
-    expect(phrase).toBe("Frobnicate widget in Acme");
+    expect(phrase).toBe("Frobnicate widget");
     expect(phrase).not.toContain("_");
   });
 
   test("a plural object drops the article", () => {
     expect(describeToolCall("list_files", {}, "past")).toBe("Listed files");
+  });
+
+  test("a colon-namespaced GitHub tool still names the provider, not the id", () => {
+    expect(describeToolCall("github:get_issue", {}, "past")).toBe(
+      "Retrieved an issue in GitHub",
+    );
+    expect(describeToolCall("github__get_issue", {}, "past")).toBe(
+      "Retrieved an issue in GitHub",
+    );
+  });
+
+  test("a bare search names the query and never the identifier", () => {
+    expect(describeToolCall("search", { q: "x" }, "past")).toBe(
+      'Searched for "x"',
+    );
+  });
+
+  test("an unknown colon-namespaced verb title-cases the end name, not the package", () => {
+    expect(describeToolCall("acme:frobnicate_widget", {}, "past")).toBe(
+      "Frobnicate widget",
+    );
+  });
+
+  test("an Interchange memory search is a layman sentence, not a qualified id", () => {
+    const phrase = describeToolCall(
+      "@corbits/memory-tools/memory:memory_search",
+      { query: "outbound" },
+      "past",
+    );
+    expect(phrase).toBe('Searched memory for "outbound"');
+    expect(phrase).not.toContain("@");
+    expect(phrase).not.toContain("/");
+    expect(phrase).not.toContain(":");
+  });
+
+  test("an Interchange memory search still running has no query to name", () => {
+    expect(
+      describeToolCall(
+        "@corbits/memory-tools/memory:memory_search",
+        {},
+        "present",
+      ),
+    ).toBe("Searching memory");
+  });
+
+  test("an Interchange list-agents call pluralizes without a package path", () => {
+    expect(
+      describeToolCall(
+        "@corbits/agent-directory-tools/ad:list_agents",
+        {},
+        "past",
+      ),
+    ).toBe("Listed agents");
+  });
+
+  test("an Interchange ask-user call is a question, not the tool id", () => {
+    expect(
+      describeToolCall(
+        "@corbits/interaction-tools/ask-user:ask_user",
+        {},
+        "past",
+      ),
+    ).toBe("Asked a question");
+  });
+
+  test("a verb in the middle of the leftover name still tenses, without repeating Linear", () => {
+    const phrase = describeToolCall(
+      "@corbits/linear-tools/li:linear_list_recent_issues",
+      {},
+      "past",
+    );
+    expect(phrase).toBe("Listed recent issues in Linear");
+    expect(phrase).not.toBe("Linear list recent issues in Linear");
+    expect(
+      describeToolCall(
+        "@corbits/linear-tools/li:linear_list_recent_issues",
+        {},
+        "present",
+      ),
+    ).toBe("Listing recent issues in Linear");
+  });
+
+  test("a nameless-verb tool still tenses its query clause", () => {
+    expect(
+      describeToolCall("github_activity", { query: "bench pricing" }, "past"),
+    ).toBe('Ran github activity for "bench pricing"');
+    expect(
+      describeToolCall(
+        "github_activity",
+        { query: "bench pricing" },
+        "present",
+      ),
+    ).toBe('Running github activity for "bench pricing"');
   });
 });
 
@@ -200,6 +301,99 @@ describe("toToolActivityRow", () => {
     expect(row.phrase).toBe('Searching the web for "x"');
     expect(row.detail).toBeUndefined();
   });
+
+  test("an Interchange memory search carries the end name, no provider, and a search glyph", () => {
+    const row = toToolActivityRow(
+      trace({
+        name: "@corbits/memory-tools/memory:memory_search",
+        input: { query: "outbound" },
+        status: "success",
+      }),
+      "k",
+    );
+    expect(row.phrase).toBe('Searched memory for "outbound"');
+    expect(row.provider).toBeUndefined();
+    expect(row.toolName).toBe("memory_search");
+    expect(["search", "memory"]).toContain(row.glyph);
+    expect(row.phrase).not.toContain("@");
+    expect(row.phrase).not.toContain("/");
+    expect(row.phrase).not.toContain(":");
+  });
+
+  test("ask_user success never opens onto the model-facing instruction", () => {
+    const row = toToolActivityRow(
+      trace({
+        name: "@corbits/interaction-tools/ask-user:ask_user",
+        status: "success",
+        output:
+          "The question has been shown to the user. Do not repeat the question.",
+      }),
+      "k",
+    );
+    expect(row.phrase).toBe("Asked a question");
+    expect(row.detail).toBeUndefined();
+    expect(row.toolName).toBe("ask_user");
+    expect(row.glyph).toBe("ask");
+  });
+
+  test("a JSON items payload becomes a result count, not the JSON", () => {
+    const json = JSON.stringify({ items: [{}, {}, {}] });
+    const row = toToolActivityRow(
+      trace({
+        name: "memory_search",
+        status: "success",
+        output: json,
+      }),
+      "k",
+    );
+    expect(row.detail).toBe("3 results.");
+    expect(row.detail).not.toContain("{");
+    expect(row.detail).not.toContain("items");
+  });
+
+  test("JSON sitting inside a content-block text field is still a count, not the JSON", () => {
+    const row = toToolActivityRow(
+      trace({
+        name: "memory_search",
+        status: "success",
+        output: [
+          {
+            type: "text",
+            text: JSON.stringify({ items: [{}, {}] }),
+          },
+        ],
+      }),
+      "k",
+    );
+    expect(row.detail).toBe("2 results.");
+    expect(row.detail).not.toContain("{");
+  });
+
+  test("an unknown colon leftover is not a provider", () => {
+    const row = toToolActivityRow(
+      trace({ name: "acme:frobnicate_widget", status: "success" }),
+      "k",
+    );
+    expect(row.provider).toBeUndefined();
+    expect(row.phrase).toBe("Frobnicate widget");
+  });
+
+  test("an Interchange Linear list carries a Linear tile and a tensed sentence", () => {
+    const row = toToolActivityRow(
+      trace({
+        name: "@corbits/linear-tools/li:linear_list_recent_issues",
+        status: "success",
+      }),
+      "k",
+    );
+    expect(row.phrase).toBe("Listed recent issues in Linear");
+    expect(row.provider).toBe("linear");
+    expect(row.toolName).toBe("linear_list_recent_issues");
+    expect(providerTile(row.provider ?? "")).toEqual({
+      initials: "Li",
+      color: "#5e6ad2",
+    });
+  });
 });
 
 describe("providerTile", () => {
@@ -214,15 +408,9 @@ describe("providerTile", () => {
     });
   });
 
-  test("an unrecognized provider still gets a tile, neutral and initialed", () => {
-    const tile = providerTile("acme");
-    expect(tile.initials).toBe("Ac");
-    expect(tile.color).toBe("var(--muted-foreground)");
-  });
-
-  test("a bare local tool with no provider namespace still gets a tile", () => {
-    const tile = providerTile(undefined);
-    expect(tile.initials.length).toBeGreaterThan(0);
+  test("an unrecognized leftover is not a brand tile", () => {
+    expect(providerTile("acme")).toBeUndefined();
+    expect(providerTile("memory")).toBeUndefined();
   });
 });
 

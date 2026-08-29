@@ -2,7 +2,9 @@
 // verification (valid/invalid/missing), unknown/disabled-trigger
 // handling, and payload parsing — with a fake `launch` seam so no
 // database or folded-run launch machinery is involved. This is the
-// trust-boundary route: no session, no tenant middleware.
+// trust-boundary route: no session, no tenant middleware. Unknown
+// trigger, disabled trigger, and bad signature must all come back as
+// the same generic 401 so a probe can't tell them apart.
 import { describe, expect, test } from "bun:test";
 import { createWebhookIngressRoutes } from "../src/ingress-routes";
 import { signPayload, WEBHOOK_SIGNATURE_HEADER } from "../src/signature";
@@ -65,7 +67,11 @@ describe("POST /:triggerId", () => {
     expect(trigger?.lastFiredAt).not.toBeNull();
   });
 
-  test("rejects a missing signature header", async () => {
+  const expectedUnauthorizedBody = {
+    error: { code: "unauthorized", message: "invalid or missing signature" },
+  };
+
+  test("rejects a missing signature header with the generic unauthorized response", async () => {
     const { app, store } = buildApp();
     await seedTrigger(store);
 
@@ -76,9 +82,10 @@ describe("POST /:triggerId", () => {
     });
 
     expect(response.status).toBe(401);
+    expect(await response.json()).toEqual(expectedUnauthorizedBody);
   });
 
-  test("rejects a signature computed with the wrong secret", async () => {
+  test("rejects a signature computed with the wrong secret with the generic unauthorized response", async () => {
     const { app, store } = buildApp();
     await seedTrigger(store);
 
@@ -93,18 +100,20 @@ describe("POST /:triggerId", () => {
     });
 
     expect(response.status).toBe(401);
+    expect(await response.json()).toEqual(expectedUnauthorizedBody);
   });
 
-  test("404s for an unknown trigger id without leaking whether it ever existed", async () => {
+  test("responds to an unknown trigger id with the same generic unauthorized response, not a 404", async () => {
     const { app } = buildApp();
     const response = await app.request("/no-such-trigger", {
       method: "POST",
       body: "{}",
     });
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual(expectedUnauthorizedBody);
   });
 
-  test("403s for a disabled trigger even with a valid signature", async () => {
+  test("responds to a disabled trigger with the same generic unauthorized response even with a valid signature", async () => {
     const { app, store } = buildApp();
     await seedTrigger(store, { enabled: false });
 
@@ -115,7 +124,8 @@ describe("POST /:triggerId", () => {
       body,
     });
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual(expectedUnauthorizedBody);
   });
 
   test("400s on a validly signed but non-JSON body", async () => {
