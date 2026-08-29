@@ -1560,13 +1560,13 @@ export async function createHub(config: HubConfig) {
       sidecarRouter.sendAgentUndeploy(address, reason),
   };
   app.route(`${TENANT_PREFIX}/chat`, createChatRoutes(chatDeps));
-  // Myra's own workbench-invite surface (`@corbits/agent-directory-tools`'
-  // `create_agent`'s `invite: true` default): the workflow-run-
-  // authenticated counterpart to `POST .../invite` above, self-WORKBENCH
-  // scoped — see `@corbits/chat`'s `workflow-participant-routes.ts` for
-  // the [Intx/repo gap] this resolves around (no direct run-address ->
-  // workbench index; resolved by scanning the tenant's workbench
-  // participant lists).
+  // Myra's workflow-run chat surfaces (`@corbits/agent-directory-tools`'
+  // `create_agent` default mint-dm + invite for non-chat kinds): the
+  // workflow-run-authenticated counterpart to browser chat routes,
+  // self-WORKBENCH scoped — see `@corbits/chat`'s
+  // `workflow-participant-routes.ts` for the [Intx/repo gap] this resolves
+  // around (no direct run-address -> workbench index; resolved by scanning
+  // the tenant's workbench participant lists).
   app.route(
     "/api/workflow-chat",
     createWorkflowParticipantRoutes({
@@ -1576,6 +1576,7 @@ export async function createHub(config: HubConfig) {
       publish: workbenchSubscribers.publish,
       turnQueue,
       authenticator: createWorkflowRunAuthenticator({ db }),
+      tenancy: chatTenancy,
     }),
   );
   // Slack tag ingress (CL-5288 Phase 1): mounted OUTSIDE the tenant

@@ -135,6 +135,9 @@ export function useWorkbenchStream(
       // turn lifecycle) that sit between them. "chat.presence"/
       // "chat.presence.snapshot" are the who's-here roster (CL-6328), piggybacked
       // on this same connection rather than a second stream.
+      // "chat.workbenches-mutated" tells the host sidebar the tenant's
+      // workbench list changed (a specialist minted while this stream is
+      // open) — still this workbench's SSE, not a tenant-wide stream.
       for (const eventType of [
         "chat.message",
         "chat.agent",
@@ -144,6 +147,7 @@ export function useWorkbenchStream(
         "chat.pin",
         "chat.presence",
         "chat.presence.snapshot",
+        "chat.workbenches-mutated",
         "message",
       ]) {
         source.addEventListener(eventType, forward(eventType));
