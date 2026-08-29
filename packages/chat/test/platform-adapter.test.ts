@@ -3302,4 +3302,29 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
     expect(swept).toEqual({ scanned: 1, relaunched: 1 });
     expect(repointedLaunch(db)?.currentRunId).not.toBe("run_live");
   });
+
+  test("connecting a provider then sending within the check interval relaunches onto the new key", async () => {
+    const { db, platform } = createRotationFixture({
+      deployedWithKey: "sk-ant-expired",
+      catalogKey: "sk-ant-expired",
+    });
+
+    await platform.ensureAwake("run_live@ten1.workbench.test");
+    expect(repointedLaunch(db)).toBeUndefined();
+
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      ...sourcesFor("sk-ant-fresh"),
+    };
+
+    await platform.reconcileInferenceSources("ten_1");
+    await platform.ensureAwake("run_live@ten1.workbench.test");
+
+    const repointed = repointedLaunch(db);
+    expect(repointed?.currentRunId).toBeDefined();
+    expect(repointed?.currentRunId).not.toBe("run_live");
+    expect(repointed?.sourcesDigest).toBe(
+      inferenceSourcesDigest(sourcesFor("sk-ant-fresh")),
+    );
+  });
 });
