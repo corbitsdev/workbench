@@ -52,6 +52,24 @@ export interface ReviewerDefinition {
   readonly displayName: string;
   readonly description: string;
   readonly systemPrompt: string;
+  /** The canned message this reviewer posts, in its own voice, once
+   * repos are picked and it starts reviewing — who it is and what it
+   * will do for these repos. Never run through inference; see
+   * `./introductions.ts`'s `reviewerIntroductions`. */
+  readonly introduction: (repoNames: readonly string[]) => string;
+}
+
+/** Renders a list of repo names the way a sentence names them:
+ * "widgets", "widgets and gadgets", or "widgets, gadgets, and sprockets". */
+function namedRepos(repoNames: readonly string[]): string {
+  if (repoNames.length === 0) return "these repos";
+  const [first, ...rest] = repoNames;
+  if (first === undefined) return "these repos";
+  if (rest.length === 0) return first;
+  const last = rest[rest.length - 1];
+  if (rest.length === 1) return `${first} and ${last}`;
+  const middle = [first, ...rest.slice(0, -1)].join(", ");
+  return `${middle}, and ${last}`;
 }
 
 const ARCHITECTURE_REVIEWER: ReviewerDefinition = {
@@ -75,6 +93,11 @@ const ARCHITECTURE_REVIEWER: ReviewerDefinition = {
     "Out of lane: style-only nitpicking, and speculative redesigns of " +
     "code this change did not touch.\n\n" +
     REVIEWER_REPORT_CONTRACT,
+  introduction: (repoNames) =>
+    `I'm the architecture reviewer. I'll read every pull request on ` +
+    `${namedRepos(repoNames)} for whether the shape holds up: the ` +
+    `invariants, where a constraint should live, and what it costs to ` +
+    `maintain later.`,
 };
 
 const CORRECTNESS_REVIEWER: ReviewerDefinition = {
@@ -102,6 +125,10 @@ const CORRECTNESS_REVIEWER: ReviewerDefinition = {
     "became a promise, a changed parameter order, a return type that " +
     "narrowed — is blocking.\n\n" +
     REVIEWER_REPORT_CONTRACT,
+  introduction: (repoNames) =>
+    `I'm the correctness reviewer. I'll read every pull request opened ` +
+    `on ${namedRepos(repoNames)} for defects, with the file, the line, ` +
+    `and the input that trips them.`,
 };
 
 const RELEASE_RISK_REVIEWER: ReviewerDefinition = {
@@ -122,6 +149,10 @@ const RELEASE_RISK_REVIEWER: ReviewerDefinition = {
     "no is worth more than a late surprise. Sequencing, rollout order, " +
     "and what has to be true before this lands are yours to raise.\n\n" +
     REVIEWER_REPORT_CONTRACT,
+  introduction: (repoNames) =>
+    `I'm the release-risk reviewer. I'll weigh in on pull requests to ` +
+    `${namedRepos(repoNames)}, saying plainly what actually blocks ` +
+    `shipping, what ships with a note, and what can wait.`,
 };
 
 /** The roster a review fans out to, in the order findings are reported. */

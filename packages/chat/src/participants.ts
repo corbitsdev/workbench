@@ -85,12 +85,17 @@ export function dedupeHandle(
 /**
  * Appends a new participant to an existing record list, de-duplicating
  * the desired handle against every handle already in the workbench.
+ * Same-address retries return the existing list by identity so a caller
+ * can tell "already present" apart from "appended a row".
  */
 export function addParticipant(
   existing: readonly ParticipantRecord[],
   address: string,
   desiredHandle: string,
 ): ParticipantRecord[] {
+  if (existing.some((participant) => participant.address === address)) {
+    return existing as ParticipantRecord[];
+  }
   const taken = new Set(existing.map((participant) => participant.handle));
   const handle = dedupeHandle(desiredHandle, taken);
   return [...existing, { address, handle }];

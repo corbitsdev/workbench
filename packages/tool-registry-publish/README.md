@@ -28,10 +28,12 @@ for how a pin resolves through it).
   process's lifetime, so concurrent or repeated calls never race two
   bundler invocations against the same input.
 - `publishCorbitsToolsRegistry` — find-or-create the tenant's
-  `corbits-tools` asset (409-tolerant, so two overlapping seed runs
+  `corbits-tools` asset (409-tolerant, so two overlapping publish runs
   for the same tenant never both fail on the asset's own name
   collision), then `PUT` every tarball `CORBITS_TOOL_PACKAGE_DIRS`
-  produces.
+  produces. `workbench setup` is the product caller (root tenant;
+  descendants inherit). Freshness (`src/` moved without a version bump)
+  fails this publish, not bench create.
 
 **A host injects:**
 
@@ -48,12 +50,13 @@ for how a pin resolves through it).
 **Never imports:**
 
 - `@workbench/hub-client` — the dependency direction runs the other
-  way (`hub-client`'s `seedTenant` calls `publishCorbitsToolsRegistry`),
-  so this package declares its own structurally-compatible `ApiCall`
-  type rather than importing `hub-client`'s.
+  way (`workbench setup` calls `publishCorbitsToolsRegistry` via
+  hub-client's re-export), so this package declares its own
+  structurally-compatible `ApiCall` type rather than importing
+  `hub-client`'s.
 - `CliError` or any operator-facing error-wrapping convention — every
   failure here is a plain `Error`; wrapping it as an actionable
-  `CliError` (problem + fix) is the calling seed step's job, not this
+  `CliError` (problem + fix) is the calling setup step's job, not this
   package's.
 - Any workflow definition or `DEFAULT_WORKFLOWS` — this package knows
   which tool packages to publish, never which workflows pin them.

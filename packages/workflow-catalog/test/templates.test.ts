@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
 import { MCP_PRESETS } from "@workbench/connections/mcp-presets";
+import { SCOUT_TOOL_PACKAGE_PINS } from "@corbits/scout-agent/definition";
 
 import {
   CODE_REVIEW_TEMPLATE,
@@ -10,8 +11,8 @@ import {
   WORKFLOW_CATALOG,
   templateBlockAssetNames,
   workbenchTemplate,
-  parseWorkbenchTemplateManifest,
-  serializeWorkbenchTemplateManifest,
+  parseWorkbenchDefinition,
+  serializeWorkbenchDefinition,
   workflowCatalogEntry,
 } from "../src/index";
 
@@ -31,8 +32,8 @@ test("every connector a template names is a real connector or MCP preset", () =>
   ]);
   for (const template of WORKBENCH_TEMPLATES) {
     for (const connector of [
-      ...template.requiredConnections,
-      ...template.optionalConnections,
+      ...template.plugins.required,
+      ...template.plugins.optional,
     ]) {
       expect(known).toContain(connector);
     }
@@ -41,8 +42,8 @@ test("every connector a template names is a real connector or MCP preset", () =>
 
 test("a template never both requires and merely offers the same connector", () => {
   for (const template of WORKBENCH_TEMPLATES) {
-    const required = new Set(template.requiredConnections);
-    for (const optional of template.optionalConnections) {
+    const required = new Set(template.plugins.required);
+    for (const optional of template.plugins.optional) {
       expect(required).not.toContain(optional);
     }
   }
@@ -70,8 +71,8 @@ test("the GTM template installs the four ported v1 workflows plus the call write
 });
 
 test("the GTM template blocks the create on the two connectors nothing works without", () => {
-  expect(GTM_TEMPLATE.requiredConnections).toEqual(["attio", "exa"]);
-  expect(GTM_TEMPLATE.optionalConnections).toEqual(["granola"]);
+  expect(GTM_TEMPLATE.plugins.required).toEqual(["attio", "exa"]);
+  expect(GTM_TEMPLATE.plugins.optional).toEqual(["granola"]);
 });
 
 test("the GTM template schedules call discovery and the web watch, and nothing else", () => {
@@ -136,7 +137,7 @@ test("the code-review template installs the code-review workflow and requires gi
   expect(templateBlockAssetNames(CODE_REVIEW_TEMPLATE)).toEqual([
     "code-review",
   ]);
-  expect(CODE_REVIEW_TEMPLATE.requiredConnections).toEqual(["github"]);
+  expect(CODE_REVIEW_TEMPLATE.plugins.required).toEqual(["github"]);
 });
 
 test("the code-review template fires from a pull-request webhook, not a clock", () => {
@@ -148,66 +149,85 @@ test("the code-review template fires from a pull-request webhook, not a clock", 
   expect(trigger?.triggerFieldKey).toBe("pullRequestUrl");
 });
 
-test("the code-review template's participants are Myra and the three reviewers", () => {
-  expect(
-    CODE_REVIEW_TEMPLATE.participants.map((participant) => participant.handle),
-  ).toEqual([
-    "myra",
+test("the code-review definition's agents are the three reviewers and nobody else", () => {
+  expect(CODE_REVIEW_TEMPLATE.agents.map((agent) => agent.handle)).toEqual([
     "correctness-reviewer",
     "architecture-reviewer",
     "release-risk-reviewer",
   ]);
 });
 
-test("participants are addressable by a distinct handle", () => {
+test("the code-review definition names the GitHub tool package its reviewers need", () => {
+  expect(CODE_REVIEW_TEMPLATE.tools).toEqual(["@corbits/github-tools"]);
+});
+
+test("the code-review walkthrough is connect GitHub, pick repos, start reviewing — in that order", () => {
+  expect(CODE_REVIEW_TEMPLATE.onboardingSteps.map((step) => step.kind)).toEqual(
+    ["connect-plugin", "pick-github-repos", "start-webhook-trigger"],
+  );
+  for (const step of CODE_REVIEW_TEMPLATE.onboardingSteps) {
+    expect(step.title.length).toBeGreaterThan(0);
+    expect(step.why.length).toBeGreaterThan(0);
+  }
+});
+
+test("agents are addressable by a distinct handle", () => {
   for (const template of WORKBENCH_TEMPLATES) {
-    const handles = template.participants.map(
-      (participant) => participant.handle,
-    );
+    const handles = template.agents.map((agent) => agent.handle);
     expect(new Set(handles).size).toBe(handles.length);
   }
 });
 
-test("the due-diligence template's participants are Myra and Scout, neither backed by a block", () => {
-  expect(workbenchTemplate("due-diligence")).toBe(DUE_DILIGENCE_TEMPLATE);
-  expect(
-    DUE_DILIGENCE_TEMPLATE.participants.map(
-      (participant) => participant.handle,
-    ),
-  ).toEqual(["myra", "scout"]);
-  expect(templateBlockAssetNames(DUE_DILIGENCE_TEMPLATE)).toEqual([]);
-  for (const participant of DUE_DILIGENCE_TEMPLATE.participants) {
-    expect(participant.blockAssetName).toBeUndefined();
+test("a definition never names the same tool package twice", () => {
+  for (const template of WORKBENCH_TEMPLATES) {
+    expect(new Set(template.tools).size).toBe(template.tools.length);
   }
 });
 
+test("the due-diligence definition's agents are Myra and Scout, neither backed by a block", () => {
+  expect(workbenchTemplate("due-diligence")).toBe(DUE_DILIGENCE_TEMPLATE);
+  expect(DUE_DILIGENCE_TEMPLATE.agents.map((agent) => agent.handle)).toEqual([
+    "myra",
+    "scout",
+  ]);
+  expect(templateBlockAssetNames(DUE_DILIGENCE_TEMPLATE)).toEqual([]);
+  for (const agent of DUE_DILIGENCE_TEMPLATE.agents) {
+    expect(agent.blockAssetName).toBeUndefined();
+  }
+});
+
+test("the due-diligence definition names Scout's tool packages and needs no walkthrough", () => {
+  expect(DUE_DILIGENCE_TEMPLATE.tools).toEqual(
+    SCOUT_TOOL_PACKAGE_PINS.map((pin) => pin.name),
+  );
+  expect(DUE_DILIGENCE_TEMPLATE.onboardingSteps).toEqual([]);
+});
+
 test("the due-diligence template blocks the create on nothing — Exa is offered, never required", () => {
-  expect(DUE_DILIGENCE_TEMPLATE.requiredConnections).toEqual([]);
-  expect(DUE_DILIGENCE_TEMPLATE.optionalConnections).toEqual(["exa"]);
+  expect(DUE_DILIGENCE_TEMPLATE.plugins.required).toEqual([]);
+  expect(DUE_DILIGENCE_TEMPLATE.plugins.optional).toEqual(["exa"]);
 });
 
 test("Jimmy is not a workbench template — the picker offers no such kind of workbench", () => {
   expect(workbenchTemplate("default-teammates")).toBeUndefined();
   for (const template of WORKBENCH_TEMPLATES) {
-    expect(
-      template.participants.some(
-        (participant) => participant.handle === "jimmy",
-      ),
-    ).toBe(false);
+    expect(template.agents.some((agent) => agent.handle === "jimmy")).toBe(
+      false,
+    );
   }
 });
 
-test("every shipped template survives the seed round trip verbatim", () => {
+test("every shipped definition survives the seed round trip verbatim", () => {
   for (const template of WORKBENCH_TEMPLATES) {
-    const parsed = parseWorkbenchTemplateManifest(
-      serializeWorkbenchTemplateManifest(template),
+    const parsed = parseWorkbenchDefinition(
+      serializeWorkbenchDefinition(template),
     );
     expect(parsed).toEqual(template);
   }
 });
 
 test("a malformed library row fails to parse instead of half-loading", () => {
-  expect(() => parseWorkbenchTemplateManifest('{"id":"code-review"}')).toThrow(
+  expect(() => parseWorkbenchDefinition('{"id":"code-review"}')).toThrow(
     /failed to parse/,
   );
   const firstRoutine = GTM_TEMPLATE.routines[0];
@@ -217,8 +237,70 @@ test("a malformed library row fails to parse instead of half-loading", () => {
     routines: [{ ...firstRoutine, blockAssetName: "not-installed" }],
   };
   expect(() =>
-    parseWorkbenchTemplateManifest(
-      serializeWorkbenchTemplateManifest(orphanRoutine),
-    ),
+    parseWorkbenchDefinition(serializeWorkbenchDefinition(orphanRoutine)),
   ).toThrow(/does not install/);
+});
+
+test("a required plugin with no step to connect it fails loud, naming the plugin", () => {
+  const unaskedPlugin = {
+    ...DUE_DILIGENCE_TEMPLATE,
+    plugins: { required: ["exa"], optional: [] },
+  };
+  expect(() =>
+    parseWorkbenchDefinition(serializeWorkbenchDefinition(unaskedPlugin)),
+  ).toThrow(/requires plugin "exa" but its onboarding never asks/);
+});
+
+test("a walkthrough step naming a connector outside the definition's plugins fails loud", () => {
+  const strayConnector = {
+    ...DUE_DILIGENCE_TEMPLATE,
+    onboardingSteps: [
+      {
+        kind: "connect-plugin" as const,
+        connectorId: "attio",
+        title: "Connect Attio",
+        why: "Nothing here reads Attio.",
+      },
+    ],
+  };
+  expect(() =>
+    parseWorkbenchDefinition(serializeWorkbenchDefinition(strayConnector)),
+  ).toThrow(/connects "attio", which is not one of its plugins/);
+});
+
+test("a start-webhook-trigger step naming an unknown trigger fails loud", () => {
+  const unknownTrigger = {
+    ...CODE_REVIEW_TEMPLATE,
+    onboardingSteps: [
+      ...CODE_REVIEW_TEMPLATE.onboardingSteps.slice(0, 2),
+      {
+        kind: "start-webhook-trigger" as const,
+        webhookTriggerKey: "issue-opened",
+        title: "Start reviewing",
+        why: "Nothing fires on issues.",
+      },
+    ],
+  };
+  expect(() =>
+    parseWorkbenchDefinition(serializeWorkbenchDefinition(unknownTrigger)),
+  ).toThrow(/"issue-opened", which the definition does not create/);
+});
+
+test("picking repos before GitHub is connected fails loud — the walkthrough is ordered", () => {
+  const outOfOrder = {
+    ...CODE_REVIEW_TEMPLATE,
+    onboardingSteps: [
+      {
+        kind: "pick-github-repos" as const,
+        title: "Pick your repos",
+        why: "Only the repositories you choose get reviewed.",
+      },
+      ...CODE_REVIEW_TEMPLATE.onboardingSteps.filter(
+        (step) => step.kind !== "pick-github-repos",
+      ),
+    ],
+  };
+  expect(() =>
+    parseWorkbenchDefinition(serializeWorkbenchDefinition(outOfOrder)),
+  ).toThrow(/asks for repos before its onboarding connects "github"/);
 });

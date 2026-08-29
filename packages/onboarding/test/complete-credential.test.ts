@@ -1,10 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type {
-  ApiCall,
-  ToolRegistryPublisher,
-  WorkflowPusher,
-} from "@workbench/hub-client";
+import type { ApiCall, WorkflowPusher } from "@workbench/hub-client";
 import {
+  CATALOG_SEEDS,
   SETUP_AGENT_ASSET_NAME,
   SidecarUnavailableError,
 } from "@workbench/hub-client";
@@ -35,7 +32,6 @@ const noopPush: WorkflowPusher = async () => ({
   outcome: "pushed" as const,
   commitSha: "a".repeat(40),
 });
-const noopPublishToolRegistry: ToolRegistryPublisher = async () => undefined;
 
 // Stubs for the provider/credential half of the shared persist-and-seed
 // sequence (CL-6394) — paired with every stubbed `seedCatalogFn` so a
@@ -295,7 +291,6 @@ describe("completeCredentialSetup", () => {
       provider: "anthropic",
       apiKey: "sk-ant-never-probed",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       ...stubPersistFns,
       seedCatalogFn: async (args) => {
@@ -330,7 +325,6 @@ describe("completeCredentialSetup", () => {
       provider: "anthropic",
       apiKey: "sk-ant-good",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
     });
 
@@ -362,7 +356,6 @@ describe("completeCredentialSetup", () => {
       provider: "anthropic",
       apiKey: "sk-ant-good",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       ...stubPersistFns,
       seedCatalogFn: async (args) => {
@@ -413,7 +406,6 @@ describe("completeCredentialSetup", () => {
       provider: "openai",
       apiKey: "sk-good",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       ...stubPersistFns,
       seedCatalogFn: async (args) => {
@@ -464,7 +456,6 @@ describe("completeCredentialSetup", () => {
       provider: "groq",
       apiKey: "gsk-good",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       ...stubPersistFns,
       seedCatalogFn: async (args) => {
@@ -519,7 +510,6 @@ describe("completeCredentialSetup", () => {
       apiKey: "hf_oauth_minted",
       credentialMetadata: { expiresAt: "2026-08-13T20:00:00.000Z" },
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       ...stubPersistFns,
       seedCatalogFn: async (args) => {
@@ -680,7 +670,6 @@ describe("completeCredentialSetup", () => {
       apiKey: "hf_freshly_minted_token",
       credentialMetadata: { expiresAt: "2026-08-13T20:00:00.000Z" },
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       // The real seedCatalog runs here (not mocked) so the rotation
       // actually happens through ensureCredential; only the workflow
@@ -830,7 +819,6 @@ describe("completeCredentialSetup", () => {
       provider: "anthropic",
       apiKey: "sk-ant-good",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       ...stubPersistFns,
       seedCatalogFn: async () => ({ hasCompletionCapableModel: true }),
@@ -1282,7 +1270,6 @@ describe("completeCredentialSetup", () => {
         provider: "anthropic",
         apiKey: "sk-ant-good",
         pushWorkflow: noopPush,
-        publishToolRegistry: noopPublishToolRegistry,
         log: collector().log,
       });
 
@@ -1293,12 +1280,15 @@ describe("completeCredentialSetup", () => {
 
     // Every ensure-then-create helper hit its 409 branch on the second
     // pass and listed the row it already created on the first — nothing
-    // was ever created twice.
+    // was ever created twice. Anthropic's curated seed is several models
+    // (one POST each for model and offering); the rest of the chain is
+    // still a single provider/credential row.
+    const anthropicCatalogSize = CATALOG_SEEDS.anthropic.models.length;
     expect(assetCreatePosts).toBe(4);
     expect(deploymentCreatePosts).toBe(4);
-    expect(catalogModelCreatePosts).toBe(1);
+    expect(catalogModelCreatePosts).toBe(anthropicCatalogSize);
     expect(catalogProviderCreatePosts).toBe(1);
-    expect(catalogOfferingCreatePosts).toBe(1);
+    expect(catalogOfferingCreatePosts).toBe(anthropicCatalogSize);
     expect(credentialCreatePosts).toBe(1);
     // The second pass is itself an explicit submission and rotates the
     // existing row rather than leaving it untouched (the CL-6103 fix,
@@ -1329,7 +1319,6 @@ describe("completeCredentialSetup", () => {
       provider: "huggingface",
       apiKey: "hf_pasted_pat",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       ...stubPersistFns,
       seedCatalogFn: async (args) => {
@@ -1382,7 +1371,6 @@ describe("completeCredentialSetup", () => {
       provider: "anthropic",
       apiKey: "sk-ant-good",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       ...stubPersistFns,
       seedCatalogFn: async () => ({ hasCompletionCapableModel: true }),
@@ -1483,7 +1471,6 @@ describe("testAndPersistCredential (the fast half)", () => {
       provider: "anthropic",
       apiKey: "sk-ant-never-probed",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       ...stubPersistFns,
       seedCatalogFn: async (args) => {
@@ -1526,7 +1513,6 @@ describe("testAndPersistCredential (the fast half)", () => {
       provider: "openrouter",
       apiKey: "sk-or-good",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       ...stubPersistFns,
       seedCatalogFn: async (args) => {
@@ -1561,7 +1547,6 @@ describe("testAndPersistCredential (the fast half)", () => {
       provider: "anthropic",
       apiKey: "sk-ant-good",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
     });
 
@@ -1597,7 +1582,6 @@ describe("ensureSeeded (the slow half)", () => {
       cookies: ["session=abc"],
       hubUrl: "http://localhost:3000",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       tenant: TENANT,
       provider: "anthropic",
@@ -1636,7 +1620,6 @@ describe("ensureSeeded (the slow half)", () => {
       cookies: ["session=abc"],
       hubUrl: "http://localhost:3000",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       tenant: TENANT,
       provider: "anthropic",
@@ -1822,7 +1805,6 @@ describe("ensureSeeded (the slow half)", () => {
         cookies: ["session=abc"],
         hubUrl: "http://localhost:3000",
         pushWorkflow: noopPush,
-        publishToolRegistry: noopPublishToolRegistry,
         log: collector().log,
         tenant: TENANT,
         provider: "anthropic",
@@ -1897,7 +1879,6 @@ describe("ensureSeeded (the slow half)", () => {
       cookies: ["session=abc"],
       hubUrl: "http://localhost:3000",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       tenant: TENANT,
       provider: "anthropic",
@@ -1927,7 +1908,6 @@ describe("ensureSeeded (the slow half)", () => {
         cookies: ["session=abc"],
         hubUrl: "http://localhost:3000",
         pushWorkflow: noopPush,
-        publishToolRegistry: noopPublishToolRegistry,
         log: collector().log,
         tenant: TENANT,
         provider: "anthropic",

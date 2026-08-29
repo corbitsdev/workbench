@@ -19,6 +19,7 @@
   "dependencies": {
     "@corbits/agent-directory": "workspace:*",
     "@corbits/api-query": "workspace:*",
+    "@corbits/approvals": "workspace:*",
     "@corbits/artifact-ui": "workspace:*",
     "@corbits/bench-ui": "workspace:*",
     "@corbits/chat": "workspace:*",
@@ -42,7 +43,7 @@
     "@corbits/url-path": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",
     "@corbits/icons": "workspace:*",
-    "@intx/types": "0.3.0",
+    "@intx/types": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-slot": "^1.2.3",
     "@tanstack/react-query": "catalog:",

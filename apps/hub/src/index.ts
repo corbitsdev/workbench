@@ -67,7 +67,7 @@ import {
 
 import {
   AGENT_SECTION_MODE,
-  CHAT_TURN_TIMEOUT_MS,
+  DEFAULT_TURN_CLAIM_TTL_MS,
   createArtifactDeliveryHandler,
   createDrizzleAgentTurnStore,
   createInMemoryTurnClaimStore,
@@ -94,12 +94,17 @@ import {
   isWorkbenchHostDefinitionName,
   listConnectedProviders,
   listDefaultInferencePreferences,
+  localPartOf,
+  parseParticipants,
+  postRoomMessage,
+  recordSourcesDigest,
   startWorkflowCommand,
   sendWorkbenchMessage,
   settleConnectedService,
   workbenchLaunchPersistExtra,
 } from "@corbits/chat";
 import type { RelaunchNoticePort } from "@corbits/chat";
+import { reportError } from "@corbits/error-sink";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
 import { decodedOrNull } from "@corbits/url-path";
 import {
@@ -171,6 +176,7 @@ import {
   isAutomatableWorkflowName,
   isConversationalWorkflowName,
   validateTriggerFieldsAtCreate,
+  webhookTriggerName,
   workflowCatalogEntry,
   workflowDisplayName,
   workbenchTemplateLibraryEntries,
@@ -234,7 +240,6 @@ import { wireMailRedelivery } from "./mail-redelivery";
 import { getLogger, setup } from "@intx/log";
 import { hexEncode } from "@intx/types";
 import {
-  createNeedsYouRoutes,
   createToolAllowanceRegistry,
   withGrantAllowance,
 } from "@corbits/approvals";
@@ -283,6 +288,7 @@ import {
 } from "@workbench/onboarding";
 import {
   createConnectionRoutes,
+  isInferenceProvider,
   createMcpOAuthRoutes,
   createMcpServerRoutes,
   createOAuthConnectRoutes,
@@ -352,6 +358,7 @@ import { createBootAssetWiring, REGISTRIES } from "./asset-service-factory";
 import { createRoutineScheduler } from "./routine-scheduler";
 import { createToolGrantsForPins } from "./tool-grants";
 import { createMcpCredentialBindingsFor } from "./mcp-credential-bindings";
+import { shutdownHub } from "./shutdown";
 import { createPinnedPackageCredentialBindingsFor } from "./pinned-package-credential-bindings";
 
 // Host policy constants, not configuration.
@@ -367,11 +374,11 @@ const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
 // registries on a name collision — the platform-native alternative to
 // npm publishing the CL-5999 capability audit called for. Routing the
 // `@corbits` scope at this registry name means a `@corbits/*` pin
-// resolves only once an operator seeds a `package-registry` asset named
-// `CORBITS_TOOLS_REGISTRY` with the package's tarball — `workbench
-// seed`'s `seedTenant` does exactly that, via
-// `@corbits/tool-registry-publish`, ahead of deploying any workflow
-// that pins a `@corbits/*` package; until then, resolution fails loud
+// resolves only once an operator publishes a `package-registry` asset
+// named `CORBITS_TOOLS_REGISTRY` with the package's tarball —
+// `workbench setup` does exactly that onto the root tenant via
+// `@corbits/tool-registry-publish`; descendants inherit it, and
+// `seedTenant` does not pack. Until then, resolution fails loud
 // rather than silently falling through to npmjs (which could never
 // carry an unpublished scope anyway).
 const TENANT_PREFIX = "/api/tenants/:tenantId";
@@ -784,16 +791,13 @@ export async function createHub(config: HubConfig) {
     db: withTurnPartPersistGuard(withTurnPartWriteDefaults(db)),
     onTurnFinalized: (agentAddress, turn) =>
       artifactDeliveryHandlerRef.current?.(agentAddress, turn),
-    // The vendored `onUsage` forward (see VENDORED.md) — the platform
-    // collector accumulates turns per session but never persisted
-    // `inference.usage`; this is the first point tenantId + turnId +
-    // provider + model + tokens are all in scope at once.
-    onUsage: (_agentAddress, tenantId, sessionId, usage) => {
+    // Per-turn usage, emitted once when the collector finalizes a turn.
+    onUsage: (_agentAddress, usage) => {
       void usageSink
         .handle({
           turnId: usage.turnId,
-          tenantId,
-          sessionId,
+          tenantId: usage.tenantId,
+          sessionId: usage.sessionId,
           provider: usage.provider,
           model: usage.model,
           tokens: usage.usage,
@@ -1115,8 +1119,8 @@ export async function createHub(config: HubConfig) {
 
   // Without this, any exception escaping a route (extension or platform
   // alike) falls through to Hono's built-in handler: a bare 500 with
-  // nothing logged. See `hubErrorHandler`'s own doc comment.
-  app.onError(hubErrorHandler(getLogger(["hub", "error"])));
+  // nothing reported. See `hubErrorHandler`'s own doc comment.
+  app.onError(hubErrorHandler());
 
   // Extension routes mount under the tenant prefix, inside the
   // platform's native tenant middleware, so every extension handler
@@ -1142,20 +1146,6 @@ export async function createHub(config: HubConfig) {
   // artifacts plane never mounts.
   let artifactSeedOnJoin:
     ((key: PresenceRoomKey, principalId: string) => Promise<void>) | undefined;
-
-  // The "needs you" list: the same `approval:*`/"resolve" grant Interchange's
-  // own approve/reject routes require, layered with the agent/bench names
-  // this tenant's approvals don't carry on their own. Approving and
-  // rejecting still go straight to Interchange's native routes below --
-  // this route only ever reads.
-  app.route(
-    `${TENANT_PREFIX}/approvals/needs-you`,
-    createNeedsYouRoutes({
-      db,
-      grantStore: createGrantStore(db),
-      conditionRegistry: { time_window: timeWindowEvaluator },
-    }),
-  );
 
   // Chat's own grant store/condition registry, built the same way
   // `createApp` builds its default when none is supplied (see
@@ -1341,7 +1331,7 @@ export async function createHub(config: HubConfig) {
   // still serializes against the others rather than each queue only
   // seeing its own slice of the traffic.
   const turnQueue = createWorkbenchTurnQueue({
-    claims: createInMemoryTurnClaimStore({ ttlMs: CHAT_TURN_TIMEOUT_MS }),
+    claims: createInMemoryTurnClaimStore({ ttlMs: DEFAULT_TURN_CLAIM_TTL_MS }),
     publish: workbenchSubscribers.publish,
   });
   // The room timeline store (CL-6327): a workbench's own messages, held
@@ -1563,7 +1553,7 @@ export async function createHub(config: HubConfig) {
       conditionRegistry: chatConditionRegistry,
     }),
     isInvitableDefinition: isPickerListableDefinition,
-    turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
+    turnTimeoutMs: DEFAULT_TURN_CLAIM_TTL_MS,
     resolvePrincipalName: async (_tenantId, principalId) => {
       const principalRow = await db.query.principal.findFirst({
         where: (p, { eq: equals }) => equals(p.id, principalId),
@@ -1589,13 +1579,13 @@ export async function createHub(config: HubConfig) {
       sidecarRouter.sendAgentUndeploy(address, reason),
   };
   app.route(`${TENANT_PREFIX}/chat`, createChatRoutes(chatDeps));
-  // Myra's own workbench-invite surface (`@corbits/agent-directory-tools`'
-  // `create_agent`'s `invite: true` default): the workflow-run-
-  // authenticated counterpart to `POST .../invite` above, self-WORKBENCH
-  // scoped — see `@corbits/chat`'s `workflow-participant-routes.ts` for
-  // the [Intx/repo gap] this resolves around (no direct run-address ->
-  // workbench index; resolved by scanning the tenant's workbench
-  // participant lists).
+  // Myra's workflow-run chat surfaces (`@corbits/agent-directory-tools`'
+  // `create_agent` default mint-dm + invite for non-chat kinds): the
+  // workflow-run-authenticated counterpart to browser chat routes,
+  // self-WORKBENCH scoped — see `@corbits/chat`'s
+  // `workflow-participant-routes.ts` for the [Intx/repo gap] this resolves
+  // around (no direct run-address -> workbench index; resolved by scanning
+  // the tenant's workbench participant lists).
   app.route(
     "/api/workflow-chat",
     createWorkflowParticipantRoutes({
@@ -1605,6 +1595,7 @@ export async function createHub(config: HubConfig) {
       publish: workbenchSubscribers.publish,
       turnQueue,
       authenticator: createWorkflowRunAuthenticator({ db }),
+      tenancy: chatTenancy,
     }),
   );
   // Slack tag ingress (CL-5288 Phase 1): mounted OUTSIDE the tenant
@@ -1649,9 +1640,8 @@ export async function createHub(config: HubConfig) {
   // (see @corbits/insights' createDrizzleRunTraceReader) — no new storage,
   // same `db` handle every other platform-table reader in this file uses.
   // The sink itself is constructed earlier, alongside `eventCollectors`
-  // (see the vendored `onUsage` forward on `createEventCollectorRegistry`
-  // above), since that's the only place tenantId/turnId/model land
-  // together on an `inference.usage` event.
+  // (see the `onUsage` hook on `createEventCollectorRegistry` above),
+  // which reports each finalized turn's usage with its run identity.
   app.route(
     `${TENANT_PREFIX}/insights`,
     createInsightsRoutes({
@@ -2017,6 +2007,8 @@ export async function createHub(config: HubConfig) {
             cryptoProviderCache: foldedRunCryptoProviders,
             launchMode: AGENT_SECTION_MODE,
             persistLaunch: workbenchLaunchPersistExtra,
+            recordLaunchSources: ({ instanceId, sourcesDigest }) =>
+              recordSourcesDigest(db, instanceId, sourcesDigest),
           },
           trigger,
           payload,
@@ -2029,8 +2021,15 @@ export async function createHub(config: HubConfig) {
   // clears (flipping the in-room connect card via `chat.settings`), and
   // the host agent is woken via `dispatchTurn` without a forged
   // signed-in-user timeline row.
-  const settleServiceConnection: ServiceConnectedHook = (info) =>
-    settleConnectedService(
+  //
+  // An inference provider's credential landing also re-checks every
+  // live participant's deployed inference chain (CL-6687): a rotated
+  // key only ever reaches an agent at deploy time, so the relaunch has
+  // to be kicked here, not left for the next message. Not awaited — a
+  // relaunch is a sidecar deploy round-trip, and the connect response
+  // must not wait on it.
+  const settleServiceConnection: ServiceConnectedHook = async (info) => {
+    await settleConnectedService(
       {
         store: chatStore,
         platform: chatPlatform,
@@ -2045,6 +2044,19 @@ export async function createHub(config: HubConfig) {
         displayName: info.displayName,
       },
     );
+    if (!isInferenceProvider(info.connectorId)) return;
+    void chatPlatform
+      .reconcileInferenceSources(info.tenantId)
+      .then(({ scanned, relaunched }) => {
+        log.info`inference credential ${info.connectorId} changed on tenant ${info.tenantId}: re-checked ${String(scanned)} live agents, relaunched ${String(relaunched)}`;
+      })
+      .catch((cause: unknown) => {
+        reportError(cause, {
+          operation: "connections.reconcile-inference-sources",
+          tenantId: info.tenantId,
+        });
+      });
+  };
   // Connections: the settings surface's tenant-scoped credential
   // test-and-store, mounted under the same tenant prefix and reusing
   // the same grant store/condition registry every other credential-
@@ -2205,6 +2217,17 @@ export async function createHub(config: HubConfig) {
         });
         return row?.id;
       },
+      hasRepoGrant: async (tenantId, repo) => {
+        const existing = await db.query.grant.findFirst({
+          where: and(
+            eq(grantTable.tenantId, tenantId),
+            eq(grantTable.resource, `repo:${repo.name}`),
+            eq(grantTable.action, "read"),
+          ),
+          columns: { id: true },
+        });
+        return existing !== undefined;
+      },
       mintRepoGrant: async (tenantId, repo) => {
         const memberRole = await db.query.role.findFirst({
           where: and(
@@ -2240,13 +2263,22 @@ export async function createHub(config: HubConfig) {
         const row = await webhookTriggerStore.create({
           id: generateId("workflowRun"),
           tenantId,
-          name: `${repo.name} pull-request-opened`,
+          name: webhookTriggerName(repo),
           workflowDefinitionId: codeReviewDefinitionId,
           inputTemplate: `Review the pull request at {{pull_request.html_url}}`,
           secret: generateWebhookSecret(),
           createdBy: principalId,
         });
         return { id: row.id };
+      },
+      hasWebhookTrigger: async (tenantId, codeReviewDefinitionId, repo) => {
+        const triggers = await webhookTriggerStore.list(tenantId);
+        const triggerName = webhookTriggerName(repo);
+        return triggers.some(
+          (trigger) =>
+            trigger.workflowDefinitionId === codeReviewDefinitionId &&
+            trigger.name === triggerName,
+        );
       },
       getTemplateSettings: async (tenantId, workbenchId) => {
         const row = await chatStore.getWorkbenchSettings(tenantId, workbenchId);
@@ -2282,6 +2314,33 @@ export async function createHub(config: HubConfig) {
           type: "chat.settings",
           data: { updatedBy: principalId, settings: row.settings },
         });
+      },
+      onReviewingStarted: async (
+        tenantId,
+        workbenchId,
+        _principalId,
+        introductions,
+      ) => {
+        const row = await chatStore.getWorkbenchSettings(tenantId, workbenchId);
+        const participants = parseParticipants(
+          row?.settings["chat/participants"],
+        );
+        for (const introduction of introductions) {
+          const participant = participants.find(
+            (candidate) => candidate.handle === introduction.handle,
+          );
+          if (participant === undefined) continue;
+          await postRoomMessage(
+            { roomMessages, publish: workbenchSubscribers.publish },
+            {
+              tenantId,
+              workbenchId,
+              sender: { name: null, address: participant.address },
+              runId: localPartOf(participant.address),
+              parts: [{ kind: "text", text: introduction.text }],
+            },
+          );
+        }
       },
     }),
   );
@@ -3453,11 +3512,18 @@ if (import.meta.main) {
   });
   const log = getLogger(["hub"]);
   log.info`Hub serving on port ${port}`;
-  const shutdown = async () => {
-    await server.stop();
-    await hub.close();
-    process.exit(0);
-  };
+  const SHUTDOWN_DRAIN_MS = 10_000;
+  // `server.stop()` waits for open connections and websockets by default,
+  // so it sits inside the same bound as the hub's own closes.
+  const shutdown = () =>
+    shutdownHub({
+      drain: async () => {
+        await server.stop();
+        await hub.close();
+      },
+      timeoutMs: SHUTDOWN_DRAIN_MS,
+      exit: (code) => process.exit(code),
+    });
   process.on("SIGINT", () => void shutdown());
   process.on("SIGTERM", () => void shutdown());
 }

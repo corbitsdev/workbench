@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { QueryClient } from "@tanstack/react-query";
 import {
   CODE_REVIEW_TEMPLATE,
-  serializeWorkbenchTemplateManifest,
+  serializeWorkbenchDefinition,
 } from "@corbits/workflow-catalog";
 
 import {
@@ -16,7 +16,7 @@ function newQueryClient(): QueryClient {
   });
 }
 
-describe("createWorkbenchFromTemplate (CL-6387)", () => {
+describe("createWorkbenchFromTemplate", () => {
   const realFetch = globalThis.fetch;
 
   afterEach(() => {
@@ -146,11 +146,7 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
     expect(calls.some((call) => call.path.includes("/invite"))).toBe(false);
   });
 
-  // and left the reviewer roster its greeting promises out of the room
-  // (every bench looked like every other "New Workbench", and Myra's
-  // "Three reviewers read every pull request" greeting described a team
-  // that wasn't there — see `createWorkbenchFromTemplate`'s own doc).
-  test("picking the code-review template names the bench after it and invites the whole reviewer roster", async () => {
+  test("picking the code-review definition names the bench after it and invites exactly its three reviewers", async () => {
     const navigated: string[] = [];
     let nextReviewerId = 0;
     const calls = stubFetch((path) => {
@@ -160,7 +156,7 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
       if (path.endsWith("/library/templates/code-review")) {
         return json({
           id: "code-review",
-          content: serializeWorkbenchTemplateManifest(CODE_REVIEW_TEMPLATE),
+          content: serializeWorkbenchDefinition(CODE_REVIEW_TEMPLATE),
         });
       }
       if (path.endsWith("/chat/workbenches")) {
@@ -181,6 +177,9 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
           ...assistantDefinitionWire,
           id: `def-reviewer-${nextReviewerId}`,
         });
+      }
+      if (path.endsWith("/chat/workbenches/chan-1/onboarding")) {
+        return json({ id: "msg-onboarding" }, 201);
       }
       if (path.endsWith("/chat/workbenches/chan-1/invite")) {
         return json({ address: "agent:invited", definitionId: "def-reviewer" });
@@ -222,10 +221,7 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
     const createAgentCalls = calls.filter((call) =>
       call.path.endsWith("/agent-definitions"),
     );
-    const reviewerCount = CODE_REVIEW_TEMPLATE.participants.filter(
-      (participant) => participant.handle !== "myra",
-    ).length;
-    expect(createAgentCalls).toHaveLength(reviewerCount);
+    expect(createAgentCalls).toHaveLength(CODE_REVIEW_TEMPLATE.agents.length);
 
     const inviteCalls = calls.filter((call) =>
       call.path.endsWith("/chat/workbenches/chan-1/invite"),
@@ -236,7 +232,37 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
     const createdIds = createAgentCalls.map(
       (_, index) => `def-reviewer-${index + 1}`,
     );
-    expect(invitedIds.sort()).toEqual(["def-assistant", ...createdIds].sort());
+    expect(invitedIds.sort()).toEqual([...createdIds].sort());
+    expect(invitedIds).not.toContain("def-assistant");
+
+    const settingsBody = JSON.parse(
+      String(
+        calls.find((call) =>
+          call.path.endsWith("/chat/workbenches/chan-1/settings"),
+        )?.init?.body,
+      ),
+    );
+    expect(settingsBody).toEqual({
+      "template/id": "code-review",
+      "template/pendingConnections": ["github"],
+    });
+
+    const onboardingCall = calls.find((call) =>
+      call.path.endsWith("/chat/workbenches/chan-1/onboarding"),
+    );
+    expect(JSON.parse(String(onboardingCall?.init?.body))).toEqual({
+      kind: "connect-github",
+      requiredForTemplate: "Code review",
+      promise: CODE_REVIEW_TEMPLATE.promise,
+      steps: CODE_REVIEW_TEMPLATE.onboardingSteps.map(({ title, why }) => ({
+        title,
+        why,
+      })),
+    });
+
+    const createBodyParsed = JSON.parse(String(createCall?.init?.body));
+    expect(createBodyParsed.kind).toBe("workbench");
+    expect(createBodyParsed.definitionId).toBeUndefined();
     expect(navigated).toEqual(["/w/chan-1"]);
 
     // CL-6594: a room this function navigates to must never carry a
@@ -293,7 +319,6 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
       "blank",
       (to) => navigated.push(to),
       newQueryClient(),
-      undefined,
       "Plan the Q3 launch",
     );
 
@@ -315,7 +340,7 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
       if (path.endsWith("/library/templates/code-review")) {
         return json({
           id: "code-review",
-          content: serializeWorkbenchTemplateManifest(CODE_REVIEW_TEMPLATE),
+          content: serializeWorkbenchDefinition(CODE_REVIEW_TEMPLATE),
         });
       }
       if (path.endsWith("/chat/workbenches")) {
@@ -332,6 +357,9 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
       }
       if (path.endsWith("/agent-definitions")) {
         return json({ ...assistantDefinitionWire, id: "def-reviewer-1" });
+      }
+      if (path.endsWith("/chat/workbenches/chan-1/onboarding")) {
+        return json({ id: "msg-onboarding" }, 201);
       }
       if (path.endsWith("/chat/workbenches/chan-1/invite")) {
         return json({
@@ -366,7 +394,6 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
       "code-review",
       () => {},
       newQueryClient(),
-      undefined,
       "Review the auth PR",
     );
 
@@ -381,6 +408,91 @@ describe("createWorkbenchFromTemplate (CL-6387)", () => {
           "chat/name" in body &&
           body["chat/name"] === "Review the auth PR",
       ),
+    ).toBe(false);
+  });
+
+  // GitHub already connected is not a different create path: the in-room
+  // card reads live connected state and flips itself to repo pick, so the
+  // create flow posts the same walkthrough card and never picks repos or
+  // starts reviewing on the person's behalf.
+  test("with GitHub already connected, create posts the same walkthrough and never starts reviewing itself", async () => {
+    const calls = stubFetch((path) => {
+      if (path.includes("/workflows/definitions")) {
+        return json({ data: [assistantDefinitionWire], nextCursor: null });
+      }
+      if (path.endsWith("/library/templates/code-review")) {
+        return json({
+          id: "code-review",
+          content: serializeWorkbenchDefinition(CODE_REVIEW_TEMPLATE),
+        });
+      }
+      if (path.endsWith("/chat/workbenches")) {
+        return json({
+          id: "chan-1",
+          title: "Code review",
+          kind: "workbench",
+          pinned: false,
+          participants: [],
+        });
+      }
+      if (path.endsWith("/template-blocks/code-review/deploy")) {
+        return json({ id: "def-code-review-block", created: true });
+      }
+      if (path.endsWith("/agent-definitions")) {
+        return json({ ...assistantDefinitionWire, id: "def-reviewer-1" });
+      }
+      if (path.endsWith("/chat/workbenches/chan-1/onboarding")) {
+        return json({ id: "msg-onboarding" }, 201);
+      }
+      if (path.endsWith("/chat/workbenches/chan-1/invite")) {
+        return json({ address: "agent:invited", definitionId: "def-reviewer" });
+      }
+      if (path.endsWith("/chat/workbenches/chan-1/settings")) {
+        return json({
+          id: "chan-1",
+          title: "Code review",
+          kind: "workbench",
+          pinned: false,
+          participants: [],
+          settings: {},
+          contextWindow: { value: 0, source: "inherit" },
+        });
+      }
+      if (path.includes("/credentials/resolve/")) {
+        return json({
+          id: "cred_github",
+          tenantId: "tnt_1",
+          name: "GitHub",
+          status: "active",
+        });
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    });
+
+    await createWorkbenchFromTemplate(
+      "tnt_1",
+      "code-review",
+      () => undefined,
+      newQueryClient(),
+    );
+
+    const onboardingCall = calls.find((call) =>
+      call.path.endsWith("/chat/workbenches/chan-1/onboarding"),
+    );
+    expect(JSON.parse(String(onboardingCall?.init?.body))).toEqual({
+      kind: "connect-github",
+      requiredForTemplate: "Code review",
+      promise: CODE_REVIEW_TEMPLATE.promise,
+      steps: CODE_REVIEW_TEMPLATE.onboardingSteps.map(({ title, why }) => ({
+        title,
+        why,
+      })),
+    });
+    expect(calls.some((call) => call.path.includes("/github/state"))).toBe(
+      false,
+    );
+    expect(
+      calls.some((call) => call.path.includes("/github/start-reviewing")),
     ).toBe(false);
   });
 });

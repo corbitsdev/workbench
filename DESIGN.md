@@ -63,11 +63,16 @@ real, never a 404.
 not home. The primary act is a prompt: say what the channel should do,
 or pick a named-template shortcut underneath. Blank `+` / prompt mint
 an empty channel and invite nobody. Named templates mint that same
-empty channel, then invite existing agents (including Myra as a
-participant, never as the mint host). The sidebar `+` opens this
-route. First-run after credential does not: `/` hops to Myra's one
-DM (`openAgentDm` / find-or-reopen). There is no parallel Myra home
-route and no Describe door.
+empty channel with no host, then instantiate the picked Workbench
+Definition — the agents, block workflows, and pending plugins it names
+(Myra joins only when the definition names her; Code review's three
+reviewers do not) — and run its ordered onboarding walkthrough as an
+in-room card the room itself posts, never a side effect of hosting an
+agent. The card reads live connection state and flips straight to the
+repo pick, so there is one walkthrough, not a separate already-connected
+dialog. The sidebar `+` opens this route. First-run after credential
+does not: `/` hops to Myra's one DM (`openAgentDm` / find-or-reopen).
+There is no parallel Myra home route and no Describe door.
 
 **`/inbox` is gone as a page** (CL-6151). The path stays as a redirect
 home so old links still resolve; it is not a live groups inbox.
@@ -120,7 +125,7 @@ as a document, and these are working surfaces.
 ## Search
 
 Two separate surfaces, never merged, and neither opens the other (a
-decision re-litigated more than once — see `docs/DECISIONS.md` → Search):
+decision re-litigated more than once):
 
 - **The magnifier in the stage top bar is a per-page filter.** It scopes to
   whatever page it's on — Files filters files, Skills filters skills — and
@@ -216,38 +221,72 @@ screens. One action, one verb, everywhere that action appears.
 ## Tool Activity in the Conversation
 
 What an agent did between question and answer renders as sentences, never
-as the material it was made from. A tool call is described by what it
-accomplished — "Searched the web for 'pricing'", "Wrote a file —
-report.md", "Posted a message in Slack #general" — never by its
-identifier, its namespace, or a humanised spelling of either. A result is
-plain text: the prose the tool returned, or a count when it returned a
-list. Raw JSON never reaches a reader, expanded or not; the only
-exception is code the user actually asked for, which is prose, not
-machinery.
-
-Tense follows state: a call still running speaks in the present
-("Searching…"), a settled one in the past ("Searched…"). The same rows
-render mid-turn and in the persisted transcript, so nothing restyles
-itself the moment a turn ends.
+as the material it was made from. Tool activity is a **chip**, not a card,
+not a full-width AI-Elements collapsible with "Parameters" / "Result"
+headers, and not a JSON inspector. Live strip and timeline share this
+chip.
 
 Tool calls render as inline chips inside the agent's message body, stacked
-under the prose, one per call — never a collapsible, never a count.
-Consecutive calls do not fold into a summary line or a "3 steps" total: a
-count of implementation objects tells a reader nothing about what actually
-happened, and hides the one call among many that might matter (a public
-Slack post reads identically to three benign file reads once it's
-flattened to a number). Each chip is `width:max-content` — it hugs its own
-content rather than spanning the column, so a wall of calls reads as a
-stack of short tags, not a wall of prose.
+under the prose, one per call. Consecutive chips stack; they never fold
+into "Used 3 tools" or a "3 steps" total — a count of implementation
+objects tells a reader nothing about what actually happened, and hides
+the one call among many that might matter. Each chip is
+`width: max-content` — it hugs its own content rather than spanning the
+column, so a wall of calls reads as a stack of short tags, not a wall of
+prose.
 
-A chip's anatomy, left to right: a small provider tile (brand-colored,
-two-letter initials) so a reader can tell at a glance which system a call
-touched, then the sentence describing what happened, then a quiet status
-marker. Detail opens on demand, one click, on the individual chip that has
-something to show; a chip with nothing to disclose offers no control at
-all. A failure says so plainly, in words, on its own chip — it is the one
-state where colour appears; everything else in this strip is quiet
-chrome.
+**Phrase.** A sentence in tense, derived from the tool's _end name_ —
+the segment after the last `:` in an Interchange qualified id, or after
+`__` in an MCP id — plus a few argument clauses (`for "…"`, `in #42`).
+Present while running or pending ("Searching memory"), past when done
+("Searched memory"). The same chips render mid-turn and in the persisted
+transcript, so nothing restyles itself the moment a turn ends. The
+qualified package path (`@scope/package/export`) never appears, even in
+expanded detail — never dump `@scope/package/export:tool` or title-case
+that path into a phrase.
+
+**Leading tile.** Known provider brands only — GitHub, GitLab, Linear,
+Notion, Postgres, Slack — get a brand-colored tile. Unknown leftovers
+(`memory`, `ad`, `ask-user`, `corbits`) are not brands. Local / first-party
+tools use an **action glyph** (search, list, ask, memory, agents, write,
+or generic lightning) on a quiet muted square — never a fake brand tile,
+never an em-dash, never a minus-in-a-dark-box.
+
+**Status glyph.** Check when done, a spinning CircleNotch while running
+or pending, WarningCircle when failed. Not a gray 6px dot. The sentence's
+tense already names the state; the glyph agrees. A failure also tints the
+phrase destructive.
+
+**Disclosure.** A caret exists only when there is human-readable detail.
+A chip with nothing to disclose offers no control at all. Expanded detail
+is quiet inset prose under that chip. Raw JSON, JSON strings, and
+model-facing instructions (e.g. ask_user's "do not repeat this in prose")
+never reach a reader — parse JSON into a count ("3 results.") or omit the
+disclosure. The only exception is code the user actually asked for, which
+is prose, not machinery.
+
+**Chrome.** Hit area ≥40px via an invisible `::before`. Radius
+`--radius`. Motion via `--duration-standard` / `--ease-out`. Scale-on-press
+~0.97 on the trigger. `prefers-reduced-motion` kills the spinner.
+
+Do:
+
+- End-name sentences with argument clauses; tense matches state.
+- Known-provider brand tiles; action glyphs on muted squares for local
+  tools.
+- Status Check / spinning CircleNotch / WarningCircle.
+- Quiet inset prose for detail; result counts when the payload is a list.
+
+Don't:
+
+- Dump `@scope/package/export:tool` or title-case it into a phrase.
+- Invent a brand from an unknown path segment.
+- Show a minus, dash, or empty tile as "the provider".
+- Show a gray status dot.
+- Render JSON, even when the tool returned a JSON string.
+- Copy Vercel AI Elements' full Parameters/Result collapsible — take the
+  status glyph and the quiet header, not the inspector.
+- Fold consecutive chips into "Used 3 tools".
 
 ## Message Alignment
 
@@ -272,6 +311,18 @@ short tags or a card, and mirroring them to the right would land next to
 the composer and break the one consistent place a reader looks for
 approvals and tool activity.
 
+## Message actions
+
+A message's compact action cluster — add reaction, reply in thread (or
+Fork inside a thread), Edit on own prompts, and ellipsis — reveals on
+pointer hover or keyboard focus-within. It is not hover-only and not a
+persistent inline row of links. The ellipsis button and a right-click on
+the message open the same menu; Edit appears there too when the row is
+the signed-in reader's own prompt with text.
+
+Edit copies the prompt into the composer. It is not an in-place rewrite
+of the bubble.
+
 ## Connect cards
 
 In-thread cards flip in place: disconnected → connected → next step. The
@@ -282,6 +333,15 @@ GitHub for Code review is PAT-first today: Connect opens a guided
 personal-access-token paste, then the same card flips to pick
 repositories. A GitHub App / hosted OAuth Connect as the welcome mat is
 CL-6343 (out of scope), not the shipped card.
+
+The room's own onboarding card renders as a scene, not a member's
+message: no author row, the job as its title with the promise beneath,
+and the walkthrough's steps listed with the current one marked in
+words. Once repos are recorded the card shows the Reviewing state —
+what it's reviewing now — with a change-repos link back to the picker,
+never still offering Connect. Consecutive agent-joined rows collapse
+into one line naming everyone, so a template room opens on the scene
+and the reviewers' own introductions, never a join dump.
 
 ## State Pills
 

@@ -14,8 +14,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/inference": "0.3.0",
-    "@intx/types": "0.3.0",
+    "@intx/inference": "workspace:*",
+    "@intx/types": "workspace:*",
     "arktype": "catalog:"
   },
   "devDependencies": {

@@ -9,10 +9,12 @@ import {
   useContextMenuState,
   useDocumentContextMenuTrigger,
 } from "@corbits/context-menu";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
 import { useBench } from "../../bench-context";
 import { useNavigate } from "../../navigation";
+import { invalidateRoutineQueries } from "../../query-client";
 import { useOpenProfileInCanvas } from "../canvas-availability";
 import { shellContextMenuFor } from "./items";
 import type { ShellContextMenuActions } from "./items";
@@ -30,6 +32,7 @@ export function ShellContextMenu({
   const navigate = useNavigate();
   const openProfile = useOpenProfileInCanvas();
   const { cycleMode } = useTheme();
+  const queryClient = useQueryClient();
   const { open, x, y, menu, triggerElement, show, hide } =
     useContextMenuState();
 
@@ -39,6 +42,7 @@ export function ShellContextMenu({
     openProfile,
     cycleTheme: cycleMode,
     signOut: onSignOut,
+    onRoutineRan: (tenantId) => invalidateRoutineQueries(queryClient, tenantId),
   };
 
   const resolve = useCallback(
@@ -52,7 +56,14 @@ export function ShellContextMenu({
     },
     // `actions` is a fresh object every render; the values it closes over
     // are what actually determine the menu, so those are the real deps.
-    [selectedTenantId, navigate, openProfile, cycleMode, onSignOut],
+    [
+      selectedTenantId,
+      navigate,
+      openProfile,
+      cycleMode,
+      onSignOut,
+      queryClient,
+    ],
   );
 
   useDocumentContextMenuTrigger({ resolve, onOpen: show });

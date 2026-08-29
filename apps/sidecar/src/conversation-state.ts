@@ -10,10 +10,13 @@
 // This module makes the warm agent's conversation DURABLE in the
 // workflow-run substrate (the single-writer proxy `RepoStore`, written
 // through the supervisor). The durable copy lives under the workflow-run
-// repo at a stable per-agent path (`agent-state/<agentKey>/...`), sibling
-// to the per-run event log under `runs/<runId>/...` and NOT confused with
-// it. On a new run (and after a child respawn, once the warm agent is
-// rebuilt lazily) the conversation is restored from the substrate into
+// repo at a per-agent, per-originating-workbench path
+// (`agent-state/<agentKey>/<workbenchId>/...`), sibling to the per-run
+// event log under `runs/<runId>/...` and NOT confused with it. `agentKey`
+// stays the warm stepId; `workbenchId` is the inbound mail From local-part
+// so two rooms sharing one principal do not share turns. On a new run (and
+// after a child respawn, once the warm agent is rebuilt lazily) the
+// conversation is restored from the substrate into
 // the agent's local store BEFORE the agent's reactor loads, so multi-turn
 // continuity holds across runs and across respawn.
 //
@@ -24,7 +27,7 @@
 // over a conversation. It is replaced here with an append-only,
 // bucket-sharded write-ahead log plus a periodic compacted checkpoint:
 //
-//   agent-state/<agentKey>/
+//   agent-state/<agentKey>/<workbenchId>/
 //     checkpoint.json        compacted full snapshot (turns + metadata)
 //     checkpoint.meta.json   { checkpointSeq: <boundary>, turnCount,
 //                              tokenUsage, pendingOperations,
@@ -68,18 +71,18 @@
 // prefix pass through untouched). A WAL blob is two levels below
 // `agent-state/<key>/`, so:
 //
-//   - WAL append uses `preservePrefix = agent-state/<key>/wal/<bucket>/`.
+//   - WAL append uses `preservePrefix = agent-state/<key>/<workbenchId>/wal/<bucket>/`.
 //     The bucket's existing blobs ARE direct children, so the merge
 //     pre-image is exactly that bucket and the append adds one entry --
-//     no isogit side-read, and the checkpoint / other buckets are
-//     untouched (outside the prefix).
+//     no isogit side-read, and the checkpoint / other buckets / sibling
+//     rooms are untouched (outside the prefix).
 //   - Checkpoint write + WAL truncate uses `preservePrefix =
-//     agent-state/<key>/`. The top-level checkpoint files are direct
-//     children; the merge returns ONLY those files and NO `wal/...`
-//     paths, so the recursive `clearPrefix` at `agent-state/<key>/` drops
-//     the entire WAL subtree in the same atomic commit. The truncate
-//     needs no nested read: omitting the WAL paths from the returned set
-//     IS the truncate.
+//     agent-state/<key>/<workbenchId>/`. The top-level checkpoint files are
+//     direct children; the merge returns ONLY those files and NO `wal/...`
+//     paths, so the recursive `clearPrefix` at the workbench dir drops
+//     that room's WAL subtree in the same atomic commit without touching
+//     sibling rooms. The truncate needs no nested read: omitting the WAL
+//     paths from the returned set IS the truncate.
 //
 // Persistence sink (the riskiest part). The connector router's
 // `snapshot()` / `restore()` surface and the harness's
@@ -108,12 +111,13 @@
 //
 // Commit granularity. The design calls for connector-state-change-driven
 // commits via the router's
-// `onStateChanged` hook. In the unified-host warm-agent path the agent
-// receives synthesized step inputs and never drives the connector router
-// (the supervisor owns mail), so `onStateChanged` stays dormant and never
-// fires. The commit therefore falls back to the run boundary (per
-// message). The `onStateChanged` wiring is retained so a future path that
-// does drive the router gets change-driven mirrors for free.
+// `onStateChanged` hook. The warm-agent path drives the connector router
+// through `seedInbound`: each mail-derived inbound message routes and
+// commits its thread state before the agent's send, so `onStateChanged`
+// fires and enqueues a change-driven mirror. The run-boundary mirror (per
+// message) still runs unconditionally, so the two triggers are
+// complementary -- the seed persists the connector state promptly, the
+// boundary persists the turn delta.
 //
 // Defensive: a restore that finds a checkpoint or WAL but cannot
 // parse/replay it THROWS (a lost or corrupt conversation on respawn is a
@@ -128,6 +132,7 @@ import { type } from "arktype";
 
 import { getLogger } from "@intx/log";
 import { createConnectorRouter } from "@intx/harness";
+import type { ConnectorReplyParts, RouteDecision } from "@intx/harness";
 import {
   createIsogitStorage,
   createNodeIsogitRuntime,
@@ -138,13 +143,17 @@ import type {
   RepoStore,
 } from "@intx/hub-sessions/substrate";
 import { WORKFLOW_RUN_AGENT_STATE_PREFIX } from "@intx/hub-sessions/substrate";
+
+import { UNSCOPED_ORIGINATING_WORKBENCH_ID } from "./originating-workbench";
 import {
   ConnectorThreadState,
   TokenUsage,
   type AuditStore,
   type ContextStore,
   type ConversationTurn,
+  type InboundMessage,
   type PendingOperation,
+  type SendReceipt,
 } from "@intx/types/runtime";
 
 const logger = getLogger(["sidecar", "workflow-child", "conversation-state"]);
@@ -154,6 +163,39 @@ const isogitStorage = createIsogitStorage(createNodeIsogitRuntime());
 const CHECKPOINT_FILE = "checkpoint.json";
 const CHECKPOINT_META_FILE = "checkpoint.meta.json";
 const WAL_DIR = "wal";
+
+const EMPTY_TOKEN_USAGE: TokenUsage = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  thinking: 0,
+};
+
+/**
+ * Substrate prefix for one agent's conversation in one originating
+ * workbench. Nested under `agent-state/<agentKey>/` so two agents in the
+ * same room cannot collide, and two rooms of one agent cannot share turns.
+ */
+export function durableConversationAgentStatePrefix(
+  agentKey: string,
+  originatingWorkbenchId: string,
+): string {
+  return `${WORKFLOW_RUN_AGENT_STATE_PREFIX}/${encodeURIComponent(agentKey)}/${encodeURIComponent(originatingWorkbenchId)}/`;
+}
+
+export function durableConversationAgentStateDir(
+  repoDir: string,
+  agentKey: string,
+  originatingWorkbenchId: string,
+): string {
+  return path.join(
+    repoDir,
+    WORKFLOW_RUN_AGENT_STATE_PREFIX,
+    encodeURIComponent(agentKey),
+    encodeURIComponent(originatingWorkbenchId),
+  );
+}
 
 /**
  * Compaction interval: fold the WAL into a fresh checkpoint once it holds
@@ -189,8 +231,8 @@ const SnapshotMetadata = type({
 
 /**
  * On-disk shape of the compacted checkpoint blob committed at
- * `agent-state/<agentKey>/checkpoint.json`. Carries the folded turn
- * history (turns 0..checkpointSeq-1) plus the non-turn reactor metadata.
+ * `agent-state/<agentKey>/<workbenchId>/checkpoint.json`. Carries the folded
+ * turn history (turns 0..checkpointSeq-1) plus the non-turn reactor metadata.
  * Validated on read because it crosses back into the program from the
  * substrate working tree -- a corrupt or partially-written checkpoint must
  * surface at the boundary, never be half-applied into the agent.
@@ -203,8 +245,9 @@ const CheckpointSnapshot = type({
 });
 
 /**
- * On-disk shape of `agent-state/<agentKey>/checkpoint.meta.json`. The
- * checkpoint pointer the restore path reads first to learn the boundary seq
+ * On-disk shape of
+ * `agent-state/<agentKey>/<workbenchId>/checkpoint.meta.json`. The checkpoint
+ * pointer the restore path reads first to learn the boundary seq
  * the checkpoint folded to (`checkpointSeq`) -- and therefore which WAL
  * boundary seqs remain to replay -- plus the folded turn count
  * (`turnCount`, = `checkpoint.json`'s turn array length) and the freshest
@@ -223,8 +266,8 @@ const CheckpointMeta = type({
 
 /**
  * On-disk shape of one WAL entry blob at
- * `agent-state/<agentKey>/wal/<bucket>/<seq>.json`. One entry per MIRROR
- * BOUNDARY (keyed by boundary `seq`, not turn index). Records the 0-or-more
+ * `agent-state/<agentKey>/<workbenchId>/wal/<bucket>/<seq>.json`. One entry
+ * per MIRROR BOUNDARY (keyed by boundary `seq`, not turn index). Records the 0-or-more
  * new turns that boundary added (the O(1) append payload -- it never
  * carries prior turns) plus the latest non-turn metadata snapshot. The
  * append is UNCONDITIONAL: a turnless boundary still writes one entry with
@@ -268,9 +311,10 @@ export interface DurableConversationStoreOpts {
   principal: Principal;
   /**
    * Stable per-agent key the snapshot is filed under
-   * (`agent-state/<agentKey>/`). The warm single-step agent's stepId is
-   * the natural key: it is stable across that agent's whole lifetime and
-   * disjoint from any runId.
+   * (`agent-state/<agentKey>/<workbenchId>/`). The warm single-step agent's
+   * stepId is the natural agentKey: it is stable across that agent's whole
+   * lifetime and disjoint from any runId. Originating workbench is bound
+   * separately so one warm agent can swap rooms without cloning.
    */
   agentKey: string;
 }
@@ -305,9 +349,54 @@ export interface DurableConversationStore {
    * Commit the local store's new turn(s) to the substrate as O(1) WAL
    * appends, folding into a fresh checkpoint when the WAL reaches the
    * compaction interval. Called synchronously at the run boundary (after
-   * the agent's send settles). A write failure surfaces.
+   * the agent's send settles). A write failure surfaces. Flushes the
+   * currently bound originating-workbench prefix (the composite key).
    */
   mirrorToSubstrate(): Promise<void>;
+  /**
+   * Advance the connector router from a received inbound message so the
+   * warm agent's reply path has thread state. Runs the router's pure
+   * `route()` then `commit()`: a `start` seeds threadRoot / lastMessageId /
+   * replyTo from the message; a `continue` advances lastMessageId / replyTo
+   * and carries prior speakers into `cc`. The advanced connector state is
+   * flushed into the local store's metadata so the run-boundary mirror
+   * persists it and a respawn restore re-seeds the router. A `passthrough`
+   * decision -- no active-thread match, or an unparseable sender -- advances
+   * nothing. Called before the warm agent's send so `composeReply()` can
+   * compose a threaded reply. A metadata write failure surfaces.
+   */
+  seedInbound(message: InboundMessage): Promise<void>;
+  /**
+   * Produce the threading headers for a reply on the active connector
+   * thread (the router's `composeReply`). Throws
+   * `NoActiveConnectorThreadError` when no thread has been seeded. The warm
+   * mail loop's reply drain reads this to address its outbound reply.
+   */
+  composeReply(): ConnectorReplyParts;
+  /**
+   * Advance the connector thread after a reply was sent. Forwards to the
+   * router's `onReplySent` (which moves `lastMessageId` to the sent reply's
+   * Message-ID so the next inbound continuation matches) and flushes the
+   * advanced connector state into the local store's metadata the same way
+   * `seedInbound` does, so `lastMessageId` persists across turns and across a
+   * child respawn. Called by the warm mail loop's reply drain after its
+   * outbound send settles. Throws `NoActiveConnectorThreadError` when no
+   * thread is active -- advancing outbound state has no meaning without a
+   * seeded thread. A metadata write failure surfaces.
+   */
+  onReplySent(receipt: SendReceipt): Promise<void>;
+  /**
+   * Point this store at `originatingWorkbenchId`'s nested substrate
+   * snapshot. Same room is a no-op. On a change: mirror the current room,
+   * retarget `agent-state/<agentKey>/<workbenchId>/`, restore that
+   * snapshot. Missing snapshot starts empty -- the prior mixed
+   * `agent-state/<agentKey>/` blob is never migrated. Returns true when
+   * the bound room changed (caller must rebuild the warm agent so
+   * `reactor.start()` loads the restored turns).
+   */
+  bindOriginatingWorkbench(originatingWorkbenchId: string): Promise<boolean>;
+  /** Room this store is bound to, or null before the first bind. */
+  boundOriginatingWorkbenchId(): string | null;
 }
 
 export async function createDurableConversationStore(
@@ -321,11 +410,11 @@ export async function createDurableConversationStore(
 
   // Reuse the connector router + the harness storage-override seam. The
   // router's `onStateChanged` is the change-driven commit hook the design
-  // names; in the synthesized-step-input warm path it stays dormant (the
-  // supervisor owns mail, so the agent never routes a connector message),
-  // so the run-boundary mirror is the operative commit trigger. The wiring
-  // is retained verbatim so a future path that drives the router gets
-  // change-driven mirrors with no further work.
+  // names. `seedInbound` drives the router (route + commit) on each inbound
+  // mail, so `onStateChanged` fires and enqueues a change-driven mirror
+  // behind the seed on the shared serialization tail; the run-boundary
+  // mirror still commits every boundary. Both triggers persist state, so a
+  // dropped change-driven mirror is recoverable at the next boundary.
   const connectorRouter = createConnectorRouter({
     onStateChanged: () => {
       void mirrorToSubstrate().catch((cause) => {
@@ -334,8 +423,27 @@ export async function createDurableConversationStore(
     },
   });
 
-  const agentStatePrefix = `${WORKFLOW_RUN_AGENT_STATE_PREFIX}/${encodeURIComponent(opts.agentKey)}/`;
+  // Nested substrate prefix is retargeted by bindOriginatingWorkbench.
+  // Unbound until the first inbound origin is known -- mirror/restore
+  // require a bound room so they cannot write the mixed agent-state/<key>/
+  // blob.
+  let originatingWorkbenchId: string | null = null;
 
+  function requireBoundWorkbenchId(): string {
+    if (originatingWorkbenchId === null) {
+      throw new Error(
+        `sidecar conversation-state: originating workbench is not bound for ${opts.agentKey}; bindOriginatingWorkbench must run before restore or mirror`,
+      );
+    }
+    return originatingWorkbenchId;
+  }
+
+  function agentStatePrefix(): string {
+    return durableConversationAgentStatePrefix(
+      opts.agentKey,
+      requireBoundWorkbenchId(),
+    );
+  }
   // The number of mirror boundaries already durably committed (the
   // checkpoint's folded boundaries plus every appended WAL entry). It is
   // the seq of the NEXT WAL entry. `null` until learned -- lazily from the
@@ -387,12 +495,23 @@ export async function createDurableConversationStore(
     return serializeStateOp(runMirror);
   }
 
+  function seedInbound(message: InboundMessage): Promise<void> {
+    return serializeStateOp(() => runSeed(message));
+  }
+
+  function composeReply(): ConnectorReplyParts {
+    return connectorRouter.composeReply();
+  }
+
+  function onReplySent(receipt: SendReceipt): Promise<void> {
+    return serializeStateOp(() => runReplySent(receipt));
+  }
+
   function substrateAgentStateFsDir(): string {
-    const repoDir = opts.substrate.getRepoDir(opts.workflowRunRepoId);
-    return path.join(
-      repoDir,
-      WORKFLOW_RUN_AGENT_STATE_PREFIX,
-      encodeURIComponent(opts.agentKey),
+    return durableConversationAgentStateDir(
+      opts.substrate.getRepoDir(opts.workflowRunRepoId),
+      opts.agentKey,
+      requireBoundWorkbenchId(),
     );
   }
 
@@ -401,7 +520,7 @@ export async function createDurableConversationStore(
   }
 
   function walBucketPrefix(bucket: number): string {
-    return `${agentStatePrefix}${WAL_DIR}/${String(bucket)}/`;
+    return `${agentStatePrefix()}${WAL_DIR}/${String(bucket)}/`;
   }
 
   function walEntryPath(seq: number): string {
@@ -409,25 +528,38 @@ export async function createDurableConversationStore(
   }
 
   function checkpointPath(): string {
-    return `${agentStatePrefix}${CHECKPOINT_FILE}`;
+    return `${agentStatePrefix()}${CHECKPOINT_FILE}`;
   }
 
   function checkpointMetaPath(): string {
-    return `${agentStatePrefix}${CHECKPOINT_META_FILE}`;
+    return `${agentStatePrefix()}${CHECKPOINT_META_FILE}`;
+  }
+
+  async function applyEmptyLocalConversation(reason: string): Promise<void> {
+    await baseStorage.writeTurns([]);
+    baseStorage.setConnectorState(null);
+    connectorRouter.restore(null);
+    await baseStorage.writeMetadata({
+      pendingOperations: [],
+      tokenUsage: EMPTY_TOKEN_USAGE,
+    });
+    await baseStorage.commit({ message: reason });
+    mirroredBoundaryCount = 0;
+    mirroredTurnCount = 0;
+    checkpointBoundarySeq = 0;
   }
 
   async function runRestore(): Promise<boolean> {
     const reconstructed = await reconstructDurableConversation(
       substrateAgentStateFsDir(),
-      opts.agentKey,
+      `${opts.agentKey}/${requireBoundWorkbenchId()}`,
     );
     if (reconstructed === null) {
-      // No durable state yet: the next mirror starts the WAL from an empty
-      // checkpoint. Record the (empty) committed counts so the first
-      // mirror appends from boundary seq 0.
-      mirroredBoundaryCount = 0;
-      mirroredTurnCount = 0;
-      checkpointBoundarySeq = 0;
+      // No snapshot for this room: start empty. Do not migrate a mixed
+      // agent-state/<agentKey>/ blob from before per-room nesting.
+      await applyEmptyLocalConversation(
+        `reset conversation for ${opts.agentKey} workbench ${requireBoundWorkbenchId()} (no prior snapshot)`,
+      );
       return false;
     }
     // Write the reconstructed turns + metadata into the local store's
@@ -500,12 +632,12 @@ export async function createDurableConversationStore(
   }
 
   /**
-   * Fold the full conversation into a fresh checkpoint and truncate the
-   * WAL in one atomic commit at `preservePrefix = agent-state/<key>/`. The
-   * merge returns ONLY the two checkpoint files and NO `wal/...` paths;
-   * because the substrate's `clearPrefix` recursively removes the whole
-   * `agent-state/<key>/` subtree before writing the returned set, omitting
-   * the WAL paths IS the truncate.
+   * Fold the full conversation into a fresh checkpoint and truncate the WAL in
+   * one atomic commit at `preservePrefix = agent-state/<key>/<workbenchId>/`.
+   * The merge returns ONLY the two checkpoint files and NO `wal/...` paths;
+   * because the substrate's `clearPrefix` recursively removes the whole room
+   * subtree before writing the returned set, omitting the WAL paths IS the
+   * truncate.
    */
   async function writeCheckpoint(
     boundarySeq: number,
@@ -539,7 +671,7 @@ export async function createDurableConversationStore(
       opts.workflowRunRepoId,
       opts.workflowRunRef,
       {
-        preservePrefix: agentStatePrefix,
+        preservePrefix: agentStatePrefix(),
         merge: async () => ({
           [checkpointPath()]: JSON.stringify(snapshot),
           [checkpointMetaPath()]: JSON.stringify(meta),
@@ -572,7 +704,7 @@ export async function createDurableConversationStore(
     if (mirroredBoundaryCount === null) {
       const reconstructed = await reconstructDurableConversation(
         substrateAgentStateFsDir(),
-        opts.agentKey,
+        `${opts.agentKey}/${requireBoundWorkbenchId()}`,
       );
       checkpointBoundarySeq = reconstructed?.checkpointBoundarySeq ?? 0;
       mirroredBoundaryCount = reconstructed?.boundaryCount ?? 0;
@@ -614,10 +746,97 @@ export async function createDurableConversationStore(
     }
   }
 
+  // Classify an inbound message, treating a `route()` throw as passthrough.
+  // The router throws when `message.headers.from` is not a parseable bare
+  // addr-spec; per the router contract that is a passthrough (deliver the
+  // message to the agent -- the caller's send is separate -- but do not
+  // advance the thread), not a programmer error, so it must not fail the
+  // seed. A synthesized passthrough decision commits as a no-op.
+  function routeOrPassthrough(message: InboundMessage): RouteDecision {
+    try {
+      return connectorRouter.route(message);
+    } catch (cause) {
+      logger.warn`connector route for ${opts.agentKey} could not parse the inbound sender; leaving the thread unadvanced: ${cause instanceof Error ? cause.message : String(cause)}`;
+      return { kind: "passthrough" };
+    }
+  }
+
+  // Advance the connector router from a received inbound message and flush
+  // the resulting connector state into the local store's metadata. `commit`
+  // fires the router's `onStateChanged`, which enqueues a change-driven
+  // mirror behind this op on the shared serialization tail; because that
+  // mirror reads the connector state from the local store's metadata (not
+  // from the router), the metadata write below is what makes the seeded
+  // state reach the substrate. The write preserves the reactor's staged
+  // pendingOperations / tokenUsage -- a seed advances only connectorState.
+  // A passthrough decision advances nothing and writes nothing.
+  async function runSeed(message: InboundMessage): Promise<void> {
+    const decision = routeOrPassthrough(message);
+    connectorRouter.commit(decision);
+    if (decision.kind === "passthrough") return;
+
+    const metadata = await baseStorage.loadMetadata();
+    baseStorage.setConnectorState(connectorRouter.snapshot());
+    await baseStorage.writeMetadata({
+      pendingOperations: metadata.pendingOperations,
+      tokenUsage: metadata.tokenUsage,
+    });
+    await baseStorage.commit({
+      message: `seed connector thread for ${opts.agentKey}`,
+    });
+  }
+
+  // Advance the connector thread after a reply was sent and flush the
+  // resulting connector state into the local store's metadata. `onReplySent`
+  // moves `lastMessageId` to the reply's Message-ID and fires the router's
+  // `onStateChanged`, which enqueues a change-driven mirror behind this op on
+  // the shared serialization tail; because that mirror reads the connector
+  // state from the local store's metadata (not from the router), the metadata
+  // write below is what makes the advanced state reach the substrate. The
+  // write preserves the reactor's staged pendingOperations / tokenUsage -- an
+  // outbound advance touches only connectorState. `onReplySent` throws when no
+  // thread is active, which surfaces to the reply drain's failure callback
+  // rather than persisting a phantom advance.
+  async function runReplySent(receipt: SendReceipt): Promise<void> {
+    connectorRouter.onReplySent(receipt);
+
+    const metadata = await baseStorage.loadMetadata();
+    baseStorage.setConnectorState(connectorRouter.snapshot());
+    await baseStorage.writeMetadata({
+      pendingOperations: metadata.pendingOperations,
+      tokenUsage: metadata.tokenUsage,
+    });
+    await baseStorage.commit({
+      message: `advance connector thread after reply for ${opts.agentKey}`,
+    });
+  }
+
+  function bindOriginatingWorkbench(nextWorkbenchId: string): Promise<boolean> {
+    return serializeStateOp(async () => {
+      if (nextWorkbenchId.length === 0) {
+        throw new Error(
+          `sidecar conversation-state: originating workbench id must be non-empty for ${opts.agentKey}`,
+        );
+      }
+      if (originatingWorkbenchId === nextWorkbenchId) return false;
+      if (originatingWorkbenchId !== null) {
+        await runMirror();
+      }
+      originatingWorkbenchId = nextWorkbenchId;
+      await runRestore();
+      return true;
+    });
+  }
+
   return {
     storage: baseStorage,
     restoreFromSubstrate,
     mirrorToSubstrate,
+    seedInbound,
+    composeReply,
+    onReplySent,
+    bindOriginatingWorkbench,
+    boundOriginatingWorkbenchId: () => originatingWorkbenchId,
   };
 }
 
@@ -638,11 +857,9 @@ export interface DurableConversationRegistryOpts {
 
 /**
  * Per-agent durable-conversation store registry. One store
- * per warm agent key, built lazily and reused across runs in the same
- * child. The first `acquire` for a key builds the store and restores its
- * prior conversation snapshot from the substrate -- the path that runs on
- * the lazy first build AND on the respawn rebuild, so the warm agent
- * resumes its conversation across child respawn. The registry is empty
+ * per warm agent key (stepId), built lazily and reused across runs in the
+ * same child. Originating-workbench snapshots nest under that key; bind
+ * retargets the live store before each send. The registry is empty
  * after a respawn (it lives in the child's address space); the substrate
  * is the durable mirror that survives.
  */
@@ -691,14 +908,9 @@ export function createDurableConversationRegistry(
         principal: opts.principal,
         agentKey: key,
       });
-      // Restore the prior conversation BEFORE the store is observable (and
-      // before the warm agent's reactor `load()` reads it). On a genuine
-      // first-ever run this is a no-op (no checkpoint/WAL yet); on a
-      // respawn rebuild it pulls the pre-respawn conversation back from the
-      // substrate (checkpoint + WAL replay). A restore failure surfaces --
-      // a lost conversation on respawn is a correctness failure, not a
-      // silently-fresh start.
-      await store.restoreFromSubstrate();
+      // Restore happens in bindOriginatingWorkbench once the inbound
+      // From local-part is known. Restoring here would load a mixed
+      // agent-state/<key>/ blob (or throw unbound).
       stores.set(key, store);
       building.delete(key);
       return store;
@@ -725,6 +937,30 @@ export function createDurableConversationRegistry(
   }
 
   return { acquire, get, peek };
+}
+
+/**
+ * Bind the warm agent's live store to the originating workbench and, when
+ * the room changed, evict the cached agent so the next send rebuilds
+ * against the restored snapshot. The cache stays keyed by stepId -- one
+ * warm agent, not one per room.
+ */
+export async function prepareConversationForOriginatingWorkbench(args: {
+  registry: DurableConversationRegistry;
+  agentKey: string;
+  /** Room named by this request's mail; undefined keeps the current binding. */
+  originatingWorkbenchId: string | undefined;
+  warmCache?: { evictAll: (reason: string) => Promise<void> };
+}): Promise<boolean> {
+  const store = await args.registry.acquire(args.agentKey);
+  const requested = args.originatingWorkbenchId;
+  const current = store.boundOriginatingWorkbenchId();
+  const target = requested ?? current ?? UNSCOPED_ORIGINATING_WORKBENCH_ID;
+  const swapped = await store.bindOriginatingWorkbench(target);
+  if (swapped && args.warmCache !== undefined) {
+    await args.warmCache.evictAll(`originating workbench changed to ${target}`);
+  }
+  return swapped;
 }
 
 interface SnapshotMetadataValue {
@@ -761,8 +997,9 @@ function castValidatedEnvelope<T>(items: unknown[]): T[] {
 
 /**
  * Reconstruct the warm agent's conversation from the two-tier on-disk
- * layout under `agentStateDir` (`<repoDir>/agent-state/<agentKey>/`): the
- * compacted `checkpoint.json` turns followed by the replayed WAL tail.
+ * layout under `agentStateDir`
+ * (`<repoDir>/agent-state/<agentKey>/<workbenchId>/`): the compacted
+ * `checkpoint.json` turns followed by the replayed WAL tail.
  * Pure read against the substrate working tree -- no inference, no commit.
  * Returns `null` when neither a checkpoint nor any WAL exists (the genuine
  * first-ever run). The latest metadata source wins (the last replayed WAL

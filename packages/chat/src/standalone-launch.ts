@@ -26,7 +26,7 @@ import { CHAT_TURN_TIMEOUT_MS } from "./turn-claims";
  * That child id is what a reply's `run_id` carries, which is the whole
  * reason a reply is traceable.
  *
- * `onBodyFailure: "continue"` — authored in the section shape itself
+ * `onBodyFailure: "tolerate"` — authored in the section shape itself
  * (`@corbits/agent-runtime`) — is the failure edge: a turn that throws
  * records a failed occurrence and leaves the section subscribed, so one
  * bad turn kills neither the agent nor the conversation.

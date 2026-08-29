@@ -72,36 +72,6 @@ export const ArtifactCountsSchema = type({
   routine: "number",
 });
 
-// `@corbits/approvals`'s "needs you" read: the same pending approvals as
-// `TenantApprovalsSchema`, but with the agent and bench names already
-// resolved server-side, so nothing here ever needs a raw id to render.
-export const NeedsYouSchema = type({
-  items: type({
-    id: "string",
-    agentName: "string",
-    benchName: "string",
-    headline: "string",
-    arguments: "object",
-    status: '"pending"',
-    createdAt: "string.date.iso",
-  }).array(),
-});
-
-// The single-approval sibling of `NeedsYouSchema` (`@corbits/approvals`'s
-// `GET .../approvals/needs-you/:approvalId`): the same display-safe
-// hydration, for one id, in any status -- not just pending. This is the
-// chat approve card's live status read; see `approval-actions.ts`.
-export const NeedsYouDetailSchema = type({
-  id: "string",
-  agentName: "string",
-  benchName: "string",
-  headline: "string",
-  arguments: "object",
-  status: "'pending' | 'approved' | 'rejected' | 'timeout' | 'expired'",
-  createdAt: "string.date.iso",
-});
-export type NeedsYouDetail = typeof NeedsYouDetailSchema.infer;
-
 export type Profile = typeof UserProfile.infer;
 export type Principal = typeof PrincipalSummary.infer;
 export type WorkflowRun = typeof WorkflowRunSummary.infer;
@@ -111,23 +81,6 @@ export type ArtifactListItem = typeof ArtifactListItemSchema.infer;
 export type ArtifactListPage = typeof ArtifactListPageSchema.infer;
 export type ArtifactDetail = typeof ArtifactDetailSchema.infer;
 export type ArtifactCounts = typeof ArtifactCountsSchema.infer;
-export type NeedsYou = typeof NeedsYouSchema.infer;
-export type NeedsYouItem = NeedsYou["items"][number];
-
-/**
- * How many things need this bench's attention right now — the count the
- * second column's "Approvals" row badges. `null` while unknown (no bench
- * selected yet, or the read hasn't resolved), so a caller never mistakes
- * "still loading" for "zero pending."
- */
-export function useNeedsYouCount(tenantId: string | null): number | null {
-  const query = useAPIQuery(
-    tenantId === null ? "" : `/api/tenants/${tenantId}/approvals/needs-you`,
-    NeedsYouSchema,
-  );
-  return query.kind === "ready" ? query.data.items.length : null;
-}
-
 /**
  * The envelope paginatedSchema validates, stated structurally: the generic
  * schema's inferred type carries an arktype inference artifact that rejects
@@ -295,40 +248,4 @@ export async function fetchArtifactDetail(
     );
   }
   return parsed;
-}
-
-export type NeedsYouDetailResult =
-  | { readonly kind: "ready"; readonly item: NeedsYouDetail }
-  | { readonly kind: "forbidden" }
-  | { readonly kind: "not-found" }
-  | { readonly kind: "error"; readonly message: string };
-
-/**
- * The chat approve card's live status read: `@corbits/approvals`'s
- * single-approval "needs you" detail, in any status. A 403 here means the
- * tenant-wide read grant was refused -- deliberately coarser than the
- * native approve/reject routes' per-deployment grant, so it is not proof
- * the viewer cannot resolve this approval (see `approval-actions.ts`).
- */
-export async function getApprovalNeedsYou(
-  tenantId: string,
-  approvalId: string,
-): Promise<NeedsYouDetailResult> {
-  const response = await fetch(
-    `/api/tenants/${tenantId}/approvals/needs-you/${approvalId}`,
-    { headers: { accept: "application/json" } },
-  );
-  if (response.status === 403) return { kind: "forbidden" };
-  if (response.status === 404) return { kind: "not-found" };
-  if (!response.ok) {
-    return {
-      kind: "error",
-      message: `The server answered ${response.status} for this approval.`,
-    };
-  }
-  const parsed = NeedsYouDetailSchema(await response.json());
-  if (parsed instanceof type.errors) {
-    return { kind: "error", message: parsed.summary };
-  }
-  return { kind: "ready", item: parsed };
 }

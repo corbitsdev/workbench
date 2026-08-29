@@ -68,12 +68,18 @@ function buildHarness() {
   let subscriber: ((state: ConnectGithubQuery) => void) | undefined;
 
   const setupPorts: ConnectGithubSetupPorts = {
+    async hasRepoGrant() {
+      return false;
+    },
     async mintRepoGrant(repo) {
       grantedRepos.push(repo.name);
     },
     async createWebhookTrigger(repo) {
       createdTriggerRepos.push(repo.name);
       return { id: `trg_${repo.id}` };
+    },
+    async hasWebhookTrigger() {
+      return false;
     },
     async persistSelectedRepos(repoIds) {
       persistedRepoIds = repoIds;
@@ -250,7 +256,12 @@ describe("connect-github round trip (CL-6345)", () => {
     expect(harness.getConnectStateCallCount()).toBe(
       getConnectStateCallCountBeforeStart,
     );
-    expect(el.textContent).toContain("Connected to GitHub as octocat");
-    expect(el.textContent).toContain("4 repos found · 3 picked");
+    // Reviewing, not "pick your repos" again and never "Connect": the
+    // server recorded the selection, so the same card now names what is
+    // under review.
+    expect(el.textContent).toContain("Reviewing");
+    expect(el.textContent).toContain("acme/checkout");
+    expect(el.textContent).toContain("acme/web");
+    expect(el.textContent).not.toContain("Connect");
   });
 });

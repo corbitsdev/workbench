@@ -50,6 +50,30 @@ async function mount(items: readonly MessageItem[], currentUser?: CurrentUser) {
   return container;
 }
 
+function joinItemFor(id: string, agentAddress: string): MessageItem {
+  return {
+    id,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    sender: { name: null, address: "sawyer@agents.example" },
+    parts: [
+      {
+        kind: "event",
+        event: "workbench.agent-joined",
+        data: { address: agentAddress },
+      },
+    ],
+  };
+}
+
+function textItem(id: string): MessageItem {
+  return {
+    id,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    sender: { name: "Sawyer", address: "sawyer@agents.example" },
+    parts: [{ kind: "text", text: "Morning" }],
+  };
+}
+
 function joinItem(senderAddress: string): MessageItem {
   return {
     id: "join_1",
@@ -99,5 +123,34 @@ describe("CL-6772: join / system notices stay on the left edge", () => {
     // Same left gutter the failed-turn strip and gen-ui blocks use, so the
     // notice sits under the message column rather than the row's midpoint.
     expect(block?.[0]).toMatch(/2\.9rem/);
+  });
+});
+
+describe("a whole team arriving reads as one line, not a join dump", () => {
+  test("three consecutive joins collapse into one line naming everyone", async () => {
+    const el = await mount([
+      joinItemFor("j1", "correctness-reviewer@agents.example"),
+      joinItemFor("j2", "architecture-reviewer@agents.example"),
+      joinItemFor("j3", "release-risk-reviewer@agents.example"),
+    ]);
+    const lines = [...el.querySelectorAll(".chat-event-line")];
+    expect(lines).toHaveLength(1);
+    const text = lines[0]?.textContent ?? "";
+    expect(text).toContain("Correctness Reviewer");
+    expect(text).toContain("Architecture Reviewer");
+    expect(text).toContain("Release Risk Reviewer");
+    expect(text.match(/joined/g)).toHaveLength(1);
+  });
+
+  test("joins separated by a real message stay their own rows", async () => {
+    const el = await mount([
+      joinItemFor("j1", "correctness-reviewer@agents.example"),
+      textItem("t1"),
+      joinItemFor("j2", "architecture-reviewer@agents.example"),
+    ]);
+    const lines = [...el.querySelectorAll(".chat-event-line")];
+    expect(lines).toHaveLength(2);
+    expect(lines[0]?.textContent).toContain("Correctness Reviewer joined");
+    expect(lines[1]?.textContent).toContain("Architecture Reviewer joined");
   });
 });

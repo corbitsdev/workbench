@@ -37,7 +37,6 @@ function deps(overrides: Partial<SeedDeps> & Pick<SeedDeps, "api">): SeedDeps {
       outcome: "pushed" as const,
       commitSha: "a".repeat(40),
     }),
-    publishToolRegistry: async () => undefined,
     log,
     ...overrides,
   };

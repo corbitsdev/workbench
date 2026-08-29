@@ -1,8 +1,10 @@
 // `workbench setup`: initialize the database, provision the
-// bench through the hub's native tenant-creation route, report
-// the role defaults the platform created, and state exactly what the
-// operator must still supply. Safe to re-run; every skipped step says
-// so.
+// bench through the hub's native tenant-creation route, persist
+// OPERATOR_TENANT_ID so first-login benches parent under it, publish
+// the platform `corbits-tools` registry onto that tenant (the
+// root; descendants inherit it), report the role defaults the
+// platform created, and state exactly what the operator must
+// still supply. Safe to re-run; every skipped step says so.
 
 import {
   paginatedSchema,
@@ -14,7 +16,9 @@ import {
   authenticate,
   parseAs,
   CliError,
+  publishCorbitsToolsRegistry,
   type ApiCall,
+  type ToolRegistryPublisher,
 } from "@workbench/hub-client";
 import { MODEL_CREDENTIAL_VARIABLES, type SetupConfig } from "./config";
 
@@ -24,6 +28,18 @@ export type SetupDeps = {
   /** Runs the shared database-initialization script; throws CliError. */
   runDbSetup: () => Promise<void>;
   log: (line: string) => void;
+  /**
+   * Publishes `corbits-tools` onto the bench this setup creates.
+   * Defaults to the real packer; tests pass a double so they never
+   * bundle a tarball.
+   */
+  publishToolRegistry?: ToolRegistryPublisher;
+  /**
+   * Writes `OPERATOR_TENANT_ID` into the operator `.env` so first-login
+   * personal benches parent under the org tenant this setup created.
+   * Isolated tests omit this; the CLI always supplies it.
+   */
+  persistEnv?: (args: { key: string; value: string }) => Promise<void>;
 };
 
 async function ensureTenant(
@@ -108,6 +124,22 @@ export async function runSetup(deps: SetupDeps): Promise<void> {
     log,
   );
 
+  if (deps.persistEnv !== undefined) {
+    try {
+      await deps.persistEnv({ key: "OPERATOR_TENANT_ID", value: tenantId });
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      throw new CliError(
+        `could not persist OPERATOR_TENANT_ID=${tenantId}: ${message}`,
+        "check that .env at the repository root is writable, then re-run: workbench setup",
+        { cause },
+      );
+    }
+    log(
+      `OPERATOR_TENANT_ID=${tenantId} written so first-login benches parent under this org`,
+    );
+  }
+
   const roles = await api(
     "GET",
     `/api/tenants/${tenantId}/roles?limit=100`,
@@ -131,6 +163,34 @@ export async function runSetup(deps: SetupDeps): Promise<void> {
       .sort()
       .join(", ")}`,
   );
+
+  const publishToolRegistry =
+    deps.publishToolRegistry ?? publishCorbitsToolsRegistry;
+  try {
+    const published = await publishToolRegistry({
+      api,
+      cookies: session.cookies,
+      hubUrl: config.hubUrl,
+      tenantId,
+      log,
+    });
+    if (Array.isArray(published) && published.length === 0) {
+      log(
+        `platform corbits-tools registry already on bench ${config.orgSlug} (skipped)`,
+      );
+    } else {
+      log(
+        `published the platform corbits-tools registry onto bench ${config.orgSlug} (${tenantId})`,
+      );
+    }
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    throw new CliError(
+      `publishing the corbits-tools package-registry asset failed: ${message}`,
+      "check the hub logs for the underlying failure, then re-run: workbench setup",
+      { cause },
+    );
+  }
 
   log("");
   log("setup complete. next: workbench seed");

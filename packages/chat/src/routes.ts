@@ -64,12 +64,15 @@ import {
 } from "./workbench-settings";
 import { isRecentlyActive } from "./workbench-activity";
 import { postRoomMessage, type RoomMessageStore } from "./room-messages";
+import { WorkbenchOnboardingStep } from "./blocks";
 import type { ConnectGithubBlockData } from "./blocks";
 import {
   findResidentAgentForDefinition,
   postCannedGreeting,
   joinHumanParticipant,
+  KindIsChatError,
   launchAndJoinAgent,
+  findExistingAgentChat,
   removeWorkbenchParticipant,
   sendWorkbenchMessage,
 } from "./workbench-service";
@@ -89,7 +92,7 @@ import {
   type WorkbenchTurnQueue,
 } from "./turn-queue";
 import type { ChatPlatform } from "./platform-port";
-import type { WorkbenchSettingsRow, ChatStore } from "./store";
+import type { ChatStore } from "./store";
 import {
   dispatchAtCommand,
   dispatchSlashCommand,
@@ -145,7 +148,14 @@ export type CreateChatRoutesDeps = {
    * schedulable workflows masquerade as chat partners.
    */
   isInvitableDefinition: (definition: InvitableDefinitionRecord) => boolean;
-  /** Per-turn timeout, the default write-claim TTL. */
+  /**
+   * The default turn-claim TTL — see
+   * `./workbench-service.ts`'s `DEFAULT_TURN_CLAIM_TTL_MS` for the
+   * production default and the arithmetic it has to clear
+   * (`waitUntilFreeTimeoutMs` + `turnDispatchTimeoutMs`, with margin)
+   * to stay an unreachable backstop rather than a bound that fires on
+   * a still-legitimate dispatch.
+   */
   turnTimeoutMs: number;
   /**
    * CL-6644's turn-level deadline: see `SendWorkbenchMessageDeps`'s field
@@ -153,6 +163,12 @@ export type CreateChatRoutesDeps = {
    * `dispatchTurnBatch` uses `DEFAULT_TURN_DISPATCH_TIMEOUT_MS`.
    */
   turnDispatchTimeoutMs?: number;
+  /**
+   * CL-7129's bound on the CL-6670 wait: see `SendWorkbenchMessageDeps`'s
+   * field of the same name in `./workbench-service.ts`. Omitted,
+   * `dispatchTurnBatch` uses `DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS`.
+   */
+  waitUntilFreeTimeoutMs?: number;
   /**
    * Resolves a principal to the display name a greeting can use. The
    * hub wires this to its user table; omitted, the canned greeting
@@ -329,28 +345,6 @@ const CreateWorkbenchBody = type({
    * `openAgentDm`) are not 400'd.
    */
   "reuseExisting?": "boolean",
-  /**
-   * The picked template's own promise line
-   * (`WorkbenchTemplateManifest.promise`, see `@corbits/workflow-catalog`),
-   * when this chat was minted from the `/new` picker's template
-   * instantiation flow (`apps/web/src/instant-agent-create.ts`). Passed
-   * through as an opaque string — this package has no notion of a
-   * template — to replace the random canned opener with one naming the
-   * room's actual job. Omitted mints exactly like an untemplated chat.
-   */
-  "templatePromise?": "string",
-  /**
-   * The template's own display name, present exactly when this chat's
-   * template needs a GitHub connection before it can run
-   * (`WorkbenchTemplateManifest.requiredConnections` naming `"github"` —
-   * see `apps/web/src/instant-agent-create.ts`). Posts one
-   * `connect-github` block (`./blocks.ts`) right after the canned
-   * greeting, in `state: "disconnected"` — this package owns the block
-   * vocabulary generically (the same way `chat-orchestrator.ts` posts an
-   * `approve` block), but has no notion of *why* a template needs GitHub,
-   * so the caller supplies the one line the card is allowed to show.
-   */
-  "connectGithubRequiredFor?": "string",
 });
 type CreateWorkbenchBodyT = typeof CreateWorkbenchBody.infer;
 
@@ -884,89 +878,7 @@ const MoveWorkbenchBody = type({
   newParentTenantId: "string",
 });
 
-/**
- * Finds an existing chat with the given agent. `POST /workbenches` with
- * `kind: "chat"` + `definitionId` always find-or-reopens this way
- * (CL-6981): a DM is the one 1:1 tenant with that agent. Uniqueness is
- * per (bench, definitionId). Product reopens; it does not clone.
- *
- * Matches forward, by the `chat/definitionId` every agent chat has
- * carried in its settings since this landed, and falls back to
- * `matchesLegacyAgentChat` for a chat minted before that key existed.
- * The comparison is on the definition's ASSET, not the row id: a
- * code-sourced deploy projects a new `workflow_definition` row per
- * frozen wire projection, so the id a chat recorded at creation and the
- * id the picker offers later are routinely different rows over the one
- * asset that IS the agent.
- * More than one match (duplicates this same gap already let through)
- * resolves to the oldest by its workbench-tenancy `createdAt` — the
- * original conversation, not whichever the caller happens to hit first —
- * with a workbench that predates workbench tenancy entirely sorting oldest
- * of all.
- */
-export async function findExistingAgentChat(
-  deps: Pick<CreateChatRoutesDeps, "store" | "platform" | "tenancy">,
-  tenantId: string,
-  definitionId: string,
-): Promise<WorkbenchSettingsRow | undefined> {
-  const chats = await deps.store.listWorkbenchSettings(tenantId, "chat");
-  const assetId = await deps.platform.resolveDefinitionAssetId(definitionId);
-  const matches: { row: WorkbenchSettingsRow; createdAt: Date }[] = [];
-  for (const row of chats) {
-    const storedDefinitionId = row.settings["chat/definitionId"];
-    const isMatch =
-      storedDefinitionId !== undefined
-        ? typeof storedDefinitionId === "string" &&
-          (await sameAgent(deps, storedDefinitionId, definitionId, assetId))
-        : await matchesLegacyAgentChat(deps, row, definitionId);
-    if (!isMatch) continue;
-    const link = await deps.tenancy.getWorkbenchTenancy(row.workbenchId);
-    matches.push({ row, createdAt: link?.createdAt ?? new Date(0) });
-  }
-  if (matches.length === 0) return undefined;
-  matches.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
-  return matches[0]?.row;
-}
-
-/**
- * Whether two definition ids name the same agent: the same row, or two
- * rows projected over the same workflow asset. An unresolvable asset (a
- * definition row that no longer exists) never matches by asset, so a
- * stale recorded id falls back to plain id equality alone.
- */
-async function sameAgent(
-  deps: Pick<CreateChatRoutesDeps, "platform">,
-  storedDefinitionId: string,
-  definitionId: string,
-  assetId: string | undefined,
-): Promise<boolean> {
-  if (storedDefinitionId === definitionId) return true;
-  if (assetId === undefined) return false;
-  const storedAssetId =
-    await deps.platform.resolveDefinitionAssetId(storedDefinitionId);
-  return storedAssetId === assetId;
-}
-
-/**
- * A chat minted before `chat/definitionId` was recorded at creation
- * carries no forward marker naming its agent — the only way back to its
- * definition is the platform's reverse address lookup, run once per
- * agent participant the chat has (ordinarily exactly one).
- */
-async function matchesLegacyAgentChat(
-  deps: Pick<CreateChatRoutesDeps, "platform">,
-  row: WorkbenchSettingsRow,
-  definitionId: string,
-): Promise<boolean> {
-  const agentAddresses = participantsOf(row.settings)
-    .map((participant) => participant.address)
-    .filter(isAgentAddress);
-  for (const address of agentAddresses) {
-    const resolved = await deps.platform.resolveDefinitionIdByAddress(address);
-    if (resolved === definitionId) return true;
-  }
-  return false;
-}
+export { findExistingAgentChat };
 
 /** Annotates a workbench view with its native child-tenancy — the
  * `tenancy` field every workbench created after this rollout carries,
@@ -1284,8 +1196,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         const agentAddress = joined.address;
         const joinEventDelivered = joined.joinEventDelivered;
         const agentDisplayName = joined.displayName;
-        const templatePromise = body.templatePromise;
-        const connectGithubRequiredFor = body.connectGithubRequiredFor;
         runPostMintDelivery(async () => {
           const senderName =
             deps.resolvePrincipalName !== undefined
@@ -1304,27 +1214,8 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               agentAddress,
               agentName: agentDisplayName,
               ...(senderName !== undefined ? { senderName } : {}),
-              ...(templatePromise !== undefined ? { templatePromise } : {}),
             },
           );
-          if (connectGithubRequiredFor !== undefined) {
-            const data: ConnectGithubBlockData = {
-              requiredForTemplate: connectGithubRequiredFor,
-              state: "disconnected",
-            };
-            await postRoomMessage(
-              { roomMessages: deps.roomMessages, publish },
-              {
-                tenantId: tenant.id,
-                workbenchId,
-                sender: { name: null, address: agentAddress },
-                runId: localPartOf(agentAddress),
-                parts: [
-                  { kind: "block", block: { type: "connect-github", data } },
-                ],
-              },
-            );
-          }
           await deps.platform
             .ensureAwake(agentAddress)
             .catch((err: unknown) => {
@@ -2073,6 +1964,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                   409,
                 );
               }
+              if (err instanceof KindIsChatError) {
+                return c.json(ErrorEnvelope(err.code, err.message), 409);
+              }
               throw err;
             }
             continue;
@@ -2124,12 +2018,24 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // resolving it against the registry only runs once it is
       // confirmed not to name a known handle, so that mention keeps
       // its ordinary fan-out behavior exactly as before.
-      const commandDecision = await dispatchWorkbenchCommand(deps, {
-        tenantId: ownerTenantId,
-        principalId: principal.id,
-        workbenchId,
-        text: textOf(messageParts),
-      });
+      const commandDecision = await (async () => {
+        try {
+          return await dispatchWorkbenchCommand(deps, {
+            tenantId: ownerTenantId,
+            principalId: principal.id,
+            workbenchId,
+            text: textOf(messageParts),
+          });
+        } catch (err) {
+          if (err instanceof KindIsChatError) {
+            return c.json(ErrorEnvelope(err.code, err.message), 409);
+          }
+          throw err;
+        }
+      })();
+      if (commandDecision instanceof Response) {
+        return commandDecision;
+      }
       if (commandDecision !== undefined && "command" in commandDecision) {
         const commandResult = commandDecision.command;
         const resultText = textForCommandResult(commandResult);
@@ -2203,6 +2109,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           ...(deps.threads !== undefined ? { threads: deps.threads } : {}),
           ...(deps.turnDispatchTimeoutMs !== undefined
             ? { turnDispatchTimeoutMs: deps.turnDispatchTimeoutMs }
+            : {}),
+          ...(deps.waitUntilFreeTimeoutMs !== undefined
+            ? { waitUntilFreeTimeoutMs: deps.waitUntilFreeTimeoutMs }
             : {}),
         },
         {
@@ -2349,6 +2258,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             ...(deps.threads !== undefined ? { threads: deps.threads } : {}),
             ...(deps.turnDispatchTimeoutMs !== undefined
               ? { turnDispatchTimeoutMs: deps.turnDispatchTimeoutMs }
+              : {}),
+            ...(deps.waitUntilFreeTimeoutMs !== undefined
+              ? { waitUntilFreeTimeoutMs: deps.waitUntilFreeTimeoutMs }
               : {}),
           },
           {
@@ -2870,18 +2782,74 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         if (err instanceof DefinitionProjectionMissingError) {
           return c.json(ErrorEnvelope("not_launchable", err.guidance), 409);
         }
+        if (err instanceof KindIsChatError) {
+          return c.json(ErrorEnvelope(err.code, err.message), 409);
+        }
         throw err;
       }
+    },
+  );
+
+  // A room's onboarding walkthrough, posted explicitly by whoever knows
+  // what the room is for — never as a side effect of hosting an agent.
+  // The step lands as a system row (no run, no launch, no wake), so an
+  // empty channel can run its walkthrough with no agent in the room at
+  // all. Only the declared step shapes are accepted: this is not a
+  // general "post any block" hole in the route surface.
+  app.post(
+    "/workbenches/:id/onboarding",
+    deps.requireGrant(idResource("workflow-run", "id"), "create"),
+    async (c) => {
+      const step = WorkbenchOnboardingStep(
+        await c.req.json().catch(() => undefined),
+      );
+      if (step instanceof type.errors) {
+        return c.json(
+          ErrorEnvelope(
+            "bad_request",
+            `invalid onboarding step: ${step.summary}`,
+          ),
+          400,
+        );
+      }
+
+      const tenant = c.get("tenant");
+      const workbenchId = c.req.param("id");
+      const existing = await deps.store.getWorkbenchSettings(
+        tenant.id,
+        workbenchId,
+      );
+      if (existing === undefined) {
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+      }
+
+      const data: ConnectGithubBlockData = {
+        requiredForTemplate: step.requiredForTemplate,
+        promise: step.promise,
+        steps: step.steps,
+        state: "disconnected",
+      };
+      const posted = await postRoomMessage(
+        { roomMessages: deps.roomMessages, publish },
+        {
+          tenantId: tenant.id,
+          workbenchId,
+          sender: { name: null, address: `system@${workbenchId}` },
+          parts: [{ kind: "block", block: { type: "connect-github", data } }],
+        },
+      );
+
+      return c.json({ id: posted.id }, 201);
     },
   );
 
   // The removal counterpart to `POST .../invite` (and to the inline
   // join a chat's own creation runs): drops a participant record and,
   // for an invited agent, releases its launched instance — see
-  // `workbench-service.ts`'s `removeWorkbenchParticipant`. A chat's
-  // participants are fixed at creation exactly as `POST .../invite`
-  // already refuses to grow them, so removal from a `kind: "chat"`
-  // workbench is refused the same way, with the same 409 shape.
+  // `workbench-service.ts`'s `removeWorkbenchParticipant`. A chat is
+  // 1:1: `launchAndJoinAgent` reuses the same definition and refuses
+  // a different agent, so removal from a `kind: "chat"` workbench is
+  // refused the same way.
   app.delete(
     "/workbenches/:id/participants/:address",
     deps.requireGrant(idResource("workflow-run", "id"), "manage"),
@@ -3387,6 +3355,14 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           return c.json(ErrorEnvelope("bad_request", err.message), 400);
         }
         throw err;
+      }
+
+      if (
+        kindOf(existing.settings) === "chat" &&
+        patch["chat/participants"] !== undefined
+      ) {
+        const refusal = new KindIsChatError();
+        return c.json(ErrorEnvelope(refusal.code, refusal.message), 409);
       }
 
       // `chat/participants` is normalized to records on write even when

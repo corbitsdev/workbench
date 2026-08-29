@@ -26,6 +26,7 @@ import {
   type CredentialWiring,
   type SourcesSnapshotRef,
   type StepEnvBase,
+  type SupervisorBackedTransportInbound,
 } from "@intx/workflow-host";
 
 import type { DurableConversationRegistry } from "../conversation-state";
@@ -101,6 +102,17 @@ export interface SidecarStepBuildEnvDeps {
    * key.
    */
   outboundMailBridge: ChildOutboundMailBridge;
+  /**
+   * Inbound local IMAP surface for the step agent's supervisor-backed
+   * transport (INBOUND half of mailbox ownership): the child mailbox reader
+   * (a fresh committed snapshot of the deployment's substrate `INBOX` per
+   * read), the shared watch registry the child's control loop fires
+   * `mailbox.notify` into, and the mutation bridge flag/expunge writes ride
+   * to the supervisor on. Present, `mail_read` / `mail_search` / `mail_wait`
+   * resolve against the committed mailbox; absent, the inbound methods stay
+   * inert.
+   */
+  inbound?: SupervisorBackedTransportInbound;
   /** Per-step tool-loader caps (cache + registry tarball size). */
   cache: StepToolCacheConfig;
   /**
@@ -279,13 +291,12 @@ export function createSidecarStepBuildEnv(
           });
     // Conversation storage. For the warm single-step agent the
     // conversation must survive child respawn, so it is backed by a
-    // per-agent durable store whose content is mirrored to the
-    // workflow-run substrate; building it here restores the
-    // prior conversation before the agent's reactor loads. A multi-step
-    // deploy (no durable registry) keeps the per-run isogit store: its
-    // per-step agents are not warm/long-lived and have no cross-run
-    // conversation to carry. The workdir + tools stay per-run in both
-    // cases -- only the conversation context is durable across runs.
+    // per-agent durable store (keyed by stepId) whose content is mirrored
+    // to the workflow-run substrate under
+    // `agent-state/<stepId>/<workbenchId>/`. Bind to the originating
+    // workbench happens before this builder runs so restore is already
+    // applied. A multi-step deploy (no durable registry) keeps the
+    // per-run isogit store.
     const storage: ContextStore & AuditStore =
       deps.durableConversation !== undefined
         ? (await deps.durableConversation.acquire(stepId)).storage
@@ -319,20 +330,22 @@ export function createSidecarStepBuildEnv(
       },
     );
 
-    // Supervisor-backed transport for the step agent's mail tools
-    // (OUTBOUND half of mailbox ownership). Inbound is inert -- the
-    // supervisor delivers the agent's input as the step input, not
-    // through the agent's own mailbox -- and outbound (`send`) routes
-    // over the control IPC to the supervisor, which performs the actual
-    // signed send through the host transport as `address`. `address` is
-    // the deployment mailbox address: the same identity the host
-    // registered the agent's `CryptoProvider` against, so the outbound
-    // mail carries the agent's signature with parity to the in-process
-    // path. Both `transport` and `address` are the env keys
-    // `@intx/tools-mail`'s sidecar bundle declares in its `requires`.
+    // Supervisor-backed transport for the step agent's mail tools (both
+    // halves of mailbox ownership). Outbound (`send`) routes over the
+    // control IPC to the supervisor, which performs the actual signed send
+    // through the host transport as `address`: the deployment mailbox
+    // address, the same identity the host registered the agent's
+    // `CryptoProvider` against, so the outbound mail carries the agent's
+    // signature with parity to the in-process path. Inbound
+    // (`deps.inbound`) makes `mail_read` / `mail_search` / `mail_wait`
+    // resolve locally against a fresh committed snapshot of the
+    // deployment's substrate `INBOX`. Both `transport` and `address` are
+    // the env keys `@intx/tools-mail`'s sidecar bundle declares in its
+    // `requires`.
     const transport = createSupervisorBackedTransport(
       deps.outboundMailBridge,
       deps.mailboxAddress,
+      deps.inbound,
     );
 
     // The step env carries `transport` + `address` beyond `BaseEnv` so

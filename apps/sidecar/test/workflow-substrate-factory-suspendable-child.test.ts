@@ -278,11 +278,12 @@ describe("createSidecarSpawnSuspendableChild", () => {
   });
 
   // CL-6448: the body-turn tool seam. The spawn input threads the parent
-  // child's credentials-backed authorize and live credential wiring; the
-  // body invoker must receive exactly those, so a body agent's tool calls
-  // gate through the parent's per-step grant snapshot instead of the
-  // throwing stub.
-  test("the spawn input's authorize and credentialWiring reach the body invoker", async () => {
+  // child's credentials-backed authorize, live credential wiring and mail
+  // part reader; the body invoker must receive exactly those, so a body
+  // agent's tool calls gate through the parent's per-step grant snapshot
+  // instead of the throwing stub, and an attachments-only inbound mail
+  // resolves its parts instead of throwing for want of a reader.
+  test("the spawn input's authorize, credentialWiring and mailPartReader reach the body invoker", async () => {
     const substrate = await makeSubstrate("suspendable-body-authorize-");
     const dataDir = await makeTempDir("suspendable-body-authz-datadir-");
     const sourcesDir = path.join(
@@ -313,16 +314,23 @@ describe("createSidecarSpawnSuspendableChild", () => {
       materialRef: { current: null },
       resolveStepGrants: () => [],
     };
-    const seen: { authorize?: unknown; credentialWiring?: unknown } = {};
+    const threadedReader = { read: () => Promise.resolve(new Uint8Array()) };
+    const seen: {
+      authorize?: unknown;
+      credentialWiring?: unknown;
+      mailPartReader?: unknown;
+    } = {};
     const bodyInvokeStep: SidecarBodyStepInvoker = async (
       _req,
       authorize,
       _sourcesRef,
       _onEvent,
       credentialWiring,
+      mailPartReader,
     ) => {
       seen.authorize = authorize;
       seen.credentialWiring = credentialWiring;
+      seen.mailPartReader = mailPartReader;
       return { output: { done: true } };
     };
     const spawn = createSidecarSpawnSuspendableChild({
@@ -352,6 +360,7 @@ describe("createSidecarSpawnSuspendableChild", () => {
         signal: new AbortController().signal,
         authorize: threadedAuthorize as never,
         credentialWiring: threadedWiring as never,
+        mailPartReader: threadedReader,
       },
       () => undefined,
     );
@@ -360,6 +369,7 @@ describe("createSidecarSpawnSuspendableChild", () => {
     expect(terminal.kind).toBe("terminal");
     expect(seen.authorize).toBe(threadedAuthorize);
     expect(seen.credentialWiring).toBe(threadedWiring);
+    expect(seen.mailPartReader).toBe(threadedReader);
   });
 
   test("a parent abort while parked cancels the child and surfaces a terminal", async () => {

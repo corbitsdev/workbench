@@ -222,7 +222,7 @@ async function loadIntxDb(): Promise<IntxDbMigrate> {
   return { runMigrations: loaded.runMigrations, dropSchema: loaded.dropSchema };
 }
 
-async function loadPostgres(): Promise<PostgresFactory> {
+export async function loadPostgres(): Promise<PostgresFactory> {
   const resolved = resolveHubDependency("postgres");
   const loaded = (await import(resolved)) as { default: PostgresFactory };
   return loaded.default;

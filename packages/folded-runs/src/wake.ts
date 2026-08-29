@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { sessionAsset } from "@intx/db/schema";
 import {
   deployAtHead,
+  type DeployedAtHead,
   type FoldedRunMode,
   type SourcesOverride,
 } from "./launch";
@@ -53,7 +54,7 @@ export type WakeFoldedRunParams = {
 export async function wakeFoldedRun(
   deps: FoldedRunsDeps,
   params: WakeFoldedRunParams,
-): Promise<void> {
+): Promise<DeployedAtHead> {
   if (params.principalId === null) {
     throw new Error(`Run "${params.instanceId}" has no principal`);
   }
@@ -84,7 +85,7 @@ export async function wakeFoldedRun(
     launchLabel: "the woken instance",
   };
   try {
-    await deployAtHead(deps, {
+    return await deployAtHead(deps, {
       ...deployAtHeadParams,
       ...(params.sources !== undefined ? { sources: params.sources } : {}),
       ...(params.mode !== undefined ? { mode: params.mode } : {}),

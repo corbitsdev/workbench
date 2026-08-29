@@ -13,6 +13,7 @@ import type { ArkErrors } from "arktype";
 import { Part } from "@corbits/chat/parts";
 import { parseParticipants } from "@corbits/chat/participants";
 import type { ParticipantRecord } from "@corbits/chat/participants";
+import type { WorkbenchOnboardingStep } from "@corbits/chat/blocks";
 import { UnauthenticatedError } from "@corbits/api-query";
 import { jimmyAgentRequest } from "@corbits/workflow-catalog";
 import { CHAT_STRINGS } from "./strings";
@@ -27,6 +28,10 @@ export {
   Part,
 } from "@corbits/chat/parts";
 export type { ParticipantRecord } from "@corbits/chat/participants";
+export type {
+  OnboardingStepLabel,
+  WorkbenchOnboardingStep,
+} from "@corbits/chat/blocks";
 export { REACTION_EMOJI } from "@corbits/chat/reaction-emoji";
 export type { ReactionEmoji } from "@corbits/chat/reaction-emoji";
 
@@ -335,41 +340,19 @@ export function listAllWorkbenches(
 //
 // `kind: "chat"` + `definitionId` always find-or-reopens the one DM
 // for that agent (CL-6981). `reuseExisting` is still accepted on the
-// wire and ignored. `kind: "workbench"` mints an empty channel; named
-// templates may send `templatePromise` / `connectGithubRequiredFor` so
-// the opener and GitHub card can follow the roster invite.
+// wire and ignored. `kind: "workbench"` mints an empty channel; a room's
+// onboarding walkthrough is posted separately through
+// `postWorkbenchOnboardingStep`, never as a side effect of create.
 export type CreateWorkbenchInput =
   | {
       readonly kind: "workbench";
       readonly name: string;
-      /** Named-template opener line. The server currently posts the
-       * canned greeting only on `kind: "chat"` + `definitionId`; this
-       * field is still sent so a follow-up can honor it on channel
-       * mint / first invite without dropping the promise from the
-       * create body. Omitted for a blank channel. */
-      readonly templatePromise?: string;
-      /** Template display name when GitHub must be connected before
-       * the roster can run. Omitted when the template does not
-       * require GitHub. */
-      readonly connectGithubRequiredFor?: string;
     }
   | {
       readonly kind: "chat";
       readonly definitionId: string;
       readonly name?: string;
       readonly reuseExisting?: boolean;
-      /** The picked template's own promise line
-       * (`WorkbenchTemplateManifest.promise`, see `@corbits/workflow-catalog`)
-       * — replaces the room's random canned opener with one naming its
-       * actual job (`packages/chat/src/routes.ts`'s `POST /workbenches`).
-       * Omitted for an untemplated chat. */
-      readonly templatePromise?: string;
-      /** The template's own display name, present exactly when the
-       * template needs a GitHub connection before it can run — posts one
-       * `connect-github` block right after the canned greeting
-       * (`packages/chat/src/routes.ts`'s `POST /workbenches`). Omitted
-       * for a template with no such requirement. */
-      readonly connectGithubRequiredFor?: string;
     }
   | {
       readonly kind: "chat";
@@ -385,6 +368,34 @@ export type CreateWorkbenchInput =
  * signal here reaches them all, so a freshly minted workbench appears
  * in the sidebar without waiting for an unrelated refetch. */
 export const WORKBENCHES_MUTATED_EVENT = "workbench:chat:workbenches-mutated";
+
+/** SSE `event.type` the chat service publishes onto a workbench stream when
+ * the tenant's workbench list changed (a specialist minted in the
+ * background, a create from another tab). The host sidebar already
+ * invalidates on `WORKBENCHES_MUTATED_EVENT`; `applyStreamWorkbenchesMutated`
+ * is the bridge from this stream payload onto that same CustomEvent. */
+export const WORKBENCHES_MUTATED_STREAM_TYPE = "chat.workbenches-mutated";
+
+const WorkbenchesMutatedStreamData = type({
+  tenantId: "string",
+  "+": "ignore",
+});
+
+/** Parses a `chat.workbenches-mutated` SSE payload and, on success, fires
+ * `WORKBENCHES_MUTATED_EVENT` with `{tenantId}` so the shell sidebar
+ * refetches. Parse failure is a no-op — a malformed stream event must
+ * never throw into the EventSource handler. Extra keys are ignored so
+ * the server can grow the payload without breaking older clients. */
+export function applyStreamWorkbenchesMutated(data: unknown): void {
+  const parsed = WorkbenchesMutatedStreamData(data);
+  if (parsed instanceof type.errors) return;
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(WORKBENCHES_MUTATED_EVENT, {
+      detail: { tenantId: parsed.tenantId },
+    }),
+  );
+}
 
 export function createWorkbench(
   tenantId: string,
@@ -708,6 +719,26 @@ export function inviteAgent(
     `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/invite`,
     InvitedAgent,
     { method: "POST", body: JSON.stringify({ definitionId }) },
+  );
+}
+
+const PostedOnboardingStep = type({ id: "string" });
+
+/**
+ * Posts one onboarding step into a room
+ * (`POST /workbenches/:id/onboarding`): the walkthrough card lands as a
+ * system row, with no agent launched or woken, so an empty channel can
+ * run its onboarding with nobody in the room yet.
+ */
+export function postWorkbenchOnboardingStep(
+  tenantId: string,
+  workbenchId: string,
+  step: WorkbenchOnboardingStep,
+): Promise<{ readonly id: string }> {
+  return request(
+    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/onboarding`,
+    PostedOnboardingStep,
+    { method: "POST", body: JSON.stringify(step) },
   );
 }
 

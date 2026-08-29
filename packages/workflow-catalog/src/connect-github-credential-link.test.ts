@@ -139,13 +139,16 @@ describe("the room GitHub connect card reads what its own submit writes", () => 
         githubDescriptor.displayName,
       ),
       resolveCodeReviewDefinitionId: async () => "wfd_code_review",
+      hasRepoGrant: async () => false,
       mintRepoGrant: async () => {},
       createWebhookTrigger: async () => ({ id: "trg_1" }),
+      hasWebhookTrigger: async () => false,
       getTemplateSettings: async () => ({
         pendingConnections: [],
         selectedRepos: [],
       }),
       persistSelectedRepos: async () => {},
+      onReviewingStarted: async () => {},
       listReposFn: async () => [],
       fetchAuthenticatedLoginFn: async () => "octocat",
     });
@@ -181,13 +184,16 @@ describe("the room GitHub connect card reads what its own submit writes", () => 
       log: () => {},
       resolveGithubConfig: buildResolveGithubConfig(store, githubDescriptor.id),
       resolveCodeReviewDefinitionId: async () => "wfd_code_review",
+      hasRepoGrant: async () => false,
       mintRepoGrant: async () => {},
       createWebhookTrigger: async () => ({ id: "trg_1" }),
+      hasWebhookTrigger: async () => false,
       getTemplateSettings: async () => ({
         pendingConnections: [],
         selectedRepos: [],
       }),
       persistSelectedRepos: async () => {},
+      onReviewingStarted: async () => {},
       listReposFn: async () => [],
       fetchAuthenticatedLoginFn: async () => "octocat",
     });

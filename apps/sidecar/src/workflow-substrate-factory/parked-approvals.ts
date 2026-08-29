@@ -92,7 +92,7 @@ export async function readColdParkedApprovalSnapshot(args: {
  * Read a warm (single-step) parked agent's durable pending operations
  * from substrate state. A warm agent's pending operations live in its
  * durable conversation store, mirrored to the workflow-run substrate
- * under `agent-state/<stepId>/`.
+ * under `agent-state/<stepId>/<workbenchId>/`.
  *
  * Reconstructs that state read-only — deliberately NOT through
  * `DurableConversationRegistry.acquire`, whose first acquire writes and
@@ -101,7 +101,8 @@ export async function readColdParkedApprovalSnapshot(args: {
  * rebuilt the live store when re-registration runs (resume re-parks
  * without re-invoking the step), so the substrate is the only place the
  * pending operations live at that moment. Returns an empty list when no
- * durable state exists for the agent.
+ * durable state exists for the agent. Walks every nested workbench dir
+ * so a park in any room is visible.
  */
 export async function readWarmParkedPendingOperations(args: {
   substrate: RepoStore;
@@ -113,12 +114,27 @@ export async function readWarmParkedPendingOperations(args: {
     WORKFLOW_RUN_AGENT_STATE_PREFIX,
     encodeURIComponent(args.stepId),
   );
-  const reconstructed = await reconstructDurableConversation(
-    agentStateDir,
-    args.stepId,
-  );
-  if (reconstructed === null) return [];
-  return reconstructed.pendingOperations;
+  let children: fs.Dirent[];
+  try {
+    children = await fs.promises.readdir(agentStateDir, {
+      withFileTypes: true,
+    });
+  } catch (cause) {
+    if (isErrnoNotFound(cause)) return [];
+    throw cause;
+  }
+  const pending: PendingOperation[] = [];
+  for (const child of children) {
+    if (!child.isDirectory()) continue;
+    const reconstructed = await reconstructDurableConversation(
+      path.join(agentStateDir, child.name),
+      `${args.stepId}/${child.name}`,
+    );
+    if (reconstructed !== null) {
+      pending.push(...reconstructed.pendingOperations);
+    }
+  }
+  return pending;
 }
 
 export async function readWarmParkedApprovalSnapshot(args: {

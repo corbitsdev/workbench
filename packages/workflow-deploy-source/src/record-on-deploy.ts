@@ -13,7 +13,7 @@
 // (vendor/intx/db/src/schema/workflow-run-launch-spec.ts), written from
 // vendored `workflow-allocation-service.ts`, which this package does not
 // touch.
-import { getLogger } from "@intx/log";
+import { reportError } from "@corbits/error-sink";
 import type {
   AdoptingWorkflowDeployer,
   DeployAdoptedWorkflowFromSourceParams,
@@ -22,8 +22,6 @@ import type {
 } from "@intx/hub-sessions";
 
 import type { WorkflowDeploySourceStore } from "./store";
-
-const logger = getLogger(["workflow-deploy-source", "record-on-deploy"]);
 
 export type DeployWorkflowDeployer = SessionService & AdoptingWorkflowDeployer;
 
@@ -62,27 +60,29 @@ export function withDeploySourceRecording<T extends DeployWorkflowDeployer>(
     ...sessionService,
     async deployWorkflowFromSource(params) {
       const result = await sessionService.deployWorkflowFromSource(params);
-      await recordOrLog(store, recordFromDeployParams(params));
+      await recordOrReport(store, recordFromDeployParams(params));
       return result;
     },
     async deployAdoptedWorkflowFromSource(params) {
       const result =
         await sessionService.deployAdoptedWorkflowFromSource(params);
-      await recordOrLog(store, recordFromDeployParams(params));
+      await recordOrReport(store, recordFromDeployParams(params));
       return result;
     },
   };
 }
 
-async function recordOrLog(
+async function recordOrReport(
   store: WorkflowDeploySourceStore,
   entry: ReturnType<typeof recordFromDeployParams>,
 ): Promise<void> {
   try {
     await store.record(entry);
   } catch (cause) {
-    logger.error`failed to record deploy source for anchor run ${entry.anchorRunId}: ${
-      cause instanceof Error ? cause.message : String(cause)
-    }`;
+    reportError(cause, {
+      operation: "workflowDeploySource.record",
+      tenantId: entry.tenantId,
+      extra: { anchorRunId: entry.anchorRunId },
+    });
   }
 }

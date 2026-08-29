@@ -3,10 +3,11 @@
 // mounted the same way `packages/connections/src/routes.test.ts` mounts
 // its own routes: a bare `Hono` with a tenant-injecting middleware, no
 // real network, no real database — every port is a plain fake.
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
+import * as errorSink from "@corbits/error-sink";
 import type {
   GitHubClientConfig,
   GitHubRepoSummary,
@@ -62,6 +63,12 @@ function mountAs(routes: Hono<TenantEnv>): Hono<TenantEnv> {
 function buildApp(overrides: Partial<ConnectGithubRoutesDeps> = {}) {
   const grants: { tenantId: string; repo: GitHubRepoSummary }[] = [];
   const triggers: { tenantId: string; repo: GitHubRepoSummary }[] = [];
+  const introductionCalls: {
+    tenantId: string;
+    workbenchId: string;
+    principalId: string;
+    introductions: readonly { handle: string; text: string }[];
+  }[] = [];
   let settings: {
     pendingConnections: readonly string[];
     selectedRepos: readonly string[];
@@ -73,6 +80,8 @@ function buildApp(overrides: Partial<ConnectGithubRoutesDeps> = {}) {
     log: () => {},
     resolveGithubConfig: async () => githubConfig,
     resolveCodeReviewDefinitionId: async () => "wfd_code_review",
+    hasRepoGrant: async (tenantId, repo) =>
+      grants.some((g) => g.tenantId === tenantId && g.repo.id === repo.id),
     mintRepoGrant: async (tenantId, repo) => {
       grants.push({ tenantId, repo });
     },
@@ -85,6 +94,8 @@ function buildApp(overrides: Partial<ConnectGithubRoutesDeps> = {}) {
       triggers.push({ tenantId, repo });
       return { id: `trg_${repo.id}` };
     },
+    hasWebhookTrigger: async (_tenantId, _definitionId, repo) =>
+      triggers.some((t) => t.repo.id === repo.id),
     getTemplateSettings: async () => settings,
     persistSelectedRepos: async (
       _tenantId,
@@ -97,6 +108,19 @@ function buildApp(overrides: Partial<ConnectGithubRoutesDeps> = {}) {
         selectedRepos: patch["template/selectedRepos"],
       };
     },
+    onReviewingStarted: async (
+      tenantId,
+      workbenchId,
+      principalId,
+      introductions,
+    ) => {
+      introductionCalls.push({
+        tenantId,
+        workbenchId,
+        principalId,
+        introductions,
+      });
+    },
     listReposFn: async () => REPOS,
     fetchAuthenticatedLoginFn: async () => "octocat",
     ...overrides,
@@ -107,9 +131,14 @@ function buildApp(overrides: Partial<ConnectGithubRoutesDeps> = {}) {
     app: mountAs(routes),
     grants,
     triggers,
+    introductionCalls,
     settingsNow: () => settings,
   };
 }
+
+afterEach(() => {
+  mock.restore();
+});
 
 describe("GET /:workbenchId/github/state", () => {
   test("reports disconnected with no github credential", async () => {
@@ -172,6 +201,68 @@ describe("POST /:workbenchId/github/start-reviewing", () => {
     });
   });
 
+  test("posts each reviewer's introduction once, naming the selected repos, after success", async () => {
+    const harness = buildApp();
+    const response = await harness.app.request("/wb_1/github/start-reviewing", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ repoIds: ["1", "2"] }),
+    });
+    expect(response.status).toBe(200);
+    expect(harness.introductionCalls.length).toBe(1);
+    const [call] = harness.introductionCalls;
+    if (call === undefined) throw new Error("expected one introduction call");
+    expect(call.tenantId).toBe("tnt_1");
+    expect(call.workbenchId).toBe("wb_1");
+    expect(call.principalId).toBe("prn_alice");
+    expect(call.introductions.length).toBe(3);
+    for (const introduction of call.introductions) {
+      expect(
+        ["acme/widgets", "acme/gadgets"].some((name) =>
+          introduction.text.includes(name),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  test("a rejecting introduction port still yields 200 and reports the failure", async () => {
+    const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
+    const harness = buildApp({
+      onReviewingStarted: async () => {
+        throw new Error("boom");
+      },
+    });
+    const response = await harness.app.request("/wb_1/github/start-reviewing", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ repoIds: ["1"] }),
+    });
+    expect(response.status).toBe(200);
+    expect(report).toHaveBeenCalled();
+    expect(report.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+    expect(report.mock.calls[0]?.[1]).toMatchObject({
+      operation: "connect-github.reviewerIntroductions",
+      tenantId: "tnt_1",
+      roomId: "wb_1",
+    });
+  });
+
+  test("a second start-reviewing does not re-post introductions already landed for the room", async () => {
+    const harness = buildApp();
+    const startReviewing = (repoIds: readonly string[]) =>
+      harness.app.request("/wb_1/github/start-reviewing", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ repoIds }),
+      });
+    const first = await startReviewing(["1"]);
+    expect(first.status).toBe(200);
+    expect(harness.introductionCalls).toHaveLength(1);
+    const second = await startReviewing(["1", "2"]);
+    expect(second.status).toBe(200);
+    expect(harness.introductionCalls).toHaveLength(1);
+  });
+
   test("400s on a malformed body without leaking raw parser text", async () => {
     const harness = buildApp();
     const response = await harness.app.request("/wb_1/github/start-reviewing", {
@@ -182,6 +273,7 @@ describe("POST /:workbenchId/github/start-reviewing", () => {
     expect(response.status).toBe(400);
     const body = (await response.json()) as { error: { code: string } };
     expect(body.error.code).toBe("bad_request");
+    expect(harness.introductionCalls).toEqual([]);
   });
 
   test("409s when the tenant has no github credential yet", async () => {
@@ -193,6 +285,24 @@ describe("POST /:workbenchId/github/start-reviewing", () => {
     });
     expect(response.status).toBe(409);
     expect(harness.grants).toEqual([]);
+    expect(harness.introductionCalls).toEqual([]);
+  });
+
+  test("502s when GitHub cannot be read, without posting introductions", async () => {
+    const harness = buildApp({
+      listReposFn: async () => {
+        throw new Error(
+          "GitHub request to /user/repos failed: 401 Bad credentials",
+        );
+      },
+    });
+    const response = await harness.app.request("/wb_1/github/start-reviewing", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ repoIds: ["1"] }),
+    });
+    expect(response.status).toBe(502);
+    expect(harness.introductionCalls).toEqual([]);
   });
 
   test("404s when the code-review workflow isn't deployed in this tenant", async () => {
@@ -206,5 +316,6 @@ describe("POST /:workbenchId/github/start-reviewing", () => {
     });
     expect(response.status).toBe(404);
     expect(harness.grants).toEqual([]);
+    expect(harness.introductionCalls).toEqual([]);
   });
 });

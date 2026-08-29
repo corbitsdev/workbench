@@ -14,8 +14,8 @@
   },
   "dependencies": {
     "@corbits/workflow-source": "workspace:*",
-    "@intx/agent": "0.3.0",
-    "@intx/types": "0.3.0",
+    "@intx/agent": "workspace:*",
+    "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
     "@intx/workflow-deploy": "workspace:*",
     "arktype": "catalog:"

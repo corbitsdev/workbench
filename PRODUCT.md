@@ -49,7 +49,10 @@ column at a time:
   and in many channels. Product reopens or invites; it does not clone
   the definition or mint a sibling instance per room. Myra is the
   first-run guide in her DM, not a special home slot and not a
-  parallel home route.
+  parallel home route. When she creates a specialist (`create_agent`),
+  the default is to mint or reopen that specialist's own DM
+  (`kind: chat`) — never to invite them into Myra's conversation. A
+  DM stays 1:1; another agent belongs in a channel.
 - The active workbench occupies the main column; a contextual panel beside
   it carries account-wide surfaces (approvals, recent activity) that stay
   visible regardless of which workbench is open.
@@ -70,9 +73,10 @@ Create stays on `/new` (`apps/web/src/pages/new-workbench-picker.tsx`):
 a prompt box is the primary act: typing a goal and submitting mints an
 empty channel and sends that text as the first message; blank plus
 invites nobody. Named-template rows underneath mint that same empty
-channel, then invite existing principals (including Myra as a
-participant, never as mint `definitionId`) — one-click shortcuts, not
-a kind-then-Create second step. There is no Describe door and no
+channel with no host and no mint `definitionId`, then instantiate the
+picked Workbench Definition's own agents (Myra joins only when the
+definition names her) — one-click shortcuts, not a kind-then-Create
+second step. There is no Describe door and no
 `describe-first-workbench.tsx`.
 
 A bench that already has one or more workbenches skips first-run and
@@ -88,19 +92,39 @@ put there.
 
 ### Code review's first minute
 
-Code review is the product scene for the template path: Connect GitHub
-with a personal access token (the shipped path today) → the connect card
-flips in place to pick repositories → reviewers introduce themselves as
-left-aligned messages with avatars. A GitHub App / hosted OAuth welcome
-mat is future work (CL-6343), not current product.
+Code review is the product scene for the definition-driven path:
+minting the Code review workbench opens an empty room with no host —
+its Workbench Definition names three reviewers and no Myra. The room
+itself posts the onboarding card as a scene, not a member's message:
+no author row, the job as its title, the promise beneath, and the
+walkthrough's steps listed with the current one marked in words. A
+walkthrough with no steps hides the step list rather than drawing an
+empty one. Connect GitHub with a personal access token (the shipped
+path today). The same in-room card reads live connection state and
+flips in place to pick repositories — already connected GitHub is
+that card, not a `/new` dialog — then Start reviewing. Once repos are
+recorded the same card shows what it is reviewing, with a change-repos
+link back to the picker — a reviewing card never still says Connect.
+Once reviewing starts, each reviewer posts its own canned introduction
+under its own address, in roster order — the first thing a person
+reads is who is reviewing and what for, never a join dump. Consecutive
+agent-joined rows collapse into one line naming everyone. A GitHub App
+/ hosted OAuth welcome mat is future work (CL-6343), not current
+product. Inviting teammates into the room is a later slice, not part
+of this first minute.
 
-Connected/settle honesty — no stale Connect after success; settle never
-posting as the signed-in user; no agent 401 after GitHub already
-succeeded — is the **target**, not shipped end-to-end. What ships today
-is narrower: live credential reads that resolve at call, and a GitHub
-settle path that can still attribute as the connecting user. Point
-implementers at IMPLEMENTATION.md open questions, CL-6737, and CL-6738;
-do not treat those three guarantees as current product law.
+Settle for a template-key-only wait posts from a system sender and
+does not wake an agent. Generic `connections/pending` still wakes the
+asking agent. Neither path posts the connected notice as the connecting
+person.
+
+## Reusing an own prompt
+
+A person can **Edit** their own previous prompt. Edit copies that text
+into the composer, replacing any leftover draft — slash command, mention,
+invite, and attachments. Sending posts a new message on the same
+timeline: it does not rewrite the original, and it does not fork a
+thread. Other people's prompts have no Edit.
 
 ## Plugins and Skills
 
@@ -168,11 +192,14 @@ User-facing surfaces (UI, docs, support) use exactly these nouns:
   the sidebar list Workbenches.
 - **Agent** — a coworker principal. Opening the row reopens that agent's
   one DM. Never "template." Myra is the first-run guide in her DM.
+  Creating a specialist opens (or reopens) that specialist's own DM,
+  not a seat in Myra's.
 - **DM** — the one 1:1 conversation with an agent. Never cloned by a
-  second open.
+  second open, and never a room for a second agent.
 - **Channel** — a shared room between people and agents. Plus mints an
-  empty one; nobody is auto-hosted. Named templates invite existing
-  principals into that room.
+  empty one; nobody is auto-hosted. Named templates instantiate their
+  Workbench Definition's own agents into that room (Myra joins only
+  when the definition names her).
 - **Bench** — the shared team scope a person signs into and switches
   between; shown in the bench switcher, never called a "workspace" or
   "org" in copy.
@@ -186,11 +213,10 @@ user-facing surfaces use the rest of the product vocabulary above.
 
 ## Open questions
 
-- Connected/settle honesty (no stale Connect after success; settle never
-  posting as the signed-in user; no agent 401 after GitHub already
-  succeeded) stays **target** until CL-6737 and CL-6738 land — see
-  IMPLEMENTATION.md open questions; do not document those guarantees as
-  shipped.
+- Template-key-only settle (system sender, no agent wake) is shipped;
+  generic `connections/pending` still wakes the asking agent. A leftover
+  agent 401 after GitHub already succeeded is still a first-minute bug
+  — see IMPLEMENTATION.md; do not document that it cannot happen.
 - The precise boundary of what Insights surfaces to a non-admin bench
   member (all tenant activity vs. only their own) is not spelled out in
   `packages/insights`'s own docs as of this writing.

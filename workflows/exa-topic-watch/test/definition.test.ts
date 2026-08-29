@@ -71,7 +71,7 @@ test("the step pins the MCP tools bundle, the one package a deploy here can reso
   const agent = digestStep(buildExaTopicWatchWorkflow(INPUT)).agent;
   expect(agent.toolPackagePins).toEqual(EXA_TOPIC_WATCH_TOOL_PACKAGE_PINS);
   expect(EXA_TOPIC_WATCH_TOOL_PACKAGE_PINS).toEqual([
-    { name: "@corbits/mcp-tools", version: "0.0.8" },
+    { name: "@corbits/mcp-tools", version: "0.0.9" },
   ]);
 });
 

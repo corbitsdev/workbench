@@ -60,7 +60,7 @@
 // childRunId, ... }`) is the seam that makes the scoping unambiguous
 // at the boundary.
 
-import type { InferenceEvent } from "@intx/types/runtime";
+import type { InferenceEvent, MailPartReader } from "@intx/types/runtime";
 import type {
   SpawnChildWorkflow,
   SpawnSuspendableChild,
@@ -198,6 +198,12 @@ export type RunSuspendableChild = (
      * capabilities exactly as a top-level step's do.
      */
     credentialWiring?: CredentialWiring;
+    /**
+     * The parent child's mail part reader (CL-6448), so a body step's
+     * attachments-only inbound mail resolves its parts the way a top-level
+     * step's does instead of throwing for want of a reader.
+     */
+    mailPartReader?: MailPartReader;
   },
   /**
    * Live inference-event sink for the child's agent steps. Threaded from the
@@ -241,6 +247,7 @@ export function createInMemorySpawnSuspendableChild(opts: {
   /** Threaded through verbatim to every spawn's input (CL-6448). */
   authorize?: WorkflowAuthorizeFn;
   credentialWiring?: CredentialWiring;
+  mailPartReader?: MailPartReader;
 }): HostSpawnSuspendableChild {
   return async (
     {
@@ -284,6 +291,9 @@ export function createInMemorySpawnSuspendableChild(opts: {
         ...(opts.authorize !== undefined ? { authorize: opts.authorize } : {}),
         ...(opts.credentialWiring !== undefined
           ? { credentialWiring: opts.credentialWiring }
+          : {}),
+        ...(opts.mailPartReader !== undefined
+          ? { mailPartReader: opts.mailPartReader }
           : {}),
       },
       onEvent,

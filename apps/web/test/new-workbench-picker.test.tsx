@@ -11,7 +11,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   CODE_REVIEW_TEMPLATE,
   DUE_DILIGENCE_TEMPLATE,
-  serializeWorkbenchTemplateManifest,
+  serializeWorkbenchDefinition,
 } from "@corbits/workflow-catalog";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -70,7 +70,7 @@ function stubFetch(
           data: [
             {
               id: "code-review",
-              content: serializeWorkbenchTemplateManifest(CODE_REVIEW_TEMPLATE),
+              content: serializeWorkbenchDefinition(CODE_REVIEW_TEMPLATE),
             },
           ],
         }),
@@ -80,7 +80,7 @@ function stubFetch(
       return Promise.resolve(
         json({
           id: "code-review",
-          content: serializeWorkbenchTemplateManifest(CODE_REVIEW_TEMPLATE),
+          content: serializeWorkbenchDefinition(CODE_REVIEW_TEMPLATE),
         }),
       );
     }
@@ -264,14 +264,11 @@ describe("NewWorkbenchPickerRoute", () => {
             data: [
               {
                 id: "code-review",
-                content:
-                  serializeWorkbenchTemplateManifest(CODE_REVIEW_TEMPLATE),
+                content: serializeWorkbenchDefinition(CODE_REVIEW_TEMPLATE),
               },
               {
                 id: "due-diligence",
-                content: serializeWorkbenchTemplateManifest(
-                  DUE_DILIGENCE_TEMPLATE,
-                ),
+                content: serializeWorkbenchDefinition(DUE_DILIGENCE_TEMPLATE),
               },
             ],
           }),
@@ -516,6 +513,12 @@ describe("NewWorkbenchPickerRoute", () => {
           definitionId: body.definitionId,
         });
       }
+      if (
+        path.endsWith("/chat/workbenches/chan_new/onboarding") &&
+        init?.method === "POST"
+      ) {
+        return json({ id: "msg_onboarding" }, 201);
+      }
       if (path.endsWith("/chat/workbenches/chan_new/settings")) {
         return json({
           id: "chan_new",
@@ -529,14 +532,6 @@ describe("NewWorkbenchPickerRoute", () => {
           },
           contextWindow: { value: 0, source: "inherit" },
         });
-      }
-      // The create flow checks whether GitHub is already connected
-      // (CL-6386's "select on new-workbench" half) before deciding
-      // whether to post the in-room card or go straight to repo
-      // selection — nothing is connected in this fixture, so every
-      // connector resolves 404/not-found.
-      if (path.includes("/credentials/resolve/")) {
-        return json({ error: "not_found" }, 404);
       }
       return undefined;
     });
@@ -563,8 +558,6 @@ describe("NewWorkbenchPickerRoute", () => {
     );
     expect(JSON.parse(String(createWorkbenchCall?.init?.body))).toMatchObject({
       kind: "workbench",
-      templatePromise:
-        "Three reviewers read every pull request and post what they'd change.",
     });
     expect(
       JSON.parse(String(createWorkbenchCall?.init?.body)).definitionId,
@@ -594,8 +587,10 @@ describe("NewWorkbenchPickerRoute", () => {
     });
   });
 
-  test("with GitHub already connected, clicking Code review skips the in-room card and mints grants from an inline repo pick (CL-6386)", async () => {
-    const calls = stubFetch((path, init) => {
+  // The in-room card is the one walkthrough: /new never opens a repo
+  // dialog of its own, connected or not.
+  test("clicking the Code review card opens no repo dialog — the walkthrough card owns repo pick", async () => {
+    stubFetch((path, init) => {
       if (path.includes("/workflows/definitions")) {
         return json({
           data: [
@@ -652,6 +647,12 @@ describe("NewWorkbenchPickerRoute", () => {
           definitionId: body.definitionId,
         });
       }
+      if (
+        path.endsWith("/chat/workbenches/chan_new/onboarding") &&
+        init?.method === "POST"
+      ) {
+        return json({ id: "msg_onboarding" }, 201);
+      }
       if (path.endsWith("/chat/workbenches/chan_new/settings")) {
         return json({
           id: "chan_new",
@@ -666,43 +667,6 @@ describe("NewWorkbenchPickerRoute", () => {
           contextWindow: { value: 0, source: "inherit" },
         });
       }
-      // GitHub already connected at the tenant level.
-      if (path.includes("/credentials/resolve/GitHub")) {
-        return json({
-          id: "cred_github",
-          tenantId: "tnt_1",
-          name: "GitHub",
-          status: "active",
-        });
-      }
-      if (path.includes("/credentials/resolve/")) {
-        return json({ error: "not_found" }, 404);
-      }
-      if (path.endsWith("/workbenches/chan_new/github/state")) {
-        return json({
-          kind: "connected",
-          orgName: "acme",
-          repos: [
-            {
-              id: "repo_widgets",
-              name: "acme/widgets",
-              openPullRequestCount: 2,
-            },
-            {
-              id: "repo_sprockets",
-              name: "acme/sprockets",
-              openPullRequestCount: 0,
-            },
-          ],
-          selectedRepoIds: [],
-        });
-      }
-      if (
-        path.endsWith("/workbenches/chan_new/github/start-reviewing") &&
-        init?.method === "POST"
-      ) {
-        return json({ startedTriggerCount: 1 });
-      }
       return undefined;
     });
 
@@ -715,52 +679,19 @@ describe("NewWorkbenchPickerRoute", () => {
     await act(async () => {
       codeReview?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-
-    let startReviewingButton: HTMLButtonElement | undefined;
-    for (let i = 0; i < 20; i++) {
-      await settle();
-      startReviewingButton = Array.from(
-        document.querySelectorAll("button"),
-      ).find((button) => button.textContent?.startsWith("Start reviewing"));
-      if (startReviewingButton !== undefined) break;
-    }
-    expect(startReviewingButton).not.toBeUndefined();
-    expect(document.body.textContent).toContain(
-      "Choose repos this workbench can work on",
-    );
-
-    const selectAllButton = Array.from(
-      document.querySelectorAll("button"),
-    ).find((button) => button.textContent === "Select all");
-    await act(async () => {
-      selectAllButton?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
-    });
-
-    await act(async () => {
-      startReviewingButton?.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
-    });
     for (let i = 0; i < 20; i++) {
       await settle();
       if (navigated.length > 0) break;
     }
 
     expect(navigated).toEqual(["/w/chan_new"]);
-
-    const createWorkbenchCall = calls.find(
-      (call) =>
-        call.path.endsWith("/chat/workbenches") && call.init?.method === "POST",
+    expect(document.body.textContent).not.toContain(
+      "Choose repos this workbench can work on",
     );
     expect(
-      JSON.parse(String(createWorkbenchCall?.init?.body)),
-    ).not.toHaveProperty("connectGithubRequiredFor");
-
-    const startReviewingCall = calls.find((call) =>
-      call.path.endsWith("/workbenches/chan_new/github/start-reviewing"),
-    );
-    expect(startReviewingCall).not.toBeUndefined();
+      Array.from(document.querySelectorAll("button")).some((button) =>
+        button.textContent?.startsWith("Start reviewing"),
+      ),
+    ).toBe(false);
   });
 });

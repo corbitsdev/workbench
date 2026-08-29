@@ -33,15 +33,21 @@ export {
 export {
   deployAtHead,
   foldedRunSourceRef,
+  inferenceSourcesDigest,
   launchFoldedRun,
   mintFoldedRun,
   parseSourcesOverride,
+  resolveLaunchSources,
   SourcesOverride,
   InferenceResolutionError,
+  type DeployedAtHead,
   type FoldedRunMode,
   type LaunchFoldedRunParams,
+  type LaunchedAndDeployedFoldedRun,
   type MintFoldedRunParams,
   type LaunchedFoldedRun,
+  type ResolvedLaunchSources,
+  type ResolveLaunchSourcesParams,
 } from "./launch";
 export { wakeFoldedRun, type WakeFoldedRunParams } from "./wake";
 export {

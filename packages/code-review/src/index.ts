@@ -24,6 +24,10 @@ export {
   type ReviewerDefinition,
 } from "./reviewers";
 export {
+  reviewerIntroductions,
+  type ReviewerIntroduction,
+} from "./introductions";
+export {
   runPullRequestReview,
   type CodeReviewGitHub,
   type PullRequestReviewResult,

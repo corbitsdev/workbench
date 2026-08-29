@@ -15,6 +15,7 @@ export type {
   PullRequestFileDiff,
   PullRequestRef,
   PullRequestReviewComment,
+  PullRequestReviewCommentsPage,
   PullRequestReviewDraft,
 } from "./pull-requests";
 export {

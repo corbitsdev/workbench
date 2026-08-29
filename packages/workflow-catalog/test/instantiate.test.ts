@@ -5,6 +5,7 @@ import {
   CODE_REVIEW_TEMPLATE,
   DUE_DILIGENCE_TEMPLATE,
   GTM_TEMPLATE,
+  type WorkbenchOnboardingStep,
 } from "../src/index";
 import {
   instantiateWorkbenchTemplate,
@@ -19,16 +20,22 @@ function fakePorts(
   readonly invited: string[];
   readonly recordedConnections: (readonly string[])[];
   readonly deployedBlocks: string[];
+  readonly calls: string[];
+  readonly onboardingSteps: (readonly WorkbenchOnboardingStep[])[];
 } {
   const created: string[] = [];
   const invited: string[] = [];
   const recordedConnections: (readonly string[])[] = [];
   const deployedBlocks: string[] = [];
+  const calls: string[] = [];
+  const onboardingSteps: (readonly WorkbenchOnboardingStep[])[] = [];
   return {
     created,
     invited,
     recordedConnections,
     deployedBlocks,
+    calls,
+    onboardingSteps,
     async listAgentHandles() {
       return existingHandles.map((handle) => ({ handle, id: `def-${handle}` }));
     },
@@ -42,14 +49,20 @@ function fakePorts(
     },
     async inviteParticipantAgent(id) {
       invited.push(id);
+      calls.push(`invite:${id}`);
     },
     async recordPendingConnections(pendingConnections) {
       recordedConnections.push(pendingConnections);
+      calls.push("recordPendingConnections");
+    },
+    async beginOnboarding(steps) {
+      onboardingSteps.push(steps);
+      calls.push("beginOnboarding");
     },
   };
 }
 
-test("instantiating the code-review template creates the three reviewer definitions, never Myra", () => {
+test("instantiating the code-review definition creates the three reviewer definitions, never Myra", () => {
   const ports = fakePorts();
   return instantiateWorkbenchTemplate(CODE_REVIEW_TEMPLATE, ports).then(
     (result) => {
@@ -93,7 +106,7 @@ test("instantiating the code-review template skips a reviewer that already exist
 // workbench from the same template) still has to become a participant
 // of THIS new room — an existing definition is not an existing
 // invitation, so skipping the create must never skip the invite too.
-test("instantiating the code-review template invites every reviewer into the room, created or skipped alike", async () => {
+test("instantiating the code-review definition invites every reviewer into the room, created or skipped alike", async () => {
   const ports = fakePorts(["architecture-reviewer"]);
   const result = await instantiateWorkbenchTemplate(
     CODE_REVIEW_TEMPLATE,
@@ -112,23 +125,53 @@ test("instantiating the code-review template invites every reviewer into the roo
   expect(ports.invited).toHaveLength(3);
 });
 
-test("instantiating the code-review template invites existing Myra, never creates her", async () => {
+test("the code-review definition never invites or creates Myra — nobody hosts a template room", async () => {
   const ports = fakePorts(["assistant"]);
-  await instantiateWorkbenchTemplate(CODE_REVIEW_TEMPLATE, ports);
-  expect(ports.invited).toContain("def-assistant");
+  const result = await instantiateWorkbenchTemplate(
+    CODE_REVIEW_TEMPLATE,
+    ports,
+  );
+  expect(ports.invited).not.toContain("def-assistant");
   expect(ports.created).not.toContain("myra");
   expect(ports.created).not.toContain("assistant");
+  expect(result.invitedHandles).not.toContain("myra");
 });
 
-test("instantiating the code-review template names an honest pending note for its not-yet-scoped webhook trigger", async () => {
+test("the due-diligence definition still invites an existing assistant as Myra", async () => {
+  const ports = fakePorts(["assistant"]);
+  const result = await instantiateWorkbenchTemplate(
+    DUE_DILIGENCE_TEMPLATE,
+    ports,
+  );
+  expect(ports.invited).toContain("def-assistant");
+  expect(ports.created).not.toContain("myra");
+  expect(result.invitedHandles).toEqual(["myra", "scout"]);
+});
+
+test("instantiating the code-review definition begins its walkthrough, in definition order, once everything else is in place", async () => {
   const ports = fakePorts();
   const result = await instantiateWorkbenchTemplate(
     CODE_REVIEW_TEMPLATE,
     ports,
   );
-  expect(result.webhookTriggerTodos).toHaveLength(1);
-  expect(result.webhookTriggerTodos[0]).toContain("pull-request-opened");
-  expect(result.webhookTriggerTodos[0]).toContain("connect-github-setup");
+  expect(ports.onboardingSteps).toEqual([CODE_REVIEW_TEMPLATE.onboardingSteps]);
+  expect(result.onboardingSteps).toEqual(CODE_REVIEW_TEMPLATE.onboardingSteps);
+  expect(ports.calls.at(-1)).toBe("beginOnboarding");
+  expect(ports.calls.at(-2)).toBe("recordPendingConnections");
+  expect(ports.calls.filter((call) => call.startsWith("invite:"))).toHaveLength(
+    3,
+  );
+});
+
+test("a definition with no onboarding steps never begins a walkthrough", async () => {
+  const ports = fakePorts();
+  const result = await instantiateWorkbenchTemplate(
+    DUE_DILIGENCE_TEMPLATE,
+    ports,
+  );
+  expect(ports.onboardingSteps).toEqual([]);
+  expect(ports.calls).not.toContain("beginOnboarding");
+  expect(result.onboardingSteps).toEqual([]);
 });
 
 test("instantiating the code-review template deploys its referenced code-review block workflow", async () => {
@@ -152,7 +195,7 @@ test("a block workflow the tenant already deployed is reported as skipped, never
   expect(result.skippedBlockAssetNames).toEqual(["code-review"]);
 });
 
-test("instantiating a manifest with a participant outside the reviewer roster throws rather than silently skipping it", () => {
+test("instantiating a definition with an agent outside the reviewer roster throws rather than silently skipping it", () => {
   return expect(
     instantiateWorkbenchTemplate(GTM_TEMPLATE, fakePorts()),
   ).rejects.toThrow(/has no known create-agent request/);
@@ -208,6 +251,9 @@ test("Scout's create request carries its tool package pins", async () => {
     async recordPendingConnections() {
       /* noop */
     },
+    async beginOnboarding() {
+      /* noop */
+    },
   };
   await instantiateWorkbenchTemplate(DUE_DILIGENCE_TEMPLATE, ports);
   const scout = requests.find((request) => request.handle === "scout");
@@ -220,20 +266,23 @@ test("Scout's create request carries its tool package pins", async () => {
   );
 });
 
-// CL-6499 dropped Jimmy's own template (he is not a "kind of workbench");
+// No shipped definition names Jimmy (he is not a "kind of workbench");
 // `@corbits/chat-ui`'s "Add Jimmy" quick-create row calls
-// `jimmyAgentRequest()` directly instead of going through a manifest. This
+// `jimmyAgentRequest()` directly instead of going through one. This
 // proves `instantiateWorkbenchTemplate`'s request map still resolves his
 // handle, so a future template naming him works with no new plumbing.
-test("a manifest naming Jimmy's handle still resolves and creates him", async () => {
-  const manifestNamingJimmy = {
+test("a definition naming Jimmy's handle still resolves and creates him", async () => {
+  const definitionNamingJimmy = {
     ...DUE_DILIGENCE_TEMPLATE,
-    participants: [
+    agents: [
       { handle: "jimmy", displayName: "Jimmy", role: "Replies with a GIF." },
     ],
   };
   const ports = fakePorts();
-  const result = await instantiateWorkbenchTemplate(manifestNamingJimmy, ports);
+  const result = await instantiateWorkbenchTemplate(
+    definitionNamingJimmy,
+    ports,
+  );
   expect(result.createdHandles).toEqual(["jimmy"]);
   expect(ports.created).toEqual(["jimmy"]);
 });

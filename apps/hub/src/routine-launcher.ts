@@ -50,6 +50,7 @@ import type { AssetService } from "@intx/hub-sessions";
 import {
   AGENT_SECTION_MODE,
   handleFromName,
+  recordSourcesDigest,
   workbenchLaunchPersistExtra,
 } from "@corbits/chat";
 import { renderRoutineInput, type RoutineLauncher } from "@corbits/routines";
@@ -199,6 +200,7 @@ export function createHubRoutineLauncher(
           foldedBody,
         }),
       });
+      await recordSourcesDigest(deps.db, instanceId, launched.sourcesDigest);
 
       if (
         input.deliveryWorkbenchId !== undefined &&

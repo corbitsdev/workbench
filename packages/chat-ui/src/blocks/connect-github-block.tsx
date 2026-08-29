@@ -1,6 +1,7 @@
-// The GitHub connect card renders both states of the first-run connect flow
-// (CL-6342 screen 2) inline in the room, using the same `BlockCard` frame
-// every other block uses -- there is no settings page or dialog for this.
+// The room's first-minute scene card: one `BlockCard` that names the job,
+// carries the walkthrough the workbench's own onboarding copy wrote, and
+// flips its body between connecting, picking repos, and reviewing --
+// inline in the room, never a settings page or a dialog.
 // Selection is controlled: like `PollBlockView` never keeps its own tally,
 // this view never owns which repos are picked -- it renders what it's given
 // and reports toggles upward. It stays pure and props-driven so it can be
@@ -16,7 +17,7 @@
 // layout around it (name left, open-PR count right) is workbench-specific
 // composition and stays local.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Checkbox, Input } from "@corbits/react-ui";
 import { Check } from "@corbits/icons";
 
@@ -29,7 +30,34 @@ export type ConnectGithubRepo = {
   readonly openPullRequestCount: number;
 };
 
-export type ConnectGithubCardProps =
+/** One labelled step of the room's walkthrough, as the workbench's own
+ * onboarding copy wrote it — the card never holds step text of its own. */
+export type OnboardingSceneStep = {
+  readonly title: string;
+  readonly why: string;
+};
+
+/** The framing every state of this card keeps: the job the room is here
+ * to do, the one-line promise under it, and the ordered walkthrough. The
+ * card flips its body between states while this header stays put. */
+export type OnboardingScene = {
+  readonly title: string;
+  readonly promise?: string;
+  readonly steps?: readonly OnboardingSceneStep[];
+  /** Which step of `steps` the person is on now, by position. */
+  readonly currentStepIndex: number;
+};
+
+/** The walkthrough this card knows how to mark: connect, pick, review.
+ * A workbench whose steps read differently still gets its labels
+ * rendered — just without a "you're here" marker the positions would
+ * only be guessing at. */
+const MARKABLE_STEP_COUNT = 3;
+
+/** What the card's body is doing right now, without the scene framing
+ * every state shares — the shape a host names when it only cares about
+ * the body variant. */
+export type ConnectGithubCardBody =
   | {
       readonly kind: "disconnected";
       readonly onConnect: () => void;
@@ -46,6 +74,16 @@ export type ConnectGithubCardProps =
       >;
     }
   | {
+      readonly kind: "error";
+      readonly message: string;
+      readonly onConnect: () => void;
+      readonly onSubmitAccessToken: (
+        token: string,
+      ) => Promise<
+        { readonly ok: true } | { readonly ok: false; readonly message: string }
+      >;
+    }
+  | {
       readonly kind: "connected";
       readonly orgName: string;
       readonly repos: readonly ConnectGithubRepo[];
@@ -55,7 +93,25 @@ export type ConnectGithubCardProps =
       readonly onChangeConnection: () => void;
       readonly onStartReviewing: (repoIds: readonly string[]) => void;
       readonly onSkip: () => void;
+      /** Set when `onStartReviewing` rejected — the picker stays up and
+       * this is the card's own alert, never a toast-only failure. */
+      readonly error?: string;
+      /** Move focus onto the pick-repos heading after Connect succeeded,
+       * so it does not stay on a control that unmounted. */
+      readonly autoFocus?: boolean;
+    }
+  | {
+      readonly kind: "reviewing";
+      readonly repoNames: readonly string[];
+      readonly onChangeRepos: () => void;
+      /** Move focus onto the reviewing scene after Start reviewing
+       * succeeded, so it does not stay on a control that unmounted. */
+      readonly autoFocus?: boolean;
     };
+
+export type ConnectGithubCardProps = ConnectGithubCardBody & {
+  readonly scene: OnboardingScene;
+};
 
 function repoMetaLabel(openPullRequestCount: number): string {
   return openPullRequestCount === 0
@@ -63,9 +119,114 @@ function repoMetaLabel(openPullRequestCount: number): string {
     : CHAT_STRINGS.blockConnectGithubOpenPulls(openPullRequestCount);
 }
 
+type StepState = "done" | "current" | "upcoming";
+
+function stepStateAt(index: number, currentStepIndex: number): StepState {
+  if (index < currentStepIndex) return "done";
+  if (index === currentStepIndex) return "current";
+  return "upcoming";
+}
+
+function stepMarkLabel(state: StepState): string | undefined {
+  if (state === "done") return CHAT_STRINGS.blockConnectGithubStepDone;
+  if (state === "current") return CHAT_STRINGS.blockConnectGithubStepCurrent;
+  return undefined;
+}
+
+/** The card's constant framing: what this room is for, the promise under
+ * it, and where the person is in the walkthrough. Every label here is the
+ * workbench's own onboarding copy, never this package's. */
+function SceneHeader({ scene }: { readonly scene: OnboardingScene }) {
+  const steps = scene.steps;
+  const marked = steps !== undefined && steps.length === MARKABLE_STEP_COUNT;
+  const currentWhy = marked ? steps[scene.currentStepIndex]?.why : undefined;
+  return (
+    <>
+      {scene.promise !== undefined ? (
+        <p className="chat-block-scene-promise">{scene.promise}</p>
+      ) : null}
+      {steps !== undefined && steps.length > 0 ? (
+        <ol className="chat-block-scene-steps">
+          {steps.map((step, index) => {
+            const state = stepStateAt(index, scene.currentStepIndex);
+            const mark = marked ? stepMarkLabel(state) : undefined;
+            return (
+              <li
+                key={step.title}
+                className="chat-block-scene-step"
+                {...(marked ? { "data-state": state } : {})}
+                aria-current={
+                  marked && state === "current" ? "step" : undefined
+                }
+              >
+                <span className="chat-block-scene-step-title">
+                  {step.title}
+                </span>
+                {mark !== undefined ? (
+                  <span className="chat-block-scene-step-mark">{mark}</span>
+                ) : null}
+              </li>
+            );
+          })}
+        </ol>
+      ) : null}
+      {currentWhy !== undefined ? (
+        <p className="chat-block-text chat-block-scene-why">{currentWhy}</p>
+      ) : null}
+    </>
+  );
+}
+
+/** The walkthrough's done state: the repos under review, what happens in
+ * them now, and one quiet way back to the picker. Deliberately says
+ * nothing about connecting — this card is past that. */
+function ReviewingBody({
+  repoNames,
+  onChangeRepos,
+  autoFocus,
+}: {
+  readonly repoNames: readonly string[];
+  readonly onChangeRepos: () => void;
+  readonly autoFocus?: boolean;
+}) {
+  const sceneRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (autoFocus === true) sceneRef.current?.focus();
+  }, [autoFocus]);
+  return (
+    <div
+      className="chat-block-scene-reviewing"
+      ref={sceneRef}
+      {...(autoFocus === true ? { tabIndex: -1 } : {})}
+    >
+      <p className="chat-block-connect-line">
+        <span className="chat-block-connect-tick" aria-hidden="true">
+          <Check />
+        </span>
+        {CHAT_STRINGS.blockConnectGithubReviewingHeadline}
+      </p>
+      <ul className="chat-block-scene-repo-names">
+        {repoNames.map((name) => (
+          <li key={name}>{name}</li>
+        ))}
+      </ul>
+      <p className="chat-block-text chat-block-connect-helper">
+        {CHAT_STRINGS.blockConnectGithubReviewingLine}
+      </p>
+      <div className="chat-block-actions">
+        <Button type="button" variant="link" onClick={onChangeRepos}>
+          {CHAT_STRINGS.blockConnectGithubChangeRepos}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function DisconnectedBody({
   onConnect,
   onSubmitAccessToken,
+  error: stateError,
+  actionLabel,
 }: {
   readonly onConnect: () => void;
   readonly onSubmitAccessToken: (
@@ -73,11 +234,13 @@ function DisconnectedBody({
   ) => Promise<
     { readonly ok: true } | { readonly ok: false; readonly message: string }
   >;
+  readonly error?: string;
+  readonly actionLabel?: string;
 }) {
   const [fieldOpen, setFieldOpen] = useState(false);
   const [token, setToken] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<string | undefined>(stateError);
 
   function openField() {
     onConnect();
@@ -133,9 +296,13 @@ function DisconnectedBody({
             setToken(event.target.value);
           }}
           disabled={submitting}
+          {...(error !== undefined ? { "aria-invalid": true } : {})}
         />
         {error !== undefined ? (
-          <p className="chat-block-text chat-block-connect-token-error">
+          <p
+            className="chat-block-text chat-block-connect-token-error"
+            role="alert"
+          >
             {error}
           </p>
         ) : null}
@@ -156,7 +323,7 @@ function DisconnectedBody({
             onClick={() => {
               setFieldOpen(false);
               setToken("");
-              setError(undefined);
+              setError(stateError);
             }}
           >
             {CHAT_STRINGS.blockConnectGithubTokenCancel}
@@ -168,10 +335,18 @@ function DisconnectedBody({
 
   return (
     <>
+      {error !== undefined ? (
+        <p
+          className="chat-block-text chat-block-connect-token-error"
+          role="alert"
+        >
+          {error}
+        </p>
+      ) : null}
       <p className="chat-block-text">{CHAT_STRINGS.blockConnectGithubIntro}</p>
       <div className="chat-block-actions">
         <Button type="button" variant="primary" onClick={openField}>
-          {CHAT_STRINGS.blockConnectGithubAction}
+          {actionLabel ?? CHAT_STRINGS.blockConnectGithubAction}
         </Button>
       </div>
       <p className="chat-block-text chat-block-connect-helper">
@@ -190,10 +365,24 @@ function ConnectedBody({
   onChangeConnection,
   onStartReviewing,
   onSkip,
+  error,
+  autoFocus,
 }: Extract<ConnectGithubCardProps, { kind: "connected" }>) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (autoFocus === true) headingRef.current?.focus();
+  }, [autoFocus]);
   const pickedCount = selectedRepoIds.length;
   return (
     <>
+      <h2
+        id="connect-github-pick-heading"
+        className="chat-block-scene-pick-heading"
+        ref={headingRef}
+        {...(autoFocus === true ? { tabIndex: -1 } : {})}
+      >
+        {CHAT_STRINGS.blockConnectGithubPickHeadline}
+      </h2>
       <p className="chat-block-connect-line">
         <span className="chat-block-connect-tick" aria-hidden="true">
           <Check />
@@ -216,7 +405,7 @@ function ConnectedBody({
       <div
         className="chat-block-connect-repo-list"
         role="group"
-        aria-label={CHAT_STRINGS.blockConnectGithubPickHeadline}
+        aria-labelledby="connect-github-pick-heading"
       >
         {repos.map((repo) => {
           const selected = selectedRepoIds.includes(repo.id);
@@ -248,11 +437,18 @@ function ConnectedBody({
         {CHAT_STRINGS.blockConnectGithubPermissionHelper}
       </p>
 
+      {error !== undefined ? (
+        <p className="chat-block-text" role="alert">
+          {error}
+        </p>
+      ) : null}
+
       <div className="chat-block-actions">
         <Button
           type="button"
           variant="primary"
           onClick={() => onStartReviewing(selectedRepoIds)}
+          disabled={pickedCount === 0}
         >
           {CHAT_STRINGS.blockConnectGithubStartReviewing(pickedCount)}
         </Button>
@@ -265,19 +461,42 @@ function ConnectedBody({
 }
 
 export function ConnectGithubBlockView(props: ConnectGithubCardProps) {
-  if (props.kind === "disconnected") {
-    return (
-      <BlockCard title={CHAT_STRINGS.blockConnectGithubHeadline}>
-        <DisconnectedBody
-          onConnect={props.onConnect}
-          onSubmitAccessToken={props.onSubmitAccessToken}
-        />
-      </BlockCard>
-    );
-  }
+  const currentStepTitle =
+    props.scene.steps?.[props.scene.currentStepIndex]?.title;
   return (
-    <BlockCard title={CHAT_STRINGS.blockConnectGithubPickHeadline}>
-      <ConnectedBody {...props} />
+    <BlockCard title={props.scene.title}>
+      <SceneHeader scene={props.scene} />
+      <div
+        className="chat-block-scene-status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {currentStepTitle ?? null}
+      </div>
+      <div className="chat-block-scene-body">
+        {props.kind === "disconnected" ? (
+          <DisconnectedBody
+            onConnect={props.onConnect}
+            onSubmitAccessToken={props.onSubmitAccessToken}
+          />
+        ) : null}
+        {props.kind === "error" ? (
+          <DisconnectedBody
+            onConnect={props.onConnect}
+            onSubmitAccessToken={props.onSubmitAccessToken}
+            error={props.message}
+            actionLabel={CHAT_STRINGS.blockConnectGithubReconnect}
+          />
+        ) : null}
+        {props.kind === "connected" ? <ConnectedBody {...props} /> : null}
+        {props.kind === "reviewing" ? (
+          <ReviewingBody
+            repoNames={props.repoNames}
+            onChangeRepos={props.onChangeRepos}
+            {...(props.autoFocus === true ? { autoFocus: true } : {})}
+          />
+        ) : null}
+      </div>
     </BlockCard>
   );
 }

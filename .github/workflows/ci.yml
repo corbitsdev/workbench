@@ -28,7 +28,7 @@ jobs:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: .bun-version
       - uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
@@ -52,7 +52,7 @@ jobs:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: .bun-version
       - uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
@@ -71,7 +71,7 @@ jobs:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: .bun-version
       - uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
@@ -91,7 +91,7 @@ jobs:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: .bun-version
       - uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
@@ -142,7 +142,7 @@ jobs:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: .bun-version
       - uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
@@ -179,6 +179,7 @@ jobs:
         run: bun run test:e2e
         env:
           E2E_REQUIRED: "1"
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/workbench
 
       - name: Run the two-org isolation suite
         run: bun test test/isolation
@@ -188,6 +189,27 @@ jobs:
       # Postgres. E2E_REQUIRED=1 turns a would-be skip here into a hard
       # failure, so a misconfigured invocation can't pass vacuously.
       - name: Run the hub's database-backed suites
-        run: bun test apps/hub/test
+        run: |
+          set -a
+          . ./.env
+          set +a
+          bun test apps/hub/test
         env:
           E2E_REQUIRED: "1"
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/workbench
+
+      # Every DB-gated suite under packages/* and apps/hub/src gates on
+      # DATABASE_URL and describe.skip's without one, so build-test (no
+      # Postgres) never runs them. Find them by the same signal they
+      # gate on rather than hardcoding a file list, so a newly added
+      # suite gets picked up automatically. E2E_REQUIRED=1 turns a
+      # would-be skip into a hard failure.
+      - name: Run the database-backed package suites
+        run: |
+          set -a
+          . ./.env
+          set +a
+          bun --env-file="${GITHUB_WORKSPACE}/.env" test $(grep -rl DATABASE_URL --include='*.test.ts' packages apps | grep -v apps/hub/test)
+        env:
+          E2E_REQUIRED: "1"
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/workbench

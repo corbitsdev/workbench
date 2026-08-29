@@ -15,11 +15,11 @@
 // whose body is one agent step, so every message becomes an occurrence
 // with its own child run id and event log.
 //
-// Section mode authors `onBodyFailure: "continue"`, the failure edge
+// Section mode authors `onBodyFailure: "tolerate"`, the failure edge
 // that keeps a section subscribed after a failed turn: a conversation
 // whose agent threw on one message must still answer the next, and the
-// primitive's default (`"end"`) retires the whole run instead. The
-// vendored surface carries the field through the live→inert projection,
+// primitive's default (`"end"`) retires the whole run instead.
+// `@intx/workflow` carries the field through the live→inert projection,
 // so the policy reaches the hub's frozen projection rather than being
 // silently dropped before deploy.
 import { buildSingleStepAgentDefinition } from "@intx/workflow-deploy";
@@ -106,7 +106,7 @@ function buildSectionWorkflow(
     [AGENT_RUNTIME_SECTION_ID]: onTrigger({
       on: { type: "mail" as const, to: config.triggerAddress },
       body,
-      onBodyFailure: "continue",
+      onBodyFailure: "tolerate",
     }),
   };
   return config.credentialBindings.length > 0

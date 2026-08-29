@@ -31,6 +31,9 @@ import type { GrantRule } from "@intx/authz";
 import {
   builtinCredentialProviders,
   createCredentialProviderRegistry,
+  driveConnectorReplies,
+  type AgentEventStream,
+  type ConnectorReplyDrain,
 } from "@intx/harness";
 import {
   createHttpRawAuthorizationCredentialProvider,
@@ -55,8 +58,12 @@ import {
   type RunWorkflowChildBindings,
   type SubstrateFactory,
   type SubstrateFactoryEnv,
+  createChildMailboxReader,
+  createMailboxWatchRegistry,
+  type SupervisorBackedTransportInbound,
 } from "@intx/workflow-host";
 import { type ReadParkedApprovalOps, type StepInvoker } from "@intx/workflow";
+import type { InboundMessage } from "@intx/types/runtime";
 
 import {
   createToolBearingAgentFactory,
@@ -64,8 +71,10 @@ import {
 } from "../step-agent-tools";
 import {
   createDurableConversationRegistry,
+  prepareConversationForOriginatingWorkbench,
   type DurableConversationRegistry,
 } from "../conversation-state";
+import { originatingWorkbenchIdFromRequest } from "../originating-workbench";
 import { parseToolRegistries } from "../tool-materialization";
 import {
   deriveHubHttpUrl,
@@ -75,11 +84,7 @@ import {
   SIDECAR_SUBSTRATE_CONFIG_KEYS,
   SubstrateConfig,
 } from "./config";
-import { actionStepStorageRoot, runStepStorageRoot } from "./storage-paths";
-import {
-  createActionToolHandlerRegistry,
-  type ActionStepMaterializationArgs,
-} from "../action-tool-handler";
+import { runStepStorageRoot } from "./storage-paths";
 import {
   readColdParkedApprovalSnapshot,
   readColdParkedPendingOperations,
@@ -351,6 +356,32 @@ export function createSidecarSubstrateFactory(
         })
       : undefined;
 
+    // INBOUND half of mailbox ownership. One watch registry per child,
+    // shared by the step agent's supervisor-backed transport (its `watch`
+    // registers callbacks here, backing `mail_wait`) and the child's control
+    // loop (which fires each `mailbox.notify` into it); it rides out on the
+    // bindings so `runWorkflowChild` routes notifications to this instance.
+    // The reader opens a fresh committed snapshot of the deployment's
+    // substrate `INBOX` per read, so a read after a `mailbox.notify` sees the
+    // message the supervisor just committed. Every step env -- top-level or
+    // onTrigger body -- gets the surface, since the fork's bodies are
+    // tool-bearing agents.
+    const mailboxWatchRegistry = createMailboxWatchRegistry();
+    const transportInbound: SupervisorBackedTransportInbound = {
+      reader: createChildMailboxReader({
+        substrate,
+        repoId: workflowRunRepoId,
+        principal,
+        ref: validated.WORKFLOW_RUN_REF,
+      }),
+      watchRegistry: mailboxWatchRegistry,
+      // The child holds no sender-key registry, so `fetchFull` reports every
+      // message's signature status as "unknown".
+      getCrypto: () => undefined,
+      // Flag/expunge writes ride to the supervisor, the sole mailbox writer.
+      mutationBridge: env.mailboxMutationBridge,
+    };
+
     const buildStepEnvBaseOpts = {
       dataDir: validated.SIDECAR_DATA_DIR,
       workflowRunRepoId,
@@ -359,6 +390,7 @@ export function createSidecarSubstrateFactory(
       mailboxAddress: env.spawn.mailboxAddress,
       stepCount: env.spawn.stepCount,
       outboundMailBridge: env.outboundMailBridge,
+      inbound: transportInbound,
       cache: stepToolCache,
       adapters: childAdapterRegistry,
       hubArtifactsUrl: deriveHubHttpUrl(validated.HUB_WS_URL),
@@ -454,7 +486,16 @@ export function createSidecarSubstrateFactory(
       sourcesRef,
       onEvent,
       credentialWiring,
+      mailPartReader,
     ) => {
+      const bodyStepId = req.authzContext.stepId;
+      if (durableConversation !== undefined && bodyStepId !== undefined) {
+        await prepareConversationForOriginatingWorkbench({
+          registry: durableConversation,
+          agentKey: bodyStepId,
+          originatingWorkbenchId: originatingWorkbenchIdFromRequest(req),
+        });
+      }
       try {
         return await createWorkflowStepInvoker({
           workflowAuthorize: authorize,
@@ -463,13 +504,13 @@ export function createSidecarSubstrateFactory(
           agentFactory: stepAgentFactory,
           sourcesRef,
           onEvent,
+          ...(mailPartReader !== undefined ? { mailPartReader } : {}),
         })(req);
       } finally {
-        const bodyStepId = req.authzContext.stepId;
         if (durableConversation !== undefined && bodyStepId !== undefined) {
           // `peek`, not `get`: a build failure before the env's acquire
           // must surface as itself, not as the registry's missing-store
-          // throw.
+          // throw. Flushes the currently bound workbench prefix.
           await durableConversation.peek(bodyStepId)?.mirrorToSubstrate();
         }
       }
@@ -512,15 +553,58 @@ export function createSidecarSubstrateFactory(
     // lifecycle.
     // Run-boundary durability flush. When the deployment is
     // warm-kept, mirror the warm agent's conversation snapshot to the
-    // workflow-run substrate after each message's send settles. The key
-    // is the step identity, the same key the env builder filed the
-    // durable store under, so the hook resolves the right per-agent
-    // store. Absent for a multi-step deploy (no durable registry).
+    // currently bound originating-workbench prefix after each message's
+    // send settles. The registry key is still the step identity (one warm
+    // agent); the store flushes `agent-state/<stepId>/<workbenchId>/`.
+    // Absent for a multi-step deploy (no durable registry).
     const onRunBoundary: ((key: string) => Promise<void>) | undefined =
       durableConversation !== undefined
         ? async (key: string) => {
             await durableConversation.get(key).mirrorToSubstrate();
           }
+        : undefined;
+
+    // Connector-thread seed: when the deployment is warm-kept, route each
+    // mail-derived inbound message onto the warm agent's connector thread
+    // before its send, so the reply path has thread state. Keyed by the step
+    // identity the durable store is filed under.
+    const seedInbound =
+      durableConversation !== undefined
+        ? async (key: string, message: InboundMessage) => {
+            await durableConversation.get(key).seedInbound(message);
+          }
+        : undefined;
+
+    // Connector reply drain: on each `connector.reply` the warm agent emits,
+    // compose a threaded reply from the durable store's connector thread,
+    // send it through the outbound bridge (the same signed-send path the
+    // agent's own transport uses) and advance the thread from the receipt.
+    // The References chain comes from the committed mailbox: the parent's
+    // own References plus its Message-Id; a parent miss (first reply on a
+    // fresh thread) leaves the transport to derive [inReplyTo].
+    const driveReplies =
+      durableConversation !== undefined
+        ? (key: string, stream: AgentEventStream): ConnectorReplyDrain =>
+            driveConnectorReplies({
+              stream,
+              composeReply: () => durableConversation.get(key).composeReply(),
+              send: (message) =>
+                env.outboundMailBridge.submit(
+                  env.spawn.mailboxAddress,
+                  message,
+                ),
+              resolveReferences: async (inReplyTo) => {
+                const store = await transportInbound.reader.open();
+                const parent = store.messages.find(
+                  (m) => m.envelope.messageId === inReplyTo,
+                );
+                return parent === undefined
+                  ? undefined
+                  : [...parent.envelope.references, parent.envelope.messageId];
+              },
+              onReplySent: (receipt) =>
+                durableConversation.get(key).onReplySent(receipt),
+            })
         : undefined;
 
     const invokeStep: RunWorkflowChildBindings["invokeStep"] = async (
@@ -530,24 +614,30 @@ export function createSidecarSubstrateFactory(
       warmCache,
       sourcesRef,
       credentialWiring,
+      mailPartReader,
     ) => {
-      const stepInvokerBaseOpts = {
+      const stepId = req.authzContext.stepId;
+      if (durableConversation !== undefined && stepId !== undefined) {
+        await prepareConversationForOriginatingWorkbench({
+          registry: durableConversation,
+          agentKey: stepId,
+          originatingWorkbenchId: originatingWorkbenchIdFromRequest(req),
+          ...(warmCache !== undefined ? { warmCache } : {}),
+        });
+      }
+      return createWorkflowStepInvoker({
         workflowAuthorize: authorize,
         buildEnv: (buildReq: Parameters<typeof buildStepEnv>[0]) =>
           buildStepEnv(buildReq, sourcesRef, credentialWiring),
         agentFactory: stepAgentFactory,
         onEvent,
         sourcesRef,
-      };
-      const stepInvokerOptsWithWarmCache =
-        warmCache !== undefined
-          ? { ...stepInvokerBaseOpts, warmCache }
-          : stepInvokerBaseOpts;
-      const stepInvokerOpts =
-        onRunBoundary !== undefined
-          ? { ...stepInvokerOptsWithWarmCache, onRunBoundary }
-          : stepInvokerOptsWithWarmCache;
-      return createWorkflowStepInvoker(stepInvokerOpts)(req);
+        mailPartReader,
+        ...(warmCache !== undefined ? { warmCache } : {}),
+        ...(onRunBoundary !== undefined ? { onRunBoundary } : {}),
+        ...(seedInbound !== undefined ? { seedInbound } : {}),
+        ...(driveReplies !== undefined ? { driveReplies } : {}),
+      })(req);
     };
 
     const evaluateGrantsAdapter: GrantEvaluator = async ({
@@ -683,47 +773,6 @@ export function createSidecarSubstrateFactory(
             }),
       );
 
-    // Native `action` steps carry no `agent`, so they never reach
-    // `invokeStep` above -- the runtime dispatches them through the
-    // separate `ActionInvoker` seam, whose `handler` refs this binding
-    // resolves. The child awaits it once, right after the definition
-    // re-verify, with the resolved in-memory `WorkflowDefinition` and the
-    // live `CredentialWiring` -- so every action step's tool closure is
-    // materialized eagerly at establish (a missing tool package or an
-    // unresolvable credential fails now, not mid-run) and each handler's
-    // `credentials` capability is scoped through the same per-step grant
-    // wiring agent steps use. Wired unconditionally: an action-free
-    // deployment enumerates zero action steps and resolves nothing.
-    const resolveActionHandler: RunWorkflowChildBindings["resolveActionHandler"] =
-      ({ definition, credentialWiring }) => {
-        const materializationByStepId = new Map<
-          string,
-          ActionStepMaterializationArgs
-        >();
-        for (const [stepId, primitive] of Object.entries(definition.steps)) {
-          if (primitive.kind !== "action") continue;
-          materializationByStepId.set(stepId, {
-            dataDir: validated.SIDECAR_DATA_DIR,
-            mailboxAddress: env.spawn.mailboxAddress,
-            stepId,
-            stepCount: env.spawn.stepCount,
-            storeDir: actionStepStorageRoot({
-              dataDir: validated.SIDECAR_DATA_DIR,
-              workflowRunRepoId,
-              stepId,
-            }),
-            cache: stepToolCache,
-            registries: parseToolRegistries(validated.SIDECAR_TOOL_REGISTRIES),
-            credentials: { wiring: credentialWiring },
-          });
-        }
-        return createActionToolHandlerRegistry({
-          definition,
-          materializationByStepId,
-          providers: credentialProviders,
-        });
-      };
-
     const bindings: RunWorkflowChildBindings = {
       substrate,
       workflowRunRepoId,
@@ -731,13 +780,13 @@ export function createSidecarSubstrateFactory(
       principal,
       invokeStep,
       initialSources: stepInferenceSources,
-      resolveActionHandler,
       runChild,
       runSuspendableChild,
       scheduler,
       evaluateGrants: evaluateGrantsAdapter,
       loadParkedApproval,
       readParkedApprovalOps,
+      mailboxWatchRegistry,
       ...(cleanupRunStorage !== undefined ? { cleanupRunStorage } : {}),
     };
     return bindings;

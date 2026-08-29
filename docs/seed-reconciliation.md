@@ -79,12 +79,14 @@ first checking `GET /api/tenants/:id/skills/:name`.
   "already exists" as done, not as a reason to abort the run the
   hub's own error advice told the operator to re-run.
 
-## Tool registry publish (`workbench seed`, ahead of every workflow deploy)
+## Tool registry publish (`workbench setup`, onto the root tenant)
 
 `publishCorbitsToolsRegistry` (`packages/tool-registry-publish/src/publish.ts`)
 finds-or-creates the tenant's `corbits-tools` package-registry asset,
-then PUTs whatever tarball is missing. Two properties keep a failed
-publish from stranding a usable-looking-but-empty asset:
+then PUTs whatever tarball is missing. `workbench setup` calls this
+onto the root tenant so descendants inherit tarballs; `workbench seed`
+does not pack. Two properties keep a failed publish from stranding a
+usable-looking-but-empty asset:
 
 - `checkToolPackageFreshness` runs **before** the asset is ever
   created — a version-bump violation aborts the publish with no HTTP
@@ -96,8 +98,8 @@ publish from stranding a usable-looking-but-empty asset:
   so a re-run of `publishCorbitsToolsRegistry` treats it exactly like
   a brand-new registry and pushes every package, which is what
   actually creates the repo's first commit. Repairing a tenant with
-  this history is the same operation as seeding one for the first
-  time: re-run `workbench seed`.
+  this history is the same operation as publishing the registry for
+  the first time: re-run `workbench setup`.
 
 ## Workflow deployments (`workbench seed`)
 
@@ -129,7 +131,10 @@ A genuine redeploy is the only honest repair.
 `apps/hub/src/env-credential-plant.ts` delegates to
 `plantEnvProviderCredentials` (`packages/onboarding`): keyed by the
 provider's stable credential name, a provider already carrying an
-active credential is skipped outright — a rotated or hand-renamed key
-is never touched. Removing an env var never deletes the planted
-credential: credentials are operator data once planted, not seeds to
-garbage-collect.
+active credential is not probed and its key is not overwritten — a
+rotated or hand-renamed key is never touched. `seedCatalog` still
+runs against that existing credential (`existingCredentialId`, no
+`apiKey`) so a hub restart backfills newly curated models additively:
+missing rows are planted, existing ones 409-skip, nothing is deleted.
+Removing an env var never deletes the planted credential: credentials
+are operator data once planted, not seeds to garbage-collect.

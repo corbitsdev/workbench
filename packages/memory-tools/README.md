@@ -39,9 +39,10 @@ with `isError: true` — never fabricate a memory or a search result.
 ## When the memory plane isn't configured (CL-6168)
 
 `apps/hub/src/memory-mount.ts` decides whether the memory plane is
-mounted at hub boot, from its own `EMBED_BASE_URL` config parse — never
-by making a call and seeing what happens. An unmounted plane is reflected
-two ways, both driven by that one boot-time decision:
+mounted at hub boot — from `EMBED_BASE_URL`, `OLLAMA_BASE_URL`, or the
+native-Ollama inject `bun run dev` applies — never by making a call and
+seeing what happens. An unmounted plane is reflected two ways, both
+driven by that one boot-time decision:
 
 - The hub's tool inventory (`listMyraUsableToolPackages` in
   `apps/hub/src/index.ts`) simply never offers `@corbits/memory-tools` to

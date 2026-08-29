@@ -1,5 +1,5 @@
 // Workbench director: DefaultDirector plus an empty-turn retry and a
-// context-budget gate (CL-6204).
+// context-budget gate.
 //
 // `@intx/inference`'s DefaultDirector checkpoints and waits when
 // inference.done has no text and no tool calls. The human then sits in a
@@ -11,31 +11,31 @@
 // We compose that path rather than reimplement it.
 //
 // Context budget (`contextBudget`, optional -- absent means unbudgeted,
-// today's pre-CL-6204 behavior): before letting any inner decision that
-// includes `infer` through, checks the turn history against the
+// today's pre-CL-6204 behavior): checks the turn history against the
 // model's real context window (`resolveContextBudgetChars` /
 // `resolveHardContextLimitChars` in `./context-budget`, sized from
-// `InferenceSource.quirks`).
+// `InferenceSource.quirks` and the advertised catalog window).
 //
 //   - Over the hard limit (no headroom left at all): this is Ollama's
 //     silent-truncation case made honest -- reply with the same
 //     "exceeded the model's context limit" message hosted providers
 //     produce via `inference.error`'s `context_overflow` category
 //     (`@intx/inference`'s `default-director.js`), instead of sending a
-//     request that would truncate server-side with no error.
+//     request that would truncate server-side with no error. Compact
+//     cannot help here, so `CONTEXT_OVERFLOW_MESSAGE` is the only reply.
 //   - Over the (headroomed) budget but under the hard limit, on a
 //     non-final `tool.done` in a multi-call batch (DefaultDirector
-//     returns `[]` for every `tool.done` before the batch's last):
-//     fire `caps.compact` here instead of the no-op. This is the one
-//     point in the reactor's event flow where `compact` cannot stall a
-//     reply -- the batch's remaining `tool.done` events are already
-//     enqueued (`@intx/inference`'s `reactor.js` `executeTools` enqueues
-//     every result from one `Promise.all` before the reactor dequeues
-//     any of them) and will still drive the eventual re-infer. Firing
-//     compact on `message.received` or the batch's *last* `tool.done`
-//     would instead stall that message's reply waiting for a follow-up
-//     event the reactor never produces (`compactors.ts`'s header
-//     comment) -- this director never does that.
+//     returns `[]` for every `tool.done` before the batch's last): fire
+//     `caps.compact` instead of the no-op. The batch's remaining
+//     `tool.done` events are already enqueued (`@intx/inference`'s
+//     `reactor.js` `executeTools` enqueues every result from one
+//     `Promise.all` before the reactor dequeues any of them) and will
+//     still drive the eventual re-infer. Do not compact as the sole
+//     terminal action on `message.received`: the reactor forbids
+//     compact+infer in one cycle and does not re-enter the director
+//     after compact, so compact-only would leave the inbound message
+//     unanswered. Over-budget inbound still infers; compaction waits
+//     for that next safe point.
 //   - Otherwise: let the inner decision through unchanged. Compaction is
 //     deferred to the next safe point rather than forced here.
 //
@@ -218,13 +218,19 @@ export class WorkbenchDirector implements ReactorDirector {
     const list = Array.isArray(actions) ? actions : [actions];
     const chars = estimateTurnsChars(state.turns);
 
-    if (list.some((action) => action.type === "infer")) {
-      if (chars > this.contextBudget.hardLimitChars) {
+    if (chars > this.contextBudget.hardLimitChars) {
+      if (
+        list.some((action) => action.type === "infer") ||
+        event.type === "message.received"
+      ) {
         return [
           capabilities.checkpoint("context-overflow"),
           capabilities.reply(CONTEXT_OVERFLOW_MESSAGE),
         ];
       }
+    }
+
+    if (list.some((action) => action.type === "infer")) {
       return undefined;
     }
 

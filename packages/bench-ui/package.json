@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@corbits/api-query": "workspace:*",
-    "@intx/types": "0.3.0",
+    "@intx/types": "workspace:*",
     "arktype": "catalog:"
   },
   "devDependencies": {

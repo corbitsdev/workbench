@@ -6,8 +6,8 @@
 //   mcp_list_tools   -- discover tools: no args for a truncated
 //                        catalog of every server, {pattern} to regex
 //                        search names across all servers, {server} for
-//                        one server's full list, {server, toolName}
-//                        for one tool's full schema.
+//                        one server's truncated list, {server, toolName}
+//                        for one tool's truncated schema.
 //   mcp_call({server, tool, arguments}) -- invoke one of those tools.
 //
 // Credentials: each connected server is a `mcp.<slug>` credential
@@ -182,6 +182,7 @@ const CallInput = type({
 
 const TRUNCATE_LENGTH = 100;
 const TRUNCATE_SUFFIX = "… [truncated]";
+const MCP_READ_MAX_CHARS = 8_000;
 
 function truncateDescription(description: string | undefined): string {
   if (description === undefined) return "";
@@ -189,11 +190,21 @@ function truncateDescription(description: string | undefined): string {
   return description.slice(0, TRUNCATE_LENGTH) + TRUNCATE_SUFFIX;
 }
 
+function truncateSchema(schema: unknown): string {
+  return truncateDescription(JSON.stringify(schema));
+}
+
+function boundReadContent(content: string): string {
+  if (content.length <= MCP_READ_MAX_CHARS) return content;
+  const keep = Math.max(0, MCP_READ_MAX_CHARS - TRUNCATE_SUFFIX.length);
+  return content.slice(0, keep) + TRUNCATE_SUFFIX;
+}
+
 function toolSummary(tool: McpToolInfo) {
   return {
     name: tool.name,
-    description: tool.description,
-    inputSchema: tool.inputSchema,
+    description: truncateDescription(tool.description),
+    inputSchema: truncateSchema(tool.inputSchema),
     readOnly: tool.annotations?.readOnlyHint === true,
   };
 }
@@ -360,6 +371,7 @@ async function runListToolsCatalog(
             tools: loaded.tools.map((tool) => ({
               name: tool.name,
               description: truncateDescription(tool.description),
+              schema: truncateSchema(tool.inputSchema),
             })),
           }),
     });
@@ -477,10 +489,11 @@ async function runRead(env: McpToolsEnv, call: ToolCall): Promise<ToolResult> {
     return {
       callId: call.id,
       isError: result.isError,
-      content:
+      content: boundReadContent(
         typeof result.content === "string"
           ? result.content
           : JSON.stringify(result.content),
+      ),
     };
   } catch (err) {
     return errorResult(call.id, err);
@@ -570,11 +583,11 @@ export const mcpTools = defineTool<McpToolsEnv>({
           "descriptions, for a first skim. `{pattern}` regex-searches " +
           "tool AND server names across every connected server — use " +
           "this when you're not sure which server has the tool you " +
-          "want. `{server}` returns one server's full tool list with " +
-          "full descriptions. `{server, toolName}` returns that one " +
-          "tool's full input schema, once you know exactly which tool " +
-          "you're calling. Never dump a whole server's catalog into a " +
-          "reply to the human.",
+          "want. `{server}` returns one server's tool list with " +
+          "truncated descriptions and schemas. `{server, toolName}` " +
+          "returns that one tool's truncated input schema, once you " +
+          "know exactly which tool you're calling. Never dump a whole " +
+          "server's catalog into a reply to the human.",
         inputSchema: {
           type: "object",
           properties: {
@@ -589,8 +602,8 @@ export const mcpTools = defineTool<McpToolsEnv>({
             toolName: {
               type: "string",
               description:
-                "A specific tool's exact name, to get its full input " +
-                "schema. Requires `server`.",
+                "A specific tool's exact name, to get its truncated " +
+                "input schema. Requires `server`.",
             },
             pattern: {
               type: "string",
@@ -610,7 +623,8 @@ export const mcpTools = defineTool<McpToolsEnv>({
           "marks the tool `readOnlyHint: true`; this is re-checked live " +
           `at call time, never assumed. Use for reads. Call ` +
           `${MCP_LIST_TOOLS_TOOL} once first to find the tool and its ` +
-          `exact name and input schema. If this errors telling you the ` +
+          `exact name and input schema. Payloads over 8k characters ` +
+          `are truncated. If this errors telling you the ` +
           `tool isn't read-only, use ${MCP_CALL_TOOL} instead.`,
         inputSchema: {
           type: "object",

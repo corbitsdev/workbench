@@ -1,15 +1,3 @@
-// The host's persisted Ed25519 identity. One key, one identity for the
-// sidecar process: whatever execution body runs on this host signs as
-// this keypair, so the identity survives the body being replaced.
-//
-// Copied near-verbatim from Interchange's own
-// `apps/sidecar/src/signing-keypair.ts` (faremeter/interchange @
-// 59f5e7b9) — see the `apps/sidecar` row in VENDORED.md. This is a host
-// identity, distinct from the per-agent keys `@intx/hub-agent`'s
-// `agent-key-store.ts` custodies: an agent key answers "which agent is
-// this" on a challenge, while this one signs the workflow-run commits
-// the supervisor and each workflow-process child produce.
-
 import fs from "node:fs/promises";
 import path from "node:path";
 import { derivePublicKeyBytes, generateKeyPair } from "@intx/crypto";
@@ -19,9 +7,13 @@ const PRIVATE_KEY_FILENAME = "ed25519.private";
 const PUBLIC_KEY_FILENAME = "ed25519.public";
 
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false;
+  if (a.length !== b.length) {
+    return false;
+  }
   for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false;
+    if (a[i] !== b[i]) {
+      return false;
+    }
   }
   return true;
 }
@@ -36,18 +28,20 @@ async function exists(filePath: string): Promise<boolean> {
 }
 
 /**
- * Load the host's persisted Ed25519 signing keypair, minting a fresh one
- * on first boot.
+ * Load the sidecar's persisted Ed25519 signing keypair, minting a fresh
+ * one on first boot.
  *
  * The 32-byte seed in `ed25519.private` is the sole source of truth for
- * the identity; the public key is always derived from it. The
- * `ed25519.public` file is an identity anchor, not a cache: on every
- * load it is cross-checked against the seed-derived public key. A
- * mismatch means one of the two files was corrupted or swapped; rather
- * than advertise a public key the host cannot sign with -- which would
- * make every signature fail verification far from the root cause -- the
- * boot halts and an operator decides whether to restore the seed or
- * remove the directory to mint a fresh identity.
+ * the sidecar's identity; the public key is always derived from it. The
+ * `ed25519.public` file is an identity anchor, not a cache: on every load
+ * it is cross-checked against the seed-derived public key. A mismatch
+ * means either the seed or the public file was corrupted or swapped (a
+ * bad backup restore, disk bitrot, an operator fat-finger). Rather than
+ * trusting the file and advertising a public key the sidecar cannot sign
+ * with -- which would make every signature fail verification at the hub,
+ * far from the root cause -- we fail loudly here at boot. We cannot tell
+ * which of the two files rotted, so we halt and let an operator decide
+ * (restore the seed, or remove the directory to mint a fresh identity).
  */
 export async function loadOrMintSidecarKeypair(
   signingDir: string,
@@ -82,7 +76,7 @@ export async function loadOrMintSidecarKeypair(
     }
     if (!bytesEqual(derivedPublicKey, storedPublicKey)) {
       throw new Error(
-        `sidecar signing public key at ${publicKeyPath} does not match the key derived from the seed at ${privateKeyPath}; restore the matching seed, or remove ${signingDir} to mint a fresh identity`,
+        `sidecar signing public key at ${publicKeyPath} does not match the key derived from the seed at ${privateKeyPath}; the sidecar would advertise a public key it cannot sign with, so every signature would fail verification at the hub; restore the matching seed, or remove ${signingDir} to mint a fresh identity`,
       );
     }
     return { privateKey: seed, publicKey: derivedPublicKey };

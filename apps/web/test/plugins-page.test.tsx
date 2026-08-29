@@ -6,11 +6,13 @@
 // data into that component correctly.
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { act } from "react";
+import { act, useState } from "react";
+import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import { BenchProvider } from "../src/bench-context";
+import type { BenchState } from "../src/bench-context";
+import { BenchContext, BenchProvider } from "../src/bench-context";
 import { NavigationProvider } from "../src/navigation";
 import { PluginsRoute } from "../src/pages/plugins-page";
 import {
@@ -34,6 +36,7 @@ afterEach(() => {
     container.remove();
     container = null;
   }
+  window.history.replaceState(null, "", "/plugins");
 });
 
 const membership = {
@@ -82,10 +85,15 @@ function fillField(id: string, value: string, textarea = false) {
   el.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-function stubFetch(): void {
+function stubFetch(
+  options: { readonly mcpPresets?: readonly Record<string, unknown>[] } = {},
+): void {
+  const mcpPresets = options.mcpPresets ?? [];
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const path = typeof input === "string" ? input : String(input);
     const method = (init?.method ?? "GET").toUpperCase();
+    if (path.includes("/mcp-servers/presets"))
+      return Promise.resolve(json({ data: mcpPresets }));
     if (path.includes("/api/me/principals"))
       return Promise.resolve(json(membership));
     if (path.includes("/api/workbench-tenancies/kinds"))
@@ -411,5 +419,341 @@ describe("PluginsRoute", () => {
     }
 
     expect(navigated).toContain("/skills/summarize");
+  });
+
+  // CL-7138: a fast bench switch used to let the previous tenant's
+  // in-flight fetch resolve after the new tenant's, overwriting its data.
+  test("a fast bench switch never lets the previous tenant's late fetch overwrite the new one's data", async () => {
+    function deferredResponse() {
+      let resolve: (response: Response) => void = () => undefined;
+      const promise = new Promise<Response>((res) => {
+        resolve = res;
+      });
+      return { promise, resolve };
+    }
+
+    const skillsDeferred: Record<
+      string,
+      ReturnType<typeof deferredResponse>
+    > = {
+      tnt_a: deferredResponse(),
+      tnt_b: deferredResponse(),
+    };
+
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      if (path.includes("/credentials/resolve/"))
+        return Promise.resolve(json(null, 404));
+      if (path.includes("/connections/provider-health"))
+        return Promise.resolve(
+          json({ providers: {}, connectedProviderCount: 0 }),
+        );
+      const skillsMatch = /\/api\/tenants\/(tnt_[ab])\/skills/.exec(path);
+      if (skillsMatch) {
+        const tenantId = skillsMatch[1] as string;
+        return (
+          skillsDeferred[tenantId]?.promise ??
+          Promise.resolve(json({ skills: [] }))
+        );
+      }
+      return Promise.resolve(json({ data: [], nextCursor: null }));
+    }) as typeof fetch;
+
+    let selectTenant: (tenantId: string) => void = () => undefined;
+
+    function BenchHarness({ children }: { readonly children: ReactNode }) {
+      const [tenantId, setTenantId] = useState("tnt_a");
+      selectTenant = setTenantId;
+      const value: BenchState = {
+        memberships: { kind: "loading" },
+        selectedTenantId: tenantId,
+        selectedPrincipalId: "prn_1",
+        selectTenant: setTenantId,
+        onBenchCreated: () => undefined,
+      };
+      return (
+        <BenchContext.Provider value={value}>{children}</BenchContext.Provider>
+      );
+    }
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root?.render(
+        <TestQueryProvider>
+          <NavigationProvider navigate={() => undefined}>
+            <BenchHarness>
+              <ProviderHealthProvider>
+                <PluginsRoute path="/plugins" navigate={() => undefined} />
+              </ProviderHealthProvider>
+            </BenchHarness>
+          </NavigationProvider>
+        </TestQueryProvider>,
+      );
+    });
+    for (let i = 0; i < 5; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    act(() => {
+      selectTenant("tnt_b");
+    });
+    for (let i = 0; i < 5; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    skillsDeferred.tnt_b?.resolve(
+      json({
+        skills: [
+          {
+            assetId: "skill_b",
+            name: "beta-only",
+            description: "Tenant B's skill.",
+            scope: "tenant",
+            creatorPrincipalId: "prn_1",
+            updatedAtIso: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+    for (let i = 0; i < 10; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    skillsDeferred.tnt_a?.resolve(
+      json({
+        skills: [
+          {
+            assetId: "skill_a",
+            name: "alpha-only",
+            description: "Tenant A's skill.",
+            scope: "tenant",
+            creatorPrincipalId: "prn_1",
+            updatedAtIso: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+    for (let i = 0; i < 10; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    const skillsTab = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Skills") === true,
+    );
+    act(() => {
+      skillsTab?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain("beta-only");
+    expect(container.textContent).not.toContain("alpha-only");
+  });
+
+  // CL-7138: cancellation must not turn every imperative reload (a
+  // connect/disconnect panel's `onChanged`, the error screen's Retry) into
+  // a full teardown to the loading skeleton — only a genuine tenant change
+  // should do that. This drives the real disconnect flow end to end.
+  test("disconnecting a plugin reloads without tearing the gallery down to the loading skeleton", async () => {
+    let deferCredentialResolves = false;
+    const deferredResolvers: (() => void)[] = [];
+    const githubCredential = {
+      id: "cred_1",
+      tenantId: "tnt_1",
+      providerId: "prov_1",
+      principalId: null,
+      oauthClientId: null,
+      name: "GitHub",
+      type: "api_key",
+      description: null,
+      scopes: [],
+      expiresAt: null,
+      status: "active",
+      metadata: {},
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const path = typeof input === "string" ? input : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (method === "DELETE" && path.includes("/credentials/cred_1"))
+        return Promise.resolve(new Response(null, { status: 204 }));
+      if (path.includes("/api/me/principals"))
+        return Promise.resolve(json(membership));
+      if (path.includes("/api/workbench-tenancies/kinds"))
+        return Promise.resolve(json({ workbenchTenantIds: [] }));
+      if (path.includes("/credentials/resolve/GitHub")) {
+        if (deferCredentialResolves) {
+          return new Promise<Response>((resolve) => {
+            deferredResolvers.push(() => resolve(json(null, 404)));
+          });
+        }
+        return Promise.resolve(json(githubCredential));
+      }
+      if (path.includes("/connections/provider-health"))
+        return Promise.resolve(
+          json({ providers: {}, connectedProviderCount: 1 }),
+        );
+      if (path.includes("/credentials/resolve/"))
+        return Promise.resolve(json(null, 404));
+      if (path.includes("/api/tenants/tnt_1/skills"))
+        return Promise.resolve(json({ skills: [] }));
+      return Promise.resolve(json({ data: [], nextCursor: null }));
+    }) as typeof fetch;
+
+    const el = await mount();
+    expect(el.textContent).toContain("Connected here");
+
+    const manageButton = el.querySelector<HTMLButtonElement>(
+      'button[aria-label="Manage GitHub"]',
+    );
+    await act(async () => {
+      manageButton?.click();
+    });
+    for (let i = 0; i < 5; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    const disconnectButton = () =>
+      [...document.body.querySelectorAll("button")].find(
+        (button) => button.textContent?.includes("Disconnect") === true,
+      );
+    expect(disconnectButton()).not.toBeUndefined();
+
+    // From here on, the reload the disconnect triggers must not resolve
+    // until we say so — gives us a window to inspect the mid-reload DOM.
+    deferCredentialResolves = true;
+
+    // First click arms the confirm button, second click fires the delete.
+    await act(async () => {
+      disconnectButton()?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    await act(async () => {
+      disconnectButton()?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
+    for (let i = 0; i < 5; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    // The delete resolved and `onChanged` fired `reloadPlugins`; its fetch
+    // is now the deferred one above, still pending.
+    expect(el.textContent).not.toContain("Loading plugins…");
+    expect(el.textContent).toContain("GitHub");
+
+    deferredResolvers.forEach((resolve) => resolve());
+    for (let i = 0; i < 10; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    expect(el.textContent).not.toContain("Connected here");
+  });
+
+  // CL-7141: `request_connection`'s fallback link (`/plugins?connect=<id>`)
+  // hands off through the same `requestPluginsConnect` path the shell
+  // banner's "Fix it" click uses.
+  test("a `?connect=<id>` URL naming a known connector opens that connector's connect panel", async () => {
+    stubFetch();
+    window.history.replaceState(null, "", "/plugins?connect=github");
+
+    const el = await mount();
+
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).toContain("GitHub");
+    expect(window.location.search).toBe("");
+    expect(el).not.toBeNull();
+  });
+
+  // CL-7141: an id the registry doesn't recognize (typo, stale link) is
+  // ignored — no dialog, no "couldn't find that connection" notice.
+  test("a `?connect=<id>` URL naming an unknown connector is ignored", async () => {
+    stubFetch();
+    window.history.replaceState(null, "", "/plugins?connect=bogus");
+
+    const el = await mount();
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(el.textContent).not.toContain(
+      "Couldn't find that connection — pick it below.",
+    );
+    expect(window.location.search).toBe("");
+  });
+
+  // CL-7141: `?connect=<id>` strips only the `connect` param — any other
+  // query param this route was opened with must survive.
+  test("a `?connect=<id>` URL keeps every other query param", async () => {
+    stubFetch();
+    window.history.replaceState(null, "", "/plugins?foo=bar&connect=github");
+
+    await mount();
+
+    expect(window.location.search).toBe("?foo=bar");
+  });
+
+  // CL-7141: `presetDeepLink` in `packages/connections-tools/src/tool.ts`
+  // emits `/plugins?connect=mcp:<slug>` for a curated MCP preset (Exa,
+  // Granola, Linear, ...) — this page resolves that against the preset
+  // catalog and focuses the matching card's own Connect button once it
+  // has loaded, rather than matching it against `CONNECTOR_REGISTRY`
+  // (which has no entry for a preset's `mcp:<slug>` id).
+  test("a `?connect=mcp:<slug>` URL naming a known preset focuses that preset's connect button", async () => {
+    stubFetch({
+      mcpPresets: [
+        {
+          slug: "exa",
+          displayName: "Exa",
+          description: "Search and research the live web.",
+          url: "https://mcp.exa.ai/mcp",
+          connectionMode: "keyless",
+          docsUrl: "https://docs.exa.ai/reference/exa-mcp",
+          connected: false,
+        },
+      ],
+    });
+    window.history.replaceState(null, "", "/plugins?connect=mcp:exa");
+
+    const el = await mount();
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    const connectButton = el.querySelector(
+      '[data-plugin-slug="exa"] button[aria-label="Connect Exa"]',
+    );
+    expect(connectButton).not.toBeNull();
+    expect(document.activeElement).toBe(connectButton);
+    expect(window.location.search).toBe("");
+  });
+
+  // CL-7141: a preset slug the catalog doesn't recognize (typo, stale
+  // link) is ignored — no dialog, no notice, no thrown error.
+  test("a `?connect=mcp:<slug>` URL naming an unknown preset is ignored", async () => {
+    stubFetch();
+    window.history.replaceState(null, "", "/plugins?connect=mcp:bogus");
+
+    const el = await mount();
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(el.textContent).not.toContain(
+      "Couldn't find that connection — pick it below.",
+    );
+    expect(window.location.search).toBe("");
   });
 });

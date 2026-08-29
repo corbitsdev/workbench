@@ -37,14 +37,18 @@ trigger fields reference).
   `isAutomatableWorkflowName`, `deliveryChannelRequiredForWorkflowName`,
   `workflowCatalogEntry`, `workflowDisplayName`, and
   `validateTriggerFieldsInput`.
-- `src/templates.ts` — `WorkbenchTemplateManifest` and the templates
-  themselves (`GTM_TEMPLATE`, `CODE_REVIEW_TEMPLATE`), each validated at
+- `src/templates.ts` — `WorkbenchDefinition` (default agents, routines,
+  tools, plugins, and the ordered `onboardingSteps` walkthrough) and the
+  shipped definitions themselves (`GTM_TEMPLATE`,
+  `CODE_REVIEW_TEMPLATE`, `DUE_DILIGENCE_TEMPLATE`), each validated at
   module load; `workbenchTemplate(id)` looks one up.
 - `src/instantiate.ts` — `instantiateWorkbenchTemplate`: resolves a
-  manifest against a bench over injected ports (create the participant
-  agent definitions that don't exist yet, record required connections as
-  pending). Today this only supports a manifest whose participants are
-  backed by `@corbits/code-review`'s reviewer roster.
+  definition against a bench over injected ports (create the agent
+  definitions that don't exist yet, record required plugins as pending,
+  then begin the definition's onboarding walkthrough). Today this only
+  supports a definition whose agents are backed by
+  `@corbits/code-review`'s reviewer roster or a standalone chat agent
+  this package can build a create request for.
 - `src/settings.ts` — the `template/*` workbench-settings vocabulary a
   template-instantiated room persists about itself.
 
