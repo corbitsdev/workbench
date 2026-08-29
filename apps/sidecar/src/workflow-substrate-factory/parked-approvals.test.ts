@@ -4,15 +4,17 @@
 // was parked on an ask-approval: the child's re-registration enumeration
 // found the park but had no `loadParkedApproval` binding wired and threw,
 // killing the deployment at boot.
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
+import type { RepoStore } from "@intx/hub-sessions";
 import type { PendingOperation } from "@intx/types/runtime";
 
 import {
   findApprovalSnapshot,
   readColdParkedApprovalSnapshot,
+  readWarmParkedPendingOperations,
   toParkedApprovalOps,
 } from "./parked-approvals";
 
@@ -71,5 +73,67 @@ describe("readColdParkedApprovalSnapshot", () => {
       correlationId: "corr-never",
     });
     expect(snapshot).toBeUndefined();
+  });
+});
+
+const EMPTY_TOKEN_USAGE = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  thinking: 0,
+};
+
+async function writeRoomCheckpoint(
+  repoDir: string,
+  stepId: string,
+  workbenchId: string,
+  pendingOperations: unknown[],
+): Promise<void> {
+  const dir = path.join(repoDir, "agent-state", stepId, workbenchId);
+  await mkdir(dir, { recursive: true });
+  const snapshot = {
+    turns: [],
+    pendingOperations,
+    tokenUsage: EMPTY_TOKEN_USAGE,
+    connectorState: null,
+  };
+  const meta = {
+    checkpointSeq: 1,
+    turnCount: 0,
+    pendingOperations,
+    tokenUsage: EMPTY_TOKEN_USAGE,
+    connectorState: null,
+  };
+  await writeFile(path.join(dir, "checkpoint.json"), JSON.stringify(snapshot));
+  await writeFile(path.join(dir, "checkpoint.meta.json"), JSON.stringify(meta));
+}
+
+describe("readWarmParkedPendingOperations", () => {
+  test("collects pending ops from nested rooms and ignores a mixed agent-state blob", async () => {
+    const repoDir = await mkdtemp(path.join(tmpdir(), "parked-warm-"));
+    tempDirs.push(repoDir);
+    await writeRoomCheckpoint(repoDir, "default", "chan_a", [
+      approvalOp("corr-a"),
+    ]);
+    await writeRoomCheckpoint(repoDir, "default", "chan_b", [
+      approvalOp("corr-b"),
+    ]);
+    await writeFile(
+      path.join(repoDir, "agent-state", "default", "checkpoint.json"),
+      JSON.stringify({ pendingOperations: [approvalOp("corr-legacy")] }),
+    );
+
+    const substrate = {
+      getRepoDir: () => repoDir,
+    } as unknown as RepoStore;
+
+    const pending = await readWarmParkedPendingOperations({
+      substrate,
+      workflowRunRepoId: REPO_ID,
+      stepId: "default",
+    });
+    const ids = pending.map((op) => op.correlationId).sort();
+    expect(ids).toEqual(["corr-a", "corr-b"]);
   });
 });

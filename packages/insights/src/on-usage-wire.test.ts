@@ -4,12 +4,15 @@ import { createUsageSink } from "./collector";
 import { createMemoryUsageStore } from "./store";
 
 /**
- * Exact `UsageForwarded` payload the vendored event-collector emits
- * (`vendor/intx/hub-sessions/src/event-collector.ts` `UsageForwarded`).
- * Hub `onUsage` (`apps/hub/src/index.ts` ~572) remaps it to `UsageEvent` as:
+ * Exact `TurnUsage` payload `@intx/hub-sessions`' event collector emits once
+ * per finalized turn. Hub `onUsage` (`apps/hub/src/index.ts`) remaps it to
+ * `UsageEvent` as
  *   `{ turnId, tenantId, sessionId, provider, model, tokens: usage.usage }`
  */
-type HubUsageForwarded = {
+type HubTurnUsage = {
+  tenantId: string;
+  sessionId: string;
+  runId: string;
   turnId: string;
   provider: string;
   model: string;
@@ -22,15 +25,11 @@ type HubUsageForwarded = {
   };
 };
 
-function hubOnUsageHandleArg(
-  tenantId: string,
-  sessionId: string,
-  usage: HubUsageForwarded,
-) {
+function hubOnUsageHandleArg(usage: HubTurnUsage) {
   return {
     turnId: usage.turnId,
-    tenantId,
-    sessionId,
+    tenantId: usage.tenantId,
+    sessionId: usage.sessionId,
     provider: usage.provider,
     model: usage.model,
     tokens: usage.usage,
@@ -38,7 +37,7 @@ function hubOnUsageHandleArg(
 }
 
 describe("hub onUsage wire → createUsageSink", () => {
-  test("inserts a row from the exact hub remapping of UsageForwarded", async () => {
+  test("inserts a row from the exact hub remapping of TurnUsage", async () => {
     const store = createMemoryUsageStore();
     let n = 0;
     const sink = createUsageSink({
@@ -46,7 +45,10 @@ describe("hub onUsage wire → createUsageSink", () => {
       generateId: () => `id-${++n}`,
     });
 
-    const forwarded: HubUsageForwarded = {
+    const forwarded: HubTurnUsage = {
+      tenantId: "tenant-acme",
+      sessionId: "session-1",
+      runId: "run-1",
       turnId: "turn-wire-1",
       provider: "anthropic",
       model: "claude-sonnet",
@@ -59,9 +61,7 @@ describe("hub onUsage wire → createUsageSink", () => {
       },
     };
 
-    const status = await sink.handle(
-      hubOnUsageHandleArg("tenant-acme", "session-1", forwarded),
-    );
+    const status = await sink.handle(hubOnUsageHandleArg(forwarded));
 
     expect(status).toBe("inserted");
     const rows = await store.listUsageByTenants(["tenant-acme"]);

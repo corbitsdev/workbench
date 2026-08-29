@@ -21,11 +21,14 @@
 //   DATABASE_URL=postgres://localhost:5432/wb6324proof_e2e \
 //   bun run scripts/e2e/cl-6324-launch-proof.ts
 import { expect } from "bun:test";
+import { ApprovalResponse, paginatedSchema } from "@intx/types";
+import { type } from "arktype";
 
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join as pathJoin } from "node:path";
 
+import { headlineFor } from "../../packages/approvals/src/headline.ts";
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
   createGitWorkflowPusher,
@@ -934,28 +937,54 @@ async function main(): Promise<void> {
   );
 
   // ---- proof 3: a real message gets a real reply --------------------
+  // Pages through the platform's native `GET .../approvals` pending list
+  // and approves every pending row with scope "once", printing what it
+  // approved. Without this, a turn that needs an approval-gated tool
+  // never finishes and this proof times out waiting for a reply that
+  // can never come.
+  const TenantApprovalsSchema = paginatedSchema(ApprovalResponse);
   async function autoApproveAll(): Promise<void> {
-    const res = await api(
-      hub.baseUrl,
-      "GET",
-      `/api/tenants/${tenant.tenantId}/approvals/needs-you`,
-      undefined,
-      user.cookies,
-    );
-    if (res.status !== 200) return;
-    const items = arrayField(res.data, "items", "needs-you") as {
-      id: string;
-      agentName: string;
-      headline: string;
-    }[];
-    for (const item of items) {
-      await api(
+    let cursor: string | undefined;
+    for (;;) {
+      const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+      const res = await api(
         hub.baseUrl,
-        "POST",
-        `/api/tenants/${tenant.tenantId}/approvals/${item.id}/approve`,
-        { scope: "once" },
+        "GET",
+        `/api/tenants/${tenant.tenantId}/approvals${query}`,
+        undefined,
         user.cookies,
       );
+      if (res.status !== 200) {
+        throw new Error(
+          `auto-approve: listing pending approvals failed with HTTP ` +
+            `${String(res.status)}: ${JSON.stringify(res.data)}`,
+        );
+      }
+      const page = TenantApprovalsSchema(res.data);
+      if (page instanceof type.errors) {
+        throw new Error(
+          `auto-approve: malformed pending approvals list: ${page.summary}`,
+        );
+      }
+      for (const item of page.data) {
+        const approved = await api(
+          hub.baseUrl,
+          "POST",
+          `/api/tenants/${tenant.tenantId}/approvals/${item.id}/approve`,
+          { scope: "once" },
+          user.cookies,
+        );
+        const headline = headlineFor(item.toolDefinition, item.toolArguments);
+        if (approved.status === 200) {
+          console.log(`  [auto-approved] ${headline}`);
+        } else {
+          console.log(
+            `  [auto-approve FAILED ${String(approved.status)}] ${headline}`,
+          );
+        }
+      }
+      if (page.nextCursor === null) break;
+      cursor = page.nextCursor;
     }
   }
 
@@ -1099,7 +1128,7 @@ async function main(): Promise<void> {
     );
     expectStatus("send the mid-turn message", sent, 201);
     // The section deployment takes the same kill mid-occurrence, so the
-    // restart has to prove `onBodyFailure: "continue"` too: a section
+    // restart has to prove `onBodyFailure: "tolerate"` too: a section
     // that retired on the dead body would never answer again.
     const sectionSent = await api(
       hub.baseUrl,
@@ -1192,7 +1221,7 @@ async function main(): Promise<void> {
 
   // The section deployment rode the same kill. Boot restore replays its
   // pin from the sidecar data dir exactly as it does the folded run's,
-  // and `onBodyFailure: "continue"` is what keeps the section subscribed
+  // and `onBodyFailure: "tolerate"` is what keeps the section subscribed
   // when the killed occurrence died mid-body: a section that retired on
   // that failure would never produce a second occurrence at all.
   //

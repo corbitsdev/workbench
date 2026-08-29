@@ -33,7 +33,7 @@ import {
 import { useEffect, useState } from "react";
 import type { KeyboardEvent } from "react";
 
-import { useNeedsYouCount } from "../api";
+import { usePendingApprovalCount } from "../pending-approvals";
 import { useBench } from "../bench-context";
 import { workbenchIdFromPath, workbenchPath } from "../workbench-path";
 import {
@@ -46,13 +46,13 @@ import { buildSidebarRows, type SidebarRow } from "./sidebar-rows";
 
 /**
  * The bench-wide "something needs you" signal above the row list. The
- * `/approvals/needs-you` read is scoped to the selected bench already, but
- * carries no per-workbench id (a known v1 gap — see
+ * pending-approvals read is scoped to the selected bench already, but an
+ * approval carries no workbench id (a known v1 gap — see
  * `workbench-timeline-merge.ts`'s `toApprovalEvents` doc), so this renders
  * once for the whole list rather than guessing which row it belongs to.
  */
 function NeedsYouSignal({ tenantId }: { readonly tenantId: string | null }) {
-  const count = useNeedsYouCount(tenantId);
+  const count = usePendingApprovalCount(tenantId);
   if (count === null || count <= 0) return null;
   return (
     <div className="shell-panel-needs-you">

@@ -645,6 +645,34 @@ export function createSidecarDeployRouter(deps: {
     if (existing === agentAddress) slugClaims.delete(deploymentId);
   }
 
+  // Reclaim a deployment address whose supervisor drove ITSELF to a terminal
+  // phase (crash-loop latch, channel crash, recycle failure) without an
+  // operator undeploy, so a redeploy of the same address succeeds without a
+  // manual undeploy first. Runs re-entrantly as the supervisor's own
+  // `onSelfTerminate` sink, so it never calls back into `wired.supervisor.*`.
+  // It drops only in-memory routing state: the durable deployment record and
+  // on-disk step state stay (the hub still believes the address is deployed,
+  // and a boot restore re-spawns from the record), and the deployment
+  // address registry is RETAINED because the supervisor's own terminal
+  // `RunFailed` commit -- written after this sink fires -- resolves its run
+  // address through it. Fully synchronous, so it cannot interleave with a
+  // concurrent operator undeploy of the same address.
+  function reclaimSelfTerminatedSupervisor(args: {
+    deploymentId: string;
+    agentAddress: string;
+  }): void {
+    if (!activeSupervisors.has(args.agentAddress)) return;
+    deps.multistepMailRouter?.unregister(args.agentAddress);
+    deps.multistepSignalRouter?.unregister(args.agentAddress);
+    deps.multistepDrainRouter?.unregister(args.agentAddress);
+    deps.multistepGrantsRouter?.unregister(args.agentAddress);
+    deps.multistepSourcesRouter?.unregister(args.agentAddress);
+    deps.multistepCredentialsRouter?.unregister(args.agentAddress);
+    activeSupervisors.delete(args.agentAddress);
+    deps.transport.unregister(args.agentAddress);
+    releaseSlug(args.deploymentId, args.agentAddress);
+  }
+
   /**
    * The per-deployment inputs the shared spawn core needs to stand up a
    * workflow deployment, independent of the live deploy frame. The live
@@ -858,6 +886,11 @@ export function createSidecarDeployRouter(deps: {
         ...(deps.registerSuspension !== undefined
           ? { onSuspensionRegister: deps.registerSuspension }
           : {}),
+        onSelfTerminate: () =>
+          reclaimSelfTerminatedSupervisor({
+            deploymentId,
+            agentAddress: spec.agentAddress,
+          }),
         ...(spec.credentials !== undefined
           ? { credentialDelivery: spec.credentials }
           : {}),
@@ -1009,7 +1042,7 @@ export function createSidecarDeployRouter(deps: {
       // supervisor's mail-bus subscription. Registration happens after
       // `spawn` succeeds so a spawn-time rejection leaves the registry
       // untouched.
-      deps.multistepMailRouter?.register(spec.agentAddress, (message) => {
+      deps.multistepMailRouter?.register(spec.agentAddress, async (message) => {
         return wired.routeInbound(message);
       });
       // Register the signal-delivery handler so a hub `signal.deliver` frame
@@ -1042,6 +1075,12 @@ export function createSidecarDeployRouter(deps: {
           grants: args.stepGrants,
           runId: args.runId,
         });
+        // The per-run file now carries the (possibly overlaid) floor. Refresh
+        // a live child so a standing ("always") approval resolved while the
+        // run is running but not parked lowers its floor immediately; the
+        // same durable file governs the next barrier/respawn, so a skipped
+        // push never leaves the run under a stale floor for good.
+        await wired.supervisor.deliverGrants(args.runId);
       });
       // Register the sources-rotation handler ONLY for a single-step warm
       // deployment: it has one long-lived agent whose sources can be

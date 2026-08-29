@@ -13,7 +13,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/agent": "0.3.0",
+    "@intx/agent": "workspace:*",
     "@intx/workflow": "workspace:*",
     "arktype": "catalog:"
   },

@@ -44,7 +44,7 @@ describe("deriveApproveCardView", () => {
   });
 
   test("pending + canAct (host maps a successful pending read to canAct) is actionable, never spectator", () => {
-    // Host contract: a successful needs-you GET that returns pending always
+    // Host contract: a successful status read that returns pending always
     // sets canAct true (`apps/web/src/approval-actions.ts`). The card must
     // then show live buttons -- not demote that to spectator.
     const view = deriveApproveCardView({
@@ -136,13 +136,11 @@ describe("deriveApproveCardView", () => {
     });
   });
 
-  test("needs-you 403 is could-not-determine, never cannot-act/spectator", () => {
-    // GET /:approvalId is gated by tenant-wide `approval:*`/"resolve". A
-    // principal scoped only to `approval:<deploymentId>` still gets 403 on
-    // that read even though the native approve/reject route may allow them.
-    // Callers must treat that 403 as "could not determine" (`forbidden` →
-    // `undetermined`, buttons stay), never as "cannot act" (`spectator`).
-    // See `packages/approvals/src/routes.ts`.
+  test("a forbidden status read keeps the buttons, never demotes to spectator", () => {
+    // A refused status read leaves the card with no platform detail to
+    // show. It still renders buttons: the refusal a person can act on is
+    // the one their own decision returns, surfaced inline, not a silently
+    // disabled card (`forbidden` → `undetermined`, never `spectator`).
     const view = deriveApproveCardView({
       wired: true,
       live: { kind: "forbidden" },

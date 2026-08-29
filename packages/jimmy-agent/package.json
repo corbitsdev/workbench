@@ -21,8 +21,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@intx/agent": "0.3.0",
-    "@intx/types": "0.3.0",
+    "@intx/agent": "workspace:*",
+    "@intx/types": "workspace:*",
     "arktype": "catalog:"
   },
   "devDependencies": {

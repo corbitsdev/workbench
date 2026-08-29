@@ -149,12 +149,48 @@ export const OutboundMessagePayload = type({
   "summary?": "string",
   "attachments?": OutboundAttachmentPayload.array(),
   "inReplyTo?": "string",
+  "references?": "string[]",
   "correlationId?": "string",
   "sessionId?": "string",
   "tenantId?": "string",
 });
 
 export type OutboundMessagePayload = typeof OutboundMessagePayload.infer;
+
+/**
+ * Wire shape of the parsed `MessageHeaders` the supervisor rides inline on a
+ * `mailbox.notify` frame. Mirrors `@intx/types/runtime`'s `MessageHeaders`
+ * field-for-field so a child watcher gets the arrived message's envelope for
+ * its `exists` `MailboxEvent` without a substrate round-trip. The four
+ * unconditionally-dereferenced fields (`from`, `to`, `date`, `messageId`) are
+ * required; the rest are optional, matching the runtime type.
+ *
+ * Duplicated here as an arktype validator (rather than importing the TypeScript
+ * `MessageHeaders` type) so the IPC module validates the header block at the
+ * wire boundary, exactly as `OutboundMessagePayload` does for outbound mail.
+ */
+export const MailboxNotifyHeaders = type({
+  from: "string",
+  to: "string[]",
+  "cc?": "string[]",
+  date: "string",
+  messageId: "string",
+  "inReplyTo?": "string",
+  "references?": "string[]",
+  "subject?": "string",
+  "listId?": "string",
+  "interchangeType?": InterchangeType,
+  "interchangeCorrelationId?": "string",
+  "interchangeTenantId?": "string",
+  "interchangeAgentId?": "string",
+  "interchangeSessionId?": "string",
+  "interchangeOfferingId?": "string",
+  "interchangeSchemaVersion?": "string",
+  "traceparent?": "string",
+  "tracestate?": "string",
+});
+
+export type MailboxNotifyHeaders = typeof MailboxNotifyHeaders.infer;
 
 /**
  * Discriminated union of every control-channel payload kind. The
@@ -170,6 +206,14 @@ export const ControlPayload = type(
       runId: "string",
       messageId: "string",
       receivedAt: "number",
+      // The run's inbound-mail input, resolved by the supervisor (the sole
+      // mail owner) before the frame: a decoded `Mail` (headers plus part
+      // descriptors that reference the part bytes committed to the workflow-run
+      // substrate). The child hands this straight to the runtime as the trigger
+      // payload. Refs, not raw mail bytes, ride here; the committed part files
+      // stay in the substrate. Typed `unknown` -- `Mail` is a nested structural
+      // type validated at the consumption boundary by `isMail`.
+      payload: "unknown",
     },
   },
   "|",
@@ -182,9 +226,10 @@ export const ControlPayload = type(
       // The resume decision in FINAL form -- the child commits it as the
       // SignalReceived payload verbatim. Each sender owns any
       // provenance-specific preparation BEFORE this frame: the dispatch loop
-      // resolves an inbound mail to conversation text (like the turn-1
-      // trigger), while `deliverSignal` ships a structured signal payload
-      // unchanged. Do NOT ship raw inbound mail bytes through here.
+      // resolves an inbound mail to a decoded `Mail` (headers plus part
+      // references, like the turn-1 trigger), while `deliverSignal` ships a
+      // structured signal payload unchanged -- so this field stays
+      // polymorphic. Do NOT ship raw inbound mail bytes through here.
       payload: "unknown",
     },
   },
@@ -510,6 +555,86 @@ export const ControlPayload = type(
     type: "'resumed.runs'",
     data: {
       runIds: type("string > 0").array(),
+    },
+  })
+  .or({
+    // Supervisor-to-child one-way notification that new mail landed in a
+    // deployment mailbox (INBOUND half of mailbox ownership, §3b). One-way
+    // like `grants-updated`/`sources-updated`: no correlation id, no response.
+    // The supervisor -- the sole mail owner -- commits the arrived message to
+    // the workflow-run substrate mailbox, then fires this frame so the child's
+    // warm-agent `watch`/`mail_wait` observes the arrival decoupled from the
+    // FIFO trigger dispatch that resolves a run's first input. `headers` rides
+    // inline so a watcher gets the `exists` `MailboxEvent`'s envelope without a
+    // substrate round-trip. The child reads the latest committed mailbox state
+    // regardless, so the frame carries no commit pin.
+    type: "'mailbox.notify'",
+    data: {
+      runId: "string > 0",
+      mailbox: "string > 0",
+      uid: "number >= 1",
+      headers: MailboxNotifyHeaders,
+    },
+  })
+  .or({
+    // Child-initiated mailbox-mutation request (INBOUND half of mailbox
+    // ownership, §3b). The supervisor is the sole writer to the
+    // workflow-run mailbox: a step agent reads its INBOX locally but
+    // every mutation -- flag writes and `expunge` -- routes up here so
+    // the supervisor applies it to its owned store. A child flushing the
+    // same ref would race the supervisor's in-memory mirror and break
+    // uid / modseq monotonicity.
+    //
+    // `data` is discriminated on `op`: an `addFlags` / `removeFlags`
+    // carries the target `uid` and the `flags` to change, so the wire
+    // boundary rejects a flag frame that omits them; an `expunge` sweeps
+    // every `\Deleted` message in the mailbox and the child constructs it
+    // with neither. `requestId` correlates the supervisor's
+    // `mailbox.mutate.response` reply.
+    type: "'mailbox.mutate.request'",
+    data: type(
+      {
+        requestId: "string > 0",
+        runId: "string > 0",
+        mailbox: "string > 0",
+        op: "'addFlags' | 'removeFlags'",
+        uid: "number >= 1",
+        flags: "string[]",
+      },
+      "|",
+      {
+        requestId: "string > 0",
+        runId: "string > 0",
+        mailbox: "string > 0",
+        op: "'expunge'",
+      },
+    ),
+  })
+  .or({
+    // Supervisor's terminal reply to a child's `mailbox.mutate.request`.
+    // The `requestId` echoes the child's correlation id so the child's
+    // pending mail-tool awaiter resolves. The reply is sent only after
+    // the supervisor flushes the mutation, so the child's next committed
+    // read observes it -- the same flush-before-signal ordering
+    // `mailbox.notify` relies on. A successful `expunge` carries the
+    // `expungedUids` it swept so the agent tool can report the count; a
+    // flag write carries no operand echo. A failed mutation (unknown
+    // uid, substrate fault) surfaces a structured `{ ok: false, reason }`
+    // the child's bridge rethrows so the mail-tool call fails loudly.
+    type: "'mailbox.mutate.response'",
+    data: {
+      requestId: "string > 0",
+      result: type(
+        {
+          ok: "true",
+          "expungedUids?": "number[]",
+        },
+        "|",
+        {
+          ok: "false",
+          reason: "string > 0",
+        },
+      ),
     },
   });
 

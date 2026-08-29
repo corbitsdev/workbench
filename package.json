@@ -77,7 +77,8 @@
     "postgres": "^3.4.8",
     "semver": "^7.7.2",
     "ssri": "^12.0.0",
-    "tar": "^7.5.1"
+    "tar": "^7.5.1",
+    "@types/ssri": "^7.1.5"
   },
   "trustedDependencies": [
     "@corbits/react-ui",
@@ -88,28 +89,29 @@
   },
   "overrides": {
     "arktype": "^2.2.0",
-    "@intx/agent": "0.3.0",
+    "@intx/agent": "workspace:*",
     "@intx/authz": "0.3.0",
     "@intx/crypto": "0.3.0",
-    "@intx/db": "0.3.0",
-    "@intx/harness": "0.3.0",
-    "@intx/hub-agent": "0.3.0",
-    "@intx/hub-api": "0.3.0",
+    "@intx/db": "workspace:*",
+    "@intx/harness": "workspace:*",
+    "@intx/hub-agent": "workspace:*",
+    "@intx/hub-api": "workspace:*",
     "@intx/hub-common": "0.3.0",
-    "@intx/hub-sessions": "0.3.0",
-    "@intx/inference": "0.3.0",
+    "@intx/hub-sessions": "workspace:*",
+    "@intx/inference": "workspace:*",
     "@intx/inference-catalog": "0.3.0",
     "@intx/log": "0.3.0",
-    "@intx/mail-memory": "0.3.0",
-    "@intx/mime": "0.3.0",
+    "@intx/mail-memory": "workspace:*",
+    "@intx/mime": "workspace:*",
     "@intx/pack-transport": "0.3.0",
     "@intx/storage-isogit": "0.3.0",
     "@intx/tool-packaging": "0.3.0",
-    "@intx/types": "0.3.0",
-    "@intx/workflow": "0.3.0",
-    "@intx/workflow-deploy": "0.3.0",
-    "@intx/workflow-host": "0.3.0",
+    "@intx/types": "workspace:*",
+    "@intx/workflow": "workspace:*",
+    "@intx/workflow-deploy": "workspace:*",
+    "@intx/workflow-host": "workspace:*",
     "better-auth": "1.6.29",
-    "hono": "4.13.3"
+    "hono": "4.13.3",
+    "@intx/mailbox": "workspace:*"
   }
 }

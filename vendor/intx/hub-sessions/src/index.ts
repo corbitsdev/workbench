@@ -8,16 +8,16 @@ export {
   SessionLaunchError,
   bridgeOrchestratorDeployContent,
   deployCodeSourcedWorkflow,
-  deployAdoptedCodeSourcedWorkflow,
   type SessionService,
   type DeployWorkflowDefinitionResult,
   type DeployWorkflowFromSourceParams,
   type DeployPreparedCodeSourcedWorkflowParams,
   type InstallAndApproveWorkflowSourceParams,
   type PreparedWorkflowDeployer,
+  type DeployCodeSourcedWorkflowArgs,
+  deployAdoptedCodeSourcedWorkflow,
   type AdoptingWorkflowDeployer,
   type DeployAdoptedWorkflowFromSourceParams,
-  type DeployCodeSourcedWorkflowArgs,
 } from "./session-service";
 export {
   installAndApproveWorkflowDefinition,
@@ -159,9 +159,9 @@ export {
   dequeueToProcessing,
   readProcessingEntry,
   markConsumed,
-  readOwnedMessageIds,
+  classifyTerminalEvent,
+  scanRunsForBoot,
   readCommittedWorkflowRunLifecycle,
-  readCommittedWorkflowRunTerminalStatus,
   readWorkflowRunLifecycle,
   replayProcessingToInbox,
   WORKFLOW_RUN_GITIGNORE_PATH,
@@ -194,6 +194,7 @@ export {
   type WorkflowRunSidecarPrincipal,
   type WorkflowRunWorkflowProcessPrincipal,
   type WorkflowRunSupervisorPrincipal,
+  readCommittedWorkflowRunTerminalStatus,
 } from "./workflow-run-kind";
 export {
   restoreWorkflowRunToAllocation,

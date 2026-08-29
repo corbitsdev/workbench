@@ -12,9 +12,9 @@ describe("pathToQueryKey", () => {
     expect(pathToQueryKey("/api/me/principals")).toEqual(meKeys.principals);
   });
 
-  test("maps needs-you onto a tenant-scoped key", () => {
-    expect(pathToQueryKey("/api/tenants/tnt_1/approvals/needs-you")).toEqual(
-      tenantKeys.needsYou("tnt_1"),
+  test("maps the pending-approvals list onto a tenant-scoped key", () => {
+    expect(pathToQueryKey("/api/tenants/tnt_1/approvals")).toEqual(
+      tenantKeys.pendingApprovals("tnt_1"),
     );
   });
 
