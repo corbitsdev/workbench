@@ -209,7 +209,7 @@ jobs:
           set -a
           . ./.env
           set +a
-          bun test $(grep -rl DATABASE_URL --include='*.test.ts' packages apps | grep -v apps/hub/test)
+          bun --env-file="${GITHUB_WORKSPACE}/.env" test $(grep -rl DATABASE_URL --include='*.test.ts' packages apps | grep -v apps/hub/test)
         env:
           E2E_REQUIRED: "1"
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/workbench
