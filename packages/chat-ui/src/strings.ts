@@ -132,6 +132,7 @@ export const CHAT_STRINGS = {
   forkThreadAction: "Fork",
   forkThreadError: "Couldn't fork that message into a thread — try again.",
   replyInThreadAction: "Reply in thread",
+  editMessageAction: "Edit",
   messageActionsMenuLabel: "Message actions",
   copyTextAction: "Copy text",
   copyTextCopiedToast: "Copied",

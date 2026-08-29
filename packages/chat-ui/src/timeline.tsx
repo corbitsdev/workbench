@@ -34,6 +34,7 @@ import {
   Clock,
   Copy,
   DotsThree,
+  PencilSimple,
   PushPin,
   PushPinSlash,
   Smiley,
@@ -936,7 +937,7 @@ async function copyMessageText(text: string): Promise<void> {
   }
 }
 
-function messageText(item: MessageItem): string {
+export function messageText(item: MessageItem): string {
   return item.parts
     .filter((part): part is Part & { kind: "text" } => part.kind === "text")
     .map((part) => part.text)
@@ -1155,20 +1156,21 @@ function StreamingMessageGroup({
 }
 
 /**
- * The ellipsis/right-click menu for a message: everything that used to be
- * a persistent inline affordance (reply-in-thread) plus copy and pin, all
- * in one place so the two triggers (the hover toolbar's ellipsis button and
- * a right-click anywhere on the message) always offer the same actions.
+ * The ellipsis/right-click menu for a message: reply-in-thread, copy, pin,
+ * and Edit (own prompts) in one place so the hover ellipsis and a
+ * right-click always offer the same actions.
  */
 function buildMessageMenu({
   item,
   threadAffordanceMode,
   onOpenThread,
+  onEditMessage,
   pinActions,
 }: {
   readonly item: MessageItem;
   readonly threadAffordanceMode: ThreadAffordanceMode;
   readonly onOpenThread: ((messageId: string) => void) | undefined;
+  readonly onEditMessage: ((messageId: string) => void) | undefined;
   readonly pinActions: PinActions | undefined;
 }): ContextMenu {
   const entries: ContextMenuEntry[] = [];
@@ -1183,6 +1185,17 @@ function buildMessageMenu({
             : CHAT_STRINGS.replyInThreadAction,
         icon: <ArrowBendUpLeft aria-hidden="true" />,
         onSelect: () => onOpenThread(item.id),
+      }),
+    );
+  }
+
+  if (onEditMessage !== undefined) {
+    entries.push(
+      contextMenuItem({
+        id: "edit-message",
+        label: CHAT_STRINGS.editMessageAction,
+        icon: <PencilSimple aria-hidden="true" />,
+        onSelect: () => onEditMessage(item.id),
       }),
     );
   }
@@ -1225,11 +1238,11 @@ function buildMessageMenu({
 
 /**
  * The compact trailing-edge action cluster a message reveals on hover or
- * keyboard focus-within — add-reaction, reply-in-thread, and the ellipsis
- * menu (see `buildMessageMenu`). Nothing here renders permanently; a quiet
- * conversation shows plain text until a reader hovers a line, matching the
- * reference pattern this replaces (a persistent inline "Reply in thread"
- * link under every message).
+ * keyboard focus-within — add-reaction, reply-in-thread, edit-own-prompt,
+ * and the ellipsis menu (see `buildMessageMenu`). Nothing here renders
+ * permanently; a quiet conversation shows plain text until a reader hovers
+ * a line, matching the reference pattern this replaces (a persistent inline
+ * "Reply in thread" link under every message).
  */
 function MessageHoverToolbar({
   messageId,
@@ -1238,6 +1251,7 @@ function MessageHoverToolbar({
   onOpenMenu,
   threadAffordanceMode,
   onOpenThread,
+  onEditMessage,
   reactionActions,
 }: {
   readonly messageId: string;
@@ -1246,6 +1260,7 @@ function MessageHoverToolbar({
   readonly onOpenMenu: (x: number, y: number, origin: Element) => void;
   readonly threadAffordanceMode: ThreadAffordanceMode;
   readonly onOpenThread?: (messageId: string) => void;
+  readonly onEditMessage?: (messageId: string) => void;
   readonly reactionActions?: ReactionActions;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -1277,6 +1292,7 @@ function MessageHoverToolbar({
   if (
     reactionActions === undefined &&
     onOpenThread === undefined &&
+    onEditMessage === undefined &&
     !menuHasEntries
   ) {
     return null;
@@ -1336,6 +1352,16 @@ function MessageHoverToolbar({
           onClick={() => onOpenThread(messageId)}
         >
           <ArrowBendUpLeft aria-hidden="true" />
+        </button>
+      ) : null}
+      {onEditMessage !== undefined ? (
+        <button
+          type="button"
+          className="chat-hover-edit"
+          aria-label={CHAT_STRINGS.editMessageAction}
+          onClick={() => onEditMessage(messageId)}
+        >
+          <PencilSimple aria-hidden="true" />
         </button>
       ) : null}
       {menuHasEntries ? (
@@ -1437,6 +1463,7 @@ function MessagePartsInner({
   threadMeta,
   threadAffordanceMode = "reply",
   onOpenThread,
+  onEditMessage,
   onOpenProfile,
   onOpenArtifact,
   onOpenArtifactInLibrary,
@@ -1468,6 +1495,7 @@ function MessagePartsInner({
   readonly threadMeta?: ThreadAffordanceMeta | undefined;
   readonly threadAffordanceMode?: ThreadAffordanceMode;
   readonly onOpenThread?: (messageId: string) => void;
+  readonly onEditMessage?: (messageId: string) => void;
   readonly onOpenProfile?: (subject: ProfileSubject) => void;
   readonly onOpenArtifact?: (part: Part & { kind: "file" }) => void;
   readonly onOpenArtifactInLibrary?: (part: Part & { kind: "file" }) => void;
@@ -1521,12 +1549,17 @@ function MessagePartsInner({
     !isSystemNoticeItem(item) &&
     !isSystemSenderItem(item) &&
     localPartOf(item.sender.address) === currentUser.principalId;
+  const ownEdit =
+    isOwn && onEditMessage !== undefined && messageText(item).length > 0
+      ? onEditMessage
+      : undefined;
   const contextMenu = useContextMenuState();
   const menu = offersSocialChrome
     ? buildMessageMenu({
         item,
         threadAffordanceMode,
         onOpenThread,
+        onEditMessage: ownEdit,
         pinActions,
       })
     : { entries: [] };
@@ -1716,6 +1749,7 @@ function MessagePartsInner({
             onOpenMenu={(x, y, origin) => contextMenu.show(x, y, menu, origin)}
             threadAffordanceMode={threadAffordanceMode}
             {...(onOpenThread !== undefined ? { onOpenThread } : {})}
+            {...(ownEdit !== undefined ? { onEditMessage: ownEdit } : {})}
             {...(reactionActions !== undefined ? { reactionActions } : {})}
           />
         ) : null}
@@ -1856,6 +1890,7 @@ export function WorkbenchTimeline({
   threadMetaByMessageId,
   threadAffordanceMode = "reply",
   onOpenThread,
+  onEditMessage,
   onOpenProfile,
   onOpenArtifact,
   onOpenArtifactInLibrary,
@@ -1888,6 +1923,7 @@ export function WorkbenchTimeline({
    * see `ThreadAffordanceMode`. */
   readonly threadAffordanceMode?: ThreadAffordanceMode;
   readonly onOpenThread?: (messageId: string) => void;
+  readonly onEditMessage?: (messageId: string) => void;
   readonly onOpenProfile?: (subject: ProfileSubject) => void;
   /** Open a message's artifact chip — the host resolves where that goes
    * (Library today; canvas is a follow-up). No chat-ui component owns
@@ -2115,6 +2151,7 @@ export function WorkbenchTimeline({
             threadMeta={threadMetaByMessageId?.get(item.id)}
             threadAffordanceMode={threadAffordanceMode}
             {...(onOpenThread !== undefined ? { onOpenThread } : {})}
+            {...(onEditMessage !== undefined ? { onEditMessage } : {})}
             {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
             {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
             {...(onFixConnection !== undefined ? { onFixConnection } : {})}

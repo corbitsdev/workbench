@@ -77,6 +77,17 @@ tenant and writes settings rows — no deploy, no host, no anchor instance
 one publish onto the workbench's live stream, so the conversation takes
 messages whether or not any agent process is running.
 
+**Editing an own prompt.** Edit is a composer replace, not a timeline
+mutation and not a thread fork. The timeline offers Edit only on the
+signed-in reader's own prompts that have text
+(`packages/chat-ui/src/timeline.tsx`). Choosing it copies that message's
+text into the composer through `ComposerHandle.setText`
+(`packages/chat-ui/src/composer.tsx`). `setText` replaces the draft and
+clears leftover composer-private state (slash, mention, pending invites,
+attachments, in-flight attachment reads). Sending is the ordinary post
+onto the timeline already in view (root or an open thread). It does not
+PATCH the origin message and it does not call `forkThread`.
+
 A workbench's address is derived, not resolved. Asking an invited agent
 for a turn is a separate act over Interchange mail; the agent replies by
 emitting `connector.reply` events on its own stream, and a reply bridge
