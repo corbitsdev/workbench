@@ -32,8 +32,6 @@ const originals: Record<EnvKey, string | undefined> = {
   OLLAMA_BASE_URL: process.env["OLLAMA_BASE_URL"],
 };
 
-const saved: Partial<Record<EnvKey, string | undefined>> = {};
-
 function clearEnvKey(key: EnvKey): void {
   // Must actually remove the key: `process.env[key] = undefined` stores the
   // *string* "undefined" (Bun >= 1.4 matches Node here), which reads as a
@@ -43,18 +41,18 @@ function clearEnvKey(key: EnvKey): void {
   Reflect.deleteProperty(process.env, key);
 }
 
-afterEach(() => {
+function restoreOriginalEnv(): void {
   for (const key of KEYS) {
-    const value = saved[key];
+    const value = originals[key];
     if (value === undefined) clearEnvKey(key);
     else process.env[key] = value;
-    saved[key] = undefined;
   }
-});
+}
+
+afterEach(restoreOriginalEnv);
 
 function stashEnv(): void {
   for (const key of KEYS) {
-    saved[key] = process.env[key];
     clearEnvKey(key);
   }
 }
