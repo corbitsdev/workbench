@@ -307,6 +307,7 @@ export const CHAT_STRINGS = {
   },
   turnActivityThinking: "Thinking…",
   turnActivityRetry: (attempt: number) => `Retrying (attempt ${attempt})…`,
+  toolActivityFailed: "Failed",
   replyTimedOutNotice: "No reply arrived — the agent may be unavailable.",
   resumeFailedNotice: (refId: string) =>
     `Couldn't resume the running reply — try again. (ref ${refId})`,

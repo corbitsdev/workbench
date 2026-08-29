@@ -18,6 +18,7 @@ import { useEffect, useState } from "react";
 import {
   describeToolCall,
   resolveToolIdentity,
+  toolActivityGlyph,
   type ToolActivityRow,
 } from "./tool-activity";
 import { LiveToolActivity } from "./tool-activity-view";
@@ -388,10 +389,12 @@ export function toolActivityRows(
 ): readonly ToolActivityRow[] {
   return activity.toolCalls.map((call) => {
     const isRunning = call.status === "running";
+    const identity = resolveToolIdentity(call.name, call.input);
     const base = {
       key: call.callId,
-      toolName: call.name,
-      provider: resolveToolIdentity(call.name, call.input).provider,
+      toolName: identity.toolName,
+      glyph: toolActivityGlyph(identity.words),
+      provider: identity.provider,
       phrase: describeToolCall(
         call.name,
         call.input,
