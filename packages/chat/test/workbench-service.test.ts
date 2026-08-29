@@ -614,7 +614,65 @@ describe("message fan-out", () => {
     });
   });
 
-  test("a chat's fan-out carries no context block, even with a full history", async () => {
+  test("a default-route turn in room B does not include room A's rows", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: roomA } = await createWorkbench(app, {
+      kind: "workbench",
+      name: "room A",
+      participants: ["ins_echo1@acme.example"],
+    });
+    const { body: roomB } = await createWorkbench(app, {
+      kind: "workbench",
+      name: "room B",
+      participants: ["ins_echo1@acme.example"],
+    });
+
+    await app.request(`/workbenches/${roomA.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "room A secret: the launch is on Mars" }],
+      }),
+    });
+    await settleFanout();
+    await nextTimelineMoment();
+
+    await app.request(`/workbenches/${roomB.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "room B note: we meet on Tuesday" }],
+      }),
+    });
+    await settleFanout();
+    await nextTimelineMoment();
+
+    const response = await app.request(`/workbenches/${roomB.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "hello, no mention here" }],
+      }),
+    });
+    expect(response.status).toBe(201);
+    await settleFanout();
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    const roomBMail = platform.sentMail.filter(
+      (mail) => mail.fromWorkbenchId === roomB.id,
+    );
+    const copy = roomBMail[roomBMail.length - 1];
+    const [contextPart] = decodeParts(copy?.content ?? { content: "" });
+    const contextText = contextPart?.kind === "text" ? contextPart.text : "";
+
+    expect(contextText).toContain("room B note: we meet on Tuesday");
+    expect(contextText).toContain("hello, no mention here");
+    expect(contextText).not.toContain("room A secret");
+    expect(contextText).not.toContain("the launch is on Mars");
+  });
+
+  test("a chat's default-route fan-out carries this-room context", async () => {
     const deps = buildDeps({
       platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
     });
@@ -640,13 +698,14 @@ describe("message fan-out", () => {
       },
     );
     expect(response.status).toBe(201);
+    await settleFanout();
 
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     const fanned = platform.sentMail[platform.sentMail.length - 1];
-    expect(fanned?.content).toEqual({
-      content: "hello, no mention here",
-      replyTo: workbench.id,
-    });
+    const [contextPart] = decodeParts(fanned?.content ?? { content: "" });
+    const contextText = contextPart?.kind === "text" ? contextPart.text : "";
+    expect(contextText).toContain("earlier turn");
+    expect(contextText).toContain("hello, no mention here");
   });
 
   test("a mention fan-out under the context window carries no dropped-history recap", async () => {
