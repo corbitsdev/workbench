@@ -138,6 +138,11 @@ test("request_connection tells the agent to keep helping for a name this workspa
     expect(result.content).toMatch(/can't connect/i);
     expect(result.content).toMatch(/keep helping/i);
     expect(result.content).not.toMatch(/name and URL/);
+    // CL-7141: no fake `/plugins?connect=mcp` deep link — there is no
+    // generic add-custom-MCP-server card to land on, so the fallback
+    // points at the Plugins page's own connector list in plain prose.
+    expect(result.content).not.toContain("/plugins?connect=mcp");
+    expect(result.content).toMatch(/plugins page/i);
   } finally {
     globalThis.fetch = originalFetch;
   }
