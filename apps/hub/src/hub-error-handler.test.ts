@@ -1,38 +1,39 @@
 // Exercises `hubErrorHandler` through a real Hono app rather than a
 // hand-rolled `Context` double, so the assertions cover exactly what
-// `app.onError` actually receives and returns.
-import { describe, expect, test } from "bun:test";
+// `app.onError` actually receives and returns. Errors are reported
+// through `@corbits/error-sink`'s real `reportError`, captured the same
+// way `packages/error-sink/src/index.test.ts` captures its own sink.
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
-import type { getLogger } from "@intx/log";
+import { configureSync, resetSync } from "@intx/log";
 
 import { hubErrorHandler } from "./hub-error-handler";
 
-/** A minimal stand-in for logtape's tagged-template `Logger`, capturing
- * every `.error` call's rendered message for assertions. */
-function fakeLogger(): {
-  logger: ReturnType<typeof getLogger>;
-  messages: string[];
-} {
-  const messages: string[] = [];
-  const logger = {
-    error: (strings: TemplateStringsArray, ...values: unknown[]) => {
-      messages.push(
-        strings.reduce(
-          (acc, part, i) =>
-            acc + part + (i < values.length ? String(values[i]) : ""),
-          "",
-        ),
-      );
+let records: { properties: Record<string, unknown> }[];
+
+function installCapturingSink(): void {
+  records = [];
+  configureSync({
+    reset: true,
+    sinks: {
+      capture: (record) => {
+        records.push(record as { properties: Record<string, unknown> });
+      },
     },
-  } as unknown as ReturnType<typeof getLogger>;
-  return { logger, messages };
+    loggers: [
+      { category: ["errors"], sinks: ["capture"], lowestLevel: "debug" },
+      { category: ["logtape", "meta"], sinks: [], lowestLevel: "warning" },
+    ],
+  });
 }
 
+beforeEach(() => installCapturingSink());
+afterEach(() => resetSync());
+
 describe("hubErrorHandler", () => {
-  test("logs the failing route and answers a generic 500 for an ordinary error", async () => {
-    const { logger, messages } = fakeLogger();
+  test("reports the failing route through reportError and answers a generic 500 with a refId", async () => {
     const app = new Hono();
-    app.onError(hubErrorHandler(logger));
+    app.onError(hubErrorHandler());
     app.get("/boom", () => {
       throw new Error("definition asset never materialized");
     });
@@ -40,17 +41,23 @@ describe("hubErrorHandler", () => {
     const res = await app.request("/boom");
 
     expect(res.status).toBe(500);
-    const body = (await res.json()) as { error: { code: string } };
+    const body = (await res.json()) as {
+      error: { code: string; refId: string };
+    };
     expect(body.error.code).toBe("internal_error");
-    expect(messages.length).toBe(1);
-    expect(messages[0]).toContain("/boom");
-    expect(messages[0]).toContain("definition asset never materialized");
+    expect(typeof body.error.refId).toBe("string");
+    expect(body.error.refId.length).toBeGreaterThan(0);
+
+    expect(records).toHaveLength(1);
+    const properties = records[0]?.properties;
+    expect(properties?.operation).toBe("hub.unhandled_route_error");
+    expect(properties?.refId).toBe(body.error.refId);
+    expect(properties?.extra).toEqual({ path: "/boom", method: "GET" });
   });
 
-  test("maps a guidance-bearing error to a 422 with its own message", async () => {
-    const { logger } = fakeLogger();
+  test("maps a guidance-bearing error to a 422 with its own message and a refId", async () => {
     const app = new Hono();
-    app.onError(hubErrorHandler(logger));
+    app.onError(hubErrorHandler());
     app.get("/launch", () => {
       class NamedLaunchError extends Error {
         readonly guidance = "Reduce it to a single step and try again.";
@@ -66,11 +73,15 @@ describe("hubErrorHandler", () => {
 
     expect(res.status).toBe(422);
     const body = (await res.json()) as {
-      error: { code: string; message: string };
+      error: { code: string; message: string; refId: string };
     };
     expect(body.error.code).toBe("MultiStepFoldUnsupportedError");
     expect(body.error.message).toBe(
       "definition wfd_research is not single-step (2 steps)",
     );
+    expect(typeof body.error.refId).toBe("string");
+    expect(body.error.refId.length).toBeGreaterThan(0);
+    expect(records).toHaveLength(1);
+    expect(records[0]?.properties.refId).toBe(body.error.refId);
   });
 });

@@ -1104,8 +1104,8 @@ export async function createHub(config: HubConfig) {
 
   // Without this, any exception escaping a route (extension or platform
   // alike) falls through to Hono's built-in handler: a bare 500 with
-  // nothing logged. See `hubErrorHandler`'s own doc comment.
-  app.onError(hubErrorHandler(getLogger(["hub", "error"])));
+  // nothing reported. See `hubErrorHandler`'s own doc comment.
+  app.onError(hubErrorHandler());
 
   // Extension routes mount under the tenant prefix, inside the
   // platform's native tenant middleware, so every extension handler
