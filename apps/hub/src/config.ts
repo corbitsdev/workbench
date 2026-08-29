@@ -81,7 +81,7 @@ const HubEnv = type({
     "a directory of built user-interface files the hub serves, e.g. apps/hub/public",
   ),
   "OPERATOR_TENANT_ID?": type("string > 0").describe(
-    "the tenant id every self-served personal bench is parented under; optional because the operator tenant it would parent under does not exist as infrastructure yet, and this field lets that land later without a rename",
+    "the tenant id every self-served personal bench is parented under; workbench setup writes this for the org tenant it creates. Leave unset only for isolated tests that need an unparented personal bench",
   ),
   "SIGNUP_RATE_LIMIT_WINDOW_SECONDS?": type(/^[1-9]\d*$/).describe(
     "the per-IP sign-up rate-limit window, in seconds, e.g. 60",

@@ -33,12 +33,13 @@ applies what hasn't already run.
 A workflow that pins a `@corbits/*` tool package (e.g. **assistant** pinning
 `@corbits/memory-tools`) resolves that pin from a `package-registry` asset
 (`CORBITS_TOOLS_REGISTRY`) carrying the package's tarball, built by
-`@corbits/tool-registry-publish`. `bun run seed` (`packages/hub-client/src/seed.ts`)
-republishes that tarball every time it runs, so after changing a tool
-package's source, republish and redeploy with:
+`@corbits/tool-registry-publish`. `workbench setup` publishes that tarball
+onto the root tenant (descendants inherit it); `workbench seed` does not
+pack. After changing a tool package's source, bump its version, then
+republish with:
 
 ```sh
-bun run seed
+workbench setup
 ```
 
 This is safe to re-run. Changing a tool package's source requires bumping

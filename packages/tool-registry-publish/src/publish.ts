@@ -241,10 +241,10 @@ export type PublishCorbitsToolsRegistryArgs = {
 /**
  * Ensures the tenant's `corbits-tools` package-registry asset exists
  * and carries every package in `CORBITS_TOOL_PACKAGE_DIRS`, packing
- * and pushing whatever is missing. Called ahead of deploying any
- * workflow that pins a `@corbits/*` tool package, so the closure
- * resolver finds a tarball instead of failing the launch with
- * "unknown registry".
+ * and pushing whatever is missing. `workbench setup` calls this onto
+ * the root tenant so descendants inherit tarballs; it is not a
+ * signup/seed side effect. Freshness is owned here: `src/` that moved
+ * without a version bump fails this publish, not bench create.
  */
 export async function publishCorbitsToolsRegistry(
   args: PublishCorbitsToolsRegistryArgs,

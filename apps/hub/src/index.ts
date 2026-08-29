@@ -370,11 +370,11 @@ const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
 // registries on a name collision — the platform-native alternative to
 // npm publishing the CL-5999 capability audit called for. Routing the
 // `@corbits` scope at this registry name means a `@corbits/*` pin
-// resolves only once an operator seeds a `package-registry` asset named
-// `CORBITS_TOOLS_REGISTRY` with the package's tarball — `workbench
-// seed`'s `seedTenant` does exactly that, via
-// `@corbits/tool-registry-publish`, ahead of deploying any workflow
-// that pins a `@corbits/*` package; until then, resolution fails loud
+// resolves only once an operator publishes a `package-registry` asset
+// named `CORBITS_TOOLS_REGISTRY` with the package's tarball —
+// `workbench setup` does exactly that onto the root tenant via
+// `@corbits/tool-registry-publish`; descendants inherit it, and
+// `seedTenant` does not pack. Until then, resolution fails loud
 // rather than silently falling through to npmjs (which could never
 // carry an unpublished scope anyway).
 const TENANT_PREFIX = "/api/tenants/:tenantId";
