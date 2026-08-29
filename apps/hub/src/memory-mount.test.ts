@@ -21,7 +21,16 @@ const KEYS = [
 
 type EnvKey = (typeof KEYS)[number];
 
-const saved: Partial<Record<EnvKey, string | undefined>> = {};
+const originals: Record<EnvKey, string | undefined> = {
+  DATABASE_URL: process.env["DATABASE_URL"],
+  EMBED_BASE_URL: process.env["EMBED_BASE_URL"],
+  EMBED_MODEL: process.env["EMBED_MODEL"],
+  EMBED_API_STYLE: process.env["EMBED_API_STYLE"],
+  EMBED_API_KEY: process.env["EMBED_API_KEY"],
+  RERANK_BASE_URL: process.env["RERANK_BASE_URL"],
+  RERANK_MODEL: process.env["RERANK_MODEL"],
+  OLLAMA_BASE_URL: process.env["OLLAMA_BASE_URL"],
+};
 
 function clearEnvKey(key: EnvKey): void {
   // Must actually remove the key: `process.env[key] = undefined` stores the
@@ -32,18 +41,18 @@ function clearEnvKey(key: EnvKey): void {
   Reflect.deleteProperty(process.env, key);
 }
 
-afterEach(() => {
+function restoreOriginalEnv(): void {
   for (const key of KEYS) {
-    const value = saved[key];
+    const value = originals[key];
     if (value === undefined) clearEnvKey(key);
     else process.env[key] = value;
-    saved[key] = undefined;
   }
-});
+}
+
+afterEach(restoreOriginalEnv);
 
 function stashEnv(): void {
   for (const key of KEYS) {
-    saved[key] = process.env[key];
     clearEnvKey(key);
   }
 }
@@ -98,6 +107,12 @@ describe("resolveMemoryEmbed", () => {
       embedApiStyle: "ollama",
       source: "OLLAMA_BASE_URL",
     });
+  });
+
+  test("afterEach restores KEYS after a non-stash resolveMemoryEmbed test", () => {
+    for (const key of KEYS) {
+      expect(process.env[key]).toBe(originals[key]);
+    }
   });
 });
 
