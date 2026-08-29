@@ -146,7 +146,14 @@ export type CreateChatRoutesDeps = {
    * schedulable workflows masquerade as chat partners.
    */
   isInvitableDefinition: (definition: InvitableDefinitionRecord) => boolean;
-  /** Per-turn timeout, the default write-claim TTL. */
+  /**
+   * The default turn-claim TTL — see
+   * `./workbench-service.ts`'s `DEFAULT_TURN_CLAIM_TTL_MS` for the
+   * production default and the arithmetic it has to clear
+   * (`waitUntilFreeTimeoutMs` + `turnDispatchTimeoutMs`, with margin)
+   * to stay an unreachable backstop rather than a bound that fires on
+   * a still-legitimate dispatch.
+   */
   turnTimeoutMs: number;
   /**
    * CL-6644's turn-level deadline: see `SendWorkbenchMessageDeps`'s field
@@ -154,6 +161,12 @@ export type CreateChatRoutesDeps = {
    * `dispatchTurnBatch` uses `DEFAULT_TURN_DISPATCH_TIMEOUT_MS`.
    */
   turnDispatchTimeoutMs?: number;
+  /**
+   * CL-7129's bound on the CL-6670 wait: see `SendWorkbenchMessageDeps`'s
+   * field of the same name in `./workbench-service.ts`. Omitted,
+   * `dispatchTurnBatch` uses `DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS`.
+   */
+  waitUntilFreeTimeoutMs?: number;
   /**
    * Resolves a principal to the display name a greeting can use. The
    * hub wires this to its user table; omitted, the canned greeting
@@ -2162,6 +2175,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           ...(deps.turnDispatchTimeoutMs !== undefined
             ? { turnDispatchTimeoutMs: deps.turnDispatchTimeoutMs }
             : {}),
+          ...(deps.waitUntilFreeTimeoutMs !== undefined
+            ? { waitUntilFreeTimeoutMs: deps.waitUntilFreeTimeoutMs }
+            : {}),
         },
         {
           tenantId: ownerTenantId,
@@ -2307,6 +2323,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             ...(deps.threads !== undefined ? { threads: deps.threads } : {}),
             ...(deps.turnDispatchTimeoutMs !== undefined
               ? { turnDispatchTimeoutMs: deps.turnDispatchTimeoutMs }
+              : {}),
+            ...(deps.waitUntilFreeTimeoutMs !== undefined
+              ? { waitUntilFreeTimeoutMs: deps.waitUntilFreeTimeoutMs }
               : {}),
           },
           {

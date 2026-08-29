@@ -67,7 +67,7 @@ import {
 
 import {
   AGENT_SECTION_MODE,
-  CHAT_TURN_TIMEOUT_MS,
+  DEFAULT_TURN_CLAIM_TTL_MS,
   createArtifactDeliveryHandler,
   createDrizzleAgentTurnStore,
   createInMemoryTurnClaimStore,
@@ -1312,7 +1312,7 @@ export async function createHub(config: HubConfig) {
   // still serializes against the others rather than each queue only
   // seeing its own slice of the traffic.
   const turnQueue = createWorkbenchTurnQueue({
-    claims: createInMemoryTurnClaimStore({ ttlMs: CHAT_TURN_TIMEOUT_MS }),
+    claims: createInMemoryTurnClaimStore({ ttlMs: DEFAULT_TURN_CLAIM_TTL_MS }),
     publish: workbenchSubscribers.publish,
   });
   // The room timeline store (CL-6327): a workbench's own messages, held
@@ -1534,7 +1534,7 @@ export async function createHub(config: HubConfig) {
       conditionRegistry: chatConditionRegistry,
     }),
     isInvitableDefinition: isPickerListableDefinition,
-    turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
+    turnTimeoutMs: DEFAULT_TURN_CLAIM_TTL_MS,
     resolvePrincipalName: async (_tenantId, principalId) => {
       const principalRow = await db.query.principal.findFirst({
         where: (p, { eq: equals }) => equals(p.id, principalId),
