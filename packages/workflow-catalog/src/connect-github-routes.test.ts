@@ -80,6 +80,8 @@ function buildApp(overrides: Partial<ConnectGithubRoutesDeps> = {}) {
     log: () => {},
     resolveGithubConfig: async () => githubConfig,
     resolveCodeReviewDefinitionId: async () => "wfd_code_review",
+    hasRepoGrant: async (tenantId, repo) =>
+      grants.some((g) => g.tenantId === tenantId && g.repo.id === repo.id),
     mintRepoGrant: async (tenantId, repo) => {
       grants.push({ tenantId, repo });
     },
@@ -92,6 +94,8 @@ function buildApp(overrides: Partial<ConnectGithubRoutesDeps> = {}) {
       triggers.push({ tenantId, repo });
       return { id: `trg_${repo.id}` };
     },
+    hasWebhookTrigger: async (_tenantId, _definitionId, repo) =>
+      triggers.some((t) => t.repo.id === repo.id),
     getTemplateSettings: async () => settings,
     persistSelectedRepos: async (
       _tenantId,

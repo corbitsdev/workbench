@@ -68,12 +68,18 @@ function buildHarness() {
   let subscriber: ((state: ConnectGithubQuery) => void) | undefined;
 
   const setupPorts: ConnectGithubSetupPorts = {
+    async hasRepoGrant() {
+      return false;
+    },
     async mintRepoGrant(repo) {
       grantedRepos.push(repo.name);
     },
     async createWebhookTrigger(repo) {
       createdTriggerRepos.push(repo.name);
       return { id: `trg_${repo.id}` };
+    },
+    async hasWebhookTrigger() {
+      return false;
     },
     async persistSelectedRepos(repoIds) {
       persistedRepoIds = repoIds;

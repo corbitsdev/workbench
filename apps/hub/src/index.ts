@@ -174,6 +174,7 @@ import {
   isAutomatableWorkflowName,
   isConversationalWorkflowName,
   validateTriggerFieldsAtCreate,
+  webhookTriggerName,
   workflowCatalogEntry,
   workflowDisplayName,
   workbenchTemplateLibraryEntries,
@@ -2172,6 +2173,17 @@ export async function createHub(config: HubConfig) {
         });
         return row?.id;
       },
+      hasRepoGrant: async (tenantId, repo) => {
+        const existing = await db.query.grant.findFirst({
+          where: and(
+            eq(grantTable.tenantId, tenantId),
+            eq(grantTable.resource, `repo:${repo.name}`),
+            eq(grantTable.action, "read"),
+          ),
+          columns: { id: true },
+        });
+        return existing !== undefined;
+      },
       mintRepoGrant: async (tenantId, repo) => {
         const memberRole = await db.query.role.findFirst({
           where: and(
@@ -2207,13 +2219,22 @@ export async function createHub(config: HubConfig) {
         const row = await webhookTriggerStore.create({
           id: generateId("workflowRun"),
           tenantId,
-          name: `${repo.name} pull-request-opened`,
+          name: webhookTriggerName(repo),
           workflowDefinitionId: codeReviewDefinitionId,
           inputTemplate: `Review the pull request at {{pull_request.html_url}}`,
           secret: generateWebhookSecret(),
           createdBy: principalId,
         });
         return { id: row.id };
+      },
+      hasWebhookTrigger: async (tenantId, codeReviewDefinitionId, repo) => {
+        const triggers = await webhookTriggerStore.list(tenantId);
+        const triggerName = webhookTriggerName(repo);
+        return triggers.some(
+          (trigger) =>
+            trigger.workflowDefinitionId === codeReviewDefinitionId &&
+            trigger.name === triggerName,
+        );
       },
       getTemplateSettings: async (tenantId, workbenchId) => {
         const row = await chatStore.getWorkbenchSettings(tenantId, workbenchId);
