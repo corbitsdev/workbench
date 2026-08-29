@@ -28,8 +28,8 @@
 //      are connected, so she hands over connect links for each.
 //   3. Once the human connects them (simulated: the fake connections
 //      state flips to connected), she creates two specialist agents —
-//      a call-notes extractor and a weekly-analytics agent — inviting
-//      each into the workbench's channel.
+//      a call-notes extractor and a weekly-analytics agent — minting
+//      each specialist its own 1:1 chat (never inviting into Myra's).
 //   4. She creates two routines: a daily one that extracts info from
 //      calls and shares updates, targeting the call-notes agent; and a
 //      weekly one that provides analytical updates, targeting the
@@ -73,6 +73,7 @@ function call(
 function createFakeHub() {
   const connected = new Set<string>();
   const createdDefinitions: { id: string; name: string }[] = [];
+  const mintedDefinitionIds: string[] = [];
   const invitedDefinitionIds: string[] = [];
   const createdRoutines: {
     definitionId: string;
@@ -178,6 +179,24 @@ function createFakeHub() {
     }
 
     if (
+      url.pathname === "/api/workflow-chat/participants/mint-dm" &&
+      method === "POST" &&
+      body
+    ) {
+      const definitionId = body["definitionId"] as string;
+      mintedDefinitionIds.push(definitionId);
+      return Response.json(
+        {
+          workbenchId: `wb_${definitionId}`,
+          address: `${definitionId}@workflow`,
+          definitionId,
+          handle: definitionId,
+        },
+        { status: 201 },
+      );
+    }
+
+    if (
       url.pathname === "/api/workflow-chat/participants/invite" &&
       method === "POST" &&
       body
@@ -231,6 +250,7 @@ function createFakeHub() {
     connected,
     createdDefinitions,
     invitedDefinitionIds,
+    mintedDefinitionIds,
     createdRoutines,
     postedCards,
   };
@@ -339,8 +359,8 @@ async function runScenario(
     "Connected: Granola, Exa, Linear.",
   );
 
-  // Step 3: Myra creates the two specialist agents she needs, inviting
-  // each into the workbench (the tool's own default).
+  // Step 3: Myra creates the two specialist agents she needs, minting
+  // each its own 1:1 chat (the tool's default).
   const agentDirectoryBundle = agentDirectoryTools(agentDirectoryEnv);
   const callNotesAgent = await agentDirectoryBundle.run(
     call("a1", CREATE_AGENT_TOOL, {
@@ -367,11 +387,11 @@ async function runScenario(
     "Call Notes Extractor",
     "Weekly Analytics",
   ]);
-  // Both were invited into the caller's channel (the default), never
-  // silently skipped.
-  expect(hub.invitedDefinitionIds).toEqual(
+  // Both got their own chat (the default), never invited into Myra's.
+  expect(hub.mintedDefinitionIds).toEqual(
     hub.createdDefinitions.map((d) => d.id),
   );
+  expect(hub.invitedDefinitionIds).toEqual([]);
 
   const [callNotesDefinition, analyticsDefinition] = hub.createdDefinitions;
   if (callNotesDefinition === undefined || analyticsDefinition === undefined) {

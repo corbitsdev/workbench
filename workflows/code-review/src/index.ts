@@ -43,7 +43,7 @@ export const CODE_REVIEW_STEP_ID = "code-review";
 
 /** The tool packages this definition pins: GitHub reach, nothing else. */
 export const CODE_REVIEW_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
-  { name: "@corbits/github-tools", version: "0.0.6" },
+  { name: "@corbits/github-tools", version: "0.0.8" },
 ];
 
 /** Binds the pinned package's "github" handle to the tenant's connection. */

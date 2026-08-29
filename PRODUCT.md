@@ -49,7 +49,10 @@ column at a time:
   and in many channels. Product reopens or invites; it does not clone
   the definition or mint a sibling instance per room. Myra is the
   first-run guide in her DM, not a special home slot and not a
-  parallel home route.
+  parallel home route. When she creates a specialist (`create_agent`),
+  the default is to mint or reopen that specialist's own DM
+  (`kind: chat`) — never to invite them into Myra's conversation. A
+  DM stays 1:1; another agent belongs in a channel.
 - The active workbench occupies the main column; a contextual panel beside
   it carries account-wide surfaces (approvals, recent activity) that stay
   visible regardless of which workbench is open.
@@ -114,6 +117,14 @@ Settle for a template-key-only wait posts from a system sender and
 does not wake an agent. Generic `connections/pending` still wakes the
 asking agent. Neither path posts the connected notice as the connecting
 person.
+
+## Reusing an own prompt
+
+A person can **Edit** their own previous prompt. Edit copies that text
+into the composer, replacing any leftover draft — slash command, mention,
+invite, and attachments. Sending posts a new message on the same
+timeline: it does not rewrite the original, and it does not fork a
+thread. Other people's prompts have no Edit.
 
 ## Plugins and Skills
 
@@ -181,8 +192,10 @@ User-facing surfaces (UI, docs, support) use exactly these nouns:
   the sidebar list Workbenches.
 - **Agent** — a coworker principal. Opening the row reopens that agent's
   one DM. Never "template." Myra is the first-run guide in her DM.
+  Creating a specialist opens (or reopens) that specialist's own DM,
+  not a seat in Myra's.
 - **DM** — the one 1:1 conversation with an agent. Never cloned by a
-  second open.
+  second open, and never a room for a second agent.
 - **Channel** — a shared room between people and agents. Plus mints an
   empty one; nobody is auto-hosted. Named templates instantiate their
   Workbench Definition's own agents into that room (Myra joins only

@@ -9,7 +9,13 @@ import { decodeParts } from "../src/codec";
 import type { Part } from "../src/parts";
 import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
 import { AgentUnreachableError } from "../src/platform-port";
-import { cannedGreeting, postCannedGreeting } from "../src/workbench-service";
+import {
+  cannedGreeting,
+  KindIsChatError,
+  launchAndJoinAgent,
+  postCannedGreeting,
+} from "../src/workbench-service";
+import { createInMemoryChatStore } from "../src/store";
 import {
   buildDeps,
   createWorkbench,
@@ -614,7 +620,65 @@ describe("message fan-out", () => {
     });
   });
 
-  test("a chat's fan-out carries no context block, even with a full history", async () => {
+  test("a default-route turn in room B does not include room A's rows", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: roomA } = await createWorkbench(app, {
+      kind: "workbench",
+      name: "room A",
+      participants: ["ins_echo1@acme.example"],
+    });
+    const { body: roomB } = await createWorkbench(app, {
+      kind: "workbench",
+      name: "room B",
+      participants: ["ins_echo1@acme.example"],
+    });
+
+    await app.request(`/workbenches/${roomA.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "room A secret: the launch is on Mars" }],
+      }),
+    });
+    await settleFanout();
+    await nextTimelineMoment();
+
+    await app.request(`/workbenches/${roomB.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "room B note: we meet on Tuesday" }],
+      }),
+    });
+    await settleFanout();
+    await nextTimelineMoment();
+
+    const response = await app.request(`/workbenches/${roomB.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "hello, no mention here" }],
+      }),
+    });
+    expect(response.status).toBe(201);
+    await settleFanout();
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    const roomBMail = platform.sentMail.filter(
+      (mail) => mail.fromWorkbenchId === roomB.id,
+    );
+    const copy = roomBMail[roomBMail.length - 1];
+    const [contextPart] = decodeParts(copy?.content ?? { content: "" });
+    const contextText = contextPart?.kind === "text" ? contextPart.text : "";
+
+    expect(contextText).toContain("room B note: we meet on Tuesday");
+    expect(contextText).toContain("hello, no mention here");
+    expect(contextText).not.toContain("room A secret");
+    expect(contextText).not.toContain("the launch is on Mars");
+  });
+
+  test("a chat's default-route fan-out carries this-room context", async () => {
     const deps = buildDeps({
       platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
     });
@@ -640,13 +704,14 @@ describe("message fan-out", () => {
       },
     );
     expect(response.status).toBe(201);
+    await settleFanout();
 
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     const fanned = platform.sentMail[platform.sentMail.length - 1];
-    expect(fanned?.content).toEqual({
-      content: "hello, no mention here",
-      replyTo: workbench.id,
-    });
+    const [contextPart] = decodeParts(fanned?.content ?? { content: "" });
+    const contextText = contextPart?.kind === "text" ? contextPart.text : "";
+    expect(contextText).toContain("earlier turn");
+    expect(contextText).toContain("hello, no mention here");
   });
 
   test("a mention fan-out under the context window carries no dropped-history recap", async () => {
@@ -989,7 +1054,7 @@ describe("POST /workbenches/:id/invite", () => {
   // One room participant = one standing principal (CL-6978): an
   // explicit re-invite of a definition this room already holds returns
   // the resident handle rather than minting a sibling or appending a
-  // second participant row. `addParticipant` does not de-dupe addresses.
+  // second participant row. `addParticipant` de-dupes the same address.
   test("an explicit re-invite of the same definition does not mint a second instance", async () => {
     let launches = 0;
     const platform = fakePlatform({
@@ -1267,10 +1332,21 @@ describe("POST /workbenches/:id/invite", () => {
     ).toHaveLength(0);
   });
 
-  test("inviting a second agent into a chat grows it — no invite cap", async () => {
-    const deps = buildDeps({
-      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+  test("re-inviting the same definition into a chat reuses the resident — no extra launch", async () => {
+    let launches = 0;
+    const platform = fakePlatform({
+      invitable: [{ id: "wfd_echo", name: "Echo" }],
+      resolveDefinitionIdByAddress: async (address) =>
+        address === "ins_invited1@acme.example" ? "wfd_echo" : undefined,
+      launchInvite: async () => {
+        launches += 1;
+        return {
+          instanceId: `ins_invited${launches}`,
+          address: `ins_invited${launches}@acme.example`,
+        };
+      },
     });
+    const deps = buildDeps({ platform });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const { body: workbench } = await createWorkbench(app, {
       kind: "chat",
@@ -1286,6 +1362,102 @@ describe("POST /workbenches/:id/invite", () => {
     expect(response.status).toBe(201);
     const body = (await response.json()) as { address: string };
     expect(body.address).toBe("ins_invited1@acme.example");
+    expect(platform.launchInviteCalls).toHaveLength(1);
+  });
+
+  test("inviting a different agent into a chat is a 409 kind_is_chat", async () => {
+    const platform = fakePlatform({
+      invitable: [
+        { id: "wfd_echo", name: "Echo" },
+        { id: "wfd_copywriter", name: "Copywriter" },
+      ],
+    });
+    const deps = buildDeps({ platform });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+    expect(platform.launchInviteCalls).toHaveLength(1);
+
+    const response = await app.request(`/workbenches/${workbench.id}/invite`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ definitionId: "wfd_copywriter" }),
+    });
+
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("kind_is_chat");
+    expect(platform.launchInviteCalls).toHaveLength(1);
+  });
+});
+
+describe("launchAndJoinAgent 1:1 chats", () => {
+  const invitable = [
+    { id: "wfd_echo", name: "Echo" },
+    { id: "wfd_copywriter", name: "Copywriter" },
+  ];
+
+  test("throws KindIsChatError when a chat already has a different agent", async () => {
+    const platform = fakePlatform({ invitable });
+    await expect(
+      launchAndJoinAgent(
+        {
+          store: createInMemoryChatStore(),
+          platform,
+          roomMessages: createInMemoryRoomMessageStore(),
+          publish: () => undefined,
+        },
+        {
+          tenantId: TENANT.id,
+          principalId: "prn_alice",
+          workbenchId: "chan_1",
+          definitionId: "wfd_copywriter",
+          existingSettings: {
+            "chat/kind": "chat",
+            "chat/definitionId": "wfd_echo",
+            "chat/participants": [
+              { address: "ins_echo@acme.example", handle: "echo" },
+            ],
+          },
+          invitable,
+        },
+      ),
+    ).rejects.toBeInstanceOf(KindIsChatError);
+    expect(platform.launchInviteCalls).toHaveLength(0);
+  });
+
+  test("returns the resident when the chat already holds this definition", async () => {
+    const platform = fakePlatform({
+      invitable,
+      resolveDefinitionIdByAddress: async (address) =>
+        address === "ins_echo@acme.example" ? "wfd_echo" : undefined,
+    });
+    const joined = await launchAndJoinAgent(
+      {
+        store: createInMemoryChatStore(),
+        platform,
+        roomMessages: createInMemoryRoomMessageStore(),
+        publish: () => undefined,
+      },
+      {
+        tenantId: TENANT.id,
+        principalId: "prn_alice",
+        workbenchId: "chan_1",
+        definitionId: "wfd_echo",
+        existingSettings: {
+          "chat/kind": "chat",
+          "chat/definitionId": "wfd_echo",
+          "chat/participants": [
+            { address: "ins_echo@acme.example", handle: "echo" },
+          ],
+        },
+        invitable,
+      },
+    );
+    expect(joined.address).toBe("ins_echo@acme.example");
+    expect(platform.launchInviteCalls).toHaveLength(0);
   });
 });
 

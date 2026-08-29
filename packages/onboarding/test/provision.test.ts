@@ -4,11 +4,7 @@ import {
   SEED_GRANTS,
   SETUP_AGENT_ASSET_NAME,
 } from "@workbench/hub-client";
-import type { ApiCall } from "@workbench/hub-client";
-import type {
-  WorkflowPusher,
-  ToolRegistryPublisher,
-} from "@workbench/hub-client";
+import type { ApiCall, WorkflowPusher } from "@workbench/hub-client";
 import {
   isFullySeeded,
   personalTenantSlug,
@@ -32,11 +28,183 @@ const noopPush: WorkflowPusher = async () => ({
   outcome: "pushed" as const,
   commitSha: "a".repeat(40),
 });
-const noopPublishToolRegistry: ToolRegistryPublisher = async () => undefined;
+const noopPublishToolRegistry = async () => undefined;
 
 function collector() {
   const lines: string[] = [];
   return { lines, log: (line: string) => lines.push(line) };
+}
+
+function firstLoginSeedHub(args: { expectedParentId?: string }) {
+  let principalsCalls = 0;
+  const startedRuns: string[] = [];
+  const tarballPuts: string[] = [];
+  const api: ApiCall = async (method, path, body) => {
+    if (path.includes("/tarballs/")) {
+      tarballPuts.push(`${method} ${path}`);
+      throw new Error(`signup must not pack: ${method} ${path}`);
+    }
+    if (method === "GET" && path === "/api/me/principals") {
+      principalsCalls += 1;
+      if (principalsCalls === 1) {
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
+      }
+      return {
+        status: 200,
+        data: {
+          data: [
+            {
+              principalId: PRINCIPAL_ID,
+              tenantId: TENANT_ID,
+              tenantName: "alice's workbench",
+              tenantSlug: TENANT_SLUG,
+              kind: "user",
+              status: "active",
+              roles: [{ id: "rol_owner", name: "owner" }],
+            },
+          ],
+          nextCursor: null,
+        },
+        cookies: [],
+      };
+    }
+    if (method === "POST" && path === "/api/tenants") {
+      const parsed = body as {
+        parentId?: string;
+        slug: string;
+        name: string;
+      };
+      expect(parsed.parentId).toBe(args.expectedParentId);
+      expect(parsed.name).toBe("Alice's Lab");
+      return {
+        status: 201,
+        data: {
+          id: TENANT_ID,
+          name: parsed.name,
+          slug: parsed.slug,
+          domain: `${parsed.slug}.localhost`,
+          ...(args.expectedParentId !== undefined
+            ? { parentId: args.expectedParentId }
+            : {}),
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+        cookies: [],
+      };
+    }
+    if (
+      method === "GET" &&
+      path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)
+    ) {
+      return {
+        status: 200,
+        data: { data: [], nextCursor: null },
+        cookies: [],
+      };
+    }
+    if (method === "POST" && path === `/api/tenants/${TENANT_ID}/grants`) {
+      return { status: 201, data: {}, cookies: [] };
+    }
+    if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`) {
+      return {
+        status: 201,
+        data: {
+          id: "ast_1",
+          tenantId: TENANT_ID,
+          kind: "workflow",
+          name: "echo",
+          displayName: null,
+          creatorPrincipalId: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+        cookies: [],
+      };
+    }
+    if (method === "POST" && path === `/api/tenants/${TENANT_ID}/git-tokens`) {
+      return {
+        status: 201,
+        data: { id: "tok_1", secret: "s3cret" },
+        cookies: [],
+      };
+    }
+    if (
+      method === "GET" &&
+      path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+    ) {
+      return { status: 404, data: {}, cookies: [] };
+    }
+    if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
+      return { status: 201, data: {}, cookies: [] };
+    }
+    if (
+      method === "GET" &&
+      path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+    ) {
+      return {
+        status: 200,
+        data: { data: [], nextCursor: null },
+        cookies: [],
+      };
+    }
+    if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
+      return { status: 200, data: { items: [] }, cookies: [] };
+    }
+    if (
+      method === "GET" &&
+      path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+    ) {
+      return { status: 200, data: [], cookies: [] };
+    }
+    if (
+      method === "POST" &&
+      path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+    ) {
+      return {
+        status: 201,
+        data: {
+          id: DEPLOYMENT_ID,
+          tenantId: TENANT_ID,
+          definitionAssetId: "ast_1",
+          status: "deployed",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+        cookies: [],
+      };
+    }
+    if (
+      method === "GET" &&
+      path === `/api/tenants/${TENANT_ID}/workflows/${DEPLOYMENT_ID}/runs`
+    ) {
+      return {
+        status: 200,
+        data: { runIds: [...startedRuns] },
+        cookies: [],
+      };
+    }
+    if (
+      method === "POST" &&
+      path === `/api/tenants/${TENANT_ID}/workflows/${DEPLOYMENT_ID}/mail`
+    ) {
+      const runId = `run_${startedRuns.length + 1}`;
+      startedRuns.push(runId);
+      return {
+        status: 202,
+        data: {
+          runId: DEPLOYMENT_ID,
+          address: "echo@x",
+          messageId: `m${startedRuns.length}`,
+        },
+        cookies: [],
+      };
+    }
+    throw new Error(`unexpected call: ${method} ${path}`);
+  };
+  return { api, tarballPuts };
 }
 
 describe("personalTenantSlug", () => {
@@ -89,8 +257,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userId: "user_1",
       userEmail: "alice@example.com",
       userEmailVerified: true,
-      pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
+      pushWorkflow: noopPush,
       log: collector().log,
     });
 
@@ -149,8 +317,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       displayName: "Alice's Lab",
-      pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
+      pushWorkflow: noopPush,
       log: collector().log,
     });
 
@@ -185,8 +353,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
         userEmail: "alice@example.com",
         userEmailVerified: true,
         displayName: "Alice's Lab",
-        pushWorkflow: noopPush,
         publishToolRegistry: noopPublishToolRegistry,
+        pushWorkflow: noopPush,
         log: collector().log,
       }),
     ).rejects.toThrow(/slug conflict/);
@@ -195,6 +363,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
   test("zero principals with no seed model: provisions the bench and reports the seed skip loudly", async () => {
     let principalsCalls = 0;
     const { lines, log } = collector();
+    const publishedTenants: string[] = [];
     const api: ApiCall = async (method, path, body) => {
       if (method === "GET" && path === "/api/me/principals") {
         principalsCalls += 1;
@@ -256,14 +425,17 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       displayName: "Alice's Lab",
+      publishToolRegistry: async ({ tenantId }) => {
+        publishedTenants.push(tenantId);
+      },
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log,
     });
 
     expect(result.kind).toBe("provisioned");
     if (result.kind !== "provisioned") throw new Error("unreachable");
     expect(result.seeded).toBe(false);
+    expect(publishedTenants).toEqual([TENANT_ID]);
     expect(result.seedSkipReason).toContain("ANTHROPIC_API_KEY");
     expect(lines.some((line) => line.includes("ANTHROPIC_API_KEY"))).toBe(true);
   });
@@ -294,8 +466,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userId: "user_1",
       userEmail: "alice@example.com",
       userEmailVerified: true,
-      pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
+      pushWorkflow: noopPush,
       log,
     });
 
@@ -304,171 +476,9 @@ describe("provisionPersonalTenantIfNeeded", () => {
   });
 
   test("zero principals with a seed model configured: provisions under the operator tenant and seeds the default workflow", async () => {
-    let principalsCalls = 0;
-    const startedRuns: string[] = [];
-    const api: ApiCall = async (method, path, body) => {
-      if (method === "GET" && path === "/api/me/principals") {
-        principalsCalls += 1;
-        if (principalsCalls === 1) {
-          return {
-            status: 200,
-            data: { data: [], nextCursor: null },
-            cookies: [],
-          };
-        }
-        return {
-          status: 200,
-          data: {
-            data: [
-              {
-                principalId: PRINCIPAL_ID,
-                tenantId: TENANT_ID,
-                tenantName: "alice's workbench",
-                tenantSlug: TENANT_SLUG,
-                kind: "user",
-                status: "active",
-                roles: [{ id: "rol_owner", name: "owner" }],
-              },
-            ],
-            nextCursor: null,
-          },
-          cookies: [],
-        };
-      }
-      if (method === "POST" && path === "/api/tenants") {
-        const parsed = body as {
-          parentId?: string;
-          slug: string;
-          name: string;
-        };
-        expect(parsed.parentId).toBe("ten_operator");
-        expect(parsed.name).toBe("Alice's Lab");
-        return {
-          status: 201,
-          data: {
-            id: TENANT_ID,
-            name: parsed.name,
-            slug: parsed.slug,
-            domain: `${parsed.slug}.localhost`,
-            parentId: "ten_operator",
-            createdAt: "2026-01-01T00:00:00.000Z",
-            updatedAt: "2026-01-01T00:00:00.000Z",
-          },
-          cookies: [],
-        };
-      }
-      if (
-        method === "GET" &&
-        path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)
-      ) {
-        return {
-          status: 200,
-          data: { data: [], nextCursor: null },
-          cookies: [],
-        };
-      }
-      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/grants`) {
-        return { status: 201, data: {}, cookies: [] };
-      }
-      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`) {
-        return {
-          status: 201,
-          data: {
-            id: "ast_1",
-            tenantId: TENANT_ID,
-            kind: "workflow",
-            name: "echo",
-            displayName: null,
-            creatorPrincipalId: null,
-            createdAt: "2026-01-01T00:00:00.000Z",
-            updatedAt: "2026-01-01T00:00:00.000Z",
-          },
-          cookies: [],
-        };
-      }
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/git-tokens`
-      ) {
-        return {
-          status: 201,
-          data: { id: "tok_1", secret: "s3cret" },
-          cookies: [],
-        };
-      }
-      if (
-        method === "GET" &&
-        path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
-      ) {
-        return { status: 404, data: {}, cookies: [] };
-      }
-      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
-        return { status: 201, data: {}, cookies: [] };
-      }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
-      ) {
-        return {
-          status: 200,
-          data: { data: [], nextCursor: null },
-          cookies: [],
-        };
-      }
-      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
-        return { status: 200, data: { items: [] }, cookies: [] };
-      }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
-      ) {
-        return { status: 200, data: [], cookies: [] };
-      }
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
-      ) {
-        return {
-          status: 201,
-          data: {
-            id: DEPLOYMENT_ID,
-            tenantId: TENANT_ID,
-            definitionAssetId: "ast_1",
-            status: "deployed",
-            createdAt: "2026-01-01T00:00:00.000Z",
-          },
-          cookies: [],
-        };
-      }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/${DEPLOYMENT_ID}/runs`
-      ) {
-        return {
-          status: 200,
-          data: { runIds: [...startedRuns] },
-          cookies: [],
-        };
-      }
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/${DEPLOYMENT_ID}/mail`
-      ) {
-        const runId = `run_${startedRuns.length + 1}`;
-        startedRuns.push(runId);
-        return {
-          status: 202,
-          data: {
-            runId: DEPLOYMENT_ID,
-            address: "echo@x",
-            messageId: `m${startedRuns.length}`,
-          },
-          cookies: [],
-        };
-      }
-      throw new Error(`unexpected call: ${method} ${path}`);
-    };
-
+    const { api, tarballPuts } = firstLoginSeedHub({
+      expectedParentId: "ten_operator",
+    });
     const { log } = collector();
     const result = await provisionPersonalTenantIfNeeded({
       api,
@@ -480,8 +490,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
       displayName: "Alice's Lab",
       operatorTenantId: "ten_operator",
       seedModel: MODEL,
-      pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
+      pushWorkflow: noopPush,
       log,
     });
 
@@ -491,6 +501,37 @@ describe("provisionPersonalTenantIfNeeded", () => {
       tenantSlug: TENANT_SLUG,
       seeded: true,
     });
+    expect(tarballPuts).toEqual([]);
+  });
+
+  test("an unparented personal root bench publishes corbits-tools before seeding", async () => {
+    const { api, tarballPuts } = firstLoginSeedHub({});
+    const { log } = collector();
+    const publishedTenants: string[] = [];
+    const result = await provisionPersonalTenantIfNeeded({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      userEmailVerified: true,
+      displayName: "Alice's Lab",
+      seedModel: MODEL,
+      publishToolRegistry: async ({ tenantId }) => {
+        publishedTenants.push(tenantId);
+      },
+      pushWorkflow: noopPush,
+      log,
+    });
+
+    expect(result).toEqual({
+      kind: "provisioned",
+      tenantId: TENANT_ID,
+      tenantSlug: TENANT_SLUG,
+      seeded: true,
+    });
+    expect(publishedTenants).toEqual([TENANT_ID]);
+    expect(tarballPuts).toEqual([]);
   });
 
   test("a retry after tenant creation succeeded but seeding failed re-seeds instead of reporting a plain existing member", async () => {
@@ -691,8 +732,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmailVerified: true,
       displayName: "Alice's Lab",
       seedModel: MODEL,
-      pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
+      pushWorkflow: noopPush,
       log: collector().log,
     });
     await expect(firstAttempt).rejects.toThrow(/asset service unavailable/);
@@ -707,8 +748,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       seedModel: MODEL,
-      pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
+      pushWorkflow: noopPush,
       log,
     });
 
@@ -743,6 +784,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
         ),
     );
     const grantsPosted: { resource: string; action: string }[] = [];
+    const publishedTenants: string[] = [];
     const api: ApiCall = async (method, path, body) => {
       if (method === "GET" && path === "/api/me/principals") {
         return {
@@ -829,6 +871,20 @@ describe("provisionPersonalTenantIfNeeded", () => {
           cookies: [],
         };
       }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return {
+          status: 200,
+          data: {
+            id: TENANT_ID,
+            name: "alice's workbench",
+            slug: TENANT_SLUG,
+            domain: `${TENANT_SLUG}.localhost`,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+          cookies: [],
+        };
+      }
       throw new Error(`unexpected call: ${method} ${path}`);
     };
 
@@ -840,8 +896,10 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       // No seedModel needed: nothing left to seed on the workflow side.
+      publishToolRegistry: async ({ tenantId }) => {
+        publishedTenants.push(tenantId);
+      },
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
     });
 
@@ -850,6 +908,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       seeded: true,
       tenantId: "ten_new",
     });
+    expect(publishedTenants).toEqual([TENANT_ID]);
     // Exactly the one grant this tenant was missing — no more, no less.
     expect(grantsPosted).toEqual([missingGrant]);
   });
@@ -921,6 +980,20 @@ describe("provisionPersonalTenantIfNeeded", () => {
           cookies: [],
         };
       }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return {
+          status: 200,
+          data: {
+            id: TENANT_ID,
+            name: "alice's workbench",
+            slug: TENANT_SLUG,
+            domain: `${TENANT_SLUG}.localhost`,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+          cookies: [],
+        };
+      }
       throw new Error(`unexpected call: ${method} ${path}`);
     };
 
@@ -931,8 +1004,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userId: "user_1",
       userEmail: "alice@example.com",
       userEmailVerified: true,
-      pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
+      pushWorkflow: noopPush,
       log: collector().log,
     });
 
@@ -949,6 +1022,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
     // not depend on a seed credential that may never exist. Seeding itself is
     // skipped (nothing to seed with); the user is not stranded in a loop.
     let assetListCalls = 0;
+    const publishedTenants: string[] = [];
     const api: ApiCall = async (method, path) => {
       if (method === "GET" && path === "/api/me/principals") {
         return {
@@ -1000,6 +1074,20 @@ describe("provisionPersonalTenantIfNeeded", () => {
       ) {
         return { status: 200, data: [], cookies: [] };
       }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return {
+          status: 200,
+          data: {
+            id: TENANT_ID,
+            name: "alice's workbench",
+            slug: TENANT_SLUG,
+            domain: `${TENANT_SLUG}.localhost`,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+          cookies: [],
+        };
+      }
       throw new Error(`unexpected call: ${method} ${path}`);
     };
 
@@ -1011,8 +1099,10 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       // No seedModel — hub without ANTHROPIC_API_KEY.
+      publishToolRegistry: async ({ tenantId }) => {
+        publishedTenants.push(tenantId);
+      },
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
     });
 
@@ -1024,6 +1114,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       seeded: false,
       tenantId: "ten_new",
     });
+    expect(publishedTenants).toEqual([TENANT_ID]);
     // Completeness was checked (tenant-local assets listed) even without a
     // seed model — membership recovery does not short-circuit before that.
     expect(assetListCalls).toBe(1);
@@ -1214,8 +1305,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       seedModel: MODEL,
-      pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
+      pushWorkflow: noopPush,
       log: collector().log,
     });
 
@@ -1450,8 +1541,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       seedModel: MODEL,
-      pushWorkflow: noopPush,
       publishToolRegistry: noopPublishToolRegistry,
+      pushWorkflow: noopPush,
       log: collector().log,
     });
 

@@ -3,7 +3,10 @@
 // workflow-command registrar: invite-then-send, sharing the same
 // `launchAndJoinAgent` core as `POST .../invite`.
 import { describe, expect, test } from "bun:test";
-import { startWorkflowCommand } from "../src/workbench-service";
+import {
+  KindIsChatError,
+  startWorkflowCommand,
+} from "../src/workbench-service";
 import { createInMemoryChatStore } from "../src/store";
 import { createInMemoryRoomMessageStore } from "../src/room-messages";
 import { fakePlatform, TENANT } from "./test-support";
@@ -197,5 +200,43 @@ describe("startWorkflowCommand", () => {
 
     expect(platform.launchInviteCalls).toHaveLength(0);
     expect(result.address).toBe("ins_existing@acme.example");
+  });
+
+  test("throws KindIsChatError when a kind: chat already has a different agent", async () => {
+    const store = createInMemoryChatStore();
+    const platform = fakePlatform({
+      invitable: [{ id: "wfd_echo", name: "Echo" }],
+    });
+    await store.createWorkbenchSettings({
+      tenantId: TENANT.id,
+      workbenchId: "chan_dm",
+      settings: {
+        "chat/kind": "chat",
+        "chat/definitionId": "wfd_assistant",
+        "chat/participants": [
+          { address: "ins_myra@acme.example", handle: "myra" },
+        ],
+      },
+      updatedBy: "prn_alice",
+    });
+
+    await expect(
+      startWorkflowCommand(
+        {
+          store,
+          platform,
+          roomMessages: createInMemoryRoomMessageStore(),
+          publish: () => undefined,
+        },
+        {
+          tenantId: TENANT.id,
+          principalId: "prn_alice",
+          workbenchId: "chan_dm",
+          definitionId: "wfd_echo",
+          args: "hi",
+        },
+      ),
+    ).rejects.toBeInstanceOf(KindIsChatError);
+    expect(platform.launchInviteCalls).toHaveLength(0);
   });
 });

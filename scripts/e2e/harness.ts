@@ -411,7 +411,7 @@ export async function api(
   const res = await fetch(`${base}${route}`, {
     method,
     headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     redirect: "manual",
   });
   const nextCookies = mergeCookies(cookies, res.headers.getSetCookie());

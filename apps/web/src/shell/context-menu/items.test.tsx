@@ -39,6 +39,7 @@ function actions(
     openProfile: mock(() => undefined),
     cycleTheme: mock(() => undefined),
     signOut: mock(() => undefined),
+    onRoutineRan: mock((_tenantId: string) => undefined),
     ...overrides,
   };
 }
@@ -182,6 +183,54 @@ describe("shellContextMenuFor: routine", () => {
     const menu = shellContextMenuFor(target, actions({ navigate }));
     findItem(menu.entries, "open").onSelect();
     expect(navigate).toHaveBeenCalledWith("/routines/rt-1");
+  });
+
+  test("run-now invalidates routine queries via onRoutineRan once the run starts", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = mock(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ runId: "run-1" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    ) as unknown as typeof fetch;
+    const onRoutineRan = mock((_tenantId: string) => undefined);
+    try {
+      const menu = shellContextMenuFor(target, actions({ onRoutineRan }));
+      findItem(menu.entries, "run-now").onSelect();
+      for (let i = 0; i < 10 && onRoutineRan.mock.calls.length === 0; i++) {
+        await Promise.resolve();
+      }
+      expect(onRoutineRan).toHaveBeenCalledWith("tenant-1");
+      expect(toastMock).toHaveBeenCalledWith("Nightly Digest started");
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  test("run-now does not invalidate routine queries when the run fails to start", async () => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = mock(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ error: { message: "boom" } }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    ) as unknown as typeof fetch;
+    const onRoutineRan = mock((_tenantId: string) => undefined);
+    try {
+      const menu = shellContextMenuFor(target, actions({ onRoutineRan }));
+      findItem(menu.entries, "run-now").onSelect();
+      for (let i = 0; i < 10 && toastMock.mock.calls.length === 0; i++) {
+        await Promise.resolve();
+      }
+      expect(toastMock).toHaveBeenCalledWith("Couldn't start the routine");
+      expect(onRoutineRan).not.toHaveBeenCalled();
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 });
 

@@ -304,8 +304,8 @@ export function createWorkflowMemoryRoutes(
 
 /**
  * Honest degraded surface when the memory plane is not mounted (no
- * `EMBED_BASE_URL`, see `apps/hub/src/memory-mount.ts`) — same
- * convention as `createUnavailableWorkflowArtifactRoutes`.
+ * `EMBED_BASE_URL` / `OLLAMA_BASE_URL`, see `apps/hub/src/memory-mount.ts`)
+ * — same convention as `createUnavailableWorkflowArtifactRoutes`.
  */
 export function createUnavailableWorkflowMemoryRoutes(): Hono<WorkflowMemoryEnv> {
   const app = new Hono<WorkflowMemoryEnv>();

@@ -21,16 +21,19 @@ via the same routes without the person typing a URL.
 - **`mcp_list_tools`** — read-only. Discovery, in four modes, narrowest
   first:
   - no arguments — a catalog of every connected server with its tool
-    names and **truncated** descriptions, for a first skim.
+    names and **truncated** descriptions and schemas, for a first skim.
   - `{ pattern }` — regex-searches tool and server names across every
     connected server, for when it's unclear which server has the tool.
-  - `{ server }` — one server's full tool list with full descriptions.
-  - `{ server, toolName }` — one tool's full input schema.
+  - `{ server }` — one server's tool list with truncated descriptions
+    and schemas (same 100-character bound as the catalog).
+  - `{ server, toolName }` — one tool, same truncated description and
+    schema.
 - **`mcp_read`** — calls a tool on a connected server without human
   approval. Only works when that server's live `tools/list` marks the
   tool `readOnlyHint: true` — re-checked at call time, never assumed from
   the model's claim (`readOnlyGate` in `src/tool.ts`). Errors, pointing at
-  `mcp_call`, when the tool isn't marked read-only.
+  `mcp_call`, when the tool isn't marked read-only. A single payload is
+  bounded to about 8,000 characters.
 - **`mcp_call`** — calls any tool, read or write, on a connected server.
   Gated `approval: "ask"` unconditionally: one downstream MCP server can
   bind under any name at deploy time, so a single grant for `mcp_call`
