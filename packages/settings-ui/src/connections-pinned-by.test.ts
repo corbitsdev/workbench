@@ -54,4 +54,8 @@ describe("connections pinned-by", () => {
       "reddit-opportunity-scanner",
     ]);
   });
+
+  test("manus pins the assistant", () => {
+    expect(CONNECTOR_PINNED_WORKFLOWS.manus).toEqual(["assistant"]);
+  });
 });

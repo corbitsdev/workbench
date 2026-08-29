@@ -31,14 +31,17 @@ export const ASSISTANT_STEP_ID = "assistant";
 
 /**
  * The tool packages this deployment pins. `@corbits/memory-tools`
- * (CL-5852) is the original pin; `@corbits/capability-tools`
- * (CL-6084/CL-6086) lets Myra self-service a missing tool, skill, or
- * model; the remaining four are the manager-tools bundles giving Myra
+ * is the original pin; `@corbits/capability-tools` lets Myra self-service
+ * a missing tool, skill, or model; the manager-tools bundles give Myra
  * real workbench-management capability — a specialist agent she can
  * create (each gets their own chat), this workbench's routines, connection
  * visibility, and skill capture — each a thin wrapper over an existing
  * platform primitive (see each package's own file-header comment for
- * which one).
+ * which one). `@corbits/mcp-tools` and `@corbits/interaction-tools`
+ * expose tenant-connected MCP servers and the ask-user card;
+ * `@corbits/manus-tools` is pinned so Manus tools exist when the tenant
+ * has connected Manus (launch folds the binding only then — the pin
+ * itself does not require a credential).
  */
 export const ASSISTANT_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
   { name: "@corbits/memory-tools", version: "0.0.4" },
@@ -50,6 +53,7 @@ export const ASSISTANT_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
   { name: "@corbits/skills-tools", version: "0.0.6" },
   { name: "@corbits/mcp-tools", version: "0.0.9" },
   { name: "@corbits/interaction-tools", version: "0.0.2" },
+  { name: "@corbits/manus-tools", version: "0.0.11" },
 ];
 
 /**

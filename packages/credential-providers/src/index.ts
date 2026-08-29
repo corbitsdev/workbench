@@ -13,6 +13,12 @@ export {
 } from "./http-x-api-key-provider";
 export type { HttpXApiKeyCredentialProviderOptions } from "./http-x-api-key-provider";
 
+export {
+  createHttpXManusApiKeyCredentialProvider,
+  HTTP_X_MANUS_API_KEY_PROVIDER_KEY,
+} from "./http-x-manus-api-key-provider";
+export type { HttpXManusApiKeyCredentialProviderOptions } from "./http-x-manus-api-key-provider";
+
 export { deriveResolvedBindings } from "./resolved-bindings";
 
 export {

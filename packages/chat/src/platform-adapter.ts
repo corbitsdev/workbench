@@ -81,6 +81,8 @@ export type CreateHubChatPlatformDeps = {
   toolGrantsForPins: FoldedRunsDeps["toolGrantsForPins"];
   /** See `FoldedRunsDeps.mcpCredentialBindingsFor`. */
   mcpCredentialBindingsFor?: FoldedRunsDeps["mcpCredentialBindingsFor"];
+  /** See `FoldedRunsDeps.pinnedPackageCredentialBindingsFor`. */
+  pinnedPackageCredentialBindingsFor?: FoldedRunsDeps["pinnedPackageCredentialBindingsFor"];
   /**
    * Decrypts credential secrets when an invited agent's launch resolves
    * inference sources against the tenant catalog — see
@@ -202,6 +204,20 @@ export type HubChatPlatform = ChatPlatform & {
   reconcileInferenceSources(
     tenantId: string,
   ): Promise<{ scanned: number; relaunched: number }>;
+  /**
+   * Relaunches live participants in `tenantId` whose launch pins include
+   * any of `packageNames` — a tool-package connector's `feedsTools` the
+   * moment its credential is stored. Bindings for those packages are
+   * folded only at deploy time (`pinnedPackageCredentialBindingsFor`),
+   * so a Myra launched at signup before Manus was pasted stays on a
+   * snapshot that cannot `resolve("manus")` until this pass mints a
+   * fresh run. Best-effort per participant, same posture as
+   * `reconcileInferenceSources`.
+   */
+  reconcilePinnedToolPackages(
+    tenantId: string,
+    packageNames: readonly string[],
+  ): Promise<{ scanned: number; relaunched: number }>;
 };
 
 /**
@@ -224,6 +240,12 @@ export function createHubChatPlatform(
       : {}),
     ...(deps.mcpCredentialBindingsFor !== undefined
       ? { mcpCredentialBindingsFor: deps.mcpCredentialBindingsFor }
+      : {}),
+    ...(deps.pinnedPackageCredentialBindingsFor !== undefined
+      ? {
+          pinnedPackageCredentialBindingsFor:
+            deps.pinnedPackageCredentialBindingsFor,
+        }
       : {}),
   };
 
@@ -753,6 +775,40 @@ export function createHubChatPlatform(
     return { scanned: participants.length, relaunched };
   }
 
+  async function reconcilePinnedToolPackages(
+    tenantId: string,
+    packageNames: readonly string[],
+  ): Promise<{ scanned: number; relaunched: number }> {
+    const wanted = new Set(packageNames);
+    const participants = await listLaunchesForTenant(
+      deps.db,
+      tenantId,
+      RECONCILE_SOURCES_LIMIT,
+    );
+    let relaunched = 0;
+    for (const live of participants) {
+      const pinsWanted = live.binding.foldedBody.toolPackagePins.some((pin) =>
+        wanted.has(pin.name),
+      );
+      if (!pinsWanted) continue;
+      try {
+        if (await isBeyondWake(deps.db, live.run)) continue;
+        if (live.run.address === null || !isRoutable(live.run.address)) {
+          continue;
+        }
+        wakeLogger.info`relaunching ${live.binding.roomAddress}: run ${live.run.id} pins a just-connected tool package; minting a fresh run so deploy folds the new binding`;
+        sourcesCheckedAt.delete(live.binding.stableId);
+        await relaunchTerminalRun(live);
+        relaunched++;
+      } catch (cause: unknown) {
+        wakeLogger.error`pinned-tool-package reconcile for ${live.binding.roomAddress} (run ${live.run.id}) failed, leaving it as-is: ${
+          cause instanceof Error ? cause.message : String(cause)
+        }`;
+      }
+    }
+    return { scanned: participants.length, relaunched };
+  }
+
   /**
    * The live run mail must actually be delivered to for a stable
    * participant id — not the room's own address, once anything has been
@@ -1271,5 +1327,6 @@ export function createHubChatPlatform(
     recordActivity: (address: string) => lifecycle?.recordActivity(address),
     sweepTerminalRuns,
     reconcileInferenceSources,
+    reconcilePinnedToolPackages,
   });
 }

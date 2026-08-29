@@ -13,6 +13,7 @@ import {
   type Icon,
   MagnifyingGlass,
   Microphone,
+  Stack,
 } from "@corbits/icons";
 
 export type PluginCategory =
@@ -32,6 +33,7 @@ export const PLUGIN_CATEGORY_ORDER: readonly PluginCategory[] = [
 
 const CATEGORY_BY_ID: Readonly<Record<string, PluginCategory>> = {
   granola: "Productivity",
+  manus: "Productivity",
   notion: "Productivity",
   zoom: "Communication",
   slack: "Communication",
@@ -68,6 +70,8 @@ const OUTCOME_BY_ID: Readonly<Record<string, string>> = {
   huggingface:
     "Routes your agents' inference through Hugging Face-hosted models.",
   granola: "Lets agents read your Granola call notes and post-call summaries.",
+  manus:
+    "Lets agents run Manus tasks and retrieve files — including slide decks.",
   exa: "Lets agents run live web search and research lookups.",
   scrapecreators: "Lets agents pull Reddit threads and creator content.",
   linear: "Lets agents read and update your Linear issues.",
@@ -79,6 +83,7 @@ const OUTCOME_BY_ID: Readonly<Record<string, string>> = {
 // than reaching for a third-party brand icon set.
 const ICON_BY_ID: Readonly<Record<string, Icon>> = {
   granola: Microphone,
+  manus: Stack,
   exa: MagnifyingGlass,
   scrapecreators: ChatCircle,
   linear: GitBranch,

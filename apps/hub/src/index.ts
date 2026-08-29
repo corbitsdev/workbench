@@ -358,6 +358,8 @@ import { createBootAssetWiring, REGISTRIES } from "./asset-service-factory";
 import { createRoutineScheduler } from "./routine-scheduler";
 import { createToolGrantsForPins } from "./tool-grants";
 import { createMcpCredentialBindingsFor } from "./mcp-credential-bindings";
+import { reconcilePinnedToolPackagesAfterConnect } from "./connection-live-reconcile";
+import { createPinnedPackageCredentialBindingsFor } from "./pinned-package-credential-bindings";
 import { shutdownHub } from "./shutdown";
 
 // Host policy constants, not configuration.
@@ -717,6 +719,20 @@ export async function createHub(config: HubConfig) {
   );
   // See `./mcp-credential-bindings.ts`'s own doc.
   const mcpCredentialBindingsFor = createMcpCredentialBindingsFor(db);
+  // Same owning check GET /connections uses — see
+  // `@workbench/connections`' `workflow-connection-routes.ts` and the
+  // `createWorkflowConnectionRoutes` wiring below. Not
+  // `listConnectedProviders` (catalog-only).
+  const isConnectorConnected = async (tenantId: string, connectorId: string) =>
+    (await resolveCredentialRequirement(
+      db,
+      tenantId,
+      { providerName: connectorId, source: "tenant" },
+      null,
+      null,
+    )) !== null;
+  const pinnedPackageCredentialBindingsFor =
+    createPinnedPackageCredentialBindingsFor(isConnectorConnected);
   const sidecarRouter = createSidecarRouter({
     hubPublicKey,
     authenticateSidecar: createSidecarTokenAuthenticator({ db }),
@@ -1281,6 +1297,7 @@ export async function createHub(config: HubConfig) {
     credentialCipher,
     toolGrantsForPins,
     mcpCredentialBindingsFor,
+    pinnedPackageCredentialBindingsFor,
     // Chat residents are undeployed on idle again (see the comment above
     // this function): `chatIdleReapMs` (env-overridable via
     // `WORKBENCH_CHAT_IDLE_REAP_MS`, default 30 minutes) is
@@ -1987,6 +2004,7 @@ export async function createHub(config: HubConfig) {
             eventCollectors,
             toolGrantsForPins,
             mcpCredentialBindingsFor,
+            pinnedPackageCredentialBindingsFor,
             cryptoProviderCache: foldedRunCryptoProviders,
             launchMode: AGENT_SECTION_MODE,
             persistLaunch: workbenchLaunchPersistExtra,
@@ -2008,9 +2026,13 @@ export async function createHub(config: HubConfig) {
   // An inference provider's credential landing also re-checks every
   // live participant's deployed inference chain (CL-6687): a rotated
   // key only ever reaches an agent at deploy time, so the relaunch has
-  // to be kicked here, not left for the next message. Not awaited — a
-  // relaunch is a sidecar deploy round-trip, and the connect response
-  // must not wait on it.
+  // to be kicked here, not left for the next message. A tool-package
+  // connector (`feedsTools`, e.g. Manus) is the same shape for a
+  // different payload: `pinnedPackageCredentialBindingsFor` only folds
+  // at deploy, so a live Myra launched at signup before the key was
+  // pasted stays on a snapshot that cannot `resolve("manus")` until
+  // this pass relaunches it. Not awaited — a relaunch is a sidecar
+  // deploy round-trip, and the connect response must not wait on it.
   const settleServiceConnection: ServiceConnectedHook = async (info) => {
     await settleConnectedService(
       {
@@ -2027,15 +2049,27 @@ export async function createHub(config: HubConfig) {
         displayName: info.displayName,
       },
     );
-    if (!isInferenceProvider(info.connectorId)) return;
-    void chatPlatform
-      .reconcileInferenceSources(info.tenantId)
-      .then(({ scanned, relaunched }) => {
-        log.info`inference credential ${info.connectorId} changed on tenant ${info.tenantId}: re-checked ${String(scanned)} live agents, relaunched ${String(relaunched)}`;
+    if (isInferenceProvider(info.connectorId)) {
+      void chatPlatform
+        .reconcileInferenceSources(info.tenantId)
+        .then(({ scanned, relaunched }) => {
+          log.info`inference credential ${info.connectorId} changed on tenant ${info.tenantId}: re-checked ${String(scanned)} live agents, relaunched ${String(relaunched)}`;
+        })
+        .catch((cause: unknown) => {
+          reportError(cause, {
+            operation: "connections.reconcile-inference-sources",
+            tenantId: info.tenantId,
+          });
+        });
+    }
+    void reconcilePinnedToolPackagesAfterConnect(chatPlatform, info)
+      .then((result) => {
+        if (result === undefined) return;
+        log.info`tool-package connector ${info.connectorId} changed on tenant ${info.tenantId}: re-checked ${String(result.scanned)} live agents, relaunched ${String(result.relaunched)}`;
       })
       .catch((cause: unknown) => {
         reportError(cause, {
-          operation: "connections.reconcile-inference-sources",
+          operation: "connections.reconcile-pinned-tool-packages",
           tenantId: info.tenantId,
         });
       });
@@ -2458,18 +2492,9 @@ export async function createHub(config: HubConfig) {
     "/api/workflow-connections",
     createWorkflowConnectionRoutes({
       authenticator: createWorkflowRunAuthenticator({ db }),
-      // The same resolution `buildCredentialDelivery` uses at agent-launch
-      // time to decide whether a tool actually gets a credential — so
-      // `list_connections` reports exactly what an agent could really use,
-      // for an inference provider and a tool connector alike (CL-6492).
-      isConnectorConnected: async (tenantId, connectorId) =>
-        (await resolveCredentialRequirement(
-          db,
-          tenantId,
-          { providerName: connectorId, source: "tenant" },
-          null,
-          null,
-        )) !== null,
+      // Same `isConnectorConnected` the pinned-package factory is wired
+      // with above (CL-6492).
+      isConnectorConnected,
       listMcpServers: (tenantId) => listMcpServerConnections(db, tenantId),
     }),
   );
@@ -2537,6 +2562,7 @@ export async function createHub(config: HubConfig) {
     hubPublicKey,
     toolGrantsForPins,
     mcpCredentialBindingsFor,
+    pinnedPackageCredentialBindingsFor,
   };
 
   // Every genuine top-level deployment run, folded runs (workbench hosts,
@@ -2727,6 +2753,7 @@ export async function createHub(config: HubConfig) {
     credentialCipher,
     toolGrantsForPins,
     mcpCredentialBindingsFor,
+    pinnedPackageCredentialBindingsFor,
     cryptoProviderCache: foldedRunCryptoProviders,
     joinDeliveryWorkbench: (input) =>
       joinRunParticipant({ store: chatStore }, input),
