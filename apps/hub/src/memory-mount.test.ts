@@ -21,6 +21,17 @@ const KEYS = [
 
 type EnvKey = (typeof KEYS)[number];
 
+const originals: Record<EnvKey, string | undefined> = {
+  DATABASE_URL: process.env["DATABASE_URL"],
+  EMBED_BASE_URL: process.env["EMBED_BASE_URL"],
+  EMBED_MODEL: process.env["EMBED_MODEL"],
+  EMBED_API_STYLE: process.env["EMBED_API_STYLE"],
+  EMBED_API_KEY: process.env["EMBED_API_KEY"],
+  RERANK_BASE_URL: process.env["RERANK_BASE_URL"],
+  RERANK_MODEL: process.env["RERANK_MODEL"],
+  OLLAMA_BASE_URL: process.env["OLLAMA_BASE_URL"],
+};
+
 const saved: Partial<Record<EnvKey, string | undefined>> = {};
 
 function clearEnvKey(key: EnvKey): void {
@@ -98,6 +109,12 @@ describe("resolveMemoryEmbed", () => {
       embedApiStyle: "ollama",
       source: "OLLAMA_BASE_URL",
     });
+  });
+
+  test("afterEach restores KEYS after a non-stash resolveMemoryEmbed test", () => {
+    for (const key of KEYS) {
+      expect(process.env[key]).toBe(originals[key]);
+    }
   });
 });
 
