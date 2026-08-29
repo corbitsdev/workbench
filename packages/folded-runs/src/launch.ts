@@ -285,7 +285,6 @@ export async function resolveLaunchSources(
   deps: Pick<FoldedRunsDeps, "db" | "credentialCipher">,
   params: ResolveLaunchSourcesParams,
 ): Promise<ResolvedLaunchSources> {
-
   const sourcesOverride = parseSourcesOverride(params.sources);
   const resolveAgainst = (model: string | null) =>
     resolveDefinitionSources({
