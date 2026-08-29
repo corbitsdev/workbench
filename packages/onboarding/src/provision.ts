@@ -19,8 +19,10 @@ import {
   parseAs,
   reconcileSeedGrants,
   seedTenant,
+  publishCorbitsToolsRegistry,
   type ApiCall,
   type ModelSource,
+  type ToolRegistryPublisher,
   type WorkflowPusher,
   isLiveDeploymentStatus,
 } from "@workbench/hub-client";
@@ -105,6 +107,7 @@ export type ProvisionArgs = {
   displayName?: string;
   operatorTenantId?: string;
   seedModel?: ModelSource;
+  publishToolRegistry?: ToolRegistryPublisher;
   pushWorkflow: WorkflowPusher;
   log: (line: string) => void;
   /** The closed-by-default access-policy gate. Absent means this hub
@@ -225,6 +228,33 @@ export async function isFullySeeded(
   return pending.length === 0;
 }
 
+async function publishRootToolRegistry(args: {
+  api: ApiCall;
+  cookies: string[];
+  hubUrl: string;
+  tenantId: string;
+  publishToolRegistry?: ToolRegistryPublisher;
+  log: (line: string) => void;
+}): Promise<void> {
+  const publishToolRegistry =
+    args.publishToolRegistry ?? publishCorbitsToolsRegistry;
+  try {
+    await publishToolRegistry({
+      api: args.api,
+      cookies: args.cookies,
+      hubUrl: args.hubUrl,
+      tenantId: args.tenantId,
+      log: args.log,
+    });
+  } catch (cause) {
+    throw new ProvisionError(
+      "tool_registry_publish_failed",
+      `personal root bench ${args.tenantId} could not publish corbits-tools before seeding: ${cause instanceof Error ? cause.message : String(cause)}`,
+      "transient",
+    );
+  }
+}
+
 /**
  * The honest partial-seed report `ensureSeeded` reads after catching a
  * sidecar-unavailable deploy failure (CL-6264): which default workflows
@@ -290,6 +320,30 @@ export async function provisionPersonalTenantIfNeeded(
       });
     }
 
+    const tenantResponse = await args.api(
+      "GET",
+      `/api/tenants/${own.tenantId}`,
+      undefined,
+      args.cookies,
+    );
+    const ownTenant = parseAs(
+      TenantResponse,
+      tenantResponse.data,
+      "tenant response",
+    );
+    if (ownTenant.parentId === undefined || ownTenant.parentId === null) {
+      await publishRootToolRegistry({
+        api: args.api,
+        cookies: args.cookies,
+        hubUrl: args.hubUrl,
+        tenantId: own.tenantId,
+        ...(args.publishToolRegistry !== undefined
+          ? { publishToolRegistry: args.publishToolRegistry }
+          : {}),
+        log: args.log,
+      });
+    }
+
     const fullySeeded = await isFullySeeded(
       args.api,
       args.cookies,
@@ -313,17 +367,6 @@ export async function provisionPersonalTenantIfNeeded(
       return { kind: "existing-member", seeded: false, tenantId: own.tenantId };
     }
 
-    const tenantResponse = await args.api(
-      "GET",
-      `/api/tenants/${own.tenantId}`,
-      undefined,
-      args.cookies,
-    );
-    const ownTenant = parseAs(
-      TenantResponse,
-      tenantResponse.data,
-      "tenant response",
-    );
     const existingMemberSeedArgs = {
       api: args.api,
       cookies: args.cookies,
@@ -436,6 +479,19 @@ export async function provisionPersonalTenantIfNeeded(
       `personal bench ${tenant.id} was created but the caller has no principal in it`,
       "transient",
     );
+  }
+
+  if (tenant.parentId === undefined || tenant.parentId === null) {
+    await publishRootToolRegistry({
+      api: args.api,
+      cookies: args.cookies,
+      hubUrl: args.hubUrl,
+      tenantId: tenant.id,
+      ...(args.publishToolRegistry !== undefined
+        ? { publishToolRegistry: args.publishToolRegistry }
+        : {}),
+      log: args.log,
+    });
   }
 
   if (!args.seedModel) {

@@ -28,6 +28,7 @@ const noopPush: WorkflowPusher = async () => ({
   outcome: "pushed" as const,
   commitSha: "a".repeat(40),
 });
+const noopPublishToolRegistry = async () => undefined;
 
 function collector() {
   const lines: string[] = [];
@@ -256,6 +257,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userId: "user_1",
       userEmail: "alice@example.com",
       userEmailVerified: true,
+      publishToolRegistry: noopPublishToolRegistry,
       pushWorkflow: noopPush,
       log: collector().log,
     });
@@ -315,6 +317,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       displayName: "Alice's Lab",
+      publishToolRegistry: noopPublishToolRegistry,
       pushWorkflow: noopPush,
       log: collector().log,
     });
@@ -350,6 +353,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
         userEmail: "alice@example.com",
         userEmailVerified: true,
         displayName: "Alice's Lab",
+        publishToolRegistry: noopPublishToolRegistry,
         pushWorkflow: noopPush,
         log: collector().log,
       }),
@@ -359,6 +363,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
   test("zero principals with no seed model: provisions the bench and reports the seed skip loudly", async () => {
     let principalsCalls = 0;
     const { lines, log } = collector();
+    const publishedTenants: string[] = [];
     const api: ApiCall = async (method, path, body) => {
       if (method === "GET" && path === "/api/me/principals") {
         principalsCalls += 1;
@@ -420,6 +425,9 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       displayName: "Alice's Lab",
+      publishToolRegistry: async ({ tenantId }) => {
+        publishedTenants.push(tenantId);
+      },
       pushWorkflow: noopPush,
       log,
     });
@@ -427,6 +435,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
     expect(result.kind).toBe("provisioned");
     if (result.kind !== "provisioned") throw new Error("unreachable");
     expect(result.seeded).toBe(false);
+    expect(publishedTenants).toEqual([TENANT_ID]);
     expect(result.seedSkipReason).toContain("ANTHROPIC_API_KEY");
     expect(lines.some((line) => line.includes("ANTHROPIC_API_KEY"))).toBe(true);
   });
@@ -457,6 +466,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userId: "user_1",
       userEmail: "alice@example.com",
       userEmailVerified: true,
+      publishToolRegistry: noopPublishToolRegistry,
       pushWorkflow: noopPush,
       log,
     });
@@ -480,6 +490,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       displayName: "Alice's Lab",
       operatorTenantId: "ten_operator",
       seedModel: MODEL,
+      publishToolRegistry: noopPublishToolRegistry,
       pushWorkflow: noopPush,
       log,
     });
@@ -493,9 +504,10 @@ describe("provisionPersonalTenantIfNeeded", () => {
     expect(tarballPuts).toEqual([]);
   });
 
-  test("an unparented personal bench still does not pack corbits-tools as a fallback", async () => {
+  test("an unparented personal root bench publishes corbits-tools before seeding", async () => {
     const { api, tarballPuts } = firstLoginSeedHub({});
     const { log } = collector();
+    const publishedTenants: string[] = [];
     const result = await provisionPersonalTenantIfNeeded({
       api,
       cookies: ["session=abc"],
@@ -505,6 +517,9 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmailVerified: true,
       displayName: "Alice's Lab",
       seedModel: MODEL,
+      publishToolRegistry: async ({ tenantId }) => {
+        publishedTenants.push(tenantId);
+      },
       pushWorkflow: noopPush,
       log,
     });
@@ -515,6 +530,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       tenantSlug: TENANT_SLUG,
       seeded: true,
     });
+    expect(publishedTenants).toEqual([TENANT_ID]);
     expect(tarballPuts).toEqual([]);
   });
 
@@ -716,6 +732,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmailVerified: true,
       displayName: "Alice's Lab",
       seedModel: MODEL,
+      publishToolRegistry: noopPublishToolRegistry,
       pushWorkflow: noopPush,
       log: collector().log,
     });
@@ -731,6 +748,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       seedModel: MODEL,
+      publishToolRegistry: noopPublishToolRegistry,
       pushWorkflow: noopPush,
       log,
     });
@@ -766,6 +784,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
         ),
     );
     const grantsPosted: { resource: string; action: string }[] = [];
+    const publishedTenants: string[] = [];
     const api: ApiCall = async (method, path, body) => {
       if (method === "GET" && path === "/api/me/principals") {
         return {
@@ -852,6 +871,20 @@ describe("provisionPersonalTenantIfNeeded", () => {
           cookies: [],
         };
       }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return {
+          status: 200,
+          data: {
+            id: TENANT_ID,
+            name: "alice's workbench",
+            slug: TENANT_SLUG,
+            domain: `${TENANT_SLUG}.localhost`,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+          cookies: [],
+        };
+      }
       throw new Error(`unexpected call: ${method} ${path}`);
     };
 
@@ -863,6 +896,9 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       // No seedModel needed: nothing left to seed on the workflow side.
+      publishToolRegistry: async ({ tenantId }) => {
+        publishedTenants.push(tenantId);
+      },
       pushWorkflow: noopPush,
       log: collector().log,
     });
@@ -872,6 +908,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       seeded: true,
       tenantId: "ten_new",
     });
+    expect(publishedTenants).toEqual([TENANT_ID]);
     // Exactly the one grant this tenant was missing — no more, no less.
     expect(grantsPosted).toEqual([missingGrant]);
   });
@@ -943,6 +980,20 @@ describe("provisionPersonalTenantIfNeeded", () => {
           cookies: [],
         };
       }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return {
+          status: 200,
+          data: {
+            id: TENANT_ID,
+            name: "alice's workbench",
+            slug: TENANT_SLUG,
+            domain: `${TENANT_SLUG}.localhost`,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+          cookies: [],
+        };
+      }
       throw new Error(`unexpected call: ${method} ${path}`);
     };
 
@@ -953,6 +1004,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userId: "user_1",
       userEmail: "alice@example.com",
       userEmailVerified: true,
+      publishToolRegistry: noopPublishToolRegistry,
       pushWorkflow: noopPush,
       log: collector().log,
     });
@@ -970,6 +1022,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
     // not depend on a seed credential that may never exist. Seeding itself is
     // skipped (nothing to seed with); the user is not stranded in a loop.
     let assetListCalls = 0;
+    const publishedTenants: string[] = [];
     const api: ApiCall = async (method, path) => {
       if (method === "GET" && path === "/api/me/principals") {
         return {
@@ -1021,6 +1074,20 @@ describe("provisionPersonalTenantIfNeeded", () => {
       ) {
         return { status: 200, data: [], cookies: [] };
       }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return {
+          status: 200,
+          data: {
+            id: TENANT_ID,
+            name: "alice's workbench",
+            slug: TENANT_SLUG,
+            domain: `${TENANT_SLUG}.localhost`,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+          cookies: [],
+        };
+      }
       throw new Error(`unexpected call: ${method} ${path}`);
     };
 
@@ -1032,6 +1099,9 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       // No seedModel — hub without ANTHROPIC_API_KEY.
+      publishToolRegistry: async ({ tenantId }) => {
+        publishedTenants.push(tenantId);
+      },
       pushWorkflow: noopPush,
       log: collector().log,
     });
@@ -1044,6 +1114,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       seeded: false,
       tenantId: "ten_new",
     });
+    expect(publishedTenants).toEqual([TENANT_ID]);
     // Completeness was checked (tenant-local assets listed) even without a
     // seed model — membership recovery does not short-circuit before that.
     expect(assetListCalls).toBe(1);
@@ -1234,6 +1305,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       seedModel: MODEL,
+      publishToolRegistry: noopPublishToolRegistry,
       pushWorkflow: noopPush,
       log: collector().log,
     });
@@ -1469,6 +1541,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       seedModel: MODEL,
+      publishToolRegistry: noopPublishToolRegistry,
       pushWorkflow: noopPush,
       log: collector().log,
     });
