@@ -266,6 +266,66 @@ test("a comment mentioning import does not swallow a later type-only import", ()
   ]);
 });
 
+test("a node: import is denylisted regardless of subpath", () => {
+  const packages: PackageManifest[] = [
+    {
+      name: "@corbits/pkg-a",
+      exports: { "./client": "packages/pkg-a/src/client.ts" },
+    },
+  ];
+  const files = new Map<string, string>([
+    ["packages/pkg-a/src/client.ts", `import { join } from "node:path";`],
+  ]);
+
+  const report = auditBrowserSafeSubpaths(
+    [{ package: "@corbits/pkg-a", subpath: "./client" }],
+    packages,
+    files,
+  );
+
+  expect(report.violations).toHaveLength(1);
+  expect(report.violations[0]).toContain("node:path");
+});
+
+test("a declared ./client export with no ENTRIES ruling is a violation naming the package", () => {
+  const packages: PackageManifest[] = [
+    {
+      name: "@corbits/pkg-a",
+      exports: { "./client": "packages/pkg-a/src/client.ts" },
+    },
+  ];
+  const files = new Map<string, string>([
+    ["packages/pkg-a/src/client.ts", `export const x = 1;`],
+  ]);
+
+  const report = auditBrowserSafeSubpaths([], packages, files);
+
+  expect(report.violations).toHaveLength(1);
+  expect(report.violations[0]).toContain("@corbits/pkg-a");
+  expect(report.violations[0]).toContain("./client");
+  expect(report.violations[0]).toContain("ENTRIES");
+});
+
+test("a declared ./client export with a matching ENTRIES ruling is not a violation", () => {
+  const packages: PackageManifest[] = [
+    {
+      name: "@corbits/pkg-a",
+      exports: { "./client": "packages/pkg-a/src/client.ts" },
+    },
+  ];
+  const files = new Map<string, string>([
+    ["packages/pkg-a/src/client.ts", `export const x = 1;`],
+  ]);
+
+  const report = auditBrowserSafeSubpaths(
+    [{ package: "@corbits/pkg-a", subpath: "./client" }],
+    packages,
+    files,
+  );
+
+  expect(report.violations).toEqual([]);
+});
+
 test("a block comment cannot hide a real value import", () => {
   const parsed = parseImportSpecifiers(
     ['/* import x from "commented-out"; */', 'import y from "real";'].join(

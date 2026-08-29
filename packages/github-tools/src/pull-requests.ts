@@ -17,7 +17,13 @@ import { type } from "arktype";
 import type { GitHubClientConfig } from "./client";
 
 const DEFAULT_BASE_URL = "https://api.github.com";
-const MAX_FILES_PER_PAGE = 100;
+const MAX_ITEMS_PER_PAGE = 100;
+/**
+ * Upper bound on how many pages a paginated fetch follows. A pull
+ * request with more than 3,000 changed files or review comments is
+ * pathological; past that we stop and say so rather than loop forever.
+ */
+const MAX_PAGES = 30;
 
 const PullRequestResponse = type({
   title: "string",
@@ -72,6 +78,8 @@ export interface PullRequestDiff {
   readonly headSha: string;
   readonly baseSha: string;
   readonly files: readonly PullRequestFileDiff[];
+  /** True when the file list hit the page bound and may be incomplete. */
+  readonly truncated: boolean;
 }
 
 /** One inline comment on a posted review. */
@@ -90,6 +98,12 @@ export interface PullRequestReviewDraft {
 export interface PostedPullRequestReview {
   readonly id: number;
   readonly url: string;
+}
+
+export interface PullRequestReviewCommentsPage {
+  readonly comments: readonly string[];
+  /** True when the comment list hit the page bound and may be incomplete. */
+  readonly truncated: boolean;
 }
 
 const PULL_REQUEST_URL =
@@ -153,13 +167,19 @@ function headers(apiKey: string | undefined): Record<string, string> {
   return base;
 }
 
-async function requestJSON(
+/**
+ * Fetches a URL and parses its body as JSON, throwing one consistently
+ * worded error for a non-2xx response. The one seam every GitHub call in
+ * this module goes through, so `requestJSON` and `fetchAllPages` report
+ * a transport failure identically instead of each spelling it out.
+ */
+async function fetchJSON(
   config: GitHubClientConfig,
   url: URL,
   init: { readonly method: string; readonly body?: string },
-): Promise<unknown> {
+): Promise<{ readonly response: Response; readonly body: unknown }> {
   const doFetch = config.fetchImpl ?? fetch;
-  const response = await doFetch(url, {
+  const response: Response = await doFetch(url, {
     method: init.method,
     headers: headers(config.apiKey),
     ...(init.body === undefined ? {} : { body: init.body }),
@@ -170,7 +190,73 @@ async function requestJSON(
         `${String(response.status)} ${response.statusText}`,
     );
   }
-  return response.json();
+  return { response, body: await response.json() };
+}
+
+async function requestJSON(
+  config: GitHubClientConfig,
+  url: URL,
+  init: { readonly method: string; readonly body?: string },
+): Promise<unknown> {
+  return (await fetchJSON(config, url, init)).body;
+}
+
+const NEXT_LINK = /<([^>]+)>\s*;\s*rel="next"/;
+
+/** Reads the `rel="next"` URL out of a GitHub `Link` response header. */
+function nextPageUrl(linkHeader: string | null): URL | null {
+  if (linkHeader === null) return null;
+  const match = NEXT_LINK.exec(linkHeader);
+  return match?.[1] === undefined ? null : new URL(match[1]);
+}
+
+/** The next page to request when a paginated endpoint sent no `Link`. */
+function fallbackNextPage(url: URL, pageItemCount: number): URL | null {
+  if (pageItemCount < MAX_ITEMS_PER_PAGE) return null;
+  const next = new URL(url);
+  const currentPage = Number(next.searchParams.get("page") ?? "1");
+  next.searchParams.set("page", String(currentPage + 1));
+  return next;
+}
+
+/**
+ * Follows a paginated GitHub list endpoint to completion: the `Link`
+ * header's `rel="next"` when GitHub sends one, otherwise successive
+ * `page=` requests until a page comes back short. Stops at `MAX_PAGES`
+ * and reports `truncated: true` rather than looping forever against a
+ * pathological pull request.
+ */
+async function fetchAllPages(
+  config: GitHubClientConfig,
+  initialUrl: URL,
+): Promise<{
+  readonly items: readonly unknown[];
+  readonly truncated: boolean;
+}> {
+  const items: unknown[] = [];
+  let url: URL | null = initialUrl;
+  let pageCount = 0;
+  let truncated = false;
+
+  while (url !== null) {
+    if (pageCount >= MAX_PAGES) {
+      truncated = true;
+      break;
+    }
+    pageCount += 1;
+    const { response, body: page } = await fetchJSON(config, url, {
+      method: "GET",
+    });
+    if (!Array.isArray(page)) {
+      throw new Error(`GitHub GET ${url.pathname} returned a non-array page`);
+    }
+    items.push(...page);
+    url =
+      nextPageUrl(response.headers.get("link")) ??
+      fallbackNextPage(url, page.length);
+  }
+
+  return { items, truncated };
 }
 
 function baseOf(config: GitHubClientConfig): string {
@@ -208,11 +294,11 @@ export async function fetchPullRequestDiff(
 
   const pullUrl = new URL(`${base}${pullPath(ref)}`);
   const filesUrl = new URL(`${base}${pullPath(ref)}/files`);
-  filesUrl.searchParams.set("per_page", String(MAX_FILES_PER_PAGE));
+  filesUrl.searchParams.set("per_page", String(MAX_ITEMS_PER_PAGE));
 
-  const [pullRaw, filesRaw] = await Promise.all([
+  const [pullRaw, filesPage] = await Promise.all([
     requestJSON(config, pullUrl, { method: "GET" }),
-    requestJSON(config, filesUrl, { method: "GET" }),
+    fetchAllPages(config, filesUrl),
   ]);
 
   const pull = PullRequestResponse(pullRaw);
@@ -221,7 +307,7 @@ export async function fetchPullRequestDiff(
       `GitHub pull-request response did not match the expected shape: ${pull.summary}`,
     );
   }
-  const files = PullRequestFilesResponse(filesRaw);
+  const files = PullRequestFilesResponse(filesPage.items);
   if (files instanceof type.errors) {
     throw new Error(
       `GitHub pull-request files response did not match the expected shape: ${files.summary}`,
@@ -237,6 +323,7 @@ export async function fetchPullRequestDiff(
     headSha: pull.head.sha,
     baseSha: pull.base.sha,
     files: files.map(toFileDiff),
+    truncated: filesPage.truncated,
   };
 }
 
@@ -251,17 +338,20 @@ const ReviewCommentsResponse = ReviewCommentResponse.array();
 export async function fetchPullRequestReviewComments(
   config: GitHubClientConfig,
   ref: PullRequestRef,
-): Promise<readonly string[]> {
+): Promise<PullRequestReviewCommentsPage> {
   const url = new URL(`${baseOf(config)}${pullPath(ref)}/comments`);
-  url.searchParams.set("per_page", String(MAX_FILES_PER_PAGE));
-  const raw = await requestJSON(config, url, { method: "GET" });
-  const comments = ReviewCommentsResponse(raw);
+  url.searchParams.set("per_page", String(MAX_ITEMS_PER_PAGE));
+  const page = await fetchAllPages(config, url);
+  const comments = ReviewCommentsResponse(page.items);
   if (comments instanceof type.errors) {
     throw new Error(
       `GitHub pull-request comments response did not match the expected shape: ${comments.summary}`,
     );
   }
-  return comments.map((comment) => comment.body);
+  return {
+    comments: comments.map((comment) => comment.body),
+    truncated: page.truncated,
+  };
 }
 
 /**

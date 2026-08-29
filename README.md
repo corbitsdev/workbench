@@ -19,7 +19,8 @@ install is tracked separately and is not part of this path.
 
 ## Quickstart
 
-Requires [Bun](https://bun.sh) >= 1.2.
+Requires [Bun](https://bun.sh) >= 1.2. The exact version CI and this repo
+develop against is pinned in [`.bun-version`](.bun-version).
 
 ```sh
 bun install
@@ -47,11 +48,13 @@ bun run dev
 Recommended: run `bun run setup:memory` for a machine-specific
 recommendation on turning on the memory plane (embeddings-backed recall)
 and its optional reranker — native Ollama, Docker, or a remote endpoint,
-whichever this machine can actually use — then add the env lines it
-prints to `.env`. Skipping this leaves memory off: memory tools answer
-"not set up" instead of erroring, so it's safe to add later, but rows
-written before `EMBED_BASE_URL` is set are never retroactively embedded.
-See [docs/local-dev.md](docs/local-dev.md#memory-plane) for the full
+whichever this machine can actually use. When a local embed path exists,
+that command writes the missing `EMBED_*` keys into `.env`. `bun run dev`
+also mounts `@corbits/memory` when `OLLAMA_BASE_URL` is set, or when
+native Ollama is on PATH even if you skipped setup. Without any of those,
+memory tools answer "not set up" instead of erroring; rows written before
+an embed URL is set are never retroactively embedded. See
+[docs/local-dev.md](docs/local-dev.md#memory-plane) for the full
 degradation story.
 
 `bun run dev` validates your `.env` (reporting every missing or malformed
@@ -87,9 +90,12 @@ through picking a provider — Anthropic, OpenAI, Google, OpenRouter, Hugging
 Face, Groq, or another of the curated providers in
 [`packages/hub-client/src/catalog-seed-data.ts`](packages/hub-client/src/catalog-seed-data.ts)
 — and pasting their own key (or, for OpenRouter, completing a PKCE OAuth
-connect), proves it with a real call before storing anything, then deploys
-and confirms the default routines on the spot — no separate `bun run seed`
-step, no docs to read. Whichever provider they connect gets its own curated
+connect), which is stored right away — no separate `bun run seed` step, no
+docs to read. A wrong key isn't caught up front; it surfaces the first time
+it's actually dialed for real inference, through the same in-chat "Fix this
+connection" flow any credential failure uses. The bench's default agents
+deploy in the background — "Your workbench is ready — agents will come
+online shortly," no "Connecting…" wait in the browser. Whichever provider they connect gets its own curated
 catalog entry planted the same way `bun run seed` plants Anthropic's; see
 [docs/model-seeding.md](docs/model-seeding.md) for how that catalog data is
 curated and kept up to date.

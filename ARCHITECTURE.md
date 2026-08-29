@@ -77,6 +77,17 @@ tenant and writes settings rows — no deploy, no host, no anchor instance
 one publish onto the workbench's live stream, so the conversation takes
 messages whether or not any agent process is running.
 
+**Editing an own prompt.** Edit is a composer replace, not a timeline
+mutation and not a thread fork. The timeline offers Edit only on the
+signed-in reader's own prompts that have text
+(`packages/chat-ui/src/timeline.tsx`). Choosing it copies that message's
+text into the composer through `ComposerHandle.setText`
+(`packages/chat-ui/src/composer.tsx`). `setText` replaces the draft and
+clears leftover composer-private state (slash, mention, pending invites,
+attachments, in-flight attachment reads). Sending is the ordinary post
+onto the timeline already in view (root or an open thread). It does not
+PATCH the origin message and it does not call `forkThread`.
+
 A workbench's address is derived, not resolved. Asking an invited agent
 for a turn is a separate act over Interchange mail; the agent replies by
 emitting `connector.reply` events on its own stream, and a reply bridge
@@ -99,6 +110,20 @@ The current step is named in words; colour is additive, never the only
 signal. Consecutive agent-joined events collapse into one line so the
 scene and the reviewers' own introductions are what a person reads
 first.
+
+**A `kind: chat` is 1:1.** It is the one DM with its agent. Inviting a
+different or additional agent into that conversation is a conflict
+(HTTP 409 `kind_is_chat`); extra agents belong on a `kind: workbench`
+channel. A same-definition invite reuses the resident principal and
+does not clone a sibling instance.
+
+**Default specialist creation mints or reopens that DM.** Myra's
+`create_agent` path does not invite the new definition into the
+caller's conversation — Myra's DM is itself `kind: chat` and would
+reject the extra agent. It mints a `kind: chat` for the definition
+under the bench, or reopens the existing one for that (bench,
+definition) pair, matching the product-surface find-or-reopen rule.
+The specialist launches into that chat, never into Myra's.
 
 **Streaming a reply.** An agent's live reply reaches the timeline through
 one path, deltas to pixels:

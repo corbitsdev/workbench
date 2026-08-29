@@ -13,7 +13,7 @@
   "scripts": {
     "check": "bun run typecheck && bun run lint && bun run test && bun run check:structural",
     "check:all": "bun run check && bun run check:packages",
-    "typecheck": "bun run scripts/run-all.ts typecheck",
+    "typecheck": "bun run scripts/run-all.ts typecheck && bunx tsc -p tsconfig.json --noEmit && bunx tsc -p test/isolation/tsconfig.json --noEmit",
     "lint": "prettier --check --cache . && eslint --cache .",
     "format": "prettier --write .",
     "build": "bun run scripts/run-all.ts build",

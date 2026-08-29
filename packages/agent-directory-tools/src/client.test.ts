@@ -5,7 +5,9 @@ import {
   CreateAgentDefinitionError,
   inviteParticipant,
   listAgentDefinitions,
+  mintAgentDm,
   NoOwnChannelError,
+  NoOwnWorkbenchError,
   type AgentDirectoryToolClientConfig,
 } from "./client";
 
@@ -195,4 +197,46 @@ test("inviteParticipant throws NoOwnChannelError on a 404", async () => {
   await expect(
     inviteParticipant(testConfig(fetchImpl), "def_1"),
   ).rejects.toBeInstanceOf(NoOwnChannelError);
+});
+
+test("mintAgentDm posts to the workflow-chat participants mint-dm endpoint", async () => {
+  let seenUrl: string | undefined;
+  let seenBody: unknown;
+  const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+    seenUrl = String(url);
+    seenBody = JSON.parse(String(init?.body));
+    return new Response(
+      JSON.stringify({
+        workbenchId: "wb_1",
+        address: "ins_1@acme.example",
+        definitionId: "def_1",
+        handle: "research-buddy",
+      }),
+      { status: 201 },
+    );
+  }) as unknown as typeof fetch;
+
+  const result = await mintAgentDm(testConfig(fetchImpl), "def_1");
+  expect(seenUrl).toBe(
+    "https://hub.example.com/api/workflow-chat/participants/mint-dm",
+  );
+  expect(seenBody).toEqual({ definitionId: "def_1" });
+  expect(result.workbenchId).toBe("wb_1");
+  expect(result.address).toBe("ins_1@acme.example");
+  expect(result.definitionId).toBe("def_1");
+  expect(result.handle).toBe("research-buddy");
+});
+
+test("mintAgentDm throws NoOwnWorkbenchError on a 404", async () => {
+  const fetchImpl = (async () =>
+    new Response(
+      JSON.stringify({
+        error: { code: "not_found", message: "no workbench found" },
+      }),
+      { status: 404 },
+    )) as unknown as typeof fetch;
+
+  await expect(
+    mintAgentDm(testConfig(fetchImpl), "def_1"),
+  ).rejects.toBeInstanceOf(NoOwnWorkbenchError);
 });

@@ -45,6 +45,7 @@ export {
 } from "./settings";
 export {
   startReviewingRepos,
+  webhookTriggerName,
   type ConnectGithubSetupPorts,
   type StartReviewingReposResult,
 } from "./connect-github-setup";

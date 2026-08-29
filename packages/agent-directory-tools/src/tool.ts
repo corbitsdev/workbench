@@ -1,13 +1,13 @@
 // The `@corbits/agent-directory-tools` bundle: Myra's manager tools —
 // `list_agents`, a plain read of the tenant's taskable agents, and
 // `create_agent`, which materializes a brand-new specialist agent
-// definition and, by default, invites it straight into the channel
-// Myra is talking in. Neither tool carries an `approval` key: creation
-// is free and the reactor never parks the call. Creation plus the
-// default invite is tenant-internal — a new definition in the caller's
-// own tenant, then (unless opted out) an invite into the caller's own
-// channel. `toolPackagePins` on that definition are pins the user
-// asked Myra to set, not a capability grant that needs a
+// definition and, by default, opens that specialist its own `kind: chat`
+// 1:1 (mint-dm) — never inviting into Myra's current DM. Neither tool
+// carries an `approval` key: creation is free and the reactor never parks
+// the call. Creation plus the default mint is tenant-internal — a new
+// definition in the caller's own tenant, then (unless opted out) a fresh
+// chat for that definition. `toolPackagePins` on that definition are pins
+// the user asked Myra to set, not a capability grant that needs a
 // per-invocation gate. State-changing MCP tools and run-now/execution
 // stay gated on their own declarations.
 //
@@ -16,10 +16,10 @@
 // ground `@corbits/memory-tools`'/`@corbits/capability-tools`' own env
 // keys are threaded from.
 //
-// See `./client.ts` for the two workflow-run-authenticated routes this
+// See `./client.ts` for the workflow-run-authenticated routes this
 // bundle's execution calls: `@corbits/agent-directory`'s
 // `createWorkflowAgentCreateRoutes` and `@corbits/chat`'s
-// `createWorkflowParticipantRoutes`.
+// `createWorkflowParticipantRoutes` (mint-dm + invite).
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
@@ -28,9 +28,9 @@ import { type } from "arktype";
 import {
   createAgentDefinition,
   CreateAgentDefinitionError,
-  inviteParticipant,
   listAgentDefinitions,
-  NoOwnChannelError,
+  mintAgentDm,
+  NoOwnWorkbenchError,
   type AgentDirectoryToolClientConfig,
   type CreateAgentDefinitionRequest,
 } from "./client";
@@ -169,40 +169,40 @@ async function runCreateAgent(
   // model it originally asked for.
   const modelSuffix = created.modelNote !== null ? ` ${created.modelNote}` : "";
 
-  // `invite` defaults to `true` — never require the model to pass it,
-  // only to opt out explicitly.
-  const shouldInvite = call.arguments["invite"] !== false;
-  if (!shouldInvite) {
+  // `invite` defaults to `true` — open the specialist's own 1:1 chat.
+  // Pass `false` to create the definition only.
+  const shouldMint = call.arguments["invite"] !== false;
+  if (!shouldMint) {
     return {
       callId: call.id,
       isError: false,
-      content: `Created "${created.name}" (use this id for routines/dispatch: ${created.id}). It is not in this channel — invite it explicitly if you want it here.${modelSuffix}`,
+      content: `Created "${created.name}" (use this id for routines/dispatch: ${created.id}). It has no chat of its own yet — call again without invite:false to open one.${modelSuffix}`,
     };
   }
 
   try {
-    await inviteParticipant(clientConfig(env), created.id);
+    const minted = await mintAgentDm(clientConfig(env), created.id);
     return {
       callId: call.id,
       isError: false,
-      content: `Created "${created.name}" (use this id for routines/dispatch: ${created.id}) and invited it into this channel.${modelSuffix}`,
+      content: `Created "${created.name}" (use this id for routines/dispatch: ${created.id}) and opened its own chat (workbenchId: ${minted.workbenchId}).${modelSuffix}`,
     };
   } catch (err) {
     // The agent was genuinely created — that half-success must never
     // be dropped or reported as a bare error. A completed (not error)
-    // result whose content names the create-succeeded/invite-failed
+    // result whose content names the create-succeeded/mint-failed
     // split, and why, so the model can relay it honestly rather than
     // claiming either full success or total failure.
     const reason =
-      err instanceof NoOwnChannelError
-        ? "this channel could not be identified as the caller's own"
+      err instanceof NoOwnWorkbenchError
+        ? "this workbench could not be identified as the caller's own"
         : err instanceof Error
           ? err.message
           : String(err);
     return {
       callId: call.id,
       isError: false,
-      content: `Created "${created.name}" (use this id for routines/dispatch: ${created.id}), but could not invite it into this channel: ${reason}.${modelSuffix}`,
+      content: `Created "${created.name}" (use this id for routines/dispatch: ${created.id}), but could not open its own chat: ${reason}.${modelSuffix}`,
     };
   }
 }
@@ -232,8 +232,9 @@ export const agentDirectoryTools = defineTool<WorkflowAgentDirectoryEnv>({
         description:
           "Create a brand-new specialist agent in this workbench, with " +
           "its own name and system prompt, and — unless told not to — " +
-          "invite it straight into this channel. Use this only for a " +
-          "genuine, specific need; never speculatively.",
+          "open that specialist its own 1:1 chat (not an invite into " +
+          "the current DM). Use this only for a genuine, specific " +
+          "need; never speculatively.",
         inputSchema: {
           type: "object",
           properties: {
@@ -274,9 +275,10 @@ export const agentDirectoryTools = defineTool<WorkflowAgentDirectoryEnv>({
             invite: {
               type: "boolean",
               description:
-                "Whether to invite the new agent into this channel " +
+                "Whether to open the new agent's own 1:1 chat " +
                 "immediately after creating it. Defaults to true — " +
-                "pass false to create the agent without inviting it.",
+                "pass false to create the agent without opening a chat. " +
+                "Does not invite into the current DM.",
             },
           },
           required: ["name", "systemPrompt"],

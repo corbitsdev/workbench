@@ -31,11 +31,7 @@
 // composition root decides how a session is minted for a user, and this
 // module stays out of the auth mechanism entirely.
 
-import {
-  type ApiCall,
-  type WorkflowPusher,
-  type ToolRegistryPublisher,
-} from "@workbench/hub-client";
+import { type ApiCall, type WorkflowPusher } from "@workbench/hub-client";
 import { ensureSeeded } from "./complete-credential";
 import { isFullySeeded } from "./provision";
 import {
@@ -64,7 +60,6 @@ export type BenchProvisionerDeps = {
   hubUrl: string;
   store: PendingSeedStore;
   pushWorkflow: WorkflowPusher;
-  publishToolRegistry?: ToolRegistryPublisher;
   sessionFor: SessionForUser;
   log: (line: string) => void;
   logError?: (line: string) => void;
@@ -172,11 +167,7 @@ export function createBenchProvisioner(
         ? { baseURLOverride: seed.baseURLOverride }
         : {}),
     };
-    const result = await runEnsureSeeded(
-      deps.publishToolRegistry !== undefined
-        ? { ...seededArgs, publishToolRegistry: deps.publishToolRegistry }
-        : seededArgs,
-    );
+    const result = await runEnsureSeeded(seededArgs);
 
     if (result.kind === "seeded-pending-agents") {
       deps.log(

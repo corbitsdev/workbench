@@ -84,6 +84,11 @@ export type ConnectGithubRoutesDeps = {
    * `undefined` when the template's own workflow was never deployed for
    * this tenant (a create-flow bug, not something this route can fix). */
   resolveCodeReviewDefinitionId(tenantId: string): Promise<string | undefined>;
+  /** True once this repo already has the `repo:<owner/name>` grant — see
+   * `./connect-github-setup.ts`'s `ConnectGithubSetupPorts.hasRepoGrant`
+   * for why this makes a retry between minting the grant and creating
+   * the trigger safe. */
+  hasRepoGrant(tenantId: string, repo: GitHubRepoSummary): Promise<boolean>;
   /** Mints the `repo:<owner/name>`-scoped grant a launched review run
    * needs to read this repo — see `./connect-github-setup.ts`'s
    * `ConnectGithubSetupPorts.mintRepoGrant` for the exact resource shape. */
@@ -97,6 +102,15 @@ export type ConnectGithubRoutesDeps = {
     codeReviewDefinitionId: string,
     repo: GitHubRepoSummary,
   ): Promise<{ readonly id: string }>;
+  /** True once this repo already has a live webhook trigger for the
+   * resolved code-review definition — see
+   * `./connect-github-setup.ts`'s `ConnectGithubSetupPorts.hasWebhookTrigger`
+   * for why this makes a retry after a mid-loop failure safe. */
+  hasWebhookTrigger(
+    tenantId: string,
+    codeReviewDefinitionId: string,
+    repo: GitHubRepoSummary,
+  ): Promise<boolean>;
   /** The room's current `template/*` settings — read before every
    * `start-reviewing` write so the state read and the persisted patch
    * never race a stale pending-connections list. */
@@ -272,6 +286,7 @@ export function createConnectGithubRoutes(
         const introductionsAlreadyPosted =
           settingsBefore.selectedRepos.length > 0;
         const result = await startReviewingRepos(body.repoIds, state.repos, {
+          hasRepoGrant: (repo) => deps.hasRepoGrant(tenant.id, repo),
           mintRepoGrant: (repo) => deps.mintRepoGrant(tenant.id, repo),
           createWebhookTrigger: (repo) =>
             deps.createWebhookTrigger(
@@ -280,6 +295,8 @@ export function createConnectGithubRoutes(
               codeReviewDefinitionId,
               repo,
             ),
+          hasWebhookTrigger: (repo) =>
+            deps.hasWebhookTrigger(tenant.id, codeReviewDefinitionId, repo),
           persistSelectedRepos: async (repoIds) => {
             const settings = await deps.getTemplateSettings(
               tenant.id,

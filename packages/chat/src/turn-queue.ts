@@ -86,8 +86,8 @@ export function createWorkbenchTurnQueue(
 
   return {
     async run(workbenchId, turn, dispatch) {
-      const claimed = await deps.claims.tryClaim({ workbenchId });
-      if (!claimed) {
+      const token = await deps.claims.tryClaim({ workbenchId });
+      if (token === false) {
         const queue = pendingByWorkbench.get(workbenchId) ?? [];
         queue.push(turn);
         pendingByWorkbench.set(workbenchId, queue);
@@ -110,17 +110,27 @@ export function createWorkbenchTurnQueue(
       // queue exists to guarantee. The pending-queue check between
       // batches runs with no `await` in between, so nothing can slip in
       // during it.
+      //
+      // `dispatch` is the one `await` in this loop the TTL backstop can
+      // fire during (CL-7129): a dispatch that outlives `ttlMs` lets a
+      // second, unrelated `run()` call win a fresh claim and start its
+      // own drain of this same `pendingByWorkbench` entry. The `holds`
+      // check right after each `dispatch` is how this loop notices that
+      // happened and stops — leaving whatever is still queued for the
+      // new holder to pick up — instead of popping and dispatching a
+      // batch the new holder is already about to dispatch itself.
       let batch: readonly QueuedTurn[] = [turn];
       try {
         for (;;) {
           await dispatch(batch);
+          if (!(await deps.claims.holds({ workbenchId }, token))) break;
           const next = pendingByWorkbench.get(workbenchId);
           if (next === undefined || next.length === 0) break;
           pendingByWorkbench.delete(workbenchId);
           batch = next;
         }
       } finally {
-        await deps.claims.release({ workbenchId });
+        await deps.claims.release({ workbenchId }, token);
       }
     },
   };

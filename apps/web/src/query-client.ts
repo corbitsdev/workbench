@@ -161,6 +161,24 @@ export const tenantKeys = {
 };
 
 /**
+ * Every surface that runs a routine (the routine panel's Run now button,
+ * the shell context menu's Run now item) must refresh the same two reads —
+ * the routines list and its run history — or one of them goes stale while
+ * the other doesn't.
+ */
+export function invalidateRoutineQueries(
+  queryClient: QueryClient,
+  tenantId: string,
+): void {
+  void queryClient.invalidateQueries({
+    queryKey: tenantKeys.routines(tenantId),
+  });
+  void queryClient.invalidateQueries({
+    queryKey: tenantKeys.routineRunHistories(tenantId),
+  });
+}
+
+/**
  * Map a hub GET path onto a stable query key. Unknown paths fall back to a
  * path-keyed entry so callers cannot accidentally share cache entries.
  */
