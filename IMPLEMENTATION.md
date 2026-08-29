@@ -132,6 +132,21 @@ template-key-only match posts `connection.connected` from the system
 address and does not `dispatchTurn`. A generic pending match still
 wakes the asking agent.
 
+That settle is not the whole of a tool-package connect. Bindings for
+pinned packages (`pinnedPackageCredentialBindingsFor` in `apps/hub`)
+fold only at deploy, so a live assistant launched before the key was
+pasted cannot `resolve` the new handle from the old snapshot.
+Connecting a `feedsTools` connector (hub `settleServiceConnection`,
+e.g. Manus → `@corbits/manus-tools`) therefore also fire-and-forget
+relaunches live assistants that pin that package
+(`reconcilePinnedToolPackages`). Persist-only — stamp the pin onto the
+launch row and leave the run — is the bug that was fixed. Connectors
+with no `feedsTools` skip the pass. Same posture as CL-6687 inference
+reconcile on provider connect; see
+[docs/credential-wiring.md](docs/credential-wiring.md) for the
+inference path and the provider plugins (`http-x-manus-api-key` among
+them).
+
 ## GitHub connect (shipped)
 
 The in-room `connect-github` card and the Plugins/Connections GitHub row
