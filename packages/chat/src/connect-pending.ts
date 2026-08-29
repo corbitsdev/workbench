@@ -15,7 +15,10 @@
 // Plugins page, another tab) never reached it. Rather than stand up a
 // second settle path for that one key, this module settles both: a
 // connector becoming connected is one event, and every room's settling
-// belongs to one mechanism, not two parallel key conventions.
+// belongs to one mechanism, not two parallel key conventions. A
+// template-key-only match settles and notices without waking anyone —
+// only a room whose own `connections/pending` named the connector had an
+// agent waiting on it.
 import { type } from "arktype";
 
 import { localPartOf } from "./agent-address";
@@ -187,9 +190,17 @@ export async function settleConnectedService(
       data: { updatedBy: input.principalId, settings: updated.settings },
     });
 
-    const agentAddress = hostAgentAddress(updated.settings, input.principalId);
+    // A room matched only through the template key never wakes an agent:
+    // its walkthrough was posted by the product, not asked for by an
+    // agent mid-turn, and the room's first agent participant may be a
+    // reviewer whose prompt only speaks JSON. A room whose own
+    // `connections/pending` names the connector did have an agent ask
+    // for it, so that agent still gets woken.
+    const agentAddress = matchedPending
+      ? hostAgentAddress(updated.settings, input.principalId)
+      : undefined;
     // CL-6741: event-only system row — never a signed-in user text bubble.
-    // Sender is the host agent when one exists; otherwise a synthetic
+    // Sender is the woken agent when there is one; otherwise a synthetic
     // system address so the row never attributes to the connecting person.
     await postRoomMessage(deps, {
       tenantId: input.tenantId,

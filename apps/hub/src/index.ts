@@ -94,6 +94,9 @@ import {
   isWorkbenchHostDefinitionName,
   listConnectedProviders,
   listDefaultInferencePreferences,
+  localPartOf,
+  parseParticipants,
+  postRoomMessage,
   startWorkflowCommand,
   sendWorkbenchMessage,
   settleConnectedService,
@@ -2246,6 +2249,33 @@ export async function createHub(config: HubConfig) {
           type: "chat.settings",
           data: { updatedBy: principalId, settings: row.settings },
         });
+      },
+      onReviewingStarted: async (
+        tenantId,
+        workbenchId,
+        _principalId,
+        introductions,
+      ) => {
+        const row = await chatStore.getWorkbenchSettings(tenantId, workbenchId);
+        const participants = parseParticipants(
+          row?.settings["chat/participants"],
+        );
+        for (const introduction of introductions) {
+          const participant = participants.find(
+            (candidate) => candidate.handle === introduction.handle,
+          );
+          if (participant === undefined) continue;
+          await postRoomMessage(
+            { roomMessages, publish: workbenchSubscribers.publish },
+            {
+              tenantId,
+              workbenchId,
+              sender: { name: null, address: participant.address },
+              runId: localPartOf(participant.address),
+              parts: [{ kind: "text", text: introduction.text }],
+            },
+          );
+        }
       },
     }),
   );

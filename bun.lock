@@ -1456,6 +1456,7 @@
       "dependencies": {
         "@corbits/code-review": "workspace:*",
         "@corbits/code-review-workflow": "workspace:*",
+        "@corbits/error-sink": "workspace:*",
         "@corbits/github-tools": "workspace:*",
         "@corbits/jimmy-agent": "workspace:*",
         "@corbits/scout-agent": "workspace:*",

@@ -95,8 +95,11 @@ export { BlockCard } from "./blocks/block-card";
 export { ConnectGithubBlockView } from "./blocks/connect-github-block";
 
 export type {
+  ConnectGithubCardBody,
   ConnectGithubCardProps,
   ConnectGithubRepo,
+  OnboardingScene,
+  OnboardingSceneStep,
 } from "./blocks/connect-github-block";
 export type {
   ApprovalActions,
@@ -161,6 +164,7 @@ export {
   getWorkbenchSettings,
   patchWorkbenchSettings,
   getConnectGithubState,
+  postWorkbenchOnboardingStep,
   startReviewingGithubRepos,
   type ConnectGithubStateResponse,
   getBenchChatSettings,
@@ -179,6 +183,8 @@ export {
 export type {
   Workbench,
   CreateWorkbenchInput,
+  OnboardingStepLabel,
+  WorkbenchOnboardingStep,
   ParticipantRecord,
   MessageItem,
   MessagesResponse,

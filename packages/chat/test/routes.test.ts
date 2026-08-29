@@ -249,35 +249,6 @@ describe("POST /workbenches", () => {
     expect(timelineTexts(timeline)[0]).toMatch(/\?$/);
   });
 
-  test("creating a chat with a templatePromise greets with it, not a random opener", async () => {
-    const deliveries: (() => Promise<void>)[] = [];
-    const deps = buildDeps({
-      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
-      runPostMintDelivery: (work) => {
-        deliveries.push(work);
-      },
-    });
-    const app = mountAs(createChatRoutes(deps), "prn_alice");
-
-    const { body } = await createWorkbench(app, {
-      kind: "chat",
-      definitionId: "wfd_echo",
-      templatePromise:
-        "Three reviewers read every pull request and post what they'd change.",
-    });
-    await deliveries[0]?.();
-
-    // The greeting is a row on the chat's own timeline, not mail: the
-    // only thing the platform is ever asked for on a mint is the
-    // agent's launch.
-    const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    expect(platform.sentMail).toHaveLength(0);
-    const timeline = await timelineOf(deps, body.id);
-    expect(timelineTexts(timeline)[0]).toContain(
-      "Three reviewers read every pull request and post what they'd change.",
-    );
-  });
-
   // CL-6471: the owner's live repro — instantiating the code-review
   // template on a fresh stack, the setup agent's own definition missed
   // the pre-fetched `invitable` snapshot (a just-seeded/just-redeployed
@@ -304,54 +275,15 @@ describe("POST /workbenches", () => {
     const { body } = await createWorkbench(app, {
       kind: "chat",
       definitionId: "wfd_echo",
-      templatePromise:
-        "Three reviewers read every pull request and post what they'd change.",
     });
     await deliveries[0]?.();
 
     const timeline = await timelineOf(deps, body.id);
-    expect(timelineTexts(timeline)[0]).toContain("I'm Myra");
+    expect(timelineTexts(timeline)[0]).toContain("Myra");
     expect(timelineTexts(timeline)[0]).not.toContain("ins_invited1");
   });
 
-  test("creating a chat with connectGithubRequiredFor posts a connect-github block after the greeting", async () => {
-    const deliveries: (() => Promise<void>)[] = [];
-    const deps = buildDeps({
-      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
-      runPostMintDelivery: (work) => {
-        deliveries.push(work);
-      },
-    });
-    const app = mountAs(createChatRoutes(deps), "prn_alice");
-
-    const { body } = await createWorkbench(app, {
-      kind: "chat",
-      definitionId: "wfd_echo",
-      templatePromise: "Three reviewers read every pull request.",
-      connectGithubRequiredFor: "Code review",
-    });
-    await deliveries[0]?.();
-
-    const timeline = await timelineOf(deps, body.id);
-    const blockMessage = timeline.find((message) =>
-      message.parts.some(
-        (part) => part.kind === "block" && part.block.type === "connect-github",
-      ),
-    );
-    expect(blockMessage).toBeDefined();
-    const blockPart = blockMessage?.parts.find(
-      (part) => part.kind === "block" && part.block.type === "connect-github",
-    );
-    expect(blockPart).toMatchObject({
-      kind: "block",
-      block: {
-        type: "connect-github",
-        data: { requiredForTemplate: "Code review", state: "disconnected" },
-      },
-    });
-  });
-
-  test("creating a chat with no templatePromise mints exactly as it always has", async () => {
+  test("creating an untemplated chat mints exactly as it always has", async () => {
     const deliveries: (() => Promise<void>)[] = [];
     const deps = buildDeps({
       platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
@@ -1063,6 +995,119 @@ describe("POST /workbenches/:id/invite", () => {
     };
     expect(errorBody.error.code).toBe("not_launchable");
     expect(errorBody.error.message).toMatch(/save its instructions/);
+  });
+});
+
+describe("POST /workbenches/:id/onboarding", () => {
+  const STEP = {
+    kind: "connect-github",
+    requiredForTemplate: "Code review",
+    promise: "Three reviewers read every pull request.",
+    steps: [
+      { title: "Connect GitHub", why: "So reviewers can read your code." },
+      { title: "Pick repositories", why: "So reviews land where you work." },
+    ],
+  };
+
+  async function postOnboarding(
+    app: ReturnType<typeof mountAs>,
+    workbenchId: string,
+    body: unknown,
+  ) {
+    return app.request(`/workbenches/${workbenchId}/onboarding`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  test("posts the walkthrough card into an empty channel from a system sender, launching nobody", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+      name: "Code review",
+    });
+
+    const response = await postOnboarding(app, workbench.id, STEP);
+
+    expect(response.status).toBe(201);
+    const posted = (await response.json()) as { id: string };
+    expect(typeof posted.id).toBe("string");
+
+    const timeline = await timelineOf(deps, workbench.id);
+    expect(timeline).toHaveLength(1);
+    const message = timeline[0];
+    expect(message?.id).toBe(posted.id);
+    expect(message?.sender.address).toBe(`system@${workbench.id}`);
+    expect(message?.runId).toBeNull();
+    expect(message?.parts).toEqual([
+      {
+        kind: "block",
+        block: {
+          type: "connect-github",
+          data: {
+            requiredForTemplate: "Code review",
+            promise: "Three reviewers read every pull request.",
+            steps: STEP.steps,
+            state: "disconnected",
+          },
+        },
+      },
+    ]);
+
+    const platform = deps.platform as ReturnType<typeof fakePlatform>;
+    expect(platform.launchInviteCalls).toEqual([]);
+    expect(platform.ensureAwakeCalls).toEqual([]);
+    expect(platform.sentMail).toHaveLength(0);
+  });
+
+  test("a malformed step is rejected with the structured error envelope", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+      name: "Code review",
+    });
+
+    const response = await postOnboarding(app, workbench.id, {
+      kind: "connect-github",
+      requiredForTemplate: "Code review",
+      promise: "",
+      steps: [],
+    });
+
+    expect(response.status).toBe(400);
+    const errorBody = (await response.json()) as { error: { code: string } };
+    expect(errorBody.error.code).toBe("bad_request");
+    expect(await timelineOf(deps, workbench.id)).toHaveLength(0);
+  });
+
+  test("an undeclared step kind is rejected — the route is not a post-any-block hole", async () => {
+    const app = mountAs(createChatRoutes(buildDeps()), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+      name: "Code review",
+    });
+
+    const response = await postOnboarding(app, workbench.id, {
+      kind: "approve",
+      requiredForTemplate: "Code review",
+      promise: "Anything at all.",
+      steps: [],
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  test("an unknown workbench is a 404", async () => {
+    const app = mountAs(createChatRoutes(buildDeps()), "prn_alice");
+
+    const response = await postOnboarding(app, "chan_missing", STEP);
+
+    expect(response.status).toBe(404);
+    const errorBody = (await response.json()) as { error: { code: string } };
+    expect(errorBody.error.code).toBe("not_found");
   });
 });
 

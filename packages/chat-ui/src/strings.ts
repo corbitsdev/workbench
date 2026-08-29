@@ -91,6 +91,8 @@ export const CHAT_STRINGS = {
   legacyBadgeLabel: "Legacy",
   eventAgentJoined: (displayName: string) => `${displayName} joined`,
   eventAgentJoinedUnknown: "An agent joined",
+  eventAgentsJoined: (displayNames: readonly string[]) =>
+    `${joinWithAnd(displayNames)} joined`,
   eventMembershipChanged: "Membership updated",
   eventSettingsChanged: "Settings updated",
   eventWorkbenchRenamed: (from: string, to: string): string =>
@@ -212,11 +214,17 @@ export const CHAT_STRINGS = {
   blockQuestionSubmitting: "Sending…",
   blockQuestionAnswerError: "Couldn't send your answer — try again.",
   blockQuestionAnsweredLabel: "Your answer",
-  blockConnectGithubHeadline: "Connect GitHub",
   blockConnectGithubPickHeadline: "Pick your repos",
+  blockConnectGithubStepDone: "Done",
+  blockConnectGithubStepCurrent: "You're here",
+  blockConnectGithubReviewingHeadline: "Reviewing",
+  blockConnectGithubReviewingLine:
+    "Every new pull request in these gets a review posted right here.",
+  blockConnectGithubChangeRepos: "change repos",
   blockConnectGithubIntro:
     "Connect GitHub with a personal access token — three quick steps, about a minute.",
   blockConnectGithubAction: "Connect GitHub",
+  blockConnectGithubReconnect: "Reconnect",
   blockConnectGithubTokenSteps: [
     "Open github.com/settings/tokens and generate a new token.",
     "Give it the repo scope — that lets agents read code, issues, and pull requests.",
@@ -240,6 +248,8 @@ export const CHAT_STRINGS = {
   blockConnectGithubStartReviewing: (count: number) =>
     `Start reviewing ${count} repo${count === 1 ? "" : "s"}`,
   blockConnectGithubSkip: "skip for now",
+  blockConnectGithubStartReviewingError:
+    "Couldn't start reviewing — try again.",
   blockConnectGithubTokenFieldLabel: "Personal access token",
   blockConnectGithubTokenFieldPlaceholder: "ghp_...",
   blockConnectGithubTokenSubmit: "Connect",

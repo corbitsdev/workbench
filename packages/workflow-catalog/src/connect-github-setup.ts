@@ -1,11 +1,10 @@
 // What runs once a person has actually picked repos on a room's GitHub
-// connect card (CL-6345 — the slice `./instantiate.ts`'s
-// `webhookTriggerTodos` named as still open). `instantiateWorkbenchTemplate`
+// connect card and starts reviewing. `instantiateWorkbenchTemplate`
 // resolves a template at create time, before any repo is known; this
 // module resolves the repo-scoped half once the person answers the
-// connect card, mirroring `instantiate.ts`'s own shape exactly: pure
-// orchestration over injected async ports, no HTTP, no store, testable
-// with plain fakes.
+// connect card and creates the live webhook trigger per repo, mirroring
+// `instantiate.ts`'s own shape exactly: pure orchestration over injected
+// async ports, no HTTP, no store, testable with plain fakes.
 import type { GitHubRepoSummary } from "@corbits/github-tools";
 
 export interface ConnectGithubSetupPorts {
@@ -20,9 +19,9 @@ export interface ConnectGithubSetupPorts {
   mintRepoGrant(repo: GitHubRepoSummary): Promise<void>;
   /**
    * Creates the live `webhook_trigger` row this repo's pull-request-opened
-   * events fire — the resolution of `instantiate.ts`'s own honest
-   * `webhookTriggerTodo` for this repo. A host binds this to
-   * `@corbits/webhook-triggers`' `WebhookTriggerStore.create`.
+   * events fire — the onboarding card's start-reviewing step is what
+   * creates this trigger, for each repo the person picked. A host binds
+   * this to `@corbits/webhook-triggers`' `WebhookTriggerStore.create`.
    */
   createWebhookTrigger(
     repo: GitHubRepoSummary,

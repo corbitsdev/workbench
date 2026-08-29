@@ -28,6 +28,7 @@ import {
   getBenchChatSettings,
   patchBenchChatSettings,
   pinMessage,
+  postWorkbenchOnboardingStep,
   toggleReaction,
   unpinMessage,
 } from "../src/api";
@@ -503,6 +504,48 @@ describe("inviteAgent", () => {
       address: "ins_invited1@acme.example",
       definitionId: "wfd_echo",
     });
+  });
+});
+
+describe("postWorkbenchOnboardingStep", () => {
+  test("posts the step to the workbench's onboarding route and parses the posted id", async () => {
+    const calls = stubFetch(() => json({ id: "msg_1" }, 201));
+    const step = {
+      kind: "connect-github" as const,
+      requiredForTemplate: "Code review",
+      promise: "Three reviewers read every pull request.",
+      steps: [
+        { title: "Connect GitHub", why: "So reviewers can read your code." },
+      ],
+    };
+
+    const posted = await postWorkbenchOnboardingStep(
+      "tenant_1",
+      "chan_1",
+      step,
+    );
+
+    expect(calls[0]?.path).toBe(
+      "/api/tenants/tenant_1/chat/workbenches/chan_1/onboarding",
+    );
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual(step);
+    expect(posted).toEqual({ id: "msg_1" });
+  });
+
+  test("a rejected step surfaces as a ChatApiError", async () => {
+    stubFetch(() =>
+      json({ error: { code: "bad_request", message: "nope" } }, 400),
+    );
+
+    await expect(
+      postWorkbenchOnboardingStep("tenant_1", "chan_1", {
+        kind: "connect-github",
+        requiredForTemplate: "Code review",
+        promise: "Three reviewers read every pull request.",
+        steps: [],
+      }),
+    ).rejects.toBeInstanceOf(ChatApiError);
   });
 });
 

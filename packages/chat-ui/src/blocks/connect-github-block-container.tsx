@@ -22,12 +22,24 @@
 // snapshot so a real disconnect still shows Connect.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConnectGithubBlockData } from "@corbits/chat/blocks";
+import { reportError } from "@corbits/error-sink";
 
+import { CHAT_STRINGS } from "../strings";
 import type {
   ConnectGithubActions,
   ConnectGithubQuery,
 } from "./connect-github-actions";
+import type { OnboardingScene } from "./connect-github-block";
 import { ConnectGithubBlockView } from "./connect-github-block";
+
+/** Positions in the room's three-step walkthrough. Which one is current
+ * is read off the live connect state, never off the card's own data:
+ * disconnected means connect, connected with nothing recorded (or a
+ * person who pressed "change repos") means pick, and repos the server
+ * actually recorded means reviewing. */
+const STEP_CONNECT = 0;
+const STEP_PICK = 1;
+const STEP_REVIEWING = 2;
 
 type ConnectedGithubQuery = Extract<ConnectGithubQuery, { kind: "connected" }>;
 
@@ -60,6 +72,7 @@ function displayQueryOf(
 }
 
 export function ConnectGithubBlockContainer({
+  data,
   messageId,
   actions,
 }: {
@@ -73,7 +86,16 @@ export function ConnectGithubBlockContainer({
   const [selectedRepoIds, setSelectedRepoIds] = useState<readonly string[]>(
     () => lastConnectedOf(messageId)?.selectedRepoIds ?? [],
   );
+  /** A person who pressed "change repos" on the done state gets the
+   * picker back without the server's recorded selection changing — only
+   * pressing "Start reviewing" again writes anything. */
+  const [repickRequested, setRepickRequested] = useState(false);
+  const [startReviewingError, setStartReviewingError] = useState<
+    string | undefined
+  >(undefined);
   const mountedRef = useRef(true);
+  const hadPickerRef = useRef(false);
+  const hadConnectRef = useRef(false);
 
   const applyQuery = useCallback(
     (result: ConnectGithubQuery) => {
@@ -123,16 +145,61 @@ export function ConnectGithubBlockContainer({
   );
 
   const displayQuery = displayQueryOf(messageId, query);
+  const recordedRepoIds =
+    displayQuery.kind === "connected" ? displayQuery.selectedRepoIds : [];
+  const currentStepIndex =
+    displayQuery.kind !== "connected"
+      ? STEP_CONNECT
+      : recordedRepoIds.length === 0 || repickRequested
+        ? STEP_PICK
+        : STEP_REVIEWING;
+  if (currentStepIndex === STEP_CONNECT) hadConnectRef.current = true;
+  if (currentStepIndex === STEP_PICK) hadPickerRef.current = true;
+  const scene: OnboardingScene = {
+    title: data.requiredForTemplate,
+    currentStepIndex,
+    ...(data.promise !== undefined ? { promise: data.promise } : {}),
+    ...(data.steps !== undefined ? { steps: data.steps } : {}),
+  };
+
+  if (displayQuery.kind === "error") {
+    return (
+      <ConnectGithubBlockView
+        scene={scene}
+        kind="error"
+        message={displayQuery.message}
+        onConnect={() => actions?.requestConnect()}
+        onSubmitAccessToken={submitAccessTokenAndRefresh}
+      />
+    );
+  }
 
   if (actions === undefined || displayQuery.kind !== "connected") {
     return (
       <ConnectGithubBlockView
+        scene={scene}
         kind="disconnected"
         onConnect={() => actions?.requestConnect()}
         onSubmitAccessToken={submitAccessTokenAndRefresh}
       />
     );
   }
+
+  if (currentStepIndex === STEP_REVIEWING) {
+    return (
+      <ConnectGithubBlockView
+        scene={scene}
+        kind="reviewing"
+        repoNames={displayQuery.repos
+          .filter((repo) => recordedRepoIds.includes(repo.id))
+          .map((repo) => repo.name)}
+        onChangeRepos={() => setRepickRequested(true)}
+        {...(hadPickerRef.current ? { autoFocus: true } : {})}
+      />
+    );
+  }
+
+  const connectedActions = actions;
 
   function toggleRepo(repoId: string) {
     setSelectedRepoIds((current) =>
@@ -142,8 +209,24 @@ export function ConnectGithubBlockContainer({
     );
   }
 
+  async function startReviewing(repoIds: readonly string[]) {
+    try {
+      setStartReviewingError(undefined);
+      await connectedActions.startReviewing(repoIds);
+      if (mountedRef.current) setRepickRequested(false);
+    } catch (cause) {
+      reportError(cause, { operation: "connect-github.startReviewing" });
+      if (mountedRef.current) {
+        setStartReviewingError(
+          CHAT_STRINGS.blockConnectGithubStartReviewingError,
+        );
+      }
+    }
+  }
+
   return (
     <ConnectGithubBlockView
+      scene={scene}
       kind="connected"
       orgName={displayQuery.orgName}
       repos={displayQuery.repos}
@@ -152,13 +235,17 @@ export function ConnectGithubBlockContainer({
       onSelectAll={() =>
         setSelectedRepoIds(displayQuery.repos.map((repo) => repo.id))
       }
-      onChangeConnection={actions.requestConnect}
+      onChangeConnection={connectedActions.requestConnect}
       onStartReviewing={(repoIds) => {
-        void actions.startReviewing(repoIds);
+        void startReviewing(repoIds);
       }}
       onSkip={() => {
-        void actions.skip();
+        void connectedActions.skip();
       }}
+      {...(startReviewingError !== undefined
+        ? { error: startReviewingError }
+        : {})}
+      {...(hadConnectRef.current ? { autoFocus: true } : {})}
     />
   );
 }

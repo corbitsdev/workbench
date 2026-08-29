@@ -63,11 +63,16 @@ real, never a 404.
 not home. The primary act is a prompt: say what the channel should do,
 or pick a named-template shortcut underneath. Blank `+` / prompt mint
 an empty channel and invite nobody. Named templates mint that same
-empty channel, then invite existing agents (including Myra as a
-participant, never as the mint host). The sidebar `+` opens this
-route. First-run after credential does not: `/` hops to Myra's one
-DM (`openAgentDm` / find-or-reopen). There is no parallel Myra home
-route and no Describe door.
+empty channel with no host, then instantiate the picked Workbench
+Definition — the agents, block workflows, and pending plugins it names
+(Myra joins only when the definition names her; Code review's three
+reviewers do not) — and run its ordered onboarding walkthrough as an
+in-room card the room itself posts, never a side effect of hosting an
+agent. The card reads live connection state and flips straight to the
+repo pick, so there is one walkthrough, not a separate already-connected
+dialog. The sidebar `+` opens this route. First-run after credential
+does not: `/` hops to Myra's one DM (`openAgentDm` / find-or-reopen).
+There is no parallel Myra home route and no Describe door.
 
 **`/inbox` is gone as a page** (CL-6151). The path stays as a redirect
 home so old links still resolve; it is not a live groups inbox.
@@ -282,6 +287,15 @@ GitHub for Code review is PAT-first today: Connect opens a guided
 personal-access-token paste, then the same card flips to pick
 repositories. A GitHub App / hosted OAuth Connect as the welcome mat is
 CL-6343 (out of scope), not the shipped card.
+
+The room's own onboarding card renders as a scene, not a member's
+message: no author row, the job as its title with the promise beneath,
+and the walkthrough's steps listed with the current one marked in
+words. Once repos are recorded the card shows the Reviewing state —
+what it's reviewing now — with a change-repos link back to the picker,
+never still offering Connect. Consecutive agent-joined rows collapse
+into one line naming everyone, so a template room opens on the scene
+and the reviewers' own introductions, never a join dump.
 
 ## State Pills
 

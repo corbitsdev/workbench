@@ -26,6 +26,7 @@ import { Hono } from "hono";
 import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { makeErrorEnvelope } from "@workbench/hub-client";
+import { reportError } from "@corbits/error-sink";
 
 import {
   fetchAuthenticatedLogin,
@@ -33,6 +34,10 @@ import {
   type GitHubClientConfig,
   type GitHubRepoSummary,
 } from "@corbits/github-tools";
+import {
+  reviewerIntroductions,
+  type ReviewerIntroduction,
+} from "@corbits/code-review/introductions";
 
 import { startReviewingRepos } from "./connect-github-setup";
 import { templateReposSettingsPatch } from "./settings";
@@ -109,6 +114,20 @@ export type ConnectGithubRoutesDeps = {
     workbenchId: string,
     principalId: string,
     patch: ReturnType<typeof templateReposSettingsPatch>,
+  ): Promise<void>;
+  /** Posts each reviewer's canned introduction to the room once
+   * `startReviewingRepos` succeeds — the identity beat of the first
+   * minute a person sees after picking repos. Called once, after the
+   * repos are recorded and before the 200 response; a later
+   * `start-reviewing` (change repos) does not call this again. A
+   * rejection is reported through `reportError` and never fails the
+   * response — the webhook triggers already exist, so a person must
+   * not see an error for a missed introduction. */
+  onReviewingStarted(
+    tenantId: string,
+    workbenchId: string,
+    principalId: string,
+    introductions: readonly ReviewerIntroduction[],
   ): Promise<void>;
   /** Test-only override, defaulting to `@corbits/github-tools`' real
    * `listRepos` — lets `connect-github-routes.test.ts` stub the GitHub
@@ -246,6 +265,12 @@ export function createConnectGithubRoutes(
       }
 
       try {
+        const settingsBefore = await deps.getTemplateSettings(
+          tenant.id,
+          workbenchId,
+        );
+        const introductionsAlreadyPosted =
+          settingsBefore.selectedRepos.length > 0;
         const result = await startReviewingRepos(body.repoIds, state.repos, {
           mintRepoGrant: (repo) => deps.mintRepoGrant(tenant.id, repo),
           createWebhookTrigger: (repo) =>
@@ -271,6 +296,30 @@ export function createConnectGithubRoutes(
             );
           },
         });
+
+        const reposById = new Map(
+          state.repos.map((repo) => [repo.id, repo] as const),
+        );
+        const repoNames = body.repoIds
+          .map((repoId) => reposById.get(repoId)?.name)
+          .filter((name): name is string => name !== undefined);
+        if (!introductionsAlreadyPosted) {
+          try {
+            await deps.onReviewingStarted(
+              tenant.id,
+              workbenchId,
+              principal.id,
+              reviewerIntroductions(repoNames),
+            );
+          } catch (cause) {
+            reportError(cause, {
+              operation: "connect-github.reviewerIntroductions",
+              tenantId: tenant.id,
+              roomId: workbenchId,
+            });
+          }
+        }
+
         return c.json(
           { startedTriggerCount: result.createdTriggerIds.length },
           200,

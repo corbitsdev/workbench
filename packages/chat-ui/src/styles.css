@@ -1247,7 +1247,12 @@
   height: 0.4rem;
   border-radius: 0;
   background: currentColor;
-  animation: chat-block-pulse 1.6s ease infinite;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .chat-block-pulse {
+    animation: chat-block-pulse 1.6s ease infinite;
+  }
 }
 
 @keyframes chat-block-pulse {
@@ -1701,6 +1706,97 @@
 
 .chat-block-required {
   color: var(--destructive);
+}
+
+/* The room's onboarding scene card: one constant header (what this room
+   is for, the promise under it, where you are in the walkthrough) above a
+   body that flips between connect, pick, and reviewing. Step state is
+   carried in words inside each row, never by color alone — DESIGN.md
+   State Pills. */
+.chat-block-scene-promise {
+  margin: 0 0 0.6rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--foreground);
+}
+
+.chat-block-scene-steps {
+  margin: 0 0 0.55rem;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  background: var(--background);
+}
+
+.chat-block-scene-step {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.4rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+.chat-block-scene-step:last-child {
+  border-bottom: 0;
+}
+
+.chat-block-scene-step[data-state="current"] {
+  color: var(--foreground);
+  font-weight: 650;
+}
+
+.chat-block-scene-step-mark {
+  margin-left: auto;
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.chat-block-scene-step[data-state="current"] .chat-block-scene-step-mark {
+  color: var(--chat-agent-accent, var(--primary));
+}
+
+.chat-block-scene-step[data-state="done"] .chat-block-scene-step-mark {
+  color: var(--ok, #37904a);
+}
+
+.chat-block-scene-why {
+  margin: 0 0 0.65rem;
+}
+
+.chat-block-scene-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.chat-block-scene-pick-heading {
+  margin: 0 0 0.7rem;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.chat-block-scene-repo-names {
+  margin: 0 0 0.55rem;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.6rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--foreground);
 }
 
 /* GitHub connect card (CL-6342 screen 2). The row's checkbox control is

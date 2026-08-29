@@ -88,6 +88,18 @@ settings") are composition on top of this tenant and its settings rows,
 not a separate object; the surface lives in `packages/chat-ui`'s
 `workbench-settings`.
 
+**In-room onboarding scene.** A named template's first-minute walkthrough
+is one timeline card posted in the room's own voice, not a member's
+message and not a side effect of hosting an agent. The card keeps a
+stable header — the job, the promise, the ordered steps — and flips its
+body in place through connect, pick-repos, and reviewing. Change-repos
+returns the body to the picker without rewriting what the room already
+recorded. An empty step list is omitted, not rendered as an empty rail.
+The current step is named in words; colour is additive, never the only
+signal. Consecutive agent-joined events collapse into one line so the
+scene and the reviewers' own introductions are what a person reads
+first.
+
 **Streaming a reply.** An agent's live reply reaches the timeline through
 one path, deltas to pixels:
 
@@ -109,6 +121,26 @@ one path, deltas to pixels:
 5. `packages/chat-ui/src/timeline.tsx` renders that growing string as a
    synthetic in-progress message alongside the persisted timeline, until
    the real message lands and replaces it.
+
+## Workbench Definition and hostless onboarding
+
+A picker "template" is a shipped **Workbench Definition**, not a second
+kind of object: default agents, routines, tools, required and optional
+plugins, and an ordered onboarding walkthrough. Creating from a named
+row mints an empty workbench channel with no host, then instantiates
+that definition into the room. The walkthrough is posted as a system
+timeline card, never as a side effect of hosting an agent — so an
+empty channel can onboard with nobody launched.
+
+Code review's definition names three reviewers and does not name Myra.
+GitHub already connected is the same in-room card: it reads live
+credential state and flips to repository pick. There is no separate
+create-dialog path for the already-connected case.
+
+Settling a connector a template room is waiting on records the
+connected event from a system address and does not wake an agent. A
+generic in-room connect that an agent asked for still wakes that
+agent.
 
 ## Capability growth and approval gates
 
@@ -146,6 +178,8 @@ does not maintain a parallel scheduler.
 - [docs/workbench-tenancy.md](docs/workbench-tenancy.md) — workbench tenant
   mint, listing, and move mechanics
 - [docs/needs-you.md](docs/needs-you.md) — the approval surfacing model
+- [docs/connect-cards.md](docs/connect-cards.md) — in-room connect cards
+  and template-room settle
 - [VENDORED.md](VENDORED.md) — the vendoring ledger for `@intx/*`
 
 ## Open questions

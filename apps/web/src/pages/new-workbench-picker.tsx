@@ -26,15 +26,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { getLogger } from "@corbits/client-log";
 import { ApiQueryError, describeApiError } from "@corbits/api-query";
 
-import type { ConnectGithubRepo } from "@corbits/chat-ui";
-
 import { useAPIQuery } from "../api";
 import { TemplateLibraryPage } from "../workbench-templates-api";
 import { useBench } from "../bench-context";
 import {
   createWorkbenchFromTemplate,
   WorkbenchPreconditionError,
-  type PickGithubRepos,
 } from "../instant-agent-create";
 import { fetchAgentReadiness } from "../onboarding";
 import { useNavigate } from "../navigation";
@@ -43,7 +40,6 @@ import {
   WORKBENCH_TEMPLATES,
   type WorkbenchTemplateId,
 } from "../workbench-templates";
-import { GithubRepoSelectDialog } from "./github-repo-select-dialog";
 
 const log = getLogger("web.new-workbench-picker");
 
@@ -71,13 +67,6 @@ export function describeWorkbenchCreateFailure(cause: unknown): string {
   }
   return GENERIC_CREATE_FAILURE;
 }
-
-type RepoPickerState = {
-  readonly orgName: string;
-  readonly repos: readonly ConnectGithubRepo[];
-  readonly selectedRepoIds: readonly string[];
-  readonly resolve: (repoIds: readonly string[] | null) => void;
-};
 
 const CARD_ICON: Record<WorkbenchTemplateId, typeof GitPullRequest> = {
   "code-review": GitPullRequest,
@@ -110,7 +99,6 @@ export function NewWorkbenchPickerRoute() {
   // Distinct from `creating`'s loader: this is a dead end until setup
   // finishes, not a request in flight.
   const [stillSettingUp, setStillSettingUp] = useState(false);
-  const [repoPicker, setRepoPicker] = useState<RepoPickerState | null>(null);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   // The last attempted create, so "Try again" (both the still-setting-up
   // dead end and a plain toast-and-retry) replays the exact same request
@@ -146,15 +134,6 @@ export function NewWorkbenchPickerRoute() {
     (template) => !offeredTemplates.includes(template),
   );
 
-  const pickGithubRepos: PickGithubRepos = ({
-    orgName,
-    repos,
-    selectedRepoIds,
-  }) =>
-    new Promise((resolve) => {
-      setRepoPicker({ orgName, repos, selectedRepoIds, resolve });
-    });
-
   async function handleCreate(
     templateId: WorkbenchTemplateId,
     firstMessage?: string,
@@ -169,7 +148,6 @@ export function NewWorkbenchPickerRoute() {
         templateId,
         navigate,
         queryClient,
-        pickGithubRepos,
         firstMessage,
       );
     } catch (cause) {
@@ -365,21 +343,6 @@ export function NewWorkbenchPickerRoute() {
           </>
         )}
       </div>
-      {repoPicker !== null ? (
-        <GithubRepoSelectDialog
-          orgName={repoPicker.orgName}
-          repos={repoPicker.repos}
-          initialSelectedRepoIds={repoPicker.selectedRepoIds}
-          onStartReviewing={(repoIds) => {
-            repoPicker.resolve(repoIds);
-            setRepoPicker(null);
-          }}
-          onSkip={() => {
-            repoPicker.resolve(null);
-            setRepoPicker(null);
-          }}
-        />
-      ) : null}
     </div>
   );
 }

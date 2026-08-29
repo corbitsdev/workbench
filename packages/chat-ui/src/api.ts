@@ -13,6 +13,7 @@ import type { ArkErrors } from "arktype";
 import { Part } from "@corbits/chat/parts";
 import { parseParticipants } from "@corbits/chat/participants";
 import type { ParticipantRecord } from "@corbits/chat/participants";
+import type { WorkbenchOnboardingStep } from "@corbits/chat/blocks";
 import { UnauthenticatedError } from "@corbits/api-query";
 import { jimmyAgentRequest } from "@corbits/workflow-catalog";
 import { CHAT_STRINGS } from "./strings";
@@ -27,6 +28,10 @@ export {
   Part,
 } from "@corbits/chat/parts";
 export type { ParticipantRecord } from "@corbits/chat/participants";
+export type {
+  OnboardingStepLabel,
+  WorkbenchOnboardingStep,
+} from "@corbits/chat/blocks";
 export { REACTION_EMOJI } from "@corbits/chat/reaction-emoji";
 export type { ReactionEmoji } from "@corbits/chat/reaction-emoji";
 
@@ -335,41 +340,19 @@ export function listAllWorkbenches(
 //
 // `kind: "chat"` + `definitionId` always find-or-reopens the one DM
 // for that agent (CL-6981). `reuseExisting` is still accepted on the
-// wire and ignored. `kind: "workbench"` mints an empty channel; named
-// templates may send `templatePromise` / `connectGithubRequiredFor` so
-// the opener and GitHub card can follow the roster invite.
+// wire and ignored. `kind: "workbench"` mints an empty channel; a room's
+// onboarding walkthrough is posted separately through
+// `postWorkbenchOnboardingStep`, never as a side effect of create.
 export type CreateWorkbenchInput =
   | {
       readonly kind: "workbench";
       readonly name: string;
-      /** Named-template opener line. The server currently posts the
-       * canned greeting only on `kind: "chat"` + `definitionId`; this
-       * field is still sent so a follow-up can honor it on channel
-       * mint / first invite without dropping the promise from the
-       * create body. Omitted for a blank channel. */
-      readonly templatePromise?: string;
-      /** Template display name when GitHub must be connected before
-       * the roster can run. Omitted when the template does not
-       * require GitHub. */
-      readonly connectGithubRequiredFor?: string;
     }
   | {
       readonly kind: "chat";
       readonly definitionId: string;
       readonly name?: string;
       readonly reuseExisting?: boolean;
-      /** The picked template's own promise line
-       * (`WorkbenchTemplateManifest.promise`, see `@corbits/workflow-catalog`)
-       * — replaces the room's random canned opener with one naming its
-       * actual job (`packages/chat/src/routes.ts`'s `POST /workbenches`).
-       * Omitted for an untemplated chat. */
-      readonly templatePromise?: string;
-      /** The template's own display name, present exactly when the
-       * template needs a GitHub connection before it can run — posts one
-       * `connect-github` block right after the canned greeting
-       * (`packages/chat/src/routes.ts`'s `POST /workbenches`). Omitted
-       * for a template with no such requirement. */
-      readonly connectGithubRequiredFor?: string;
     }
   | {
       readonly kind: "chat";
@@ -708,6 +691,26 @@ export function inviteAgent(
     `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/invite`,
     InvitedAgent,
     { method: "POST", body: JSON.stringify({ definitionId }) },
+  );
+}
+
+const PostedOnboardingStep = type({ id: "string" });
+
+/**
+ * Posts one onboarding step into a room
+ * (`POST /workbenches/:id/onboarding`): the walkthrough card lands as a
+ * system row, with no agent launched or woken, so an empty channel can
+ * run its onboarding with nobody in the room yet.
+ */
+export function postWorkbenchOnboardingStep(
+  tenantId: string,
+  workbenchId: string,
+  step: WorkbenchOnboardingStep,
+): Promise<{ readonly id: string }> {
+  return request(
+    `/api/tenants/${tenantId}/chat/workbenches/${workbenchId}/onboarding`,
+    PostedOnboardingStep,
+    { method: "POST", body: JSON.stringify(step) },
   );
 }
 
