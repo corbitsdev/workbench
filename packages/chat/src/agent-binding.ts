@@ -324,7 +324,9 @@ export async function recordSourcesDigest(
  * Every participant a tenant has launched, with its live run, for the
  * pass that re-checks each one's inference chain after a provider
  * credential changes (`platform-adapter.ts`'s
- * `reconcileInferenceSources`). Bounded like `listLaunchesBeyondWake`.
+ * `reconcileInferenceSources`) and the pass that relaunches agents
+ * whose pins include a just-connected tool-package connector
+ * (`reconcilePinnedToolPackages`). Bounded like `listLaunchesBeyondWake`.
  */
 export async function listLaunchesForTenant(
   db: DB["db"],

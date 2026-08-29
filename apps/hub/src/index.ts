@@ -358,9 +358,9 @@ import { createBootAssetWiring, REGISTRIES } from "./asset-service-factory";
 import { createRoutineScheduler } from "./routine-scheduler";
 import { createToolGrantsForPins } from "./tool-grants";
 import { createMcpCredentialBindingsFor } from "./mcp-credential-bindings";
+import { reconcilePinnedToolPackagesAfterConnect } from "./connection-live-reconcile";
 import { createPinnedPackageCredentialBindingsFor } from "./pinned-package-credential-bindings";
 import { shutdownHub } from "./shutdown";
-import { createPinnedPackageCredentialBindingsFor } from "./pinned-package-credential-bindings";
 
 // Host policy constants, not configuration.
 const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
@@ -2026,9 +2026,13 @@ export async function createHub(config: HubConfig) {
   // An inference provider's credential landing also re-checks every
   // live participant's deployed inference chain (CL-6687): a rotated
   // key only ever reaches an agent at deploy time, so the relaunch has
-  // to be kicked here, not left for the next message. Not awaited — a
-  // relaunch is a sidecar deploy round-trip, and the connect response
-  // must not wait on it.
+  // to be kicked here, not left for the next message. A tool-package
+  // connector (`feedsTools`, e.g. Manus) is the same shape for a
+  // different payload: `pinnedPackageCredentialBindingsFor` only folds
+  // at deploy, so a live Myra launched at signup before the key was
+  // pasted stays on a snapshot that cannot `resolve("manus")` until
+  // this pass relaunches it. Not awaited — a relaunch is a sidecar
+  // deploy round-trip, and the connect response must not wait on it.
   const settleServiceConnection: ServiceConnectedHook = async (info) => {
     await settleConnectedService(
       {
@@ -2045,15 +2049,27 @@ export async function createHub(config: HubConfig) {
         displayName: info.displayName,
       },
     );
-    if (!isInferenceProvider(info.connectorId)) return;
-    void chatPlatform
-      .reconcileInferenceSources(info.tenantId)
-      .then(({ scanned, relaunched }) => {
-        log.info`inference credential ${info.connectorId} changed on tenant ${info.tenantId}: re-checked ${String(scanned)} live agents, relaunched ${String(relaunched)}`;
+    if (isInferenceProvider(info.connectorId)) {
+      void chatPlatform
+        .reconcileInferenceSources(info.tenantId)
+        .then(({ scanned, relaunched }) => {
+          log.info`inference credential ${info.connectorId} changed on tenant ${info.tenantId}: re-checked ${String(scanned)} live agents, relaunched ${String(relaunched)}`;
+        })
+        .catch((cause: unknown) => {
+          reportError(cause, {
+            operation: "connections.reconcile-inference-sources",
+            tenantId: info.tenantId,
+          });
+        });
+    }
+    void reconcilePinnedToolPackagesAfterConnect(chatPlatform, info)
+      .then((result) => {
+        if (result === undefined) return;
+        log.info`tool-package connector ${info.connectorId} changed on tenant ${info.tenantId}: re-checked ${String(result.scanned)} live agents, relaunched ${String(result.relaunched)}`;
       })
       .catch((cause: unknown) => {
         reportError(cause, {
-          operation: "connections.reconcile-inference-sources",
+          operation: "connections.reconcile-pinned-tool-packages",
           tenantId: info.tenantId,
         });
       });
