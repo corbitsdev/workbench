@@ -114,7 +114,6 @@ under the bench, or reopens the existing one for that (bench,
 definition) pair, matching the product-surface find-or-reopen rule.
 The specialist launches into that chat, never into Myra's.
 
-
 **Streaming a reply.** An agent's live reply reaches the timeline through
 one path, deltas to pixels:
 
