@@ -982,7 +982,7 @@
     },
     "packages/mcp-tools": {
       "name": "@corbits/mcp-tools",
-      "version": "0.0.8",
+      "version": "0.0.10",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
