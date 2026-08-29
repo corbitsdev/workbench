@@ -121,17 +121,23 @@ export function parseImportSpecifiers(source: string): ImportSpecifier[] {
   const fromPattern =
     /\b(import|export)\s+(type\s+)?[^;]*?\bfrom\s+["']([^"']+)["']/g;
   for (const match of contents.matchAll(fromPattern)) {
-    results.push({ specifier: match[3], typeOnly: match[2] !== undefined });
+    const specifier = match[3];
+    if (specifier === undefined) continue;
+    results.push({ specifier, typeOnly: match[2] !== undefined });
   }
 
   const dynamicPattern = /\bimport\s*\(\s*["']([^"']+)["']/g;
   for (const match of contents.matchAll(dynamicPattern)) {
-    results.push({ specifier: match[1], typeOnly: false });
+    const specifier = match[1];
+    if (specifier === undefined) continue;
+    results.push({ specifier, typeOnly: false });
   }
 
   const sideEffectPattern = /\bimport\s+["']([^"']+)["']\s*;/g;
   for (const match of contents.matchAll(sideEffectPattern)) {
-    results.push({ specifier: match[1], typeOnly: false });
+    const specifier = match[1];
+    if (specifier === undefined) continue;
+    results.push({ specifier, typeOnly: false });
   }
 
   return results;

@@ -88,7 +88,10 @@ async function uploadArtifact(
   bytes: Uint8Array,
 ): Promise<{ status: number; data: unknown }> {
   const form = new FormData();
-  form.append("file", new File([bytes], fileName, { type: "application/pdf" }));
+  form.append(
+    "file",
+    new File([Uint8Array.from(bytes)], fileName, { type: "application/pdf" }),
+  );
   const res = await fetch(
     `${baseUrl}/api/tenants/${tenantId}/artifacts/upload`,
     {
