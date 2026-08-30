@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createInMemoryTurnClaimStore } from "./turn-claims";
+import type { TurnClaimStore } from "./turn-claims";
 import { createWorkbenchTurnQueue, type QueuedTurn } from "./turn-queue";
 import type { ChatWorkbenchEvent } from "./platform-port";
 
@@ -105,17 +106,18 @@ describe("createWorkbenchTurnQueue", () => {
     await firstRun;
   });
 
-  test("a failed dispatch still releases the claim", async () => {
+  test("a failed dispatch still releases the claim and does not reject run()", async () => {
     const queue = createWorkbenchTurnQueue({
       claims: createInMemoryTurnClaimStore({ ttlMs: 60_000 }),
       publish: () => undefined,
     });
 
-    await expect(
-      queue.run("wb_1", turn("msg_1", "one"), async () => {
-        throw new Error("dispatch blew up");
-      }),
-    ).rejects.toThrow("dispatch blew up");
+    // `dispatch` must never reject per its own documented contract; a
+    // dispatch that breaks it is this queue's failure to contain, not
+    // something that should propagate out of `run()`.
+    await queue.run("wb_1", turn("msg_1", "one"), async () => {
+      throw new Error("dispatch blew up");
+    });
 
     // The claim was released despite the throw — a fresh turn can run.
     const dispatched: (readonly QueuedTurn[])[] = [];
@@ -123,6 +125,34 @@ describe("createWorkbenchTurnQueue", () => {
       dispatched.push(batch);
     });
     expect(dispatched).toEqual([[turn("msg_2", "two")]]);
+  });
+
+  test("a rejecting dispatch does not strand what queued behind it", async () => {
+    const queue = createWorkbenchTurnQueue({
+      claims: createInMemoryTurnClaimStore({ ttlMs: 60_000 }),
+      publish: () => undefined,
+    });
+
+    let rejectFirst: ((err: Error) => void) | undefined;
+    const dispatched: string[] = [];
+    const dispatch = (batch: readonly QueuedTurn[]): Promise<void> => {
+      if (batch[0]?.messageId === "msg_1") {
+        return new Promise((_resolve, reject) => {
+          rejectFirst = reject;
+        });
+      }
+      for (const t of batch) dispatched.push(t.messageId);
+      return Promise.resolve();
+    };
+
+    const firstRun = queue.run("wb_1", turn("msg_1", "one"), dispatch);
+    // msg_2 queues behind msg_1's still-open (and later rejecting) dispatch.
+    await queue.run("wb_1", turn("msg_2", "two"), dispatch);
+
+    rejectFirst?.(new Error("dispatch blew up"));
+    await firstRun;
+
+    expect(dispatched).toEqual(["msg_2"]);
   });
 
   // CL-7129: the TTL is a crash/hang backstop for a dispatch that never
@@ -209,5 +239,106 @@ describe("createWorkbenchTurnQueue", () => {
 
     resolveNext();
     await firstRun;
+  });
+});
+
+describe("turn queue drains everything that was enqueued", () => {
+  test("does not strand a turn enqueued while the holder is releasing", async () => {
+    const holders = new Map<string, string>();
+    let n = 0;
+    let onReleaseStart: (() => Promise<void>) | undefined;
+
+    const claims: TurnClaimStore = {
+      async tryClaim(c) {
+        if (holders.has(c.workbenchId)) return false;
+        const t = String(++n);
+        holders.set(c.workbenchId, t);
+        return t;
+      },
+      async release(c, t) {
+        // A durable claim store awaits I/O here; anything can arrive first.
+        const hook = onReleaseStart;
+        onReleaseStart = undefined;
+        if (hook) await hook();
+        if (holders.get(c.workbenchId) !== t) return false;
+        holders.delete(c.workbenchId);
+        return true;
+      },
+      async holds(c, t) {
+        return holders.get(c.workbenchId) === t;
+      },
+    };
+
+    const queue = createWorkbenchTurnQueue({ claims, publish: () => undefined });
+    const dispatched: string[] = [];
+    const dispatch = async (batch: readonly QueuedTurn[]) => {
+      for (const t of batch) dispatched.push(t.messageId);
+    };
+
+    // m2 arrives after the drain loop saw an empty queue, before release lands.
+    onReleaseStart = async () => {
+      await queue.run("wb", turn("m2", "two"), dispatch);
+    };
+
+    await queue.run("wb", turn("m1", "one"), dispatch);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(dispatched).toEqual(["m1", "m2"]);
+  });
+
+  // The symmetric half of the same race: the holder's `release()` can
+  // resolve and its own post-release recheck can find nothing pending
+  // *before* a concurrent enqueuer's failed `tryClaim` call ever
+  // resolves — the enqueuer's push then lands only after the holder is
+  // already gone and has already returned. Closing this requires the
+  // enqueue path to reclaim on its own, not just the release path.
+  test("does not strand a turn whose push lands only after the holder already returned", async () => {
+    const holders = new Map<string, string>();
+    let n = 0;
+    let releaseBlockedClaim: (() => void) | undefined;
+
+    const claims: TurnClaimStore = {
+      async tryClaim(c) {
+        if (holders.has(c.workbenchId)) {
+          // Simulate a claim read that is still in flight (e.g. a slow
+          // durable store) when the holder's own release already lands.
+          await new Promise<void>((resolve) => {
+            releaseBlockedClaim = resolve;
+          });
+          return false;
+        }
+        const t = String(++n);
+        holders.set(c.workbenchId, t);
+        return t;
+      },
+      async release(c, t) {
+        if (holders.get(c.workbenchId) !== t) return false;
+        holders.delete(c.workbenchId);
+        return true;
+      },
+      async holds(c, t) {
+        return holders.get(c.workbenchId) === t;
+      },
+    };
+
+    const queue = createWorkbenchTurnQueue({ claims, publish: () => undefined });
+    const dispatched: string[] = [];
+    const dispatch = async (batch: readonly QueuedTurn[]) => {
+      for (const t of batch) dispatched.push(t.messageId);
+    };
+
+    const firstRun = queue.run("wb", turn("m1", "one"), dispatch);
+    const secondRun = queue.run("wb", turn("m2", "two"), dispatch);
+
+    // m1 fully dispatches, sees nothing pending (m2's push hasn't
+    // landed yet — its tryClaim call is still parked), and releases.
+    await firstRun;
+    expect(dispatched).toEqual(["m1"]);
+
+    // Only now does m2's tryClaim resolve `false` and its push execute.
+    releaseBlockedClaim?.();
+    await secondRun;
+
+    expect(dispatched).toEqual(["m1", "m2"]);
   });
 });
