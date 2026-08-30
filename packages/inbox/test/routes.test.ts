@@ -25,9 +25,20 @@ function neverCalledDb(): MailboxDb {
   ) as MailboxDb;
 }
 
-function mount(): Hono<TenantEnv> {
+function throwingDb(message: string): MailboxDb {
+  return new Proxy(
+    {},
+    {
+      get() {
+        throw new Error(message);
+      },
+    },
+  ) as MailboxDb;
+}
+
+function mount(db: MailboxDb = neverCalledDb()): Hono<TenantEnv> {
   const routes = createInboxRoutes({
-    db: neverCalledDb(),
+    db,
     bus: createInMemoryMailboxEventBus(),
   });
   const app = new Hono<TenantEnv>();
@@ -69,5 +80,35 @@ describe("GET / cursor/filter cross-check", () => {
     expect(response.status).toBe(400);
     const body = (await response.json()) as { error: string };
     expect(body.error).toBe("malformed cursor");
+  });
+});
+
+describe("bulk ops surface a failed inbox walk instead of silently truncating it (CL-7207)", () => {
+  test("GET /counts reports and 500s rather than swallowing a walk failure", async () => {
+    const app = mount(throwingDb("connection reset mid-walk"));
+    const response = await app.request("/counts");
+    expect(response.status).toBe(500);
+    const body = (await response.json()) as { error: string; refId: string };
+    expect(body.error).toBe("could not list the inbox");
+    expect(typeof body.refId).toBe("string");
+    expect(body.refId.length).toBeGreaterThan(0);
+  });
+
+  test("POST /mark-all-read reports and 500s rather than silently marking nothing", async () => {
+    const app = mount(throwingDb("connection reset mid-walk"));
+    const response = await app.request("/mark-all-read", { method: "POST" });
+    expect(response.status).toBe(500);
+    const body = (await response.json()) as { error: string; refId: string };
+    expect(body.error).toBe("could not list the inbox");
+    expect(typeof body.refId).toBe("string");
+  });
+
+  test("POST /clear-done reports and 500s rather than silently clearing nothing", async () => {
+    const app = mount(throwingDb("connection reset mid-walk"));
+    const response = await app.request("/clear-done", { method: "POST" });
+    expect(response.status).toBe(500);
+    const body = (await response.json()) as { error: string; refId: string };
+    expect(body.error).toBe("could not list the inbox");
+    expect(typeof body.refId).toBe("string");
   });
 });
