@@ -21,6 +21,7 @@ import type { TenantEnv } from "@intx/hub-api";
 import { getLogger } from "@intx/log";
 import { Hono } from "hono";
 
+import { cursorScopeMismatch } from "./cursor";
 import { isInboxGroup, type InboxGroup } from "./group";
 import { itemsEligibleForClearDone, itemsEligibleForMarkAllRead } from "./bulk";
 import {
@@ -212,6 +213,22 @@ export function createInboxRoutes(
       if (decoded === null) {
         return c.json({ error: "malformed cursor" }, 400);
       }
+      // A cursor is only meaningful against the exact view/sort/filter it
+      // was minted under (CL-7206) — paging `?group=action` then replaying
+      // that cursor under `?group=mention` must be rejected, not silently
+      // seek into the wrong result set. Same error vocabulary as
+      // `@corbits/mailbox`'s own `mount.ts` cross-check.
+      const mismatch = cursorScopeMismatch(decoded, {
+        view: "all",
+        sort: "date",
+        filter,
+      });
+      if (mismatch !== null) {
+        return c.json(
+          { error: `cursor does not match inbox ${mismatch}` },
+          400,
+        );
+      }
       cursor = decoded;
     }
 
@@ -219,6 +236,7 @@ export function createInboxRoutes(
       tenantId: tenant.id,
       principalId: principal.id,
       view: "all" as const,
+      sort: "date" as const,
       limit,
       priorities: WORKBENCH_INBOX_PRIORITIES,
     };
