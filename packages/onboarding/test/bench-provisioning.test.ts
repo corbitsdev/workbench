@@ -251,6 +251,44 @@ describe("createBenchProvisioner", () => {
     );
   });
 
+  test("a permanently-failing bench's backoff is reclaimed once its row is gone, not only on success", async () => {
+    // Simulates the CL-7233 orphan case: the pending_seed row disappears
+    // (TTL-expiry or otherwise) while the bench is still backed off from
+    // repeated failures — the retry-hold bookkeeping must not survive
+    // the row that justified it.
+    const { provisioner, store } = harness({
+      ensureSeededFn: async () => {
+        throw new Error("sidecar still down");
+      },
+    });
+    await store.put(SEED);
+
+    const first = await provisioner.drainOnce();
+    expect(first).toMatchObject({ failed: 1 });
+    // Confirm the hold is actually in effect before the row disappears —
+    // otherwise this test would pass for the wrong reason.
+    const stillBackedOff = await provisioner.drainOnce();
+    expect(stillBackedOff).toMatchObject({ deferred: 1 });
+
+    // The row is gone by some path other than this provisioner's own
+    // convergence (an admin action, or read-time TTL expiry elsewhere).
+    await store.clear({ userId: "user_1", tenantId: "ten_1" });
+    const afterRowGone = await provisioner.drainOnce();
+    expect(afterRowGone).toMatchObject({
+      converged: 0,
+      pending: 0,
+      failed: 0,
+      deferred: 0,
+    });
+
+    // A brand-new connect for the same user/tenant must not inherit the
+    // dead bench's backoff — without eviction, this would come back
+    // deferred instead of attempted.
+    await store.put(SEED);
+    const freshAttempt = await provisioner.drainOnce();
+    expect(freshAttempt).toMatchObject({ failed: 1 });
+  });
+
   test("drains every waiting bench in one tick, not just the first", async () => {
     const { provisioner, store, calls } = harness();
     await store.put(SEED);
