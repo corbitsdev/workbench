@@ -74,7 +74,10 @@ actually pulled, so Myra's first DM message is a real agent turn — even
 on a machine that only has models like llama3.2 or qwen3. An inherited
 catalog seed the instance never pulled is not the default when the
 tenant already owns a pulled completion model. Embedding models never
-become that default.
+become that default. A local model that writes a tool it meant to
+invoke as JSON in the reply still becomes a human turn: the person
+sees Myra's words (and ordinary tool activity), not that JSON as the
+message.
 
 Create stays on `/new` (`apps/web/src/pages/new-workbench-picker.tsx`):
 a prompt box is the primary act: typing a goal and submitting mints an

@@ -154,6 +154,16 @@ one path, deltas to pixels:
    synthetic in-progress message alongside the persisted timeline, until
    the real message lands and replaces it.
 
+**Provider tool-call quirks.** Some OpenAI-compatible local models emit
+a declared tool call as a JSON object in assistant text instead of a
+native tool-call field. Workbench's Ollama adapter wraps the platform
+OpenAI adapter (composition, not a fork) and reclassifies that exact
+object into structured tool-call events when the tool name was
+declared for the request. Unknown names, extra keys, arrays, mixed
+prose, and fenced JSON stay text so a legitimate JSON or code answer
+is not stolen. The reactor and timeline still only see the usual text
+versus tool-call events.
+
 ## Workbench Definition and hostless onboarding
 
 A picker "template" is a shipped **Workbench Definition**, not a second
