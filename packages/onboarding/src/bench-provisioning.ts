@@ -31,6 +31,7 @@
 // composition root decides how a session is minted for a user, and this
 // module stays out of the auth mechanism entirely.
 
+import { reportError } from "@corbits/error-sink";
 import { type ApiCall, type WorkflowPusher } from "@workbench/hub-client";
 import { ensureSeeded } from "./complete-credential";
 import { isFullySeeded } from "./provision";
@@ -321,6 +322,11 @@ export function createBenchProvisioner(
     void drainOnce().catch((cause: unknown) => {
       const message = cause instanceof Error ? cause.message : String(cause);
       logError(`bench provisioning drain failed: ${message}`);
+      // Not scoped to any one bench — a whole-tick failure (listDue
+      // itself throwing, say) rather than one seed's own provisioning
+      // failure, which already carries tenant context via holdOff
+      // (CL-7234).
+      reportError(cause, { operation: "bench_provisioning_drain" });
     });
   }
 
