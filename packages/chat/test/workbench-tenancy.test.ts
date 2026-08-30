@@ -8,7 +8,11 @@
 // exercised here as an outcome of `moveWorkbenchTenancy` itself, never
 // as a separate pre-check call.
 import { expect, test } from "bun:test";
-import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
+import type { ApiCall } from "@workbench/hub-client";
+import {
+  createInMemoryNativeTenantApi,
+  createInMemoryWorkbenchTenancyStore,
+} from "../src/workbench-tenancy";
 
 test("createWorkbenchTenant mints a tenant and records the parent link", async () => {
   const tenancy = createInMemoryWorkbenchTenancyStore();
@@ -18,6 +22,7 @@ test("createWorkbenchTenant mints a tenant and records the parent link", async (
     workbenchId: "ins_general",
     name: "General",
     creatorUserId: "usr_alice",
+    cookies: ["session=test"],
   });
 
   expect(result.tenantId).toMatch(/^tnt_/);
@@ -49,18 +54,21 @@ test("listChildWorkbenchTenancies scopes strictly to the requested parent bench"
     workbenchId: "ins_a1",
     name: "A One",
     creatorUserId: "usr_alice",
+    cookies: ["session=test"],
   });
   await tenancy.createWorkbenchTenant({
     parentTenantId: "tnt_bench_a",
     workbenchId: "ins_a2",
     name: "A Two",
     creatorUserId: "usr_alice",
+    cookies: ["session=test"],
   });
   await tenancy.createWorkbenchTenant({
     parentTenantId: "tnt_bench_b",
     workbenchId: "ins_b1",
     name: "B One",
     creatorUserId: "usr_bob",
+    cookies: ["session=test"],
   });
 
   const benchAWorkbenches =
@@ -82,6 +90,7 @@ test("listWorkbenchTenantIds answers which requested ids are workbench tenancies
     workbenchId: "ins_general",
     name: "General",
     creatorUserId: "usr_alice",
+    cookies: ["session=test"],
   });
 
   const result = await tenancy.listWorkbenchTenantIds([
@@ -105,12 +114,14 @@ test("moveWorkbenchTenancy re-parents one workbench without disturbing others wh
     workbenchId: "ins_moving",
     name: "Moving",
     creatorUserId: "usr_alice",
+    cookies: ["session=test"],
   });
   await tenancy.createWorkbenchTenant({
     parentTenantId: "tnt_bench_a",
     workbenchId: "ins_staying",
     name: "Staying",
     creatorUserId: "usr_alice",
+    cookies: ["session=test"],
   });
   tenancy.registerExistingTenant("tnt_bench_c");
   tenancy.grantManageInTenant("usr_alice", "tnt_bench_c");
@@ -140,6 +151,7 @@ test("moveWorkbenchTenancy reports a nonexistent destination tenant", async () =
     workbenchId: "ins_movable",
     name: "Movable",
     creatorUserId: "usr_alice",
+    cookies: ["session=test"],
   });
 
   const outcome = await tenancy.moveWorkbenchTenancy({
@@ -158,6 +170,7 @@ test("moveWorkbenchTenancy is forbidden for a real destination tenant the caller
     workbenchId: "ins_movable",
     name: "Movable",
     creatorUserId: "usr_alice",
+    cookies: ["session=test"],
   });
   tenancy.registerExistingTenant("tnt_bench_c");
 
@@ -177,12 +190,14 @@ test("moveWorkbenchTenancy treats the destination tenant a workbench was minted 
     workbenchId: "ins_general",
     name: "General",
     creatorUserId: "usr_alice",
+    cookies: ["session=test"],
   });
   await tenancy.createWorkbenchTenant({
     parentTenantId: "tnt_bench_a",
     workbenchId: "ins_movable",
     name: "Movable",
     creatorUserId: "usr_alice",
+    cookies: ["session=test"],
   });
 
   const outcome = await tenancy.moveWorkbenchTenancy({
@@ -194,30 +209,38 @@ test("moveWorkbenchTenancy treats the destination tenant a workbench was minted 
   expect(outcome.kind).toBe("moved");
 });
 
-test("compensateWorkbenchTenant removes the minted tenant and its tenancy link", async () => {
+test("compensateWorkbenchTenant removes the tenancy link and leaves the native tenant", async () => {
   const tenancy = createInMemoryWorkbenchTenancyStore();
   const minted = await tenancy.createWorkbenchTenant({
     parentTenantId: "tnt_bench_a",
     workbenchId: "ins_orphaned",
     name: "Orphaned",
     creatorUserId: "usr_alice",
+    cookies: ["session=test"],
   });
   await tenancy.createWorkbenchTenant({
     parentTenantId: "tnt_bench_b",
     workbenchId: "ins_movable",
     name: "Movable",
     creatorUserId: "usr_bob",
+    cookies: ["session=test"],
   });
 
   await tenancy.compensateWorkbenchTenant(minted.tenantId);
 
   expect(await tenancy.getWorkbenchTenancy("ins_orphaned")).toBeUndefined();
+  expect(await tenancy.listWorkbenchTenantIds([minted.tenantId])).toEqual(
+    new Set(),
+  );
+  // Native tenant rows stay — compensation is not a DELETE of Interchange
+  // tenants — so the compensated tenant is still a real move destination
+  // for a caller who holds manage there (the mint's own creator).
   const outcome = await tenancy.moveWorkbenchTenancy({
     workbenchId: "ins_movable",
     newParentTenantId: minted.tenantId,
     callerRefId: "usr_alice",
   });
-  expect(outcome).toEqual({ kind: "destination_not_found" });
+  expect(outcome.kind).toBe("moved");
 });
 
 test("moveWorkbenchTenancy rejects moving a workbench into its own tenant", async () => {
@@ -227,6 +250,7 @@ test("moveWorkbenchTenancy rejects moving a workbench into its own tenant", asyn
     workbenchId: "ins_general",
     name: "General",
     creatorUserId: "usr_alice",
+    cookies: ["session=test"],
   });
   // The creator holds a manage grant in its own tenant (seeded as
   // owner) — proving the rejection is structural, not authorization,
@@ -249,6 +273,7 @@ test("moveWorkbenchTenancy rejects a multi-node cycle: moving a workbench into i
     workbenchId: "ins_parent",
     name: "Parent",
     creatorUserId: "usr_alice",
+    cookies: ["session=test"],
   });
   const childWorkbench = await tenancy.createWorkbenchTenant({
     // The child workbench's tenant is parented under the parent
@@ -258,6 +283,7 @@ test("moveWorkbenchTenancy rejects a multi-node cycle: moving a workbench into i
     workbenchId: "ins_child",
     name: "Child",
     creatorUserId: "usr_alice",
+    cookies: ["session=test"],
   });
   tenancy.grantManageInTenant("usr_alice", childWorkbench.tenantId);
 
@@ -291,6 +317,7 @@ test("moveWorkbenchTenancy allows moving a workbench into an unrelated tenant th
     workbenchId: "ins_movable",
     name: "Movable",
     creatorUserId: "usr_alice",
+    cookies: ["session=test"],
   });
 
   // "tnt_sibling" shares an ancestor ("tnt_root") with the workbench's
@@ -348,6 +375,7 @@ test("addWorkbenchMember mints a member-role principal in the workbench's own te
     workbenchId: "ins_general",
     name: "General",
     creatorUserId: "usr_alice",
+    cookies: ["session=test"],
   });
 
   const result = await tenancy.addWorkbenchMember({
@@ -374,6 +402,7 @@ test("addWorkbenchMember is idempotent for a refId already holding a principal i
     workbenchId: "ins_general",
     name: "General",
     creatorUserId: "usr_alice",
+    cookies: ["session=test"],
   });
 
   const first = await tenancy.addWorkbenchMember({
@@ -396,4 +425,90 @@ test("addWorkbenchMember returns undefined for a legacy workbench with no tenanc
       refId: "usr_bob",
     }),
   ).toBeUndefined();
+});
+
+test("createWorkbenchTenant mints via POST /api/tenants and POST grants, not SQL", async () => {
+  const calls: {
+    method: string;
+    path: string;
+    body: unknown;
+    cookies: string[] | undefined;
+  }[] = [];
+  const inner = createInMemoryNativeTenantApi();
+  const api: ApiCall = async (method, path, body, cookies) => {
+    calls.push({ method, path, body, cookies });
+    return inner(method, path, body, cookies);
+  };
+  const tenancy = createInMemoryWorkbenchTenancyStore({ api });
+
+  const result = await tenancy.createWorkbenchTenant({
+    parentTenantId: "tnt_bench_a",
+    workbenchId: "ins_general",
+    name: "General",
+    creatorUserId: "usr_alice",
+    cookies: ["session=alice"],
+  });
+
+  const tenantPosts = calls.filter(
+    (call) => call.method === "POST" && call.path === "/api/tenants",
+  );
+  expect(tenantPosts).toHaveLength(1);
+  expect(tenantPosts[0]?.body).toEqual({
+    name: "General",
+    slug: expect.stringContaining("general"),
+    parentId: "tnt_bench_a",
+  });
+  expect(tenantPosts[0]?.cookies).toEqual(["session=alice"]);
+
+  const grantPosts = calls.filter(
+    (call) =>
+      call.method === "POST" &&
+      call.path === `/api/tenants/${result.tenantId}/grants`,
+  );
+  expect(grantPosts).toHaveLength(2);
+  expect(grantPosts.map((call) => call.body)).toEqual([
+    {
+      roleId: expect.stringMatching(/^rol_/),
+      resource: "room:*",
+      action: "read",
+      effect: "allow",
+      origin: "creator",
+    },
+    {
+      roleId: expect.stringMatching(/^rol_/),
+      resource: "room:*",
+      action: "write",
+      effect: "allow",
+      origin: "creator",
+    },
+  ]);
+  expect(
+    calls.every(
+      (call) =>
+        call.method !== "POST" ||
+        call.path === "/api/tenants" ||
+        /\/api\/tenants\/[^/]+\/grants$/.test(call.path),
+    ),
+  ).toBe(true);
+});
+
+test("createWorkbenchTenant fails closed when POST /api/tenants is rejected", async () => {
+  const api: ApiCall = async () => ({
+    status: 403,
+    data: { error: { code: "forbidden", message: "nope" } },
+    cookies: [],
+  });
+  const tenancy = createInMemoryWorkbenchTenancyStore({ api });
+
+  await expect(
+    tenancy.createWorkbenchTenant({
+      parentTenantId: "tnt_bench_a",
+      workbenchId: "ins_general",
+      name: "General",
+      creatorUserId: "usr_alice",
+      cookies: ["session=alice"],
+    }),
+  ).rejects.toThrow("POST /api/tenants failed with status 403");
+
+  expect(await tenancy.getWorkbenchTenancy("ins_general")).toBeUndefined();
 });

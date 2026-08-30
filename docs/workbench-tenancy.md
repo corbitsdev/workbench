@@ -25,21 +25,25 @@ notion of "which bench owns this workbench."
 
 1. Mints a new tenant via `WorkbenchTenancyStore.createWorkbenchTenant`
    (`packages/chat/src/workbench-tenancy.ts`), parented under the calling
-   bench (`tenant.parentId = <bench id>`). The child tenant is seeded
-   exactly as the native `POST /api/tenants` route seeds one it creates
-   directly — the same `owner`/`admin`/`member` system roles, the same
-   grant shapes — so it is indistinguishable from a tenant created by
-   hand through that route. The mint (tenant, its three system roles,
-   the creator's owner principal and role assignment, every system
-   grant, and the `workbench_tenancy` link) runs as one transaction, so it
-   either lands complete or not at all — there is no partially-seeded
-   tenant to observe.
-2. Seeds the child tenant's `owner` principal for the creator's own auth
-   user id (`principal.refId`), so the creator is a first-class native
-   member of the workbench's own tenant, not just of the parent bench.
+   bench (`tenant.parentId = <bench id>`). Native tenant/role/grant rows
+   are created through Interchange HTTP as the requesting user:
+   `POST /api/tenants` (name, slug, parentId) then
+   `POST /api/tenants/:id/grants` for the extra member-role `room:*`
+   read/write pair. Workbench never INSERT-s into `intx.grants`,
+   `intx.roles`, or `intx.tenants`. The native `POST /api/tenants` route
+   seeds the same `owner`/`admin`/`member` system roles and grant shapes
+   a bench created by hand through that route would get, and returns the
+   Interchange `tenantId` subsequent grant/repo calls thread in the URL
+   (`/api/tenants/:tenantId/...` — the hub-client equivalent of a tenant
+   header).
+2. The creator becomes the child tenant's `owner` principal because
+   `POST /api/tenants` seeds the authenticated caller that way
+   (`principal.refId` is the creator's auth user id), so they are a
+   first-class native member of the workbench's own tenant, not just of
+   the parent bench.
 3. Records the parent↔child link in `workbench_tenancy`
    (`packages/chat/src/schema.ts`), the table this package owns for
-   exactly this purpose.
+   exactly this purpose — the only SQL write on the mint path.
 4. Launches the workbench host and stores `workbench_settings` /
    `workbench_launch` unchanged from before this feature: both remain
    scoped to the parent bench's tenant id, not the new child tenant.
@@ -48,9 +52,10 @@ notion of "which bench owns this workbench."
    tenant if the launch fails: `POST .../chat/workbenches` wraps the
    launch call and, on failure, calls
    `WorkbenchTenancyStore.compensateWorkbenchTenant` to delete the
-   freshly-minted tenant (and everything cascaded onto it) before
-   re-raising the error. Both the failure and the compensation are
-   logged loudly.
+   `workbench_tenancy` link (native Interchange tenant rows stay —
+   compensation no longer deletes them) before re-raising the error.
+   Both the failure and the compensation are logged loudly. Mint HTTP
+   failures themselves go through `reportError`.
 
    Compensation is itself a database write, and can itself fail — the
    same outage that failed the launch, for instance, can just as

@@ -56,6 +56,7 @@ function buildApp(
       }),
     authenticator: overrides.authenticator ?? authenticateAsRun,
     tenancy: overrides.tenancy ?? createInMemoryWorkbenchTenancyStore(),
+    sessionFor: overrides.sessionFor ?? (async () => ["session=test"]),
   }) as unknown as Hono;
 }
 

@@ -134,6 +134,14 @@ export type CreateWorkflowParticipantRoutesDeps = {
     | "getWorkbenchTenancy"
     | "getWorkbenchOwnerUserId"
   >;
+  /**
+   * Mints a session for the bench owner when a workflow child has no
+   * browser cookies. Production binds `createBenchSessionMinter`.
+   */
+  readonly sessionFor: (args: {
+    userId: string;
+    tenantId: string;
+  }) => Promise<string[] | undefined>;
 };
 
 export function createWorkflowParticipantRoutes(
@@ -273,6 +281,20 @@ export function createWorkflowParticipantRoutes(
       );
     }
 
+    const cookies = await deps.sessionFor({
+      userId: creatorUserId,
+      tenantId: ownerTenantId,
+    });
+    if (cookies === undefined) {
+      return c.json(
+        errorEnvelope(
+          "session_unmintable",
+          `Could not mint a session for owner "${creatorUserId}" to create an agent DM`,
+        ),
+        500,
+      );
+    }
+
     let minted: Awaited<ReturnType<typeof mintAgentDm>>;
     try {
       minted = await mintAgentDm(
@@ -288,6 +310,7 @@ export function createWorkflowParticipantRoutes(
           callerWorkbenchId: workbench.workbenchId,
           callerPrincipalId: scope.principalId,
           creatorUserId,
+          cookies,
           definitionId: body.definitionId,
         },
       );

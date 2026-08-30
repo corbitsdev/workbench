@@ -105,6 +105,7 @@ import {
   DefinitionProjectionMissingError,
 } from "@corbits/folded-runs";
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
+import { cookiesFromHeader } from "@workbench/hub-client";
 import type { AgentTurnStore } from "./agent-turns";
 import type { ThreadStore } from "./threads";
 import { ThreadDepthCapError } from "./threads";
@@ -1049,19 +1050,19 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           : undefined);
 
       // A workbench is a child tenant of the bench it is created in from
-      // the moment it exists.
-      // The mint itself is one transaction (see `workbench-tenancy.ts`),
-      // so it never lands half-seeded; but the agent mint that follows
-      // it is a separate transaction against separate tables, so a
-      // failure there is compensated for explicitly below rather than
-      // trusted to ordering alone. The creator becomes the child
-      // tenant's native owner exactly as the native tenant-creation
-      // route seeds its own creator (see `workbench-tenancy.ts`).
+      // the moment it exists. Native tenant/role/grant rows are minted
+      // through POST /api/tenants as this caller; the workbench_tenancy
+      // link is written after. A later launch failure compensates the
+      // link only — the native tenant stays, same as a later launch
+      // failure already lives with. The creator becomes the child
+      // tenant's native owner exactly as POST /api/tenants seeds its
+      // own creator.
       const workbenchTenant = await deps.tenancy.createWorkbenchTenant({
         parentTenantId: tenant.id,
         workbenchId,
         name: chatTitle ?? workbenchId,
         creatorUserId: principal.refId,
+        cookies: cookiesFromHeader(c.req.header("cookie")),
       });
 
       // Compensation can itself fail (a dropped connection, the same

@@ -162,6 +162,37 @@ describe("guardedHubApp — bypass shape B: arbitrary parentId under a tenant th
     expect(created).toHaveLength(0);
   });
 
+  test("an admin is denied by the default owners tenancyCreation policy", async () => {
+    const { app: nativeApp, created } = stubNativeApp();
+    const deps = depsFor({
+      user: {
+        id: "usr_admin",
+        email: "admin@acme.example",
+        emailVerified: true,
+      },
+      resolveCallerRoleNames: async (tenantId, userId) =>
+        tenantId === "tnt_acme" && userId === "usr_admin"
+          ? ["admin"]
+          : undefined,
+    });
+    const wrapped = guardedHubApp(nativeApp, deps);
+
+    const response = await wrapped.request("/api/tenants", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Sub bench",
+        slug: "sub-bench",
+        parentId: "tnt_acme",
+      }),
+    });
+    expect(response.status).toBe(403);
+    expect(
+      ((await response.json()) as { error: { code: string } }).error.code,
+    ).toBe("tenancy_creation_forbidden");
+    expect(created).toHaveLength(0);
+  });
+
   test("owners-admins policy also accepts an admin", async () => {
     const { app: nativeApp, created } = stubNativeApp();
     const deps = depsFor({

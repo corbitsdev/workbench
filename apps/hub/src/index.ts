@@ -20,10 +20,8 @@ import {
 } from "@intx/db";
 import {
   asset as assetTable,
-  grant as grantTable,
   model,
   modelPricing,
-  role as roleTable,
   tenant as tenantTable,
   workflowDefinition,
 } from "@intx/db/schema";
@@ -339,6 +337,10 @@ import {
 import { type } from "arktype";
 import { betterAuth } from "better-auth";
 import { createBenchSessionMinter } from "./bench-session";
+import {
+  hasRepoGrantViaHttp,
+  mintRepoGrantViaHttp,
+} from "./native-repo-grants";
 import { createSignInAttemptLimiter } from "./sign-in-rate-limit";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type Context, Hono, type Next } from "hono";
@@ -1270,8 +1272,14 @@ export async function createHub(config: HubConfig) {
   // agents never produce text. `config.baseUrl` (not `localhost`) is
   // what makes the URL usable from a sidecar on another machine.
   app.route("/api/chat/noop-inference", createNoopInferenceRoutes());
+  const selfApi = createHubAPI(config.baseUrl);
+  const sessionFor = createBenchSessionMinter({
+    auth,
+    log: (line) => log.warn`${line}`,
+  });
   const chatTenancy = createDrizzleWorkbenchTenancyStore(db, {
     conditionRegistry: chatConditionRegistry,
+    api: selfApi,
   });
   // Mounted outside the tenant prefix, like `/api/onboarding`: the bench
   // switcher asks this across every tenant a signed-in user belongs to,
@@ -1601,6 +1609,7 @@ export async function createHub(config: HubConfig) {
       turnQueue,
       authenticator: createWorkflowRunAuthenticator({ db }),
       tenancy: chatTenancy,
+      sessionFor,
     }),
   );
   // Slack tag ingress (CL-5288 Phase 1): mounted OUTSIDE the tenant
@@ -1618,6 +1627,7 @@ export async function createHub(config: HubConfig) {
     chatPlatform,
     roomMessages,
     chatTenancy,
+    sessionFor,
     workbenchSubscribers,
     turnQueue,
   });
@@ -2238,43 +2248,10 @@ export async function createHub(config: HubConfig) {
         });
         return row?.id;
       },
-      hasRepoGrant: async (tenantId, repo) => {
-        const existing = await db.query.grant.findFirst({
-          where: and(
-            eq(grantTable.tenantId, tenantId),
-            eq(grantTable.resource, `repo:${repo.name}`),
-            eq(grantTable.action, "read"),
-          ),
-          columns: { id: true },
-        });
-        return existing !== undefined;
-      },
-      mintRepoGrant: async (tenantId, repo) => {
-        const memberRole = await db.query.role.findFirst({
-          where: and(
-            eq(roleTable.tenantId, tenantId),
-            eq(roleTable.name, "member"),
-          ),
-          columns: { id: true },
-        });
-        if (memberRole === undefined) {
-          throw new Error(
-            `tenant ${tenantId} has no system "member" role to scope a repo grant to`,
-          );
-        }
-        const now = new Date();
-        await db.insert(grantTable).values({
-          id: generateId("grant"),
-          tenantId,
-          roleId: memberRole.id,
-          resource: `repo:${repo.name}`,
-          action: "read",
-          effect: "allow",
-          origin: "system",
-          createdAt: now,
-          updatedAt: now,
-        });
-      },
+      hasRepoGrant: (tenantId, repo, cookies) =>
+        hasRepoGrantViaHttp(selfApi, tenantId, repo, cookies),
+      mintRepoGrant: (tenantId, repo, cookies) =>
+        mintRepoGrantViaHttp(selfApi, tenantId, repo, cookies),
       createWebhookTrigger: async (
         tenantId,
         principalId,
@@ -3233,7 +3210,6 @@ export async function createHub(config: HubConfig) {
   // patching any vendor route.
   await applyAccessPolicyMigrations(config.databaseUrl);
   const accessPolicyStore = createDrizzleAccessPolicyStore(db);
-  const selfApi = createHubAPI(config.baseUrl);
   app.route(
     `${TENANT_PREFIX}/access-policy`,
     createAccessPolicyRoutes({
@@ -3261,10 +3237,7 @@ export async function createHub(config: HubConfig) {
     hubUrl: config.baseUrl,
     store: pendingSeedStore,
     pushWorkflow: createGitWorkflowPusher(),
-    sessionFor: createBenchSessionMinter({
-      auth,
-      log: (line) => log.warn`${line}`,
-    }),
+    sessionFor,
     log: (line) => log.info`${line}`,
     logError: (line) => log.error`${line}`,
   });

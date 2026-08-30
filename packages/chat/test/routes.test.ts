@@ -595,6 +595,7 @@ describe("POST /workbenches — kind: chat + definitionId always find-or-reopens
       workbenchId: legacyWorkbenchId,
       name: "echo",
       creatorUserId: "prn_alice",
+      cookies: ["session=test"],
     });
     await deps.store.createWorkbenchSettings({
       tenantId: TENANT.id,
@@ -638,6 +639,7 @@ describe("POST /workbenches — kind: chat + definitionId always find-or-reopens
       workbenchId: olderWorkbenchId,
       name: "echo",
       creatorUserId: "prn_alice",
+      cookies: ["session=test"],
     });
     await deps.store.createWorkbenchSettings({
       tenantId: TENANT.id,
@@ -660,6 +662,7 @@ describe("POST /workbenches — kind: chat + definitionId always find-or-reopens
       workbenchId: newerWorkbenchId,
       name: "echo",
       creatorUserId: "prn_alice",
+      cookies: ["session=test"],
     });
     await deps.store.createWorkbenchSettings({
       tenantId: TENANT.id,

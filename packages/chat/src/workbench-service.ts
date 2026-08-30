@@ -69,6 +69,8 @@ export type ProvisionSpaceWorkbenchInput = {
   readonly creatorPrincipalId: string;
   readonly creatorUserId: string;
   readonly name: string;
+  /** Request cookies forwarded into native `POST /api/tenants`. */
+  readonly cookies: string[];
 };
 
 export type ProvisionSpaceWorkbenchResult = {
@@ -100,6 +102,7 @@ export async function provisionSpaceWorkbench(
     workbenchId,
     name: input.name,
     creatorUserId: input.creatorUserId,
+    cookies: input.cookies,
   });
 
   const preset = presetForKind("workbench");
@@ -176,6 +179,8 @@ export type MintAgentDmInput = {
   readonly callerPrincipalId: string;
   /** Human auth user `refId` — required by `createWorkbenchTenant`. */
   readonly creatorUserId: string;
+  /** Request cookies forwarded into native `POST /api/tenants`. */
+  readonly cookies: string[];
   readonly definitionId: string;
   /** Optional title; else invitable description / definition name. */
   readonly name?: string;
@@ -322,6 +327,7 @@ export async function mintAgentDm(
     workbenchId,
     name: chatTitle ?? workbenchId,
     creatorUserId: input.creatorUserId,
+    cookies: input.cookies,
   });
 
   async function compensateMint(err: unknown, phase: string): Promise<void> {
