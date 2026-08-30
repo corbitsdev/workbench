@@ -277,7 +277,12 @@ export function createPresenceRoomRegistry(): PresenceRoomRegistry {
   }
 
   function isRoomEmpty(room: Room): boolean {
-    return room.clientIdByPrincipal.size === 0 && room.listeners.size === 0;
+    return (
+      room.clientIdByPrincipal.size === 0 &&
+      room.listeners.size === 0 &&
+      room.docListeners.size === 0 &&
+      room.snapshotListeners.size === 0
+    );
   }
 
   function destroyRoomIfEmpty(key: PresenceRoomKey, room: Room): void {
@@ -443,6 +448,7 @@ export function createPresenceRoomRegistry(): PresenceRoomRegistry {
       room.docListeners.add(listener);
       return () => {
         room.docListeners.delete(listener);
+        destroyRoomIfEmpty(key, room);
       };
     },
 
@@ -471,6 +477,7 @@ export function createPresenceRoomRegistry(): PresenceRoomRegistry {
       room.snapshotListeners.add(listener);
       return () => {
         room.snapshotListeners.delete(listener);
+        destroyRoomIfEmpty(key, room);
       };
     },
   };
