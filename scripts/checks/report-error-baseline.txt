@@ -1,0 +1,301 @@
+# check:report-error debt ledger — NOT an allowlist.
+#
+# Every line below is a catch clause that already existed when
+# check:report-error started enforcing the reportError convention. It is
+# recorded here so new code is held to the rule immediately while the
+# existing backlog is tracked instead of hidden. Each line names a real
+# bug someone should still fix: route the catch through reportError,
+# rethrow it, or (for a finding already in flight on a ticket) replace
+# its line here with a report-error-ignore comment in the source instead.
+#
+# This file only ever shrinks: fixing an entry and regenerating removes
+# its line; a line with no matching finding anymore fails the check
+# until it's regenerated, so it can't rot silently.
+#
+# Regenerate after fixing (or newly opting out) entries:
+#   bun run scripts/checks/report-error.ts --write-baseline
+#
+# Format (tab-separated): <path>\t<occurrence>\t<evidence>
+# `occurrence` is this evidence string's 1-based rank among matches in
+# the same file — line numbers aren't used as the key because they
+# drift as unrelated code around a catch changes.
+apps/hub/src/bench-session.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
+apps/hub/src/credential-expiry-sweep.ts	1	log.error`credential expiry sweep failed: ${
+apps/hub/src/env-credential-plant.ts	1	session = undefined;
+apps/hub/src/grant-allowance.ts	1	return null;
+apps/hub/src/index.ts	1	email = "";
+apps/hub/src/index.ts	1	email = undefined;
+apps/hub/src/index.ts	1	log.warn(
+apps/hub/src/index.ts	1	sidecarAllocationLog.error`Sidecar allocation reconciliation failed: ${error instanceof Error ? error.message : String(error)}`;
+apps/hub/src/mail-redelivery.ts	1	log.warn`could not wake ${recipient} ahead of redelivery: ${
+apps/hub/src/routine-launcher.ts	1	const reason =
+apps/hub/src/routine-launcher.ts	1	const reason = err instanceof Error ? err.message : String(err);
+apps/hub/src/routine-scheduler.ts	1	const reason = err instanceof Error ? err.message : String(err);
+apps/hub/src/routine-scheduler.ts	1	log.error`marking routine ${claimed.id}'s failed fire also failed: ${
+apps/hub/src/routine-scheduler.ts	1	log.error`routine scheduler tick failed: ${
+apps/hub/src/shutdown.ts	1	return { kind: "failed", error };
+apps/sidecar/src/atomic-write.ts	1	logger.warn`parent-dir fsync failed for ${path}; durability is degraded but the file is renamed and fsynced — ${err instanceof Error ? err.message : String(err)}`;
+apps/sidecar/src/concurrency.ts	1	failures.push({ item, error });
+apps/sidecar/src/conversation-state.ts	1	logger.warn`connector route for ${opts.agentKey} could not parse the inbound sender; leaving the thread unadvanced: ${cause instanceof Error ? cause.message : String(cause)}`;
+apps/sidecar/src/originating-workbench.ts	1	return undefined;
+apps/sidecar/src/shutdown.ts	1	return { kind: "failed", error };
+apps/sidecar/src/signing-keypair.ts	1	return false;
+apps/sidecar/src/step-agent-tools.ts	1	logger.error`step plugin dispose failed during ${context}: ${cause instanceof Error ? cause.message : String(cause)}`;
+apps/sidecar/src/step-agent-tools.ts	1	logger.error`step tool bundle dispose failed: ${cause instanceof Error ? cause.message : String(cause)}`;
+apps/sidecar/src/step-agent-tools.ts	1	logger.warn`step credential capability dispose failed: ${cause instanceof Error ? cause.message : String(cause)}`;
+apps/sidecar/src/tool-materialization.ts	1	if (!(hasCode(err) && err.code === "ENOENT")) {
+apps/sidecar/src/tool-materialization.ts	1	logger.error`active-deploy-id degraded write also failed for ${activeIdFile}: ${fallback instanceof Error ? fallback.message : String(fallback)}; writing dirty marker so the next boot can reconcile`;
+apps/sidecar/src/tool-materialization.ts	1	logger.error`active-deploy-id dirty marker write also failed for ${activeIdFile}.dirty: ${marker instanceof Error ? marker.message : String(marker)}; on-disk state will diverge from the recorded id for one boot cycle`;
+apps/sidecar/src/tool-materialization.ts	1	logger.warn`active-deploy-id primary persist failed for ${activeIdFile}: ${primary instanceof Error ? primary.message : String(primary)}; attempting degraded write`;
+apps/sidecar/src/tool-materialization.ts	1	logger.warn`audit-dir fsync failed for ${dir}; rejected-apply durability is degraded but the files are written — ${err instanceof Error ? err.message : String(err)}`;
+apps/sidecar/src/tool-materialization.ts	1	logger.warn`fsync failed for ${filePath}; durability is degraded but the bytes are written — ${err instanceof Error ? err.message : String(err)}`;
+apps/sidecar/src/tool-materialization.ts	1	logger.warn`parent-dir fsync failed for ${instanceDir} after deploy-id persist; deploy-id durability is degraded but the committed deploy is staged on disk — ${err instanceof Error ? err.message : String(err)}`;
+apps/sidecar/src/workflow-deployment-record.ts	1	const reason = cause instanceof Error ? cause.message : String(cause);
+apps/sidecar/src/workflow-deployment-record.ts	1	return undefined;
+apps/sidecar/src/workflow-host-wiring/index.ts	1	const message =
+apps/sidecar/src/workflow-host-wiring/index.ts	1	const reason =
+apps/sidecar/src/workflow-host-wiring/index.ts	2	const reason =
+apps/sidecar/src/workflow-host-wiring/supervisor.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
+apps/sidecar/src/workflow-probe-handler.ts	1	logger.debug`probe child ${String(handle.pid)} SIGKILL raised (already exited?): ${errorMessage(err)}`;
+apps/sidecar/src/workflow-probe-handler.ts	1	logger.debug`probe child ${String(handle.pid)} SIGTERM raised (already exited?): ${errorMessage(err)}`;
+apps/sidecar/src/workflow-probe-handler.ts	1	payload = { ok: false, error: enrichProbeError(err) };
+apps/sidecar/src/workflow-run-pack-client.ts	1	const msg = cause instanceof Error ? cause.message : String(cause);
+apps/web/src/approval-actions.ts	1	if (cause instanceof ApiQueryError) {
+apps/web/src/auth/quote-card.tsx	1	// localStorage unavailable (private mode / blocked) — rotation just
+apps/web/src/auth/quote-card.tsx	1	return -1;
+apps/web/src/bench-context.tsx	1	// A private-browsing tab with storage disabled loses persistence, not
+apps/web/src/bench-context.tsx	1	return null;
+apps/web/src/block-response-actions.ts	1	if (cause instanceof ChatApiError && cause.status === 403) {
+apps/web/src/block-response-actions.ts	2	if (cause instanceof ChatApiError && cause.status === 403) {
+apps/web/src/command-palette-recents.ts	1	// Storage disabled or full — recents just stop persisting this tab.
+apps/web/src/command-palette-recents.ts	1	return null;
+apps/web/src/connect-github-actions.ts	1	const message =
+apps/web/src/connect-service-actions.ts	1	const message =
+apps/web/src/connect-service-actions.ts	1	return { ok: false, message: "Couldn't connect. Try again." };
+apps/web/src/connect-service-actions.ts	2	const message =
+apps/web/src/deployment-capabilities-api.ts	1	return {
+apps/web/src/global-routines.ts	1	toast(
+apps/web/src/global-routines.ts	2	toast(
+apps/web/src/last-workbench.ts	1	// A private-browsing tab with storage disabled loses this signal —
+apps/web/src/last-workbench.ts	1	return null;
+apps/web/src/onboarding.ts	1	return { kind: "error" };
+apps/web/src/onboarding.ts	1	return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
+apps/web/src/onboarding.ts	1	return { kind: "unknown" };
+apps/web/src/onboarding.ts	2	return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
+apps/web/src/onboarding.ts	3	return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
+apps/web/src/pages/agent-detail-page.tsx	1	// A handle collision is the one failure retrying can never clear, so
+apps/web/src/pages/agent-detail-page.tsx	1	setLifecycle({
+apps/web/src/pages/agent-detail-page.tsx	1	setSave({ kind: "idle" });
+apps/web/src/pages/create-agent-panel.tsx	1	setDraftFailed(true);
+apps/web/src/pages/create-agent-panel.tsx	1	setSubmitError(
+apps/web/src/pages/create-skill-dialog.tsx	1	setServerError(cause instanceof Error ? cause.message : String(cause));
+apps/web/src/pages/library-page.tsx	1	setUploadError(
+apps/web/src/pages/mission-control-page.tsx	1	toast(
+apps/web/src/pages/new-workbench-picker.tsx	1	// The missing-setup-agent precondition reads identically whether
+apps/web/src/pages/skill-detail-page.tsx	1	if (options.keepDraft) {
+apps/web/src/pages/skill-detail-page.tsx	1	if (statusOf(cause) === 409) {
+apps/web/src/pages/skill-detail-page.tsx	1	setActionError(describeApiError(cause, "reading that version"));
+apps/web/src/pages/skill-detail-page.tsx	1	setActionError(describeApiError(cause, "saving that change"));
+apps/web/src/pages/skills-page.tsx	1	setState({ status: "error", message: messageOf(cause) });
+apps/web/src/profile-relations.ts	1	return {
+apps/web/src/session.ts	1	return {
+apps/web/src/session.ts	2	return {
+apps/web/src/session.ts	3	return {
+apps/web/src/session.ts	4	return {
+apps/web/src/settings-access.ts	1	return "denied";
+apps/web/src/shell/context-menu/items.tsx	1	toast("Couldn't copy the link");
+apps/web/src/shell/routine-panel.tsx	1	setSaveState("error");
+apps/web/src/shell/workbench-list.tsx	1	// Revert the optimistic title on failure; the list will refetch on
+apps/web/src/shell/workbench-list.tsx	1	setPinned(!next);
+packages/access-policy/src/policy.ts	1	return [];
+packages/agent-directory-tools/src/tool.ts	1	// The agent was genuinely created — that half-success must never
+packages/agent-directory-tools/src/tool.ts	1	if (err instanceof CreateAgentDefinitionError) {
+packages/agent-directory-tools/src/tool.ts	1	return errorResult(call.id, err);
+packages/agent-directory/src/definition-history.ts	1	return null;
+packages/agent-directory/src/routes.ts	1	return c.json(
+packages/agent-lifecycle/src/index.ts	1	log.error`lifecycle sweep failed to undeploy ${address}: ${
+packages/approvals/src/allowance.ts	1	deps.log(
+packages/approvals/src/allowance.ts	1	return { outcome: "park", reason: "classification_failed" };
+packages/artifacts-hub/src/routes.ts	1	return c.json(
+packages/artifacts-hub/src/template-library.ts	1	deps.log(
+packages/artifacts-hub/src/workflow-routes.ts	1	return c.json(
+packages/artifacts-hub/src/workflow-routes.ts	2	return c.json(
+packages/capability-tools/src/tool.ts	1	if (err instanceof CapabilityOutOfInventoryError) {
+packages/capability-tools/src/tool.ts	1	return errorResult(call.id, err);
+packages/catalog-tools/src/tool.ts	1	return errorResult(call.id, err);
+packages/catalog-tools/src/tool.ts	2	return errorResult(call.id, err);
+packages/catalog-tools/src/tool.ts	3	return errorResult(call.id, err);
+packages/chat-ui/src/composer.tsx	1	if (attachGenerationRef.current !== generation) return;
+packages/chat-ui/src/default-agent-workbench.ts	1	return {
+packages/chat-ui/src/invite-agent-dialog.tsx	1	setInviteError(
+packages/chat-ui/src/invite-agent-dialog.tsx	1	setInviteError(CHAT_STRINGS.inviteAgentQuickCreateError);
+packages/chat-ui/src/timeline.tsx	1	toast(CHAT_STRINGS.copyTextError);
+packages/chat-ui/src/tool-activity.ts	1	return output;
+packages/chat-ui/src/use-optimistic-sends.ts	1	if (cause instanceof ChatApiError && cause.status === 403) {
+packages/chat-ui/src/use-thread-navigation.ts	1	toast(CHAT_STRINGS.forkThreadError);
+packages/chat-ui/src/use-workbench-stream.ts	1	onEventRef.current(eventType, message.data);
+packages/chat/src/platform-adapter.ts	1	continue;
+packages/chat/src/platform-adapter.ts	1	wakeLogger.error`drift check for ${binding.roomAddress} (run ${live.run.id}) failed, leaving it as-is: ${
+packages/chat/src/platform-adapter.ts	1	wakeLogger.error`inference-source reconcile for ${binding.roomAddress} (run ${run.id}) failed, leaving it as-is: ${
+packages/chat/src/platform-adapter.ts	1	wakeLogger.error`pinned-tool-package reconcile for ${live.binding.roomAddress} (run ${live.run.id}) failed, leaving it as-is: ${
+packages/chat/src/platform-adapter.ts	1	wakeLogger.error`relaunch sweep: could not relaunch ${live.binding.roomAddress} (run ${live.run.id} is ${live.run.status}): ${
+packages/chat/src/routes.ts	1	log.error(
+packages/chat/src/routes.ts	1	return c.json(ErrorEnvelope("not_found", "blob not found"), 404);
+packages/chat/src/routes.ts	2	log.error(
+packages/chat/src/turn-context.ts	1	contextLog.warn`failed to assemble turn context on workbench ${input.workbenchId}: ${
+packages/chat/src/workbench-service.ts	1	fanoutLog.error(
+packages/chat/src/workbench-service.ts	1	greetingLog.error(
+packages/chat/src/workbench-service.ts	1	mintAgentDmLog.error(
+packages/chat/src/workbench-service.ts	1	provisionLog.error(
+packages/chat/src/workbench-service.ts	1	removeLog.error(
+packages/chat/src/workbench-service.ts	2	fanoutLog.error(
+packages/code-review/src/report.ts	1	return { ok: false, reason: "the reply was not JSON" };
+packages/code-review/src/review-run.ts	1	return { reviewer, ok: false, reason: reasonOf(err) };
+packages/command-palette/src/recents.ts	1	// A full or disabled store (private browsing, quota) loses
+packages/command-palette/src/recents.ts	1	// As above — loses persistence, not function.
+packages/command-palette/src/recents.ts	1	return [];
+packages/connections-tools/src/tool.ts	1	if (err instanceof NoOwnRoomError) {
+packages/connections-tools/src/tool.ts	1	return errorResult(call.id, err);
+packages/connections-tools/src/tool.ts	2	return errorResult(call.id, err);
+packages/connections-tools/src/tool.ts	3	return errorResult(call.id, err);
+packages/connections-tools/src/tool.ts	4	return errorResult(call.id, err);
+packages/connections/src/connected-hook.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
+packages/connections/src/connected-hook.ts	2	const message = cause instanceof Error ? cause.message : String(cause);
+packages/connections/src/github-connect.ts	1	return {
+packages/connections/src/gmail-connect.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
+packages/connections/src/huggingface-connect.ts	1	return {
+packages/connections/src/mcp-oauth-routes.ts	1	// malformed JSON on an error response; classifier uses the thrown error
+packages/connections/src/mcp-oauth-routes.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
+packages/connections/src/mcp-oauth-routes.ts	2	const message = cause instanceof Error ? cause.message : String(cause);
+packages/connections/src/mcp-oauth-routes.ts	3	const message = cause instanceof Error ? cause.message : String(cause);
+packages/connections/src/mcp-oauth.ts	1	return {
+packages/connections/src/mcp-probe.ts	1	const message =
+packages/connections/src/mcp-probe.ts	1	return undefined;
+packages/connections/src/mcp-probe.ts	1	return { ok: false, message: `"${url}" is not a valid URL.` };
+packages/connections/src/mcp-server-routes.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
+packages/connections/src/oauth-routes.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
+packages/connections/src/oauth-routes.ts	1	return defaultReturnPath;
+packages/connections/src/oauth-tenant-connect.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
+packages/connections/src/openrouter-connect.ts	1	return {
+packages/connections/src/pkce.ts	1	return undefined;
+packages/connections/src/probes.ts	1	return {
+packages/connections/src/routes.ts	1	const message =
+packages/connections/src/routes.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
+packages/error-sink/src/index.ts	1	return context.refId ?? UNKNOWN_OPERATION;
+packages/folded-run-one-shot/src/one-shot-reply.ts	1	log.error`one-shot run ${triggerAddress}: undeploy failed during teardown (${reason}): ${
+packages/folded-run-one-shot/src/one-shot-reply.ts	1	void settle("planning-run-send-failed", () => {
+packages/folded-runs/src/mail.ts	1	lastError = err;
+packages/folded-runs/src/mail.ts	1	return { ok: false, error: err, attempts: attemptsUsed };
+packages/github-tools/src/pull-request-tools.ts	1	return errorResult(call.id, failureMessage(err));
+packages/github-tools/src/pull-request-tools.ts	1	return null;
+packages/github-tools/src/pull-request-tools.ts	2	return errorResult(call.id, failureMessage(err));
+packages/github-tools/src/tool.ts	1	return null;
+packages/github-tools/src/tool.ts	1	return {
+packages/granola-tools/src/tool.ts	1	return null;
+packages/granola-tools/src/tool.ts	1	return {
+packages/granola-tools/src/tool.ts	2	return {
+packages/hub-client/src/credential-test.ts	1	// Not JSON, or didn't match either shape — fall through to the
+packages/hub-client/src/credential-test.ts	1	return [];
+packages/hub-client/src/credential-test.ts	1	return undefined;
+packages/hub-client/src/credential-test.ts	1	return {
+packages/hub-client/src/workflow-push.ts	1	existing = null;
+packages/inbox/src/routes.ts	1	publishLog.error(
+packages/interaction-tools/src/tool.ts	1	if (err instanceof NoOwnChannelError) {
+packages/jimmy-agent/src/gif-search-tool.ts	1	return false;
+packages/jimmy-agent/src/gif-search-tool.ts	1	return null;
+packages/jimmy-agent/src/gif-search-tool.ts	1	return {
+packages/linear-tools/src/tool.ts	1	return null;
+packages/linear-tools/src/tool.ts	1	return {
+packages/longevity-sim/src/cli.ts	1	const detail =
+packages/longevity-sim/src/engine.ts	1	defects.push({
+packages/longevity-sim/src/engine.ts	2	defects.push({
+packages/longevity-sim/src/engine.ts	3	defects.push({
+packages/manus-tools/src/tool.ts	1	return errorResult(call.id, err);
+packages/manus-tools/src/tool.ts	1	return null;
+packages/manus-tools/src/tool.ts	2	return errorResult(call.id, err);
+packages/manus-tools/src/tool.ts	3	return errorResult(call.id, err);
+packages/manus-tools/src/tool.ts	4	return errorResult(call.id, err);
+packages/manus-tools/src/tool.ts	5	return errorResult(call.id, err);
+packages/manus-tools/src/tool.ts	6	return errorResult(call.id, err);
+packages/mcp-tools/src/tool.ts	1	return errorResult(
+packages/mcp-tools/src/tool.ts	1	return errorResult(call.id, err);
+packages/mcp-tools/src/tool.ts	1	return {
+packages/mcp-tools/src/tool.ts	2	return errorResult(call.id, err);
+packages/mcp-tools/src/tool.ts	3	return errorResult(call.id, err);
+packages/mcp-tools/src/tool.ts	4	return errorResult(call.id, err);
+packages/memory-hub/src/workflow-routes.ts	1	return c.json(
+packages/memory-hub/src/workflow-routes.ts	2	return c.json(
+packages/memory-tools/src/tool.ts	1	if (err instanceof MemoryUnavailableError) {
+packages/memory-tools/src/tool.ts	2	if (err instanceof MemoryUnavailableError) {
+packages/memory-tools/src/tool.ts	3	if (err instanceof MemoryUnavailableError) {
+packages/mocks/src/ollama/capture.ts	1	return raw;
+packages/ollama-adapter/src/inline-tool-json.ts	1	return false;
+packages/ollama-adapter/src/inline-tool-json.ts	1	return { kind: "incomplete" };
+packages/onboarding/src/pending-seed.ts	1	return drop();
+packages/onboarding/src/routes.ts	1	// Neither `ProvisionError` nor `CliError` messages are safe to show
+packages/onboarding/src/routes.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
+packages/onboarding/src/routes.ts	1	if (cause instanceof ProvisionError) {
+packages/onboarding/src/routes.ts	1	return c.json(
+packages/presence/src/artifact-persistence.ts	1	deps.onSnapshotError?.(key, error);
+packages/presence/src/client.ts	1	// A malformed update is dropped rather than crashing the client;
+packages/presence/src/client.ts	1	return [];
+packages/presence/src/client.ts	1	return undefined;
+packages/presence/src/client.ts	2	return undefined;
+packages/presence/src/routes.ts	1	return c.json(
+packages/reddit-tools/src/tool.ts	1	return null;
+packages/reddit-tools/src/tool.ts	1	return {
+packages/reddit-tools/src/tool.ts	2	return {
+packages/routines-tools/src/tool.ts	1	return errorResult(call.id, err);
+packages/routines-tools/src/tool.ts	1	return once;
+packages/routines-tools/src/tool.ts	1	return value;
+packages/routines-tools/src/tool.ts	2	return errorResult(call.id, err);
+packages/routines-tools/src/tool.ts	3	return errorResult(call.id, err);
+packages/routines-tools/src/tool.ts	4	return errorResult(call.id, err);
+packages/routines/src/cron.ts	1	return false;
+packages/routines/src/cron.ts	2	return false;
+packages/routines/src/routes.ts	1	log.error(
+packages/routines/src/routes.ts	1	return c.json(
+packages/routines/src/routes.ts	2	log.error(
+packages/routines/src/schedule-language.ts	1	return null;
+packages/sandbox-sidecar/src/provisioner.ts	1	log.error`failed to sweep obsolete unit ${externalRef} for allocation ${allocationId}: ${
+packages/sandbox-sidecar/src/provisioner.ts	1	return rejected(...classify(error, "destroy_unit_failed"));
+packages/sandbox-sidecar/src/provisioner.ts	1	return rejected(...classify(error, "start_unit_failed"));
+packages/scout-agent/src/artifact-tool.ts	1	return {
+packages/scout-agent/src/artifact-tool.ts	2	return {
+packages/settings-ui/src/account-section.tsx	1	toast(SETTINGS_STRINGS.accountEmailCopyError);
+packages/skills-tools/src/tool.ts	1	return errorResult(call.id, err);
+packages/skills-tools/src/tool.ts	2	return errorResult(call.id, err);
+packages/skills-tools/src/tool.ts	3	return errorResult(call.id, err);
+packages/skills-tools/src/tool.ts	4	return errorResult(call.id, err);
+packages/skills-tools/src/tool.ts	5	return errorResult(call.id, err);
+packages/skills/src/asset-history.ts	1	return [];
+packages/skills/src/hub-asset-store.ts	1	return null;
+packages/skills/src/registry.ts	1	contentErrorToRegistryError(cause);
+packages/skills/src/registry.ts	2	contentErrorToRegistryError(cause);
+packages/slack-tag/src/principal-resolver.ts	1	log.error("Auto-provision failed for {email}: {error}", {
+packages/slack-tag/src/slack-channel-name.ts	1	log.warn("conversations.info lookup failed for {channel}: {error}", {
+packages/slack-tag/src/thread-state.ts	1	log.error(
+packages/tool-registry-publish/src/freshness-check.ts	1	log.error`${err instanceof Error ? err.message : String(err)}`;
+packages/tools-skills/src/tool.ts	1	return errorResult(call.id, err);
+packages/tools-skills/src/tool.ts	2	return errorResult(call.id, err);
+packages/tools-skills/src/tool.ts	3	return errorResult(call.id, err);
+packages/turn-artifacts/src/index.ts	1	return [];
+packages/url-path/src/decoded-or-null.ts	1	return null;
+packages/web-search-tools/src/tool.ts	1	return null;
+packages/web-search-tools/src/tool.ts	1	return {
+packages/webhook-triggers/src/ingress-routes.ts	1	return c.json(
+packages/webhook-triggers/src/signature.ts	1	return false;
+packages/workflow-catalog/src/connect-github-routes.ts	1	// A repoId `state.repos` doesn't carry means the card's own
+packages/workflow-catalog/src/connect-github-routes.ts	1	// The GitHub client's own errors (transport, HTTP status, shape
+packages/workflow-catalog/src/template-block-routes.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
+workflows/attio-task-agent/src/finalize-tool.ts	1	return {
+workflows/collateral-generation/src/finalize-tool.ts	1	return {
+workflows/diligence-brief/src/finalize-tool.ts	1	return {
+workflows/exa-topic-watch/src/finalize-tool.ts	1	return {
+workflows/granola-call/src/finalize-tool.ts	1	return {
+workflows/last-30-days-research/src/finalize-tool.ts	1	return {
+workflows/morning-brief/src/finalize-tool.ts	1	return {
+workflows/pain-point-collateral/src/finalize-tool.ts	1	return {
+workflows/process-granola-call/src/finalize-tool.ts	1	return {
+workflows/reddit-opportunity-scanner/src/finalize-tool.ts	1	return {
+workflows/reddit-opportunity-scanner/src/finalize-tool.ts	2	return {
