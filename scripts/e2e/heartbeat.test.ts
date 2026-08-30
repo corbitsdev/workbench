@@ -236,7 +236,7 @@ describe.skipIf(databaseUrl === undefined)("heartbeat workflow", () => {
               `${JSON.stringify(res.data)}\nsidecar output:\n${sidecar.output()}`,
           );
         }
-        await Bun.sleep(1000);
+        await Bun.sleep(200);
       }
       expectStatus("deploy heartbeat workflow", res, 201);
       return stringField(res.data, "id", "deploy heartbeat workflow");
@@ -284,7 +284,7 @@ describe.skipIf(databaseUrl === undefined)("heartbeat workflow", () => {
               "heartbeat trigger was accepted but no run started within 30s",
             );
           }
-          await Bun.sleep(500);
+          await Bun.sleep(200);
         }
       },
     );

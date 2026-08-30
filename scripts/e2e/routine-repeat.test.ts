@@ -271,7 +271,7 @@ describe.skipIf(databaseUrl === undefined)("routine repeat fires", () => {
                 `${JSON.stringify(res.data)}\nsidecar output:\n${sidecar.output()}`,
             );
           }
-          await Bun.sleep(1000);
+          await Bun.sleep(200);
           continue;
         }
         expectStatus("deploy heartbeat workflow", res, 201);

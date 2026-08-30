@@ -184,6 +184,18 @@ describe("readHubConfig", () => {
     expect(config.signupRateLimit).toEqual({ windowSeconds: 30, max: 2 });
   });
 
+  test("ROUTINE_SCHEDULER_POLL_INTERVAL_MS is optional and absent by default", () => {
+    expect(
+      readHubConfig(validEnv).routineSchedulerPollIntervalMs,
+    ).toBeUndefined();
+    expect(
+      readHubConfig({
+        ...validEnv,
+        ROUTINE_SCHEDULER_POLL_INTERVAL_MS: "500",
+      }).routineSchedulerPollIntervalMs,
+    ).toBe(500);
+  });
+
   test("the sign-in rate limit is configurable and defaults well above better-auth's built-in 3-per-10-seconds special rule (CL-6494)", () => {
     expect(readHubConfig(validEnv).signInRateLimit).toEqual({
       windowSeconds: 60,
