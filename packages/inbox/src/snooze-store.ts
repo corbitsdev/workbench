@@ -19,14 +19,17 @@ export interface SnoozeScope {
 }
 
 /**
- * Record when a snoozed message should reopen. Written *before* the
- * message's own status flips to `snoozed` (see `routes.ts`'s `/:id/snooze`
- * handler): if the status flip then fails, the message is left in
- * whatever status it already had with an orphaned snooze row pointing at
- * it — harmless, since `claimAndReopenSnooze` below no-ops and cleans up a
- * row whose message isn't actually `snoozed`. The other ordering (status
- * first, `until` second) would reproduce the exact bug this ticket fixes:
- * a message stuck `snoozed` with nothing ever recording when to reopen it.
+ * Record when a snoozed message should reopen. `routes.ts`'s `/:id/snooze`
+ * handler calls this and the status flip to `snoozed` inside one
+ * `db.transaction`, not as two independent statements: an uncommitted
+ * insert is invisible to any other transaction under read-committed
+ * isolation, so a concurrent sweep tick's `claimAndReopenSnooze` can never
+ * observe this row before the status flip has *also* committed alongside
+ * it. Two separate statements would let a sweep tick land in the gap, see
+ * the row before the flip, no-op (the message isn't `snoozed` yet), and
+ * delete the row as harmless-looking cleanup — and then the status flip
+ * would still land afterward, reproducing this ticket's exact bug: a
+ * message stuck `snoozed` with nothing left to ever reopen it.
  */
 export async function setSnoozeUntil(
   db: MailboxDb,

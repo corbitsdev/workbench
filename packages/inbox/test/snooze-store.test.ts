@@ -9,10 +9,13 @@
 // suite's.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import postgres from "postgres";
+import { Hono } from "hono";
+import type { TenantEnv } from "@intx/hub-api";
 
 import { createDB, schema } from "@intx/db";
 import { generateId } from "@intx/hub-common";
 import {
+  createInMemoryMailboxEventBus,
   createMailboxDb,
   enrichMailboxMessage,
   getMailboxMessage,
@@ -21,6 +24,7 @@ import {
 
 import { setupDatabase } from "../../../scripts/db-setup";
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { createInboxRoutes } from "../src/routes";
 import {
   claimAndReopenSnooze,
   clearSnoozeUntil,
@@ -229,6 +233,93 @@ describeIfDb("snooze-store against a real inbox.snooze table", () => {
 
       const due = await findDueSnoozes(mailboxDb.db, new Date());
       expect(due.some((r) => r.messageId === messageId)).toBe(false);
+    } finally {
+      await mailboxDb.close();
+    }
+  });
+
+  test("a sweep claim racing the route's own snooze write never strands the message `snoozed` with no way to reopen it", async () => {
+    // Regression test for a race a Critique pass on CL-7208 found and
+    // reproduced: `POST /:id/snooze` used to persist `until` and flip
+    // `status` to `snoozed` as two separate statements. A sweep tick's
+    // `claimAndReopenSnooze` landing in the gap between them could see the
+    // snooze row before the status flip landed, no-op (the message wasn't
+    // `snoozed` yet) and delete the row as harmless cleanup — and then the
+    // route's own status flip would still land afterward, leaving the
+    // message stuck `snoozed` with the row that was supposed to reopen it
+    // already gone. `routes.ts` now runs both writes in one transaction so
+    // the row is invisible to a concurrent claim until the flip commits
+    // with it; this drives the same interleaving the bug needed and
+    // asserts the message is never left `snoozed` with zero snooze rows.
+    const mailboxDb = createMailboxDb(scratchUrl);
+    try {
+      const written = await writeMailboxMessage(mailboxDb.db, {
+        tenantId,
+        principalId,
+        address: `${principalId}@inbox.test`,
+        fromAddress: "routine:test",
+        subject: "Race the sweep",
+        body: "test body",
+      });
+      const messageId = written?.id;
+      if (messageId === undefined) throw new Error("message not written");
+      const scope = { tenantId, principalId, id: messageId };
+
+      const app = new Hono<TenantEnv>();
+      app.use("*", async (c, next) => {
+        c.set("tenant", { id: tenantId } as never);
+        c.set("principal", { id: principalId } as never);
+        await next();
+      });
+      app.route(
+        "/",
+        createInboxRoutes({
+          db: mailboxDb.db,
+          bus: createInMemoryMailboxEventBus(),
+        }),
+      );
+
+      const until = new Date(Date.now() + 50);
+      // A "due" check has to compare against a fixed point safely past
+      // `until`, not real wall-clock time at check time — the whole
+      // request/claim/verify round trip below runs well under 50ms, so a
+      // `new Date()` taken after it finishes can still be *before*
+      // `until`, which would make an already-correct row look "not due
+      // yet" rather than reopened. `wellPastUntil` is what the real sweep
+      // would eventually pass once `until` has genuinely elapsed.
+      const wellPastUntil = new Date(until.getTime() + 60_000);
+
+      const [response] = await Promise.all([
+        app.request(`/${messageId}/snooze`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ until: until.toISOString() }),
+        }),
+        // Fired concurrently with the route's own write, already past
+        // `until` — exactly the timing the bug needed: the sweep
+        // considers the row due from the moment it can see it at all.
+        claimAndReopenSnooze(
+          mailboxDb.db,
+          { tenantId, principalId, messageId },
+          wellPastUntil,
+        ),
+      ]);
+      expect(response.status).toBe(200);
+
+      const message = await getMailboxMessage(mailboxDb.db, scope);
+      const due = await findDueSnoozes(mailboxDb.db, wellPastUntil);
+      const hasSnoozeRow = due.some((r) => r.messageId === messageId);
+
+      // The invariant the bug violated: never `snoozed` with nothing left
+      // to ever reopen it. Whichever side of the race won, the message
+      // must end up either genuinely `open` (the claim won) or `snoozed`
+      // with its row still there to be claimed on a later tick (the route
+      // won) — never `snoozed` with the row already gone.
+      if (message?.status === "snoozed") {
+        expect(hasSnoozeRow).toBe(true);
+      } else {
+        expect(message?.status).toBe("open");
+      }
     } finally {
       await mailboxDb.close();
     }
