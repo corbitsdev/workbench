@@ -31,6 +31,7 @@ import {
   type ChatStore,
   type RoomMessageStore,
 } from "@corbits/chat";
+import type { SessionForUser } from "@workbench/onboarding";
 import {
   createAutoProvisionPrincipalResolver,
   createDrizzleSlackChannelBindingStore,
@@ -61,6 +62,7 @@ export type MountWorkbenchSlackTagDeps = {
   readonly chatPlatform: ChatPlatform;
   readonly roomMessages: RoomMessageStore;
   readonly chatTenancy: Pick<WorkbenchTenancyStore, "createWorkbenchTenant">;
+  readonly sessionFor: SessionForUser;
   readonly workbenchSubscribers: WorkbenchSubscriberRegistry;
   /** The same one-in-flight-turn-per-workbench queue `createChatRoutes`
    * is given (CL-6331) — shared, never a second instance, so a Slack
@@ -141,6 +143,16 @@ export async function mountWorkbenchSlackTag(
         );
       }
 
+      const cookies = await deps.sessionFor({
+        userId: creatorPrincipal.refId,
+        tenantId: tenantRow.id,
+      });
+      if (cookies === undefined) {
+        throw new Error(
+          `could not mint a session for Slack principal "${input.creatorPrincipalId}" (${creatorPrincipal.refId})`,
+        );
+      }
+
       const channelId = generateId("workflowRun");
 
       const channelTenant = await deps.chatTenancy.createWorkbenchTenant({
@@ -148,6 +160,7 @@ export async function mountWorkbenchSlackTag(
         workbenchId: channelId,
         name: input.name,
         creatorUserId: creatorPrincipal.refId,
+        cookies,
       });
 
       const preset = presetForKind("chat");

@@ -5,14 +5,13 @@
 // child-tenant listing or re-parenting route exists upstream (see
 // `docs/workbench-tenancy.md`).
 //
-// Tenant/principal/role/grant creation here mirrors
-// `vendor/intx/hub-api/src/routes/tenants.ts`'s `POST /api/tenants`
-// exactly — same system roles, same owner grant shape — so a workbench
-// tenant is indistinguishable, from the native surface's point of
-// view, from one minted through that route by hand. This is
-// consumption of `@intx/db`'s published schema, not a fork of the
-// vendored route: nothing in `vendor/intx` is read or written by this
-// module.
+// Native tenants are minted through `POST /api/tenants` as the caller
+// (the same path access-policy child-tenants and onboarding use). Extra
+// member-role `room:*` grants are planted with `POST /api/tenants/:id/grants`
+// using `origin: "creator"` — native POST records provenance-from-caller,
+// not the `origin: "system"` SQL seed this module used to write. This
+// module still reads native `tenant`/`principal`/`role`/`grant` rows for
+// move and membership, and writes only `workbench_tenancy`.
 import { and, eq, gt, inArray, isNull, or } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { generateId } from "@intx/hub-common";
@@ -21,6 +20,14 @@ import { parseGrantRow } from "@intx/db";
 import { evaluateGrants } from "@intx/authz";
 import type { ConditionRegistry, GrantRule } from "@intx/authz";
 import { getLogger } from "@intx/log";
+import {
+  paginatedSchema,
+  PrincipalResponse,
+  RoleResponse,
+  TenantResponse,
+} from "@intx/types";
+import { reportError } from "@corbits/error-sink";
+import { parseAs, type ApiCall } from "@workbench/hub-client";
 import { workbenchTenancy } from "./schema";
 
 const log = getLogger(["chat", "workbench-tenancy"]);
@@ -35,8 +42,6 @@ const log = getLogger(["chat", "workbench-tenancy"]);
  */
 const MOVE_DESTINATION_RESOURCE = "workflow-run:*";
 const MOVE_DESTINATION_ACTION = "manage";
-
-const SYSTEM_ROLES = ["owner", "admin", "member"] as const;
 
 /**
  * The member role's room grant pair (CL-6332): every workbench tenant's
@@ -80,6 +85,224 @@ function slugForWorkbenchTenant(name: string): string {
   return `${base !== "" ? base : "workbench"}-${tail}`;
 }
 
+function throwHttp(label: string, status: number, data: unknown): never {
+  throw new Error(
+    `${label} failed with status ${status}: ${JSON.stringify(data)}`,
+  );
+}
+
+/**
+ * Mints a native child tenant through `POST /api/tenants` as the caller,
+ * then plants `MEMBER_ROOM_GRANTS` on the new tenant's `member` role.
+ * Returns the native tenant plus the owner's principal id in that tenant.
+ */
+async function mintNativeChildTenant(
+  api: ApiCall,
+  cookies: string[],
+  input: {
+    name: string;
+    slug: string;
+    parentTenantId: string;
+    creatorUserId: string;
+  },
+): Promise<{
+  tenant: typeof TenantResponse.infer;
+  ownerPrincipalId: string;
+}> {
+  const created = await api(
+    "POST",
+    "/api/tenants",
+    {
+      name: input.name,
+      slug: input.slug,
+      parentId: input.parentTenantId,
+    },
+    cookies,
+  );
+  if (created.status !== 201) {
+    throwHttp("POST /api/tenants", created.status, created.data);
+  }
+  const minted = parseAs(TenantResponse, created.data, "tenant response");
+
+  const principalsResponse = await api(
+    "GET",
+    `/api/tenants/${minted.id}/principals?limit=200`,
+    undefined,
+    cookies,
+  );
+  if (principalsResponse.status !== 200) {
+    throwHttp(
+      `GET /api/tenants/${minted.id}/principals`,
+      principalsResponse.status,
+      principalsResponse.data,
+    );
+  }
+  const principals = parseAs(
+    paginatedSchema(PrincipalResponse),
+    principalsResponse.data,
+    "principals response",
+  );
+  const membership = principals.data.find(
+    (p) => p.refId === input.creatorUserId,
+  );
+  if (membership === undefined) {
+    throw new Error(
+      `tenant ${minted.id} was created but has no principal for ${input.creatorUserId}`,
+    );
+  }
+
+  const rolesResponse = await api(
+    "GET",
+    `/api/tenants/${minted.id}/roles?limit=50`,
+    undefined,
+    cookies,
+  );
+  if (rolesResponse.status !== 200) {
+    throwHttp(
+      `GET /api/tenants/${minted.id}/roles`,
+      rolesResponse.status,
+      rolesResponse.data,
+    );
+  }
+  const roles = parseAs(
+    paginatedSchema(RoleResponse),
+    rolesResponse.data,
+    "roles response",
+  );
+  const memberRole = roles.data.find((r) => r.name === "member");
+  if (memberRole === undefined) {
+    throw new Error(`tenant ${minted.id} has no system "member" role`);
+  }
+
+  // Native POST records provenance-from-caller (`origin: "creator"`),
+  // not the `origin: "system"` SQL this mint used to write.
+  for (const seed of MEMBER_ROOM_GRANTS) {
+    const posted = await api(
+      "POST",
+      `/api/tenants/${minted.id}/grants`,
+      {
+        roleId: memberRole.id,
+        resource: seed.resource,
+        action: seed.action,
+        effect: "allow",
+        origin: "creator",
+      },
+      cookies,
+    );
+    if (posted.status !== 201) {
+      throwHttp(
+        `POST /api/tenants/${minted.id}/grants ${seed.resource}/${seed.action}`,
+        posted.status,
+        posted.data,
+      );
+    }
+  }
+
+  return { tenant: minted, ownerPrincipalId: membership.id };
+}
+
+/**
+ * In-memory stand-in for `POST /api/tenants` + role list + grant plant,
+ * so unit tests exercise the same HTTP-shaped mint the drizzle store
+ * uses without pretending to SQL-insert native rows.
+ */
+export function createInMemoryNativeTenantApi(): ApiCall {
+  const minted: {
+    id: string;
+    name: string;
+    slug: string;
+    parentId?: string;
+    principalId: string;
+    memberRoleId: string;
+  }[] = [];
+
+  return async (method, path, body, cookies = []) => {
+    if (method === "POST" && path === "/api/tenants") {
+      const parsed = body as {
+        name: string;
+        slug: string;
+        parentId?: string;
+      };
+      const id = generateId("tenant");
+      const principalId = generateId("principal");
+      const memberRoleId = generateId("role");
+      const row: (typeof minted)[number] = {
+        id,
+        name: parsed.name,
+        slug: parsed.slug,
+        principalId,
+        memberRoleId,
+      };
+      if (parsed.parentId !== undefined) row.parentId = parsed.parentId;
+      minted.push(row);
+      const data: Record<string, unknown> = {
+        id,
+        name: parsed.name,
+        slug: parsed.slug,
+        domain: `${parsed.slug}.localhost`,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      };
+      if (parsed.parentId !== undefined) data["parentId"] = parsed.parentId;
+      return { status: 201, data, cookies };
+    }
+    const principalsMatch = /^\/api\/tenants\/([^/]+)\/principals/.exec(path);
+    if (method === "GET" && principalsMatch !== null) {
+      const tenantId = principalsMatch[1] ?? "";
+      const row = minted.find((t) => t.id === tenantId);
+      const principalId = row?.principalId ?? generateId("principal");
+      return {
+        status: 200,
+        data: {
+          data: [
+            {
+              id: principalId,
+              tenantId,
+              kind: "user",
+              refId: "pending",
+              displayName: row?.name ?? "owner",
+              status: "active",
+              roles: [{ id: "rol_owner", name: "owner" }],
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+          nextCursor: null,
+        },
+        cookies,
+      };
+    }
+    const rolesMatch = /^\/api\/tenants\/([^/]+)\/roles/.exec(path);
+    if (method === "GET" && rolesMatch !== null) {
+      const tenantId = rolesMatch[1] ?? "";
+      const row = minted.find((t) => t.id === tenantId);
+      const memberRoleId = row?.memberRoleId ?? generateId("role");
+      return {
+        status: 200,
+        data: {
+          data: [
+            {
+              id: memberRoleId,
+              tenantId,
+              name: "member",
+              description: "System member role",
+              isSystem: true,
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+          nextCursor: null,
+        },
+        cookies,
+      };
+    }
+    if (method === "POST" && /\/api\/tenants\/[^/]+\/grants$/.test(path)) {
+      return { status: 201, data: {}, cookies };
+    }
+    throw new Error(`unexpected ${method} ${path}`);
+  };
+}
+
 export type WorkbenchTenancyDb<
   TSchema extends Record<string, unknown> = Record<string, never>,
 > = PostgresJsDatabase<TSchema>;
@@ -104,6 +327,8 @@ export interface CreateWorkbenchTenantInput {
    * `POST /api/tenants` seeds its creator.
    */
   readonly creatorUserId: string;
+  /** The caller's session cookies, forwarded into native tenant/grant HTTP. */
+  readonly cookies: string[];
 }
 
 export interface CreateWorkbenchTenantResult {
@@ -165,10 +390,9 @@ export interface TenantPrincipal {
 export interface WorkbenchTenancyStore {
   /**
    * Mints a native tenant as `input.workbenchId`'s own tenancy, parented
-   * under `input.parentTenantId`, seeds it exactly as the native
-   * tenant-creation route does (system roles, owner grant, admin/member
-   * grants, and an owner principal for `input.creatorUserId`), and
-   * records the link in `workbench_tenancy`.
+   * under `input.parentTenantId`, by calling `POST /api/tenants` as the
+   * requesting user, planting the extra member-role room grants, and
+   * recording the link in `workbench_tenancy`.
    */
   createWorkbenchTenant(
     input: CreateWorkbenchTenantInput,
@@ -228,13 +452,9 @@ export interface WorkbenchTenancyStore {
 
   /**
    * Undoes a mint that a subsequent step (the workbench host launch)
-   * failed to complete: deletes the `workbench_tenancy` link and the
-   * tenant row itself, which cascades to every row seeded alongside
-   * it (`role`, `principal`, `principal_role`, `grant`) through their
-   * own `onDelete: "cascade"` foreign keys to `tenant.id`. Leaves
-   * nothing behind for a workbench that never finished launching,
-   * rather than a fully-privileged tenant with no workbench pointing at
-   * it.
+   * failed to complete: deletes the `workbench_tenancy` link only.
+   * Native tenant/role/grant/principal rows stay — compensation no
+   * longer deletes Interchange tenants.
    */
   compensateWorkbenchTenant(tenantId: string): Promise<void>;
 
@@ -316,12 +536,15 @@ export interface WorkbenchTenancyAuthzDeps {
    * (see `moveWorkbenchTenancy`).
    */
   readonly conditionRegistry?: ConditionRegistry;
+  /** Self-HTTP caller used to mint native tenants and extra grants. */
+  readonly api: ApiCall;
 }
 
 /**
  * The production `WorkbenchTenancyStore`, operating on `@intx/db`'s
  * native `tenant`/`principal`/`role`/`principalRole`/`grant` tables
- * plus this package's own `workbench_tenancy` link table.
+ * (read/move/membership) plus this package's own `workbench_tenancy`
+ * link table. Native tenant minting is HTTP, never a SQL insert.
  */
 export function createDrizzleWorkbenchTenancyStore<
   TSchema extends Record<string, unknown>,
@@ -331,149 +554,38 @@ export function createDrizzleWorkbenchTenancyStore<
 ): WorkbenchTenancyStore {
   return {
     async createWorkbenchTenant(input) {
-      const tenantId = generateId("tenant");
       const slug = slugForWorkbenchTenant(input.name);
-      const domain = `${slug}.localhost`;
-      const now = new Date();
-      const ownerPrincipalId = generateId("principal");
-
-      // Every insert below seeds one tenant's worth of native state —
-      // tenant, its three system roles, the creator's owner principal
-      // and role assignment, every system grant, and the chat-owned
-      // link row. A failure partway through must never leave a
-      // half-seeded tenant behind, so the whole mint runs as one
-      // transaction: it either lands complete or not at all.
-      await db.transaction(async (tx) => {
-        await tx.insert(tenant).values({
-          id: tenantId,
+      let minted: Awaited<ReturnType<typeof mintNativeChildTenant>>;
+      try {
+        minted = await mintNativeChildTenant(authz.api, input.cookies, {
           name: input.name,
           slug,
-          domain,
-          parentId: input.parentTenantId,
-          createdAt: now,
-          updatedAt: now,
-        });
-
-        const roleIds: Record<(typeof SYSTEM_ROLES)[number], string> = {
-          owner: "",
-          admin: "",
-          member: "",
-        };
-        for (const roleName of SYSTEM_ROLES) {
-          const roleId = generateId("role");
-          roleIds[roleName] = roleId;
-          await tx.insert(role).values({
-            id: roleId,
-            tenantId,
-            name: roleName,
-            description: `System ${roleName} role`,
-            isSystem: true,
-            createdAt: now,
-            updatedAt: now,
-          });
-        }
-
-        await tx.insert(principal).values({
-          id: ownerPrincipalId,
-          tenantId,
-          kind: "user",
-          refId: input.creatorUserId,
-          status: "active",
-          createdAt: now,
-          updatedAt: now,
-        });
-        await tx.insert(principalRole).values({
-          principalId: ownerPrincipalId,
-          roleId: roleIds.owner,
-          createdAt: now,
-        });
-
-        await tx.insert(grant).values({
-          id: generateId("grant"),
-          tenantId,
-          roleId: roleIds.owner,
-          resource: "*",
-          action: "*",
-          effect: "allow",
-          origin: "system",
-          createdAt: now,
-          updatedAt: now,
-        });
-        await tx.insert(grant).values([
-          {
-            id: generateId("grant"),
-            tenantId,
-            roleId: roleIds.admin,
-            resource: "*",
-            action: "read",
-            effect: "allow" as const,
-            origin: "system" as const,
-            createdAt: now,
-            updatedAt: now,
-          },
-          {
-            id: generateId("grant"),
-            tenantId,
-            roleId: roleIds.admin,
-            resource: "*",
-            action: "create",
-            effect: "allow" as const,
-            origin: "system" as const,
-            createdAt: now,
-            updatedAt: now,
-          },
-          {
-            id: generateId("grant"),
-            tenantId,
-            roleId: roleIds.admin,
-            resource: "*",
-            action: "manage",
-            effect: "allow" as const,
-            origin: "system" as const,
-            createdAt: now,
-            updatedAt: now,
-          },
-        ]);
-        await tx.insert(grant).values({
-          id: generateId("grant"),
-          tenantId,
-          roleId: roleIds.member,
-          resource: "*",
-          action: "read",
-          effect: "allow",
-          origin: "system",
-          createdAt: now,
-          updatedAt: now,
-        });
-        await tx.insert(grant).values(
-          MEMBER_ROOM_GRANTS.map((seed) => ({
-            id: generateId("grant"),
-            tenantId,
-            roleId: roleIds.member,
-            resource: seed.resource,
-            action: seed.action,
-            effect: "allow" as const,
-            origin: "system" as const,
-            createdAt: now,
-            updatedAt: now,
-          })),
-        );
-
-        await tx.insert(workbenchTenancy).values({
-          workbenchId: input.workbenchId,
-          tenantId,
           parentTenantId: input.parentTenantId,
-          slug,
-          createdAt: now,
+          creatorUserId: input.creatorUserId,
         });
+      } catch (cause) {
+        reportError(cause, {
+          operation: "createWorkbenchTenant",
+          tenantId: input.parentTenantId,
+          extra: { workbenchId: input.workbenchId },
+        });
+        throw cause;
+      }
+      const now = new Date();
+      await db.insert(workbenchTenancy).values({
+        workbenchId: input.workbenchId,
+        tenantId: minted.tenant.id,
+        parentTenantId: input.parentTenantId,
+        slug: minted.tenant.slug,
+        createdAt: now,
       });
 
       return {
-        tenantId,
+        tenantId: minted.tenant.id,
         parentTenantId: input.parentTenantId,
-        domain,
-        slug,
-        ownerPrincipalId,
+        domain: minted.tenant.domain,
+        slug: minted.tenant.slug,
+        ownerPrincipalId: minted.ownerPrincipalId,
       };
     },
 
@@ -651,16 +763,12 @@ export function createDrizzleWorkbenchTenancyStore<
 
     async compensateWorkbenchTenant(tenantId) {
       log.error(
-        "Compensating workbench tenant {tenantId}: deleting the freshly " +
-          "minted tenant and its seeded rows after a downstream failure",
+        "Compensating workbench tenant {tenantId}: deleting the workbench_tenancy link after a downstream failure. Native tenant rows stay.",
         { tenantId },
       );
-      await db.transaction(async (tx) => {
-        await tx
-          .delete(workbenchTenancy)
-          .where(eq(workbenchTenancy.tenantId, tenantId));
-        await tx.delete(tenant).where(eq(tenant.id, tenantId));
-      });
+      await db
+        .delete(workbenchTenancy)
+        .where(eq(workbenchTenancy.tenantId, tenantId));
     },
 
     async getTenantPrincipal(tenantId, principalId) {
@@ -773,10 +881,10 @@ export function createDrizzleWorkbenchTenancyStore<
 
 /**
  * An in-memory `WorkbenchTenancyStore`, for tests and any host wiring
- * chat routes without a database. Mints synthetic tenant/principal ids
- * with the same `generateId` shape as the drizzle store, but performs
- * no native-schema writes — the two stores share only their public
- * contract, exercised by `test/workbench-tenancy.test.ts`.
+ * chat routes without a database. Mints native tenants through the
+ * injected `ApiCall` (defaulting to `createInMemoryNativeTenantApi`)
+ * and records only the chat-owned link — the same HTTP-shaped mint
+ * the drizzle store uses.
  *
  * The three extra methods below `WorkbenchTenancyStore` declares
  * (`registerExistingTenant`, `grantManageInTenant`, `registerPrincipal`)
@@ -789,11 +897,41 @@ export function createDrizzleWorkbenchTenancyStore<
  * `"moved"`). `registerPrincipal` does the same for `getTenantPrincipal`
  * — standing up a fake native `principal` row without a database.
  */
-export function createInMemoryWorkbenchTenancyStore(): WorkbenchTenancyStore & {
+export function createInMemoryWorkbenchTenancyStore(
+  deps: {
+    api?: ApiCall;
+  } = {},
+): WorkbenchTenancyStore & {
   registerExistingTenant(tenantId: string, parentTenantId?: string): void;
   grantManageInTenant(refId: string, tenantId: string): void;
   registerPrincipal(tenantId: string, principal: TenantPrincipal): void;
 } {
+  const inner = deps.api ?? createInMemoryNativeTenantApi();
+  let pendingCreatorUserId = "";
+  const api: ApiCall = async (method, path, body, cookies) => {
+    const result = await inner(method, path, body, cookies);
+    if (
+      method === "GET" &&
+      /\/api\/tenants\/[^/]+\/principals/.test(path) &&
+      result.status === 200 &&
+      result.data !== null &&
+      typeof result.data === "object" &&
+      "data" in result.data
+    ) {
+      const page = result.data as { data: Record<string, unknown>[] };
+      return {
+        ...result,
+        data: {
+          ...page,
+          data: page.data.map((row) => ({
+            ...row,
+            refId: pendingCreatorUserId,
+          })),
+        },
+      };
+    }
+    return result;
+  };
   const byWorkbenchId = new Map<string, WorkbenchTenancyRow>();
   const existingTenants = new Set<string>();
   const manageGrants = new Set<string>();
@@ -849,23 +987,40 @@ export function createInMemoryWorkbenchTenancyStore(): WorkbenchTenancyStore & {
           `Workbench "${input.workbenchId}" already has a tenancy`,
         );
       }
-      const tenantId = generateId("tenant");
       const slug = slugForWorkbenchTenant(input.name);
+      pendingCreatorUserId = input.creatorUserId;
+      let minted: Awaited<ReturnType<typeof mintNativeChildTenant>>;
+      try {
+        minted = await mintNativeChildTenant(api, input.cookies, {
+          name: input.name,
+          slug,
+          parentTenantId: input.parentTenantId,
+          creatorUserId: input.creatorUserId,
+        });
+      } catch (cause) {
+        reportError(cause, {
+          operation: "createWorkbenchTenant",
+          tenantId: input.parentTenantId,
+          extra: { workbenchId: input.workbenchId },
+        });
+        throw cause;
+      }
+      const tenantId = minted.tenant.id;
       const row: WorkbenchTenancyRow = {
         workbenchId: input.workbenchId,
         tenantId,
         parentTenantId: input.parentTenantId,
-        slug,
+        slug: minted.tenant.slug,
         createdAt: new Date(),
       };
       byWorkbenchId.set(input.workbenchId, row);
       existingTenants.add(tenantId);
       parentOf.set(tenantId, input.parentTenantId);
       // The creator is minted as this tenant's owner, exactly as the
-      // drizzle store does — the owner role's `*`/`*` grant covers
-      // the move-destination check too.
+      // native POST /api/tenants route does — the owner role's `*`/`*`
+      // grant covers the move-destination check too.
       manageGrants.add(manageGrantKey(input.creatorUserId, tenantId));
-      const ownerPrincipalId = generateId("principal");
+      const ownerPrincipalId = minted.ownerPrincipalId;
       const ownerPrincipal: TenantPrincipal = {
         id: ownerPrincipalId,
         kind: "user",
@@ -884,8 +1039,8 @@ export function createInMemoryWorkbenchTenancyStore(): WorkbenchTenancyStore & {
       return {
         tenantId,
         parentTenantId: input.parentTenantId,
-        domain: `${slug}.localhost`,
-        slug,
+        domain: minted.tenant.domain,
+        slug: minted.tenant.slug,
         ownerPrincipalId,
       };
     },
@@ -911,7 +1066,6 @@ export function createInMemoryWorkbenchTenancyStore(): WorkbenchTenancyStore & {
     },
 
     async compensateWorkbenchTenant(tenantId) {
-      existingTenants.delete(tenantId);
       for (const [workbenchId, row] of byWorkbenchId) {
         if (row.tenantId === tenantId) byWorkbenchId.delete(workbenchId);
       }

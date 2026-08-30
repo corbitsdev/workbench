@@ -25,7 +25,7 @@
 import { Hono } from "hono";
 import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { cookiesFromHeader, makeErrorEnvelope } from "@workbench/hub-client";
 import { reportError } from "@corbits/error-sink";
 
 import {
@@ -88,11 +88,19 @@ export type ConnectGithubRoutesDeps = {
    * `./connect-github-setup.ts`'s `ConnectGithubSetupPorts.hasRepoGrant`
    * for why this makes a retry between minting the grant and creating
    * the trigger safe. */
-  hasRepoGrant(tenantId: string, repo: GitHubRepoSummary): Promise<boolean>;
+  hasRepoGrant(
+    tenantId: string,
+    repo: GitHubRepoSummary,
+    cookies: string[],
+  ): Promise<boolean>;
   /** Mints the `repo:<owner/name>`-scoped grant a launched review run
    * needs to read this repo — see `./connect-github-setup.ts`'s
    * `ConnectGithubSetupPorts.mintRepoGrant` for the exact resource shape. */
-  mintRepoGrant(tenantId: string, repo: GitHubRepoSummary): Promise<void>;
+  mintRepoGrant(
+    tenantId: string,
+    repo: GitHubRepoSummary,
+    cookies: string[],
+  ): Promise<void>;
   /** Creates the live `webhook_trigger` row this repo's pull-request-opened
    * events fire, scoped to the resolved code-review definition. A host
    * binds this to `@corbits/webhook-triggers`' `WebhookTriggerStore.create`. */
@@ -286,8 +294,18 @@ export function createConnectGithubRoutes(
         const introductionsAlreadyPosted =
           settingsBefore.selectedRepos.length > 0;
         const result = await startReviewingRepos(body.repoIds, state.repos, {
-          hasRepoGrant: (repo) => deps.hasRepoGrant(tenant.id, repo),
-          mintRepoGrant: (repo) => deps.mintRepoGrant(tenant.id, repo),
+          hasRepoGrant: (repo) =>
+            deps.hasRepoGrant(
+              tenant.id,
+              repo,
+              cookiesFromHeader(c.req.header("cookie")),
+            ),
+          mintRepoGrant: (repo) =>
+            deps.mintRepoGrant(
+              tenant.id,
+              repo,
+              cookiesFromHeader(c.req.header("cookie")),
+            ),
           createWebhookTrigger: (repo) =>
             deps.createWebhookTrigger(
               tenant.id,

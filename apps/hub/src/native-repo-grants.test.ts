@@ -1,25 +1,34 @@
 // Repo grants for GitHub start-reviewing go through native tenant HTTP,
 // never a SQL insert into Interchange grant/role tables.
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { configureSync, resetSync } from "@intx/log";
 import type { ApiCall } from "@workbench/hub-client";
 
-let reportErrorCalls: unknown[] = [];
-beforeEach(async () => {
-  reportErrorCalls = [];
-  await mock.module("@corbits/error-sink", () => ({
-    reportError: (...args: unknown[]) => {
-      reportErrorCalls.push(args);
-      return "ref_test";
-    },
-  }));
-});
-afterEach(() => {
-  mock.restore();
-});
+import {
+  hasRepoGrantViaHttp,
+  mintRepoGrantViaHttp,
+} from "./native-repo-grants";
 
-const { hasRepoGrantViaHttp, mintRepoGrantViaHttp } = await import(
-  "./native-repo-grants"
-);
+let records: { properties: Record<string, unknown> }[];
+
+function installCapturingSink(): void {
+  records = [];
+  configureSync({
+    reset: true,
+    sinks: {
+      capture: (record) => {
+        records.push(record as { properties: Record<string, unknown> });
+      },
+    },
+    loggers: [
+      { category: ["errors"], sinks: ["capture"], lowestLevel: "debug" },
+      { category: ["logtape", "meta"], sinks: [], lowestLevel: "warning" },
+    ],
+  });
+}
+
+beforeEach(() => installCapturingSink());
+afterEach(() => resetSync());
 
 const REPO = { id: "1", name: "acme/widgets" };
 const TENANT_ID = "tnt_bench";
@@ -45,10 +54,16 @@ function rolesPage() {
 
 describe("mintRepoGrantViaHttp", () => {
   test("POSTs /api/tenants/:id/grants for repo:<name> read and never needs SQL", async () => {
-    const posts: { path: string; body: unknown; cookies: string[] | undefined }[] =
-      [];
+    const posts: {
+      path: string;
+      body: unknown;
+      cookies: string[] | undefined;
+    }[] = [];
     const api: ApiCall = async (method, path, body, cookies) => {
-      if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/roles`)) {
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/roles`)
+      ) {
         return { status: 200, data: rolesPage(), cookies: cookies ?? [] };
       }
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/grants`) {
@@ -69,12 +84,15 @@ describe("mintRepoGrantViaHttp", () => {
       effect: "allow",
       origin: "creator",
     });
-    expect(reportErrorCalls).toHaveLength(0);
+    expect(records).toHaveLength(0);
   });
 
   test("reports and rethrows when POST /grants is rejected", async () => {
     const api: ApiCall = async (method, path, _body, cookies) => {
-      if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/roles`)) {
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/roles`)
+      ) {
         return { status: 200, data: rolesPage(), cookies: cookies ?? [] };
       }
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/grants`) {
@@ -89,17 +107,18 @@ describe("mintRepoGrantViaHttp", () => {
 
     await expect(
       mintRepoGrantViaHttp(api, TENANT_ID, REPO, COOKIES),
-    ).rejects.toThrow("POST /api/tenants/tnt_bench/grants failed with status 403");
+    ).rejects.toThrow(
+      "POST /api/tenants/tnt_bench/grants failed with status 403",
+    );
 
-    expect(reportErrorCalls).toHaveLength(1);
-    expect(reportErrorCalls[0]).toEqual([
-      expect.any(Error),
-      {
+    expect(records).toHaveLength(1);
+    expect(records[0]?.properties).toEqual(
+      expect.objectContaining({
         operation: "mintRepoGrant",
         tenantId: TENANT_ID,
         extra: { repo: "acme/widgets" },
-      },
-    ]);
+      }),
+    );
   });
 });
 
@@ -144,7 +163,10 @@ describe("hasRepoGrantViaHttp", () => {
 
   test("is false when GET /grants lists no matching row", async () => {
     const api: ApiCall = async (method, path, _body, cookies) => {
-      if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/grants`)) {
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/grants`)
+      ) {
         return {
           status: 200,
           data: { data: [], nextCursor: null },
@@ -154,6 +176,8 @@ describe("hasRepoGrantViaHttp", () => {
       throw new Error(`unexpected ${method} ${path}`);
     };
 
-    expect(await hasRepoGrantViaHttp(api, TENANT_ID, REPO, COOKIES)).toBe(false);
+    expect(await hasRepoGrantViaHttp(api, TENANT_ID, REPO, COOKIES)).toBe(
+      false,
+    );
   });
 });

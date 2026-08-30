@@ -15,8 +15,8 @@ export interface ConnectGithubSetupPorts {
    * grant for a repo that already has one. The `grant` table
    * (`vendor/intx/db`) carries no unique constraint over
    * tenant/resource/action, so this read is the only thing standing
-   * between a retry and a duplicate row. A host binds this to a read
-   * against the same `grant` table `mintRepoGrant` inserts into.
+   * between a retry and a duplicate row. A host binds this to GET
+   * `/api/tenants/:id/grants?resource=repo:<name>`.
    */
   hasRepoGrant(repo: GitHubRepoSummary): Promise<boolean>;
   /**
@@ -24,7 +24,7 @@ export interface ConnectGithubSetupPorts {
    * name — the same `"<type>:<id>"` resource-string shape
    * `idResource("room", "id")` builds in `@intx/hub-api`'s grant
    * middleware, applied here to a repo instead of a room). A host binds
-   * this to an actual `grant` row insert; this module never touches
+   * this to POST `/api/tenants/:id/grants`; this module never touches
    * drizzle directly.
    */
   mintRepoGrant(repo: GitHubRepoSummary): Promise<void>;
