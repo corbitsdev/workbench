@@ -23,6 +23,7 @@ describe("provisionSpaceWorkbench", () => {
         creatorPrincipalId: "prn_alice",
         creatorUserId: "usr_alice",
         name: "Morning digest",
+        cookies: ["session=test"],
       },
     );
 
@@ -54,6 +55,7 @@ describe("provisionSpaceWorkbench", () => {
           creatorPrincipalId: "prn_alice",
           creatorUserId: "usr_alice",
           name: "Doomed space",
+          cookies: ["session=test"],
         },
       ),
     ).rejects.toThrow("settings write failed");
@@ -75,6 +77,7 @@ describe("provisionSpaceWorkbench", () => {
         creatorPrincipalId: "prn_alice",
         creatorUserId: "usr_alice",
         name: "Undo me",
+        cookies: ["session=test"],
       },
     );
 

@@ -27,6 +27,7 @@ describe("POST /kinds", () => {
         workbenchId: "ins_general",
         name: "General",
         creatorUserId: "user_1",
+        cookies: ["session=test"],
       },
     );
     const app = mountAuthenticated(createWorkbenchTenancyRoutes({ tenancy }));
