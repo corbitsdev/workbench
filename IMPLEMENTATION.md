@@ -41,6 +41,12 @@ core, reusable components live there; only workbench-specific composition
 is pinned to a specific upstream commit rather than a floating version
 range.
 
+`@corbits/chat-ui` owns the conversation surface. The composer's host
+seam is `ComposerHandle`: `insertText` splices at the caret (Mention);
+`setText` replaces the whole draft (Edit a previous prompt) and is the
+layer that clears leftover slash, mention, invite, and attachment state
+so a replaced draft cannot send under the old picker's rules.
+
 ## Vendored `@intx/*`
 
 Interchange capabilities are consumed as published `@intx/*` npm packages
@@ -126,6 +132,21 @@ template-key-only match posts `connection.connected` from the system
 address and does not `dispatchTurn`. A generic pending match still
 wakes the asking agent.
 
+That settle is not the whole of a tool-package connect. Bindings for
+pinned packages (`pinnedPackageCredentialBindingsFor` in `apps/hub`)
+fold only at deploy, so a live assistant launched before the key was
+pasted cannot `resolve` the new handle from the old snapshot.
+Connecting a `feedsTools` connector (hub `settleServiceConnection`,
+e.g. Manus → `@corbits/manus-tools`) therefore also fire-and-forget
+relaunches live assistants that pin that package
+(`reconcilePinnedToolPackages`). Persist-only — stamp the pin onto the
+launch row and leave the run — is the bug that was fixed. Connectors
+with no `feedsTools` skip the pass. Same posture as CL-6687 inference
+reconcile on provider connect; see
+[docs/credential-wiring.md](docs/credential-wiring.md) for the
+inference path and the provider plugins (`http-x-manus-api-key` among
+them).
+
 ## GitHub connect (shipped)
 
 The in-room `connect-github` card and the Plugins/Connections GitHub row
@@ -160,6 +181,103 @@ Optional `GITHUB_APP_CLIENT_ID` / `GITHUB_APP_CLIENT_SECRET` exist for
 that future hosted path; leaving them unset is normal. See
 `docs/connect-cards.md` and PRODUCT.md's Code review first minute.
 
+## create_agent and specialist DMs
+
+`@corbits/agent-directory-tools`' `create_agent` creates a specialist
+definition in the caller's tenant and, by default, opens that
+specialist's own 1:1 — never an invite into Myra's DM.
+
+- **Default** (`invite` omitted or true): POST
+  `/api/workflow-chat/participants/mint-dm` (`mintAgentDm` in
+  `@corbits/chat`). That find-or-reopens the `kind: chat` for
+  `(bench, definition)`, matching `POST /workbenches`. The agent
+  launches into that chat, not the caller's.
+- **`invite: false`**: create the definition only — no mint-dm and no
+  invite.
+- **Extra agent into `kind: chat`**: POST
+  `/api/workflow-chat/participants/invite` (and the session invite
+  path) returns **409** `kind_is_chat` when the target is a DM and the
+  definition is not that chat's first/same agent. Same-definition
+  retry reuses the resident.
+
+A create-succeeded / mint-failed split is a completed tool result that
+names both halves, not a bare error.
+
+## Canva MCP connect (shipped)
+
+Canva is the `canva` MCP preset (`packages/connections/src/mcp-presets.ts`):
+`https://mcp.canva.com/mcp`, `connectionMode: "oauth"`, with the 16
+advertised PRM scopes space-joined onto RFC 7591 DCR `clientMetadata.scope`
+(`createMcpOAuthProvider` in `packages/connections/src/mcp-oauth.ts`).
+Other presets omit `oauthScopes` and stay on the SDK's SEP-835 PRM
+fallback.
+
+Connect-time probe and credential fetch share
+`mcpOriginPinnedFetch` (`packages/credential-providers/src/mcp-origin-pinned-fetch.ts`):
+pin to the stored origin, extra first hop only
+`https://mcp.canva.com` → `https://canva.ai` (not a host suffix),
+`redirect: "manual"` so a 302 is never followed. `/start` classifies
+DCR/client refusal as `client_rejected` versus unreachable discovery as
+`discovery_failed` (`packages/connections/src/mcp-oauth-routes.ts`).
+RFC 7591 `invalid_redirect_uri` (and `invalid_client_metadata`,
+`invalid_client`, `unauthorized_client`) count as `client_rejected`; the
+route clones 4xx/5xx JSON before the MCP SDK 1.30.0 maps unknown codes
+onto `ServerError`.
+
+A successful OAuth callback probes with the new token and, on success,
+appends `toolCount` to the Plugins return query. The Canva row
+(`packages/plugins-ui/src/mcp-preset-cards.tsx`) shows that count when
+it is a non-negative integer; otherwise the row stays "Connected".
+`@corbits/mcp-tools` per-request timeout is two minutes
+(`MCP_REQUEST_TIMEOUT_MS` in `packages/mcp-tools/src/mcp-client.ts`) —
+above the SDK's 60s default, below a five-minute chat turn.
+
+These are unit-tested control-flow facts. Live Canva OAuth against
+Canva's own servers is **not** verified; do not document a proven live
+handshake.
+
+## Workbench-host default inference
+
+`selectDefaultInferencePreferences`
+(`packages/chat/src/inference-preferences.ts`) builds the preference
+list a workbench host launches with (`workbenchHostInferencePreferences`
+on the chat adapter; also `tenantDefaultModel` on agent-definition
+routes). It keeps credentialed completion-capable offerings
+(`preferCompletionCapable` in `@workbench/hub-client/model-capability`
+— embedding names never win) and, when any survivor is
+`origin.direct`, picks from that direct set only. Inherit-only catalogs
+still sort among inherited completion rows.
+
+Ollama connect is the case that used to lose: discovery
+(`GET /api/tenants/:id/models`) includes inherited `CATALOG_SEEDS` rows,
+so the curated name (`CATALOG_SEEDS.ollama.models[0]`) could win a
+name-sort without living on the instance. `resolveOllamaModelSource`
+(`packages/onboarding/src/complete-credential.ts`) therefore also reads
+tenant-owned `GET /api/tenants/:id/catalog/models` (paginated
+`ModelResponse` envelope) when discovery contains that curated name. A
+non-empty owned list restricts candidates to those names; an empty owned
+list keeps inherited discovery. Other providers still pin
+`CATALOG_SEEDS[provider].models[0]`.
+
+Ollama's OpenAI-compatible endpoint can also emit a declared tool call
+as a JSON object in `content` instead of native `tool_calls`.
+`@intx/inference`'s OpenAI parser only reads `delta.tool_calls`, so
+that JSON would otherwise land on the timeline as assistant text and
+the tool would never run. `@corbits/ollama-adapter`
+(`reclassifyInlineToolJsonEvents` in
+`packages/ollama-adapter/src/inline-tool-json.ts`) rewrites a content
+stream that is exactly that object into `inference.tool_call.*`
+events, gated on the tools declared for the request. Salvage requires
+a plain object whose keys are only `name` plus exactly one of
+`parameters` or `arguments` (optional `id`), and a `name` in the
+declared set. Unknown names, no-tools requests, extra keys, arrays,
+mixed prose, fenced JSON, and incomplete objects stay text.
+
+The assistant definition (`workflows/assistant`) also tells Myra to
+invoke tools only through tool calls — never by writing a JSON object
+with a tool name into the reply — and not to `memory_search` a bare
+greeting.
+
 ## Related docs
 
 - [README.md](README.md) — quickstart, local setup, repo layout, e2e detail
@@ -180,3 +298,5 @@ that future hosted path; leaving them unset is normal. See
 - Whether Pulumi stacks/config live in this repo or a separate
   infrastructure repo is not established in the docs reviewed for this
   pass.
+- Live Canva MCP OAuth (DCR, redirect allowlist, and post-OAuth probe
+  against `mcp.canva.com` / `canva.ai`) is not verified as of CL-7083.

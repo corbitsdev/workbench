@@ -76,7 +76,7 @@ import {
   slackTriggerOffered,
 } from "../deployment-capabilities-api";
 import { useGranolaPluginConnected } from "../granola-plugin-availability";
-import { tenantKeys } from "../query-client";
+import { invalidateRoutineQueries } from "../query-client";
 import { useCanvasColumnRoutine, useCloseCanvas } from "./canvas-availability";
 import type { RoutinePanelSubject } from "./canvas-availability";
 import { CanvasPaneHeader } from "./canvas-column";
@@ -202,12 +202,7 @@ function RoutineEditorPanel({
 
   const invalidateRoutines = () => {
     if (tenantId === null) return;
-    void queryClient.invalidateQueries({
-      queryKey: tenantKeys.routines(tenantId),
-    });
-    void queryClient.invalidateQueries({
-      queryKey: tenantKeys.routineRunHistories(tenantId),
-    });
+    invalidateRoutineQueries(queryClient, tenantId);
   };
 
   const [routineId, setRoutineId] = useState<string | null>(

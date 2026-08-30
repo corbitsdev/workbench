@@ -5,10 +5,11 @@
 // workflow's launch body failing to read, a definition asset that never
 // materialized — stays invisible until someone reports it from the UI.
 // This handler is the one place every such exception is guaranteed to be
-// logged, and it maps a named consumer-facing error to a real 4xx rather
+// reported, and it maps a named consumer-facing error to a real 4xx rather
 // than folding it into a generic message.
 import type { Context } from "hono";
-import { getLogger } from "@intx/log";
+import type { TenantEnv } from "@intx/hub-api";
+import { reportError } from "@corbits/error-sink";
 
 /**
  * Duck-typed rather than an `instanceof` allowlist: any error carrying a
@@ -28,17 +29,32 @@ function hasGuidance(err: unknown): err is Error & { guidance: string } {
 }
 
 /**
- * Builds the handler passed to `app.onError`. Takes the logger as a
- * parameter (rather than constructing one internally) so a test can
- * inject a fake and assert on what got logged.
+ * `app.onError` runs for routes mounted both inside and outside the
+ * platform's tenant middleware, so `c`'s `Variables` aren't statically
+ * known here; this borrows the same `TenantEnv` a tenant-scoped route
+ * types `c.get("tenant")` with (see `packages/access-policy/src/routes.ts`)
+ * to read `tenant.id` when a tenant-scoped route set it, without claiming
+ * the wider type up front.
  */
-export function hubErrorHandler(log: ReturnType<typeof getLogger>) {
+function extractTenantId(c: Context): string | undefined {
+  return (c as unknown as Context<TenantEnv>).var.tenant?.id;
+}
+
+/** Builds the handler passed to `app.onError`. */
+export function hubErrorHandler() {
   return (err: unknown, c: Context): Response | Promise<Response> => {
-    const message = err instanceof Error ? err.message : String(err);
-    log.error`Unhandled error on ${c.req.method} ${c.req.path}: ${message}`;
+    const tenantId = extractTenantId(c);
+    const refId = reportError(err, {
+      operation: "hub.unhandled_route_error",
+      ...(tenantId !== undefined ? { tenantId } : {}),
+      extra: { path: c.req.path, method: c.req.method },
+    });
 
     if (hasGuidance(err)) {
-      return c.json({ error: { code: err.name, message: err.message } }, 422);
+      return c.json(
+        { error: { code: err.name, message: err.message, refId } },
+        422,
+      );
     }
 
     return c.json(
@@ -46,6 +62,7 @@ export function hubErrorHandler(log: ReturnType<typeof getLogger>) {
         error: {
           code: "internal_error",
           message: "Something went wrong. Please try again.",
+          refId,
         },
       },
       500,

@@ -35,6 +35,7 @@ import {
 import { workbenchLaunch } from "../src/schema";
 import {
   foldedRun,
+  inferenceSourcesDigest,
   DefinitionProjectionMissingError,
 } from "@corbits/folded-runs";
 import { IDLE_HIBERNATE_UNDEPLOY_REASON } from "@corbits/agent-lifecycle";
@@ -72,6 +73,18 @@ mock.module("@intx/hub-api", () => ({
   },
 }));
 
+const actualDb = await import("@intx/db");
+
+type BuildCredentialDeliveryResult = Awaited<
+  ReturnType<typeof actualDb.buildCredentialDelivery>
+>;
+
+let buildCredentialDeliveryResult: BuildCredentialDeliveryResult = {
+  ok: true,
+  delivery: undefined,
+};
+const buildCredentialDeliveryCalls: unknown[] = [];
+
 // `deployAtHead` (reached through `launchFoldedRun`/`launchInvite`) looks
 // up `listVisibleOfferings` once per launch to correct an Ollama
 // offering's adapter-registry key (CL-6586's `withOllamaAdapterKey`) --
@@ -79,9 +92,12 @@ mock.module("@intx/hub-api", () => ({
 // minimal chainable fake `db` never implements. None of these fixtures
 // resolve against an Ollama offering, so an empty list is the correct
 // fake: nothing here should ever need its `provider` field corrected.
-const actualDb = await import("@intx/db");
 mock.module("@intx/db", () => ({
   ...actualDb,
+  buildCredentialDelivery: async (...args: unknown[]) => {
+    buildCredentialDeliveryCalls.push(args[0]);
+    return buildCredentialDeliveryResult;
+  },
   listVisibleOfferings: async () => [],
 }));
 
@@ -215,6 +231,7 @@ function createFakeDb(opts: {
         currentRunId?: string;
         foldedBody: unknown;
         noopInference?: boolean;
+        sourcesDigest?: string | null;
       }
     | undefined;
   /**
@@ -517,6 +534,33 @@ function deployedDefinition(
   return JSON.parse(parseWorkflowSourceEntry(entry, "asst_rendered")) as {
     steps: Record<string, unknown>;
   };
+}
+
+/**
+ * The credential bindings the rendered entry module default-exports —
+ * the snapshot `env.credentials.resolve` reads, not the launch body's
+ * own (optional) bindings.
+ */
+function deployedCredentialBindings(
+  trees: readonly Record<string, string | Uint8Array>[],
+): unknown {
+  const tree = trees[trees.length - 1];
+  if (tree === undefined) throw new Error("no source tree was ever rendered");
+  const entry = tree[WORKFLOW_SOURCE_ENTRY_PATH];
+  if (typeof entry !== "string") {
+    throw new Error("no workflow entry module in the rendered tree");
+  }
+  const open = entry.indexOf("export default ");
+  const close = entry.lastIndexOf(";");
+  if (open === -1 || close === -1) {
+    throw new Error(
+      `rendered entry module has no definition literal: ${entry}`,
+    );
+  }
+  const definition = JSON.parse(
+    entry.slice(open + "export default ".length, close),
+  ) as { credentialBindings?: unknown };
+  return definition.credentialBindings ?? [];
 }
 
 function createFakeAssetService(
@@ -2766,6 +2810,16 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
     return { db, platform };
   }
 
+  // A relaunch re-points `currentRunId`; the fixture's rows predate
+  // CL-6687's digest column, so the first check also records a baseline
+  // `sourcesDigest` — a write that is not a relaunch.
+  function repointOf(db: ReturnType<typeof createFakeDb>) {
+    return db.updated
+      .filter((row) => row.table === workbenchLaunch)
+      .map((row) => row.values as { currentRunId?: string })
+      .find((values) => values.currentRunId !== undefined);
+  }
+
   test("a routable run whose deployed content differs from the current authored content is relaunched, not served as-is", async () => {
     const { db, platform } = createDriftFixture({
       deployedSystemPrompt: STALE_SYSTEM_PROMPT,
@@ -2775,8 +2829,7 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
 
     await platform.ensureAwake("run_stale@ten1.workbench.test");
 
-    const repointed = db.updated.find((row) => row.table === workbenchLaunch)
-      ?.values as { currentRunId: string } | undefined;
+    const repointed = repointOf(db);
     expect(repointed?.currentRunId).toBeDefined();
     expect(repointed?.currentRunId).not.toBe("run_stale");
   });
@@ -2797,9 +2850,7 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
 
     await platform.ensureAwake("run_stale@ten1.workbench.test");
 
-    expect(
-      db.updated.find((row) => row.table === workbenchLaunch),
-    ).toBeUndefined();
+    expect(repointOf(db)).toBeUndefined();
   });
 
   test("sendMail redeploys an already-routable-but-drifted target before delivering — lifecycle.ensureAwake's routability check alone would have missed it", async () => {
@@ -3099,5 +3150,413 @@ describe("createHubChatPlatform relaunch sweep", () => {
     });
     expect(sessionService.adoptedDeployCalls).toHaveLength(0);
     expect(notices).toEqual([]);
+  });
+});
+
+// CL-6687: inference sources — the decrypted API key included — are
+// rendered into a run's deployed bytes at deploy time and never re-read.
+// `foldedBody` comparison cannot see a rotated key, so a live agent kept
+// sending the dead one after Settings said the new key was saved. The
+// deploy now records a digest of the chain it pinned; a send (or a
+// provider connect) compares it against today's resolution and relaunches
+// on a mismatch.
+describe("createHubChatPlatform inference-source rotation reconciliation", () => {
+  const FOLDED_BODY = {
+    systemPrompt: "be helpful",
+    toolPackagePins: [],
+    grantRequirements: [],
+    credentialBindings: [],
+    model: null,
+  };
+
+  function sourcesFor(apiKey: string) {
+    return {
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          apiKey,
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+  }
+
+  function createRotationFixture(opts: {
+    deployedWithKey: string | null;
+    catalogKey: string;
+  }) {
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      ...sourcesFor(opts.catalogKey),
+    };
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "workbench-1",
+        displayName: null,
+      },
+      definitionId: "wfd_unused",
+      workflowRunRow: {
+        id: "run_live",
+        address: "run_live@ten1.workbench.test",
+        principalId: "prin_room1",
+        definitionId: "wfd_run_clone",
+        status: "running",
+      },
+      workflowDefinitionRow: {
+        id: "wfd_run_clone",
+        tenantId: "ten_1",
+        status: "deployed",
+        assetId: "asst_myra",
+        name: "myra",
+        origin: "run",
+      },
+      workflowDefinitionRows: [
+        {
+          id: "wfd_run_clone",
+          tenantId: "ten_1",
+          status: "deployed",
+          name: "myra",
+          assetId: "asst_myra",
+          origin: "run",
+        },
+        {
+          id: "wfd_myra_authored",
+          tenantId: "ten_1",
+          status: "deployed",
+          name: "myra",
+          assetId: "asst_myra",
+          origin: "authored",
+        },
+      ],
+      workbenchLaunchRow: {
+        tenantId: "ten_1",
+        instanceId: "run_live",
+        currentRunId: "run_live",
+        foldedBody: FOLDED_BODY,
+        sourcesDigest:
+          opts.deployedWithKey === null
+            ? null
+            : inferenceSourcesDigest(sourcesFor(opts.deployedWithKey)),
+      },
+      wireProjectionsByDefinitionId: {
+        wfd_run_clone: inertProjection({
+          id: "wfd_run_clone",
+          systemPrompt: FOLDED_BODY.systemPrompt,
+          model: null,
+        }),
+        wfd_myra_authored: inertProjection({
+          id: "wfd_myra_authored",
+          systemPrompt: FOLDED_BODY.systemPrompt,
+          model: null,
+        }),
+      },
+    });
+    const platform = createHubChatPlatform({
+      toolGrantsForPins: () => [],
+      db: db as never,
+      sessionService: createFakeSessionService(),
+      assetService: createFakeAssetService(),
+      sidecarRouter: createFakeSidecarRouter({
+        routableAddresses: ["run_live@ten1.workbench.test"],
+      }),
+      eventCollectors: createFakeEventCollectors(),
+    });
+    return { db, platform };
+  }
+
+  function repointedLaunch(db: ReturnType<typeof createFakeDb>) {
+    return db.updated.find((row) => row.table === workbenchLaunch)?.values as
+      { currentRunId: string; sourcesDigest: string } | undefined;
+  }
+
+  test("a routable run deployed with a key the catalog has since rotated is relaunched on the new key", async () => {
+    const { db, platform } = createRotationFixture({
+      deployedWithKey: "sk-ant-expired",
+      catalogKey: "sk-ant-fresh",
+    });
+
+    await platform.ensureAwake("run_live@ten1.workbench.test");
+
+    const repointed = repointedLaunch(db);
+    expect(repointed?.currentRunId).toBeDefined();
+    expect(repointed?.currentRunId).not.toBe("run_live");
+    expect(repointed?.sourcesDigest).toBe(
+      inferenceSourcesDigest(sourcesFor("sk-ant-fresh")),
+    );
+  });
+
+  test("re-saving the same key is not a rotation: the run is left alone", async () => {
+    const { db, platform } = createRotationFixture({
+      deployedWithKey: "sk-ant-same",
+      catalogKey: "sk-ant-same",
+    });
+
+    await platform.ensureAwake("run_live@ten1.workbench.test");
+
+    expect(repointedLaunch(db)).toBeUndefined();
+  });
+
+  test("a run that predates digest recording gets today's chain as its baseline and is left alone", async () => {
+    const { db, platform } = createRotationFixture({
+      deployedWithKey: null,
+      catalogKey: "sk-ant-fresh",
+    });
+
+    await platform.ensureAwake("run_live@ten1.workbench.test");
+
+    const launchWrites = db.updated.filter(
+      (row) => row.table === workbenchLaunch,
+    );
+    expect(launchWrites).toHaveLength(1);
+    expect(launchWrites[0]?.values).toEqual({
+      sourcesDigest: inferenceSourcesDigest(sourcesFor("sk-ant-fresh")),
+    });
+  });
+
+  test("the per-send chain check is throttled: a second send inside the interval resolves nothing", async () => {
+    const { platform } = createRotationFixture({
+      deployedWithKey: "sk-ant-same",
+      catalogKey: "sk-ant-same",
+    });
+    resolveDefinitionSourcesCalls.length = 0;
+
+    await platform.ensureAwake("run_live@ten1.workbench.test");
+    const afterFirst = resolveDefinitionSourcesCalls.length;
+    await platform.ensureAwake("run_live@ten1.workbench.test");
+
+    expect(afterFirst).toBeGreaterThan(0);
+    expect(resolveDefinitionSourcesCalls).toHaveLength(afterFirst);
+  });
+
+  test("reconcileInferenceSources sweeps a tenant's live participants the moment a credential lands", async () => {
+    const { db, platform } = createRotationFixture({
+      deployedWithKey: "sk-ant-expired",
+      catalogKey: "sk-ant-fresh",
+    });
+
+    const swept = await platform.reconcileInferenceSources("ten_1");
+
+    expect(swept).toEqual({ scanned: 1, relaunched: 1 });
+    expect(repointedLaunch(db)?.currentRunId).not.toBe("run_live");
+  });
+
+  test("connecting a provider then sending within the check interval relaunches onto the new key", async () => {
+    const { db, platform } = createRotationFixture({
+      deployedWithKey: "sk-ant-expired",
+      catalogKey: "sk-ant-expired",
+    });
+
+    await platform.ensureAwake("run_live@ten1.workbench.test");
+    expect(repointedLaunch(db)).toBeUndefined();
+
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      ...sourcesFor("sk-ant-fresh"),
+    };
+
+    await platform.reconcileInferenceSources("ten_1");
+    await platform.ensureAwake("run_live@ten1.workbench.test");
+
+    const repointed = repointedLaunch(db);
+    expect(repointed?.currentRunId).toBeDefined();
+    expect(repointed?.currentRunId).not.toBe("run_live");
+    expect(repointed?.sourcesDigest).toBe(
+      inferenceSourcesDigest(sourcesFor("sk-ant-fresh")),
+    );
+  });
+});
+
+// A live Myra launched at signup pins `@corbits/manus-tools` with no
+// required binding. Connecting Manus later stores the credential but
+// used to only `dispatchTurn` the existing run — the sidecar still
+// resolved `manus` as not connected. Inference reconcile cannot see
+// this: Manus is not an inference provider. The connect hook has to
+// relaunch live runs whose pins include the connector's `feedsTools`
+// packages so `deployAtHead` folds `pinnedPackageCredentialBindingsFor`.
+describe("createHubChatPlatform pinned-tool-package connect reconciliation", () => {
+  const MANUS_PIN = { name: "@corbits/manus-tools", version: "*" };
+  const MANUS_BINDING = {
+    package: "@corbits/manus-tools",
+    handle: "manus",
+    provider: "manus",
+    locator: "tenant" as const,
+  };
+  const CATALOG_SOURCES = {
+    sources: [
+      {
+        id: "off_1",
+        provider: "anthropic",
+        baseURL: "https://inference.invalid",
+        apiKey: "sk-ant-same",
+        model: "claude-sonnet-5",
+      },
+    ],
+    defaultSource: "off_1",
+  };
+
+  function createManusPinFixture(opts: {
+    toolPackagePins: { name: string; version: string }[];
+  }) {
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      ...CATALOG_SOURCES,
+    };
+    buildCredentialDeliveryCalls.length = 0;
+    buildCredentialDeliveryResult = {
+      ok: true,
+      delivery: {
+        bindings: [
+          {
+            handle: "manus",
+            credentialId: "cred_manus_1",
+            consumer: "tool:@corbits/manus-tools",
+          },
+        ],
+        materials: [
+          {
+            credentialId: "cred_manus_1",
+            providerKey: "manus",
+            origin: "https://api.manus.ai",
+            secret: "n/a",
+          },
+        ],
+      },
+    };
+    const foldedBody = {
+      systemPrompt: "be helpful",
+      toolPackagePins: opts.toolPackagePins,
+      grantRequirements: [],
+      credentialBindings: [],
+      model: null,
+    };
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "workbench-1",
+        displayName: null,
+      },
+      definitionId: "wfd_unused",
+      workflowRunRow: {
+        id: "run_live",
+        address: "run_live@ten1.workbench.test",
+        principalId: "prin_room1",
+        definitionId: "wfd_run_clone",
+        status: "running",
+      },
+      workflowDefinitionRow: {
+        id: "wfd_run_clone",
+        tenantId: "ten_1",
+        status: "deployed",
+        assetId: "asst_myra",
+        name: "myra",
+        origin: "run",
+      },
+      workflowDefinitionRows: [
+        {
+          id: "wfd_run_clone",
+          tenantId: "ten_1",
+          status: "deployed",
+          name: "myra",
+          assetId: "asst_myra",
+          origin: "run",
+        },
+        {
+          id: "wfd_myra_authored",
+          tenantId: "ten_1",
+          status: "deployed",
+          name: "myra",
+          assetId: "asst_myra",
+          origin: "authored",
+        },
+      ],
+      workbenchLaunchRow: {
+        tenantId: "ten_1",
+        instanceId: "run_live",
+        currentRunId: "run_live",
+        foldedBody,
+        sourcesDigest: inferenceSourcesDigest(CATALOG_SOURCES),
+      },
+      wireProjectionsByDefinitionId: {
+        wfd_run_clone: inertProjection({
+          id: "wfd_run_clone",
+          systemPrompt: foldedBody.systemPrompt,
+          model: null,
+          toolPackagePins: opts.toolPackagePins,
+        }),
+        wfd_myra_authored: inertProjection({
+          id: "wfd_myra_authored",
+          systemPrompt: foldedBody.systemPrompt,
+          model: null,
+          toolPackagePins: opts.toolPackagePins,
+        }),
+      },
+    });
+    const assetService = createFakeAssetService();
+    const platform = createHubChatPlatform({
+      toolGrantsForPins: () => [],
+      db: db as never,
+      sessionService: createFakeSessionService(),
+      assetService,
+      sidecarRouter: createFakeSidecarRouter({
+        routableAddresses: ["run_live@ten1.workbench.test"],
+      }),
+      eventCollectors: createFakeEventCollectors(),
+      credentialCipher: {} as never,
+      pinnedPackageCredentialBindingsFor: async () => [MANUS_BINDING],
+    });
+    return { db, platform, assetService };
+  }
+
+  function repointedLaunch(db: ReturnType<typeof createFakeDb>) {
+    return db.updated.find((row) => row.table === workbenchLaunch)?.values as
+      { currentRunId: string } | undefined;
+  }
+
+  test("connecting manus after a live launch relaunches and folds the manus CredentialBinding", async () => {
+    const { db, platform, assetService } = createManusPinFixture({
+      toolPackagePins: [MANUS_PIN],
+    });
+
+    await platform.ensureAwake("run_live@ten1.workbench.test");
+    expect(repointedLaunch(db)).toBeUndefined();
+    expect(assetService.populatedTrees).toHaveLength(0);
+
+    const swept = await platform.reconcilePinnedToolPackages("ten_1", [
+      "@corbits/manus-tools",
+    ]);
+
+    // Persist-only (stamp a pin/binding onto the launch row and leave
+    // `currentRunId` as `run_live`) is the bug: the sidecar keeps the
+    // snapshot that cannot `resolve("manus")`. A passing result must
+    // mint a fresh run and fold the binding into the deployed entry.
+    expect(swept).toEqual({ scanned: 1, relaunched: 1 });
+    expect(repointedLaunch(db)?.currentRunId).not.toBe("run_live");
+    expect(deployedCredentialBindings(assetService.populatedTrees)).toEqual([
+      MANUS_BINDING,
+    ]);
+    expect(buildCredentialDeliveryCalls[0]).toMatchObject({
+      tenantId: "ten_1",
+      bindings: [MANUS_BINDING],
+    });
+  });
+
+  test("a live run that does not pin the connected package is left alone", async () => {
+    const { db, platform, assetService } = createManusPinFixture({
+      toolPackagePins: [],
+    });
+
+    const swept = await platform.reconcilePinnedToolPackages("ten_1", [
+      "@corbits/manus-tools",
+    ]);
+
+    expect(swept).toEqual({ scanned: 1, relaunched: 0 });
+    expect(repointedLaunch(db)).toBeUndefined();
+    expect(assetService.populatedTrees).toHaveLength(0);
   });
 });

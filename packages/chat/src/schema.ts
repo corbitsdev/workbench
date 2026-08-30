@@ -6,6 +6,7 @@
 // docs/package-migrations.md. `tenantId`/`principalId` are plain text
 // identifiers, not foreign keys, so referencing platform tenant/principal
 // ids works identically from a named schema.
+import { sql } from "drizzle-orm";
 import {
   index,
   integer,
@@ -15,6 +16,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const chatSchema = pgSchema("chat");
@@ -116,6 +118,14 @@ export const workbenchLaunch = chatSchema.table("workbench_launch", {
    */
   priorRunIds: jsonb("prior_run_ids").notNull().default([]),
   foldedBody: jsonb("folded_body").notNull(),
+  /**
+   * `@corbits/folded-runs`' `inferenceSourcesDigest` of the chain the
+   * current run last deployed with — secret included, hashed. A send
+   * compares it against today's resolution so a rotated API key
+   * reaches a live agent (CL-6687); `null` until the run's first
+   * deploy, and for rows that predate the column.
+   */
+  sourcesDigest: text("sources_digest"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -221,6 +231,12 @@ export const workbenchThreads = chatSchema.table(
       table.tenantId,
       table.workbenchId,
     ),
+    uniqueIndex("workbench_threads_root_key")
+      .on(table.tenantId, table.workbenchId)
+      .where(sql`${table.kind} = 'root'`),
+    uniqueIndex("workbench_threads_reply_key")
+      .on(table.tenantId, table.workbenchId, table.parentMessageId)
+      .where(sql`${table.kind} = 'reply'`),
   ],
 );
 

@@ -39,6 +39,8 @@ import {
   unpinMessage,
   workbenchStreamUrl,
   isKnownWorkbenchKind,
+  WORKBENCHES_MUTATED_STREAM_TYPE,
+  applyStreamWorkbenchesMutated,
 } from "./api";
 import type { Workbench, ParticipantRecord, Part } from "./api";
 import { WorkbenchSettingsSurface } from "./workbench-settings";
@@ -60,7 +62,12 @@ import { displayWorkbenchTitle } from "./workbench-display-title";
 import { useStreamingReply, typingAgentNames } from "./streaming-reply";
 import { useTurnActivity, TurnActivityStrip } from "./turn-activity";
 import type { StreamingReplyState } from "./streaming-reply";
-import { AgentBadge, WorkbenchTimeline, messageDomId } from "./timeline";
+import {
+  AgentBadge,
+  WorkbenchTimeline,
+  messageDomId,
+  messageText,
+} from "./timeline";
 import { NoUsableModelBanner } from "./no-usable-model-banner";
 import { ResumeFailedBanner } from "./resume-failed-banner";
 import type {
@@ -956,6 +963,10 @@ function ChatWorkspaceInner({
           }
           break;
         }
+        case WORKBENCHES_MUTATED_STREAM_TYPE: {
+          applyStreamWorkbenchesMutated(data);
+          break;
+        }
       }
     },
     refreshFeed,
@@ -1541,6 +1552,14 @@ function ChatWorkspaceInner({
                     onOpenThread={
                       inThreadView ? forkMessage : openThreadForMessage
                     }
+                    onEditMessage={(messageId) => {
+                      if (messagesState.kind !== "ready") return;
+                      const item = messagesState.items.find(
+                        (message) => message.id === messageId,
+                      );
+                      if (item === undefined) return;
+                      composerRef.current?.setText(messageText(item));
+                    }}
                     {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
                     {...(onOpenArtifact !== undefined
                       ? { onOpenArtifact }

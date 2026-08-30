@@ -79,12 +79,14 @@ first checking `GET /api/tenants/:id/skills/:name`.
   "already exists" as done, not as a reason to abort the run the
   hub's own error advice told the operator to re-run.
 
-## Tool registry publish (`workbench seed`, ahead of every workflow deploy)
+## Tool registry publish (`workbench setup`, onto the root tenant)
 
 `publishCorbitsToolsRegistry` (`packages/tool-registry-publish/src/publish.ts`)
 finds-or-creates the tenant's `corbits-tools` package-registry asset,
-then PUTs whatever tarball is missing. Two properties keep a failed
-publish from stranding a usable-looking-but-empty asset:
+then PUTs whatever tarball is missing. `workbench setup` calls this
+onto the root tenant so descendants inherit tarballs; `workbench seed`
+does not pack. Two properties keep a failed publish from stranding a
+usable-looking-but-empty asset:
 
 - `checkToolPackageFreshness` runs **before** the asset is ever
   created — a version-bump violation aborts the publish with no HTTP
@@ -96,8 +98,8 @@ publish from stranding a usable-looking-but-empty asset:
   so a re-run of `publishCorbitsToolsRegistry` treats it exactly like
   a brand-new registry and pushes every package, which is what
   actually creates the repo's first commit. Repairing a tenant with
-  this history is the same operation as seeding one for the first
-  time: re-run `workbench seed`.
+  this history is the same operation as publishing the registry for
+  the first time: re-run `workbench setup`.
 
 ## Workflow deployments (`workbench seed`)
 

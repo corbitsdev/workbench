@@ -22,6 +22,7 @@ import {
 } from "@intx/types";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { hasUsableModel } from "@corbits/inference-settings";
+import { reportError } from "@corbits/error-sink";
 import {
   cookiesFromHeader,
   createHubAPI,
@@ -114,11 +115,17 @@ export async function disconnectConnector(
       cookies,
     );
     if (deletedCatalogProvider.status !== 204) {
-      throw new Error(
-        `couldn't remove the catalog provider for ${args.connectorId} (status ${String(deletedCatalogProvider.status)})`,
+      if (deletedCatalogProvider.status !== 404) {
+        throw new Error(
+          `couldn't remove the catalog provider for ${args.connectorId} (status ${String(deletedCatalogProvider.status)})`,
+        );
+      }
+      log(
+        `catalog provider ${args.connectorId} was already removed (concurrent disconnect)`,
       );
+    } else {
+      log(`removed catalog provider ${args.connectorId} and its offerings`);
     }
-    log(`removed catalog provider ${args.connectorId} and its offerings`);
   }
 
   const providers = await api(
@@ -144,9 +151,15 @@ export async function disconnectConnector(
     cookies,
   );
   if (deletedProvider.status !== 204) {
-    throw new Error(
-      `couldn't remove the provider row for ${args.connectorId} (status ${String(deletedProvider.status)})`,
+    if (deletedProvider.status !== 404) {
+      throw new Error(
+        `couldn't remove the provider row for ${args.connectorId} (status ${String(deletedProvider.status)})`,
+      );
+    }
+    log(
+      `provider ${args.connectorId} was already removed (concurrent disconnect)`,
     );
+    return { disconnected: false };
   }
   log(`removed provider ${args.connectorId} and its credentials`);
   return { disconnected: true };
@@ -581,6 +594,11 @@ export function createConnectionRoutes(
         deps.log(
           `disconnect failed for connector ${connectorId} on tenant ${tenant.id}: ${message}`,
         );
+        reportError(cause, {
+          operation: "disconnect_connector",
+          tenantId: tenant.id,
+          extra: { connectorId },
+        });
         return c.json(
           ErrorEnvelope(
             "disconnect_failed",

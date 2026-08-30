@@ -4,6 +4,7 @@
 // `@corbits/folded-runs`' `deployAtHead`, which mints these into
 // `config.grants`.
 import { describe, expect, test } from "bun:test";
+import { describeCorbitsToolPackages } from "@corbits/tool-registry-publish";
 import { createToolGrantsForPins } from "./tool-grants";
 
 const DESCRIPTIONS = [
@@ -84,5 +85,23 @@ describe("createToolGrantsForPins", () => {
   test("no pins yields no grants", () => {
     const toolGrantsForPins = createToolGrantsForPins(DESCRIPTIONS);
     expect(toolGrantsForPins([])).toEqual([]);
+  });
+
+  test("assistant pin of webhook_create is ask, not allow", async () => {
+    const toolGrantsForPins = createToolGrantsForPins(
+      await describeCorbitsToolPackages(),
+    );
+    const grants = toolGrantsForPins([
+      { name: "@corbits/manus-tools", version: "*" },
+    ]);
+    expect(
+      grants.find((g) => g.resource.endsWith(":webhook_create"))?.effect,
+    ).toBe("ask");
+    expect(
+      grants.find((g) => g.resource.endsWith(":create_slides"))?.effect,
+    ).toBe("allow");
+    expect(grants.find((g) => g.resource.endsWith(":task_list"))?.effect).toBe(
+      "allow",
+    );
   });
 });

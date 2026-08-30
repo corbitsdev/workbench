@@ -47,6 +47,11 @@ export {
   SETUP_AGENT_ASSET_NAME,
 } from "./seed";
 export {
+  publishCorbitsToolsRegistry,
+  type PublishCorbitsToolsRegistryArgs,
+  type PublishSummary,
+} from "@corbits/tool-registry-publish";
+export {
   CATALOG_SEEDS,
   deriveWorkbenchHostInferencePreferences,
 } from "./catalog-seed-data";

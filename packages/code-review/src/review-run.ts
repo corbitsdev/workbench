@@ -21,6 +21,7 @@ import type {
   PostedPullRequestReview,
   PullRequestDiff,
   PullRequestRef,
+  PullRequestReviewCommentsPage,
   PullRequestReviewDraft,
 } from "@corbits/github-tools";
 
@@ -39,7 +40,9 @@ export interface CodeReviewGitHub {
     review: PullRequestReviewDraft,
   ): Promise<PostedPullRequestReview>;
   /** Bodies of every review comment already posted, for the fingerprint scan. */
-  listPostedComments(ref: PullRequestRef): Promise<readonly string[]>;
+  listPostedComments(
+    ref: PullRequestRef,
+  ): Promise<PullRequestReviewCommentsPage>;
 }
 
 /** Runs one reviewer's turn and returns its raw reply. */
@@ -111,13 +114,17 @@ export async function runPullRequestReview(
     };
   }
   const prompt = renderReviewPrompt(diff);
-  const alreadyPosted = fingerprintsIn(
-    await deps.github.listPostedComments(ref),
-  );
+  const postedComments = await deps.github.listPostedComments(ref);
+  const alreadyPosted = fingerprintsIn(postedComments.comments);
   const passes = await Promise.all(
     reviewers.map((reviewer) => runOne(deps, reviewer, prompt)),
   );
-  const review = aggregateReview(passes, diff, alreadyPosted);
+  const review = aggregateReview(
+    passes,
+    diff,
+    alreadyPosted,
+    postedComments.truncated,
+  );
   const posted = await deps.github.postReview(ref, diff.headSha, review);
   return { skipped: false, diff, passes, review, posted };
 }

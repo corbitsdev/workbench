@@ -31,25 +31,29 @@ export const ASSISTANT_STEP_ID = "assistant";
 
 /**
  * The tool packages this deployment pins. `@corbits/memory-tools`
- * (CL-5852) is the original pin; `@corbits/capability-tools`
- * (CL-6084/CL-6086) lets Myra self-service a missing tool, skill, or
- * model; the remaining four are the manager-tools bundles giving Myra
+ * is the original pin; `@corbits/capability-tools` lets Myra self-service
+ * a missing tool, skill, or model; the manager-tools bundles give Myra
  * real workbench-management capability — a specialist agent she can
- * create and invite in, this workbench's routines, connection
+ * create (each gets their own chat), this workbench's routines, connection
  * visibility, and skill capture — each a thin wrapper over an existing
  * platform primitive (see each package's own file-header comment for
- * which one).
+ * which one). `@corbits/mcp-tools` and `@corbits/interaction-tools`
+ * expose tenant-connected MCP servers and the ask-user card;
+ * `@corbits/manus-tools` is pinned so Manus tools exist when the tenant
+ * has connected Manus (launch folds the binding only then — the pin
+ * itself does not require a credential).
  */
 export const ASSISTANT_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
   { name: "@corbits/memory-tools", version: "0.0.4" },
   { name: "@corbits/capability-tools", version: "0.0.3" },
   { name: "@corbits/routines-tools", version: "0.0.5" },
-  { name: "@corbits/agent-directory-tools", version: "0.0.4" },
+  { name: "@corbits/agent-directory-tools", version: "0.0.5" },
   { name: "@corbits/connections-tools", version: "0.0.6" },
   { name: "@corbits/catalog-tools", version: "0.0.1" },
   { name: "@corbits/skills-tools", version: "0.0.6" },
-  { name: "@corbits/mcp-tools", version: "0.0.8" },
+  { name: "@corbits/mcp-tools", version: "0.0.10" },
   { name: "@corbits/interaction-tools", version: "0.0.2" },
+  { name: "@corbits/manus-tools", version: "0.0.11" },
 ];
 
 /**
@@ -133,8 +137,8 @@ const ASSISTANT_TEAMMATE_CLAUSE =
   "URL, a cadence, whichever specifics the plan actually turns on — " +
   "never 'should I create an agent for that?' or any other question " +
   "that just asks permission to use the mechanism. On their OK, build " +
-  "the whole thing in one go: create the specialists and invite them " +
-  "in, create the routines, and save the facts they gave you to " +
+  "the whole thing in one go: create the specialists (each gets their " +
+  "own chat), create the routines, and save the facts they gave you to " +
   "memory — every write already asks for its own approval, so build " +
   "once you have what you need rather than checking in again first.";
 
@@ -209,14 +213,18 @@ export const ASSISTANT_SYSTEM_PROMPT =
   "\n" +
   "## Tools\n" +
   "Each tool's own description says how it works; what spans them: " +
+  "invoke tools only through tool calls, never by writing a JSON object " +
+  "with a tool name into your reply. " +
   "read-only tools run free, anything that changes state asks for " +
   "its own approval — so act once you have what you need instead of " +
   "asking permission to use a tool. Use the team's firm memory " +
   "(memory_search, memory_add, memory_list) to recall facts and " +
   "decisions from earlier conversations and to record ones worth " +
-  "keeping — never fabricate a recollection when a search comes back " +
-  "empty, and if memory isn't set up on this deployment, proceed " +
-  "without mentioning it. Any MCP server connected under Plugins is " +
+  "keeping — never memory_search a bare greeting, and use memory only " +
+  "when you actually need a fact from earlier; never fabricate a " +
+  "recollection when a search comes back empty, and if memory isn't " +
+  "set up on this deployment, proceed without mentioning it. Any MCP " +
+  "server connected under Plugins is " +
   "reachable with mcp_list_servers, mcp_list_tools, mcp_read, and " +
   "mcp_call — discover once with mcp_list_tools (pattern search when " +
   "unsure which server has the tool you want); use mcp_read for " +

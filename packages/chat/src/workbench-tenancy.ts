@@ -294,6 +294,14 @@ export interface WorkbenchTenancyStore {
   }): Promise<
     { readonly tenantId: string; readonly principalId: string } | undefined
   >;
+
+  /**
+   * The auth user id (`principal.refId`) of an active owner-role principal
+   * in `tenantId`, or `undefined` when none is present — used by mint-dm
+   * to seed a new agent chat's child tenant with the human bench owner as
+   * creator, without the workflow child inventing a user id.
+   */
+  getWorkbenchOwnerUserId(tenantId: string): Promise<string | undefined>;
 }
 
 export interface WorkbenchTenancyAuthzDeps {
@@ -741,6 +749,25 @@ export function createDrizzleWorkbenchTenancyStore<
         return { tenantId: link.tenantId, principalId };
       });
     },
+
+    async getWorkbenchOwnerUserId(tenantId) {
+      const [row] = await db
+        .select({ refId: principal.refId })
+        .from(principal)
+        .innerJoin(principalRole, eq(principalRole.principalId, principal.id))
+        .innerJoin(role, eq(role.id, principalRole.roleId))
+        .where(
+          and(
+            eq(principal.tenantId, tenantId),
+            eq(principal.kind, "user"),
+            eq(principal.status, "active"),
+            eq(role.tenantId, tenantId),
+            eq(role.name, "owner"),
+          ),
+        )
+        .limit(1);
+      return row?.refId;
+    },
   };
 }
 
@@ -772,6 +799,10 @@ export function createInMemoryWorkbenchTenancyStore(): WorkbenchTenancyStore & {
   const manageGrants = new Set<string>();
   const principalsByKey = new Map<string, TenantPrincipal>();
   const principalsByRefKey = new Map<string, TenantPrincipal>();
+  /** Owner `refId` per tenant — seeded by `createWorkbenchTenant`, and by
+   * `grantManageInTenant` when a test stands up a root bench owner without
+   * minting a child workbench. */
+  const ownerRefByTenant = new Map<string, string>();
   const principalKey = (tenantId: string, principalId: string) =>
     `${tenantId}::${principalId}`;
   const refKey = (tenantId: string, refId: string) => `${tenantId}::${refId}`;
@@ -849,6 +880,7 @@ export function createInMemoryWorkbenchTenancyStore(): WorkbenchTenancyStore & {
         refKey(tenantId, input.creatorUserId),
         ownerPrincipal,
       );
+      ownerRefByTenant.set(tenantId, input.creatorUserId);
       return {
         tenantId,
         parentTenantId: input.parentTenantId,
@@ -892,6 +924,12 @@ export function createInMemoryWorkbenchTenancyStore(): WorkbenchTenancyStore & {
 
     grantManageInTenant(refId, tenantId) {
       manageGrants.add(manageGrantKey(refId, tenantId));
+      // A test seeding a root bench owner (no createWorkbenchTenant) still
+      // needs getWorkbenchOwnerUserId to resolve — treat the manage grant
+      // as the owner marker when none is recorded yet.
+      if (!ownerRefByTenant.has(tenantId)) {
+        ownerRefByTenant.set(tenantId, refId);
+      }
     },
 
     registerPrincipal(tenantId, principalRow) {
@@ -911,6 +949,10 @@ export function createInMemoryWorkbenchTenancyStore(): WorkbenchTenancyStore & {
 
     async getTenantPrincipalByRefId(tenantId, refId) {
       return principalsByRefKey.get(refKey(tenantId, refId));
+    },
+
+    async getWorkbenchOwnerUserId(tenantId) {
+      return ownerRefByTenant.get(tenantId);
     },
 
     // Mirrors the drizzle store's fold of the destination check into

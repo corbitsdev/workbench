@@ -31,6 +31,7 @@ import {
 } from "./participants";
 import {
   benchContextWindowOf,
+  kindOf,
   participantsOf,
   resolveContextWindow,
 } from "./workbench-settings";
@@ -44,8 +45,9 @@ import type {
 import { postRoomMessage, type RoomMessageStore } from "./room-messages";
 import type { WorkbenchSubscriberRegistry } from "./workbench-events";
 import type { QueuedTurn, WorkbenchTurnQueue } from "./turn-queue";
+import { CHAT_TURN_TIMEOUT_MS } from "./turn-claims";
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
-import type { ChatStore } from "./store";
+import type { ChatStore, WorkbenchSettingsRow } from "./store";
 import { withTimeout } from "./with-timeout";
 
 const provisionLog = getLogger(["chat", "provision-space"]);
@@ -138,6 +140,342 @@ export async function provisionSpaceWorkbench(
     compensate: async () => {
       await deps.tenancy.compensateWorkbenchTenant(workbenchTenant.tenantId);
     },
+  };
+}
+
+const mintAgentDmLog = getLogger(["chat", "mint-agent-dm"]);
+
+export type MintAgentDmDeps = {
+  readonly tenancy: Pick<
+    WorkbenchTenancyStore,
+    | "createWorkbenchTenant"
+    | "compensateWorkbenchTenant"
+    | "getWorkbenchTenancy"
+  >;
+  readonly store: Pick<
+    ChatStore,
+    | "createWorkbenchSettings"
+    | "deleteWorkbenchSettings"
+    | "updateWorkbenchSettings"
+    | "listWorkbenchSettings"
+  >;
+  readonly platform: LaunchAndJoinAgentDeps["platform"];
+  readonly roomMessages: LaunchAndJoinAgentDeps["roomMessages"];
+  readonly publish: LaunchAndJoinAgentDeps["publish"];
+};
+
+export type MintAgentDmInput = {
+  /** Parent bench tenant id (`scope.tenantId`) — settings and launches
+   * are scoped here, matching `POST /workbenches` agent-DM mint. */
+  readonly tenantId: string;
+  /** Myra's (caller's) workbench id — receives `chat.workbenches-mutated`
+   * so the sidebar refreshes without joining the new agent into this DM. */
+  readonly callerWorkbenchId: string;
+  /** Caller's principal id — settings `updatedBy` / launch creator. */
+  readonly callerPrincipalId: string;
+  /** Human auth user `refId` — required by `createWorkbenchTenant`. */
+  readonly creatorUserId: string;
+  readonly definitionId: string;
+  /** Optional title; else invitable description / definition name. */
+  readonly name?: string;
+};
+
+export type MintAgentDmResult = {
+  readonly workbenchId: string;
+  readonly address: string;
+  readonly definitionId: string;
+  readonly handle: string;
+  readonly displayName: string;
+};
+
+export type FindExistingAgentChatDeps = {
+  readonly store: Pick<ChatStore, "listWorkbenchSettings">;
+  readonly platform: Pick<
+    WorkbenchLauncher,
+    "resolveDefinitionAssetId" | "resolveDefinitionIdByAddress"
+  >;
+  readonly tenancy: Pick<WorkbenchTenancyStore, "getWorkbenchTenancy">;
+};
+
+/**
+ * Finds an existing chat with the given agent. `POST /workbenches` with
+ * `kind: "chat"` + `definitionId` always find-or-reopens this way
+ * (CL-6981), and `mintAgentDm` does the same: a DM is the one 1:1
+ * tenant with that agent. Uniqueness is per (bench, definitionId).
+ * Product reopens; it does not clone.
+ *
+ * Matches forward, by the `chat/definitionId` every agent chat has
+ * carried in its settings since this landed, and falls back to
+ * `matchesLegacyAgentChat` for a chat minted before that key existed.
+ * The comparison is on the definition's ASSET, not the row id: a
+ * code-sourced deploy projects a new `workflow_definition` row per
+ * frozen wire projection, so the id a chat recorded at creation and the
+ * id the picker offers later are routinely different rows over the one
+ * asset that IS the agent.
+ * More than one match (duplicates this same gap already let through)
+ * resolves to the oldest by its workbench-tenancy `createdAt` — the
+ * original conversation, not whichever the caller happens to hit first —
+ * with a workbench that predates workbench tenancy entirely sorting oldest
+ * of all.
+ */
+export async function findExistingAgentChat(
+  deps: FindExistingAgentChatDeps,
+  tenantId: string,
+  definitionId: string,
+): Promise<WorkbenchSettingsRow | undefined> {
+  const chats = await deps.store.listWorkbenchSettings(tenantId, "chat");
+  const assetId = await deps.platform.resolveDefinitionAssetId(definitionId);
+  const matches: { row: WorkbenchSettingsRow; createdAt: Date }[] = [];
+  for (const row of chats) {
+    const storedDefinitionId = row.settings["chat/definitionId"];
+    const isMatch =
+      storedDefinitionId !== undefined
+        ? typeof storedDefinitionId === "string" &&
+          (await sameAgent(deps, storedDefinitionId, definitionId, assetId))
+        : await matchesLegacyAgentChat(deps, row, definitionId);
+    if (!isMatch) continue;
+    const link = await deps.tenancy.getWorkbenchTenancy(row.workbenchId);
+    matches.push({ row, createdAt: link?.createdAt ?? new Date(0) });
+  }
+  if (matches.length === 0) return undefined;
+  matches.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  return matches[0]?.row;
+}
+
+/**
+ * Whether two definition ids name the same agent: the same row, or two
+ * rows projected over the same workflow asset. An unresolvable asset (a
+ * definition row that no longer exists) never matches by asset, so a
+ * stale recorded id falls back to plain id equality alone.
+ */
+async function sameAgent(
+  deps: Pick<FindExistingAgentChatDeps, "platform">,
+  storedDefinitionId: string,
+  definitionId: string,
+  assetId: string | undefined,
+): Promise<boolean> {
+  if (storedDefinitionId === definitionId) return true;
+  if (assetId === undefined) return false;
+  const storedAssetId =
+    await deps.platform.resolveDefinitionAssetId(storedDefinitionId);
+  return storedAssetId === assetId;
+}
+
+/**
+ * A chat minted before `chat/definitionId` was recorded at creation
+ * carries no forward marker naming its agent — the only way back to its
+ * definition is the platform's reverse address lookup, run once per
+ * agent participant the chat has (ordinarily exactly one).
+ */
+async function matchesLegacyAgentChat(
+  deps: Pick<FindExistingAgentChatDeps, "platform">,
+  row: WorkbenchSettingsRow,
+  definitionId: string,
+): Promise<boolean> {
+  const agentAddresses = participantsOf(row.settings)
+    .map((participant) => participant.address)
+    .filter(isAgentAddress);
+  for (const address of agentAddresses) {
+    const resolved = await deps.platform.resolveDefinitionIdByAddress(address);
+    if (resolved === definitionId) return true;
+  }
+  return false;
+}
+
+/**
+ * Mints a `kind: "chat"` 1:1 for `definitionId` under the caller's bench,
+ * or reopens the existing one for that (bench, definition) — never clones
+ * a second DM. Launches the agent into THAT workbench (never into
+ * `callerWorkbenchId`), and on a fresh mint publishes
+ * `chat.workbenches-mutated` on the caller's workbench so the sidebar
+ * picks up the new chat. The workflow-run counterpart of `POST
+ * /workbenches` agent-DM mint — `create_agent`'s default path uses this
+ * instead of inviting into Myra's own DM (which is itself `kind: chat`
+ * and rejects additional agents via `KindIsChatError`).
+ */
+export async function mintAgentDm(
+  deps: MintAgentDmDeps,
+  input: MintAgentDmInput,
+): Promise<MintAgentDmResult> {
+  const existing = await findExistingAgentChat(
+    deps,
+    input.tenantId,
+    input.definitionId,
+  );
+  if (existing !== undefined) {
+    return reopenAgentDm(deps, input, existing);
+  }
+
+  const invitable = await deps.platform.listInvitableDefinitions(
+    input.tenantId,
+  );
+  const matched = invitable.find(
+    (definition) => definition.id === input.definitionId,
+  );
+  const chatTitle =
+    input.name ?? matched?.description ?? matched?.name ?? undefined;
+
+  const workbenchId = generateId("workflowRun");
+  const workbenchTenant = await deps.tenancy.createWorkbenchTenant({
+    parentTenantId: input.tenantId,
+    workbenchId,
+    name: chatTitle ?? workbenchId,
+    creatorUserId: input.creatorUserId,
+  });
+
+  async function compensateMint(err: unknown, phase: string): Promise<void> {
+    mintAgentDmLog.error(
+      "Agent DM {phase} failed for {workbenchId} after minting " +
+        "{tenantId}; compensating the orphaned tenant and settings: {cause}",
+      {
+        phase,
+        workbenchId,
+        tenantId: workbenchTenant.tenantId,
+        cause: err instanceof Error ? err.message : String(err),
+        err,
+      },
+    );
+    try {
+      await deps.store.deleteWorkbenchSettings(input.tenantId, workbenchId);
+      await deps.tenancy.compensateWorkbenchTenant(workbenchTenant.tenantId);
+    } catch (compensationErr) {
+      mintAgentDmLog.error(
+        "Compensation failed for orphaned tenant {tenantId} after " +
+          "workbench {workbenchId}'s {phase} failure; this tenant is now " +
+          "a privileged orphan and requires manual cleanup",
+        {
+          phase,
+          workbenchId,
+          tenantId: workbenchTenant.tenantId,
+          compensationErr,
+        },
+      );
+    }
+  }
+
+  const preset = presetForKind("chat");
+  const baseSettings: Record<string, unknown> = {
+    "chat/kind": "chat",
+    "chat/pinned": preset.pinned,
+    "chat/participants": [],
+    "chat/definitionId": input.definitionId,
+  };
+  const settings: Record<string, unknown> =
+    chatTitle !== undefined
+      ? { ...baseSettings, "chat/name": chatTitle }
+      : baseSettings;
+
+  let row;
+  try {
+    row = await deps.store.createWorkbenchSettings({
+      tenantId: input.tenantId,
+      workbenchId,
+      settings,
+      updatedBy: input.callerPrincipalId,
+    });
+  } catch (err) {
+    await compensateMint(err, "settings write");
+    throw err;
+  }
+
+  let joined: LaunchAndJoinAgentResult;
+  try {
+    joined = await launchAndJoinAgent(
+      {
+        store: deps.store,
+        platform: deps.platform,
+        roomMessages: deps.roomMessages,
+        publish: deps.publish,
+      },
+      {
+        tenantId: input.tenantId,
+        principalId: input.callerPrincipalId,
+        workbenchId,
+        definitionId: input.definitionId,
+        existingSettings: row.settings,
+        invitable,
+      },
+    );
+  } catch (err) {
+    await compensateMint(err, "agent mint");
+    throw err;
+  }
+
+  if (chatTitle === undefined) {
+    await deps.store.updateWorkbenchSettings({
+      tenantId: input.tenantId,
+      workbenchId,
+      settings: { ...joined.settings, "chat/name": joined.handle },
+      updatedBy: input.callerPrincipalId,
+    });
+  }
+
+  deps.publish(input.callerWorkbenchId, {
+    type: "chat.workbenches-mutated",
+    data: { tenantId: input.tenantId },
+  });
+
+  // Fire-and-forget pre-warm — never block mint+join+publish on deploy.
+  void deps.platform.ensureAwake(joined.address).catch((err: unknown) => {
+    mintAgentDmLog.error(
+      "Pre-warm deploy failed for minted agent DM {workbenchId}'s agent " +
+        "{address}; the next message to it retries the wake: {err}",
+      { workbenchId, address: joined.address, err },
+    );
+  });
+
+  return {
+    workbenchId,
+    address: joined.address,
+    definitionId: joined.definitionId,
+    handle: joined.handle,
+    displayName: joined.displayName,
+  };
+}
+
+async function reopenAgentDm(
+  deps: MintAgentDmDeps,
+  input: MintAgentDmInput,
+  existing: WorkbenchSettingsRow,
+): Promise<MintAgentDmResult> {
+  const agent = participantsOf(existing.settings).find((participant) =>
+    isAgentAddress(participant.address),
+  );
+  if (agent !== undefined) {
+    return {
+      workbenchId: existing.workbenchId,
+      address: agent.address,
+      definitionId: input.definitionId,
+      handle: agent.handle,
+      displayName: agent.handle,
+    };
+  }
+
+  const invitable = await deps.platform.listInvitableDefinitions(
+    input.tenantId,
+  );
+  const joined = await launchAndJoinAgent(
+    {
+      store: deps.store,
+      platform: deps.platform,
+      roomMessages: deps.roomMessages,
+      publish: deps.publish,
+    },
+    {
+      tenantId: input.tenantId,
+      principalId: input.callerPrincipalId,
+      workbenchId: existing.workbenchId,
+      definitionId: input.definitionId,
+      existingSettings: existing.settings,
+      invitable,
+    },
+  );
+  return {
+    workbenchId: existing.workbenchId,
+    address: joined.address,
+    definitionId: joined.definitionId,
+    handle: joined.handle,
+    displayName: joined.displayName,
   };
 }
 
@@ -256,6 +594,19 @@ export async function resolveInvitedDisplayName(
 }
 
 /**
+ * A `kind: chat` is 1:1. Same-definition invite reuses the resident
+ * (CL-6978) and never reaches this error; a different or additional
+ * agent belongs on a workbench, not a DM.
+ */
+export class KindIsChatError extends Error {
+  readonly code = "kind_is_chat" as const;
+  constructor() {
+    super("a chat is 1:1; adding another agent is only for workbenches");
+    this.name = "KindIsChatError";
+  }
+}
+
+/**
  * The invite core: launches the definition's own instance (or reuses
  * the tenant's standing run for that agent), derives its friendly
  * mention handle, appends the participant record, posts the join
@@ -266,10 +617,13 @@ export async function resolveInvitedDisplayName(
  *
  * Room-local first (CL-6978): if this room already holds a participant
  * launched from the definition, return that handle/address without
- * launching and without appending a second row — `addParticipant` does
- * not de-dupe addresses. Tenant-wide, `launchInvite` reuses the
+ * launching and without appending a second row — `addParticipant`
+ * de-dupes the same address by identity. Tenant-wide, `launchInvite`
+ * reuses the
  * standing `workbench_launch` so the same principal can sit in its DM
  * and many channels without a sibling instance.
+ *
+ * A `kind: chat` cannot gain a different agent after that first join.
  */
 export async function launchAndJoinAgent(
   deps: LaunchAndJoinAgentDeps,
@@ -295,6 +649,20 @@ export async function launchAndJoinAgent(
       settings: input.existingSettings,
       joinEventDelivered: Promise.resolve(),
     };
+  }
+
+  if (kindOf(input.existingSettings) === "chat") {
+    const boundDefinitionId = input.existingSettings["chat/definitionId"];
+    const alreadyHasAgent = participants.some((participant) =>
+      isAgentAddress(participant.address),
+    );
+    const isThisChatMint =
+      typeof boundDefinitionId === "string" &&
+      boundDefinitionId === input.definitionId &&
+      !alreadyHasAgent;
+    if (!isThisChatMint) {
+      throw new KindIsChatError();
+    }
   }
 
   const launched = await deps.platform.launchInvite({
@@ -910,12 +1278,64 @@ export type SendWorkbenchMessageDeps = {
    * the production default.
    */
   readonly turnDispatchTimeoutMs?: number;
+  /**
+   * CL-7129's bound on the CL-6670 wait: `dispatchTurnBatch` wraps
+   * `agentTurns.waitUntilFree` in this budget before it ever starts the
+   * `turnDispatchTimeoutMs` clock below, defaulting to
+   * `DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS`. Left unbounded, a slow prior
+   * turn for the same agent could hold `turn-queue.ts`'s claim past its
+   * TTL while this `await` was still open — the exact gap that let a
+   * second `run()` win the claim and start a second concurrent drain.
+   * Injectable so tests exercise the bound in milliseconds instead of
+   * the production default.
+   */
+  readonly waitUntilFreeTimeoutMs?: number;
 };
 
 /** CL-6644's default turn-level deadline: generous enough to cover a
  * cold wake plus a remote inference round-trip, the same reasoning
  * `DEFAULT_WAKE_TIMEOUT_MS` (30s) uses for the wake step alone. */
 export const DEFAULT_TURN_DISPATCH_TIMEOUT_MS = 120_000;
+
+/**
+ * CL-7129's default bound on `agentTurns.waitUntilFree`: must cover the
+ * longest a legitimate prior turn is allowed to run —
+ * `CHAT_TURN_TIMEOUT_MS`, the same bound the section body's own
+ * per-occurrence timeout enforces — plus a grace margin. A message
+ * queued behind a prior turn that is merely slow, not hung, has to be
+ * delivered once that turn frees up rather than time out here and land
+ * as an undelivered notice (CL-6670's exact case; a bound narrower than
+ * `CHAT_TURN_TIMEOUT_MS` reintroduces the bug CL-6670 fixed for any
+ * prior turn that runs past it).
+ */
+export const DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS = CHAT_TURN_TIMEOUT_MS + 30_000;
+
+/**
+ * CL-7129's default turn-claim TTL: the backstop for a workbench whose
+ * dispatch loop crashed or hung without ever calling `release` (see
+ * `./turn-claims.ts`'s `createInMemoryTurnClaimStore`). A well-behaved
+ * dispatch runs `DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS`'s wait and
+ * `DEFAULT_TURN_DISPATCH_TIMEOUT_MS`'s dispatch call back-to-back
+ * inside one claim's lifetime, so the TTL has to clear the sum of both
+ * with margin to spare — otherwise the TTL fires on a claim a legitimate
+ * dispatch is still using, letting a second `run()` win it and drain
+ * the same workbench's queue concurrently (the CL-7129 bug this whole
+ * store change exists to close). Kept strictly greater by a 30s margin
+ * so it is unreachable in any well-behaved case.
+ */
+export const DEFAULT_TURN_CLAIM_TTL_MS =
+  DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS +
+  DEFAULT_TURN_DISPATCH_TIMEOUT_MS +
+  30_000;
+
+/** `waitUntilFree`'s own timeout message: names the agent address the
+ * wait was blocked on and the budget it exceeded. */
+export function waitUntilFreeTimeoutMessage(
+  agentAddress: string,
+  timeoutMs: number,
+): string {
+  return `waiting for "${agentAddress}"'s prior turn to close did not settle within ${String(timeoutMs)}ms`;
+}
 
 /** The turn-level deadline's own rejection message: names the turn's
  * run address (the recipient every dispatch failure is already reported
@@ -1139,9 +1559,9 @@ async function routeToRecipients(
     if (target !== undefined) recipientSet.add(target);
   }
   // No mention and no agent reply target: the default-routing case,
-  // where the host receives every such message unconditionally — the
-  // same standing relationship a chat's one agent has always had, so
-  // it needs no re-situating context either.
+  // where the host receives every such message unconditionally. Assemble
+  // this-room turn context the same way mention fan-out does, so a host
+  // shared across rooms is not asked with another room's rows.
   const isDefaultRouting = recipientSet.size === 0;
   if (isDefaultRouting) {
     const host = participants.find((participant) =>
@@ -1171,7 +1591,7 @@ async function routeToRecipients(
   );
 
   const contextText =
-    !isDefaultRouting && recipients.length > 0
+    recipients.length > 0
       ? await assembleTurnContext({
           roomMessages: deps.roomMessages,
           tenantId: input.tenantId,
@@ -1224,6 +1644,7 @@ async function dispatchTurnBatch(
     | "roomMessages"
     | "publish"
     | "turnDispatchTimeoutMs"
+    | "waitUntilFreeTimeoutMs"
     | "agentTurns"
   >,
   tenantId: string,
@@ -1232,6 +1653,8 @@ async function dispatchTurnBatch(
 ): Promise<void> {
   const turnDispatchTimeoutMs =
     deps.turnDispatchTimeoutMs ?? DEFAULT_TURN_DISPATCH_TIMEOUT_MS;
+  const waitUntilFreeTimeoutMs =
+    deps.waitUntilFreeTimeoutMs ?? DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS;
   const recipientSet = new Set<string>();
   for (const turn of batch) {
     for (const agentAddress of turn.recipients) recipientSet.add(agentAddress);
@@ -1259,24 +1682,38 @@ async function dispatchTurnBatch(
   await Promise.all(
     recipients.map(async (agentAddress) => {
       try {
-        // CL-6670: wait OUTSIDE the per-hop deadline below. An agent
-        // that already has a turn running must never be handed a
-        // second occurrence while the first is still generating — the
-        // sidecar's `agent.event` stream carries only the agent's
-        // address, so `chat-orchestrator.ts`'s reply path cannot tell
-        // two simultaneously-`running` turns for the same agent apart
-        // (see `AgentTurnStore.findRunningTurn`'s own doc comment) and
-        // one of the two replies would land stamped onto the wrong
-        // turn, or as the wrong turn's own drop notice. Waiting here
-        // serializes the SAME agent's turns into arrival order, in
-        // this recipient's own concurrent branch only — a different
-        // agent named in the same batch (`recipients.map` above) is a
+        // CL-6670: wait under its own deadline, separate from the
+        // per-hop deadline below. An agent that already has a turn
+        // running must never be handed a second occurrence while the
+        // first is still generating — the sidecar's `agent.event`
+        // stream carries only the agent's address, so
+        // `chat-orchestrator.ts`'s reply path cannot tell two
+        // simultaneously-`running` turns for the same agent apart (see
+        // `AgentTurnStore.findRunningTurn`'s own doc comment) and one
+        // of the two replies would land stamped onto the wrong turn, or
+        // as the wrong turn's own drop notice. Waiting here serializes
+        // the SAME agent's turns into arrival order, in this
+        // recipient's own concurrent branch only — a different agent
+        // named in the same batch (`recipients.map` above) is a
         // different key and proceeds immediately, unaffected.
-        await deps.agentTurns?.waitUntilFree({
-          tenantId,
-          workbenchId,
-          agentAddress,
-        });
+        //
+        // CL-7129: this wait is bounded — `waitUntilFreeTimeoutMs`, kept
+        // below the turn-claim TTL alongside `turnDispatchTimeoutMs`
+        // below — because it runs while `turn-queue.ts` still holds
+        // this workbench's claim; left unbounded, a slow prior turn
+        // could hold that claim past its TTL and let a second `run()`
+        // start a second, concurrent drain of the same queue.
+        if (deps.agentTurns !== undefined) {
+          await withTimeout(
+            deps.agentTurns.waitUntilFree({
+              tenantId,
+              workbenchId,
+              agentAddress,
+            }),
+            waitUntilFreeTimeoutMs,
+            waitUntilFreeTimeoutMessage(agentAddress, waitUntilFreeTimeoutMs),
+          );
+        }
         // CL-6644: one deadline around the whole turn, not another
         // per-hop bound. `dispatchTurn` only ever reaches "the mail was
         // handed to the agent's mailbox" (see `./turn-queue.ts`'s own

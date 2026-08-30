@@ -203,6 +203,132 @@ describe("McpPresetCardsSection", () => {
     );
   });
 
+  test("a client_rejected OAuth return names the registration failure, not unreachable sign-in", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?mcpOauth=canva&outcome=error&code=client_rejected",
+    );
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          data: [
+            ...PRESETS,
+            {
+              slug: "canva",
+              displayName: "Canva",
+              description: "Design with Canva — via MCP.",
+              url: "https://mcp.canva.com/mcp",
+              connectionMode: "oauth",
+              docsUrl: "https://www.canva.com",
+              connected: false,
+            },
+          ],
+        }),
+      )) as unknown as typeof fetch;
+
+    const container = mountSection();
+    await settle();
+
+    const canvaCard = container.querySelector(
+      '[data-plugin-slug="canva"]',
+    ) as HTMLElement;
+    expect(canvaCard.textContent).toContain(
+      "That app didn't accept Workbench as a client (redirect URL or registration). Try connecting again.",
+    );
+    expect(canvaCard.textContent).not.toContain(
+      "Couldn't reach that app's sign-in. Try connecting again.",
+    );
+    expect(
+      canvaCard.querySelector('[aria-label="Connect Canva"]'),
+    ).not.toBeNull();
+
+    const granolaCard = container.querySelector(
+      '[data-plugin-slug="granola"]',
+    ) as HTMLElement;
+    expect(granolaCard.textContent).not.toContain(
+      "That app didn't accept Workbench as a client (redirect URL or registration). Try connecting again.",
+    );
+  });
+
+  test("an OAuth connected return shows the probe tool count on that preset row", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?mcpOauth=canva&outcome=connected&toolCount=40",
+    );
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          data: [
+            ...PRESETS,
+            {
+              slug: "canva",
+              displayName: "Canva",
+              description: "Design with Canva — via MCP.",
+              url: "https://mcp.canva.com/mcp",
+              connectionMode: "oauth",
+              docsUrl: "https://www.canva.com",
+              connected: true,
+            },
+          ],
+        }),
+      )) as unknown as typeof fetch;
+
+    const container = mountSection();
+    await settle();
+
+    const canvaCard = container.querySelector(
+      '[data-plugin-slug="canva"]',
+    ) as HTMLElement;
+    expect(canvaCard.textContent).toContain("40 tools");
+    expect(canvaCard.textContent).not.toContain("Not connected");
+    expect(
+      canvaCard.querySelector('[aria-label="Disconnect Canva"]'),
+    ).not.toBeNull();
+
+    const granolaCard = container.querySelector(
+      '[data-plugin-slug="granola"]',
+    ) as HTMLElement;
+    expect(granolaCard.textContent).not.toContain("40 tools");
+  });
+
+  test("an OAuth connected return with a non-integer toolCount stays a bare Connected", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?mcpOauth=canva&outcome=connected&toolCount=abc",
+    );
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          data: [
+            ...PRESETS,
+            {
+              slug: "canva",
+              displayName: "Canva",
+              description: "Design with Canva — via MCP.",
+              url: "https://mcp.canva.com/mcp",
+              connectionMode: "oauth",
+              docsUrl: "https://www.canva.com",
+              connected: true,
+            },
+          ],
+        }),
+      )) as unknown as typeof fetch;
+
+    const container = mountSection();
+    await settle();
+
+    const canvaCard = container.querySelector(
+      '[data-plugin-slug="canva"]',
+    ) as HTMLElement;
+    expect(canvaCard.textContent).toContain("Connected");
+    expect(canvaCard.textContent).not.toContain("abc");
+    expect(canvaCard.textContent).not.toContain("NaN");
+    expect(canvaCard.textContent).not.toContain("tools");
+  });
+
   test("Disconnect's accessible name includes the preset display name (CL-6794)", async () => {
     globalThis.fetch = (async () =>
       new Response(

@@ -43,6 +43,14 @@ same origin-pinning and `redirect: "manual"` protections; only the
 injected header name differs. A tenant's Exa or ScrapeCreators provider
 row must set `plugin: "http-x-api-key"`.
 
+## `http-x-manus-api-key`
+
+Manus authenticates via `x-manus-api-key`, not `x-api-key` and not
+`authorization` in any shape. `createHttpXManusApiKeyCredentialProvider`
+(key `http-x-manus-api-key`) mirrors the same origin-pinning and
+`redirect: "manual"` protections; only the injected header name differs.
+A tenant's Manus provider row must set `plugin: "http-x-manus-api-key"`.
+
 ## `resolved-bindings`
 
 `deriveResolvedBindings` reshapes a launch-time `CredentialDelivery`

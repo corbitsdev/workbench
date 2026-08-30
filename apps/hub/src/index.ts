@@ -67,7 +67,7 @@ import {
 
 import {
   AGENT_SECTION_MODE,
-  CHAT_TURN_TIMEOUT_MS,
+  DEFAULT_TURN_CLAIM_TTL_MS,
   createArtifactDeliveryHandler,
   createDrizzleAgentTurnStore,
   createInMemoryTurnClaimStore,
@@ -97,12 +97,14 @@ import {
   localPartOf,
   parseParticipants,
   postRoomMessage,
+  recordSourcesDigest,
   startWorkflowCommand,
   sendWorkbenchMessage,
   settleConnectedService,
   workbenchLaunchPersistExtra,
 } from "@corbits/chat";
 import type { RelaunchNoticePort } from "@corbits/chat";
+import { reportError } from "@corbits/error-sink";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
 import { decodedOrNull } from "@corbits/url-path";
 import {
@@ -174,6 +176,7 @@ import {
   isAutomatableWorkflowName,
   isConversationalWorkflowName,
   validateTriggerFieldsAtCreate,
+  webhookTriggerName,
   workflowCatalogEntry,
   workflowDisplayName,
   workbenchTemplateLibraryEntries,
@@ -285,6 +288,7 @@ import {
 } from "@workbench/onboarding";
 import {
   createConnectionRoutes,
+  isInferenceProvider,
   createMcpOAuthRoutes,
   createMcpServerRoutes,
   createOAuthConnectRoutes,
@@ -354,6 +358,9 @@ import { createBootAssetWiring, REGISTRIES } from "./asset-service-factory";
 import { createRoutineScheduler } from "./routine-scheduler";
 import { createToolGrantsForPins } from "./tool-grants";
 import { createMcpCredentialBindingsFor } from "./mcp-credential-bindings";
+import { reconcilePinnedToolPackagesAfterConnect } from "./connection-live-reconcile";
+import { createPinnedPackageCredentialBindingsFor } from "./pinned-package-credential-bindings";
+import { shutdownHub } from "./shutdown";
 
 // Host policy constants, not configuration.
 const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
@@ -368,11 +375,11 @@ const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
 // registries on a name collision — the platform-native alternative to
 // npm publishing the CL-5999 capability audit called for. Routing the
 // `@corbits` scope at this registry name means a `@corbits/*` pin
-// resolves only once an operator seeds a `package-registry` asset named
-// `CORBITS_TOOLS_REGISTRY` with the package's tarball — `workbench
-// seed`'s `seedTenant` does exactly that, via
-// `@corbits/tool-registry-publish`, ahead of deploying any workflow
-// that pins a `@corbits/*` package; until then, resolution fails loud
+// resolves only once an operator publishes a `package-registry` asset
+// named `CORBITS_TOOLS_REGISTRY` with the package's tarball —
+// `workbench setup` does exactly that onto the root tenant via
+// `@corbits/tool-registry-publish`; descendants inherit it, and
+// `seedTenant` does not pack. Until then, resolution fails loud
 // rather than silently falling through to npmjs (which could never
 // carry an unpublished scope anyway).
 const TENANT_PREFIX = "/api/tenants/:tenantId";
@@ -712,6 +719,20 @@ export async function createHub(config: HubConfig) {
   );
   // See `./mcp-credential-bindings.ts`'s own doc.
   const mcpCredentialBindingsFor = createMcpCredentialBindingsFor(db);
+  // Same owning check GET /connections uses — see
+  // `@workbench/connections`' `workflow-connection-routes.ts` and the
+  // `createWorkflowConnectionRoutes` wiring below. Not
+  // `listConnectedProviders` (catalog-only).
+  const isConnectorConnected = async (tenantId: string, connectorId: string) =>
+    (await resolveCredentialRequirement(
+      db,
+      tenantId,
+      { providerName: connectorId, source: "tenant" },
+      null,
+      null,
+    )) !== null;
+  const pinnedPackageCredentialBindingsFor =
+    createPinnedPackageCredentialBindingsFor(isConnectorConnected);
   const sidecarRouter = createSidecarRouter({
     hubPublicKey,
     authenticateSidecar: createSidecarTokenAuthenticator({ db }),
@@ -1099,8 +1120,8 @@ export async function createHub(config: HubConfig) {
 
   // Without this, any exception escaping a route (extension or platform
   // alike) falls through to Hono's built-in handler: a bare 500 with
-  // nothing logged. See `hubErrorHandler`'s own doc comment.
-  app.onError(hubErrorHandler(getLogger(["hub", "error"])));
+  // nothing reported. See `hubErrorHandler`'s own doc comment.
+  app.onError(hubErrorHandler());
 
   // Extension routes mount under the tenant prefix, inside the
   // platform's native tenant middleware, so every extension handler
@@ -1276,6 +1297,7 @@ export async function createHub(config: HubConfig) {
     credentialCipher,
     toolGrantsForPins,
     mcpCredentialBindingsFor,
+    pinnedPackageCredentialBindingsFor,
     // Chat residents are undeployed on idle again (see the comment above
     // this function): `chatIdleReapMs` (env-overridable via
     // `WORKBENCH_CHAT_IDLE_REAP_MS`, default 30 minutes) is
@@ -1310,7 +1332,7 @@ export async function createHub(config: HubConfig) {
   // still serializes against the others rather than each queue only
   // seeing its own slice of the traffic.
   const turnQueue = createWorkbenchTurnQueue({
-    claims: createInMemoryTurnClaimStore({ ttlMs: CHAT_TURN_TIMEOUT_MS }),
+    claims: createInMemoryTurnClaimStore({ ttlMs: DEFAULT_TURN_CLAIM_TTL_MS }),
     publish: workbenchSubscribers.publish,
   });
   // The room timeline store (CL-6327): a workbench's own messages, held
@@ -1532,7 +1554,7 @@ export async function createHub(config: HubConfig) {
       conditionRegistry: chatConditionRegistry,
     }),
     isInvitableDefinition: isPickerListableDefinition,
-    turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
+    turnTimeoutMs: DEFAULT_TURN_CLAIM_TTL_MS,
     resolvePrincipalName: async (_tenantId, principalId) => {
       const principalRow = await db.query.principal.findFirst({
         where: (p, { eq: equals }) => equals(p.id, principalId),
@@ -1558,13 +1580,13 @@ export async function createHub(config: HubConfig) {
       sidecarRouter.sendAgentUndeploy(address, reason),
   };
   app.route(`${TENANT_PREFIX}/chat`, createChatRoutes(chatDeps));
-  // Myra's own workbench-invite surface (`@corbits/agent-directory-tools`'
-  // `create_agent`'s `invite: true` default): the workflow-run-
-  // authenticated counterpart to `POST .../invite` above, self-WORKBENCH
-  // scoped — see `@corbits/chat`'s `workflow-participant-routes.ts` for
-  // the [Intx/repo gap] this resolves around (no direct run-address ->
-  // workbench index; resolved by scanning the tenant's workbench
-  // participant lists).
+  // Myra's workflow-run chat surfaces (`@corbits/agent-directory-tools`'
+  // `create_agent` default mint-dm + invite for non-chat kinds): the
+  // workflow-run-authenticated counterpart to browser chat routes,
+  // self-WORKBENCH scoped — see `@corbits/chat`'s
+  // `workflow-participant-routes.ts` for the [Intx/repo gap] this resolves
+  // around (no direct run-address -> workbench index; resolved by scanning
+  // the tenant's workbench participant lists).
   app.route(
     "/api/workflow-chat",
     createWorkflowParticipantRoutes({
@@ -1574,6 +1596,7 @@ export async function createHub(config: HubConfig) {
       publish: workbenchSubscribers.publish,
       turnQueue,
       authenticator: createWorkflowRunAuthenticator({ db }),
+      tenancy: chatTenancy,
     }),
   );
   // Slack tag ingress (CL-5288 Phase 1): mounted OUTSIDE the tenant
@@ -1981,9 +2004,12 @@ export async function createHub(config: HubConfig) {
             eventCollectors,
             toolGrantsForPins,
             mcpCredentialBindingsFor,
+            pinnedPackageCredentialBindingsFor,
             cryptoProviderCache: foldedRunCryptoProviders,
             launchMode: AGENT_SECTION_MODE,
             persistLaunch: workbenchLaunchPersistExtra,
+            recordLaunchSources: ({ instanceId, sourcesDigest }) =>
+              recordSourcesDigest(db, instanceId, sourcesDigest),
           },
           trigger,
           payload,
@@ -1996,8 +2022,19 @@ export async function createHub(config: HubConfig) {
   // clears (flipping the in-room connect card via `chat.settings`), and
   // the host agent is woken via `dispatchTurn` without a forged
   // signed-in-user timeline row.
-  const settleServiceConnection: ServiceConnectedHook = (info) =>
-    settleConnectedService(
+  //
+  // An inference provider's credential landing also re-checks every
+  // live participant's deployed inference chain (CL-6687): a rotated
+  // key only ever reaches an agent at deploy time, so the relaunch has
+  // to be kicked here, not left for the next message. A tool-package
+  // connector (`feedsTools`, e.g. Manus) is the same shape for a
+  // different payload: `pinnedPackageCredentialBindingsFor` only folds
+  // at deploy, so a live Myra launched at signup before the key was
+  // pasted stays on a snapshot that cannot `resolve("manus")` until
+  // this pass relaunches it. Not awaited — a relaunch is a sidecar
+  // deploy round-trip, and the connect response must not wait on it.
+  const settleServiceConnection: ServiceConnectedHook = async (info) => {
+    await settleConnectedService(
       {
         store: chatStore,
         platform: chatPlatform,
@@ -2012,6 +2049,31 @@ export async function createHub(config: HubConfig) {
         displayName: info.displayName,
       },
     );
+    if (isInferenceProvider(info.connectorId)) {
+      void chatPlatform
+        .reconcileInferenceSources(info.tenantId)
+        .then(({ scanned, relaunched }) => {
+          log.info`inference credential ${info.connectorId} changed on tenant ${info.tenantId}: re-checked ${String(scanned)} live agents, relaunched ${String(relaunched)}`;
+        })
+        .catch((cause: unknown) => {
+          reportError(cause, {
+            operation: "connections.reconcile-inference-sources",
+            tenantId: info.tenantId,
+          });
+        });
+    }
+    void reconcilePinnedToolPackagesAfterConnect(chatPlatform, info)
+      .then((result) => {
+        if (result === undefined) return;
+        log.info`tool-package connector ${info.connectorId} changed on tenant ${info.tenantId}: re-checked ${String(result.scanned)} live agents, relaunched ${String(result.relaunched)}`;
+      })
+      .catch((cause: unknown) => {
+        reportError(cause, {
+          operation: "connections.reconcile-pinned-tool-packages",
+          tenantId: info.tenantId,
+        });
+      });
+  };
   // Connections: the settings surface's tenant-scoped credential
   // test-and-store, mounted under the same tenant prefix and reusing
   // the same grant store/condition registry every other credential-
@@ -2172,6 +2234,17 @@ export async function createHub(config: HubConfig) {
         });
         return row?.id;
       },
+      hasRepoGrant: async (tenantId, repo) => {
+        const existing = await db.query.grant.findFirst({
+          where: and(
+            eq(grantTable.tenantId, tenantId),
+            eq(grantTable.resource, `repo:${repo.name}`),
+            eq(grantTable.action, "read"),
+          ),
+          columns: { id: true },
+        });
+        return existing !== undefined;
+      },
       mintRepoGrant: async (tenantId, repo) => {
         const memberRole = await db.query.role.findFirst({
           where: and(
@@ -2207,13 +2280,22 @@ export async function createHub(config: HubConfig) {
         const row = await webhookTriggerStore.create({
           id: generateId("workflowRun"),
           tenantId,
-          name: `${repo.name} pull-request-opened`,
+          name: webhookTriggerName(repo),
           workflowDefinitionId: codeReviewDefinitionId,
           inputTemplate: `Review the pull request at {{pull_request.html_url}}`,
           secret: generateWebhookSecret(),
           createdBy: principalId,
         });
         return { id: row.id };
+      },
+      hasWebhookTrigger: async (tenantId, codeReviewDefinitionId, repo) => {
+        const triggers = await webhookTriggerStore.list(tenantId);
+        const triggerName = webhookTriggerName(repo);
+        return triggers.some(
+          (trigger) =>
+            trigger.workflowDefinitionId === codeReviewDefinitionId &&
+            trigger.name === triggerName,
+        );
       },
       getTemplateSettings: async (tenantId, workbenchId) => {
         const row = await chatStore.getWorkbenchSettings(tenantId, workbenchId);
@@ -2410,18 +2492,9 @@ export async function createHub(config: HubConfig) {
     "/api/workflow-connections",
     createWorkflowConnectionRoutes({
       authenticator: createWorkflowRunAuthenticator({ db }),
-      // The same resolution `buildCredentialDelivery` uses at agent-launch
-      // time to decide whether a tool actually gets a credential — so
-      // `list_connections` reports exactly what an agent could really use,
-      // for an inference provider and a tool connector alike (CL-6492).
-      isConnectorConnected: async (tenantId, connectorId) =>
-        (await resolveCredentialRequirement(
-          db,
-          tenantId,
-          { providerName: connectorId, source: "tenant" },
-          null,
-          null,
-        )) !== null,
+      // Same `isConnectorConnected` the pinned-package factory is wired
+      // with above (CL-6492).
+      isConnectorConnected,
       listMcpServers: (tenantId) => listMcpServerConnections(db, tenantId),
     }),
   );
@@ -2489,6 +2562,7 @@ export async function createHub(config: HubConfig) {
     hubPublicKey,
     toolGrantsForPins,
     mcpCredentialBindingsFor,
+    pinnedPackageCredentialBindingsFor,
   };
 
   // Every genuine top-level deployment run, folded runs (workbench hosts,
@@ -2679,6 +2753,7 @@ export async function createHub(config: HubConfig) {
     credentialCipher,
     toolGrantsForPins,
     mcpCredentialBindingsFor,
+    pinnedPackageCredentialBindingsFor,
     cryptoProviderCache: foldedRunCryptoProviders,
     joinDeliveryWorkbench: (input) =>
       joinRunParticipant({ store: chatStore }, input),
@@ -3454,11 +3529,18 @@ if (import.meta.main) {
   });
   const log = getLogger(["hub"]);
   log.info`Hub serving on port ${port}`;
-  const shutdown = async () => {
-    await server.stop();
-    await hub.close();
-    process.exit(0);
-  };
+  const SHUTDOWN_DRAIN_MS = 10_000;
+  // `server.stop()` waits for open connections and websockets by default,
+  // so it sits inside the same bound as the hub's own closes.
+  const shutdown = () =>
+    shutdownHub({
+      drain: async () => {
+        await server.stop();
+        await hub.close();
+      },
+      timeoutMs: SHUTDOWN_DRAIN_MS,
+      exit: (code) => process.exit(code),
+    });
   process.on("SIGINT", () => void shutdown());
   process.on("SIGTERM", () => void shutdown());
 }

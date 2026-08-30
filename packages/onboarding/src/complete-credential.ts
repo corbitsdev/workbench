@@ -55,6 +55,7 @@
 
 import {
   ModelInfo,
+  ModelResponse,
   PrincipalSummary,
   TenantResponse,
   paginatedSchema,
@@ -70,7 +71,6 @@ import {
   type ModelSource,
   type SeedTenantArgs,
   type SupportedCredentialProvider,
-  type ToolRegistryPublisher,
   type WorkflowPusher,
 } from "@workbench/hub-client";
 import { preferCompletionCapable } from "@workbench/hub-client/model-capability";
@@ -157,8 +157,6 @@ type CommonArgs = {
   cookies: string[];
   hubUrl: string;
   pushWorkflow: WorkflowPusher;
-  /** Passed through to `seedTenant`; a test double replaces the real corbits-tools publish the same way `pushWorkflow` replaces the real git push. */
-  publishToolRegistry?: ToolRegistryPublisher;
   log: (line: string) => void;
 };
 
@@ -265,6 +263,14 @@ type CatalogOfferingCandidate = {
  * broken toward the name this repo already knows serves tool calls and
  * thinking — never as a value this can return when the instance doesn't
  * actually offer it.
+ *
+ * Discovery (`GET /models`) includes inherited operator catalog seeds, so
+ * the curated name can "resolve" without living on this tenant's instance
+ * (CL-7185). When that name appears in discovery, this also reads
+ * tenant-owned `/catalog/models`. A non-empty owned list restricts
+ * candidates to those names before the curated preference / priority sort;
+ * an empty owned list keeps discovery (inherit-only). The extra fetch is
+ * skipped when discovery does not contain the curated name.
  */
 async function resolveOllamaModelSource(
   api: ApiCall,
@@ -313,15 +319,38 @@ async function resolveOllamaModelSource(
     (candidate) => candidate.canonicalName,
   );
   const curatedName = catalogSeed.models[0]?.canonicalName;
+  let pool = completionCapable;
+  if (
+    curatedName !== undefined &&
+    completionCapable.some(
+      (candidate) => candidate.canonicalName === curatedName,
+    )
+  ) {
+    const ownedResponse = await api(
+      "GET",
+      `/api/tenants/${tenantId}/catalog/models`,
+      undefined,
+      cookies,
+    );
+    const owned = parseAs(
+      paginatedSchema(ModelResponse),
+      ownedResponse.data,
+      "tenant-owned catalog models response",
+    ).data;
+    if (owned.length > 0) {
+      const ownedNames = new Set(owned.map((model) => model.canonicalName));
+      pool = completionCapable.filter((candidate) =>
+        ownedNames.has(candidate.canonicalName),
+      );
+    }
+  }
   const preferred =
     curatedName !== undefined
-      ? completionCapable.find(
-          (candidate) => candidate.canonicalName === curatedName,
-        )
+      ? pool.find((candidate) => candidate.canonicalName === curatedName)
       : undefined;
   const winner =
     preferred ??
-    [...completionCapable].sort(
+    [...pool].sort(
       (left, right) =>
         left.priority - right.priority ||
         left.canonicalName.localeCompare(right.canonicalName),
@@ -489,11 +518,7 @@ export async function ensureSeeded(
     confirmDeployments: false,
   };
   try {
-    await runSeedTenant(
-      args.publishToolRegistry !== undefined
-        ? { ...seedTenantArgs, publishToolRegistry: args.publishToolRegistry }
-        : seedTenantArgs,
-    );
+    await runSeedTenant(seedTenantArgs);
   } catch (cause) {
     if (!isSidecarUnavailableError(cause)) throw cause;
     args.log(
@@ -546,14 +571,10 @@ export async function completeCredentialSetup(
     args.baseURLOverride !== undefined
       ? { ...baseEnsureSeededArgs, baseURLOverride: args.baseURLOverride }
       : baseEnsureSeededArgs;
-  const withPublishToolRegistry =
-    args.publishToolRegistry !== undefined
-      ? { ...ensureSeededArgs, publishToolRegistry: args.publishToolRegistry }
-      : ensureSeededArgs;
   const seeded = await ensureSeeded(
     args.seedTenantFn !== undefined
-      ? { ...withPublishToolRegistry, seedTenantFn: args.seedTenantFn }
-      : withPublishToolRegistry,
+      ? { ...ensureSeededArgs, seedTenantFn: args.seedTenantFn }
+      : ensureSeededArgs,
   );
 
   if (seeded.kind === "seeded-pending-agents") {

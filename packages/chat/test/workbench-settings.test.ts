@@ -12,13 +12,13 @@ import {
 import {
   buildDeps,
   createWorkbench,
+  fakePlatform,
   mountAs,
   sendText,
   TENANT,
   timelineEvents,
   timelineOf,
 } from "./test-support";
-import type { fakePlatform } from "./test-support";
 
 describe("chat/contextWindow", () => {
   test("a window of 2 keeps only the last 2 prior messages in the block", async () => {
@@ -335,6 +335,34 @@ describe("PATCH /workbenches/:id/settings", () => {
     );
 
     expect(response.status).toBe(400);
+  });
+
+  test("refuses to PATCH chat/participants on a kind: chat", async () => {
+    const deps = buildDeps({
+      platform: fakePlatform({ invitable: [{ id: "wfd_echo", name: "Echo" }] }),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+
+    const response = await app.request(
+      `/workbenches/${workbench.id}/settings`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          "chat/participants": [
+            { address: "ins_extra@acme.example", handle: "extra" },
+          ],
+        }),
+      },
+    );
+
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("kind_is_chat");
   });
 
   test("chat/purpose round-trips through PATCH /workbenches/:id/settings", async () => {

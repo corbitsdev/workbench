@@ -128,11 +128,12 @@ export {
   CHAT_TURN_TIMEOUT_MS,
   createInMemoryTurnClaimStore,
 } from "./turn-claims";
-export type { TurnClaim, TurnClaimStore } from "./turn-claims";
+export type { TurnClaim, TurnClaimStore, TurnClaimToken } from "./turn-claims";
 export {
   AGENT_SECTION_MODE,
   workbenchLaunchPersistExtra,
 } from "./standalone-launch";
+export { recordSourcesDigest } from "./agent-binding";
 export { createWorkbenchTurnQueue, TurnQueuedEvent } from "./turn-queue";
 export type {
   DispatchTurnBatch,
@@ -227,7 +228,12 @@ export {
   dispatchTurn,
   DEFAULT_TURN_DISPATCH_TIMEOUT_MS,
   turnDispatchTimeoutMessage,
+  DEFAULT_WAIT_UNTIL_FREE_TIMEOUT_MS,
+  DEFAULT_TURN_CLAIM_TTL_MS,
+  waitUntilFreeTimeoutMessage,
   launchAndJoinAgent,
+  KindIsChatError,
+  mintAgentDm,
   postCannedGreeting,
   cannedGreeting,
   sendWorkbenchMessage,
@@ -238,6 +244,9 @@ export type {
   LaunchAndJoinAgentDeps,
   LaunchAndJoinAgentInput,
   LaunchAndJoinAgentResult,
+  MintAgentDmDeps,
+  MintAgentDmInput,
+  MintAgentDmResult,
   PostCannedGreetingDeps,
   PostCannedGreetingInput,
   CannedGreetingInput,

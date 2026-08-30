@@ -80,6 +80,90 @@ function cookieName(slug: string): string {
   return `workbench_mcp_oauth_${slug}`;
 }
 
+const CLIENT_REJECTED_OAUTH_CODES = new Set([
+  "invalid_client_metadata",
+  "invalid_redirect_uri",
+  "invalid_client",
+  "unauthorized_client",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
+
+function readString(value: unknown, key: string): string | undefined {
+  if (!isRecord(value)) return undefined;
+  const candidate = value[key];
+  return typeof candidate === "string" && candidate.length > 0
+    ? candidate
+    : undefined;
+}
+
+/** Classify `/start` `auth()` throws: DCR/client rejection vs unreachable
+ * discovery. Prefer the RFC 7591 `error` captured from the HTTP body —
+ * SDK 1.30.0 maps unknown codes such as `invalid_redirect_uri` to
+ * `ServerError` (`errorCode` `server_error`) and drops the original.
+ * Then `errorCode`/`error` on the thrown object. Fall back to
+ * registration wording in the message so "redirect URI is not
+ * allowlisted" still counts when the body was not JSON. */
+function mcpOAuthStartErrorCode(
+  cause: unknown,
+  capturedCode: string | undefined,
+): "discovery_failed" | "client_rejected" {
+  for (const code of [
+    capturedCode,
+    readString(cause, "errorCode"),
+    readString(cause, "error"),
+  ]) {
+    if (code !== undefined && CLIENT_REJECTED_OAUTH_CODES.has(code)) {
+      return "client_rejected";
+    }
+  }
+
+  const message = cause instanceof Error ? cause.message : String(cause);
+  const lower = message.toLowerCase();
+  for (const code of CLIENT_REJECTED_OAUTH_CODES) {
+    if (lower.includes(code)) {
+      return "client_rejected";
+    }
+  }
+
+  if (
+    lower.includes("client metadata") ||
+    lower.includes("redirect uri") ||
+    lower.includes("redirect_uri") ||
+    lower.includes("redirection uri") ||
+    lower.includes("redirection_uri") ||
+    lower.includes("client registration")
+  ) {
+    return "client_rejected";
+  }
+  return "discovery_failed";
+}
+
+/** Clone 4xx/5xx JSON before the SDK's `parseErrorResponse` consumes the
+ * body and maps unknown RFC 7591 codes onto `ServerError`. */
+async function fetchCapturingOAuthError(
+  captured: { code: string | undefined },
+  url: string | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  const response = await fetch(url, init);
+  if (response.status < 400) return response;
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("json")) return response;
+  try {
+    const body: unknown = await response.clone().json();
+    const code = readString(body, "error");
+    if (code !== undefined) {
+      captured.code = code;
+    }
+  } catch {
+    // malformed JSON on an error response; classifier uses the thrown error
+  }
+  return response;
+}
+
 export type CreateMcpOAuthRoutesDeps = {
   hubUrl: string;
   requireGrant: RequireGrant;
@@ -196,11 +280,21 @@ export function createMcpOAuthRoutes(
         callbackUrl,
         clientName: "Corbits Workbench",
         session,
+        ...(preset?.oauthScopes === undefined
+          ? {}
+          : { scope: preset.oauthScopes.join(" ") }),
       });
 
       let result: Awaited<ReturnType<typeof auth>>;
+      const capturedOAuthError: { code: string | undefined } = {
+        code: undefined,
+      };
       try {
-        result = await auth(provider, { serverUrl: target.url });
+        result = await auth(provider, {
+          serverUrl: target.url,
+          fetchFn: (url, init) =>
+            fetchCapturingOAuthError(capturedOAuthError, url, init),
+        });
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause);
         deps.log(`mcp oauth start failed for "${target.slug}": ${message}`);
@@ -208,7 +302,7 @@ export function createMcpOAuthRoutes(
           redirectPath(returnPath, {
             mcpOauth: target.slug,
             outcome: "error",
-            code: "discovery_failed",
+            code: mcpOAuthStartErrorCode(cause, capturedOAuthError.code),
           }),
           302,
         );
@@ -344,10 +438,14 @@ export function createMcpOAuthRoutes(
             }
           : {}),
       };
+      const callbackPreset = mcpPresetBySlug(payload.slug);
       const provider = createMcpOAuthProvider({
         callbackUrl,
         clientName: "Corbits Workbench",
         session,
+        ...(callbackPreset?.oauthScopes === undefined
+          ? {}
+          : { scope: callbackPreset.oauthScopes.join(" ") }),
       });
 
       let result: Awaited<ReturnType<typeof auth>>;

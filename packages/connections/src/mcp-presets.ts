@@ -21,6 +21,10 @@ export type McpPreset = {
    * renders above the paste field — each step one action a person can
    * take, ending with what happens to the token. */
   readonly tokenSteps?: readonly string[];
+  /** Space-joined into RFC 7591 DCR `clientMetadata.scope` when this
+   * preset's OAuth connect runs. Omit the key — other presets stay on
+   * the SDK's SEP-835 PRM fallback. */
+  readonly oauthScopes?: readonly string[];
 };
 
 /**
@@ -140,6 +144,24 @@ export const MCP_PRESETS: readonly McpPreset[] = [
     url: "https://mcp.canva.com/mcp",
     connectionMode: "oauth",
     docsUrl: "https://www.canva.dev/docs/mcp/",
+    oauthScopes: [
+      "profile:read",
+      "design:meta:read",
+      "design:content:write",
+      "design:content:read",
+      "folder:read",
+      "folder:write",
+      "brandtemplate:content:read",
+      "brandtemplate:meta:read",
+      "brandtemplate:content:write",
+      "comment:write",
+      "comment:read",
+      "asset:read",
+      "asset:write",
+      "brandkit:read",
+      "help:answers:read",
+      "help:answers:write",
+    ],
   },
 ];
 

@@ -132,13 +132,33 @@ export function memoryWritten(keys: readonly string[]) {
 }
 
 /**
- * Passes if create_agent succeeded and the created agent was invited
- * into the same workbench the conversation is running in — the tool's
- * own contract is "invite into the caller's channel by default" (see
- * `packages/agent-directory-tools/src/tool.ts`), so this checks the
- * call succeeded and its result mentions an invite/participant rather
- * than re-deriving invite plumbing here.
+ * Passes if create_agent succeeded and the result shows the specialist's
+ * own chat was minted or reopened. Creating an agent now opens that
+ * agent's 1:1 — invite-into-the-current-workbench wording is ignored,
+ * not required. A definition-created signal plus either an own-chat id
+ * (`workbenchId` / `chatId` / a `created` field) or explicit minted-chat
+ * wording is enough, so this still scores after invite-into-current
+ * fields disappear from the tool result. Copy that says the definition
+ * was created but its own chat could not be opened is a fail — the
+ * minted-chat wording would otherwise match `/own chats?/`.
  */
+const DEFINITION_CREATED_SIGNAL =
+  /Created\s+"|use this id for routines\/dispatch:|"id"\s*:/i;
+
+const MINTED_OWN_CHAT_SIGNAL =
+  /workbenchId|chatId|chat_id|"created"\s*:|own chats?|minted|reopened/i;
+
+const COULD_NOT_OPEN_OWN_CHAT_SIGNAL = /could not open its own chats?/i;
+
+function createAgentMintedOwnChat(call: ToolCall): boolean {
+  return (
+    !call.isError &&
+    !COULD_NOT_OPEN_OWN_CHAT_SIGNAL.test(call.result) &&
+    DEFINITION_CREATED_SIGNAL.test(call.result) &&
+    MINTED_OWN_CHAT_SIGNAL.test(call.result)
+  );
+}
+
 export function agentCreatedInWorkbench() {
   return function agentCreatedInWorkbenchScorer(
     ctx: ScorerContext,
@@ -146,18 +166,15 @@ export function agentCreatedInWorkbench() {
     const creates = allToolCalls(
       ctx.transcript.slice(0, ctx.turnIndex + 1),
     ).filter((call) => call.name === "create_agent");
-    const succeeded = creates.filter((call) => !call.isError);
-    const invited = succeeded.filter((call) =>
-      /invit|particip|address/i.test(call.result),
-    );
+    const minted = creates.filter(createAgentMintedOwnChat);
     return result(
       "agentCreatedInWorkbench",
-      creates.length > 0 && invited.length === creates.length,
+      creates.length > 0 && minted.length === creates.length,
       creates.length === 0
         ? "no create_agent call yet"
-        : invited.length === creates.length
-          ? `${String(creates.length)} agent(s) created, all invited`
-          : `${String(creates.length - invited.length)} of ${String(creates.length)} created agent(s) show no invite in their result`,
+        : minted.length === creates.length
+          ? `${String(creates.length)} agent(s) created, all with their own chat`
+          : `${String(creates.length - minted.length)} of ${String(creates.length)} created agent(s) show no minted own chat in their result`,
     );
   };
 }

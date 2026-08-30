@@ -403,6 +403,19 @@ describe("GET /presets", () => {
     expect(bySlug.get("exa")?.connected).toBe(true);
     expect(bySlug.get("granola")?.connected).toBe(false);
   });
+
+  test("does not expose oauthScopes on the public presets JSON", async () => {
+    const hub = fakeHub({});
+    const app = buildApp({ apiCall: hub.apiCall });
+
+    const response = await app.request("/presets");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { data: Record<string, unknown>[] };
+    expect(body.data.length).toBeGreaterThan(0);
+    for (const preset of body.data) {
+      expect("oauthScopes" in preset).toBe(false);
+    }
+  });
 });
 
 describe("POST / with presetSlug", () => {

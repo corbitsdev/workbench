@@ -407,6 +407,67 @@ export const chatMigrations: readonly ChatMigration[] = [
         DROP COLUMN IF EXISTS "noop_inference";
     `,
   },
+  {
+    name: "0024_workbench_launch_sources_digest",
+    sql: `
+      ALTER TABLE "chat"."workbench_launch"
+        ADD COLUMN IF NOT EXISTS "sources_digest" text;
+    `,
+  },
+  {
+    // CL-7130: `ensureRootThread`/`anchoredReplyThread` used to
+    // select-then-insert with no unique constraint backing the read,
+    // so concurrent first writers could each insert a thread for the
+    // same (workbench, kind='root') or (workbench, parent_message_id,
+    // kind='reply') key. Dedupe existing duplicates — keeping the
+    // oldest row per key — before the partial unique indexes below
+    // make a repeat impossible: every reference to a dropped
+    // duplicate's id (thread membership, message thread pointers, and
+    // any reply thread anchored under a dropped duplicate root) is
+    // repointed at the kept row first, so nothing is left dangling.
+    name: "0025_workbench_threads_unique_key",
+    sql: `
+      CREATE TEMP TABLE "thread_dedupe_map" ON COMMIT DROP AS
+      SELECT "id" AS "drop_id", "keep_id" FROM (
+        SELECT
+          "id",
+          first_value("id") OVER (
+            PARTITION BY "tenant_id", "workbench_id", "kind", "parent_message_id"
+            ORDER BY "created_at", "id"
+          ) AS "keep_id"
+        FROM "chat"."workbench_threads"
+        WHERE "kind" IN ('root', 'reply')
+      ) "ranked"
+      WHERE "id" <> "keep_id";
+
+      UPDATE "chat"."workbench_thread_messages" "wtm"
+        SET "thread_id" = "m"."keep_id"
+        FROM "thread_dedupe_map" "m"
+        WHERE "wtm"."thread_id" = "m"."drop_id";
+
+      UPDATE "chat"."workbench_messages" "wm"
+        SET "thread_id" = "m"."keep_id"
+        FROM "thread_dedupe_map" "m"
+        WHERE "wm"."thread_id" = "m"."drop_id";
+
+      UPDATE "chat"."workbench_threads" "wt"
+        SET "parent_thread_id" = "m"."keep_id"
+        FROM "thread_dedupe_map" "m"
+        WHERE "wt"."parent_thread_id" = "m"."drop_id";
+
+      DELETE FROM "chat"."workbench_threads" "wt"
+        USING "thread_dedupe_map" "m"
+        WHERE "wt"."id" = "m"."drop_id";
+
+      CREATE UNIQUE INDEX IF NOT EXISTS "workbench_threads_root_key"
+        ON "chat"."workbench_threads" ("tenant_id", "workbench_id")
+        WHERE "kind" = 'root';
+
+      CREATE UNIQUE INDEX IF NOT EXISTS "workbench_threads_reply_key"
+        ON "chat"."workbench_threads" ("tenant_id", "workbench_id", "parent_message_id")
+        WHERE "kind" = 'reply';
+    `,
+  },
 ];
 
 /**

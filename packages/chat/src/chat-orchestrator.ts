@@ -29,6 +29,7 @@ import {
   toolDoneResult,
   type ReplyContentBlock,
 } from "@corbits/agent-events";
+import { reportError } from "@corbits/error-sink";
 import type { Memory } from "@corbits/memory";
 import {
   persistedArtifactsForFinalizedTurn,
@@ -313,11 +314,9 @@ function flattenReplyText(parts: readonly Part[]): string {
 
 /**
  * Resolves an agent address on the event stream to every chat workbench it is
- * a member of, per the durable `workbench_settings` store. Shared by every
- * poster below rather than assuming "exactly one workbench": an agent is
- * invited to exactly one workbench today by construction, but this resolves
- * defensively so a store that ever showed more than one still gets every
- * member workbench, not a guess at "the" one.
+ * a member of, per the durable `workbench_settings` store. An agent can be
+ * invited to more than one workbench; callers that post a turn's reply must
+ * still pick the originating room rather than spraying every membership.
  */
 async function resolveMemberWorkbenches(
   deps: ChatOrchestratorDeps,
@@ -451,17 +450,126 @@ type TurnOutcome =
   | { readonly status: "completed" }
   | { readonly status: "failed"; readonly error: string };
 
+type ReplyMember = {
+  readonly workbenchId: string;
+  readonly turnId: string | undefined;
+  readonly childRunId: string | undefined;
+};
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === "string" && value !== "" ? value : undefined;
+}
+
+/**
+ * Hints already on the inbound event for the originating room: the
+ * dispatch mail's `fromWorkbenchId` / From local-part / `replyTo`, or a
+ * turn id. The sidecar `agent.event` stream often carries none of these
+ * (address + payload only); callers must still refuse to spray when
+ * correlation is missing and more than one running turn exists.
+ */
+function originatingHintsFromEvent(event: unknown): readonly string[] {
+  if (typeof event !== "object" || event === null) return [];
+  const record = event as Record<string, unknown>;
+  const data =
+    typeof record["data"] === "object" && record["data"] !== null
+      ? (record["data"] as Record<string, unknown>)
+      : undefined;
+  const hints: string[] = [];
+  const take = (value: unknown) => {
+    const field = stringField(value);
+    if (field !== undefined) hints.push(field);
+  };
+  take(data?.["workbenchId"]);
+  take(data?.["fromWorkbenchId"]);
+  take(data?.["replyTo"]);
+  take(data?.["from"]);
+  take(data?.["turnId"]);
+  take(record["workbenchId"]);
+  take(record["fromWorkbenchId"]);
+  take(record["replyTo"]);
+  take(record["from"]);
+  take(record["turnId"]);
+  return hints;
+}
+
+function correlateOriginatingWorkbench(
+  event: unknown,
+  members: readonly ReplyMember[],
+): string | undefined {
+  const memberIds = new Set(members.map((member) => member.workbenchId));
+  for (const hint of originatingHintsFromEvent(event)) {
+    if (memberIds.has(hint)) return hint;
+    const local = localPartOf(hint);
+    if (memberIds.has(local)) return local;
+    const byTurnId = members.filter((member) => member.turnId === hint);
+    if (byTurnId.length === 1) {
+      const match = byTurnId[0];
+      if (match !== undefined) return match.workbenchId;
+    }
+    const byChildRunId = members.filter((member) => member.childRunId === hint);
+    if (byChildRunId.length === 1) {
+      const match = byChildRunId[0];
+      if (match !== undefined) return match.workbenchId;
+    }
+  }
+  return undefined;
+}
+
 async function postReply(
   deps: ChatOrchestratorDeps,
   pendingDelegationThreads: Map<string, PendingDelegationThread>,
   agentAddress: string,
   parts: readonly Part[],
   outcome: TurnOutcome,
+  event?: unknown,
 ): Promise<void> {
   const resolved = await resolveMemberWorkbenches(deps, agentAddress);
   if (resolved === undefined) return;
 
+  const members: ReplyMember[] = [];
   for (const workbenchId of resolved.workbenchIds) {
+    const turn = await deps.agentTurns?.findRunningTurn({
+      tenantId: resolved.tenantId,
+      workbenchId,
+      agentAddress: resolved.roomAddress,
+    });
+    members.push({
+      workbenchId,
+      turnId: turn?.id,
+      childRunId: turn?.childRunId,
+    });
+  }
+  const runningIds = members
+    .filter((member) => member.turnId !== undefined)
+    .map((member) => member.workbenchId);
+  const correlated = correlateOriginatingWorkbench(event, members);
+  const targetIds =
+    correlated !== undefined
+      ? [correlated]
+      : runningIds.length === 1
+        ? runningIds
+        : runningIds.length === 0 && resolved.workbenchIds.length === 1
+          ? resolved.workbenchIds
+          : [];
+
+  if (targetIds.length === 0) {
+    reportError(
+      new Error(`dropping ${agentAddress}'s reply: no originating workbench`),
+      {
+        operation: "chat.postReply",
+        tenantId: resolved.tenantId,
+        agentId: agentAddress,
+        extra: {
+          workbenchIds: resolved.workbenchIds,
+          runningWorkbenchIds: runningIds,
+        },
+      },
+    );
+    log.error`chat orchestrator: dropping ${agentAddress}'s reply — no originating workbench among ${String(resolved.workbenchIds.length)} membership(s) (${String(runningIds.length)} running)`;
+    return;
+  }
+
+  for (const workbenchId of targetIds) {
     const turn = await deps.agentTurns?.findRunningTurn({
       tenantId: resolved.tenantId,
       workbenchId,
@@ -964,9 +1072,16 @@ export function createChatOrchestrator(
           accumulated !== undefined && accumulated.length > 0
             ? accumulated
             : [{ kind: "text", text: content }];
-        void postReply(deps, pendingDelegationThreads, agentAddress, parts, {
-          status: "completed",
-        }).catch((cause: unknown) => {
+        void postReply(
+          deps,
+          pendingDelegationThreads,
+          agentAddress,
+          parts,
+          {
+            status: "completed",
+          },
+          event,
+        ).catch((cause: unknown) => {
           log.error`chat orchestrator: failed to post ${agentAddress}'s reply: ${
             cause instanceof Error ? cause.message : String(cause)
           }`;
@@ -1022,6 +1137,7 @@ export function createChatOrchestrator(
               agentAddress,
               [{ kind: "text", text: noticeContent }],
               { status: "failed", error: errorMessage },
+              event,
             ).catch((cause: unknown) => {
               log.error`chat orchestrator: failed to post ${agentAddress}'s turn-drop notice: ${
                 cause instanceof Error ? cause.message : String(cause)

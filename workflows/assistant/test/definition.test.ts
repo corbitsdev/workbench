@@ -125,6 +125,7 @@ test("the agent pins memory, capability, and the manager-tools bundles at the ve
     "@corbits/skills-tools",
     "@corbits/mcp-tools",
     "@corbits/interaction-tools",
+    "@corbits/manus-tools",
   ]);
   // A pin the registry cannot resolve fails every assistant deploy, so
   // each one must name a version the workspace actually publishes.
@@ -147,6 +148,27 @@ test("the prompt tells Myra to discover an MCP server's tools before calling one
   expect(ASSISTANT_SYSTEM_PROMPT).toContain("mcp_list_tools");
   expect(ASSISTANT_SYSTEM_PROMPT).toContain("mcp_call");
   expect(ASSISTANT_SYSTEM_PROMPT).toContain("never guess a tool name");
+});
+
+test("the prompt never writes tool JSON as reply text and does not memory_search a bare greeting", () => {
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("only through tool calls");
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "never by writing a JSON object with a tool name into your reply",
+  );
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "never memory_search a bare greeting",
+  );
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "use memory only when you actually need a fact from earlier",
+  );
+});
+
+test("the workflow pins manus-tools and does not require a Manus credential binding", () => {
+  const definition = buildAssistantWorkflow(INPUT);
+  expect(ASSISTANT_TOOL_PACKAGE_PINS.map((pin) => pin.name)).toContain(
+    "@corbits/manus-tools",
+  );
+  expect(definition.credentialBindings ?? []).toEqual([]);
 });
 
 test("the definition survives the workflow-asset JSON round-trip", () => {
@@ -222,9 +244,11 @@ test("the prompt asks only for facts Myra can't infer, never permission to use t
 test("the prompt builds the whole team on the person's OK: agents, routines, and memory in one go", () => {
   expect(ASSISTANT_SYSTEM_PROMPT).toContain(
     "On their OK, build the whole thing in one go: create the " +
-      "specialists and invite them in, create the routines, and save " +
-      "the facts they gave you to memory",
+      "specialists (each gets their own chat), create the routines, " +
+      "and save the facts they gave you to memory",
   );
+  expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("invite them in");
+  expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("create_channel");
 });
 
 test("the prompt has a delegated specialist finish its thread with a summary back to the host/main", () => {
@@ -298,4 +322,6 @@ test("the prompt hands a built team off with the exact discovery closing line", 
     "Their own chats for focused work. Here when you want me to run " +
       "the hunt and hand things off.",
   );
+  expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("invite them into this");
+  expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("invite it into this");
 });

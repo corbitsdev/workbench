@@ -3,7 +3,7 @@
 // the pre-re-pin numbering of workbench's own two migrations) is refused
 // with the reset instruction instead of being patched incrementally.
 // DB-gated: skipped when DATABASE_URL is unset.
-import { afterAll, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
 import { dbTargetFromUrl, loadPostgres, setupDatabase } from "./db-setup";
 
@@ -19,32 +19,30 @@ const OLD_NUMBERING_TAIL = [
 describeIfDb(
   "setupDatabase against a schema migrated under the old numbering",
   () => {
-    const schema = `db_setup_test_${Date.now().toString(36)}`;
-    const target = dbTargetFromUrl(databaseUrl);
-    const client = loadPostgres().then((postgres) =>
-      postgres({ ...target, max: 1, onnotice: () => undefined }),
-    );
-    afterAll(async () => {
-      const sql = await client;
-      await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
-      await sql.end();
-    });
-
     test("refuses to apply incrementally and names the reset", async () => {
-      const sql = await client;
-      await sql.unsafe(`CREATE SCHEMA "${schema}"`);
-      await sql.unsafe(
-        `CREATE TABLE "${schema}"."workbench_setup_migration" (filename text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
+      const schema = `db_setup_test_${Date.now().toString(36)}`;
+      const target = dbTargetFromUrl(databaseUrl);
+      const sql = await loadPostgres().then((postgres) =>
+        postgres({ ...target, max: 1, onnotice: () => undefined }),
       );
-      for (const file of OLD_NUMBERING_TAIL) {
+      try {
+        await sql.unsafe(`CREATE SCHEMA "${schema}"`);
         await sql.unsafe(
-          `INSERT INTO "${schema}"."workbench_setup_migration" (filename) VALUES ($1)`,
-          [file],
+          `CREATE TABLE "${schema}"."workbench_setup_migration" (filename text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
         );
+        for (const file of OLD_NUMBERING_TAIL) {
+          await sql.unsafe(
+            `INSERT INTO "${schema}"."workbench_setup_migration" (filename) VALUES ($1)`,
+            [file],
+          );
+        }
+        await expect(setupDatabase(databaseUrl, { schema })).rejects.toThrow(
+          /different @intx\/db migration set[\s\S]*db-setup\.ts --reset/,
+        );
+      } finally {
+        await sql.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+        await sql.end();
       }
-      await expect(setupDatabase(databaseUrl, { schema })).rejects.toThrow(
-        /different @intx\/db migration set[\s\S]*db-setup\.ts --reset/,
-      );
     });
   },
 );

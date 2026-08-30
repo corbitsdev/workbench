@@ -43,6 +43,8 @@ export interface AgentBinding {
   /** Every run this participant used to be, oldest first. */
   readonly priorRunIds: readonly string[];
   readonly foldedBody: FoldedBody;
+  /** See `workbenchLaunch.sourcesDigest`. */
+  readonly sourcesDigest: string | null;
 }
 
 /**
@@ -97,6 +99,7 @@ function bindingFrom(row: LaunchRow, domain: string): AgentBinding {
     liveAddress: formatRunAddress(row.currentRunId, domain),
     priorRunIds: priorRunIdsFrom(row),
     foldedBody: parsed,
+    sourcesDigest: row.sourcesDigest ?? null,
   };
 }
 
@@ -288,14 +291,60 @@ export async function repointBinding(
   db: DB["db"],
   binding: AgentBinding,
   newRunId: string,
+  sourcesDigest: string,
 ): Promise<void> {
   const history = [...binding.priorRunIds, binding.currentRunId].slice(
     -PRIOR_RUN_HISTORY_LIMIT,
   );
   await db
     .update(workbenchLaunch)
-    .set({ currentRunId: newRunId, priorRunIds: history })
+    .set({ currentRunId: newRunId, priorRunIds: history, sourcesDigest })
     .where(eq(workbenchLaunch.instanceId, binding.stableId));
+}
+
+/**
+ * Records the inference chain a deploy just pinned for the participant
+ * `stableId` names — a wake, or a standalone launch whose mapping row
+ * `workbenchLaunchPersistExtra` wrote before the deploy resolved — so
+ * the next send can tell whether the tenant's catalog (a rotated key, a
+ * moved endpoint) has moved on from it since.
+ */
+export async function recordSourcesDigest(
+  db: DB["db"],
+  stableId: string,
+  sourcesDigest: string,
+): Promise<void> {
+  await db
+    .update(workbenchLaunch)
+    .set({ sourcesDigest })
+    .where(eq(workbenchLaunch.instanceId, stableId));
+}
+
+/**
+ * Every participant a tenant has launched, with its live run, for the
+ * pass that re-checks each one's inference chain after a provider
+ * credential changes (`platform-adapter.ts`'s
+ * `reconcileInferenceSources`) and the pass that relaunches agents
+ * whose pins include a just-connected tool-package connector
+ * (`reconcilePinnedToolPackages`). Bounded like `listLaunchesBeyondWake`.
+ */
+export async function listLaunchesForTenant(
+  db: DB["db"],
+  tenantId: string,
+  limit: number,
+): Promise<LiveAgent[]> {
+  const rows = await db
+    .select()
+    .from(workbenchLaunch)
+    .where(eq(workbenchLaunch.tenantId, tenantId))
+    .limit(limit);
+  const live: LiveAgent[] = [];
+  for (const row of rows) {
+    const run = await readRun(db, row.currentRunId);
+    if (run === undefined || run.address === null) continue;
+    live.push({ binding: bindingFrom(row, requireDomain(run.address)), run });
+  }
+  return live;
 }
 
 /**

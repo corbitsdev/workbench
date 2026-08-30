@@ -31,7 +31,7 @@ async function runGit(
   cwd: string,
   env: Record<string, string>,
 ): Promise<{ code: number; output: string }> {
-  const child = Bun.spawn(["git", ...args], {
+  const child = Bun.spawn(["git", "-c", "core.hooksPath=", ...args], {
     cwd,
     env: { ...process.env, ...env },
     stdout: "pipe",
@@ -128,7 +128,12 @@ export function createGitWorkflowPusher(): WorkflowPusher {
         { label: "stage", args: ["add", ...Object.keys(tree)] },
         {
           label: "commit",
-          args: ["commit", "-m", "Deploy the default workflow definition"],
+          args: [
+            "commit",
+            "--no-verify",
+            "-m",
+            "Deploy the default workflow definition",
+          ],
         },
         {
           // Forced deliberately: this asset repo is seed-owned (this

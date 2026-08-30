@@ -49,7 +49,10 @@ column at a time:
   and in many channels. Product reopens or invites; it does not clone
   the definition or mint a sibling instance per room. Myra is the
   first-run guide in her DM, not a special home slot and not a
-  parallel home route.
+  parallel home route. When she creates a specialist (`create_agent`),
+  the default is to mint or reopen that specialist's own DM
+  (`kind: chat`) — never to invite them into Myra's conversation. A
+  DM stays 1:1; another agent belongs in a channel.
 - The active workbench occupies the main column; a contextual panel beside
   it carries account-wide surfaces (approvals, recent activity) that stay
   visible regardless of which workbench is open.
@@ -65,6 +68,16 @@ lands in Myra's one DM rather than `/new` or an empty shell:
 3. **Myra's DM** — `/` hops an empty bench to that agent's one DM
    (`openAgentDm` / find-or-reopen). There is no parallel Myra home
    route. `/new` stays the create door (sidebar `+`), not this hop.
+
+Connecting a local Ollama uses a completion model that instance has
+actually pulled, so Myra's first DM message is a real agent turn — even
+on a machine that only has models like llama3.2 or qwen3. An inherited
+catalog seed the instance never pulled is not the default when the
+tenant already owns a pulled completion model. Embedding models never
+become that default. A local model that writes a tool it meant to
+invoke as JSON in the reply still becomes a human turn: the person
+sees Myra's words (and ordinary tool activity), not that JSON as the
+message.
 
 Create stays on `/new` (`apps/web/src/pages/new-workbench-picker.tsx`):
 a prompt box is the primary act: typing a goal and submitting mints an
@@ -115,6 +128,14 @@ does not wake an agent. Generic `connections/pending` still wakes the
 asking agent. Neither path posts the connected notice as the connecting
 person.
 
+## Reusing an own prompt
+
+A person can **Edit** their own previous prompt. Edit copies that text
+into the composer, replacing any leftover draft — slash command, mention,
+invite, and attachments. Sending posts a new message on the same
+timeline: it does not rewrite the original, and it does not fork a
+thread. Other people's prompts have no Edit.
+
 ## Plugins and Skills
 
 A **Skill** is a named, reusable capability — instructions an agent can
@@ -125,6 +146,20 @@ implicitly. Plugins extend what a workbench can do the same way Skills
 extend what an agent knows — both are installable, both are scoped to the
 bench or workbench that installs them, and neither requires touching
 platform internals.
+
+The Plugins rail is how a person connects remote MCP servers: curated
+preset cards plus an add-by-URL path. Canva is an OAuth preset — Connect
+sends them through that app's sign-in, then back to Plugins. After a
+successful OAuth return, the row can show how many tools the connect
+probe found; a missing or non-integer count stays a bare "Connected". If
+sign-in cannot start, Plugins distinguishes an unreachable authorization
+server from the app rejecting Workbench as a client (redirect URL or
+registration). Agent MCP tool calls are allowed two minutes so a slow
+design tool can finish inside a chat turn.
+
+Live Canva OAuth against Canva's own servers is **not** verified as of
+CL-7083. This documents the shipped connect path, not a proven live
+handshake.
 
 ## Workbench settings
 
@@ -181,8 +216,10 @@ User-facing surfaces (UI, docs, support) use exactly these nouns:
   the sidebar list Workbenches.
 - **Agent** — a coworker principal. Opening the row reopens that agent's
   one DM. Never "template." Myra is the first-run guide in her DM.
+  Creating a specialist opens (or reopens) that specialist's own DM,
+  not a seat in Myra's.
 - **DM** — the one 1:1 conversation with an agent. Never cloned by a
-  second open.
+  second open, and never a room for a second agent.
 - **Channel** — a shared room between people and agents. Plus mints an
   empty one; nobody is auto-hosted. Named templates instantiate their
   Workbench Definition's own agents into that room (Myra joins only
@@ -204,6 +241,14 @@ user-facing surfaces use the rest of the product vocabulary above.
   generic `connections/pending` still wakes the asking agent. A leftover
   agent 401 after GitHub already succeeded is still a first-minute bug
   — see IMPLEMENTATION.md; do not document that it cannot happen.
+- Connected/settle honesty (no stale Connect after success; settle never
+  posting as the signed-in user; no agent 401 after GitHub already
+  succeeded) stays **target** until CL-6737 and CL-6738 land — see
+  IMPLEMENTATION.md open questions; do not document those guarantees as
+  shipped.
+- Live Canva MCP OAuth (sign-in, DCR, and post-OAuth probe against
+  Canva's own servers) is not verified; do not document a proven live
+  Canva handshake.
 - The precise boundary of what Insights surfaces to a non-admin bench
   member (all tenant activity vs. only their own) is not spelled out in
   `packages/insights`'s own docs as of this writing.

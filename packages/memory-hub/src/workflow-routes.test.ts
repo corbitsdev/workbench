@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
-
+import { createFakeDocumentStore, createMemory } from "@corbits/memory";
 import type { ResolvedWorkflowRunScope } from "@corbits/artifacts-hub";
 
 import {
   createUnavailableWorkflowMemoryRoutes,
   createWorkflowMemoryRoutes,
+  createWorkflowMemoryStore,
   type WorkflowMemoryRoutesStore,
 } from "./workflow-routes";
 
@@ -296,5 +297,46 @@ describe("createUnavailableWorkflowMemoryRoutes", () => {
     expect(search.status).toBe(503);
     expect(add.status).toBe(503);
     expect(list.status).toBe(503);
+  });
+});
+
+describe("createWorkflowMemoryStore over the published @corbits/memory plane", () => {
+  test("add/search/list go through createMemory + createFakeDocumentStore, scoped to tenant+principal", async () => {
+    const memory = createMemory({
+      documentStore: createFakeDocumentStore(),
+    });
+    try {
+      const store = createWorkflowMemoryStore(memory);
+      const added = await store.add(SCOPE, {
+        title: "Decision A",
+        text: "Tenant one shipped memory tools.",
+      });
+      expect(added.documentId).toMatch(/^fake_doc_/);
+      await store.add(OTHER_SCOPE, {
+        title: "Decision B",
+        text: "Tenant two shipped memory tools.",
+      });
+      const found = await store.search(SCOPE, {
+        query: "shipped memory tools",
+      });
+      expect(found.items.map((item) => item.title)).toEqual(["Decision A"]);
+      const other = await store.search(OTHER_SCOPE, {
+        query: "shipped memory tools",
+      });
+      expect(other.items.map((item) => item.title)).toEqual(["Decision B"]);
+      const listed = await store.list(SCOPE, 8);
+      expect(listed.map((event) => event.title)).toEqual(["Decision A"]);
+    } finally {
+      await memory.close();
+    }
+  });
+
+  test("pins the published github @corbits/memory package, not a workbench-local store", async () => {
+    const pkg = (await Bun.file(
+      new URL("../package.json", import.meta.url),
+    ).json()) as { dependencies: Record<string, string> };
+    expect(pkg.dependencies["@corbits/memory"]).toMatch(
+      /^github:corbitsdev\/corbits-memory#/,
+    );
   });
 });

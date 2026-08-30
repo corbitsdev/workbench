@@ -89,6 +89,29 @@ describe("persistConnectorCredential", () => {
     expect(result.credentialId).toBe("cred_prv_github");
   });
 
+  test("manus persists the production API origin so origin-pin can resolve", async () => {
+    const { providers, seeds, fns } = recordingFns();
+    await persistConnectorCredential({
+      api: noApi as never,
+      cookies: [],
+      tenantId: "tnt_1",
+      descriptor: descriptorOrThrow("manus"),
+      secret: "manus_key",
+      log: () => undefined,
+      ...fns,
+    });
+
+    expect(providers).toEqual([
+      {
+        tenantId: "tnt_1",
+        name: "manus",
+        plugin: "http-x-manus-api-key",
+        apiBaseUrl: "https://api.manus.ai",
+      },
+    ]);
+    expect(seeds).toEqual([]);
+  });
+
   test("an inference provider seeds its catalog under the same credential name", async () => {
     const { credentials, seeds, fns } = recordingFns();
     await persistConnectorCredential({
@@ -166,6 +189,7 @@ describe("isInferenceProvider", () => {
     expect(isInferenceProvider("openrouter")).toBe(true);
     expect(isInferenceProvider("github")).toBe(false);
     expect(isInferenceProvider("linear")).toBe(false);
+    expect(isInferenceProvider("manus")).toBe(false);
   });
 });
 

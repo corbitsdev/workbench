@@ -10,7 +10,7 @@
 // Routing against the interface (rather than a raw drizzle handle) keeps the
 // route layer testable with a plain in-memory fake, with no database and no
 // drizzle SQL-condition internals involved.
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
 import { participantsOf } from "./workbench-settings";
@@ -311,8 +311,8 @@ export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
             workbenchReadState.principalId,
           ],
           set: {
-            lastSeenCreatedAt: input.lastSeenCreatedAt,
-            lastSeenId: input.lastSeenId,
+            lastSeenCreatedAt: sql`CASE WHEN excluded.last_seen_created_at >= ${workbenchReadState.lastSeenCreatedAt} THEN excluded.last_seen_created_at ELSE ${workbenchReadState.lastSeenCreatedAt} END`,
+            lastSeenId: sql`CASE WHEN excluded.last_seen_created_at >= ${workbenchReadState.lastSeenCreatedAt} THEN excluded.last_seen_id ELSE ${workbenchReadState.lastSeenId} END`,
           },
         })
         .returning();
@@ -459,11 +459,20 @@ export function createInMemoryChatStore(): ChatStore {
     },
 
     async putReadState(input) {
-      const row: ReadStateRow = { ...input };
-      readStateByKey.set(
-        readStateKey(input.tenantId, input.workbenchId, input.principalId),
-        row,
+      const key = readStateKey(
+        input.tenantId,
+        input.workbenchId,
+        input.principalId,
       );
+      const existing = readStateByKey.get(key);
+      if (
+        existing !== undefined &&
+        existing.lastSeenCreatedAt > input.lastSeenCreatedAt
+      ) {
+        return existing;
+      }
+      const row: ReadStateRow = { ...input };
+      readStateByKey.set(key, row);
       return row;
     },
 

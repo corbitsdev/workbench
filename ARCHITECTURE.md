@@ -61,6 +61,13 @@ every read, never copied down at creation time. A sub-workbench or child
 tenant never gets a snapshot of its parent's catalog; it always sees the
 parent's current state.
 
+The workbench host's default inference model is chosen from that
+visible catalog: tenant-owned (direct) completion offerings beat
+inherited catalog seeds when any exist; an inherit-only catalog still
+picks the inherited completion default. Embedding models stay
+ineligible. This is a preference among what the ancestor walk already
+shows, not a snapshot and not a second catalog.
+
 See [docs/TENANCY.md](docs/TENANCY.md) for the full contract, including
 the workbench-owned discriminator that distinguishes a "real" bench from a
 workbench's own child tenancy (native tenants carry no `kind` field), and
@@ -76,6 +83,17 @@ tenant and writes settings rows — no deploy, no host, no anchor instance
 **timeline** of `chat.workbench_messages` rows; posting is one insert plus
 one publish onto the workbench's live stream, so the conversation takes
 messages whether or not any agent process is running.
+
+**Editing an own prompt.** Edit is a composer replace, not a timeline
+mutation and not a thread fork. The timeline offers Edit only on the
+signed-in reader's own prompts that have text
+(`packages/chat-ui/src/timeline.tsx`). Choosing it copies that message's
+text into the composer through `ComposerHandle.setText`
+(`packages/chat-ui/src/composer.tsx`). `setText` replaces the draft and
+clears leftover composer-private state (slash, mention, pending invites,
+attachments, in-flight attachment reads). Sending is the ordinary post
+onto the timeline already in view (root or an open thread). It does not
+PATCH the origin message and it does not call `forkThread`.
 
 A workbench's address is derived, not resolved. Asking an invited agent
 for a turn is a separate act over Interchange mail; the agent replies by
@@ -100,6 +118,20 @@ signal. Consecutive agent-joined events collapse into one line so the
 scene and the reviewers' own introductions are what a person reads
 first.
 
+**A `kind: chat` is 1:1.** It is the one DM with its agent. Inviting a
+different or additional agent into that conversation is a conflict
+(HTTP 409 `kind_is_chat`); extra agents belong on a `kind: workbench`
+channel. A same-definition invite reuses the resident principal and
+does not clone a sibling instance.
+
+**Default specialist creation mints or reopens that DM.** Myra's
+`create_agent` path does not invite the new definition into the
+caller's conversation — Myra's DM is itself `kind: chat` and would
+reject the extra agent. It mints a `kind: chat` for the definition
+under the bench, or reopens the existing one for that (bench,
+definition) pair, matching the product-surface find-or-reopen rule.
+The specialist launches into that chat, never into Myra's.
+
 **Streaming a reply.** An agent's live reply reaches the timeline through
 one path, deltas to pixels:
 
@@ -122,6 +154,16 @@ one path, deltas to pixels:
    synthetic in-progress message alongside the persisted timeline, until
    the real message lands and replaces it.
 
+**Provider tool-call quirks.** Some OpenAI-compatible local models emit
+a declared tool call as a JSON object in assistant text instead of a
+native tool-call field. Workbench's Ollama adapter wraps the platform
+OpenAI adapter (composition, not a fork) and reclassifies that exact
+object into structured tool-call events when the tool name was
+declared for the request. Unknown names, extra keys, arrays, mixed
+prose, and fenced JSON stay text so a legitimate JSON or code answer
+is not stolen. The reactor and timeline still only see the usual text
+versus tool-call events.
+
 ## Workbench Definition and hostless onboarding
 
 A picker "template" is a shipped **Workbench Definition**, not a second
@@ -141,6 +183,12 @@ Settling a connector a template room is waiting on records the
 connected event from a system address and does not wake an agent. A
 generic in-room connect that an agent asked for still wakes that
 agent.
+
+Credential bindings for pinned tool packages fold only at deploy.
+Connecting a connector that feeds those packages relaunches live
+assistants that already pin them, so the new credential is on the
+run — not only on the next invite. The pending-room settle and that
+relaunch are separate passes.
 
 ## Capability growth and approval gates
 
@@ -167,6 +215,30 @@ everything else on the platform, supplying placement policy (which
 sidecar a given run lands on) rather than reimplementing execution.
 Provisioning and allocation follow Interchange's own contracts; workbench
 does not maintain a parallel scheduler.
+
+## MCP connect
+
+Remote MCP servers connect through Plugins (curated presets and
+add-by-URL). The connect-time probe and later tool calls share one
+origin-pinned fetch: every first hop must be the stored origin or an
+explicit extra origin for that pin — not a host-suffix match — and a 3xx
+is never followed, even to an allowlisted origin. Canva is the one
+shipped extra: the stored MCP origin may also first-hop the protocol
+origin that is not the stored `apiBaseUrl`.
+
+OAuth presets that list advertised scopes send those scopes on RFC 7591
+dynamic client registration; presets that omit the list stay on the SDK's
+protected-resource metadata fallback. When `/start` fails, the return
+distinguishes `client_rejected` (the authorization server refused
+Workbench as a client — including RFC 7591 `invalid_redirect_uri` and
+sibling client-metadata codes, even when the SDK maps an unknown code
+onto a generic server error) from `discovery_failed` (the authorization
+server could not be reached). A successful callback re-probes with the
+new token and may put that probe's tool count on the Plugins return so
+the row can show it.
+
+Live Canva OAuth against Canva's own servers is not verified; this is
+the shipped control flow, not a proven live handshake.
 
 ## Related docs
 

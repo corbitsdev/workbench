@@ -568,6 +568,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/credential-providers": "workspace:*",
+        "@corbits/error-sink": "workspace:*",
         "@corbits/inference-settings": "workspace:*",
         "@corbits/mcp-tools": "workspace:*",
         "@intx/crypto": "0.3.0",
@@ -966,9 +967,22 @@
         "typescript": "catalog:",
       },
     },
+    "packages/manus-tools": {
+      "name": "@corbits/manus-tools",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "0.3.0",
+        "@intx/types": "0.3.0",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/mcp-tools": {
       "name": "@corbits/mcp-tools",
-      "version": "0.0.8",
+      "version": "0.0.10",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -1251,6 +1265,7 @@
         "@corbits/api-query": "workspace:*",
         "@corbits/bench-ui": "workspace:*",
         "@corbits/chat-ui": "workspace:*",
+        "@corbits/error-sink": "workspace:*",
         "@corbits/icons": "workspace:*",
         "@corbits/inference-settings": "workspace:*",
         "@corbits/react-ui": "github:corbitsdev/react-ui#3b122812a307ccb35be31386f7696020c5a84635",
@@ -1432,6 +1447,7 @@
       "name": "@corbits/webhook-triggers",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/error-sink": "workspace:*",
         "@corbits/folded-runs": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
@@ -1477,8 +1493,8 @@
       "name": "@corbits/workflow-deploy-source",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/error-sink": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
-        "@intx/log": "0.3.0",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
@@ -2199,6 +2215,8 @@
     "@corbits/longevity-sim": ["@corbits/longevity-sim@workspace:packages/longevity-sim"],
 
     "@corbits/mailbox": ["@corbits/mailbox@github:corbitsdev/corbits-mailbox#caa5214", { "dependencies": { "@hono/standard-validator": "0.2.3", "@standard-community/standard-json": "0.3.5", "@standard-community/standard-openapi": "0.2.9", "arktype": "2.1.29", "hono-openapi": "1.3.1" }, "peerDependencies": { "@intx/log": "^0.2.2", "@intx/mime": "^0.2.2", "@intx/types": "^0.2.2", "drizzle-orm": "^0.45.2", "hono": "^4.12.0", "postgres": "^3.4.0" } }, "corbitsdev-corbits-mailbox-caa5214", "sha512-z8DRBFgA4ukM8p29COeaMjfKZYe5jAUF4OBMiaIQFuW592+DGD/y6Ws6SjGlXmR9azkHNWh8oTzjlWlRP24vsQ=="],
+
+    "@corbits/manus-tools": ["@corbits/manus-tools@workspace:packages/manus-tools"],
 
     "@corbits/mcp-tools": ["@corbits/mcp-tools@workspace:packages/mcp-tools"],
 

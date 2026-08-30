@@ -105,11 +105,18 @@ export async function persistConnectorCredential(
           plugin: args.descriptor.credentialPlugin,
           apiBaseUrl: args.baseURLOverride,
         }
-      : {
-          tenantId: args.tenantId,
-          name: args.descriptor.id,
-          plugin: args.descriptor.credentialPlugin,
-        };
+      : args.descriptor.id === "manus"
+        ? {
+            tenantId: args.tenantId,
+            name: args.descriptor.id,
+            plugin: args.descriptor.credentialPlugin,
+            apiBaseUrl: "https://api.manus.ai",
+          }
+        : {
+            tenantId: args.tenantId,
+            name: args.descriptor.id,
+            plugin: args.descriptor.credentialPlugin,
+          };
   const providerId = await runEnsureProvider(
     args.api,
     args.cookies,

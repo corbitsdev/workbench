@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 
 import {
   createCleanupHarness,
+  parseEnvFileDatabaseUrl,
   runCleanups,
   type SpawnedApp,
 } from "./harness.ts";
@@ -63,5 +64,42 @@ describe("createCleanupHarness", () => {
     await expect(runCleanups(cleanups)).rejects.toThrow("boom");
     expect(ran).toEqual(["last-registered", "first-registered"]);
     expect(cleanups).toHaveLength(0);
+  });
+});
+
+describe("parseEnvFileDatabaseUrl", () => {
+  test("reads DATABASE_URL and ignores comments and blanks", () => {
+    expect(
+      parseEnvFileDatabaseUrl(
+        "# comment\n\nFOO=bar\nDATABASE_URL=postgres://localhost:5432/workbench\n",
+      ),
+    ).toBe("postgres://localhost:5432/workbench");
+  });
+
+  test("strips surrounding quotes and trims", () => {
+    expect(
+      parseEnvFileDatabaseUrl(
+        `  DATABASE_URL="postgres://localhost:5432/workbench"  \n`,
+      ),
+    ).toBe("postgres://localhost:5432/workbench");
+    expect(
+      parseEnvFileDatabaseUrl(
+        `DATABASE_URL='postgres://localhost:5432/workbench'\n`,
+      ),
+    ).toBe("postgres://localhost:5432/workbench");
+  });
+
+  test("ignores a commented DATABASE_URL and returns undefined when none is set", () => {
+    expect(
+      parseEnvFileDatabaseUrl("# DATABASE_URL=postgres://commented\nFOO=bar\n"),
+    ).toBeUndefined();
+  });
+
+  test("last DATABASE_URL wins", () => {
+    expect(
+      parseEnvFileDatabaseUrl(
+        "DATABASE_URL=postgres://first/db\nDATABASE_URL=postgres://second/db\n",
+      ),
+    ).toBe("postgres://second/db");
   });
 });

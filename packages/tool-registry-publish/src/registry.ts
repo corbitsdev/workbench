@@ -36,6 +36,7 @@ export const CORBITS_TOOL_PACKAGE_DIRS: readonly string[] = [
   new URL("../../github-tools", import.meta.url).pathname,
   new URL("../../web-search-tools", import.meta.url).pathname,
   new URL("../../granola-tools", import.meta.url).pathname,
+  new URL("../../manus-tools", import.meta.url).pathname,
   new URL("../../linear-tools", import.meta.url).pathname,
   // Scout's own artifact-save/list tool bundle (`scoutArtifactTools`) and
   // Jimmy's `gif_search` bundle: each package pins itself in its own

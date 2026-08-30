@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type {
-  ApiCall,
-  ToolRegistryPublisher,
-  WorkflowPusher,
-} from "@workbench/hub-client";
+import type { ApiCall, WorkflowPusher } from "@workbench/hub-client";
 import {
   CATALOG_SEEDS,
   SETUP_AGENT_ASSET_NAME,
@@ -36,7 +32,6 @@ const noopPush: WorkflowPusher = async () => ({
   outcome: "pushed" as const,
   commitSha: "a".repeat(40),
 });
-const noopPublishToolRegistry: ToolRegistryPublisher = async () => undefined;
 
 // Stubs for the provider/credential half of the shared persist-and-seed
 // sequence (CL-6394) — paired with every stubbed `seedCatalogFn` so a
@@ -123,6 +118,24 @@ function resolvedCatalogResponse(
         },
       ],
     })),
+    cookies: [],
+  };
+}
+
+function ownedCatalogModelsResponse(canonicalNames: string[]) {
+  return {
+    status: 200,
+    data: {
+      data: canonicalNames.map((canonicalName, index) => ({
+        id: `own_mdl_${index}`,
+        tenantId: TENANT_ID,
+        canonicalName,
+        disabled: false,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      })),
+      nextCursor: null,
+    },
     cookies: [],
   };
 }
@@ -224,6 +237,87 @@ describe("modelSourceFor", () => {
           },
         ]);
       }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      ) {
+        return ownedCatalogModelsResponse(["llama3.2", "gpt-oss:20b"]);
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await modelSourceFor(
+      api,
+      ["session=abc"],
+      TENANT_ID,
+      "ollama",
+      "ollama",
+    );
+    expect(result.model).toBe("gpt-oss:20b");
+  });
+
+  // CL-7185: discovery includes the inherited curated name, but this
+  // tenant's own catalog only lists the model the instance actually
+  // pulled. Prefer the owned name, never the inherited pin.
+  test("ollama prefers a tenant-owned model over an inherited curated name the instance does not own", async () => {
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/models`) {
+        return resolvedCatalogResponse([
+          {
+            canonicalName: "gpt-oss:20b",
+            providerName: "ollama",
+            capabilities: ["plain-text"],
+          },
+          {
+            canonicalName: "llama3.2",
+            providerName: "ollama",
+            capabilities: ["plain-text"],
+          },
+        ]);
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      ) {
+        return ownedCatalogModelsResponse(["llama3.2"]);
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await modelSourceFor(
+      api,
+      ["session=abc"],
+      TENANT_ID,
+      "ollama",
+      "ollama",
+    );
+    expect(result.model).toBe("llama3.2");
+  });
+
+  // CL-7185: an empty owned list means inherit-only — keep discovery's
+  // curated preference rather than failing open to "no candidates".
+  test("ollama keeps the discovery pick when the tenant owns no catalog models", async () => {
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/models`) {
+        return resolvedCatalogResponse([
+          {
+            canonicalName: "gpt-oss:20b",
+            providerName: "ollama",
+            capabilities: ["plain-text"],
+          },
+          {
+            canonicalName: "llama3.2",
+            providerName: "ollama",
+            capabilities: ["plain-text"],
+          },
+        ]);
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      ) {
+        return ownedCatalogModelsResponse([]);
+      }
       throw new Error(`unexpected call: ${method} ${path}`);
     };
 
@@ -296,7 +390,6 @@ describe("completeCredentialSetup", () => {
       provider: "anthropic",
       apiKey: "sk-ant-never-probed",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       ...stubPersistFns,
       seedCatalogFn: async (args) => {
@@ -331,7 +424,6 @@ describe("completeCredentialSetup", () => {
       provider: "anthropic",
       apiKey: "sk-ant-good",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
     });
 
@@ -363,7 +455,6 @@ describe("completeCredentialSetup", () => {
       provider: "anthropic",
       apiKey: "sk-ant-good",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       ...stubPersistFns,
       seedCatalogFn: async (args) => {
@@ -414,7 +505,6 @@ describe("completeCredentialSetup", () => {
       provider: "openai",
       apiKey: "sk-good",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       ...stubPersistFns,
       seedCatalogFn: async (args) => {
@@ -465,7 +555,6 @@ describe("completeCredentialSetup", () => {
       provider: "groq",
       apiKey: "gsk-good",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       ...stubPersistFns,
       seedCatalogFn: async (args) => {
@@ -520,7 +609,6 @@ describe("completeCredentialSetup", () => {
       apiKey: "hf_oauth_minted",
       credentialMetadata: { expiresAt: "2026-08-13T20:00:00.000Z" },
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       ...stubPersistFns,
       seedCatalogFn: async (args) => {
@@ -681,7 +769,6 @@ describe("completeCredentialSetup", () => {
       apiKey: "hf_freshly_minted_token",
       credentialMetadata: { expiresAt: "2026-08-13T20:00:00.000Z" },
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       // The real seedCatalog runs here (not mocked) so the rotation
       // actually happens through ensureCredential; only the workflow
@@ -831,7 +918,6 @@ describe("completeCredentialSetup", () => {
       provider: "anthropic",
       apiKey: "sk-ant-good",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       ...stubPersistFns,
       seedCatalogFn: async () => ({ hasCompletionCapableModel: true }),
@@ -1283,7 +1369,6 @@ describe("completeCredentialSetup", () => {
         provider: "anthropic",
         apiKey: "sk-ant-good",
         pushWorkflow: noopPush,
-        publishToolRegistry: noopPublishToolRegistry,
         log: collector().log,
       });
 
@@ -1333,7 +1418,6 @@ describe("completeCredentialSetup", () => {
       provider: "huggingface",
       apiKey: "hf_pasted_pat",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       ...stubPersistFns,
       seedCatalogFn: async (args) => {
@@ -1386,7 +1470,6 @@ describe("completeCredentialSetup", () => {
       provider: "anthropic",
       apiKey: "sk-ant-good",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       ...stubPersistFns,
       seedCatalogFn: async () => ({ hasCompletionCapableModel: true }),
@@ -1487,7 +1570,6 @@ describe("testAndPersistCredential (the fast half)", () => {
       provider: "anthropic",
       apiKey: "sk-ant-never-probed",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       ...stubPersistFns,
       seedCatalogFn: async (args) => {
@@ -1530,7 +1612,6 @@ describe("testAndPersistCredential (the fast half)", () => {
       provider: "openrouter",
       apiKey: "sk-or-good",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       ...stubPersistFns,
       seedCatalogFn: async (args) => {
@@ -1565,7 +1646,6 @@ describe("testAndPersistCredential (the fast half)", () => {
       provider: "anthropic",
       apiKey: "sk-ant-good",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
     });
 
@@ -1601,7 +1681,6 @@ describe("ensureSeeded (the slow half)", () => {
       cookies: ["session=abc"],
       hubUrl: "http://localhost:3000",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       tenant: TENANT,
       provider: "anthropic",
@@ -1640,7 +1719,6 @@ describe("ensureSeeded (the slow half)", () => {
       cookies: ["session=abc"],
       hubUrl: "http://localhost:3000",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       tenant: TENANT,
       provider: "anthropic",
@@ -1826,7 +1904,6 @@ describe("ensureSeeded (the slow half)", () => {
         cookies: ["session=abc"],
         hubUrl: "http://localhost:3000",
         pushWorkflow: noopPush,
-        publishToolRegistry: noopPublishToolRegistry,
         log: collector().log,
         tenant: TENANT,
         provider: "anthropic",
@@ -1901,7 +1978,6 @@ describe("ensureSeeded (the slow half)", () => {
       cookies: ["session=abc"],
       hubUrl: "http://localhost:3000",
       pushWorkflow: noopPush,
-      publishToolRegistry: noopPublishToolRegistry,
       log: collector().log,
       tenant: TENANT,
       provider: "anthropic",
@@ -1931,7 +2007,6 @@ describe("ensureSeeded (the slow half)", () => {
         cookies: ["session=abc"],
         hubUrl: "http://localhost:3000",
         pushWorkflow: noopPush,
-        publishToolRegistry: noopPublishToolRegistry,
         log: collector().log,
         tenant: TENANT,
         provider: "anthropic",

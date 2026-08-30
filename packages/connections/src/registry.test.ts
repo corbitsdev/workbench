@@ -113,10 +113,18 @@ describe("CONNECTOR_REGISTRY", () => {
     expect(descriptor?.feedsTools).toEqual([]);
   });
 
-  test("includes the five tool connectors with the right feedsTools", () => {
+  test("includes the tool connectors with the right feedsTools", () => {
     expect(CONNECTOR_REGISTRY["granola"]?.feedsTools).toEqual([
       "@corbits/granola-tools",
     ]);
+    expect(CONNECTOR_REGISTRY["manus"]?.feedsTools).toEqual([
+      "@corbits/manus-tools",
+    ]);
+    expect(CONNECTOR_REGISTRY["manus"]?.credentialPlugin).toBe(
+      "http-x-manus-api-key",
+    );
+    expect(CONNECTOR_REGISTRY["manus"]?.authKind).toBe("api-key");
+    expect(CONNECTOR_REGISTRY["manus"]?.icon).toBeUndefined();
     expect(CONNECTOR_REGISTRY["exa"]?.feedsTools).toEqual([
       "@corbits/web-search-tools",
     ]);
@@ -161,9 +169,12 @@ describe("connectorDescriptors", () => {
     expect(CONNECTOR_REGISTRY["scrapecreators"]?.credentialPlugin).toBe(
       "http-x-api-key",
     );
-    const bearerConnectors = new Set(["linear", "exa", "scrapecreators"]);
+    expect(CONNECTOR_REGISTRY["manus"]?.credentialPlugin).toBe(
+      "http-x-manus-api-key",
+    );
+    const nonBearer = new Set(["linear", "exa", "scrapecreators", "manus"]);
     for (const [id, descriptor] of Object.entries(CONNECTOR_REGISTRY)) {
-      if (bearerConnectors.has(id)) continue;
+      if (nonBearer.has(id)) continue;
       expect(descriptor.credentialPlugin).toBe("http");
     }
   });

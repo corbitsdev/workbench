@@ -11,6 +11,7 @@
 // share that shape; what still distinguishes a folded run is its
 // `principalId`, whose `agent_session` join is what makes the run's
 // mailbox listable through the platform's sanctioned per-run surfaces.
+import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { type } from "arktype";
 import type { DBExecutor } from "@intx/db";
@@ -234,63 +235,56 @@ async function markRunDeployClone(
  * failure-path rollback of those rows — this function only throws.
  */
 
-export async function deployAtHead(
-  deps: Pick<
-    FoldedRunsDeps,
-    | "db"
-    | "sessionService"
-    | "sidecarRouter"
-    | "eventCollectors"
-    | "credentialCipher"
-    | "assetService"
-    | "toolGrantsForPins"
-    | "mcpCredentialBindingsFor"
-  >,
-  params: {
-    tenantId: string;
-    instanceId: string;
-    triggerAddress: string;
-    principalId: string;
-    sessionId: string;
-    foldedBody: FoldedBody;
-    /** Named in the "seed a tenant catalog source" error, e.g. "the workbench host", "the invited agent", or "the woken instance". */
-    launchLabel: string;
-    /**
-     * When present, used verbatim in place of `resolveDefinitionSources`
-     * — the tenant catalog is never touched, so a launch pinned this
-     * way needs no catalog source to exist at all. Absent, this is
-     * the ordinary catalog-resolved path every launch used before this
-     * override existed.
-     */
-    sources?: SourcesOverride;
-    /**
-     * The tenant's current live default model — the same (provider,
-     * model) Settings' "Default model & fallbacks" row heads today
-     * (see `@corbits/chat`'s `resolveFallbackModel`). Tried first when
-     * `foldedBody.model` is `null` (a definition that declares no model
-     * of its own); tried SECOND, as a retry, when `foldedBody.model` is
-     * set but does not resolve against the tenant's current catalog —
-     * e.g. it was pinned (by a person, or by the seed that created this
-     * definition) against a provider the tenant has since disconnected,
-     * or before it connected any provider at all. Without that retry an
-     * agent whose pin predates the tenant's current connection stays
-     * permanently dead even after a working provider is connected,
-     * because `foldedBody.model` alone would keep resolving to the same
-     * unlaunchable name forever. Absent, a `foldedBody.model` that fails
-     * to resolve — or a `null` one with nothing to fall back to —
-     * resolves to the loud `InferenceResolutionError` it always has.
-     */
-    fallbackModel?: string;
-    /**
-     * The shape the run's deployed definition takes. Defaults to the
-     * folded conversational step every launcher uses today; CL-6329's
-     * per-turn swap passes `{ kind: "section", turnTimeoutMs }` and
-     * nothing else about this call changes, because the mode is config
-     * data rendered into the deployed bytes rather than a branch here.
-     */
-    mode?: FoldedRunMode;
-  },
-): Promise<void> {
+/** The inference chain a launch pins into its deployed bytes. */
+export type ResolvedLaunchSources = {
+  sources: InferenceSource[];
+  defaultSource: string;
+};
+
+export type ResolveLaunchSourcesParams = {
+  tenantId: string;
+  foldedBody: FoldedBody;
+  /** Named in the "seed a tenant catalog source" error, e.g. "the workbench host", "the invited agent", or "the woken instance". */
+  launchLabel: string;
+  /**
+   * When present, used verbatim in place of `resolveDefinitionSources`
+   * — the tenant catalog is never touched, so a launch pinned this
+   * way needs no catalog source to exist at all. Absent, this is
+   * the ordinary catalog-resolved path every launch used before this
+   * override existed.
+   */
+  sources?: SourcesOverride;
+  /**
+   * The tenant's current live default model — the same (provider,
+   * model) Settings' "Default model & fallbacks" row heads today
+   * (see `@corbits/chat`'s `resolveFallbackModel`). Tried first when
+   * `foldedBody.model` is `null` (a definition that declares no model
+   * of its own); tried SECOND, as a retry, when `foldedBody.model` is
+   * set but does not resolve against the tenant's current catalog —
+   * e.g. it was pinned (by a person, or by the seed that created this
+   * definition) against a provider the tenant has since disconnected,
+   * or before it connected any provider at all. Without that retry an
+   * agent whose pin predates the tenant's current connection stays
+   * permanently dead even after a working provider is connected,
+   * because `foldedBody.model` alone would keep resolving to the same
+   * unlaunchable name forever. Absent, a `foldedBody.model` that fails
+   * to resolve — or a `null` one with nothing to fall back to —
+   * resolves to the loud `InferenceResolutionError` it always has.
+   */
+  fallbackModel?: string;
+};
+
+/**
+ * Resolves the inference chain a folded run deploys with, exactly as
+ * `deployAtHead` pins it — the same call a drift check makes later to
+ * ask "would this run deploy with different sources today?" (CL-6687:
+ * a rotated API key is only ever picked up at deploy time, so the
+ * deployed chain has to be comparable against the current one).
+ */
+export async function resolveLaunchSources(
+  deps: Pick<FoldedRunsDeps, "db" | "credentialCipher">,
+  params: ResolveLaunchSourcesParams,
+): Promise<ResolvedLaunchSources> {
   const sourcesOverride = parseSourcesOverride(params.sources);
   const resolveAgainst = (model: string | null) =>
     resolveDefinitionSources({
@@ -338,18 +332,93 @@ export async function deployAtHead(
   // A caller-supplied override already states the adapter key it wants
   // (see `SourcesOverride`'s doc) — only a catalog-resolved chain needs
   // its `provider` field corrected for Ollama offerings.
-  if (sourcesOverride === undefined) {
-    const offerings = await listVisibleOfferings(deps.db, params.tenantId);
-    const ollamaOfferingIds = new Set(
-      offerings
-        .filter((resolved) => resolved.provider.name === "ollama")
-        .map((resolved) => resolved.offering.id),
-    );
-    resolution.sources = withOllamaAdapterKey(
-      resolution.sources,
-      ollamaOfferingIds,
-    );
+  if (sourcesOverride !== undefined) {
+    return {
+      sources: [...resolution.sources],
+      defaultSource: resolution.defaultSource,
+    };
   }
+  const offerings = await listVisibleOfferings(deps.db, params.tenantId);
+  const ollamaOfferingIds = new Set(
+    offerings
+      .filter((resolved) => resolved.provider.name === "ollama")
+      .map((resolved) => resolved.offering.id),
+  );
+  return {
+    sources: withOllamaAdapterKey(resolution.sources, ollamaOfferingIds),
+    defaultSource: resolution.defaultSource,
+  };
+}
+
+function canonicalJSON(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJSON).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries
+      .map(([k, v]) => `${JSON.stringify(k)}:${canonicalJSON(v)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * A stable fingerprint of a resolved inference chain — every field the
+ * deployed bytes carry, the decrypted secret included, so a rotated key
+ * (or a moved base URL, or a re-pointed default) changes the digest
+ * while a re-save of the same key does not. Only the hash is ever
+ * stored; the secret itself never leaves the resolution.
+ */
+export function inferenceSourcesDigest(
+  resolved: ResolvedLaunchSources,
+): string {
+  return createHash("sha256")
+    .update(
+      canonicalJSON({
+        sources: resolved.sources,
+        defaultSource: resolved.defaultSource,
+      }),
+    )
+    .digest("hex");
+}
+
+export type DeployedAtHead = {
+  /** `inferenceSourcesDigest` of the chain this deploy pinned. */
+  readonly sourcesDigest: string;
+};
+
+export async function deployAtHead(
+  deps: Pick<
+    FoldedRunsDeps,
+    | "db"
+    | "sessionService"
+    | "sidecarRouter"
+    | "eventCollectors"
+    | "credentialCipher"
+    | "assetService"
+    | "toolGrantsForPins"
+    | "mcpCredentialBindingsFor"
+    | "pinnedPackageCredentialBindingsFor"
+  >,
+  params: ResolveLaunchSourcesParams & {
+    instanceId: string;
+    triggerAddress: string;
+    principalId: string;
+    sessionId: string;
+    /**
+     * The shape the run's deployed definition takes. Defaults to the
+     * folded conversational step every launcher uses today; CL-6329's
+     * per-turn swap passes `{ kind: "section", turnTimeoutMs }` and
+     * nothing else about this call changes, because the mode is config
+     * data rendered into the deployed bytes rather than a branch here.
+     */
+    mode?: FoldedRunMode;
+  },
+): Promise<DeployedAtHead> {
+  const resolution = await resolveLaunchSources(deps, params);
 
   // `create` replaces any collector already registered for this
   // address (see `EventCollectorRegistry.create`), so this is
@@ -397,9 +466,29 @@ export async function deployAtHead(
     isMcpToolsPin && deps.mcpCredentialBindingsFor !== undefined
       ? await deps.mcpCredentialBindingsFor(params.tenantId)
       : [];
+  // Static-handle packages (`@corbits/manus-tools`, granola-tools, …) declare
+  // `interchange.credentials`, but the assistant does not require those
+  // bindings — a required bind would throw MissingCredentialError on first
+  // chat. When this port is supplied, fold in only the bindings for pins
+  // whose connector the tenant already has, skipping handles the definition
+  // itself already bound.
+  const pinnedPackageBindings: readonly CredentialBinding[] =
+    deps.pinnedPackageCredentialBindingsFor !== undefined
+      ? await deps.pinnedPackageCredentialBindingsFor(
+          params.tenantId,
+          params.foldedBody.toolPackagePins,
+        )
+      : [];
+  const definedHandles = new Set(
+    params.foldedBody.credentialBindings.map((binding) => binding.handle),
+  );
+  const extraPinnedBindings = pinnedPackageBindings.filter(
+    (binding) => !definedHandles.has(binding.handle),
+  );
   const credentialBindings = [
     ...params.foldedBody.credentialBindings,
     ...mcpBindings,
+    ...extraPinnedBindings,
   ];
 
   // The deploy front resolves the credential MATERIAL itself from the
@@ -464,9 +553,10 @@ export async function deployAtHead(
   // The definition's own `credentialBindings` are what the workflow
   // host's per-step credential snapshot
   // (`vendor/intx/workflow-host/src/supervisor/credentials.ts`) derives
-  // its consumer bindings from, which is why the pinned-package MCP
-  // bindings folded in above have to reach the rendered config and not
-  // just the delivery: without them `env.credentials.resolve("mcp.<slug>")`
+  // its consumer bindings from, which is why the pinned-package bindings
+  // folded in above — MCP `mcp.<slug>` handles and static connector
+  // handles such as `manus` — have to reach the rendered config and not
+  // just the delivery: without them `env.credentials.resolve(...)`
   // fails "not connected" even when the material was delivered.
   const runtimeConfig: AgentRuntimeConfig = {
     workflowId: `wf_${params.instanceId}`,
@@ -580,6 +670,7 @@ export async function deployAtHead(
       `${params.launchLabel}: deployment ${params.triggerAddress} is not routable for run ${params.instanceId}; cannot deliver its run grants, so the run would start under-authorized`,
     );
   }
+  return { sourcesDigest: inferenceSourcesDigest(resolution) };
 }
 
 export type LaunchFoldedRunParams = {
@@ -614,6 +705,8 @@ export type LaunchedFoldedRun = {
   readonly instancePrincipalId: string;
   readonly sessionId: string;
 };
+
+export type LaunchedAndDeployedFoldedRun = LaunchedFoldedRun & DeployedAtHead;
 
 export type MintFoldedRunParams = Pick<
   LaunchFoldedRunParams,
@@ -735,7 +828,7 @@ export async function mintFoldedRun(
 export async function launchFoldedRun(
   deps: FoldedRunsDeps,
   params: LaunchFoldedRunParams,
-): Promise<LaunchedFoldedRun> {
+): Promise<LaunchedAndDeployedFoldedRun> {
   const { instancePrincipalId, sessionId } = await mintFoldedRun(deps, {
     tenantId: params.tenantId,
     instanceId: params.instanceId,
@@ -746,6 +839,7 @@ export async function launchFoldedRun(
       : {}),
   });
 
+  let deployed: DeployedAtHead;
   try {
     // Opened/deployed via the shared `deployAtHead` step, mirroring
     // the reference route: the run's runtime status/readiness
@@ -761,7 +855,7 @@ export async function launchFoldedRun(
       foldedBody: params.foldedBody,
       launchLabel: params.launchLabel,
     };
-    await deployAtHead(deps, {
+    deployed = await deployAtHead(deps, {
       ...deployAtHeadParams,
       ...(params.sources !== undefined ? { sources: params.sources } : {}),
       ...(params.fallbackModel !== undefined
@@ -810,5 +904,5 @@ export async function launchFoldedRun(
     throw err;
   }
 
-  return { instancePrincipalId, sessionId };
+  return { instancePrincipalId, sessionId, ...deployed };
 }

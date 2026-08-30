@@ -59,7 +59,6 @@ function args(
     },
     model: MODEL,
     pushWorkflow: recordingPusher().push,
-    publishToolRegistry: async () => undefined,
     log,
     sleep: instantSleep,
     runStartTimeoutMs: 3,
@@ -355,12 +354,17 @@ describe("seedTenant", () => {
     });
   });
 
-  test("publishes the tenant's corbits-tools registry before deploying any workflow", async () => {
-    const { push } = recordingPusher();
-    const publishCalls: { tenantId: string; hubUrl: string }[] = [];
-    let assetCreated = false;
+  test("deploys workflows without publishing the corbits-tools registry", async () => {
+    const { pushes, push } = recordingPusher();
+    const registryListCalls: string[] = [];
     let runsCalls = 0;
     const handler: FakeHandler = (method, path, _body) => {
+      if (
+        path.includes("kind=package-registry") ||
+        path.includes("/tarballs")
+      ) {
+        registryListCalls.push(`${method} ${path}`);
+      }
       const base = baseRoutes(method, path);
       if (base) return base;
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
@@ -409,26 +413,12 @@ describe("seedTenant", () => {
         api: fakeAPI(handler),
         pushWorkflow: push,
         workflows: echoOnly,
-        publishToolRegistry: async (publishArgs) => {
-          publishCalls.push({
-            tenantId: publishArgs.tenantId,
-            hubUrl: publishArgs.hubUrl,
-          });
-          assetCreated = true;
-        },
       }),
     );
 
-    expect(publishCalls).toEqual([
-      { tenantId: TENANT_ID, hubUrl: "http://localhost:3000" },
-    ]);
-    // The fake stands in for the real publish call, which must run
-    // before any workflow deploy call reaches the fake API — proven
-    // indirectly here by the deploy succeeding at all, since the fake
-    // handler above never special-cases ordering; the direct ordering
-    // guarantee lives in `seedTenant`'s own source (publish happens
-    // immediately after the grant loop, before the workflow loop).
-    expect(assetCreated).toBe(true);
+    expect(registryListCalls).toEqual([]);
+    expect(pushes).toHaveLength(1);
+    expect(pushes[0]?.remoteUrl).toContain("/echo.git");
   });
 
   test("fresh run pushes, deploys, and confirms the assistant workflow", async () => {
