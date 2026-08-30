@@ -195,23 +195,17 @@ export type Fixture = {
   multistepCredentialsRouter: MultistepCredentialsRouter;
 };
 
-export async function makeLifecycleFixture(opts?: {
-  /**
-   * Reuse a prior fixture's data dir, so a test can construct a SECOND
-   * router against the SAME on-disk state to model a sidecar process
-   * restart (boot-time restore).
-   */
-  dataDir?: string;
-  /**
-   * Override the default in-memory fake key store with a real one (e.g.
-   * `@intx/hub-agent`'s `createAgentKeyStore` bound to the same
-   * `dataDir`), for a test that needs the actual on-disk key-persistence
-   * behavior the fake bypasses entirely.
-   */
-  keyStore?: Parameters<typeof createSidecarDeployRouter>[0]["keyStore"];
-}): Promise<Fixture> {
-  const spawns: Spawn[] = [];
-  const spawner: SubprocessSpawner = ({ env }) => {
+/**
+ * A `SubprocessSpawner` whose child never signals `ready` on its own --
+ * `answerReadyHandshake` drives that half explicitly -- so a caller
+ * controls exactly when a mocked `wired.supervisor.spawn()` call resolves.
+ * Exported (not just used internally by `makeLifecycleFixture`) so a test
+ * that builds its own router directly (rather than through the fixture)
+ * can still exercise a real spawn/ready handshake instead of a spawner
+ * that throws or resolves synchronously.
+ */
+export function createHandshakeSpawner(spawns: Spawn[]): SubprocessSpawner {
+  return ({ env }) => {
     const supervisorToChild = createMemoryNdjsonStream();
     const childToSupervisor = createMemoryNdjsonStream();
     const eventChildToSupervisor = createMemoryFrameStream();
@@ -256,6 +250,39 @@ export async function makeLifecycleFixture(opts?: {
     spawns.push(entry);
     return handle;
   };
+}
+
+export async function makeLifecycleFixture(opts?: {
+  /**
+   * Reuse a prior fixture's data dir, so a test can construct a SECOND
+   * router against the SAME on-disk state to model a sidecar process
+   * restart (boot-time restore).
+   */
+  dataDir?: string;
+  /**
+   * Override the default in-memory fake key store with a real one (e.g.
+   * `@intx/hub-agent`'s `createAgentKeyStore` bound to the same
+   * `dataDir`), for a test that needs the actual on-disk key-persistence
+   * behavior the fake bypasses entirely.
+   */
+  keyStore?: Parameters<typeof createSidecarDeployRouter>[0]["keyStore"];
+  /**
+   * Override the default single-step `LIFECYCLE_CLOSURE_DEFINITION` closure
+   * materializer -- e.g. with a multi-step definition, for a test that needs
+   * the eager (non-deferred-to-wake) boot-restore path.
+   */
+  materializeDeploymentClosure?: Parameters<
+    typeof createSidecarDeployRouter
+  >[0]["materializeDeploymentClosure"];
+  /**
+   * Override the boot-restore attempt's timeout ceiling, so a test can
+   * exercise the timeout path in milliseconds instead of the real 30s
+   * default.
+   */
+  restoreAttemptTimeoutMs?: number;
+}): Promise<Fixture> {
+  const spawns: Spawn[] = [];
+  const spawner = createHandshakeSpawner(spawns);
 
   const transport = createInMemoryTransport();
   const keyPair = await generateKeyPair();
@@ -321,17 +348,22 @@ export async function makeLifecycleFixture(opts?: {
     // Stand in for the real fetch + SRI-verify + layout + evaluate pass: a
     // fixture cannot publish a package, so every deploy evaluates to the one
     // lifecycle definition below.
-    materializeDeploymentClosure: ({ deploymentId }) =>
-      Promise.resolve({
-        definition: LIFECYCLE_CLOSURE_DEFINITION,
-        packageDir: path.join(dataDir, "closure-package", deploymentId),
-        deployDir: path.join(dataDir, "closure-deploy", deploymentId),
-      }),
+    materializeDeploymentClosure:
+      opts?.materializeDeploymentClosure ??
+      (({ deploymentId }) =>
+        Promise.resolve({
+          definition: LIFECYCLE_CLOSURE_DEFINITION,
+          packageDir: path.join(dataDir, "closure-package", deploymentId),
+          deployDir: path.join(dataDir, "closure-deploy", deploymentId),
+        })),
     multistepMailRouter,
     multistepSignalRouter,
     multistepDrainRouter,
     multistepSourcesRouter,
     multistepCredentialsRouter,
+    ...(opts?.restoreAttemptTimeoutMs !== undefined
+      ? { restoreAttemptTimeoutMs: opts.restoreAttemptTimeoutMs }
+      : {}),
   });
   return {
     router,
