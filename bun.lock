@@ -1022,6 +1022,18 @@
         "typescript": "catalog:",
       },
     },
+    "packages/migration-runner": {
+      "name": "@corbits/migration-runner",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/log": "0.3.0",
+        "postgres": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/mocks": {
       "name": "@corbits/mocks",
       "version": "0.0.1",
@@ -2226,6 +2238,8 @@
     "@corbits/memory-hub": ["@corbits/memory-hub@workspace:packages/memory-hub"],
 
     "@corbits/memory-tools": ["@corbits/memory-tools@workspace:packages/memory-tools"],
+
+    "@corbits/migration-runner": ["@corbits/migration-runner@workspace:packages/migration-runner"],
 
     "@corbits/mocks": ["@corbits/mocks@workspace:packages/mocks"],
 
@@ -3588,8 +3602,6 @@
     "@tailwindcss/oxide-wasm32-wasi/tslib": ["tslib@2.8.1", "", { "bundled": true }, "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w=="],
 
     "@typescript-eslint/eslint-plugin/ignore": ["ignore@7.0.6", "", {}, "sha512-BAg6QkE8W+TuQLrrw0Ugr7HegXduRuuj8/ti2kSOc+jz1dmx8/WNcjr6XGnq5YpDWxFwwaavqD0+jIUOKelTsw=="],
-
-    "@workbench/hub/@corbits/mailbox": ["@corbits/mailbox@github:corbitsdev/corbits-mailbox#caa5214", { "dependencies": { "@hono/standard-validator": "0.2.3", "@standard-community/standard-json": "0.3.5", "@standard-community/standard-openapi": "0.2.9", "arktype": "2.1.29", "hono-openapi": "1.3.1" }, "peerDependencies": { "@intx/log": "^0.2.2", "@intx/mime": "^0.2.2", "@intx/types": "^0.2.2", "drizzle-orm": "^0.45.2", "hono": "^4.12.0", "postgres": "^3.4.0" } }, "corbitsdev-corbits-mailbox-caa5214", "sha512-z8DRBFgA4ukM8p29COeaMjfKZYe5jAUF4OBMiaIQFuW592+DGD/y6Ws6SjGlXmR9azkHNWh8oTzjlWlRP24vsQ=="],
 
     "ajv-formats/ajv": ["ajv@8.20.0", "", { "dependencies": { "fast-deep-equal": "^3.1.3", "fast-uri": "^3.0.1", "json-schema-traverse": "^1.0.0", "require-from-string": "^2.0.2" } }, "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA=="],
 
