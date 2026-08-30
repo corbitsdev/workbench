@@ -329,15 +329,26 @@ describe("createAgentLifecycle", () => {
   // CL-6643: a run whose deployed record was parked aside (no sidecar
   // record, cold wake required) can hang inside the injected `wake` port
   // forever — the sidecar never acks a redeploy it has no state for.
-  // Without a bound, that first hung call never leaves `pendingWakes`
-  // (its `.finally` never runs because the promise it's attached to
-  // never settles), so every later `ensureAwake` for the same address
-  // coalesces onto that same dead promise and hangs too — silently,
-  // forever, for the rest of the process's life. This is the mechanism
-  // behind "message accepted, then silence: no fanout, no wake, no
-  // error" — the caller (`sendMail`) never sees a rejection to report as
-  // an undelivered notice, because nothing ever rejects.
-  test("a wake that never settles does not wedge every later call behind it forever", async () => {
+  // Without a bound, a caller waiting on that hung call would hang too;
+  // `ensureAwake` bounds each caller's own wait so it always sees a
+  // settled outcome. This is the mechanism behind "message accepted,
+  // then silence: no fanout, no wake, no error" — the caller (`sendMail`)
+  // never sees a rejection to report as an undelivered notice, because
+  // nothing ever rejects.
+  //
+  // CL-7217: a still-hung `wake()` must not let a second caller dispatch
+  // a SECOND, concurrent `wake()` for the same address — that races both
+  // redeploys against each other on the host. So every later caller for
+  // this address keeps coalescing onto the one real `wake()` call for as
+  // long as it stays in flight, each with its own fresh timeout. The
+  // trade-off this accepts: an address whose underlying `wake()` never
+  // settles, ever, is permanently deduped (unwakeable via this dedup
+  // path) for the rest of the process's life, since nothing ever clears
+  // `pendingWakes` for it. That is intentional — a silently wedged
+  // address is a lesser failure than every retry redeploying it
+  // concurrently forever — and is proven below by a third call still
+  // seeing no new `wake()` dispatch.
+  test("a wake that never settles times out every caller but never dispatches a second concurrent wake", async () => {
     const routable = new Set<string>();
     let wakeCalls = 0;
 
@@ -364,11 +375,63 @@ describe("createAgentLifecycle", () => {
     expect(wakeCalls).toBe(1);
 
     // A second, later call for the same address — the next message sent
-    // to the same workbench — must attempt its own wake rather than
-    // coalescing onto the first call's dead, already-timed-out promise.
+    // to the same workbench — coalesces onto the still-hung first wake
+    // rather than dispatching a concurrent one; it gets its own timeout
+    // and rejects too, but `wake` is not called again.
     await expect(lifecycle.ensureAwake("agent-1@t.test")).rejects.toThrow(
       /wake/i,
     );
-    expect(wakeCalls).toBe(2);
+    expect(wakeCalls).toBe(1);
+
+    // A third call proves this isn't a one-off race: the dedup holds for
+    // as long as the underlying wake never settles.
+    await expect(lifecycle.ensureAwake("agent-1@t.test")).rejects.toThrow(
+      /wake/i,
+    );
+    expect(wakeCalls).toBe(1);
+  });
+
+  // CL-7217: the earlier version of this fix cleared `pendingWakes` the
+  // moment the per-caller timeout fired, not when `wake()` itself
+  // settled — so a caller arriving after a timeout, but before the real
+  // wake finished, dispatched a brand-new concurrent `wake()` call. This
+  // proves the corrected coalescing: a second caller arriving in that
+  // window joins the one real wake in flight and observes its outcome,
+  // instead of triggering its own.
+  test("a caller arriving after a timeout coalesces onto the still-in-flight wake instead of dispatching a second one", async () => {
+    const routable = new Set<string>();
+    let wakeCalls = 0;
+    let resolveWake: (() => void) | undefined;
+
+    const lifecycle = createAgentLifecycle({
+      idleSleepMs: 1_000,
+      wakeTimeoutMs: 20,
+      isRoutable: (address) => routable.has(address),
+      undeploy: async () => undefined,
+      wake: async (address) => {
+        wakeCalls += 1;
+        await new Promise<void>((resolve) => {
+          resolveWake = resolve;
+        });
+        routable.add(address);
+      },
+      log,
+    });
+    stop = lifecycle.stop;
+
+    const first = lifecycle.ensureAwake("agent-1@t.test");
+
+    // The first caller's own 20ms budget expires while the underlying
+    // wake is still running.
+    await expect(first).rejects.toThrow(/wake/i);
+    expect(wakeCalls).toBe(1);
+
+    // A second caller arrives after that timeout but before the real
+    // wake has settled. It must join the one in-flight wake rather than
+    // starting a new one.
+    const second = lifecycle.ensureAwake("agent-1@t.test");
+    resolveWake?.();
+    await expect(second).resolves.toBeUndefined();
+    expect(wakeCalls).toBe(1);
   });
 });

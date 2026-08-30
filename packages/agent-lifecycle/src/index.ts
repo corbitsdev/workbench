@@ -169,12 +169,18 @@ export function createAgentLifecycle(
   if (typeof interval.unref === "function") interval.unref();
 
   /**
-   * Races `wake(address)` against `wakeTimeoutMs`. A timeout rejects
-   * with a distinct error so a caller (and everything coalesced behind
-   * it) always gets a settled outcome — never a hang — even though the
-   * underlying `wake` call keeps running unobserved past the deadline.
+   * Races `pending` against `wakeTimeoutMs`, rejecting with a distinct
+   * error so a caller always gets a settled outcome — never a hang —
+   * even though `pending` itself keeps running unobserved past the
+   * deadline. Called once per `ensureAwake` caller (not once per
+   * address): every caller coalesced onto the same in-flight `pending`
+   * gets its own fresh timer, so one caller's timeout never shortens
+   * another's wait.
    */
-  function wakeWithTimeout(address: string): Promise<void> {
+  function boundToTimeout(
+    pending: Promise<void>,
+    address: string,
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         reject(
@@ -183,7 +189,7 @@ export function createAgentLifecycle(
           ),
         );
       }, wakeTimeoutMs);
-      wake(address).then(
+      pending.then(
         (value) => {
           clearTimeout(timer);
           resolve(value);
@@ -196,21 +202,34 @@ export function createAgentLifecycle(
     });
   }
 
+  /**
+   * `pendingWakes` tracks the raw, untimed `wake(address)` call — never
+   * the timeout-bound promise a caller sees. Clearing the map entry only
+   * when the real wake settles (not when a caller's own timeout fires)
+   * is what keeps a later caller, arriving after an earlier one already
+   * timed out, coalescing onto the same in-flight wake instead of
+   * dispatching a second, concurrent one (CL-7217) — the earlier version
+   * of this function cleared the entry on timeout, which let exactly
+   * that race through. The trade-off: an address whose injected `wake`
+   * never settles, ever, stays permanently deduped — no later caller can
+   * ever trigger a fresh attempt for it — which is an accepted cost
+   * against a concurrent-wake race that can corrupt host state.
+   */
   async function ensureAwake(address: string): Promise<void> {
     if (isRoutable(address)) return;
 
-    const pending = pendingWakes.get(address);
-    if (pending !== undefined) return pending;
-
-    const waking = wakeWithTimeout(address)
-      .then(() => {
-        recordActivity(address);
-      })
-      .finally(() => {
-        pendingWakes.delete(address);
-      });
-    pendingWakes.set(address, waking);
-    return waking;
+    let inFlight = pendingWakes.get(address);
+    if (inFlight === undefined) {
+      inFlight = wake(address)
+        .then(() => {
+          recordActivity(address);
+        })
+        .finally(() => {
+          pendingWakes.delete(address);
+        });
+      pendingWakes.set(address, inFlight);
+    }
+    return boundToTimeout(inFlight, address);
   }
 
   function stop(): void {
