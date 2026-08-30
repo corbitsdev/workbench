@@ -134,13 +134,15 @@ describe("createGitWorkflowPusher", () => {
       const hook = join(hooksDir, "commit-msg");
       await writeFile(
         hook,
-        `#!/bin/sh
-author="\${GIT_AUTHOR_EMAIL:-}"
-if [ "\$author" = "seed@workbench.localhost" ]; then
-  echo "commit blocked: author must be listed in allowed-emails" >&2
-  exit 1
-fi
-`,
+        [
+          "#!/bin/sh",
+          'author="${GIT_AUTHOR_EMAIL:-}"',
+          'if [ "$author" = "seed@workbench.localhost" ]; then',
+          '  echo "commit blocked: author must be listed in allowed-emails" >&2',
+          "  exit 1",
+          "fi",
+          "",
+        ].join("\n"),
         "utf-8",
       );
       await chmod(hook, 0o755);
