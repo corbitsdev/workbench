@@ -18,6 +18,7 @@ import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { type } from "arktype";
 import { decodedOrNull } from "@corbits/url-path";
+import { reportError } from "@corbits/error-sink";
 
 import type { TenantEnv } from "@intx/hub-api";
 import type { RequireGrant } from "@intx/hub-api";
@@ -2227,57 +2228,18 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                   : {}),
               };
 
-      const row = await deps.blockResponses.upsertBlockResponse({
+      const responseKey = {
         tenantId: ownerTenantId,
         workbenchId,
         messageId,
         blockId,
         principalId: principal.id,
+      };
+
+      const row = await deps.blockResponses.upsertBlockResponse({
+        ...responseKey,
         payload,
       });
-
-      // A question's answer is the interview reply itself, not just a
-      // structured event: post it into the workbench as the responding
-      // user's own message so the asking agent receives it exactly as it
-      // would any other reply from that user — visible in-thread, routed
-      // by the workbench's normal host routing, no side channel only the
-      // agent can read.
-      if (payload.kind === "question") {
-        const answer = await sendWorkbenchMessage(
-          {
-            store: deps.store,
-            platform: deps.platform,
-            roomMessages: deps.roomMessages,
-            publish,
-            turnQueue,
-            ...(deps.agentTurns !== undefined
-              ? { agentTurns: deps.agentTurns }
-              : {}),
-            ...(deps.threads !== undefined ? { threads: deps.threads } : {}),
-            ...(deps.turnDispatchTimeoutMs !== undefined
-              ? { turnDispatchTimeoutMs: deps.turnDispatchTimeoutMs }
-              : {}),
-            ...(deps.waitUntilFreeTimeoutMs !== undefined
-              ? { waitUntilFreeTimeoutMs: deps.waitUntilFreeTimeoutMs }
-              : {}),
-          },
-          {
-            tenantId: ownerTenantId,
-            principalId: principal.id,
-            senderAddress: senderAddressOf(c),
-            workbenchId,
-            messageParts: [{ kind: "text", text: payload.answer }],
-            // A question block's `blockId` IS its `questionId`
-            // (`ask_user`'s `postQuestion` mints one id and reuses it as
-            // both), which is also the `message_response` gate's own
-            // correlationId (`beforeAskUser`, `@corbits/interaction-tools`)
-            // — so this is the exact id that resolves the gate this answer
-            // is for, not merely "whichever gate is next".
-            correlationId: blockId,
-          },
-        );
-        deps.onMessageFanout?.(answer.fanoutDelivered);
-      }
 
       // A machine-readable event into the same workbench timeline the
       // responder is already a member of, so the outcome reaches the
@@ -2287,7 +2249,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // the same event any other message in this workbench would show them;
       // that is the workbench's own membership boundary, not a new one — the
       // GET route below is the boundary that must never let a member read
-      // *another* member's raw response on demand.
+      // *another* member's raw response on demand. Posted before the
+      // question branch below ever gets a chance to dispatch a turn, so an
+      // agent reading the timeline for its turn always finds this event
+      // already there (CL-7192).
       await postRoomMessage(
         { roomMessages: deps.roomMessages, publish },
         {
@@ -2299,11 +2264,80 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             {
               kind: "event",
               event: "block.response",
-              data: { messageId, blockId, ...payload },
+              data: { messageId, blockId, ...row.payload },
             },
           ],
         },
       );
+
+      // A question's answer is the interview reply itself, not just a
+      // structured event: post it into the workbench as the responding
+      // user's own message so the asking agent receives it exactly as it
+      // would any other reply from that user — visible in-thread, routed
+      // by the workbench's normal host routing, no side channel only the
+      // agent can read.
+      //
+      // `claimBlockResponseNotification` guards this so only the
+      // submission that first answers a question ever sends the message
+      // and dispatches a turn: a changed answer, or a double-click that
+      // beats the UI's disable, still lands its own row above, but never
+      // gets a second turn (CL-7192). A failed send releases the claim so
+      // a retried submission can still notify the agent, rather than
+      // leaving the answer permanently unable to reach it.
+      if (payload.kind === "question") {
+        const claimToken =
+          await deps.blockResponses.claimBlockResponseNotification(responseKey);
+        if (claimToken !== false) {
+          try {
+            const answer = await sendWorkbenchMessage(
+              {
+                store: deps.store,
+                platform: deps.platform,
+                roomMessages: deps.roomMessages,
+                publish,
+                turnQueue,
+                ...(deps.agentTurns !== undefined
+                  ? { agentTurns: deps.agentTurns }
+                  : {}),
+                ...(deps.threads !== undefined
+                  ? { threads: deps.threads }
+                  : {}),
+                ...(deps.turnDispatchTimeoutMs !== undefined
+                  ? { turnDispatchTimeoutMs: deps.turnDispatchTimeoutMs }
+                  : {}),
+                ...(deps.waitUntilFreeTimeoutMs !== undefined
+                  ? { waitUntilFreeTimeoutMs: deps.waitUntilFreeTimeoutMs }
+                  : {}),
+              },
+              {
+                tenantId: ownerTenantId,
+                principalId: principal.id,
+                senderAddress: senderAddressOf(c),
+                workbenchId,
+                messageParts: [{ kind: "text", text: payload.answer }],
+              },
+            );
+            deps.onMessageFanout?.(answer.fanoutDelivered);
+          } catch (err) {
+            const refId = reportError(err, {
+              operation: "chat.blockResponse.notifyQuestionAnswer",
+              tenantId: ownerTenantId,
+              roomId: workbenchId,
+            });
+            await deps.blockResponses.releaseBlockResponseNotification(
+              responseKey,
+              claimToken,
+            );
+            return c.json(
+              ErrorEnvelope(
+                "notify_failed",
+                `your answer was saved, but the agent couldn't be notified — try again (ref ${refId})`,
+              ),
+              500,
+            );
+          }
+        }
+      }
 
       return c.json({ blockId, updatedAt: row.updatedAt.toISOString() }, 200);
     },

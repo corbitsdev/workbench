@@ -519,6 +519,14 @@ export const chatMigrations: readonly ChatMigration[] = [
         WHERE "kind" = 'delivery' AND "run_ref" IS NOT NULL;
     `,
   },
+  {
+    name: "0027_block_responses_notified_at",
+    sql: `
+      ALTER TABLE "chat"."block_responses"
+        ADD COLUMN IF NOT EXISTS "notified_at" timestamptz,
+        ADD COLUMN IF NOT EXISTS "notification_claim_token" text;
+    `,
+  },
 ];
 
 /**

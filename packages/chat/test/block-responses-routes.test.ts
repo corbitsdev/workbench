@@ -9,17 +9,39 @@ import { createChatRoutes } from "../src/routes";
 import { createInMemoryBlockResponseStore } from "../src/block-responses";
 import { createInMemoryChatStore } from "../src/store";
 import type { ChatStore } from "../src/store";
+import { createInMemoryRoomMessageStore } from "../src/room-messages";
+import type { RoomMessageStore } from "../src/room-messages";
 import {
   buildDeps,
   createWorkbench,
   fakePlatform,
   mountAs,
-  settleFanout,
   TENANT,
   timelineEvents,
   timelineOf,
   timelineTexts,
 } from "./test-support";
+
+/** A `RoomMessageStore` whose next attempt to post a text-bearing message
+ * (the answer, never the `block.response` event) throws once, then
+ * delegates normally — used to simulate a notify failure a retry
+ * recovers from. */
+function roomMessagesFailingNextAnswer(
+  base: RoomMessageStore,
+): RoomMessageStore {
+  let shouldFail = true;
+  return {
+    ...base,
+    async insertMessage(input) {
+      const isAnswerText = input.parts.some((part) => part.kind === "text");
+      if (isAnswerText && shouldFail) {
+        shouldFail = false;
+        throw new Error("simulated notify failure");
+      }
+      return base.insertMessage(input);
+    },
+  };
+}
 
 function responsesUrl(workbenchId: string, messageId: string, blockId: string) {
   return `/workbenches/${workbenchId}/messages/${messageId}/blocks/${blockId}/responses`;
@@ -307,114 +329,119 @@ describe("block response routes — question answers", () => {
     });
   });
 
-  test("answering a question stamps the answer's mail with the block's own id as its correlationId", async () => {
+  test("changing an answer updates the stored response but never dispatches a second turn", async () => {
     const platform = fakePlatform();
     const deps = buildDeps({
       platform,
       blockResponses: createInMemoryBlockResponseStore(),
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: workbench } = await createWorkbench(app, {
-      kind: "workbench",
-      participants: ["ins_echo1@acme.example"],
-    });
+    const workbenchId = await newWorkbench(deps.store);
 
-    const post = await app.request(
-      responsesUrl(workbench.id, "m1", "blk_question1"),
+    const first = await app.request(
+      responsesUrl(workbenchId, "m1", "blk_question1"),
       {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ kind: "question", answer: "Staging" }),
       },
     );
-    expect(post.status).toBe(200);
-    await settleFanout();
+    expect(first.status).toBe(200);
 
-    // The block's own id (`blk_question1`, the same id `postQuestion`
-    // mints as `questionId`) rides as the answer mail's correlationId —
-    // the exact id `tryCorrelate` (`vendor/intx/inference/src/reactor.ts`)
-    // needs to resolve the `message_response` gate this answers, rather
-    // than "whichever gate is next".
-    expect(platform.sentMail).toHaveLength(1);
-    expect(platform.sentMail[0]?.correlationId).toBe("blk_question1");
+    const second = await app.request(
+      responsesUrl(workbenchId, "m1", "blk_question1"),
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "question", answer: "Production" }),
+      },
+    );
+    expect(second.status).toBe(200);
+
+    // Only the first answer ever became a message the agent was asked to
+    // turn on -- the second lands in the stored row (and its own
+    // `block.response` event) but never re-sends or re-dispatches.
+    const timeline = await timelineOf(deps, workbenchId);
+    expect(timelineTexts(timeline)).toEqual(["Staging"]);
+    expect(timelineEvents(timeline, "block.response")).toHaveLength(2);
+
+    const get = await getResponses(app, workbenchId, "m1", "blk_question1");
+    const body = (await get.json()) as { own: unknown };
+    expect(body.own).toEqual({ kind: "question", answer: "Production" });
   });
 
-  test("a question's correlationId survives batching even when it isn't the batch's last queued message", async () => {
-    // A held first dispatch forces the answer (queued 2nd) and a further
-    // plain follow-up (queued 3rd, landing last) into one batched turn —
-    // proving the batch's correlationId comes from whichever queued turn
-    // carries one, not from `batch[batch.length - 1]`, which here is the
-    // follow-up and carries none.
-    let releaseHold: () => void = () => {};
-    const held = new Promise<void>((resolve) => {
-      releaseHold = resolve;
-    });
-    let resolveFirstDispatchStarted: () => void = () => {};
-    const firstDispatchStarted = new Promise<void>((resolve) => {
-      resolveFirstDispatchStarted = resolve;
-    });
-    let holdConsumed = false;
-
+  test("a double-click resubmitting the identical answer never dispatches a second turn", async () => {
     const platform = fakePlatform();
-    const deliverMail = platform.sendMail.bind(platform);
-    platform.sendMail = async (input) => {
-      if (!holdConsumed) {
-        holdConsumed = true;
-        resolveFirstDispatchStarted();
-        await held;
-      }
-      return deliverMail(input);
-    };
-
     const deps = buildDeps({
       platform,
       blockResponses: createInMemoryBlockResponseStore(),
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
-    const { body: workbench } = await createWorkbench(app, {
-      kind: "workbench",
-      participants: ["ins_echo1@acme.example"],
-    });
+    const workbenchId = await newWorkbench(deps.store);
 
-    // Message 1 dispatches immediately and is held open.
-    const first = await app.request(`/workbenches/${workbench.id}/messages`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ parts: [{ kind: "text", text: "hello" }] }),
-    });
-    expect(first.status).toBe(201);
-    await firstDispatchStarted;
-
-    // Queued 2nd, while the first dispatch is still held: the answer,
-    // carrying the block's id as its correlationId.
-    const post = await app.request(
-      responsesUrl(workbench.id, "m1", "blk_question1"),
-      {
+    const submit = () =>
+      app.request(responsesUrl(workbenchId, "m1", "blk_question1"), {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ kind: "question", answer: "Staging" }),
-      },
+        body: JSON.stringify({ kind: "question", answer: "Production" }),
+      });
+
+    const [first, second] = await Promise.all([submit(), submit()]);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+
+    const timeline = await timelineOf(deps, workbenchId);
+    expect(timelineTexts(timeline)).toEqual(["Production"]);
+  });
+
+  test("a failed notification releases the claim so a retried answer still reaches the agent", async () => {
+    const platform = fakePlatform();
+    const roomMessages = roomMessagesFailingNextAnswer(
+      createInMemoryRoomMessageStore(),
     );
-    expect(post.status).toBe(200);
-
-    // Queued 3rd, landing last in the batch: an unrelated follow-up with
-    // no correlationId of its own.
-    const third = await app.request(`/workbenches/${workbench.id}/messages`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        parts: [{ kind: "text", text: "also, one more thing" }],
-      }),
+    const deps = buildDeps({
+      platform,
+      roomMessages,
+      blockResponses: createInMemoryBlockResponseStore(),
     });
-    expect(third.status).toBe(201);
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const workbenchId = await newWorkbench(deps.store);
 
-    releaseHold();
-    await settleFanout();
+    const submit = () =>
+      app.request(responsesUrl(workbenchId, "m1", "blk_question1"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "question", answer: "Production" }),
+      });
 
-    // First dispatch (message 1), then one batched dispatch covering
-    // both the answer and the follow-up.
-    expect(platform.sentMail).toHaveLength(2);
-    expect(platform.sentMail[1]?.correlationId).toBe("blk_question1");
+    const failed = await submit();
+    expect(failed.status).toBe(500);
+    const failedBody = (await failed.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(failedBody.error.code).toBe("notify_failed");
+    expect(failedBody.error.message).toMatch(/ref /);
+
+    // The answer itself was already durable even though the notify failed.
+    const afterFailure = await getResponses(
+      app,
+      workbenchId,
+      "m1",
+      "blk_question1",
+    );
+    const afterFailureBody = (await afterFailure.json()) as { own: unknown };
+    expect(afterFailureBody.own).toEqual({
+      kind: "question",
+      answer: "Production",
+    });
+    expect(timelineTexts(await timelineOf(deps, workbenchId))).toEqual([]);
+
+    const retried = await submit();
+    expect(retried.status).toBe(200);
+
+    const timeline = await timelineOf(deps, workbenchId);
+    expect(timelineTexts(timeline)).toEqual(["Production"]);
+    expect(timelineEvents(timeline, "block.response")).toHaveLength(2);
   });
 
   test("a question response without answer text is rejected", async () => {

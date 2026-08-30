@@ -563,3 +563,30 @@ pinned strip the shell mock shows above the message list
 (`@corbits/chat-ui`'s `PinnedStrip`) renders every currently-pinned message
 as a jump-to chip; clicking one scrolls the timeline to that message's own
 row (`messageDomId`).
+
+### Question answers notify at most once (CL-7192)
+
+A question block's answer is relayed into the workbench as the
+responding user's own message, and the asking agent is turned on it —
+but only once per question, ever. `upsertBlockResponse`
+(`packages/chat/src/block-responses.ts`) is a plain "second answer
+overwrites the first" write; the one-time send-and-dispatch is gated
+separately by `claimBlockResponseNotification`, a guarded UPDATE on the
+same row (`notifiedAt`/`notificationClaimToken`) that at most one
+submission for a given (tenant, workbench, message, block, principal)
+can ever win. A changed answer or a double-click that beats the UI's
+disable still lands its own row and its own `block.response` timeline
+event, but never wins a second claim — re-answering after the first
+notification updates the stored payload without ever notifying the
+agent again.
+
+A claim a submission wins but fails to act on (the send into the
+workbench throws) is released so a retried submission can still reach
+the agent; `POST /workbenches/:id/messages/:id/blocks/:id/responses`
+answers that case with an explicit `notify_failed` 500 telling the
+caller their answer was saved and to retry, rather than leaving the row
+reading "answered" with the agent silently never turned. The
+`block.response` event is always posted — from the upsert's own
+returned row, never the request's local payload — before this claim is
+even attempted, so an agent dispatched off a won claim always finds its
+own correlation event already on the timeline.
