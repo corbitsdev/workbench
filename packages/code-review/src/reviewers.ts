@@ -10,7 +10,17 @@
 // takes, so the same three definitions can be installed as agents in a
 // workbench and driven by this package's own review run.
 
-/** The output contract every reviewer replies under. */
+/**
+ * The JSON contract a reviewer replies under **when a machine parses the
+ * reply back** — `./review-run.ts`'s pass runner, and nothing else.
+ *
+ * It is deliberately not part of `ReviewerDefinition.systemPrompt`. The
+ * same prompts install these reviewers as ordinary chat agents
+ * (`./agent-requests.ts`), and a reviewer carrying this contract answers
+ * a person in the room with `{"summary": ..., "findings": []}` instead of
+ * a sentence (CL-7189). Append it with `reviewerReportPrompt` on the one
+ * path that reads JSON back.
+ */
 export const REVIEWER_REPORT_CONTRACT =
   "Reply with JSON and nothing else — no prose before or after, no code " +
   'fence. Shape: {"summary": string, "findings": [{"severity": ' +
@@ -91,8 +101,7 @@ const ARCHITECTURE_REVIEWER: ReviewerDefinition = {
     "duplication that should have been a refactor or an extension of an " +
     "existing interface.\n\n" +
     "Out of lane: style-only nitpicking, and speculative redesigns of " +
-    "code this change did not touch.\n\n" +
-    REVIEWER_REPORT_CONTRACT,
+    "code this change did not touch.",
   introduction: (repoNames) =>
     `I'm the architecture reviewer. I'll read every pull request on ` +
     `${namedRepos(repoNames)} for whether the shape holds up: the ` +
@@ -123,8 +132,7 @@ const CORRECTNESS_REVIEWER: ReviewerDefinition = {
     "that cannot happen, or tests for inputs that cannot occur. A " +
     "signature that drifted from what callers expect — a value that " +
     "became a promise, a changed parameter order, a return type that " +
-    "narrowed — is blocking.\n\n" +
-    REVIEWER_REPORT_CONTRACT,
+    "narrowed — is blocking.",
   introduction: (repoNames) =>
     `I'm the correctness reviewer. I'll read every pull request opened ` +
     `on ${namedRepos(repoNames)} for defects, with the file, the line, ` +
@@ -147,8 +155,7 @@ const RELEASE_RISK_REVIEWER: ReviewerDefinition = {
     "Say what the team is most likely getting wrong that nobody else " +
     'would raise. Say "do not ship" plainly when you mean it — an early ' +
     "no is worth more than a late surprise. Sequencing, rollout order, " +
-    "and what has to be true before this lands are yours to raise.\n\n" +
-    REVIEWER_REPORT_CONTRACT,
+    "and what has to be true before this lands are yours to raise.",
   introduction: (repoNames) =>
     `I'm the release-risk reviewer. I'll weigh in on pull requests to ` +
     `${namedRepos(repoNames)}, saying plainly what actually blocks ` +
@@ -161,6 +168,13 @@ export const CODE_REVIEW_REVIEWERS: readonly ReviewerDefinition[] = [
   ARCHITECTURE_REVIEWER,
   RELEASE_RISK_REVIEWER,
 ];
+
+/** This reviewer's lens plus the JSON contract — the system prompt for
+ * a turn whose reply is parsed, never the one an installed chat agent
+ * answers a person under. */
+export function reviewerReportPrompt(reviewer: ReviewerDefinition): string {
+  return `${reviewer.systemPrompt}\n\n${REVIEWER_REPORT_CONTRACT}`;
+}
 
 /** Looks a reviewer up by id; an unknown id is a named error. */
 export function reviewerById(id: string): ReviewerDefinition {

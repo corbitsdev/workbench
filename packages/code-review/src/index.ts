@@ -20,6 +20,7 @@ export {
 export {
   CODE_REVIEW_REVIEWERS,
   REVIEWER_REPORT_CONTRACT,
+  reviewerReportPrompt,
   reviewerById,
   type ReviewerDefinition,
 } from "./reviewers";
