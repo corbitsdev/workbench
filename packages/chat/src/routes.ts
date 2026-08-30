@@ -3407,23 +3407,19 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // `chat/participants` is normalized to records on write even when
       // a caller PATCHes it with bare addresses (as the settings-control
       // wire path does) — settings always hold records, never strings.
-      const merged: Record<string, unknown> = {
-        ...existing.settings,
-        ...patch,
-      };
+      // Merge happens under a row lock against the live snapshot so a
+      // PATCH that omits `chat/participants` cannot revert a concurrent
+      // invite.
+      const writePatch: Record<string, unknown> = { ...patch };
       if (patch["chat/participants"] !== undefined) {
-        merged["chat/participants"] = parseParticipants(
+        writePatch["chat/participants"] = parseParticipants(
           patch["chat/participants"],
         );
       }
-      // The settings record itself is the durable source of truth; it
-      // is updated before anything else here fires, so a failure
-      // below never leaves the record unwritten and the audit trail
-      // silently ahead of it.
-      const row = await deps.store.updateWorkbenchSettings({
+      const row = await deps.store.patchWorkbenchSettings({
         tenantId: tenant.id,
         workbenchId,
-        settings: merged,
+        patch: writePatch,
         updatedBy: principal.id,
       });
 
