@@ -5,6 +5,7 @@
 // in ./provision.ts.
 
 import type { AppEnv } from "@intx/hub-api";
+import { createExpiringMap } from "@corbits/collections";
 import { createNoopCredentialCipher } from "@intx/crypto";
 import { CredentialResponse, paginatedSchema } from "@intx/types";
 import type { CredentialCipher } from "@intx/types";
@@ -285,8 +286,18 @@ export function createOnboardingRoutes(
   // (or a runaway script) can pile concurrent tenant creates onto the hub.
   // One in-flight or recent provision per user is enough; the window is
   // short because successful provisioning resolves immediately.
+  //
+  // This router is built once at hub boot and lives for the process —
+  // every distinct user who has ever attempted a named create would
+  // otherwise sit in this map forever (CL-7233). A TTL equal to the rate
+  // limit window itself is exactly the right eviction policy here: an
+  // entry has no reason to exist past the window it gates, so
+  // `createExpiringMap`'s own `get()` already encodes the rate-limit
+  // check — a defined result means "still inside the window".
   const PROVISION_RATE_LIMIT_MS = 10_000;
-  const lastProvisionByUser = new Map<string, number>();
+  const lastProvisionByUser = createExpiringMap<string, number>({
+    ttlMs: PROVISION_RATE_LIMIT_MS,
+  });
 
   /**
    * Reads where the bench's agents actually stand. Two hub reads, no
@@ -365,11 +376,8 @@ export function createOnboardingRoutes(
     // anyone who types a name within the window of their membership probe.
     if (isCreateAttempt) {
       const now = Date.now();
-      const lastAttempt = lastProvisionByUser.get(user.id);
-      if (
-        lastAttempt !== undefined &&
-        now - lastAttempt < PROVISION_RATE_LIMIT_MS
-      ) {
+      const isRateLimited = lastProvisionByUser.get(user.id) !== undefined;
+      if (isRateLimited) {
         return c.json(
           {
             error: {
