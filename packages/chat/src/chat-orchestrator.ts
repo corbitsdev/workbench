@@ -197,6 +197,21 @@ function gateBlockedCorrelationId(event: unknown): string | undefined {
 }
 
 /**
+ * Identifies one turn on the shared `agent.event` stream: an agent
+ * address alone is not enough, since `resolveMemberWorkbenches` (above)
+ * deliberately returns workbench ids plural — one address can be a member
+ * of several benches, each with its own turn running at once. Every
+ * `agent.event` frame carries a `sessionId` regardless of which inner
+ * event type it wraps (`vendor/intx/hub-sessions/src/ws/sidecar-events.ts`'s
+ * `SidecarEventMap["agent.event"]`), scoped to the one sidecar connection
+ * that turn's occurrence runs on — the correlator this module's in-flight
+ * turn state (below) keys on instead of the address alone.
+ */
+function turnKeyFor(agentAddress: string, sessionId: string): string {
+  return `${agentAddress}:${sessionId}`;
+}
+
+/**
  * Turn-scoped reply assembly (CL-6378). A turn's `inference.done` events
  * already carry the model's output pre-split into prose and tool calls
  * (`inferenceDoneBlocks`, reading the same split
@@ -205,14 +220,13 @@ function gateBlockedCorrelationId(event: unknown): string | undefined {
  * `Part[]` a reply message posts as, so a tool call the model made
  * becomes a `ToolTracePart` the UI renders as `ToolBlock`, never JSON
  * folded into a `TextPart`'s prose. One accumulator per process, keyed by
- * agent address (this stream carries no turnId to key on more precisely,
- * matching `repliedAddresses`' own per-address bookkeeping above); reset
- * the moment a turn's `connector.reply` or turn-drop notice consumes it.
+ * turn (see `turnKeyFor` below): reset the moment a turn's
+ * `connector.reply` or turn-drop notice consumes it.
  */
 export function createReplyPartsAccumulator(): {
-  onInferenceDone(agentAddress: string, blocks: ReplyContentBlock[]): void;
+  onInferenceDone(turnKey: string, blocks: ReplyContentBlock[]): void;
   onToolDone(
-    agentAddress: string,
+    turnKey: string,
     result: {
       callId: string;
       content: unknown;
@@ -220,18 +234,18 @@ export function createReplyPartsAccumulator(): {
       detail?: unknown;
     },
   ): void;
-  /** Returns and clears the address's accumulated parts, or undefined if
-   * nothing was ever accumulated for it this turn. */
-  take(agentAddress: string): Part[] | undefined;
+  /** Returns and clears the turn's accumulated parts, or undefined if
+   * nothing was ever accumulated for it. */
+  take(turnKey: string): Part[] | undefined;
 } {
-  const partsByAddress = new Map<string, Part[]>();
-  const toolTraceIndexByAddress = new Map<string, Map<string, number>>();
+  const partsByTurn = new Map<string, Part[]>();
+  const toolTraceIndexByTurn = new Map<string, Map<string, number>>();
 
   return {
-    onInferenceDone(agentAddress, blocks) {
-      const parts = partsByAddress.get(agentAddress) ?? [];
+    onInferenceDone(turnKey, blocks) {
+      const parts = partsByTurn.get(turnKey) ?? [];
       const toolTraceIndex =
-        toolTraceIndexByAddress.get(agentAddress) ?? new Map<string, number>();
+        toolTraceIndexByTurn.get(turnKey) ?? new Map<string, number>();
       for (const block of blocks) {
         if (block.kind === "text") {
           parts.push({ kind: "text", text: block.text });
@@ -245,14 +259,12 @@ export function createReplyPartsAccumulator(): {
           });
         }
       }
-      partsByAddress.set(agentAddress, parts);
-      toolTraceIndexByAddress.set(agentAddress, toolTraceIndex);
+      partsByTurn.set(turnKey, parts);
+      toolTraceIndexByTurn.set(turnKey, toolTraceIndex);
     },
-    onToolDone(agentAddress, result) {
-      const parts = partsByAddress.get(agentAddress);
-      const index = toolTraceIndexByAddress
-        .get(agentAddress)
-        ?.get(result.callId);
+    onToolDone(turnKey, result) {
+      const parts = partsByTurn.get(turnKey);
+      const index = toolTraceIndexByTurn.get(turnKey)?.get(result.callId);
       if (parts === undefined || index === undefined) return;
       const existing = parts[index];
       if (existing === undefined || existing.kind !== "tool-trace") return;
@@ -292,10 +304,10 @@ export function createReplyPartsAccumulator(): {
         });
       }
     },
-    take(agentAddress) {
-      const parts = partsByAddress.get(agentAddress);
-      partsByAddress.delete(agentAddress);
-      toolTraceIndexByAddress.delete(agentAddress);
+    take(turnKey) {
+      const parts = partsByTurn.get(turnKey);
+      partsByTurn.delete(turnKey);
+      toolTraceIndexByTurn.delete(turnKey);
       return parts;
     },
   };
@@ -997,29 +1009,31 @@ export function createChatOrchestrator(
   // doc comment for what this does and doesn't cover.
   const postedApprovalIds = new Set<string>();
 
-  // Every address with a `connector.reply` pending delivery for its
-  // current turn — added the moment reply content is seen, cleared the
-  // moment that turn's own `message.run.ended` bracket closes (see
-  // below), keyed per address rather than per message — this stream
-  // carries no messageId to correlate on more precisely — though chat
-  // only needs a presence bit here, never the reply text itself.
-  const repliedAddresses = new Set<string>();
+  // Every turn with a `connector.reply` pending delivery — added the
+  // moment reply content is seen, cleared the moment that same turn's own
+  // `message.run.ended` bracket closes (see below). Keyed by `turnKeyFor`
+  // (agent address + sidecar session id), never by address alone: one
+  // address can be mid-turn in several benches at once
+  // (`resolveMemberWorkbenches` returns workbench ids plural by design),
+  // and each such turn runs its own sidecar connection with its own
+  // `sessionId` — the correlator every `agent.event` frame carries
+  // regardless of which inner event type it wraps.
+  const repliedTurns = new Set<string>();
 
   // Process-lifetime idempotency guard for the turn-drop notice below,
-  // keyed the same coarse way as `repliedAddresses` (this stream carries
-  // no turnId to key a redelivered `message.run.ended` on more
-  // precisely): set the moment a notice is posted for an address's
-  // silent turn, cleared the moment that address's next `connector.reply`
-  // arrives OR the next `message.run.started` opens so a genuinely new
-  // turn is never suppressed by a stale entry. The `message.run.started`
-  // clear matters independently of a reply landing: two turns in a row
-  // can each end with zero `connector.reply` (an inference turn that
+  // keyed the same way as `repliedTurns`: set the moment a notice is
+  // posted for a turn that ended silently, cleared the moment that same
+  // turn's next `connector.reply` arrives OR its `message.run.started`
+  // reopens (a session can host more than one turn across its lifetime,
+  // and a genuinely new turn on that session must never be suppressed by
+  // a stale entry the previous turn on it left behind). Two turns in a
+  // row can each end with zero `connector.reply` (an inference turn that
   // produced no text is not rare under load — see the notice's own
   // wording below), and without re-arming on every turn's OPEN, the
   // second silent turn's own notice would be swallowed by the guard
   // still set from the first, leaving the user staring at a thread that
   // looks permanently dead with no trace anywhere it ever tried again.
-  const notifiedDropAddresses = new Set<string>();
+  const notifiedDropTurns = new Set<string>();
 
   // See `PendingDelegationThread`'s own doc comment above `postReply`.
   const pendingDelegationThreads = new Map<string, PendingDelegationThread>();
@@ -1029,15 +1043,17 @@ export function createChatOrchestrator(
 
   const unsubscribe = deps.events.on(
     "agent.event",
-    ({ agentAddress, event }) => {
+    ({ agentAddress, sessionId, event }) => {
       // Any event at all counts as activity, not just `connector.reply`
       // below — an agent mid-inference must never be undeployed out
       // from under itself by the idle sweep just because it hasn't
       // replied yet.
       deps.recordActivity?.(agentAddress);
 
+      const turnKey = turnKeyFor(agentAddress, sessionId);
+
       if (messageRunStarted(event)) {
-        notifiedDropAddresses.delete(agentAddress);
+        notifiedDropTurns.delete(turnKey);
         return;
       }
 
@@ -1048,17 +1064,17 @@ export function createChatOrchestrator(
       // an inference step or a tool settling is not itself a reply.
       const blocks = inferenceDoneBlocks(event);
       if (blocks !== undefined) {
-        replyParts.onInferenceDone(agentAddress, blocks);
+        replyParts.onInferenceDone(turnKey, blocks);
       }
       const toolResult = toolDoneResult(event);
       if (toolResult !== undefined) {
-        replyParts.onToolDone(agentAddress, toolResult);
+        replyParts.onToolDone(turnKey, toolResult);
       }
 
       const content = connectorReplyContent(event);
       if (content !== undefined) {
-        repliedAddresses.add(agentAddress);
-        notifiedDropAddresses.delete(agentAddress);
+        repliedTurns.add(turnKey);
+        notifiedDropTurns.delete(turnKey);
         // Prefer this turn's accumulated [text, tool-trace, text, ...]
         // parts over the flattened `content` string — the string is a
         // fallback for the rare case nothing was ever accumulated (e.g.
@@ -1067,7 +1083,7 @@ export function createChatOrchestrator(
         // `connector.reply` case). Never wrap `content` verbatim when
         // structured parts exist, or a leaked JSON-shaped tool call
         // sitting in that string would still show up as prose.
-        const accumulated = replyParts.take(agentAddress);
+        const accumulated = replyParts.take(turnKey);
         const parts: Part[] =
           accumulated !== undefined && accumulated.length > 0
             ? accumulated
@@ -1111,22 +1127,22 @@ export function createChatOrchestrator(
       // came back out." Beyond the error log, an honest notice now goes
       // into the workbench itself — a human staring at a stalled thread
       // during saturated inference (stress round 3) must never see
-      // nothing at all — guarded by `notifiedDropAddresses` so a
-      // redelivered `message.run.ended` (sidecar reconnect, wire-layer
-      // replay) posts the notice once, not once per delivery.
+      // nothing at all — guarded by `notifiedDropTurns` so a redelivered
+      // `message.run.ended` (sidecar reconnect, wire-layer replay) posts
+      // the notice once, not once per delivery.
       const ended = messageRunEnded(event);
       if (ended !== undefined) {
-        // A turn's bracket closed either way — nothing accumulated for
-        // it (if any) belongs to a future turn, not this one.
-        replyParts.take(agentAddress);
+        // This turn's bracket closed either way — nothing accumulated
+        // for it (if any) belongs to a future turn, not this one.
+        replyParts.take(turnKey);
 
-        const hadReply = repliedAddresses.delete(agentAddress);
+        const hadReply = repliedTurns.delete(turnKey);
         if (!hadReply) {
           const errorMessage = ended.errorMessage ?? "no error reported";
           log.error`chat orchestrator: agent ${agentAddress}'s turn ended (${ended.status}) with no reply ever posted to any workbench: ${errorMessage}`;
 
-          if (!notifiedDropAddresses.has(agentAddress)) {
-            notifiedDropAddresses.add(agentAddress);
+          if (!notifiedDropTurns.has(turnKey)) {
+            notifiedDropTurns.add(turnKey);
             const noticeContent =
               ended.status === "failed"
                 ? errorMessage

@@ -521,6 +521,167 @@ describe("createChatOrchestrator", () => {
     orchestrator.dispose();
   });
 
+  // CL-7196: `resolveMemberWorkbenches` deliberately returns workbench ids
+  // plural — one address can be a member of several benches, and each
+  // bench's turn runs its own sidecar connection with its own
+  // `sessionId`. Two such turns for the SAME agent, interleaved on the
+  // shared `agent.event` stream, must never share in-flight state: room
+  // A's inference/tool events, reply, and bracket-close must never
+  // observe or consume anything room B's turn accumulated, and vice
+  // versa — regardless of which turn's bracket closes first.
+  test("two overlapping turns for one agent in two benches do not observe each other's state", async () => {
+    const room = fakeRoom();
+    const agentTurns = createInMemoryAgentTurnStore();
+    const agentAddress = "ins_echo1@ten1.workbench.test";
+    await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_room_a",
+      agentAddress,
+      requestMessageIds: ["msg_a"],
+    });
+    await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_room_b",
+      agentAddress,
+      requestMessageIds: ["msg_b"],
+    });
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+      store: {
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_room_a", [agentAddress]),
+          workbenchRow("ins_room_b", [agentAddress]),
+        ],
+      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
+      events,
+      agentTurns,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    // Room B's turn starts thinking first: a text block, then a tool
+    // call — accumulating in its own turn's bucket.
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_room_b",
+      event: {
+        type: "inference.done",
+        data: {
+          turn: {
+            content: [
+              { type: "text", text: "Let me check that." },
+              {
+                type: "tool_call",
+                id: "call_1",
+                name: "web_search",
+                arguments: {},
+              },
+            ],
+          },
+        },
+      },
+    });
+    // Room A's turn, on a wholly different session, produces its own
+    // text while room B's turn is still open.
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_room_a",
+      event: {
+        type: "inference.done",
+        data: { turn: { content: [{ type: "text", text: "Sure, one sec." }] } },
+      },
+    });
+    // Room B's tool call resolves.
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_room_b",
+      event: {
+        type: "tool.done",
+        data: { result: { callId: "call_1", content: "3 results found" } },
+      },
+    });
+    // Room A replies and closes first.
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_room_a",
+      event: {
+        type: "connector.reply",
+        data: { content: "Sure, one sec.", fromWorkbenchId: "ins_room_a" },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_room_a",
+      event: {
+        type: "message.run.ended",
+        data: { status: "completed", fromWorkbenchId: "ins_room_a" },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Room B replies and closes after room A.
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_room_b",
+      event: {
+        type: "connector.reply",
+        data: {
+          content: "Here's what I found.",
+          fromWorkbenchId: "ins_room_b",
+        },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_room_b",
+      event: {
+        type: "message.run.ended",
+        data: { status: "completed", fromWorkbenchId: "ins_room_b" },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Room A's own reply carries only its own text — never room B's
+    // "Let me check that." text or its tool-trace.
+    const postedInA = room.posted.filter(
+      (message) => message.workbenchId === "ins_room_a",
+    );
+    expect(postedInA).toHaveLength(1);
+    expect(postedInA[0]?.parts).toEqual([
+      { kind: "text", text: "Sure, one sec." },
+    ]);
+
+    // Room B's own reply keeps its full accumulated [text, tool-trace] —
+    // never swallowed by room A's bracket close, and never replaced by
+    // just the flattened `content` string.
+    const postedInB = room.posted.filter(
+      (message) => message.workbenchId === "ins_room_b",
+    );
+    expect(postedInB).toHaveLength(1);
+    expect(postedInB[0]?.parts).toEqual([
+      { kind: "text", text: "Let me check that." },
+      {
+        kind: "tool-trace",
+        name: "web_search",
+        input: {},
+        status: "success",
+        output: "3 results found",
+      },
+    ]);
+
+    // Neither bench got a spurious "I didn't manage to answer that one"
+    // drop notice from the other turn's flag being stolen.
+    expect(room.posted).toHaveLength(2);
+
+    orchestrator.dispose();
+  });
+
   // CL-6378: a turn's `inference.done` events already split the model's
   // output into prose and tool calls (see `event-collector.ts`'s
   // `handleInferenceDone`), and `tool.done` resolves each call's
