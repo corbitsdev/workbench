@@ -7,7 +7,7 @@
 // mention fan-out (see codec.ts). Message-id reply correlation is a
 // workbench concern here — do not fork Interchange mail to change that.
 
-import { and, eq, asc } from "drizzle-orm";
+import { and, eq, asc, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
 import { workbenchThreadMessages, workbenchThreads } from "./schema";
@@ -358,14 +358,6 @@ export type ThreadDb<
   TSchema extends Record<string, unknown> = Record<string, never>,
 > = PostgresJsDatabase<TSchema>;
 
-function requireReturningRow<T>(rows: readonly T[], what: string): T {
-  const row = rows[0];
-  if (row === undefined) {
-    throw new Error(`expected ${what} row from returning()`);
-  }
-  return row;
-}
-
 function mapThreadRow(
   row: typeof workbenchThreads.$inferSelect,
 ): WorkbenchThread {
@@ -556,23 +548,36 @@ export function createDrizzleThreadStore<
     return reselected;
   }
 
+  async function selectDeliveryThread(
+    tenantId: string,
+    workbenchId: string,
+    runRef: string,
+  ): Promise<WorkbenchThread | undefined> {
+    const rows = await db
+      .select()
+      .from(workbenchThreads)
+      .where(
+        and(
+          eq(workbenchThreads.tenantId, tenantId),
+          eq(workbenchThreads.workbenchId, workbenchId),
+          eq(workbenchThreads.kind, "delivery"),
+          eq(workbenchThreads.runRef, runRef),
+        ),
+      )
+      .limit(1);
+    return rows[0] ? mapThreadRow(rows[0]) : undefined;
+  }
+
   return {
     ensureRootThread,
 
     async createDeliveryThread(input) {
-      const existing = await db
-        .select()
-        .from(workbenchThreads)
-        .where(
-          and(
-            eq(workbenchThreads.tenantId, input.tenantId),
-            eq(workbenchThreads.workbenchId, input.workbenchId),
-            eq(workbenchThreads.kind, "delivery"),
-            eq(workbenchThreads.runRef, input.runRef),
-          ),
-        )
-        .limit(1);
-      if (existing[0]) return mapThreadRow(existing[0]);
+      // Insert-first, not select-then-insert: two concurrent first
+      // deliveries of the same run both attempt the insert, the
+      // partial unique index (tenant_id, workbench_id, run_ref) WHERE
+      // kind = 'delivery' AND run_ref IS NOT NULL serializes them, and
+      // the loser's empty `returning()` re-selects the winner's row
+      // rather than creating a duplicate delivery thread.
       const id = newThreadId();
       const inserted = await db
         .insert(workbenchThreads)
@@ -586,8 +591,32 @@ export function createDrizzleThreadStore<
           runRef: input.runRef,
           title: input.title ?? null,
         })
+        .onConflictDoNothing({
+          target: [
+            workbenchThreads.tenantId,
+            workbenchThreads.workbenchId,
+            workbenchThreads.runRef,
+          ],
+          // Matches `workbench_threads_delivery_key`'s predicate in
+          // ./schema.ts exactly — the ON CONFLICT arbiter predicate
+          // must match the partial index's own predicate, not just be
+          // implied by it.
+          where: sql`${workbenchThreads.kind} = 'delivery' AND ${workbenchThreads.runRef} IS NOT NULL`,
+        })
         .returning();
-      return mapThreadRow(requireReturningRow(inserted, "delivery thread"));
+      const row = inserted[0];
+      if (row) return mapThreadRow(row);
+      const reselected = await selectDeliveryThread(
+        input.tenantId,
+        input.workbenchId,
+        input.runRef,
+      );
+      if (!reselected) {
+        throw new Error(
+          "expected delivery thread row after conflicting insert",
+        );
+      }
+      return reselected;
     },
 
     openReplyThread: (input) => anchoredReplyThread(input, "reply"),
