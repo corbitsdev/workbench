@@ -22,7 +22,11 @@ Thanks for your interest in Corbits Workbench.
    hook. That hook is the local stand-in for the cheap CI jobs: lint,
    typecheck, and unit tests. GitHub still runs walking-skeleton, e2e,
    isolation, and database-backed suites. Skip the hook with
-   `git push --no-verify` or `SKIP_WORKBENCH_HOOKS=1`.
+   `git push --no-verify` or `SKIP_WORKBENCH_HOOKS=1`. Typecheck and
+   tests narrow to the packages your change touches; a change under
+   `package.json`, `bun.lock`, a shared tsconfig, `scripts/`, or
+   `.github/` falls back to checking every package instead, which takes
+   much longer — that's expected for those paths, not a hang.
 2. `bun run check` — everything must be green before and after your
    change.
 3. Tests first: add failing tests, then the implementation, then docs.
