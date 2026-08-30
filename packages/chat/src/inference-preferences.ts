@@ -69,6 +69,13 @@ export async function listConnectedProviders(
  * whose only reachable offering really is an embedding model gets no
  * default rather than one that fails every turn.
  *
+ * When any credentialed completion-capable offering is tenant-owned
+ * (`origin.direct`), the default is picked from that direct set only
+ * (CL-7185). Inherited operator catalog seeds otherwise win the name
+ * sort (`gpt-oss:20b` before `llama3.2`) and launch against a model
+ * the child's instance never pulled. Inherit-only catalogs stay on
+ * inherited offerings.
+ *
  * Kept DB-free so the tie/fallback rules stay covered by a plain unit
  * test; `listDefaultInferencePreferences` is the thin `@intx/db`-backed
  * wrapper around it.
@@ -79,11 +86,14 @@ export function selectDefaultInferencePreferences(
   const credentialed = offerings.filter(
     (entry) => entry.provider.credentialId !== null,
   );
-  const sorted = preferCompletionCapable(
+  const completionCapable = preferCompletionCapable(
     credentialed,
     (entry) => entry.offering.capabilities,
     (entry) => entry.model.canonicalName,
-  )
+  );
+  const direct = completionCapable.filter((entry) => entry.origin.direct);
+  const pool = direct.length > 0 ? direct : completionCapable;
+  const sorted = pool
     .slice()
     .sort(
       (left, right) =>
