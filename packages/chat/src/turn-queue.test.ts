@@ -347,4 +347,52 @@ describe("turn queue drains everything that was enqueued", () => {
 
     expect(dispatched).toEqual(["m1", "m2"]);
   });
+
+  // CL-7195's own reasoning ("a durable store reopens the window")
+  // implies these calls can also reject outright, not just resolve
+  // `false` — a real possibility for I/O, unlike the in-memory store.
+  // `run()` documents "never rejects", so the drain loop's claim-store
+  // calls must not leak that rejection, and must still attempt to free
+  // the claim rather than leaving it held until the TTL backstop.
+  test("still releases the claim and does not reject run() when the claim store throws mid-drain", async () => {
+    const holders = new Map<string, string>();
+    let n = 0;
+    let releaseCalls = 0;
+
+    const claims: TurnClaimStore = {
+      async tryClaim(c) {
+        if (holders.has(c.workbenchId)) return false;
+        const t = String(++n);
+        holders.set(c.workbenchId, t);
+        return t;
+      },
+      async release(c, t) {
+        releaseCalls++;
+        if (holders.get(c.workbenchId) !== t) return false;
+        holders.delete(c.workbenchId);
+        return true;
+      },
+      async holds() {
+        throw new Error("claim store connection reset");
+      },
+    };
+
+    const queue = createWorkbenchTurnQueue({
+      claims,
+      publish: () => undefined,
+    });
+    const dispatched: string[] = [];
+    const dispatch = async (batch: readonly QueuedTurn[]) => {
+      for (const t of batch) dispatched.push(t.messageId);
+    };
+
+    // Does not reject, despite `holds` throwing.
+    await queue.run("wb", turn("m1", "one"), dispatch);
+
+    expect(dispatched).toEqual(["m1"]);
+    expect(releaseCalls).toBeGreaterThan(0);
+    // The claim was freed despite the throw — a fresh turn can claim it
+    // directly rather than only being queued.
+    expect(holders.has("wb")).toBe(false);
+  });
 });
