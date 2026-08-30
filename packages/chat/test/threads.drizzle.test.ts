@@ -2,15 +2,16 @@
 // checkout still runs the unit gates), mirroring
 // `reactions.drizzle.test.ts`. Runs against its own scratch database.
 //
-// `threads.test.ts` proves `ensureRootThread`/`openReplyThread`'s
-// idempotency against the in-memory store, which can never actually
-// race (no `await` between its read and write). This exercises the
-// real `createDrizzleThreadStore` path, where two concurrent first
-// writers for the same root or reply key really do race at the
-// database: proves the fix (insert with `onConflictDoNothing` backed
-// by the partial unique index, then re-select on conflict — never
-// select-then-insert) never throws a raw unique-violation and both
-// callers converge on the same thread row (CL-7130).
+// `threads.test.ts` proves `ensureRootThread`/`openReplyThread`/
+// `createDeliveryThread`'s idempotency against the in-memory store,
+// which can never actually race (no `await` between its read and
+// write). This exercises the real `createDrizzleThreadStore` path,
+// where two concurrent first writers for the same root, reply, or
+// delivery key really do race at the database: proves the fix (insert
+// with `onConflictDoNothing` backed by the partial unique index, then
+// re-select on conflict — never select-then-insert) never throws a raw
+// unique-violation and both callers converge on the same thread row
+// (CL-7130, CL-7199).
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -116,6 +117,34 @@ describeIfDb("createDrizzleThreadStore: concurrent first writers", () => {
         `SELECT id FROM "chat"."workbench_threads" ` +
           `WHERE tenant_id = $1 AND workbench_id = $2 AND kind = 'reply' AND parent_message_id = $3`,
         [TENANT, WORKBENCH, "msg_race"],
+      );
+      expect(rows).toHaveLength(1);
+    } finally {
+      await sql.end();
+    }
+  });
+
+  test("two concurrent createDeliveryThread calls for the same run ref never throw a unique-violation and agree on one row", async () => {
+    const sql = postgres(scratchUrl, { max: 5, onnotice: () => undefined });
+    try {
+      const store = createDrizzleThreadStore(drizzle(sql));
+      const input = {
+        tenantId: TENANT,
+        workbenchId: WORKBENCH,
+        runRef: "run_race",
+      };
+
+      const [first, second] = await Promise.all([
+        store.createDeliveryThread(input),
+        store.createDeliveryThread(input),
+      ]);
+
+      expect(first.id).toBe(second.id);
+
+      const rows = await sql.unsafe(
+        `SELECT id FROM "chat"."workbench_threads" ` +
+          `WHERE tenant_id = $1 AND workbench_id = $2 AND kind = 'delivery' AND run_ref = $3`,
+        [TENANT, WORKBENCH, "run_race"],
       );
       expect(rows).toHaveLength(1);
     } finally {

@@ -468,6 +468,57 @@ export const chatMigrations: readonly ChatMigration[] = [
         WHERE "kind" = 'reply';
     `,
   },
+  {
+    // CL-7199: `createDeliveryThread` select-then-inserted with no
+    // unique constraint backing the read, same class of bug as 0025's
+    // root/reply case — a redelivered routine event could insert a
+    // second delivery thread for the same run. Dedupe existing
+    // duplicates — keeping the oldest row per (tenant, workbench,
+    // run_ref) — before the partial unique index below makes a repeat
+    // impossible, repointing every reference to a dropped duplicate's
+    // id first. Rows with a null `run_ref` are excluded from the
+    // dedupe: the window partition below groups nulls together, but
+    // the partial index treats them as distinct, so collapsing them
+    // here would delete rows the index was never going to reject.
+    name: "0026_workbench_threads_delivery_key",
+    sql: `
+      CREATE TEMP TABLE "delivery_thread_dedupe_map" ON COMMIT DROP AS
+      SELECT "id" AS "drop_id", "keep_id" FROM (
+        SELECT
+          "id",
+          first_value("id") OVER (
+            PARTITION BY "tenant_id", "workbench_id", "run_ref"
+            ORDER BY "created_at", "id"
+          ) AS "keep_id"
+        FROM "chat"."workbench_threads"
+        WHERE "kind" = 'delivery' AND "run_ref" IS NOT NULL
+      ) "ranked"
+      WHERE "id" <> "keep_id";
+
+      UPDATE "chat"."workbench_thread_messages" "wtm"
+        SET "thread_id" = "m"."keep_id"
+        FROM "delivery_thread_dedupe_map" "m"
+        WHERE "wtm"."thread_id" = "m"."drop_id";
+
+      UPDATE "chat"."workbench_messages" "wm"
+        SET "thread_id" = "m"."keep_id"
+        FROM "delivery_thread_dedupe_map" "m"
+        WHERE "wm"."thread_id" = "m"."drop_id";
+
+      UPDATE "chat"."workbench_threads" "wt"
+        SET "parent_thread_id" = "m"."keep_id"
+        FROM "delivery_thread_dedupe_map" "m"
+        WHERE "wt"."parent_thread_id" = "m"."drop_id";
+
+      DELETE FROM "chat"."workbench_threads" "wt"
+        USING "delivery_thread_dedupe_map" "m"
+        WHERE "wt"."id" = "m"."drop_id";
+
+      CREATE UNIQUE INDEX IF NOT EXISTS "workbench_threads_delivery_key"
+        ON "chat"."workbench_threads" ("tenant_id", "workbench_id", "run_ref")
+        WHERE "kind" = 'delivery' AND "run_ref" IS NOT NULL;
+    `,
+  },
 ];
 
 /**

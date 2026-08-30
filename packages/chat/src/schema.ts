@@ -237,6 +237,13 @@ export const workbenchThreads = chatSchema.table(
     uniqueIndex("workbench_threads_reply_key")
       .on(table.tenantId, table.workbenchId, table.parentMessageId)
       .where(sql`${table.kind} = 'reply'`),
+    // `run_ref` is nullable (root/reply rows never set it), and a
+    // partial unique index treats NULLs as distinct rather than equal
+    // — so the predicate excludes them explicitly rather than relying
+    // on every delivery-thread caller to always supply one.
+    uniqueIndex("workbench_threads_delivery_key")
+      .on(table.tenantId, table.workbenchId, table.runRef)
+      .where(sql`${table.kind} = 'delivery' AND ${table.runRef} IS NOT NULL`),
   ],
 );
 
