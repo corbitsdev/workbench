@@ -1,13 +1,14 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "include": ["src", "package.json", "src/**/*.json"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
+  "extends": "./tsconfig.src.json",
   "compilerOptions": {
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "types": ["bun"],
-    "composite": true,
-    "emitDeclarationOnly": true,
-    "outDir": "dist",
-    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
-  }
+    "composite": false,
+    "noEmit": true,
+    "disableSourceOfProjectReferenceRedirect": true,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "rootDir": "../.."
+  },
+  "include": ["src"],
+  "exclude": []
 }

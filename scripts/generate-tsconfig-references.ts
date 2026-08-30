@@ -1,19 +1,34 @@
 // Derives each package's composite project settings from its own
 // package.json `dependencies` (not `devDependencies` — a dev-only edge is
 // not a type dependency and is the easiest way to introduce a spurious
-// cycle) and, where a package has a `test/` directory, a sibling
-// `tsconfig.test.json` for type-checking it. Run with `--check` to fail
-// instead of write, for use in `check:tsconfig-references`.
+// cycle) and a combined `tsconfig.json` that type-checks `src` + `test`
+// together. Run with `--check` to fail instead of write, for use in
+// `check:tsconfig-references`.
 //
-// Two tsconfigs per package, not one, because a composite project's
-// `references` must form a DAG, and test files routinely break that: they
-// import `scripts/e2e/harness.ts` (a shared test helper, not a workspace
-// package) which itself imports production packages like `@corbits/hub-client`
-// -- so a package upstream of `hub-client` whose *tests* import the harness
-// would otherwise put that package's own composite project in a cycle with
-// itself. Splitting src (composite, referenced by dependents, built by
-// `tsc --build`) from test (a leaf nothing depends on, so it can reference
-// anything without risking a cycle) removes that whole class of failure.
+// Two tsconfigs per package, not one, and the composite one is NOT named
+// `tsconfig.json` -- for two independent reasons:
+//
+// 1. A composite project's `references` must form a DAG, and test files
+//    routinely break that: they import `scripts/e2e/harness.ts` (a shared
+//    test helper, not a workspace package) which itself imports production
+//    packages like `@corbits/hub-client` -- so a package upstream of
+//    `hub-client` whose *tests* import the harness would otherwise put
+//    that package's own composite project in a cycle with itself.
+// 2. Every tool that discovers a project by convention -- ESLint's
+//    `projectService`, an editor's language server, a bare `tsc` in the
+//    package directory -- looks for a file literally named `tsconfig.json`
+//    and does not know to also check a same-purpose file under a different
+//    name. Naming the composite src-only project `tsconfig.src.json`
+//    instead keeps `tsconfig.json` as the combined, conventionally-named
+//    project every such tool finds on its own; only `tsc --build` and the
+//    `references` of composite dependents need to know the other name
+//    exists, and they do so via an explicit path
+//    (`{"path": "../dep/tsconfig.src.json"}`, not a bare directory).
+//
+// Splitting src (composite, referenced by dependents, built by
+// `tsc --build`) from the combined project (a leaf nothing depends on, so
+// it can reference anything without risking a cycle) removes that whole
+// class of failure.
 import { existsSync } from "node:fs";
 import { relative } from "node:path";
 import { Glob } from "bun";
@@ -25,6 +40,8 @@ const WORKSPACE_ROOTS = [
   "workflows",
   "vendor/intx",
 ] as const;
+
+const SRC_CONFIG_NAME = "tsconfig.src.json";
 
 type PackageManifest = {
   readonly name: string;
@@ -69,13 +86,13 @@ const BUILD_COMPILER_OPTIONS = {
   tsBuildInfoFile: "dist/tsconfig.tsbuildinfo",
 };
 
-const TEST_COMPILER_OPTIONS = {
+const COMBINED_COMPILER_OPTIONS = {
   composite: false,
   noEmit: true,
   disableSourceOfProjectReferenceRedirect: true,
   // `noEmit` alone does not turn off `rootDir` enforcement -- TypeScript
   // still computes it for declaration output whenever `declaration` is on,
-  // which every project inherits from tsconfig.base.json. A test project
+  // which every project inherits from tsconfig.base.json. This project
   // reaches test helpers and, through them, whatever those helpers import,
   // all outside its own package directory; declaration output was never
   // wanted here, so switch off everything that makes TypeScript care where
@@ -171,7 +188,8 @@ function srcReferencePathsFor(
     if (target === undefined || !withTsconfig.has(target.name)) continue;
     if (cyclicNames.has(target.name)) continue;
     const rel = relative(manifest.dir, target.dir) || ".";
-    paths.push(rel.startsWith(".") ? rel : `./${rel}`);
+    const relDir = rel.startsWith(".") ? rel : `./${rel}`;
+    paths.push(`${relDir}/${SRC_CONFIG_NAME}`);
   }
   return paths.sort();
 }
@@ -183,8 +201,8 @@ function srcReferencePathsFor(
  * the edge), are not composite, and pull in production packages themselves
  * (`harness.ts` imports `@workbench/hub-client`), so they can never
  * legally appear in a `references` array. A package's `test/` directory
- * importing one is fine -- a non-composite test project resolves it via
- * plain source, same as any other undeclared import. A package's `src`
+ * importing one is fine -- the combined non-composite project resolves it
+ * via plain source, same as any other undeclared import. A package's `src`
  * importing one is not: a composite project cannot cross its rootDir via an
  * undeclared relative import, so such a package is excluded from the
  * composite graph entirely (see `excludedNames` in `main`), the same
@@ -217,9 +235,11 @@ async function loadTsconfig(path: string): Promise<Tsconfig | undefined> {
 // Colocated unit tests (`src/**/*.test.ts`, see AGENTS.md) commonly reach
 // outside `src` -- into the package's own `package.json`, or a `test/`
 // fixtures module -- which the composite src project cannot allow across
-// its rootDir. They are excluded here and picked up by the test project's
-// `include` instead, alongside a dedicated `test/` directory when present.
+// its rootDir. They are excluded here and picked up by the combined
+// project's `include` instead, alongside a dedicated `test/` directory
+// when present.
 function withSrcFields(
+  dir: string,
   config: Tsconfig,
   referencePaths: readonly string[],
 ): Tsconfig {
@@ -228,9 +248,17 @@ function withSrcFields(
     references: _oldReferences,
     include,
     exclude: _oldExclude,
+    extends: _oldExtends,
     ...rest
   } = config;
   return {
+    // Not hand-copied from the seed: `vendor/intx/*` sits one directory
+    // deeper than `apps/*`/`packages/*`/`tools/*`/`workflows/*`, so a fixed
+    // "../../" string resolves to a path that doesn't exist for it -- an
+    // unresolvable `extends` silently drops everything the base config
+    // sets, `skipLibCheck` included, and node_modules' own .d.ts files
+    // start failing the build.
+    extends: `${relative(dir, ".")}/tsconfig.base.json`,
     ...rest,
     include: [
       ...(include ?? ["src"]).filter(
@@ -291,15 +319,21 @@ function legacyFieldsMatch(current: Tsconfig, next: Tsconfig): boolean {
   return listsMatch(current.include, next.include);
 }
 
-function testConfigFor(
+// The combined project: everyone's `tsconfig.json` by name, so every tool
+// that discovers a project by convention (ESLint's `projectService`, an
+// editor, a bare `tsc` invocation) finds it without being told the
+// composite project exists at all.
+function combinedConfigFor(
   dir: string,
   referencePaths: readonly string[],
   hasTestDir: boolean,
+  extraInclude: readonly string[],
 ): Tsconfig {
+  const baseInclude = hasTestDir ? ["src", "test"] : ["src"];
   return {
-    extends: "./tsconfig.json",
+    extends: `./${SRC_CONFIG_NAME}`,
     compilerOptions: {
-      ...TEST_COMPILER_OPTIONS,
+      ...COMBINED_COMPILER_OPTIONS,
       // `extends` still carries `outDir: "dist"` down from the composite
       // src config. With an `outDir` but no explicit `rootDir`, TypeScript
       // infers `rootDir` from `include` alone -- "src" and "test" -- not
@@ -312,7 +346,12 @@ function testConfigFor(
       // passes; nothing is emitted here regardless.
       rootDir: relative(dir, ".") || ".",
     },
-    include: hasTestDir ? ["src", "test"] : ["src"],
+    // A package can have content outside src/test that nothing else here
+    // knows about (packages/e2b-sandbox-sidecar's `template/`, a sandbox
+    // asset tree read at runtime, not imported) -- carried forward from
+    // whatever the package's own tsconfig.json already declared rather
+    // than silently dropped by rebuilding `include` from a fixed list.
+    include: [...new Set([...baseInclude, ...extraInclude])],
     exclude: [],
     ...(referencePaths.length > 0
       ? { references: referencePaths.map((path) => ({ path })) }
@@ -323,6 +362,7 @@ function testConfigFor(
 // Formatting is prettier's job (enforced separately by `bun run lint`), so
 // drift is judged on the meaningful fields only, not on whitespace.
 function srcFieldsMatch(current: Tsconfig, next: Tsconfig): boolean {
+  if (current.extends !== next.extends) return false;
   const currentOptions = current.compilerOptions ?? {};
   const nextOptions = next.compilerOptions ?? {};
   for (const key of Object.keys(BUILD_COMPILER_OPTIONS)) {
@@ -357,16 +397,17 @@ function referencesMatch(
   );
 }
 
-function testFieldsMatch(
+function combinedFieldsMatch(
   current: Tsconfig | undefined,
   next: Tsconfig,
 ): boolean {
   if (current === undefined) return false;
   const currentOptions = current.compilerOptions ?? {};
   const nextOptions = next.compilerOptions ?? {};
-  for (const key of [...Object.keys(TEST_COMPILER_OPTIONS), "rootDir"]) {
+  for (const key of [...Object.keys(COMBINED_COMPILER_OPTIONS), "rootDir"]) {
     if (currentOptions[key] !== nextOptions[key]) return false;
   }
+  if (current.extends !== next.extends) return false;
   return (
     referencesMatch(current.references, next.references) &&
     listsMatch(current.include, next.include)
@@ -415,22 +456,29 @@ async function main(): Promise<void> {
     }
   }
 
-  const existingSrc = new Map<string, Tsconfig>();
+  // The combined `tsconfig.json` is the thing every package has always
+  // had; it's the seed for a composite package's `tsconfig.src.json`
+  // (carrying forward any package-specific compilerOptions, like
+  // `types: ["bun"]`) and, for a legacy package, the file itself.
+  const existingCombined = new Map<string, Tsconfig>();
   for (const manifest of manifests) {
     const config = await loadTsconfig(`${manifest.dir}/tsconfig.json`);
-    if (config !== undefined) existingSrc.set(manifest.name, config);
+    if (config !== undefined) existingCombined.set(manifest.name, config);
   }
-  const withTsconfig = new Set(existingSrc.keys());
+  const withTsconfig = new Set(existingCombined.keys());
 
   const drifted: string[] = [];
   const written: string[] = [];
+  const removed: string[] = [];
   for (const manifest of manifests) {
-    const current = existingSrc.get(manifest.name);
-    if (current === undefined) continue;
+    const currentCombined = existingCombined.get(manifest.name);
+    if (currentCombined === undefined) continue;
+
+    const srcConfigPath = `${manifest.dir}/${SRC_CONFIG_NAME}`;
 
     if (excludedNames.has(manifest.name)) {
-      const nextLegacy = withLegacyFields(current);
-      if (!legacyFieldsMatch(current, nextLegacy)) {
+      const nextLegacy = withLegacyFields(currentCombined);
+      if (!legacyFieldsMatch(currentCombined, nextLegacy)) {
         if (checkOnly) {
           drifted.push(`${manifest.dir}/tsconfig.json`);
         } else {
@@ -439,12 +487,12 @@ async function main(): Promise<void> {
           written.push(path);
         }
       }
-      const testConfigPath = `${manifest.dir}/tsconfig.test.json`;
-      if (existsSync(testConfigPath)) {
-        if (checkOnly) drifted.push(testConfigPath);
+      if (existsSync(srcConfigPath)) {
+        if (checkOnly) drifted.push(srcConfigPath);
         else {
-          // Deleted, not written -- prettier has nothing left to format.
-          await Bun.file(testConfigPath).delete();
+          // Removed, not written -- prettier has nothing left to format.
+          await Bun.file(srcConfigPath).delete();
+          removed.push(srcConfigPath);
         }
       }
       continue;
@@ -456,29 +504,51 @@ async function main(): Promise<void> {
       withTsconfig,
       excludedNames,
     );
-    const nextSrc = withSrcFields(current, srcReferences);
-    if (!srcFieldsMatch(current, nextSrc)) {
+    // The current tsconfig.src.json (if this isn't the first run) carries
+    // any package-specific compilerOptions already merged in; fall back to
+    // the combined file only the very first time a package joins the
+    // composite graph.
+    const srcSeed = (await loadTsconfig(srcConfigPath)) ?? currentCombined;
+    const nextSrc = withSrcFields(manifest.dir, srcSeed, srcReferences);
+    const currentSrc = await loadTsconfig(srcConfigPath);
+    if (currentSrc === undefined || !srcFieldsMatch(currentSrc, nextSrc)) {
       if (checkOnly) {
-        drifted.push(`${manifest.dir}/tsconfig.json`);
+        drifted.push(srcConfigPath);
       } else {
-        const path = `${manifest.dir}/tsconfig.json`;
-        await Bun.write(path, `${JSON.stringify(nextSrc, null, 2)}\n`);
-        written.push(path);
+        await Bun.write(srcConfigPath, `${JSON.stringify(nextSrc, null, 2)}\n`);
+        written.push(srcConfigPath);
       }
     }
 
     const hasTestDir = existsSync(`${manifest.dir}/test`);
-    const nextTest = testConfigFor(manifest.dir, srcReferences, hasTestDir);
-    const currentTest = await loadTsconfig(
-      `${manifest.dir}/tsconfig.test.json`,
+    const extraInclude = (currentCombined.include ?? []).filter(
+      (entry) => entry !== "src" && entry !== "test",
     );
-    if (!testFieldsMatch(currentTest, nextTest)) {
+    const nextCombined = combinedConfigFor(
+      manifest.dir,
+      srcReferences,
+      hasTestDir,
+      extraInclude,
+    );
+    if (!combinedFieldsMatch(currentCombined, nextCombined)) {
       if (checkOnly) {
-        drifted.push(`${manifest.dir}/tsconfig.test.json`);
+        drifted.push(`${manifest.dir}/tsconfig.json`);
       } else {
-        const path = `${manifest.dir}/tsconfig.test.json`;
-        await Bun.write(path, `${JSON.stringify(nextTest, null, 2)}\n`);
+        const path = `${manifest.dir}/tsconfig.json`;
+        await Bun.write(path, `${JSON.stringify(nextCombined, null, 2)}\n`);
         written.push(path);
+      }
+    }
+
+    // `tsconfig.test.json` predates the rename above -- the combined
+    // project it held now lives at `tsconfig.json` directly.
+    const stalePath = `${manifest.dir}/tsconfig.test.json`;
+    if (existsSync(stalePath)) {
+      if (checkOnly) {
+        drifted.push(stalePath);
+      } else {
+        await Bun.file(stalePath).delete();
+        removed.push(stalePath);
       }
     }
   }
@@ -489,17 +559,19 @@ async function main(): Promise<void> {
   // (observed: a clean project reported errors that belonged to a project
   // built earlier in the same invocation). Handing it one root -- a
   // solution file whose only content is `references` to every composite
-  // project -- avoids that: `tsc --build` still walks the full transitive
-  // graph and skips whatever is already up to date, but the diagnostic
-  // state is no longer split across sibling root arguments.
+  // project's tsconfig.src.json -- avoids that: `tsc --build` still walks
+  // the full transitive graph and skips whatever is already up to date,
+  // but the diagnostic state is no longer split across sibling root
+  // arguments.
   const solutionReferences = manifests
     .filter(
       (manifest) =>
-        existingSrc.has(manifest.name) && !excludedNames.has(manifest.name),
+        existingCombined.has(manifest.name) &&
+        !excludedNames.has(manifest.name),
     )
     .map((manifest) => manifest.dir)
     .sort()
-    .map((dir) => ({ path: `./${dir}` }));
+    .map((dir) => ({ path: `./${dir}/${SRC_CONFIG_NAME}` }));
   const solutionPath = "tsconfig.build.json";
   const nextSolution: Tsconfig = {
     files: [],
@@ -534,6 +606,10 @@ async function main(): Promise<void> {
       stderr: "inherit",
     });
     await format.exited;
+  }
+  if (!checkOnly && removed.length > 0) {
+    console.error(`removed ${removed.length} stale file(s):`);
+    for (const path of removed) console.error(`  ${path}`);
   }
 }
 

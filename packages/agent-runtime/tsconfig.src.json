@@ -1,0 +1,29 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["src", "package.json", "src/**/*.json"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
+  "compilerOptions": {
+    "types": ["bun"],
+    "composite": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
+  },
+  "references": [
+    {
+      "path": "../../vendor/intx/agent/tsconfig.src.json"
+    },
+    {
+      "path": "../../vendor/intx/types/tsconfig.src.json"
+    },
+    {
+      "path": "../../vendor/intx/workflow-deploy/tsconfig.src.json"
+    },
+    {
+      "path": "../../vendor/intx/workflow/tsconfig.src.json"
+    },
+    {
+      "path": "../workflow-source/tsconfig.src.json"
+    }
+  ]
+}

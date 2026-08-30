@@ -41,6 +41,7 @@ async function writePackage(
 async function readTsconfig(name: string, file = "tsconfig.json") {
   const path = join(workspace, "packages", name, file);
   return JSON.parse(await Bun.file(path).text()) as {
+    extends?: string;
     compilerOptions?: Record<string, unknown>;
     references?: { path: string }[];
     include?: string[];
@@ -79,23 +80,37 @@ afterEach(async () => {
 });
 
 describe("generate-tsconfig-references", () => {
-  test("gives a leaf package composite settings and no references", async () => {
+  test("gives a leaf package's tsconfig.src.json composite settings", async () => {
     await writePackage("leaf");
     await run([]);
 
-    const config = await readTsconfig("leaf");
+    const config = await readTsconfig("leaf", "tsconfig.src.json");
     expect(config.compilerOptions?.["composite"]).toBe(true);
     expect(config.compilerOptions?.["outDir"]).toBe("dist");
     expect(config.references ?? []).toEqual([]);
   });
 
-  test("references a real workspace dependency by relative path", async () => {
+  test("keeps tsconfig.json as the combined, conventionally-named project", async () => {
+    // Every tool that discovers a project by convention -- ESLint's
+    // projectService, an editor, a bare `tsc` in the package directory --
+    // looks for a file literally named tsconfig.json. The composite
+    // src-only project lives at tsconfig.src.json instead, so this stays
+    // the file such tools find on their own.
+    await writePackage("leaf");
+    await run([]);
+
+    const config = await readTsconfig("leaf");
+    expect(config.extends).toBe("./tsconfig.src.json");
+    expect(config.compilerOptions?.["composite"]).toBe(false);
+  });
+
+  test("references a real workspace dependency's tsconfig.src.json", async () => {
     await writePackage("leaf");
     await writePackage("consumer", { "@fixture/leaf": "workspace:*" });
     await run([]);
 
-    const config = await readTsconfig("consumer");
-    expect(config.references).toEqual([{ path: "../leaf" }]);
+    const config = await readTsconfig("consumer", "tsconfig.src.json");
+    expect(config.references).toEqual([{ path: "../leaf/tsconfig.src.json" }]);
   });
 
   test("does not reference a devDependency", async () => {
@@ -120,11 +135,11 @@ describe("generate-tsconfig-references", () => {
     await writeFile(join(dir, "src", "index.ts"), "export {};\n");
     await run([]);
 
-    const config = await readTsconfig("consumer");
+    const config = await readTsconfig("consumer", "tsconfig.src.json");
     expect(config.references ?? []).toEqual([]);
   });
 
-  test("writes a sibling tsconfig.test.json that references the same deps", async () => {
+  test("the combined tsconfig.json references the same deps as tsconfig.src.json", async () => {
     await writePackage("leaf");
     await writePackage(
       "consumer",
@@ -133,13 +148,15 @@ describe("generate-tsconfig-references", () => {
     );
     await run([]);
 
-    const testConfig = await readTsconfig("consumer", "tsconfig.test.json");
-    expect(testConfig.references).toEqual([{ path: "../leaf" }]);
-    expect(testConfig.compilerOptions?.["composite"]).toBe(false);
-    expect(testConfig.include).toContain("test");
+    const combined = await readTsconfig("consumer");
+    expect(combined.references).toEqual([
+      { path: "../leaf/tsconfig.src.json" },
+    ]);
+    expect(combined.compilerOptions?.["composite"]).toBe(false);
+    expect(combined.include).toContain("test");
   });
 
-  test("gives tsconfig.test.json an explicit rootDir at the workspace root", async () => {
+  test("gives the combined tsconfig.json an explicit rootDir at the workspace root", async () => {
     // Without this, TypeScript infers `rootDir` from `include` alone once
     // `outDir` is inherited from the extended src config, and TS6059s on
     // any file a test reaches outside "src"/"test" -- which a shared test
@@ -147,8 +164,36 @@ describe("generate-tsconfig-references", () => {
     await writePackage("leaf", {}, { withTest: true });
     await run([]);
 
-    const testConfig = await readTsconfig("leaf", "tsconfig.test.json");
-    expect(testConfig.compilerOptions?.["rootDir"]).toBe("../..");
+    const combined = await readTsconfig("leaf");
+    expect(combined.compilerOptions?.["rootDir"]).toBe("../..");
+  });
+
+  test("preserves a non-standard include entry across regenerations", async () => {
+    // packages/e2b-sandbox-sidecar has a `template/` directory that is
+    // neither `src` nor `test` -- assets read at runtime, not imported --
+    // and was silently dropped the first time this generator rebuilt
+    // `include` from a fixed ["src", "test"] list instead of carrying
+    // forward whatever the package's own tsconfig.json already declared.
+    await writePackage("leaf");
+    const dir = join(workspace, "packages", "leaf");
+    await mkdir(join(dir, "template"), { recursive: true });
+    await writeFile(
+      join(dir, "tsconfig.json"),
+      JSON.stringify(
+        { extends: "../../tsconfig.base.json", include: ["src", "template"] },
+        null,
+        2,
+      ),
+    );
+    await run([]);
+
+    const combined = await readTsconfig("leaf");
+    expect(combined.include).toContain("template");
+
+    // Idempotent: a second run must not lose it either.
+    await run([]);
+    const combinedAgain = await readTsconfig("leaf");
+    expect(combinedAgain.include).toContain("template");
   });
 
   test("excludes a real dependency cycle from the composite graph entirely", async () => {
@@ -159,7 +204,7 @@ describe("generate-tsconfig-references", () => {
     const a = await readTsconfig("cycle-a");
     expect(a.compilerOptions?.["composite"]).toBeUndefined();
     expect(a.references ?? []).toEqual([]);
-    expect(await tsconfigExists("cycle-a", "tsconfig.test.json")).toBe(false);
+    expect(await tsconfigExists("cycle-a", "tsconfig.src.json")).toBe(false);
   });
 
   // A package that is not itself part of a dependency cycle, but depends on
@@ -177,7 +222,7 @@ describe("generate-tsconfig-references", () => {
     const consumer = await readTsconfig("consumer");
     expect(consumer.compilerOptions?.["composite"]).toBeUndefined();
     expect(consumer.references ?? []).toEqual([]);
-    expect(await tsconfigExists("consumer", "tsconfig.test.json")).toBe(false);
+    expect(await tsconfigExists("consumer", "tsconfig.src.json")).toBe(false);
   });
 
   test("excludes a two-hop transitive consumer of a cyclic package", async () => {
@@ -198,7 +243,7 @@ describe("generate-tsconfig-references", () => {
     await writePackage("unrelated");
     await run([]);
 
-    const unrelated = await readTsconfig("unrelated");
+    const unrelated = await readTsconfig("unrelated", "tsconfig.src.json");
     expect(unrelated.compilerOptions?.["composite"]).toBe(true);
   });
 
@@ -212,6 +257,9 @@ describe("generate-tsconfig-references", () => {
     );
     await run([]);
 
+    expect(await tsconfigExists("uses-harness", "tsconfig.src.json")).toBe(
+      false,
+    );
     const config = await readTsconfig("uses-harness");
     expect(config.compilerOptions?.["composite"]).toBeUndefined();
   });

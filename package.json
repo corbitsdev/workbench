@@ -14,7 +14,7 @@
     "check": "bun run typecheck && bun run lint && bun run test && bun run check:structural",
     "check:all": "bun run check && bun run check:packages",
     "typecheck": "bun run scripts/typecheck.ts",
-    "lint": "prettier --check --cache . && eslint --cache .",
+    "lint": "bunx tsc --build tsconfig.build.json && prettier --check --cache . && NODE_OPTIONS=--max-old-space-size=6144 eslint --cache .",
     "format": "prettier --write .",
     "hooks:install": "bun run scripts/hooks-install.ts",
     "prepare": "bun run hooks:install",
