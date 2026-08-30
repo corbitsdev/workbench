@@ -21,7 +21,7 @@ import { agentTurns } from "./schema";
 import type { ChatDb } from "./store";
 import { CHAT_TURN_TIMEOUT_MS } from "./turn-claims";
 
-export type AgentTurnStatus = "running" | "completed" | "failed";
+export type AgentTurnStatus = "running" | "completed" | "failed" | "cancelled";
 
 export interface AgentTurn {
   readonly id: string;
@@ -100,6 +100,20 @@ export interface AgentTurnStore {
     readonly workbenchId: string;
     readonly agentAddress: string;
   }): Promise<AgentTurn | undefined>;
+  /**
+   * Every `running` turn for a workbench, across every agent — the
+   * cancel endpoint's own read (CL-7201): a workbench can have more than
+   * one agent turn in flight at once (`dispatchTurnBatch` fans out
+   * concurrently), and settling "the" in-flight turn means settling all
+   * of them. Deliberately not built on `listTurns`: that method has no
+   * status filter and pages to `AGENT_TURNS_PAGE_SIZE`, so a busy
+   * workbench could silently leave an older running turn off the page
+   * and therefore unsettled.
+   */
+  findRunningTurns(input: {
+    readonly tenantId: string;
+    readonly workbenchId: string;
+  }): Promise<readonly AgentTurn[]>;
   /**
    * Resolves once (workbench, agent) has no `running` turn — immediately
    * if none is running right now, otherwise when the current one closes
@@ -348,6 +362,16 @@ export function createInMemoryAgentTurnStore(
       return runningTurn(input);
     },
 
+    async findRunningTurns(input) {
+      expireStaleTurns();
+      return [...rows.values()].filter(
+        (turn) =>
+          turn.tenantId === input.tenantId &&
+          turn.workbenchId === input.workbenchId &&
+          turn.status === "running",
+      );
+    },
+
     async waitUntilFree(input, signal) {
       for (;;) {
         if (signal?.aborted) throw signal.reason;
@@ -403,7 +427,9 @@ function toAgentTurn(row: AgentTurnRow): AgentTurn {
       )
     : [];
   const status: AgentTurnStatus =
-    row.status === "completed" || row.status === "failed"
+    row.status === "completed" ||
+    row.status === "failed" ||
+    row.status === "cancelled"
       ? row.status
       : "running";
   return {
@@ -549,6 +575,21 @@ export function createDrizzleAgentTurnStore<
 
     async findRunningTurn(input) {
       return resolveRunningTurn(input);
+    },
+
+    async findRunningTurns(input) {
+      await expireStaleTurns(input);
+      const rows = await db
+        .select()
+        .from(agentTurns)
+        .where(
+          and(
+            eq(agentTurns.tenantId, input.tenantId),
+            eq(agentTurns.workbenchId, input.workbenchId),
+            eq(agentTurns.status, "running"),
+          ),
+        );
+      return rows.map((row) => toAgentTurn(row as AgentTurnRow));
     },
 
     async waitUntilFree(input, signal) {
