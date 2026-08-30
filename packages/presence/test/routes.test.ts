@@ -290,6 +290,17 @@ describe("presence routes: doc sync", () => {
       },
     );
 
+    await alice.request(`/rooms/${ARTIFACT_SURFACE}/join`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    await bob.request(`/rooms/${ARTIFACT_SURFACE}/join`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+
     await alice.request(`/rooms/${ARTIFACT_SURFACE}/update`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -328,6 +339,11 @@ describe("presence routes: doc sync", () => {
       },
     );
 
+    await alice.request(`/rooms/${ARTIFACT_SURFACE}/join`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
     await alice.request(`/rooms/${ARTIFACT_SURFACE}/update`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -419,6 +435,11 @@ describe("presence routes: doc sync", () => {
       },
     );
 
+    await tenantA.request(`/rooms/${ARTIFACT_SURFACE}/join`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
     await tenantA.request(`/rooms/${ARTIFACT_SURFACE}/update`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -530,6 +551,11 @@ describe("presence routes: doc sync", () => {
       { tenantId: "tnt_a", principalId: "prn_alice" },
     );
 
+    await app.request(`/rooms/${ARTIFACT_SURFACE}/join`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
     const response = await app.request(`/rooms/${ARTIFACT_SURFACE}/update`, {
       method: "POST",
       headers: { "content-type": "application/json" },
