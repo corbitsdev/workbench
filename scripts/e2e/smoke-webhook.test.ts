@@ -285,7 +285,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
                 `sidecar never became deployable (hub kept answering 502): ${JSON.stringify(res.data)}\nsidecar output:\n${sidecar.output()}`,
               );
             }
-            await Bun.sleep(1000);
+            await Bun.sleep(200);
             continue;
           }
           expectStatus("deploy heartbeat workflow", res, 201);
@@ -515,7 +515,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
                   `run ${instanceId} recorded no inference_turn within the deadline`,
                 );
               }
-              await Bun.sleep(500);
+              await Bun.sleep(200);
             }
           } finally {
             await sql.end();

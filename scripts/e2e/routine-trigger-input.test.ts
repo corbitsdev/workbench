@@ -328,7 +328,7 @@ describe.skipIf(databaseUrl === undefined)(
                 `sidecar never became deployable (hub kept answering 502): ${JSON.stringify(res.data)}\nsidecar output:\n${sidecar.output()}`,
               );
             }
-            await Bun.sleep(1000);
+            await Bun.sleep(200);
             continue;
           }
           expectStatus("deploy heartbeat workflow", res, 201);
@@ -406,7 +406,7 @@ describe.skipIf(databaseUrl === undefined)(
         while (Date.now() < deadline) {
           mailbox = await readMailbox(url, runId);
           if (mailbox.length > 0) break;
-          await Bun.sleep(500);
+          await Bun.sleep(200);
         }
 
         if (
@@ -443,8 +443,9 @@ describe.skipIf(databaseUrl === undefined)(
         const routineId = stringField(routine.data, "id", "create routine");
 
         // Force the routine due immediately rather than waiting out its
-        // own cadence — the scheduler poll interval (30s) is the only
-        // wait this needs.
+        // own cadence — the only wait left is the scheduler's own poll
+        // interval, which the e2e harness sets to 300ms (CL-7250), not
+        // the real 30s production cadence.
         const sql = await connectE2eDb(url);
         try {
           await sql.unsafe(
@@ -471,7 +472,7 @@ describe.skipIf(databaseUrl === undefined)(
             runId = items[0]?.runId;
             break;
           }
-          await Bun.sleep(1000);
+          await Bun.sleep(200);
         }
         if (runId === undefined) {
           throw new Error(
@@ -485,7 +486,7 @@ describe.skipIf(databaseUrl === undefined)(
         while (Date.now() < mailboxDeadline) {
           mailbox = await readMailbox(url, runId);
           if (mailbox.length > 0) break;
-          await Bun.sleep(500);
+          await Bun.sleep(200);
         }
 
         if (
@@ -572,7 +573,7 @@ describe.skipIf(databaseUrl === undefined)(
         while (Date.now() < deadline) {
           mailbox = await readMailbox(url, deliveredData.instanceId);
           if (mailbox.length > 0) break;
-          await Bun.sleep(500);
+          await Bun.sleep(200);
         }
 
         if (

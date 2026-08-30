@@ -259,7 +259,7 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
               `${JSON.stringify(res.data)}\nsidecar output:\n${sidecar.output()}`,
           );
         }
-        await Bun.sleep(1000);
+        await Bun.sleep(200);
       }
       expectStatus("deploy workflow", res, 201);
       return stringField(res.data, "id", "deploy workflow");

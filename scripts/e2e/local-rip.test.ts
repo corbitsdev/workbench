@@ -367,7 +367,7 @@ describe.skipIf(databaseUrl === undefined)(
             });
           } catch (cause) {
             if (Date.now() > deadline) throw cause;
-            await Bun.sleep(1000);
+            await Bun.sleep(200);
           }
         }
       }
@@ -414,7 +414,7 @@ describe.skipIf(databaseUrl === undefined)(
               break;
             } catch (cause) {
               if (Date.now() > deadline) throw cause;
-              await Bun.sleep(1000);
+              await Bun.sleep(200);
             }
           }
         },

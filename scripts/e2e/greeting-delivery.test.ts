@@ -258,7 +258,7 @@ describe.skipIf(databaseUrl === undefined)(
               break;
             } catch (cause) {
               if (Date.now() > deadline) throw cause;
-              await Bun.sleep(1000);
+              await Bun.sleep(200);
             }
           }
         },
@@ -307,7 +307,7 @@ describe.skipIf(databaseUrl === undefined)(
             return;
           } catch (cause) {
             if (Date.now() > deadline) throw cause;
-            await Bun.sleep(1000);
+            await Bun.sleep(200);
           }
         }
       }
@@ -343,7 +343,7 @@ describe.skipIf(databaseUrl === undefined)(
                 `"assistant" never appeared as invitable: ${JSON.stringify(res.data)}`,
               );
             }
-            await Bun.sleep(1000);
+            await Bun.sleep(200);
           }
         },
       );
@@ -373,7 +373,7 @@ describe.skipIf(databaseUrl === undefined)(
                   `${JSON.stringify(res.data)}\nsidecar output:\n${sidecar.output()}`,
               );
             }
-            await Bun.sleep(1000);
+            await Bun.sleep(200);
           }
           expectStatus("create chat", res, 201);
           const id = stringField(res.data, "id", "create chat");
@@ -449,7 +449,7 @@ describe.skipIf(databaseUrl === undefined)(
                   `${JSON.stringify(items)}\nsidecar output:\n${sidecar.output()}`,
               );
             }
-            await Bun.sleep(1000);
+            await Bun.sleep(200);
           }
         },
       );
