@@ -239,6 +239,13 @@ export function connectPresence(
   // `joinFailureCount > 0` — the actual throttle; `joinFailureCount` by
   // itself only picks the delay.
   let nextJoinAttemptAt = 0;
+  // Local doc edits (base64-encoded) whose `/update` POST failed and
+  // hasn't yet been redelivered. Safe to replay in order once the
+  // connection is healthy again: a Yjs update is idempotent against a
+  // doc that has already applied it, so redelivering never double-edits
+  // — without this queue a dropped update is gone for good (see CL-7202).
+  let pendingUpdates: string[] = [];
+  let flushingPendingUpdates = false;
 
   const notify = (members: readonly PresenceState[]) => {
     latestMembers = members;
@@ -289,6 +296,7 @@ export function connectPresence(
       }
       joinFailureCount = 0;
       joined = true;
+      flushPendingUpdates();
       if (doc === undefined) return;
       void response.json().then((body) => {
         if (disconnected) return;
@@ -322,7 +330,9 @@ export function connectPresence(
           joined = false;
           doJoin();
         }
+        return;
       }
+      flushPendingUpdates();
     });
   }
 
@@ -336,19 +346,59 @@ export function connectPresence(
     }
   }
 
+  /**
+   * POSTs one already-encoded doc update. `isRetry` distinguishes a fresh
+   * local edit (queued into `pendingUpdates` on failure) from a replay out
+   * of that queue (left in place on failure — `flushPendingUpdates` is
+   * already the thing re-adding it by not removing it).
+   */
+  function postUpdate(
+    base64Update: string,
+    isRetry: boolean,
+  ): Promise<boolean> {
+    return post("update", { update: base64Update }).then((response) => {
+      if (disconnected) return false;
+      if (response === undefined) {
+        reportError("update");
+        if (!isRetry) pendingUpdates.push(base64Update);
+        return false;
+      }
+      if (!response.ok) {
+        reportError("update", response.status);
+        if (!isRetry) pendingUpdates.push(base64Update);
+        return false;
+      }
+      return true;
+    });
+  }
+
+  /**
+   * Redelivers queued failed updates in order, one at a time, stopping at
+   * the first failure so a later edit can never leapfrog an earlier one
+   * still waiting to land. Called whenever a join or heartbeat succeeds —
+   * the client's only signals that the connection is healthy again.
+   */
+  function flushPendingUpdates(): void {
+    if (disconnected || flushingPendingUpdates || pendingUpdates.length === 0) {
+      return;
+    }
+    const [next, ...rest] = pendingUpdates;
+    if (next === undefined) return;
+    flushingPendingUpdates = true;
+    void postUpdate(next, true).then((succeeded) => {
+      flushingPendingUpdates = false;
+      if (!succeeded) return;
+      pendingUpdates = rest;
+      flushPendingUpdates();
+    });
+  }
+
   let onLocalDocUpdate:
     ((update: Uint8Array, origin: unknown) => void) | undefined;
   if (doc !== undefined) {
     onLocalDocUpdate = (update, origin) => {
       if (disconnected || origin === REMOTE_UPDATE_ORIGIN) return;
-      void post("update", { update: encodeBase64(update) }).then((response) => {
-        if (disconnected) return;
-        if (response === undefined) {
-          reportError("update");
-        } else if (!response.ok) {
-          reportError("update", response.status);
-        }
-      });
+      void postUpdate(encodeBase64(update), false);
     };
     doc.on("update", onLocalDocUpdate);
   }

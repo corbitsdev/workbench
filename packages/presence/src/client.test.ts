@@ -575,4 +575,97 @@ describe("connectPresence: error reporting and rejoin (CL-7202)", () => {
 
     handle.disconnect();
   });
+
+  test("a doc update that fails to post is redelivered once the next heartbeat succeeds", async () => {
+    const calls: { path: string; body: unknown }[] = [];
+    const doc = new Y.Doc();
+    const errors: PresenceError[] = [];
+    let updateStatus = 500;
+    const fetchImpl: PresenceFetch = (url, init) => {
+      const body = JSON.parse(init.body) as unknown;
+      calls.push({ path: url, body });
+      const status = url.endsWith("/update") ? updateStatus : 200;
+      return Promise.resolve({
+        ok: status >= 200 && status < 300,
+        status,
+        json: () => Promise.resolve({}),
+      });
+    };
+    const handle = connectPresence({
+      roomUrl: ROOM_URL,
+      fetchImpl,
+      openEventSource: () => new FakeEventSource(),
+      doc,
+    });
+    handle.onError((error) => errors.push(error));
+
+    await flushMicrotasks(); // join settles
+    doc.getText("content").insert(0, "hello");
+    await flushMicrotasks(); // the update POST fails and is queued
+
+    expect(errors).toEqual([{ operation: "update", status: 500 }]);
+    const failedCall = calls.find((c) => c.path.endsWith("/update"));
+    calls.length = 0;
+
+    // The next successful heartbeat redelivers the queued update with
+    // the exact same payload — nothing about the failed edit is lost.
+    updateStatus = 200;
+    handle.publishTyping(true);
+    await flushMicrotasks();
+
+    expect(calls.map((c) => c.path)).toEqual([
+      `${ROOM_URL}/heartbeat`,
+      `${ROOM_URL}/update`,
+    ]);
+    expect(calls.find((c) => c.path.endsWith("/update"))?.body).toEqual(
+      failedCall?.body,
+    );
+    // No second `onError` fire for the now-successful redelivery.
+    expect(errors).toEqual([{ operation: "update", status: 500 }]);
+    handle.disconnect();
+  });
+
+  test("queued updates are redelivered in the order they were made", async () => {
+    const calls: { path: string; body: unknown }[] = [];
+    const doc = new Y.Doc();
+    let updateStatus = 500;
+    const fetchImpl: PresenceFetch = (url, init) => {
+      const body = JSON.parse(init.body) as unknown;
+      calls.push({ path: url, body });
+      const status = url.endsWith("/update") ? updateStatus : 200;
+      return Promise.resolve({
+        ok: status >= 200 && status < 300,
+        status,
+        json: () => Promise.resolve({}),
+      });
+    };
+    const handle = connectPresence({
+      roomUrl: ROOM_URL,
+      fetchImpl,
+      openEventSource: () => new FakeEventSource(),
+      doc,
+    });
+
+    await flushMicrotasks();
+    doc.getText("content").insert(0, "a");
+    await flushMicrotasks();
+    doc.getText("content").insert(1, "b");
+    await flushMicrotasks();
+    const [firstFailedUpdate, secondFailedUpdate] = calls
+      .filter((c) => c.path.endsWith("/update"))
+      .map((c) => c.body);
+    calls.length = 0;
+
+    updateStatus = 200;
+    handle.publishTyping(true);
+    await flushMicrotasks(); // redelivers the first queued update
+    handle.publishTyping(true);
+    await flushMicrotasks(); // redelivers the second
+
+    const redeliveredUpdates = calls
+      .filter((c) => c.path.endsWith("/update"))
+      .map((c) => c.body);
+    expect(redeliveredUpdates).toEqual([firstFailedUpdate, secondFailedUpdate]);
+    handle.disconnect();
+  });
 });
