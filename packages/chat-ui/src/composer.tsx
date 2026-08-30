@@ -7,7 +7,7 @@
 // does not compose with an inline mention popover.
 
 import { Avatar, Button } from "@corbits/react-ui";
-import { CircleNotch, Paperclip, PaperPlaneRight, X } from "@corbits/icons";
+import { ArrowUp, CircleNotch, Paperclip, X } from "@corbits/icons";
 import {
   forwardRef,
   useImperativeHandle,
@@ -241,7 +241,7 @@ export function attachmentValidationMessage(
   }
 }
 
-/** PaperPlaneRight/Enter stay blocked while a send or file read is in flight. */
+/** ArrowUp/Enter stay blocked while a send or file read is in flight. */
 export function canSendComposerAction(
   text: string,
   attachments: readonly ComposerAttachment[],
@@ -826,26 +826,6 @@ export const Composer = forwardRef<
           </div>
         </div>
       )}
-      {attachments.length > 0 && (
-        <ul
-          className="chat-composer-attachments"
-          aria-label={CHAT_STRINGS.composerAttachmentsLabel}
-        >
-          {attachments.map((file) => (
-            <li key={file.id} className="chat-composer-attachment">
-              <span className="chat-composer-attachment-name">{file.name}</span>
-              <button
-                type="button"
-                className="chat-composer-attachment-remove"
-                aria-label={CHAT_STRINGS.composerRemoveAttachment(file.name)}
-                onClick={() => removeAttachment(file.id)}
-              >
-                <X aria-hidden="true" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
       <div className="chat-composer-row">
         <input
           ref={fileInputRef}
@@ -856,17 +836,28 @@ export const Composer = forwardRef<
           tabIndex={-1}
           aria-hidden="true"
         />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="chat-composer-icon-button"
-          disabled={!canAttach}
-          onClick={() => fileInputRef.current?.click()}
-          aria-label={CHAT_STRINGS.composerAttach}
-        >
-          <Paperclip />
-        </Button>
+        {attachments.length > 0 && (
+          <ul
+            className="chat-composer-attachments"
+            aria-label={CHAT_STRINGS.composerAttachmentsLabel}
+          >
+            {attachments.map((file) => (
+              <li key={file.id} className="chat-composer-attachment">
+                <span className="chat-composer-attachment-name">
+                  {file.name}
+                </span>
+                <button
+                  type="button"
+                  className="chat-composer-attachment-remove"
+                  aria-label={CHAT_STRINGS.composerRemoveAttachment(file.name)}
+                  onClick={() => removeAttachment(file.id)}
+                >
+                  <X aria-hidden="true" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         <textarea
           ref={textareaRef}
           className="chat-composer-input"
@@ -884,38 +875,49 @@ export const Composer = forwardRef<
           onBlur={() => setFocused(false)}
           rows={1}
         />
-        <Button
-          type="button"
-          variant={sendVisualState === "empty" ? "ghost" : "primary"}
-          size="icon"
-          className="chat-composer-icon-button"
-          disabled={!canSend}
-          data-send-state={sendVisualState}
-          onClick={() => void send()}
-          aria-label={
-            sending ? CHAT_STRINGS.composerSending : CHAT_STRINGS.composerSend
-          }
-          title={
-            sending ? CHAT_STRINGS.composerSending : CHAT_STRINGS.composerSend
-          }
-        >
-          {sendVisualState === "sending" ? (
-            <CircleNotch
-              className="chat-composer-send-spinner"
-              aria-hidden="true"
-            />
-          ) : (
-            <PaperPlaneRight aria-hidden="true" />
-          )}
-        </Button>
-      </div>
-      {/* Always mounted so its reserved height never toggles the composer's
-       * box size — only opacity/visibility change (CL-6250). */}
-      <div
-        className="chat-composer-hint"
-        data-visible={focused && value.trim().length > 0}
-      >
-        {CHAT_STRINGS.composerKeyboardHint}
+        <div className="chat-composer-actions">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="chat-composer-icon-button"
+            disabled={!canAttach}
+            onClick={() => fileInputRef.current?.click()}
+            aria-label={CHAT_STRINGS.composerAttach}
+          >
+            <Paperclip />
+          </Button>
+          <span
+            className="chat-composer-keyboard-hint"
+            data-visible={focused && value.trim().length > 0}
+          >
+            {CHAT_STRINGS.composerKeyboardHint}
+          </span>
+          <Button
+            type="button"
+            variant={sendVisualState === "empty" ? "ghost" : "primary"}
+            size="sm"
+            className="chat-composer-icon-button"
+            disabled={!canSend}
+            data-send-state={sendVisualState}
+            onClick={() => void send()}
+            aria-label={
+              sending ? CHAT_STRINGS.composerSending : CHAT_STRINGS.composerSend
+            }
+            title={
+              sending ? CHAT_STRINGS.composerSending : CHAT_STRINGS.composerSend
+            }
+          >
+            {sendVisualState === "sending" ? (
+              <CircleNotch
+                className="chat-composer-send-spinner"
+                aria-hidden="true"
+              />
+            ) : (
+              <ArrowUp aria-hidden="true" />
+            )}
+          </Button>
+        </div>
       </div>
       <div
         className="chat-composer-status"
