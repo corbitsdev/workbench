@@ -37,6 +37,7 @@ import { isFullySeeded } from "./provision";
 import {
   PENDING_SEED_SCAN_LIMIT,
   type PendingSeed,
+  type PendingSeedListCursor,
   type PendingSeedStore,
 } from "./pending-seed";
 
@@ -81,6 +82,11 @@ export type DrainReport = {
   /** Benches skipped this tick because a previous failure's backoff has
    * not elapsed, or because a pass over them is still running. */
   readonly deferred: number;
+  /** True when this tick stopped because its scan page filled the limit
+   * with more rows still in the table. The next tick continues after this
+   * page's cursor rather than restarting at the oldest row. False when
+   * the scan reached the end of the table. */
+  readonly truncated: boolean;
 };
 
 export type BenchProvisioner = {
@@ -113,6 +119,7 @@ export function createBenchProvisioner(
   const retryAfter = new Map<string, number>();
   const failureCount = new Map<string, number>();
   let timer: ReturnType<typeof setInterval> | undefined;
+  let scanAfter: PendingSeedListCursor | undefined;
 
   function holdOff(key: string): void {
     const failures = (failureCount.get(key) ?? 0) + 1;
@@ -217,13 +224,16 @@ export function createBenchProvisioner(
   async function drainOnce(
     args: { ignoreBackoff?: boolean } = {},
   ): Promise<DrainReport> {
-    const due = await deps.store.listDue({ limit: PENDING_SEED_SCAN_LIMIT });
+    const page = await deps.store.listDue({
+      limit: PENDING_SEED_SCAN_LIMIT,
+      ...(scanAfter !== undefined ? { after: scanAfter } : {}),
+    });
     let converged = 0;
     let pending = 0;
     let failed = 0;
     let deferred = 0;
 
-    for (const seed of due) {
+    for (const seed of page.seeds) {
       const key = benchKey(seed);
       const heldUntil = retryAfter.get(key);
       if (
@@ -243,7 +253,19 @@ export function createBenchProvisioner(
       else deferred += 1;
     }
 
-    return { converged, pending, failed, deferred };
+    if (page.truncated && page.next !== undefined) {
+      scanAfter = page.next;
+    } else {
+      scanAfter = undefined;
+    }
+
+    return {
+      converged,
+      pending,
+      failed,
+      deferred,
+      truncated: page.truncated,
+    };
   }
 
   function wake(): void {

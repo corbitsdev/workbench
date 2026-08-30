@@ -57,7 +57,7 @@
 // plaintext key forward at all — this entire store, table, and AEAD
 // dance goes away.
 
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, gt, or } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { type } from "arktype";
 import type { CredentialCipher } from "@intx/types";
@@ -145,15 +145,24 @@ export interface PendingSeedStore {
     now?: () => number;
   }): Promise<PendingSeed | undefined>;
   /**
-   * Every unexpired row, for the background drain that has no request —
-   * and therefore no (userId, tenantId) — to scope itself by. This is
-   * what makes provisioning survive a hub restart: the rows a crashed
-   * process was mid-way through are still here, and the next boot's
-   * first tick picks them straight back up. Expired rows are deleted on
-   * the way past, the same read-time sweep `read` performs, so a dead
-   * key is never handed to a drain. `limit` bounds one tick's work.
+   * One ordered page of unexpired rows, for the background drain that has
+   * no request — and therefore no (userId, tenantId) — to scope itself by.
+   * This is what makes provisioning survive a hub restart: the rows a
+   * crashed process was mid-way through are still here, and the next
+   * boot's first tick picks them straight back up. Expired rows are
+   * deleted on the way past, the same read-time sweep `read` performs, so
+   * a dead key is never handed to a drain.
+   *
+   * Rows are ordered oldest-due first (`expiresAt`, then `userId`,
+   * `tenantId`). `limit` bounds one page so a tick cannot scan the whole
+   * table; pass `after` the previous page's `next` cursor to continue.
+   * `truncated` is true when more rows remain behind this page.
    */
-  listDue(args: { now?: () => number; limit?: number }): Promise<PendingSeed[]>;
+  listDue(args: {
+    now?: () => number;
+    limit?: number;
+    after?: PendingSeedListCursor;
+  }): Promise<PendingSeedDuePage>;
   /** Deletes the row for (userId, tenantId), if any. Called once the
    * pending seed has done its job (seeded successfully) or once the
    * bench already reads as fully seeded some other way. */
@@ -161,6 +170,19 @@ export interface PendingSeedStore {
 }
 
 export const PENDING_SEED_SCAN_LIMIT = 50;
+
+/** Keyset cursor for `listDue` — the last row of a truncated page. */
+export type PendingSeedListCursor = {
+  readonly expiresAt: Date;
+  readonly userId: string;
+  readonly tenantId: string;
+};
+
+export type PendingSeedDuePage = {
+  readonly seeds: PendingSeed[];
+  readonly truncated: boolean;
+  readonly next?: PendingSeedListCursor;
+};
 
 interface StoredRow {
   provider: string;
@@ -177,7 +199,23 @@ interface RowAccess {
   get(userId: string, tenantId: string): Promise<StoredRow | undefined>;
   put(userId: string, tenantId: string, row: StoredRow): Promise<void>;
   delete(userId: string, tenantId: string): Promise<void>;
-  list(limit: number): Promise<IdentifiedRow[]>;
+  list(args: {
+    limit: number;
+    after?: PendingSeedListCursor;
+  }): Promise<IdentifiedRow[]>;
+}
+
+function comparePendingSeedCursor(
+  a: PendingSeedListCursor,
+  b: PendingSeedListCursor,
+): number {
+  const byExpires = a.expiresAt.getTime() - b.expiresAt.getTime();
+  if (byExpires !== 0) return byExpires;
+  if (a.userId < b.userId) return -1;
+  if (a.userId > b.userId) return 1;
+  if (a.tenantId < b.tenantId) return -1;
+  if (a.tenantId > b.tenantId) return 1;
+  return 0;
 }
 
 function createPendingSeedStore(
@@ -263,13 +301,32 @@ function createPendingSeedStore(
     async listDue(args) {
       const now = args.now ?? Date.now;
       const nowMs = now();
-      const rows = await access.list(args.limit ?? PENDING_SEED_SCAN_LIMIT);
+      const limit = args.limit ?? PENDING_SEED_SCAN_LIMIT;
+      const fetched = await access.list({
+        limit: limit + 1,
+        ...(args.after !== undefined ? { after: args.after } : {}),
+      });
+      const truncated = fetched.length > limit;
+      const rows = truncated ? fetched.slice(0, limit) : fetched;
       const due: PendingSeed[] = [];
       for (const row of rows) {
         const seed = await decodeRow(row, nowMs);
         if (seed !== undefined) due.push(seed);
       }
-      return due;
+      const last = rows[rows.length - 1];
+      return {
+        seeds: due,
+        truncated,
+        ...(truncated && last !== undefined
+          ? {
+              next: {
+                expiresAt: last.expiresAt,
+                userId: last.userId,
+                tenantId: last.tenantId,
+              },
+            }
+          : {}),
+      };
     },
 
     async clear(args) {
@@ -330,8 +387,41 @@ export function createDrizzlePendingSeedStore<
             ),
           );
       },
-      async list(limit) {
-        const rows = await db.select().from(pendingSeed).limit(limit);
+      async list({ limit, after }) {
+        const rows =
+          after === undefined
+            ? await db
+                .select()
+                .from(pendingSeed)
+                .orderBy(
+                  asc(pendingSeed.expiresAt),
+                  asc(pendingSeed.userId),
+                  asc(pendingSeed.tenantId),
+                )
+                .limit(limit)
+            : await db
+                .select()
+                .from(pendingSeed)
+                .where(
+                  or(
+                    gt(pendingSeed.expiresAt, after.expiresAt),
+                    and(
+                      eq(pendingSeed.expiresAt, after.expiresAt),
+                      gt(pendingSeed.userId, after.userId),
+                    ),
+                    and(
+                      eq(pendingSeed.expiresAt, after.expiresAt),
+                      eq(pendingSeed.userId, after.userId),
+                      gt(pendingSeed.tenantId, after.tenantId),
+                    ),
+                  ),
+                )
+                .orderBy(
+                  asc(pendingSeed.expiresAt),
+                  asc(pendingSeed.userId),
+                  asc(pendingSeed.tenantId),
+                )
+                .limit(limit);
         return rows.map((row) => ({
           userId: row.userId,
           tenantId: row.tenantId,
@@ -364,11 +454,19 @@ export function createInMemoryPendingSeedStore(
       async delete(userId, tenantId) {
         rows.delete(keyOf(userId, tenantId));
       },
-      async list(limit) {
-        return [...rows.entries()].slice(0, limit).map(([key, row]) => {
+      async list({ limit, after }) {
+        const identified = [...rows.entries()].map(([key, row]) => {
           const [userId = "", tenantId = ""] = key.split(":");
           return { ...row, userId, tenantId };
         });
+        identified.sort(comparePendingSeedCursor);
+        const filtered =
+          after === undefined
+            ? identified
+            : identified.filter(
+                (row) => comparePendingSeedCursor(row, after) > 0,
+              );
+        return filtered.slice(0, limit);
       },
     },
     cipher,
