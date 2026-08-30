@@ -286,6 +286,94 @@ describe("createInMemoryAgentTurnStore", () => {
       expect(stored?.status).toBe("failed");
       expect(stored?.replyMessageId).toBeNull();
     });
+
+    // CL-7201: a turn cancelled by the user must never be resurrected by
+    // a real reply that lands after the fact -- exactly the same
+    // guarantee CL-7193 already gives a timed-out turn against a late
+    // reply, now exercised for the cancel outcome specifically, since
+    // cancellation is a NEW way to close a turn out from under work
+    // that is still in flight (a `message_response` gate answer, an
+    // ordinary reply) and has no code of its own to fall back on if
+    // this compare-and-set ever regressed.
+    test("a turn cancelled while a real reply is in flight cannot be reopened by that reply landing late", async () => {
+      const store = createInMemoryAgentTurnStore();
+      const opened = await store.startTurn(BASE);
+
+      const cancelled = await store.finishTurn({
+        tenantId: BASE.tenantId,
+        turnId: opened.id,
+        status: "cancelled",
+        error: "Cancelled by user",
+      });
+      expect(cancelled?.status).toBe("cancelled");
+
+      // The agent (or a message_response gate answer correlating to
+      // this turn) finishes its work anyway -- CL-7230's known ceiling
+      // is that nothing here can stop it -- and tries to close the same
+      // turn as a normal completed reply.
+      const lateReply = await store.finishTurn({
+        tenantId: BASE.tenantId,
+        turnId: opened.id,
+        status: "completed",
+        replyMessageId: "msg_late_reply",
+      });
+      expect(lateReply).toBeUndefined();
+
+      const stored = await store.getTurn({
+        tenantId: BASE.tenantId,
+        turnId: opened.id,
+      });
+      expect(stored?.status).toBe("cancelled");
+      expect(stored?.replyMessageId).toBeNull();
+    });
+  });
+
+  // CL-7201: the cancel endpoint's fallback sweep -- settling a turn
+  // whose dispatch has already moved off the caller's own call stack
+  // (its `sendMail` resolved, an abort signal has nothing left to
+  // reach) -- must see every currently-running turn for a workbench,
+  // not just the newest one. `listTurns` alone is the wrong primitive
+  // for that sweep: it has no status filter and pages to
+  // `AGENT_TURNS_PAGE_SIZE`, so a busy workbench could silently leave
+  // older running turns unsettled.
+  describe("findRunningTurns (CL-7201)", () => {
+    test("returns every running turn for a workbench, across agents, excluding settled ones", async () => {
+      const store = createInMemoryAgentTurnStore();
+      const first = await store.startTurn(BASE);
+      const second = await store.startTurn({
+        ...BASE,
+        agentAddress: "ins_echo2@acme.example",
+      });
+      const settled = await store.startTurn({
+        ...BASE,
+        agentAddress: "ins_echo3@acme.example",
+      });
+      await store.finishTurn({
+        tenantId: BASE.tenantId,
+        turnId: settled.id,
+        status: "completed",
+        replyMessageId: "msg_done",
+      });
+      await store.startTurn({ ...BASE, workbenchId: "wb_other" });
+
+      const running = await store.findRunningTurns({
+        tenantId: BASE.tenantId,
+        workbenchId: BASE.workbenchId,
+      });
+
+      expect(new Set(running.map((turn) => turn.id))).toEqual(
+        new Set([first.id, second.id]),
+      );
+    });
+
+    test("returns nothing for a workbench with no running turns", async () => {
+      const store = createInMemoryAgentTurnStore();
+      const running = await store.findRunningTurns({
+        tenantId: BASE.tenantId,
+        workbenchId: BASE.workbenchId,
+      });
+      expect(running).toEqual([]);
+    });
   });
 });
 
