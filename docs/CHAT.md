@@ -171,6 +171,52 @@ agents replying in one room under distinct occurrences, three rapid
 messages serializing into ordered turns, and a sidecar killed
 mid-occurrence leaving both the room and the section alive.
 
+## Stopping a turn (CL-7201)
+
+Before this, the only bound on a wedged turn was the dispatch and
+wait-until-free timeouts themselves — minutes long, and no way for a
+user watching an agent go wrong to do anything but wait or reload.
+`POST /workbenches/:id/turns/cancel` (`packages/chat/src/routes.ts`)
+closes that gap, calling `cancelWorkbenchTurn`
+(`packages/chat/src/workbench-service.ts`), which runs two independent
+mechanisms together because a turn can be in either place when the user
+asks to stop it:
+
+- **Still on our own call stack.** `dispatchTurnBatch` registers one
+  `AbortController` per recipient it dispatches, via a workbench-keyed
+  `TurnCancelRegistry` (`packages/chat/src/turn-cancellation.ts`) —
+  the same "one instance, shared" pattern `WorkbenchTurnQueue` follows.
+  Its signal is composed into each `withTimeout` call (`waitUntilFree`,
+  `dispatchTurn`) as an **external signal** — `withTimeout` (CL-7193)
+  already gives `work` an `AbortSignal` the moment its own timeout wins;
+  CL-7201 extends it to also fire (with the external caller's own
+  reason, not its own timeout message) the moment that external signal
+  aborts, whichever comes first. `dispatchTurn`'s abort-close handler
+  tells a deliberate cancellation apart from a timeout by checking
+  whether the abort reason is a `TurnCancelledError`, and closes the
+  turn row `cancelled` rather than `failed`.
+- **Already off our call stack.** `sendMail` has no cancellable
+  primitive of its own (CL-7230) — once it resolves, the agent is
+  generating (or parked on a `message_response` gate somewhere in the
+  execution plane this package cannot see into) with nothing left
+  registered to abort. `cancelWorkbenchTurn` snapshots every turn
+  `AgentTurnStore.findRunningTurns` reports for the workbench _before_
+  triggering the registry above (so a row the abort path already
+  claimed is still counted), then sweeps it directly through the same
+  `finishTurn` compare-and-set.
+
+Both mechanisms race the same compare-and-set, so whichever reaches a
+given row first is the only one that ever settles it or posts a notice
+— `postCancelledNotice`, a `turnCancelled` text part distinct from
+`postUndeliveredNotice`'s `turnFailed` (a cancellation is not a
+failure, and the timeline says so). CL-7230's ceiling is honest, not
+silent: settling the row is not the same as stopping the underlying
+agent process, and a late reply that lands anyway simply finds no
+`running` row left to attach to. The composer offers a Stop affordance
+(`packages/chat-ui/src/composer.tsx`) whenever `isPendingReply`
+(`streaming-reply.ts`) is true, independent of its own `sending` state
+— a follow-up message can still be typed and queued while a turn runs.
+
 ## Threads: workbench → thread → sub-thread
 
 A workbench's timeline is itself a thread — its **root thread**, one per
