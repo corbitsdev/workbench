@@ -56,6 +56,7 @@ type McpCredentialRow = {
   accessToken: string;
   status: "active" | "expired";
   recipients: readonly { tenantId: string; principalId: string }[];
+  expiresAt: Date;
 };
 
 function mcpCredential(
@@ -72,6 +73,7 @@ function mcpCredential(
     accessToken: "access_old",
     status: "active",
     recipients: [{ tenantId: "tnt_1", principalId: "prn_1" }],
+    expiresAt: new Date("2026-08-13T11:00:00.000Z"),
     ...overrides,
   };
 }
@@ -136,6 +138,7 @@ function inMemoryStore(
           slug: r.slug,
           name: r.name,
           serverUrl: r.serverUrl,
+          expiresAt: r.expiresAt,
           tokens: {
             access_token: r.accessToken,
             token_type: "bearer",
@@ -371,6 +374,45 @@ describe("tickCredentialExpirySweep", () => {
     expect(store.claims).toEqual([]);
     expect(notify.mailed).toEqual([]);
   });
+
+  test("a credential with no recipient past the unowned-age bound is claimed anyway, unnotified", async () => {
+    // 8 days before `now` — past MAX_UNOWNED_CREDENTIAL_AGE_MS (7 days).
+    const store = inMemoryStore([
+      credential({
+        recipients: [],
+        expiresAt: "2026-08-05T00:00:00.000Z",
+      }),
+    ]);
+    const notify = notifyDeps();
+
+    await tickCredentialExpirySweep({
+      store,
+      notify,
+      hubUrl: HUB_URL,
+      now: () => now,
+    });
+
+    expect(store.claims).toEqual(["cred_1"]);
+    expect(notify.mailed).toEqual([]);
+  });
+
+  test("a mail failure past the unmailed-age bound is claimed anyway, unnotified", async () => {
+    // 36 hours before `now` — past MAX_UNMAILED_CREDENTIAL_AGE_MS (24h).
+    const store = inMemoryStore([
+      credential({ expiresAt: "2026-08-11T00:00:00.000Z" }),
+    ]);
+    const notify = throwingNotifyDeps(new Error("postgres blip"));
+
+    await tickCredentialExpirySweep({
+      store,
+      notify,
+      hubUrl: HUB_URL,
+      now: () => now,
+    });
+
+    expect(store.claims).toEqual(["cred_1"]);
+    expect(notify.mailed).toEqual([]);
+  });
 });
 
 describe("tickCredentialExpirySweep — MCP oauth_token refresh (CL-6207)", () => {
@@ -532,5 +574,58 @@ describe("tickCredentialExpirySweep — MCP oauth_token refresh (CL-6207)", () =
     expect(refreshCalled).toBe(false);
     expect(store.mcpRefreshes).toEqual([]);
     expect(store.mcpClaims).toEqual([]);
+  });
+
+  test("a failed refresh with no recipient past the unowned-age bound is claimed anyway, unnotified", async () => {
+    // 8 days before `now` — past MAX_UNOWNED_CREDENTIAL_AGE_MS (7 days).
+    const store = inMemoryStore(
+      [],
+      [
+        mcpCredential({
+          recipients: [],
+          expiresAt: new Date("2026-08-05T00:00:00.000Z"),
+        }),
+      ],
+    );
+    const notify = notifyDeps();
+    const refreshMcpTokens = async (): Promise<McpOAuthRefreshResult> => ({
+      ok: false,
+      message: "invalid_grant: refresh token revoked",
+    });
+
+    await tickCredentialExpirySweep({
+      store,
+      notify,
+      hubUrl: HUB_URL,
+      refreshMcpTokens,
+      now: () => now,
+    });
+
+    expect(store.mcpClaims).toEqual(["cred_mcp_1"]);
+    expect(notify.mailed).toEqual([]);
+  });
+
+  test("a failed refresh whose reconnect mail keeps failing past the unmailed-age bound is claimed anyway", async () => {
+    // 36 hours before `now` — past MAX_UNMAILED_CREDENTIAL_AGE_MS (24h).
+    const store = inMemoryStore(
+      [],
+      [mcpCredential({ expiresAt: new Date("2026-08-11T00:00:00.000Z") })],
+    );
+    const notify = throwingNotifyDeps(new Error("postgres blip"));
+    const refreshMcpTokens = async (): Promise<McpOAuthRefreshResult> => ({
+      ok: false,
+      message: "invalid_grant: refresh token revoked",
+    });
+
+    await tickCredentialExpirySweep({
+      store,
+      notify,
+      hubUrl: HUB_URL,
+      refreshMcpTokens,
+      now: () => now,
+    });
+
+    expect(store.mcpClaims).toEqual(["cred_mcp_1"]);
+    expect(notify.mailed).toEqual([]);
   });
 });

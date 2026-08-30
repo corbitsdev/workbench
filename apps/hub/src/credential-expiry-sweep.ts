@@ -57,6 +57,27 @@ const MCP_REFRESH_LEAD_MS = POLL_INTERVAL_MS;
 const MCP_OAUTH_CLIENT_NAME = "Corbits Workbench";
 const log = getLogger(["hub", "credential-expiry-sweep"]);
 
+// Mail-first-claim-after (see `mailThenClaimExpiry`) leaves a still-due
+// credential `active` for as long as it keeps failing to notify anyone —
+// on purpose, so a transient mail outage or a not-yet-provisioned
+// recipient gets more than one tick to resolve. Left unbounded, though,
+// `active` stops meaning "usable": the credential is genuinely dead at
+// the provider, and the rest of the system (anything selecting an
+// `active` credential to actually use) would keep trusting a row that
+// will never work again. Past these ages the sweep gives up on ever
+// notifying anyone and claims the expiry anyway, so the stored status
+// stops asserting something false — reported loudly, since nobody was
+// told.
+//
+// The two failure shapes get different budgets: a mail outage is a
+// transient, systemic condition most likely to resolve within a day if
+// it's going to resolve at all, while a credential with zero active
+// recipients is more often a slow-moving tenant-provisioning gap (a new
+// tenant, a departed user being replaced) that deserves more real-world
+// time before writing off the notification as unreachable.
+const MAX_UNMAILED_CREDENTIAL_AGE_MS = 24 * 60 * 60 * 1000;
+const MAX_UNOWNED_CREDENTIAL_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
 // The OAuth-connected providers whose tokens expire, and how to name
 // each in the notification. A second such provider generalizes this
 // list, never a second parallel sweep.
@@ -91,6 +112,10 @@ export type RefreshableMcpCredential = {
   readonly tokens: OAuthTokens;
   readonly clientInformation?: OAuthClientInformationMixed;
   readonly recipients: readonly { tenantId: string; principalId: string }[];
+  /** The credential's real `expiresAt` column — when it became due for
+   * this reconnect-nudge fallback, used to bound how long an unmailed
+   * expiry is left `active` (see `MAX_UNMAILED_CREDENTIAL_AGE_MS`). */
+  readonly expiresAt: Date;
 };
 
 export type CredentialExpirySweepStore = {
@@ -217,7 +242,7 @@ export function createDrizzleCredentialExpirySweepStore(
         );
 
       const due = rows.filter(
-        (row) =>
+        (row): row is typeof row & { expiresAt: Date } =>
           row.expiresAt !== null && row.expiresAt.getTime() <= cutoff.getTime(),
       );
       if (due.length === 0) return [];
@@ -268,6 +293,7 @@ export function createDrizzleCredentialExpirySweepStore(
           slug: mcpSlugOf(row.providerName),
           name: parsedMetadata.name ?? row.providerName,
           serverUrl: row.apiBaseUrl ?? parsedMetadata.url,
+          expiresAt: row.expiresAt,
           tokens: {
             access_token: accessToken,
             token_type: "bearer",
@@ -350,6 +376,14 @@ export type CredentialExpirySweepDeps = {
  * and swallowed here (never `active` → `expired` with the notification
  * lost), and never propagates out to abort sibling candidates in the
  * same tick.
+ *
+ * That "stay active and retry" grace is bounded by `dueSince` (see
+ * `MAX_UNMAILED_CREDENTIAL_AGE_MS` / `MAX_UNOWNED_CREDENTIAL_AGE_MS`):
+ * once a credential has been due for longer than its budget with the
+ * notification still unsent, this claims the expiry anyway rather than
+ * asserting `active` forever for a credential that is genuinely dead at
+ * the provider — reported loudly, since giving up here means nobody was
+ * ever told.
  */
 async function mailThenClaimExpiry(
   deps: CredentialExpirySweepDeps,
@@ -358,21 +392,54 @@ async function mailThenClaimExpiry(
     readonly credentialId: string;
     readonly tenantId: string;
     readonly recipients: readonly { tenantId: string; principalId: string }[];
+    readonly dueSince: Date;
   },
   event: CredentialExpiredNotification,
 ): Promise<void> {
+  const ageMs = now.getTime() - target.dueSince.getTime();
+
   if (target.recipients.length === 0) {
-    log.warn`credential ${target.credentialId} has no active recipient to notify; leaving it active until one exists`;
+    if (ageMs < MAX_UNOWNED_CREDENTIAL_AGE_MS) {
+      log.warn`credential ${target.credentialId} has no active recipient to notify; leaving it active until one exists`;
+      return;
+    }
+    reportError(
+      new Error(
+        "credential expiry never had an active recipient to notify; claiming it as expired unnotified",
+      ),
+      {
+        operation: "credential-expiry-sweep.abandon-unowned",
+        tenantId: target.tenantId,
+        extra: {
+          credentialId: target.credentialId,
+          dueSince: target.dueSince.toISOString(),
+        },
+      },
+    );
+    await deps.store.claimExpiry(target.credentialId, now);
     return;
   }
+
   try {
     await deliverCredentialMail(deps.notify, event);
   } catch (err) {
+    if (ageMs < MAX_UNMAILED_CREDENTIAL_AGE_MS) {
+      reportError(err, {
+        operation: "credential-expiry-sweep.deliver",
+        tenantId: target.tenantId,
+        extra: { credentialId: target.credentialId },
+      });
+      return;
+    }
     reportError(err, {
-      operation: "credential-expiry-sweep.deliver",
+      operation: "credential-expiry-sweep.abandon-unmailed",
       tenantId: target.tenantId,
-      extra: { credentialId: target.credentialId },
+      extra: {
+        credentialId: target.credentialId,
+        dueSince: target.dueSince.toISOString(),
+      },
     });
+    await deps.store.claimExpiry(target.credentialId, now);
     return;
   }
   const claimed = await deps.store.claimExpiry(target.credentialId, now);
@@ -398,7 +465,21 @@ export async function tickCredentialExpirySweep(
   const due = findDueCredentialExpiries(candidates, now);
 
   for (const { credential: expiring, event } of due) {
-    await mailThenClaimExpiry(deps, now, expiring, event);
+    // Guaranteed defined and parseable for anything `findDueCredentialExpiries`
+    // returned; `now` is an unreachable fallback, never a real fallback value.
+    const dueSince =
+      expiring.expiresAt !== undefined ? new Date(expiring.expiresAt) : now;
+    await mailThenClaimExpiry(
+      deps,
+      now,
+      {
+        credentialId: expiring.credentialId,
+        tenantId: expiring.tenantId,
+        recipients: expiring.recipients,
+        dueSince,
+      },
+      event,
+    );
   }
 
   const refreshable = await deps.store.loadRefreshableMcpCandidates(
@@ -429,15 +510,25 @@ export async function tickCredentialExpirySweep(
     }
 
     log.warn`mcp oauth refresh failed for credential ${candidate.credentialId} ("${candidate.name}"): ${result.message}`;
-    await mailThenClaimExpiry(deps, now, candidate, {
-      kind: "credential-expired",
-      tenantId: candidate.tenantId,
-      credentialId: candidate.credentialId,
-      providerId: `mcp:${candidate.slug}`,
-      providerLabel: candidate.name,
-      recipients: [...candidate.recipients],
-      createdAt: now.toISOString(),
-    });
+    await mailThenClaimExpiry(
+      deps,
+      now,
+      {
+        credentialId: candidate.credentialId,
+        tenantId: candidate.tenantId,
+        recipients: candidate.recipients,
+        dueSince: candidate.expiresAt,
+      },
+      {
+        kind: "credential-expired",
+        tenantId: candidate.tenantId,
+        credentialId: candidate.credentialId,
+        providerId: `mcp:${candidate.slug}`,
+        providerLabel: candidate.name,
+        recipients: [...candidate.recipients],
+        createdAt: now.toISOString(),
+      },
+    );
   }
 }
 
