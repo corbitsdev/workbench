@@ -16,6 +16,8 @@
     "typecheck": "bun run scripts/run-all.ts typecheck && bunx tsc -p tsconfig.json --noEmit && bunx tsc -p test/isolation/tsconfig.json --noEmit",
     "lint": "prettier --check --cache . && eslint --cache .",
     "format": "prettier --write .",
+    "hooks:install": "bun run scripts/hooks-install.ts",
+    "prepare": "bun run hooks:install",
     "build": "bun run scripts/run-all.ts build",
     "test": "bun test ./scripts/*.test.ts && bun run scripts/run-all.ts test",
     "test:e2e": "bun test scripts/e2e",
