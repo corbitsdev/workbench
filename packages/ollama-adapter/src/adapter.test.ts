@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { createOpenAIAdapter } from "@intx/inference/providers";
 import type { LastCycleSource } from "@intx/types/runtime";
-import type { ConversationTurn, InferenceOptions } from "@intx/types/runtime";
+import type {
+  ConversationTurn,
+  InferenceEvent,
+  InferenceOptions,
+  ToolDefinition,
+} from "@intx/types/runtime";
 
 import { createOllamaAdapter } from "./adapter";
 
@@ -21,8 +26,46 @@ const messages: ConversationTurn[] = [
 
 const options: InferenceOptions = {};
 
+const memorySearchTool: ToolDefinition = {
+  name: "memory_search",
+  description: "Search firm memory",
+  inputSchema: { type: "object" },
+};
+
+const CL_7186_PAYLOAD =
+  '{"name":"memory_search","parameters":{"query":"this person"}}';
+
 function bodyOf(built: { body: string }): Record<string, unknown> {
   return JSON.parse(built.body) as Record<string, unknown>;
+}
+
+function toolStarts(events: readonly InferenceEvent[]): InferenceEvent[] {
+  return events.filter((event) => event.type === "inference.tool_call.start");
+}
+
+function textDeltas(events: readonly InferenceEvent[]): InferenceEvent[] {
+  return events.filter((event) => event.type === "inference.text.delta");
+}
+
+function argumentFragments(events: readonly InferenceEvent[]): string {
+  return events
+    .filter((event) => event.type === "inference.tool_call.delta")
+    .map(
+      (event) => (event.data as { argumentFragment: string }).argumentFragment,
+    )
+    .join("");
+}
+
+function expectSharedToolCallId(events: readonly InferenceEvent[]): void {
+  const ids = events
+    .filter(
+      (event) =>
+        event.type === "inference.tool_call.start" ||
+        event.type === "inference.tool_call.delta",
+    )
+    .map((event) => (event.data as { callId: string }).callId);
+  expect(ids.length).toBeGreaterThan(0);
+  expect(new Set(ids)).toEqual(new Set(["ollama-inline-0"]));
 }
 
 describe("createOllamaAdapter", () => {
@@ -83,5 +126,58 @@ describe("createOllamaAdapter", () => {
     ]);
     expect(typeof wrapped.extractRetryAfterMs).toBe("function");
     expect(typeof wrapped.extractPacingDelayMs).toBe("function");
+  });
+
+  test("parseResponse salvages declared inline memory_search JSON into a tool call", () => {
+    const wrapped = createOllamaAdapter(source, undefined);
+    wrapped.buildRequest(messages, "gpt-oss:20b", {
+      tools: [memorySearchTool],
+    });
+    const events = [
+      ...wrapped.parseResponse(
+        JSON.stringify({
+          choices: [{ delta: { content: CL_7186_PAYLOAD } }],
+        }),
+      ),
+      ...wrapped.parseResponse(
+        JSON.stringify({
+          choices: [{ delta: {}, finish_reason: "stop" }],
+        }),
+      ),
+    ];
+    expect(textDeltas(events)).toEqual([]);
+    expect((toolStarts(events)[0]?.data as { name: string }).name).toBe(
+      "memory_search",
+    );
+    expectSharedToolCallId(events);
+    expect(JSON.parse(argumentFragments(events))).toEqual({
+      query: "this person",
+    });
+  });
+
+  test("parseJSONResponse salvages declared inline memory_search JSON into a tool call", () => {
+    const wrapped = createOllamaAdapter(source, undefined);
+    wrapped.buildRequest(messages, "gpt-oss:20b", {
+      tools: [memorySearchTool],
+    });
+    const events = wrapped.parseJSONResponse(
+      JSON.stringify({
+        object: "chat.completion",
+        choices: [
+          {
+            message: { role: "assistant", content: CL_7186_PAYLOAD },
+          },
+        ],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      }),
+    );
+    expect(textDeltas(events)).toEqual([]);
+    expect((toolStarts(events)[0]?.data as { name: string }).name).toBe(
+      "memory_search",
+    );
+    expectSharedToolCallId(events);
+    expect(JSON.parse(argumentFragments(events))).toEqual({
+      query: "this person",
+    });
   });
 });

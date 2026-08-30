@@ -150,6 +150,19 @@ test("the prompt tells Myra to discover an MCP server's tools before calling one
   expect(ASSISTANT_SYSTEM_PROMPT).toContain("never guess a tool name");
 });
 
+test("the prompt never writes tool JSON as reply text and does not memory_search a bare greeting", () => {
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain("only through tool calls");
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "never by writing a JSON object with a tool name into your reply",
+  );
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "never memory_search a bare greeting",
+  );
+  expect(ASSISTANT_SYSTEM_PROMPT).toContain(
+    "use memory only when you actually need a fact from earlier",
+  );
+});
+
 test("the workflow pins manus-tools and does not require a Manus credential binding", () => {
   const definition = buildAssistantWorkflow(INPUT);
   expect(ASSISTANT_TOOL_PACKAGE_PINS.map((pin) => pin.name)).toContain(

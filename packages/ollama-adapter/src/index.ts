@@ -11,3 +11,10 @@ export {
   reclassifyThinkingEvents,
   type ThinkSplitState,
 } from "./think-tags";
+export {
+  createInlineToolJsonState,
+  reclassifyInlineToolJsonEvents,
+  responseChunkIsTerminal,
+  setDeclaredToolNames,
+  type InlineToolJsonState,
+} from "./inline-tool-json";

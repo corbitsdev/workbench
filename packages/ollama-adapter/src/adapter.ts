@@ -26,6 +26,12 @@ import {
   type OllamaAdapterOverride,
 } from "./overrides";
 import { createThinkSplitState, reclassifyThinkingEvents } from "./think-tags";
+import {
+  createInlineToolJsonState,
+  reclassifyInlineToolJsonEvents,
+  responseChunkIsTerminal,
+  setDeclaredToolNames,
+} from "./inline-tool-json";
 
 type OllamaChatBody = {
   options?: Record<string, unknown>;
@@ -85,16 +91,32 @@ export const createOllamaAdapter: AdapterFactory = (
   // chunk of one response without leaking state between requests.
   const streamThinkState = createThinkSplitState();
   const jsonThinkState = createThinkSplitState();
+  const streamInlineState = createInlineToolJsonState();
+  const jsonInlineState = createInlineToolJsonState();
   return {
     ...inner,
-    buildRequest: (messages, model, options) =>
-      applyOverride(
+    buildRequest: (messages, model, options) => {
+      setDeclaredToolNames(streamInlineState, options.tools);
+      setDeclaredToolNames(jsonInlineState, options.tools);
+      return applyOverride(
         inner.buildRequest(messages, model, options),
         resolveOverride(config, model),
-      ),
+      );
+    },
     parseResponse: (sseData) =>
-      reclassifyThinkingEvents(inner.parseResponse(sseData), streamThinkState),
+      reclassifyInlineToolJsonEvents(
+        reclassifyThinkingEvents(
+          inner.parseResponse(sseData),
+          streamThinkState,
+        ),
+        streamInlineState,
+        { flush: responseChunkIsTerminal(sseData) },
+      ),
     parseJSONResponse: (body) =>
-      reclassifyThinkingEvents(inner.parseJSONResponse(body), jsonThinkState),
+      reclassifyInlineToolJsonEvents(
+        reclassifyThinkingEvents(inner.parseJSONResponse(body), jsonThinkState),
+        jsonInlineState,
+        { flush: true },
+      ),
   };
 };
