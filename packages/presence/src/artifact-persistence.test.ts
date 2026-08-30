@@ -12,6 +12,22 @@ function docUpdateInserting(text: string): Uint8Array {
   return Y.encodeStateAsUpdate(doc);
 }
 
+/** `applyDocUpdate` only accepts updates for a room that already exists —
+ * it never auto-creates one (see `room-registry.ts`) — so every test that
+ * posts a doc update joins first to open the room, exactly like the real
+ * join-then-edit flow the HTTP routes use. */
+function joinPrincipal(
+  registry: ReturnType<typeof createPresenceRoomRegistry>,
+  key: { tenantId: string; surface: string },
+  principalId: string,
+): void {
+  registry.join(key, {
+    principalId,
+    displayName: principalId,
+    color: "hsl(0 65% 45%)",
+  });
+}
+
 /** Drains pending microtasks — generous rather than an exact tick count,
  * since the write chain's depth (and therefore how many `.then()` hops a
  * test needs to wait out) is an implementation detail these tests
@@ -87,6 +103,7 @@ describe("createArtifactDocPersistence", () => {
 
     registry.seedDocText(key, "");
     registry.subscribeDocUpdates(key, () => undefined); // keep the room alive
+    joinPrincipal(registry, key, "prn_alice");
 
     // Simulate three quick edits, each a real Yjs update.
     const edit = (text: string) => {
@@ -131,14 +148,13 @@ describe("createArtifactDocPersistence", () => {
       },
     });
 
-    registry.applyDocUpdate(key, docUpdateInserting("final edit"), "prn_bob");
-
     const unsubscribe = registry.subscribe(key, () => undefined);
     registry.join(key, {
       principalId: "prn_bob",
       displayName: "Bob",
       color: "hsl(0 65% 45%)",
     });
+    registry.applyDocUpdate(key, docUpdateInserting("final edit"), "prn_bob");
     registry.leave(key, "prn_bob");
     unsubscribe();
 
@@ -147,6 +163,42 @@ describe("createArtifactDocPersistence", () => {
     // runs a microtask later via the per-room write chain.
     await flushMicrotasks();
     expect(writes).toEqual(["final edit"]);
+  });
+
+  test("a post-eviction zombie update cannot pre-empt or block seedOnJoin's content restoration", async () => {
+    const registry = createPresenceRoomRegistry();
+    const persistence = createArtifactDocPersistence({
+      registry,
+      loadArtifactContent: async () => "content from storage",
+      writeArtifactSnapshot: async () => ({ version: 1 }),
+    });
+
+    // Alice joins, edits, and leaves — the room empties and is torn down.
+    const unsubscribe = registry.subscribe(key, () => undefined);
+    joinPrincipal(registry, key, "prn_alice");
+    registry.applyDocUpdate(
+      key,
+      docUpdateInserting("alice's edit"),
+      "prn_alice",
+    );
+    registry.leave(key, "prn_alice");
+    unsubscribe();
+    // The room's teardown flush is asynchronous (see room-registry.ts's
+    // deferred destroy) — wait for it to actually settle and the room to
+    // be gone before simulating a POST arriving after that point.
+    await flushMicrotasks();
+
+    // A delayed POST from Alice's now-evicted client lands after the
+    // room was destroyed. It must be rejected outright, not silently
+    // recreate the room and populate it with stale content.
+    expect(() =>
+      registry.applyDocUpdate(key, docUpdateInserting("zombie"), "prn_alice"),
+    ).toThrow();
+
+    // A legitimate rejoin must still restore the real stored content —
+    // the zombie write must not have made the doc look already-seeded.
+    await persistence.seedOnJoin(key);
+    expect(registry.docText(key)).toBe("content from storage");
   });
 
   test("never schedules a snapshot for a non-artifact surface", () => {
@@ -166,6 +218,7 @@ describe("createArtifactDocPersistence", () => {
     });
 
     const channelKey = { tenantId: "tnt_a", surface: "channel:chn_1" };
+    joinPrincipal(registry, channelKey, "prn_alice");
     registry.applyDocUpdate(
       channelKey,
       docUpdateInserting("not an artifact"),
@@ -234,6 +287,7 @@ describe("createArtifactDocPersistence", () => {
       writeArtifactSnapshot: async () => ({ version: 12 }),
     });
 
+    joinPrincipal(registry, key, "prn_alice");
     registry.applyDocUpdate(key, docUpdateInserting("x"), "prn_alice");
     clock.advance(2_100);
     await Promise.resolve();
@@ -258,6 +312,7 @@ describe("createArtifactDocPersistence", () => {
       onSnapshotError: (_key, error) => errors.push(error),
     });
 
+    joinPrincipal(registry, key, "prn_alice");
     registry.applyDocUpdate(key, docUpdateInserting("x"), "prn_alice");
 
     clock.advance(3_000);
@@ -298,6 +353,7 @@ describe("createArtifactDocPersistence", () => {
       },
     });
 
+    joinPrincipal(registry, key, "prn_alice");
     registry.applyDocUpdate(key, docUpdateInserting("a"), "prn_alice");
     clock.advance(2_000); // schedules write #1 (slow — awaits its resolver)
     await Promise.resolve();

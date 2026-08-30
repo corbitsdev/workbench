@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import * as Y from "yjs";
 import {
   createPresenceRoomRegistry,
+  PresenceRoomNotFoundError,
   type PresenceRoomKey,
   type PresenceState,
 } from "./room-registry";
@@ -136,6 +137,12 @@ function clientDoc(): Y.Doc {
   return new Y.Doc();
 }
 
+/** Drains pending microtasks — generous rather than an exact tick count,
+ * matching `artifact-persistence.test.ts`'s helper of the same name. */
+async function flushMicrotasks(times = 10): Promise<void> {
+  for (let i = 0; i < times; i += 1) await Promise.resolve();
+}
+
 describe("createPresenceRoomRegistry: doc sync", () => {
   const docKey: PresenceRoomKey = {
     tenantId: "tnt_a",
@@ -144,6 +151,8 @@ describe("createPresenceRoomRegistry: doc sync", () => {
 
   test("concurrent inserts from two clients both land in the server's doc", () => {
     const registry = createPresenceRoomRegistry();
+    registry.join(docKey, state("prn_alice"));
+    registry.join(docKey, state("prn_bob"));
     const alice = clientDoc();
     const bob = clientDoc();
     alice.getText("content").insert(0, "hello");
@@ -162,6 +171,7 @@ describe("createPresenceRoomRegistry: doc sync", () => {
 
   test("a late joiner catches up to the full doc state via docStateAsUpdate", () => {
     const registry = createPresenceRoomRegistry();
+    registry.join(docKey, state("prn_alice"));
     const alice = clientDoc();
     alice.getText("content").insert(0, "already written");
     registry.applyDocUpdate(docKey, Y.encodeStateAsUpdate(alice), "prn_alice");
@@ -174,6 +184,7 @@ describe("createPresenceRoomRegistry: doc sync", () => {
 
   test("applyDocUpdate notifies both the room-scoped and global doc-change listeners", () => {
     const registry = createPresenceRoomRegistry();
+    registry.join(docKey, state("prn_alice"));
     const roomUpdates: string[] = [];
     const globalChanges: { key: PresenceRoomKey; author: string }[] = [];
     registry.subscribeDocUpdates(docKey, (_update, author) =>
@@ -189,6 +200,54 @@ describe("createPresenceRoomRegistry: doc sync", () => {
     expect(globalChanges).toEqual([{ key: docKey, author: "prn_alice" }]);
   });
 
+  test("applyDocUpdate rejects an update for a room nobody currently holds open", () => {
+    const registry = createPresenceRoomRegistry();
+    const alice = clientDoc();
+    alice.getText("content").insert(0, "never joined");
+
+    expect(() =>
+      registry.applyDocUpdate(
+        docKey,
+        Y.encodeStateAsUpdate(alice),
+        "prn_alice",
+      ),
+    ).toThrow(PresenceRoomNotFoundError);
+    expect(registry.docText(docKey)).toBe("");
+  });
+
+  test("a zombie update arriving after the room emptied cannot repopulate the freshly recreated room, and a real rejoin still restores it", () => {
+    const registry = createPresenceRoomRegistry();
+    const unsubscribe = registry.subscribe(docKey, () => undefined);
+    registry.join(docKey, state("prn_alice"));
+    registry.applyDocUpdate(
+      docKey,
+      Y.encodeStateAsUpdate(clientDoc()),
+      "prn_alice",
+    );
+    registry.leave(docKey, "prn_alice");
+    unsubscribe();
+
+    // The room is now torn down. A delayed POST from Alice's now-evicted
+    // client — built before she left, delivered after — must not be able
+    // to create a fresh, unseeded room out of nothing.
+    const zombie = clientDoc();
+    zombie.getText("content").insert(0, "zombie content");
+    expect(() =>
+      registry.applyDocUpdate(
+        docKey,
+        Y.encodeStateAsUpdate(zombie),
+        "prn_alice",
+      ),
+    ).toThrow(PresenceRoomNotFoundError);
+    expect(registry.docText(docKey)).toBe("");
+
+    // A legitimate rejoin still sees a genuinely empty doc, ready for
+    // `seedOnJoin` to restore real content — not silently defeated by the
+    // zombie write.
+    expect(registry.seedDocText(docKey, "real stored content")).toBe(true);
+    expect(registry.docText(docKey)).toBe("real stored content");
+  });
+
   test("seedDocText only seeds an empty doc, never clobbering real content", () => {
     const registry = createPresenceRoomRegistry();
     expect(registry.seedDocText(docKey, "seeded")).toBe(true);
@@ -201,7 +260,9 @@ describe("createPresenceRoomRegistry: doc sync", () => {
   test("onEmpty fires when a room with doc content is torn down", () => {
     const registry = createPresenceRoomRegistry();
     const emptied: PresenceRoomKey[] = [];
-    registry.onEmpty((key) => emptied.push(key));
+    registry.onEmpty((key) => {
+      emptied.push(key);
+    });
 
     registry.seedDocText(docKey, "content before anyone joins");
     const unsubscribe = registry.subscribe(docKey, () => undefined);
@@ -253,5 +314,157 @@ describe("createPresenceRoomRegistry: doc sync", () => {
     registry.notifySnapshot(docKey, { version: 1, savedAt: 1 });
 
     expect(seen).toEqual([]);
+  });
+
+  test("a room kept alive only by a doc-update listener survives an otherwise-empty join/leave cycle", () => {
+    const registry = createPresenceRoomRegistry();
+    const docUpdates: string[] = [];
+    registry.subscribeDocUpdates(docKey, (_update, author) =>
+      docUpdates.push(author),
+    );
+
+    registry.join(docKey, state("prn_alice"));
+    registry.leave(docKey, "prn_alice"); // no presence `subscribe` listener attached
+
+    // The room must still be alive — proven by a doc update still
+    // reaching the listener registered before the join/leave cycle,
+    // rather than the room having been silently torn down and recreated
+    // out from under it.
+    const alice = clientDoc();
+    alice.getText("content").insert(0, "still here");
+    registry.applyDocUpdate(docKey, Y.encodeStateAsUpdate(alice), "prn_alice2");
+
+    expect(docUpdates).toEqual(["prn_alice2"]);
+  });
+
+  test("a room kept alive only by a snapshot listener survives an otherwise-empty join/leave cycle", () => {
+    const registry = createPresenceRoomRegistry();
+    const notifications: number[] = [];
+    registry.subscribeSnapshots(docKey, (info) =>
+      notifications.push(info.version),
+    );
+
+    registry.join(docKey, state("prn_alice"));
+    registry.leave(docKey, "prn_alice");
+
+    // Proven the same way: the room surviving is what lets a later
+    // `notifySnapshot` still reach the listener.
+    registry.notifySnapshot(docKey, { version: 7, savedAt: 1 });
+
+    expect(notifications).toEqual([7]);
+  });
+});
+
+describe("createPresenceRoomRegistry: deferred destroy", () => {
+  const docKey: PresenceRoomKey = {
+    tenantId: "tnt_a",
+    surface: "artifact:art_1",
+  };
+
+  test("a rejoin before a pending onEmpty flush settles cancels the deferred destroy without losing content", async () => {
+    const registry = createPresenceRoomRegistry();
+    let resolveFlush: (() => void) | undefined;
+    registry.onEmpty(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveFlush = resolve;
+        }),
+    );
+
+    registry.seedDocText(docKey, "unsaved content");
+    const unsubscribe = registry.subscribe(docKey, () => undefined);
+    registry.join(docKey, state("prn_alice"));
+    registry.leave(docKey, "prn_alice");
+    unsubscribe(); // room now empty; destroy deferred on the pending flush
+
+    // Bob joins before the flush resolves.
+    registry.join(docKey, state("prn_bob"));
+    expect(registry.docText(docKey)).toBe("unsaved content");
+
+    resolveFlush?.();
+    await flushMicrotasks();
+
+    // The doc must still be intact — the deferred destroy must not have
+    // fired against a room that came back to life while it waited.
+    expect(registry.docText(docKey)).toBe("unsaved content");
+  });
+
+  test("a doc update landing on a room while its flush is pending gets its own flush, never silently destroyed with it", async () => {
+    const registry = createPresenceRoomRegistry();
+    const flushedContents: string[] = [];
+    let resolveFirstFlush: (() => void) | undefined;
+    let flushCount = 0;
+    registry.onEmpty((key) => {
+      flushCount += 1;
+      flushedContents.push(registry.docText(key));
+      if (flushCount === 1) {
+        return new Promise<void>((resolve) => {
+          resolveFirstFlush = resolve;
+        });
+      }
+      return undefined;
+    });
+
+    registry.seedDocText(docKey, "first content");
+    const unsubscribe = registry.subscribe(docKey, () => undefined);
+    registry.join(docKey, state("prn_alice"));
+    registry.leave(docKey, "prn_alice");
+    unsubscribe(); // flush #1 dispatched and pending
+
+    // A doc update lands on the still-live (pending-destroy) room before
+    // the first flush resolves.
+    const alice = clientDoc();
+    alice.getText("content").insert(0, "second content");
+    registry.applyDocUpdate(docKey, Y.encodeStateAsUpdate(alice), "prn_alice");
+
+    resolveFirstFlush?.();
+    await flushMicrotasks();
+
+    // The second write must have triggered its own flush dispatch instead
+    // of being silently dropped once the room was eventually destroyed.
+    expect(flushCount).toBe(2);
+    expect(flushedContents[1]).toContain("second content");
+  });
+
+  test("a rejoin/edit/leave cycle happening entirely inside a pending flush window is not lost", async () => {
+    const registry = createPresenceRoomRegistry();
+    const flushedContents: string[] = [];
+    const resolvers: (() => void)[] = [];
+    registry.onEmpty((key) => {
+      flushedContents.push(registry.docText(key));
+      return new Promise<void>((resolve) => resolvers.push(resolve));
+    });
+
+    registry.seedDocText(docKey, "first content");
+    const unsubscribeAlice = registry.subscribe(docKey, () => undefined);
+    registry.join(docKey, state("prn_alice"));
+    registry.leave(docKey, "prn_alice");
+    unsubscribeAlice(); // flush #1 dispatched and pending
+
+    // Bob joins, edits, and leaves entirely within the first flush's
+    // pending window.
+    const unsubscribeBob = registry.subscribe(docKey, () => undefined);
+    registry.join(docKey, state("prn_bob"));
+    const bob = clientDoc();
+    bob.getText("content").insert(0, "bob's edit");
+    registry.applyDocUpdate(docKey, Y.encodeStateAsUpdate(bob), "prn_bob");
+    registry.leave(docKey, "prn_bob");
+    unsubscribeBob();
+
+    resolvers[0]?.();
+    await flushMicrotasks();
+
+    // Settling the first flush must not destroy the doc out from under
+    // Bob's session — it must trigger a second flush that actually sees
+    // Bob's content, not silently discard it. And that second flush must
+    // see it on the *same* doc Alice's flush already captured — proven by
+    // both her content and Bob's showing up together, not a doc that got
+    // destroyed-and-recreated fresh (losing "first content") in between.
+    expect(flushedContents.length).toBe(2);
+    expect(flushedContents[1]).toContain("first content");
+    expect(flushedContents[1]).toContain("bob's edit");
+
+    resolvers[1]?.();
+    await flushMicrotasks();
   });
 });

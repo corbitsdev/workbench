@@ -1,6 +1,7 @@
 export {
   createPresenceRoomRegistry,
   PRESENCE_DOC_TEXT_FIELD,
+  PresenceRoomNotFoundError,
   type PresenceRoomRegistry,
   type PresenceRoomKey,
   type PresenceRoomListener,

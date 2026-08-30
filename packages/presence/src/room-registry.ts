@@ -73,6 +73,16 @@ interface Room {
   readonly listeners: Set<PresenceRoomListener>;
   readonly docListeners: Set<PresenceDocUpdateListener>;
   readonly snapshotListeners: Set<PresenceDocSnapshotListener>;
+  /**
+   * Bumped on every `join` and `applyDocUpdate`/`seedDocText` call. A
+   * deferred destroy (see `destroyRoomIfEmpty`) captures this before
+   * dispatching `onEmpty` and compares it again once any pending flush
+   * settles — a mismatch means new membership or new content arrived
+   * during the flush, so the room isn't actually stale enough to destroy
+   * yet, and gets a fresh empty-check (and fresh flush) instead of being
+   * torn down out from under whatever just landed on it.
+   */
+  epoch: number;
 }
 
 export interface PresenceRoomRegistry {
@@ -106,10 +116,22 @@ export interface PresenceRoomRegistry {
   /**
    * Applies a Yjs update (already decoded from the wire's base64) to the
    * room's doc, attributing it to `authorPrincipalId` for persistence's
-   * "who wrote this snapshot" bookkeeping. Creates the room if it doesn't
-   * exist yet — mirrors `join`'s own "first call creates" behavior.
-   * Throws if `update` isn't a well-formed Yjs update; the caller (the
-   * HTTP route) is expected to turn that into a 400.
+   * "who wrote this snapshot" bookkeeping. Unlike `join`, this never
+   * creates a room: a room only exists once something has opened it
+   * (`join` or a live `subscribe*`), and a write against a room nobody
+   * currently holds open is exactly the "zombie" case (a stale POST
+   * arriving after the room emptied and was torn down) that would
+   * otherwise populate a freshly recreated, not-yet-seeded doc and
+   * permanently defeat `seedOnJoin`'s "only seed an empty doc" guard.
+   * Throws `PresenceRoomNotFoundError` for that case, and throws
+   * (unspecified) if `update` isn't a well-formed Yjs update — the caller
+   * (the HTTP route) is expected to turn either into an error response.
+   *
+   * This is a room-lifecycle guard, not an authorization check: it does
+   * not require `authorPrincipalId` to currently be a joined member (doc
+   * edits are deliberately decoupled from presence/awareness join in this
+   * design). Whether `authorPrincipalId` is allowed to write at all is the
+   * caller's `requireGrant` check, upstream of this call.
    */
   applyDocUpdate(
     key: PresenceRoomKey,
@@ -135,8 +157,16 @@ export interface PresenceRoomRegistry {
   onDocChange(
     listener: (key: PresenceRoomKey, authorPrincipalId: string) => void,
   ): () => void;
-  /** Fires when a room is torn down for having no members and no SSE subscribers left — persistence's cue to flush a pending snapshot immediately rather than wait out the debounce window on a doc nobody is looking at anymore. */
-  onEmpty(listener: (key: PresenceRoomKey) => void): () => void;
+  /**
+   * Fires when a room is about to be torn down for having no members and
+   * no SSE subscribers left — persistence's cue to flush a pending
+   * snapshot immediately rather than wait out the debounce window on a
+   * doc nobody is looking at anymore. A listener may return a `Promise`;
+   * the registry defers the actual `Y.Doc` destruction until every
+   * listener's promise has settled, so a flush that's still in flight is
+   * guaranteed to see a live doc for its entire duration.
+   */
+  onEmpty(listener: (key: PresenceRoomKey) => void | Promise<void>): () => void;
 
   /**
    * Announces that a snapshot write for the room finished — persistence
@@ -157,12 +187,33 @@ function roomKeyId(key: PresenceRoomKey): string {
   return `${key.tenantId}::${key.surface}`;
 }
 
+/** Thrown by `applyDocUpdate` for a room nobody currently holds open — see
+ * that method's doc comment. Exported so a caller (e.g. the HTTP routes)
+ * could map it to a distinct response instead of folding it into
+ * "malformed update"; today's route still does the latter, since
+ * distinguishing the two response codes is out of this change's scope. */
+export class PresenceRoomNotFoundError extends Error {
+  constructor(key: PresenceRoomKey) {
+    super(`no open presence room for ${roomKeyId(key)}`);
+    this.name = "PresenceRoomNotFoundError";
+  }
+}
+
 export function createPresenceRoomRegistry(): PresenceRoomRegistry {
   const rooms = new Map<string, Room>();
   const docChangeListeners = new Set<
     (key: PresenceRoomKey, authorPrincipalId: string) => void
   >();
-  const emptyListeners = new Set<(key: PresenceRoomKey) => void>();
+  const emptyListeners = new Set<
+    (key: PresenceRoomKey) => void | Promise<void>
+  >();
+  // Room ids currently mid-teardown: their `onEmpty` listeners have fired
+  // and destruction is waiting on the returned promises to settle. Guards
+  // against a `leave`/`sweepStale`/unsubscribe that fires while that's
+  // still in flight re-dispatching `onEmpty` a second time for the same
+  // teardown — the eventual `finalize` re-checks emptiness (and, via
+  // `epoch`, freshness) on its own once the first round settles.
+  const pendingDestroys = new Set<string>();
   let nextClientId = 1;
 
   function ensureRoom(key: PresenceRoomKey): Room {
@@ -185,6 +236,7 @@ export function createPresenceRoomRegistry(): PresenceRoomRegistry {
         listeners: new Set(),
         docListeners: new Set(),
         snapshotListeners: new Set(),
+        epoch: 0,
       };
       rooms.set(id, room);
     }
@@ -224,17 +276,60 @@ export function createPresenceRoomRegistry(): PresenceRoomRegistry {
     room.awareness.meta.set(clientId, { clock, lastUpdated: Date.now() });
   }
 
+  function isRoomEmpty(room: Room): boolean {
+    return (
+      room.clientIdByPrincipal.size === 0 &&
+      room.listeners.size === 0 &&
+      room.docListeners.size === 0 &&
+      room.snapshotListeners.size === 0
+    );
+  }
+
   function destroyRoomIfEmpty(key: PresenceRoomKey, room: Room): void {
-    if (room.clientIdByPrincipal.size > 0 || room.listeners.size > 0) return;
+    const id = roomKeyId(key);
+    // `room` may be a stale reference captured by a closure (e.g.
+    // `subscribe`'s returned unsubscribe) from before the room was last
+    // torn down and recreated under the same key — never act on anything
+    // but the room currently registered.
+    if (rooms.get(id) !== room) return;
+    if (!isRoomEmpty(room)) return;
+    if (pendingDestroys.has(id)) return;
+    pendingDestroys.add(id);
+
+    const epochAtDispatch = room.epoch;
     // Fired synchronously, before the doc is destroyed: a listener (e.g.
     // persistence's flush-on-empty) that reads `docText`/`doc` needs it
-    // intact for the duration of this call — any `await` inside a
-    // listener naturally suspends past the destroy below, but every
-    // synchronous read within the listener still sees a live doc.
-    for (const listener of emptyListeners) listener(key);
-    room.awareness.destroy();
-    room.doc.destroy();
-    rooms.delete(roomKeyId(key));
+    // intact for the duration of this call — every synchronous read
+    // within a listener sees a live doc regardless of whether it also
+    // returns a promise. A returned promise defers `finalize` below, but
+    // never the synchronous dispatch itself.
+    const pendingFlushes = [...emptyListeners]
+      .map((listener) => listener(key))
+      .filter((result): result is Promise<void> => result instanceof Promise);
+
+    const finalize = (): void => {
+      pendingDestroys.delete(id);
+      if (rooms.get(id) !== room) return;
+      if (!isRoomEmpty(room)) return;
+      if (room.epoch !== epochAtDispatch) {
+        // A join or a doc/text change landed on the still-live room while
+        // its flush was in flight — the room is empty again now, but with
+        // content newer than what just got flushed. Re-run the whole
+        // empty check so that content gets its own `onEmpty` dispatch (and
+        // its own flush) instead of being silently destroyed unpersisted.
+        destroyRoomIfEmpty(key, room);
+        return;
+      }
+      room.awareness.destroy();
+      room.doc.destroy();
+      rooms.delete(id);
+    };
+
+    if (pendingFlushes.length === 0) {
+      finalize();
+    } else {
+      void Promise.allSettled(pendingFlushes).then(finalize);
+    }
   }
 
   return {
@@ -247,6 +342,7 @@ export function createPresenceRoomRegistry(): PresenceRoomRegistry {
         room.clientIdByPrincipal.set(state.principalId, clientId);
       }
       room.lastSeenAtByPrincipal.set(state.principalId, now);
+      room.epoch += 1;
       writeAwarenessState(room, clientId, state);
       broadcast(room);
       return currentStates(room);
@@ -315,7 +411,9 @@ export function createPresenceRoomRegistry(): PresenceRoomRegistry {
     },
 
     applyDocUpdate(key, update, authorPrincipalId) {
-      const room = ensureRoom(key);
+      const room = rooms.get(roomKeyId(key));
+      if (room === undefined) throw new PresenceRoomNotFoundError(key);
+      room.epoch += 1;
       Y.applyUpdate(room.doc, update, "remote");
       for (const listener of room.docListeners) {
         listener(update, authorPrincipalId);
@@ -340,6 +438,7 @@ export function createPresenceRoomRegistry(): PresenceRoomRegistry {
       const room = ensureRoom(key);
       const yText = room.doc.getText(PRESENCE_DOC_TEXT_FIELD);
       if (yText.length > 0) return false;
+      room.epoch += 1;
       yText.insert(0, text);
       return true;
     },
@@ -349,6 +448,7 @@ export function createPresenceRoomRegistry(): PresenceRoomRegistry {
       room.docListeners.add(listener);
       return () => {
         room.docListeners.delete(listener);
+        destroyRoomIfEmpty(key, room);
       };
     },
 
@@ -377,6 +477,7 @@ export function createPresenceRoomRegistry(): PresenceRoomRegistry {
       room.snapshotListeners.add(listener);
       return () => {
         room.snapshotListeners.delete(listener);
+        destroyRoomIfEmpty(key, room);
       };
     },
   };

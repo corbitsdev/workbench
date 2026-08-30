@@ -93,7 +93,15 @@ export function createArtifactDocPersistence(
       clearTimeout(handle as ReturnType<typeof setTimeout>));
 
   const timers = new Map<string, unknown>();
-  const pendingAuthor = new Map<string, string>();
+  // The single source of truth for "this room has a doc change that
+  // hasn't been captured into a write yet" — set on every `onDocChange`
+  // fire, cleared only at the moment `flush` reads the doc's current
+  // content into a queued write. Deliberately independent of `timers`:
+  // `flushNow` (called from `onEmpty`, right before the registry destroys
+  // the room's doc) must flush unflushed content whether or not a
+  // debounce timer happens to still be pending, or a room emptying
+  // between two scheduling events would silently drop its last edit.
+  const unflushedAuthor = new Map<string, string>();
   // Per-room write serialization: two snapshot writes for the same room
   // can otherwise both be in flight at once (a slow write #1 still
   // pending when write #2's own debounce elapses and starts). Since each
@@ -144,8 +152,8 @@ export function createArtifactDocPersistence(
   function enqueueSnapshot(
     key: PresenceRoomKey,
     authorPrincipalId: string,
-  ): void {
-    if (artifactIdForSurface(key.surface) === null) return;
+  ): Promise<void> {
+    if (artifactIdForSurface(key.surface) === null) return Promise.resolve();
     const content = deps.registry.docText(key);
     const id = roomKeyId(key);
     const previous = writeChains.get(id) ?? Promise.resolve();
@@ -156,10 +164,24 @@ export function createArtifactDocPersistence(
     // swallows its own errors via `onSnapshotError`, but a defensive
     // catch here keeps one unexpected throw from permanently wedging
     // every later write queued behind it for this room.
-    writeChains.set(
-      id,
-      next.catch(() => undefined),
-    );
+    const chained = next.catch(() => undefined);
+    writeChains.set(id, chained);
+    return chained;
+  }
+
+  /** Reads whatever content is currently unflushed for `key` and hands it
+   * to `enqueueSnapshot`, clearing the room's dirty bit. Both the
+   * debounce timer's natural firing and `flushNow`'s bypass funnel
+   * through this one place so "is there unflushed content" has exactly
+   * one answer. Resolves once the write (if any was actually unflushed)
+   * has settled, so `flushNow` can hand that back to the registry as the
+   * promise it defers a pending room destroy on. */
+  function flush(key: PresenceRoomKey): Promise<void> {
+    const id = roomKeyId(key);
+    const author = unflushedAuthor.get(id);
+    if (author === undefined) return Promise.resolve();
+    unflushedAuthor.delete(id);
+    return enqueueSnapshot(key, author);
   }
 
   function scheduleSnapshot(
@@ -170,34 +192,32 @@ export function createArtifactDocPersistence(
     const id = roomKeyId(key);
     const existing = timers.get(id);
     if (existing !== undefined) clearTimeoutImpl(existing);
-    pendingAuthor.set(id, authorPrincipalId);
+    unflushedAuthor.set(id, authorPrincipalId);
     const handle = setTimeoutImpl(() => {
       timers.delete(id);
-      const author = pendingAuthor.get(id);
-      pendingAuthor.delete(id);
-      if (author !== undefined) enqueueSnapshot(key, author);
+      void flush(key);
     }, debounceMs);
     timers.set(id, handle);
   }
 
-  function flushNow(key: PresenceRoomKey): void {
+  function flushNow(key: PresenceRoomKey): Promise<void> {
     const id = roomKeyId(key);
     const existing = timers.get(id);
-    const author = pendingAuthor.get(id);
-    if (existing === undefined || author === undefined) return;
-    clearTimeoutImpl(existing);
-    timers.delete(id);
-    pendingAuthor.delete(id);
-    enqueueSnapshot(key, author);
+    if (existing !== undefined) {
+      clearTimeoutImpl(existing);
+      timers.delete(id);
+    }
+    return flush(key);
   }
 
   deps.registry.onDocChange((key, authorPrincipalId) => {
     scheduleSnapshot(key, authorPrincipalId);
   });
 
-  deps.registry.onEmpty((key) => {
-    flushNow(key);
-  });
+  // Returning the flush's promise lets the registry defer actually
+  // destroying the room's `Y.Doc` until this settles — see
+  // `PresenceRoomRegistry.onEmpty`'s doc comment.
+  deps.registry.onEmpty((key) => flushNow(key));
 
   return {
     async seedOnJoin(key) {
@@ -211,7 +231,7 @@ export function createArtifactDocPersistence(
     dispose() {
       for (const handle of timers.values()) clearTimeoutImpl(handle);
       timers.clear();
-      pendingAuthor.clear();
+      unflushedAuthor.clear();
     },
   };
 }
