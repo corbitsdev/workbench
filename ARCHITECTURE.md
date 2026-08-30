@@ -61,6 +61,13 @@ every read, never copied down at creation time. A sub-workbench or child
 tenant never gets a snapshot of its parent's catalog; it always sees the
 parent's current state.
 
+The workbench host's default inference model is chosen from that
+visible catalog: tenant-owned (direct) completion offerings beat
+inherited catalog seeds when any exist; an inherit-only catalog still
+picks the inherited completion default. Embedding models stay
+ineligible. This is a preference among what the ancestor walk already
+shows, not a snapshot and not a second catalog.
+
 See [docs/TENANCY.md](docs/TENANCY.md) for the full contract, including
 the workbench-owned discriminator that distinguishes a "real" bench from a
 workbench's own child tenancy (native tenants carry no `kind` field), and

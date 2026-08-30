@@ -236,6 +236,29 @@ These are unit-tested control-flow facts. Live Canva OAuth against
 Canva's own servers is **not** verified; do not document a proven live
 handshake.
 
+## Workbench-host default inference
+
+`selectDefaultInferencePreferences`
+(`packages/chat/src/inference-preferences.ts`) builds the preference
+list a workbench host launches with (`workbenchHostInferencePreferences`
+on the chat adapter; also `tenantDefaultModel` on agent-definition
+routes). It keeps credentialed completion-capable offerings
+(`preferCompletionCapable` in `@workbench/hub-client/model-capability`
+— embedding names never win) and, when any survivor is
+`origin.direct`, picks from that direct set only. Inherit-only catalogs
+still sort among inherited completion rows.
+
+Ollama connect is the case that used to lose: discovery
+(`GET /api/tenants/:id/models`) includes inherited `CATALOG_SEEDS` rows,
+so the curated name (`CATALOG_SEEDS.ollama.models[0]`) could win a
+name-sort without living on the instance. `resolveOllamaModelSource`
+(`packages/onboarding/src/complete-credential.ts`) therefore also reads
+tenant-owned `GET /api/tenants/:id/catalog/models` (paginated
+`ModelResponse` envelope) when discovery contains that curated name. A
+non-empty owned list restricts candidates to those names; an empty owned
+list keeps inherited discovery. Other providers still pin
+`CATALOG_SEEDS[provider].models[0]`.
+
 ## Related docs
 
 - [README.md](README.md) — quickstart, local setup, repo layout, e2e detail
