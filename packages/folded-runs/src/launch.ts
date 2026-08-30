@@ -643,46 +643,55 @@ export async function deployAtHead(
 
   // Everything from here on runs AFTER `deployAdoptedWorkflowFromSource`
   // resolved, meaning a live child now exists on the sidecar. A failure
-  // in this region is a leaked deploy, never a "nothing happened" —
+  // in either step below is a leaked deploy, never a "nothing happened" —
   // wrapped as `SessionLaunchError(..., leakedAgent: true)` so a caller's
   // failure-path rollback (`launchFoldedRun`) preserves the run's rows
   // instead of deleting them out from under a genuinely running agent
-  // (CL-7213). The distinction is structural (this try/catch boundary),
-  // not a classification any caller has to reconstruct from error type.
+  // (CL-7213). The distinction is structural (everything past this
+  // comment), not a classification any caller has to reconstruct from
+  // error type. Each step gets its own phase label — `SessionLaunchError.phase`
+  // is surfaced in cleanup diagnostics upstream (see
+  // `deployAgentUndeploy` failure logging in `session-service.ts`), so a
+  // shared label across both steps would misreport which one actually
+  // failed.
   try {
     await markRunDeployClone(
       deps.db,
       params.instanceId,
       definitionIdBeforeDeploy,
     );
-
-    // Produce the run's `run.grants` frame, the same contract upstream's
-    // hub fires on every run birth: the sidecar writes it to
-    // `runs/<runId>/grants.json` in the deployment's workflow-run repo,
-    // and the supervisor's `onRunStart` barrier reads that file to
-    // authorize the run. A folded run is self-anchored, so its run id IS
-    // its deployment id, and `grants` — the tool-pin and
-    // credential-binding set already deployed as `config.grants` — is
-    // the run's whole grant set.
-    //
-    // Sent after the deploy resolves and before any trigger mail: the
-    // sidecar registers its grants handler during the deploy the ack
-    // acknowledges, and both frames ride the same per-address channel,
-    // so same-socket FIFO puts the grants on disk ahead of the mail that
-    // starts the run.
-    if (
-      !deps.sidecarRouter.sendRunGrants(
-        params.triggerAddress,
-        params.instanceId,
-        grants,
-      )
-    ) {
-      throw new Error(
-        `${params.launchLabel}: deployment ${params.triggerAddress} is not routable for run ${params.instanceId}; cannot deliver its run grants, so the run would start under-authorized`,
-      );
-    }
   } catch (err) {
-    throw new SessionLaunchError("grants", err, true);
+    throw new SessionLaunchError("clone", err, true);
+  }
+
+  // Produce the run's `run.grants` frame, the same contract upstream's
+  // hub fires on every run birth: the sidecar writes it to
+  // `runs/<runId>/grants.json` in the deployment's workflow-run repo,
+  // and the supervisor's `onRunStart` barrier reads that file to
+  // authorize the run. A folded run is self-anchored, so its run id IS
+  // its deployment id, and `grants` — the tool-pin and
+  // credential-binding set already deployed as `config.grants` — is
+  // the run's whole grant set.
+  //
+  // Sent after the deploy resolves and before any trigger mail: the
+  // sidecar registers its grants handler during the deploy the ack
+  // acknowledges, and both frames ride the same per-address channel,
+  // so same-socket FIFO puts the grants on disk ahead of the mail that
+  // starts the run.
+  if (
+    !deps.sidecarRouter.sendRunGrants(
+      params.triggerAddress,
+      params.instanceId,
+      grants,
+    )
+  ) {
+    throw new SessionLaunchError(
+      "grants",
+      new Error(
+        `${params.launchLabel}: deployment ${params.triggerAddress} is not routable for run ${params.instanceId}; cannot deliver its run grants, so the run would start under-authorized`,
+      ),
+      true,
+    );
   }
   return { sourcesDigest: inferenceSourcesDigest(resolution) };
 }
