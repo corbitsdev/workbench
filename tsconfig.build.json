@@ -1,0 +1,269 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./apps/sidecar"
+    },
+    {
+      "path": "./packages/agent-directory-tools"
+    },
+    {
+      "path": "./packages/agent-events"
+    },
+    {
+      "path": "./packages/agent-lifecycle"
+    },
+    {
+      "path": "./packages/agent-runtime"
+    },
+    {
+      "path": "./packages/agent-workflow-authoring"
+    },
+    {
+      "path": "./packages/api-query"
+    },
+    {
+      "path": "./packages/approvals"
+    },
+    {
+      "path": "./packages/artifact-ui"
+    },
+    {
+      "path": "./packages/bench"
+    },
+    {
+      "path": "./packages/bench-ui"
+    },
+    {
+      "path": "./packages/capability-tools"
+    },
+    {
+      "path": "./packages/catalog-tools"
+    },
+    {
+      "path": "./packages/client-log"
+    },
+    {
+      "path": "./packages/code-review"
+    },
+    {
+      "path": "./packages/command-palette"
+    },
+    {
+      "path": "./packages/commands"
+    },
+    {
+      "path": "./packages/context-menu"
+    },
+    {
+      "path": "./packages/credential-providers"
+    },
+    {
+      "path": "./packages/docker-provisioner"
+    },
+    {
+      "path": "./packages/e2b-sandbox-sidecar"
+    },
+    {
+      "path": "./packages/echo"
+    },
+    {
+      "path": "./packages/error-sink"
+    },
+    {
+      "path": "./packages/github-tools"
+    },
+    {
+      "path": "./packages/gotenberg-render"
+    },
+    {
+      "path": "./packages/granola-tools"
+    },
+    {
+      "path": "./packages/icons"
+    },
+    {
+      "path": "./packages/inbox"
+    },
+    {
+      "path": "./packages/inference-catalog"
+    },
+    {
+      "path": "./packages/interaction-tools"
+    },
+    {
+      "path": "./packages/jimmy-agent"
+    },
+    {
+      "path": "./packages/linear-tools"
+    },
+    {
+      "path": "./packages/manus-tools"
+    },
+    {
+      "path": "./packages/mcp-tools"
+    },
+    {
+      "path": "./packages/memory-tools"
+    },
+    {
+      "path": "./packages/mocks"
+    },
+    {
+      "path": "./packages/notify"
+    },
+    {
+      "path": "./packages/ollama-adapter"
+    },
+    {
+      "path": "./packages/preferences"
+    },
+    {
+      "path": "./packages/presence"
+    },
+    {
+      "path": "./packages/reddit-tools"
+    },
+    {
+      "path": "./packages/routines-tools"
+    },
+    {
+      "path": "./packages/run-key-history"
+    },
+    {
+      "path": "./packages/sandbox-sidecar"
+    },
+    {
+      "path": "./packages/scout-agent"
+    },
+    {
+      "path": "./packages/shell-layout"
+    },
+    {
+      "path": "./packages/sidecar-placement"
+    },
+    {
+      "path": "./packages/skills"
+    },
+    {
+      "path": "./packages/skills-tools"
+    },
+    {
+      "path": "./packages/slug"
+    },
+    {
+      "path": "./packages/text-diff"
+    },
+    {
+      "path": "./packages/tool-registry-publish"
+    },
+    {
+      "path": "./packages/tools-skills"
+    },
+    {
+      "path": "./packages/turn-artifacts"
+    },
+    {
+      "path": "./packages/url-path"
+    },
+    {
+      "path": "./packages/web-search-tools"
+    },
+    {
+      "path": "./packages/workflow-deploy-source"
+    },
+    {
+      "path": "./packages/workflow-freeze"
+    },
+    {
+      "path": "./packages/workflow-source"
+    },
+    {
+      "path": "./vendor/intx/agent"
+    },
+    {
+      "path": "./vendor/intx/db"
+    },
+    {
+      "path": "./vendor/intx/harness"
+    },
+    {
+      "path": "./vendor/intx/hub-agent"
+    },
+    {
+      "path": "./vendor/intx/hub-api"
+    },
+    {
+      "path": "./vendor/intx/hub-sessions"
+    },
+    {
+      "path": "./vendor/intx/inference"
+    },
+    {
+      "path": "./vendor/intx/mail-memory"
+    },
+    {
+      "path": "./vendor/intx/mailbox"
+    },
+    {
+      "path": "./vendor/intx/mime"
+    },
+    {
+      "path": "./vendor/intx/types"
+    },
+    {
+      "path": "./vendor/intx/workflow"
+    },
+    {
+      "path": "./vendor/intx/workflow-deploy"
+    },
+    {
+      "path": "./vendor/intx/workflow-host"
+    },
+    {
+      "path": "./workflows/assistant"
+    },
+    {
+      "path": "./workflows/attio-task-agent"
+    },
+    {
+      "path": "./workflows/code-review"
+    },
+    {
+      "path": "./workflows/collateral-generation"
+    },
+    {
+      "path": "./workflows/diligence-brief"
+    },
+    {
+      "path": "./workflows/echo"
+    },
+    {
+      "path": "./workflows/exa-topic-watch"
+    },
+    {
+      "path": "./workflows/granola-call"
+    },
+    {
+      "path": "./workflows/heartbeat"
+    },
+    {
+      "path": "./workflows/last-30-days-research"
+    },
+    {
+      "path": "./workflows/morning-brief"
+    },
+    {
+      "path": "./workflows/pain-point-collateral"
+    },
+    {
+      "path": "./workflows/process-granola-call"
+    },
+    {
+      "path": "./workflows/reddit-opportunity-scanner"
+    },
+    {
+      "path": "./workflows/workbench-digest"
+    }
+  ]
+}

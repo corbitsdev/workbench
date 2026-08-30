@@ -1,0 +1,31 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true,
+    "disableSourceOfProjectReferenceRedirect": true,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "rootDir": "../.."
+  },
+  "include": ["src"],
+  "exclude": [],
+  "references": [
+    {
+      "path": "../../vendor/intx/agent"
+    },
+    {
+      "path": "../../vendor/intx/types"
+    },
+    {
+      "path": "../../vendor/intx/workflow"
+    },
+    {
+      "path": "../../vendor/intx/workflow-deploy"
+    },
+    {
+      "path": "../workflow-source"
+    }
+  ]
+}

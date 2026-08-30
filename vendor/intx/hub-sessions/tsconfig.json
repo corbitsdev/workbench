@@ -1,11 +1,44 @@
 {
   "extends": "../tsconfig.base.json",
   "include": [
-    "src/**/*.ts"
+    "src/**/*.ts",
+    "package.json",
+    "src/**/*.json"
+  ],
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx"
   ],
   "compilerOptions": {
     "types": [
       "bun"
-    ]
-  }
+    ],
+    "composite": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
+  },
+  "references": [
+    {
+      "path": "../agent"
+    },
+    {
+      "path": "../db"
+    },
+    {
+      "path": "../inference"
+    },
+    {
+      "path": "../mime"
+    },
+    {
+      "path": "../types"
+    },
+    {
+      "path": "../workflow"
+    },
+    {
+      "path": "../workflow-deploy"
+    }
+  ]
 }

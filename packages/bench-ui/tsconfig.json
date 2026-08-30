@@ -1,9 +1,22 @@
 {
   "extends": "../../tsconfig.base.json",
+  "include": ["src", "package.json", "src/**/*.json"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
   "compilerOptions": {
     "jsx": "react-jsx",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "types": ["bun"]
+    "types": ["bun"],
+    "composite": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
   },
-  "include": ["src", "test"]
+  "references": [
+    {
+      "path": "../../vendor/intx/types"
+    },
+    {
+      "path": "../api-query"
+    }
+  ]
 }

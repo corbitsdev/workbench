@@ -1,7 +1,32 @@
 {
   "extends": "../../tsconfig.base.json",
+  "include": ["src", "package.json", "src/**/*.json"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
   "compilerOptions": {
-    "types": ["bun"]
+    "types": ["bun"],
+    "composite": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
   },
-  "include": ["src", "test"]
+  "references": [
+    {
+      "path": "../../vendor/intx/agent"
+    },
+    {
+      "path": "../../vendor/intx/db"
+    },
+    {
+      "path": "../../vendor/intx/hub-sessions"
+    },
+    {
+      "path": "../../vendor/intx/types"
+    },
+    {
+      "path": "../../vendor/intx/workflow"
+    },
+    {
+      "path": "../../vendor/intx/workflow-deploy"
+    }
+  ]
 }

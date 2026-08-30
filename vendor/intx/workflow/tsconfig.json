@@ -2,11 +2,32 @@
   "extends": "../tsconfig.base.json",
   "include": [
     "src/**/*.ts",
-    "test/**/*.ts"
+    "test/**/*.ts",
+    "package.json",
+    "src/**/*.json"
+  ],
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx"
   ],
   "compilerOptions": {
     "types": [
       "bun"
-    ]
-  }
+    ],
+    "composite": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
+  },
+  "references": [
+    {
+      "path": "../agent"
+    },
+    {
+      "path": "../inference"
+    },
+    {
+      "path": "../types"
+    }
+  ]
 }
