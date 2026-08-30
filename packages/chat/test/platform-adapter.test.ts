@@ -27,6 +27,7 @@ import type { FoldedRunsDeps } from "@corbits/folded-runs";
 import {
   agentSession,
   asset,
+  sessionAsset,
   sessionMail,
   workflowDefinition,
   workflowDefinitionVersion,
@@ -2468,6 +2469,139 @@ describe("createHubChatPlatform", () => {
       await expect(
         platform.ensureAwake("ins_unknown@ten1.workbench.test"),
       ).rejects.toThrow();
+    });
+  });
+
+  // CL-7214: `sendFoldedMailWithReclaimRetry`'s reclaim-retry loop used
+  // to call `wakeByAddress` directly, bypassing `lifecycle.ensureAwake`'s
+  // per-address coalescing entirely. Proves that a reclaim-retry wake and
+  // an independent, concurrent `ensureAwake` call for the same address
+  // now coalesce onto the same in-flight wake — never dispatching a
+  // second, concurrent `wakeFoldedRun` that would race the first on the
+  // same `session_asset` primary key and git ref.
+  describe("wakeByAddressBounded reclaim-retry coalescing", () => {
+    test("a reclaim-retry wake and a concurrent ensureAwake call for the same address never redeploy it twice", async () => {
+      resolveDefinitionSourcesResult = {
+        ok: true,
+        sources: [
+          {
+            id: "off_1",
+            provider: "anthropic",
+            baseURL: "https://inference.invalid",
+            apiKey: "placeholder",
+            model: "claude-sonnet-5",
+          },
+        ],
+        defaultSource: "off_1",
+      };
+      const address = "ins_workbench1@ten1.workbench.test";
+      const db = createFakeDb({
+        assetRow: {
+          tenantId: "ten_1",
+          creatorPrincipalId: "prin_creator",
+          name: "workbench-1",
+          displayName: null,
+        },
+        definitionId: "wfd_workbench1",
+        workflowRunRow: {
+          id: "ins_workbench1",
+          address,
+          principalId: "prin_run1",
+        },
+        workbenchLaunchRow: {
+          tenantId: "ten_1",
+          instanceId: "ins_workbench1",
+          foldedBody: {
+            systemPrompt: "host prompt",
+            model: "claude-sonnet-5",
+            toolPackagePins: [],
+            grantRequirements: [],
+            credentialBindings: [],
+          },
+        },
+      });
+      db.inserted.push({
+        table: agentSession,
+        values: { id: "ses_run1", principalId: "prin_run1" },
+      });
+
+      const sessionService = createFakeSessionService();
+      let sendAttempts = 0;
+      sessionService.sendUserMessage = async (params: unknown) => {
+        sessionService.sendUserMessageCalls.push(params);
+        sendAttempts += 1;
+        // The first delivery attempt fails as "agent is unreachable",
+        // forcing `sendFoldedMailWithReclaimRetry` down its reclaim
+        // path — the call site that used to bypass coalescing.
+        if (sendAttempts === 1) {
+          throw new Error("agent is unreachable");
+        }
+        return new TextEncoder().encode("raw-mime-bytes");
+      };
+
+      // The first deploy (the cold wake before the first send attempt)
+      // resolves immediately; every deploy after it is held open until
+      // the test releases it, so the reclaim-retry's redeploy is still
+      // in flight when the concurrent `ensureAwake` call joins it.
+      let deployCallCount = 0;
+      const gatedDeployReleases: (() => void)[] = [];
+      const originalDeploy =
+        sessionService.deployAdoptedWorkflowFromSource.bind(sessionService);
+      sessionService.deployAdoptedWorkflowFromSource = async (
+        params: Parameters<typeof originalDeploy>[0],
+      ) => {
+        const result = await originalDeploy(params);
+        deployCallCount += 1;
+        if (deployCallCount >= 2) {
+          await new Promise<void>((resolve) => {
+            gatedDeployReleases.push(resolve);
+          });
+        }
+        return result;
+      };
+
+      const platform = createHubChatPlatform({
+        toolGrantsForPins: () => [],
+        db: db as never,
+        sessionService,
+        assetService: createFakeAssetService(),
+        sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
+        eventCollectors: createFakeEventCollectors(),
+        lifecycle: { idleSleepMs: 60_000 },
+        reclaimRetryDelaysMs: [1],
+        mailDeliveryTimeoutMs: 5_000,
+      });
+
+      const sendMailPromise = platform.sendMail({
+        tenantId: "ten_1",
+        workbenchId: "ins_workbench1",
+        principalId: "prin_sender",
+        content: { content: "hello workbench" },
+      });
+
+      // Let the cold wake (deploy #1) resolve, the first send attempt
+      // fail, and the reclaim retry's own wake (deploy #2) start and
+      // gate.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(deployCallCount).toBe(2);
+
+      // A second, independent caller asks for the same address while
+      // deploy #2 is still in flight — the concurrent-wake race CL-7214
+      // closes.
+      const ensureAwakePromise = platform.ensureAwake(address);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(deployCallCount).toBe(2);
+      expect(
+        db.deleted.filter((row) => row.table === sessionAsset).length,
+      ).toBe(2);
+
+      gatedDeployReleases.forEach((release) => release());
+      await Promise.all([sendMailPromise, ensureAwakePromise]);
+
+      expect(deployCallCount).toBe(2);
+      expect(
+        db.deleted.filter((row) => row.table === sessionAsset).length,
+      ).toBe(2);
     });
   });
 
