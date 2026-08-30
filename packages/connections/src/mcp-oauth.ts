@@ -24,6 +24,7 @@ import type {
   OAuthClientMetadata,
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
+import { reportError } from "@corbits/error-sink";
 
 export type McpOAuthSession = {
   clientInformation?: OAuthClientInformationMixed;
@@ -149,6 +150,10 @@ export async function refreshMcpOAuthTokens(args: {
   try {
     result = await auth(provider, { serverUrl: args.serverUrl });
   } catch (cause) {
+    reportError(cause, {
+      operation: "refresh_mcp_oauth_tokens",
+      extra: { serverUrl: args.serverUrl },
+    });
     return {
       ok: false,
       message: cause instanceof Error ? cause.message : String(cause),

@@ -14,6 +14,7 @@
 // later expiry sweep reads.
 
 import { type } from "arktype";
+import { reportError } from "@corbits/error-sink";
 
 export const HUGGINGFACE_AUTHORIZE_URL =
   "https://huggingface.co/oauth/authorize";
@@ -90,6 +91,7 @@ export async function exchangeCodeForToken(
       body: body.toString(),
     });
   } catch (cause) {
+    reportError(cause, { operation: "exchange_code_for_huggingface_token" });
     return {
       ok: false,
       message:

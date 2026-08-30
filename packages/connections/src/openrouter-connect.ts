@@ -7,6 +7,7 @@
 // and never put in a URL.
 
 import { type } from "arktype";
+import { reportError } from "@corbits/error-sink";
 
 export const OPENROUTER_AUTH_URL = "https://openrouter.ai/auth";
 export const OPENROUTER_KEY_EXCHANGE_URL =
@@ -59,6 +60,7 @@ export async function exchangeCodeForKey(
       }),
     });
   } catch (cause) {
+    reportError(cause, { operation: "exchange_code_for_openrouter_key" });
     return {
       ok: false,
       message:

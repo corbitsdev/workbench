@@ -11,6 +11,7 @@
 // authorize URL) for the credential row to keep alongside the secret.
 
 import { type } from "arktype";
+import { reportError } from "@corbits/error-sink";
 
 export const GOOGLE_AUTHORIZE_URL =
   "https://accounts.google.com/o/oauth2/v2/auth";
@@ -83,6 +84,7 @@ export async function exchangeCodeForGoogleToken(
       body: params.toString(),
     });
   } catch (cause) {
+    reportError(cause, { operation: "exchange_code_for_google_token" });
     const message = cause instanceof Error ? cause.message : String(cause);
     return { ok: false, message: `Google token exchange failed: ${message}` };
   }

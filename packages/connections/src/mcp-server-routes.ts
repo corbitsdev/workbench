@@ -34,6 +34,7 @@ import {
 } from "@corbits/credential-providers";
 import { probeMcpServer } from "./mcp-probe";
 import { fireConnectedHook, type ServiceConnectedHook } from "./connected-hook";
+import { reportError } from "@corbits/error-sink";
 import { MCP_PRESETS, mcpPresetBySlug } from "./mcp-presets";
 
 const ErrorEnvelope = (code: string, message: string) => ({
@@ -342,6 +343,13 @@ export function createMcpServerRoutes(
       deps.log(
         `mcp server connect failed for tenant ${tenant.id}, slug ${slug}: ${message}`,
       );
+      // Never widen extra beyond identifiers safe to print — `cause` here
+      // can carry the pasted bearer token in scope above.
+      reportError(cause, {
+        operation: "persist_mcp_server_connection",
+        tenantId: tenant.id,
+        extra: { slug },
+      });
       return c.json(
         ErrorEnvelope(
           "connection_setup_failed",

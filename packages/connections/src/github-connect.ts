@@ -12,6 +12,7 @@
 // still names `credentialPlugin: "http"`).
 
 import { type } from "arktype";
+import { reportError } from "@corbits/error-sink";
 
 export const GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize";
 export const GITHUB_TOKEN_EXCHANGE_URL =
@@ -69,6 +70,7 @@ export async function exchangeCodeForGithubToken(
       }),
     });
   } catch (cause) {
+    reportError(cause, { operation: "exchange_code_for_github_token" });
     return {
       ok: false,
       message:
