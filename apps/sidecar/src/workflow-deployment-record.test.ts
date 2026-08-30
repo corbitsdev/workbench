@@ -184,15 +184,14 @@ describe("recordWorkflowDeploymentRestoreFailure", () => {
     const updated = await recordWorkflowDeploymentRestoreFailure(
       dataDir,
       "dep_1",
-      baseRecord,
       { kind: "permanent", reason: "address derives a different slug" },
     );
 
-    expect(updated.restoreFailure).toEqual({
+    expect(updated?.restoreFailure).toEqual({
       kind: "permanent",
       attempts: 1,
       reason: "address derives a different slug",
-      lastAttemptAt: updated.restoreFailure?.lastAttemptAt ?? "",
+      lastAttemptAt: updated?.restoreFailure?.lastAttemptAt ?? "",
     });
     const onDisk = await readWorkflowDeploymentRecord(dataDir, "dep_1");
     expect(onDisk?.restoreFailure?.attempts).toBe(1);
@@ -202,47 +201,59 @@ describe("recordWorkflowDeploymentRestoreFailure", () => {
     const dataDir = await makeDataDir();
     await writeWorkflowDeploymentRecord(dataDir, "dep_1", baseRecord);
 
-    let record = baseRecord;
+    let record: WorkflowDeploymentRecord | undefined;
     for (let i = 0; i < 3; i++) {
-      record = await recordWorkflowDeploymentRestoreFailure(
-        dataDir,
-        "dep_1",
-        record,
-        { kind: "permanent", reason: "still malformed" },
-      );
+      record = await recordWorkflowDeploymentRestoreFailure(dataDir, "dep_1", {
+        kind: "permanent",
+        reason: "still malformed",
+      });
     }
 
-    expect(record.restoreFailure?.attempts).toBe(3);
-    expect(record.restoreFailure?.kind).toBe("permanent");
+    expect(record?.restoreFailure?.attempts).toBe(3);
+    expect(record?.restoreFailure?.kind).toBe("permanent");
   });
 
   test("a kind change resets the counter rather than adding to the other kind's count", async () => {
     const dataDir = await makeDataDir();
     await writeWorkflowDeploymentRecord(dataDir, "dep_1", baseRecord);
 
+    await recordWorkflowDeploymentRestoreFailure(dataDir, "dep_1", {
+      kind: "permanent",
+      reason: "malformed",
+    });
     let record = await recordWorkflowDeploymentRestoreFailure(
       dataDir,
       "dep_1",
-      baseRecord,
-      { kind: "permanent", reason: "malformed" },
+      {
+        kind: "permanent",
+        reason: "still malformed",
+      },
     );
-    record = await recordWorkflowDeploymentRestoreFailure(
-      dataDir,
-      "dep_1",
-      record,
-      { kind: "permanent", reason: "still malformed" },
-    );
-    expect(record.restoreFailure?.attempts).toBe(2);
+    expect(record?.restoreFailure?.attempts).toBe(2);
 
-    record = await recordWorkflowDeploymentRestoreFailure(
+    record = await recordWorkflowDeploymentRestoreFailure(dataDir, "dep_1", {
+      kind: "transient",
+      reason: "provider not registered",
+    });
+
+    expect(record?.restoreFailure?.kind).toBe("transient");
+    expect(record?.restoreFailure?.attempts).toBe(1);
+  });
+
+  test("is a no-op that returns undefined when the record is already gone (CL-7215: a reclaiming teardown raced ahead of this write)", async () => {
+    const dataDir = await makeDataDir();
+    // Deliberately never written: simulates a teardown deleting the record
+    // before the boot loop's failure-recording catch acquires the lock.
+
+    const updated = await recordWorkflowDeploymentRestoreFailure(
       dataDir,
-      "dep_1",
-      record,
+      "dep_missing",
       { kind: "transient", reason: "provider not registered" },
     );
 
-    expect(record.restoreFailure?.kind).toBe("transient");
-    expect(record.restoreFailure?.attempts).toBe(1);
+    expect(updated).toBeUndefined();
+    const onDisk = await readWorkflowDeploymentRecord(dataDir, "dep_missing");
+    expect(onDisk).toBeUndefined();
   });
 });
 
@@ -253,11 +264,14 @@ describe("clearWorkflowDeploymentRestoreFailure", () => {
     const failed = await recordWorkflowDeploymentRestoreFailure(
       dataDir,
       "dep_1",
-      baseRecord,
       { kind: "transient", reason: "provider not registered" },
     );
 
-    await clearWorkflowDeploymentRestoreFailure(dataDir, "dep_1", failed);
+    await clearWorkflowDeploymentRestoreFailure(
+      dataDir,
+      "dep_1",
+      failed as WorkflowDeploymentRecord,
+    );
 
     const onDisk = await readWorkflowDeploymentRecord(dataDir, "dep_1");
     expect(onDisk?.restoreFailure).toBeUndefined();

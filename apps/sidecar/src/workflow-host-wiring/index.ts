@@ -651,19 +651,26 @@ export function createSidecarDeployRouter(deps: {
   const activeSupervisors = new Map<string, SidecarWorkflowSupervisor>();
 
   // CL-7215: per-deployment FIFO serialization for the boot-restore
-  // failure record. Two independent writers touch the same on-disk
+  // failure record. Three independent writers can touch the same on-disk
   // `deployment.json` around a timed-out restore -- the boot loop's own
-  // catch (`recordWorkflowDeploymentRestoreFailure`) and, if the
-  // abandoned restore later finishes anyway, `restoreDeploymentFromRecord`'s
-  // late-settle correction (`clearWorkflowDeploymentRestoreFailure`) -- and
+  // catch (`recordWorkflowDeploymentRestoreFailure`), if the abandoned
+  // restore later finishes anyway `restoreDeploymentFromRecord`'s
+  // late-settle correction (`clearWorkflowDeploymentRestoreFailure`), and
+  // `teardownDeployment`'s reclaim/park writes if an operator undeploys
+  // or hibernates the address while a restore is still dangling -- and
   // without serialization a correction's disk READ can land before the
   // catch's disk WRITE, observe nothing to clear, and no-op, leaving the
   // catch's later write to permanently mismark a live deployment as
-  // failed. Queuing both through this lock, keyed by deployment id, makes
-  // whichever runs second observe the first's completed write; combined
-  // with the catch consulting `activeSupervisors` (see below) while
-  // holding the lock, the final on-disk state is correct regardless of
-  // which side actually finishes first.
+  // failed (or, symmetrically, the catch's write can land after a
+  // reclaiming teardown deleted the record, resurrecting it with a false
+  // failure for a deployment that no longer exists --
+  // `recordWorkflowDeploymentRestoreFailure` re-reads from disk and
+  // no-ops on a missing record specifically to make that resurrection
+  // impossible). Queuing every writer through this lock, keyed by
+  // deployment id, makes whichever runs last observe every prior one's
+  // completed write; combined with the catch consulting
+  // `activeSupervisors` (see below) while holding the lock, the final
+  // on-disk state is correct regardless of ordering.
   const deploymentRecordLocks = new Map<string, Promise<unknown>>();
   function withDeploymentRecordLock<T>(
     deploymentId: string,
@@ -1842,14 +1849,29 @@ export function createSidecarDeployRouter(deps: {
         // The caller's own timeout already fired -- and its catch may
         // already have recorded this attempt as a boot failure -- but
         // `spawnWorkflowDeployment` just registered a live supervisor for
-        // this address regardless (CL-7215). Correct the durable record so
-        // it stops claiming a genuinely live deployment failed to restore.
-        // Serialized through `withDeploymentRecordLock` against that same
-        // catch: without it, this read could land BEFORE the catch's write
-        // does, observe nothing to clear, and no-op -- leaving the catch's
-        // write to permanently mismark a live deployment once it lands
-        // afterward. The lock guarantees whichever of the two runs second
-        // observes the first's completed write.
+        // this address regardless (CL-7215). Reconcile the durable record
+        // against whatever the current on-disk truth is, under the same
+        // lock the boot loop's catch and `teardownDeployment` use: without
+        // it, this read could land BEFORE the catch's write does, observe
+        // nothing to correct, and no-op -- leaving the catch's write to
+        // permanently mismark a live deployment once it lands afterward.
+        // The lock guarantees whichever writer runs last observes every
+        // prior one's completed write.
+        //
+        // Three outcomes are possible for what this read finds:
+        // - a `restoreFailure` stamp: the boot loop's catch ran first and
+        //   falsely marked this now-live deployment failed -- clear it.
+        // - the record itself is GONE: a reclaiming `teardownDeployment`
+        //   ran while this spawn was in flight. `activeSupervisors` had no
+        //   entry for this address yet at that point (this spawn had not
+        //   resolved), so the teardown's own `wired` check missed it and
+        //   left the routers this spawn just (re-)registered live, with no
+        //   durable record backing them -- an orphaned live deployment,
+        //   arguably worse than the original false-failure bug this ticket
+        //   started from. Unwind it (below, outside the lock).
+        // - neither: nothing raced this restore; leave it as a normal
+        //   successful (if late) restore.
+        let reclaimedDuringSpawn = false;
         try {
           const corrected = await withDeploymentRecordLock(
             deploymentId,
@@ -1858,7 +1880,11 @@ export function createSidecarDeployRouter(deps: {
                 dataDir,
                 deploymentId,
               );
-              if (onDisk?.restoreFailure === undefined) return false;
+              if (onDisk === undefined) {
+                reclaimedDuringSpawn = true;
+                return false;
+              }
+              if (onDisk.restoreFailure === undefined) return false;
               await clearWorkflowDeploymentRestoreFailure(
                 dataDir,
                 deploymentId,
@@ -1876,6 +1902,24 @@ export function createSidecarDeployRouter(deps: {
               "workflow-host-wiring.restoreDeploymentFromRecord.lateRestoreCorrection",
             agentId: record.agentAddress,
           });
+        }
+        if (reclaimedDuringSpawn) {
+          // Called OUTSIDE the lock above: `teardownDeployment` acquires
+          // the same per-deployment lock itself, and this restore's own
+          // correction closure has already returned by this point, so
+          // there is no reentrant deadlock.
+          logger.warn`Workflow deployment ${record.agentAddress} finished spawning after being torn down while its boot-restore attempt was still in flight; unwinding the orphaned live supervisor`;
+          try {
+            await teardownDeployment(record.agentAddress, {
+              reclaimDirs: true,
+            });
+          } catch (unwindError) {
+            reportError(unwindError, {
+              operation:
+                "workflow-host-wiring.restoreDeploymentFromRecord.unwindReclaimedDuringSpawn",
+              agentId: record.agentAddress,
+            });
+          }
         }
       }
       logger.info`Restored workflow deployment for ${record.agentAddress}`;
@@ -1970,7 +2014,16 @@ export function createSidecarDeployRouter(deps: {
     // crash-interrupted deploy is reclaimed too. Skipped for a hibernate:
     // the record IS the durable state a later relaunch reads to resume.
     if (opts.reclaimDirs && stepStateDataDir !== undefined) {
-      await deleteWorkflowDeploymentRecord(stepStateDataDir, deploymentId);
+      // CL-7215: serialized through the same per-deployment lock the
+      // boot-restore path uses. Without it, a teardown racing a dangling
+      // (timed-out but still-running) restore's correction could delete
+      // the record out from under it, or clobber a `restoreFailure` write
+      // it lands mid-teardown -- neither of the boot-restore path's own
+      // two writers accounts for a third, unlocked writer touching the
+      // same file.
+      await withDeploymentRecordLock(deploymentId, () =>
+        deleteWorkflowDeploymentRecord(stepStateDataDir, deploymentId),
+      );
     }
     // Stamp the kept record as parked. This is the ONLY durable signal that
     // distinguishes "the hub parked this deployment on purpose" from "this
@@ -1980,7 +2033,12 @@ export function createSidecarDeployRouter(deps: {
     // counts today; it does not yet change what it spawns (that cutover is
     // CL-6282).
     if (!opts.reclaimDirs && stepStateDataDir !== undefined) {
-      await markWorkflowDeploymentRecordParked(stepStateDataDir, deploymentId);
+      // CL-7215: same lock as above, for the same reason -- a hibernate's
+      // parked-stamp read-modify-write must not interleave with a dangling
+      // restore's own record writes for this deploymentId.
+      await withDeploymentRecordLock(deploymentId, () =>
+        markWorkflowDeploymentRecordParked(stepStateDataDir, deploymentId),
+      );
     }
     if (opts.reclaimDirs) {
       releaseSlug(deploymentId, agentAddress);
@@ -2102,13 +2160,14 @@ export function createSidecarDeployRouter(deps: {
                 ? cause.kind
                 : "transient";
             // CL-7215: serialized against `restoreDeploymentFromRecord`'s
-            // own late-settle correction via the same lock, and gated on
-            // `activeSupervisors` -- in-memory, always set synchronously the
-            // instant `spawnWorkflowDeployment` actually succeeds, unlike a
-            // disk snapshot -- so a restore that timed out here but has
-            // ALREADY gone live by the time this runs never gets a boot
-            // failure recorded against it in the first place. See the lock's
-            // own doc comment for why both writers must go through it.
+            // own late-settle correction AND `teardownDeployment`'s record
+            // writes via the same lock, and gated on `activeSupervisors` --
+            // in-memory, always set synchronously the instant
+            // `spawnWorkflowDeployment` actually succeeds, unlike a disk
+            // snapshot -- so a restore that timed out here but has ALREADY
+            // gone live by the time this runs never gets a boot failure
+            // recorded against it in the first place. See the lock's own
+            // doc comment for why every writer must go through it.
             await withDeploymentRecordLock(deploymentId, async () => {
               if (activeSupervisors.has(record.agentAddress)) {
                 logger.warn`Workflow deployment ${deploymentId} timed out during boot restore but finished spawning before its failure could be recorded; leaving its record as a live, successful restore`;
@@ -2117,9 +2176,15 @@ export function createSidecarDeployRouter(deps: {
               const updated = await recordWorkflowDeploymentRestoreFailure(
                 dataDir,
                 deploymentId,
-                record,
                 { kind, reason },
               );
+              if (updated === undefined) {
+                // The record is gone -- a concurrent reclaiming teardown
+                // won the lock first and deleted it. Nothing to mark: the
+                // deployment was torn down on purpose, not left claiming a
+                // false restore failure.
+                return;
+              }
               if (isWorkflowDeploymentRestoreQuarantined(updated)) {
                 const attempts = updated.restoreFailure?.attempts ?? 0;
                 logger.warn`Workflow deployment ${deploymentId} failed to restore ${attempts} consecutive times and is now quarantined -- it will not be retried again until the address is undeployed. Last failure: ${reason}`;

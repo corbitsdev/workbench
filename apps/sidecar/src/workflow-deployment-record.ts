@@ -227,24 +227,35 @@ export async function markWorkflowDeploymentRecordParked(
  * `attempts` (reset to 1 when `failure.kind` differs from the previously
  * recorded kind, so a transient streak can never inflate the permanent
  * counter or vice versa), stamp `reason`/`lastAttemptAt`, and persist.
- * Returns the updated record so the caller can check `isWorkflowDeploymentRestoreQuarantined`
- * without a re-read. Takes the caller's in-memory `record` rather than
- * re-reading it, matching `markWorkflowDeploymentRecordParked`'s sibling
- * shape but avoiding a redundant read on the hot boot-restore path.
+ * Returns the updated record so the caller can check
+ * `isWorkflowDeploymentRestoreQuarantined` without a re-read.
+ *
+ * Re-reads the record from disk rather than trusting the caller's
+ * in-memory copy (CL-7215): the boot-restore path's per-deployment lock
+ * serializes this against a reclaiming teardown that can delete the
+ * record out from under a dangling (timed-out but still-running) restore
+ * between when the boot loop scanned it and when this runs. Blindly
+ * writing the stale in-memory `record` would resurrect `deployment.json`
+ * with a false failure stamp for a deployment that was fully reclaimed --
+ * the exact "durable record disagrees with reality" failure this ticket
+ * exists to close, just from the opposite direction. Returns `undefined`
+ * (no write) when the record is already gone, matching
+ * `markWorkflowDeploymentRecordParked`'s no-op-on-missing shape.
  */
 export async function recordWorkflowDeploymentRestoreFailure(
   dataDir: string,
   deploymentId: string,
-  record: WorkflowDeploymentRecord,
   failure: { kind: RestoreFailureKind; reason: string },
-): Promise<WorkflowDeploymentRecord> {
-  const previous = record.restoreFailure;
+): Promise<WorkflowDeploymentRecord | undefined> {
+  const existing = await readWorkflowDeploymentRecord(dataDir, deploymentId);
+  if (existing === undefined) return undefined;
+  const previous = existing.restoreFailure;
   const attempts =
     previous !== undefined && previous.kind === failure.kind
       ? previous.attempts + 1
       : 1;
   const updated: WorkflowDeploymentRecord = {
-    ...record,
+    ...existing,
     restoreFailure: {
       kind: failure.kind,
       attempts,
