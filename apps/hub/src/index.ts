@@ -331,6 +331,10 @@ import {
   createCredentialExpirySweep,
   createDrizzleCredentialExpirySweepStore,
 } from "./credential-expiry-sweep";
+import {
+  createDrizzleInboxUnsnoozeSweepStore,
+  createInboxUnsnoozeSweep,
+} from "./inbox-unsnooze-sweep";
 
 import { type } from "arktype";
 import { betterAuth } from "better-auth";
@@ -2547,6 +2551,14 @@ export async function createHub(config: HubConfig) {
     },
   });
 
+  // Reopen a snoozed inbox item once its `until` has passed (CL-7208) — a
+  // light periodic sweep over `@corbits/inbox`'s own snooze table, on the
+  // same mailboxDb/mailboxBus every other mailbox consumer here shares.
+  const inboxUnsnoozeSweep = createInboxUnsnoozeSweep({
+    store: createDrizzleInboxUnsnoozeSweepStore(mailboxDb),
+    bus: mailboxBus,
+  });
+
   // Shared `FoldedRunsDeps` for every one-shot Myra prompt below (routine
   // drafting, agent-definition drafting): a real one-shot inference call
   // that launches a folded run, awaits its single reply, and tears the run
@@ -3499,6 +3511,7 @@ export async function createHub(config: HubConfig) {
       chatOrchestrator.dispose();
       routineScheduler.stop();
       credentialExpirySweep.stop();
+      inboxUnsnoozeSweep.stop();
       benchProvisioner.stop();
       await insightsUsage.close();
       await insightsLatency.close();

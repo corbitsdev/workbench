@@ -83,6 +83,52 @@ describe("GET / cursor/filter cross-check", () => {
   });
 });
 
+describe("POST /:id/snooze rejects before touching the database (CL-7208)", () => {
+  test("rejects a missing until", async () => {
+    const app = mount();
+    const response = await app.request("/msg_1/snooze", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  test("rejects an until that isn't a string", async () => {
+    const app = mount();
+    const response = await app.request("/msg_1/snooze", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ until: 12345 }),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  test("rejects an until that doesn't parse as a timestamp", async () => {
+    const app = mount();
+    const response = await app.request("/msg_1/snooze", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ until: "not-a-date" }),
+    });
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe("until must be a valid timestamp");
+  });
+
+  test("rejects an until that has already passed, rather than snoozing forever", async () => {
+    const app = mount();
+    const response = await app.request("/msg_1/snooze", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ until: "2020-01-01T00:00:00.000Z" }),
+    });
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toBe("until must be in the future");
+  });
+});
+
 describe("bulk ops surface a failed inbox walk instead of silently truncating it (CL-7207)", () => {
   test("GET /counts reports and 500s rather than swallowing a walk failure", async () => {
     const app = mount(throwingDb("connection reset mid-walk"));

@@ -144,6 +144,18 @@ const ALLOWLIST: readonly {
     tables: ["pending_seed"],
   },
   {
+    // `@corbits/mailbox`'s enrichment carries only priority,
+    // classification and status — there is no column for a snooze's
+    // `until` timestamp, so the reopen sweep has nothing to scan. This
+    // table is that one column, keyed to the same
+    // (tenantId, principalId, messageId) scope every mailbox mutation
+    // already uses, in its own `inbox` schema. Tenancy, principals and
+    // grants stay native (CL-7208).
+    relPath: "packages/inbox/src/schema.ts",
+    maxOccurrences: 1,
+    tables: ["snooze"],
+  },
+  {
     relPath: "packages/slack-tag/src/schema.ts",
     maxOccurrences: 1,
     tables: ["slack_channel_binding"],

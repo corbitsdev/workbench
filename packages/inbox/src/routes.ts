@@ -20,6 +20,7 @@ import {
 import { reportError } from "@corbits/error-sink";
 import type { TenantEnv } from "@intx/hub-api";
 import { getLogger } from "@intx/log";
+import { type } from "arktype";
 import { Hono, type Context } from "hono";
 
 import {
@@ -35,8 +36,19 @@ import {
   type InboxCounts,
   type InboxItem,
 } from "./project";
+import { setSnoozeUntil } from "./snooze-store";
 import { WORKBENCH_INBOX_PRIORITIES } from "./vocabulary";
 import { walkAllOpen } from "./walk";
+
+// Parsed at the boundary, per AGENTS.md: `until` is untrusted request
+// input, never `as`-cast. Required — a snooze with no `until` is exactly
+// the bug this ticket fixes (CL-7208).
+const SnoozeBodySchema = type({ until: "string" });
+
+/** Thrown inside `/:id/snooze`'s transaction to roll back a snooze-until
+ * insert for a message that turned out not to be in scope, and caught
+ * outside to answer 404 instead of a 500. */
+class SnoozeTargetNotFound extends Error {}
 
 // Page size for bulk product ops (mark-all-read, clear-done, counts). Large
 // enough that a normal inbox finishes in one round-trip; anything past it
@@ -389,23 +401,54 @@ export function createInboxRoutes(
     const tenant = c.get("tenant");
     const principal = c.get("principal");
     const id = c.req.param("id");
-    const body: unknown = await c.req.json().catch(() => ({}));
-    // `until` is accepted for forward-compat with a scheduled unsnooze; the
-    // product store today only records the status flip.
-    let until: string | undefined;
-    if (typeof body === "object" && body !== null && "until" in body) {
-      const rawUntil = (body as { until: unknown }).until;
-      if (rawUntil !== undefined && typeof rawUntil !== "string") {
-        return c.json({ error: "until must be a string" }, 400);
-      }
-      if (typeof rawUntil === "string") until = rawUntil;
+    const rawBody: unknown = await c.req.json().catch(() => null);
+    const parsedBody = SnoozeBodySchema(rawBody);
+    if (parsedBody instanceof type.errors) {
+      return c.json(
+        { error: `invalid snooze body: ${parsedBody.summary}` },
+        400,
+      );
     }
-    const ok = await enrichMailboxMessage(
-      db,
-      { tenantId: tenant.id, principalId: principal.id, id },
-      { status: "snoozed" },
-    );
-    if (!ok) return c.json({ error: "not found" }, 404);
+    const until = new Date(parsedBody.until);
+    if (Number.isNaN(until.getTime())) {
+      return c.json({ error: "until must be a valid timestamp" }, 400);
+    }
+    const now = new Date();
+    if (until.getTime() <= now.getTime()) {
+      return c.json({ error: "until must be in the future" }, 400);
+    }
+
+    const scope = { tenantId: tenant.id, principalId: principal.id, id };
+    // Both writes run in one transaction: an uncommitted insert is
+    // invisible to any other transaction under read-committed isolation,
+    // so the sweep's own `claimAndReopenSnooze` can never see this snooze
+    // row until the status flip has *also* committed alongside it. Without
+    // this, a sweep tick landing between two separate statements could
+    // find the row before the status flip lands, no-op (the message isn't
+    // `snoozed` yet) and delete the row as "cleanup," and then the status
+    // flip would still land afterward — leaving the message stuck
+    // `snoozed` with the row that was supposed to reopen it already gone.
+    // That is exactly this ticket's bug, reintroduced by an un-transacted
+    // write order (CL-7208). Throwing (rather than returning false) on a
+    // missing message rolls the snooze insert back too, via the sentinel
+    // below caught outside the transaction.
+    let notFound = false;
+    await db
+      .transaction(async (tx) => {
+        await setSnoozeUntil(tx, scope, until);
+        const ok = await enrichMailboxMessage(tx, scope, { status: "snoozed" });
+        if (!ok) throw new SnoozeTargetNotFound();
+      })
+      .catch((error) => {
+        if (error instanceof SnoozeTargetNotFound) {
+          notFound = true;
+          return;
+        }
+        throw error;
+      });
+    if (notFound) {
+      return c.json({ error: "not found" }, 404);
+    }
     publish(
       bus,
       { tenantId: tenant.id, principalId: principal.id },
@@ -414,7 +457,7 @@ export function createInboxRoutes(
     );
     return c.json({
       ok: true,
-      until,
+      until: until.toISOString(),
     });
   });
 
