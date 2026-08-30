@@ -1,0 +1,26 @@
+name: Setup Workbench
+description: Checkout, install Bun, restore caches, and bun install
+inputs:
+  fetch-depth:
+    description: Git fetch depth. Pass 0 for a full clone when merge-base is needed.
+    required: false
+    default: "1"
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: ${{ inputs.fetch-depth }}
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version-file: .bun-version
+    - uses: actions/cache@v4
+      with:
+        path: ~/.bun/install/cache
+        key: bun-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version') }}
+    - uses: actions/cache@v4
+      with:
+        path: node_modules
+        key: node-modules-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version') }}
+    - run: bun install --frozen-lockfile
+      shell: bash

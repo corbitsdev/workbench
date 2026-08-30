@@ -24,41 +24,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: .bun-version
-      - uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-
-      - run: bun install --frozen-lockfile
+      - uses: ./.github/actions/setup-workbench
       - uses: actions/cache@v4
         with:
           path: |
             .eslintcache
             node_modules/.cache/prettier
-          key: lint-${{ runner.os }}-${{ github.sha }}
-          restore-keys: lint-${{ runner.os }}-
+          key: lint-${{ runner.os }}-${{ hashFiles('bun.lock', 'eslint.config.ts', '.prettierrc.json', '.bun-version') }}
       - run: bun run lint
 
   typecheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-workbench
         with:
           fetch-depth: 0
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: .bun-version
-      - uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-
-      - run: bun install --frozen-lockfile
       - run: bun run typecheck
         env:
           WORKBENCH_CHECK_SINCE: ${{ github.event.pull_request.base.sha }}
@@ -67,17 +48,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-workbench
         with:
           fetch-depth: 0
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: .bun-version
-      - uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-
-      - run: bun install --frozen-lockfile
       - run: bun run build
       - run: bun run test
         env:
@@ -87,17 +60,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-workbench
         with:
           fetch-depth: 0
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: .bun-version
-      - uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-
-      - run: bun install --frozen-lockfile
       - name: Structural check self-tests
         run: bun test scripts/checks/test
       - run: bun run check:deletion
@@ -116,7 +81,7 @@ jobs:
         env:
           CHECK_BASE_REF: ${{ github.event.pull_request.base.sha }}
 
-  walking-skeleton:
+  e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -138,17 +103,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: .bun-version
-      - uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-
-      - run: bun install --frozen-lockfile
+      - uses: ./.github/actions/setup-workbench
 
       # The committed template ships a placeholder secret and a
       # credential-less local DATABASE_URL; point the URL at the service
@@ -181,8 +136,89 @@ jobs:
           E2E_REQUIRED: "1"
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/workbench
 
+  isolation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        # pgvector-enabled Postgres 17, matching the local development
+        # database (brew postgresql@17 + pgvector).
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-workbench
+
+      - name: Write env file
+        run: |
+          cp .env.example .env
+          secret=$(openssl rand -hex 32)
+          sed -i "s|^SESSION_SECRET=.*|SESSION_SECRET=${secret}|" .env
+          sed -i "s|^DATABASE_URL=.*|DATABASE_URL=postgres://postgres:postgres@localhost:5432/workbench|" .env
+
+      - name: Assert the e2e test env is wired
+        run: |
+          test -f .env
+          grep -q '^DATABASE_URL=postgres://postgres:postgres@localhost:5432/workbench$' .env
+          grep -Eq '^SESSION_SECRET=.{32,}$' .env
+          pg_isready -h localhost -p 5432
+          git --version
+
       - name: Run the two-org isolation suite
         run: bun test test/isolation
+        env:
+          E2E_REQUIRED: "1"
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/workbench
+
+  db-suites:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        # pgvector-enabled Postgres 17, matching the local development
+        # database (brew postgresql@17 + pgvector).
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-workbench
+
+      - name: Write env file
+        run: |
+          cp .env.example .env
+          secret=$(openssl rand -hex 32)
+          sed -i "s|^SESSION_SECRET=.*|SESSION_SECRET=${secret}|" .env
+          sed -i "s|^DATABASE_URL=.*|DATABASE_URL=postgres://postgres:postgres@localhost:5432/workbench|" .env
+
+      - name: Assert the e2e test env is wired
+        run: |
+          test -f .env
+          grep -q '^DATABASE_URL=postgres://postgres:postgres@localhost:5432/workbench$' .env
+          grep -Eq '^SESSION_SECRET=.{32,}$' .env
+          pg_isready -h localhost -p 5432
+          git --version
 
       # apps/hub's own DB-backed suites (e.g. the sign-up rate-limit
       # proof) never run under the plain `checks` job, which has no
