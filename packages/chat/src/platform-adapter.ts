@@ -675,21 +675,37 @@ export function createHubChatPlatform(
   /**
    * `wakeByAddress`, bounded to `DEFAULT_WAKE_TIMEOUT_MS` — the same
    * bound `@corbits/agent-lifecycle`'s `ensureAwake` puts on this exact
-   * call when `lifecycle` is configured (CL-6643). Every call site that
-   * invokes `wakeByAddress` directly rather than through
-   * `lifecycle.ensureAwake` — `sendFoldedMailWithReclaimRetry`'s reclaim
-   * retry, and the exported `ensureAwake` hook's no-`lifecycle` fallback
-   * — used to await the underlying sidecar deploy round-trip with no
-   * bound at all, so a deploy the sidecar never acked wedged the caller
-   * (and, for the reclaim retry, every later send) forever instead of
-   * failing loud (CL-6644).
+   * call when `lifecycle` is configured (CL-6643), so a deploy the
+   * sidecar never acked fails loud instead of wedging the caller forever
+   * (CL-6644).
+   *
+   * When `lifecycle` is configured, this routes through
+   * `lifecycle.ensureAwake` rather than calling `wakeByAddress` itself —
+   * `sendFoldedMailWithReclaimRetry`'s reclaim retry used to call
+   * `wakeByAddress` directly, bypassing `lifecycle.ensureAwake`'s
+   * per-address coalescing entirely. Two wakes for the same instance
+   * racing in through this bypass could both pass `wakeFoldedRun`'s
+   * `session_asset` delete and both redeploy, colliding on the same
+   * primary key and git ref (CL-7214). Every wake path now funnels
+   * through the one coalescing map `@corbits/agent-lifecycle` owns,
+   * rather than this package growing a second one beside it.
+   * `reconcileDriftedRun` mirrors the pattern `sendMail` and the
+   * exported `ensureAwake` hook already use: `lifecycle.ensureAwake`
+   * no-ops on an address that is already routable, so a staleness check
+   * needs to run unconditionally alongside it (CL-6588). Only the
+   * no-`lifecycle` fallback still calls `wakeByAddress` directly.
    */
-  function wakeByAddressBounded(address: string): Promise<void> {
-    return withTimeout(
-      wakeByAddress(address),
-      DEFAULT_WAKE_TIMEOUT_MS,
-      `wake for "${address}" did not settle within ${String(DEFAULT_WAKE_TIMEOUT_MS)}ms`,
-    );
+  async function wakeByAddressBounded(address: string): Promise<void> {
+    if (lifecycle === undefined) {
+      await withTimeout(
+        wakeByAddress(address),
+        DEFAULT_WAKE_TIMEOUT_MS,
+        `wake for "${address}" did not settle within ${String(DEFAULT_WAKE_TIMEOUT_MS)}ms`,
+      );
+      return;
+    }
+    await lifecycle.ensureAwake(address);
+    await reconcileDriftedRun(address);
   }
 
   /**
