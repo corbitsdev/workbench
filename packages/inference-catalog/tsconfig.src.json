@@ -20,6 +20,9 @@
       "path": "../../vendor/intx/types/tsconfig.src.json"
     },
     {
+      "path": "../migration-runner/tsconfig.src.json"
+    },
+    {
       "path": "../ollama-adapter/tsconfig.src.json"
     }
   ]

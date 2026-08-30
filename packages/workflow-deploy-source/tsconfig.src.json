@@ -18,6 +18,9 @@
     },
     {
       "path": "../error-sink/tsconfig.src.json"
+    },
+    {
+      "path": "../migration-runner/tsconfig.src.json"
     }
   ]
 }

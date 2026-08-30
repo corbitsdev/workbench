@@ -107,6 +107,9 @@
       "path": "./packages/memory-tools/tsconfig.src.json"
     },
     {
+      "path": "./packages/migration-runner/tsconfig.src.json"
+    },
+    {
       "path": "./packages/mocks/tsconfig.src.json"
     },
     {

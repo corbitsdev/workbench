@@ -15,6 +15,9 @@
     },
     {
       "path": "../api-query/tsconfig.src.json"
+    },
+    {
+      "path": "../migration-runner/tsconfig.src.json"
     }
   ]
 }

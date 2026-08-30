@@ -14,20 +14,20 @@
 # drift: editing a vendored tree means updating this hash and the
 # package's VENDORED-FROM delta line in the same change.
 apps/sidecar | sawyer | 2026-10-26
-vendor/intx/agent | sawyer | 2026-10-26 | c14902575fc12d5ceb73f0a12a723b610cfcf091d4da4d1d39f3d30b13fe33dc
-vendor/intx/db | sawyer | 2026-10-26 | d9fa2cebb27105e231b1169d5f057b84b068a8ddbf81c7e9b039d42c733efbdb
-vendor/intx/harness | sawyer | 2026-10-26 | dd48359469e8b06edc972136c0c5db60fea5c7ff3db8212b0ad8e86811291992
-vendor/intx/hub-agent | sawyer | 2026-10-26 | d31460113177a3c441ce13323dbca0874a8a839f0550d9dadabd42baabe07495
-vendor/intx/hub-api | sawyer | 2026-10-26 | ecf147546a25b86cba8f805ad49e2b03090f5a4d2131ec9dd763ac3c244e9c1e
-vendor/intx/hub-sessions | sawyer | 2026-10-26 | bdcbea7353145c865a80125dfac1be6bce9ed5ce28ea4a41bb066490e7c72cca
-vendor/intx/inference | sawyer | 2026-10-26 | 19ae6e15bf30b551b0cd66d587f40568eabd37f42c04f48d57fc069197c47076
-vendor/intx/mail-memory | sawyer | 2026-10-26 | 0ae4724a1b9a1af21cbbd9c3c19b14b2e360272e7032d828e832666cf2ec8605
-vendor/intx/mailbox | sawyer | 2026-10-26 | fee02c910a4144158296ca545ba990ae2399f27eca0b733308ee10b98cd92812
-vendor/intx/mime | sawyer | 2026-10-26 | e4148748e681899ab51577bbc51754abda3c0f11023c20c04c9702d836e72849
-vendor/intx/types | sawyer | 2026-10-26 | e5cd92466cb66a844f0264a6ee15659e571bfa8857029473b6ea30d40910ca8e
-vendor/intx/workflow | sawyer | 2026-10-26 | 9c923d6388c2bf996eef7ea7a20f8710fce02ece1871b437ec85828c988f5980
-vendor/intx/workflow-deploy | sawyer | 2026-10-26 | 0029773861f7e7b4ff54e4ecdc30cea11d38066add8f3f4d1f78deb015a3b201
-vendor/intx/workflow-host | sawyer | 2026-10-26 | 191c0c8e47d6eeed80937ff32adf1bbea3e4147e9d3e56acd64278f428b55e75
+vendor/intx/agent | sawyer | 2026-10-26 | f29297427016f6cb0c10ba49a846e2e445bdd38b6aabfc47854a1cc85ce8e002
+vendor/intx/db | sawyer | 2026-10-26 | e1a41e59050ca32d6b590b33f559221584b3e78c71d4b61b3b3d10df82a50096
+vendor/intx/harness | sawyer | 2026-10-26 | 5daababe006d9cf8e678c0eed22c2daa99cc519f35ed7a32ec2b977da9f2fb71
+vendor/intx/hub-agent | sawyer | 2026-10-26 | 617f93b05da6a02415ea3b319526137b56a1d5cc3689ca4d33ab324d8f5807d3
+vendor/intx/hub-api | sawyer | 2026-10-26 | 10fd46c7bf0b058618a8124f6f43d7e779fd5861ff0146fe8d7c2886b836c40e
+vendor/intx/hub-sessions | sawyer | 2026-10-26 | c884af15f80f228acb95b95d415a035bc8d6bae579d199c00fb98a511ba42219
+vendor/intx/inference | sawyer | 2026-10-26 | 3754de556eac6387a427454d57a22f46ad42dc22096c9c76f993cea74f97f50a
+vendor/intx/mail-memory | sawyer | 2026-10-26 | 99e15f6b256f36562dcf4b0cbd84e412b1a8985f00019e3e1748ecd18332b74d
+vendor/intx/mailbox | sawyer | 2026-10-26 | 9647f7c0cda5a9fce7d687b2901a92769f18a442dcd4d1ffe8334eeb71b7dbb0
+vendor/intx/mime | sawyer | 2026-10-26 | ef4ad0c981b976bdfd88afd3c170d09fc534f04a263648eb9e1b440e9e6b5a07
+vendor/intx/types | sawyer | 2026-10-26 | 38b6e88e7b1710e865b783f9d8b842fe3603eb54b4d9f8f945ba64f5e654d708
+vendor/intx/workflow | sawyer | 2026-10-26 | 0d8b76651b9890ee39d271bf5d14e25a2a6496821d2a99d0712db0d75c736193
+vendor/intx/workflow-deploy | sawyer | 2026-10-26 | dd144cb4ca55373597a681d08b84fffc5084ec1fc7150ad25963d8e8273c49d9
+vendor/intx/workflow-host | sawyer | 2026-10-26 | 85eb308faadb576db975050545f9d7306c3c1a05bbbc16648782691c62ac8798
 
 packages/folded-runs | sawyer | 2026-11-01
 

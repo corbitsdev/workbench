@@ -61,11 +61,16 @@ direct TypeScript source resolution (`types`/`default` → `./src/...`), with
 `dist/` references and the `customConditions` entry in the shared tsconfig
 removed — workbench forbids custom resolve conditions — and each tsconfig
 carries `types: ["bun"]`. `vendor/intx/*` (CL-7226) additionally gained the
-workspace-wide TypeScript project-references cutover: `composite: true`,
-`references` generated from real workspace `dependencies`, and a sibling
-`tsconfig.test.json` — the same shape every other package in the workspace
-got in the same change, so a vendored package's build participates in
-`tsc --build` like any other. `vendor/intx/hub-api` (CL-6345) accepts
+workspace-wide TypeScript project-references cutover: a `tsconfig.src.json`
+with `composite: true` and `references` generated from real workspace
+`dependencies`, while `tsconfig.json` stays the combined, conventionally
+named project (extends `tsconfig.src.json`, adds `test`) so tools that
+discover a project by looking for a file literally named `tsconfig.json`
+— ESLint's `projectService`, an editor, a bare `tsc` invocation — still
+find one without being told the composite project exists at all. The same
+shape every other package in the workspace got in the same change, so a
+vendored package's build participates in `tsc --build` like any other.
+`vendor/intx/hub-api` (CL-6345) accepts
 `principalId: null` on `resolveApproval` for a decision a standing-grant
 allowance already authorized, skipping the per-principal resolve gate the
 HTTP routes still enforce. `vendor/intx/hub-api` (CL-workflow-deploy-bearer) adds
