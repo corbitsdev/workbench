@@ -7,6 +7,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
+import { resolveConcurrency } from "./run-all.ts";
 import { SEQUENTIAL_SCRIPTS } from "./sequential-scripts.ts";
 
 const RUNNER = join(import.meta.dir, "run-all.ts");
@@ -68,9 +69,14 @@ async function runProbe(
   // WORKBENCH_CHECK_SINCE exported resolves the filter against the real repo's
   // git rather than the fixture, every probe package reads as unaffected, and
   // the runner correctly reports "nothing affected" — failing tests that are
-  // actually about something else. A case that wants either variable sets it
-  // through `extraEnv`.
-  const { WORKBENCH_CHECK_SINCE: _since, ...ambient } = process.env;
+  // actually about something else. GITHUB_ACTIONS would also change the
+  // default fan-out, so a case that wants either variable sets it through
+  // `extraEnv`.
+  const {
+    WORKBENCH_CHECK_SINCE: _since,
+    GITHUB_ACTIONS: _actions,
+    ...ambient
+  } = process.env;
   const child = Bun.spawn(["bun", "run", RUNNER, script], {
     cwd: workspace,
     env: { ...ambient, PROBE_LOG: logPath, ...extraEnv },
@@ -189,6 +195,21 @@ describe("run-all", () => {
 
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain("WORKBENCH_CHECK_CONCURRENCY");
+  });
+
+  test("uses every core in GitHub Actions and leaves two free locally", () => {
+    expect(resolveConcurrency("typecheck", {}, 8)).toBe(6);
+    expect(resolveConcurrency("typecheck", { GITHUB_ACTIONS: "true" }, 8)).toBe(
+      8,
+    );
+    expect(
+      resolveConcurrency(
+        "typecheck",
+        { GITHUB_ACTIONS: "true", WORKBENCH_CHECK_CONCURRENCY: "3" },
+        8,
+      ),
+    ).toBe(3);
+    expect(resolveConcurrency("test", { GITHUB_ACTIONS: "true" }, 8)).toBe(1);
   });
 
   test("fails the run and names the package whose script failed", async () => {
