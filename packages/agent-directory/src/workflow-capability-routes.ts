@@ -39,11 +39,12 @@
 // route through `requireGrant` like every other definition-mutating
 // surface instead of carrying this interim rule.
 import { type } from "arktype";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 
 import type { DB } from "@intx/db";
-import { workflowDefinition, workflowRun } from "@intx/db/schema";
+import { createWorkflowDefinitionStore } from "@intx/db";
+import { workflowRun } from "@intx/db/schema";
 import { DEFAULT_ASSET_REF } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
 
@@ -136,6 +137,7 @@ export function createWorkflowCapabilityRoutes(
   deps: CreateWorkflowCapabilityRoutesDeps,
 ): Hono<WorkflowCapabilitiesEnv> {
   const app = new Hono<WorkflowCapabilitiesEnv>();
+  const definitionStore = createWorkflowDefinitionStore(deps.db);
 
   app.onError((err, c) => {
     if (err instanceof CapabilityOutOfInventoryError) {
@@ -206,12 +208,7 @@ export function createWorkflowCapabilityRoutes(
       );
     }
 
-    const row = await deps.db.query.workflowDefinition.findFirst({
-      where: and(
-        eq(workflowDefinition.id, definitionId),
-        eq(workflowDefinition.tenantId, scope.tenantId),
-      ),
-    });
+    const row = await definitionStore.findById(scope.tenantId, definitionId);
     if (!hostGuardedRow(row)) {
       return c.json(definitionNotFound(definitionId), 404);
     }

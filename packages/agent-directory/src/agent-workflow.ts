@@ -18,6 +18,7 @@ import type { ToolPackagePin } from "@intx/types/tool-packages";
 import type { CredentialBinding } from "@intx/types";
 import { and, eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
+import { createWorkflowDefinitionStore } from "@intx/db";
 import { asset, workflowDefinition } from "@intx/db/schema";
 import { AssetServiceError, DEFAULT_ASSET_REF } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
@@ -535,13 +536,10 @@ export async function createAgentDefinitionCore(
       if (existing === undefined) {
         throw new DuplicateAgentHandleError(input.handle);
       }
-      const hasDefinition = await deps.db.query.workflowDefinition.findFirst({
-        where: and(
-          eq(workflowDefinition.assetId, existing.id),
-          eq(workflowDefinition.tenantId, input.tenantId),
-        ),
-      });
-      if (hasDefinition !== undefined) {
+      const siblingDefinitions = await createWorkflowDefinitionStore(
+        deps.db,
+      ).listByAsset(input.tenantId, existing.id);
+      if (siblingDefinitions.length > 0) {
         throw new DuplicateAgentHandleError(input.handle);
       }
       assetId = existing.id;
@@ -571,12 +569,10 @@ export async function createAgentDefinitionCore(
     workflowJson,
   });
 
-  const row = await deps.db.query.workflowDefinition.findFirst({
-    where: and(
-      eq(workflowDefinition.id, definitionId),
-      eq(workflowDefinition.tenantId, input.tenantId),
-    ),
-  });
+  const row = await createWorkflowDefinitionStore(deps.db).findById(
+    input.tenantId,
+    definitionId,
+  );
   if (row === undefined) {
     throw new Error(
       `agent definition "${definitionId}" was created but is not readable back`,

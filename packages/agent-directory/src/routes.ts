@@ -19,6 +19,7 @@ import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 
 import type { DB } from "@intx/db";
+import { createWorkflowDefinitionStore } from "@intx/db";
 import { asset, workflowDefinition } from "@intx/db/schema";
 import type { TenantEnv, RequireGrant } from "@intx/hub-api";
 import { idResource } from "@intx/hub-api";
@@ -144,6 +145,7 @@ export function createAgentDefinitionRoutes({
   tenantDefaultModel,
 }: CreateAgentDefinitionRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
+  const definitionStore = createWorkflowDefinitionStore(db);
 
   // Pinning a name the registry cannot resolve, or requesting a
   // capability out of the tenant's live inventory, is a bad request from
@@ -776,25 +778,14 @@ export function createAgentDefinitionRoutes({
 
       const tenant = c.get("tenant");
       const definitionId = c.req.param("definitionId");
-      const row = await db.query.workflowDefinition.findFirst({
-        where: and(
-          eq(workflowDefinition.id, definitionId),
-          eq(workflowDefinition.tenantId, tenant.id),
-        ),
-      });
+      const row = await definitionStore.findById(tenant.id, definitionId);
       if (!hostGuardedRow(row)) {
         return c.json(definitionNotFound(definitionId), 404);
       }
 
-      await db
-        .update(workflowDefinition)
-        .set({ status: body.status, updatedAt: new Date() })
-        .where(
-          and(
-            eq(workflowDefinition.id, definitionId),
-            eq(workflowDefinition.tenantId, tenant.id),
-          ),
-        );
+      await definitionStore.updateFields(tenant.id, definitionId, {
+        status: body.status,
+      });
 
       return c.json({ id: definitionId, status: body.status });
     },

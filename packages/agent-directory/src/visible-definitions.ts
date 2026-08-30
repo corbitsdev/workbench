@@ -7,9 +7,13 @@
 // available, and a same-name definition made at the child shadows the
 // ancestor's. Reads inherit up the chain; creating/editing a definition
 // stays own-tenant only (`./routes.ts`).
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
-import { getAncestorChain, schema } from "@intx/db";
+import {
+  createWorkflowDefinitionStore,
+  getAncestorChain,
+  schema,
+} from "@intx/db";
 import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
 import { isConversationalWorkflowName } from "@corbits/workflow-catalog";
 import { deriveDisplayName } from "./client";
@@ -37,15 +41,13 @@ export async function listVisibleAgentDefinitions(
   tenantId: string,
 ): Promise<readonly VisibleAgentDefinition[]> {
   const chain = await getAncestorChain(db, tenantId);
+  const definitionStore = createWorkflowDefinitionStore(db);
   const byName = new Map<string, VisibleAgentDefinition>();
   const tenantNameById = new Map<string, string>();
 
   for (const tid of chain) {
-    const rows = await db.query.workflowDefinition.findMany({
-      where: and(
-        eq(schema.workflowDefinition.tenantId, tid),
-        eq(schema.workflowDefinition.status, "deployed"),
-      ),
+    const rows = await definitionStore.listByTenant(tid, {
+      status: "deployed",
     });
     if (rows.length === 0) continue;
 

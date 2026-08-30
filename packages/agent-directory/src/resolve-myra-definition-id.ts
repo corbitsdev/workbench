@@ -4,9 +4,8 @@
 // `myra-drafting.ts`), each of which takes it as an injected
 // `resolveMyraDefinitionId` port rather than importing this module
 // directly, so a test can stub it without touching a database.
-import { and, eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
-import { workflowDefinition } from "@intx/db/schema";
+import { createWorkflowDefinitionStore } from "@intx/db";
 import { WORKFLOW_CATALOG } from "@corbits/workflow-catalog";
 
 /** Myra's asset name in the seeded workflow catalog — the same lookup
@@ -38,12 +37,10 @@ export async function resolveMyraDefinitionIdFromDb(
       'the workflow catalog has no entry displayed as "Myra"',
     );
   }
-  const row = await db.query.workflowDefinition.findFirst({
-    where: and(
-      eq(workflowDefinition.name, MYRA_ASSET_NAME),
-      eq(workflowDefinition.tenantId, tenantId),
-    ),
-  });
+  const row = await createWorkflowDefinitionStore(db).findByName(
+    tenantId,
+    MYRA_ASSET_NAME,
+  );
   if (row === undefined || row.status !== "deployed" || row.assetId === null) {
     throw new MyraDefinitionUnresolvableError(
       tenantId,
