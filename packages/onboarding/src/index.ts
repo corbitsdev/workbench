@@ -40,6 +40,8 @@ export {
 export type {
   PendingSeed,
   PendingSeedDb,
+  PendingSeedDuePage,
+  PendingSeedListCursor,
   PendingSeedStore,
 } from "./pending-seed";
 export {
