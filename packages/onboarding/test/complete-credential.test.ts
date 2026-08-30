@@ -122,6 +122,24 @@ function resolvedCatalogResponse(
   };
 }
 
+function ownedCatalogModelsResponse(canonicalNames: string[]) {
+  return {
+    status: 200,
+    data: {
+      data: canonicalNames.map((canonicalName, index) => ({
+        id: `own_mdl_${index}`,
+        tenantId: TENANT_ID,
+        canonicalName,
+        disabled: false,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      })),
+      nextCursor: null,
+    },
+    cookies: [],
+  };
+}
+
 describe("modelSourceFor", () => {
   test("every other provider ignores a baseURLOverride and never calls the hub", async () => {
     const api: ApiCall = (async () => {
@@ -218,6 +236,87 @@ describe("modelSourceFor", () => {
             capabilities: ["plain-text"],
           },
         ]);
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      ) {
+        return ownedCatalogModelsResponse(["llama3.2", "gpt-oss:20b"]);
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await modelSourceFor(
+      api,
+      ["session=abc"],
+      TENANT_ID,
+      "ollama",
+      "ollama",
+    );
+    expect(result.model).toBe("gpt-oss:20b");
+  });
+
+  // CL-7185: discovery includes the inherited curated name, but this
+  // tenant's own catalog only lists the model the instance actually
+  // pulled. Prefer the owned name, never the inherited pin.
+  test("ollama prefers a tenant-owned model over an inherited curated name the instance does not own", async () => {
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/models`) {
+        return resolvedCatalogResponse([
+          {
+            canonicalName: "gpt-oss:20b",
+            providerName: "ollama",
+            capabilities: ["plain-text"],
+          },
+          {
+            canonicalName: "llama3.2",
+            providerName: "ollama",
+            capabilities: ["plain-text"],
+          },
+        ]);
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      ) {
+        return ownedCatalogModelsResponse(["llama3.2"]);
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await modelSourceFor(
+      api,
+      ["session=abc"],
+      TENANT_ID,
+      "ollama",
+      "ollama",
+    );
+    expect(result.model).toBe("llama3.2");
+  });
+
+  // CL-7185: an empty owned list means inherit-only — keep discovery's
+  // curated preference rather than failing open to "no candidates".
+  test("ollama keeps the discovery pick when the tenant owns no catalog models", async () => {
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/models`) {
+        return resolvedCatalogResponse([
+          {
+            canonicalName: "gpt-oss:20b",
+            providerName: "ollama",
+            capabilities: ["plain-text"],
+          },
+          {
+            canonicalName: "llama3.2",
+            providerName: "ollama",
+            capabilities: ["plain-text"],
+          },
+        ]);
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      ) {
+        return ownedCatalogModelsResponse([]);
       }
       throw new Error(`unexpected call: ${method} ${path}`);
     };
