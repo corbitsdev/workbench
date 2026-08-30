@@ -1,0 +1,15 @@
+#!/bin/sh
+# Local stand-in for the cheap CI jobs. Heavy suites stay on GitHub.
+set -eu
+
+if [ -n "${SKIP_WORKBENCH_HOOKS:-}" ] || [ -n "${CI:-}" ]; then
+  exit 0
+fi
+
+if git rev-parse --verify --quiet origin/main >/dev/null; then
+  export WORKBENCH_CHECK_SINCE=origin/main
+fi
+
+bun run lint
+bun run typecheck
+bun run test
