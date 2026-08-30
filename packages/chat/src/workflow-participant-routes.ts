@@ -114,6 +114,7 @@ export type CreateWorkflowParticipantRoutesDeps = {
     | "createWorkbenchSettings"
     | "deleteWorkbenchSettings"
     | "listWorkbenchSettings"
+    | "mutateWorkbenchParticipants"
   > &
     SendWorkbenchMessageDeps["store"];
   readonly platform: LaunchAndJoinAgentDeps["platform"] &

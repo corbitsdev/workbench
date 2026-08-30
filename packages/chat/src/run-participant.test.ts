@@ -1,23 +1,25 @@
 import { describe, expect, test } from "bun:test";
 import { joinRunParticipant } from "./run-participant";
-import { parseParticipants } from "./participants";
+import type { ParticipantRecord } from "./participants";
 
 function fakeStore(existing: Record<string, unknown>) {
   const updates: unknown[] = [];
   return {
     updates,
     store: {
-      getWorkbenchSettings: async () => ({
-        tenantId: "ten_1",
-        workbenchId: "chn_1",
-        kind: "workbench",
-        settings: existing,
-      }),
-      updateWorkbenchSettings: async (input: {
-        settings: Record<string, unknown>;
+      mutateWorkbenchParticipants: async (input: {
+        updatedBy: string;
+        mutate: (
+          participants: readonly ParticipantRecord[],
+        ) => ParticipantRecord[];
       }) => {
-        updates.push(input);
-        return { settings: input.settings };
+        const nextParticipants = input.mutate(
+          (existing["chat/participants"] as ParticipantRecord[]) ?? [],
+        );
+        updates.push({ updatedBy: input.updatedBy, nextParticipants });
+        return {
+          settings: { ...existing, "chat/participants": nextParticipants },
+        };
       },
     },
   };
@@ -42,21 +44,21 @@ describe("joinRunParticipant", () => {
     expect(updates).toHaveLength(1);
     const written = updates[0] as {
       updatedBy: string;
-      settings: Record<string, unknown>;
+      nextParticipants: ParticipantRecord[];
     };
     expect(written.updatedBy).toBe("usr_1");
-    expect(written.settings["chat/name"]).toBe("GTM");
-    expect(parseParticipants(written.settings["chat/participants"])).toEqual([
+    expect(written.nextParticipants).toEqual([
       { address: "wfr_myra@acme.test", handle: "myra" },
       { address: "wfr_run@acme.test", handle: "daily-digest" },
     ]);
   });
 
-  test("throws when the workbench does not exist in the tenant", async () => {
+  test("propagates the store's not-found error for a missing workbench", async () => {
     const store = {
-      getWorkbenchSettings: async () => undefined,
-      updateWorkbenchSettings: async () => {
-        throw new Error("must not be called");
+      mutateWorkbenchParticipants: async () => {
+        throw new Error(
+          'mutateWorkbenchParticipants: no workbench_settings row for workbench "chn_missing"',
+        );
       },
     };
     await expect(

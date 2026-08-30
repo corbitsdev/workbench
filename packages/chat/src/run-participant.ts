@@ -6,14 +6,11 @@
 // `launchAndJoinAgent`, the run is launched elsewhere (`@corbits/routines`'
 // launcher port) and no join event is posted: a routine's arrival in the
 // workbench is its first reply, not a "joined" announcement.
-import { addParticipant, parseParticipants } from "./participants";
+import { addParticipant } from "./participants";
 import type { ChatStore } from "./store";
 
 export type JoinRunParticipantDeps = {
-  readonly store: Pick<
-    ChatStore,
-    "getWorkbenchSettings" | "updateWorkbenchSettings"
-  >;
+  readonly store: Pick<ChatStore, "mutateWorkbenchParticipants">;
 };
 
 export type JoinRunParticipantInput = {
@@ -28,26 +25,15 @@ export async function joinRunParticipant(
   deps: JoinRunParticipantDeps,
   input: JoinRunParticipantInput,
 ): Promise<void> {
-  const row = await deps.store.getWorkbenchSettings(
-    input.tenantId,
-    input.workbenchId,
-  );
-  if (row === undefined) {
-    throw new Error(
-      `no workbench "${input.workbenchId}" in tenant "${input.tenantId}"`,
-    );
-  }
-  await deps.store.updateWorkbenchSettings({
+  // No pre-check read: `mutateWorkbenchParticipants` takes its own
+  // locked read and throws (naming the workbench) if the row doesn't
+  // exist, so a separate unlocked existence check here would only add
+  // a second, redundant place for the same failure to surface.
+  await deps.store.mutateWorkbenchParticipants({
     tenantId: input.tenantId,
     workbenchId: input.workbenchId,
-    settings: {
-      ...row.settings,
-      "chat/participants": addParticipant(
-        parseParticipants(row.settings["chat/participants"]),
-        input.address,
-        input.handle,
-      ),
-    },
     updatedBy: input.principalId,
+    mutate: (participants) =>
+      addParticipant(participants, input.address, input.handle),
   });
 }

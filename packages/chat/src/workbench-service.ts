@@ -158,6 +158,7 @@ export type MintAgentDmDeps = {
     | "deleteWorkbenchSettings"
     | "updateWorkbenchSettings"
     | "listWorkbenchSettings"
+    | "mutateWorkbenchParticipants"
   >;
   readonly platform: LaunchAndJoinAgentDeps["platform"];
   readonly roomMessages: LaunchAndJoinAgentDeps["roomMessages"];
@@ -480,7 +481,7 @@ async function reopenAgentDm(
 }
 
 export type LaunchAndJoinAgentDeps = {
-  readonly store: Pick<ChatStore, "updateWorkbenchSettings">;
+  readonly store: Pick<ChatStore, "mutateWorkbenchParticipants">;
   readonly platform: WorkbenchLauncher;
   readonly roomMessages: RoomMessageStore;
   readonly publish: (workbenchId: string, event: ChatWorkbenchEvent) => void;
@@ -688,18 +689,12 @@ export async function launchAndJoinAgent(
   // the settings PATCH route's record-then-mail ordering: the
   // participant list is the durable source of truth, so a failure
   // below never leaves it unwritten.
-  const row = await deps.store.updateWorkbenchSettings({
+  const row = await deps.store.mutateWorkbenchParticipants({
     tenantId: input.tenantId,
     workbenchId: input.workbenchId,
-    settings: {
-      ...input.existingSettings,
-      "chat/participants": addParticipant(
-        participants,
-        launched.address,
-        desiredHandle,
-      ),
-    },
     updatedBy: input.principalId,
+    mutate: (currentParticipants) =>
+      addParticipant(currentParticipants, launched.address, desiredHandle),
   });
 
   const joinEvent: PartType = {
@@ -873,7 +868,7 @@ export async function postCannedGreeting(
 }
 
 export type JoinHumanParticipantDeps = {
-  readonly store: Pick<ChatStore, "updateWorkbenchSettings">;
+  readonly store: Pick<ChatStore, "mutateWorkbenchParticipants">;
   readonly roomMessages: RoomMessageStore;
   readonly publish: (workbenchId: string, event: ChatWorkbenchEvent) => void;
   readonly tenancy: Pick<WorkbenchTenancyStore, "addWorkbenchMember">;
@@ -882,7 +877,7 @@ export type JoinHumanParticipantDeps = {
 export type JoinHumanParticipantInput = {
   readonly tenantId: string;
   /** The creator/inviter — whoever's action is causing the join, and
-   * who `updateWorkbenchSettings` records as `updatedBy`. */
+   * who `mutateWorkbenchParticipants` records as `updatedBy`. */
   readonly principalId: string;
   readonly workbenchId: string;
   /** The bench member being added as the chat's second participant —
@@ -902,7 +897,6 @@ export type JoinHumanParticipantInput = {
    * chosen member's display name from the request body) supplies it
    * directly. */
   readonly memberHandle: string;
-  readonly existingSettings: Record<string, unknown>;
 };
 
 export type JoinHumanParticipantResult = {
@@ -940,19 +934,12 @@ export async function joinHumanParticipant(
     refId: input.memberRefId,
   });
 
-  const participants = participantsOf(input.existingSettings);
-  const row = await deps.store.updateWorkbenchSettings({
+  const row = await deps.store.mutateWorkbenchParticipants({
     tenantId: input.tenantId,
     workbenchId: input.workbenchId,
-    settings: {
-      ...input.existingSettings,
-      "chat/participants": addParticipant(
-        participants,
-        input.memberPrincipalId,
-        input.memberHandle,
-      ),
-    },
     updatedBy: input.principalId,
+    mutate: (participants) =>
+      addParticipant(participants, input.memberPrincipalId, input.memberHandle),
   });
 
   const joinEvent: PartType = {
@@ -1001,7 +988,7 @@ export async function joinHumanParticipant(
 }
 
 export type RemoveWorkbenchParticipantDeps = {
-  readonly store: Pick<ChatStore, "updateWorkbenchSettings">;
+  readonly store: Pick<ChatStore, "mutateWorkbenchParticipants">;
   readonly roomMessages: RoomMessageStore;
   readonly publish: (workbenchId: string, event: ChatWorkbenchEvent) => void;
   /**
@@ -1025,7 +1012,6 @@ export type RemoveWorkbenchParticipantInput = {
   readonly tenantId: string;
   readonly principalId: string;
   readonly workbenchId: string;
-  readonly existingSettings: Record<string, unknown>;
   /** The participant being removed — already confirmed by the caller
    * (`routes.ts`'s DELETE handler) to actually be a member of this
    * workbench. */
@@ -1052,18 +1038,12 @@ export async function removeWorkbenchParticipant(
   deps: RemoveWorkbenchParticipantDeps,
   input: RemoveWorkbenchParticipantInput,
 ): Promise<RemoveWorkbenchParticipantResult> {
-  const participants = participantsOf(input.existingSettings);
-  const row = await deps.store.updateWorkbenchSettings({
+  const row = await deps.store.mutateWorkbenchParticipants({
     tenantId: input.tenantId,
     workbenchId: input.workbenchId,
-    settings: {
-      ...input.existingSettings,
-      "chat/participants": removeParticipant(
-        participants,
-        input.participant.address,
-      ),
-    },
     updatedBy: input.principalId,
+    mutate: (participants) =>
+      removeParticipant(participants, input.participant.address),
   });
 
   const isAgent = isAgentAddress(input.participant.address);
@@ -1133,7 +1113,7 @@ export async function removeWorkbenchParticipant(
 export type StartWorkflowCommandDeps = {
   readonly store: Pick<
     ChatStore,
-    "getWorkbenchSettings" | "updateWorkbenchSettings"
+    "getWorkbenchSettings" | "mutateWorkbenchParticipants"
   >;
   readonly platform: WorkbenchLauncher & Pick<WorkbenchMail, "sendMail">;
   readonly roomMessages: RoomMessageStore;

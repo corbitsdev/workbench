@@ -1276,7 +1276,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               memberPrincipalId: body.principalId,
               memberRefId: memberPrincipal.refId,
               memberHandle,
-              existingSettings: row.settings,
             },
           );
 
@@ -2003,7 +2002,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               memberPrincipalId: entry.principalId,
               memberRefId: target.refId,
               memberHandle: handleFromName(entry.name ?? "", entry.principalId),
-              existingSettings: currentSettings,
             },
           );
           currentSettings = joined.settings;
@@ -2923,7 +2921,6 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           tenantId: tenant.id,
           principalId: principal.id,
           workbenchId,
-          existingSettings: existing.settings,
           participant,
         },
       );

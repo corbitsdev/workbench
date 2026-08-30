@@ -56,6 +56,7 @@ export type MountWorkbenchSlackTagDeps = {
     | "getBenchSettings"
     | "createWorkbenchSettings"
     | "updateWorkbenchSettings"
+    | "mutateWorkbenchParticipants"
   >;
   readonly chatPlatform: ChatPlatform;
   readonly roomMessages: RoomMessageStore;

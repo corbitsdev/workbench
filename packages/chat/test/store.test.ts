@@ -4,6 +4,7 @@
 // that call it.
 
 import { expect, test } from "bun:test";
+import { addParticipant, removeParticipant } from "../src/participants";
 import { createInMemoryChatStore } from "../src/store";
 
 test("createWorkbenchSettings then getWorkbenchSettings round-trips the row", async () => {
@@ -71,6 +72,70 @@ test("updateWorkbenchSettings replaces the settings blob and rejects a missing w
       workbenchId: "chn_missing",
       settings: {},
       updatedBy: "prn_1",
+    }),
+  ).rejects.toThrow();
+});
+
+test("mutateWorkbenchParticipants folds `mutate` over the current list and writes only that key back", async () => {
+  const store = createInMemoryChatStore();
+  await store.createWorkbenchSettings({
+    tenantId: "tnt_1",
+    workbenchId: "chn_1",
+    settings: { "chat/kind": "workbench", "chat/pinned": true },
+    updatedBy: "prn_1",
+  });
+
+  const row = await store.mutateWorkbenchParticipants({
+    tenantId: "tnt_1",
+    workbenchId: "chn_1",
+    updatedBy: "prn_2",
+    mutate: (participants) => addParticipant(participants, "prn_bob", "bob"),
+  });
+
+  expect(row.settings["chat/participants"]).toEqual([
+    { address: "prn_bob", handle: "bob" },
+  ]);
+  // Untouched keys survive exactly as they were — this is the targeted
+  // merge the whole-blob `updateWorkbenchSettings` never gave.
+  expect(row.settings["chat/kind"]).toBe("workbench");
+  expect(row.settings["chat/pinned"]).toBe(true);
+  expect(row.updatedBy).toBe("prn_2");
+});
+
+test("mutateWorkbenchParticipants removing a participant leaves the rest untouched", async () => {
+  const store = createInMemoryChatStore();
+  await store.createWorkbenchSettings({
+    tenantId: "tnt_1",
+    workbenchId: "chn_1",
+    settings: {
+      "chat/participants": [
+        { address: "prn_bob", handle: "bob" },
+        { address: "prn_carol", handle: "carol" },
+      ],
+    },
+    updatedBy: "prn_1",
+  });
+
+  const row = await store.mutateWorkbenchParticipants({
+    tenantId: "tnt_1",
+    workbenchId: "chn_1",
+    updatedBy: "prn_1",
+    mutate: (participants) => removeParticipant(participants, "prn_bob"),
+  });
+
+  expect(row.settings["chat/participants"]).toEqual([
+    { address: "prn_carol", handle: "carol" },
+  ]);
+});
+
+test("mutateWorkbenchParticipants rejects a missing workbench", async () => {
+  const store = createInMemoryChatStore();
+  await expect(
+    store.mutateWorkbenchParticipants({
+      tenantId: "tnt_1",
+      workbenchId: "chn_missing",
+      updatedBy: "prn_1",
+      mutate: (participants) => [...participants],
     }),
   ).rejects.toThrow();
 });
