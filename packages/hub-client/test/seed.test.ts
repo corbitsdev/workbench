@@ -1900,6 +1900,111 @@ describe("seedCatalog", () => {
     expect(patchCalls).toBe(0);
   });
 
+  // CL-7236: an interactive MCP OAuth reconnect (packages/connections/src/
+  // mcp-oauth-routes.ts) passes `credentialVerified: true` after a
+  // completed OAuth exchange — a user re-authorizing an integration whose
+  // stored row hasn't technically expired yet (refreshed provider-side
+  // scopes, or a proactive reconnect). Before the fix, the oauth_token
+  // branch of `shouldRotate` looked only at `existing.status`, ignoring
+  // `verified` entirely: zero PATCH calls, and the stale row's id returned
+  // as though the reconnect had worked.
+  test("a name conflict on a verified oauth_token reconnect rotates the still-active row", async () => {
+    const { lines, log } = collector();
+    let patchCalls = 0;
+    let patchBody: unknown;
+
+    const activeCredentialRow = () => ({
+      id: "cre_active",
+      tenantId: TENANT_ID,
+      providerId: "prv_1",
+      name: "huggingface-default",
+      type: "oauth_token",
+      status: "active",
+      metadata: { expiresAt: "2026-09-01T00:00:00.000Z" },
+      createdAt: TIMESTAMP,
+      updatedAt: TIMESTAMP,
+    });
+
+    const handler: FakeHandler = (method, path, body) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
+        return { status: 201, data: providerRow("prv_1", "huggingface") };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/credentials`)
+        return { status: 409, data: { error: "name taken" } };
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/credentials`)
+        return {
+          status: 200,
+          data: { data: [activeCredentialRow()], nextCursor: null },
+        };
+      if (
+        method === "PATCH" &&
+        path === `/api/tenants/${TENANT_ID}/credentials/cre_active`
+      ) {
+        patchCalls += 1;
+        patchBody = body;
+        return {
+          status: 200,
+          data: {
+            ...activeCredentialRow(),
+            metadata: { expiresAt: "2026-10-01T00:00:00.000Z" },
+          },
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      )
+        return {
+          status: 201,
+          data: catalogModelRow("mdl_1", "deepseek-ai/DeepSeek-V4-Flash"),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      )
+        return {
+          status: 201,
+          data: catalogProviderRow(
+            "cpv_1",
+            "huggingface",
+            "cre_active",
+            "openai-compatible",
+            "https://router.huggingface.co/v1",
+          ),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      )
+        return {
+          status: 201,
+          data: catalogOfferingRow("off_1", "mdl_1", "cpv_1"),
+        };
+      return undefined;
+    };
+
+    await seedCatalog({
+      api: fakeAPI(handler),
+      cookies: [],
+      tenantId: TENANT_ID,
+      provider: "huggingface",
+      apiKey: "hf_freshly_reauthorized_token",
+      credentialType: "oauth_token",
+      credentialVerified: true,
+      credentialMetadata: { expiresAt: "2026-10-01T00:00:00.000Z" },
+      log,
+    });
+
+    expect(patchCalls).toBe(1);
+    expect(patchBody).toEqual({
+      secret: "hf_freshly_reauthorized_token",
+      status: "active",
+      metadata: { expiresAt: "2026-10-01T00:00:00.000Z" },
+    });
+    expect(lines.some((line) => line.includes("rotated credential"))).toBe(
+      true,
+    );
+  });
+
   // A regenerated OpenRouter key, or a retry after a bad paste, reconnects
   // under the same stable credential name — the caller has already proven
   // the fresh key against the provider's own probe (`credentialVerified:
