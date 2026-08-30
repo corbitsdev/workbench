@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@corbits/folded-run-one-shot": "workspace:*",
+    "@corbits/migration-runner": "workspace:*",
     "@corbits/slug": "workspace:*",
     "cronstrue": "^3.24.0",
     "@corbits/workflow-catalog": "workspace:*",
