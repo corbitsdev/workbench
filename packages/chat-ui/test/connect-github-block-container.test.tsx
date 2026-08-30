@@ -25,9 +25,7 @@ const DATA: ConnectGithubBlockData = {
   state: "disconnected",
 };
 
-const REPOS: readonly ConnectGithubRepo[] = [
-  { id: "1", name: "acme/widgets", openPullRequestCount: 2 },
-];
+const REPOS: readonly ConnectGithubRepo[] = [{ id: "1", name: "acme/widgets" }];
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -169,7 +167,7 @@ describe("ConnectGithubBlockContainer post-submit refresh (CL-6463)", () => {
     });
 
     const heading = el.querySelector(".chat-block-scene-pick-heading");
-    expect(heading?.textContent).toBe("Pick your repos");
+    expect(heading?.textContent).toBe("Choose what gets reviewed");
     expect(heading?.getAttribute("tabindex")).toBe("-1");
     expect(document.activeElement).toBe(heading);
     expect(el.querySelector("#connect-github-token")).toBeNull();
@@ -317,6 +315,35 @@ describe("ConnectGithubBlockContainer names a kind:error state (PR 422)", () => 
     expect(alert).not.toBeNull();
     expect(alert?.textContent).toBe(message);
 
+    const connectPrimary = [...el.querySelectorAll("button")].find(
+      (button) => button.textContent === "Connect GitHub",
+    );
+    expect(connectPrimary).toBeUndefined();
+  });
+
+  // CL-7189: a rejected read used to leave the query on `loading`, which
+  // renders the disconnected body — the card told a person with a working
+  // connection that they had never connected.
+  test("a state read that rejects becomes a spoken error, never a silent Connect GitHub", async () => {
+    const actions: ConnectGithubActions = {
+      getConnectState: () => Promise.reject(new Error("boom")),
+      subscribeConnectState: () => () => {},
+      requestConnect: () => {},
+      submitAccessToken: async () => ({ ok: true as const }),
+      startReviewing: async () => ({ startedTriggerCount: 0 }),
+      skip: async () => {},
+    };
+
+    const el = await mount(actions, "m_state_rejected");
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const alert = el.querySelector('[role="alert"]');
+    expect(alert?.textContent).toBe(
+      "Couldn't reach GitHub with your token just now — try connecting again.",
+    );
     const connectPrimary = [...el.querySelectorAll("button")].find(
       (button) => button.textContent === "Connect GitHub",
     );

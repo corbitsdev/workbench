@@ -60,6 +60,25 @@ function lastConnectedOf(messageId: string): ConnectedGithubQuery | undefined {
   return lastConnectedByMessageId.get(messageId);
 }
 
+/** A state read that fails is an error the card says out loud, never a
+ * silent fall-through to "Connect GitHub" over a connection that
+ * exists (CL-7189): an unhandled rejection used to leave the query on
+ * `loading`, which renders the disconnected body. */
+async function readConnectState(
+  actions: ConnectGithubActions,
+  messageId: string,
+): Promise<ConnectGithubQuery> {
+  try {
+    return await actions.getConnectState(messageId);
+  } catch (cause) {
+    reportError(cause, { operation: "connect-github.getConnectState" });
+    return {
+      kind: "error",
+      message: CHAT_STRINGS.blockConnectGithubStateUnreadable,
+    };
+  }
+}
+
 function displayQueryOf(
   messageId: string,
   query: ConnectGithubQuery,
@@ -120,7 +139,7 @@ export function ConnectGithubBlockContainer({
 
   useEffect(() => {
     if (actions === undefined) return;
-    actions.getConnectState(messageId).then(applyQuery);
+    void readConnectState(actions, messageId).then(applyQuery);
     const unsubscribe = actions.subscribeConnectState(messageId, applyQuery);
     return unsubscribe;
   }, [actions, messageId, applyQuery]);
@@ -137,7 +156,7 @@ export function ConnectGithubBlockContainer({
       }
       const result = await actions.submitAccessToken(token);
       if (result.ok) {
-        applyQuery(await actions.getConnectState(messageId));
+        applyQuery(await readConnectState(actions, messageId));
       }
       return result;
     },
