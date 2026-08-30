@@ -1,14 +1,23 @@
 // Exercises `createWebhookIngressRoutes`' HTTP surface: signature
-// verification (valid/invalid/missing), unknown/disabled-trigger
+// verification (valid/invalid/missing/stale), unknown/disabled-trigger
 // handling, and payload parsing — with a fake `launch` seam so no
 // database or folded-run launch machinery is involved. This is the
 // trust-boundary route: no session, no tenant middleware. Unknown
-// trigger, disabled trigger, and bad signature must all come back as
-// the same generic 401 so a probe can't tell them apart.
+// trigger, disabled trigger, bad signature, and a stale/replayed
+// timestamp must all come back as the same generic 401 so a probe
+// can't tell them apart.
 import { describe, expect, test } from "bun:test";
 import { createWebhookIngressRoutes } from "../src/ingress-routes";
-import { signPayload, WEBHOOK_SIGNATURE_HEADER } from "../src/signature";
+import {
+  signPayload,
+  WEBHOOK_SIGNATURE_HEADER,
+  WEBHOOK_TIMESTAMP_HEADER,
+} from "../src/signature";
 import { createInMemoryWebhookTriggerStore } from "./test-support";
+
+function nowSeconds(): string {
+  return String(Math.floor(Date.now() / 1000));
+}
 
 async function seedTrigger(
   store: ReturnType<typeof createInMemoryWebhookTriggerStore>,
@@ -43,7 +52,7 @@ function buildApp(
 }
 
 describe("POST /:triggerId", () => {
-  test("launches on a validly signed payload", async () => {
+  test("launches on a validly signed payload with a fresh timestamp", async () => {
     let launchedWith: unknown;
     const { app, store } = buildApp(async (_trigger, payload) => {
       launchedWith = payload;
@@ -52,11 +61,13 @@ describe("POST /:triggerId", () => {
     await seedTrigger(store);
 
     const body = JSON.stringify({ note: { title: "Q3 planning" } });
+    const timestamp = nowSeconds();
     const response = await app.request("/ins_trigger1", {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        [WEBHOOK_SIGNATURE_HEADER]: signPayload("s3cr3t", body),
+        [WEBHOOK_TIMESTAMP_HEADER]: timestamp,
+        [WEBHOOK_SIGNATURE_HEADER]: signPayload("s3cr3t", timestamp, body),
       },
       body,
     });
@@ -77,8 +88,49 @@ describe("POST /:triggerId", () => {
 
     const response = await app.request("/ins_trigger1", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        [WEBHOOK_TIMESTAMP_HEADER]: nowSeconds(),
+      },
       body: "{}",
+    });
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual(expectedUnauthorizedBody);
+  });
+
+  test("rejects a missing timestamp header with the generic unauthorized response", async () => {
+    const { app, store } = buildApp();
+    await seedTrigger(store);
+
+    const body = "{}";
+    const response = await app.request("/ins_trigger1", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [WEBHOOK_SIGNATURE_HEADER]: signPayload("s3cr3t", nowSeconds(), body),
+      },
+      body,
+    });
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual(expectedUnauthorizedBody);
+  });
+
+  test("rejects a stale timestamp (a replayed delivery) with the generic unauthorized response", async () => {
+    const { app, store } = buildApp();
+    await seedTrigger(store);
+
+    const body = "{}";
+    const staleTimestamp = String(Math.floor(Date.now() / 1000) - 301);
+    const response = await app.request("/ins_trigger1", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [WEBHOOK_TIMESTAMP_HEADER]: staleTimestamp,
+        [WEBHOOK_SIGNATURE_HEADER]: signPayload("s3cr3t", staleTimestamp, body),
+      },
+      body,
     });
 
     expect(response.status).toBe(401);
@@ -90,11 +142,17 @@ describe("POST /:triggerId", () => {
     await seedTrigger(store);
 
     const body = "{}";
+    const timestamp = nowSeconds();
     const response = await app.request("/ins_trigger1", {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        [WEBHOOK_SIGNATURE_HEADER]: signPayload("wrong-secret", body),
+        [WEBHOOK_TIMESTAMP_HEADER]: timestamp,
+        [WEBHOOK_SIGNATURE_HEADER]: signPayload(
+          "wrong-secret",
+          timestamp,
+          body,
+        ),
       },
       body,
     });
@@ -118,9 +176,13 @@ describe("POST /:triggerId", () => {
     await seedTrigger(store, { enabled: false });
 
     const body = "{}";
+    const timestamp = nowSeconds();
     const response = await app.request("/ins_trigger1", {
       method: "POST",
-      headers: { [WEBHOOK_SIGNATURE_HEADER]: signPayload("s3cr3t", body) },
+      headers: {
+        [WEBHOOK_TIMESTAMP_HEADER]: timestamp,
+        [WEBHOOK_SIGNATURE_HEADER]: signPayload("s3cr3t", timestamp, body),
+      },
       body,
     });
 
@@ -133,9 +195,13 @@ describe("POST /:triggerId", () => {
     await seedTrigger(store);
 
     const body = "not json";
+    const timestamp = nowSeconds();
     const response = await app.request("/ins_trigger1", {
       method: "POST",
-      headers: { [WEBHOOK_SIGNATURE_HEADER]: signPayload("s3cr3t", body) },
+      headers: {
+        [WEBHOOK_TIMESTAMP_HEADER]: timestamp,
+        [WEBHOOK_SIGNATURE_HEADER]: signPayload("s3cr3t", timestamp, body),
+      },
       body,
     });
 

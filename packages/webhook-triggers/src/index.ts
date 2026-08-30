@@ -16,6 +16,7 @@ export {
   signPayload,
   verifySignature,
   WEBHOOK_SIGNATURE_HEADER,
+  WEBHOOK_TIMESTAMP_HEADER,
 } from "./signature";
 export { renderInputTemplate } from "./mapping";
 export {
