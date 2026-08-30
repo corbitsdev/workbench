@@ -7,14 +7,17 @@
 //
 // `bridgeWorkbenchStream` is the route's one call into this module: it
 // wires both this registry and the platform's own event stream onto a
-// live SSE stream, and owns two defects that matter here.
+// live SSE stream, and owns the defects that matter here.
 //
 // 1. A write that fails (the client disconnected, but the abort
 //    signal hasn't fired yet) must drop that subscriber immediately
 //    rather than leaving it registered until `stream.onAbort`
 //    eventually runs. A dangling subscriber between disconnect and
 //    abort is a zombie: every event published in that window still
-//    attempts (and fails) a write.
+//    attempts (and fails) a write. The same teardown also closes the
+//    underlying stream so the client's `EventSource` actually sees the
+//    connection end and reconnects, rather than a stream that looks
+//    live while nothing is coming through it anymore (CL-7197).
 // 2. Access must be re-checked on every delivered event, not only at
 //    connect time. The route resolves access once before opening the
 //    stream, but a share or a share member's row can be revoked at
@@ -31,10 +34,31 @@
 //    quiet. A truly instant kill would need a poll/heartbeat
 //    independent of traffic; that's a real, disclosed scope cut, not
 //    a hidden gap, and out of scope here.
+// 3. Every delivery — the presence snapshot, each event, and the
+//    keepalive ping — runs through one chained promise so writes reach
+//    the stream in the order they were enqueued, never in the order
+//    their `authorize()` calls happen to resolve. This is also what
+//    keeps the presence snapshot first: it's enqueued before the local
+//    and platform subscriptions are installed, so nothing can jump
+//    ahead of it even if an event arrives the instant a subscription is
+//    wired up.
 import type { SSEStreamingApi } from "hono/streaming";
+import { reportError } from "@corbits/error-sink";
 import type { WorkbenchEvents, ChatWorkbenchEvent } from "./platform-port";
 import { ChatPresenceSnapshotEventData } from "./stream-events";
 import type { WorkbenchPresenceRegistry } from "./workbench-presence";
+
+// Below nginx's 60s default proxy timeout and most load balancers' idle
+// timeouts, so an idle connection never looks abandoned to anything
+// sitting between the client and this process.
+const DEFAULT_KEEPALIVE_INTERVAL_MS = 25_000;
+
+// A stream whose deliveries have backed up this far has already lost
+// coherence with the client (whatever it shows is minutes stale by the
+// time it drains) — closing and letting the client reconnect is more
+// useful than an unbounded queue holding every event since the backup
+// started.
+const MAX_QUEUED_DELIVERIES = 200;
 
 export type WorkbenchSubscriber = (event: ChatWorkbenchEvent) => void;
 
@@ -121,18 +145,34 @@ export function createWorkbenchSubscriberRegistry(): WorkbenchSubscriberRegistry
   };
 }
 
+/** What `bridgeWorkbenchStream` hands back to the route. */
+export interface WorkbenchStreamBridge {
+  /** Unsubscribes both sources and closes the stream; safe to call more
+   * than once. The route calls this from `stream.onAbort`. */
+  teardown: () => void;
+  /** Resolves once `teardown` has run, from any cause — client abort,
+   * a revoked `authorize()`, or a write failure. The route awaits this
+   * instead of a promise that never resolves, so its closure (and
+   * everything it closes over) is released once the connection ends
+   * rather than pinned in memory for the life of the process. */
+  closed: Promise<void>;
+}
+
 /**
  * Wires a live SSE stream to both the local registry and the
  * platform's own per-workbench event stream, and returns the combined
- * teardown the route calls from `stream.onAbort`. Before every event
+ * teardown the route calls from `stream.onAbort` plus a `closed`
+ * promise it awaits instead of parking forever. Before every event
  * from either source is written, `authorize()` re-runs the same
  * fail-closed access check the route ran at connect time; a `false`
- * result unsubscribes both sources and closes the stream rather than
- * writing the event, so a revoked share or share member stops
- * receiving events on the very next one published. A failed
- * `writeSSE` (the client is already gone) unsubscribes that source
- * immediately rather than only logging and waiting for abort — the
- * fix for the zombie-subscriber defect.
+ * result (or a rejection — a transient resolver error must not become
+ * an unhandled rejection) unsubscribes both sources and closes the
+ * stream rather than writing the event, so a revoked share or share
+ * member stops receiving events on the very next one published. A
+ * failed `writeSSE` (the client is already gone) unsubscribes that
+ * source immediately, closes the stream so the client's `EventSource`
+ * actually reconnects, and reports the failure — the fix for the
+ * zombie-subscriber and dead-stream defects.
  */
 export function bridgeWorkbenchStream(input: {
   registry: WorkbenchSubscriberRegistry;
@@ -155,11 +195,19 @@ export function bridgeWorkbenchStream(input: {
     registry: WorkbenchPresenceRegistry;
     principalId: string;
   };
-}): () => void {
+  /** Overrides `DEFAULT_KEEPALIVE_INTERVAL_MS`; exists for tests. */
+  keepaliveIntervalMs?: number;
+}): WorkbenchStreamBridge {
   let tornDown = false;
+  let resolveClosed: () => void = () => undefined;
+  const closed = new Promise<void>((resolve) => {
+    resolveClosed = resolve;
+  });
 
   let unsubscribeLocal: () => void = () => undefined;
   let unsubscribePlatform: () => void = () => undefined;
+  let keepaliveTimer: ReturnType<typeof setInterval> | undefined;
+
   const teardownPresence = () => {
     if (input.presence === undefined) return;
     const wentOffline = input.presence.registry.disconnect(
@@ -182,13 +230,60 @@ export function bridgeWorkbenchStream(input: {
     unsubscribeLocal();
     unsubscribePlatform();
     teardownPresence();
+    if (keepaliveTimer !== undefined) clearInterval(keepaliveTimer);
+    resolveClosed();
+  };
+  const closeStream = () => input.stream.close().catch(() => undefined);
+
+  // Every write to this stream — the presence snapshot, each delivered
+  // event, and the keepalive ping — is chained onto this one promise so
+  // they land on the wire in the order they were enqueued, never in the
+  // order their own async work (an `authorize()` call, say) happens to
+  // settle. `queuedCount` bounds how far a stuck client can make this
+  // grow.
+  let deliveryQueue: Promise<void> = Promise.resolve();
+  let queuedCount = 0;
+
+  const enqueue = (task: () => Promise<void>) => {
+    if (tornDown) return;
+    if (queuedCount >= MAX_QUEUED_DELIVERIES) {
+      reportError(new Error("workbench stream delivery queue overflow"), {
+        operation: "chat.workbenchStream.overflow",
+        roomId: input.workbenchId,
+      });
+      teardown();
+      void closeStream();
+      return;
+    }
+    queuedCount += 1;
+    deliveryQueue = deliveryQueue
+      .then(async () => {
+        queuedCount -= 1;
+        if (tornDown) return;
+        await task();
+      })
+      // A task's own failure is already handled (reported, torn down)
+      // inside itself; this catch only exists so a task that somehow
+      // still throws can't poison every delivery queued after it.
+      .catch(() => undefined);
   };
 
-  const deliver = async (event: ChatWorkbenchEvent) => {
-    if (tornDown) return;
-    if (!(await input.authorize())) {
+  const deliverEvent = async (event: ChatWorkbenchEvent) => {
+    let authorized: boolean;
+    try {
+      authorized = await input.authorize();
+    } catch (error) {
+      reportError(error, {
+        operation: "chat.workbenchStream.authorize",
+        roomId: input.workbenchId,
+      });
       teardown();
-      await input.stream.close().catch(() => undefined);
+      await closeStream();
+      return;
+    }
+    if (!authorized) {
+      teardown();
+      await closeStream();
       return;
     }
     try {
@@ -196,13 +291,44 @@ export function bridgeWorkbenchStream(input: {
         event: event.type,
         data: JSON.stringify(event.data),
       });
-    } catch {
+    } catch (error) {
+      reportError(error, {
+        operation: "chat.workbenchStream.write",
+        roomId: input.workbenchId,
+      });
       teardown();
+      await closeStream();
     }
   };
 
+  // Enqueued before either subscription is installed, so nothing
+  // delivered by either source can be written ahead of it — the fix
+  // for the snapshot/delta race.
+  if (input.presence !== undefined) {
+    const { registry: presenceRegistry, principalId } = input.presence;
+    presenceRegistry.connect(input.workbenchId, principalId);
+    const snapshot = ChatPresenceSnapshotEventData.assert({
+      members: presenceRegistry.snapshot(input.workbenchId),
+    });
+    enqueue(async () => {
+      try {
+        await input.stream.writeSSE({
+          event: "chat.presence.snapshot",
+          data: JSON.stringify(snapshot),
+        });
+      } catch (error) {
+        reportError(error, {
+          operation: "chat.workbenchStream.presenceSnapshot",
+          roomId: input.workbenchId,
+        });
+        teardown();
+        await closeStream();
+      }
+    });
+  }
+
   unsubscribeLocal = input.registry.subscribe(input.workbenchId, (event) => {
-    void deliver(event);
+    enqueue(() => deliverEvent(event));
   });
 
   // The platform side resolves a folded run before it can subscribe
@@ -210,39 +336,52 @@ export function bridgeWorkbenchStream(input: {
   // failure there (the run isn't back yet after a hub restart, a slow
   // DB) must degrade this stream to registry-only rather than take the
   // whole SSE connection down — a client still gets typing/settings
-  // events and its own poll fallback covers the rest.
+  // events and its own poll fallback covers the rest. The degradation
+  // itself is still a failure worth knowing about, so it's reported
+  // rather than swallowed.
   try {
     unsubscribePlatform = input.platform.subscribeToWorkbench(
       input.workbenchId,
       (event) => {
-        void deliver(event);
+        enqueue(() => deliverEvent(event));
       },
     );
-  } catch {
+  } catch (error) {
+    reportError(error, {
+      operation: "chat.workbenchStream.platformSubscribe",
+      roomId: input.workbenchId,
+    });
     unsubscribePlatform = () => undefined;
   }
 
   if (input.presence !== undefined) {
-    const { registry: presenceRegistry, principalId } = input.presence;
-    presenceRegistry.connect(input.workbenchId, principalId);
-    const snapshot = ChatPresenceSnapshotEventData.assert({
-      members: presenceRegistry.snapshot(input.workbenchId),
-    });
-    void input.stream
-      .writeSSE({
-        event: "chat.presence.snapshot",
-        data: JSON.stringify(snapshot),
-      })
-      .catch(() => undefined);
     input.registry.publish(input.workbenchId, {
       type: "chat.presence",
       data: {
-        principalId,
+        principalId: input.presence.principalId,
         state: "online",
         lastActiveAt: new Date().toISOString(),
       },
     });
   }
 
-  return teardown;
+  keepaliveTimer = setInterval(() => {
+    // A backed-up queue is already proof the connection is alive;
+    // adding to the backlog would only make it worse.
+    if (tornDown || queuedCount > 0) return;
+    enqueue(async () => {
+      try {
+        await input.stream.writeSSE({ event: "keepalive", data: "" });
+      } catch (error) {
+        reportError(error, {
+          operation: "chat.workbenchStream.keepalive",
+          roomId: input.workbenchId,
+        });
+        teardown();
+        await closeStream();
+      }
+    });
+  }, input.keepaliveIntervalMs ?? DEFAULT_KEEPALIVE_INTERVAL_MS);
+
+  return { teardown, closed };
 }

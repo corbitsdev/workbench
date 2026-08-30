@@ -3610,7 +3610,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       }
 
       return streamSSE(c, async (stream) => {
-        const unbridge = bridgeWorkbenchStream({
+        const { teardown, closed } = bridgeWorkbenchStream({
           registry,
           platform: platformEvents,
           workbenchId,
@@ -3625,8 +3625,8 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             ).then((access) => access !== undefined),
           presence: { registry: presence, principalId: principal.id },
         });
-        stream.onAbort(unbridge);
-        await new Promise<void>(() => undefined);
+        stream.onAbort(teardown);
+        await closed;
       });
     },
   );
