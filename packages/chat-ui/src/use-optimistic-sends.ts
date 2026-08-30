@@ -12,7 +12,7 @@
 // either arrival shows up with a matching `clientId`, so whichever wins
 // that race, the other is a no-op.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChatApiError, pingWorkbenchPresence, sendMessage } from "./api";
 import type { MessageItem, MessagesResponse } from "./api";
@@ -172,6 +172,16 @@ export function useOptimisticSends(args: {
     setPendingSends([]);
   }, [activeWorkbenchId]);
 
+  // `sendPending` closes over the `activeWorkbenchId` its own render was
+  // called with, which stays fixed for the life of that async call. This
+  // ref tracks the live value so a continuation resolving after the reader
+  // has switched benches can tell its own send is no longer for the
+  // workbench currently on screen (CL-7198).
+  const activeWorkbenchIdRef = useRef(activeWorkbenchId);
+  useEffect(() => {
+    activeWorkbenchIdRef.current = activeWorkbenchId;
+  }, [activeWorkbenchId]);
+
   async function sendPending(
     nonce: string,
     text: string,
@@ -290,7 +300,14 @@ export function useOptimisticSends(args: {
             });
           },
         );
-        if (pendingParentMessageId !== null) {
+        // A continuation that started before the reader switched to a
+        // different workbench must not drag them back into this one's
+        // thread — `useThreadNavigation` already reset the open thread on
+        // that switch; re-opening it here would undo that reset (CL-7198).
+        if (
+          pendingParentMessageId !== null &&
+          activeWorkbenchIdRef.current === activeWorkbenchId
+        ) {
           openThreadById(threadId);
         }
       }
