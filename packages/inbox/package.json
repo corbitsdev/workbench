@@ -14,6 +14,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/error-sink": "workspace:*",
     "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#caa5214a2811a66a6f3dd3b7631b5f53591c8c14",
     "@corbits/notify": "workspace:*",
     "@intx/hub-api": "workspace:*",

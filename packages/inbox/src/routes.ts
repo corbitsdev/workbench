@@ -17,12 +17,18 @@ import {
   type MailboxListCursor,
 } from "@corbits/mailbox";
 
+import { reportError } from "@corbits/error-sink";
 import type { TenantEnv } from "@intx/hub-api";
 import { getLogger } from "@intx/log";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 
+import {
+  itemsEligibleForClearDone,
+  itemsEligibleForMarkAllRead,
+  runBulkOperation,
+} from "./bulk";
+import { cursorScopeMismatch } from "./cursor";
 import { isInboxGroup, type InboxGroup } from "./group";
-import { itemsEligibleForClearDone, itemsEligibleForMarkAllRead } from "./bulk";
 import {
   projectInboxItem,
   projectInboxItemDetail,
@@ -30,6 +36,7 @@ import {
   type InboxItem,
 } from "./project";
 import { WORKBENCH_INBOX_PRIORITIES } from "./vocabulary";
+import { walkAllOpen } from "./walk";
 
 // Page size for bulk product ops (mark-all-read, clear-done, counts). Large
 // enough that a normal inbox finishes in one round-trip; anything past it
@@ -72,9 +79,7 @@ async function listAllOpen(
   scope: { tenantId: string; principalId: string },
   filter?: MailboxFilter,
 ): Promise<InboxItem[]> {
-  const out: InboxItem[] = [];
-  let cursor: MailboxListCursor | undefined;
-  for (;;) {
+  return walkAllOpen((page) => {
     const listOpts = {
       tenantId: scope.tenantId,
       principalId: scope.principalId,
@@ -84,23 +89,16 @@ async function listAllOpen(
       priorities: WORKBENCH_INBOX_PRIORITIES,
     };
     const listOptsWithCursor =
-      cursor !== undefined ? { ...listOpts, cursor } : listOpts;
-    const page = await listUserMailbox(
+      page.cursor !== undefined
+        ? { ...listOpts, cursor: page.cursor }
+        : listOpts;
+    return listUserMailbox(
       db,
       filter !== undefined
         ? { ...listOptsWithCursor, filter }
         : listOptsWithCursor,
     );
-    for (const message of page.items) {
-      out.push(projectInboxItem(message));
-    }
-    if (page.nextCursor === undefined) break;
-    const next = decodeMailboxListCursor(page.nextCursor);
-    if (next === null) break;
-    cursor = next;
-  }
-
-  return out;
+  });
 }
 
 /**
@@ -114,14 +112,35 @@ export function createInboxRoutes(
   const { db, bus } = deps;
   const app = new Hono<TenantEnv>();
 
+  // A failed inbox walk (an undecodable cursor mid-walk, a cursor that
+  // never advances, or a pathologically large inbox — see walk.ts) must be
+  // loud, not a silently truncated count or bulk op. Reported through
+  // @corbits/error-sink and answered as a 500 with the refId a person can
+  // quote back, rather than a falsely-complete 200 (CL-7207).
+  async function listAllOpenOrReport(
+    c: Context<TenantEnv>,
+    tenantId: string,
+    operation: string,
+    scope: { tenantId: string; principalId: string },
+    filter?: MailboxFilter,
+  ): Promise<InboxItem[] | Response> {
+    try {
+      return await listAllOpen(db, scope, filter);
+    } catch (cause) {
+      const refId = reportError(cause, { operation, tenantId });
+      return c.json({ error: "could not list the inbox", refId }, 500);
+    }
+  }
+
   // Static path segments first so `/:id` never captures them.
   app.get("/counts", async (c) => {
     const tenant = c.get("tenant");
     const principal = c.get("principal");
-    const items = await listAllOpen(db, {
+    const items = await listAllOpenOrReport(c, tenant.id, "inbox_counts_walk", {
       tenantId: tenant.id,
       principalId: principal.id,
     });
+    if (items instanceof Response) return items;
     const counts: InboxCounts = {
       action: 0,
       mention: 0,
@@ -140,35 +159,75 @@ export function createInboxRoutes(
     const tenant = c.get("tenant");
     const principal = c.get("principal");
     const scope = { tenantId: tenant.id, principalId: principal.id };
-    const items = await listAllOpen(db, scope);
-    let marked = 0;
-    for (const item of itemsEligibleForMarkAllRead(items)) {
-      await enrichMailboxMessage(
-        db,
-        { ...scope, id: item.id },
-        { status: "done" },
-      );
-      await markMailboxMessageRead(db, { ...scope, id: item.id });
-      publish(bus, scope, item.id, "mark_read");
-      marked += 1;
-    }
-    return c.json({ marked });
+    const items = await listAllOpenOrReport(
+      c,
+      tenant.id,
+      "inbox_mark_all_read_walk",
+      scope,
+    );
+    if (items instanceof Response) return items;
+    const { succeeded: marked, failed } = await runBulkOperation(
+      itemsEligibleForMarkAllRead(items),
+      async (item) => {
+        // Atomic: a throw between the status flip and the read flip must
+        // never leave a row done-but-unread (CL-7207).
+        await db.transaction(async (tx) => {
+          await enrichMailboxMessage(
+            tx,
+            { ...scope, id: item.id },
+            { status: "done" },
+          );
+          await markMailboxMessageRead(tx, { ...scope, id: item.id });
+        });
+        publish(bus, scope, item.id, "mark_read");
+      },
+      (item, error) =>
+        reportError(error, {
+          operation: "inbox_mark_all_read_item",
+          tenantId: tenant.id,
+          extra: { id: item.id },
+        }),
+    );
+    // A 200 must mean "every eligible item was marked" — a partial result
+    // is reported as 207 so a caller that only checks the status code (not
+    // the body) can't mistake "half the inbox" for "success" (CL-7207).
+    return c.json(
+      { marked, failed, complete: failed === 0 },
+      failed === 0 ? 200 : 207,
+    );
   });
 
   app.post("/clear-done", async (c) => {
     const tenant = c.get("tenant");
     const principal = c.get("principal");
     const scope = { tenantId: tenant.id, principalId: principal.id };
-    const items = await listAllOpen(db, scope);
-    let cleared = 0;
-    for (const item of itemsEligibleForClearDone(items)) {
-      const ok = await trashMailboxMessage(db, { ...scope, id: item.id });
-      if (ok) {
+    const items = await listAllOpenOrReport(
+      c,
+      tenant.id,
+      "inbox_clear_done_walk",
+      scope,
+    );
+    if (items instanceof Response) return items;
+    const { succeeded: cleared, failed } = await runBulkOperation(
+      itemsEligibleForClearDone(items),
+      async (item) => {
+        const ok = await trashMailboxMessage(db, { ...scope, id: item.id });
+        if (!ok) throw new Error(`message ${item.id} not found to trash`);
         publish(bus, scope, item.id, "trash");
-        cleared += 1;
-      }
-    }
-    return c.json({ cleared });
+      },
+      (item, error) =>
+        reportError(error, {
+          operation: "inbox_clear_done_item",
+          tenantId: tenant.id,
+          extra: { id: item.id },
+        }),
+    );
+    // Same partial-vs-complete signal as mark-all-read: 207 whenever any
+    // item failed, so a status-code-only caller can't read it as success.
+    return c.json(
+      { cleared, failed, complete: failed === 0 },
+      failed === 0 ? 200 : 207,
+    );
   });
 
   app.get("/", async (c) => {
@@ -212,6 +271,22 @@ export function createInboxRoutes(
       if (decoded === null) {
         return c.json({ error: "malformed cursor" }, 400);
       }
+      // A cursor is only meaningful against the exact view/sort/filter it
+      // was minted under (CL-7206) — paging `?group=action` then replaying
+      // that cursor under `?group=mention` must be rejected, not silently
+      // seek into the wrong result set. Same error vocabulary as
+      // `@corbits/mailbox`'s own `mount.ts` cross-check.
+      const mismatch = cursorScopeMismatch(decoded, {
+        view: "all",
+        sort: "date",
+        filter,
+      });
+      if (mismatch !== null) {
+        return c.json(
+          { error: `cursor does not match inbox ${mismatch}` },
+          400,
+        );
+      }
       cursor = decoded;
     }
 
@@ -219,6 +294,7 @@ export function createInboxRoutes(
       tenantId: tenant.id,
       principalId: principal.id,
       view: "all" as const,
+      sort: "date" as const,
       limit,
       priorities: WORKBENCH_INBOX_PRIORITIES,
     };
