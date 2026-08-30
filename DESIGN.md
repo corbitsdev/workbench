@@ -260,10 +260,10 @@ phrase destructive.
 **Disclosure.** A caret exists only when there is human-readable detail.
 A chip with nothing to disclose offers no control at all. Expanded detail
 is quiet inset prose under that chip. Raw JSON, JSON strings, and
-model-facing instructions (e.g. ask_user's "do not repeat this in prose")
-never reach a reader — parse JSON into a count ("3 results.") or omit the
-disclosure. The only exception is code the user actually asked for, which
-is prose, not machinery.
+model-facing instructions (e.g. request_connection's "keep helping in
+the meantime") never reach a reader — parse JSON into a count
+("3 results.") or omit the disclosure. The only exception is code the
+user actually asked for, which is prose, not machinery.
 
 **Chrome.** Hit area ≥40px via an invisible `::before`. Radius
 `--radius`. Motion via `--duration-standard` / `--ease-out`. Scale-on-press

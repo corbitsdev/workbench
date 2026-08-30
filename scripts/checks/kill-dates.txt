@@ -14,17 +14,17 @@
 # drift: editing a vendored tree means updating this hash and the
 # package's VENDORED-FROM delta line in the same change.
 apps/sidecar | sawyer | 2026-10-26
-vendor/intx/agent | sawyer | 2026-10-26 | d0d56d9f452b78f4b541ad8f4e89f975e8069446bb98f2c8097b90de4b020243
+vendor/intx/agent | sawyer | 2026-10-26 | 2264716cfaa126ef3205f4f9887f3a580072ab8552d6bbc351bd8ca1638bfd74
 vendor/intx/db | sawyer | 2026-10-26 | 0a4cdb9a8a6ff19d5d4713cbc4f5cc9257aad839b1fa393b2026e6d5afd828b9
 vendor/intx/harness | sawyer | 2026-10-26 | 867f2b0eb4a360c68bf552d5b95a9530411e2c1a2d046d1f5ce718d4a9be36a8
 vendor/intx/hub-agent | sawyer | 2026-10-26 | 30d5050511f22bc73b3c5d34728dfdf5b791de203452b83d4333a1dc762afceb
 vendor/intx/hub-api | sawyer | 2026-10-26 | 42ee33e027559b236065382cb94f393bbcfee69625615894f82be778f34f7aa1
-vendor/intx/hub-sessions | sawyer | 2026-10-26 | 53addc3090ad9f54bc4bac8fb50ad8d567ccf46f30bb5403d447351cb16b4fb6
-vendor/intx/inference | sawyer | 2026-10-26 | 77fec29b078e8d03e686747c70e6b62ac1fd1434db0fb2c1e12e84b6dc71465f
+vendor/intx/hub-sessions | sawyer | 2026-10-26 | 19fcc2c0bf6af1dd9a1b267513bea777968c454a323cc402fc5ec1cca8097523
+vendor/intx/inference | sawyer | 2026-10-26 | f32792856f555b0fed40ce75badde7630a45a6452ad20cfc61058192f8376f11
 vendor/intx/mail-memory | sawyer | 2026-10-26 | 9f3601a7fb22e2d1c63daa976f3afccbd79af2187c155a0080c0d60c82450b92
 vendor/intx/mailbox | sawyer | 2026-10-26 | d36d7ffcc32018571276e4922a8c2714b7ee0bb5deb80b01e73859245975d4c6
 vendor/intx/mime | sawyer | 2026-10-26 | d02e5f8f1429eac7c27d3a37eec31111f8a1053c91fbfae77ac58a0d63c823ed
-vendor/intx/types | sawyer | 2026-10-26 | ec1de14b859007b4db137da1533d4ce79d11024ad69c8b36938017319d6d8e86
+vendor/intx/types | sawyer | 2026-10-26 | beef009a180cb7747c65014ed38c732a124851c81f60029ccd0c33075896b93f
 vendor/intx/workflow | sawyer | 2026-10-26 | 4b51b9bd6a124cfaa0c916e2b26c04ac9170618bb092f0c8e1c312263fc84fdf
 vendor/intx/workflow-deploy | sawyer | 2026-10-26 | 960a2ae408223649fe8be0e3b9d63f2b0cca25259bc0ae06761bca521bb738e5
 vendor/intx/workflow-host | sawyer | 2026-10-26 | aff0342a526387ea9ccb52827fd4f13d9dd52645b37795362ce9b2fd912a5da5
