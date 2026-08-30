@@ -19,6 +19,7 @@ import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { createMemoryState } from "@chat-adapter/state-memory";
 import type { AppEnv } from "@intx/hub-api";
+import { reportError } from "@corbits/error-sink";
 
 import {
   launchAndJoinAgent,
@@ -32,6 +33,7 @@ import {
   type RoomMessageStore,
 } from "@corbits/chat";
 import type { SessionForUser } from "@workbench/onboarding";
+import { slackChannelMintSession } from "./slack-channel-mint-session";
 import {
   createAutoProvisionPrincipalResolver,
   createDrizzleSlackChannelBindingStore,
@@ -61,7 +63,10 @@ export type MountWorkbenchSlackTagDeps = {
   >;
   readonly chatPlatform: ChatPlatform;
   readonly roomMessages: RoomMessageStore;
-  readonly chatTenancy: Pick<WorkbenchTenancyStore, "createWorkbenchTenant">;
+  readonly chatTenancy: Pick<
+    WorkbenchTenancyStore,
+    "createWorkbenchTenant" | "getWorkbenchOwnerUserId"
+  >;
   readonly sessionFor: SessionForUser;
   readonly workbenchSubscribers: WorkbenchSubscriberRegistry;
   /** The same one-in-flight-turn-per-workbench queue `createChatRoutes`
@@ -143,15 +148,12 @@ export async function mountWorkbenchSlackTag(
         );
       }
 
-      const cookies = await deps.sessionFor({
-        userId: creatorPrincipal.refId,
+      const { ownerUserId, cookies } = await slackChannelMintSession({
         tenantId: tenantRow.id,
+        getWorkbenchOwnerUserId: (id) =>
+          deps.chatTenancy.getWorkbenchOwnerUserId(id),
+        sessionFor: deps.sessionFor,
       });
-      if (cookies === undefined) {
-        throw new Error(
-          `could not mint a session for Slack principal "${input.creatorPrincipalId}" (${creatorPrincipal.refId})`,
-        );
-      }
 
       const channelId = generateId("workflowRun");
 
@@ -159,7 +161,7 @@ export async function mountWorkbenchSlackTag(
         parentTenantId: tenantRow.id,
         workbenchId: channelId,
         name: input.name,
-        creatorUserId: creatorPrincipal.refId,
+        creatorUserId: ownerUserId,
         cookies,
       });
 
