@@ -26,6 +26,7 @@ import {
   paginatedSchema,
   ProviderResponse,
 } from "@intx/types";
+import { reportError } from "@corbits/error-sink";
 import {
   inferenceCredentialName,
   OLLAMA_PLACEHOLDER_SECRET,
@@ -327,7 +328,17 @@ export async function plantEnvProviderCredentials(
           }),
         );
       } catch (cause) {
-        const message = cause instanceof Error ? cause.message : String(cause);
+        reportError(cause, {
+          operation: "env_credential_plant_backfill_catalog",
+          tenantId: args.tenantId,
+          extra: { provider },
+        });
+        // Never the raw cause detail (this module handles a live API
+        // key, CL-7234) — sanitizeProviderMessage is the same redaction
+        // the probe-failure path below already applies.
+        const message = sanitizeProviderMessage(
+          cause instanceof Error ? cause.message : String(cause),
+        );
         args.log(
           `env credential plant: ${provider} failed to backfill catalog: ${message}`,
         );
@@ -357,7 +368,16 @@ export async function plantEnvProviderCredentials(
     try {
       await runSeedCatalog(catalogSeedArgs(provider, { apiKey }));
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
+      reportError(cause, {
+        operation: "env_credential_plant",
+        tenantId: args.tenantId,
+        extra: { provider },
+      });
+      // Never the raw cause detail — this catch runs right after a live
+      // API key was used to seed the catalog (CL-7234).
+      const message = sanitizeProviderMessage(
+        cause instanceof Error ? cause.message : String(cause),
+      );
       args.log(`env credential plant: ${provider} failed to plant: ${message}`);
       outcomes.push({ provider, status: "failed", message });
       continue;

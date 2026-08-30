@@ -25,6 +25,7 @@ import { Hono } from "hono";
 import { type } from "arktype";
 import type { AccessPolicyStore } from "@workbench/access-policy";
 import { generateRefId, makeErrorEnvelope } from "@workbench/hub-client";
+import { reportError } from "@corbits/error-sink";
 
 import {
   personalTenantSlug,
@@ -72,16 +73,30 @@ function assertNonEmpty<T>(arr: T[]): asserts arr is [T, ...T[]] {
 function reportOnboardingError(
   logError: (line: string) => void,
   args: {
+    /** The @corbits/error-sink operation name for this call site — one
+     * per route action, snake_case, never the failure code itself
+     * (CL-7234): a `ProvisionError`'s own `code` is an unbounded
+     * per-failure taxonomy, and using it as `operation` would fragment
+     * "provisioning is broken" across N sink operations instead of one. */
+    operation: string;
     userAction: string;
     code: string;
     userMessage: string;
     cause: unknown;
+    tenantId?: string;
+    extra?: Record<string, unknown>;
   },
 ): ReturnType<typeof makeErrorEnvelope> {
   const refId = generateRefId();
   const detail =
     args.cause instanceof Error ? args.cause.message : String(args.cause);
   logError(`[${refId}] ${args.userAction} failed (${args.code}): ${detail}`);
+  reportError(args.cause, {
+    operation: args.operation,
+    refId,
+    ...(args.tenantId !== undefined ? { tenantId: args.tenantId } : {}),
+    ...(args.extra !== undefined ? { extra: args.extra } : {}),
+  });
   return makeErrorEnvelope({
     code: args.code,
     userMessage: args.userMessage,
@@ -433,10 +448,12 @@ export function createOnboardingRoutes(
             ? "Sign-ups aren't open for this account yet. Contact your workspace admin for access."
             : "Setting up your workbench hit a snag — we're on it. Try again in a moment.";
         const envelope = reportOnboardingError(deps.logError ?? deps.log, {
+          operation: "onboarding_provision",
           userAction: `first-login provisioning for user ${user.id}`,
           code: cause.code,
           userMessage,
           cause,
+          extra: { userId: user.id, code: cause.code },
         });
         return c.json(
           {
@@ -449,11 +466,13 @@ export function createOnboardingRoutes(
       // been momentarily unavailable, and retrying is safe because
       // provisioning is idempotent.
       const envelope = reportOnboardingError(deps.logError ?? deps.log, {
+        operation: "onboarding_provision",
         userAction: `first-login provisioning for user ${user.id}`,
         code: "provisioning_failed",
         userMessage:
           "Setting up your workbench hit a snag — we're on it. Try again in a moment.",
         cause,
+        extra: { userId: user.id },
       });
       return c.json(
         { error: { ...envelope.error, kind: "transient" as const } },
@@ -736,6 +755,9 @@ export function createOnboardingRoutes(
       pushWorkflow: deps.pushWorkflow,
       log: deps.log,
     };
+    // Known once `runTestAndPersistCredential` resolves; a failure
+    // before that point (the credential itself, say) has no tenant yet.
+    let tenantId: string | undefined;
     try {
       // The fast half, and only the fast half (CL-6457): persist the
       // credential, seed its catalog, answer. Deploying this bench's
@@ -776,6 +798,7 @@ export function createOnboardingRoutes(
       // follow. The credential is proven-durable here whether or not the
       // agents have finished deploying.
       deps.providerHealth?.clear(result.tenantId, parsed.provider);
+      tenantId = result.tenantId;
 
       const status = await provisioningStatus(cookies, result);
       if (status.kind === "ready") {
@@ -809,11 +832,14 @@ export function createOnboardingRoutes(
       // disk (CL-6360). The raw detail is logged behind a refId; the
       // client only ever sees a fixed consumer sentence plus that refId.
       const envelope = reportOnboardingError(deps.logError ?? deps.log, {
+        operation: "onboarding_complete",
         userAction: `credential setup for user ${user.id}`,
         code: "credential_setup_failed",
         userMessage:
           "Your key was added, but finishing your workbench setup hit a snag — we're on it. Try again in a moment.",
         cause,
+        ...(tenantId !== undefined ? { tenantId } : {}),
+        extra: { userId: user.id },
       });
       return c.json({ error: envelope.error }, 500);
     }
@@ -843,6 +869,9 @@ export function createOnboardingRoutes(
     }
 
     const cookies = cookiesFromHeader(c.req.header("cookie"));
+    // Known once the tenant lookup below resolves; a lookup failure
+    // itself has no tenant yet.
+    let tenantId: string | undefined;
     try {
       const expectedSlug = personalTenantSlug(user.email, user.id);
       const tenant = await findPersonalTenant(api, cookies, expectedSlug);
@@ -856,6 +885,7 @@ export function createOnboardingRoutes(
           409,
         );
       }
+      tenantId = tenant.tenantId;
 
       const status = await provisioningStatus(cookies, tenant);
       if (status.kind === "ready") {
@@ -879,11 +909,14 @@ export function createOnboardingRoutes(
       return c.json(status, 200);
     } catch (cause) {
       const envelope = reportOnboardingError(deps.logError ?? deps.log, {
+        operation: "onboarding_complete_setup",
         userAction: `complete-setup for user ${user.id}`,
         code: "complete_setup_failed",
         userMessage:
           "Finishing your workbench setup hit a snag — we're on it. Try again in a moment.",
         cause,
+        ...(tenantId !== undefined ? { tenantId } : {}),
+        extra: { userId: user.id },
       });
       return c.json({ error: envelope.error }, 500);
     }
@@ -906,6 +939,9 @@ export function createOnboardingRoutes(
     }
 
     const cookies = cookiesFromHeader(c.req.header("cookie"));
+    // Known once the tenant lookup below resolves; a lookup failure
+    // itself has no tenant yet.
+    let tenantId: string | undefined;
     try {
       const expectedSlug = personalTenantSlug(user.email, user.id);
       const tenant = await findPersonalTenant(api, cookies, expectedSlug);
@@ -919,15 +955,19 @@ export function createOnboardingRoutes(
           409,
         );
       }
+      tenantId = tenant.tenantId;
 
       return c.json(await provisioningStatus(cookies, tenant), 200);
     } catch (cause) {
       const envelope = reportOnboardingError(deps.logError ?? deps.log, {
+        operation: "onboarding_provisioning_status",
         userAction: `provisioning status for user ${user.id}`,
         code: "provisioning_status_failed",
         userMessage:
           "Checking on your agents hit a snag — we're on it. Try again in a moment.",
         cause,
+        ...(tenantId !== undefined ? { tenantId } : {}),
+        extra: { userId: user.id },
       });
       return c.json({ error: envelope.error }, 500);
     }
