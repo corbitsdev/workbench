@@ -71,6 +71,21 @@ describe("createExpiringMap", () => {
     expect(map.get("a")).toBe(2);
   });
 
+  test("size never counts an expired entry, even if nothing has read or swept it yet", () => {
+    const clock = fakeClock();
+    const map = createExpiringMap<string, number>({
+      ttlMs: 1_000,
+      now: clock.now,
+    });
+
+    map.set("a", 1);
+    clock.advance(5_000);
+
+    // Neither get() nor a further set() has touched "a" since it
+    // expired — size on its own must still report it as gone.
+    expect(map.size).toBe(0);
+  });
+
   test("delete removes a key outright", () => {
     const map = createExpiringMap<string, number>({ ttlMs: 1_000 });
     map.set("a", 1);
