@@ -555,7 +555,10 @@ async function main(): Promise<void> {
           git(root, ["diff", "--unified=0", `${baseRef}...HEAD`]) ?? "",
         );
 
-  const report = auditReportError(files, { baseline, changedLines });
+  const report = auditReportError(files, {
+    baseline,
+    ...(changedLines !== undefined ? { changedLines } : {}),
+  });
   if (baseRef === undefined) {
     report.notes.push(
       "no base ref (no origin/main, no CHECK_BASE_REF); skipping the " +
