@@ -16,7 +16,6 @@ import {
   createWorkbench,
   fakePlatform,
   mountAs,
-  settleFanout,
   TENANT,
   timelineEvents,
   timelineOf,
