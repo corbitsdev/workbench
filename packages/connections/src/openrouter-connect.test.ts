@@ -1,8 +1,8 @@
 // Unit tests for the OpenRouter connector's code-for-key exchange,
 // driven entirely against a stubbed fetch -- no OpenRouter credentials
 // involved.
-import { expect, test } from "bun:test";
-
+import { expect, spyOn, test } from "bun:test";
+import * as errorSink from "@corbits/error-sink";
 import {
   exchangeCodeForKey,
   OPENROUTER_KEY_EXCHANGE_URL,
@@ -34,6 +34,7 @@ test("exchanges the code and verifier for the user-scoped API key", async () => 
 });
 
 test("a transport failure is reported honestly, never as a key", async () => {
+  const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
   const fetchImpl: ExchangeFetch = async () => {
     throw new Error("getaddrinfo ENOTFOUND");
   };
@@ -47,7 +48,14 @@ test("a transport failure is reported honestly, never as a key", async () => {
   expect(result.ok).toBe(false);
   if (!result.ok) {
     expect(result.message).toContain("Could not reach OpenRouter");
+    expect(result.message).toContain("getaddrinfo ENOTFOUND");
   }
+  expect(report).toHaveBeenCalledTimes(1);
+  expect(report.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+  expect(report.mock.calls[0]?.[1]).toMatchObject({
+    operation: "exchange_code_for_openrouter_key",
+  });
+  report.mockRestore();
 });
 
 // CL-7235: an OpenRouter key endpoint that never answers used to leave

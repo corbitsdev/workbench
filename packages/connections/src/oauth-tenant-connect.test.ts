@@ -3,7 +3,8 @@
 // authorize -> callback -> credential-stored round trip against a fake
 // provider (mirroring `oauth-routes.test.ts`'s `fakeDescriptor`), and a
 // mismatched-state callback that must never reach persistence at all.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import * as errorSink from "@corbits/error-sink";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import type { TenantEnv } from "@intx/hub-api";
@@ -161,6 +162,40 @@ describe("createTenantConnectCredential, mounted through createOAuthConnectRoute
         secret: "key-for-abc123",
       },
     ]);
+  });
+
+  test("a persist failure is reported and comes back as invalid-credential", async () => {
+    const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
+    const connectCredential = createTenantConnectCredential({
+      hubUrl: "https://bench.example.com",
+      log: () => undefined,
+      registry: { widget: WIDGET_CONNECTOR },
+      ensureProviderFn: async () => {
+        throw new Error("provider store unavailable");
+      },
+    });
+
+    const result = await connectCredential({
+      c: {
+        get: (key: string) =>
+          key === "tenant" ? TENANT : key === "principal" ? PRINCIPAL : null,
+      } as never,
+      connectorId: "widget",
+      userId: "user_1",
+      userEmail: "user_1@example.com",
+      cookies: [],
+      apiKey: "key-for-abc123",
+    });
+
+    expect(result.kind).toBe("invalid-credential");
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+    expect(report.mock.calls[0]?.[1]).toMatchObject({
+      operation: "persist_tenant_oauth_connection",
+      tenantId: TENANT.id,
+      extra: { connectorId: "widget" },
+    });
+    report.mockRestore();
   });
 
   test("a callback with no matching state never persists a credential", async () => {

@@ -1,7 +1,8 @@
 // Unit tests for the Hugging Face connector's code-for-token exchange,
 // driven entirely against a stubbed fetch -- no Hugging Face credentials
 // involved.
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
+import * as errorSink from "@corbits/error-sink";
 
 import {
   exchangeCodeForToken,
@@ -40,6 +41,7 @@ test("exchanges the code and verifier for an access token and expiry", async () 
 });
 
 test("a transport failure is reported honestly, never as a token", async () => {
+  const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
   const fetchImpl: ExchangeFetch = async () => {
     throw new Error("getaddrinfo ENOTFOUND");
   };
@@ -55,7 +57,14 @@ test("a transport failure is reported honestly, never as a token", async () => {
   expect(result.ok).toBe(false);
   if (!result.ok) {
     expect(result.message).toContain("Could not reach Hugging Face");
+    expect(result.message).toContain("getaddrinfo ENOTFOUND");
   }
+  expect(report).toHaveBeenCalledTimes(1);
+  expect(report.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+  expect(report.mock.calls[0]?.[1]).toMatchObject({
+    operation: "exchange_code_for_huggingface_token",
+  });
+  report.mockRestore();
 });
 
 // CL-7235: a Hugging Face token endpoint that never answers used to
