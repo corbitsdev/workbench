@@ -14,6 +14,13 @@ export const TextPart = type({
    * (`PrFailedTurnStrip`) instead of a plain bubble. Absent on every
    * other text part. */
   "turnFailed?": "boolean",
+  /** Set only on the cancelled-turn notice `postCancelledNotice`
+   * (`./workbench-service.ts`) posts in the cancelled agent's own voice
+   * (CL-7201) — distinct from `turnFailed`: a user cancelling a turn is
+   * not a failure, and the frontend renders it with its own honest copy
+   * rather than `FailedTurnStrip`'s "didn't reply" framing. Absent on
+   * every other text part. */
+  "turnCancelled?": "boolean",
 });
 export type TextPart = typeof TextPart.infer;
 

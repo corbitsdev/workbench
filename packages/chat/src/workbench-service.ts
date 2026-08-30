@@ -24,6 +24,10 @@ import {
 import type { AgentTurnStore } from "./agent-turns";
 import type { ThreadStore } from "./threads";
 import {
+  TurnCancelledError,
+  type TurnCancelRegistry,
+} from "./turn-cancellation";
+import {
   addParticipant,
   handleFromName,
   removeParticipant,
@@ -1235,6 +1239,18 @@ export type SendWorkbenchMessageDeps = {
    */
   readonly turnQueue: WorkbenchTurnQueue;
   /**
+   * The live abort seam a running turn is reachable through while still
+   * on our own call stack (CL-7201) — see `./turn-cancellation.ts`.
+   * `dispatchTurnBatch` registers one controller per recipient it
+   * dispatches and composes it into each `withTimeout` call so a
+   * cancellation lands exactly like a timeout does, distinguished only
+   * by its `TurnCancelledError` reason. Required, not optional: it is
+   * process-local, in-memory state with no cost to always have — every
+   * composition gets real cancellation propagation, not just the ones
+   * that remember to wire it up.
+   */
+  readonly turnCancellation: TurnCancelRegistry;
+  /**
    * The turn projection (CL-6329). `dispatchTurn` opens a row before it
    * touches the execution plane, so an in-flight turn is visible from
    * its first moment and the child run id its reply will carry is
@@ -1645,6 +1661,7 @@ async function dispatchTurnBatch(
     | "turnDispatchTimeoutMs"
     | "waitUntilFreeTimeoutMs"
     | "agentTurns"
+    | "turnCancellation"
   >,
   tenantId: string,
   workbenchId: string,
@@ -1692,6 +1709,16 @@ async function dispatchTurnBatch(
   // delay every agent mentioned after it.
   await Promise.all(
     recipients.map(async (agentAddress) => {
+      // CL-7201: one controller for this recipient's whole attempt —
+      // spanning both the `waitUntilFree` wait below and the
+      // `dispatchTurn` call after it — so a cancel request lands
+      // wherever this recipient actually is, not just one of the two
+      // phases. Registered before either `withTimeout` call and always
+      // unregistered once this recipient's own attempt settles, win or
+      // lose, so a cancel arriving after the fact never reaches (or
+      // leaks a reference to) a controller nothing is listening on any
+      // more.
+      const cancelController = deps.turnCancellation.register(workbenchId);
       try {
         // CL-6670: wait under its own deadline, separate from the
         // per-hop deadline below. An agent that already has a turn
@@ -1724,6 +1751,7 @@ async function dispatchTurnBatch(
               ),
             waitUntilFreeTimeoutMs,
             waitUntilFreeTimeoutMessage(agentAddress, waitUntilFreeTimeoutMs),
+            cancelController.signal,
           );
         }
         // CL-6644: one deadline around the whole turn, not another
@@ -1764,8 +1792,24 @@ async function dispatchTurnBatch(
             ),
           turnDispatchTimeoutMs,
           turnDispatchTimeoutMessage(agentAddress, turnDispatchTimeoutMs),
+          cancelController.signal,
         );
       } catch (err) {
+        // CL-7201: a deliberate cancellation is not a failure — the
+        // user asked for exactly this. `dispatchTurn`'s own abort-close
+        // handler (if this recipient was still inside its `sendMail`
+        // call) or `cancelWorkbenchTurn`'s sweep (if it wasn't) already
+        // settled the turn row and posted the one honest notice this
+        // gets; reporting it here too would double-post and misfile a
+        // user action as an operational error.
+        if (err instanceof TurnCancelledError) {
+          fanoutLog.info(
+            "Turn dispatch for {agentAddress} on workbench {workbenchId} " +
+              "was cancelled by the user for message(s) {messageIds}",
+            { agentAddress, workbenchId, messageIds },
+          );
+          return;
+        }
         const refId = reportError(err, {
           operation: "chat.dispatchTurn",
           tenantId,
@@ -1792,6 +1836,8 @@ async function dispatchTurnBatch(
           cause: err,
           refId,
         });
+      } finally {
+        deps.turnCancellation.unregister(workbenchId, cancelController);
       }
     }),
   );
@@ -1838,9 +1884,21 @@ export type DispatchTurnInput = {
  * row to attach to — `finishTurn`'s compare-and-set means whichever of
  * the abort close and the late reply's own close reaches the row first
  * is the only one that applies.
+ *
+ * CL-7201: the same abort can also be a deliberate cancellation rather
+ * than a timeout (`signal.reason instanceof TurnCancelledError`) — this
+ * closes the row `cancelled` instead of `failed` in that case, and, only
+ * if this close actually wins `finishTurn`'s compare-and-set (this
+ * recipient's controller was still reachable when the user cancelled),
+ * posts the one cancelled notice the timeline gets for it. Losing that
+ * race means `cancelWorkbenchTurn`'s own sweep already settled the row
+ * and posted the notice instead — exactly one of the two ever does.
  */
 export async function dispatchTurn(
-  deps: Pick<SendWorkbenchMessageDeps, "platform" | "agentTurns">,
+  deps: Pick<
+    SendWorkbenchMessageDeps,
+    "platform" | "agentTurns" | "roomMessages" | "publish"
+  >,
   input: DispatchTurnInput,
   signal?: AbortSignal,
 ): Promise<void> {
@@ -1853,15 +1911,24 @@ export async function dispatchTurn(
 
   const closeAsTimedOut = () => {
     if (turn === undefined) return;
+    const cancelled = signal?.reason instanceof TurnCancelledError;
     deps.agentTurns
       ?.finishTurn({
         tenantId: input.tenantId,
         turnId: turn.id,
-        status: "failed",
+        status: cancelled ? "cancelled" : "failed",
         error:
           signal?.reason instanceof Error
             ? signal.reason.message
             : "turn dispatch timed out",
+      })
+      .then((finished) => {
+        if (finished === undefined || !cancelled) return;
+        return postCancelledNotice(deps, {
+          tenantId: input.tenantId,
+          workbenchId: input.workbenchId,
+          agentAddress: input.agentAddress,
+        });
       })
       .catch((err: unknown) => {
         reportError(err, {
@@ -1987,4 +2054,150 @@ async function postUndeliveredNotice(
       { agentAddress: input.agentAddress, workbenchId: input.workbenchId, err },
     );
   }
+}
+
+const CANCELLED_NOTICE = "This turn was cancelled.";
+
+/**
+ * The timeline's own record of a cancellation (CL-7201) — deliberately
+ * distinct from `postUndeliveredNotice`: a user stopping a turn is not a
+ * failure, and reusing `turnFailed`'s "didn't reply" framing (with its
+ * Retry action) would misrepresent something the user asked for as
+ * something that went wrong on its own. Posted in the cancelled agent's
+ * own voice for the same reason `postUndeliveredNotice` is: the person
+ * reading the room sees who stopped replying and why, without a system
+ * message breaking the conversation's voice. Swallows its own failure
+ * exactly like `postUndeliveredNotice` — if the timeline is unreachable
+ * there is nowhere left to say so.
+ */
+async function postCancelledNotice(
+  deps: Pick<SendWorkbenchMessageDeps, "roomMessages" | "publish">,
+  input: {
+    readonly tenantId: string;
+    readonly workbenchId: string;
+    readonly agentAddress: string;
+  },
+): Promise<void> {
+  try {
+    await postRoomMessage(deps, {
+      tenantId: input.tenantId,
+      workbenchId: input.workbenchId,
+      sender: { name: null, address: input.agentAddress },
+      runId: localPartOf(input.agentAddress),
+      parts: [
+        {
+          kind: "text",
+          text: CANCELLED_NOTICE,
+          turnCancelled: true,
+        },
+      ],
+    });
+  } catch (err) {
+    // report-error-ignore: mirrors postUndeliveredNotice just above —
+    // the timeline being unreachable here is the same pre-existing,
+    // already-tracked class of failure with nowhere left to report to.
+    fanoutLog.error(
+      "Could not post the cancelled-turn notice for {agentAddress} onto " +
+        "workbench {workbenchId}'s timeline: {err}",
+      { agentAddress: input.agentAddress, workbenchId: input.workbenchId, err },
+    );
+  }
+}
+
+export type CancelWorkbenchTurnResult = {
+  /** How many turns were running for this workbench the moment cancel
+   * was asked for, and are now settled `cancelled` — the honest answer
+   * to "what did cancelling stop," per CL-7230's ceiling. Counted by
+   * outcome, not by which of the two mechanisms below actually
+   * performed the write: a turn `dispatchTurn`'s own abort-close
+   * settled a moment before this call's sweep reached it still counts
+   * here as cancelled. A workbench with nothing running returns 0. */
+  readonly cancelledCount: number;
+};
+
+/**
+ * Stops a workbench's in-flight turn(s) (CL-7201) — the cancel route's
+ * own logic, kept here rather than in `routes.ts` so it is testable
+ * without an HTTP round trip.
+ *
+ * Two independent mechanisms, run together, because a turn can be in
+ * either of two places when the user asks to stop it:
+ *
+ * 1. Still reachable on our own call stack — `dispatchTurnBatch`'s
+ *    per-recipient controller (`./turn-cancellation.ts`) is aborted,
+ *    which cuts the `waitUntilFree` wait or the `dispatchTurn` call
+ *    short exactly like a timeout does, synchronously, the moment
+ *    `cancel` below fires. That recipient's own abort-close handler
+ *    settles its row and posts the notice — frequently winning the
+ *    race against this function's own sweep, below, for any turn that
+ *    was still reachable this way.
+ * 2. Already off our call stack entirely — `sendMail` already resolved,
+ *    the agent is generating (or parked on a `message_response` gate
+ *    somewhere in the execution plane this package cannot see into).
+ *    Nothing is registered to abort any more, so the row is found via
+ *    `findRunningTurns` (snapshotted BEFORE `cancel` below, so a row
+ *    path 1 already claimed is still counted) and settled directly.
+ *
+ * Both paths call the same `finishTurn` compare-and-set, so whichever
+ * reaches a given row first is the only one that ever settles or
+ * notifies for it — never both, never neither; the loser's own
+ * `finishTurn` call harmlessly returns `undefined`. CL-7230's known
+ * ceiling applies to path 2 specifically: settling the row is not the
+ * same as stopping the underlying agent process, which this cannot
+ * reach.
+ */
+export async function cancelWorkbenchTurn(
+  deps: Pick<
+    SendWorkbenchMessageDeps,
+    "agentTurns" | "turnCancellation" | "roomMessages" | "publish"
+  >,
+  input: { readonly tenantId: string; readonly workbenchId: string },
+): Promise<CancelWorkbenchTurnResult> {
+  if (deps.agentTurns === undefined) {
+    deps.turnCancellation.cancel(input.workbenchId);
+    return { cancelledCount: 0 };
+  }
+  const agentTurns = deps.agentTurns;
+
+  // Snapshotted before `cancel` fires: path 1's abort-close can (and
+  // often does) win a row's compare-and-set synchronously inside
+  // `cancel` itself, before this sweep's own `finishTurn` call ever
+  // runs — this list is what lets the sweep still count, and settle,
+  // whatever it didn't personally win.
+  const running = await agentTurns.findRunningTurns({
+    tenantId: input.tenantId,
+    workbenchId: input.workbenchId,
+  });
+
+  deps.turnCancellation.cancel(input.workbenchId);
+
+  await Promise.all(
+    running.map(async (turn) => {
+      const finished = await agentTurns.finishTurn({
+        tenantId: input.tenantId,
+        turnId: turn.id,
+        status: "cancelled",
+        error: "Cancelled by user",
+      });
+      // `undefined` means path 1's abort-close already won this row —
+      // it already posted its own notice, so posting a second one here
+      // would double it up.
+      if (finished === undefined) return;
+      await postCancelledNotice(deps, {
+        tenantId: input.tenantId,
+        workbenchId: input.workbenchId,
+        agentAddress: finished.agentAddress,
+      });
+    }),
+  );
+
+  const settled = await Promise.all(
+    running.map((turn) =>
+      agentTurns.getTurn({ tenantId: input.tenantId, turnId: turn.id }),
+    ),
+  );
+  return {
+    cancelledCount: settled.filter((turn) => turn?.status === "cancelled")
+      .length,
+  };
 }
