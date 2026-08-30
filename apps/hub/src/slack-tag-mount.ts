@@ -15,11 +15,9 @@ import { eq } from "drizzle-orm";
 import type { Hono } from "hono";
 import type { DB } from "@intx/db";
 import { principal, tenant } from "@intx/db/schema";
-import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { createMemoryState } from "@chat-adapter/state-memory";
 import type { AppEnv } from "@intx/hub-api";
-import { reportError } from "@corbits/error-sink";
 
 import {
   launchAndJoinAgent,
@@ -33,7 +31,6 @@ import {
   type RoomMessageStore,
 } from "@corbits/chat";
 import type { SessionForUser } from "@workbench/onboarding";
-import { slackChannelMintSession } from "./slack-channel-mint-session";
 import {
   createAutoProvisionPrincipalResolver,
   createDrizzleSlackChannelBindingStore,
@@ -41,6 +38,7 @@ import {
   resolveThreadState,
   applySlackTagMigrations,
 } from "@corbits/slack-tag";
+import { mintSlackChannelWorkbench } from "./slack-channel-mint-session";
 
 const log = getLogger(["hub", "slack-tag"]);
 
@@ -65,7 +63,7 @@ export type MountWorkbenchSlackTagDeps = {
   readonly roomMessages: RoomMessageStore;
   readonly chatTenancy: Pick<
     WorkbenchTenancyStore,
-    "createWorkbenchTenant" | "getWorkbenchOwnerUserId"
+    "createWorkbenchTenant" | "getWorkbenchOwnerUserId" | "addWorkbenchMember"
   >;
   readonly sessionFor: SessionForUser;
   readonly workbenchSubscribers: WorkbenchSubscriberRegistry;
@@ -148,22 +146,20 @@ export async function mountWorkbenchSlackTag(
         );
       }
 
-      const { ownerUserId, cookies } = await slackChannelMintSession({
-        tenantId: tenantRow.id,
-        getWorkbenchOwnerUserId: (id) =>
-          deps.chatTenancy.getWorkbenchOwnerUserId(id),
-        sessionFor: deps.sessionFor,
-      });
-
-      const channelId = generateId("workflowRun");
-
-      const channelTenant = await deps.chatTenancy.createWorkbenchTenant({
-        parentTenantId: tenantRow.id,
-        workbenchId: channelId,
-        name: input.name,
-        creatorUserId: ownerUserId,
-        cookies,
-      });
+      const minted = await mintSlackChannelWorkbench(
+        {
+          tenantId: tenantRow.id,
+          getWorkbenchOwnerUserId: (id) =>
+            deps.chatTenancy.getWorkbenchOwnerUserId(id),
+          sessionFor: deps.sessionFor,
+          chatTenancy: deps.chatTenancy,
+        },
+        {
+          name: input.name,
+          creatorRefId: creatorPrincipal.refId,
+        },
+      );
+      const channelId = minted.channelId;
 
       const preset = presetForKind("chat");
       const settingsRow = await deps.chatStore.createWorkbenchSettings({
@@ -202,7 +198,7 @@ export async function mountWorkbenchSlackTag(
         {
           channelId,
           tenantId: tenantRow.id,
-          channelTenant: channelTenant.tenantId,
+          channelTenant: minted.workbenchTenantId,
         },
       );
       return { channelId };
