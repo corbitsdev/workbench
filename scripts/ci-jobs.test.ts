@@ -84,8 +84,8 @@ test("setup-workbench caches bun install and node_modules on the lockfile", asyn
   );
 
   expect(action).toContain("using: composite");
-  expect(action).toContain("fetch-depth:");
-  expect(action).toContain('default: "1"');
+  expect(action).not.toContain("actions/checkout");
+  expect(action).not.toContain("fetch-depth:");
   expect(action).toContain(
     "key: bun-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version') }}",
   );

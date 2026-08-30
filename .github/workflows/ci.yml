@@ -37,9 +37,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-workbench
         with:
           fetch-depth: 0
+      - uses: ./.github/actions/setup-workbench
       - run: bun run typecheck
         env:
           WORKBENCH_CHECK_SINCE: ${{ github.event.pull_request.base.sha }}
@@ -48,9 +48,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-workbench
         with:
           fetch-depth: 0
+      - uses: ./.github/actions/setup-workbench
       - run: bun run build
       - run: bun run test
         env:
@@ -60,9 +60,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-workbench
         with:
           fetch-depth: 0
+      - uses: ./.github/actions/setup-workbench
       - name: Structural check self-tests
         run: bun test scripts/checks/test
       - run: bun run check:deletion

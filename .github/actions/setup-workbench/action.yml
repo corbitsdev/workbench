@@ -1,16 +1,8 @@
 name: Setup Workbench
-description: Checkout, install Bun, restore caches, and bun install
-inputs:
-  fetch-depth:
-    description: Git fetch depth. Pass 0 for a full clone when merge-base is needed.
-    required: false
-    default: "1"
+description: Install Bun, restore caches, and bun install
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: ${{ inputs.fetch-depth }}
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version-file: .bun-version
