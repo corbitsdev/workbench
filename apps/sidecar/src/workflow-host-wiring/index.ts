@@ -58,6 +58,7 @@ import {
   isWorkflowDeploymentRestoreQuarantined,
   markWorkflowDeploymentRecordParked,
   partitionScannedDeployments,
+  readWorkflowDeploymentRecord,
   recordWorkflowDeploymentRestoreFailure,
   scanWorkflowDeploymentRecords,
   writeWorkflowDeploymentRecord,
@@ -160,33 +161,69 @@ export const RESTORE_CONCURRENCY = 8;
  * transient failure: counted on the record's `restoreFailure` counter,
  * logged, and skipped, so the boot moves on and the record gets another
  * attempt next boot (or quarantines after `RESTORE_QUARANTINE_THRESHOLD`
- * consecutive permanent failures).
+ * consecutive permanent failures). Overridable per router
+ * (`deps.restoreAttemptTimeoutMs`) so a test can exercise the timeout path
+ * in milliseconds instead of waiting out the real ceiling.
  */
 export const RESTORE_ATTEMPT_TIMEOUT_MS = 30_000;
 
+/**
+ * Bounds a boot-restore attempt to `timeoutMs` -- so `restoreWorkflowDeployments`'s
+ * bounded worker pool frees this slot and moves on to the next record rather
+ * than waiting on a wedged restore forever -- WITHOUT quietly abandoning the
+ * restore itself (CL-7215). `work` receives an `AbortSignal` that fires the
+ * instant the deadline wins, so a restore attempt that has not yet started
+ * its closure fetch or its spawn can cancel itself for real rather than
+ * running either to completion unobserved. Neither the closure fetch
+ * (`@intx/tool-packaging`'s `applyAtomic`) nor the workflow-process spawn
+ * (`@intx/workflow-host`'s `Supervisor.spawn`) accept a signal of their own,
+ * so a restore already past both of `restoreDeploymentFromRecord`'s
+ * checkpoints when the deadline fires keeps running -- but it corrects its
+ * own durable record once it learns the true outcome instead of leaving a
+ * live deployment recorded as a boot failure; see the `signal.aborted`
+ * check around `spawnWorkflowDeployment` in `restoreDeploymentFromRecord`.
+ */
 function withRestoreTimeout<T>(
-  promise: Promise<T>,
+  work: (signal: AbortSignal) => Promise<T>,
   deploymentId: string,
+  timeoutMs: number,
 ): Promise<T> {
+  const controller = new AbortController();
   return new Promise((resolve, reject) => {
+    const message = `restore of ${deploymentId} exceeded ${timeoutMs}ms`;
     const timer = setTimeout(() => {
-      reject(
-        new Error(
-          `restore of ${deploymentId} exceeded ${RESTORE_ATTEMPT_TIMEOUT_MS}ms`,
-        ),
-      );
-    }, RESTORE_ATTEMPT_TIMEOUT_MS);
-    promise.then(
+      controller.abort(new Error(message));
+      reject(new Error(message));
+    }, timeoutMs);
+    work(controller.signal).then(
       (value) => {
         clearTimeout(timer);
         resolve(value);
       },
-      (error) => {
+      (error: unknown) => {
         clearTimeout(timer);
         reject(error);
       },
     );
   });
+}
+
+/**
+ * Cooperative cancellation checkpoint for `restoreDeploymentFromRecord`
+ * (CL-7215): called immediately before starting a phase of work that is
+ * still avoidable -- the closure fetch, or the spawn itself -- so a restore
+ * whose caller has already timed out stops advancing instead of spending
+ * that work on an attempt nobody is waiting on anymore.
+ */
+function throwIfRestoreAborted(
+  signal: AbortSignal,
+  deploymentId: string,
+): void {
+  if (signal.aborted) {
+    throw new Error(
+      `restore of ${deploymentId} was cancelled after its boot-restore attempt timed out`,
+    );
+  }
 }
 
 /**
@@ -542,6 +579,14 @@ export function createSidecarDeployRouter(deps: {
    */
   readyTimeoutMs?: number;
   /**
+   * Ceiling (ms) on a single boot-time `restoreDeploymentFromRecord`
+   * attempt; see `RESTORE_ATTEMPT_TIMEOUT_MS`'s doc comment for what the
+   * bound protects. Defaults to `RESTORE_ATTEMPT_TIMEOUT_MS`; overridable
+   * so a test can exercise the timeout-and-late-settle path in
+   * milliseconds instead of the real 30s ceiling.
+   */
+  restoreAttemptTimeoutMs?: number;
+  /**
    * Deployment-record writer, injectable so a test can block or fail the
    * persist at a controlled point -- the natural seam for exercising a
    * recycle that interleaves the source-rotation persist window. Defaults
@@ -589,6 +634,8 @@ export function createSidecarDeployRouter(deps: {
     deps.writeWorkflowDeploymentRecord ?? writeWorkflowDeploymentRecord;
   const applyClosure =
     deps.materializeDeploymentClosure ?? materializeDeploymentClosure;
+  const restoreAttemptTimeoutMs =
+    deps.restoreAttemptTimeoutMs ?? RESTORE_ATTEMPT_TIMEOUT_MS;
   const multistepSpawner =
     deps.multistepSubprocessSpawner ?? defaultSubprocessSpawner;
   const multistepDeriveStepAddress: DeriveStepAddress =
@@ -602,6 +649,37 @@ export function createSidecarDeployRouter(deps: {
   // map to call `supervisor.shutdown()` so the child's lifetime ends
   // with the deployment.
   const activeSupervisors = new Map<string, SidecarWorkflowSupervisor>();
+
+  // CL-7215: per-deployment FIFO serialization for the boot-restore
+  // failure record. Two independent writers touch the same on-disk
+  // `deployment.json` around a timed-out restore -- the boot loop's own
+  // catch (`recordWorkflowDeploymentRestoreFailure`) and, if the
+  // abandoned restore later finishes anyway, `restoreDeploymentFromRecord`'s
+  // late-settle correction (`clearWorkflowDeploymentRestoreFailure`) -- and
+  // without serialization a correction's disk READ can land before the
+  // catch's disk WRITE, observe nothing to clear, and no-op, leaving the
+  // catch's later write to permanently mismark a live deployment as
+  // failed. Queuing both through this lock, keyed by deployment id, makes
+  // whichever runs second observe the first's completed write; combined
+  // with the catch consulting `activeSupervisors` (see below) while
+  // holding the lock, the final on-disk state is correct regardless of
+  // which side actually finishes first.
+  const deploymentRecordLocks = new Map<string, Promise<unknown>>();
+  function withDeploymentRecordLock<T>(
+    deploymentId: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const prior = deploymentRecordLocks.get(deploymentId) ?? Promise.resolve();
+    const settled = prior.then(fn, fn);
+    deploymentRecordLocks.set(
+      deploymentId,
+      settled.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return settled;
+  }
 
   // Synchronous single-flight guard for the deploy path. The real supervisor
   // does not exist until inside `spawnWorkflowDeployment`, so `deployMultiStep`
@@ -1585,6 +1663,7 @@ export function createSidecarDeployRouter(deps: {
     dataDir: string,
     deploymentId: string,
     record: WorkflowDeploymentRecord,
+    signal: AbortSignal,
   ): Promise<"restored" | "deferred-to-wake" | "pruned"> {
     // Integrity: the stored address must re-derive to its own directory
     // name. A mismatch means a corrupt or misplaced record -- permanent,
@@ -1621,6 +1700,11 @@ export function createSidecarDeployRouter(deps: {
     if (Object.keys(record.sources).length === 1) {
       return "deferred-to-wake";
     }
+
+    // CL-7215: the closure fetch below is real, avoidable work -- bail
+    // before starting it rather than spending it on an attempt the caller
+    // has already timed out and recorded as failed.
+    throwIfRestoreAborted(signal, deploymentId);
 
     // Reconstruct this deployment's runnable definition: re-materialize the
     // pinned closure and evaluate the pinned code, then project it to the
@@ -1746,7 +1830,54 @@ export function createSidecarDeployRouter(deps: {
       slugClaims.get(deploymentId) !== record.agentAddress;
     claimSlug(deploymentId, record.agentAddress);
     try {
+      // CL-7215: checked INSIDE this try, after the slug is claimed, so a
+      // cancellation here unwinds through the same catch below that
+      // releases it -- an abort must never leak a claimed slug.
+      // `spawnWorkflowDeployment` itself has no cancellation point (no
+      // signal reaches `@intx/workflow-host`'s `Supervisor.spawn`), so this
+      // is the last point this restore can still avoid starting it.
+      throwIfRestoreAborted(signal, deploymentId);
       await spawnWorkflowDeployment(spec);
+      if (signal.aborted) {
+        // The caller's own timeout already fired -- and its catch may
+        // already have recorded this attempt as a boot failure -- but
+        // `spawnWorkflowDeployment` just registered a live supervisor for
+        // this address regardless (CL-7215). Correct the durable record so
+        // it stops claiming a genuinely live deployment failed to restore.
+        // Serialized through `withDeploymentRecordLock` against that same
+        // catch: without it, this read could land BEFORE the catch's write
+        // does, observe nothing to clear, and no-op -- leaving the catch's
+        // write to permanently mismark a live deployment once it lands
+        // afterward. The lock guarantees whichever of the two runs second
+        // observes the first's completed write.
+        try {
+          const corrected = await withDeploymentRecordLock(
+            deploymentId,
+            async () => {
+              const onDisk = await readWorkflowDeploymentRecord(
+                dataDir,
+                deploymentId,
+              );
+              if (onDisk?.restoreFailure === undefined) return false;
+              await clearWorkflowDeploymentRestoreFailure(
+                dataDir,
+                deploymentId,
+                onDisk,
+              );
+              return true;
+            },
+          );
+          if (corrected) {
+            logger.warn`Workflow deployment ${record.agentAddress} finished restoring after its boot-restore attempt had already timed out; corrected its record so it no longer claims the deployment failed to restore`;
+          }
+        } catch (correctionError) {
+          reportError(correctionError, {
+            operation:
+              "workflow-host-wiring.restoreDeploymentFromRecord.lateRestoreCorrection",
+            agentId: record.agentAddress,
+          });
+        }
+      }
       logger.info`Restored workflow deployment for ${record.agentAddress}`;
       return "restored";
     } catch (cause) {
@@ -1942,8 +2073,15 @@ export function createSidecarDeployRouter(deps: {
           }
           try {
             const outcome = await withRestoreTimeout(
-              restoreDeploymentFromRecord(dataDir, deploymentId, record),
+              (signal) =>
+                restoreDeploymentFromRecord(
+                  dataDir,
+                  deploymentId,
+                  record,
+                  signal,
+                ),
               deploymentId,
+              restoreAttemptTimeoutMs,
             );
             if (outcome === "deferred-to-wake") {
               deferredToWakeCount += 1;
@@ -1963,18 +2101,32 @@ export function createSidecarDeployRouter(deps: {
               cause instanceof WorkflowRestoreFailure
                 ? cause.kind
                 : "transient";
-            const updated = await recordWorkflowDeploymentRestoreFailure(
-              dataDir,
-              deploymentId,
-              record,
-              { kind, reason },
-            );
-            if (isWorkflowDeploymentRestoreQuarantined(updated)) {
-              const attempts = updated.restoreFailure?.attempts ?? 0;
-              logger.warn`Workflow deployment ${deploymentId} failed to restore ${attempts} consecutive times and is now quarantined -- it will not be retried again until the address is undeployed. Last failure: ${reason}`;
-            } else {
-              logger.warn`Failed to restore workflow deployment ${deploymentId}: ${reason}`;
-            }
+            // CL-7215: serialized against `restoreDeploymentFromRecord`'s
+            // own late-settle correction via the same lock, and gated on
+            // `activeSupervisors` -- in-memory, always set synchronously the
+            // instant `spawnWorkflowDeployment` actually succeeds, unlike a
+            // disk snapshot -- so a restore that timed out here but has
+            // ALREADY gone live by the time this runs never gets a boot
+            // failure recorded against it in the first place. See the lock's
+            // own doc comment for why both writers must go through it.
+            await withDeploymentRecordLock(deploymentId, async () => {
+              if (activeSupervisors.has(record.agentAddress)) {
+                logger.warn`Workflow deployment ${deploymentId} timed out during boot restore but finished spawning before its failure could be recorded; leaving its record as a live, successful restore`;
+                return;
+              }
+              const updated = await recordWorkflowDeploymentRestoreFailure(
+                dataDir,
+                deploymentId,
+                record,
+                { kind, reason },
+              );
+              if (isWorkflowDeploymentRestoreQuarantined(updated)) {
+                const attempts = updated.restoreFailure?.attempts ?? 0;
+                logger.warn`Workflow deployment ${deploymentId} failed to restore ${attempts} consecutive times and is now quarantined -- it will not be retried again until the address is undeployed. Last failure: ${reason}`;
+              } else {
+                logger.warn`Failed to restore workflow deployment ${deploymentId}: ${reason}`;
+              }
+            });
           }
         },
       );
