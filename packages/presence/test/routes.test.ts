@@ -85,6 +85,98 @@ describe("presence routes", () => {
     expect(response.status).toBe(404);
   });
 
+  test("a heartbeat arriving just past the timeout boundary does not evict its own sender", async () => {
+    let clock = 0;
+    const registry = createPresenceRoomRegistry();
+    const app = mountAs(
+      createPresenceRoutes({
+        registry,
+        requireGrant: allowAll,
+        now: () => clock,
+      }),
+      {
+        tenantId: "tnt_a",
+        principalId: "prn_alice",
+      },
+    );
+
+    await app.request(`/rooms/${SURFACE}/join`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+
+    // One second past the default 45s heartbeat timeout: normal jitter
+    // (a slow network tick, a throttled background tab), not a genuinely
+    // stale client — the heartbeat that arrives now is itself proof the
+    // sender is alive.
+    clock = 46_000;
+    const response = await app.request(`/rooms/${SURFACE}/heartbeat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      members: JoinResponseBody["members"];
+    };
+    expect(body.members.map((m) => m.principalId)).toEqual(["prn_alice"]);
+  });
+
+  test("a heartbeat still sweeps a genuinely stale, different principal out of the response", async () => {
+    let clock = 0;
+    const registry = createPresenceRoomRegistry();
+    const alice = mountAs(
+      createPresenceRoutes({
+        registry,
+        requireGrant: allowAll,
+        now: () => clock,
+      }),
+      {
+        tenantId: "tnt_a",
+        principalId: "prn_alice",
+      },
+    );
+    const bob = mountAs(
+      createPresenceRoutes({
+        registry,
+        requireGrant: allowAll,
+        now: () => clock,
+      }),
+      {
+        tenantId: "tnt_a",
+        principalId: "prn_bob",
+      },
+    );
+
+    await alice.request(`/rooms/${SURFACE}/join`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    await bob.request(`/rooms/${SURFACE}/join`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+
+    // Bob never heartbeats again; alice's next heartbeat lands well past
+    // the timeout for bob, but only 1ms past it for herself.
+    clock = 46_000;
+    const response = await alice.request(`/rooms/${SURFACE}/heartbeat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      members: JoinResponseBody["members"];
+    };
+    expect(body.members.map((m) => m.principalId)).toEqual(["prn_alice"]);
+  });
+
   test("an invalid join body is rejected with 400", async () => {
     const app = mountAs(createPresenceRoutes({ requireGrant: allowAll }), {
       tenantId: "tnt_a",

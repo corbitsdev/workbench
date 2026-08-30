@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import * as Y from "yjs";
 import {
   connectPresence,
+  type PresenceError,
   type PresenceEventSourceLike,
   type PresenceFetch,
   type PresenceStreamEvent,
@@ -48,9 +49,33 @@ function fakeFetch(
     calls.push({ path: url, body });
     return Promise.resolve({
       ok: true,
+      status: 200,
       json: () => Promise.resolve(joinResponse),
     });
   };
+}
+
+/** A `PresenceFetch` whose response per operation is scripted by
+ * `statusFor`, defaulting to 200 for anything unlisted — for exercising
+ * failure and rejoin paths `fakeFetch`'s always-succeeds shape can't. */
+function scriptedFetch(
+  calls: string[],
+  statusFor: (path: string) => number | "reject",
+): PresenceFetch {
+  return (url) => {
+    calls.push(url);
+    const status = statusFor(url);
+    if (status === "reject") return Promise.reject(new Error("network down"));
+    return Promise.resolve({
+      ok: status >= 200 && status < 300,
+      status,
+      json: () => Promise.resolve({}),
+    });
+  };
+}
+
+async function flushMicrotasks(): Promise<void> {
+  for (let i = 0; i < 5; i++) await Promise.resolve();
 }
 
 describe("connectPresence", () => {
@@ -104,13 +129,18 @@ describe("connectPresence", () => {
     handle.disconnect();
   });
 
-  test("publishCursor and publishTyping post heartbeats with the patch", () => {
+  test("publishCursor and publishTyping post heartbeats with the patch", async () => {
     const calls: { path: string; body: unknown }[] = [];
     const handle = connectPresence({
       roomUrl: "/rooms/channel:chn_1",
       fetchImpl: fakeFetch(calls),
       openEventSource: () => new FakeEventSource(),
     });
+    // Let the initial join's response settle before publishing: a patch
+    // published before the room has confirmed the join rejoins instead
+    // of heartbeating a membership the server doesn't have yet (CL-7202).
+    await Promise.resolve();
+    await Promise.resolve();
     calls.length = 0; // drop the initial join call
 
     handle.publishCursor({ x: 5, y: 6, surfaceVersion: 1 });
@@ -304,6 +334,338 @@ describe("connectPresence: doc sync", () => {
     source.emit("doc.saved", JSON.stringify({ version: "12" }));
 
     expect(saved).toEqual([]);
+    handle.disconnect();
+  });
+});
+
+// CL-7202: the client used to blind-post every join/heartbeat/leave/update
+// request (`.catch(() => undefined)`, no `response.ok` check anywhere, no
+// way for a caller to hear about a failure), and never rejoined after a
+// failed join or a heartbeat the server had already forgotten about (404
+// `not_joined`) — all while the SSE stream stayed open regardless, so the
+// UI kept reading as live.
+describe("connectPresence: error reporting and rejoin (CL-7202)", () => {
+  const ROOM_URL = "/rooms/channel:chn_1";
+
+  test("a join request that never reaches the server is reported through onError, not swallowed", async () => {
+    const calls: string[] = [];
+    const errors: PresenceError[] = [];
+    const handle = connectPresence({
+      roomUrl: ROOM_URL,
+      fetchImpl: scriptedFetch(calls, () => "reject"),
+      openEventSource: () => new FakeEventSource(),
+    });
+    handle.onError((error) => errors.push(error));
+
+    await flushMicrotasks();
+
+    expect(calls).toEqual([`${ROOM_URL}/join`]);
+    expect(errors).toEqual([{ operation: "join" }]);
+    handle.disconnect();
+  });
+
+  test("a non-ok join response is reported through onError with its status", async () => {
+    const calls: string[] = [];
+    const errors: PresenceError[] = [];
+    const handle = connectPresence({
+      roomUrl: ROOM_URL,
+      fetchImpl: scriptedFetch(calls, () => 500),
+      openEventSource: () => new FakeEventSource(),
+    });
+    handle.onError((error) => errors.push(error));
+
+    await flushMicrotasks();
+
+    expect(errors).toEqual([{ operation: "join", status: 500 }]);
+    handle.disconnect();
+  });
+
+  test("publishing before the room has confirmed the join rejoins instead of heartbeating a membership it doesn't have yet", async () => {
+    let clock = 0;
+    const calls: string[] = [];
+    const handle = connectPresence({
+      roomUrl: ROOM_URL,
+      fetchImpl: scriptedFetch(calls, () => 500),
+      openEventSource: () => new FakeEventSource(),
+      now: () => clock,
+    });
+
+    await flushMicrotasks();
+    clock = 1_000; // past the first failure's backoff window
+    handle.publishTyping(true);
+    await flushMicrotasks();
+
+    expect(calls).toEqual([`${ROOM_URL}/join`, `${ROOM_URL}/join`]);
+    handle.disconnect();
+  });
+
+  test("a heartbeat 404 (self-eviction) triggers an automatic rejoin", async () => {
+    const calls: string[] = [];
+    let joinCount = 0;
+    const handle = connectPresence({
+      roomUrl: ROOM_URL,
+      fetchImpl: scriptedFetch(calls, (path) => {
+        if (path.endsWith("/join")) {
+          joinCount += 1;
+          return 200;
+        }
+        if (path.endsWith("/heartbeat")) return 404;
+        return 200;
+      }),
+      openEventSource: () => new FakeEventSource(),
+    });
+    const errors: PresenceError[] = [];
+    handle.onError((error) => errors.push(error));
+
+    await flushMicrotasks();
+    expect(joinCount).toBe(1);
+
+    handle.publishCursor({ x: 1, y: 2, surfaceVersion: 1 });
+    await flushMicrotasks();
+
+    expect(calls).toEqual([
+      `${ROOM_URL}/join`,
+      `${ROOM_URL}/heartbeat`,
+      `${ROOM_URL}/join`,
+    ]);
+    expect(errors).toEqual([{ operation: "heartbeat", status: 404 }]);
+    expect(joinCount).toBe(2);
+    handle.disconnect();
+  });
+
+  test("a heartbeat succeeds normally once join has succeeded, without rejoining", async () => {
+    const calls: string[] = [];
+    const handle = connectPresence({
+      roomUrl: ROOM_URL,
+      fetchImpl: scriptedFetch(calls, () => 200),
+      openEventSource: () => new FakeEventSource(),
+    });
+
+    await flushMicrotasks();
+    handle.publishTyping(true);
+    await flushMicrotasks();
+
+    expect(calls).toEqual([`${ROOM_URL}/join`, `${ROOM_URL}/heartbeat`]);
+    handle.disconnect();
+  });
+
+  test("a failed doc update is reported through onError", async () => {
+    const calls: string[] = [];
+    const doc = new Y.Doc();
+    const errors: PresenceError[] = [];
+    const handle = connectPresence({
+      roomUrl: ROOM_URL,
+      fetchImpl: scriptedFetch(calls, (path) =>
+        path.endsWith("/update") ? 413 : 200,
+      ),
+      openEventSource: () => new FakeEventSource(),
+      doc,
+    });
+    handle.onError((error) => errors.push(error));
+
+    await flushMicrotasks();
+    doc.getText("content").insert(0, "hello");
+    await flushMicrotasks();
+
+    expect(errors).toEqual([{ operation: "update", status: 413 }]);
+    handle.disconnect();
+  });
+
+  test("onError's unsubscribe stops further delivery", async () => {
+    const calls: string[] = [];
+    const errors: PresenceError[] = [];
+    const handle = connectPresence({
+      roomUrl: ROOM_URL,
+      fetchImpl: scriptedFetch(calls, () => 500),
+      openEventSource: () => new FakeEventSource(),
+    });
+    const unsubscribe = handle.onError((error) => errors.push(error));
+    await flushMicrotasks();
+    unsubscribe();
+
+    handle.publishTyping(true);
+    await flushMicrotasks();
+
+    expect(errors).toEqual([{ operation: "join", status: 500 }]);
+    handle.disconnect();
+  });
+
+  test("a client stuck unable to join backs off instead of re-posting on every publish call", async () => {
+    let clock = 0;
+    const calls: string[] = [];
+    const handle = connectPresence({
+      roomUrl: ROOM_URL,
+      fetchImpl: scriptedFetch(calls, () => 500),
+      openEventSource: () => new FakeEventSource(),
+      now: () => clock,
+    });
+
+    await flushMicrotasks();
+    expect(calls).toEqual([`${ROOM_URL}/join`]); // the initial attempt
+
+    // A caller publishing cursor moves in a tight loop while unjoined
+    // must not turn into a `/join` per call.
+    handle.publishCursor({ x: 1, y: 1, surfaceVersion: 1 });
+    handle.publishCursor({ x: 2, y: 2, surfaceVersion: 1 });
+    handle.publishCursor({ x: 3, y: 3, surfaceVersion: 1 });
+    await flushMicrotasks();
+    expect(calls).toEqual([`${ROOM_URL}/join`]);
+
+    // Still inside the backoff window after the first failure.
+    clock = 999;
+    handle.publishCursor({ x: 4, y: 4, surfaceVersion: 1 });
+    await flushMicrotasks();
+    expect(calls).toEqual([`${ROOM_URL}/join`]);
+
+    // Past the backoff window: one retry is allowed.
+    clock = 1_000;
+    handle.publishCursor({ x: 5, y: 5, surfaceVersion: 1 });
+    await flushMicrotasks();
+    expect(calls).toEqual([`${ROOM_URL}/join`, `${ROOM_URL}/join`]);
+
+    handle.disconnect();
+  });
+
+  test("a join success resets the backoff, so a later failure streak starts from the base delay again", async () => {
+    let clock = 0;
+    const calls: string[] = [];
+    let failNextJoin = true;
+    let heartbeatStatus = 200;
+    const handle = connectPresence({
+      roomUrl: ROOM_URL,
+      fetchImpl: scriptedFetch(calls, (path) => {
+        if (path.endsWith("/join")) return failNextJoin ? 500 : 200;
+        if (path.endsWith("/heartbeat")) return heartbeatStatus;
+        return 200;
+      }),
+      openEventSource: () => new FakeEventSource(),
+      now: () => clock,
+    });
+
+    await flushMicrotasks(); // fails once (attempt 1): 1s backoff scheduled
+
+    clock = 1_000;
+    failNextJoin = false;
+    handle.publishCursor({ x: 1, y: 1, surfaceVersion: 1 });
+    await flushMicrotasks(); // succeeds; joinFailureCount resets to 0
+
+    // Evict via a 404'd heartbeat and let the immediate rejoin attempt
+    // fail too: if the reset above hadn't happened, this failure would
+    // be attempt 3 (4s backoff) rather than a fresh attempt 1 (1s).
+    heartbeatStatus = 404;
+    failNextJoin = true;
+    calls.length = 0;
+    handle.publishTyping(true); // joined === true, so this sends a heartbeat
+    await flushMicrotasks();
+    expect(calls).toEqual([`${ROOM_URL}/heartbeat`, `${ROOM_URL}/join`]);
+
+    clock = 1_999; // short of a full second past the failure at clock 1_000
+    handle.publishCursor({ x: 2, y: 2, surfaceVersion: 1 });
+    await flushMicrotasks();
+    expect(calls).toEqual([`${ROOM_URL}/heartbeat`, `${ROOM_URL}/join`]);
+
+    clock = 2_000; // a full second past the failure
+    handle.publishCursor({ x: 3, y: 3, surfaceVersion: 1 });
+    await flushMicrotasks();
+    expect(calls).toEqual([
+      `${ROOM_URL}/heartbeat`,
+      `${ROOM_URL}/join`,
+      `${ROOM_URL}/join`,
+    ]);
+
+    handle.disconnect();
+  });
+
+  test("a doc update that fails to post is redelivered once the next heartbeat succeeds", async () => {
+    const calls: { path: string; body: unknown }[] = [];
+    const doc = new Y.Doc();
+    const errors: PresenceError[] = [];
+    let updateStatus = 500;
+    const fetchImpl: PresenceFetch = (url, init) => {
+      const body = JSON.parse(init.body) as unknown;
+      calls.push({ path: url, body });
+      const status = url.endsWith("/update") ? updateStatus : 200;
+      return Promise.resolve({
+        ok: status >= 200 && status < 300,
+        status,
+        json: () => Promise.resolve({}),
+      });
+    };
+    const handle = connectPresence({
+      roomUrl: ROOM_URL,
+      fetchImpl,
+      openEventSource: () => new FakeEventSource(),
+      doc,
+    });
+    handle.onError((error) => errors.push(error));
+
+    await flushMicrotasks(); // join settles
+    doc.getText("content").insert(0, "hello");
+    await flushMicrotasks(); // the update POST fails and is queued
+
+    expect(errors).toEqual([{ operation: "update", status: 500 }]);
+    const failedCall = calls.find((c) => c.path.endsWith("/update"));
+    calls.length = 0;
+
+    // The next successful heartbeat redelivers the queued update with
+    // the exact same payload — nothing about the failed edit is lost.
+    updateStatus = 200;
+    handle.publishTyping(true);
+    await flushMicrotasks();
+
+    expect(calls.map((c) => c.path)).toEqual([
+      `${ROOM_URL}/heartbeat`,
+      `${ROOM_URL}/update`,
+    ]);
+    expect(calls.find((c) => c.path.endsWith("/update"))?.body).toEqual(
+      failedCall?.body,
+    );
+    // No second `onError` fire for the now-successful redelivery.
+    expect(errors).toEqual([{ operation: "update", status: 500 }]);
+    handle.disconnect();
+  });
+
+  test("queued updates are redelivered in the order they were made", async () => {
+    const calls: { path: string; body: unknown }[] = [];
+    const doc = new Y.Doc();
+    let updateStatus = 500;
+    const fetchImpl: PresenceFetch = (url, init) => {
+      const body = JSON.parse(init.body) as unknown;
+      calls.push({ path: url, body });
+      const status = url.endsWith("/update") ? updateStatus : 200;
+      return Promise.resolve({
+        ok: status >= 200 && status < 300,
+        status,
+        json: () => Promise.resolve({}),
+      });
+    };
+    const handle = connectPresence({
+      roomUrl: ROOM_URL,
+      fetchImpl,
+      openEventSource: () => new FakeEventSource(),
+      doc,
+    });
+
+    await flushMicrotasks();
+    doc.getText("content").insert(0, "a");
+    await flushMicrotasks();
+    doc.getText("content").insert(1, "b");
+    await flushMicrotasks();
+    const [firstFailedUpdate, secondFailedUpdate] = calls
+      .filter((c) => c.path.endsWith("/update"))
+      .map((c) => c.body);
+    calls.length = 0;
+
+    updateStatus = 200;
+    handle.publishTyping(true);
+    await flushMicrotasks(); // redelivers the first queued update
+    handle.publishTyping(true);
+    await flushMicrotasks(); // redelivers the second
+
+    const redeliveredUpdates = calls
+      .filter((c) => c.path.endsWith("/update"))
+      .map((c) => c.body);
+    expect(redeliveredUpdates).toEqual([firstFailedUpdate, secondFailedUpdate]);
     handle.disconnect();
   });
 });

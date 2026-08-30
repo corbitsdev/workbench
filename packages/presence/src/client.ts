@@ -39,7 +39,24 @@ export interface PresenceEventSourceLike {
 export type PresenceFetch = (
   url: string,
   init: { method: string; headers: Record<string, string>; body: string },
-) => Promise<{ ok: boolean; json: () => Promise<unknown> }>;
+) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
+
+/** The four requests this module ever POSTs — also each one's URL path
+ * segment under `roomUrl`. */
+export type PresenceOperation = "join" | "heartbeat" | "leave" | "update";
+
+/**
+ * Reported through `PresenceHandle.onError` for every join/heartbeat/leave/
+ * update request that never reached the server (a rejected `fetch`, no
+ * `status`) or came back non-2xx (`status` set). This is the only signal a
+ * consuming UI has that "connected" is a lie — the SSE stream opens and
+ * stays open regardless of whether join or any later heartbeat actually
+ * succeeded server-side.
+ */
+export interface PresenceError {
+  readonly operation: PresenceOperation;
+  readonly status?: number;
+}
 
 export interface PresenceClientOptions {
   /** The room's base URL, e.g. `/api/tenants/tnt_1/presence/rooms/channel:chn_1`. */
@@ -65,6 +82,8 @@ export interface PresenceClientOptions {
    * from anything it did locally.
    */
   readonly onSaved?: (info: { version: number; savedAt: number }) => void;
+  /** Injectable clock, for deterministic tests of rejoin backoff. */
+  readonly now?: () => number;
 }
 
 /**
@@ -91,11 +110,29 @@ export interface PresenceHandle {
   publishTyping(typing: boolean): void;
   /** Subscribes to every room snapshot; fires once with whatever has been received so far. */
   subscribe(listener: (members: readonly PresenceState[]) => void): () => void;
+  /** Subscribes to every failed join/heartbeat/leave/update request. */
+  onError(listener: (error: PresenceError) => void): () => void;
   /** Leaves the room and tears down the stream/heartbeat timer. */
   disconnect(): void;
 }
 
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
+
+// Exponential backoff for repeated join failures: without it, a client
+// whose join keeps failing (server down, or a caller publishing cursor
+// updates on every mouse move while unjoined) would re-POST `/join` as
+// fast as each failed attempt resolves. Mirrors
+// `packages/chat-ui/src/use-workbench-stream.ts`'s `backoffDelayMs` shape
+// (not imported — that package depends on this one, not the reverse).
+const REJOIN_BASE_DELAY_MS = 1_000;
+const REJOIN_MAX_DELAY_MS = 30_000;
+
+function rejoinDelayMs(failureCount: number): number {
+  return Math.min(
+    REJOIN_BASE_DELAY_MS * 2 ** (failureCount - 1),
+    REJOIN_MAX_DELAY_MS,
+  );
+}
 
 function parseMembers(data: string): readonly PresenceState[] {
   try {
@@ -179,22 +216,125 @@ export function connectPresence(
   const heartbeatIntervalMs =
     options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
   const doc = options.doc;
+  const now = options.now ?? Date.now;
 
   const listeners = new Set<(members: readonly PresenceState[]) => void>();
+  const errorListeners = new Set<(error: PresenceError) => void>();
   let latestMembers: readonly PresenceState[] = [];
   let disconnected = false;
+  // Whether the last join attempt is known to have succeeded server-side.
+  // A heartbeat answered 404 (`not_joined`) — this room evicted us, most
+  // often ordinary heartbeat jitter racing the server's own timeout sweep
+  // — flips this back to `false` so the next heartbeat tick rejoins
+  // instead of heartbeating a membership that no longer exists.
+  let joined = false;
+  // Guards against a `publishCursor`/`publishTyping` call landing while
+  // the initial (or a rejoin) `join` request is still in flight from
+  // firing a second, redundant one.
+  let joinInFlight = false;
+  // Consecutive join failures since the last success — drives
+  // `rejoinDelayMs`'s backoff and resets to 0 the moment a join succeeds.
+  let joinFailureCount = 0;
+  // The earliest time `doJoin` will send another request while
+  // `joinFailureCount > 0` — the actual throttle; `joinFailureCount` by
+  // itself only picks the delay.
+  let nextJoinAttemptAt = 0;
+  // Local doc edits (base64-encoded) whose `/update` POST failed and
+  // hasn't yet been redelivered. Safe to replay in order once the
+  // connection is healthy again: a Yjs update is idempotent against a
+  // doc that has already applied it, so redelivering never double-edits
+  // — without this queue a dropped update is gone for good (see CL-7202).
+  let pendingUpdates: string[] = [];
+  let flushingPendingUpdates = false;
 
   const notify = (members: readonly PresenceState[]) => {
     latestMembers = members;
     for (const listener of listeners) listener(members);
   };
 
-  const post = (path: string, body: unknown) =>
-    fetchImpl(`${options.roomUrl}/${path}`, {
+  const reportError = (operation: PresenceOperation, status?: number) => {
+    const error: PresenceError =
+      status === undefined ? { operation } : { operation, status };
+    for (const listener of errorListeners) listener(error);
+  };
+
+  const post = (operation: PresenceOperation, body: unknown) =>
+    fetchImpl(`${options.roomUrl}/${operation}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body ?? {}),
     }).catch(() => undefined);
+
+  /**
+   * Joins (or rejoins) the room. Called once at connect time and again
+   * whenever a heartbeat discovers the server no longer considers us
+   * joined — the only two situations this room's membership needs
+   * (re-)establishing. Backs off after repeated failures rather than
+   * retrying on every call: `publishCursor`/`publishTyping` land far more
+   * often than the heartbeat timer ticks, so without the backoff gate a
+   * still-unjoined client publishing cursor moves would re-POST `/join`
+   * as fast as each failed attempt resolves.
+   */
+  function doJoin(): void {
+    if (joinInFlight) return;
+    if (joinFailureCount > 0 && now() < nextJoinAttemptAt) return;
+    joinInFlight = true;
+    void post("join", { displayName: options.displayName }).then((response) => {
+      joinInFlight = false;
+      if (disconnected) return;
+      if (response === undefined) {
+        joinFailureCount += 1;
+        nextJoinAttemptAt = now() + rejoinDelayMs(joinFailureCount);
+        reportError("join");
+        return;
+      }
+      if (!response.ok) {
+        joinFailureCount += 1;
+        nextJoinAttemptAt = now() + rejoinDelayMs(joinFailureCount);
+        reportError("join", response.status);
+        return;
+      }
+      joinFailureCount = 0;
+      joined = true;
+      flushPendingUpdates();
+      if (doc === undefined) return;
+      void response.json().then((body) => {
+        if (disconnected) return;
+        const docUpdate = docUpdateFromJoinResponse(body);
+        if (docUpdate !== undefined) applyRemoteUpdate(docUpdate);
+      });
+    });
+  }
+
+  /**
+   * Sends a heartbeat (optionally carrying a cursor/typing patch) if the
+   * room still considers us joined, rejoining first if it doesn't — the
+   * self-healing half of CL-7202: a 404'd heartbeat now recovers instead
+   * of leaving the client heartbeating into the void while its own SSE
+   * stream keeps reading as live.
+   */
+  function sendHeartbeat(patch: PresenceStatePatch): void {
+    if (!joined) {
+      doJoin();
+      return;
+    }
+    void post("heartbeat", patch).then((response) => {
+      if (disconnected) return;
+      if (response === undefined) {
+        reportError("heartbeat");
+        return;
+      }
+      if (!response.ok) {
+        reportError("heartbeat", response.status);
+        if (response.status === 404) {
+          joined = false;
+          doJoin();
+        }
+        return;
+      }
+      flushPendingUpdates();
+    });
+  }
 
   function applyRemoteUpdate(base64Update: string): void {
     if (doc === undefined) return;
@@ -206,29 +346,64 @@ export function connectPresence(
     }
   }
 
+  /**
+   * POSTs one already-encoded doc update. `isRetry` distinguishes a fresh
+   * local edit (queued into `pendingUpdates` on failure) from a replay out
+   * of that queue (left in place on failure — `flushPendingUpdates` is
+   * already the thing re-adding it by not removing it).
+   */
+  function postUpdate(
+    base64Update: string,
+    isRetry: boolean,
+  ): Promise<boolean> {
+    return post("update", { update: base64Update }).then((response) => {
+      if (disconnected) return false;
+      if (response === undefined) {
+        reportError("update");
+        if (!isRetry) pendingUpdates.push(base64Update);
+        return false;
+      }
+      if (!response.ok) {
+        reportError("update", response.status);
+        if (!isRetry) pendingUpdates.push(base64Update);
+        return false;
+      }
+      return true;
+    });
+  }
+
+  /**
+   * Redelivers queued failed updates in order, one at a time, stopping at
+   * the first failure so a later edit can never leapfrog an earlier one
+   * still waiting to land. Called whenever a join or heartbeat succeeds —
+   * the client's only signals that the connection is healthy again.
+   */
+  function flushPendingUpdates(): void {
+    if (disconnected || flushingPendingUpdates || pendingUpdates.length === 0) {
+      return;
+    }
+    const [next, ...rest] = pendingUpdates;
+    if (next === undefined) return;
+    flushingPendingUpdates = true;
+    void postUpdate(next, true).then((succeeded) => {
+      flushingPendingUpdates = false;
+      if (!succeeded) return;
+      pendingUpdates = rest;
+      flushPendingUpdates();
+    });
+  }
+
   let onLocalDocUpdate:
     ((update: Uint8Array, origin: unknown) => void) | undefined;
   if (doc !== undefined) {
     onLocalDocUpdate = (update, origin) => {
       if (disconnected || origin === REMOTE_UPDATE_ORIGIN) return;
-      void post("update", { update: encodeBase64(update) });
+      void postUpdate(encodeBase64(update), false);
     };
     doc.on("update", onLocalDocUpdate);
   }
 
-  void post("join", { displayName: options.displayName })
-    .then((response) => {
-      if (doc === undefined || response === undefined || !response.ok) {
-        return undefined;
-      }
-      return response.json();
-    })
-    .then((body) => {
-      if (body === undefined) return;
-      const docUpdate = docUpdateFromJoinResponse(body);
-      if (docUpdate !== undefined) applyRemoteUpdate(docUpdate);
-    })
-    .catch(() => undefined);
+  doJoin();
 
   const source = openEventSource(`${options.roomUrl}/stream`);
   source.addEventListener("presence.state", (event) => {
@@ -248,20 +423,18 @@ export function connectPresence(
 
   const heartbeatTimer = setInterval(() => {
     if (disconnected) return;
-    void post("heartbeat", {});
+    sendHeartbeat({});
   }, heartbeatIntervalMs);
 
   return {
     publishCursor(cursor) {
       if (disconnected) return;
-      const patch: PresenceStatePatch = { cursor };
-      void post("heartbeat", patch);
+      sendHeartbeat({ cursor });
     },
 
     publishTyping(typing) {
       if (disconnected) return;
-      const patch: PresenceStatePatch = { typing };
-      void post("heartbeat", patch);
+      sendHeartbeat({ typing });
     },
 
     subscribe(listener) {
@@ -272,18 +445,27 @@ export function connectPresence(
       };
     },
 
+    onError(listener) {
+      errorListeners.add(listener);
+      return () => {
+        errorListeners.delete(listener);
+      };
+    },
+
     disconnect() {
       if (disconnected) return;
       disconnected = true;
       clearInterval(heartbeatTimer);
       source.close();
       listeners.clear();
+      errorListeners.clear();
       if (doc !== undefined && onLocalDocUpdate !== undefined) {
         doc.off("update", onLocalDocUpdate);
       }
       // Best-effort: the room drops this principal on its own heartbeat
       // timeout even if this never arrives (page unload racing the
-      // request), so a failed leave is not a correctness bug.
+      // request), so a failed leave is not reported as a `PresenceError`
+      // — there is no listener left to hear it by the time it would fire.
       void post("leave", {});
     },
   };

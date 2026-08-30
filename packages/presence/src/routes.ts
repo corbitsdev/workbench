@@ -175,19 +175,23 @@ export function createPresenceRoutes(
     const surface = c.req.param("surface");
     const key = { tenantId: tenant.id, surface };
 
-    registry.sweepStale(heartbeatTimeoutMs, now());
-
     let patch: PresenceStatePatch = {};
     if (body.cursor !== undefined) patch = { ...patch, cursor: body.cursor };
     if (body.typing !== undefined) patch = { ...patch, typing: body.typing };
-    const states = registry.heartbeat(key, principal.id, patch, now());
-    if (states === undefined) {
+    // Refresh this principal's `lastSeenAt` *before* sweeping: this
+    // request arriving is itself proof of liveness, so the sweep below
+    // must judge staleness against the fresh timestamp, never the
+    // pre-request one — otherwise a heartbeat landing a moment past
+    // `heartbeatTimeoutMs` (ordinary jitter) would evict its own sender.
+    const heartbeatResult = registry.heartbeat(key, principal.id, patch, now());
+    if (heartbeatResult === undefined) {
       return c.json(
         errorEnvelope("not_joined", "principal has not joined this room"),
         404,
       );
     }
-    return c.json({ members: states });
+    registry.sweepStale(heartbeatTimeoutMs, now());
+    return c.json({ members: registry.states(key) });
   });
 
   app.post(
