@@ -136,8 +136,10 @@ describe("createInMemoryPendingSeedStore", () => {
 
     const due = await store.listDue({});
 
-    expect(due).toHaveLength(2);
-    expect(due).toEqual(
+    expect(due.truncated).toBe(false);
+    expect(due).not.toHaveProperty("next");
+    expect(due.seeds).toHaveLength(2);
+    expect(due.seeds).toEqual(
       expect.arrayContaining([
         SEED,
         {
@@ -162,7 +164,10 @@ describe("createInMemoryPendingSeedStore", () => {
     clock = PENDING_SEED_TTL_MS + 1;
     const due = await store.listDue({ now: () => clock });
 
-    expect(due).toEqual([{ ...SEED, userId: "user_2", tenantId: "ten_2" }]);
+    expect(due.truncated).toBe(false);
+    expect(due.seeds).toEqual([
+      { ...SEED, userId: "user_2", tenantId: "ten_2" },
+    ]);
     // Swept, not merely skipped — the expired row is gone for good.
     expect(
       await store.read({ userId: "user_1", tenantId: "ten_1", now: () => 0 }),
@@ -181,7 +186,52 @@ describe("createInMemoryPendingSeedStore", () => {
 
     const due = await store.listDue({ limit: 2 });
 
-    expect(due).toHaveLength(2);
+    expect(due.seeds).toHaveLength(2);
+    expect(due.truncated).toBe(true);
+    expect(due.next).toEqual({
+      expiresAt: expect.any(Date),
+      userId: expect.any(String),
+      tenantId: expect.any(String),
+    });
+  });
+
+  test("listDue returns oldest-due first and continues from an (expiresAt, userId, tenantId) cursor", async () => {
+    const store = createInMemoryPendingSeedStore(testCipher());
+    for (let index = 0; index < 5; index += 1) {
+      await store.put(
+        {
+          ...SEED,
+          userId: `user_${index}`,
+          tenantId: `ten_${index}`,
+        },
+        { ttlMs: 5_000 - index },
+      );
+    }
+
+    const first = await store.listDue({ limit: 2 });
+    expect(first.seeds.map((seed) => seed.userId)).toEqual([
+      "user_4",
+      "user_3",
+    ]);
+    expect(first.truncated).toBe(true);
+
+    const second = await store.listDue({
+      limit: 2,
+      ...(first.next !== undefined ? { after: first.next } : {}),
+    });
+    expect(second.seeds.map((seed) => seed.userId)).toEqual([
+      "user_2",
+      "user_1",
+    ]);
+    expect(second.truncated).toBe(true);
+
+    const third = await store.listDue({
+      limit: 2,
+      ...(second.next !== undefined ? { after: second.next } : {}),
+    });
+    expect(third.seeds.map((seed) => seed.userId)).toEqual(["user_0"]);
+    expect(third.truncated).toBe(false);
+    expect(third).not.toHaveProperty("next");
   });
 
   test("cleared on successful seed — the row is gone after clear", async () => {

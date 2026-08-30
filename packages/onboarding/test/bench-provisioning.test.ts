@@ -16,6 +16,7 @@ import {
 } from "../src/bench-provisioning";
 import {
   createInMemoryPendingSeedStore,
+  PENDING_SEED_SCAN_LIMIT,
   type PendingSeed,
   type PendingSeedStore,
 } from "../src/pending-seed";
@@ -95,7 +96,7 @@ describe("createBenchProvisioner", () => {
 
     expect(calls.ensureSeeded).toBe(1);
     expect(deployedByTenant.get("ten_1")).toEqual(ALL_WORKFLOWS);
-    expect(report).toMatchObject({ converged: 1 });
+    expect(report).toMatchObject({ converged: 1, truncated: false });
     expect(
       await store.read({ userId: "user_1", tenantId: "ten_1" }),
     ).toBeUndefined();
@@ -122,7 +123,7 @@ describe("createBenchProvisioner", () => {
     const report = await provisioner.drainOnce();
 
     expect(calls.ensureSeeded).toBe(0);
-    expect(report).toMatchObject({ converged: 1 });
+    expect(report).toMatchObject({ converged: 1, truncated: false });
     expect(
       await store.read({ userId: "user_1", tenantId: "ten_1" }),
     ).toBeUndefined();
@@ -211,7 +212,7 @@ describe("createBenchProvisioner", () => {
 
     expect(calls.ensureSeeded).toBe(1);
     expect(deployedByTenant.get("ten_1")).toEqual(ALL_WORKFLOWS);
-    expect(report).toMatchObject({ converged: 1 });
+    expect(report).toMatchObject({ converged: 1, truncated: false });
   });
 
   test("overlapping drains never double-deploy the same bench", async () => {
@@ -259,6 +260,69 @@ describe("createBenchProvisioner", () => {
     const report = await provisioner.drainOnce();
 
     expect(calls.ensureSeeded).toBe(2);
-    expect(report).toMatchObject({ converged: 2 });
+    expect(report).toMatchObject({ converged: 2, truncated: false });
+  });
+
+  test("DrainReport.truncated is true when more due rows remain behind this tick's page", async () => {
+    const seen = new Set<string>();
+    const { provisioner, store } = harness({
+      ensureSeededFn: async (args) => {
+        seen.add(args.tenant.tenantId);
+        return {
+          kind: "seeded-pending-agents",
+          deployed: [],
+          pending: ALL_WORKFLOWS,
+          message: "agents pending",
+        };
+      },
+    });
+    for (let index = 0; index < PENDING_SEED_SCAN_LIMIT + 3; index += 1) {
+      await store.put({
+        ...SEED,
+        userId: `user_${index}`,
+        tenantId: `ten_${index}`,
+      });
+    }
+
+    const first = await provisioner.drainOnce();
+    expect(first.truncated).toBe(true);
+    expect(first.pending).toBe(PENDING_SEED_SCAN_LIMIT);
+    expect(seen.size).toBe(PENDING_SEED_SCAN_LIMIT);
+
+    const second = await provisioner.drainOnce();
+    expect(second.truncated).toBe(false);
+    expect(second.pending).toBe(3);
+    expect(seen.size).toBe(PENDING_SEED_SCAN_LIMIT + 3);
+  });
+
+  test("rows past the scan limit still get a drain pass across ticks, even when the first page never converges", async () => {
+    const seen = new Set<string>();
+    const { provisioner, store } = harness({
+      ensureSeededFn: async (args) => {
+        seen.add(args.tenant.tenantId);
+        return {
+          kind: "seeded-pending-agents",
+          deployed: [],
+          pending: ALL_WORKFLOWS,
+          message: "agents pending",
+        };
+      },
+    });
+    const total = PENDING_SEED_SCAN_LIMIT + 3;
+    for (let index = 0; index < total; index += 1) {
+      await store.put({
+        ...SEED,
+        userId: `user_${index}`,
+        tenantId: `ten_${index}`,
+      });
+    }
+
+    await provisioner.drainOnce();
+    await provisioner.drainOnce();
+
+    expect(seen.size).toBe(total);
+    for (let index = 0; index < total; index += 1) {
+      expect(seen.has(`ten_${index}`)).toBe(true);
+    }
   });
 });
