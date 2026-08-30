@@ -1214,6 +1214,9 @@ export function createHubChatPlatform(
         domain,
         content: input.content.content,
         cryptoProvider,
+        ...(input.correlationId !== undefined
+          ? { correlationId: input.correlationId }
+          : {}),
       };
       const withAttachments =
         attachments !== undefined

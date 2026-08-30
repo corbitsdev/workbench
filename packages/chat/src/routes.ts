@@ -2269,6 +2269,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             senderAddress: senderAddressOf(c),
             workbenchId,
             messageParts: [{ kind: "text", text: payload.answer }],
+            // A question block's `blockId` IS its `questionId`
+            // (`ask_user`'s `postQuestion` mints one id and reuses it as
+            // both), which is also the `message_response` gate's own
+            // correlationId (`beforeAskUser`, `@corbits/interaction-tools`)
+            // — so this is the exact id that resolves the gate this answer
+            // is for, not merely "whichever gate is next".
+            correlationId: blockId,
           },
         );
         deps.onMessageFanout?.(answer.fanoutDelivered);

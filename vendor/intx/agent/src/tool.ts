@@ -34,6 +34,7 @@
 
 import type { GrantEffect } from "@intx/types";
 import type {
+  BeforeToolExtension,
   ToolCall,
   ToolDefinition,
   ToolResult,
@@ -127,6 +128,15 @@ export interface ToolBundle {
   readonly definitions: readonly ToolDefinition[];
   run(call: ToolCall, signal: AbortSignal): Promise<ToolResult>;
   dispose?(): Promise<void>;
+  /**
+   * A before-tool extension this bundle contributes to the reactor, checked
+   * ahead of dispatch for every call regardless of which bundle owns the
+   * call's name (mirrors how the authz extension inspects every call). Use
+   * this when a tool's own semantics -- not a cross-cutting policy like
+   * authz -- require suspending on a gate before the tool ever runs. Absent
+   * for the common case of a bundle whose tools always answer synchronously.
+   */
+  readonly beforeToolExtension?: BeforeToolExtension;
 }
 
 /**

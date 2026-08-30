@@ -14,6 +14,7 @@ import {
   createWorkbench,
   fakePlatform,
   mountAs,
+  settleFanout,
   TENANT,
   timelineEvents,
   timelineOf,
@@ -304,6 +305,116 @@ describe("block response routes — question answers", () => {
       answer: "Production",
       optionIndex: 1,
     });
+  });
+
+  test("answering a question stamps the answer's mail with the block's own id as its correlationId", async () => {
+    const platform = fakePlatform();
+    const deps = buildDeps({
+      platform,
+      blockResponses: createInMemoryBlockResponseStore(),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+      participants: ["ins_echo1@acme.example"],
+    });
+
+    const post = await app.request(
+      responsesUrl(workbench.id, "m1", "blk_question1"),
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "question", answer: "Staging" }),
+      },
+    );
+    expect(post.status).toBe(200);
+    await settleFanout();
+
+    // The block's own id (`blk_question1`, the same id `postQuestion`
+    // mints as `questionId`) rides as the answer mail's correlationId —
+    // the exact id `tryCorrelate` (`vendor/intx/inference/src/reactor.ts`)
+    // needs to resolve the `message_response` gate this answers, rather
+    // than "whichever gate is next".
+    expect(platform.sentMail).toHaveLength(1);
+    expect(platform.sentMail[0]?.correlationId).toBe("blk_question1");
+  });
+
+  test("a question's correlationId survives batching even when it isn't the batch's last queued message", async () => {
+    // A held first dispatch forces the answer (queued 2nd) and a further
+    // plain follow-up (queued 3rd, landing last) into one batched turn —
+    // proving the batch's correlationId comes from whichever queued turn
+    // carries one, not from `batch[batch.length - 1]`, which here is the
+    // follow-up and carries none.
+    let releaseHold: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      releaseHold = resolve;
+    });
+    let resolveFirstDispatchStarted: () => void = () => {};
+    const firstDispatchStarted = new Promise<void>((resolve) => {
+      resolveFirstDispatchStarted = resolve;
+    });
+    let holdConsumed = false;
+
+    const platform = fakePlatform();
+    const deliverMail = platform.sendMail.bind(platform);
+    platform.sendMail = async (input) => {
+      if (!holdConsumed) {
+        holdConsumed = true;
+        resolveFirstDispatchStarted();
+        await held;
+      }
+      return deliverMail(input);
+    };
+
+    const deps = buildDeps({
+      platform,
+      blockResponses: createInMemoryBlockResponseStore(),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+      participants: ["ins_echo1@acme.example"],
+    });
+
+    // Message 1 dispatches immediately and is held open.
+    const first = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ kind: "text", text: "hello" }] }),
+    });
+    expect(first.status).toBe(201);
+    await firstDispatchStarted;
+
+    // Queued 2nd, while the first dispatch is still held: the answer,
+    // carrying the block's id as its correlationId.
+    const post = await app.request(
+      responsesUrl(workbench.id, "m1", "blk_question1"),
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "question", answer: "Staging" }),
+      },
+    );
+    expect(post.status).toBe(200);
+
+    // Queued 3rd, landing last in the batch: an unrelated follow-up with
+    // no correlationId of its own.
+    const third = await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ kind: "text", text: "also, one more thing" }],
+      }),
+    });
+    expect(third.status).toBe(201);
+
+    releaseHold();
+    await settleFanout();
+
+    // First dispatch (message 1), then one batched dispatch covering
+    // both the answer and the follow-up.
+    expect(platform.sentMail).toHaveLength(2);
+    expect(platform.sentMail[1]?.correlationId).toBe("blk_question1");
   });
 
   test("a question response without answer text is rejected", async () => {

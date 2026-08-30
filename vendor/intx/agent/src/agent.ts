@@ -53,6 +53,7 @@ import type { ErrorRecord } from "@intx/types/audit";
 import type {
   ApprovalSnapshot,
   AssistantTurn,
+  BeforeToolExtension,
   BlobReader,
   ContextCommit,
   ContextStore,
@@ -247,6 +248,14 @@ interface ResolvedTools {
    * standard `ToolBundle` contract.
    */
   readonly bundles: readonly ToolBundle[];
+  /**
+   * Before-tool extensions contributed by bundles via `ToolBundle.beforeToolExtension`,
+   * in factory order. Composed with the authz extension by `createReactorAssembly`
+   * (authz first, so policy denial/ask still takes precedence over a tool's own
+   * gate) so a tool package can suspend on its own gate without the reactor or
+   * any app-level wiring knowing the tool's name.
+   */
+  readonly beforeToolExtensions: readonly BeforeToolExtension[];
 }
 
 /**
@@ -344,7 +353,11 @@ function resolveTools<EnvReq extends BaseEnv>(
     },
   };
 
-  return { definitions, runner, bundles: constructed };
+  const beforeToolExtensions = constructed
+    .map((bundle) => bundle.beforeToolExtension)
+    .filter((ext): ext is BeforeToolExtension => ext !== undefined);
+
+  return { definitions, runner, bundles: constructed, beforeToolExtensions };
 }
 
 function resolveDirector<EnvReq extends BaseEnv>(
@@ -695,6 +708,9 @@ export async function createAgent<EnvReq extends BaseEnv>(
       auditStore,
       authorize,
       toolDefinitions: resolvedTools.definitions,
+      ...(resolvedTools.beforeToolExtensions.length > 0
+        ? { beforeToolExtensions: [...resolvedTools.beforeToolExtensions] }
+        : {}),
       onShutdown: async () => {
         try {
           await flushErrors();

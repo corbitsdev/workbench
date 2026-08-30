@@ -41,6 +41,10 @@ export type QueuedTurn = {
   readonly principalId: string;
   readonly recipients: readonly string[];
   readonly parts: readonly PartType[];
+  /** The id an answer must carry to resolve the `message_response` gate it
+   * answers (see `SendWorkbenchMessageInput.correlationId` in
+   * `./workbench-service.ts`). Absent for every ordinary message. */
+  readonly correlationId?: string;
 };
 
 export type WorkbenchTurnQueueDeps = {

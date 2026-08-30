@@ -83,6 +83,7 @@ export function fakePlatform(
     principalId?: string;
     content: MailContent;
     fromWorkbenchId?: string;
+    correlationId?: string;
   }[];
   launchInviteCalls: {
     tenantId: string;
@@ -96,6 +97,7 @@ export function fakePlatform(
     principalId?: string;
     content: MailContent;
     fromWorkbenchId?: string;
+    correlationId?: string;
   }[] = [];
   const launchInviteCalls: {
     tenantId: string;
@@ -172,10 +174,14 @@ export function fakePlatform(
         input.principalId !== undefined
           ? { ...sentMailEntryBase, principalId: input.principalId }
           : sentMailEntryBase;
-      sentMail.push(
+      const withFromWorkbench =
         input.fromWorkbenchId !== undefined
           ? { ...withPrincipal, fromWorkbenchId: input.fromWorkbenchId }
-          : withPrincipal,
+          : withPrincipal;
+      sentMail.push(
+        input.correlationId !== undefined
+          ? { ...withFromWorkbench, correlationId: input.correlationId }
+          : withFromWorkbench,
       );
       const id = `mail_${++mailCounter}`;
       const createdAt = new Date().toISOString();

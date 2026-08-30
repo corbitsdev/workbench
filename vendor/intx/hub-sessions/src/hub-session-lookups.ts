@@ -290,6 +290,16 @@ export function createHubSessionLookups(
       kind,
       approvalSnapshot,
     }) {
+      // This co-write is approval-only: it always writes an `approval` row,
+      // built from `approvalSnapshot`, alongside the correlation. A signal
+      // kind this RPC has no persistence for fails loud here rather than
+      // writing a spurious approval row for it.
+      if (kind !== "approval") {
+        throw new Error(
+          `registerSignalCorrelation only supports "approval" signals; got "${kind}" for ${correlationId}`,
+        );
+      }
+
       // Resolve tenancy and co-write both rows in one transaction so a resolver
       // never sees a correlation without its approval or vice versa. Both
       // inserts are idempotent on their dedup key (the signal_correlation
