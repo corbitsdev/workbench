@@ -1,12 +1,15 @@
 // Package-owned migrations for @corbits/inference-catalog. Own ledger, own
 // Postgres schema, literal SQL, transactional apply — the convention in
-// docs/package-migrations.md.
-import postgres from "postgres";
+// docs/package-migrations.md. Mechanics (schema/ledger bootstrap,
+// transactional apply, the advisory lock across concurrent hub replicas)
+// live in @corbits/migration-runner — this file owns only the domain SQL.
+import {
+  applyPackageMigrations,
+  type ApplyPackageMigrationsReport,
+  type PackageMigration,
+} from "@corbits/migration-runner";
 
-export interface InferenceCatalogMigration {
-  name: string;
-  sql: string;
-}
+export type InferenceCatalogMigration = PackageMigration;
 
 const SCHEMA = "inference_catalog";
 
@@ -32,63 +35,17 @@ export const inferenceCatalogMigrations: readonly InferenceCatalogMigration[] =
 
 const LEDGER_TABLE = "inference_catalog_migrations";
 
-function quoteIdentifier(name: string): string {
-  return `"${name.replace(/"/g, '""')}"`;
-}
-
-function quoteQualified(schema: string, name: string): string {
-  return `${quoteIdentifier(schema)}.${quoteIdentifier(name)}`;
-}
-
-export interface ApplyInferenceCatalogMigrationsReport {
-  applied: string[];
-  alreadyApplied: string[];
-}
+export type ApplyInferenceCatalogMigrationsReport =
+  ApplyPackageMigrationsReport;
 
 export async function applyInferenceCatalogMigrations(
   databaseUrl: string,
 ): Promise<ApplyInferenceCatalogMigrationsReport> {
-  const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
-  try {
-    await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(SCHEMA)}`);
-
-    await sql.unsafe(
-      `CREATE TABLE IF NOT EXISTS ${quoteQualified(SCHEMA, LEDGER_TABLE)} (` +
-        `name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
-    );
-
-    const applied: string[] = [];
-    const alreadyApplied: string[] = [];
-
-    for (const migration of inferenceCatalogMigrations) {
-      const existing = await sql.unsafe(
-        `SELECT 1 FROM ${quoteQualified(SCHEMA, LEDGER_TABLE)} WHERE name = $1`,
-        [migration.name],
-      );
-      if (existing.length > 0) {
-        alreadyApplied.push(migration.name);
-        continue;
-      }
-      try {
-        await sql.begin(async (tx) => {
-          await tx.unsafe(migration.sql);
-          await tx.unsafe(
-            `INSERT INTO ${quoteQualified(SCHEMA, LEDGER_TABLE)} (name) VALUES ($1)`,
-            [migration.name],
-          );
-        });
-        applied.push(migration.name);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        throw new Error(
-          `inference-catalog migration ${migration.name} failed: ${message}`,
-          { cause: err },
-        );
-      }
-    }
-
-    return { applied, alreadyApplied };
-  } finally {
-    await sql.end({ timeout: 5 });
-  }
+  return applyPackageMigrations({
+    databaseUrl,
+    schema: SCHEMA,
+    ledgerTable: LEDGER_TABLE,
+    migrations: inferenceCatalogMigrations,
+    packageLabel: "inference-catalog",
+  });
 }

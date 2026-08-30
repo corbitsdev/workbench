@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@corbits/api-query": "workspace:*",
+    "@corbits/migration-runner": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",

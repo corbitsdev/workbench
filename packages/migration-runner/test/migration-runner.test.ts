@@ -6,10 +6,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import postgres from "postgres";
 
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
-import {
-  applyPackageMigrations,
-  type PackageMigration,
-} from "../src/index";
+import { applyPackageMigrations, type PackageMigration } from "../src/index";
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);
@@ -66,18 +63,14 @@ describeIfDb("applyPackageMigrations", () => {
 
   beforeAll(async () => {
     await withMaintenanceConnection(async (maintenance) => {
-      await maintenance.unsafe(
-        `DROP DATABASE IF EXISTS "${scratchDatabase}"`,
-      );
+      await maintenance.unsafe(`DROP DATABASE IF EXISTS "${scratchDatabase}"`);
       await maintenance.unsafe(`CREATE DATABASE "${scratchDatabase}"`);
     });
   }, 20000);
 
   afterAll(async () => {
     await withMaintenanceConnection(async (maintenance) => {
-      await maintenance.unsafe(
-        `DROP DATABASE IF EXISTS "${scratchDatabase}"`,
-      );
+      await maintenance.unsafe(`DROP DATABASE IF EXISTS "${scratchDatabase}"`);
     });
   }, 20000);
 
@@ -129,9 +122,7 @@ describeIfDb("applyPackageMigrations", () => {
 
     expect(new Set(appliedNames).size).toBe(appliedNames.length);
     expect([...appliedNames, ...alreadyAppliedNames].sort()).toEqual(
-      [...migrations, ...migrations]
-        .map((migration) => migration.name)
-        .sort(),
+      [...migrations, ...migrations].map((migration) => migration.name).sort(),
     );
 
     const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });

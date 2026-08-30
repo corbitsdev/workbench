@@ -15,6 +15,7 @@
   "dependencies": {
     "@corbits/agent-directory": "workspace:*",
     "@corbits/assistant-workflow": "workspace:*",
+    "@corbits/migration-runner": "workspace:*",
     "@corbits/routines": "workspace:*",
     "@corbits/webhook-triggers": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",
