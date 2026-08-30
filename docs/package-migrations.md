@@ -72,7 +72,8 @@ package onto the transactional pattern — see below):
 1. **Self-contained, transactional** — `@corbits/chat`, `@corbits/notify`,
    `@corbits/webhook-triggers`, `@corbits/routines`, `@corbits/insights`,
    `@corbits/skills`, `@corbits/bench`, `@corbits/preferences`,
-   `@corbits/inference-catalog`, `@corbits/evals`, `@corbits/access-policy`.
+   `@corbits/inference-catalog`, `@corbits/evals`, `@corbits/access-policy`,
+   `@corbits/workflow-deploy-source`.
    The package's `src/migrations.ts` owns only a literal `{ name, sql }[]`
    array and a thin `applyXMigrations(databaseUrl)` wrapper; the mechanics —
    schema/ledger bootstrap, the transactional apply loop, and the advisory

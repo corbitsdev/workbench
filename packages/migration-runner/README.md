@@ -25,11 +25,13 @@ name rather than the name itself, so two distinct table names could in
 principle hash to the same key — two packages would then serialize their
 boot-time migrations against each other instead of running in parallel, a
 liveness cost (one waits its turn) and never a correctness one (each still
-applies to its own schema and ledger). The six current ledger tables
+applies to its own schema and ledger). The nine current ledger tables
 (`access_policy_migrations`, `bench_migrations`, `evals_migrations`,
 `inference_catalog_migrations`, `insights_migrations`,
-`preferences_migrations`) do not collide — verified against a live
-`hashtext()`. Confirm the same before naming a seventh.
+`preferences_migrations`, `webhook_triggers_migrations`,
+`routine_migrations`, `workflow_deploy_source_migrations`) do not collide —
+verified pairwise against a live PostgreSQL 17.11 `hashtext()`. Confirm the
+same before naming a tenth.
 
 ## What it does not change
 
