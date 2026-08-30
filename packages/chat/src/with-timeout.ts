@@ -31,6 +31,13 @@ export function withTimeout<T>(
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       controller.abort(new Error(message));
+      // CL-7201 (Critique finding): the two `work`-settles-first
+      // branches below already remove this listener; the timeout
+      // winning is a third way this call can end and needs the same
+      // cleanup, or `externalSignal` — reused across more than one
+      // `withTimeout` call in `dispatchTurnBatch` — keeps a dangling
+      // listener from every timed-out call forever.
+      externalSignal?.removeEventListener("abort", onExternalAbort);
       reject(new Error(message));
     }, ms);
 
