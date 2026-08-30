@@ -217,6 +217,50 @@ describe("nextStreamingReplyState (CL-6376: the typing pulse clears on a dispatc
   });
 });
 
+// CL-7201: a user-cancelled turn clears the same pulse a failed one does
+// — `postCancelledNotice` carries `turnCancelled`, not `turnFailed`, so
+// this is its own case rather than reusing the failure fixture above.
+describe("nextStreamingReplyState (CL-7201: the typing pulse clears on a user cancellation too)", () => {
+  test("a chat.message carrying a turnCancelled part clears a pending reply", () => {
+    const state = awaiting("");
+    expect(
+      nextStreamingReplyState(state, {
+        eventType: "chat.message",
+        data: {
+          id: "msg_1",
+          parts: [
+            {
+              kind: "text",
+              text: "This turn was cancelled.",
+              turnCancelled: true,
+            },
+          ],
+        },
+      }),
+    ).toBeNull();
+  });
+
+  test("a chat.message from the cancelled agent's own address is never mistaken for a rendered reply", () => {
+    const state = awaiting("");
+    expect(
+      nextStreamingReplyState(state, {
+        eventType: "chat.message",
+        data: {
+          id: "msg_1",
+          sender: { name: null, address: MYRA.address },
+          parts: [
+            {
+              kind: "text",
+              text: "This turn was cancelled.",
+              turnCancelled: true,
+            },
+          ],
+        },
+      }),
+    ).toBeNull();
+  });
+});
+
 describe("nextStreamingReplyState (CL-false-no-reply: rendered content, not a lifecycle event, ends the turn)", () => {
   test("a chat.message from the awaiting turn's agent moves straight to replied — the reply already rendered, connector.reply or not", () => {
     const state = awaiting("Full answer.");
