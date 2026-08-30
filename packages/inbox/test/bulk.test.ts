@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   itemsEligibleForClearDone,
   itemsEligibleForMarkAllRead,
+  runBulkOperation,
 } from "../src/bulk";
 import type { InboxItem } from "../src/project";
 
@@ -39,5 +40,42 @@ describe("itemsEligibleForClearDone", () => {
       item({ id: "d", group: "delivery", status: "snoozed" }),
     ];
     expect(itemsEligibleForClearDone(items).map((i) => i.id)).toEqual(["m"]);
+  });
+});
+
+describe("runBulkOperation", () => {
+  test("a thrown error on one item does not stop the rest", async () => {
+    const applied: string[] = [];
+    const failures: { id: string; error: unknown }[] = [];
+    const result = await runBulkOperation(
+      ["a", "b", "c"],
+      async (id) => {
+        if (id === "b") throw new Error("transient write failure");
+        applied.push(id);
+      },
+      (id, error) => failures.push({ id, error }),
+    );
+
+    // Both non-failing items still ran, despite "b" throwing between them —
+    // the caller can tell exactly how far the operation got.
+    expect(applied).toEqual(["a", "c"]);
+    expect(result).toEqual({ succeeded: 2, failed: 1 });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.id).toBe("b");
+    expect((failures[0]?.error as Error).message).toBe(
+      "transient write failure",
+    );
+  });
+
+  test("every item succeeding reports zero failures", async () => {
+    const result = await runBulkOperation(["a", "b"], async () => {});
+    expect(result).toEqual({ succeeded: 2, failed: 0 });
+  });
+
+  test("onError is optional", async () => {
+    const result = await runBulkOperation(["a"], async () => {
+      throw new Error("boom");
+    });
+    expect(result).toEqual({ succeeded: 0, failed: 1 });
   });
 });
