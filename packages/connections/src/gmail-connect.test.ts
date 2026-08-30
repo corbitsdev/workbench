@@ -7,6 +7,7 @@ import { expect, test } from "bun:test";
 import {
   exchangeCodeForGoogleToken,
   GOOGLE_TOKEN_EXCHANGE_URL,
+  type ExchangeFetch,
 } from "./gmail-connect";
 
 function stubFetch(
@@ -88,4 +89,31 @@ test("a Google error response maps to an honest failure that never echoes token 
   if (result.ok) throw new Error("expected failure");
   expect(result.message).toContain("invalid_grant");
   expect(result.message).not.toContain("secret-1");
+});
+
+// CL-7235: a Google token endpoint that never answers used to leave this
+// exchange awaiting `doFetch` forever. It now carries a bounded
+// `AbortSignal`, so a stalled provider is caught the same way any other
+// network failure already is instead of hanging the `/callback` request
+// indefinitely.
+test("wires a bounded AbortSignal into the exchange fetch so a stalled provider can't hang the exchange", async () => {
+  let capturedSignal: AbortSignal | undefined;
+  const fetchImpl: ExchangeFetch = (_url, init) => {
+    capturedSignal = init.signal;
+    return new Promise(() => {
+      // never resolves -- a provider that never answers.
+    });
+  };
+
+  void exchangeCodeForGoogleToken({
+    code: "auth-code-1",
+    redirectUri: "https://bench.example.com/callback",
+    clientId: "client-1",
+    clientSecret: "secret-1",
+    fetchImpl,
+  });
+  await Promise.resolve();
+
+  expect(capturedSignal).toBeInstanceOf(AbortSignal);
+  expect(capturedSignal?.aborted).toBe(false);
 });

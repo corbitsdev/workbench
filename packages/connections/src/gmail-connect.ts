@@ -12,6 +12,11 @@
 
 import { type } from "arktype";
 
+import {
+  postExchangeRequest,
+  type OAuthExchangeFetch,
+} from "./oauth-exchange-fetch";
+
 export const GOOGLE_AUTHORIZE_URL =
   "https://accounts.google.com/o/oauth2/v2/auth";
 export const GOOGLE_TOKEN_EXCHANGE_URL = "https://oauth2.googleapis.com/token";
@@ -38,20 +43,17 @@ export type GoogleExchangeResult =
     }
   | { readonly ok: false; readonly message: string };
 
+/** Re-exported for symmetry with the other three connect modules and so
+ * tests can type a stub `fetchImpl` explicitly. */
+export type ExchangeFetch = OAuthExchangeFetch;
+
 export type ExchangeCodeForGoogleTokenArgs = {
   readonly code: string;
   readonly codeVerifier?: string;
   readonly redirectUri: string;
   readonly clientId: string;
   readonly clientSecret: string;
-  readonly fetchImpl?: (
-    url: string,
-    init: {
-      method: "POST";
-      headers: Record<string, string>;
-      body: string;
-    },
-  ) => Promise<Response>;
+  readonly fetchImpl?: ExchangeFetch;
 };
 
 /**
@@ -77,7 +79,7 @@ export async function exchangeCodeForGoogleToken(
 
   let response: Response;
   try {
-    response = await doFetch(GOOGLE_TOKEN_EXCHANGE_URL, {
+    response = await postExchangeRequest(doFetch, GOOGLE_TOKEN_EXCHANGE_URL, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: params.toString(),

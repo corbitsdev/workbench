@@ -119,4 +119,31 @@ describe("exchangeCodeForGithubToken", () => {
       expect(result.message).toContain("getaddrinfo ENOTFOUND");
     }
   });
+
+  // CL-7235: a GitHub token endpoint that never answers used to leave
+  // this exchange awaiting `doFetch` forever. It now carries a bounded
+  // `AbortSignal`, so a stalled provider is caught the same way any
+  // other network failure already is instead of hanging the `/callback`
+  // request indefinitely.
+  test("wires a bounded AbortSignal into the exchange fetch so a stalled provider can't hang the exchange", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    const fetchImpl: ExchangeFetch = (_url, init) => {
+      capturedSignal = init.signal;
+      return new Promise(() => {
+        // never resolves -- a provider that never answers.
+      });
+    };
+
+    void exchangeCodeForGithubToken({
+      code: "auth_code_1",
+      redirectUri: "https://hub.example.test/callback",
+      clientId: "client_1",
+      clientSecret: "secret_1",
+      fetchImpl,
+    });
+    await Promise.resolve();
+
+    expect(capturedSignal).toBeInstanceOf(AbortSignal);
+    expect(capturedSignal?.aborted).toBe(false);
+  });
 });
