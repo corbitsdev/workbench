@@ -352,6 +352,14 @@ export const blockResponses = chatSchema.table(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Question-only claim flag: null until a question's answer has been
+    // sent into the workbench and its turn dispatched. See
+    // `claimBlockResponseNotification` in `./block-responses.ts`.
+    notifiedAt: timestamp("notified_at", { withTimezone: true }),
+    // Scopes `releaseBlockResponseNotification` to the exact claim it
+    // took, set together with `notifiedAt`, so a release can never
+    // clobber a claim it does not hold. See `./block-responses.ts`.
+    notificationClaimToken: text("notification_claim_token"),
   },
   (table) => [
     primaryKey({
