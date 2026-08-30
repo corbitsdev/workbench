@@ -106,6 +106,21 @@ function reportDispatchFailure(
   );
 }
 
+function reportClaimStoreFailure(
+  operation: string,
+  workbenchId: string,
+  err: unknown,
+): void {
+  const refId = reportError(err, {
+    operation,
+    roomId: workbenchId,
+  });
+  log.error(
+    "turn queue: claim store call failed for workbench {workbenchId} (ref {refId}): {err}",
+    { workbenchId, refId, err },
+  );
+}
+
 export function createWorkbenchTurnQueue(
   deps: WorkbenchTurnQueueDeps,
 ): WorkbenchTurnQueue {
@@ -141,54 +156,72 @@ export function createWorkbenchTurnQueue(
   ): Promise<void> {
     let token = firstToken;
     let batch = firstBatch;
-    for (;;) {
-      try {
-        await dispatch(batch);
-      } catch (err) {
-        reportDispatchFailure(workbenchId, batch, err);
-      }
+    // The claim store's own contract (`./turn-claims.ts`) requires a won
+    // claim to be "never left un-called on a path that can still
+    // complete" — the outer try/catch is what makes that hold even when
+    // `holds`/`release`/`tryClaim` themselves reject (a durable store
+    // doing I/O can, unlike the in-memory one), not just when they
+    // resolve normally. `dispatch` gets its own inner try/catch because
+    // a rejecting dispatch is an expected, contract-violating case this
+    // loop must keep draining through, not stop for.
+    try {
+      for (;;) {
+        try {
+          await dispatch(batch);
+        } catch (err) {
+          reportDispatchFailure(workbenchId, batch, err);
+        }
 
-      if (!(await deps.claims.holds({ workbenchId }, token))) {
-        // The TTL backstop already reassigned this claim to a fresh
-        // `run()` call; that call's own loop now owns draining
-        // whatever is pending here.
-        return;
-      }
+        if (!(await deps.claims.holds({ workbenchId }, token))) {
+          // The TTL backstop already reassigned this claim to a fresh
+          // `run()` call; that call's own loop now owns draining
+          // whatever is pending here.
+          return;
+        }
 
-      const queued = pendingByWorkbench.get(workbenchId);
-      if (queued !== undefined && queued.length > 0) {
+        const queued = pendingByWorkbench.get(workbenchId);
+        if (queued !== undefined && queued.length > 0) {
+          pendingByWorkbench.delete(workbenchId);
+          batch = queued;
+          continue;
+        }
+
+        const released = await deps.claims.release({ workbenchId }, token);
+        if (!released) return;
+
+        // `release` can itself await (any durable store reopens exactly
+        // this window — see `./turn-claims.ts`'s own doc comment): a
+        // concurrent `run()` whose `tryClaim` read us as still holding,
+        // before this `release` took effect, pushed onto
+        // `pendingByWorkbench` with nobody left holding the claim to
+        // drain it. Recheck and reclaim rather than stranding it — `run`'s
+        // enqueue path below runs the symmetric dance from its own side,
+        // so between the two, whichever notices the claim is free first
+        // picks up what's pending.
+        const late = pendingByWorkbench.get(workbenchId);
+        if (late === undefined || late.length === 0) return;
+
+        const reclaimed = await deps.claims.tryClaim({ workbenchId });
+        if (reclaimed === false) return; // the new holder's own loop will see it
+
+        const afterReclaim = pendingByWorkbench.get(workbenchId);
+        if (afterReclaim === undefined || afterReclaim.length === 0) {
+          // Drained by whoever we raced against for the reclaim itself.
+          await deps.claims.release({ workbenchId }, reclaimed);
+          return;
+        }
         pendingByWorkbench.delete(workbenchId);
-        batch = queued;
-        continue;
+        token = reclaimed;
+        batch = afterReclaim;
       }
-
-      const released = await deps.claims.release({ workbenchId }, token);
-      if (!released) return;
-
-      // `release` can itself await (any durable store reopens exactly
-      // this window — see `./turn-claims.ts`'s own doc comment): a
-      // concurrent `run()` whose `tryClaim` read us as still holding,
-      // before this `release` took effect, pushed onto
-      // `pendingByWorkbench` with nobody left holding the claim to
-      // drain it. Recheck and reclaim rather than stranding it — `run`'s
-      // enqueue path below runs the symmetric dance from its own side,
-      // so between the two, whichever notices the claim is free first
-      // picks up what's pending.
-      const late = pendingByWorkbench.get(workbenchId);
-      if (late === undefined || late.length === 0) return;
-
-      const reclaimed = await deps.claims.tryClaim({ workbenchId });
-      if (reclaimed === false) return; // the new holder's own loop will see it
-
-      const afterReclaim = pendingByWorkbench.get(workbenchId);
-      if (afterReclaim === undefined || afterReclaim.length === 0) {
-        // Drained by whoever we raced against for the reclaim itself.
-        await deps.claims.release({ workbenchId }, reclaimed);
-        return;
-      }
-      pendingByWorkbench.delete(workbenchId);
-      token = reclaimed;
-      batch = afterReclaim;
+    } catch (err) {
+      reportClaimStoreFailure("chat.turnQueue.drain", workbenchId, err);
+      // Best-effort: `token` may already be released (this call then
+      // no-ops per the store's contract) or may be the one this loop
+      // never got to release because the failure happened first either
+      // way, attempting it is strictly better than leaking it until the
+      // TTL backstop expires.
+      await deps.claims.release({ workbenchId }, token).catch(() => undefined);
     }
   }
 
@@ -216,17 +249,28 @@ export function createWorkbenchTurnQueue(
       // `tryClaim` to may already have released — its own emptiness
       // check ran before this push landed — leaving nobody holding the
       // claim to drain what was just enqueued. Reclaim in that case
-      // rather than returning with the turn stranded.
-      const reclaimed = await deps.claims.tryClaim({ workbenchId });
-      if (reclaimed === false) return;
+      // rather than returning with the turn stranded. `run` documents
+      // "never rejects", so a claim store that throws here (rather than
+      // resolving `false`) is caught and reported, same as `drain`'s own
+      // guard, instead of propagating out.
+      try {
+        const reclaimed = await deps.claims.tryClaim({ workbenchId });
+        if (reclaimed === false) return;
 
-      const batch = pendingByWorkbench.get(workbenchId);
-      pendingByWorkbench.delete(workbenchId);
-      if (batch === undefined || batch.length === 0) {
-        await deps.claims.release({ workbenchId }, reclaimed);
-        return;
+        const batch = pendingByWorkbench.get(workbenchId);
+        pendingByWorkbench.delete(workbenchId);
+        if (batch === undefined || batch.length === 0) {
+          await deps.claims.release({ workbenchId }, reclaimed);
+          return;
+        }
+        await drain(workbenchId, reclaimed, batch, dispatch);
+      } catch (err) {
+        reportClaimStoreFailure(
+          "chat.turnQueue.enqueueReclaim",
+          workbenchId,
+          err,
+        );
       }
-      await drain(workbenchId, reclaimed, batch, dispatch);
     },
   };
 }
