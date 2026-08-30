@@ -265,6 +265,7 @@ describe("Composer keyboard hint", () => {
     mount(() => Promise.resolve(true));
     expect(keyboardHint()).not.toBeNull();
     expect(keyboardHint()?.getAttribute("data-visible")).toBe("false");
+    expect(keyboardHint()?.getAttribute("aria-hidden")).toBe("true");
 
     act(() => {
       textarea().focus();
@@ -273,6 +274,7 @@ describe("Composer keyboard hint", () => {
     await settle();
 
     expect(keyboardHint()?.getAttribute("data-visible")).toBe("true");
+    expect(keyboardHint()?.getAttribute("aria-hidden")).toBe("false");
     expect(keyboardHint()?.textContent).toBe("Enter to send");
     expect(
       container?.querySelectorAll(".chat-composer-actions > button").length,
@@ -294,6 +296,7 @@ describe("Composer keyboard hint", () => {
     typeInto(textarea(), "");
     await settle();
     expect(keyboardHint()?.getAttribute("data-visible")).toBe("false");
+    expect(keyboardHint()?.getAttribute("aria-hidden")).toBe("true");
   });
 });
 
