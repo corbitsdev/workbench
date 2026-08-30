@@ -226,7 +226,7 @@ describe("connect-github round trip (CL-6345)", () => {
       checkboxes[1]?.click();
       checkboxes[2]?.click();
     });
-    expect(el.textContent).toContain("4 your token can reach · 3 picked");
+    expect(el.textContent).toContain("4 repos your token can reach · 3 picked");
 
     const getConnectStateCallCountBeforeStart =
       harness.getConnectStateCallCount();

@@ -241,7 +241,7 @@ export const CHAT_STRINGS = {
     `Connected to GitHub as ${org}`,
   blockConnectGithubChange: "change",
   blockConnectGithubRepoCount: (found: number, picked: number) =>
-    `${found} your token can reach · ${picked} picked`,
+    `${found} repo${found === 1 ? "" : "s"} your token can reach · ${picked} picked`,
   blockConnectGithubSelectAll: "Select all",
   blockConnectGithubRepoUpdated: (relative: string) => `updated ${relative}`,
   blockConnectGithubRepoNeverPushed: "no commits yet",

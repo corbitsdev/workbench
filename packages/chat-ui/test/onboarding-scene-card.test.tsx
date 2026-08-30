@@ -298,7 +298,7 @@ describe("the walkthrough marker follows the live connect state", () => {
     await act(async () => {
       changeRepos?.click();
     });
-    expect(el.textContent).toContain("2 your token can reach · 1 picked");
+    expect(el.textContent).toContain("2 repos your token can reach · 1 picked");
     expect(el.querySelector(".chat-block-title")?.textContent).toBe(
       "Code review",
     );
@@ -332,7 +332,7 @@ describe("the walkthrough marker follows the live connect state", () => {
     await act(async () => {
       changeRepos?.click();
     });
-    expect(el.textContent).toContain("2 your token can reach · 1 picked");
+    expect(el.textContent).toContain("2 repos your token can reach · 1 picked");
 
     const start = [...el.querySelectorAll("button")].find((button) =>
       button.textContent?.startsWith("Start reviewing"),
@@ -344,7 +344,7 @@ describe("the walkthrough marker follows the live connect state", () => {
     });
 
     expect(el.querySelector(".chat-block-scene-reviewing")).toBeNull();
-    expect(el.textContent).toContain("2 your token can reach · 1 picked");
+    expect(el.textContent).toContain("2 repos your token can reach · 1 picked");
     expect(currentStepTitle(el)).toBe("Choose what gets reviewed");
     const alert = el.querySelector('[role="alert"]');
     expect(alert).not.toBeNull();

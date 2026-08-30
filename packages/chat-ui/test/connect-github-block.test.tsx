@@ -278,7 +278,7 @@ describe("connect GitHub card — 2b pick your repos", () => {
     });
 
     expect(el.textContent).toContain("Connected to GitHub as acme");
-    expect(el.textContent).toContain("6 your token can reach · 3 picked");
+    expect(el.textContent).toContain("6 repos your token can reach · 3 picked");
 
     const rows = el.querySelectorAll(".chat-block-connect-repo-row");
     expect(rows).toHaveLength(6);
@@ -327,7 +327,7 @@ describe("connect GitHub card — 2b pick your repos", () => {
       />,
     );
 
-    expect(el.textContent).toContain("6 your token can reach · 3 picked");
+    expect(el.textContent).toContain("6 repos your token can reach · 3 picked");
     const start = [...el.querySelectorAll("button")].find((button) =>
       button.textContent?.startsWith("Start reviewing"),
     ) as HTMLButtonElement;
@@ -340,7 +340,7 @@ describe("connect GitHub card — 2b pick your repos", () => {
       mobileCheckbox?.click();
     });
 
-    expect(el.textContent).toContain("6 your token can reach · 4 picked");
+    expect(el.textContent).toContain("6 repos your token can reach · 4 picked");
     const startAfter = [...el.querySelectorAll("button")].find((button) =>
       button.textContent?.startsWith("Start reviewing"),
     ) as HTMLButtonElement;
@@ -360,7 +360,7 @@ describe("connect GitHub card — 2b pick your repos", () => {
       />,
     );
 
-    expect(el.textContent).toContain("6 your token can reach · 0 picked");
+    expect(el.textContent).toContain("6 repos your token can reach · 0 picked");
     const start = [...el.querySelectorAll("button")].find((button) =>
       button.textContent?.startsWith("Start reviewing"),
     ) as HTMLButtonElement;
@@ -378,7 +378,7 @@ describe("connect GitHub card — 2b pick your repos", () => {
       selectAll.click();
     });
 
-    expect(el.textContent).toContain("6 your token can reach · 6 picked");
+    expect(el.textContent).toContain("6 repos your token can reach · 6 picked");
     const startAfter = [...el.querySelectorAll("button")].find((button) =>
       button.textContent?.startsWith("Start reviewing"),
     ) as HTMLButtonElement;
@@ -568,7 +568,7 @@ describe("connect GitHub card — accessibility", () => {
     });
 
     expect(status?.textContent).toBe("Connect GitHub");
-    expect(el.textContent).toContain("6 your token can reach · 2 picked");
+    expect(el.textContent).toContain("6 repos your token can reach · 2 picked");
   });
 
   test("autoFocus on the pick-repos scene moves focus onto the pick heading", async () => {
