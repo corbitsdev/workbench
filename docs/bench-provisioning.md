@@ -51,7 +51,11 @@ properties follow from that framing rather than having to be built:
 A failing bench is held off with exponential backoff (15s, doubling to a
 10-minute ceiling) so a sidecar outage is not hammered, and a bench is
 never dropped for failing — the row stays until it converges or its TTL
-(24 hours) expires.
+(24 hours) expires. That backoff bookkeeping is reclaimed once the row
+itself is gone — TTL-expiry or otherwise — not only when the bench
+converges, so a permanently-failing bench never leaves a stale backoff
+behind for a later, unrelated connect to the same user/tenant to
+inherit (CL-7233).
 
 ## Sessions
 
