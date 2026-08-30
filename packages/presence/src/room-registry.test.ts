@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import * as Y from "yjs";
 import {
   createPresenceRoomRegistry,
+  PresenceRoomNotFoundError,
   type PresenceRoomKey,
   type PresenceState,
 } from "./room-registry";
@@ -210,7 +211,7 @@ describe("createPresenceRoomRegistry: doc sync", () => {
         Y.encodeStateAsUpdate(alice),
         "prn_alice",
       ),
-    ).toThrow();
+    ).toThrow(PresenceRoomNotFoundError);
     expect(registry.docText(docKey)).toBe("");
   });
 
@@ -237,7 +238,7 @@ describe("createPresenceRoomRegistry: doc sync", () => {
         Y.encodeStateAsUpdate(zombie),
         "prn_alice",
       ),
-    ).toThrow();
+    ).toThrow(PresenceRoomNotFoundError);
     expect(registry.docText(docKey)).toBe("");
 
     // A legitimate rejoin still sees a genuinely empty doc, ready for
@@ -376,11 +377,7 @@ describe("createPresenceRoomRegistry: deferred destroy", () => {
     // the first flush resolves.
     const alice = clientDoc();
     alice.getText("content").insert(0, "second content");
-    registry.applyDocUpdate(
-      docKey,
-      Y.encodeStateAsUpdate(alice),
-      "prn_alice",
-    );
+    registry.applyDocUpdate(docKey, Y.encodeStateAsUpdate(alice), "prn_alice");
 
     resolveFirstFlush?.();
     await flushMicrotasks();
