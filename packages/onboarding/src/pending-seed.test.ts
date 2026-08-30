@@ -196,6 +196,7 @@ describe("createInMemoryPendingSeedStore", () => {
   });
 
   test("listDue returns oldest-due first and continues from an (expiresAt, userId, tenantId) cursor", async () => {
+    const clock = 0;
     const store = createInMemoryPendingSeedStore(testCipher());
     for (let index = 0; index < 5; index += 1) {
       await store.put(
@@ -204,11 +205,11 @@ describe("createInMemoryPendingSeedStore", () => {
           userId: `user_${index}`,
           tenantId: `ten_${index}`,
         },
-        { ttlMs: 5_000 - index },
+        { now: () => clock, ttlMs: 5_000 - index },
       );
     }
 
-    const first = await store.listDue({ limit: 2 });
+    const first = await store.listDue({ limit: 2, now: () => clock });
     expect(first.seeds.map((seed) => seed.userId)).toEqual([
       "user_4",
       "user_3",
@@ -217,6 +218,7 @@ describe("createInMemoryPendingSeedStore", () => {
 
     const second = await store.listDue({
       limit: 2,
+      now: () => clock,
       ...(first.next !== undefined ? { after: first.next } : {}),
     });
     expect(second.seeds.map((seed) => seed.userId)).toEqual([
@@ -227,6 +229,7 @@ describe("createInMemoryPendingSeedStore", () => {
 
     const third = await store.listDue({
       limit: 2,
+      now: () => clock,
       ...(second.next !== undefined ? { after: second.next } : {}),
     });
     expect(third.seeds.map((seed) => seed.userId)).toEqual(["user_0"]);
