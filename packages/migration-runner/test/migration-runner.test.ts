@@ -159,4 +159,36 @@ describeIfDb("applyPackageMigrations", () => {
 
     expect(result.applied).toEqual(["0001_widget", "0002_widget_label"]);
   }, 10000);
+
+  test("releases the lock when a migration fails, so the next run isn't blocked behind it", async () => {
+    const failSchema = `${SCHEMA}_fail`;
+    const failLedger = `${LEDGER_TABLE}_fail`;
+    const brokenMigrations: readonly PackageMigration[] = [
+      { name: "0001_broken", sql: "SELECT this_column_does_not_exist" },
+    ];
+
+    await expect(
+      applyPackageMigrations({
+        databaseUrl: scratchUrl,
+        schema: failSchema,
+        ledgerTable: failLedger,
+        migrations: brokenMigrations,
+        packageLabel: "migration-runner-fail-test",
+      }),
+    ).rejects.toThrow(
+      /migration-runner-fail-test migration 0001_broken failed/,
+    );
+
+    // A second run reaching the same lock immediately (rather than hanging
+    // behind the first run's connection) proves the failed run's `finally`
+    // released it instead of leaving it held until the connection closed.
+    const result = await applyPackageMigrations({
+      databaseUrl: scratchUrl,
+      schema: failSchema,
+      ledgerTable: failLedger,
+      migrations,
+      packageLabel: "migration-runner-fail-test",
+    });
+    expect(result.applied).toEqual(["0001_widget", "0002_widget_label"]);
+  }, 10000);
 });
