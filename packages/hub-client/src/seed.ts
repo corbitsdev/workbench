@@ -1121,35 +1121,44 @@ export async function ensureCredential(
     );
   }
 
-  // An `oauth_token` credential (Hugging Face today) can reconnect under
-  // its same stable name with a fresh secret and a fresh `expiresAt`
-  // once the stored one has gone stale — reusing the stale row instead
-  // of rotating it would silently strand the reconnect on the old,
-  // already-expired secret, and since the row's `status` is already
-  // non-`active`, the expiry sweep would never see it again to re-notify.
-  // Scoped to exactly that case: an `active` row (the common idempotent
-  // re-seed) is left untouched, so a routine re-seed with an unchanged
-  // token never turns into a rotation.
+  // An `oauth_token` credential (Hugging Face, or an MCP server connected
+  // through OAuth) rotates on a name conflict in two distinct cases:
+  //
+  // 1. The stored row has gone stale (`status !== "active"`) — a plain
+  //    re-seed or a reconnect after the expiry sweep already flipped it.
+  //    Reusing the stale row instead of rotating it would silently strand
+  //    the reconnect on the old, already-expired secret, and since the
+  //    row's `status` is already non-`active`, the expiry sweep would
+  //    never see it again to re-notify.
+  // 2. The caller sets `args.verified` — an interactive OAuth reconnect
+  //    (`connections`' `mcp-oauth-routes.ts`) completed a fresh exchange
+  //    and is handing `ensureCredential` a genuinely new token, even
+  //    though the existing row hasn't technically expired yet (the user
+  //    re-authorized proactively, or the provider-side scopes changed).
+  //    Gating on `status` alone silently dropped this token (CL-7236):
+  //    zero PATCH call, and the stale row's id returned as if the
+  //    reconnect had worked.
+  //
+  // A plain `workbench seed` never sets `verified` on an `oauth_token`
+  // credential — its token comes straight from env with no OAuth exchange
+  // of its own — so an idempotent re-seed of a still-active row still
+  // just skips, exactly as before.
   //
   // An `api_key` credential (OpenRouter, an onboarding-picked provider)
-  // has no such staleness signal — its row stays `active` whether or not
-  // the person reconnecting regenerated the key or is retrying after a
-  // bad paste — so `status` can't gate it the way it gates `oauth_token`.
-  // It rotates on a name conflict only when `args.verified` is set,
-  // which a caller sets only for an explicit user submission through a
-  // connect UI: `testAndPersistCredential`
+  // has no staleness signal at all — its row stays `active` whether or
+  // not the person reconnecting regenerated the key or is retrying after
+  // a bad paste — so it rotates on a name conflict only when
+  // `args.verified` is set, which a caller sets only for an explicit user
+  // submission through a connect UI: `testAndPersistCredential`
   // (`@workbench/onboarding`'s `complete-credential.ts`) sets it
   // unconditionally for a pasted key or a completed OAuth exchange
   // (CL-6123 dropped the probe that used to gate this), and
   // `connections`' `POST /:connectorId/complete` (`routes.ts`) still
   // sets it only after `descriptor.probe` passes, since that surface
-  // (Settings > Connections) is allowed to block on a real check. A
-  // plain `workbench seed` never sets `verified` — its key comes
-  // straight from env with no probe of its own — so that idempotent
-  // re-seed still just skips, exactly as before.
+  // (Settings > Connections) is allowed to block on a real check.
   const shouldRotate =
     args.type === "oauth_token"
-      ? existing.status !== "active"
+      ? existing.status !== "active" || args.verified === true
       : args.verified === true;
   if (shouldRotate) {
     const rotated = await api(
