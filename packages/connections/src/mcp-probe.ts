@@ -8,6 +8,7 @@
 import { mcpOriginPinnedFetch } from "@corbits/credential-providers";
 import { withMcpConnection, listMcpTools } from "@corbits/mcp-tools";
 import { discoverOAuthServerInfo } from "@modelcontextprotocol/sdk/client/auth.js";
+import { reportError } from "@corbits/error-sink";
 
 export type McpProbeResult =
   | { readonly ok: true; readonly toolCount: number }
@@ -47,7 +48,15 @@ async function discoverOAuthRequirement(
     return info.authorizationServerMetadata !== undefined
       ? { authorizationServerUrl: info.authorizationServerUrl }
       : undefined;
-  } catch {
+  } catch (cause) {
+    // A missing discovery document is the expected negative result (most
+    // MCP servers aren't OAuth-gated) and degrades to it identically to a
+    // real discovery-transport failure — report so an actual outage here
+    // doesn't silently read as "this server doesn't do OAuth."
+    reportError(cause, {
+      operation: "discover_mcp_oauth_requirement",
+      extra: { origin: new URL(url).origin },
+    });
     return undefined;
   }
 }
@@ -78,6 +87,10 @@ export async function probeMcpServer(
   try {
     parsedUrl = new URL(url);
   } catch {
+    // report-error-ignore: CL-7247 — a malformed URL here is a person's
+    // paste-in typo (the same "not a valid URL" outcome the UI already
+    // surfaces to them), never a system fault; there is nothing to fix in
+    // response to it.
     return { ok: false, message: `"${url}" is not a valid URL.` };
   }
   if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
@@ -95,6 +108,10 @@ export async function probeMcpServer(
       cause instanceof Error
         ? `Could not connect to that MCP server: ${cause.message}`
         : `Could not connect to that MCP server: ${String(cause)}`;
+    reportError(cause, {
+      operation: "probe_mcp_server",
+      extra: { origin: parsedUrl.origin },
+    });
     if (looksUnauthorized(cause)) {
       const discovered = await discoverOAuthRequirement(url);
       if (discovered !== undefined) {

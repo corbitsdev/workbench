@@ -2,7 +2,8 @@
 // entirely against a stubbed fetch — no Google credentials involved.
 // Live-key verification against a real Google OAuth app is a deploy
 // concern (`GMAIL_CLIENT_ID`/`GMAIL_CLIENT_SECRET`), not a test one.
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
+import * as errorSink from "@corbits/error-sink";
 
 import {
   exchangeCodeForGoogleToken,
@@ -116,4 +117,26 @@ test("wires a bounded AbortSignal into the exchange fetch so a stalled provider 
 
   expect(capturedSignal).toBeInstanceOf(AbortSignal);
   expect(capturedSignal?.aborted).toBe(false);
+});
+
+test("a transport failure is reported and never crashes", async () => {
+  const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
+  const result = await exchangeCodeForGoogleToken({
+    code: "auth-code-1",
+    redirectUri: "https://bench.example.com/callback",
+    clientId: "client-1",
+    clientSecret: "secret-1",
+    fetchImpl: async () => {
+      throw new Error("getaddrinfo ENOTFOUND");
+    },
+  });
+  expect(result.ok).toBe(false);
+  if (result.ok) throw new Error("expected failure");
+  expect(result.message).toContain("getaddrinfo ENOTFOUND");
+  expect(report).toHaveBeenCalledTimes(1);
+  expect(report.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+  expect(report.mock.calls[0]?.[1]).toMatchObject({
+    operation: "exchange_code_for_google_token",
+  });
+  report.mockRestore();
 });

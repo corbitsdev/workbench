@@ -2,7 +2,8 @@
 // real network calls, no real keys — a 401 must reject, a 2xx must
 // accept, matching `@workbench/hub-client/credential-test`'s own
 // contract for `testProviderCredential`.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import * as errorSink from "@corbits/error-sink";
 import type { FetchLike } from "@workbench/hub-client/credential-test";
 import {
   testExaCredential,
@@ -33,6 +34,22 @@ describe("testGranolaCredential", () => {
       fakeFetch(200, JSON.stringify({ notes: [] })),
     );
     expect(result.ok).toBe(true);
+  });
+
+  test("a transport failure is reported by displayName, never the key", async () => {
+    const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
+    const fetchImpl: FetchLike = async () => {
+      throw new Error("getaddrinfo ENOTFOUND");
+    };
+    const result = await testGranolaCredential("test-key", fetchImpl);
+    expect(result.ok).toBe(false);
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+    expect(report.mock.calls[0]?.[1]).toMatchObject({
+      operation: "probe_credential",
+      extra: { displayName: "Granola" },
+    });
+    report.mockRestore();
   });
 });
 

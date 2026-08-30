@@ -327,6 +327,8 @@ export async function plantEnvProviderCredentials(
           }),
         );
       } catch (cause) {
+        // report-error-ignore: CL-7234 routes this catch through
+        // reportError the way provision.ts already does
         const message = cause instanceof Error ? cause.message : String(cause);
         args.log(
           `env credential plant: ${provider} failed to backfill catalog: ${message}`,
@@ -357,6 +359,8 @@ export async function plantEnvProviderCredentials(
     try {
       await runSeedCatalog(catalogSeedArgs(provider, { apiKey }));
     } catch (cause) {
+      // report-error-ignore: CL-7234 routes this catch through
+      // reportError the way provision.ts already does
       const message = cause instanceof Error ? cause.message : String(cause);
       args.log(`env credential plant: ${provider} failed to plant: ${message}`);
       outcomes.push({ provider, status: "failed", message });

@@ -8,7 +8,8 @@
 // `deps.probe` (the same test seam `mcp-server-routes.test.ts` uses),
 // since this suite is about the OAuth mechanics, not a second proof that
 // `@corbits/mcp-tools`' transport works.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import * as errorSink from "@corbits/error-sink";
 import { Hono, type MiddlewareHandler } from "hono";
 import { createNoopCredentialCipher } from "@intx/crypto";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
@@ -621,6 +622,7 @@ describe("MCP OAuth connect flow", () => {
   });
 
   test("start redirects discovery_failed when the authorization server is unreachable", async () => {
+    const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
     const hub = fakeHub();
     const routes = createMcpOAuthRoutes({
       hubUrl: "http://hub.test",
@@ -638,6 +640,13 @@ describe("MCP OAuth connect flow", () => {
     expect(response.headers.get("location")).toBe(
       "/plugins?mcpOauth=canva&outcome=error&code=discovery_failed",
     );
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+    expect(report.mock.calls[0]?.[1]).toMatchObject({
+      operation: "mcp_oauth_start",
+      extra: { slug: "canva" },
+    });
+    report.mockRestore();
   });
 
   test("callback completes the token exchange and stores a bearer credential", async () => {
@@ -672,6 +681,106 @@ describe("MCP OAuth connect flow", () => {
       expect(hub.providers[0]?.plugin).toBe("mcp-streamable-http");
       expect(hub.credentials).toHaveLength(1);
       expect(hub.credentials[0]?.secret).toBe(probedToken);
+    } finally {
+      as.stop();
+    }
+  });
+
+  test("a token-exchange failure is reported without leaking the code or verifier", async () => {
+    const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
+    const as = startStubAuthorizationServer();
+    try {
+      const hub = fakeHub();
+      const routes = createMcpOAuthRoutes({
+        hubUrl: "http://hub.test",
+        requireGrant: allowAll,
+        log: () => {},
+        credentialCipher: createNoopCredentialCipher(),
+        apiCall: hub.apiCall,
+      });
+      const app = mountAs(routes);
+
+      const startResponse = await app.request(
+        `/exa/start?url=${encodeURIComponent(as.resourcePath)}&name=Exa`,
+        { redirect: "manual" },
+      );
+      const cookieHeader = startResponse.headers.get("set-cookie") ?? "";
+      const cookie = cookieHeader.split(";")[0] ?? "";
+      const authorizeLocation = startResponse.headers.get("location") ?? "";
+      const authorizeResponse = await fetch(authorizeLocation, {
+        redirect: "manual",
+      });
+      const redirectToCallback =
+        authorizeResponse.headers.get("location") ?? "";
+      const callbackUrl = new URL(redirectToCallback);
+      // A code the stub server never issued: its /token endpoint 400s
+      // with invalid_grant, which auth() surfaces as a throw.
+      callbackUrl.searchParams.set("code", "code_never_issued");
+
+      const callbackResponse = await app.request(
+        `${callbackUrl.pathname}${callbackUrl.search}`,
+        { headers: { cookie }, redirect: "manual" },
+      );
+
+      expect(callbackResponse.headers.get("location") ?? "").toContain(
+        "code=exchange_failed",
+      );
+      expect(report).toHaveBeenCalledTimes(1);
+      expect(report.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+      expect(report.mock.calls[0]?.[1]).toMatchObject({
+        operation: "mcp_oauth_token_exchange",
+        tenantId: TENANT.id,
+        extra: { slug: "exa" },
+      });
+      report.mockRestore();
+    } finally {
+      as.stop();
+    }
+  });
+
+  test("a persist failure after a completed exchange is reported without leaking the token", async () => {
+    const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
+    const as = startStubAuthorizationServer();
+    try {
+      const failingApiCall: ApiCall = async (method, path) => {
+        if (method === "GET" && path.endsWith("/providers?inherited=false")) {
+          return {
+            status: 200,
+            data: { data: [], nextCursor: null },
+            cookies: [],
+          };
+        }
+        throw new Error("provider store unavailable");
+      };
+      const routes = createMcpOAuthRoutes({
+        hubUrl: "http://hub.test",
+        requireGrant: allowAll,
+        log: () => {},
+        credentialCipher: createNoopCredentialCipher(),
+        apiCall: failingApiCall,
+        probe: async (): Promise<McpProbeResult> => ({
+          ok: true,
+          toolCount: 1,
+        }),
+      });
+      const app = mountAs(routes);
+
+      const callbackResponse = await runConnectFlow(app, as);
+
+      expect(callbackResponse.headers.get("location") ?? "").toContain(
+        "code=setup_failed",
+      );
+      expect(report).toHaveBeenCalledTimes(1);
+      expect(report.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+      expect(report.mock.calls[0]?.[1]).toMatchObject({
+        operation: "persist_mcp_oauth_connection",
+        tenantId: TENANT.id,
+        extra: { slug: "exa" },
+      });
+      const extra = report.mock.calls[0]?.[1]?.extra as
+        Record<string, unknown> | undefined;
+      expect(JSON.stringify(extra)).not.toContain("token_for_");
+      report.mockRestore();
     } finally {
       as.stop();
     }

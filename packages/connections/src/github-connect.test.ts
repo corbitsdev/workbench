@@ -3,7 +3,8 @@
 // surface GitHub's own `error`/`error_description` shape (distinct from
 // a non-2xx status — GitHub's token endpoint answers 200 with an `error`
 // field on a rejected code).
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import * as errorSink from "@corbits/error-sink";
 import {
   exchangeCodeForGithubToken,
   type ExchangeFetch,
@@ -101,6 +102,7 @@ describe("exchangeCodeForGithubToken", () => {
   });
 
   test("a transport failure is reported honestly", async () => {
+    const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
     const fetchImpl: ExchangeFetch = async () => {
       throw new Error("getaddrinfo ENOTFOUND");
     };
@@ -118,6 +120,12 @@ describe("exchangeCodeForGithubToken", () => {
       expect(result.message).toContain("Could not reach GitHub");
       expect(result.message).toContain("getaddrinfo ENOTFOUND");
     }
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+    expect(report.mock.calls[0]?.[1]).toMatchObject({
+      operation: "exchange_code_for_github_token",
+    });
+    report.mockRestore();
   });
 
   // CL-7235: a GitHub token endpoint that never answers used to leave

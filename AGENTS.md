@@ -88,7 +88,19 @@ check:*` script, so a violation fails CI rather than waiting for review.
   `@corbits/error-sink` — never a bare `catch {}`, never a toast alone. It
   attaches operation/tenant/room/agent context and a `refId` a person can
   quote to support, and redacts secrets before anything reaches a log
-  sink.
+  sink. Unlike every other rule in this section, this one does not yet
+  hold retroactively: `check:report-error` fails a catch clause that
+  neither calls `reportError` nor rethrows only when the catch is new or
+  the current change's diff touches its line; a pre-existing catch is
+  instead recorded in `scripts/checks/report-error-baseline.txt`, a debt
+  ledger — not an allowlist — of 280 violations as of this check landing,
+  each one a real bug still to fix. Regenerate it with `bun run
+scripts/checks/report-error.ts --write-baseline` after fixing (or
+  newly opting out) entries; a stale entry with no matching violation
+  fails the check, so the ledger can only shrink. A violation already
+  tracked on its own ticket opts out instead with a `report-error-ignore:
+<reason>` comment on the catch or in its body — that's for a violation
+  actively being fixed, never a way to clear a baseline entry quietly.
 - A package's `browser-safe` subpath (e.g. `@corbits/routines/client`) may
   never import a server-only dependency (`postgres`, `drizzle-orm`,
   `hono`, any `@intx/*`) — `check:browser-safe-subpaths` walks the real

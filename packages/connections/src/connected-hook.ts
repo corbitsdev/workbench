@@ -5,6 +5,7 @@
 // without knowing which door the connection came through. Best-effort
 // by contract: a hook failure is logged and never breaks the connect
 // itself — the credential is already stored when this fires.
+import { reportError } from "@corbits/error-sink";
 
 export type ServiceConnectedInfo = {
   readonly tenantId: string;
@@ -30,6 +31,11 @@ export async function fireConnectedHook(
     log(
       `onConnected hook failed for ${info.connectorId} on tenant ${info.tenantId}: ${message}`,
     );
+    reportError(cause, {
+      operation: "fire_connected_hook",
+      tenantId: info.tenantId,
+      extra: { connectorId: info.connectorId },
+    });
   }
 }
 
@@ -77,5 +83,10 @@ export async function fireInferenceCredentialSeedableHook(
     log(
       `onInferenceCredentialUsable hook failed for ${info.provider} on tenant ${info.tenantId}: ${message}`,
     );
+    reportError(cause, {
+      operation: "fire_inference_credential_seedable_hook",
+      tenantId: info.tenantId,
+      extra: { provider: info.provider },
+    });
   }
 }

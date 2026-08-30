@@ -2,7 +2,8 @@
 // (`apiCall`) and a stubbed probe, mirroring `routes.test.ts`'s own
 // bare-Hono/tenant-injecting-middleware setup. Nothing here touches the
 // real network or a real MCP server.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import * as errorSink from "@corbits/error-sink";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
@@ -239,6 +240,42 @@ describe("POST /", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as { slug: string };
     expect(body.slug).toBe("notion-2");
+  });
+
+  test("a storage failure after a successful probe reports it without leaking the token", async () => {
+    const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
+    const failingApiCall: ApiCall = async (method, path) => {
+      if (method === "GET" && path.endsWith("/providers?inherited=false")) {
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
+      }
+      throw new Error("provider store unavailable");
+    };
+    const app = buildApp({ apiCall: failingApiCall });
+
+    const response = await app.request("/", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Notion Workspace",
+        url: "https://mcp.notion.example/sse",
+        token: "secret-token",
+      }),
+    });
+
+    expect(response.status).toBe(500);
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+    expect(report.mock.calls[0]?.[1]).toMatchObject({
+      operation: "persist_mcp_server_connection",
+      tenantId: TENANT.id,
+    });
+    const extra = report.mock.calls[0]?.[1]?.extra as
+      Record<string, unknown> | undefined;
+    expect(JSON.stringify(extra)).not.toContain("secret-token");
+    report.mockRestore();
   });
 
   test("a failing probe never touches storage", async () => {

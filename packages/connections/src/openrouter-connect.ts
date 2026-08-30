@@ -7,6 +7,7 @@
 // and never put in a URL.
 
 import { type } from "arktype";
+import { reportError } from "@corbits/error-sink";
 
 import {
   postExchangeRequest,
@@ -57,6 +58,7 @@ export async function exchangeCodeForKey(
       }),
     });
   } catch (cause) {
+    reportError(cause, { operation: "exchange_code_for_openrouter_key" });
     return {
       ok: false,
       message:

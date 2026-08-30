@@ -42,6 +42,7 @@ import {
   type ConnectStateStore,
 } from "./pkce";
 import { fireConnectedHook, type ServiceConnectedHook } from "./connected-hook";
+import { reportError } from "@corbits/error-sink";
 import type { ConnectorDescriptor } from "./descriptor";
 import { CONNECTOR_REGISTRY } from "./registry";
 
@@ -102,6 +103,11 @@ export function sanitizeReturnPath(
     const decodedOnceMore = decodeURIComponent(candidate);
     if (decodedOnceMore !== candidate) candidate = decodedOnceMore;
   } catch {
+    // report-error-ignore: CL-7247 — a malformed percent-encoding here is
+    // untrusted, possibly adversarial redirect input; the function's own
+    // contract (see header) is to fail silently to the default path
+    // exactly like an absent `?return=` would, never to surface as an
+    // error for a value nothing should have sent in the first place.
     return defaultReturnPath;
   }
 
@@ -625,6 +631,15 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
       deps.log(
         `${connectorId} connect setup failed for user ${user.id}: ${message}`,
       );
+      // Never widen `extra` beyond identifiers safe to print — `cause` here
+      // can carry the exchanged material (apiKey/refreshToken) or the
+      // connector's clientSecret in scope above; reportError's redaction
+      // covers the error object itself, not whatever this call adds to
+      // context.
+      reportError(cause, {
+        operation: "oauth_connect_setup",
+        extra: { connectorId, userId: user.id },
+      });
       return c.redirect(
         redirectPath(returnPath, connectorId, {
           outcome: "error",
