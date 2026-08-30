@@ -1892,7 +1892,11 @@ export type DispatchTurnInput = {
  * recipient's controller was still reachable when the user cancelled),
  * posts the one cancelled notice the timeline gets for it. Losing that
  * race means `cancelWorkbenchTurn`'s own sweep already settled the row
- * and posted the notice instead — exactly one of the two ever does.
+ * and posted the notice instead — exactly one of the two ever does. A
+ * signal already aborted BEFORE this is ever called returns immediately
+ * after closing the row, never calling `sendMail` at all — that is not
+ * CL-7230's ceiling (a send already in flight, which cannot be
+ * stopped), just a send that hasn't started yet and has no reason to.
  */
 export async function dispatchTurn(
   deps: Pick<
@@ -1940,10 +1944,17 @@ export async function dispatchTurn(
       });
   };
   if (signal?.aborted) {
+    // CL-7201 (Critique finding): already aborted before `sendMail` was
+    // ever asked to run at all — not CL-7230's "aborts while sendMail
+    // is already in flight" ceiling, which genuinely cannot be
+    // stopped. Firing a brand-new mail send for a turn already known
+    // (and closed) as cancelled would orphan a reply nothing could ever
+    // attach to a running row again, so this returns instead of falling
+    // through to it.
     closeAsTimedOut();
-  } else {
-    signal?.addEventListener("abort", closeAsTimedOut, { once: true });
+    return;
   }
+  signal?.addEventListener("abort", closeAsTimedOut, { once: true });
 
   try {
     await deps.platform.sendMail({
