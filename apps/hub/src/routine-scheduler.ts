@@ -45,9 +45,15 @@ export type RoutineSchedulerDeps = {
   ) => Promise<boolean>;
   /** Injectable for deterministic tests; defaults to `Date.now`-backed wall time. */
   now?: () => Date;
+  /** How often the poller sweeps for due routines. Defaults to
+   * `DEFAULT_ROUTINE_SCHEDULER_POLL_INTERVAL_MS`. Test/dev-only override
+   * (see `ROUTINE_SCHEDULER_POLL_INTERVAL_MS` in `config.ts`) — a live
+   * hub always runs the real cadence unless that env var is set, which
+   * only the e2e harness does. */
+  pollIntervalMs?: number;
 };
 
-const POLL_INTERVAL_MS = 30_000;
+export const DEFAULT_ROUTINE_SCHEDULER_POLL_INTERVAL_MS = 30_000;
 const log = getLogger(["hub", "routine-scheduler"]);
 
 /**
@@ -131,7 +137,10 @@ export function createRoutineScheduler(deps: RoutineSchedulerDeps) {
     }
   }
 
-  const interval = setInterval(() => void tick(), POLL_INTERVAL_MS);
+  const interval = setInterval(
+    () => void tick(),
+    deps.pollIntervalMs ?? DEFAULT_ROUTINE_SCHEDULER_POLL_INTERVAL_MS,
+  );
   if (typeof interval.unref === "function") interval.unref();
 
   return {

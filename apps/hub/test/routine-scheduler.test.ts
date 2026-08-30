@@ -1,12 +1,16 @@
 // Scheduler poller: claim → fire, backoff on failure, dead-letter at max.
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, jest, test } from "bun:test";
 import {
   backoffMsForFailure,
   createInMemoryRoutineStore,
   MAX_ROUTINE_FIRE_FAILURES,
   type RoutineLauncher,
 } from "@corbits/routines";
-import { tickRoutineScheduler } from "../src/routine-scheduler";
+import {
+  createRoutineScheduler,
+  DEFAULT_ROUTINE_SCHEDULER_POLL_INTERVAL_MS,
+  tickRoutineScheduler,
+} from "../src/routine-scheduler";
 
 const CRON = { kind: "cron" as const, expression: "0 * * * *" };
 
@@ -234,5 +238,90 @@ describe("tickRoutineScheduler", () => {
     expect(
       await store.listDueRoutines(new Date(clock.getTime() + 1e12)),
     ).toEqual([]);
+  });
+});
+
+// `createRoutineScheduler`'s own `setInterval` wrapper — the piece an
+// e2e test cannot drive with fake timers because it lives in a spawned
+// child process (see CL-7250). Proven here instead, entirely
+// in-process with Bun's fake timers, so the real 30s production
+// cadence and the injectable override are both covered in
+// milliseconds rather than by waiting either one out for real.
+describe("createRoutineScheduler's setInterval wiring", () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test("defaults to the real 30s cadence when pollIntervalMs is unset", async () => {
+    jest.useFakeTimers();
+    const store = createInMemoryRoutineStore();
+    await store.createRoutine({
+      tenantId: "t1",
+      name: "hourly",
+      definitionId: "def_1",
+      trigger: CRON,
+      scope: "bench",
+      input: {},
+      deliveryWorkbenchId: "ch_delivery",
+      createdBy: "user_1",
+    });
+    let launches = 0;
+    const scheduler = createRoutineScheduler({
+      store,
+      launcher: launcher(async () => {
+        launches += 1;
+        return { runId: "run_1" };
+      }),
+      now: () => new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+    });
+    try {
+      jest.advanceTimersByTime(DEFAULT_ROUTINE_SCHEDULER_POLL_INTERVAL_MS - 1);
+      await Promise.resolve();
+      expect(launches).toBe(0);
+
+      jest.advanceTimersByTime(1);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(launches).toBe(1);
+    } finally {
+      scheduler.stop();
+    }
+  });
+
+  test("an injected pollIntervalMs overrides the default cadence", async () => {
+    jest.useFakeTimers();
+    const store = createInMemoryRoutineStore();
+    await store.createRoutine({
+      tenantId: "t1",
+      name: "hourly",
+      definitionId: "def_1",
+      trigger: CRON,
+      scope: "bench",
+      input: {},
+      deliveryWorkbenchId: "ch_delivery",
+      createdBy: "user_1",
+    });
+    let launches = 0;
+    const scheduler = createRoutineScheduler({
+      store,
+      launcher: launcher(async () => {
+        launches += 1;
+        return { runId: "run_1" };
+      }),
+      now: () => new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+      pollIntervalMs: 500,
+    });
+    try {
+      jest.advanceTimersByTime(499);
+      await Promise.resolve();
+      expect(launches).toBe(0);
+
+      jest.advanceTimersByTime(1);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(launches).toBe(1);
+    } finally {
+      scheduler.stop();
+    }
   });
 });

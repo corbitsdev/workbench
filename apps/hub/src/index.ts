@@ -2948,6 +2948,9 @@ export async function createHub(config: HubConfig) {
     store: routineStore,
     launcher: routineLauncher,
     deliveryWorkbenchRequired: routineDeliveryWorkbenchRequired,
+    ...(config.routineSchedulerPollIntervalMs !== undefined
+      ? { pollIntervalMs: config.routineSchedulerPollIntervalMs }
+      : {}),
   });
 
   // The inventory Myra is offered when drafting a new agent definition

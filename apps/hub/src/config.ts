@@ -101,6 +101,9 @@ const HubEnv = type({
   "WORKBENCH_ALLOWED_EMAIL_DOMAINS?": type("string").describe(
     "comma-separated email domains allowed when WORKBENCH_SIGNUP=open, e.g. acme.example",
   ),
+  "ROUTINE_SCHEDULER_POLL_INTERVAL_MS?": type(/^[1-9]\d*$/).describe(
+    "dev/test-only override for the routine scheduler's poll interval, in milliseconds — unset (default) runs the real 30s production cadence; the e2e harness sets this to a fast interval so a scheduled-routine test doesn't wait out the real cadence",
+  ),
   "ANTHROPIC_API_KEY?": type("string > 0").describe(
     "your Anthropic API key; optional, enables the default workflow set for freshly self-served benches, and auto-plants a probed catalog credential on the operator bench at hub start",
   ),
@@ -354,6 +357,10 @@ export type HubConfig = {
   /** Dev/test-only opt-in to skip @workbench/access-policy's email-
    * verification requirement. */
   readonly allowUnverifiedEmails: boolean;
+  /** Dev/test-only override for the routine scheduler's poll interval —
+   * see `ROUTINE_SCHEDULER_POLL_INTERVAL_MS` above. Unset runs the real
+   * production cadence (`routine-scheduler.ts`'s own default). */
+  readonly routineSchedulerPollIntervalMs?: number;
   /** Every sidecar-allocation backend registered for exclusive placement,
    * zero or more, each addressable by its provisioner id. Empty when
    * unconfigured — the registry then holds no provisioners and every
@@ -660,6 +667,10 @@ export function readHubConfig(
   if (parsed.OPERATOR_TENANT_ID !== undefined)
     hubConfig.operatorTenantId = parsed.OPERATOR_TENANT_ID;
   if (parsed.PORT !== undefined) hubConfig.listenPort = Number(parsed.PORT);
+  if (parsed.ROUTINE_SCHEDULER_POLL_INTERVAL_MS !== undefined)
+    hubConfig.routineSchedulerPollIntervalMs = Number(
+      parsed.ROUTINE_SCHEDULER_POLL_INTERVAL_MS,
+    );
   if (seedModel !== undefined) hubConfig.seedModel = seedModel;
   if (parsed.HUGGINGFACE_OAUTH_CLIENT_ID !== undefined)
     hubConfig.huggingfaceOAuthClientId = parsed.HUGGINGFACE_OAUTH_CLIENT_ID;
