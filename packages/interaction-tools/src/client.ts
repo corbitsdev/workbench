@@ -57,12 +57,16 @@ const PostedMessageResponse = type({ id: "string", createdAt: "string" });
 /**
  * Posts a `question` block into the caller's own channel. Mints the
  * block's `questionId` here (never trusts the model to supply a stable,
- * collision-free id) and returns it, since `ask_user`'s tool result names
- * it so a caller can correlate a later answer, and the route persists
- * responses keyed by `(messageId, blockId)`. `@intx/hub-common`'s
- * `generateId` is a closed enum of platform id kinds (vendored, read-only
- * source) with no "question" entry, so this mints its own `q_`-prefixed
- * id the same way `packages/chat/src/threads.ts`'s `thr_` ids do.
+ * collision-free id) and returns it: `beforeAskUser` (`./tool.ts`) reuses
+ * it verbatim as the `message_response` gate's own `correlationId`, and
+ * the block-response route persists (and later relays) an answer keyed on
+ * this same id as `blockId` — a question block's `blockId` IS its
+ * `questionId`, the same way a poll's is its `pollId`
+ * (`packages/chat/src/schema.ts`'s `block_responses` table comment).
+ * `@intx/hub-common`'s `generateId` is a closed enum of platform id kinds
+ * (vendored, read-only source) with no "question" entry, so this mints its
+ * own `q_`-prefixed id the same way `packages/chat/src/threads.ts`'s
+ * `thr_` ids do.
  */
 export async function postQuestion(
   config: AskUserClientConfig,

@@ -1381,6 +1381,16 @@ export type SendWorkbenchMessageInput = {
    * into the run the room already has.
    */
   readonly forcedRecipientAddress?: string;
+  /**
+   * The id an answer must carry to resolve the gate it answers — a
+   * `message_response` gate's own correlationId (`@corbits/interaction-tools`'s
+   * `beforeAskUser`), threaded down to `headers.interchangeCorrelationId`
+   * on the InboundMessage the reactor's `tryCorrelate` reads. Sourced from
+   * the answered block's own id for a question response
+   * (`packages/chat/src/routes.ts`'s blocks/responses route); absent for
+   * every ordinary message, which carries no correlation at all.
+   */
+  readonly correlationId?: string;
 };
 
 export type SendWorkbenchMessageResult = {
@@ -1620,6 +1630,9 @@ async function routeToRecipients(
       principalId: input.principalId,
       recipients,
       parts: turnParts,
+      ...(input.correlationId !== undefined
+        ? { correlationId: input.correlationId }
+        : {}),
     },
     (batch) =>
       dispatchTurnBatch(deps, input.tenantId, input.workbenchId, batch),
@@ -1664,6 +1677,18 @@ async function dispatchTurnBatch(
   const last = batch[batch.length - 1];
   if (last === undefined) return;
   const messageIds = batch.map((turn) => turn.messageId);
+  // An answer's correlationId must survive batching regardless of where in
+  // the batch it landed — unlike `principalId`, which is legitimately
+  // "whoever sent last," a gate answer is a specific message a specific
+  // queued turn carries, not necessarily the batch's final one (a further
+  // unrelated message queued behind the answer, before this batch drains,
+  // would otherwise make `last.correlationId` undefined and silently strand
+  // the gate on its timeout instead of resolving it). At most one queued
+  // turn in a batch carries a correlationId in practice — a batch answering
+  // more than one live question is not a shape this dispatch produces.
+  const batchCorrelationId = batch.find(
+    (turn) => turn.correlationId !== undefined,
+  )?.correlationId;
 
   // CL-6644: unconditional entry marker — see the matching note on the
   // caller's own recipient-resolution log. This is the one line that
@@ -1730,6 +1755,15 @@ async function dispatchTurnBatch(
             agentAddress,
             parts,
             requestMessageIds: messageIds,
+            // A batch concatenating more than one queued message's parts
+            // still stamps the whole combined body as the answer when any
+            // one of them carries a correlationId — acceptable (the user
+            // did answer), but a batch mixing the actual answer with an
+            // unrelated follow-up hands the gate the whole blob, not just
+            // the answer.
+            ...(batchCorrelationId !== undefined
+              ? { correlationId: batchCorrelationId }
+              : {}),
           }),
           turnDispatchTimeoutMs,
           turnDispatchTimeoutMessage(agentAddress, turnDispatchTimeoutMs),
@@ -1774,6 +1808,9 @@ export type DispatchTurnInput = {
   readonly parts: PartType[];
   /** The room messages this turn answers, in arrival order. */
   readonly requestMessageIds: readonly string[];
+  /** See `SendWorkbenchMessageInput.correlationId`; threaded straight
+   * through to `WorkbenchMail.sendMail`. */
+  readonly correlationId?: string;
 };
 
 /**
@@ -1812,6 +1849,9 @@ export async function dispatchTurn(
       principalId: input.principalId,
       content: encodeParts(input.parts, { replyTo: input.workbenchId }),
       fromWorkbenchId: input.workbenchId,
+      ...(input.correlationId !== undefined
+        ? { correlationId: input.correlationId }
+        : {}),
     });
   } catch (err) {
     if (turn !== undefined) {
