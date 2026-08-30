@@ -369,6 +369,13 @@ export const Composer = forwardRef<
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachGenerationRef = useRef(0);
+  // `sending` is React state, set only after `onSend` has already been
+  // awaited into — two calls to `performSend` inside one synchronous tick
+  // (an Enter keydown and a click both firing before a render lands) would
+  // both read `sending === false` and both post. This ref is set the
+  // instant a send starts, synchronously ahead of any render, so a second
+  // call in the same tick is turned away (CL-7198).
+  const sendInFlightRef = useRef(false);
 
   /** Auto-grow: the textarea reports its own content height, so the
    * measurement resets to the CSS-declared min-height before reading
@@ -455,10 +462,16 @@ export const Composer = forwardRef<
    * recovering the text is the pending bubble's own Discard action.
    */
   async function performSend(payload: ComposerSendPayload): Promise<void> {
+    if (sendInFlightRef.current) return;
+    sendInFlightRef.current = true;
     setSending(true);
     setErrorMessage(null);
-    await onSend(payload);
-    setSending(false);
+    try {
+      await onSend(payload);
+    } finally {
+      sendInFlightRef.current = false;
+      setSending(false);
+    }
   }
 
   function runSlashCommand(command: SlashCommandSpec) {
