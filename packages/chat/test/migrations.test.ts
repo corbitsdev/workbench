@@ -46,6 +46,7 @@ const migrationNames = [
   "0023_drop_workbench_host_arm",
   "0024_workbench_launch_sources_digest",
   "0025_workbench_threads_unique_key",
+  "0026_workbench_threads_delivery_key",
 ];
 
 describeIfDb("applyChatMigrations", () => {
@@ -173,6 +174,12 @@ describeIfDb("applyChatMigrations", () => {
       );
       expect(threadIndexNames).toContain("workbench_threads_root_key");
       expect(threadIndexNames).toContain("workbench_threads_reply_key");
+
+      // CL-7199: `createDeliveryThread` insert-then-reselects on
+      // conflict the same way; this partial unique index is what makes
+      // the conflict possible instead of a silent duplicate delivery
+      // thread per run.
+      expect(threadIndexNames).toContain("workbench_threads_delivery_key");
     } finally {
       await sql.end();
     }
@@ -380,6 +387,185 @@ describeIfDb("0025_workbench_threads_unique_key dedupe", () => {
           );
         })(),
       ).rejects.toThrow();
+    } finally {
+      await verify.end();
+    }
+  }, 120000);
+});
+
+describeIfDb("0026_workbench_threads_delivery_key dedupe", () => {
+  const scratchUrl = scratchUrlFor(
+    databaseUrl ?? "postgres://localhost:5432/unused",
+  ).replace("_chat_migrations_test", "_chat_migrations_delivery_dedupe_test");
+  const scratchTarget = new URL(scratchUrl);
+  const scratchDatabase = scratchTarget.pathname.replace(/^\//, "");
+
+  beforeAll(async () => {
+    const maintenanceUrl = new URL(scratchUrl);
+    maintenanceUrl.pathname = "/postgres";
+    const maintenance = postgres(maintenanceUrl.toString(), {
+      max: 1,
+      onnotice: () => undefined,
+    });
+    try {
+      await maintenance.unsafe(`DROP DATABASE IF EXISTS "${scratchDatabase}"`);
+      await maintenance.unsafe(`CREATE DATABASE "${scratchDatabase}"`);
+    } finally {
+      await maintenance.end();
+    }
+  }, 20000);
+
+  afterAll(async () => {
+    const maintenanceUrl = new URL(scratchUrl);
+    maintenanceUrl.pathname = "/postgres";
+    const maintenance = postgres(maintenanceUrl.toString(), {
+      max: 1,
+      onnotice: () => undefined,
+    });
+    try {
+      await maintenance.unsafe(`DROP DATABASE IF EXISTS "${scratchDatabase}"`);
+    } finally {
+      await maintenance.end();
+    }
+  }, 20000);
+
+  test("collapses duplicate delivery threads per run ref, repoints thread_id and parent_thread_id references, leaves null-run-ref rows untouched, and rejects a repeat insert", async () => {
+    // Replay every migration through 0025 by hand, seeding the
+    // duplicates 0026 must clean up before it exists to forbid them —
+    // then let `applyChatMigrations` run 0026 for real.
+    const preDeliveryKeyMigrations = chatMigrations.filter(
+      (migration) => migration.name !== "0026_workbench_threads_delivery_key",
+    );
+    const seed = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
+    try {
+      await seed.unsafe(`CREATE SCHEMA IF NOT EXISTS "chat"`);
+      await seed.unsafe(
+        `CREATE TABLE IF NOT EXISTS "chat"."chat_migrations" ` +
+          `(name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
+      );
+      for (const migration of preDeliveryKeyMigrations) {
+        await seed.begin(async (tx) => {
+          await tx.unsafe(migration.sql);
+          await tx.unsafe(
+            `INSERT INTO "chat"."chat_migrations" (name) VALUES ($1)`,
+            [migration.name],
+          );
+        });
+      }
+
+      await seed.unsafe(`
+        INSERT INTO "chat"."workbench_threads"
+          (id, tenant_id, workbench_id, kind, run_ref, created_at)
+        VALUES
+          ('thr_delivery_old', 'tnt_ddedupe', 'wb_ddedupe', 'delivery', 'run_1', now() - interval '1 hour'),
+          ('thr_delivery_new', 'tnt_ddedupe', 'wb_ddedupe', 'delivery', 'run_1', now())
+      `);
+      // Two delivery rows with a null run_ref: the window partition in
+      // the dedupe groups nulls together (unlike the partial unique
+      // index it backstops, which treats nulls as distinct), so these
+      // must survive untouched rather than being collapsed to one row.
+      await seed.unsafe(`
+        INSERT INTO "chat"."workbench_threads"
+          (id, tenant_id, workbench_id, kind, run_ref, created_at)
+        VALUES
+          ('thr_delivery_null_a', 'tnt_ddedupe', 'wb_ddedupe', 'delivery', NULL, now() - interval '1 hour'),
+          ('thr_delivery_null_b', 'tnt_ddedupe', 'wb_ddedupe', 'delivery', NULL, now())
+      `);
+      await seed.unsafe(`
+        INSERT INTO "chat"."workbench_thread_messages"
+          (tenant_id, workbench_id, thread_id, message_id)
+        VALUES ('tnt_ddedupe', 'wb_ddedupe', 'thr_delivery_new', 'msg_ddedupe')
+      `);
+      // A message parked in the dropped delivery duplicate — proves
+      // `workbench_messages.thread_id` is repointed too.
+      await seed.unsafe(`
+        INSERT INTO "chat"."workbench_messages"
+          (id, tenant_id, workbench_id, sender_address, thread_id, parts)
+        VALUES (
+          'msg_in_dropped_delivery', 'tnt_ddedupe', 'wb_ddedupe', 'addr_1',
+          'thr_delivery_new', '[]'::jsonb
+        )
+      `);
+      // A reply thread anchored directly on the dropped delivery
+      // duplicate (a reply to a message that lived in it) — proves
+      // `workbench_threads.parent_thread_id` is repointed, matching
+      // `containerThreadFor`/`resolveThreadAnchor` letting a delivery
+      // thread act as a reply's anchor.
+      await seed.unsafe(`
+        INSERT INTO "chat"."workbench_threads"
+          (id, tenant_id, workbench_id, kind, parent_message_id, parent_thread_id, created_at)
+        VALUES (
+          'thr_child_of_dropped_delivery', 'tnt_ddedupe', 'wb_ddedupe', 'reply',
+          'msg_child', 'thr_delivery_new', now()
+        )
+      `);
+    } finally {
+      await seed.end();
+    }
+
+    const report = await applyChatMigrations(scratchUrl);
+    expect(report.applied).toEqual(["0026_workbench_threads_delivery_key"]);
+
+    const verify = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
+    try {
+      const deliveries = await verify.unsafe(
+        `SELECT id FROM "chat"."workbench_threads" ` +
+          `WHERE tenant_id = 'tnt_ddedupe' AND workbench_id = 'wb_ddedupe' ` +
+          `AND kind = 'delivery' AND run_ref = 'run_1'`,
+      );
+      expect(deliveries.map((row) => String(row["id"]))).toEqual([
+        "thr_delivery_old",
+      ]);
+
+      const nullRunRefRows = await verify.unsafe(
+        `SELECT id FROM "chat"."workbench_threads" ` +
+          `WHERE tenant_id = 'tnt_ddedupe' AND workbench_id = 'wb_ddedupe' ` +
+          `AND kind = 'delivery' AND run_ref IS NULL`,
+      );
+      expect(nullRunRefRows.map((row) => String(row["id"])).sort()).toEqual([
+        "thr_delivery_null_a",
+        "thr_delivery_null_b",
+      ]);
+
+      const membership = await verify.unsafe(
+        `SELECT thread_id FROM "chat"."workbench_thread_messages" WHERE message_id = 'msg_ddedupe'`,
+      );
+      expect(String(membership[0]?.["thread_id"])).toBe("thr_delivery_old");
+
+      const messageThreadId = await verify.unsafe(
+        `SELECT thread_id FROM "chat"."workbench_messages" WHERE id = 'msg_in_dropped_delivery'`,
+      );
+      expect(String(messageThreadId[0]?.["thread_id"])).toBe(
+        "thr_delivery_old",
+      );
+
+      const childParentThreadId = await verify.unsafe(
+        `SELECT parent_thread_id FROM "chat"."workbench_threads" WHERE id = 'thr_child_of_dropped_delivery'`,
+      );
+      expect(String(childParentThreadId[0]?.["parent_thread_id"])).toBe(
+        "thr_delivery_old",
+      );
+
+      // The delivery unique index holds: a second delivery row for the
+      // same (tenant, workbench, run_ref) key is now rejected rather
+      // than silently accepted as a second duplicate.
+      await expect(
+        (async () => {
+          await verify.unsafe(
+            `INSERT INTO "chat"."workbench_threads" ` +
+              `(id, tenant_id, workbench_id, kind, run_ref) ` +
+              `VALUES ('thr_delivery_conflict', 'tnt_ddedupe', 'wb_ddedupe', 'delivery', 'run_1')`,
+          );
+        })(),
+      ).rejects.toThrow();
+
+      // A null run_ref never conflicts, matching the partial index's
+      // predicate.
+      await verify.unsafe(
+        `INSERT INTO "chat"."workbench_threads" ` +
+          `(id, tenant_id, workbench_id, kind, run_ref) ` +
+          `VALUES ('thr_delivery_null_c', 'tnt_ddedupe', 'wb_ddedupe', 'delivery', NULL)`,
+      );
     } finally {
       await verify.end();
     }
