@@ -9,15 +9,17 @@
 // wires both this registry and the platform's own event stream onto a
 // live SSE stream, and owns the defects that matter here.
 //
-// 1. A write that fails (the client disconnected, but the abort
-//    signal hasn't fired yet) must drop that subscriber immediately
-//    rather than leaving it registered until `stream.onAbort`
-//    eventually runs. A dangling subscriber between disconnect and
-//    abort is a zombie: every event published in that window still
-//    attempts (and fails) a write. The same teardown also closes the
-//    underlying stream so the client's `EventSource` actually sees the
-//    connection end and reconnects, rather than a stream that looks
-//    live while nothing is coming through it anymore (CL-7197).
+// 1. A write that throws must drop that subscriber and close the
+//    stream immediately rather than leaving it registered until
+//    `stream.onAbort` eventually runs — a dangling subscriber between
+//    disconnect and abort is a zombie: every event published in that
+//    window still attempts a write. In practice Hono's own
+//    `StreamingApi.write` swallows writer errors internally and never
+//    rejects, so `stream.onAbort` (wired by the route) is the only
+//    signal that actually fires for a disconnected client today; this
+//    path exists for any write that does throw (a custom `stream`
+//    passed in tests, or a future Hono release that stops swallowing)
+//    and is otherwise inert rather than load-bearing (CL-7197).
 // 2. Access must be re-checked on every delivered event, not only at
 //    connect time. The route resolves access once before opening the
 //    stream, but a share or a share member's row can be revoked at
@@ -169,10 +171,13 @@ export interface WorkbenchStreamBridge {
  * an unhandled rejection) unsubscribes both sources and closes the
  * stream rather than writing the event, so a revoked share or share
  * member stops receiving events on the very next one published. A
- * failed `writeSSE` (the client is already gone) unsubscribes that
- * source immediately, closes the stream so the client's `EventSource`
- * actually reconnects, and reports the failure — the fix for the
- * zombie-subscriber and dead-stream defects.
+ * `writeSSE` that throws (the client is already gone) unsubscribes
+ * that source immediately, closes the stream, and reports the
+ * failure — Hono's own `write` swallows writer errors today, so in
+ * practice `stream.onAbort` is what actually catches a disconnected
+ * client, but this path covers any write that does throw rather than
+ * silently degrading. A periodic keepalive keeps idle connections
+ * alive behind proxies that time out on silence.
  */
 export function bridgeWorkbenchStream(input: {
   registry: WorkbenchSubscriberRegistry;

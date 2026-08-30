@@ -187,7 +187,7 @@ describe("bridgeWorkbenchStream", () => {
     expect(writes).toHaveLength(1);
   });
 
-  test("a subscriber whose write rejects is removed and the stream is closed", async () => {
+  test("a write that throws removes that subscriber and closes the stream (Hono's own writeSSE never rejects; this covers a stream implementation that does)", async () => {
     const registry = createWorkbenchSubscriberRegistry();
     let writeCount = 0;
     let closeCount = 0;
