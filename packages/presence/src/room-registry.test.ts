@@ -315,6 +315,44 @@ describe("createPresenceRoomRegistry: doc sync", () => {
 
     expect(seen).toEqual([]);
   });
+
+  test("a room kept alive only by a doc-update listener survives an otherwise-empty join/leave cycle", () => {
+    const registry = createPresenceRoomRegistry();
+    const docUpdates: string[] = [];
+    registry.subscribeDocUpdates(docKey, (_update, author) =>
+      docUpdates.push(author),
+    );
+
+    registry.join(docKey, state("prn_alice"));
+    registry.leave(docKey, "prn_alice"); // no presence `subscribe` listener attached
+
+    // The room must still be alive — proven by a doc update still
+    // reaching the listener registered before the join/leave cycle,
+    // rather than the room having been silently torn down and recreated
+    // out from under it.
+    const alice = clientDoc();
+    alice.getText("content").insert(0, "still here");
+    registry.applyDocUpdate(docKey, Y.encodeStateAsUpdate(alice), "prn_alice2");
+
+    expect(docUpdates).toEqual(["prn_alice2"]);
+  });
+
+  test("a room kept alive only by a snapshot listener survives an otherwise-empty join/leave cycle", () => {
+    const registry = createPresenceRoomRegistry();
+    const notifications: number[] = [];
+    registry.subscribeSnapshots(docKey, (info) =>
+      notifications.push(info.version),
+    );
+
+    registry.join(docKey, state("prn_alice"));
+    registry.leave(docKey, "prn_alice");
+
+    // Proven the same way: the room surviving is what lets a later
+    // `notifySnapshot` still reach the listener.
+    registry.notifySnapshot(docKey, { version: 7, savedAt: 1 });
+
+    expect(notifications).toEqual([7]);
+  });
 });
 
 describe("createPresenceRoomRegistry: deferred destroy", () => {
