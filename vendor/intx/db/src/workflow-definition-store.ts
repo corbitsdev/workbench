@@ -1,6 +1,6 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 
-import { GrantWalkSnapshot } from "@intx/types";
+import { GrantWalkSnapshot, type WorkflowDefinitionStatus } from "@intx/types";
 import { WorkflowProjectionDefinition } from "@intx/types/sidecar";
 
 import type { DB, DBExecutor } from "./client";
@@ -120,6 +120,122 @@ export type WorkflowDefinitionRollbackResult =
  */
 export function createWorkflowDefinitionStore(db: DBHandle) {
   return {
+    // WORKBENCH DELTA (see VENDORED.md): the four read shapes CL-7275 found
+    // 41 hand-rolled call sites reaching for because the shipped store only
+    // covered the `(assetId, wireHash)` selector and the frozen-version
+    // reads. Every one of those 41 sites is one of: a single definition by
+    // its id, a single definition by its name, every deployed definition for
+    // a tenant, or every definition sharing an asset -- always tenant-scoped,
+    // since a definition is never read across tenants. Centralizing them
+    // here means an invariant Interchange adds later (a status filter, a
+    // required join) reaches every caller instead of only the two that
+    // already routed through `loadFrozenWireProjection`.
+
+    /**
+     * A single definition by id, scoped to the tenant that must own it.
+     * `undefined` on a miss -- including a real id from another tenant,
+     * which callers must see as "not found", never a cross-tenant read.
+     */
+    async findById(
+      tenantId: string,
+      definitionId: string,
+    ): Promise<ParsedWorkflowDefinition | undefined> {
+      const row = await db.query.workflowDefinition.findFirst({
+        where: and(
+          eq(workflowDefinition.id, definitionId),
+          eq(workflowDefinition.tenantId, tenantId),
+        ),
+      });
+      return row === undefined ? undefined : parseWorkflowDefinitionRow(row);
+    },
+
+    /**
+     * A single definition by its (tenant-scoped) name. Callers that only
+     * ever want the launchable one pass `status: "deployed"`; callers
+     * resolving an id for a name regardless of lifecycle state omit it.
+     */
+    async findByName(
+      tenantId: string,
+      name: string,
+      opts: { status?: WorkflowDefinitionStatus } = {},
+    ): Promise<ParsedWorkflowDefinition | undefined> {
+      const row = await db.query.workflowDefinition.findFirst({
+        where: and(
+          eq(workflowDefinition.tenantId, tenantId),
+          eq(workflowDefinition.name, name),
+          ...(opts.status !== undefined
+            ? [eq(workflowDefinition.status, opts.status)]
+            : []),
+        ),
+      });
+      return row === undefined ? undefined : parseWorkflowDefinitionRow(row);
+    },
+
+    /**
+     * Every definition in a tenant, optionally narrowed by status. The
+     * listing surface behind "what can this tenant launch" -- callers that
+     * pass `status: "deployed"` are asking exactly that.
+     */
+    async listByTenant(
+      tenantId: string,
+      opts: { status?: WorkflowDefinitionStatus } = {},
+    ): Promise<ParsedWorkflowDefinition[]> {
+      const rows = await db.query.workflowDefinition.findMany({
+        where: and(
+          eq(workflowDefinition.tenantId, tenantId),
+          ...(opts.status !== undefined
+            ? [eq(workflowDefinition.status, opts.status)]
+            : []),
+        ),
+      });
+      return rows.map(parseWorkflowDefinitionRow);
+    },
+
+    /**
+     * Every definition sharing an asset, newest first -- the sibling
+     * versions a single asset backs (see `WorkflowDefinitionSelector`).
+     * Ordering matches the one hand-rolled call site this replaces, which
+     * relied on `createdAt desc` to name the newest sibling first.
+     */
+    async listByAsset(
+      tenantId: string,
+      assetId: string,
+      opts: { status?: WorkflowDefinitionStatus } = {},
+    ): Promise<ParsedWorkflowDefinition[]> {
+      const rows = await db.query.workflowDefinition.findMany({
+        where: and(
+          eq(workflowDefinition.tenantId, tenantId),
+          eq(workflowDefinition.assetId, assetId),
+          ...(opts.status !== undefined
+            ? [eq(workflowDefinition.status, opts.status)]
+            : []),
+        ),
+        orderBy: desc(workflowDefinition.createdAt),
+      });
+      return rows.map(parseWorkflowDefinitionRow);
+    },
+
+    /**
+     * Patch a definition's mutable fields (description, lifecycle status),
+     * tenant-scoped so a stale id from another tenant updates nothing.
+     * `updatedAt` is always stamped; callers never pass it themselves.
+     */
+    async updateFields(
+      tenantId: string,
+      definitionId: string,
+      patch: { description?: string; status?: WorkflowDefinitionStatus },
+    ): Promise<void> {
+      await db
+        .update(workflowDefinition)
+        .set({ ...patch, updatedAt: new Date() })
+        .where(
+          and(
+            eq(workflowDefinition.id, definitionId),
+            eq(workflowDefinition.tenantId, tenantId),
+          ),
+        );
+    },
+
     /**
      * Roll a definition back to a prior version: deactivate the current
      * version, activate the target, and repoint `currentVersion` in one
