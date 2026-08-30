@@ -7,13 +7,20 @@
 // re-seed force-repoints `main` to the canonical content rather than
 // dying on divergent history it never asked to reconcile.
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createGitWorkflowPusher } from "./workflow-push";
 
 async function git(args: string[], cwd: string): Promise<string> {
-  const child = Bun.spawn(["git", ...args], {
+  const child = Bun.spawn(["git", "-c", "core.hooksPath=", ...args], {
     cwd,
     stdout: "pipe",
     stderr: "pipe",
@@ -114,6 +121,58 @@ describe("createGitWorkflowPusher", () => {
       // An unchanged push still reports the pin the deploy sources from.
       expect(second.commitSha).toBe(first.commitSha);
     } finally {
+      await rm(work, { recursive: true, force: true });
+    }
+  });
+
+  test("commits the seed tree even when the operator's inherited hooksPath would reject seed@workbench.localhost", async () => {
+    const work = await mkdtemp(join(tmpdir(), "workflow-push-hooks-"));
+    const previousGlobal = process.env.GIT_CONFIG_GLOBAL;
+    try {
+      const hooksDir = join(work, "hooks");
+      await mkdir(hooksDir);
+      const hook = join(hooksDir, "commit-msg");
+      await writeFile(
+        hook,
+        [
+          "#!/bin/sh",
+          'author="${GIT_AUTHOR_EMAIL:-}"',
+          'if [ "$author" = "seed@workbench.localhost" ]; then',
+          '  echo "commit blocked: author must be listed in allowed-emails" >&2',
+          "  exit 1",
+          "fi",
+          "",
+        ].join("\n"),
+        "utf-8",
+      );
+      await chmod(hook, 0o755);
+      const globalConfig = join(work, "gitconfig");
+      await writeFile(
+        globalConfig,
+        `[core]\nhooksPath = ${hooksDir}\n`,
+        "utf-8",
+      );
+      process.env.GIT_CONFIG_GLOBAL = globalConfig;
+
+      const remoteDir = join(work, "remote.git");
+      await git(["init", "--bare", "--initial-branch=main", remoteDir], work);
+
+      const pusher = createGitWorkflowPusher();
+      const outcome = await pusher({
+        remoteUrl: `file://${remoteDir}`,
+        tokenSecret: "unused-for-file-transport",
+        workflowJson: '{"v":1}',
+        packageName: "@workbench-seed/test",
+      });
+
+      expect(outcome.outcome).toBe("pushed");
+      expect(outcome.commitSha).toMatch(/^[0-9a-f]{40}$/);
+    } finally {
+      if (previousGlobal === undefined) {
+        delete process.env.GIT_CONFIG_GLOBAL;
+      } else {
+        process.env.GIT_CONFIG_GLOBAL = previousGlobal;
+      }
       await rm(work, { recursive: true, force: true });
     }
   });
