@@ -39,7 +39,10 @@ import {
 import { applyWebhookTriggersMigrations } from "../packages/webhook-triggers/src/migrations";
 import { applyNotifyMigrations } from "../packages/notify/src/migrations";
 import { applyRoutineMigrations } from "../packages/routines/src/migrations";
-import { applyMailboxMigrations } from "../packages/inbox/src/migrations";
+import {
+  applyInboxMigrations,
+  applyMailboxMigrations,
+} from "../packages/inbox/src/migrations";
 import { applyInsightsMigrations } from "../packages/insights/src/migrations";
 import { applyPreferencesMigrations } from "../packages/preferences/src/migrations";
 import { applyBenchMigrations } from "../packages/bench/src/migrations";
@@ -76,6 +79,8 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   { name: "@corbits/routines", apply: applyRoutineMigrations },
   { name: "@corbits/notify", apply: applyNotifyMigrations },
   { name: "@corbits/mailbox", apply: applyMailboxMigrations },
+  // CL-7208's snooze-until table, own schema — see packages/inbox/src/schema.ts.
+  { name: "@corbits/inbox", apply: applyInboxMigrations },
   { name: "@corbits/insights", apply: applyInsightsMigrations },
   { name: "@corbits/preferences", apply: applyPreferencesMigrations },
   { name: "@corbits/bench", apply: applyBenchMigrations },
