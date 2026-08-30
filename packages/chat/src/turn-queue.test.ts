@@ -269,7 +269,10 @@ describe("turn queue drains everything that was enqueued", () => {
       },
     };
 
-    const queue = createWorkbenchTurnQueue({ claims, publish: () => undefined });
+    const queue = createWorkbenchTurnQueue({
+      claims,
+      publish: () => undefined,
+    });
     const dispatched: string[] = [];
     const dispatch = async (batch: readonly QueuedTurn[]) => {
       for (const t of batch) dispatched.push(t.messageId);
@@ -321,7 +324,10 @@ describe("turn queue drains everything that was enqueued", () => {
       },
     };
 
-    const queue = createWorkbenchTurnQueue({ claims, publish: () => undefined });
+    const queue = createWorkbenchTurnQueue({
+      claims,
+      publish: () => undefined,
+    });
     const dispatched: string[] = [];
     const dispatch = async (batch: readonly QueuedTurn[]) => {
       for (const t of batch) dispatched.push(t.messageId);

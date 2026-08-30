@@ -101,7 +101,7 @@ function reportDispatchFailure(
   // `dispatch` documents "must never reject" (see `DispatchTurnBatch`);
   // reaching here means some caller broke that contract.
   log.error(
-    "turn queue: dispatch rejected for workbench {workbenchId}, message(s) {messageIds} (ref {refId}), violating its \"never reject\" contract: {err}",
+    'turn queue: dispatch rejected for workbench {workbenchId}, message(s) {messageIds} (ref {refId}), violating its "never reject" contract: {err}',
     { workbenchId, messageIds, refId, err },
   );
 }
