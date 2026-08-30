@@ -680,3 +680,127 @@ describe("ComposerHandle.setText", () => {
     expect(sent).toEqual([{ text: "copied prompt", attachments: [] }]);
   });
 });
+
+// CL-7201: the composer's Stop affordance. `handleStop` guards against a
+// double-click and re-enables itself once the host reports the turn is
+// no longer running -- but a REJECTED stop request must also re-enable
+// it, or a genuinely failed cancel (not a slow one) leaves the person
+// with a permanently disabled button and no way to retry for the rest
+// of that turn's life (Critique finding, CL-7201).
+function stopButton(): HTMLButtonElement {
+  const button = container?.querySelector<HTMLButtonElement>(
+    '[aria-label="Stop"]',
+  );
+  if (button === null || button === undefined) {
+    throw new Error("stop button not found");
+  }
+  return button;
+}
+
+function mountStoppable(
+  running: boolean,
+  onStop: () => void | Promise<unknown>,
+) {
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  act(() => {
+    root?.render(
+      createElement(Composer, {
+        agents: [],
+        onSend: () => Promise.resolve(true),
+        onInviteAgent: () => undefined,
+        onOpenAgentsSettings: () => undefined,
+        onCreateRoutineInSpace: () => undefined,
+        running,
+        onStop,
+      }),
+    );
+  });
+  return {
+    container,
+    rerender: (nextRunning: boolean) => {
+      act(() => {
+        root?.render(
+          createElement(Composer, {
+            agents: [],
+            onSend: () => Promise.resolve(true),
+            onInviteAgent: () => undefined,
+            onOpenAgentsSettings: () => undefined,
+            onCreateRoutineInSpace: () => undefined,
+            running: nextRunning,
+            onStop,
+          }),
+        );
+      });
+    },
+  };
+}
+
+describe("Composer stop affordance (CL-7201)", () => {
+  test("renders no Stop button when no turn is running", () => {
+    mountStoppable(false, () => undefined);
+    expect(container?.querySelector('[aria-label="Stop"]')).toBeNull();
+  });
+
+  test("clicking Stop calls onStop and disables the button against a double-click", async () => {
+    let calls = 0;
+    mountStoppable(true, () => {
+      calls += 1;
+    });
+
+    expect(stopButton().hasAttribute("disabled")).toBe(false);
+    act(() => {
+      stopButton().click();
+    });
+    await settle();
+
+    expect(calls).toBe(1);
+    expect(stopButton().hasAttribute("disabled")).toBe(true);
+
+    act(() => {
+      stopButton().click();
+    });
+    await settle();
+    expect(calls).toBe(1);
+  });
+
+  test("the button re-enables once the host reports the turn is no longer running", async () => {
+    const { rerender } = mountStoppable(true, () => undefined);
+    act(() => {
+      stopButton().click();
+    });
+    await settle();
+    expect(stopButton().hasAttribute("disabled")).toBe(true);
+
+    rerender(false);
+    expect(container?.querySelector('[aria-label="Stop"]')).toBeNull();
+  });
+
+  test("a stop request that REJECTS re-enables the button instead of leaving it stuck", async () => {
+    let reject: (err: unknown) => void = () => undefined;
+    mountStoppable(
+      true,
+      () =>
+        new Promise((_resolve, rej) => {
+          reject = rej;
+        }),
+    );
+
+    act(() => {
+      stopButton().click();
+    });
+    await settle();
+    expect(stopButton().hasAttribute("disabled")).toBe(true);
+
+    await act(async () => {
+      reject(new Error("network error"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The turn is still running (the cancel request itself failed, not
+    // the turn) -- the button must come back so the user can try again.
+    expect(stopButton().hasAttribute("disabled")).toBe(false);
+  });
+});
