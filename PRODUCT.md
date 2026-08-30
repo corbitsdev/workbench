@@ -69,6 +69,13 @@ lands in Myra's one DM rather than `/new` or an empty shell:
    (`openAgentDm` / find-or-reopen). There is no parallel Myra home
    route. `/new` stays the create door (sidebar `+`), not this hop.
 
+Connecting a local Ollama uses a completion model that instance has
+actually pulled, so Myra's first DM message is a real agent turn — even
+on a machine that only has models like llama3.2 or qwen3. An inherited
+catalog seed the instance never pulled is not the default when the
+tenant already owns a pulled completion model. Embedding models never
+become that default.
+
 Create stays on `/new` (`apps/web/src/pages/new-workbench-picker.tsx`):
 a prompt box is the primary act: typing a goal and submitting mints an
 empty channel and sends that text as the first message; blank plus
