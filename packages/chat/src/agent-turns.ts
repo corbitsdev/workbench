@@ -68,7 +68,15 @@ export interface AgentTurnStore {
    * turn is on the projection from its first moment.
    */
   startTurn(input: StartAgentTurnInput): Promise<AgentTurn>;
-  /** Closes a turn. Undefined for a turn id this store does not hold. */
+  /**
+   * Closes a turn — compare-and-set on `status === "running"` (CL-7193),
+   * so two closes racing the same turn (a dispatch deadline closing it
+   * `failed` the instant it fires, the turn's own late reply closing it
+   * `completed` once it lands) can never clobber each other: exactly one
+   * applies, and the loser reads back `undefined` rather than
+   * overwriting the winner's `replyMessageId`. Also undefined for a
+   * turn id this store does not hold.
+   */
   finishTurn(input: FinishAgentTurnInput): Promise<AgentTurn | undefined>;
   /**
    * The newest turn still `running` for (workbench, agent) — what the
@@ -105,12 +113,20 @@ export interface AgentTurnStore {
    * dispatch: this is scoped to one (workbench, agent) pair, so two
    * different agents mentioned in the same message still turn
    * concurrently.
+   *
+   * CL-7193: an aborted `signal` makes the wait stop polling and throw
+   * — never resolve as though the agent were free — so a caller whose
+   * own deadline already fired never mistakes an abandoned wait for a
+   * green light to dispatch.
    */
-  waitUntilFree(input: {
-    readonly tenantId: string;
-    readonly workbenchId: string;
-    readonly agentAddress: string;
-  }): Promise<void>;
+  waitUntilFree(
+    input: {
+      readonly tenantId: string;
+      readonly workbenchId: string;
+      readonly agentAddress: string;
+    },
+    signal?: AbortSignal,
+  ): Promise<void>;
   listTurns(input: {
     readonly tenantId: string;
     readonly workbenchId: string;
@@ -168,26 +184,65 @@ function sectionKey(input: {
  * in-memory one by construction, the Drizzle one because this hub runs
  * as a single replica — see `AGENT_TURN_STALE_MS`'s own doc comment for
  * the ceiling this backstop mirrors).
+ *
+ * CL-7193: each waiter used to be a bare `resolve` — `notify` deleted
+ * the whole per-key Set and called every one, but never cleared their
+ * individual backstop timers, and a backstop firing first (the key kept
+ * timing out, `notify` never came) never removed its own entry either.
+ * A key that kept timing out accumulated one abandoned waiter per
+ * attempt forever. Every waiter now owns its full teardown — clearing
+ * its own timer, removing itself from the Set, detaching its abort
+ * listener — so whichever of {`notify`, the backstop, an aborted
+ * `signal`} reaches it first is the only one that ever runs it.
  */
-function createTurnFreedSignal(): {
+export function createTurnFreedSignal(): {
   notify(key: string): void;
-  wait(key: string, backstopMs: number): Promise<void>;
+  wait(key: string, backstopMs: number, signal?: AbortSignal): Promise<void>;
+  /** Waiters still pending for `key` — diagnostic, and what proves the
+   * Set never grows unboundedly across repeated timeouts. */
+  waiterCount(key: string): number;
 } {
-  const waiters = new Map<string, Set<() => void>>();
+  type Waiter = {
+    readonly settle: () => void;
+    readonly timer: ReturnType<typeof setTimeout>;
+  };
+  // A waiter's own settle() needs to remove that same waiter from its
+  // Set -- an id minted before the waiter object exists gives it a way
+  // to name itself without the object having to reference its own
+  // not-yet-created binding.
+  const waiters = new Map<string, Map<number, Waiter>>();
+  let nextWaiterId = 0;
+
+  function forget(key: string, id: number): void {
+    const byId = waiters.get(key);
+    if (byId === undefined) return;
+    byId.delete(id);
+    if (byId.size === 0) waiters.delete(key);
+  }
+
   return {
     notify(key) {
-      const set = waiters.get(key);
-      if (set === undefined) return;
-      waiters.delete(key);
-      for (const resolve of set) resolve();
+      const byId = waiters.get(key);
+      if (byId === undefined) return;
+      for (const waiter of [...byId.values()]) waiter.settle();
     },
-    wait(key, backstopMs) {
+    wait(key, backstopMs, signal) {
       return new Promise((resolve) => {
-        const set = waiters.get(key) ?? new Set();
-        set.add(resolve);
-        waiters.set(key, set);
-        setTimeout(resolve, backstopMs);
+        const byId = waiters.get(key) ?? new Map<number, Waiter>();
+        waiters.set(key, byId);
+        const id = nextWaiterId++;
+        const settle = () => {
+          clearTimeout(byId.get(id)?.timer);
+          forget(key, id);
+          signal?.removeEventListener("abort", settle);
+          resolve();
+        };
+        byId.set(id, { settle, timer: setTimeout(settle, backstopMs) });
+        signal?.addEventListener("abort", settle, { once: true });
       });
+    },
+    waiterCount(key) {
+      return waiters.get(key)?.size ?? 0;
     },
   };
 }
@@ -263,6 +318,12 @@ export function createInMemoryAgentTurnStore(
       if (existing === undefined || existing.tenantId !== input.tenantId) {
         return undefined;
       }
+      // CL-7193: compare-and-set on status -- a turn already closed
+      // (by a dispatch deadline's abort close, or an earlier finishTurn)
+      // never gets clobbered by a second close racing in behind it.
+      if (existing.status !== "running") {
+        return undefined;
+      }
       const finished: AgentTurn = {
         id: existing.id,
         tenantId: existing.tenantId,
@@ -287,13 +348,14 @@ export function createInMemoryAgentTurnStore(
       return runningTurn(input);
     },
 
-    async waitUntilFree(input) {
+    async waitUntilFree(input, signal) {
       for (;;) {
+        if (signal?.aborted) throw signal.reason;
         const running = runningTurn(input);
         if (running === undefined) return;
         const staleAt = Date.parse(running.startedAt) + AGENT_TURN_STALE_MS;
         const backstopMs = Math.max(0, staleAt - now()) + 50;
-        await freed.wait(sectionKey(input), backstopMs);
+        await freed.wait(sectionKey(input), backstopMs, signal);
       }
     },
 
@@ -455,6 +517,9 @@ export function createDrizzleAgentTurnStore<
     },
 
     async finishTurn(input) {
+      // CL-7193: compare-and-set on status -- a turn already closed
+      // (by a dispatch deadline's abort close, or an earlier finishTurn)
+      // never gets clobbered by a second close racing in behind it.
       const [row] = await db
         .update(agentTurns)
         .set({
@@ -472,6 +537,7 @@ export function createDrizzleAgentTurnStore<
           and(
             eq(agentTurns.id, input.turnId),
             eq(agentTurns.tenantId, input.tenantId),
+            eq(agentTurns.status, "running"),
           ),
         )
         .returning();
@@ -485,13 +551,14 @@ export function createDrizzleAgentTurnStore<
       return resolveRunningTurn(input);
     },
 
-    async waitUntilFree(input) {
+    async waitUntilFree(input, signal) {
       for (;;) {
+        if (signal?.aborted) throw signal.reason;
         const running = await resolveRunningTurn(input);
         if (running === undefined) return;
         const staleAt = Date.parse(running.startedAt) + AGENT_TURN_STALE_MS;
         const backstopMs = Math.max(0, staleAt - now()) + 50;
-        await freed.wait(sectionKey(input), backstopMs);
+        await freed.wait(sectionKey(input), backstopMs, signal);
       }
     },
 
