@@ -140,6 +140,73 @@ test("mutateWorkbenchParticipants rejects a missing workbench", async () => {
   ).rejects.toThrow();
 });
 
+test("patchWorkbenchSettings merges only provided keys and keeps omitted ones", async () => {
+  const store = createInMemoryChatStore();
+  const alice = { address: "prn_alice@acme.example", handle: "alice" };
+  await store.createWorkbenchSettings({
+    tenantId: "tnt_1",
+    workbenchId: "chn_1",
+    settings: {
+      "chat/pinned": false,
+      "chat/participants": [alice],
+    },
+    updatedBy: "prn_1",
+  });
+
+  const updated = await store.patchWorkbenchSettings({
+    tenantId: "tnt_1",
+    workbenchId: "chn_1",
+    patch: { "chat/pinned": true },
+    updatedBy: "prn_2",
+  });
+  expect(updated.settings["chat/pinned"]).toBe(true);
+  expect(updated.settings["chat/participants"]).toEqual([alice]);
+  expect(updated.updatedBy).toBe("prn_2");
+
+  await expect(
+    store.patchWorkbenchSettings({
+      tenantId: "tnt_1",
+      workbenchId: "chn_missing",
+      patch: { "chat/pinned": true },
+      updatedBy: "prn_1",
+    }),
+  ).rejects.toThrow();
+});
+
+test("concurrent patchWorkbenchSettings of participants and another key both land", async () => {
+  const store = createInMemoryChatStore();
+  const alice = { address: "prn_alice@acme.example", handle: "alice" };
+  const bob = { address: "prn_bob@acme.example", handle: "bob" };
+  await store.createWorkbenchSettings({
+    tenantId: "tnt_1",
+    workbenchId: "chn_1",
+    settings: {
+      "chat/pinned": false,
+      "chat/participants": [alice],
+    },
+    updatedBy: "prn_1",
+  });
+
+  await Promise.all([
+    store.patchWorkbenchSettings({
+      tenantId: "tnt_1",
+      workbenchId: "chn_1",
+      patch: { "chat/pinned": true },
+      updatedBy: "prn_2",
+    }),
+    store.patchWorkbenchSettings({
+      tenantId: "tnt_1",
+      workbenchId: "chn_1",
+      patch: { "chat/participants": [alice, bob] },
+      updatedBy: "prn_3",
+    }),
+  ]);
+
+  const row = await store.getWorkbenchSettings("tnt_1", "chn_1");
+  expect(row?.settings["chat/pinned"]).toBe(true);
+  expect(row?.settings["chat/participants"]).toEqual([alice, bob]);
+});
+
 test("getBenchSettings is undefined until a bench sets defaults, then upsertBenchSettings replaces them", async () => {
   const store = createInMemoryChatStore();
   expect(await store.getBenchSettings("tnt_1")).toBeUndefined();
