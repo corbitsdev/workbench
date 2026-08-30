@@ -15,6 +15,7 @@ import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { idResource } from "@intx/hub-api";
 import { generateId } from "@intx/hub-common";
+import { pgErrorCode, PG_UNIQUE_VIOLATION } from "@intx/db";
 
 import { generateWebhookSecret } from "./signature";
 import type { WebhookTriggerRow } from "./schema";
@@ -23,6 +24,21 @@ import type { WebhookTriggerStore } from "./store";
 const ErrorEnvelope = (code: string, message: string) => ({
   error: { code, message },
 });
+
+/**
+ * True for a Postgres unique-violation (`23505`) — the shape a duplicate
+ * `(tenant, workflow definition, name)` now raises through
+ * `0003_webhook_trigger_tenant_definition_name_unique`. `pgErrorCode`
+ * walks Drizzle's wrapped cause chain, since a real insert failure
+ * arrives as a `DrizzleQueryError` rather than the raw driver error;
+ * this package's in-memory test fake stamps `.code` directly to match.
+ * Never silently retried as an `ensure`: this route's `create` promises
+ * a genuinely new row, so a collision is reported to the caller as a
+ * conflict rather than handed back someone else's trigger.
+ */
+function isUniqueViolation(error: unknown): boolean {
+  return pgErrorCode(error) === PG_UNIQUE_VIOLATION;
+}
 
 const CreateTriggerBody = type({
   name: "string",
@@ -95,15 +111,29 @@ export function createWebhookTriggerRoutes(
 
     const secret = generateWebhookSecret();
 
-    const row = await deps.store.create({
-      id: generateId("workflowRun"),
-      tenantId: tenant.id,
-      name: body.name,
-      workflowDefinitionId: body.workflowDefinitionId,
-      inputTemplate: body.inputTemplate,
-      secret,
-      createdBy: principal.id,
-    });
+    let row: WebhookTriggerRow;
+    try {
+      row = await deps.store.create({
+        id: generateId("workflowRun"),
+        tenantId: tenant.id,
+        name: body.name,
+        workflowDefinitionId: body.workflowDefinitionId,
+        inputTemplate: body.inputTemplate,
+        secret,
+        createdBy: principal.id,
+      });
+    } catch (cause) {
+      if (isUniqueViolation(cause)) {
+        return c.json(
+          ErrorEnvelope(
+            "conflict",
+            "a trigger with this name already exists for this workflow definition",
+          ),
+          409,
+        );
+      }
+      throw cause;
+    }
 
     return c.json({ ...publicView(row), secret }, 201);
   });

@@ -57,6 +57,28 @@ describe("POST /", () => {
     const body = (await response.json()) as { error: { code: string } };
     expect(body.error.code).toBe("bad_request");
   });
+
+  test("a second create for the same name/definition 409s rather than duplicating", async () => {
+    const { app } = buildApp();
+    const post = () =>
+      app.request("/", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: "Granola note-taker",
+          workflowDefinitionId: "def_1",
+          inputTemplate: "New note: {{note.title}}",
+        }),
+      });
+
+    const first = await post();
+    expect(first.status).toBe(201);
+
+    const second = await post();
+    expect(second.status).toBe(409);
+    const body = (await second.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("conflict");
+  });
 });
 
 describe("GET / and GET /:id", () => {

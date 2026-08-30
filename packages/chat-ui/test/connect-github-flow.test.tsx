@@ -67,7 +67,17 @@ function buildHarness() {
   let connected = false;
   let subscriber: ((state: ConnectGithubQuery) => void) | undefined;
 
+  const heldLeases = new Set<string>();
+
   const setupPorts: ConnectGithubSetupPorts = {
+    async acquireRepoReviewLease(repo) {
+      if (heldLeases.has(repo.name)) return false;
+      heldLeases.add(repo.name);
+      return true;
+    },
+    async releaseRepoReviewLease(repo) {
+      heldLeases.delete(repo.name);
+    },
     async hasRepoGrant() {
       return false;
     },

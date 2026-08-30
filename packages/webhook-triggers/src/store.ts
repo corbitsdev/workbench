@@ -36,7 +36,27 @@ export interface CreateWebhookTriggerInput {
 }
 
 export interface WebhookTriggerStore {
+  /**
+   * Always inserts a new row — a second call with the same
+   * `(tenantId, workflowDefinitionId, name)` throws a unique-constraint
+   * violation rather than silently reusing the first row. The generic
+   * management API (`management-routes.ts`) wants this: reusing an
+   * existing row here would mean a caller posting a *different*
+   * `inputTemplate` under a name that already exists gets back 201 and
+   * someone else's trigger.
+   */
   create(input: CreateWebhookTriggerInput): Promise<WebhookTriggerRow>;
+  /**
+   * Idempotent create: a second call with the same
+   * `(tenantId, workflowDefinitionId, name)` returns the first call's
+   * row untouched rather than inserting (or throwing) — the id and the
+   * real, already-persisted secret, never a freshly generated one that
+   * was never stored. This is what a retry-safe *mint* wants
+   * (`startReviewingRepos`'s trigger-per-repo convention, CL-7242): two
+   * concurrent calls for the same repo must settle on exactly one live
+   * trigger.
+   */
+  ensure(input: CreateWebhookTriggerInput): Promise<WebhookTriggerRow>;
   get(
     tenantId: string,
     triggerId: string,
@@ -98,6 +118,63 @@ export function createDrizzleWebhookTriggerStore<
       // it) — return it directly rather than round-tripping through an
       // extra decrypt call.
       return { ...row, secret: input.secret };
+    },
+
+    async ensure(input) {
+      const encryptedSecret = await credentialCipher.encrypt(
+        input.secret,
+        credentialAad(input.id, "secret"),
+      );
+      // Insert-first, not select-then-insert: two concurrent calls for
+      // the same (tenant, definition, name) both attempt the insert,
+      // the unique index serializes them, and the loser's empty
+      // `returning()` re-selects the winner's row rather than creating
+      // a duplicate trigger.
+      const inserted = await db
+        .insert(webhookTrigger)
+        .values({
+          id: input.id,
+          tenantId: input.tenantId,
+          name: input.name,
+          workflowDefinitionId: input.workflowDefinitionId,
+          inputTemplate: input.inputTemplate,
+          secret: encryptedSecret,
+          enabled: true,
+          createdBy: input.createdBy,
+        })
+        .onConflictDoNothing({
+          target: [
+            webhookTrigger.tenantId,
+            webhookTrigger.workflowDefinitionId,
+            webhookTrigger.name,
+          ],
+        })
+        .returning();
+      const row = inserted[0];
+      if (row) {
+        // As in `create`, the plaintext is already known — return it
+        // directly rather than round-tripping through an extra decrypt.
+        return { ...row, secret: input.secret };
+      }
+      const [existing] = await db
+        .select()
+        .from(webhookTrigger)
+        .where(
+          and(
+            eq(webhookTrigger.tenantId, input.tenantId),
+            eq(webhookTrigger.workflowDefinitionId, input.workflowDefinitionId),
+            eq(webhookTrigger.name, input.name),
+          ),
+        )
+        .limit(1);
+      if (existing === undefined) {
+        throw new Error(
+          "expected webhook trigger row after conflicting insert",
+        );
+      }
+      // The winner's real, already-persisted secret — never the
+      // freshly generated plaintext this call never actually stored.
+      return decrypted(existing);
     },
 
     async get(tenantId, triggerId) {

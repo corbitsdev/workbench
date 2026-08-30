@@ -163,6 +163,7 @@ import {
   createWorkflowCommandPlugin,
 } from "@corbits/commands";
 import {
+  createDrizzleRepoReviewLeaseStore,
   createDrizzleWebhookTriggerStore,
   createWebhookIngressRoutes,
   createWebhookTriggerRoutes,
@@ -1978,6 +1979,12 @@ export async function createHub(config: HubConfig) {
     db,
     credentialCipher,
   );
+  // CL-7242: the sole concurrency backstop for the GitHub connect
+  // card's start-reviewing step -- see
+  // packages/webhook-triggers/src/repo-review-lease.ts for why this
+  // lives in our own schema rather than as any change to Interchange's
+  // `grant` table.
+  const repoReviewLeaseStore = createDrizzleRepoReviewLeaseStore(db);
   // Shared by every folded-run first-turn mail send below (webhook
   // triggers and routines alike) — a `CryptoProviderCache` is keyed by
   // instance id, which is globally unique across this hub regardless of
@@ -2248,6 +2255,19 @@ export async function createHub(config: HubConfig) {
         });
         return row?.id;
       },
+      acquireRepoReviewLease: (tenantId, repo) =>
+        repoReviewLeaseStore.acquire(tenantId, repo.name),
+      releaseRepoReviewLease: (tenantId, repo) =>
+        repoReviewLeaseStore.release(tenantId, repo.name),
+      // hasRepoGrant/mintRepoGrant go through Interchange's native
+      // grants HTTP surface (never a direct `grant` table write --
+      // see native-repo-grants.ts). That table carries no unique
+      // constraint over tenant/resource/action, so a bare read-then-
+      // POST here would itself be a duplicate-grant race; safe only
+      // because the caller in connect-github-routes.ts reaches this
+      // once `acquireRepoReviewLease` has already made this call-site
+      // single-flight per (tenant, repo) -- see
+      // packages/webhook-triggers/src/repo-review-lease.ts (CL-7242).
       hasRepoGrant: (tenantId, repo, cookies) =>
         hasRepoGrantViaHttp(selfApi, tenantId, repo, cookies),
       mintRepoGrant: (tenantId, repo, cookies) =>
@@ -2258,7 +2278,14 @@ export async function createHub(config: HubConfig) {
         codeReviewDefinitionId,
         repo,
       ) => {
-        const row = await webhookTriggerStore.create({
+        // `ensure`, not `create`: a concurrent "start reviewing" call
+        // for the same repo can race this one past `hasWebhookTrigger`
+        // above, and `webhook_trigger_tenant_definition_name_unique`
+        // (packages/webhook-triggers migration 0003, CL-7242) is what
+        // actually resolves that — the loser gets the winner's real
+        // row back instead of minting a second live trigger with a
+        // different secret.
+        const row = await webhookTriggerStore.ensure({
           id: generateId("workflowRun"),
           tenantId,
           name: webhookTriggerName(repo),

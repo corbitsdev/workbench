@@ -175,5 +175,49 @@ describeIfDb(
         await sql.end();
       }
     });
+
+    // CL-7242: `startReviewingRepos`'s check-then-act
+    // (hasWebhookTrigger then createWebhookTrigger) can race two
+    // concurrent "start reviewing" calls for the same repo past the
+    // read before either write lands. `ensure` is the actual backstop
+    // apps/hub's `createWebhookTrigger` port binds to instead of
+    // `create` — reconstructs the audit's finding (2 live triggers for
+    // one repo) against the real `webhook_trigger_tenant_definition_name_unique`
+    // index (migration 0003).
+    test("two concurrent ensure() calls for the same tenant/definition/name settle on exactly one trigger", async () => {
+      const sql = postgres(scratchUrl, { max: 5 });
+      try {
+        const db = drizzle(sql);
+        const cipher = createEnvKeyCredentialCipher(KEY);
+        const store = createDrizzleWebhookTriggerStore(db, cipher);
+
+        const input = (id: string) => ({
+          id,
+          tenantId: TENANT_ID,
+          name: "acme/widgets pull-request-opened",
+          workflowDefinitionId: "def_code_review",
+          inputTemplate: "Review the pull request at {{pull_request.html_url}}",
+          secret: `secret-${id}`,
+          createdBy: "user_1",
+        });
+
+        const [first, second] = await Promise.all([
+          store.ensure(input("wht_race_1")),
+          store.ensure(input("wht_race_2")),
+        ]);
+
+        expect(first.id).toBe(second.id);
+        expect(first.secret).toBe(second.secret);
+
+        const rows = await sql`
+          select id from webhook_triggers.webhook_trigger
+          where tenant_id = ${TENANT_ID} and workflow_definition_id = 'def_code_review'
+            and name = 'acme/widgets pull-request-opened'
+        `;
+        expect(rows).toHaveLength(1);
+      } finally {
+        await sql.end();
+      }
+    });
   },
 );

@@ -4,7 +4,17 @@ export {
   type ApplyWebhookTriggersMigrationsReport,
   type WebhookTriggersMigration,
 } from "./migrations";
-export { webhookTrigger, type WebhookTriggerRow } from "./schema";
+export {
+  webhookTrigger,
+  repoReviewLease,
+  type WebhookTriggerRow,
+  type RepoReviewLeaseRow,
+} from "./schema";
+export {
+  createDrizzleRepoReviewLeaseStore,
+  type RepoReviewLeaseStore,
+  type RepoReviewLeaseDb,
+} from "./repo-review-lease";
 export {
   createDrizzleWebhookTriggerStore,
   type CreateWebhookTriggerInput,

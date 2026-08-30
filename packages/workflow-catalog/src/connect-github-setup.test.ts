@@ -18,6 +18,10 @@ function fakePorts() {
   const createdTriggerRepos: string[] = [];
   let persistedRepoIds: readonly string[] | undefined;
   const ports: ConnectGithubSetupPorts = {
+    async acquireRepoReviewLease() {
+      return true;
+    },
+    async releaseRepoReviewLease() {},
     async hasRepoGrant() {
       return false;
     },
@@ -55,9 +59,22 @@ function fakePorts() {
 function fakeBackedPorts() {
   const grantedRepoNames = new Set<string>();
   const existingTriggerRepoNames = new Set<string>();
+  const leasedRepoNames = new Set<string>();
   const grantedRepos: string[] = [];
   const createdTriggerRepos: string[] = [];
   const ports: ConnectGithubSetupPorts = {
+    // Synchronous check-and-set, same as the real lease's DB-side
+    // compare-and-swap: two calls sharing this same `ports` object
+    // (e.g. via `Promise.all`) race here exactly like two real
+    // concurrent HTTP requests race the real `RepoReviewLeaseStore`.
+    async acquireRepoReviewLease(repo) {
+      if (leasedRepoNames.has(repo.name)) return false;
+      leasedRepoNames.add(repo.name);
+      return true;
+    },
+    async releaseRepoReviewLease(repo) {
+      leasedRepoNames.delete(repo.name);
+    },
     async hasRepoGrant(repo) {
       return grantedRepoNames.has(repo.name);
     },
@@ -188,6 +205,35 @@ describe("startReviewingRepos", () => {
       "acme/sprockets",
     ]);
     expect(result.createdTriggerIds).toEqual(["trg_2", "trg_3"]);
+  });
+
+  test("two concurrent calls for the same repo mint exactly one grant and one trigger (CL-7242)", async () => {
+    // Reconstructs the audit's own reproduction: `Promise.all` of two
+    // concurrent `startReviewingRepos` calls sharing the same
+    // backing state, for the same repo. Before the lease existed,
+    // both calls' `hasRepoGrant`/`hasWebhookTrigger` reads landed
+    // before either write, so both minted -- 2 grants, 2 triggers,
+    // for one repo. `acquireRepoReviewLease`'s synchronous
+    // check-and-set means only one of the two calls below ever gets
+    // past the lease for "acme/widgets": the other's per-repo body
+    // never runs at all.
+    const fake = fakeBackedPorts();
+
+    const [first, second] = await Promise.all([
+      startReviewingRepos(["1"], REPOS, fake.ports),
+      startReviewingRepos(["1"], REPOS, fake.ports),
+    ]);
+
+    expect(fake.grantedRepos).toEqual(["acme/widgets"]);
+    expect(fake.createdTriggerRepos).toEqual(["acme/widgets"]);
+
+    const totalCreated =
+      first.createdTriggerIds.length + second.createdTriggerIds.length;
+    expect(totalCreated).toBe(1);
+
+    const totalSkipped =
+      first.skippedRepoIds.length + second.skippedRepoIds.length;
+    expect(totalSkipped).toBe(1);
   });
 });
 
