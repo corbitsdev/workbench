@@ -11,9 +11,11 @@ import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
 import { AgentUnreachableError } from "../src/platform-port";
 import {
   cannedGreeting,
+  joinHumanParticipant,
   KindIsChatError,
   launchAndJoinAgent,
   postCannedGreeting,
+  removeWorkbenchParticipant,
 } from "../src/workbench-service";
 import { createInMemoryChatStore } from "../src/store";
 import {
@@ -1458,6 +1460,126 @@ describe("launchAndJoinAgent 1:1 chats", () => {
     );
     expect(joined.address).toBe("ins_echo@acme.example");
     expect(platform.launchInviteCalls).toHaveLength(0);
+  });
+});
+
+describe("joinHumanParticipant / removeWorkbenchParticipant (CL-7194)", () => {
+  const tenancy = { addWorkbenchMember: async () => undefined };
+
+  test("joinHumanParticipant adds the member without a caller-supplied settings snapshot", async () => {
+    const store = createInMemoryChatStore();
+    await store.createWorkbenchSettings({
+      tenantId: TENANT.id,
+      workbenchId: "chan_1",
+      settings: { "chat/kind": "workbench" },
+      updatedBy: "prn_alice",
+    });
+
+    const result = await joinHumanParticipant(
+      {
+        store,
+        roomMessages: createInMemoryRoomMessageStore(),
+        publish: () => undefined,
+        tenancy,
+      },
+      {
+        tenantId: TENANT.id,
+        principalId: "prn_alice",
+        workbenchId: "chan_1",
+        memberPrincipalId: "prn_bob",
+        memberRefId: "prn_bob",
+        memberHandle: "bob",
+      },
+    );
+
+    expect(result.address).toBe("prn_bob");
+    expect(result.settings["chat/participants"]).toEqual([
+      { address: "prn_bob", handle: "bob" },
+    ]);
+  });
+
+  // The in-memory store's mutateWorkbenchParticipants body has no
+  // await between its read and write, so two Promise.all'd calls
+  // against it can never actually interleave — this proves
+  // joinHumanParticipant was correctly rewired onto the mutate-closure
+  // call site (both invites land, no stale-snapshot rebuild), not that
+  // the fix holds under real concurrency. That's what
+  // settings-participants.drizzle.test.ts's real-Postgres tests prove.
+  test("two invites issued together both land, rewired through the mutate closure", async () => {
+    const store = createInMemoryChatStore();
+    await store.createWorkbenchSettings({
+      tenantId: TENANT.id,
+      workbenchId: "chan_1",
+      settings: { "chat/kind": "workbench" },
+      updatedBy: "prn_alice",
+    });
+    const deps = {
+      store,
+      roomMessages: createInMemoryRoomMessageStore(),
+      publish: () => undefined,
+      tenancy,
+    };
+
+    await Promise.all([
+      joinHumanParticipant(deps, {
+        tenantId: TENANT.id,
+        principalId: "prn_alice",
+        workbenchId: "chan_1",
+        memberPrincipalId: "prn_bob",
+        memberRefId: "prn_bob",
+        memberHandle: "bob",
+      }),
+      joinHumanParticipant(deps, {
+        tenantId: TENANT.id,
+        principalId: "prn_alice",
+        workbenchId: "chan_1",
+        memberPrincipalId: "prn_carol",
+        memberRefId: "prn_carol",
+        memberHandle: "carol",
+      }),
+    ]);
+
+    const row = await store.getWorkbenchSettings(TENANT.id, "chan_1");
+    const addresses = (
+      row?.settings["chat/participants"] as { address: string }[]
+    )
+      .map((participant) => participant.address)
+      .sort();
+    expect(addresses).toEqual(["prn_bob", "prn_carol"]);
+  });
+
+  test("removeWorkbenchParticipant drops exactly the named participant", async () => {
+    const store = createInMemoryChatStore();
+    await store.createWorkbenchSettings({
+      tenantId: TENANT.id,
+      workbenchId: "chan_1",
+      settings: {
+        "chat/kind": "workbench",
+        "chat/participants": [
+          { address: "prn_bob", handle: "bob" },
+          { address: "prn_carol", handle: "carol" },
+        ],
+      },
+      updatedBy: "prn_alice",
+    });
+
+    const result = await removeWorkbenchParticipant(
+      {
+        store,
+        roomMessages: createInMemoryRoomMessageStore(),
+        publish: () => undefined,
+      },
+      {
+        tenantId: TENANT.id,
+        principalId: "prn_alice",
+        workbenchId: "chan_1",
+        participant: { address: "prn_bob", handle: "bob" },
+      },
+    );
+
+    expect(result.settings["chat/participants"]).toEqual([
+      { address: "prn_carol", handle: "carol" },
+    ]);
   });
 });
 

@@ -13,6 +13,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
+import type { ParticipantRecord } from "./participants";
 import { participantsOf } from "./workbench-settings";
 import {
   workbenchLaunch,
@@ -52,6 +53,24 @@ export interface UpdateWorkbenchSettingsInput {
   readonly workbenchId: string;
   readonly settings: Record<string, unknown>;
   readonly updatedBy: string;
+}
+
+export interface MutateWorkbenchParticipantsInput {
+  readonly tenantId: string;
+  readonly workbenchId: string;
+  readonly updatedBy: string;
+  /**
+   * Computes the next `chat/participants` list from the current one —
+   * `addParticipant`/`removeParticipant` from `./participants.ts` are
+   * the two callers actually pass. Runs against a row-locked read
+   * taken inside the same transaction as the write (see
+   * `mutateWorkbenchParticipants`'s own doc), so it always sees the
+   * latest committed list, never a snapshot a concurrent writer has
+   * since moved past.
+   */
+  readonly mutate: (
+    participants: readonly ParticipantRecord[],
+  ) => ParticipantRecord[];
 }
 
 export interface ChatBenchSettingsRow {
@@ -113,6 +132,19 @@ export interface ChatStore {
   ): Promise<WorkbenchSettingsRow[]>;
   updateWorkbenchSettings(
     input: UpdateWorkbenchSettingsInput,
+  ): Promise<WorkbenchSettingsRow>;
+  /**
+   * The targeted counterpart to `updateWorkbenchSettings` for the one
+   * key every join/remove path actually changes: `chat/participants`.
+   * Reads the row under a lock, folds `input.mutate` over its current
+   * participant list, and writes back only that JSONB path — so two
+   * overlapping calls (two concurrent invites, an invite racing a
+   * removal) serialize on the row instead of each clobbering the
+   * other's whole-blob snapshot. See `createDrizzleChatStore`'s
+   * implementation for how the lock is taken.
+   */
+  mutateWorkbenchParticipants(
+    input: MutateWorkbenchParticipantsInput,
   ): Promise<WorkbenchSettingsRow>;
   getBenchSettings(tenantId: string): Promise<ChatBenchSettingsRow | undefined>;
   upsertBenchSettings(
@@ -250,6 +282,60 @@ export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
         );
       }
       return row as WorkbenchSettingsRow;
+    },
+
+    // Takes a `SELECT ... FOR UPDATE` row lock and writes back inside the
+    // same transaction, rather than an optimistic version check with a
+    // retry loop: a wall-clock version stamp (e.g. `updated_at`) can
+    // collide across two transactions that start in the same tick, which
+    // would silently accept the second write — the exact bug this method
+    // exists to close. A real lock has no such window, and contention on
+    // one workbench's settings row is negligible (two people inviting
+    // into the same bench at the same instant, serialized for
+    // microseconds).
+    async mutateWorkbenchParticipants(input) {
+      return db.transaction(async (tx) => {
+        const [current] = await tx
+          .select()
+          .from(workbenchSettings)
+          .where(
+            and(
+              eq(workbenchSettings.tenantId, input.tenantId),
+              eq(workbenchSettings.workbenchId, input.workbenchId),
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (current === undefined) {
+          throw new Error(
+            `mutateWorkbenchParticipants: no workbench_settings row for workbench ${input.workbenchId}`,
+          );
+        }
+        const currentRow = current as WorkbenchSettingsRow;
+        const nextParticipants = input.mutate(
+          participantsOf(currentRow.settings),
+        );
+        const [row] = await tx
+          .update(workbenchSettings)
+          .set({
+            settings: sql`jsonb_set(${workbenchSettings.settings}, '{chat/participants}', ${JSON.stringify(nextParticipants)}::jsonb)`,
+            updatedBy: input.updatedBy,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(workbenchSettings.tenantId, input.tenantId),
+              eq(workbenchSettings.workbenchId, input.workbenchId),
+            ),
+          )
+          .returning();
+        if (row === undefined) {
+          throw new Error(
+            `mutateWorkbenchParticipants: update returned no row for workbench ${input.workbenchId}`,
+          );
+        }
+        return row as WorkbenchSettingsRow;
+      });
     },
 
     async getBenchSettings(tenantId) {
@@ -430,6 +516,31 @@ export function createInMemoryChatStore(): ChatStore {
       const row: WorkbenchSettingsRow = {
         ...existing,
         settings: input.settings,
+        updatedBy: input.updatedBy,
+        updatedAt: new Date(),
+      };
+      settingsByKey.set(key, row);
+      return row;
+    },
+
+    // No real concurrency to guard against in-process, but the shape
+    // matches the drizzle store exactly: read the current list, fold
+    // `mutate` over it, write only `chat/participants` back.
+    async mutateWorkbenchParticipants(input) {
+      const key = settingsKey(input.tenantId, input.workbenchId);
+      const existing = settingsByKey.get(key);
+      if (existing === undefined) {
+        throw new Error(
+          `mutateWorkbenchParticipants: no workbench_settings row for workbench ${input.workbenchId}`,
+        );
+      }
+      const nextParticipants = input.mutate(participantsOf(existing.settings));
+      const row: WorkbenchSettingsRow = {
+        ...existing,
+        settings: {
+          ...existing.settings,
+          "chat/participants": nextParticipants,
+        },
         updatedBy: input.updatedBy,
         updatedAt: new Date(),
       };

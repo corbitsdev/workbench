@@ -1901,6 +1901,63 @@ describe("POST /workbenches/:id/messages — invite pre-step (CL-5879 mention-pu
       "prn_bob",
     ]);
   });
+
+  // CL-7194: joinHumanParticipant no longer takes a caller-supplied
+  // settings snapshot — each invite in this loop now reads and writes
+  // its participant record through a single atomic store call. This
+  // proves that change didn't regress the loop's own accumulation: two
+  // people invited in the same request both survive, not just the last.
+  test("inviting multiple people in one request lands every one of them", async () => {
+    const deps = buildDeps();
+    (
+      deps.tenancy as ReturnType<typeof createInMemoryWorkbenchTenancyStore>
+    ).registerPrincipal(TENANT.id, {
+      id: "prn_bob",
+      kind: "user",
+      status: "active",
+      refId: "prn_bob",
+    });
+    (
+      deps.tenancy as ReturnType<typeof createInMemoryWorkbenchTenancyStore>
+    ).registerPrincipal(TENANT.id, {
+      id: "prn_carol",
+      kind: "user",
+      status: "active",
+      refId: "prn_carol",
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+      name: "Test Workbench",
+    });
+
+    const response = await app.request(
+      `/workbenches/${workbench.id}/messages`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          parts: [{ kind: "text", text: "welcome both!" }],
+          invite: [
+            { kind: "person", principalId: "prn_bob", name: "Bob" },
+            { kind: "person", principalId: "prn_carol", name: "Carol" },
+          ],
+        }),
+      },
+    );
+
+    expect(response.status).toBe(201);
+    const settingsResponse = await app.request(
+      `/workbenches/${workbench.id}/settings`,
+    );
+    const settingsBody = (await settingsResponse.json()) as {
+      participants: { address: string }[];
+    };
+    expect(settingsBody.participants.map((p) => p.address).sort()).toEqual([
+      "prn_bob",
+      "prn_carol",
+    ]);
+  });
 });
 
 describe("GET /workbenches/:id/blobs/:blobId", () => {
