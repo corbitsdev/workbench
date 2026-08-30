@@ -1318,7 +1318,7 @@ const AgentTurnWire = type({
   workbenchId: "string",
   agentAddress: "string",
   childRunId: "string",
-  status: "'running' | 'completed' | 'failed'",
+  status: "'running' | 'completed' | 'failed' | 'cancelled'",
   "replyMessageId?": "string | null",
 });
 export type AgentTurnSummary = typeof AgentTurnWire.infer;
@@ -1351,6 +1351,31 @@ export function getWorkbenchTurn(
   return request(
     `${turnsPath(tenantId, workbenchId)}/${turnId}`,
     AgentTurnDetailWire,
+  );
+}
+
+const CancelWorkbenchTurnWire = type({ cancelledCount: "number" });
+export type CancelWorkbenchTurnResult = typeof CancelWorkbenchTurnWire.infer;
+
+/**
+ * Stops a workbench's in-flight turn(s) (CL-7201) — `POST
+ * .../turns/cancel` in `packages/chat/src/routes.ts`. `cancelledCount`
+ * is the honest count of turns actually settled `cancelled`, not a
+ * promise that the underlying agent process stopped (see CL-7230): the
+ * composer's own Stop affordance treats any non-throwing response as
+ * "asked," and relies on the timeline's cancelled-turn notice — not this
+ * response — to clear the typing indicator.
+ */
+export function cancelWorkbenchTurn(
+  tenantId: string,
+  workbenchId: string,
+): Promise<CancelWorkbenchTurnResult> {
+  return request(
+    `${turnsPath(tenantId, workbenchId)}/cancel`,
+    CancelWorkbenchTurnWire,
+    {
+      method: "POST",
+    },
   );
 }
 

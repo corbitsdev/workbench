@@ -813,6 +813,32 @@ function FailedTurnStrip({
 }
 
 /**
+ * The cancelled-turn counterpart to `FailedTurnStrip` (CL-7201) — same
+ * quiet inline placement, deliberately simpler: no Retry (the user
+ * chose to stop this; resending is just typing again, not recovering
+ * from an error) and no disclosure, since `postCancelledNotice`'s own
+ * text ("This turn was cancelled.") is the whole story — there is no
+ * hidden diagnosis to expand into, unlike a failure's cause.
+ */
+function CancelledTurnStrip({
+  item,
+  participants,
+  currentUser,
+}: {
+  readonly item: TimelineMessageItem;
+  readonly participants: readonly ParticipantRecord[];
+  readonly currentUser: CurrentUser | undefined;
+}) {
+  const display = senderDisplay(item.sender, participants, currentUser);
+  const sender = display?.label ?? CHAT_STRINGS.senderFallbackMember;
+  return (
+    <div className="chat-turn-cancelled" role="status">
+      <span>{CHAT_STRINGS.turnCancelledTitle(sender)}</span>
+    </div>
+  );
+}
+
+/**
  * The nearest message before a failed-turn notice sent by someone other
  * than the unreachable agent itself — the request that notice answered.
  * `postUndeliveredNotice` posts the notice from that agent's own address
@@ -960,6 +986,7 @@ export function offersMessageSocialChrome(item: MessageItem): boolean {
   return !item.parts.every((part) => {
     if (part.kind === "event") return true;
     if (part.kind === "text" && part.turnFailed === true) return true;
+    if (part.kind === "text" && part.turnCancelled === true) return true;
     if (part.kind === "text" && isClassifiedInferenceFailureText(part.text)) {
       return true;
     }
@@ -1614,6 +1641,16 @@ function MessagePartsInner({
                   {...(onWhatHappenedFailedTurn !== undefined
                     ? { onWhatHappenedFailedTurn }
                     : {})}
+                />
+              );
+            }
+            if (part.kind === "text" && part.turnCancelled === true) {
+              return (
+                <CancelledTurnStrip
+                  key={key}
+                  item={item}
+                  participants={participants}
+                  currentUser={currentUser}
                 />
               );
             }

@@ -38,6 +38,7 @@ export const CHAT_STRINGS = {
   composerPlaceholderChat: (name: string) => `Message ${name}…`,
   composerSend: "Send",
   composerSending: "Sending…",
+  composerStop: "Stop",
   composerKeyboardHint: "Enter to send",
   composerAttach: "Attach files",
   composerAttachmentsLabel: "Selected attachments",
@@ -159,6 +160,7 @@ export const CHAT_STRINGS = {
   unpinMessageAction: "Unpin message",
   pinMessageError: "Couldn't pin that message — try again.",
   unpinMessageError: "Couldn't unpin that message — try again.",
+  turnCancelError: "Couldn't stop that turn — try again.",
   pinnedStripLabel: "Pinned messages",
   pinnedStripEmptyPreview: "Pinned message",
   pinnedStripJumpAction: (preview: string) => `Jump to: ${preview}`,
@@ -317,6 +319,7 @@ export const CHAT_STRINGS = {
     `Couldn't resume the running reply — try again. (ref ${refId})`,
   resumeFailedRetryAction: "Retry",
   turnFailedTitle: (sender: string) => `${sender} didn't reply`,
+  turnCancelledTitle: (sender: string) => `You stopped ${sender}'s turn`,
   turnFailedSub: "No reply arrived — the agent may be unavailable.",
   noUsableModelBannerText:
     "No model is connected yet, so a reply here won't come through.",

@@ -28,6 +28,7 @@ import type { ReactNode } from "react";
 import {
   workbenchesQueryKey,
   workbenchesQueryKeyPrefix,
+  cancelWorkbenchTurn,
   describeChatError,
   fetchRunningTurn,
   inviteAgent,
@@ -59,7 +60,11 @@ import { SLASH_COMMANDS } from "./slash-commands";
 
 import { CHAT_STRINGS } from "./strings";
 import { displayWorkbenchTitle } from "./workbench-display-title";
-import { useStreamingReply, typingAgentNames } from "./streaming-reply";
+import {
+  useStreamingReply,
+  isPendingReply,
+  typingAgentNames,
+} from "./streaming-reply";
 import { useTurnActivity, TurnActivityStrip } from "./turn-activity";
 import type { StreamingReplyState } from "./streaming-reply";
 import {
@@ -806,6 +811,17 @@ function ChatWorkspaceInner({
     },
     [tenantId, activeWorkbenchId],
   );
+
+  // CL-7201: fire-and-forget, matching the reaction/pin handlers above —
+  // the composer's own `stopping` state is the user-visible feedback,
+  // and the timeline's cancelled-turn notice (not this response) is
+  // what actually clears the typing indicator once the turn settles.
+  const handleStopTurn = useCallback(() => {
+    if (activeWorkbenchId === null) return;
+    cancelWorkbenchTurn(tenantId, activeWorkbenchId).catch(() =>
+      toast(CHAT_STRINGS.turnCancelError),
+    );
+  }, [tenantId, activeWorkbenchId]);
 
   const handlePinMessage = useCallback(
     (messageId: string) => {
@@ -1636,6 +1652,8 @@ function ChatWorkspaceInner({
                       bringInLoadError={bringInLoadError}
                       placeholder={composerPlaceholderFor(activeWorkbench)}
                       onSend={handleSend}
+                      running={isPendingReply(streamingReply)}
+                      onStop={handleStopTurn}
                       onInviteAgent={() => setInviteDialogOpen(true)}
                       onOpenAgentsSettings={() =>
                         openWorkbenchSettings("agents")

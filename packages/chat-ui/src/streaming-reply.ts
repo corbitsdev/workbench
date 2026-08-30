@@ -103,6 +103,34 @@ function hasTurnFailedPart(data: unknown): boolean {
   );
 }
 
+/** Whether a `chat.message` payload carries `postCancelledNotice`'s
+ * `turnCancelled` part (see `packages/chat/src/workbench-service.ts`,
+ * CL-7201) — the cancellation counterpart to `hasTurnFailedPart` above,
+ * kept as its own flag rather than reusing `turnFailed` because a user
+ * stopping a turn is not a failure. Same reasoning applies here: a
+ * cancelled turn's dispatch can close with no `chat.agent` events of its
+ * own (still waiting on `waitUntilFree`, say), so this notice is the
+ * only signal that clears the pulse for that case. */
+function hasTurnCancelledPart(data: unknown): boolean {
+  if (typeof data !== "object" || data === null) return false;
+  const parts = (data as Record<string, unknown>).parts;
+  if (!Array.isArray(parts)) return false;
+  return parts.some(
+    (part) =>
+      typeof part === "object" &&
+      part !== null &&
+      (part as Record<string, unknown>).turnCancelled === true,
+  );
+}
+
+/** Either of the two turn-ended notice flags — the one thing
+ * `isRenderedAgentReply` and `nextStreamingReplyState` actually care
+ * about ("is this a system notice about how the turn ended, or the
+ * agent's own reply"), never which specific outcome it was. */
+function hasTurnEndedNoticePart(data: unknown): boolean {
+  return hasTurnFailedPart(data) || hasTurnCancelledPart(data);
+}
+
 /** Whether a `chat.message` payload is the awaiting turn's own reply
  * actually rendering on screen — the one observable fact this module can
  * trust over any `chat.agent` lifecycle event. `postReply`
@@ -113,10 +141,11 @@ function hasTurnFailedPart(data: unknown): boolean {
  * backstop armed once the reply the reader is looking at has already
  * posted. Requires an agent sender (never the reader's own echoed
  * message) and at least one part; `postUndeliveredNotice` also posts from
- * the agent's own address with a real text part, so `hasTurnFailedPart`
- * rules that one out explicitly rather than by accident. */
+ * the agent's own address with a real text part, so
+ * `hasTurnEndedNoticePart` rules that one (and its cancelled
+ * counterpart) out explicitly rather than by accident. */
 function isRenderedAgentReply(data: unknown): boolean {
-  if (hasTurnFailedPart(data)) return false;
+  if (hasTurnEndedNoticePart(data)) return false;
   if (typeof data !== "object" || data === null) return false;
   const sender = (data as Record<string, unknown>).sender;
   if (typeof sender !== "object" || sender === null) return false;
@@ -148,16 +177,18 @@ function isRenderedAgentReply(data: unknown): boolean {
  * inert rather than re-opening the pulse. The hard-terminal events —
  * `reactor.done`/`reactor.error`, `message.run.ended`, `inference.error`,
  * and a `chat.message` carrying `postUndeliveredNotice`'s `turnFailed`
- * part (see `hasTurnFailedPart`, the one failure path with no `chat.agent`
- * events of its own) — return to idle from any phase. Every other event
- * type (tool calls, thinking, usage) leaves the current state untouched.
+ * or `postCancelledNotice`'s `turnCancelled` part (see
+ * `hasTurnEndedNoticePart`, the failure/cancellation paths with no
+ * `chat.agent` events of their own) — return to idle from any phase.
+ * Every other event type (tool calls, thinking, usage) leaves the
+ * current state untouched.
  */
 export function nextStreamingReplyState(
   current: StreamingReplyState,
   event: { readonly eventType: string; readonly data: unknown },
 ): StreamingReplyState {
   if (event.eventType === "chat.message") {
-    if (hasTurnFailedPart(event.data)) return null;
+    if (hasTurnEndedNoticePart(event.data)) return null;
     if (
       current !== null &&
       current.phase === "awaiting" &&
