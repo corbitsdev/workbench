@@ -2560,12 +2560,14 @@
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.01em;
+  visibility: hidden;
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms var(--chat-ease);
 }
 
 .chat-composer-keyboard-hint[data-visible="true"] {
+  visibility: visible;
   opacity: 1;
 }
 
