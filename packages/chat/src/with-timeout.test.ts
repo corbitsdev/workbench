@@ -1,3 +1,5 @@
+import { getEventListeners } from "node:events";
+
 import { describe, expect, test } from "bun:test";
 
 import { withTimeout } from "./with-timeout";
@@ -147,6 +149,28 @@ describe("withTimeout", () => {
         external.signal,
       );
       expect(result).toBe("ok");
+    });
+
+    // CL-7201 (Critique finding): the timeout-fired branch never removed
+    // its own listener from `externalSignal` — only the two `work`-
+    // settles-first branches did. Within one `dispatchTurnBatch`
+    // recipient the same cancellation controller's signal is reused
+    // across two sequential `withTimeout` calls (`waitUntilFree`, then
+    // `dispatchTurn`); a `waitUntilFree` timeout leaving a dangling
+    // listener behind means the `dispatchTurn` call's own listener
+    // stacks on top of it instead of starting clean.
+    test("a timeout win still removes this call's own listener from the external signal", async () => {
+      const external = new AbortController();
+      await expect(
+        withTimeout(
+          () => new Promise<never>(() => {}),
+          10,
+          "did not settle within 10ms",
+          external.signal,
+        ),
+      ).rejects.toThrow("did not settle within 10ms");
+
+      expect(getEventListeners(external.signal, "abort")).toHaveLength(0);
     });
   });
 });
