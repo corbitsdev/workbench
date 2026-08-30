@@ -29,10 +29,10 @@ import type {
 import { WorkbenchTimeline } from "../src/timeline";
 
 const REPOS: readonly ConnectGithubRepo[] = [
-  { id: "1", name: "acme/checkout", openPullRequestCount: 4 },
-  { id: "2", name: "acme/billing-api", openPullRequestCount: 0 },
-  { id: "3", name: "acme/web", openPullRequestCount: 7 },
-  { id: "4", name: "acme/mobile", openPullRequestCount: 1 },
+  { id: "1", name: "acme/checkout" },
+  { id: "2", name: "acme/billing-api" },
+  { id: "3", name: "acme/web" },
+  { id: "4", name: "acme/mobile" },
 ];
 
 function messageWithConnectGithubBlock(): MessageItem[] {
@@ -226,7 +226,7 @@ describe("connect-github round trip (CL-6345)", () => {
       checkboxes[1]?.click();
       checkboxes[2]?.click();
     });
-    expect(el.textContent).toContain("4 repos found · 3 picked");
+    expect(el.textContent).toContain("4 repos your token can reach · 3 picked");
 
     const getConnectStateCallCountBeforeStart =
       harness.getConnectStateCallCount();

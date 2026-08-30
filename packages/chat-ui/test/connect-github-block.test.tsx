@@ -23,13 +23,15 @@ import type {
 } from "../src/blocks/connect-github-block";
 import { ConnectGithubBlockView } from "../src/blocks/connect-github-block";
 
+const AN_HOUR_AGO = new Date(Date.now() - 60 * 60_000).toISOString();
+
 const REPOS: readonly ConnectGithubRepo[] = [
-  { id: "checkout", name: "acme/checkout", openPullRequestCount: 4 },
-  { id: "billing-api", name: "acme/billing-api", openPullRequestCount: 2 },
-  { id: "web", name: "acme/web", openPullRequestCount: 7 },
-  { id: "mobile", name: "acme/mobile", openPullRequestCount: 1 },
-  { id: "design-tokens", name: "acme/design-tokens", openPullRequestCount: 0 },
-  { id: "handbook", name: "acme/handbook", openPullRequestCount: 0 },
+  { id: "checkout", name: "acme/checkout", lastPushedAt: AN_HOUR_AGO },
+  { id: "billing-api", name: "acme/billing-api" },
+  { id: "web", name: "acme/web" },
+  { id: "mobile", name: "acme/mobile" },
+  { id: "design-tokens", name: "acme/design-tokens" },
+  { id: "handbook", name: "acme/handbook" },
 ];
 
 /** The framing the room's onboarding card always carries. Individual
@@ -40,7 +42,10 @@ const SCENE: OnboardingScene = {
   promise: "Every new pull request gets reviewed before you merge it.",
   steps: [
     { title: "Connect GitHub", why: "Reviewers need to read your code." },
-    { title: "Pick your repos", why: "Only the repos you pick are watched." },
+    {
+      title: "Choose what gets reviewed",
+      why: "Of the repos your token reaches, these get watched.",
+    },
     { title: "Start reviewing", why: "Reviews land right here in this room." },
   ],
   currentStepIndex: 0,
@@ -129,7 +134,7 @@ describe("connect GitHub card — 2a disconnected", () => {
     // Honest PAT-first framing — there is no hosted GitHub sign-in in
     // this card, so it never claims an app install it can't do.
     expect(el.textContent).toContain(
-      "Connect GitHub with a personal access token — three quick steps, about a minute.",
+      "You choose which repositories the token can reach while you're creating it",
     );
     expect(el.textContent).toContain(
       "stored encrypted, only your agents use it, and you can remove it any time",
@@ -166,14 +171,16 @@ describe("connect GitHub card — 2a disconnected", () => {
     const steps = [...el.querySelectorAll(".chat-block-connect-steps li")].map(
       (item) => item.textContent,
     );
-    expect(steps).toHaveLength(3);
+    expect(steps).toHaveLength(4);
     expect(steps[0]).toContain(
-      "Open github.com/settings/tokens and generate a new token.",
+      "Open GitHub's fine-grained token page and generate a new token.",
     );
-    expect(steps[1]).toContain("repo scope");
-    expect(steps[2]).toContain("Paste it here");
+    expect(steps[1]).toContain("Repository access");
+    expect(steps[3]).toContain("Paste it here");
     expect(
-      el.querySelector('a[href="https://github.com/settings/tokens"]'),
+      el.querySelector(
+        'a[href="https://github.com/settings/personal-access-tokens/new"]',
+      ),
     ).not.toBeNull();
 
     const field = el.querySelector("#connect-github-token");
@@ -271,17 +278,16 @@ describe("connect GitHub card — 2b pick your repos", () => {
     });
 
     expect(el.textContent).toContain("Connected to GitHub as acme");
-    expect(el.textContent).toContain("6 repos found · 3 picked");
+    expect(el.textContent).toContain("6 repos your token can reach · 3 picked");
 
     const rows = el.querySelectorAll(".chat-block-connect-repo-row");
     expect(rows).toHaveLength(6);
     expect(el.textContent).toContain("acme/checkout");
-    expect(el.textContent).toContain("4 open pull requests");
-    expect(el.textContent).toContain("1 open pull request");
-    expect(el.textContent).toContain("no open pull requests");
+    expect(el.textContent).toContain("updated 1h ago");
+    expect(el.textContent).toContain("no commits yet");
 
     expect(el.textContent).toContain(
-      "Picking a repo lets the reviewers post reviews to it — each repo is its own permission, and you can turn any off later.",
+      "These are the repositories your token can reach. Pick the ones you want reviewed",
     );
   });
 
@@ -321,7 +327,7 @@ describe("connect GitHub card — 2b pick your repos", () => {
       />,
     );
 
-    expect(el.textContent).toContain("6 repos found · 3 picked");
+    expect(el.textContent).toContain("6 repos your token can reach · 3 picked");
     const start = [...el.querySelectorAll("button")].find((button) =>
       button.textContent?.startsWith("Start reviewing"),
     ) as HTMLButtonElement;
@@ -334,7 +340,7 @@ describe("connect GitHub card — 2b pick your repos", () => {
       mobileCheckbox?.click();
     });
 
-    expect(el.textContent).toContain("6 repos found · 4 picked");
+    expect(el.textContent).toContain("6 repos your token can reach · 4 picked");
     const startAfter = [...el.querySelectorAll("button")].find((button) =>
       button.textContent?.startsWith("Start reviewing"),
     ) as HTMLButtonElement;
@@ -354,7 +360,7 @@ describe("connect GitHub card — 2b pick your repos", () => {
       />,
     );
 
-    expect(el.textContent).toContain("6 repos found · 0 picked");
+    expect(el.textContent).toContain("6 repos your token can reach · 0 picked");
     const start = [...el.querySelectorAll("button")].find((button) =>
       button.textContent?.startsWith("Start reviewing"),
     ) as HTMLButtonElement;
@@ -372,7 +378,7 @@ describe("connect GitHub card — 2b pick your repos", () => {
       selectAll.click();
     });
 
-    expect(el.textContent).toContain("6 repos found · 6 picked");
+    expect(el.textContent).toContain("6 repos your token can reach · 6 picked");
     const startAfter = [...el.querySelectorAll("button")].find((button) =>
       button.textContent?.startsWith("Start reviewing"),
     ) as HTMLButtonElement;
@@ -434,7 +440,7 @@ describe("connect GitHub card — accessibility", () => {
     const group = el.querySelector('[role="group"]');
     expect(
       el.querySelector(".chat-block-scene-pick-heading")?.textContent,
-    ).toBe("Pick your repos");
+    ).toBe("Choose what gets reviewed");
     expect(group?.getAttribute("aria-labelledby")).toBe(
       "connect-github-pick-heading",
     );
@@ -534,7 +540,7 @@ describe("connect GitHub card — accessibility", () => {
 
     const status = el.querySelector(".chat-block-scene-status");
     const alert = el.querySelector('[role="alert"]');
-    expect(status?.textContent).toBe("Pick your repos");
+    expect(status?.textContent).toBe("Choose what gets reviewed");
     expect(alert?.textContent).toContain("Couldn't start reviewing");
     expect(status?.contains(alert)).toBe(false);
     expect(
@@ -562,7 +568,7 @@ describe("connect GitHub card — accessibility", () => {
     });
 
     expect(status?.textContent).toBe("Connect GitHub");
-    expect(el.textContent).toContain("6 repos found · 2 picked");
+    expect(el.textContent).toContain("6 repos your token can reach · 2 picked");
   });
 
   test("autoFocus on the pick-repos scene moves focus onto the pick heading", async () => {
@@ -580,7 +586,7 @@ describe("connect GitHub card — accessibility", () => {
     });
 
     const heading = el.querySelector(".chat-block-scene-pick-heading");
-    expect(heading?.textContent).toBe("Pick your repos");
+    expect(heading?.textContent).toBe("Choose what gets reviewed");
     expect(heading?.getAttribute("tabindex")).toBe("-1");
     expect(document.activeElement).toBe(heading);
   });

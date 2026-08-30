@@ -22,15 +22,18 @@ import { WorkbenchTimeline } from "../src/timeline";
 
 const STEPS: { title: string; why: string }[] = [
   { title: "Connect GitHub", why: "Reviewers need to read your code." },
-  { title: "Pick your repos", why: "Only the repos you pick are watched." },
+  {
+    title: "Choose what gets reviewed",
+    why: "Of the repos your token reaches, these get watched.",
+  },
   { title: "Start reviewing", why: "Reviews land right here in this room." },
 ];
 
 const PROMISE = "Every new pull request gets reviewed before you merge it.";
 
 const REPOS: readonly ConnectGithubRepo[] = [
-  { id: "1", name: "acme/checkout", openPullRequestCount: 2 },
-  { id: "2", name: "acme/web", openPullRequestCount: 0 },
+  { id: "1", name: "acme/checkout" },
+  { id: "2", name: "acme/web" },
 ];
 
 let container: HTMLDivElement | null = null;
@@ -151,7 +154,7 @@ describe("the room's onboarding card is a scene, not a member's message", () => 
     );
     expect(stepTitles(el)).toEqual([
       "Connect GitHub",
-      "Pick your repos",
+      "Choose what gets reviewed",
       "Start reviewing",
     ]);
   });
@@ -201,7 +204,10 @@ describe("the room's onboarding card is a scene, not a member's message", () => 
         })}
       />,
     );
-    expect(stepTitles(el)).toEqual(["Connect GitHub", "Pick your repos"]);
+    expect(stepTitles(el)).toEqual([
+      "Connect GitHub",
+      "Choose what gets reviewed",
+    ]);
     expect(currentStepTitle(el)).toBeUndefined();
     expect(el.querySelector(".chat-block-scene-why")).toBeNull();
   });
@@ -250,8 +256,8 @@ describe("the walkthrough marker follows the live connect state", () => {
       repos: REPOS,
       selectedRepoIds: [],
     });
-    expect(currentStepTitle(el)).toBe("Pick your repos");
-    expect(currentStepAria(el)).toBe("Pick your repos");
+    expect(currentStepTitle(el)).toBe("Choose what gets reviewed");
+    expect(currentStepAria(el)).toBe("Choose what gets reviewed");
     expect(el.querySelector(".chat-block-scene-why")?.textContent).toBe(
       STEPS[1]?.why,
     );
@@ -292,11 +298,11 @@ describe("the walkthrough marker follows the live connect state", () => {
     await act(async () => {
       changeRepos?.click();
     });
-    expect(el.textContent).toContain("2 repos found · 1 picked");
+    expect(el.textContent).toContain("2 repos your token can reach · 1 picked");
     expect(el.querySelector(".chat-block-title")?.textContent).toBe(
       "Code review",
     );
-    expect(currentStepTitle(el)).toBe("Pick your repos");
+    expect(currentStepTitle(el)).toBe("Choose what gets reviewed");
     expect(el.querySelector(".chat-block-scene-why")?.textContent).toBe(
       STEPS[1]?.why,
     );
@@ -326,7 +332,7 @@ describe("the walkthrough marker follows the live connect state", () => {
     await act(async () => {
       changeRepos?.click();
     });
-    expect(el.textContent).toContain("2 repos found · 1 picked");
+    expect(el.textContent).toContain("2 repos your token can reach · 1 picked");
 
     const start = [...el.querySelectorAll("button")].find((button) =>
       button.textContent?.startsWith("Start reviewing"),
@@ -338,13 +344,13 @@ describe("the walkthrough marker follows the live connect state", () => {
     });
 
     expect(el.querySelector(".chat-block-scene-reviewing")).toBeNull();
-    expect(el.textContent).toContain("2 repos found · 1 picked");
-    expect(currentStepTitle(el)).toBe("Pick your repos");
+    expect(el.textContent).toContain("2 repos your token can reach · 1 picked");
+    expect(currentStepTitle(el)).toBe("Choose what gets reviewed");
     const alert = el.querySelector('[role="alert"]');
     expect(alert).not.toBeNull();
     expect(alert?.textContent).toContain("Couldn't start reviewing");
     const status = el.querySelector(".chat-block-scene-status");
-    expect(status?.textContent).toBe("Pick your repos");
+    expect(status?.textContent).toBe("Choose what gets reviewed");
     expect(status?.contains(alert)).toBe(false);
     expect(report).toHaveBeenCalled();
     expect(report.mock.calls[0]?.[1]).toMatchObject({

@@ -14,20 +14,23 @@
 // mode) rather than a hand-rolled input -- AGENTS.md puts generic controls
 // upstream in react-ui, not here. Its corner radius is react-ui's rounded
 // default, a visual delta from the mock's flat radius-0 system; the row
-// layout around it (name left, open-PR count right) is workbench-specific
+// layout around it (name left, last-push time right) is workbench-specific
 // composition and stays local.
 
 import { useEffect, useRef, useState } from "react";
 import { Button, Checkbox, Input } from "@corbits/react-ui";
 import { Check } from "@corbits/icons";
 
+import { formatRelativeActivity } from "../relative-time";
 import { CHAT_STRINGS } from "../strings";
 import { BlockCard } from "./block-card";
 
 export type ConnectGithubRepo = {
   readonly id: string;
   readonly name: string;
-  readonly openPullRequestCount: number;
+  /** When GitHub last saw a push, ISO-8601 — absent on a repo with no
+   * commits yet. It is what the picker's ordering is explaining. */
+  readonly lastPushedAt?: string;
 };
 
 /** One labelled step of the room's walkthrough, as the workbench's own
@@ -113,10 +116,14 @@ export type ConnectGithubCardProps = ConnectGithubCardBody & {
   readonly scene: OnboardingScene;
 };
 
-function repoMetaLabel(openPullRequestCount: number): string {
-  return openPullRequestCount === 0
-    ? CHAT_STRINGS.blockConnectGithubNoOpenPulls
-    : CHAT_STRINGS.blockConnectGithubOpenPulls(openPullRequestCount);
+function repoMetaLabel(lastPushedAt: string | undefined): string {
+  if (lastPushedAt === undefined) {
+    return CHAT_STRINGS.blockConnectGithubRepoNeverPushed;
+  }
+  const relative = formatRelativeActivity(lastPushedAt);
+  return relative === ""
+    ? CHAT_STRINGS.blockConnectGithubRepoNeverPushed
+    : CHAT_STRINGS.blockConnectGithubRepoUpdated(relative);
 }
 
 type StepState = "done" | "current" | "upcoming";
@@ -425,7 +432,7 @@ function ConnectedBody({
                   {repo.name}
                 </span>
                 <span className="chat-block-connect-repo-meta">
-                  {repoMetaLabel(repo.openPullRequestCount)}
+                  {repoMetaLabel(repo.lastPushedAt)}
                 </span>
               </label>
             </div>

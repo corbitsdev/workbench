@@ -414,7 +414,7 @@ describe("parseBlock connect-github", () => {
         requiredForTemplate: "github",
         state: "connected",
         orgName: "octocat",
-        repos: [{ id: "1", name: "acme/widgets", openPullRequestCount: 99 }],
+        repos: [{ id: "1", name: "acme/widgets" }],
       },
     });
     expect(result.ok).toBe(true);

@@ -29,7 +29,11 @@ import { aggregateReview, type ReviewerPass } from "./aggregate";
 import { isBotAuthor } from "./bot-guard";
 import { fingerprintsIn } from "./fingerprint";
 import { renderReviewPrompt } from "./prompt";
-import { CODE_REVIEW_REVIEWERS, type ReviewerDefinition } from "./reviewers";
+import {
+  CODE_REVIEW_REVIEWERS,
+  reviewerReportPrompt,
+  type ReviewerDefinition,
+} from "./reviewers";
 
 /** The GitHub reach a review run needs, under the connection's credential. */
 export interface CodeReviewGitHub {
@@ -45,9 +49,14 @@ export interface CodeReviewGitHub {
   ): Promise<PullRequestReviewCommentsPage>;
 }
 
-/** Runs one reviewer's turn and returns its raw reply. */
+/** Runs one reviewer's turn and returns its raw reply. `systemPrompt`
+ * is the reviewer's lens *plus* the JSON report contract this run parses
+ * back — a host must use it rather than `reviewer.systemPrompt`, which
+ * carries the lens alone so the same reviewer can answer a person in
+ * prose (CL-7189). */
 export type ReviewerTurn = (input: {
   readonly reviewer: ReviewerDefinition;
+  readonly systemPrompt: string;
   readonly prompt: string;
 }) => Promise<string>;
 
@@ -85,7 +94,11 @@ async function runOne(
   prompt: string,
 ): Promise<ReviewerPass> {
   try {
-    const reply = await deps.runReviewerTurn({ reviewer, prompt });
+    const reply = await deps.runReviewerTurn({
+      reviewer,
+      systemPrompt: reviewerReportPrompt(reviewer),
+      prompt,
+    });
     return { reviewer, ok: true, reply };
   } catch (err) {
     return { reviewer, ok: false, reason: reasonOf(err) };

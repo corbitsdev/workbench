@@ -8,9 +8,9 @@ import {
 import type { GitHubRepoSummary } from "@corbits/github-tools";
 
 const REPOS: readonly GitHubRepoSummary[] = [
-  { id: "1", name: "acme/widgets", openPullRequestCount: 2 },
-  { id: "2", name: "acme/gadgets", openPullRequestCount: 0 },
-  { id: "3", name: "acme/sprockets", openPullRequestCount: 5 },
+  { id: "1", name: "acme/widgets" },
+  { id: "2", name: "acme/gadgets" },
+  { id: "3", name: "acme/sprockets" },
 ];
 
 function fakePorts() {
@@ -196,7 +196,6 @@ describe("webhookTriggerName", () => {
     const repo: GitHubRepoSummary = {
       id: "1",
       name: "acme/widgets",
-      openPullRequestCount: 0,
     };
     expect(webhookTriggerName(repo)).toBe("acme/widgets pull-request-opened");
   });
