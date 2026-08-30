@@ -128,7 +128,12 @@ export function createGitWorkflowPusher(): WorkflowPusher {
         { label: "stage", args: ["add", ...Object.keys(tree)] },
         {
           label: "commit",
-          args: ["commit", "--no-verify", "-m", "Deploy the default workflow definition"],
+          args: [
+            "commit",
+            "--no-verify",
+            "-m",
+            "Deploy the default workflow definition",
+          ],
         },
         {
           // Forced deliberately: this asset repo is seed-owned (this

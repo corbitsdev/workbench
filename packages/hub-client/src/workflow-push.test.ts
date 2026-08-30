@@ -7,7 +7,14 @@
 // re-seed force-repoints `main` to the canonical content rather than
 // dying on divergent history it never asked to reconcile.
 import { describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createGitWorkflowPusher } from "./workflow-push";
@@ -138,7 +145,11 @@ fi
       );
       await chmod(hook, 0o755);
       const globalConfig = join(work, "gitconfig");
-      await writeFile(globalConfig, `[core]\nhooksPath = ${hooksDir}\n`, "utf-8");
+      await writeFile(
+        globalConfig,
+        `[core]\nhooksPath = ${hooksDir}\n`,
+        "utf-8",
+      );
       process.env.GIT_CONFIG_GLOBAL = globalConfig;
 
       const remoteDir = join(work, "remote.git");
