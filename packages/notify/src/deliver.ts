@@ -6,6 +6,13 @@
 // Fan-out to external sinks is queued strictly after the mail commits, one
 // dispatch row per (mail row, enabled sink). A sink is never called from this
 // path: the mail is the durable record, and a copy of it is the worker's job.
+//
+// That queuing step is NOT atomic with the mail write, and nothing
+// reconciles the two if a crash or a throw lands between them (CL-7238):
+// a mail row can end up committed with no dispatch row ever queued for it.
+// Closing that gap needs a seam `@corbits/mailbox` doesn't expose today
+// (an in-transaction hook, or a way to read back an existing row's id by
+// key) — see CL-7238 for why this can't be fixed from this package alone.
 import {
   parseNotificationEvent,
   type ApprovalNotification,
