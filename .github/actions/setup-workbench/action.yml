@@ -1,0 +1,18 @@
+name: Setup Workbench
+description: Install Bun, restore caches, and bun install
+runs:
+  using: composite
+  steps:
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version-file: .bun-version
+    - uses: actions/cache@v4
+      with:
+        path: ~/.bun/install/cache
+        key: bun-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version') }}
+    - uses: actions/cache@v4
+      with:
+        path: node_modules
+        key: node-modules-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version') }}
+    - run: bun install --frozen-lockfile
+      shell: bash

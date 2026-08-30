@@ -10,13 +10,20 @@ const CONCURRENCY_ENV = "WORKBENCH_CHECK_CONCURRENCY";
 
 type Job = { readonly name: string; readonly dir: string };
 
-function resolveConcurrency(script: string): number {
-  const raw = process.env[CONCURRENCY_ENV];
+export function resolveConcurrency(
+  script: string,
+  env: NodeJS.ProcessEnv = process.env,
+  cores: number = availableParallelism(),
+): number {
+  const raw = env[CONCURRENCY_ENV];
   if (raw === undefined || raw === "") {
     if (SEQUENTIAL_SCRIPTS.has(script)) return 1;
-    // Each job saturates about one core, so leave a couple free for the editor
-    // and type server a developer runs alongside the gate.
-    return Math.max(1, availableParallelism() - 2);
+    // Locally each job saturates about one core, so leave a couple free for
+    // the editor and type server a developer runs alongside the gate. CI
+    // runners have no editor — use every core so package fan-out is not
+    // artificially capped.
+    if (env["GITHUB_ACTIONS"] === "true") return Math.max(1, cores);
+    return Math.max(1, cores - 2);
   }
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isInteger(parsed) || parsed < 1) {
@@ -136,59 +143,61 @@ async function narrowToAffected(jobs: readonly Job[]): Promise<Job[]> {
   return narrowed;
 }
 
-const scriptArg = process.argv[2];
-if (!scriptArg) {
-  console.error("usage: bun run scripts/run-all.ts <script-name>");
-  process.exit(1);
-}
-const script: string = scriptArg;
+if (import.meta.main) {
+  const scriptArg = process.argv[2];
+  if (!scriptArg) {
+    console.error("usage: bun run scripts/run-all.ts <script-name>");
+    process.exit(1);
+  }
+  const script: string = scriptArg;
 
-let concurrency: number;
-try {
-  concurrency = resolveConcurrency(script);
-} catch (cause) {
-  console.error(cause instanceof Error ? cause.message : String(cause));
-  process.exit(1);
-}
+  let concurrency: number;
+  try {
+    concurrency = resolveConcurrency(script);
+  } catch (cause) {
+    console.error(cause instanceof Error ? cause.message : String(cause));
+    process.exit(1);
+  }
 
-const discovered = await discover(script);
-const jobs = await narrowToAffected(discovered);
-if (jobs.length === 0) {
-  const reason =
-    discovered.length === 0
-      ? "no workspace packages define it yet"
-      : "nothing affected by this change";
-  console.log(`${script}: ${reason}`);
-  process.exit(0);
-}
+  const discovered = await discover(script);
+  const jobs = await narrowToAffected(discovered);
+  if (jobs.length === 0) {
+    const reason =
+      discovered.length === 0
+        ? "no workspace packages define it yet"
+        : "nothing affected by this change";
+    console.log(`${script}: ${reason}`);
+    process.exit(0);
+  }
 
-const failures: string[] = [];
-let nextJob = 0;
+  const failures: string[] = [];
+  let nextJob = 0;
 
-async function worker(): Promise<void> {
-  while (nextJob < jobs.length) {
-    const job = jobs[nextJob];
-    nextJob += 1;
-    if (job === undefined) return;
+  async function worker(): Promise<void> {
+    while (nextJob < jobs.length) {
+      const job = jobs[nextJob];
+      nextJob += 1;
+      if (job === undefined) return;
 
-    // Progress goes to stderr so stdout stays a clean sequence of per-package
-    // blocks; a ten-minute gate that prints nothing until the end reads as hung.
-    console.error(`started ${job.name}`);
-    const code = await runJob(job, script);
-    if (code !== 0) {
-      failures.push(job.name);
-      console.error(`${job.name}: ${script} exited with code ${code}`);
+      // Progress goes to stderr so stdout stays a clean sequence of per-package
+      // blocks; a ten-minute gate that prints nothing until the end reads as hung.
+      console.error(`started ${job.name}`);
+      const code = await runJob(job, script);
+      if (code !== 0) {
+        failures.push(job.name);
+        console.error(`${job.name}: ${script} exited with code ${code}`);
+      }
     }
   }
-}
 
-await Promise.all(
-  Array.from({ length: Math.min(concurrency, jobs.length) }, () => worker()),
-);
-
-if (failures.length > 0) {
-  console.error(
-    `${script} failed in ${failures.length} package(s): ${failures.join(", ")}`,
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, jobs.length) }, () => worker()),
   );
-  process.exit(1);
+
+  if (failures.length > 0) {
+    console.error(
+      `${script} failed in ${failures.length} package(s): ${failures.join(", ")}`,
+    );
+    process.exit(1);
+  }
 }
