@@ -203,6 +203,39 @@ specialist's own 1:1 — never an invite into Myra's DM.
 A create-succeeded / mint-failed split is a completed tool result that
 names both halves, not a bare error.
 
+## Canva MCP connect (shipped)
+
+Canva is the `canva` MCP preset (`packages/connections/src/mcp-presets.ts`):
+`https://mcp.canva.com/mcp`, `connectionMode: "oauth"`, with the 16
+advertised PRM scopes space-joined onto RFC 7591 DCR `clientMetadata.scope`
+(`createMcpOAuthProvider` in `packages/connections/src/mcp-oauth.ts`).
+Other presets omit `oauthScopes` and stay on the SDK's SEP-835 PRM
+fallback.
+
+Connect-time probe and credential fetch share
+`mcpOriginPinnedFetch` (`packages/credential-providers/src/mcp-origin-pinned-fetch.ts`):
+pin to the stored origin, extra first hop only
+`https://mcp.canva.com` → `https://canva.ai` (not a host suffix),
+`redirect: "manual"` so a 302 is never followed. `/start` classifies
+DCR/client refusal as `client_rejected` versus unreachable discovery as
+`discovery_failed` (`packages/connections/src/mcp-oauth-routes.ts`).
+RFC 7591 `invalid_redirect_uri` (and `invalid_client_metadata`,
+`invalid_client`, `unauthorized_client`) count as `client_rejected`; the
+route clones 4xx/5xx JSON before the MCP SDK 1.30.0 maps unknown codes
+onto `ServerError`.
+
+A successful OAuth callback probes with the new token and, on success,
+appends `toolCount` to the Plugins return query. The Canva row
+(`packages/plugins-ui/src/mcp-preset-cards.tsx`) shows that count when
+it is a non-negative integer; otherwise the row stays "Connected".
+`@corbits/mcp-tools` per-request timeout is two minutes
+(`MCP_REQUEST_TIMEOUT_MS` in `packages/mcp-tools/src/mcp-client.ts`) —
+above the SDK's 60s default, below a five-minute chat turn.
+
+These are unit-tested control-flow facts. Live Canva OAuth against
+Canva's own servers is **not** verified; do not document a proven live
+handshake.
+
 ## Related docs
 
 - [README.md](README.md) — quickstart, local setup, repo layout, e2e detail
@@ -223,3 +256,5 @@ names both halves, not a bare error.
 - Whether Pulumi stacks/config live in this repo or a separate
   infrastructure repo is not established in the docs reviewed for this
   pass.
+- Live Canva MCP OAuth (DCR, redirect allowlist, and post-OAuth probe
+  against `mcp.canva.com` / `canva.ai`) is not verified as of CL-7083.

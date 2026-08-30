@@ -137,6 +137,20 @@ extend what an agent knows — both are installable, both are scoped to the
 bench or workbench that installs them, and neither requires touching
 platform internals.
 
+The Plugins rail is how a person connects remote MCP servers: curated
+preset cards plus an add-by-URL path. Canva is an OAuth preset — Connect
+sends them through that app's sign-in, then back to Plugins. After a
+successful OAuth return, the row can show how many tools the connect
+probe found; a missing or non-integer count stays a bare "Connected". If
+sign-in cannot start, Plugins distinguishes an unreachable authorization
+server from the app rejecting Workbench as a client (redirect URL or
+registration). Agent MCP tool calls are allowed two minutes so a slow
+design tool can finish inside a chat turn.
+
+Live Canva OAuth against Canva's own servers is **not** verified as of
+CL-7083. This documents the shipped connect path, not a proven live
+handshake.
+
 ## Workbench settings
 
 Each workbench has its own full-stage settings surface, not a dialog —
@@ -217,6 +231,14 @@ user-facing surfaces use the rest of the product vocabulary above.
   generic `connections/pending` still wakes the asking agent. A leftover
   agent 401 after GitHub already succeeded is still a first-minute bug
   — see IMPLEMENTATION.md; do not document that it cannot happen.
+- Connected/settle honesty (no stale Connect after success; settle never
+  posting as the signed-in user; no agent 401 after GitHub already
+  succeeded) stays **target** until CL-6737 and CL-6738 land — see
+  IMPLEMENTATION.md open questions; do not document those guarantees as
+  shipped.
+- Live Canva MCP OAuth (sign-in, DCR, and post-OAuth probe against
+  Canva's own servers) is not verified; do not document a proven live
+  Canva handshake.
 - The precise boundary of what Insights surfaces to a non-admin bench
   member (all tenant activity vs. only their own) is not spelled out in
   `packages/insights`'s own docs as of this writing.

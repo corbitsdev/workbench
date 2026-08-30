@@ -154,6 +154,24 @@ describe("createLaunchCaches: assetService reads", () => {
     expect(inner.listCalls.length).toBe(1);
   });
 
+  test("lists an empty catalog when the package-registry has no resolvable main", async () => {
+    const heads = new Map<string, string | null>();
+    const inner = countingAssetService(heads);
+    const { repoStore } = countingRepoStore(heads);
+    const caches = createLaunchCaches({
+      assetService: inner.assetService,
+      repoStore,
+    });
+
+    const listed = await caches.assetService.listAssetBlobs({
+      assetId: ASSET_ID,
+      dir: "tarballs",
+    });
+
+    expect(listed).toEqual([]);
+    expect(inner.listCalls.length).toBe(0);
+  });
+
   test("delegates createAsset and populateAsset untouched", () => {
     const heads = new Map([[HEAD_REF, "sha-1"]]);
     const inner = countingAssetService(heads);

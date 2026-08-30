@@ -11,9 +11,9 @@
 //
 // Every protection the sibling providers enforce is mirrored exactly:
 // the handle is pinned to the credential's origin at shape time, every
-// request is re-checked against that origin, and every outbound request
-// forces `redirect: "manual"` so a 3xx never sends a token to a foreign
-// host.
+// request is re-checked against that origin (plus an explicit extra-origin
+// map), and every outbound request forces `redirect: "manual"` so a 3xx
+// never sends a token to a foreign host.
 
 import type {
   CredentialProvider,
@@ -22,6 +22,7 @@ import type {
 } from "@intx/types";
 
 import type { FetchLike } from "./http-x-api-key-provider";
+import { mcpOriginPinnedFetch } from "./mcp-origin-pinned-fetch";
 
 /**
  * The stored-secret sentinel for a keyless MCP-server connection.
@@ -58,60 +59,21 @@ export function createMcpStreamableHttpCredentialProvider(
 
       return {
         kind: "http",
-        async fetch(
-          input: string | URL | Request,
-          init?: RequestInit,
-        ): Promise<Response> {
-          const target = resolveTargetUrl(input, pinnedOrigin);
-          if (target.origin !== pinnedOrigin) {
-            throw new Error(
-              `mcp-streamable-http credential is pinned to ${pinnedOrigin}; refusing cross-origin request to ${target.origin}`,
-            );
-          }
-
-          // Read the secret fresh on every call so a rotation of the
-          // underlying material cell reaches this handle without a
-          // rebuild.
-          const { secret } = context.readCurrentMaterial();
-          const keyless = secret === MCP_NO_TOKEN_SENTINEL;
-
-          if (input instanceof Request) {
-            const headers = new Headers(input.headers);
-            if (keyless) headers.delete("authorization");
-            else headers.set("authorization", `Bearer ${secret}`);
-            return fetchImpl(
-              new Request(input, { headers, redirect: "manual" }),
-            );
-          }
-
-          const headers = new Headers(init?.headers);
-          if (keyless) headers.delete("authorization");
-          else headers.set("authorization", `Bearer ${secret}`);
-          return fetchImpl(target, { ...init, headers, redirect: "manual" });
-        },
+        fetch: mcpOriginPinnedFetch({
+          pinnedOrigin,
+          fetch: fetchImpl,
+          readToken: () => {
+            // Read the secret fresh on every call so a rotation of the
+            // underlying material cell reaches this handle without a
+            // rebuild.
+            const { secret } = context.readCurrentMaterial();
+            return secret === MCP_NO_TOKEN_SENTINEL ? undefined : secret;
+          },
+        }),
         dispose(): void {
           // An http handle allocates no resources; nothing to release.
         },
       };
     },
   };
-}
-
-/**
- * Resolve the URL a request targets, matching the sibling providers: a
- * relative string resolves against the pinned origin, an absolute
- * string or URL keeps its own origin (refused above if it differs), and
- * a `Request` already carries an absolute URL.
- */
-function resolveTargetUrl(
-  input: string | URL | Request,
-  pinnedOrigin: string,
-): URL {
-  if (typeof input === "string") {
-    return new URL(input, pinnedOrigin);
-  }
-  if (input instanceof URL) {
-    return input;
-  }
-  return new URL(input.url);
 }

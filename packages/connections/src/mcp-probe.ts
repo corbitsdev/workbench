@@ -5,6 +5,7 @@
 // second hand-rolled MCP client: the exact transport/session mechanics
 // `mcp_list_tools` uses at call time, run once at connect time to prove
 // the URL is a real MCP server before it is ever stored.
+import { mcpOriginPinnedFetch } from "@corbits/credential-providers";
 import { withMcpConnection, listMcpTools } from "@corbits/mcp-tools";
 import { discoverOAuthServerInfo } from "@modelcontextprotocol/sdk/client/auth.js";
 
@@ -51,16 +52,16 @@ async function discoverOAuthRequirement(
   }
 }
 
-/** Builds the bearer-authenticated fetch the probe (and nothing durable)
- * uses: a plain `fetch` injecting `authorization` when a token was
- * pasted, with no origin pinning — this is the one-shot pre-storage
- * check, before a provider row (and its pinned origin) exists at all. */
-function probeFetch(token: string | undefined): typeof fetch {
-  if (token === undefined || token.length === 0) return fetch;
-  return ((input, init) => {
-    const headers = new Headers(init?.headers);
-    headers.set("authorization", `Bearer ${token}`);
-    return fetch(input as string | URL, { ...init, headers });
+/** Builds the origin-pinned fetch the probe (and nothing durable) uses:
+ * the same helper `mcp_call` later uses via the credential provider, pinned
+ * to this server's origin so a 3xx cannot leak a bearer (or a keyless
+ * handshake) off the URL the person pasted. Keyless probes pin too. */
+function probeFetch(url: string, token: string | undefined): typeof fetch {
+  const pinnedOrigin = new URL(url).origin;
+  return mcpOriginPinnedFetch({
+    pinnedOrigin,
+    readToken: () =>
+      token === undefined || token.length === 0 ? undefined : token,
   }) as typeof fetch;
 }
 
@@ -85,7 +86,7 @@ export async function probeMcpServer(
 
   try {
     const tools = await withMcpConnection(
-      { url, fetchImpl: probeFetch(token) },
+      { url, fetchImpl: probeFetch(url, token) },
       (client) => listMcpTools(client),
     );
     return { ok: true, toolCount: tools.length };

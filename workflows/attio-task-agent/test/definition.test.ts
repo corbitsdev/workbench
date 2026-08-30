@@ -70,7 +70,7 @@ test("one MCP pin covers the CRM, past calls, and the web — the OG needed thre
   const agent = workStep(buildAttioTaskAgentWorkflow(INPUT)).agent;
   expect(agent.toolPackagePins).toEqual(ATTIO_TASK_AGENT_TOOL_PACKAGE_PINS);
   expect(ATTIO_TASK_AGENT_TOOL_PACKAGE_PINS).toEqual([
-    { name: "@corbits/mcp-tools", version: "0.0.9" },
+    { name: "@corbits/mcp-tools", version: "0.0.10" },
   ]);
 });
 

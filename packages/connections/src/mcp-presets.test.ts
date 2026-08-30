@@ -112,4 +112,29 @@ describe("MCP_PRESETS", () => {
     expect(mcpPresetBySlug("canva")?.connectionMode).toBe("oauth");
     expect(mcpPresetBySlug("canva")?.icon).toBeUndefined();
   });
+
+  test("Canva lists the 16 live PRM OAuth scopes; other presets omit oauthScopes", () => {
+    expect(mcpPresetBySlug("canva")?.oauthScopes).toEqual([
+      "profile:read",
+      "design:meta:read",
+      "design:content:write",
+      "design:content:read",
+      "folder:read",
+      "folder:write",
+      "brandtemplate:content:read",
+      "brandtemplate:meta:read",
+      "brandtemplate:content:write",
+      "comment:write",
+      "comment:read",
+      "asset:read",
+      "asset:write",
+      "brandkit:read",
+      "help:answers:read",
+      "help:answers:write",
+    ]);
+    for (const preset of MCP_PRESETS) {
+      if (preset.slug === "canva") continue;
+      expect("oauthScopes" in preset).toBe(false);
+    }
+  });
 });

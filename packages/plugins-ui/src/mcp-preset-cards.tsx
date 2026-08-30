@@ -23,6 +23,8 @@ function messageOf(cause: unknown): string {
 
 const MCP_OAUTH_ERROR_COPY: Readonly<Record<string, string>> = {
   discovery_failed: "Couldn't reach that app's sign-in. Try connecting again.",
+  client_rejected:
+    "That app didn't accept Workbench as a client (redirect URL or registration). Try connecting again.",
   no_authorization_needed:
     "That app didn't start a sign-in. Try connecting again.",
   state_expired:
@@ -45,6 +47,20 @@ function mcpOauthReturnError(slug: string): string | null {
     (code !== null ? MCP_OAUTH_ERROR_COPY[code] : undefined) ??
     "The connection did not finish. Try connecting again."
   );
+}
+
+function mcpOauthConnectedReturn():
+  { readonly slug: string; readonly toolCount: number } | undefined {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("outcome") !== "connected") return undefined;
+  const slug = params.get("mcpOauth");
+  const raw = params.get("toolCount");
+  if (slug === null || slug === "" || raw === null || raw === "") {
+    return undefined;
+  }
+  const toolCount = Number(raw);
+  if (!Number.isInteger(toolCount) || toolCount < 0) return undefined;
+  return { slug, toolCount };
 }
 
 function McpPresetCard({
@@ -248,7 +264,12 @@ export function McpPresetCardsSection({
 }) {
   const [presets, setPresets] = useState<readonly McpPreset[]>([]);
   const [toolCounts, setToolCounts] = useState<ReadonlyMap<string, number>>(
-    new Map(),
+    () => {
+      const returned = mcpOauthConnectedReturn();
+      return returned === undefined
+        ? new Map()
+        : new Map([[returned.slug, returned.toolCount]]);
+    },
   );
   const [loadError, setLoadError] = useState<string | null>(null);
   // Whether the presets fetch has resolved at least once — distinct from
