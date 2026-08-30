@@ -13,23 +13,21 @@ function fakeFetch(handler: (url: string) => Promise<Response>): typeof fetch {
     handler(String(input))) as unknown as typeof fetch;
 }
 
-test("listRepos maps each repo and fills in its own open-PR count", async () => {
+test("listRepos reads the whole picker from one list call, never a per-repo search", async () => {
   const requested: string[] = [];
   const fetchImpl = fakeFetch((url) => {
     requested.push(url);
     if (url.includes("/user/repos")) {
       return Promise.resolve(
         jsonResponse([
-          { id: 1, full_name: "acme/widgets" },
-          { id: 2, full_name: "acme/gadgets" },
+          {
+            id: 1,
+            full_name: "acme/widgets",
+            pushed_at: "2026-08-29T12:00:00Z",
+          },
+          { id: 2, full_name: "acme/gadgets", pushed_at: null },
         ]),
       );
-    }
-    if (url.includes("repo%3Aacme%2Fwidgets")) {
-      return Promise.resolve(jsonResponse({ total_count: 3 }));
-    }
-    if (url.includes("repo%3Aacme%2Fgadgets")) {
-      return Promise.resolve(jsonResponse({ total_count: 0 }));
     }
     throw new Error(`unstubbed request: ${url}`);
   });
@@ -37,10 +35,15 @@ test("listRepos maps each repo and fills in its own open-PR count", async () => 
   const repos = await listRepos({ apiKey: "tok", baseUrl: BASE, fetchImpl });
 
   expect(repos).toEqual([
-    { id: "1", name: "acme/widgets", openPullRequestCount: 3 },
-    { id: "2", name: "acme/gadgets", openPullRequestCount: 0 },
+    {
+      id: "1",
+      name: "acme/widgets",
+      lastPushedAt: "2026-08-29T12:00:00Z",
+    },
+    { id: "2", name: "acme/gadgets" },
   ]);
-  expect(requested.some((url) => url.includes("/user/repos"))).toBe(true);
+  expect(requested).toHaveLength(1);
+  expect(requested.some((url) => url.includes("/search/"))).toBe(false);
 });
 
 test("listRepos throws when the repos response doesn't match the expected shape", async () => {
@@ -49,6 +52,17 @@ test("listRepos throws when the repos response doesn't match the expected shape"
   );
   await expect(listRepos({ baseUrl: BASE, fetchImpl })).rejects.toThrow(
     /did not match the expected shape/,
+  );
+});
+
+test("listRepos names the status when GitHub rejects the list call", async () => {
+  const fetchImpl = fakeFetch(() =>
+    Promise.resolve(
+      new Response("nope", { status: 403, statusText: "Forbidden" }),
+    ),
+  );
+  await expect(listRepos({ baseUrl: BASE, fetchImpl })).rejects.toThrow(
+    /403 Forbidden/,
   );
 });
 

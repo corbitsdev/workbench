@@ -1236,7 +1236,7 @@ export function patchWorkbenchSettings(
 const ConnectGithubRepoResponse = type({
   id: "string",
   name: "string",
-  openPullRequestCount: "number",
+  "lastPushedAt?": "string",
 });
 
 const ConnectGithubStateResponse = type({ kind: "'disconnected'" })

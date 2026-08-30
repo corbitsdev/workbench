@@ -44,8 +44,8 @@ const allowAll: RequireGrant = () => async (_c, next) => {
 };
 
 const REPOS: readonly GitHubRepoSummary[] = [
-  { id: "1", name: "acme/widgets", openPullRequestCount: 2 },
-  { id: "2", name: "acme/gadgets", openPullRequestCount: 0 },
+  { id: "1", name: "acme/widgets" },
+  { id: "2", name: "acme/gadgets" },
 ];
 
 function mountAs(routes: Hono<TenantEnv>): Hono<TenantEnv> {

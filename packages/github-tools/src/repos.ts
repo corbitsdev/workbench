@@ -1,13 +1,13 @@
-// The connect-github card's repo picker (CL-6345): the authenticated
-// user's own repositories, plus one honestly-limited open-PR count per
-// repo. GitHub's `/user/repos` list has no open-PR count on the row
-// itself, so getting one costs a second call per repo — the search API's
-// `total_count`, which is exact and free of pagination, unlike walking
-// `/pulls` pages. That is an N+1 fetch (one list call, one search call
-// per repo returned); acceptable for the picker's own repo count (a
-// handful of repos, not thousands), but a caller listing an org with
-// hundreds of repos will feel it. A cheaper batched count is future work,
-// not something this module fakes today.
+// The connect-github card's repo picker (CL-6345): the repositories the
+// connected token can reach, most recently pushed first.
+//
+// One call, on purpose. This used to decorate every row with an exact
+// open-PR count from the search API, which cost one `/search/issues` call
+// per repo fired concurrently — and GitHub's search API allows 30 requests
+// a minute and secondary-rate-limits bursts, so any account past a handful
+// of repos got a 403 and the whole picker failed to load (CL-7189). The
+// count was decoration on a checkbox row; the push timestamp that explains
+// the ordering rides along on the list response for free.
 import { type } from "arktype";
 
 import type { GitHubClientConfig } from "./client";
@@ -15,10 +15,9 @@ import type { GitHubClientConfig } from "./client";
 const GitHubUserRepo = type({
   id: "number",
   full_name: "string",
+  "pushed_at?": "string | null",
 });
 const GitHubUserReposResponse = GitHubUserRepo.array();
-
-const GitHubSearchTotalCount = type({ total_count: "number" });
 
 const DEFAULT_BASE_URL = "https://api.github.com";
 const PER_PAGE = 100;
@@ -26,7 +25,9 @@ const PER_PAGE = 100;
 export interface GitHubRepoSummary {
   readonly id: string;
   readonly name: string;
-  readonly openPullRequestCount: number;
+  /** When GitHub last saw a push, ISO-8601 — absent on a repo that has
+   * never been pushed to. */
+  readonly lastPushedAt?: string;
 }
 
 function headers(apiKey: string | undefined): Record<string, string> {
@@ -55,29 +56,11 @@ async function fetchJSON(
   return response.json();
 }
 
-async function openPullRequestCountOf(
-  config: GitHubClientConfig,
-  base: string,
-  fullName: string,
-): Promise<number> {
-  const url = new URL(`${base}/search/issues`);
-  url.searchParams.set("q", `repo:${fullName} is:pr is:open`);
-  url.searchParams.set("per_page", "1");
-  const raw = await fetchJSON(config, url);
-  const parsed = GitHubSearchTotalCount(raw);
-  if (parsed instanceof type.errors) {
-    throw new Error(
-      `GitHub open-PR count response did not match the expected shape: ${parsed.summary}`,
-    );
-  }
-  return parsed.total_count;
-}
-
 /**
  * Lists the repositories the connected credential can see, most
- * recently pushed first, with each repo's own open-PR count filled in.
- * Throws on any transport, HTTP, or shape failure; the connect-github
- * card's own host catches at its render boundary.
+ * recently pushed first. Throws on any transport, HTTP, or shape
+ * failure; the connect-github card's own host catches at its render
+ * boundary.
  */
 export async function listRepos(
   config: GitHubClientConfig,
@@ -95,17 +78,13 @@ export async function listRepos(
     );
   }
 
-  return Promise.all(
-    repos.map(async (repo) => ({
-      id: String(repo.id),
-      name: repo.full_name,
-      openPullRequestCount: await openPullRequestCountOf(
-        config,
-        base,
-        repo.full_name,
-      ),
-    })),
-  );
+  return repos.map((repo) => ({
+    id: String(repo.id),
+    name: repo.full_name,
+    ...(typeof repo.pushed_at === "string"
+      ? { lastPushedAt: repo.pushed_at }
+      : {}),
+  }));
 }
 
 const GitHubAuthenticatedUser = type({ login: "string" });
