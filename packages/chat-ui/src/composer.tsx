@@ -351,10 +351,16 @@ export const Composer = forwardRef<
      * typically the host's own `isPendingReply(streamingReply)`. Absent
      * or `false` renders no Stop affordance at all. */
     readonly running?: boolean;
-    /** Cancels the running turn — `POST .../turns/cancel`. Required
+    /**
+     * Cancels the running turn — `POST .../turns/cancel`. Required
      * whenever `running` can be `true`; the composer never guesses at
-     * how to stop a turn on its own. */
-    readonly onStop?: () => void;
+     * how to stop a turn on its own. May return a promise: a rejection
+     * re-enables the button immediately (the request itself failed —
+     * network, a denied grant — not merely a slow cancel, so there is
+     * no reason to make the person wait for `running` to change before
+     * they can try again).
+     */
+    readonly onStop?: () => void | Promise<unknown>;
   }
 >(function Composer(
   {
@@ -737,7 +743,13 @@ export const Composer = forwardRef<
   function handleStop() {
     if (stopping || onStop === undefined) return;
     setStopping(true);
-    onStop();
+    // CL-7201 (Critique finding): a rejected stop request is a FAILED
+    // cancel, not a slow one -- the `useEffect` above only re-enables
+    // once the host reports `running` has gone false, which never
+    // happens for a request that never reached the server. Without
+    // this catch the button stayed disabled for the rest of the turn's
+    // life with no way to retry.
+    Promise.resolve(onStop()).catch(() => setStopping(false));
   }
 
   return (
