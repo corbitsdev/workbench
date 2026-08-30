@@ -17,6 +17,7 @@ function offering(
     providerName: string;
     credentialId: string | null;
     capabilities: readonly Capability[];
+    origin: ResolvedOffering["origin"];
   }> = {},
 ): ResolvedOffering {
   const {
@@ -26,6 +27,7 @@ function offering(
     providerName = "anthropic",
     credentialId = "cred_1",
     capabilities = ["plain-text"],
+    origin = { tenantId: "tnt_bench", direct: true },
   } = overrides;
   return {
     offering: {
@@ -38,7 +40,7 @@ function offering(
       name: providerName,
       credentialId,
     } as ResolvedOffering["provider"],
-    origin: { tenantId: "tnt_bench", direct: true },
+    origin,
   };
 }
 
@@ -163,5 +165,49 @@ describe("selectDefaultInferencePreferences", () => {
       { provider: "anthropic", model: "claude-sonnet-5" },
       { provider: "opencode-zen", model: "claude-sonnet-5" },
     ]);
+  });
+
+  test("CL-7185: a tenant-owned completion offering wins over an inherited curated name at the same priority", () => {
+    const result = selectDefaultInferencePreferences([
+      offering({
+        offeringId: "off_inherited",
+        canonicalName: "gpt-oss:20b",
+        providerName: "ollama",
+        priority: 0,
+        capabilities: ["plain-text"],
+        origin: { tenantId: "tnt_parent", direct: false },
+      }),
+      offering({
+        offeringId: "off_direct",
+        canonicalName: "llama3.2",
+        providerName: "ollama",
+        priority: 0,
+        capabilities: ["plain-text"],
+        origin: { tenantId: "tnt_bench", direct: true },
+      }),
+    ]);
+    expect(result).toEqual([{ provider: "ollama", model: "llama3.2" }]);
+  });
+
+  test("CL-7185: inherit-only offerings still pick among inherited when none are origin.direct", () => {
+    const result = selectDefaultInferencePreferences([
+      offering({
+        offeringId: "off_inherited_curated",
+        canonicalName: "gpt-oss:20b",
+        providerName: "ollama",
+        priority: 0,
+        capabilities: ["plain-text"],
+        origin: { tenantId: "tnt_parent", direct: false },
+      }),
+      offering({
+        offeringId: "off_inherited_live",
+        canonicalName: "llama3.2",
+        providerName: "ollama",
+        priority: 0,
+        capabilities: ["plain-text"],
+        origin: { tenantId: "tnt_parent", direct: false },
+      }),
+    ]);
+    expect(result).toEqual([{ provider: "ollama", model: "gpt-oss:20b" }]);
   });
 });
