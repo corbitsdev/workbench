@@ -1,0 +1,19 @@
+{
+  "name": "@corbits/collections",
+  "private": true,
+  "description": "Bounded, self-evicting in-memory collections for process-lifetime state (CL-7233) — a TTL map today, with orchestrator/crypto-cache callers (CL-7229, CL-7223) expected to consolidate onto it rather than growing their own",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
