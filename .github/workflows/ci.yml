@@ -220,6 +220,17 @@ jobs:
           pg_isready -h localhost -p 5432
           git --version
 
+      # apps/hub/test and most of the package suites below connect
+      # straight to DATABASE_URL (or its `_e2e`-suffixed sibling from
+      # `e2eDatabaseUrl()`) rather than booting through the harness, so
+      # — unlike e2e and isolation, which provision their own schema —
+      # this job must create and migrate both databases itself before
+      # those suites run.
+      - name: Set up the databases
+        run: |
+          DATABASE_URL=postgres://postgres:postgres@localhost:5432/workbench bun scripts/db-setup.ts
+          DATABASE_URL=postgres://postgres:postgres@localhost:5432/workbench_e2e bun scripts/db-setup.ts
+
       # apps/hub's own DB-backed suites (e.g. the sign-up rate-limit
       # proof) never run under the plain `checks` job, which has no
       # Postgres. E2E_REQUIRED=1 turns a would-be skip here into a hard

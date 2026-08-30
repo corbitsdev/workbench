@@ -47,6 +47,24 @@ test("CI splits e2e, isolation, and db-suites onto their own Postgres jobs", asy
   expect(dbSuites).toContain("E2E_REQUIRED:");
   expect(dbSuites).toContain("bun test apps/hub/test");
   expect(dbSuites).toContain("grep -rl DATABASE_URL");
+
+  // Unlike e2e and isolation, which provision their own schema through
+  // the harness, apps/hub/test and most package suites connect straight
+  // to DATABASE_URL or its `_e2e`-suffixed sibling from
+  // `e2eDatabaseUrl()` — both databases must exist and be migrated
+  // before those suites run, or their queries fail with "database ...
+  // does not exist".
+  const plainSetupIndex = dbSuites.indexOf(
+    "postgres://postgres:postgres@localhost:5432/workbench bun scripts/db-setup.ts",
+  );
+  const e2eSetupIndex = dbSuites.indexOf(
+    "postgres://postgres:postgres@localhost:5432/workbench_e2e bun scripts/db-setup.ts",
+  );
+  const hubSuiteIndex = dbSuites.indexOf("bun test apps/hub/test");
+  expect(plainSetupIndex).toBeGreaterThan(-1);
+  expect(e2eSetupIndex).toBeGreaterThan(-1);
+  expect(plainSetupIndex).toBeLessThan(hubSuiteIndex);
+  expect(e2eSetupIndex).toBeLessThan(hubSuiteIndex);
 });
 
 test("jobs that need merge-base fetch full history; the rest stay shallow", async () => {
