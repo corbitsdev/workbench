@@ -67,6 +67,14 @@ type FakeDefinitionRow = {
   status: string;
   currentVersion: number;
   assetId: string | null;
+  creatorPrincipalId?: string | null;
+  wireHash?: string | null;
+  origin?: string;
+  grantRequirements?: unknown;
+  modelRequirements?: unknown;
+  credentialBindings?: unknown;
+  createdAt?: Date;
+  updatedAt?: Date;
 };
 
 // `POST /definitions` reuses `createAgentDefinitionCore`, whose write
@@ -90,6 +98,14 @@ function fakeDb(
     status: "deployed",
     currentVersion: 1,
     assetId: "ast_new",
+    creatorPrincipalId: null,
+    wireHash: null,
+    origin: "authored",
+    grantRequirements: null,
+    modelRequirements: null,
+    credentialBindings: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
   };
   const definitions = opts.definitions ?? [createdRow];
   const selectResult = [

@@ -201,9 +201,28 @@ type FakeDbOptions = {
   hasDefinition?: boolean;
 };
 
-function fakeDb(opts: FakeDbOptions = {}): DB["db"] {
-  let wfDefFindFirstCalls = 0;
+function fullDefinitionRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "def_new",
+    tenantId: TENANT.id,
+    assetId: "ast_new",
+    name: "Research Buddy",
+    description: null,
+    creatorPrincipalId: null,
+    wireHash: null,
+    origin: "authored",
+    grantRequirements: null,
+    modelRequirements: null,
+    credentialBindings: null,
+    currentVersion: "1",
+    status: "deployed",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  };
+}
 
+function fakeDb(opts: FakeDbOptions = {}): DB["db"] {
   const selectResult = [
     {
       tenantId: TENANT.id,
@@ -219,23 +238,13 @@ function fakeDb(opts: FakeDbOptions = {}): DB["db"] {
         findFirst: async () => opts.existingAsset ?? undefined,
       },
       workflowDefinition: {
-        findFirst: async () => {
-          wfDefFindFirstCalls += 1;
-          if (wfDefFindFirstCalls === 1) {
-            return opts.hasDefinition ? { id: "def_existing" } : undefined;
-          }
-          // Read-back after ensureWorkflowDefinitionForAsset.
-          return {
-            id: "def_new",
-            tenantId: TENANT.id,
-            name: "Research Buddy",
-            description: null,
-            currentVersion: "1",
-            status: "deployed",
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          };
-        },
+        // Existence check for the duplicate-asset recovery path
+        // (`createWorkflowDefinitionStore(...).listByAsset`).
+        findMany: async () =>
+          opts.hasDefinition ? [fullDefinitionRow({ id: "def_existing" })] : [],
+        // Read-back after ensureWorkflowDefinitionForAsset
+        // (`createWorkflowDefinitionStore(...).findById`).
+        findFirst: async () => fullDefinitionRow(),
       },
     },
     select: () => ({
@@ -426,16 +435,7 @@ function fakeCreateDb(): DB["db"] {
   return {
     query: {
       workflowDefinition: {
-        findFirst: async () => ({
-          id: "def_new",
-          tenantId: TENANT.id,
-          name: "Research Buddy",
-          description: null,
-          currentVersion: "1",
-          status: "deployed",
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        }),
+        findFirst: async () => fullDefinitionRow(),
       },
     },
     select: () => ({
@@ -603,7 +603,7 @@ test("a create request rejects a toolPackagePins entry outside the @corbits scop
 });
 
 function fakeSkillsDb(
-  row: { id: string; assetId: string | null } | undefined,
+  row: { id: string; assetId: string | null; name?: string } | undefined,
 ): DB["db"] {
   return {
     query: {
@@ -611,12 +611,11 @@ function fakeSkillsDb(
         findFirst: async () =>
           row === undefined
             ? undefined
-            : {
+            : fullDefinitionRow({
                 id: row.id,
-                tenantId: TENANT.id,
                 assetId: row.assetId,
-                name: "Research Buddy",
-              },
+                name: row.name ?? "Research Buddy",
+              }),
       },
     },
   } as unknown as DB["db"];
@@ -801,17 +800,13 @@ function fakeInstructionsDb(
         findFirst: async () =>
           row === undefined
             ? undefined
-            : {
+            : fullDefinitionRow({
                 id: row.id,
-                tenantId: TENANT.id,
                 assetId: row.assetId,
                 name: row.name,
-                description: null,
-                currentVersion: "1",
-                status: "deployed",
                 createdAt: new Date("2026-08-01T00:00:00.000Z"),
                 updatedAt: new Date("2026-08-01T00:00:00.000Z"),
-              },
+              }),
       },
     },
     update: makeUpdater(committedUpdateCalls),
