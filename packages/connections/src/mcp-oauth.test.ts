@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
-import { createMcpOAuthProvider } from "./mcp-oauth";
+import { describe, expect, spyOn, test } from "bun:test";
+import * as errorSink from "@corbits/error-sink";
+import { createMcpOAuthProvider, refreshMcpOAuthTokens } from "./mcp-oauth";
 
 describe("createMcpOAuthProvider", () => {
   test("clientMetadata includes scope only when it is passed", () => {
@@ -32,5 +33,30 @@ describe("createMcpOAuthProvider", () => {
       response_types: ["code"],
       token_endpoint_auth_method: "none",
     });
+  });
+});
+
+describe("refreshMcpOAuthTokens", () => {
+  test("an unreachable server reports the failure and comes back ok: false", async () => {
+    const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
+    const server = Bun.serve({ port: 0, fetch: () => new Response(null) });
+    const serverUrl = `http://127.0.0.1:${String(server.port)}/mcp`;
+    server.stop(true);
+
+    const result = await refreshMcpOAuthTokens({
+      serverUrl,
+      tokens: { access_token: "at_1", token_type: "Bearer" },
+      callbackUrl: "http://hub.test/callback",
+      clientName: "Corbits Workbench",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+    expect(report.mock.calls[0]?.[1]).toMatchObject({
+      operation: "refresh_mcp_oauth_tokens",
+      extra: { serverUrl },
+    });
+    report.mockRestore();
   });
 });

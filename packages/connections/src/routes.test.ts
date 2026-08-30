@@ -5,7 +5,8 @@
 // `packages/webhook-triggers/test/management-routes.test.ts`. A fake
 // registry stands in for `CONNECTOR_REGISTRY` so every probe outcome is
 // deterministic and nothing here ever touches the real network.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import * as errorSink from "@corbits/error-sink";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
@@ -622,7 +623,8 @@ describe("POST /:connectorId/complete", () => {
     expect(body.error.code).toBe("connection_setup_failed");
   });
 
-  test("a storage failure after a good probe 500s", async () => {
+  test("a storage failure after a good probe 500s and reports without leaking the key", async () => {
+    const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
     const app = buildApp({
       ensureProviderFn: async () => {
         throw new Error("hub unreachable");
@@ -636,6 +638,16 @@ describe("POST /:connectorId/complete", () => {
     expect(response.status).toBe(500);
     const body = (await response.json()) as { error: { code: string } };
     expect(body.error.code).toBe("connection_setup_failed");
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+    expect(report.mock.calls[0]?.[1]).toMatchObject({
+      operation: "persist_api_key_connection",
+      extra: { connectorId: "accepting-connector" },
+    });
+    const extra = report.mock.calls[0]?.[1]?.extra as
+      Record<string, unknown> | undefined;
+    expect(JSON.stringify(extra)).not.toContain("good-key");
+    report.mockRestore();
   });
 
   test("a rejected probe reports the connector needs_attention with a category, never the probe's own message", async () => {
@@ -1240,5 +1252,44 @@ describe("onInferenceCredentialUsable hook", () => {
 
     expect(response.status).toBe(200);
     expect(events).toHaveLength(0);
+  });
+
+  test("a resolved-catalog check failure is reported and never breaks the connect", async () => {
+    const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
+    const events: unknown[] = [];
+    const routes = createConnectionRoutes({
+      hubUrl: "http://hub.test",
+      requireGrant: allowAll,
+      log: () => {},
+      registry: OLLAMA_REGISTRY,
+      ensureProviderFn: async () => "prv_1",
+      ensureCredentialFn: async () => "crd_1",
+      seedCatalogFn: async () => ({ hasCompletionCapableModel: true }),
+      getResolvedCatalogFn: async () => {
+        throw new Error("hub unreachable");
+      },
+      onInferenceCredentialUsable: async (info) => {
+        events.push(info);
+      },
+    });
+    const app = mountAs(routes);
+    const response = await app.request("/ollama/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        apiKey: "https://home-mac-studio.tail87f5aa.ts.net",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(events).toHaveLength(0);
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+    expect(report.mock.calls[0]?.[1]).toMatchObject({
+      operation: "check_resolved_catalog_after_connect",
+      tenantId: TENANT.id,
+      extra: { connectorId: "ollama" },
+    });
+    report.mockRestore();
   });
 });

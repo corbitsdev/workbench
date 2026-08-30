@@ -6,7 +6,8 @@
 // themselves: state sealing/consuming, PKCE round-tripping, the
 // returnPath cookie, not_configured, rate limiting, and duplicate-
 // callback recovery — all driven purely off `ConnectorDescriptor.oauth`.
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import * as errorSink from "@corbits/error-sink";
 import type { AppEnv } from "@intx/hub-api";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
@@ -177,6 +178,12 @@ describe("sanitizeReturnPath", () => {
         allowlist,
       ),
     ).toBe("/settings/connections");
+  });
+
+  test("malformed percent-encoding falls back to the default silently", () => {
+    expect(sanitizeReturnPath("%", defaultReturnPath, allowlist)).toBe(
+      defaultReturnPath,
+    );
   });
 });
 
@@ -677,6 +684,7 @@ describe("GET /:connectorId/callback", () => {
   });
 
   test("a thrown store failure surfaces as setup_failed without leaking the key", async () => {
+    const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
     const lines: string[] = [];
     const app = connectRoutes({
       log: (line) => lines.push(line),
@@ -697,6 +705,16 @@ describe("GET /:connectorId/callback", () => {
     );
     expect(redirect.searchParams.get("code")).toBe("setup_failed");
     expect(lines.join("\n")).not.toContain("key-for-abc123");
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+    expect(report.mock.calls[0]?.[1]).toMatchObject({
+      operation: "oauth_connect_setup",
+      extra: { connectorId: "widget" },
+    });
+    const extra = report.mock.calls[0]?.[1]?.extra as
+      Record<string, unknown> | undefined;
+    expect(JSON.stringify(extra)).not.toContain("key-for-abc123");
+    report.mockRestore();
   });
 
   describe("open-redirect regression: the return cookie is never trusted either", () => {
