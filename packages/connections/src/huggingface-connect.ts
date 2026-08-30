@@ -15,6 +15,11 @@
 
 import { type } from "arktype";
 
+import {
+  postExchangeRequest,
+  type OAuthExchangeFetch,
+} from "./oauth-exchange-fetch";
+
 export const HUGGINGFACE_AUTHORIZE_URL =
   "https://huggingface.co/oauth/authorize";
 export const HUGGINGFACE_TOKEN_URL = "https://huggingface.co/oauth/token";
@@ -44,14 +49,7 @@ export type ExchangeResult =
     }
   | { readonly ok: false; readonly message: string };
 
-export type ExchangeFetch = (
-  url: string,
-  init: {
-    method: "POST";
-    headers: Record<string, string>;
-    body: string;
-  },
-) => Promise<Response>;
+export type ExchangeFetch = OAuthExchangeFetch;
 
 export type ExchangeCodeForTokenArgs = {
   readonly code: string;
@@ -84,7 +82,7 @@ export async function exchangeCodeForToken(
 
   let response: Response;
   try {
-    response = await doFetch(HUGGINGFACE_TOKEN_URL, {
+    response = await postExchangeRequest(doFetch, HUGGINGFACE_TOKEN_URL, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: body.toString(),

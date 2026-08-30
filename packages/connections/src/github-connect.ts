@@ -13,6 +13,11 @@
 
 import { type } from "arktype";
 
+import {
+  postExchangeRequest,
+  type OAuthExchangeFetch,
+} from "./oauth-exchange-fetch";
+
 export const GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize";
 export const GITHUB_TOKEN_EXCHANGE_URL =
   "https://github.com/login/oauth/access_token";
@@ -27,14 +32,7 @@ export type ExchangeResult =
   | { readonly ok: true; readonly key: string }
   | { readonly ok: false; readonly message: string };
 
-export type ExchangeFetch = (
-  url: string,
-  init: {
-    method: "POST";
-    headers: Record<string, string>;
-    body: string;
-  },
-) => Promise<Response>;
+export type ExchangeFetch = OAuthExchangeFetch;
 
 export type ExchangeCodeForGithubTokenArgs = {
   readonly code: string;
@@ -55,7 +53,7 @@ export async function exchangeCodeForGithubToken(
   const doFetch = args.fetchImpl ?? fetch;
   let response: Response;
   try {
-    response = await doFetch(GITHUB_TOKEN_EXCHANGE_URL, {
+    response = await postExchangeRequest(doFetch, GITHUB_TOKEN_EXCHANGE_URL, {
       method: "POST",
       headers: {
         "content-type": "application/json",

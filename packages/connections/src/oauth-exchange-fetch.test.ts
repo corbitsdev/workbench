@@ -13,6 +13,11 @@ import {
   type OAuthExchangeFetch,
 } from "./oauth-exchange-fetch";
 
+// The two real-timer tests below use a small but not razor-thin
+// `timeoutMs` (100ms) and a generous per-test timeout (20s) so they
+// prove the abort actually fires without false-failing on a busy CI
+// runner -- the assertion is "clearly bounded, not that it happened in
+// under a handful of milliseconds."
 test("a provider that never answers is aborted once the timeout fires, not left hanging", async () => {
   let sawAbort = false;
   const fetchImpl: OAuthExchangeFetch = (_url, init) =>
@@ -28,11 +33,11 @@ test("a provider that never answers is aborted once the timeout fires, not left 
       fetchImpl,
       "https://provider.example.test/token",
       { method: "POST", headers: {}, body: "" },
-      5,
+      100,
     ),
   ).rejects.toBeDefined();
   expect(sawAbort).toBe(true);
-});
+}, 20_000);
 
 test("passes the caller's timeoutMs through to the abort signal, not the default", async () => {
   const start = performance.now();
@@ -46,12 +51,12 @@ test("passes the caller's timeoutMs through to the abort signal, not the default
       fetchImpl,
       "https://provider.example.test/token",
       { method: "POST", headers: {}, body: "" },
-      5,
+      100,
     ),
   ).rejects.toBeDefined();
 
   expect(performance.now() - start).toBeLessThan(OAUTH_EXCHANGE_TIMEOUT_MS);
-});
+}, 20_000);
 
 test("a provider that answers before the timeout resolves normally", async () => {
   const fetchImpl: OAuthExchangeFetch = async () =>
