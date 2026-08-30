@@ -77,3 +77,73 @@ describeIfDb("applyWorkflowDeploySourceMigrations", () => {
     expect(report.alreadyApplied).toEqual(["0001_workflow_deploy_source"]);
   });
 });
+
+// Separate database from the suites above: two replicas racing the same
+// ledger must not collide with the earlier tests' own already-applied
+// rows, and must start from a schema that has never seen this migration
+// set before.
+describeIfDb("applyWorkflowDeploySourceMigrations concurrency", () => {
+  const scratchUrl = scratchUrlFor(
+    databaseUrl ?? "postgres://localhost:5432/unused",
+  ).replace(
+    "_workflow_deploy_source_migrations_test",
+    "_workflow_deploy_source_migrations_concurrent_test",
+  );
+  const scratchDatabase = new URL(scratchUrl).pathname.replace(/^\//, "");
+
+  async function withMaintenance(run: (sql: postgres.Sql) => Promise<void>) {
+    const maintenanceUrl = new URL(scratchUrl);
+    maintenanceUrl.pathname = "/postgres";
+    const maintenance = postgres(maintenanceUrl.toString(), {
+      max: 1,
+      onnotice: () => undefined,
+    });
+    try {
+      await run(maintenance);
+    } finally {
+      await maintenance.end();
+    }
+  }
+
+  beforeAll(async () => {
+    await withMaintenance(async (sql) => {
+      await sql.unsafe(`DROP DATABASE IF EXISTS "${scratchDatabase}"`);
+      await sql.unsafe(`CREATE DATABASE "${scratchDatabase}"`);
+    });
+  }, 20000);
+
+  afterAll(async () => {
+    await withMaintenance(async (sql) => {
+      await sql.unsafe(`DROP DATABASE IF EXISTS "${scratchDatabase}"`);
+    });
+  }, 20000);
+
+  test("two replicas booting concurrently both complete without either crashing on a duplicate ledger insert", async () => {
+    const [first, second] = await Promise.all([
+      applyWorkflowDeploySourceMigrations(scratchUrl),
+      applyWorkflowDeploySourceMigrations(scratchUrl),
+    ]);
+
+    const appliedNames = [...first.applied, ...second.applied].sort();
+    expect(new Set(appliedNames).size).toBe(appliedNames.length);
+    expect(
+      [
+        ...appliedNames,
+        ...first.alreadyApplied,
+        ...second.alreadyApplied,
+      ].sort(),
+    ).toEqual(["0001_workflow_deploy_source", "0001_workflow_deploy_source"]);
+
+    const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
+    try {
+      const ledgerRows = await sql.unsafe(
+        `SELECT name FROM "workflow_deploy_source"."workflow_deploy_source_migrations" ORDER BY name`,
+      );
+      expect(ledgerRows.map((row) => String(row["name"]))).toEqual([
+        "0001_workflow_deploy_source",
+      ]);
+    } finally {
+      await sql.end();
+    }
+  }, 10000);
+});

@@ -126,3 +126,71 @@ describeIfDb("applyRoutineMigrations", () => {
     }
   });
 });
+
+// Separate database from the suites above: two replicas racing the same
+// ledger must not collide with the idempotency test's own already-applied
+// rows, and must start from a schema that has never seen this migration
+// set before.
+describeIfDb("applyRoutineMigrations concurrency", () => {
+  const scratchUrl = scratchUrlFor(
+    databaseUrl ?? "postgres://localhost:5432/unused",
+  ).replace("_routine_migrations_test", "_routine_migrations_concurrent_test");
+  const scratchDatabase = new URL(scratchUrl).pathname.replace(/^\//, "");
+
+  beforeAll(async () => {
+    const maintenanceUrl = new URL(scratchUrl);
+    maintenanceUrl.pathname = "/postgres";
+    const maintenance = postgres(maintenanceUrl.toString(), {
+      max: 1,
+      onnotice: () => undefined,
+    });
+    try {
+      await maintenance.unsafe(`DROP DATABASE IF EXISTS "${scratchDatabase}"`);
+      await maintenance.unsafe(`CREATE DATABASE "${scratchDatabase}"`);
+    } finally {
+      await maintenance.end();
+    }
+  }, 20000);
+
+  afterAll(async () => {
+    const maintenanceUrl = new URL(scratchUrl);
+    maintenanceUrl.pathname = "/postgres";
+    const maintenance = postgres(maintenanceUrl.toString(), {
+      max: 1,
+      onnotice: () => undefined,
+    });
+    try {
+      await maintenance.unsafe(`DROP DATABASE IF EXISTS "${scratchDatabase}"`);
+    } finally {
+      await maintenance.end();
+    }
+  }, 20000);
+
+  test("two replicas booting concurrently both complete without either crashing on a duplicate ledger insert", async () => {
+    const [first, second] = await Promise.all([
+      applyRoutineMigrations(scratchUrl),
+      applyRoutineMigrations(scratchUrl),
+    ]);
+
+    const appliedNames = [...first.applied, ...second.applied].sort();
+    expect(new Set(appliedNames).size).toBe(appliedNames.length);
+
+    const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
+    try {
+      const ledgerRows = await sql.unsafe(
+        `SELECT name FROM "routines"."routine_migrations" ORDER BY name`,
+      );
+      const ledgerNames = ledgerRows.map((row) => String(row["name"]));
+      expect(new Set(ledgerNames).size).toBe(ledgerNames.length);
+      expect(
+        [
+          ...appliedNames,
+          ...first.alreadyApplied,
+          ...second.alreadyApplied,
+        ].sort(),
+      ).toEqual([...ledgerNames, ...ledgerNames].sort());
+    } finally {
+      await sql.end();
+    }
+  }, 10000);
+});

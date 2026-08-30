@@ -4,13 +4,17 @@
 // this package's half of the "mount + migrations is the entire install
 // story" install contract. Bookkeeping is its own ledger table, never
 // the platform's drizzle journal, so this package's migration history
-// stays extractable on its own.
-import postgres from "postgres";
+// stays extractable on its own. Mechanics (schema/ledger bootstrap,
+// transactional apply, the advisory lock across concurrent hub
+// replicas) live in @corbits/migration-runner — this file owns only
+// the domain SQL.
+import {
+  applyPackageMigrations,
+  type ApplyPackageMigrationsReport,
+  type PackageMigration,
+} from "@corbits/migration-runner";
 
-export interface RoutineMigration {
-  name: string;
-  sql: string;
-}
+export type RoutineMigration = PackageMigration;
 
 export const routineMigrations: readonly RoutineMigration[] = [
   {
@@ -119,18 +123,7 @@ export const routineMigrations: readonly RoutineMigration[] = [
 const SCHEMA = "routines";
 const LEDGER_TABLE = "routine_migrations";
 
-function quoteIdentifier(name: string): string {
-  return `"${name.replace(/"/g, '""')}"`;
-}
-
-function quoteQualified(schema: string, name: string): string {
-  return `${quoteIdentifier(schema)}.${quoteIdentifier(name)}`;
-}
-
-export interface ApplyRoutineMigrationsReport {
-  applied: string[];
-  alreadyApplied: string[];
-}
+export type ApplyRoutineMigrationsReport = ApplyPackageMigrationsReport;
 
 /**
  * Apply `routineMigrations` against `databaseUrl`, idempotently: a
@@ -141,40 +134,11 @@ export interface ApplyRoutineMigrationsReport {
 export async function applyRoutineMigrations(
   databaseUrl: string,
 ): Promise<ApplyRoutineMigrationsReport> {
-  const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
-  try {
-    await sql.unsafe(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(SCHEMA)}`);
-
-    await sql.unsafe(
-      `CREATE TABLE IF NOT EXISTS ${quoteQualified(SCHEMA, LEDGER_TABLE)} (` +
-        `name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
-    );
-    const rows = await sql.unsafe(
-      `SELECT name FROM ${quoteQualified(SCHEMA, LEDGER_TABLE)}`,
-    );
-    const alreadyApplied = new Set(rows.map((row) => String(row["name"])));
-    const applied: string[] = [];
-    for (const migration of routineMigrations) {
-      if (alreadyApplied.has(migration.name)) continue;
-      try {
-        await sql.begin(async (tx) => {
-          await tx.unsafe(migration.sql);
-          await tx.unsafe(
-            `INSERT INTO ${quoteQualified(SCHEMA, LEDGER_TABLE)} (name) VALUES ($1)`,
-            [migration.name],
-          );
-        });
-        applied.push(migration.name);
-      } catch (error) {
-        throw new Error(
-          `@corbits/routines migration ${JSON.stringify(migration.name)} failed: ` +
-            `${error instanceof Error ? error.message : String(error)}`,
-          { cause: error },
-        );
-      }
-    }
-    return { applied, alreadyApplied: [...alreadyApplied] };
-  } finally {
-    await sql.end();
-  }
+  return applyPackageMigrations({
+    databaseUrl,
+    schema: SCHEMA,
+    ledgerTable: LEDGER_TABLE,
+    migrations: routineMigrations,
+    packageLabel: "@corbits/routines",
+  });
 }

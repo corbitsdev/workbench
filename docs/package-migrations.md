@@ -41,6 +41,14 @@ tables — how its migrations are written, tracked, and applied.
   ledger row — is left behind half-applied; the next run retries the same
   migration from a clean slate instead of getting stuck on a schema that
   looks partially migrated but has no ledger row to explain why.
+- **A session-level advisory lock guards the whole run.** Two hub replicas
+  can boot at the same time and both call a package's migration runner
+  concurrently; without a lock, both can see a migration as unapplied and
+  race the same ledger `INSERT`, crashing the loser on a duplicate key.
+  `@corbits/migration-runner`'s `applyPackageMigrations` holds
+  `pg_advisory_lock(hashtext(ledgerTable))` for the whole bootstrap-and-apply
+  run and releases it in a `finally`, so the second replica simply waits and
+  then finds every migration already applied.
 
 ## Why not `drizzle-kit` codegen
 
@@ -63,16 +71,19 @@ package onto the transactional pattern — see below):
 
 1. **Self-contained, transactional** — `@corbits/chat`, `@corbits/notify`,
    `@corbits/webhook-triggers`, `@corbits/routines`, `@corbits/insights`,
-   `@corbits/skills`.
-   The package's `src/migrations.ts` owns a literal `{ name, sql }[]` array,
-   opens its own short-lived `postgres` client, creates its ledger table if
-   absent, and applies each not-yet-applied migration inside
-   `sql.begin(async (tx) => { ... })` — the migration's SQL and its ledger
-   insert commit or roll back together. `scripts/db-setup.ts` imports the
+   `@corbits/skills`, `@corbits/bench`, `@corbits/preferences`,
+   `@corbits/inference-catalog`, `@corbits/evals`, `@corbits/access-policy`,
+   `@corbits/workflow-deploy-source`.
+   The package's `src/migrations.ts` owns only a literal `{ name, sql }[]`
+   array and a thin `applyXMigrations(databaseUrl)` wrapper; the mechanics —
+   schema/ledger bootstrap, the transactional apply loop, and the advisory
+   lock — live once in `@corbits/migration-runner`'s
+   `applyPackageMigrations`, called with the package's schema name, ledger
+   table name, and migration array. `scripts/db-setup.ts` imports the
    package's `applyXMigrations(databaseUrl)` function directly and calls it
    after the platform's own migrations. See
-   `packages/insights/src/migrations.ts` for the reference implementation
-   every other package now matches.
+   `packages/access-policy/src/migrations.ts` for the reference
+   implementation every other package now matches.
 2. **Delegated to an external package** — `@corbits/mailbox`. The package
    ships and owns its entire migration story (its own literal SQL, its own
    ledger, its own `mailbox` schema) behind a single exported runner
@@ -108,11 +119,12 @@ the new schema by running `workbench reset` rather than by an in-place
 ## Which shape to use for a new package
 
 **Transactional, self-contained** (shape 1 above), in a Postgres schema
-named for the package. Copy `packages/insights/src/migrations.ts`'s shape:
-a `pgSchema("<name>")` in `schema.ts`, a literal migration array whose SQL
-qualifies every table/index with that schema, a package-named ledger table
-living in the same schema, and each migration applied inside `sql.begin`.
-Reach for the delegated shape only when the package already ships its own
-migration runner as part of a larger, independently-owned engine (its own
-schema, its own connection handling) — not as a shortcut to skip writing a
-ledger table.
+named for the package. Copy `packages/access-policy/src/migrations.ts`'s
+shape: a `pgSchema("<name>")` in `schema.ts`, a literal migration array
+whose SQL qualifies every table/index with that schema, a package-named
+ledger table living in the same schema, and an `applyXMigrations` that
+calls `@corbits/migration-runner`'s `applyPackageMigrations` with that
+schema, ledger table, and migration array. Reach for the delegated shape
+only when the package already ships its own migration runner as part of a
+larger, independently-owned engine (its own schema, its own connection
+handling) — not as a shortcut to skip writing a ledger table.
