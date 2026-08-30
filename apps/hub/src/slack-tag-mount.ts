@@ -26,6 +26,7 @@ import {
   type WorkbenchSubscriberRegistry,
   type WorkbenchTenancyStore,
   type WorkbenchTurnQueue,
+  type TurnCancelRegistry,
   type ChatPlatform,
   type ChatStore,
   type RoomMessageStore,
@@ -72,6 +73,9 @@ export type MountWorkbenchSlackTagDeps = {
    * send and a person's own message for the same channel serialize
    * against each other too. */
   readonly turnQueue: WorkbenchTurnQueue;
+  /** The same cancellation registry `createChatRoutes` is given
+   * (CL-7201) — shared, never a second instance. */
+  readonly turnCancellation: TurnCancelRegistry;
 };
 
 export type MountedWorkbenchSlackTag = { readonly mounted: boolean };
@@ -211,6 +215,7 @@ export async function mountWorkbenchSlackTag(
           roomMessages: deps.roomMessages,
           publish: deps.workbenchSubscribers.publish,
           turnQueue: deps.turnQueue,
+          turnCancellation: deps.turnCancellation,
         },
         {
           tenantId: input.tenantId,
