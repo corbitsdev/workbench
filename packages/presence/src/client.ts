@@ -82,6 +82,8 @@ export interface PresenceClientOptions {
    * from anything it did locally.
    */
   readonly onSaved?: (info: { version: number; savedAt: number }) => void;
+  /** Injectable clock, for deterministic tests of rejoin backoff. */
+  readonly now?: () => number;
 }
 
 /**
@@ -115,6 +117,22 @@ export interface PresenceHandle {
 }
 
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
+
+// Exponential backoff for repeated join failures: without it, a client
+// whose join keeps failing (server down, or a caller publishing cursor
+// updates on every mouse move while unjoined) would re-POST `/join` as
+// fast as each failed attempt resolves. Mirrors
+// `packages/chat-ui/src/use-workbench-stream.ts`'s `backoffDelayMs` shape
+// (not imported — that package depends on this one, not the reverse).
+const REJOIN_BASE_DELAY_MS = 1_000;
+const REJOIN_MAX_DELAY_MS = 30_000;
+
+function rejoinDelayMs(failureCount: number): number {
+  return Math.min(
+    REJOIN_BASE_DELAY_MS * 2 ** (failureCount - 1),
+    REJOIN_MAX_DELAY_MS,
+  );
+}
 
 function parseMembers(data: string): readonly PresenceState[] {
   try {
@@ -198,6 +216,7 @@ export function connectPresence(
   const heartbeatIntervalMs =
     options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
   const doc = options.doc;
+  const now = options.now ?? Date.now;
 
   const listeners = new Set<(members: readonly PresenceState[]) => void>();
   const errorListeners = new Set<(error: PresenceError) => void>();
@@ -213,6 +232,13 @@ export function connectPresence(
   // the initial (or a rejoin) `join` request is still in flight from
   // firing a second, redundant one.
   let joinInFlight = false;
+  // Consecutive join failures since the last success — drives
+  // `rejoinDelayMs`'s backoff and resets to 0 the moment a join succeeds.
+  let joinFailureCount = 0;
+  // The earliest time `doJoin` will send another request while
+  // `joinFailureCount > 0` — the actual throttle; `joinFailureCount` by
+  // itself only picks the delay.
+  let nextJoinAttemptAt = 0;
 
   const notify = (members: readonly PresenceState[]) => {
     latestMembers = members;
@@ -236,22 +262,32 @@ export function connectPresence(
    * Joins (or rejoins) the room. Called once at connect time and again
    * whenever a heartbeat discovers the server no longer considers us
    * joined — the only two situations this room's membership needs
-   * (re-)establishing.
+   * (re-)establishing. Backs off after repeated failures rather than
+   * retrying on every call: `publishCursor`/`publishTyping` land far more
+   * often than the heartbeat timer ticks, so without the backoff gate a
+   * still-unjoined client publishing cursor moves would re-POST `/join`
+   * as fast as each failed attempt resolves.
    */
   function doJoin(): void {
     if (joinInFlight) return;
+    if (joinFailureCount > 0 && now() < nextJoinAttemptAt) return;
     joinInFlight = true;
     void post("join", { displayName: options.displayName }).then((response) => {
       joinInFlight = false;
       if (disconnected) return;
       if (response === undefined) {
+        joinFailureCount += 1;
+        nextJoinAttemptAt = now() + rejoinDelayMs(joinFailureCount);
         reportError("join");
         return;
       }
       if (!response.ok) {
+        joinFailureCount += 1;
+        nextJoinAttemptAt = now() + rejoinDelayMs(joinFailureCount);
         reportError("join", response.status);
         return;
       }
+      joinFailureCount = 0;
       joined = true;
       if (doc === undefined) return;
       void response.json().then((body) => {

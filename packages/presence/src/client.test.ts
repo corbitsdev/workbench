@@ -381,14 +381,17 @@ describe("connectPresence: error reporting and rejoin (CL-7202)", () => {
   });
 
   test("publishing before the room has confirmed the join rejoins instead of heartbeating a membership it doesn't have yet", async () => {
+    let clock = 0;
     const calls: string[] = [];
     const handle = connectPresence({
       roomUrl: ROOM_URL,
       fetchImpl: scriptedFetch(calls, () => 500),
       openEventSource: () => new FakeEventSource(),
+      now: () => clock,
     });
 
     await flushMicrotasks();
+    clock = 1_000; // past the first failure's backoff window
     handle.publishTyping(true);
     await flushMicrotasks();
 
@@ -484,6 +487,92 @@ describe("connectPresence: error reporting and rejoin (CL-7202)", () => {
     await flushMicrotasks();
 
     expect(errors).toEqual([{ operation: "join", status: 500 }]);
+    handle.disconnect();
+  });
+
+  test("a client stuck unable to join backs off instead of re-posting on every publish call", async () => {
+    let clock = 0;
+    const calls: string[] = [];
+    const handle = connectPresence({
+      roomUrl: ROOM_URL,
+      fetchImpl: scriptedFetch(calls, () => 500),
+      openEventSource: () => new FakeEventSource(),
+      now: () => clock,
+    });
+
+    await flushMicrotasks();
+    expect(calls).toEqual([`${ROOM_URL}/join`]); // the initial attempt
+
+    // A caller publishing cursor moves in a tight loop while unjoined
+    // must not turn into a `/join` per call.
+    handle.publishCursor({ x: 1, y: 1, surfaceVersion: 1 });
+    handle.publishCursor({ x: 2, y: 2, surfaceVersion: 1 });
+    handle.publishCursor({ x: 3, y: 3, surfaceVersion: 1 });
+    await flushMicrotasks();
+    expect(calls).toEqual([`${ROOM_URL}/join`]);
+
+    // Still inside the backoff window after the first failure.
+    clock = 999;
+    handle.publishCursor({ x: 4, y: 4, surfaceVersion: 1 });
+    await flushMicrotasks();
+    expect(calls).toEqual([`${ROOM_URL}/join`]);
+
+    // Past the backoff window: one retry is allowed.
+    clock = 1_000;
+    handle.publishCursor({ x: 5, y: 5, surfaceVersion: 1 });
+    await flushMicrotasks();
+    expect(calls).toEqual([`${ROOM_URL}/join`, `${ROOM_URL}/join`]);
+
+    handle.disconnect();
+  });
+
+  test("a join success resets the backoff, so a later failure streak starts from the base delay again", async () => {
+    let clock = 0;
+    const calls: string[] = [];
+    let failNextJoin = true;
+    let heartbeatStatus = 200;
+    const handle = connectPresence({
+      roomUrl: ROOM_URL,
+      fetchImpl: scriptedFetch(calls, (path) => {
+        if (path.endsWith("/join")) return failNextJoin ? 500 : 200;
+        if (path.endsWith("/heartbeat")) return heartbeatStatus;
+        return 200;
+      }),
+      openEventSource: () => new FakeEventSource(),
+      now: () => clock,
+    });
+
+    await flushMicrotasks(); // fails once (attempt 1): 1s backoff scheduled
+
+    clock = 1_000;
+    failNextJoin = false;
+    handle.publishCursor({ x: 1, y: 1, surfaceVersion: 1 });
+    await flushMicrotasks(); // succeeds; joinFailureCount resets to 0
+
+    // Evict via a 404'd heartbeat and let the immediate rejoin attempt
+    // fail too: if the reset above hadn't happened, this failure would
+    // be attempt 3 (4s backoff) rather than a fresh attempt 1 (1s).
+    heartbeatStatus = 404;
+    failNextJoin = true;
+    calls.length = 0;
+    handle.publishTyping(true); // joined === true, so this sends a heartbeat
+    await flushMicrotasks();
+    expect(calls).toEqual([`${ROOM_URL}/heartbeat`, `${ROOM_URL}/join`]);
+
+    clock = 1_999; // short of a full second past the failure at clock 1_000
+    handle.publishCursor({ x: 2, y: 2, surfaceVersion: 1 });
+    await flushMicrotasks();
+    expect(calls).toEqual([`${ROOM_URL}/heartbeat`, `${ROOM_URL}/join`]);
+
+    clock = 2_000; // a full second past the failure
+    handle.publishCursor({ x: 3, y: 3, surfaceVersion: 1 });
+    await flushMicrotasks();
+    expect(calls).toEqual([
+      `${ROOM_URL}/heartbeat`,
+      `${ROOM_URL}/join`,
+      `${ROOM_URL}/join`,
+    ]);
+
     handle.disconnect();
   });
 });
