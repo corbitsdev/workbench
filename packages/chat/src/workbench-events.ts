@@ -211,7 +211,7 @@ export function bridgeWorkbenchStream(input: {
 
   let unsubscribeLocal: () => void = () => undefined;
   let unsubscribePlatform: () => void = () => undefined;
-  let keepaliveTimer: ReturnType<typeof setInterval> | undefined;
+  let keepaliveTimer: ReturnType<typeof setInterval> | undefined = undefined;
 
   const teardownPresence = () => {
     if (input.presence === undefined) return;
