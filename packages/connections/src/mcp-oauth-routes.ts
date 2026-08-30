@@ -35,6 +35,7 @@ import { createConnectStateStore, randomToken } from "./pkce";
 import { fireConnectedHook, type ServiceConnectedHook } from "./connected-hook";
 import { mcpPresetBySlug } from "./mcp-presets";
 import { probeMcpServer, type McpProbeResult } from "./mcp-probe";
+import { reportError } from "@corbits/error-sink";
 import {
   listMcpProviders,
   providerName,
@@ -159,7 +160,10 @@ async function fetchCapturingOAuthError(
       captured.code = code;
     }
   } catch {
-    // malformed JSON on an error response; classifier uses the thrown error
+    // report-error-ignore: CL-7247 — malformed JSON on an error response;
+    // mcpOAuthStartErrorCode's own message-sniffing fallback classifies
+    // the thrown error regardless, so this degrades to that path rather
+    // than losing information worth reporting on its own.
   }
   return response;
 }
@@ -298,6 +302,11 @@ export function createMcpOAuthRoutes(
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause);
         deps.log(`mcp oauth start failed for "${target.slug}": ${message}`);
+        reportError(cause, {
+          operation: "mcp_oauth_start",
+          tenantId: c.get("tenant").id,
+          extra: { slug: target.slug },
+        });
         return c.redirect(
           redirectPath(returnPath, {
             mcpOauth: target.slug,
@@ -459,6 +468,13 @@ export function createMcpOAuthRoutes(
         deps.log(
           `mcp oauth token exchange failed for "${payload.slug}": ${message}`,
         );
+        // Never widen extra beyond identifiers safe to print — the
+        // authorization `code` and any codeVerifier are in scope above.
+        reportError(cause, {
+          operation: "mcp_oauth_token_exchange",
+          tenantId: c.get("tenant").id,
+          extra: { slug: payload.slug },
+        });
         return c.redirect(
           redirectPath(returnPath, {
             mcpOauth: payload.slug,
@@ -583,6 +599,13 @@ export function createMcpOAuthRoutes(
         deps.log(
           `mcp oauth connect setup failed for tenant ${tenant.id}, slug ${payload.slug}: ${message}`,
         );
+        // Never widen extra beyond identifiers safe to print — the
+        // exchanged access/refresh tokens are in scope above.
+        reportError(cause, {
+          operation: "persist_mcp_oauth_connection",
+          tenantId: tenant.id,
+          extra: { slug: payload.slug },
+        });
         return c.redirect(
           redirectPath(returnPath, {
             mcpOauth: payload.slug,

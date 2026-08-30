@@ -19,6 +19,7 @@
 // path, which has nothing else vouching for the secret).
 import type { TenantEnv } from "@intx/hub-api";
 import { createHubAPI } from "@workbench/hub-client";
+import { reportError } from "@corbits/error-sink";
 import type { ConnectorDescriptor } from "./descriptor";
 import type { ProviderHealthStore } from "./provider-health";
 import { CONNECTOR_REGISTRY } from "./registry";
@@ -99,6 +100,11 @@ export function createTenantConnectCredential(
       deps.log(
         `oauth connect for ${args.connectorId} on tenant ${tenant.id} failed to persist: ${message}`,
       );
+      reportError(cause, {
+        operation: "persist_tenant_oauth_connection",
+        tenantId: tenant.id,
+        extra: { connectorId: args.connectorId },
+      });
       return { kind: "invalid-credential", message };
     }
   };

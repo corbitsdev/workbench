@@ -12,6 +12,7 @@
 // still names `credentialPlugin: "http"`).
 
 import { type } from "arktype";
+import { reportError } from "@corbits/error-sink";
 
 import {
   postExchangeRequest,
@@ -67,6 +68,7 @@ export async function exchangeCodeForGithubToken(
       }),
     });
   } catch (cause) {
+    reportError(cause, { operation: "exchange_code_for_github_token" });
     return {
       ok: false,
       message:

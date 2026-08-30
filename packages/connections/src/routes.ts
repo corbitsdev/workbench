@@ -532,6 +532,11 @@ export function createConnectionRoutes(
               deps.log(
                 `could not check tenant ${tenant.id}'s resolved catalog after connecting ${descriptor.id}; the bench stays as-is until its next reconcile: ${message}`,
               );
+              reportError(cause, {
+                operation: "check_resolved_catalog_after_connect",
+                tenantId: tenant.id,
+                extra: { connectorId: descriptor.id },
+              });
             }
           }
         }
@@ -546,6 +551,13 @@ export function createConnectionRoutes(
         deps.log(
           `connection setup failed for connector ${connectorId} on tenant ${tenant.id}: ${message}`,
         );
+        // Never widen extra beyond identifiers safe to print — the pasted
+        // `parsed.apiKey` is in scope above.
+        reportError(cause, {
+          operation: "persist_api_key_connection",
+          tenantId: tenant.id,
+          extra: { connectorId },
+        });
         return c.json(
           ErrorEnvelope(
             "connection_setup_failed",

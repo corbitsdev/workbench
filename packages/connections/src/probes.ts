@@ -11,6 +11,7 @@ import type {
   CredentialTestResult,
   FetchLike,
 } from "@workbench/hub-client/credential-test";
+import { reportError } from "@corbits/error-sink";
 
 const PROBE_TIMEOUT_MS = 5000;
 
@@ -34,6 +35,10 @@ async function probe(
     if (init.body !== undefined) fetchArgs.body = init.body;
     response = await fetchImpl(url, fetchArgs);
   } catch (cause) {
+    reportError(cause, {
+      operation: "probe_credential",
+      extra: { displayName },
+    });
     return {
       ok: false,
       message:

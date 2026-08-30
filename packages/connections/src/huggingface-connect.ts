@@ -14,6 +14,7 @@
 // later expiry sweep reads.
 
 import { type } from "arktype";
+import { reportError } from "@corbits/error-sink";
 
 import {
   postExchangeRequest,
@@ -88,6 +89,7 @@ export async function exchangeCodeForToken(
       body: body.toString(),
     });
   } catch (cause) {
+    reportError(cause, { operation: "exchange_code_for_huggingface_token" });
     return {
       ok: false,
       message:

@@ -159,28 +159,6 @@ packages/connections-tools/src/tool.ts	1	return errorResult(call.id, err);
 packages/connections-tools/src/tool.ts	2	return errorResult(call.id, err);
 packages/connections-tools/src/tool.ts	3	return errorResult(call.id, err);
 packages/connections-tools/src/tool.ts	4	return errorResult(call.id, err);
-packages/connections/src/connected-hook.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
-packages/connections/src/connected-hook.ts	2	const message = cause instanceof Error ? cause.message : String(cause);
-packages/connections/src/github-connect.ts	1	return {
-packages/connections/src/gmail-connect.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
-packages/connections/src/huggingface-connect.ts	1	return {
-packages/connections/src/mcp-oauth-routes.ts	1	// malformed JSON on an error response; classifier uses the thrown error
-packages/connections/src/mcp-oauth-routes.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
-packages/connections/src/mcp-oauth-routes.ts	2	const message = cause instanceof Error ? cause.message : String(cause);
-packages/connections/src/mcp-oauth-routes.ts	3	const message = cause instanceof Error ? cause.message : String(cause);
-packages/connections/src/mcp-oauth.ts	1	return {
-packages/connections/src/mcp-probe.ts	1	const message =
-packages/connections/src/mcp-probe.ts	1	return undefined;
-packages/connections/src/mcp-probe.ts	1	return { ok: false, message: `"${url}" is not a valid URL.` };
-packages/connections/src/mcp-server-routes.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
-packages/connections/src/oauth-routes.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
-packages/connections/src/oauth-routes.ts	1	return defaultReturnPath;
-packages/connections/src/oauth-tenant-connect.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
-packages/connections/src/openrouter-connect.ts	1	return {
-packages/connections/src/pkce.ts	1	return undefined;
-packages/connections/src/probes.ts	1	return {
-packages/connections/src/routes.ts	1	const message =
-packages/connections/src/routes.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
 packages/error-sink/src/index.ts	1	return context.refId ?? UNKNOWN_OPERATION;
 packages/folded-run-one-shot/src/one-shot-reply.ts	1	log.error`one-shot run ${triggerAddress}: undeploy failed during teardown (${reason}): ${
 packages/folded-run-one-shot/src/one-shot-reply.ts	1	void settle("planning-run-send-failed", () => {
