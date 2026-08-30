@@ -501,9 +501,19 @@ export function useWorkbenchFeed(args: {
 }): WorkbenchFeed {
   const { tenantId, activeWorkbenchId, onWorkbenchNotFound } = args;
   const queryClient = useQueryClient();
-  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
+  // Scoped to the (tenantId, workbenchId) the timer was scheduled for —
+  // not a bare timer handle — so a pending refresh for one workbench can
+  // never make another workbench's `refreshFeed()` call early-return, and
+  // never fires an invalidation against a query key that is no longer the
+  // active one (CL-7198).
+  const refreshTimerRef = useRef<
+    | {
+        readonly tenantId: string;
+        readonly workbenchId: string;
+        readonly timer: ReturnType<typeof setTimeout>;
+      }
+    | undefined
+  >(undefined);
 
   // Threads and the mailbox are two queries, and every view the timeline
   // can show is derived from them (CL-6313). Each message carries the
@@ -600,22 +610,39 @@ export function useWorkbenchFeed(args: {
     // completes, so invalidating on each one still walks the hub once per
     // gap between responses. Collapsing the burst into one refetch per
     // window is the difference between ~40 requests per turn and ~2.
-    if (refreshTimerRef.current !== undefined) return;
-    refreshTimerRef.current = setTimeout(() => {
-      refreshTimerRef.current = undefined;
-      void queryClient.invalidateQueries({
-        queryKey: chatFeedQueryKeyPrefix(tenantId, activeWorkbenchId),
-      });
-    }, CHAT_FEED_COALESCE_MS);
+    const pending = refreshTimerRef.current;
+    if (pending !== undefined) {
+      if (
+        pending.tenantId === tenantId &&
+        pending.workbenchId === activeWorkbenchId
+      ) {
+        return;
+      }
+      // A timer scheduled for a workbench the reader has since left —
+      // clear it rather than let it invalidate that now-inactive query key.
+      clearTimeout(pending.timer);
+    }
+    const workbenchId = activeWorkbenchId;
+    refreshTimerRef.current = {
+      tenantId,
+      workbenchId,
+      timer: setTimeout(() => {
+        refreshTimerRef.current = undefined;
+        void queryClient.invalidateQueries({
+          queryKey: chatFeedQueryKeyPrefix(tenantId, workbenchId),
+        });
+      }, CHAT_FEED_COALESCE_MS),
+    };
   }, [queryClient, tenantId, activeWorkbenchId, isUnauthorized]);
 
   useEffect(
     () => () => {
       if (refreshTimerRef.current !== undefined) {
-        clearTimeout(refreshTimerRef.current);
+        clearTimeout(refreshTimerRef.current.timer);
+        refreshTimerRef.current = undefined;
       }
     },
-    [],
+    [tenantId, activeWorkbenchId],
   );
   return {
     threads,
