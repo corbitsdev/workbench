@@ -88,7 +88,9 @@ check:*` script, so a violation fails CI rather than waiting for review.
   `@corbits/error-sink` — never a bare `catch {}`, never a toast alone. It
   attaches operation/tenant/room/agent context and a `refId` a person can
   quote to support, and redacts secrets before anything reaches a log
-  sink.
+  sink. `check:report-error` catches a catch clause that neither calls
+  `reportError` nor rethrows; a deliberate exception opts out with a
+  `report-error-ignore: <reason>` comment on the catch or in its body.
 - A package's `browser-safe` subpath (e.g. `@corbits/routines/client`) may
   never import a server-only dependency (`postgres`, `drizzle-orm`,
   `hono`, any `@intx/*`) — `check:browser-safe-subpaths` walks the real
