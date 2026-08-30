@@ -20,6 +20,7 @@ import {
 import { reportError } from "@corbits/error-sink";
 import type { TenantEnv } from "@intx/hub-api";
 import { getLogger } from "@intx/log";
+import { type } from "arktype";
 import { Hono, type Context } from "hono";
 
 import {
@@ -35,8 +36,14 @@ import {
   type InboxCounts,
   type InboxItem,
 } from "./project";
+import { clearSnoozeUntil, setSnoozeUntil } from "./snooze-store";
 import { WORKBENCH_INBOX_PRIORITIES } from "./vocabulary";
 import { walkAllOpen } from "./walk";
+
+// Parsed at the boundary, per AGENTS.md: `until` is untrusted request
+// input, never `as`-cast. Required — a snooze with no `until` is exactly
+// the bug this ticket fixes (CL-7208).
+const SnoozeBodySchema = type({ until: "string" });
 
 // Page size for bulk product ops (mark-all-read, clear-done, counts). Large
 // enough that a normal inbox finishes in one round-trip; anything past it
@@ -389,23 +396,36 @@ export function createInboxRoutes(
     const tenant = c.get("tenant");
     const principal = c.get("principal");
     const id = c.req.param("id");
-    const body: unknown = await c.req.json().catch(() => ({}));
-    // `until` is accepted for forward-compat with a scheduled unsnooze; the
-    // product store today only records the status flip.
-    let until: string | undefined;
-    if (typeof body === "object" && body !== null && "until" in body) {
-      const rawUntil = (body as { until: unknown }).until;
-      if (rawUntil !== undefined && typeof rawUntil !== "string") {
-        return c.json({ error: "until must be a string" }, 400);
-      }
-      if (typeof rawUntil === "string") until = rawUntil;
+    const rawBody: unknown = await c.req.json().catch(() => null);
+    const parsedBody = SnoozeBodySchema(rawBody);
+    if (parsedBody instanceof type.errors) {
+      return c.json(
+        { error: `invalid snooze body: ${parsedBody.summary}` },
+        400,
+      );
     }
-    const ok = await enrichMailboxMessage(
-      db,
-      { tenantId: tenant.id, principalId: principal.id, id },
-      { status: "snoozed" },
-    );
-    if (!ok) return c.json({ error: "not found" }, 404);
+    const until = new Date(parsedBody.until);
+    if (Number.isNaN(until.getTime())) {
+      return c.json({ error: "until must be a valid timestamp" }, 400);
+    }
+    const now = new Date();
+    if (until.getTime() <= now.getTime()) {
+      return c.json({ error: "until must be in the future" }, 400);
+    }
+
+    const scope = { tenantId: tenant.id, principalId: principal.id, id };
+    // `until` is persisted before the status flip: an orphaned snooze row
+    // on a message that never actually became `snoozed` is harmless (the
+    // sweep no-ops and cleans it up), but the reverse order — status
+    // first, `until` second — would leave a message stuck `snoozed` with
+    // nothing ever recording when to reopen it, reproducing this ticket's
+    // bug (CL-7208).
+    await setSnoozeUntil(db, scope, until);
+    const ok = await enrichMailboxMessage(db, scope, { status: "snoozed" });
+    if (!ok) {
+      await clearSnoozeUntil(db, scope);
+      return c.json({ error: "not found" }, 404);
+    }
     publish(
       bus,
       { tenantId: tenant.id, principalId: principal.id },
@@ -414,7 +434,7 @@ export function createInboxRoutes(
     );
     return c.json({
       ok: true,
-      until,
+      until: until.toISOString(),
     });
   });
 
