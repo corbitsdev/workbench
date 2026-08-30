@@ -14,7 +14,12 @@
 // a controllable stub — spreading through every other export unchanged
 // — so a real tenant catalog is never required to prove the wiring.
 import { describe, expect, mock, test } from "bun:test";
-import { agentSession, principal, workflowRun } from "@intx/db/schema";
+import {
+  agentSession,
+  principal,
+  workflowDefinition,
+  workflowRun,
+} from "@intx/db/schema";
 import { foldedRun } from "../src/schema";
 import { SessionLaunchError } from "@intx/hub-sessions";
 import type { EventCollectorRegistry, SidecarRouter } from "@intx/hub-sessions";
@@ -933,6 +938,121 @@ describe("launchFoldedRun", () => {
     // Neither the run row nor its folded-run marker is deleted: the
     // leaked child is still real and still folded, so both rows must
     // stay.
+    expect(db.deleted).toEqual([]);
+    const runUpdate = db.updated.find((row) => row.table === workflowRun);
+    expect(runUpdate?.values).toEqual({ status: "failed" });
+  });
+
+  // `deployAdoptedWorkflowFromSource` resolving means a live child now
+  // exists on the sidecar; `sendRunGrants` returning `false` (address not
+  // yet routable — a real hub-link drop between the deploy ack and the
+  // grants send) must never read as "nothing was deployed." CL-7213: this
+  // used to throw a plain `Error`, which the catch's `leaked` check missed
+  // entirely, deleting the row for a run that was actually live and now
+  // permanently unauthorized and untracked.
+  test("marks the run failed (not deleted) when sendRunGrants fails after a successful deploy", async () => {
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          apiKey: "placeholder",
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+
+    const db = createFakeDb();
+    const sessionService = createFakeSessionService();
+    const eventCollectors = createFakeEventCollectors();
+
+    await expect(
+      launchFoldedRun(
+        {
+          db: db as never,
+          sessionService,
+          assetService: createFakeAssetService(),
+          sidecarRouter: createFakeSidecarRouter(false),
+          toolGrantsForPins: () => [],
+          eventCollectors,
+        },
+        {
+          tenantId: "ten_1",
+          instanceId: "ins_workbench1",
+          triggerAddress: "ins_workbench1@ten1.workbench.test",
+          definitionId: "wfd_workbench1",
+          foldedBody: FOLDED_BODY,
+          launchLabel: "the workbench host",
+        },
+      ),
+    ).rejects.toThrow(SessionLaunchError);
+
+    expect(db.deleted).toEqual([]);
+    const runUpdate = db.updated.find((row) => row.table === workflowRun);
+    expect(runUpdate?.values).toEqual({ status: "failed" });
+  });
+
+  // Same class of bug as the `sendRunGrants` case above, but for the
+  // other post-deploy step: `markRunDeployClone` runs after the live
+  // deploy resolves too, so a plain `Error` out of it must be treated as
+  // a leaked deploy for the same reason.
+  test("marks the run failed (not deleted) when markRunDeployClone fails after a successful deploy", async () => {
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          apiKey: "placeholder",
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+
+    // A second definition read that differs from the first is what makes
+    // `markRunDeployClone` attempt the `workflowDefinition` update at all
+    // (see `createFakeDb`'s own doc) — that update is the call this test
+    // makes fail.
+    const db = createFakeDb("ast_definition1", [
+      "wfd_definition1",
+      "wfd_definition1_clone",
+    ]);
+    const originalUpdate = db.update.bind(db);
+    db.update = ((table: unknown) => {
+      if (table === workflowDefinition) {
+        throw new Error("clone marking failed");
+      }
+      return originalUpdate(table);
+    }) as typeof db.update;
+    const sessionService = createFakeSessionService();
+    const eventCollectors = createFakeEventCollectors();
+
+    await expect(
+      launchFoldedRun(
+        {
+          db: db as never,
+          sessionService,
+          assetService: createFakeAssetService(),
+          sidecarRouter: createFakeSidecarRouter(),
+          toolGrantsForPins: () => [],
+          eventCollectors,
+        },
+        {
+          tenantId: "ten_1",
+          instanceId: "ins_workbench1",
+          triggerAddress: "ins_workbench1@ten1.workbench.test",
+          definitionId: "wfd_workbench1",
+          foldedBody: FOLDED_BODY,
+          launchLabel: "the workbench host",
+        },
+      ),
+    ).rejects.toThrow(SessionLaunchError);
+
     expect(db.deleted).toEqual([]);
     const runUpdate = db.updated.find((row) => row.table === workflowRun);
     expect(runUpdate?.values).toEqual({ status: "failed" });
