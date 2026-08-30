@@ -20,9 +20,16 @@ the ledger and finds every migration already applied. Postgres also releases
 a session-level advisory lock automatically if the holding connection dies,
 so a crashed replica never wedges the lock for the next boot.
 
-The lock key is derived from the ledger table name, which is already unique
-per package (`bench_migrations`, `insights_migrations`, ...), so distinct
-packages never contend on the same lock.
+The lock key is `hashtext(ledgerTable)`, a 32-bit hash of the ledger table
+name rather than the name itself, so two distinct table names could in
+principle hash to the same key — two packages would then serialize their
+boot-time migrations against each other instead of running in parallel, a
+liveness cost (one waits its turn) and never a correctness one (each still
+applies to its own schema and ledger). The six current ledger tables
+(`access_policy_migrations`, `bench_migrations`, `evals_migrations`,
+`inference_catalog_migrations`, `insights_migrations`,
+`preferences_migrations`) do not collide — verified against a live
+`hashtext()`. Confirm the same before naming a seventh.
 
 ## What it does not change
 
