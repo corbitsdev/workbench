@@ -14,11 +14,15 @@
 // "release on completion" below means "release once this seam's own
 // dispatch call settles", not "once the agent finished replying" —
 // exactly the gap `./turn-claims.ts`'s TTL exists to backstop.
+import { reportError } from "@corbits/error-sink";
+import { getLogger } from "@intx/log";
 import { type } from "arktype";
 
 import type { Part as PartType } from "./parts";
-import type { TurnClaimStore } from "./turn-claims";
+import type { TurnClaimStore, TurnClaimToken } from "./turn-claims";
 import type { WorkbenchSubscriberRegistry } from "./workbench-events";
+
+const log = getLogger(["chat", "turn-queue"]);
 
 /**
  * The non-persisted stream event a room's client renders as the queued
@@ -57,11 +61,11 @@ export type WorkbenchTurnQueueDeps = {
  * never reject — exactly like `routeMessage`'s own contract in
  * `workbench-service.ts`, which this wraps: a recipient that fails is
  * `dispatch`'s own job to report (an undelivered notice on the
- * timeline), never something this queue has to catch. A `dispatch` that
- * broke this contract would strand whatever queued behind it — the
- * claim still releases (see `run`'s `finally`), but nothing would be
- * left to notice and drain the leftover queue until the next unrelated
- * message arrived.
+ * timeline), never something this queue has to catch. `run` below
+ * still guards this contract itself (a rejection is reported via
+ * `reportError` and treated as a settled, empty turn) so a `dispatch`
+ * that breaks it degrades to a logged defect rather than stranding
+ * whatever queued behind it.
  */
 export type DispatchTurnBatch = (batch: readonly QueuedTurn[]) => Promise<void>;
 
@@ -83,59 +87,146 @@ export type WorkbenchTurnQueue = {
   ): Promise<void>;
 };
 
+function reportDispatchFailure(
+  workbenchId: string,
+  batch: readonly QueuedTurn[],
+  err: unknown,
+): void {
+  const messageIds = batch.map((t) => t.messageId);
+  const refId = reportError(err, {
+    operation: "chat.turnQueue.dispatch",
+    roomId: workbenchId,
+    extra: { messageIds },
+  });
+  // `dispatch` documents "must never reject" (see `DispatchTurnBatch`);
+  // reaching here means some caller broke that contract.
+  log.error(
+    "turn queue: dispatch rejected for workbench {workbenchId}, message(s) {messageIds} (ref {refId}), violating its \"never reject\" contract: {err}",
+    { workbenchId, messageIds, refId, err },
+  );
+}
+
 export function createWorkbenchTurnQueue(
   deps: WorkbenchTurnQueueDeps,
 ): WorkbenchTurnQueue {
+  // Process-local, paired one-to-one with `deps.claims`: a multi-replica
+  // hub would need every workbench's turns routed to the same replica,
+  // or replica B enqueues here into a `Map` replica A never reads and a
+  // turn queued on B is never dispatched at all. This queue is
+  // single-replica-only until the pending list moves into whatever
+  // store backs `deps.claims`.
   const pendingByWorkbench = new Map<string, QueuedTurn[]>();
+
+  // Runs `firstBatch` (already claimed under `token`) to completion,
+  // draining whatever else queues behind it under the same claim, then
+  // releases. Holds the claim across every batch rather than releasing
+  // and re-claiming between them: releasing early would open a window
+  // (each `await` is a yield point) where a fresh, unrelated call could
+  // win the claim ahead of a batch that was already queued and waiting
+  // — breaking the ordering this queue exists to guarantee.
+  //
+  // `dispatch` is the one `await` in this loop the TTL backstop
+  // (CL-7129) can fire during: a dispatch that outlives `ttlMs` lets a
+  // second, unrelated `run()` call win a fresh claim and start its own
+  // drain of this same `pendingByWorkbench` entry. The `holds` check
+  // right after each `dispatch` is how this loop notices that happened
+  // and stops — leaving whatever is still queued for the new holder to
+  // pick up — instead of popping and dispatching a batch the new holder
+  // is already about to dispatch itself.
+  async function drain(
+    workbenchId: string,
+    firstToken: TurnClaimToken,
+    firstBatch: readonly QueuedTurn[],
+    dispatch: DispatchTurnBatch,
+  ): Promise<void> {
+    let token = firstToken;
+    let batch = firstBatch;
+    for (;;) {
+      try {
+        await dispatch(batch);
+      } catch (err) {
+        reportDispatchFailure(workbenchId, batch, err);
+      }
+
+      if (!(await deps.claims.holds({ workbenchId }, token))) {
+        // The TTL backstop already reassigned this claim to a fresh
+        // `run()` call; that call's own loop now owns draining
+        // whatever is pending here.
+        return;
+      }
+
+      const queued = pendingByWorkbench.get(workbenchId);
+      if (queued !== undefined && queued.length > 0) {
+        pendingByWorkbench.delete(workbenchId);
+        batch = queued;
+        continue;
+      }
+
+      const released = await deps.claims.release({ workbenchId }, token);
+      if (!released) return;
+
+      // `release` can itself await (any durable store reopens exactly
+      // this window — see `./turn-claims.ts`'s own doc comment): a
+      // concurrent `run()` whose `tryClaim` read us as still holding,
+      // before this `release` took effect, pushed onto
+      // `pendingByWorkbench` with nobody left holding the claim to
+      // drain it. Recheck and reclaim rather than stranding it — `run`'s
+      // enqueue path below runs the symmetric dance from its own side,
+      // so between the two, whichever notices the claim is free first
+      // picks up what's pending.
+      const late = pendingByWorkbench.get(workbenchId);
+      if (late === undefined || late.length === 0) return;
+
+      const reclaimed = await deps.claims.tryClaim({ workbenchId });
+      if (reclaimed === false) return; // the new holder's own loop will see it
+
+      const afterReclaim = pendingByWorkbench.get(workbenchId);
+      if (afterReclaim === undefined || afterReclaim.length === 0) {
+        // Drained by whoever we raced against for the reclaim itself.
+        await deps.claims.release({ workbenchId }, reclaimed);
+        return;
+      }
+      pendingByWorkbench.delete(workbenchId);
+      token = reclaimed;
+      batch = afterReclaim;
+    }
+  }
 
   return {
     async run(workbenchId, turn, dispatch) {
       const token = await deps.claims.tryClaim({ workbenchId });
-      if (token === false) {
-        const queue = pendingByWorkbench.get(workbenchId) ?? [];
-        queue.push(turn);
-        pendingByWorkbench.set(workbenchId, queue);
-        deps.publish(workbenchId, {
-          type: "chat.turn-queued",
-          data: {
-            workbenchId,
-            messageId: turn.messageId,
-            queueLength: queue.length,
-          },
-        });
+      if (token !== false) {
+        await drain(workbenchId, token, [turn], dispatch);
         return;
       }
 
-      // Holds the claim across every batch it dispatches below, rather
-      // than releasing and re-claiming between them: releasing early
-      // would open a window (each `await` is a yield point) where a
-      // fresh, unrelated call could win the claim ahead of a batch that
-      // was already queued and waiting — breaking the ordering this
-      // queue exists to guarantee. The pending-queue check between
-      // batches runs with no `await` in between, so nothing can slip in
-      // during it.
-      //
-      // `dispatch` is the one `await` in this loop the TTL backstop can
-      // fire during (CL-7129): a dispatch that outlives `ttlMs` lets a
-      // second, unrelated `run()` call win a fresh claim and start its
-      // own drain of this same `pendingByWorkbench` entry. The `holds`
-      // check right after each `dispatch` is how this loop notices that
-      // happened and stops — leaving whatever is still queued for the
-      // new holder to pick up — instead of popping and dispatching a
-      // batch the new holder is already about to dispatch itself.
-      let batch: readonly QueuedTurn[] = [turn];
-      try {
-        for (;;) {
-          await dispatch(batch);
-          if (!(await deps.claims.holds({ workbenchId }, token))) break;
-          const next = pendingByWorkbench.get(workbenchId);
-          if (next === undefined || next.length === 0) break;
-          pendingByWorkbench.delete(workbenchId);
-          batch = next;
-        }
-      } finally {
-        await deps.claims.release({ workbenchId }, token);
+      const queue = pendingByWorkbench.get(workbenchId) ?? [];
+      queue.push(turn);
+      pendingByWorkbench.set(workbenchId, queue);
+      deps.publish(workbenchId, {
+        type: "chat.turn-queued",
+        data: {
+          workbenchId,
+          messageId: turn.messageId,
+          queueLength: queue.length,
+        },
+      });
+
+      // Symmetric to `drain`'s own reclaim above: the holder we lost
+      // `tryClaim` to may already have released — its own emptiness
+      // check ran before this push landed — leaving nobody holding the
+      // claim to drain what was just enqueued. Reclaim in that case
+      // rather than returning with the turn stranded.
+      const reclaimed = await deps.claims.tryClaim({ workbenchId });
+      if (reclaimed === false) return;
+
+      const batch = pendingByWorkbench.get(workbenchId);
+      pendingByWorkbench.delete(workbenchId);
+      if (batch === undefined || batch.length === 0) {
+        await deps.claims.release({ workbenchId }, reclaimed);
+        return;
       }
+      await drain(workbenchId, reclaimed, batch, dispatch);
     },
   };
 }
