@@ -180,6 +180,104 @@ describeIfDb("createDrizzleAccessPolicyStore", () => {
     }
   });
 
+  test("upsertPolicy is atomic: two concurrent patches to different fields on an existing row both land, neither reverts the other", async () => {
+    const setupSql = postgres(scratchUrl, { max: 1 });
+    try {
+      const store = createDrizzleAccessPolicyStore(drizzle(setupSql));
+      await store.upsertPolicy("tnt_race_existing", {
+        selfSignup: "off",
+        allowedDomains: [],
+        tenancyCreation: "owners",
+      });
+    } finally {
+      await setupSql.end();
+    }
+
+    // A plain `Promise.all` of two real calls does not reliably force
+    // the worst-case interleaving on a fast local connection: one
+    // call's whole read-modify-write often finishes before the other's
+    // read even starts, so the two never actually overlap. Instead, a
+    // third connection takes the row's lock first and holds it open
+    // while both real `upsertPolicy` calls start and queue up behind
+    // it — releasing it then guarantees both calls' reads had to
+    // happen without seeing the other's write yet, exactly the
+    // interleaving that silently reverted one admin's change.
+    const holderSql = postgres(scratchUrl, { max: 1 });
+    const sqlA = postgres(scratchUrl, { max: 1 });
+    const sqlB = postgres(scratchUrl, { max: 1 });
+    try {
+      const storeA = createDrizzleAccessPolicyStore(drizzle(sqlA));
+      const storeB = createDrizzleAccessPolicyStore(drizzle(sqlB));
+
+      let holderReady: () => void = () => undefined;
+      const holderHasLock = new Promise<void>((resolve) => {
+        holderReady = resolve;
+      });
+      let releaseHolder: () => void = () => undefined;
+      const releaseSignal = new Promise<void>((resolve) => {
+        releaseHolder = resolve;
+      });
+      const holderTx = holderSql.begin(async (tx) => {
+        await tx`select * from access_policy.policy where tenant_id = 'tnt_race_existing' for update`;
+        holderReady();
+        await releaseSignal;
+      });
+
+      await holderHasLock;
+
+      const racers = Promise.all([
+        storeA.upsertPolicy("tnt_race_existing", { selfSignup: "open" }),
+        storeB.upsertPolicy("tnt_race_existing", {
+          allowedDomains: ["acme.example"],
+        }),
+      ]);
+      // Give both calls time to actually issue their row-locking read
+      // and start queuing behind the holder before it releases.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      releaseHolder();
+      await holderTx;
+      await racers;
+
+      const policy = await storeA.getPolicy("tnt_race_existing");
+      expect(policy.selfSignup).toBe("open");
+      expect(policy.allowedDomains).toEqual(["acme.example"]);
+      expect(policy.tenancyCreation).toBe("owners");
+    } finally {
+      await holderSql.end();
+      await sqlA.end();
+      await sqlB.end();
+    }
+  });
+
+  test("upsertPolicy is atomic: two concurrent first-writes for a brand-new tenant both land, neither reverts the other", async () => {
+    const sql = postgres(scratchUrl, { max: 5 });
+    try {
+      const store = createDrizzleAccessPolicyStore(drizzle(sql));
+
+      // No row exists yet for this tenant, so both calls race the
+      // create path too — the ensure-row-then-lock step inside
+      // `upsertPolicy` has to serialize this case as well, not only
+      // the existing-row case above.
+      await Promise.all([
+        store.upsertPolicy("tnt_race_new", { selfSignup: "open" }),
+        store.upsertPolicy("tnt_race_new", {
+          allowedDomains: ["acme.example"],
+        }),
+      ]);
+
+      const policy = await store.getPolicy("tnt_race_new");
+      expect(policy.selfSignup).toBe("open");
+      expect(policy.allowedDomains).toEqual(["acme.example"]);
+
+      const rows =
+        await sql`select count(*)::int as count from access_policy.policy where tenant_id = 'tnt_race_new'`;
+      expect(rows[0]?.["count"]).toBe(1);
+    } finally {
+      await sql.end();
+    }
+  });
+
   test("pending invites: a domain match is found for any email on that domain", async () => {
     const sql = postgres(scratchUrl, { max: 1 });
     try {

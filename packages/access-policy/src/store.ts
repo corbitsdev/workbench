@@ -110,41 +110,63 @@ export function createDrizzleAccessPolicyStore<
       return row !== undefined;
     },
 
+    // Read-modify-write under a transaction with a row lock rather than
+    // an optimistic version-stamp check: two transactions starting in
+    // the same wall-clock tick could still both pass a version check,
+    // which is exactly the lost-update bug this closes.
+    //
+    // Because this method's row may not exist yet (it is an upsert),
+    // `SELECT ... FOR UPDATE` alone has nothing to lock for a brand-new
+    // tenant. The `INSERT ... ON CONFLICT DO NOTHING` below guarantees
+    // a row first: two concurrent first-writes for the same tenant
+    // serialize on that insert's unique-index conflict — the loser
+    // blocks until the winner's transaction commits, then no-ops and
+    // its own subsequent `SELECT ... FOR UPDATE` sees the winner's
+    // committed row rather than racing it.
     async upsertPolicy(tenantId, patch) {
-      const current = await db
-        .select()
-        .from(policy)
-        .where(eq(policy.tenantId, tenantId));
-      const existing =
-        current[0] === undefined
-          ? DEFAULT_ACCESS_POLICY
-          : resolveAccessPolicy(current[0]);
-      const next: AccessPolicy = {
-        selfSignup: patch.selfSignup ?? existing.selfSignup,
-        allowedDomains: patch.allowedDomains ?? existing.allowedDomains,
-        tenancyCreation: patch.tenancyCreation ?? existing.tenancyCreation,
-      };
-      const now = new Date();
-      await db
-        .insert(policy)
-        .values({
-          tenantId,
-          selfSignup: next.selfSignup,
-          allowedDomains: serializeAllowedDomains(next.allowedDomains),
-          tenancyCreation: next.tenancyCreation,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: policy.tenantId,
-          set: {
+      return db.transaction(async (tx) => {
+        const now = new Date();
+        await tx
+          .insert(policy)
+          .values({
+            tenantId,
+            selfSignup: DEFAULT_ACCESS_POLICY.selfSignup,
+            allowedDomains: serializeAllowedDomains(
+              DEFAULT_ACCESS_POLICY.allowedDomains,
+            ),
+            tenancyCreation: DEFAULT_ACCESS_POLICY.tenancyCreation,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .onConflictDoNothing({ target: policy.tenantId });
+
+        const [current] = await tx
+          .select()
+          .from(policy)
+          .where(eq(policy.tenantId, tenantId))
+          .for("update");
+        if (current === undefined) {
+          throw new Error(
+            `upsertPolicy: no access_policy.policy row for tenant ${tenantId} after ensuring one exists`,
+          );
+        }
+        const existing = resolveAccessPolicy(current);
+        const next: AccessPolicy = {
+          selfSignup: patch.selfSignup ?? existing.selfSignup,
+          allowedDomains: patch.allowedDomains ?? existing.allowedDomains,
+          tenancyCreation: patch.tenancyCreation ?? existing.tenancyCreation,
+        };
+        await tx
+          .update(policy)
+          .set({
             selfSignup: next.selfSignup,
             allowedDomains: serializeAllowedDomains(next.allowedDomains),
             tenancyCreation: next.tenancyCreation,
-            updatedAt: now,
-          },
-        });
-      return next;
+            updatedAt: new Date(),
+          })
+          .where(eq(policy.tenantId, tenantId));
+        return next;
+      });
     },
 
     async createPendingInvite(tenantId, input) {
