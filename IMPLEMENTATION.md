@@ -259,6 +259,25 @@ non-empty owned list restricts candidates to those names; an empty owned
 list keeps inherited discovery. Other providers still pin
 `CATALOG_SEEDS[provider].models[0]`.
 
+Ollama's OpenAI-compatible endpoint can also emit a declared tool call
+as a JSON object in `content` instead of native `tool_calls`.
+`@intx/inference`'s OpenAI parser only reads `delta.tool_calls`, so
+that JSON would otherwise land on the timeline as assistant text and
+the tool would never run. `@corbits/ollama-adapter`
+(`reclassifyInlineToolJsonEvents` in
+`packages/ollama-adapter/src/inline-tool-json.ts`) rewrites a content
+stream that is exactly that object into `inference.tool_call.*`
+events, gated on the tools declared for the request. Salvage requires
+a plain object whose keys are only `name` plus exactly one of
+`parameters` or `arguments` (optional `id`), and a `name` in the
+declared set. Unknown names, no-tools requests, extra keys, arrays,
+mixed prose, fenced JSON, and incomplete objects stay text.
+
+The assistant definition (`workflows/assistant`) also tells Myra to
+invoke tools only through tool calls — never by writing a JSON object
+with a tool name into the reply — and not to `memory_search` a bare
+greeting.
+
 ## Related docs
 
 - [README.md](README.md) — quickstart, local setup, repo layout, e2e detail
