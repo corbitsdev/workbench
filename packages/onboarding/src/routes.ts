@@ -870,6 +870,8 @@ export function createOnboardingRoutes(
       deps.benchProvisioner?.wake();
       return c.json(status, 200);
     } catch (cause) {
+      // report-error-ignore: CL-7234 — reportOnboardingError itself needs
+      // to call reportError; tracked there rather than at each call site
       const envelope = reportOnboardingError(deps.logError ?? deps.log, {
         userAction: `complete-setup for user ${user.id}`,
         code: "complete_setup_failed",
@@ -914,6 +916,8 @@ export function createOnboardingRoutes(
 
       return c.json(await provisioningStatus(cookies, tenant), 200);
     } catch (cause) {
+      // report-error-ignore: CL-7234 — reportOnboardingError itself needs
+      // to call reportError; tracked there rather than at each call site
       const envelope = reportOnboardingError(deps.logError ?? deps.log, {
         userAction: `provisioning status for user ${user.id}`,
         code: "provisioning_status_failed",

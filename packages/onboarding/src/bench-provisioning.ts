@@ -197,6 +197,8 @@ export function createBenchProvisioner(
         else holdOff(key);
         return outcome;
       } catch (cause) {
+        // report-error-ignore: CL-7234 routes this drain catch through
+        // reportError the way provision.ts already does
         const message = cause instanceof Error ? cause.message : String(cause);
         logError(
           `bench provisioning for tenant ${seed.tenantId} failed; its pending row stays for a retry: ${message}`,

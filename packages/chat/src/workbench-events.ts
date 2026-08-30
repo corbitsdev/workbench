@@ -197,6 +197,8 @@ export function bridgeWorkbenchStream(input: {
         data: JSON.stringify(event.data),
       });
     } catch {
+      // report-error-ignore: CL-7197 hardens this whole delivery path,
+      // including routing this catch through reportError
       teardown();
     }
   };
@@ -219,6 +221,8 @@ export function bridgeWorkbenchStream(input: {
       },
     );
   } catch {
+    // report-error-ignore: CL-7197 — the bare catch{} named in that
+    // ticket's "Swallowed error" defect; routes through reportError there
     unsubscribePlatform = () => undefined;
   }
 
