@@ -18,17 +18,22 @@ Thanks for your interest in Corbits Workbench.
 
 ## The short version
 
-1. `bun install && bun run check` — everything must be green before and after
-   your change.
-2. Tests first: add failing tests, then the implementation, then docs.
-3. One logical change per commit; write messages for a public audience.
-4. Never commit secrets. `.env.example` is the only tracked env file.
-5. Never vendor code without a ledger row and kill date in
+1. `bun install` (or `bun run hooks:install`) sets a repo-local pre-push
+   hook. That hook is the local stand-in for the cheap CI jobs: lint,
+   typecheck, and unit tests. GitHub still runs walking-skeleton, e2e,
+   isolation, and database-backed suites. Skip the hook with
+   `git push --no-verify` or `SKIP_WORKBENCH_HOOKS=1`.
+2. `bun run check` — everything must be green before and after your
+   change.
+3. Tests first: add failing tests, then the implementation, then docs.
+4. One logical change per commit; write messages for a public audience.
+5. Never commit secrets. `.env.example` is the only tracked env file.
+6. Never vendor code without a ledger row and kill date in
    [VENDORED.md](VENDORED.md).
-6. A package that owns its own product tables follows
+7. A package that owns its own product tables follows
    [docs/package-migrations.md](docs/package-migrations.md): literal SQL,
    a package-owned ledger table, applied transactionally.
-7. Security issues go through [SECURITY.md](SECURITY.md), never a public
+8. Security issues go through [SECURITY.md](SECURITY.md), never a public
    issue.
 
 This document will grow as the project does.
