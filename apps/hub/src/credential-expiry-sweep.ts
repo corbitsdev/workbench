@@ -28,9 +28,11 @@ import { type } from "arktype";
 import { credential, principal, provider } from "@intx/db/schema";
 import type { DB } from "@intx/db";
 import { getLogger } from "@intx/log";
+import { reportError } from "@corbits/error-sink";
 import {
   deliverCredentialMail,
   findDueCredentialExpiries,
+  type CredentialExpiredNotification,
   type ExpiringCredential,
   type NotifyDeliveryDeps,
 } from "@corbits/notify";
@@ -336,8 +338,52 @@ export type CredentialExpirySweepDeps = {
 };
 
 /**
- * One sweep: claim-and-mail every Hugging-Face-style credential expiry
- * due at `now`, then refresh (or, on refresh failure, claim-and-mail)
+ * Mail a credential-expiry reconnect nudge, then claim the credential as
+ * `expired` only once that mail has gone out (or is already out — a
+ * `credential-expired` event dedupes on `credentialId` alone, so a
+ * redelivery from a retried tick is a harmless no-op, never a second
+ * mail). Claiming is deliberately the LAST step: `active` is the durable
+ * "still needs a decision" state, and this function leaves a credential
+ * `active` whenever that decision (mail sent, credential marked expired)
+ * did not fully land, so the next tick's own due-scan is the retry —
+ * no separate retry queue is needed. A thrown mail error is reported
+ * and swallowed here (never `active` → `expired` with the notification
+ * lost), and never propagates out to abort sibling candidates in the
+ * same tick.
+ */
+async function mailThenClaimExpiry(
+  deps: CredentialExpirySweepDeps,
+  now: Date,
+  target: {
+    readonly credentialId: string;
+    readonly tenantId: string;
+    readonly recipients: readonly { tenantId: string; principalId: string }[];
+  },
+  event: CredentialExpiredNotification,
+): Promise<void> {
+  if (target.recipients.length === 0) {
+    log.warn`credential ${target.credentialId} has no active recipient to notify; leaving it active until one exists`;
+    return;
+  }
+  try {
+    await deliverCredentialMail(deps.notify, event);
+  } catch (err) {
+    reportError(err, {
+      operation: "credential-expiry-sweep.deliver",
+      tenantId: target.tenantId,
+      extra: { credentialId: target.credentialId },
+    });
+    return;
+  }
+  const claimed = await deps.store.claimExpiry(target.credentialId, now);
+  // False means another replica already claimed this exact expiry
+  // between the mail attempt and this claim — not an error.
+  if (!claimed) return;
+}
+
+/**
+ * One sweep: mail-then-claim every Hugging-Face-style credential expiry
+ * due at `now`, then refresh (or, on refresh failure, mail-then-claim)
  * every MCP oauth_token credential nearing its own real expiry. Exported
  * (rather than kept as a closure) so a test can drive a single,
  * deterministic pass without waiting on `setInterval`.
@@ -352,16 +398,7 @@ export async function tickCredentialExpirySweep(
   const due = findDueCredentialExpiries(candidates, now);
 
   for (const { credential: expiring, event } of due) {
-    const claimed = await deps.store.claimExpiry(expiring.credentialId, now);
-    // False means another replica already claimed this exact expiry
-    // between `loadActiveCandidates` and this claim — not an error.
-    if (!claimed) continue;
-
-    if (expiring.recipients.length === 0) {
-      log.warn`credential ${expiring.credentialId} expired with no active recipient to notify`;
-      continue;
-    }
-    await deliverCredentialMail(deps.notify, event);
+    await mailThenClaimExpiry(deps, now, expiring, event);
   }
 
   const refreshable = await deps.store.loadRefreshableMcpCandidates(
@@ -392,15 +429,7 @@ export async function tickCredentialExpirySweep(
     }
 
     log.warn`mcp oauth refresh failed for credential ${candidate.credentialId} ("${candidate.name}"): ${result.message}`;
-    const claimed = await deps.store.claimExpiry(candidate.credentialId, now);
-    // False means another replica already claimed this exact expiry — not an error.
-    if (!claimed) continue;
-
-    if (candidate.recipients.length === 0) {
-      log.warn`credential ${candidate.credentialId} expired with no active recipient to notify`;
-      continue;
-    }
-    await deliverCredentialMail(deps.notify, {
+    await mailThenClaimExpiry(deps, now, candidate, {
       kind: "credential-expired",
       tenantId: candidate.tenantId,
       credentialId: candidate.credentialId,
