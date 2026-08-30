@@ -890,6 +890,7 @@ export const Composer = forwardRef<
           <span
             className="chat-composer-keyboard-hint"
             data-visible={focused && value.trim().length > 0}
+            aria-hidden={!(focused && value.trim().length > 0)}
           >
             {CHAT_STRINGS.composerKeyboardHint}
           </span>
