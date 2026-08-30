@@ -215,7 +215,7 @@ export const CHAT_STRINGS = {
   blockQuestionSubmitting: "Sending…",
   blockQuestionAnswerError: "Couldn't send your answer — try again.",
   blockQuestionAnsweredLabel: "Your answer",
-  blockConnectGithubPickHeadline: "Pick your repos",
+  blockConnectGithubPickHeadline: "Choose what gets reviewed",
   blockConnectGithubStepDone: "Done",
   blockConnectGithubStepCurrent: "You're here",
   blockConnectGithubReviewingHeadline: "Reviewing",
@@ -223,36 +223,39 @@ export const CHAT_STRINGS = {
     "Every new pull request in these gets a review posted right here.",
   blockConnectGithubChangeRepos: "change repos",
   blockConnectGithubIntro:
-    "Connect GitHub with a personal access token — three quick steps, about a minute.",
+    "Connect GitHub with a personal access token. You choose which repositories the token can reach while you're creating it — that's exactly what the reviewers will be able to read.",
   blockConnectGithubAction: "Connect GitHub",
   blockConnectGithubReconnect: "Reconnect",
   blockConnectGithubTokenSteps: [
-    "Open github.com/settings/tokens and generate a new token.",
-    "Give it the repo scope — that lets agents read code, issues, and pull requests.",
+    "Open GitHub's fine-grained token page and generate a new token.",
+    "Under Repository access, select the repositories you want reviewed — nothing outside that list is ever reachable with this token.",
+    "Under Repository permissions, set Contents, Issues, and Pull requests to Read and write, so the reviewers can read your diffs and post back on them.",
     "Paste it here. It's stored encrypted, only your agents use it, and you can remove it any time.",
   ] as readonly string[],
-  blockConnectGithubTokenSettingsUrl: "https://github.com/settings/tokens",
-  blockConnectGithubTokenSettingsLink: "Open github.com/settings/tokens",
+  blockConnectGithubTokenSettingsUrl:
+    "https://github.com/settings/personal-access-tokens/new",
+  blockConnectGithubTokenSettingsLink: "Open GitHub's token page",
   blockConnectGithubTokenHelper:
     "Your token is stored encrypted, only your agents use it, and you can remove it any time.",
   blockConnectGithubConnectedAs: (org: string) =>
     `Connected to GitHub as ${org}`,
   blockConnectGithubChange: "change",
   blockConnectGithubRepoCount: (found: number, picked: number) =>
-    `${found} repos found · ${picked} picked`,
+    `${found} your token can reach · ${picked} picked`,
   blockConnectGithubSelectAll: "Select all",
-  blockConnectGithubNoOpenPulls: "no open pull requests",
-  blockConnectGithubOpenPulls: (count: number) =>
-    count === 1 ? "1 open pull request" : `${count} open pull requests`,
+  blockConnectGithubRepoUpdated: (relative: string) => `updated ${relative}`,
+  blockConnectGithubRepoNeverPushed: "no commits yet",
   blockConnectGithubPermissionHelper:
-    "Picking a repo lets the reviewers post reviews to it — each repo is its own permission, and you can turn any off later.",
+    "These are the repositories your token can reach. Pick the ones you want reviewed — you can change the list any time, and narrowing what the token itself can reach is done back on GitHub.",
   blockConnectGithubStartReviewing: (count: number) =>
     `Start reviewing ${count} repo${count === 1 ? "" : "s"}`,
   blockConnectGithubSkip: "skip for now",
   blockConnectGithubStartReviewingError:
     "Couldn't start reviewing — try again.",
+  blockConnectGithubStateUnreadable:
+    "Couldn't reach GitHub with your token just now — try connecting again.",
   blockConnectGithubTokenFieldLabel: "Personal access token",
-  blockConnectGithubTokenFieldPlaceholder: "ghp_...",
+  blockConnectGithubTokenFieldPlaceholder: "github_pat_...",
   blockConnectGithubTokenSubmit: "Connect",
   blockConnectGithubTokenSubmitting: "Connecting…",
   blockConnectGithubTokenCancel: "cancel",

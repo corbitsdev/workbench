@@ -348,12 +348,12 @@ export const CODE_REVIEW_TEMPLATE: WorkbenchDefinition = {
       kind: "connect-plugin",
       connectorId: "github",
       title: "Connect GitHub",
-      why: "The reviewers need it to read your diffs and post what they'd change.",
+      why: "Create a token scoped to the repositories you want reviewed — that is what the reviewers will be able to read.",
     },
     {
       kind: "pick-github-repos",
-      title: "Pick your repos",
-      why: "Only the repositories you choose get reviewed.",
+      title: "Choose what gets reviewed",
+      why: "Of the repositories your token reaches, these are the ones a new pull request starts a review in.",
     },
     {
       kind: "start-webhook-trigger",
