@@ -2,18 +2,26 @@
 // Workbench's control (Granola, or anything else) posts here to kick
 // off a workflow run. This is THE trust boundary — no session cookie,
 // no tenant membership, nothing about the caller is trusted except
-// what the HMAC signature over the raw body proves. Every failure
-// mode here is loud and specific in the log, but every one of unknown
-// trigger, disabled trigger, and bad/missing signature returns the
-// SAME generic 401 `unauthorized` response, so a probe against a
+// what the HMAC signature over `timestamp.rawBody` proves, and proves
+// only within the freshness window `verifySignature` enforces (see
+// `./signature.ts`) — so a captured, byte-for-byte replay of a real
+// delivery stops verifying once it goes stale. Every failure mode
+// here is loud and specific in the log, but every one of unknown
+// trigger, disabled trigger, and bad/missing/stale signature returns
+// the SAME generic 401 `unauthorized` response, so a probe against a
 // wrong triggerId cannot distinguish "no such trigger" from "disabled"
-// from "wrong secret".
+// from "wrong secret" from "replayed".
 import { Hono } from "hono";
 import type { Env } from "hono";
 import { getLogger } from "@intx/log";
 
 import type { LaunchedWebhookTrigger } from "./launch";
-import { WEBHOOK_SIGNATURE_HEADER, verifySignature } from "./signature";
+import {
+  WEBHOOK_SIGNATURE_HEADER,
+  WEBHOOK_TIMESTAMP_HEADER,
+  isFreshTimestamp,
+  verifySignature,
+} from "./signature";
 import type { WebhookTriggerRow } from "./schema";
 import type { WebhookTriggerStore } from "./store";
 
@@ -72,13 +80,22 @@ export function createWebhookIngressRoutes(
 
     const rawBody = await c.req.text();
     const signatureHeader = c.req.header(WEBHOOK_SIGNATURE_HEADER);
-    if (!verifySignature(trigger.secret, rawBody, signatureHeader)) {
-      log.warn(
-        "Rejected webhook delivery for trigger {triggerId}: bad signature",
-        {
-          triggerId,
-        },
-      );
+    const timestampHeader = c.req.header(WEBHOOK_TIMESTAMP_HEADER);
+    if (
+      !verifySignature(
+        trigger.secret,
+        timestampHeader,
+        rawBody,
+        signatureHeader,
+      )
+    ) {
+      const reason = isFreshTimestamp(timestampHeader)
+        ? "bad signature"
+        : "missing or stale timestamp";
+      log.warn("Rejected webhook delivery for trigger {triggerId}: {reason}", {
+        triggerId,
+        reason,
+      });
       return c.json(unauthorizedResponse(), 401);
     }
 

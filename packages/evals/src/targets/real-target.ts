@@ -37,6 +37,7 @@ import {
 import {
   signPayload,
   WEBHOOK_SIGNATURE_HEADER,
+  WEBHOOK_TIMESTAMP_HEADER,
 } from "@corbits/webhook-triggers";
 
 import type {
@@ -891,13 +892,15 @@ export async function bootMyraTarget(
         );
       }
       const rawBody = JSON.stringify(payload);
+      const timestamp = String(Math.floor(Date.now() / 1000));
       const response = await fetch(
         new URL(`/api/webhooks/${triggerId}`, hub.baseUrl),
         {
           method: "POST",
           headers: {
             "content-type": "application/json",
-            [WEBHOOK_SIGNATURE_HEADER]: signPayload(secret, rawBody),
+            [WEBHOOK_TIMESTAMP_HEADER]: timestamp,
+            [WEBHOOK_SIGNATURE_HEADER]: signPayload(secret, timestamp, rawBody),
           },
           body: rawBody,
         },

@@ -17,7 +17,11 @@
 // assertion here reads `session_mail` straight out of Postgres, joined
 // through `agent_session`/`workflow_run` on the run's own instance id —
 // a harness-side fact, not a public contract.
-import { createHmac } from "node:crypto";
+import {
+  signPayload,
+  WEBHOOK_SIGNATURE_HEADER,
+  WEBHOOK_TIMESTAMP_HEADER,
+} from "@corbits/webhook-triggers";
 import { describe, test } from "bun:test";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
@@ -543,16 +547,16 @@ describe.skipIf(databaseUrl === undefined)(
           topic: "Deploy finished",
           source: "ci",
         });
-        const signature = createHmac("sha256", secret)
-          .update(rawBody, "utf8")
-          .digest("hex");
+        const timestamp = String(Math.floor(Date.now() / 1000));
+        const signature = signPayload(secret, timestamp, rawBody);
         const delivered = await fetch(
           `${hub.baseUrl}/api/webhooks/${triggerId}`,
           {
             method: "POST",
             headers: {
               "content-type": "application/json",
-              "x-webhook-signature": signature,
+              [WEBHOOK_SIGNATURE_HEADER]: signature,
+              [WEBHOOK_TIMESTAMP_HEADER]: timestamp,
             },
             body: rawBody,
           },

@@ -18,7 +18,11 @@
 // already does for the sidecar identity row — and confirms the trigger
 // itself recorded the delivery (`lastFiredAt`).
 
-import { createHmac } from "node:crypto";
+import {
+  signPayload,
+  WEBHOOK_SIGNATURE_HEADER,
+  WEBHOOK_TIMESTAMP_HEADER,
+} from "@corbits/webhook-triggers";
 import { describe, expect, test } from "bun:test";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
@@ -381,14 +385,14 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
         "a correctly signed delivery is accepted and launches a run",
         async () => {
           const rawBody = JSON.stringify({ event: "smoke-test" });
-          const signature = createHmac("sha256", secret)
-            .update(rawBody, "utf8")
-            .digest("hex");
+          const timestamp = String(Math.floor(Date.now() / 1000));
+          const signature = signPayload(secret, timestamp, rawBody);
           const res = await fetch(`${hub.baseUrl}/api/webhooks/${triggerId}`, {
             method: "POST",
             headers: {
               "content-type": "application/json",
-              "x-webhook-signature": signature,
+              [WEBHOOK_SIGNATURE_HEADER]: signature,
+              [WEBHOOK_TIMESTAMP_HEADER]: timestamp,
             },
             body: rawBody,
           });
@@ -416,7 +420,8 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
           method: "POST",
           headers: {
             "content-type": "application/json",
-            "x-webhook-signature": "0".repeat(64),
+            [WEBHOOK_SIGNATURE_HEADER]: "0".repeat(64),
+            [WEBHOOK_TIMESTAMP_HEADER]: String(Math.floor(Date.now() / 1000)),
           },
           body: rawBody,
         });
