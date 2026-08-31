@@ -61,8 +61,6 @@ import {
 import type { BringInListFailure, BringInMember } from "./mentions";
 import { PinnedStrip } from "./pinned-strip";
 import { SLASH_COMMANDS } from "./slash-commands";
-
-import { getResolvedCatalog } from "@corbits/inference-settings";
 import { failedTurnModelChoices } from "./failed-turn-models";
 import { CHAT_STRINGS } from "./strings";
 import { displayWorkbenchTitle } from "./workbench-display-title";
@@ -109,7 +107,6 @@ import {
 } from "./use-workbench-feed";
 import { generatedAvatarStyle } from "./avatar-identity";
 import { useWorkbenchPresenceRoster } from "./workbench-presence";
-import { failedTurnModelChoices } from "./failed-turn-models";
 import { type } from "arktype";
 import {
   ChatMessageEventData,
@@ -1180,64 +1177,6 @@ function ChatWorkspaceInner({
     activeWorkbenchId,
   ]);
 
-  const handleApplyFailedTurnModel = useCallback(
-    async (input: {
-      readonly definitionId: string;
-      readonly address: string;
-      readonly canonicalName: string;
-    }) => {
-      if (activeWorkbenchId === null) return;
-      await addAgentCapability(tenantId, input.definitionId, {
-        kind: "model",
-        canonicalName: input.canonicalName,
-      });
-      await refreshWorkbenchAgent(tenantId, activeWorkbenchId, input.address);
-    },
-    [tenantId, activeWorkbenchId],
-  );
-
-  const handleOpenAgentSettings = useCallback(
-    (definitionId: string) => {
-      onSettingsOpenChange?.(true, "agents", definitionId);
-    },
-    [onSettingsOpenChange],
-  );
-
-  const catalogQuery = useQuery({
-    queryKey: ["tenant", tenantId, "models", "failed-turn"],
-    queryFn: () => getResolvedCatalog(tenantId),
-    enabled: activeWorkbenchId !== null,
-  });
-  const workbenchAgentsQuery = useQuery({
-    queryKey: [
-      "tenant",
-      tenantId,
-      "chat",
-      "workbench-agents",
-      activeWorkbenchId,
-    ],
-    queryFn: () => listWorkbenchAgents(tenantId, activeWorkbenchId ?? ""),
-    enabled: activeWorkbenchId !== null,
-  });
-
-  const failedTurnRecovery = useMemo(() => {
-    const definitionIdByAddress: Record<string, string> = {};
-    for (const agent of workbenchAgentsQuery.data ?? []) {
-      definitionIdByAddress[agent.address] = agent.definitionId;
-    }
-    return {
-      models: failedTurnModelChoices(catalogQuery.data ?? []),
-      definitionIdByAddress,
-      onApplyModel: handleApplyFailedTurnModel,
-      onOpenAgentSettings: handleOpenAgentSettings,
-    };
-  }, [
-    catalogQuery.data,
-    workbenchAgentsQuery.data,
-    handleApplyFailedTurnModel,
-    handleOpenAgentSettings,
-  ]);
-
   // The mention popover's "Bring in…" group: only a `workbench` grows its
   // participants after creation (a chat's counterpart is fixed at
   // creation — see `workbench-service.ts`'s `joinHumanParticipant`/
@@ -1718,7 +1657,6 @@ function ChatWorkspaceInner({
                     reactionActions={reactionActions}
                     pinActions={pinActions}
                     onRetryFailedTurn={handleRetryFailedTurn}
-                    failedTurnRecovery={failedTurnRecovery}
                     failedTurnRecovery={failedTurnRecovery}
                     pendingActions={{
                       onRetry: retryPendingSend,
