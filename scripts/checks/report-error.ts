@@ -56,9 +56,10 @@
 //
 // This follows check:tool-package-freshness's own precedent for scoping a
 // new invariant to what changed rather than retroactively flagging
-// pre-existing state: CI passes CHECK_BASE_REF; locally this falls back to
-// the merge base with origin/main; with neither available the touched-file
-// half of the gate no-ops (new-vs-baseline enforcement still applies).
+// pre-existing state: on a GitHub pull_request job the base SHA comes
+// from the event payload; locally this falls back to the merge base with
+// origin/main; with neither available the touched-file half of the gate
+// no-ops (new-vs-baseline enforcement still applies).
 //
 // Regenerate the baseline after fixing (or newly opting out) entries:
 //   bun run scripts/checks/report-error.ts --write-baseline
@@ -547,7 +548,7 @@ async function main(): Promise<void> {
     ? parseBaseline(await baselineFile.text())
     : new Set<string>();
 
-  const baseRef = resolveBaseRef(root, process.env["CHECK_BASE_REF"]);
+  const baseRef = resolveBaseRef(root);
   const changedLines =
     baseRef === undefined
       ? undefined
@@ -561,7 +562,7 @@ async function main(): Promise<void> {
   });
   if (baseRef === undefined) {
     report.notes.push(
-      "no base ref (no origin/main, no CHECK_BASE_REF); skipping the " +
+      "no base ref (no origin/main, no pull_request.base.sha); skipping the " +
         "touched-line ratchet — CI supplies the base ref for the " +
         "authoritative run. New-vs-baseline enforcement still applies.",
     );

@@ -16,6 +16,7 @@
 // history rather than a snapshot of the working tree, which is why it is a
 // separate check.
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
   emptyReport,
@@ -59,15 +60,59 @@ function git(root: string, args: readonly string[]): string | undefined {
 }
 
 /**
- * The commit this change branched from. CI supplies the base ref
- * explicitly; locally the merge base with `origin/main` answers the same
- * question a reviewer would ask.
+ * The PR base SHA GitHub Actions writes into GITHUB_EVENT_PATH.
+ * Absent (local runs, push events, unreadable payload) means fall
+ * through to merge-base with origin/main.
  */
-export function resolveBaseRef(
-  root: string,
-  explicit: string | undefined,
+export function pullRequestBaseSha(
+  env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
-  if (explicit !== undefined && explicit.length > 0) return explicit;
+  const eventPath = env["GITHUB_EVENT_PATH"];
+  if (eventPath === undefined || eventPath === "") return undefined;
+  let raw: string;
+  try {
+    raw = readFileSync(eventPath, "utf8");
+  } catch {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    !("pull_request" in parsed)
+  ) {
+    return undefined;
+  }
+  const pullRequest = parsed.pull_request;
+  if (
+    typeof pullRequest !== "object" ||
+    pullRequest === null ||
+    !("base" in pullRequest)
+  ) {
+    return undefined;
+  }
+  const base = pullRequest.base;
+  if (typeof base !== "object" || base === null || !("sha" in base)) {
+    return undefined;
+  }
+  const sha = base.sha;
+  return typeof sha === "string" && sha.length > 0 ? sha : undefined;
+}
+
+/**
+ * The commit this change branched from. On a GitHub pull_request job
+ * that is the PR base SHA from the event payload; locally (and on
+ * push) the merge base with origin/main answers the same question a
+ * reviewer would ask.
+ */
+export function resolveBaseRef(root: string): string | undefined {
+  const fromEvent = pullRequestBaseSha();
+  if (fromEvent !== undefined) return fromEvent;
   return git(root, ["merge-base", "HEAD", "origin/main"]);
 }
 
@@ -138,11 +183,11 @@ async function versionAtHead(
 
 async function main(): Promise<void> {
   const root = rootFromArgs(Bun.argv.slice(2));
-  const baseRef = resolveBaseRef(root, process.env["CHECK_BASE_REF"]);
+  const baseRef = resolveBaseRef(root);
   if (baseRef === undefined) {
     const report = emptyReport();
     report.notes.push(
-      "no base ref (no origin/main, no CHECK_BASE_REF); skipping — CI " +
+      "no base ref (no origin/main, no pull_request.base.sha); skipping — CI " +
         "supplies the base ref for the authoritative run",
     );
     reportAndExit("check:tool-package-freshness", report);

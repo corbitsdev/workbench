@@ -32,7 +32,7 @@ const databaseUrl = e2eDatabaseUrl();
 if (databaseUrl === undefined) {
   console.warn(
     "smoke-chat: DATABASE_URL is not set; suite skipped. Set DATABASE_URL " +
-      "(see .env.example) to run it; CI sets E2E_REQUIRED=1 so this skip " +
+      "(see .env.example) to run it; start Postgres with `docker compose -f docker-compose.test.yml up -d` so this skip " +
       "can never pass silently there.",
   );
 }
