@@ -94,7 +94,10 @@ export type ChatOrchestratorDeps = {
    * address and nothing finer. Omitted, replies carry no run id at all
    * rather than a guessed one; there is no second way to name a run.
    */
-  agentTurns?: Pick<AgentTurnStore, "findRunningTurn" | "finishTurn">;
+  agentTurns?: Pick<
+    AgentTurnStore,
+    "findRunningTurn" | "finishTurn" | "listTurns"
+  >;
   /**
    * Resolves a gate-blocked event's `correlationId` to the approval row the
    * hub's IPC register co-write already wrote — the same read the "needs
@@ -546,6 +549,17 @@ function correlateOriginatingWorkbench(
   return undefined;
 }
 
+async function latestTurnForAgent(
+  agentTurns: Pick<AgentTurnStore, "listTurns"> | undefined,
+  tenantId: string,
+  workbenchId: string,
+  agentAddress: string,
+) {
+  if (agentTurns === undefined) return undefined;
+  const turns = await agentTurns.listTurns({ tenantId, workbenchId });
+  return turns.find((turn) => turn.agentAddress === agentAddress);
+}
+
 async function postReply(
   deps: ChatOrchestratorDeps,
   pendingDelegationThreads: ExpiringMap<string, PendingDelegationThread>,
@@ -574,7 +588,7 @@ async function postReply(
     .filter((member) => member.turnId !== undefined)
     .map((member) => member.workbenchId);
   const correlated = correlateOriginatingWorkbench(event, members);
-  const targetIds =
+  const resolvedTargets =
     correlated !== undefined
       ? [correlated]
       : runningIds.length === 1
@@ -582,6 +596,26 @@ async function postReply(
         : runningIds.length === 0 && resolved.workbenchIds.length === 1
           ? resolved.workbenchIds
           : [];
+  // A cancelled 1:1 turn still has exactly one membership and no running
+  // row, so the fallback above would otherwise post the late reply as an
+  // unattached message. Drop those; a membership that never opened a
+  // turn still uses the fallback.
+  const targetIds: string[] = [];
+  for (const workbenchId of resolvedTargets) {
+    const member = members.find((entry) => entry.workbenchId === workbenchId);
+    if (member?.turnId !== undefined) {
+      targetIds.push(workbenchId);
+      continue;
+    }
+    const latest = await latestTurnForAgent(
+      deps.agentTurns,
+      resolved.tenantId,
+      workbenchId,
+      resolved.roomAddress,
+    );
+    if (latest?.status === "cancelled") continue;
+    targetIds.push(workbenchId);
+  }
 
   if (targetIds.length === 0) {
     reportError(
