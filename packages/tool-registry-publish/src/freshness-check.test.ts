@@ -60,7 +60,11 @@ async function fixtureGitEnv(): Promise<Record<string, string | undefined>> {
   };
 }
 
-async function git(cwd: string, args: readonly string[]): Promise<string> {
+async function git(
+  cwd: string,
+  args: readonly string[],
+  env?: Record<string, string | undefined>,
+): Promise<string> {
   const proc = Bun.spawn(
     [
       "git",
@@ -76,7 +80,7 @@ async function git(cwd: string, args: readonly string[]): Promise<string> {
     ],
     {
       cwd,
-      env: await fixtureGitEnv(),
+      env: env ?? (await fixtureGitEnv()),
       stdout: "pipe",
       stderr: "pipe",
     },
@@ -117,20 +121,24 @@ async function rawGit(
 // `git commit` runs the operator's commit-msg / author hooks. Plumbing
 // writes the same history without that surface, so this suite does not
 // depend on whoever owns `core.hooksPath` on the machine.
-async function commitAll(root: string, message: string): Promise<void> {
-  await git(root, ["add", "."]);
-  const tree = await git(root, ["write-tree"]);
+async function commitAll(
+  root: string,
+  message: string,
+  env?: Record<string, string | undefined>,
+): Promise<void> {
+  await git(root, ["add", "."], env);
+  const tree = await git(root, ["write-tree"], env);
   let parent: string | undefined;
   try {
-    parent = await git(root, ["rev-parse", "--verify", "HEAD"]);
+    parent = await git(root, ["rev-parse", "--verify", "HEAD"], env);
   } catch {
     parent = undefined;
   }
   const sha =
     parent === undefined
-      ? await git(root, ["commit-tree", tree, "-m", message])
-      : await git(root, ["commit-tree", tree, "-p", parent, "-m", message]);
-  await git(root, ["update-ref", "HEAD", sha]);
+      ? await git(root, ["commit-tree", tree, "-m", message], env)
+      : await git(root, ["commit-tree", tree, "-p", parent, "-m", message], env);
+  await git(root, ["update-ref", "HEAD", sha], env);
 }
 
 async function writePkg(
@@ -146,15 +154,18 @@ async function writePkg(
   await writeFile(path.join(pkg, "src", "index.ts"), src);
 }
 
-async function committedPackage(src: string): Promise<{
+async function committedPackage(
+  src: string,
+  env?: Record<string, string | undefined>,
+): Promise<{
   root: string;
   pkg: string;
 }> {
   const root = await scratchDir("corbits-tools-freshness-");
-  await git(root, ["init", "-b", "main"]);
+  await git(root, ["init", "-b", "main"], env);
   const pkg = path.join(root, "fake-tools");
   await writePkg(pkg, "0.0.1", src);
-  await commitAll(root, "initial @corbits/fake-tools@0.0.1");
+  await commitAll(root, "initial @corbits/fake-tools@0.0.1", env);
   return { root, pkg };
 }
 
@@ -371,7 +382,10 @@ describe("checkToolPackageFreshness", () => {
     expect(unguarded).toBeInstanceOf(Error);
     expect((unguarded as Error).message).toContain("allowed-emails");
 
-    const { pkg } = await committedPackage("export const n = 1;\n");
+    const { pkg } = await committedPackage(
+      "export const n = 1;\n",
+      hostileEnv,
+    );
     await checkToolPackageFreshness({ packageDirs: [pkg] });
   });
 });
