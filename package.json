@@ -61,7 +61,8 @@
     "puppeteer-core": "^25.7.0",
     "typescript": "6.0.3",
     "typescript-eslint": "^8.42.0",
-    "@corbits/run-scope": "workspace:*"
+    "@corbits/run-scope": "workspace:*",
+    "@corbits/webhook-triggers": "workspace:*"
   },
   "engines": {
     "bun": ">=1.2.0"

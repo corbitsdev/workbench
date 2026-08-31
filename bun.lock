@@ -13,6 +13,7 @@
         "@corbits/evals": "workspace:*",
         "@corbits/ollama-adapter": "workspace:*",
         "@corbits/run-scope": "workspace:*",
+        "@corbits/webhook-triggers": "workspace:*",
         "@corbits/workflow-catalog": "workspace:*",
         "@eslint/js": "^10.0.0",
         "@intx/db": "workspace:*",
@@ -766,7 +767,7 @@
     },
     "packages/github-tools": {
       "name": "@corbits/github-tools",
-      "version": "0.0.8",
+      "version": "0.0.9",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -919,7 +920,7 @@
     },
     "packages/interaction-tools": {
       "name": "@corbits/interaction-tools",
-      "version": "0.0.2",
+      "version": "0.0.4",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
