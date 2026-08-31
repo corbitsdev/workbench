@@ -87,40 +87,6 @@ export type WorkbenchTurnQueue = {
   ): Promise<void>;
 };
 
-function reportDispatchFailure(
-  workbenchId: string,
-  batch: readonly QueuedTurn[],
-  err: unknown,
-): void {
-  const messageIds = batch.map((t) => t.messageId);
-  const refId = reportError(err, {
-    operation: "chat.turnQueue.dispatch",
-    roomId: workbenchId,
-    extra: { messageIds },
-  });
-  // `dispatch` documents "must never reject" (see `DispatchTurnBatch`);
-  // reaching here means some caller broke that contract.
-  log.error(
-    'turn queue: dispatch rejected for workbench {workbenchId}, message(s) {messageIds} (ref {refId}), violating its "never reject" contract: {err}',
-    { workbenchId, messageIds, refId, err },
-  );
-}
-
-function reportClaimStoreFailure(
-  operation: string,
-  workbenchId: string,
-  err: unknown,
-): void {
-  const refId = reportError(err, {
-    operation,
-    roomId: workbenchId,
-  });
-  log.error(
-    "turn queue: claim store call failed for workbench {workbenchId} (ref {refId}): {err}",
-    { workbenchId, refId, err },
-  );
-}
-
 export function createWorkbenchTurnQueue(
   deps: WorkbenchTurnQueueDeps,
 ): WorkbenchTurnQueue {
@@ -169,7 +135,18 @@ export function createWorkbenchTurnQueue(
         try {
           await dispatch(batch);
         } catch (err) {
-          reportDispatchFailure(workbenchId, batch, err);
+          const messageIds = batch.map((t) => t.messageId);
+          const refId = reportError(err, {
+            operation: "chat.turnQueue.dispatch",
+            roomId: workbenchId,
+            extra: { messageIds },
+          });
+          // `dispatch` documents "must never reject" (see `DispatchTurnBatch`);
+          // reaching here means some caller broke that contract.
+          log.error(
+            'turn queue: dispatch rejected for workbench {workbenchId}, message(s) {messageIds} (ref {refId}), violating its "never reject" contract: {err}',
+            { workbenchId, messageIds, refId, err },
+          );
         }
 
         if (!(await deps.claims.holds({ workbenchId }, token))) {
@@ -215,7 +192,14 @@ export function createWorkbenchTurnQueue(
         batch = afterReclaim;
       }
     } catch (err) {
-      reportClaimStoreFailure("chat.turnQueue.drain", workbenchId, err);
+      const refId = reportError(err, {
+        operation: "chat.turnQueue.drain",
+        roomId: workbenchId,
+      });
+      log.error(
+        "turn queue: claim store call failed for workbench {workbenchId} (ref {refId}): {err}",
+        { workbenchId, refId, err },
+      );
       // Best-effort: `token` may already be released (this call then
       // no-ops per the store's contract) or may be the one this loop
       // never got to release because the failure happened first either
@@ -265,10 +249,13 @@ export function createWorkbenchTurnQueue(
         }
         await drain(workbenchId, reclaimed, batch, dispatch);
       } catch (err) {
-        reportClaimStoreFailure(
-          "chat.turnQueue.enqueueReclaim",
-          workbenchId,
-          err,
+        const refId = reportError(err, {
+          operation: "chat.turnQueue.enqueueReclaim",
+          roomId: workbenchId,
+        });
+        log.error(
+          "turn queue: claim store call failed for workbench {workbenchId} (ref {refId}): {err}",
+          { workbenchId, refId, err },
         );
       }
     },

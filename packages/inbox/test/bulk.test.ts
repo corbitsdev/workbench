@@ -3,8 +3,8 @@ import { describe, expect, test } from "bun:test";
 import {
   itemsEligibleForClearDone,
   itemsEligibleForMarkAllRead,
-  runBulkOperation,
 } from "../src/bulk";
+import { runBulkOperation } from "../src/bulk-run";
 import type { InboxItem } from "../src/project";
 
 function item(
@@ -53,7 +53,7 @@ describe("runBulkOperation", () => {
         if (id === "b") throw new Error("transient write failure");
         applied.push(id);
       },
-      (id, error) => failures.push({ id, error }),
+      { onError: (id, error) => failures.push({ id, error }) },
     );
 
     // Both non-failing items still ran, despite "b" throwing between them —
