@@ -2,9 +2,11 @@
 // loud — the failure mode `publishCorbitsToolsRegistry` cannot catch,
 // because it skips an already-published name@version rather than
 // comparing source. Fixtures are scratch git repos so this suite does
-// not depend on the worktree's own dirty tool packages.
+// not depend on the worktree's own dirty tool packages. History is
+// written with plumbing (`commit-tree`) under a test-owned git config
+// so a developer `core.hooksPath` cannot fail the suite.
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { CORBITS_TOOL_PACKAGE_DIRS } from "./registry";
@@ -17,6 +19,7 @@ import {
 } from "./freshness-check";
 
 const scratchDirs: string[] = [];
+let fixtureGitConfig: string | undefined;
 
 afterAll(async () => {
   await Promise.all(
@@ -30,25 +33,116 @@ async function scratchDir(prefix: string): Promise<string> {
   return dir;
 }
 
-async function git(cwd: string, args: readonly string[]): Promise<void> {
+async function fixtureGitEnv(): Promise<Record<string, string | undefined>> {
+  if (fixtureGitConfig === undefined) {
+    const dir = await scratchDir("corbits-tools-freshness-gitconfig-");
+    const hooks = path.join(dir, "hooks");
+    await mkdir(hooks);
+    fixtureGitConfig = path.join(dir, "config");
+    await writeFile(
+      fixtureGitConfig,
+      [
+        "[user]",
+        "\tname = Freshness",
+        "\temail = freshness@test",
+        "[core]",
+        `\thooksPath = ${hooks}`,
+        "[commit]",
+        "\tgpgsign = false",
+        "",
+      ].join("\n"),
+    );
+  }
+  return {
+    ...process.env,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: fixtureGitConfig,
+  };
+}
+
+async function git(
+  cwd: string,
+  args: readonly string[],
+  env?: Record<string, string | undefined>,
+): Promise<string> {
   const proc = Bun.spawn(
     [
       "git",
       "-c",
+      "core.hooksPath=",
+      "-c",
       "user.email=freshness@test",
       "-c",
       "user.name=Freshness",
+      "-c",
+      "commit.gpgsign=false",
       ...args,
     ],
-    { cwd, stdout: "pipe", stderr: "pipe" },
+    {
+      cwd,
+      env: env ?? (await fixtureGitEnv()),
+      stdout: "pipe",
+      stderr: "pipe",
+    },
   );
-  const [stderr, code] = await Promise.all([
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
     proc.exited,
   ]);
   if (code !== 0) {
     throw new Error(`git ${args.join(" ")} failed: ${stderr}`);
   }
+  return stdout.trim();
+}
+
+async function rawGit(
+  cwd: string,
+  args: readonly string[],
+  env: Record<string, string | undefined>,
+): Promise<string> {
+  const proc = Bun.spawn(["git", ...args], {
+    cwd,
+    env,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (code !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${stderr}`);
+  }
+  return stdout.trim();
+}
+
+// `git commit` runs the operator's commit-msg / author hooks. Plumbing
+// writes the same history without that surface, so this suite does not
+// depend on whoever owns `core.hooksPath` on the machine.
+async function commitAll(
+  root: string,
+  message: string,
+  env?: Record<string, string | undefined>,
+): Promise<void> {
+  await git(root, ["add", "."], env);
+  const tree = await git(root, ["write-tree"], env);
+  let parent: string | undefined;
+  try {
+    parent = await git(root, ["rev-parse", "--verify", "HEAD"], env);
+  } catch {
+    parent = undefined;
+  }
+  const sha =
+    parent === undefined
+      ? await git(root, ["commit-tree", tree, "-m", message], env)
+      : await git(
+          root,
+          ["commit-tree", tree, "-p", parent, "-m", message],
+          env,
+        );
+  await git(root, ["update-ref", "HEAD", sha], env);
 }
 
 async function writePkg(
@@ -64,17 +158,39 @@ async function writePkg(
   await writeFile(path.join(pkg, "src", "index.ts"), src);
 }
 
-async function committedPackage(src: string): Promise<{
+async function committedPackage(
+  src: string,
+  env?: Record<string, string | undefined>,
+): Promise<{
   root: string;
   pkg: string;
 }> {
   const root = await scratchDir("corbits-tools-freshness-");
-  await git(root, ["init", "-b", "main"]);
+  await git(root, ["init", "-b", "main"], env);
   const pkg = path.join(root, "fake-tools");
   await writePkg(pkg, "0.0.1", src);
-  await git(root, ["add", "."]);
-  await git(root, ["commit", "-m", "initial @corbits/fake-tools@0.0.1"]);
+  await commitAll(root, "initial @corbits/fake-tools@0.0.1", env);
   return { root, pkg };
+}
+
+async function plantRejectingAuthorHook(): Promise<string> {
+  const work = await scratchDir("corbits-tools-freshness-hooks-");
+  const hooksDir = path.join(work, "hooks");
+  await mkdir(hooksDir);
+  const hook = path.join(hooksDir, "commit-msg");
+  await writeFile(
+    hook,
+    [
+      "#!/bin/sh",
+      'echo "commit blocked: author must be listed in allowed-emails" >&2',
+      "exit 1",
+      "",
+    ].join("\n"),
+  );
+  await chmod(hook, 0o755);
+  const globalConfig = path.join(work, "gitconfig");
+  await writeFile(globalConfig, `[core]\nhooksPath = ${hooksDir}\n`);
+  return globalConfig;
 }
 
 describe("staleToolPackages", () => {
@@ -218,12 +334,60 @@ describe("checkToolPackageFreshness", () => {
   test("committed src change after the version-introducing commit is loud", async () => {
     const { root, pkg } = await committedPackage("export const n = 1;\n");
     await writePkg(pkg, "0.0.1", "export const n = 2;\n");
-    await git(root, ["add", "."]);
-    await git(root, ["commit", "-m", "src change, forgot the bump"]);
+    await commitAll(root, "src change, forgot the bump");
 
     await expect(
       checkToolPackageFreshness({ packageDirs: [pkg] }),
     ).rejects.toBeInstanceOf(StaleToolPackageError);
+  });
+
+  test("fixture history is written even when a global author hook would reject git commit", async () => {
+    const globalConfig = await plantRejectingAuthorHook();
+    const hostileEnv = {
+      ...process.env,
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_GLOBAL: globalConfig,
+    };
+
+    const victim = await scratchDir("corbits-tools-freshness-victim-");
+    await rawGit(
+      victim,
+      [
+        "-c",
+        "user.email=freshness@test",
+        "-c",
+        "user.name=Freshness",
+        "init",
+        "-b",
+        "main",
+      ],
+      hostileEnv,
+    );
+    await writeFile(path.join(victim, "README"), "victim\n");
+    await rawGit(victim, ["add", "."], hostileEnv);
+    let unguarded: unknown;
+    try {
+      await rawGit(
+        victim,
+        [
+          "-c",
+          "user.email=freshness@test",
+          "-c",
+          "user.name=Freshness",
+          "commit",
+          "-m",
+          "should be blocked",
+        ],
+        hostileEnv,
+      );
+    } catch (err) {
+      unguarded = err;
+    }
+    expect(unguarded).toBeInstanceOf(Error);
+    expect((unguarded as Error).message).toContain("allowed-emails");
+
+    const { pkg } = await committedPackage("export const n = 1;\n", hostileEnv);
+    await checkToolPackageFreshness({ packageDirs: [pkg] });
   });
 });
 
