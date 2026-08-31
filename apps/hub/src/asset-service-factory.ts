@@ -12,6 +12,7 @@ import {
 } from "@intx/hub-sessions";
 import { generateKeyPair } from "@intx/crypto";
 import type { DB } from "@intx/db";
+import { assertHubDataDirGitSafety } from "./hub-data-dir-git-safety";
 
 // Host policy constant, not configuration — shared by boot (tool-package
 // registry routing) and asset-service construction.
@@ -35,7 +36,12 @@ export interface BootAssetWiring {
 export async function createBootAssetWiring(args: {
   db: DB["db"];
   dataDir: string;
+  allowGitInsideWorkTree?: boolean;
 }): Promise<BootAssetWiring> {
+  assertHubDataDirGitSafety(
+    args.dataDir,
+    args.allowGitInsideWorkTree === true ? { allowInsideWorkTree: true } : {},
+  );
   const signingKey = await generateKeyPair();
   const agentRepoStore = createAgentRepoStore({
     dataDir: args.dataDir,

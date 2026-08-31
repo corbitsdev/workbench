@@ -188,6 +188,9 @@ const HubEnv = type({
   "ALLOW_UNVERIFIED_EMAILS?": type("'1' | 'true'").describe(
     "dev/test-only opt-in to let @workbench/access-policy trust an email that better-auth has not verified — self-signup domain checks and pending-invite redemption normally require emailVerified; never set this for a real deployment",
   ),
+  "HUB_ALLOW_GIT_INSIDE_WORK_TREE?": type("'1' | 'true'").describe(
+    "opt-in to initialize hub git-on-disk state inside a directory that is already a git work tree; refused by default because a nested init that misses its own .git walks up and commits onto the enclosing working branch",
+  ),
   "SIDECAR_PROVISIONERS?": type("string").describe(
     "comma-separated sidecar-allocation backend ids to register for workbenches placed on their own exclusive sidecar, e.g. 'docker'; unset or empty (default) keeps the hub on its current single shared sidecar with no exclusive-placement backend available",
   ),
@@ -357,6 +360,8 @@ export type HubConfig = {
   /** Dev/test-only opt-in to skip @workbench/access-policy's email-
    * verification requirement. */
   readonly allowUnverifiedEmails: boolean;
+  /** Opt-in to initialize git-on-disk state inside an existing git work tree. */
+  readonly allowGitInsideWorkTree?: boolean;
   /** Dev/test-only override for the routine scheduler's poll interval —
    * see `ROUTINE_SCHEDULER_POLL_INTERVAL_MS` above. Unset runs the real
    * production cadence (`routine-scheduler.ts`'s own default). */
@@ -666,6 +671,8 @@ export function readHubConfig(
   };
   if (parsed.OPERATOR_TENANT_ID !== undefined)
     hubConfig.operatorTenantId = parsed.OPERATOR_TENANT_ID;
+  if (parsed.HUB_ALLOW_GIT_INSIDE_WORK_TREE !== undefined)
+    hubConfig.allowGitInsideWorkTree = true;
   if (parsed.PORT !== undefined) hubConfig.listenPort = Number(parsed.PORT);
   if (parsed.ROUTINE_SCHEDULER_POLL_INTERVAL_MS !== undefined)
     hubConfig.routineSchedulerPollIntervalMs = Number(
