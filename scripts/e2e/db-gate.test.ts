@@ -11,15 +11,15 @@ import { databaseIsRequired, dbGate } from "./db-gate.ts";
 const gatedKeys = ["CI", "GITHUB_JOB", "E2E_REQUIRED"] as const;
 const saved = new Map(gatedKeys.map((key) => [key, process.env[key]]));
 
+/** Unsets a gated variable for one test. Empty string is not `CI=true`
+ * and is not a named GITHUB_JOB, same as a variable the shell never set. */
 function unset(key: (typeof gatedKeys)[number]): void {
-  delete process.env[key];
+  process.env[key] = "";
 }
 
 afterEach(() => {
   for (const key of gatedKeys) {
-    const value = saved.get(key);
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
+    process.env[key] = saved.get(key) ?? "";
   }
 });
 
