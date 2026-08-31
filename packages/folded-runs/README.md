@@ -20,9 +20,11 @@ or a host-specific package such as `@corbits/chat`.
   imported from `@intx/hub-api`'s hub-api-internal helper.
 - **Crypto provider caching** (`./src/crypto-cache.ts`) —
   `createCryptoProviderCache` mints one `CryptoProvider` per cache key
-  (a workbench id, an instance id, ...) and reuses it for the cache's
-  lifetime; never evicted, since a key going momentarily unreachable does
-  not mean it is gone for good.
+  (a workbench id, an instance id, ...) and reuses it while the key stays
+  in active use, via `@corbits/collections`' `createExpiringMap` with a
+  7-day idle ttl refreshed on every access (CL-7223): a key going
+  momentarily unreachable (idle sleep, a sweep) does not evict it, so
+  only a key nobody has asked for in a week is treated as gone for good.
 - **Run lookups** (`./src/runs.ts`) — resolving a run by id or address, and
   bridging a run's principal to its live session via the shared-principal
   bridge.
