@@ -6,7 +6,7 @@
 // 2. resolveScope recursion: a workbench with a workbench child tenancy is
 //    NOT a leaf — its /usage now includes the grandchild's rows, and the
 //    workspace parent's aggregate includes them too.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import postgres from "postgres";
@@ -21,9 +21,10 @@ import { createInsightsRoutes } from "../src/routes";
 import { createPostgresUsageStore } from "../src/pg-store";
 import { createMemoryUsageStore } from "../src/store";
 import type { OverallUsageSummary } from "../src/queries";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);

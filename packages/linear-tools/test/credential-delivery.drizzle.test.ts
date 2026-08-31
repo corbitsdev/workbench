@@ -14,7 +14,7 @@
 //     secret;
 //   - the same binding fails closed (`unresolved`) when no credential
 //     exists for the provider, rather than delivering nothing silently.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import {
   buildCredentialDelivery,
   createDB,
@@ -28,9 +28,10 @@ import type { CredentialBinding } from "@intx/types";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const SCHEMA = "linear_tools_credential_delivery_test";
 const KEY = new Uint8Array(32).fill(11);

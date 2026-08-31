@@ -1,0 +1,21 @@
+# Postgres for local DB-gated test runs, matching the `walking-skeleton`
+# job's `services.postgres` block in .github/workflows/ci.yml exactly —
+# same image, same credentials, same healthcheck — so a suite that fails
+# here fails (or passes) the same way it does in CI.
+#
+# Usage:
+#   docker compose -f docker-compose.test.yml up -d
+#   DATABASE_URL=postgres://postgres:postgres@localhost:5432/workbench bun test ...
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

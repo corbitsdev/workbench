@@ -19,7 +19,7 @@
 // (`services/search.ts`'s `degraded: ["dense_unavailable"]`) rather than
 // a fake standing in for it — zero real keys, and the ONLY inference this
 // test performs is the plane's own lexical (Postgres FTS) fallback.
-import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { createInMemoryGrantStore } from "@intx/authz";
 import {
@@ -29,6 +29,7 @@ import {
 import type { ResolvedWorkflowRunScope } from "@corbits/artifacts-hub";
 
 import { mountMemory } from "./memory-mount";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 const KEYS = [
   "DATABASE_URL",
@@ -66,7 +67,7 @@ afterEach(() => {
 });
 
 const databaseUrl = process.env["DATABASE_URL"];
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const TENANT_A: ResolvedWorkflowRunScope = {
   tenantId: "ten_memory_a",

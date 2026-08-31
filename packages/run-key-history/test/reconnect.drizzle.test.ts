@@ -12,7 +12,7 @@
 // now-stale `workflow_run` row and fails forever. `lookupRunKeyHistoryReconnectKey`
 // is the repair: it notices the disagreement and republishes this
 // package's own record.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { createDB, runMigrations, dropSchema, schema } from "@intx/db";
 import { workflowRun } from "@intx/db/schema";
@@ -22,9 +22,10 @@ import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { applyRunKeyHistoryMigrations } from "../src/migrations";
 import { createDrizzleRunKeyHistoryStore } from "../src/store";
 import { lookupRunKeyHistoryReconnectKey } from "../src/reconnect";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const SCHEMA = "run_key_history_reconnect_test";
 const TENANT = "tnt_run_key_history_reconnect";

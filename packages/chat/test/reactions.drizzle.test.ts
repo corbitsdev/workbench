@@ -11,13 +11,14 @@
 // at the database: proves the fix (`INSERT ... ON CONFLICT DO NOTHING`,
 // never select-then-branch) never throws a raw PK-violation and always
 // leaves a consistent, non-crashed final state.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { applyChatMigrations } from "../src/migrations";
 import { createDrizzleReactionStore } from "../src/reactions";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);
@@ -27,7 +28,7 @@ function scratchUrlFor(e2eUrl: string): string {
 }
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const TENANT = "tnt_1";
 const WORKBENCH = "run_workbench1";

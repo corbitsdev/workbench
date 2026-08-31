@@ -15,7 +15,7 @@
 // UPDATE — the kind of tamper the application layer never produces on
 // its own) fails to decrypt and is swept away rather than silently
 // misattributed.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -25,6 +25,7 @@ import {
 
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { applyOnboardingMigrations } from "../src/migrations";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 import {
   createDrizzlePendingSeedStore,
   type PendingSeed,
@@ -38,7 +39,7 @@ function scratchUrlFor(e2eUrl: string): string {
 }
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const KEY = new Uint8Array(32).fill(9);
 
