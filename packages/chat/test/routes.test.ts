@@ -977,7 +977,7 @@ describe("POST /workbenches/:id/invite", () => {
     };
     expect(errorBody.error.code).toBe("not_launchable");
     expect(errorBody.error.userMessage).toBe(
-      "No launchable inference source for that definition",
+      "This agent's model isn't available here.",
     );
   });
 
