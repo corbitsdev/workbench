@@ -319,32 +319,37 @@ describe("message fan-out", () => {
         (message) => message.sender.address === "ins_echo1@acme.example",
       );
       const part = notice?.parts[0];
-      return part?.kind === "text" ? part.text : "";
+      return part?.kind === "text" ? part : undefined;
     }
 
-    test("InferenceResolutionError gets the fix-your-key copy, not 'send it again'", async () => {
-      const text = await noticeTextFor(
+    test("InferenceResolutionError gets the model-unavailable copy, not 'send it again' or the raw dump", async () => {
+      const part = await noticeTextFor(
         new InferenceResolutionError("test-launch", "no catalog source"),
       );
-      expect(text).toContain("add or check your model key");
-      expect(text).not.toContain("send it again");
+      expect(part?.text).toContain("model isn't available here");
+      expect(part?.turnFailedReason).toBe("model_unavailable");
+      expect(part?.text).not.toContain("send it again");
+      expect(part?.text).not.toContain("add or check your model key");
+      expect(part?.text).not.toContain("cannot resolve an inference source");
+      expect(part?.text).not.toContain("no catalog source");
+      expect(part?.text).not.toMatch(/HTTP/);
     });
 
     test("a 401 credential_failure gets the fix-your-key copy", async () => {
-      const text = await noticeTextFor(
+      const part = await noticeTextFor(
         Object.assign(new Error("unauthorized"), {
           status: 401,
           category: "credential_failure",
         }),
       );
-      expect(text).toContain("add or check your model key");
-      expect(text).not.toContain("send it again");
+      expect(part?.text).toContain("add or check your model key");
+      expect(part?.text).not.toContain("send it again");
     });
 
     test("a genuinely transient failure keeps the retryable copy", async () => {
-      const text = await noticeTextFor(new Error("sidecar unavailable"));
-      expect(text).toContain("send it again");
-      expect(text).not.toContain("model key");
+      const part = await noticeTextFor(new Error("sidecar unavailable"));
+      expect(part?.text).toContain("send it again");
+      expect(part?.text).not.toContain("model key");
     });
 
     // CL-6644: a dispatch failure that never surfaces a logged cause is
@@ -352,8 +357,8 @@ describe("message fan-out", () => {
     // carry a `reportError` refId a person can quote to support, and
     // that refId must be the one the caller actually logged.
     test("carries a reportError refId a person can quote to support", async () => {
-      const text = await noticeTextFor(new Error("sidecar unavailable"));
-      expect(text).toMatch(/\(ref [^)]+\)$/);
+      const part = await noticeTextFor(new Error("sidecar unavailable"));
+      expect(part?.text).toMatch(/\(ref [^)]+\)$/);
     });
   });
 

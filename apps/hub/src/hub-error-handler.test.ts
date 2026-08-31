@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { configureSync, resetSync } from "@intx/log";
+import { InferenceResolutionError } from "@corbits/folded-runs";
 
 import { hubErrorHandler } from "./hub-error-handler";
 
@@ -83,5 +84,28 @@ describe("hubErrorHandler", () => {
     expect(body.error.refId.length).toBeGreaterThan(0);
     expect(records).toHaveLength(1);
     expect(records[0]?.properties.refId).toBe(body.error.refId);
+  });
+
+  test("maps InferenceResolutionError to 422 with consumer copy, not 500", async () => {
+    const app = new Hono();
+    app.onError(hubErrorHandler());
+    app.get("/wake", () => {
+      throw new InferenceResolutionError(
+        "the woken instance",
+        'No launchable inference source for model "claude-sonnet-5"',
+      );
+    });
+
+    const res = await app.request("/wake");
+
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as {
+      error: { code: string; message: string; refId: string };
+    };
+    expect(body.error.code).toBe("InferenceResolutionError");
+    expect(body.error.message).toBe("This agent's model isn't available here.");
+    expect(body.error.message).not.toContain("claude-sonnet-5");
+    expect(body.error.message).not.toMatch(/cannot resolve an inference/);
+    expect(typeof body.error.refId).toBe("string");
   });
 });
