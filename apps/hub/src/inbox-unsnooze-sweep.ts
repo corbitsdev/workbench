@@ -15,7 +15,6 @@
 // leaves the row for the next tick to retry rather than orphaning it —
 // the mail-then-claim lesson CL-7209 applied to the credential-expiry
 // sweep, applied here to the claim itself.
-import { getLogger } from "@intx/log";
 import { reportError } from "@corbits/error-sink";
 import {
   claimAndReopenSnooze,
@@ -49,7 +48,6 @@ export type InboxUnsnoozeSweepDeps = {
 };
 
 const POLL_INTERVAL_MS = 60 * 1000;
-const publishLog = getLogger(["hub", "inbox-unsnooze-sweep"]);
 
 function publishReopened(
   bus: Pick<MailboxEventBus, "publish">,
@@ -65,15 +63,11 @@ function publishReopened(
       { type: "mailbox", id: row.messageId, op: "enrich" },
     );
   } catch (error) {
-    publishLog.error(
-      "mailbox reopen event publish failed for {id} on tenant {tenantId}, principal {principalId}: {error}",
-      {
-        id: row.messageId,
-        tenantId: row.tenantId,
-        principalId: row.principalId,
-        error: error instanceof Error ? error.message : String(error),
-      },
-    );
+    reportError(error, {
+      operation: "inbox_unsnooze_sweep_publish",
+      tenantId: row.tenantId,
+      extra: { messageId: row.messageId, principalId: row.principalId },
+    });
   }
 }
 

@@ -23,11 +23,8 @@ import { getLogger } from "@intx/log";
 import { type } from "arktype";
 import { Hono, type Context } from "hono";
 
-import {
-  itemsEligibleForClearDone,
-  itemsEligibleForMarkAllRead,
-  runBulkOperation,
-} from "./bulk";
+import { itemsEligibleForClearDone, itemsEligibleForMarkAllRead } from "./bulk";
+import { runBulkOperation } from "./bulk-run";
 import { cursorScopeMismatch } from "./cursor";
 import { isInboxGroup, type InboxGroup } from "./group";
 import {
@@ -193,12 +190,11 @@ export function createInboxRoutes(
         });
         publish(bus, scope, item.id, "mark_read");
       },
-      (item, error) =>
-        reportError(error, {
-          operation: "inbox_mark_all_read_item",
-          tenantId: tenant.id,
-          extra: { id: item.id },
-        }),
+      {
+        operation: "inbox_mark_all_read_item",
+        tenantId: tenant.id,
+        extraFor: (item) => ({ id: item.id }),
+      },
     );
     // A 200 must mean "every eligible item was marked" — a partial result
     // is reported as 207 so a caller that only checks the status code (not
@@ -227,12 +223,11 @@ export function createInboxRoutes(
         if (!ok) throw new Error(`message ${item.id} not found to trash`);
         publish(bus, scope, item.id, "trash");
       },
-      (item, error) =>
-        reportError(error, {
-          operation: "inbox_clear_done_item",
-          tenantId: tenant.id,
-          extra: { id: item.id },
-        }),
+      {
+        operation: "inbox_clear_done_item",
+        tenantId: tenant.id,
+        extraFor: (item) => ({ id: item.id }),
+      },
     );
     // Same partial-vs-complete signal as mark-all-read: 207 whenever any
     // item failed, so a status-code-only caller can't read it as success.
