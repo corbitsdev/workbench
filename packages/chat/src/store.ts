@@ -1,9 +1,12 @@
 // Persistence for the two chat product tables, kept apart from route
 // wiring so the HTTP layer never touches drizzle directly. `settings`
-// is record-as-truth: callers read and write the whole namespaced
-// jsonb blob, and this module never interprets any `chat/*` key —
-// that parsing lives in `routes.ts`, next to the request boundary it
-// guards.
+// is record-as-truth: callers read and write namespaced jsonb keys, and
+// this module never interprets any `chat/*` key — that parsing lives in
+// `routes.ts`, next to the request boundary it guards. Whole-blob replace
+// (`updateWorkbenchSettings`) remains for callers that already hold the
+// full record; `patchWorkbenchSettings` locks the row and merges only the
+// keys the caller sent so concurrent PATCHes of different keys cannot
+// clobber each other.
 //
 // `ChatStore` is the seam `routes.ts` actually depends on; `createDrizzleChatStore`
 // is its one production implementation, over the two tables in `./schema.ts`.
@@ -71,6 +74,13 @@ export interface MutateWorkbenchParticipantsInput {
   readonly mutate: (
     participants: readonly ParticipantRecord[],
   ) => ParticipantRecord[];
+}
+
+export interface PatchWorkbenchSettingsInput {
+  readonly tenantId: string;
+  readonly workbenchId: string;
+  readonly patch: Record<string, unknown>;
+  readonly updatedBy: string;
 }
 
 export interface ChatBenchSettingsRow {
@@ -146,6 +156,15 @@ export interface ChatStore {
   mutateWorkbenchParticipants(
     input: MutateWorkbenchParticipantsInput,
   ): Promise<WorkbenchSettingsRow>;
+  /**
+   * Merges `patch` onto the workbench's settings under a row lock
+   * (`SELECT ... FOR UPDATE` in Postgres). Only keys present in `patch`
+   * are written; omitted keys keep the locked snapshot's values, so a
+   * concurrent PATCH of a different key cannot be reverted.
+   */
+  patchWorkbenchSettings(
+    input: PatchWorkbenchSettingsInput,
+  ): Promise<WorkbenchSettingsRow>;
   getBenchSettings(tenantId: string): Promise<ChatBenchSettingsRow | undefined>;
   upsertBenchSettings(
     input: UpsertBenchSettingsInput,
@@ -198,6 +217,18 @@ export interface ChatStore {
     tenantId: string,
     address: string,
   ): Promise<WorkbenchByParticipantAddress | undefined>;
+}
+
+/** Top-level JSONB merge: only keys present in `patch` overwrite. */
+function mergeSettingsPatch(
+  existing: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...existing };
+  for (const key of Object.keys(patch)) {
+    merged[key] = patch[key];
+  }
+  return merged;
 }
 
 /**
@@ -338,6 +369,49 @@ export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
       });
     },
 
+    async patchWorkbenchSettings(input) {
+      return db.transaction(async (tx) => {
+        const [selected] = await tx
+          .select()
+          .from(workbenchSettings)
+          .where(
+            and(
+              eq(workbenchSettings.tenantId, input.tenantId),
+              eq(workbenchSettings.workbenchId, input.workbenchId),
+            ),
+          )
+          .for("update")
+          .limit(1);
+        if (selected === undefined) {
+          throw new Error(
+            `patchWorkbenchSettings: no workbench_settings row for workbench ${input.workbenchId}`,
+          );
+        }
+        const existing = selected as WorkbenchSettingsRow;
+        const merged = mergeSettingsPatch(existing.settings, input.patch);
+        const [row] = await tx
+          .update(workbenchSettings)
+          .set({
+            settings: merged,
+            updatedBy: input.updatedBy,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(workbenchSettings.tenantId, input.tenantId),
+              eq(workbenchSettings.workbenchId, input.workbenchId),
+            ),
+          )
+          .returning();
+        if (row === undefined) {
+          throw new Error(
+            `patchWorkbenchSettings: no workbench_settings row for workbench ${input.workbenchId}`,
+          );
+        }
+        return row as WorkbenchSettingsRow;
+      });
+    },
+
     async getBenchSettings(tenantId) {
       const [selected] = await db
         .select()
@@ -467,6 +541,7 @@ export function createInMemoryChatStore(): ChatStore {
   const readStateByKey = new Map<string, ReadStateRow>();
   const benchSettingsByTenant = new Map<string, ChatBenchSettingsRow>();
   const launchedByKey = new Set<string>();
+  const rowLocks = new Map<string, Promise<void>>();
 
   const settingsKey = (tenantId: string, workbenchId: string) =>
     `${tenantId}:${workbenchId}`;
@@ -475,6 +550,27 @@ export function createInMemoryChatStore(): ChatStore {
     workbenchId: string,
     principalId: string,
   ) => `${tenantId}:${workbenchId}:${principalId}`;
+
+  const withRowLock = async <T>(
+    key: string,
+    fn: () => Promise<T>,
+  ): Promise<T> => {
+    const previous = rowLocks.get(key) ?? Promise.resolve();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    rowLocks.set(
+      key,
+      previous.then(() => held),
+    );
+    await previous;
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  };
 
   return {
     async createWorkbenchSettings(input) {
@@ -546,6 +642,26 @@ export function createInMemoryChatStore(): ChatStore {
       };
       settingsByKey.set(key, row);
       return row;
+    },
+
+    async patchWorkbenchSettings(input) {
+      const key = settingsKey(input.tenantId, input.workbenchId);
+      return withRowLock(key, async () => {
+        const existing = settingsByKey.get(key);
+        if (existing === undefined) {
+          throw new Error(
+            `patchWorkbenchSettings: no workbench_settings row for workbench ${input.workbenchId}`,
+          );
+        }
+        const row: WorkbenchSettingsRow = {
+          ...existing,
+          settings: mergeSettingsPatch(existing.settings, input.patch),
+          updatedBy: input.updatedBy,
+          updatedAt: new Date(),
+        };
+        settingsByKey.set(key, row);
+        return row;
+      });
     },
 
     async getBenchSettings(tenantId) {

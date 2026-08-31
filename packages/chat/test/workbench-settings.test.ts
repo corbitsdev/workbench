@@ -487,6 +487,56 @@ describe("PATCH /workbenches/:id/settings", () => {
     expect(clearedBody.contextWindow).toEqual({ value: 20, source: "inherit" });
     expect(clearedBody.settings["chat/contextWindow"]).toBeNull();
   });
+
+  test("concurrent PATCH of chat/participants and chat/pinned both land", async () => {
+    const deps = buildDeps();
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+    });
+
+    const before = await deps.store.getWorkbenchSettings(
+      TENANT.id,
+      workbench.id,
+    );
+    const existingParticipants = before?.settings["chat/participants"];
+    const extra = {
+      address: "ins_extra@acme.example",
+      handle: "extra",
+    };
+
+    const [pinnedResponse, participantsResponse] = await Promise.all([
+      app.request(`/workbenches/${workbench.id}/settings`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ "chat/pinned": true }),
+      }),
+      app.request(`/workbenches/${workbench.id}/settings`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          "chat/participants": [
+            ...(Array.isArray(existingParticipants)
+              ? existingParticipants
+              : []),
+            extra,
+          ],
+        }),
+      }),
+    ]);
+
+    expect(pinnedResponse.status).toBe(200);
+    expect(participantsResponse.status).toBe(200);
+
+    const stored = await deps.store.getWorkbenchSettings(
+      TENANT.id,
+      workbench.id,
+    );
+    expect(stored?.settings["chat/pinned"]).toBe(true);
+    const participants = stored?.settings["chat/participants"];
+    expect(Array.isArray(participants)).toBe(true);
+    expect(participants).toContainEqual(extra);
+  });
 });
 
 describe("GET/PATCH /bench/settings", () => {
