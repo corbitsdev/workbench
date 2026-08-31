@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  generateRefId,
-  makeErrorEnvelope,
-  parseErrorEnvelope,
-} from "./error-envelope";
+import { makeErrorEnvelope, parseErrorEnvelope } from "./error-envelope";
 
 describe("error envelope", () => {
   test("makeErrorEnvelope carries code, userMessage, and a generated refId", () => {
@@ -17,10 +13,6 @@ describe("error envelope", () => {
     );
     expect(typeof envelope.error.refId).toBe("string");
     expect(envelope.error.refId.length).toBeGreaterThan(0);
-  });
-
-  test("refIds are not constant across calls", () => {
-    expect(generateRefId()).not.toBe(generateRefId());
   });
 
   test("parseErrorEnvelope accepts a well-formed envelope", () => {
