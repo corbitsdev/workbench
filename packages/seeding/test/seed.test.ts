@@ -1463,7 +1463,11 @@ describe("seedCatalog", () => {
   test("fresh run creates the full provider-to-offering chain", async () => {
     const { lines, log } = collector();
     const modelPosts: string[] = [];
-    const offeringPosts: { modelId: string; providerId: string }[] = [];
+    const offeringPosts: {
+      modelId: string;
+      providerId: string;
+      priority: number;
+    }[] = [];
     const handler: FakeHandler = (method, path, body) => {
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
         return { status: 201, data: providerRow("prv_1", "anthropic") };
@@ -1548,7 +1552,6 @@ describe("seedCatalog", () => {
       "mdl_5",
       "mdl_6",
     ]);
-
     const output = lines.join("\n");
     expect(output).toContain("created provider anthropic");
     expect(output).toContain("created credential anthropic-default");
@@ -1559,6 +1562,80 @@ describe("seedCatalog", () => {
       "catalog ready: anthropic/claude-sonnet-5, claude-opus-5, claude-opus-4-8, claude-haiku-4-5-20251001, claude-fable-5, claude-sonnet-4-6",
     );
   });
+
+  test.failing(
+    "fresh run gives the declared Anthropic default the lowest distinct priority",
+    async () => {
+      const { log } = collector();
+      const modelNamesById = new Map<string, string>();
+      const offeringPosts: { modelId: string; priority: number }[] = [];
+      const handler: FakeHandler = (method, path, body) => {
+        if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
+          return { status: 201, data: providerRow("prv_1", "anthropic") };
+        if (
+          method === "POST" &&
+          path === `/api/tenants/${TENANT_ID}/credentials`
+        )
+          return {
+            status: 201,
+            data: credentialRow("cre_1", "prv_1", "anthropic-default"),
+          };
+        if (
+          method === "POST" &&
+          path === `/api/tenants/${TENANT_ID}/catalog/models`
+        ) {
+          const canonicalName = (body as { canonicalName: string })
+            .canonicalName;
+          const modelId = `mdl_${modelNamesById.size + 1}`;
+          modelNamesById.set(modelId, canonicalName);
+          return {
+            status: 201,
+            data: catalogModelRow(modelId, canonicalName),
+          };
+        }
+        if (
+          method === "POST" &&
+          path === `/api/tenants/${TENANT_ID}/catalog/providers`
+        )
+          return {
+            status: 201,
+            data: catalogProviderRow("cpv_1", "anthropic", "cre_1"),
+          };
+        if (
+          method === "POST" &&
+          path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+        ) {
+          const offering = body as { modelId: string; priority: number };
+          offeringPosts.push(offering);
+          return {
+            status: 201,
+            data: catalogOfferingRow(
+              `off_${offeringPosts.length}`,
+              offering.modelId,
+              "cpv_1",
+            ),
+          };
+        }
+        return undefined;
+      };
+
+      await seedCatalog({
+        api: fakeAPI(handler),
+        cookies: [],
+        tenantId: TENANT_ID,
+        apiKey: "sk-test",
+        log,
+      });
+
+      const priorities = offeringPosts.map((offering) => offering.priority);
+      const sonnet = offeringPosts.find(
+        (offering) =>
+          modelNamesById.get(offering.modelId) === "claude-sonnet-5",
+      );
+      expect(new Set(priorities).size).toBe(offeringPosts.length);
+      expect(sonnet?.priority).toBe(Math.min(...priorities));
+    },
+  );
 
   test("an Ollama offering's quirks carry that model's real context-window ceiling, not the built-in 4096 default", async () => {
     const { log } = collector();
