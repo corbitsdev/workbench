@@ -277,7 +277,7 @@ describe("Composer keyboard hint", () => {
     expect(keyboardHint()?.getAttribute("aria-hidden")).toBe("false");
     expect(keyboardHint()?.textContent).toBe("Enter to send");
     expect(
-      container?.querySelectorAll(".chat-composer-actions > button").length,
+      container?.querySelectorAll(".chat-composer-actions button").length,
     ).toBe(2);
     expect(container?.querySelector(".chat-composer-row > textarea")).toBe(
       textarea(),
@@ -738,6 +738,14 @@ function mountStoppable(
 }
 
 describe("Composer stop affordance (CL-7201)", () => {
+  test("keeps Stop and Send together in the right-aligned action group", () => {
+    mountStoppable(true, () => undefined);
+
+    const actions = container?.querySelector(".chat-composer-actions");
+    expect(actions?.children).toHaveLength(3);
+    expect(stopButton().parentElement).toBe(sendButton().parentElement);
+  });
+
   test("renders no Stop button when no turn is running", () => {
     mountStoppable(false, () => undefined);
     expect(container?.querySelector('[aria-label="Stop"]')).toBeNull();
