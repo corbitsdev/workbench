@@ -7,13 +7,14 @@
 // ones. Proves it keeps exactly one grant per group (never zero,
 // matching the "a repo never ends up with fewer grants than it had"
 // bar), never touches an unrelated grant, and is safe to re-run.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import postgres from "postgres";
 
 import { runMigrations } from "@intx/db";
 
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { reconcileDuplicateRepoGrants } from "../src/reconcile-duplicate-repo-grants";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);
@@ -23,7 +24,7 @@ function scratchUrlFor(e2eUrl: string): string {
 }
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const TENANT_ID = "tnt_reconcile";
 const ROLE_ID = "role_reconcile_member";

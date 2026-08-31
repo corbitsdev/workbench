@@ -7,7 +7,7 @@
 // `open` and removes the snooze row once `until` has passed. Runs against
 // its own scratch database, never the developer's or the walking-skeleton
 // suite's.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import postgres from "postgres";
 import { Hono } from "hono";
 import type { TenantEnv } from "@intx/hub-api";
@@ -25,6 +25,7 @@ import {
 import { setupDatabase } from "../../../scripts/db-setup";
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { createInboxRoutes } from "../src/routes";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 import {
   claimAndReopenSnooze,
   clearSnoozeUntil,
@@ -51,7 +52,7 @@ function dbConfigFromUrl(databaseUrl: string) {
 }
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 describeIfDb("snooze-store against a real inbox.snooze table", () => {
   const scratchUrl = scratchUrlFor(
