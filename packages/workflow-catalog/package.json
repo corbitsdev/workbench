@@ -25,12 +25,16 @@
     "@intx/hub-api": "workspace:*",
     "@workbench/hub-client": "workspace:*",
     "arktype": "catalog:",
-    "hono": "^4.11.9"
+    "hono": "^4.11.9",
+    "postgres": "catalog:"
   },
   "devDependencies": {
     "@corbits/workflow-freeze": "workspace:*",
+    "@intx/crypto": "0.3.0",
+    "@intx/db": "workspace:*",
     "@types/bun": "catalog:",
     "@workbench/connections": "workspace:*",
+    "drizzle-orm": "catalog:",
     "typescript": "catalog:"
   }
 }

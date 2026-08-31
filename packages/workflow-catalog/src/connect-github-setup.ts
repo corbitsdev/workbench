@@ -9,14 +9,39 @@ import type { GitHubRepoSummary } from "@corbits/github-tools";
 
 export interface ConnectGithubSetupPorts {
   /**
+   * Acquires the short-lived lease serializing this repo's setup
+   * (CL-7242): true means this call now owns it and must run the rest
+   * of this repo's body below; false means another call currently
+   * owns it (or very recently did) and this repo must be skipped
+   * entirely, including `hasRepoGrant`/`hasWebhookTrigger`. This is
+   * the actual concurrency backstop — `hasRepoGrant` and
+   * `hasWebhookTrigger` below are a fast path for a *sequential*
+   * retry (CL-7134), not a lock, and are only safe to reach because
+   * the lease already ensures two concurrent calls for the same repo
+   * can never both get here. A host binds this to
+   * `@corbits/webhook-triggers`' `RepoReviewLeaseStore.acquire`.
+   */
+  acquireRepoReviewLease(repo: GitHubRepoSummary): Promise<boolean>;
+  /**
+   * Releases the lease `acquireRepoReviewLease` won, once this repo's
+   * body finishes (success or failure) — so a legitimate retry never
+   * waits out the lease's own staleness window. A host binds this to
+   * `RepoReviewLeaseStore.release`.
+   */
+  releaseRepoReviewLease(repo: GitHubRepoSummary): Promise<void>;
+  /**
    * True once this repo already has the `repo:<repo.name>` grant —
    * checked before minting one, so a retry after a failure between
-   * minting the grant and creating the trigger never mints a second
-   * grant for a repo that already has one. The `grant` table
-   * (`vendor/intx/db`) carries no unique constraint over
+   * minting the grant and creating the trigger skips straight past
+   * minting for a repo that already has one (CL-7134's fast path). The
+   * `grant` table (`vendor/intx/db`) carries no unique constraint over
    * tenant/resource/action, so this read is the only thing standing
-   * between a retry and a duplicate row. A host binds this to GET
-   * `/api/tenants/:id/grants?resource=repo:<name>`.
+   * between a retry and a duplicate row absent the lease below. A host
+   * binds this to GET `/api/tenants/:id/grants?resource=repo:<name>`.
+   *
+   * Safe to be a plain read, not a conflict-checked one: the lease
+   * above already guarantees only one caller ever reaches this point
+   * for a given repo at a time.
    */
   hasRepoGrant(repo: GitHubRepoSummary): Promise<boolean>;
   /**
@@ -26,13 +51,23 @@ export interface ConnectGithubSetupPorts {
    * middleware, applied here to a repo instead of a room). A host binds
    * this to POST `/api/tenants/:id/grants`; this module never touches
    * drizzle directly.
+   *
+   * A plain insert is safe here (CL-7242): the lease above is what
+   * makes this call-site single-flight per repo, so this never needs
+   * its own conflict handling against the platform's `grant` table.
    */
   mintRepoGrant(repo: GitHubRepoSummary): Promise<void>;
   /**
    * Creates the live `webhook_trigger` row this repo's pull-request-opened
    * events fire — the onboarding card's start-reviewing step is what
-   * creates this trigger, for each repo the person picked. A host binds
-   * this to `@corbits/webhook-triggers`' `WebhookTriggerStore.create`.
+   * creates this trigger, for each repo the person picked. A host
+   * binds this to `@corbits/webhook-triggers`' `WebhookTriggerStore.ensure`
+   * rather than `create`: the lease already makes this call-site
+   * single-flight per repo, so `ensure`'s own idempotence
+   * (backed by `webhook_trigger_tenant_definition_name_unique`, our
+   * own schema, unaffected by CL-7242's vendored-table constraint) is
+   * pure defense-in-depth — a lease bug degrades to a silent no-op
+   * here instead of a hard failure or a real duplicate trigger.
    */
   createWebhookTrigger(
     repo: GitHubRepoSummary,
@@ -40,9 +75,10 @@ export interface ConnectGithubSetupPorts {
   /**
    * True once this repo already has a live webhook trigger — checked
    * before creating one, so a retry after a mid-loop failure (a repo
-   * 1..N-1 already set up, N onward not) never mints a second trigger
-   * for a repo a prior attempt already finished. A host binds this to a
-   * read against `@corbits/webhook-triggers`' `WebhookTriggerStore.list`.
+   * 1..N-1 already set up, N onward not) skips straight past creating
+   * one for a repo a prior attempt already finished (CL-7134's fast
+   * path). A host binds this to a read against
+   * `@corbits/webhook-triggers`' `WebhookTriggerStore.list`.
    *
    * This is never cleared on GitHub disconnect: nothing here disables or
    * deletes a trigger, so re-adding a repo after a reconnect finds its
@@ -63,6 +99,14 @@ export interface ConnectGithubSetupPorts {
 
 export interface StartReviewingReposResult {
   readonly createdTriggerIds: readonly string[];
+  /**
+   * Repos this call didn't touch because another call currently owns
+   * (or very recently owned) their setup lease — not an error, but
+   * worth surfacing rather than silently dropping: if the lease
+   * holder crashed, this is the caller's only signal that a repo in
+   * the selection got no setup work done at all this round.
+   */
+  readonly skippedRepoIds: readonly string[];
 }
 
 /**
@@ -78,7 +122,19 @@ export interface StartReviewingReposResult {
  * creating the trigger must still create the trigger without re-minting
  * the grant, and a retry after a failure before the grant was minted
  * must still mint it. A repo both checks already report true for is
- * skipped entirely.
+ * skipped entirely. (CL-7134.)
+ *
+ * `hasRepoGrant`/`hasWebhookTrigger` are a fast path for a *sequential*
+ * retry, not a lock: two truly concurrent calls for the same repo (a
+ * double-click, or a client retrying an in-flight request rather than
+ * a failed one) can both read "not set up yet" before either write
+ * lands. `acquireRepoReviewLease` is the actual concurrency backstop
+ * (CL-7242): only the caller that wins the lease enters the rest of a
+ * repo's body at all, so the checks below never race against a
+ * concurrent duplicate for the same repo — the lease is released
+ * (`releaseRepoReviewLease`) as soon as that body finishes, success or
+ * failure, so a legitimate retry is never blocked by its own prior
+ * attempt.
  */
 export async function startReviewingRepos(
   repoIds: readonly string[],
@@ -97,20 +153,29 @@ export async function startReviewingRepos(
   });
 
   const createdTriggerIds: string[] = [];
+  const skippedRepoIds: string[] = [];
   for (const repo of selected) {
-    if (!(await ports.hasRepoGrant(repo))) {
-      await ports.mintRepoGrant(repo);
-    }
-    if (await ports.hasWebhookTrigger(repo)) {
+    if (!(await ports.acquireRepoReviewLease(repo))) {
+      skippedRepoIds.push(repo.id);
       continue;
     }
-    const trigger = await ports.createWebhookTrigger(repo);
-    createdTriggerIds.push(trigger.id);
+    try {
+      if (!(await ports.hasRepoGrant(repo))) {
+        await ports.mintRepoGrant(repo);
+      }
+      if (await ports.hasWebhookTrigger(repo)) {
+        continue;
+      }
+      const trigger = await ports.createWebhookTrigger(repo);
+      createdTriggerIds.push(trigger.id);
+    } finally {
+      await ports.releaseRepoReviewLease(repo);
+    }
   }
 
   await ports.persistSelectedRepos(repoIds);
 
-  return { createdTriggerIds };
+  return { createdTriggerIds, skippedRepoIds };
 }
 
 /**

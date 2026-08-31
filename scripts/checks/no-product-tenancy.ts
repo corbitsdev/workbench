@@ -79,8 +79,17 @@ const ALLOWLIST: readonly {
   },
   {
     relPath: "packages/webhook-triggers/src/schema.ts",
-    maxOccurrences: 1,
-    tables: ["webhook_trigger"],
+    maxOccurrences: 2,
+    tables: [
+      "webhook_trigger",
+      // CL-7242: a short-lived lease serializing the GitHub connect
+      // card's start-reviewing step, entirely workbench-owned state
+      // with no relationship to Interchange's own `grant` table — see
+      // repo-review-lease.ts's doc comment for why the concurrency
+      // fix lives here rather than as any change to Interchange's
+      // schema.
+      "repo_review_lease",
+    ],
   },
   {
     relPath: "packages/notify/src/schema.ts",

@@ -38,20 +38,59 @@ export function principal(id: string) {
 export function createInMemoryWebhookTriggerStore(): WebhookTriggerStore {
   const rows = new Map<string, WebhookTriggerRow>();
 
+  function findByName(
+    tenantId: string,
+    workflowDefinitionId: string,
+    name: string,
+  ): WebhookTriggerRow | undefined {
+    return [...rows.values()].find(
+      (row) =>
+        row.tenantId === tenantId &&
+        row.workflowDefinitionId === workflowDefinitionId &&
+        row.name === name,
+    );
+  }
+
+  function newRow(input: CreateWebhookTriggerInput): WebhookTriggerRow {
+    return {
+      id: input.id,
+      tenantId: input.tenantId,
+      name: input.name,
+      workflowDefinitionId: input.workflowDefinitionId,
+      inputTemplate: input.inputTemplate,
+      secret: input.secret,
+      enabled: true,
+      createdBy: input.createdBy,
+      createdAt: new Date(),
+      lastFiredAt: null,
+    };
+  }
+
   return {
     async create(input: CreateWebhookTriggerInput) {
-      const row: WebhookTriggerRow = {
-        id: input.id,
-        tenantId: input.tenantId,
-        name: input.name,
-        workflowDefinitionId: input.workflowDefinitionId,
-        inputTemplate: input.inputTemplate,
-        secret: input.secret,
-        enabled: true,
-        createdBy: input.createdBy,
-        createdAt: new Date(),
-        lastFiredAt: null,
-      };
+      if (findByName(input.tenantId, input.workflowDefinitionId, input.name)) {
+        // Mirrors the real driver's shape for a `23505` unique
+        // violation, so callers exercising `isUniqueViolation`-style
+        // handling against this fake see the same thing production does.
+        throw Object.assign(
+          new Error(
+            `webhook trigger ${input.name} already exists for this workflow definition`,
+          ),
+          { code: "23505" },
+        );
+      }
+      const row = newRow(input);
+      rows.set(row.id, row);
+      return row;
+    },
+    async ensure(input: CreateWebhookTriggerInput) {
+      const existing = findByName(
+        input.tenantId,
+        input.workflowDefinitionId,
+        input.name,
+      );
+      if (existing) return existing;
+      const row = newRow(input);
       rows.set(row.id, row);
       return row;
     },

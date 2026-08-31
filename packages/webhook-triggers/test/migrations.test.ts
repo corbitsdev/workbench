@@ -20,6 +20,13 @@ function scratchUrlFor(e2eUrl: string): string {
 const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
 
+const migrationNames = [
+  "0001_webhook_trigger",
+  "0002_webhook_trigger_tenant_index",
+  "0003_webhook_trigger_tenant_definition_name_unique",
+  "0004_repo_review_lease",
+];
+
 describeIfDb("applyWebhookTriggersMigrations", () => {
   const scratchUrl = scratchUrlFor(
     databaseUrl ?? "postgres://localhost:5432/unused",
@@ -55,11 +62,6 @@ describeIfDb("applyWebhookTriggersMigrations", () => {
       await maintenance.end();
     }
   }, 20000);
-
-  const migrationNames = [
-    "0001_webhook_trigger",
-    "0002_webhook_trigger_tenant_index",
-  ];
 
   test("applies the trigger table into its own schema and is idempotent on a second run", async () => {
     const first = await applyWebhookTriggersMigrations(scratchUrl);
@@ -146,21 +148,16 @@ describeIfDb("applyWebhookTriggersMigrations concurrency", () => {
         ...first.alreadyApplied,
         ...second.alreadyApplied,
       ].sort(),
-    ).toEqual(
-      ["0001_webhook_trigger", "0002_webhook_trigger_tenant_index"]
-        .flatMap((name) => [name, name])
-        .sort(),
-    );
+    ).toEqual(migrationNames.flatMap((name) => [name, name]).sort());
 
     const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
     try {
       const ledgerRows = await sql.unsafe(
         `SELECT name FROM "webhook_triggers"."webhook_triggers_migrations" ORDER BY name`,
       );
-      expect(ledgerRows.map((row) => String(row["name"]))).toEqual([
-        "0001_webhook_trigger",
-        "0002_webhook_trigger_tenant_index",
-      ]);
+      expect(ledgerRows.map((row) => String(row["name"]))).toEqual(
+        migrationNames,
+      );
     } finally {
       await sql.end();
     }

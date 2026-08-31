@@ -84,6 +84,23 @@ export type ConnectGithubRoutesDeps = {
    * `undefined` when the template's own workflow was never deployed for
    * this tenant (a create-flow bug, not something this route can fix). */
   resolveCodeReviewDefinitionId(tenantId: string): Promise<string | undefined>;
+  /** Acquires the short-lived lease serializing one repo's setup
+   * (CL-7242) — see `./connect-github-setup.ts`'s
+   * `ConnectGithubSetupPorts.acquireRepoReviewLease` for why this is
+   * the actual concurrency backstop, not `hasRepoGrant`/`hasWebhookTrigger`
+   * below. A host binds this to `@corbits/webhook-triggers`'
+   * `RepoReviewLeaseStore.acquire`. */
+  acquireRepoReviewLease(
+    tenantId: string,
+    repo: GitHubRepoSummary,
+  ): Promise<boolean>;
+  /** Releases a lease `acquireRepoReviewLease` won — see
+   * `ConnectGithubSetupPorts.releaseRepoReviewLease`. A host binds
+   * this to `RepoReviewLeaseStore.release`. */
+  releaseRepoReviewLease(
+    tenantId: string,
+    repo: GitHubRepoSummary,
+  ): Promise<void>;
   /** True once this repo already has the `repo:<owner/name>` grant — see
    * `./connect-github-setup.ts`'s `ConnectGithubSetupPorts.hasRepoGrant`
    * for why this makes a retry between minting the grant and creating
@@ -294,6 +311,10 @@ export function createConnectGithubRoutes(
         const introductionsAlreadyPosted =
           settingsBefore.selectedRepos.length > 0;
         const result = await startReviewingRepos(body.repoIds, state.repos, {
+          acquireRepoReviewLease: (repo) =>
+            deps.acquireRepoReviewLease(tenant.id, repo),
+          releaseRepoReviewLease: (repo) =>
+            deps.releaseRepoReviewLease(tenant.id, repo),
           hasRepoGrant: (repo) =>
             deps.hasRepoGrant(
               tenant.id,

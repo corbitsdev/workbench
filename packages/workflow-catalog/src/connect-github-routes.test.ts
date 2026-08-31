@@ -80,6 +80,8 @@ function buildApp(overrides: Partial<ConnectGithubRoutesDeps> = {}) {
     log: () => {},
     resolveGithubConfig: async () => githubConfig,
     resolveCodeReviewDefinitionId: async () => "wfd_code_review",
+    acquireRepoReviewLease: async () => true,
+    releaseRepoReviewLease: async () => {},
     hasRepoGrant: async (tenantId, repo) =>
       grants.some((g) => g.tenantId === tenantId && g.repo.id === repo.id),
     mintRepoGrant: async (tenantId, repo) => {
