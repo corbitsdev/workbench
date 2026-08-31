@@ -697,8 +697,11 @@ export function createHubChatPlatform(
    */
   async function wakeByAddressBounded(address: string): Promise<void> {
     if (lifecycle === undefined) {
+      // CL-7193: `wakeByAddress` has no cancellable primitive to hook a
+      // signal into, so a timeout here still abandons the underlying wake
+      // exactly as before — the signal parameter is unused on purpose.
       await withTimeout(
-        wakeByAddress(address),
+        () => wakeByAddress(address),
         DEFAULT_WAKE_TIMEOUT_MS,
         `wake for "${address}" did not settle within ${String(DEFAULT_WAKE_TIMEOUT_MS)}ms`,
       );
@@ -877,8 +880,12 @@ export function createHubChatPlatform(
     let loggedRetryStart = false;
     for (let attempt = 0; ; attempt++) {
       try {
+        // CL-7193: `sendFoldedMail` does a DB write plus a sidecar
+        // delivery that shouldn't be half-cancelled, and has no signal
+        // to accept regardless — the signal parameter is unused here,
+        // same abandon-on-timeout behavior as before.
         return await withTimeout(
-          sendFoldedMail(foldedRunsDeps, params),
+          () => sendFoldedMail(foldedRunsDeps, params),
           MAIL_DELIVERY_TIMEOUT_MS,
           `mail to ${params.agentAddress} did not settle within ${String(MAIL_DELIVERY_TIMEOUT_MS)}ms`,
         );

@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   AGENT_TURN_STALE_MS,
   createInMemoryAgentTurnStore,
+  createTurnFreedSignal,
 } from "./agent-turns";
 
 const BASE = {
@@ -223,5 +224,131 @@ describe("createInMemoryAgentTurnStore", () => {
       await waiting;
       expect(freed).toBe(true);
     });
+
+    // CL-7193: a key that keeps timing out (nothing ever calls `notify`)
+    // used to leave one abandoned resolve in the waiter Set per attempt
+    // forever. An `AbortSignal` now lets a timed-out wait remove itself
+    // immediately instead of lingering until its own backstop fires.
+    test("an aborted wait throws instead of reporting the agent free", async () => {
+      const store = createInMemoryAgentTurnStore();
+      await store.startTurn(BASE);
+      const controller = new AbortController();
+
+      const waiting = store.waitUntilFree(BASE, controller.signal);
+      controller.abort(new Error("deadline"));
+
+      await expect(waiting).rejects.toThrow("deadline");
+    });
+
+    test("an already-aborted signal throws immediately, without polling", async () => {
+      const store = createInMemoryAgentTurnStore();
+      await store.startTurn(BASE);
+      const controller = new AbortController();
+      controller.abort(new Error("already gone"));
+
+      await expect(
+        store.waitUntilFree(BASE, controller.signal),
+      ).rejects.toThrow("already gone");
+    });
+  });
+
+  // CL-7193: `finishTurn` used to overwrite a turn's row unconditionally.
+  // A dispatch deadline closing a turn as `failed` and the turn's own
+  // late reply closing it as `completed` could race — whichever landed
+  // last silently clobbered the other, discarding its `replyMessageId`.
+  // `finishTurn` is now compare-and-set on `status === "running"`, so
+  // exactly one of two racing closes ever applies.
+  describe("finishTurn is compare-and-set on status (CL-7193)", () => {
+    test("a second finishTurn call on an already-finished turn is a no-op", async () => {
+      const store = createInMemoryAgentTurnStore();
+      const opened = await store.startTurn(BASE);
+
+      const first = await store.finishTurn({
+        tenantId: BASE.tenantId,
+        turnId: opened.id,
+        status: "failed",
+        error: "turn dispatch timed out",
+      });
+      expect(first?.status).toBe("failed");
+
+      const second = await store.finishTurn({
+        tenantId: BASE.tenantId,
+        turnId: opened.id,
+        status: "completed",
+        replyMessageId: "msg_late_reply",
+      });
+      expect(second).toBeUndefined();
+
+      const stored = await store.getTurn({
+        tenantId: BASE.tenantId,
+        turnId: opened.id,
+      });
+      expect(stored?.status).toBe("failed");
+      expect(stored?.replyMessageId).toBeNull();
+    });
+  });
+});
+
+// CL-7193: the process-local pubsub `waitUntilFree` is built on. Exercised
+// directly because the defect it fixes -- a backstop firing before
+// `notify` leaves its waiter in the Set forever -- is about the waiter
+// bookkeeping itself, not any one store's behavior.
+describe("createTurnFreedSignal (CL-7193)", () => {
+  test("a backstop that fires before notify removes its own waiter from the Set", async () => {
+    const freed = createTurnFreedSignal();
+
+    await freed.wait("key", 1);
+
+    expect(freed.waiterCount("key")).toBe(0);
+  });
+
+  test("repeated timed-out waits never grow the waiter Set", async () => {
+    const freed = createTurnFreedSignal();
+
+    for (let i = 0; i < 25; i++) {
+      await freed.wait("key", 1);
+    }
+
+    expect(freed.waiterCount("key")).toBe(0);
+  });
+
+  test("notify clears the backstop timer so it never fires again after resolving", async () => {
+    const freed = createTurnFreedSignal();
+    const waiting = freed.wait("key", 10_000);
+
+    freed.notify("key");
+    await waiting;
+
+    expect(freed.waiterCount("key")).toBe(0);
+  });
+
+  test("an aborted wait removes itself from the Set immediately", async () => {
+    const freed = createTurnFreedSignal();
+    const controller = new AbortController();
+
+    const waiting = freed.wait("key", 10_000, controller.signal);
+    expect(freed.waiterCount("key")).toBe(1);
+
+    controller.abort();
+    await waiting;
+
+    expect(freed.waiterCount("key")).toBe(0);
+  });
+
+  test("a different key's waiters are never touched by another key's notify", async () => {
+    const freed = createTurnFreedSignal();
+    let otherFreed = false;
+    const waiting = freed.wait("other", 10_000).then(() => {
+      otherFreed = true;
+    });
+
+    freed.notify("key");
+    await Promise.resolve();
+    expect(otherFreed).toBe(false);
+    expect(freed.waiterCount("other")).toBe(1);
+
+    freed.notify("other");
+    await waiting;
+    expect(otherFreed).toBe(true);
   });
 });

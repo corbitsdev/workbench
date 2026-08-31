@@ -1714,13 +1714,14 @@ async function dispatchTurnBatch(
         // this workbench's claim; left unbounded, a slow prior turn
         // could hold that claim past its TTL and let a second `run()`
         // start a second, concurrent drain of the same queue.
-        if (deps.agentTurns !== undefined) {
+        const agentTurns = deps.agentTurns;
+        if (agentTurns !== undefined) {
           await withTimeout(
-            deps.agentTurns.waitUntilFree({
-              tenantId,
-              workbenchId,
-              agentAddress,
-            }),
+            (signal) =>
+              agentTurns.waitUntilFree(
+                { tenantId, workbenchId, agentAddress },
+                signal,
+              ),
             waitUntilFreeTimeoutMs,
             waitUntilFreeTimeoutMessage(agentAddress, waitUntilFreeTimeoutMs),
           );
@@ -1733,24 +1734,34 @@ async function dispatchTurnBatch(
         // `chat-orchestrator.ts`'s independent sidecar-event
         // subscription. This deadline therefore can never cut off a
         // reply in progress: nothing it awaits is the reply.
+        //
+        // CL-7193: `dispatchTurn` gets the deadline's own `AbortSignal`
+        // so it can close its turn row the instant the deadline fires,
+        // instead of leaving it `running` until (or unless) the
+        // abandoned `sendMail` below eventually settles.
         await withTimeout(
-          dispatchTurn(deps, {
-            tenantId,
-            workbenchId,
-            principalId: last.principalId,
-            agentAddress,
-            parts,
-            requestMessageIds: messageIds,
-            // A batch concatenating more than one queued message's parts
-            // still stamps the whole combined body as the answer when any
-            // one of them carries a correlationId — acceptable (the user
-            // did answer), but a batch mixing the actual answer with an
-            // unrelated follow-up hands the gate the whole blob, not just
-            // the answer.
-            ...(batchCorrelationId !== undefined
-              ? { correlationId: batchCorrelationId }
-              : {}),
-          }),
+          (signal) =>
+            dispatchTurn(
+              deps,
+              {
+                tenantId,
+                workbenchId,
+                principalId: last.principalId,
+                agentAddress,
+                parts,
+                requestMessageIds: messageIds,
+                // A batch concatenating more than one queued message's parts
+                // still stamps the whole combined body as the answer when any
+                // one of them carries a correlationId — acceptable (the user
+                // did answer), but a batch mixing the actual answer with an
+                // unrelated follow-up hands the gate the whole blob, not just
+                // the answer.
+                ...(batchCorrelationId !== undefined
+                  ? { correlationId: batchCorrelationId }
+                  : {}),
+              },
+              signal,
+            ),
           turnDispatchTimeoutMs,
           turnDispatchTimeoutMessage(agentAddress, turnDispatchTimeoutMs),
         );
@@ -1817,10 +1828,21 @@ export type DispatchTurnInput = {
  * will carry is already allocated. A trigger that never lands closes the
  * row `failed` and rethrows, leaving the caller to post the undelivered
  * notice it always has.
+ *
+ * CL-7193: `sendMail` itself has no cancellable primitive — a caller's
+ * `signal` firing can't stop the send in flight, only close the
+ * bookkeeping around it. The moment it aborts, this closes the turn row
+ * `failed` immediately rather than waiting for `sendMail` to eventually
+ * settle, so a real reply that later lands (behind the undelivered
+ * notice the caller already posted for this timeout) finds no `running`
+ * row to attach to — `finishTurn`'s compare-and-set means whichever of
+ * the abort close and the late reply's own close reaches the row first
+ * is the only one that applies.
  */
 export async function dispatchTurn(
   deps: Pick<SendWorkbenchMessageDeps, "platform" | "agentTurns">,
   input: DispatchTurnInput,
+  signal?: AbortSignal,
 ): Promise<void> {
   const turn = await deps.agentTurns?.startTurn({
     tenantId: input.tenantId,
@@ -1828,6 +1850,34 @@ export async function dispatchTurn(
     agentAddress: input.agentAddress,
     requestMessageIds: input.requestMessageIds,
   });
+
+  const closeAsTimedOut = () => {
+    if (turn === undefined) return;
+    deps.agentTurns
+      ?.finishTurn({
+        tenantId: input.tenantId,
+        turnId: turn.id,
+        status: "failed",
+        error:
+          signal?.reason instanceof Error
+            ? signal.reason.message
+            : "turn dispatch timed out",
+      })
+      .catch((err: unknown) => {
+        reportError(err, {
+          operation: "chat.dispatchTurn.closeAsTimedOut",
+          tenantId: input.tenantId,
+          roomId: input.workbenchId,
+          agentId: input.agentAddress,
+        });
+      });
+  };
+  if (signal?.aborted) {
+    closeAsTimedOut();
+  } else {
+    signal?.addEventListener("abort", closeAsTimedOut, { once: true });
+  }
+
   try {
     await deps.platform.sendMail({
       tenantId: input.tenantId,
@@ -1849,6 +1899,8 @@ export async function dispatchTurn(
       });
     }
     throw err;
+  } finally {
+    signal?.removeEventListener("abort", closeAsTimedOut);
   }
 }
 
