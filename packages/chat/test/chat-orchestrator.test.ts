@@ -22,8 +22,12 @@ import { createSidecarEmitter } from "@intx/hub-sessions";
 import {
   createArtifactDeliveryHandler,
   createChatOrchestrator,
+  POSTED_APPROVAL_GUARD_TTL_MS,
 } from "../src/chat-orchestrator";
-import { createInMemoryAgentTurnStore } from "../src/agent-turns";
+import {
+  AGENT_TURN_STALE_MS,
+  createInMemoryAgentTurnStore,
+} from "../src/agent-turns";
 import { parseBlock } from "../src/blocks";
 import type { ChatPlatform, ChatWorkbenchEvent } from "../src/platform-port";
 import {
@@ -973,6 +977,135 @@ describe("createChatOrchestrator", () => {
     orchestrator.dispose();
   });
 
+  // CL-7229: `pendingDelegationThreads` is bounded by `AGENT_TURN_STALE_MS`
+  // rather than growing one entry per delegation for the life of the hub
+  // process. A specialist that never replies (never woke, crashed, or was
+  // mentioned by mistake) has its entry aged out once the rest of the
+  // system would already consider that occurrence stale — an eviction
+  // this test proves happens, and proves is safe: the specialist's reply
+  // still posts (nothing is lost), it simply lands unthreaded instead of
+  // nested under the delegating message.
+  test("a delegation nobody ever replies to is evicted after AGENT_TURN_STALE_MS, not held forever", async () => {
+    const room = fakeRoom();
+    const openedThreadFor: string[] = [];
+    const events = createSidecarEmitter();
+    let now = 0;
+
+    // Two distinct addresses resolve in event order (host first,
+    // specialist second) — see the "delegated specialist" test above
+    // for why a single-run `createFakeDb` can't tell them apart.
+    const runsByCallOrder = [
+      { id: "ins_myra1", tenantId: "ten_1" },
+      { id: "ins_echo1", tenantId: "ten_1" },
+    ];
+    let dbCallIndex = 0;
+    let launchCallIndex = 0;
+    const db = {
+      query: {
+        workflowRun: {
+          findFirst: async () => {
+            const run = runsByCallOrder[dbCallIndex];
+            dbCallIndex += 1;
+            return run === undefined
+              ? undefined
+              : { ...run, principalId: null };
+          },
+        },
+      },
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: async () => {
+              const run = runsByCallOrder[launchCallIndex];
+              launchCallIndex += 1;
+              return run === undefined
+                ? []
+                : [launchRowFor(run.id, run.tenantId)];
+            },
+          }),
+        }),
+      }),
+    };
+
+    const orchestrator = createChatOrchestrator(
+      {
+        db: db as never,
+        store: {
+          listWorkbenchSettings: async () => [
+            workbenchRow("ins_workbench1", [
+              "ins_myra1@ten1.workbench.test",
+              "ins_echo1@ten1.workbench.test",
+            ]),
+          ],
+        },
+        roomMessages: room.roomMessages,
+        publish: room.publish,
+        platform: fakeMail().platform,
+        threads: {
+          openReplyThread: async (input) => {
+            openedThreadFor.push(input.parentMessageId);
+            return {
+              id: "thr_1",
+              tenantId: input.tenantId,
+              workbenchId: input.workbenchId,
+              kind: "reply",
+              parentMessageId: input.parentMessageId,
+              parentThreadId: "thr_root",
+              runRef: null,
+              title: null,
+              createdAt: new Date(),
+            };
+          },
+          assignMessage: async () => {},
+        },
+        events,
+        claims: fakeClaims(),
+        approvals: { findByCorrelationId: async () => null },
+      },
+      { now: () => now },
+    );
+
+    // The host delegates to the specialist by @mention.
+    events.emit("agent.event", {
+      agentAddress: "ins_myra1@ten1.workbench.test",
+      sessionId: "ses_1",
+      event: {
+        type: "connector.reply",
+        data: { content: "@ins_echo1 can you take this one" },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(room.posted).toHaveLength(1);
+
+    // The specialist never wakes up. Time passes well beyond
+    // `AGENT_TURN_STALE_MS` — the rest of the system has already given
+    // up on that occurrence ever finishing. `createExpiringMap` evicts
+    // lazily, so the entry is gone the moment anything next reads it.
+    now += AGENT_TURN_STALE_MS + 1;
+
+    // The specialist finally does reply, long after being abandoned.
+    events.emit("agent.event", {
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      sessionId: "ses_2",
+      event: {
+        type: "connector.reply",
+        data: { content: "Sorry for the wait — filed the ticket." },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // The reply is never lost — it still posts...
+    const specialistReply = room.posted.find(
+      (message) => message.sender.address === "ins_echo1@ten1.workbench.test",
+    );
+    expect(specialistReply).toMatchObject({ workbenchId: "ins_workbench1" });
+    // ...but the evicted entry means it's no longer threaded under the
+    // (long-abandoned) delegating message.
+    expect(openedThreadFor).toHaveLength(0);
+
+    orchestrator.dispose();
+  });
+
   // CL-6137 / turn-drop notice (stress round 3): a turn that never
   // emits `connector.reply` content is no longer invisible — the
   // bracket close posts an honest in-workbench notice — but a reply this
@@ -1405,6 +1538,81 @@ describe("createChatOrchestrator", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(room.posted).toHaveLength(0);
+
+    orchestrator.dispose();
+  });
+
+  // CL-7229: `postedApprovalIds` is bounded by `POSTED_APPROVAL_GUARD_TTL_MS`
+  // rather than growing one entry per approval ever carded for the life of
+  // the hub process. Proves both halves: the entry is actually evicted
+  // after the TTL, and — the safety property that matters — a redelivery
+  // that arrives after eviction still posts nothing for an approval that
+  // has since resolved, because the live status re-read in
+  // `postApproveBlock` is the real guard; the in-memory guard is only ever
+  // an optimization on top of it.
+  test("an evicted approval guard entry still can't cause a duplicate card once the approval has resolved", async () => {
+    const room = fakeRoom();
+    const events = createSidecarEmitter();
+    let status: "pending" | "approved" = "pending";
+    let now = 0;
+
+    const orchestrator = createChatOrchestrator(
+      {
+        db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+        store: {
+          listWorkbenchSettings: async () => [
+            workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
+          ],
+        },
+        roomMessages: room.roomMessages,
+        publish: room.publish,
+        platform: fakeMail().platform,
+        events,
+        claims: fakeClaims(),
+        approvals: {
+          findByCorrelationId: async () => approvalRow({ status }),
+        },
+      },
+      { now: () => now },
+    );
+
+    const emitGateBlocked = () =>
+      events.emit("agent.event", {
+        agentAddress: "ins_echo1@ten1.workbench.test",
+        sessionId: "ses_1",
+        event: {
+          type: "reactor.gate.blocked",
+          data: {
+            reason: "approval",
+            gateId: "gate_1",
+            correlationId: "cor_1",
+          },
+        },
+      });
+
+    emitGateBlocked();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(room.posted).toHaveLength(1);
+
+    // A redelivery well within the TTL is still deduped by the guard.
+    now += 1_000;
+    emitGateBlocked();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(room.posted).toHaveLength(1);
+
+    // The approval resolves — a human acted on the card already posted —
+    // and enough time passes for the guard entry to be evicted.
+    status = "approved";
+    now += POSTED_APPROVAL_GUARD_TTL_MS + 1;
+
+    // A very late, redelivered gate-blocked event arrives (a stale
+    // wire-layer replay) for the now-evicted, now-resolved approval.
+    emitGateBlocked();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // No second card: the live status re-read still catches it even
+    // though the in-memory guard no longer remembers this approval.
+    expect(room.posted).toHaveLength(1);
 
     orchestrator.dispose();
   });

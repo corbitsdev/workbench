@@ -440,6 +440,7 @@
         "@corbits/agent-lifecycle": "workspace:*",
         "@corbits/agent-runtime": "workspace:*",
         "@corbits/approvals": "workspace:*",
+        "@corbits/collections": "workspace:*",
         "@corbits/commands": "workspace:*",
         "@corbits/error-sink": "workspace:*",
         "@corbits/folded-runs": "workspace:*",
