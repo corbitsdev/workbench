@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { InferenceResolutionError } from "@corbits/folded-runs";
 import { createChatRoutes } from "../src/routes";
 import { decodeParts } from "../src/codec";
-import type { Part } from "../src/parts";
+import type { Part, TextPart } from "../src/parts";
 import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
 import { AgentUnreachableError } from "../src/platform-port";
 import {
@@ -291,7 +291,9 @@ describe("message fan-out", () => {
   // takes: `InferenceResolutionError` (launch-time, no resolvable
   // source) and a runtime 401 `credential_failure`.
   describe("the undelivered notice is cause-aware", () => {
-    async function noticeTextFor(dispatchFailure: unknown): Promise<string> {
+    async function noticeTextFor(
+      dispatchFailure: unknown,
+    ): Promise<TextPart | undefined> {
       const platform = fakePlatform();
       const deliverMail = platform.sendMail.bind(platform);
       platform.sendMail = async (input) => {
