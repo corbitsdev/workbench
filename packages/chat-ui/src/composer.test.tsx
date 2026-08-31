@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { canStopComposer, insertTextAtCaret } from "./composer";
+import { isAwaitingReply } from "./streaming-reply";
 
 describe("insertTextAtCaret", () => {
   test("splices the insertion in at the caret", () => {
@@ -35,5 +36,13 @@ describe("canStopComposer", () => {
 
   test("offers nothing when no turn is running", () => {
     expect(canStopComposer({ running: false })).toBe(false);
+  });
+
+  test("offers Stop while awaiting a turn that already has streamed text", () => {
+    expect(
+      canStopComposer({
+        running: isAwaitingReply({ phase: "awaiting", text: "Hello" }),
+      }),
+    ).toBe(true);
   });
 });

@@ -62,7 +62,7 @@ import { CHAT_STRINGS } from "./strings";
 import { displayWorkbenchTitle } from "./workbench-display-title";
 import {
   useStreamingReply,
-  isPendingReply,
+  isAwaitingReply,
   typingAgentNames,
 } from "./streaming-reply";
 import { useTurnActivity, TurnActivityStrip } from "./turn-activity";
@@ -1656,7 +1656,7 @@ function ChatWorkspaceInner({
                       bringInLoadError={bringInLoadError}
                       placeholder={composerPlaceholderFor(activeWorkbench)}
                       onSend={handleSend}
-                      running={isPendingReply(streamingReply)}
+                      running={isAwaitingReply(streamingReply)}
                       onStop={handleStopTurn}
                       onInviteAgent={() => setInviteDialogOpen(true)}
                       onOpenAgentsSettings={() =>

@@ -255,7 +255,9 @@ export function canSendComposerAction(
 /**
  * Whether the composer offers a Stop affordance (CL-7201) — a stand-in
  * for "is there a turn to cancel," reported by the host from its own
- * `isPendingReply`-style signal. Deliberately independent of `sending`/
+ * `isAwaitingReply` signal (the whole in-flight phase, including after
+ * tokens have started streaming — not the tokenless `isPendingReply`
+ * pulse). Deliberately independent of `sending`/
  * `preparing`: a follow-up message can still be typed and queued while a
  * turn runs (`turn-queue.ts` batches it), so Stop and Send coexist
  * rather than one gating the other.
@@ -348,7 +350,7 @@ export const Composer = forwardRef<
     /** Defaults to the generic workbench copy — a chat passes one naming its counterpart. */
     readonly placeholder?: string;
     /** Whether a turn is currently running for this workbench (CL-7201) —
-     * typically the host's own `isPendingReply(streamingReply)`. Absent
+     * typically the host's own `isAwaitingReply(streamingReply)`. Absent
      * or `false` renders no Stop affordance at all. */
     readonly running?: boolean;
     /**

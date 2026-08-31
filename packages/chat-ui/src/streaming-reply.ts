@@ -53,6 +53,13 @@ export function isPendingReply(state: StreamingReplyState): boolean {
   return state !== null && state.phase === "awaiting" && state.text === "";
 }
 
+/** Whether a turn is still in flight — Stop stays up for the whole
+ * `"awaiting"` phase, including after tokens have started streaming.
+ * Distinct from `isPendingReply`, which is only the empty typing pulse. */
+export function isAwaitingReply(state: StreamingReplyState): boolean {
+  return state !== null && state.phase === "awaiting";
+}
+
 type InferenceDeltaEvent = {
   readonly type: "inference.text.delta";
   readonly data: { readonly partial: { readonly text: string } };
@@ -180,6 +187,9 @@ function isRenderedAgentReply(data: unknown): boolean {
  * or `postCancelledNotice`'s `turnCancelled` part (see
  * `hasTurnEndedNoticePart`, the failure/cancellation paths with no
  * `chat.agent` events of their own) — return to idle from any phase.
+ * A `turnCancelled` notice is the exception: it settles `"replied"` so a
+ * late `inference.start` / `reactor.start` / text delta from the still-
+ * running occurrence (CL-7230's ceiling) cannot reopen the pulse.
  * Every other event type (tool calls, thinking, usage) leaves the
  * current state untouched.
  */
@@ -188,7 +198,8 @@ export function nextStreamingReplyState(
   event: { readonly eventType: string; readonly data: unknown },
 ): StreamingReplyState {
   if (event.eventType === "chat.message") {
-    if (hasTurnEndedNoticePart(event.data)) return null;
+    if (hasTurnCancelledPart(event.data)) return REPLIED;
+    if (hasTurnFailedPart(event.data)) return null;
     if (
       current !== null &&
       current.phase === "awaiting" &&

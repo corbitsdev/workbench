@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   hydrateStreamingReplyFromTurn,
+  isAwaitingReply,
   isPendingReply,
   nextStreamingReplyState,
   openPendingReply,
@@ -221,7 +222,7 @@ describe("nextStreamingReplyState (CL-6376: the typing pulse clears on a dispatc
 // — `postCancelledNotice` carries `turnCancelled`, not `turnFailed`, so
 // this is its own case rather than reusing the failure fixture above.
 describe("nextStreamingReplyState (CL-7201: the typing pulse clears on a user cancellation too)", () => {
-  test("a chat.message carrying a turnCancelled part clears a pending reply", () => {
+  test("a chat.message carrying a turnCancelled part settles the turn as replied", () => {
     const state = awaiting("");
     expect(
       nextStreamingReplyState(state, {
@@ -237,7 +238,7 @@ describe("nextStreamingReplyState (CL-7201: the typing pulse clears on a user ca
           ],
         },
       }),
-    ).toBeNull();
+    ).toEqual({ phase: "replied" });
   });
 
   test("a chat.message from the cancelled agent's own address is never mistaken for a rendered reply", () => {
@@ -257,7 +258,87 @@ describe("nextStreamingReplyState (CL-7201: the typing pulse clears on a user ca
           ],
         },
       }),
-    ).toBeNull();
+    ).toEqual({ phase: "replied" });
+  });
+
+  test("inference.start after a turnCancelled notice does not reopen the pulse", () => {
+    let state = nextStreamingReplyState(awaiting("Hello"), {
+      eventType: "chat.message",
+      data: {
+        id: "msg_1",
+        parts: [
+          {
+            kind: "text",
+            text: "This turn was cancelled.",
+            turnCancelled: true,
+          },
+        ],
+      },
+    });
+    state = nextStreamingReplyState(
+      state,
+      agentEvent({ type: "inference.start", seq: 9, data: { model: "x" } }),
+    );
+    expect(isPendingReply(state)).toBe(false);
+    expect(isAwaitingReply(state)).toBe(false);
+  });
+
+  test("a late text delta after a turnCancelled notice does not reopen the pulse", () => {
+    let state = nextStreamingReplyState(awaiting("Hel"), {
+      eventType: "chat.message",
+      data: {
+        id: "msg_1",
+        parts: [
+          {
+            kind: "text",
+            text: "This turn was cancelled.",
+            turnCancelled: true,
+          },
+        ],
+      },
+    });
+    state = nextStreamingReplyState(state, delta("Hello"));
+    expect(isPendingReply(state)).toBe(false);
+    expect(isAwaitingReply(state)).toBe(false);
+  });
+
+  test("reactor.start after a turnCancelled notice does not reopen the pulse", () => {
+    let state = nextStreamingReplyState(awaiting(""), {
+      eventType: "chat.message",
+      data: {
+        id: "msg_1",
+        parts: [
+          {
+            kind: "text",
+            text: "This turn was cancelled.",
+            turnCancelled: true,
+          },
+        ],
+      },
+    });
+    state = nextStreamingReplyState(
+      state,
+      agentEvent({ type: "reactor.start", seq: 0, data: {} }),
+    );
+    expect(isPendingReply(state)).toBe(false);
+    expect(isAwaitingReply(state)).toBe(false);
+  });
+});
+
+describe("isAwaitingReply (CL-7201: Stop stays up while tokens stream)", () => {
+  test("is true for the whole awaiting phase, including streamed text", () => {
+    expect(isAwaitingReply(awaiting(""))).toBe(true);
+    expect(isAwaitingReply(awaiting("Hello"))).toBe(true);
+  });
+
+  test("is false when idle or already replied", () => {
+    expect(isAwaitingReply(null)).toBe(false);
+    expect(isAwaitingReply({ phase: "replied" })).toBe(false);
+  });
+
+  test("isPendingReply is only the tokenless pulse — not the Stop predicate", () => {
+    expect(isPendingReply(awaiting("Hello"))).toBe(false);
+    expect(isAwaitingReply(awaiting("Hello"))).toBe(true);
   });
 });
 
