@@ -4,10 +4,7 @@
 import { Glob } from "bun";
 import { availableParallelism } from "node:os";
 
-import {
-  CONCURRENCY_ENV,
-  resolveConcurrency as resolveBaseConcurrency,
-} from "./concurrency.ts";
+import { CONCURRENCY_ENV } from "./concurrency.ts";
 import { SEQUENTIAL_SCRIPTS } from "./sequential-scripts.ts";
 
 type Job = { readonly name: string; readonly dir: string };
@@ -27,7 +24,13 @@ export function resolveConcurrency(
     if (env["GITHUB_ACTIONS"] === "true") return Math.max(1, cores);
     return Math.max(1, cores - 2);
   }
-  return resolveBaseConcurrency();
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(
+      `${CONCURRENCY_ENV} must be a positive integer, got "${raw}"`,
+    );
+  }
+  return parsed;
 }
 
 // Bun's Glob silently matches nothing when a brace alternative contains a

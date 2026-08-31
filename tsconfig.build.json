@@ -47,6 +47,9 @@
       "path": "./packages/code-review/tsconfig.src.json"
     },
     {
+      "path": "./packages/collections/tsconfig.src.json"
+    },
+    {
       "path": "./packages/command-palette/tsconfig.src.json"
     },
     {
