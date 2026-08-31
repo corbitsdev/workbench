@@ -307,7 +307,7 @@ export function createBenchProvisioner(
       scanAfter = undefined;
     }
 
-    await pruneOrphanedHolds(due);
+    await pruneOrphanedHolds(page.seeds);
 
     return {
       converged,
