@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@corbits/agent-runtime": "workspace:*",
+    "@corbits/collections": "workspace:*",
     "@intx/crypto": "0.3.0",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
