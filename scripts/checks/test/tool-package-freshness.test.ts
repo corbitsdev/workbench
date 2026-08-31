@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import {
   auditFreshness,
   packagesWithChangedSource,
+  pullRequestBaseSha,
   readToolPackageNames,
 } from "../tool-package-freshness";
 
@@ -95,5 +99,34 @@ describe("scope", () => {
       ];
     `);
     expect(names).toEqual(["github-tools", "memory-tools"]);
+  });
+});
+
+describe("pullRequestBaseSha", () => {
+  test("reads pull_request.base.sha from GITHUB_EVENT_PATH", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "base-ref-"));
+    const eventPath = path.join(dir, "event.json");
+    writeFileSync(
+      eventPath,
+      JSON.stringify({ pull_request: { base: { sha: "abc123def" } } }),
+    );
+    expect(pullRequestBaseSha({ GITHUB_EVENT_PATH: eventPath })).toBe(
+      "abc123def",
+    );
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("returns undefined when GITHUB_EVENT_PATH is unset", () => {
+    expect(pullRequestBaseSha({})).toBeUndefined();
+  });
+
+  test("returns undefined when the event is not a pull_request", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "base-ref-"));
+    const eventPath = path.join(dir, "event.json");
+    writeFileSync(eventPath, JSON.stringify({ ref: "refs/heads/main" }));
+    expect(
+      pullRequestBaseSha({ GITHUB_EVENT_PATH: eventPath }),
+    ).toBeUndefined();
+    rmSync(dir, { recursive: true, force: true });
   });
 });
