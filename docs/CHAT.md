@@ -211,11 +211,15 @@ given row first is the only one that ever settles it or posts a notice
 `postUndeliveredNotice`'s `turnFailed` (a cancellation is not a
 failure, and the timeline says so). CL-7230's ceiling is honest, not
 silent: settling the row is not the same as stopping the underlying
-agent process, and a late reply that lands anyway simply finds no
-`running` row left to attach to. The composer offers a Stop affordance
-(`packages/chat-ui/src/composer.tsx`) whenever `isPendingReply`
-(`streaming-reply.ts`) is true, independent of its own `sending` state
-— a follow-up message can still be typed and queued while a turn runs.
+agent process. A late `connector.reply` that lands anyway finds no
+`running` row left to attach to, and `postReply` will not fall back to
+posting it unattached onto a 1:1 membership whose latest turn is
+`cancelled`. The composer offers a Stop affordance
+(`packages/chat-ui/src/composer.tsx`) whenever `isAwaitingReply`
+(`streaming-reply.ts`) is true — the whole in-flight phase, including
+after tokens have started streaming — independent of its own `sending`
+state. A follow-up message can still be typed and queued while a turn
+runs.
 
 ## Threads: workbench → thread → sub-thread
 
