@@ -1,7 +1,61 @@
 {
-  "extends": "../../tsconfig.base.json",
+  "extends": "./tsconfig.src.json",
   "compilerOptions": {
-    "types": ["bun"]
+    "composite": false,
+    "noEmit": true,
+    "disableSourceOfProjectReferenceRedirect": true,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "rootDir": "../.."
   },
-  "include": ["src", "test"]
+  "include": ["src", "test"],
+  "exclude": [],
+  "references": [
+    {
+      "path": "../../packages/agent-lifecycle/tsconfig.src.json"
+    },
+    {
+      "path": "../../packages/credential-providers/tsconfig.src.json"
+    },
+    {
+      "path": "../../packages/error-sink/tsconfig.src.json"
+    },
+    {
+      "path": "../../packages/ollama-adapter/tsconfig.src.json"
+    },
+    {
+      "path": "../../vendor/intx/agent/tsconfig.src.json"
+    },
+    {
+      "path": "../../vendor/intx/harness/tsconfig.src.json"
+    },
+    {
+      "path": "../../vendor/intx/hub-agent/tsconfig.src.json"
+    },
+    {
+      "path": "../../vendor/intx/hub-sessions/tsconfig.src.json"
+    },
+    {
+      "path": "../../vendor/intx/inference/tsconfig.src.json"
+    },
+    {
+      "path": "../../vendor/intx/mail-memory/tsconfig.src.json"
+    },
+    {
+      "path": "../../vendor/intx/mime/tsconfig.src.json"
+    },
+    {
+      "path": "../../vendor/intx/types/tsconfig.src.json"
+    },
+    {
+      "path": "../../vendor/intx/workflow-deploy/tsconfig.src.json"
+    },
+    {
+      "path": "../../vendor/intx/workflow-host/tsconfig.src.json"
+    },
+    {
+      "path": "../../vendor/intx/workflow/tsconfig.src.json"
+    }
+  ]
 }

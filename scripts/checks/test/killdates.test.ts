@@ -163,6 +163,29 @@ test("a tsc-generated tsbuildinfo does not change a vendored tree's hash", () =>
   }
 });
 
+test("a tsc --build dist/ output directory does not change a vendored tree's hash", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "killdates-test-"));
+  try {
+    mkdirSync(path.join(root, "vendor", "intx", "log"), { recursive: true });
+    writeFileSync(path.join(root, "vendor", "intx", "log", "index.ts"), "hi");
+    const hash = hashDirectory(path.join(root, "vendor", "intx", "log"));
+    mkdirSync(path.join(root, "vendor", "intx", "log", "dist"), {
+      recursive: true,
+    });
+    writeFileSync(
+      path.join(root, "vendor", "intx", "log", "dist", "index.d.ts"),
+      "export declare const hi: string;",
+    );
+    writeFileSync(
+      path.join(root, "vendor", "intx", "log", "dist", "tsconfig.tsbuildinfo"),
+      "{}",
+    );
+    expect(hashDirectory(path.join(root, "vendor", "intx", "log"))).toBe(hash);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("a byte edit in a vendored tree is a drift violation naming the package", () => {
   const root = mkdtempSync(path.join(tmpdir(), "killdates-test-"));
   try {

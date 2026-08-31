@@ -1,7 +1,22 @@
 {
-  "extends": "../../tsconfig.base.json",
+  "extends": "./tsconfig.src.json",
   "compilerOptions": {
-    "types": ["bun"]
+    "composite": false,
+    "noEmit": true,
+    "disableSourceOfProjectReferenceRedirect": true,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "rootDir": "../.."
   },
-  "include": ["src", "template"]
+  "include": ["src", "template"],
+  "exclude": [],
+  "references": [
+    {
+      "path": "../../vendor/intx/hub-sessions/tsconfig.src.json"
+    },
+    {
+      "path": "../sandbox-sidecar/tsconfig.src.json"
+    }
+  ]
 }

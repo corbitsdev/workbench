@@ -1,7 +1,34 @@
 {
-  "extends": "../../tsconfig.base.json",
+  "extends": "./tsconfig.src.json",
   "compilerOptions": {
-    "types": ["bun"]
+    "composite": false,
+    "noEmit": true,
+    "disableSourceOfProjectReferenceRedirect": true,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "rootDir": "../.."
   },
-  "include": ["src", "test"]
+  "include": ["src", "test"],
+  "exclude": [],
+  "references": [
+    {
+      "path": "../../vendor/intx/agent/tsconfig.src.json"
+    },
+    {
+      "path": "../../vendor/intx/db/tsconfig.src.json"
+    },
+    {
+      "path": "../../vendor/intx/hub-sessions/tsconfig.src.json"
+    },
+    {
+      "path": "../../vendor/intx/types/tsconfig.src.json"
+    },
+    {
+      "path": "../../vendor/intx/workflow-deploy/tsconfig.src.json"
+    },
+    {
+      "path": "../../vendor/intx/workflow/tsconfig.src.json"
+    }
+  ]
 }

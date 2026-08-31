@@ -20,7 +20,6 @@
 
     "composite": true,
     "module": "ESNext",
-    "noEmit": true,
 
     "lib": ["ESNext"]
   }

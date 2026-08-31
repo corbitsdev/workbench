@@ -1,11 +1,24 @@
 {
-  "extends": "../tsconfig.base.json",
-  "include": [
-    "src/**/*.ts"
-  ],
+  "extends": "./tsconfig.src.json",
   "compilerOptions": {
-    "types": [
-      "bun"
-    ]
-  }
+    "composite": false,
+    "noEmit": true,
+    "disableSourceOfProjectReferenceRedirect": true,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "rootDir": "../../.."
+  },
+  "include": [
+    "src"
+  ],
+  "exclude": [],
+  "references": [
+    {
+      "path": "../mime/tsconfig.src.json"
+    },
+    {
+      "path": "../types/tsconfig.src.json"
+    }
+  ]
 }
