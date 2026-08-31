@@ -1,4 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 import { Hono } from "hono";
 import { createInMemoryGrantStore } from "@intx/authz";
 
@@ -224,7 +225,7 @@ describe("mountMemory", () => {
 // mounting with only DATABASE_URL (no second memory-plane URL) lands the
 // memory engine's tables in its own `memory` schema, never `public`.
 const databaseUrl = process.env["DATABASE_URL"];
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 describeIfDb("mountMemory: schema isolation against a real database", () => {
   afterAll(async () => {

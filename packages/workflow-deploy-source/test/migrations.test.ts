@@ -1,11 +1,12 @@
 // DB-gated: runs against its own scratch database, never the
 // developer's or the walking-skeleton suite's, mirroring
 // packages/run-key-history/test/migrations.test.ts.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import postgres from "postgres";
 
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { applyWorkflowDeploySourceMigrations } from "../src/migrations";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);
@@ -15,7 +16,7 @@ function scratchUrlFor(e2eUrl: string): string {
 }
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 describeIfDb("applyWorkflowDeploySourceMigrations", () => {
   const scratchUrl = scratchUrlFor(

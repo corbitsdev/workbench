@@ -65,6 +65,7 @@ jobs:
       - run: bun run check:killdates
       - run: bun run check:packages
       - run: bun run check:licenses
+      - run: bun run check:db-gate
       - run: bun run check:no-product-tenancy
       - run: bun run check:browser-safe-subpaths
       - run: bun run check:web-utilities

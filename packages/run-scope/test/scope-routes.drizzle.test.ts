@@ -12,7 +12,7 @@
 // other by `workflow_run`'s own columns, see `@corbits/folded-runs`'
 // `launch.ts`'s big comment) never appears in this scoped listing,
 // while a genuine top-level deployment run does.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { createDB, runMigrations, dropSchema } from "@intx/db";
 import { schema } from "@intx/db";
@@ -22,9 +22,10 @@ import { foldedRun } from "@corbits/folded-runs";
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { listTopLevelRuns, listTopLevelRunFires } from "../src/scope-routes";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const SCHEMA = "folded_runs_scope_routes_test";
 const TENANT = "tnt_scope_routes";

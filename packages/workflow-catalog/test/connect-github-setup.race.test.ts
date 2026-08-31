@@ -17,7 +17,7 @@
 // when DATABASE_URL is unset. Runs against its own scratch database
 // (mirroring `@corbits/webhook-triggers`' own `store.drizzle.test.ts`),
 // never the developer's or the walking-skeleton suite's.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { and, eq } from "drizzle-orm";
 import postgres from "postgres";
@@ -34,6 +34,7 @@ import {
 import type { GitHubRepoSummary } from "@corbits/github-tools";
 
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 import {
   startReviewingRepos,
   webhookTriggerName,
@@ -48,7 +49,7 @@ function scratchUrlFor(e2eUrl: string): string {
 }
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const REPO: GitHubRepoSummary = {
   id: "1",

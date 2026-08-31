@@ -2,13 +2,14 @@
 // checkout still runs the unit gates), mirroring `read-state.drizzle.test.ts`.
 // Two concurrent `patchWorkbenchSettings` calls on one row must both land:
 // a participants write and a `chat/pinned` write cannot clobber each other.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { applyChatMigrations } from "../src/migrations";
 import { createDrizzleChatStore } from "../src/store";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);
@@ -18,7 +19,7 @@ function scratchUrlFor(e2eUrl: string): string {
 }
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const TENANT = "tnt_1";
 const WORKBENCH = "run_workbench1";

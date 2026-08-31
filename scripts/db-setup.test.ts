@@ -3,12 +3,13 @@
 // the pre-re-pin numbering of workbench's own two migrations) is refused
 // with the reset instruction instead of being patched incrementally.
 // DB-gated: skipped when DATABASE_URL is unset.
-import { describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 
 import { dbTargetFromUrl, loadPostgres, setupDatabase } from "./db-setup";
+import { dbGate } from "./e2e/db-gate";
 
 const databaseUrl = process.env["DATABASE_URL"] ?? "";
-const describeIfDb = databaseUrl === "" ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const OLD_NUMBERING_TAIL = [
   "0084_delete_orphaned_credential_grants.sql",

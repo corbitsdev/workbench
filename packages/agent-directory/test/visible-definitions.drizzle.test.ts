@@ -8,15 +8,16 @@
 // ancestor chain the same way `listMcpServerConnections` does (CL-6191) —
 // a child tenant sees an ancestor's agent definitions, and a same-name
 // definition made at the child shadows the ancestor's.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createDB, runMigrations, dropSchema, schema } from "@intx/db";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { listVisibleAgentDefinitions } from "../src/visible-definitions";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const SCHEMA = "agent_directory_visible_definitions_test";
 

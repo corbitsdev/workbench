@@ -5,25 +5,19 @@
 // config registers the route and inherits real Slack signature
 // verification from `@corbits/slack-tag`/`corbits-tag/slack` — request/
 // reply behavior itself is covered by `packages/slack-tag`'s own tests.
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  describe,
-  expect,
-  test,
-} from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import postgres from "postgres";
 import type { HubConfig } from "../src/config.ts";
 import { createHub } from "../src/index.ts";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 // DB-gated: skipped when DATABASE_URL is unset, matching this repo's
 // convention for tests that talk to a real Postgres.
 const DATABASE_URL = process.env["DATABASE_URL"] ?? "";
-const describeIfDb = DATABASE_URL === "" ? describe.skip : describe;
+const describeIfDb = dbGate(DATABASE_URL, import.meta.path);
 const SLACK_WEBHOOK_PATH = "/api/tag/slack/webhook";
 const TENANT_SLUG = `slack-tag-test-${crypto.randomUUID().slice(0, 8)}`;
 

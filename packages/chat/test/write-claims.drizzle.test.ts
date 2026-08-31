@@ -10,13 +10,14 @@
 // throws a raw PK-violation — the exact scenario CL-6039 exists to close:
 // a redelivered `onTurnFinalized` racing itself across a hub restart or
 // sidecar reconnect.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { applyChatMigrations } from "../src/migrations";
 import { createDrizzleWriteClaimStore } from "../src/write-claims";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);
@@ -26,7 +27,7 @@ function scratchUrlFor(e2eUrl: string): string {
 }
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 describeIfDb("createDrizzleWriteClaimStore: concurrent tryClaim", () => {
   const scratchUrl = scratchUrlFor(

@@ -6,7 +6,8 @@
 // `getArtifact`/`writeArtifactVersion` seam actually lands a new artifact
 // version row — not just that the two packages' unit tests independently
 // pass with fakes standing in for each other.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 import * as Y from "yjs";
 import { and, eq } from "drizzle-orm";
 
@@ -39,7 +40,7 @@ function dbConfigFromUrl(databaseUrl: string) {
 }
 
 const databaseUrl = process.env["DATABASE_URL"];
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 describeIfDb(
   "artifact doc persistence: a real snapshot write against Postgres",

@@ -6,16 +6,17 @@
 // in-memory fake — a read-modify-write bug here would silently drop
 // another domain's config keys or clobber a concurrent writer, neither
 // of which the in-memory store's tests can catch.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { createDB, dropSchema, runMigrations, schema } from "@intx/db";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { createDrizzleSidecarPlacementStore } from "../src/store";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const SCHEMA = "sidecar_placement_store_test";
 

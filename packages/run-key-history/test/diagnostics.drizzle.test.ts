@@ -5,7 +5,7 @@
 // motivating incident needed — a retired run failing its challenge is
 // not the same fault as a live run with a genuinely diverged key or one
 // that was never acknowledged at all.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq, inArray } from "drizzle-orm";
 import { createDB, runMigrations, dropSchema, schema } from "@intx/db";
 
@@ -14,6 +14,7 @@ import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { applyRunKeyHistoryMigrations } from "../src/migrations";
 import { createDrizzleRunKeyHistoryStore } from "../src/store";
 import { runKeyHistory } from "../src/schema";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 import {
   countRunIdentityStates,
   getRunIdentityStatus,
@@ -21,7 +22,7 @@ import {
 } from "../src/diagnostics";
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const SCHEMA = "run_key_history_diagnostics_test";
 const TENANT = "tnt_run_key_history_diagnostics";

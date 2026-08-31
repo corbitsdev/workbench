@@ -2,7 +2,7 @@
 // diagnostics.drizzle.test.ts and @corbits/insights' routes-scope.test.ts.
 // Proves the HTTP surface an operator actually reaches: /runs/:runAddress
 // for a single run's lifecycle + status, /summary for tenant-wide counts.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import { inArray } from "drizzle-orm";
@@ -16,9 +16,10 @@ import { applyRunKeyHistoryMigrations } from "../src/migrations";
 import { createDrizzleRunKeyHistoryStore } from "../src/store";
 import { runKeyHistory } from "../src/schema";
 import { createRunKeyHistoryRoutes } from "../src/routes";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const allowAll: RequireGrant = () => async (_c, next) => {
   await next();

@@ -16,7 +16,7 @@
 // DB-gated: skipped when DATABASE_URL is unset, so a fresh checkout
 // still runs the unit gates. Run with e.g.
 // `DATABASE_URL=postgres://localhost:5432/workbench_e2e bun test`.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -48,9 +48,10 @@ import type { PinnedSkillIndexResolver } from "../src/routes";
 import { createDrizzleDefinitionSkillsStore } from "../src/skills-store";
 import type { DefinitionAssetHistory } from "../src/definition-history";
 import type { CapabilityInventoryProvider } from "../src/capability-inventory";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 const databaseUrl = process.env["DATABASE_URL"];
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const suffix = randomUUID().slice(0, 8);
 const TENANT = {

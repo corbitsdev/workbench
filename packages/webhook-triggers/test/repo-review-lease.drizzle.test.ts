@@ -6,12 +6,13 @@
 // being stolen, and a released lease being immediately reacquirable —
 // against a real Postgres. A mocked port proves nothing about
 // `ON CONFLICT ... DO UPDATE ... WHERE`.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
 import { applyWebhookTriggersMigrations } from "../src/migrations";
 import { createDrizzleRepoReviewLeaseStore } from "../src/repo-review-lease";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);
@@ -21,7 +22,7 @@ function scratchUrlFor(e2eUrl: string): string {
 }
 
 const databaseUrl = process.env["DATABASE_URL"] ?? "";
-const describeIfDb = databaseUrl === "" ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const TENANT_ID = "tnt_1";
 

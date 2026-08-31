@@ -13,7 +13,7 @@
 // overlapping calls serialize instead of clobbering each other. This test
 // fires two real concurrent transactions (two connections from the pool)
 // at the same row and proves both participants land.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
@@ -22,6 +22,7 @@ import { applyChatMigrations } from "../src/migrations";
 import { addParticipant } from "../src/participants";
 import { createDrizzleChatStore } from "../src/store";
 import { participantsOf } from "../src/workbench-settings";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);
@@ -31,7 +32,7 @@ function scratchUrlFor(e2eUrl: string): string {
 }
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const TENANT = "tnt_1";
 
