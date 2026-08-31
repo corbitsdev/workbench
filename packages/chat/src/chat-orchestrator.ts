@@ -29,6 +29,7 @@ import {
   toolDoneResult,
   type ReplyContentBlock,
 } from "@corbits/agent-events";
+import { createExpiringMap, type ExpiringMap } from "@corbits/collections";
 import { reportError } from "@corbits/error-sink";
 import type { Memory } from "@corbits/memory";
 import {
@@ -58,7 +59,7 @@ import { parseParticipants, type ParticipantRecord } from "./participants";
 import type { Part, TextPart } from "./parts";
 import type { ChatPlatform } from "./platform-port";
 import { postRoomMessage, type RoomMessageStore } from "./room-messages";
-import type { AgentTurnStore } from "./agent-turns";
+import { AGENT_TURN_STALE_MS, type AgentTurnStore } from "./agent-turns";
 import type { ChatStore } from "./store";
 import type { ThreadStore } from "./threads";
 import type { WorkbenchSubscriberRegistry } from "./workbench-events";
@@ -420,6 +421,24 @@ async function resolveMemberWorkbenches(
  * "thread machinery that already exists" scope for CL-5879 rather than
  * tracking an open-ended delegation session. A specialist mentioned
  * again gets a fresh entry from that later delegating message.
+ *
+ * Bounded with a TTL (CL-7229) rather than a plain `Map`: a specialist
+ * that never replies (crashed, never woke, or was mentioned by mistake)
+ * left its entry here forever, one per abandoned delegation for the
+ * life of the hub process. The TTL is `AGENT_TURN_STALE_MS` — the same
+ * threshold `./agent-turns.ts` already uses to decide a `running` turn
+ * row is no longer believable and fails it outright. That threshold is
+ * exactly the point past which this entry stops mattering too: once a
+ * specialist's occurrence has run longer than any turn is allowed to,
+ * the rest of the system has already given up on it ever finishing, so
+ * evicting the pending-thread entry at the same age can't drop a reply
+ * a running turn still needs. If a reply somehow still lands after
+ * that (a very late, already-abandoned occurrence), it just posts
+ * unthreaded into the main feed instead of nested under the delegating
+ * message — a cosmetic degrade, never a lost message. The common case
+ * (event-driven delete) is unchanged: `threadDelegatedReply` below
+ * still deletes the entry the moment the specialist's first reply
+ * consumes it, long before the TTL would ever fire.
  */
 type PendingDelegationThread = {
   readonly tenantId: string;
@@ -429,7 +448,7 @@ type PendingDelegationThread = {
 
 async function threadDelegatedReply(
   deps: ChatOrchestratorDeps,
-  pendingDelegationThreads: Map<string, PendingDelegationThread>,
+  pendingDelegationThreads: ExpiringMap<string, PendingDelegationThread>,
   agentAddress: string,
   workbenchId: string,
   messageId: string,
@@ -529,7 +548,7 @@ function correlateOriginatingWorkbench(
 
 async function postReply(
   deps: ChatOrchestratorDeps,
-  pendingDelegationThreads: Map<string, PendingDelegationThread>,
+  pendingDelegationThreads: ExpiringMap<string, PendingDelegationThread>,
   agentAddress: string,
   parts: readonly Part[],
   outcome: TurnOutcome,
@@ -643,6 +662,25 @@ async function postReply(
 }
 
 /**
+ * How long `postApproveBlock`'s `postedApprovalIds` guard remembers a
+ * carded approval (CL-7229). Every gate the reactor blocks on — approval
+ * gates included — resolves out of `"pending"` on its own within
+ * `DEFAULT_GATE_TIMEOUT_MS` (one hour: `vendor/intx/inference/src/reactor.ts`,
+ * not exported — `./chat-orchestrator.ts`'s own copy of the same number
+ * `./authz-extension.ts` already keeps for the same reason), either by a
+ * human's decision or by timing out to a terminal `"timeout"`/`"expired"`
+ * status; the gate never stays blocked, and stays open, past that bound.
+ * A guard entry older than that bound is therefore guaranteed to belong
+ * to an approval that is no longer pending, so evicting it can never
+ * cause a duplicate card: the very next line of `postApproveBlock` below
+ * re-reads the approval's live status and bails out on anything but
+ * `"pending"` regardless of whether this guard remembers it. Set well
+ * past the gate timeout (double it, plus a margin) so an evicted entry's
+ * safety never depends on exact timing.
+ */
+export const POSTED_APPROVAL_GUARD_TTL_MS = 2 * 60 * 60 * 1000 + 5 * 60 * 1000;
+
+/**
  * Posts the platform-minted approve block for a gate-blocked run into every
  * workbench the parked agent is a member of. `postedApprovalIds` is the
  * process-local idempotency guard against a redelivered `agent.event`
@@ -652,20 +690,25 @@ async function postReply(
  * (a race with `POST .../resolve`, or a *very* stale replay) is a no-op
  * too, since a card for an already-resolved approval would render terminal
  * state a human never got to act on — nothing to add to the workbench.
+ *
+ * Bounded with `POSTED_APPROVAL_GUARD_TTL_MS` (CL-7229) instead of a plain
+ * `Set` that grew one entry per approval ever carded for the life of the
+ * hub process — see that constant's own doc comment for why an eviction
+ * can never reopen the duplicate-card hole this guard exists to close.
  */
 async function postApproveBlock(
   deps: ChatOrchestratorDeps,
   agentAddress: string,
   correlationId: string,
-  postedApprovalIds: Set<string>,
+  postedApprovalIds: ExpiringMap<string, true>,
 ): Promise<void> {
   const approval = await deps.approvals.findByCorrelationId(correlationId);
   if (approval === null || approval.status !== "pending") return;
-  if (postedApprovalIds.has(approval.id)) return;
+  if (postedApprovalIds.get(approval.id) !== undefined) return;
   // Marked before the awaits below: two redelivered events racing this
   // function must not both pass the guard while the first resolves
   // workbenches.
-  postedApprovalIds.add(approval.id);
+  postedApprovalIds.set(approval.id, true);
 
   const resolved = await resolveMemberWorkbenches(deps, agentAddress);
   if (resolved === undefined) return;
@@ -1004,10 +1047,21 @@ export function createArtifactDeliveryHandler(deps: ChatOrchestratorDeps): (
 
 export function createChatOrchestrator(
   deps: ChatOrchestratorDeps,
+  options?: {
+    /** Injectable clock, for tests that age the two TTL-bounded
+     * collections below without waiting on a real timer. */
+    readonly now?: () => number;
+  },
 ): ChatOrchestrator {
-  // Process-lifetime idempotency guard for `postApproveBlock` — see its own
-  // doc comment for what this does and doesn't cover.
-  const postedApprovalIds = new Set<string>();
+  const now = options?.now ?? Date.now;
+
+  // Bounded idempotency guard for `postApproveBlock` (CL-7229) — see
+  // `POSTED_APPROVAL_GUARD_TTL_MS`'s own doc comment for what this does
+  // and doesn't cover, and why an eviction is safe.
+  const postedApprovalIds = createExpiringMap<string, true>({
+    ttlMs: POSTED_APPROVAL_GUARD_TTL_MS,
+    now,
+  });
 
   // Every turn with a `connector.reply` pending delivery — added the
   // moment reply content is seen, cleared the moment that same turn's own
@@ -1036,7 +1090,10 @@ export function createChatOrchestrator(
   const notifiedDropTurns = new Set<string>();
 
   // See `PendingDelegationThread`'s own doc comment above `postReply`.
-  const pendingDelegationThreads = new Map<string, PendingDelegationThread>();
+  const pendingDelegationThreads = createExpiringMap<
+    string,
+    PendingDelegationThread
+  >({ ttlMs: AGENT_TURN_STALE_MS, now });
 
   // See `createReplyPartsAccumulator`'s own doc comment above.
   const replyParts = createReplyPartsAccumulator();
