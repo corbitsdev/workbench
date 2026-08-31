@@ -41,8 +41,6 @@ jobs:
           fetch-depth: 0
       - uses: ./.github/actions/setup-workbench
       - run: bun run typecheck
-        env:
-          WORKBENCH_CHECK_SINCE: ${{ github.event.pull_request.base.sha }}
 
   build-test:
     runs-on: ubuntu-latest
@@ -53,8 +51,6 @@ jobs:
       - uses: ./.github/actions/setup-workbench
       - run: bun run build
       - run: bun run test
-        env:
-          WORKBENCH_CHECK_SINCE: ${{ github.event.pull_request.base.sha }}
 
   structural:
     runs-on: ubuntu-latest

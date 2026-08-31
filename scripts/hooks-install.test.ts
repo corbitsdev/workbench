@@ -136,8 +136,6 @@ describe("pre-push hook", () => {
     expect(source).toContain("bun run lint");
     expect(source).toContain("bun run typecheck");
     expect(source).toContain("bun run test");
-    expect(source).toContain("WORKBENCH_CHECK_SINCE");
-    expect(source).toContain("origin/main");
   });
 });
 
