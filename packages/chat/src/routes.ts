@@ -2845,7 +2845,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       } catch (err) {
         if (err instanceof InferenceResolutionError) {
           return c.json(
-            ErrorEnvelope("not_launchable", err.resolutionMessage),
+            ErrorEnvelope("not_launchable", MODEL_UNAVAILABLE_CONSUMER_MESSAGE),
             409,
           );
         }
