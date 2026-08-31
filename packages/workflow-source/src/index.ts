@@ -10,6 +10,11 @@
 // definition back out of it through `parseWorkflowSourceEntry`, so the
 // bytes on disk have exactly one producer and one consumer.
 //
+// `validate-push.test.ts` round-trips the rendered tree through the real
+// `workflowKindHandler.validatePush`, so a renderer/validator drift fails a
+// test here instead of surfacing as a push rejection on a workflow someone
+// just created.
+//
 // The entry is a JSON literal rather than a call into a builder: an
 // asset tree is a standalone codebase, so it can declare no workspace
 // dependency to evaluate, and the definition it carries is inert data.
