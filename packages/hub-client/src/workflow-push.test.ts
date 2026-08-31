@@ -17,11 +17,19 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { installDisposableHubDataDir } from "../../../test/disposable-hub-data-dir";
 import { createGitWorkflowPusher } from "./workflow-push";
 
+installDisposableHubDataDir();
+
 async function git(args: string[], cwd: string): Promise<string> {
+  const env = { ...process.env };
+  delete env["GIT_DIR"];
+  delete env["GIT_WORK_TREE"];
+  delete env["GIT_INDEX_FILE"];
   const child = Bun.spawn(["git", "-c", "core.hooksPath=", ...args], {
     cwd,
+    env,
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -173,6 +181,55 @@ describe("createGitWorkflowPusher", () => {
       } else {
         process.env.GIT_CONFIG_GLOBAL = previousGlobal;
       }
+      await rm(work, { recursive: true, force: true });
+    }
+  });
+
+  test("does not commit onto an inherited GIT_DIR pointing at another work tree", async () => {
+    const work = await mkdtemp(join(tmpdir(), "workflow-push-git-dir-"));
+    const previousGitDir = process.env.GIT_DIR;
+    const previousWorkTree = process.env.GIT_WORK_TREE;
+    try {
+      const victim = join(work, "victim");
+      await git(["init", "-b", "main", victim], work);
+      await Bun.write(join(victim, "keep.txt"), "keep\n");
+      await git(["add", "keep.txt"], victim);
+      await git(
+        [
+          "-c",
+          "user.email=keep@test",
+          "-c",
+          "user.name=keep",
+          "commit",
+          "-m",
+          "keep",
+        ],
+        victim,
+      );
+
+      const remoteDir = join(work, "remote.git");
+      await git(["init", "--bare", "--initial-branch=main", remoteDir], work);
+
+      process.env.GIT_DIR = join(victim, ".git");
+      process.env.GIT_WORK_TREE = victim;
+
+      const pusher = createGitWorkflowPusher();
+      const outcome = await pusher({
+        remoteUrl: `file://${remoteDir}`,
+        tokenSecret: "unused-for-file-transport",
+        workflowJson: '{"v":1}',
+        packageName: "@workbench-seed/test",
+      });
+      expect(outcome.outcome).toBe("pushed");
+
+      const log = await git(["log", "--format=%s"], victim);
+      expect(log).not.toContain("Deploy the default workflow definition");
+      expect(await readFile(join(victim, "keep.txt"), "utf-8")).toBe("keep\n");
+    } finally {
+      if (previousGitDir === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = previousGitDir;
+      if (previousWorkTree === undefined) delete process.env.GIT_WORK_TREE;
+      else process.env.GIT_WORK_TREE = previousWorkTree;
       await rm(work, { recursive: true, force: true });
     }
   });

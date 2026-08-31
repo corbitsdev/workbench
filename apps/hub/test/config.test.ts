@@ -304,6 +304,29 @@ describe("readHubConfig", () => {
     expect(readHubConfig(validEnv).allowUnverifiedEmails).toBe(false);
   });
 
+  test("allowGitInsideWorkTree is omitted by default", () => {
+    expect(readHubConfig(validEnv).allowGitInsideWorkTree).toBeUndefined();
+  });
+
+  test("HUB_ALLOW_GIT_INSIDE_WORK_TREE='1' or 'true' opts in", () => {
+    expect(
+      readHubConfig({ ...validEnv, HUB_ALLOW_GIT_INSIDE_WORK_TREE: "1" })
+        .allowGitInsideWorkTree,
+    ).toBe(true);
+    expect(
+      readHubConfig({ ...validEnv, HUB_ALLOW_GIT_INSIDE_WORK_TREE: "true" })
+        .allowGitInsideWorkTree,
+    ).toBe(true);
+  });
+
+  test("HUB_ALLOW_GIT_INSIDE_WORK_TREE rejects any other value", () => {
+    const message = readExpectingError({
+      ...validEnv,
+      HUB_ALLOW_GIT_INSIDE_WORK_TREE: "yes",
+    });
+    expect(message).toContain("HUB_ALLOW_GIT_INSIDE_WORK_TREE");
+  });
+
   test("ALLOW_UNVERIFIED_EMAILS='1' or 'true' opts in", () => {
     expect(
       readHubConfig({ ...validEnv, ALLOW_UNVERIFIED_EMAILS: "1" })

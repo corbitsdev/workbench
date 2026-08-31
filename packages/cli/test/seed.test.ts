@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { installDisposableHubDataDir } from "../../../test/disposable-hub-data-dir";
 import { CliError } from "@workbench/hub-client";
 import type { SeedConfig } from "../src/config";
 import { resolveSeedWorkflows, runSeed, type SeedDeps } from "../src/seed";
@@ -12,6 +13,8 @@ import {
   TENANT_ID,
   type FakeHandler,
 } from "./helpers";
+
+installDisposableHubDataDir();
 
 const CONFIG: SeedConfig = {
   hubUrl: "http://localhost:3000",
