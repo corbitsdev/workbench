@@ -137,7 +137,11 @@ async function commitAll(
   const sha =
     parent === undefined
       ? await git(root, ["commit-tree", tree, "-m", message], env)
-      : await git(root, ["commit-tree", tree, "-p", parent, "-m", message], env);
+      : await git(
+          root,
+          ["commit-tree", tree, "-p", parent, "-m", message],
+          env,
+        );
   await git(root, ["update-ref", "HEAD", sha], env);
 }
 
@@ -382,10 +386,7 @@ describe("checkToolPackageFreshness", () => {
     expect(unguarded).toBeInstanceOf(Error);
     expect((unguarded as Error).message).toContain("allowed-emails");
 
-    const { pkg } = await committedPackage(
-      "export const n = 1;\n",
-      hostileEnv,
-    );
+    const { pkg } = await committedPackage("export const n = 1;\n", hostileEnv);
     await checkToolPackageFreshness({ packageDirs: [pkg] });
   });
 });
