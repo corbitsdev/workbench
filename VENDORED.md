@@ -60,7 +60,12 @@ exports map is repointed from the upstream `intx-src` resolve condition to
 direct TypeScript source resolution (`types`/`default` → `./src/...`), with
 `dist/` references and the `customConditions` entry in the shared tsconfig
 removed — workbench forbids custom resolve conditions — and each tsconfig
-carries `types: ["bun"]`. `vendor/intx/hub-api` (CL-6345) accepts
+carries `types: ["bun"]`. `vendor/intx/*` (CL-7226) additionally gained the
+workspace-wide TypeScript project-references cutover: `composite: true`,
+`references` generated from real workspace `dependencies`, and a sibling
+`tsconfig.test.json` — the same shape every other package in the workspace
+got in the same change, so a vendored package's build participates in
+`tsc --build` like any other. `vendor/intx/hub-api` (CL-6345) accepts
 `principalId: null` on `resolveApproval` for a decision a standing-grant
 allowance already authorized, skipping the per-principal resolve gate the
 HTTP routes still enforce. `vendor/intx/hub-api` (CL-workflow-deploy-bearer) adds
