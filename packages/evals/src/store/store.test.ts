@@ -1,24 +1,19 @@
 // Round-trips EvalRunResult through a real, uniquely-named scratch
 // Postgres database — never the developer's own DATABASE_URL. Skips
 // without DATABASE_URL (like every other real-Postgres suite in this
-// repo); E2E_REQUIRED=1 turns that skip into a loud CI failure.
+// repo); CI=true turns that skip into a loud CI failure.
 import { afterAll, describe, expect, test } from "bun:test";
 import postgres from "postgres";
 
 import { applyEvalsMigrations } from "./migrations.ts";
 import { createPostgresEvalRunStore } from "./pg-store.ts";
 import type { EvalRunResult } from "../types.ts";
+import { assertDatabaseConfigured } from "../../../../scripts/e2e/db-gate.ts";
 
 function scratchDatabaseUrl(): string | undefined {
   const base = process.env["DATABASE_URL"];
   if (base === undefined || base === "") {
-    if (process.env["E2E_REQUIRED"] === "1") {
-      throw new Error(
-        "E2E_REQUIRED=1 but DATABASE_URL is not set; the evals store " +
-          "suite would be skipped. Set DATABASE_URL to a reachable " +
-          "Postgres.",
-      );
-    }
+    assertDatabaseConfigured(undefined, "evals store suite");
     return undefined;
   }
   const url = new URL(base);

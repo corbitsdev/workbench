@@ -16,6 +16,7 @@ import {
   type HubHandle,
   type SpawnedApp,
 } from "../../scripts/e2e/harness.ts";
+import { assertDatabaseConfigured } from "../../scripts/e2e/db-gate.ts";
 
 /**
  * The minimal surface of the hub the suite needs: a fetch-shaped
@@ -46,10 +47,10 @@ export const ISOLATION_SIGNUP_RATE_LIMIT_WINDOW_SECONDS = 60;
  * The database the suite runs against. The suite never invents a
  * default: pointing it at a database is an explicit act, because it
  * creates real rows there. Locally, an unconfigured database skips the
- * suite (a fresh checkout still runs the unit gates); E2E_REQUIRED=1
- * turns that same gap into a hard failure, mirroring
- * scripts/e2e/harness.ts's e2eDatabaseUrl — this suite guards
- * multi-tenant authorization, so it must never vanish from CI silently.
+ * suite (a fresh checkout still runs the unit gates); CI=true turns
+ * that same gap into a hard failure, mirroring dbGate — this suite
+ * guards multi-tenant authorization, so it must never vanish from CI
+ * silently.
  */
 export function resolveDatabaseUrl(): string | undefined {
   const isolationUrl = process.env["ISOLATION_DATABASE_URL"];
@@ -58,13 +59,7 @@ export function resolveDatabaseUrl(): string | undefined {
       ? isolationUrl
       : process.env["DATABASE_URL"];
   if (url !== undefined && url !== "") return url;
-  if (process.env["E2E_REQUIRED"] === "1") {
-    throw new Error(
-      "E2E_REQUIRED=1 but no database is configured for the isolation " +
-        "suite; set DATABASE_URL or ISOLATION_DATABASE_URL to a reachable " +
-        "Postgres.",
-    );
-  }
+  assertDatabaseConfigured(undefined, "isolation suite");
   return undefined;
 }
 

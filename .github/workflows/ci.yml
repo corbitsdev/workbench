@@ -75,8 +75,6 @@ jobs:
       - run: bun run check:react-ui-pin
       - run: bun run check:tool-package-pins
       - run: bun run check:tool-package-freshness
-        env:
-          CHECK_BASE_REF: ${{ github.event.pull_request.base.sha }}
 
   e2e:
     runs-on: ubuntu-latest
@@ -117,8 +115,7 @@ jobs:
       # CI stays green. Fail loudly instead: the env file must exist
       # with a usable DATABASE_URL and SESSION_SECRET, Postgres must be
       # reachable, and git (the workflow-asset publication path) must be
-      # present. E2E_REQUIRED=1 below turns any remaining skip into a
-      # hard failure.
+      # present. CI=true turns any remaining skip into a hard failure.
       - name: Assert the e2e test env is wired
         run: |
           test -f .env
@@ -130,7 +127,6 @@ jobs:
       - name: Run the walking skeleton
         run: bun run test:e2e
         env:
-          E2E_REQUIRED: "1"
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/workbench
 
   isolation:
@@ -175,7 +171,6 @@ jobs:
       - name: Run the two-org isolation suite
         run: bun test test/isolation
         env:
-          E2E_REQUIRED: "1"
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/workbench
 
   db-suites:
@@ -230,7 +225,7 @@ jobs:
 
       # apps/hub's own DB-backed suites (e.g. the sign-up rate-limit
       # proof) never run under the plain `checks` job, which has no
-      # Postgres. E2E_REQUIRED=1 turns a would-be skip here into a hard
+      # Postgres. CI=true turns a would-be skip here into a hard
       # failure, so a misconfigured invocation can't pass vacuously.
       - name: Run the hub's database-backed suites
         run: |
@@ -239,15 +234,14 @@ jobs:
           set +a
           bun test apps/hub/test
         env:
-          E2E_REQUIRED: "1"
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/workbench
 
       # Every DB-gated suite under packages/* and apps/hub/src gates on
       # DATABASE_URL and describe.skip's without one, so build-test (no
       # Postgres) never runs them. Find them by the same signal they
       # gate on rather than hardcoding a file list, so a newly added
-      # suite gets picked up automatically. E2E_REQUIRED=1 turns a
-      # would-be skip into a hard failure.
+      # suite gets picked up automatically. CI=true turns a would-be
+      # skip into a hard failure.
       - name: Run the database-backed package suites
         run: |
           set -a
@@ -255,5 +249,4 @@ jobs:
           set +a
           bun --env-file="${GITHUB_WORKSPACE}/.env" test $(grep -rl DATABASE_URL --include='*.test.ts' packages apps | grep -v apps/hub/test)
         env:
-          E2E_REQUIRED: "1"
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/workbench

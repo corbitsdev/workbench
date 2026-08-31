@@ -1,6 +1,6 @@
 // DB-gated: skipped when no DATABASE_URL is reachable (a fresh
 // checkout still runs the unit gates), and turned into a loud failure
-// by E2E_REQUIRED=1 so the suite can never silently vanish from CI —
+// by CI=true so the suite can never silently vanish from CI —
 // mirroring scripts/e2e/harness.ts's e2eDatabaseUrl/baseUrlToE2eUrl.
 // Runs against its own scratch database, never the developer's or the
 // walking-skeleton suite's, so a failure here can never corrupt either.

@@ -18,7 +18,7 @@
 //
 // Needs DATABASE_URL (see .env.example); like every e2e-shaped suite
 // in this repo, a missing DATABASE_URL skips with a warning locally
-// and fails loudly when E2E_REQUIRED=1 (CI).
+// and fails loudly when CI=true.
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -49,6 +49,10 @@ import {
   startHub,
   startSidecar,
 } from "./e2e/harness.ts";
+import {
+  assertDatabaseConfigured,
+  skippedDatabaseWarning,
+} from "./e2e/db-gate.ts";
 
 function dbConfigFromUrl(databaseUrl: string) {
   const url = new URL(databaseUrl);
@@ -105,12 +109,7 @@ const infra: MyraTargetInfra = {
 function databaseUrl(): string | undefined {
   const url = process.env["DATABASE_URL"];
   if (url !== undefined && url !== "") return url;
-  if (process.env["E2E_REQUIRED"] === "1") {
-    throw new Error(
-      "E2E_REQUIRED=1 but DATABASE_URL is not set; `bun run eval` would be " +
-        "skipped. Set DATABASE_URL to a reachable Postgres.",
-    );
-  }
+  assertDatabaseConfigured(undefined, "bun run eval");
   return undefined;
 }
 
@@ -145,11 +144,7 @@ function assertPlumbingOnly(results: readonly EvalRunResult[]): void {
 async function main(): Promise<void> {
   const url = databaseUrl();
   if (url === undefined) {
-    process.stdout.write(
-      "bun run eval: DATABASE_URL is not set; skipped. Set DATABASE_URL " +
-        "(see .env.example) to run it; CI sets E2E_REQUIRED=1 so this skip " +
-        "can never pass silently there.\n",
-    );
+    process.stdout.write(skippedDatabaseWarning("bun run eval") + "\n");
     return;
   }
 
