@@ -230,10 +230,10 @@ describe("POST / (create)", () => {
     });
     expect(res.status).toBe(413);
     const body = (await res.json()) as {
-      error: { code: string; message: string };
+      error: { code: string; userMessage: string; refId: string };
     };
     expect(body.error.code).toBe("content_too_large");
-    expect(body.error.message).toMatch(/shorten|split/);
+    expect(body.error.userMessage).toMatch(/shorten|split/);
     expect(created).toHaveLength(0);
   });
 
@@ -276,10 +276,10 @@ describe("POST / (create)", () => {
     const limited = await request();
     expect(limited.status).toBe(429);
     const body = (await limited.json()) as {
-      error: { code: string; message: string };
+      error: { code: string; userMessage: string; refId: string };
     };
     expect(body.error.code).toBe("rate_limited");
-    expect(body.error.message).toMatch(/wait/i);
+    expect(body.error.userMessage).toMatch(/wait/i);
   });
 });
 
@@ -441,10 +441,10 @@ describe("POST /binary (create binary artifact)", () => {
     });
     expect(res.status).toBe(413);
     const body = (await res.json()) as {
-      error: { code: string; message: string };
+      error: { code: string; userMessage: string; refId: string };
     };
     expect(body.error.code).toBe("content_too_large");
-    expect(body.error.message).toMatch(/byte/i);
+    expect(body.error.userMessage).toMatch(/byte/i);
     expect(createdBinary).toHaveLength(0);
   });
 

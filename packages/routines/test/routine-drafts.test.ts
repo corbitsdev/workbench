@@ -144,13 +144,17 @@ describe("POST /routine-drafts with a Myra-backed drafting port", () => {
     const { response, body } = await createDraft(app, DRAFT_BODY);
 
     expect(response.status).toBe(422);
-    expect(body).toEqual({
-      error: {
-        code: "drafting_failed",
-        message:
-          "Myra couldn't draft a routine from that. Try rephrasing, or build it from the catalog instead.",
-      },
-    });
+    const error = body.error as {
+      code: string;
+      userMessage: string;
+      refId: string;
+    };
+    expect(error.code).toBe("drafting_failed");
+    expect(error.userMessage).toBe(
+      "Myra couldn't draft a routine from that. Try rephrasing, or build it from the catalog instead.",
+    );
+    expect(typeof error.refId).toBe("string");
+    expect(error.refId.length).toBeGreaterThan(0);
   });
 
   test("an unparseable Myra reply also surfaces the honest drafting_failed envelope", async () => {
@@ -208,12 +212,17 @@ describe("in-flight drafting guard", () => {
     const second = await createDraft(app, DRAFT_BODY);
 
     expect(second.response.status).toBe(409);
-    expect(second.body).toEqual({
-      error: {
-        code: "dispatch_in_progress",
-        message: "Myra is already working on your last request.",
-      },
-    });
+    const error = second.body.error as {
+      code: string;
+      userMessage: string;
+      refId: string;
+    };
+    expect(error.code).toBe("dispatch_in_progress");
+    expect(error.userMessage).toBe(
+      "Myra is already working on your last request.",
+    );
+    expect(typeof error.refId).toBe("string");
+    expect(error.refId.length).toBeGreaterThan(0);
 
     releaseFirst();
     const firstResult = await first;

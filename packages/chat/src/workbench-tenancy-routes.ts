@@ -9,6 +9,7 @@
 import type { AppEnv } from "@intx/hub-api";
 import { Hono } from "hono";
 import { type } from "arktype";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
 
@@ -29,7 +30,10 @@ export function createWorkbenchTenancyRoutes(
     const user = c.get("user");
     if (!user) {
       return c.json(
-        { error: { code: "unauthorized", message: "Authentication required" } },
+        makeErrorEnvelope({
+          code: "unauthorized",
+          userMessage: "Authentication required",
+        }),
         401,
       );
     }
@@ -37,7 +41,10 @@ export function createWorkbenchTenancyRoutes(
     const body = TenantIdsBody(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {
       return c.json(
-        { error: { code: "invalid_body", message: body.summary } },
+        makeErrorEnvelope({
+          code: "invalid_body",
+          userMessage: body.summary,
+        }),
         400,
       );
     }

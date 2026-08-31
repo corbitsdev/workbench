@@ -13,6 +13,7 @@ import { Hono } from "hono";
 import { type } from "arktype";
 import type { ModelPricingRow, ResolvedOffering } from "@intx/db";
 import { Capability } from "@intx/types";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 import { CONCEPTS } from "./concepts";
 import { EMPTY_POLICY, type BenchModelPolicy } from "./policy";
@@ -99,13 +100,11 @@ export function createWorkflowCatalogRoutes(
     const scope = await deps.authenticator.resolve(token, address);
     if (scope === null) {
       return c.json(
-        {
-          error: {
-            code: "unauthorized",
-            message:
-              "Missing or unrecognized sidecar bearer token / run address",
-          },
-        },
+        makeErrorEnvelope({
+          code: "unauthorized",
+          userMessage:
+            "Missing or unrecognized sidecar bearer token / run address",
+        }),
         401,
       );
     }
@@ -164,19 +163,20 @@ export function createWorkflowCatalogRoutes(
     const body = ChainBody(raw);
     if (body instanceof type.errors) {
       return c.json(
-        {
-          error: {
-            code: "bad_request",
-            message: `invalid body: ${body.summary}`,
-          },
-        },
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid body: ${body.summary}`,
+        }),
         400,
       );
     }
     const need = needFrom(body);
     if (need instanceof Error) {
       return c.json(
-        { error: { code: "bad_request", message: need.message } },
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: need.message,
+        }),
         400,
       );
     }
@@ -191,7 +191,10 @@ export function createWorkflowCatalogRoutes(
     } catch (err) {
       if (err instanceof UnknownConceptError) {
         return c.json(
-          { error: { code: "bad_request", message: err.message } },
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: err.message,
+          }),
           400,
         );
       }
@@ -205,19 +208,20 @@ export function createWorkflowCatalogRoutes(
     const body = EstimateBody(raw);
     if (body instanceof type.errors) {
       return c.json(
-        {
-          error: {
-            code: "bad_request",
-            message: `invalid body: ${body.summary}`,
-          },
-        },
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid body: ${body.summary}`,
+        }),
         400,
       );
     }
     const need = needFrom(body);
     if (need instanceof Error) {
       return c.json(
-        { error: { code: "bad_request", message: need.message } },
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: need.message,
+        }),
         400,
       );
     }
@@ -243,7 +247,10 @@ export function createWorkflowCatalogRoutes(
     } catch (err) {
       if (err instanceof UnknownConceptError) {
         return c.json(
-          { error: { code: "bad_request", message: err.message } },
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: err.message,
+          }),
           400,
         );
       }

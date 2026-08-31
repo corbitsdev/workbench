@@ -108,13 +108,14 @@ async function request<T>(
     throw new ApiQueryError("Not signed in.", 401, path);
   }
   if (!response.ok) {
-    // Envelope-first: the hub's own `error.message` is already plain,
+    // Envelope-first: the hub's own `error.userMessage` is already plain,
     // human copy — kept verbatim. Only the fallback (no envelope message)
     // is synthesized here, and it never repeats the request path.
     const detail = await response
       .json()
       .then(
-        (body: { error?: { message?: string } }) => body.error?.message ?? "",
+        (body: { error?: { userMessage?: string } }) =>
+          body.error?.userMessage ?? "",
       )
       .catch(() => "");
     throw new ApiQueryError(

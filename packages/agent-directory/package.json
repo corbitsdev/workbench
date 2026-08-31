@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@corbits/chat": "workspace:*",
+    "@corbits/error-sink": "workspace:*",
     "@corbits/folded-run-one-shot": "workspace:*",
     "@corbits/skills": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",
@@ -27,6 +28,7 @@
     "@intx/log": "0.3.0",
     "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
+    "@workbench/hub-client": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "hono": "^4.11.9",

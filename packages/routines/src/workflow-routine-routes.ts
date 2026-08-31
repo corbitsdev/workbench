@@ -30,6 +30,7 @@ import { type } from "arktype";
 
 import { RoutineTrigger } from "./trigger";
 import type { RoutineStore, UpdateRoutineInput } from "./store";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 import {
   fireOnceTriggerIfNeeded,
   isDeliveryWorkbenchRequired,
@@ -140,10 +141,6 @@ export type CreateWorkflowRoutineRoutesDeps = {
   workbenchNotice?: WorkbenchNoticePort | undefined;
 };
 
-const ErrorEnvelope = (code: string, message: string) => ({
-  error: { code, message },
-});
-
 /** "definition not found" plus up to 8 `name (wfd_id)` candidates, so a
  * model that passed a bad id or name can self-correct. */
 async function definitionNotFoundMessage(
@@ -202,10 +199,11 @@ export function createWorkflowRoutineRoutes(
     const scope = await deps.authenticator.resolve(token, address);
     if (scope === null) {
       return c.json(
-        ErrorEnvelope(
-          "unauthorized",
-          "Missing or unrecognized sidecar bearer token / run address",
-        ),
+        makeErrorEnvelope({
+          code: "unauthorized",
+          userMessage:
+            "Missing or unrecognized sidecar bearer token / run address",
+        }),
         401,
       );
     }
@@ -226,7 +224,10 @@ export function createWorkflowRoutineRoutes(
     );
     if (body instanceof type.errors) {
       return c.json(
-        ErrorEnvelope("bad_request", `invalid routine body: ${body.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid routine body: ${body.summary}`,
+        }),
         400,
       );
     }
@@ -246,10 +247,10 @@ export function createWorkflowRoutineRoutes(
       }
       if (!owned) {
         return c.json(
-          ErrorEnvelope(
-            "not_found",
-            await definitionNotFoundMessage(deps, scope.tenantId),
-          ),
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: await definitionNotFoundMessage(deps, scope.tenantId),
+          }),
           404,
         );
       }
@@ -264,7 +265,10 @@ export function createWorkflowRoutineRoutes(
       ))
     ) {
       return c.json(
-        ErrorEnvelope("not_found", "webhook trigger not found"),
+        makeErrorEnvelope({
+          code: "not_found",
+          userMessage: "webhook trigger not found",
+        }),
         404,
       );
     }
@@ -297,10 +301,10 @@ export function createWorkflowRoutineRoutes(
 
     if (needsDelivery) {
       return c.json(
-        ErrorEnvelope(
-          "bad_request",
-          "deliveryWorkbenchId is required for this workflow",
-        ),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: "deliveryWorkbenchId is required for this workflow",
+        }),
         400,
       );
     }
@@ -312,7 +316,13 @@ export function createWorkflowRoutineRoutes(
         body.input ?? {},
       );
       if (!validated.ok) {
-        return c.json(ErrorEnvelope("bad_request", validated.message), 400);
+        return c.json(
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: validated.message,
+          }),
+          400,
+        );
       }
     }
 
@@ -371,7 +381,10 @@ export function createWorkflowRoutineRoutes(
     );
     if (body instanceof type.errors) {
       return c.json(
-        ErrorEnvelope("bad_request", `invalid routine patch: ${body.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid routine patch: ${body.summary}`,
+        }),
         400,
       );
     }
@@ -379,7 +392,13 @@ export function createWorkflowRoutineRoutes(
     const routineId = c.req.param("id");
     const existing = await deps.store.getRoutine(scope.tenantId, routineId);
     if (existing === undefined) {
-      return c.json(ErrorEnvelope("not_found", "routine not found"), 404);
+      return c.json(
+        makeErrorEnvelope({
+          code: "not_found",
+          userMessage: "routine not found",
+        }),
+        404,
+      );
     }
 
     if (
@@ -392,7 +411,10 @@ export function createWorkflowRoutineRoutes(
       ))
     ) {
       return c.json(
-        ErrorEnvelope("not_found", "webhook trigger not found"),
+        makeErrorEnvelope({
+          code: "not_found",
+          userMessage: "webhook trigger not found",
+        }),
         404,
       );
     }
@@ -429,7 +451,10 @@ export function createWorkflowRoutineRoutes(
     const body = RunNowBody(await c.req.json().catch(() => ({})));
     if (body instanceof type.errors) {
       return c.json(
-        ErrorEnvelope("bad_request", `invalid run body: ${body.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid run body: ${body.summary}`,
+        }),
         400,
       );
     }
@@ -437,7 +462,13 @@ export function createWorkflowRoutineRoutes(
     const routineId = c.req.param("id");
     const existing = await deps.store.getRoutine(scope.tenantId, routineId);
     if (existing === undefined) {
-      return c.json(ErrorEnvelope("not_found", "routine not found"), 404);
+      return c.json(
+        makeErrorEnvelope({
+          code: "not_found",
+          userMessage: "routine not found",
+        }),
+        404,
+      );
     }
 
     // "Run now" is an unscheduled fire of the exact launcher a scheduled
@@ -453,10 +484,11 @@ export function createWorkflowRoutineRoutes(
         existing.deliveryWorkbenchId === "")
     ) {
       return c.json(
-        ErrorEnvelope(
-          "bad_request",
-          "routine has no deliveryWorkbenchId; set one before running",
-        ),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage:
+            "routine has no deliveryWorkbenchId; set one before running",
+        }),
         400,
       );
     }

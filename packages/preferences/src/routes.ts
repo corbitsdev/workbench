@@ -9,10 +9,7 @@ import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 
 import type { PreferencesStore } from "./store";
-
-const ErrorEnvelope = (code: string, message: string) => ({
-  error: { code, message },
-});
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 const PatchBody = type("Record<string, unknown>");
 
@@ -44,7 +41,10 @@ export function createPreferencesRoutes(
     const patch = PatchBody(raw);
     if (patch instanceof type.errors) {
       return c.json(
-        ErrorEnvelope("bad_request", `invalid body: ${patch.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid body: ${patch.summary}`,
+        }),
         400,
       );
     }

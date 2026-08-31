@@ -2,7 +2,7 @@
   "name": "@corbits/catalog-tools",
   "private": true,
   "description": "The list_model_concepts, pick_models and estimate_run_cost tools as an @intx/agent bundle: an agent asks for a model by what the work needs and gets back an ordered, priced chain of what this bench can actually reach — never a model named by hand.",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {

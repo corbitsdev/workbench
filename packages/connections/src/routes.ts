@@ -28,6 +28,7 @@ import {
   createHubAPI,
   ensureCredential,
   ensureProvider,
+  makeErrorEnvelope,
   parseAs,
   OLLAMA_PLACEHOLDER_SECRET,
   seedCatalog,
@@ -177,10 +178,6 @@ export async function disconnectConnector(
 // different session) reads back with no redaction step of its own. See
 // `provider-health.ts`'s own header for why.
 const CREDENTIAL_TEST_FAILURE_CATEGORY = "credential_failure" as const;
-
-const ErrorEnvelope = (code: string, message: string) => ({
-  error: { code, message },
-});
 
 // CL-6351: a fresh Ollama connect whose instance has only embedding
 // models pulled still succeeds (the URL and instance are real) but has
@@ -401,7 +398,10 @@ export function createConnectionRoutes(
       const descriptor = findApiKeyDescriptor(connectorId);
       if (descriptor === undefined || descriptor.probe === undefined) {
         return c.json(
-          ErrorEnvelope("not_found", `Unknown connector: ${connectorId}`),
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: `Unknown connector: ${connectorId}`,
+          }),
           404,
         );
       }
@@ -409,10 +409,10 @@ export function createConnectionRoutes(
       const parsed = await parseApiKeyBody(c);
       if (parsed instanceof type.errors) {
         return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            `An API key is required: ${parsed.summary}`,
-          ),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `An API key is required: ${parsed.summary}`,
+          }),
           400,
         );
       }
@@ -429,7 +429,13 @@ export function createConnectionRoutes(
           descriptor.id,
           CREDENTIAL_TEST_FAILURE_CATEGORY,
         );
-        return c.json(ErrorEnvelope("invalid_credential", test.message), 422);
+        return c.json(
+          makeErrorEnvelope({
+            code: "invalid_credential",
+            userMessage: test.message,
+          }),
+          422,
+        );
       }
 
       const cookies = cookiesFromHeader(c.req.header("cookie"));
@@ -553,16 +559,18 @@ export function createConnectionRoutes(
         );
         // Never widen extra beyond identifiers safe to print — the pasted
         // `parsed.apiKey` is in scope above.
-        reportError(cause, {
+        const refId = reportError(cause, {
           operation: "persist_api_key_connection",
           tenantId: tenant.id,
           extra: { connectorId },
         });
         return c.json(
-          ErrorEnvelope(
-            "connection_setup_failed",
-            "The key checked out, but saving the connection failed. Try again in a moment.",
-          ),
+          makeErrorEnvelope({
+            code: "connection_setup_failed",
+            userMessage:
+              "The key checked out, but saving the connection failed. Try again in a moment.",
+            refId,
+          }),
           500,
         );
       }
@@ -580,7 +588,10 @@ export function createConnectionRoutes(
       const connectorId = c.req.param("connectorId");
       if (registry[connectorId] === undefined) {
         return c.json(
-          ErrorEnvelope("not_found", `Unknown connector: ${connectorId}`),
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: `Unknown connector: ${connectorId}`,
+          }),
           404,
         );
       }
@@ -596,7 +607,10 @@ export function createConnectionRoutes(
         );
         if (!result.disconnected) {
           return c.json(
-            ErrorEnvelope("not_found", `${connectorId} is not connected`),
+            makeErrorEnvelope({
+              code: "not_found",
+              userMessage: `${connectorId} is not connected`,
+            }),
             404,
           );
         }
@@ -606,16 +620,17 @@ export function createConnectionRoutes(
         deps.log(
           `disconnect failed for connector ${connectorId} on tenant ${tenant.id}: ${message}`,
         );
-        reportError(cause, {
+        const refId = reportError(cause, {
           operation: "disconnect_connector",
           tenantId: tenant.id,
           extra: { connectorId },
         });
         return c.json(
-          ErrorEnvelope(
-            "disconnect_failed",
-            "Couldn't disconnect — try again.",
-          ),
+          makeErrorEnvelope({
+            code: "disconnect_failed",
+            userMessage: "Couldn't disconnect — try again.",
+            refId,
+          }),
           500,
         );
       }

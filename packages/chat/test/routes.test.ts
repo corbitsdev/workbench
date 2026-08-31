@@ -370,14 +370,16 @@ describe("POST /workbenches", () => {
 
     expect(response.status).toBe(409);
     const errorBody = (await response.json()) as {
-      error: { code: string; message: string };
+      error: { code: string; userMessage: string };
     };
     expect(errorBody.error.code).toBe("not_launchable");
-    expect(errorBody.error.message).toBe(
+    expect(errorBody.error.userMessage).toBe(
       "This agent's model isn't available here.",
     );
-    expect(errorBody.error.message).not.toMatch(/cannot resolve an inference/);
-    expect(errorBody.error.message).not.toMatch(/HTTP/);
+    expect(errorBody.error.userMessage).not.toMatch(
+      /cannot resolve an inference/,
+    );
+    expect(errorBody.error.userMessage).not.toMatch(/HTTP/);
 
     const tenancy = deps.tenancy as ReturnType<
       typeof createInMemoryWorkbenchTenancyStore
@@ -412,10 +414,10 @@ describe("POST /workbenches", () => {
 
     expect(response.status).toBe(409);
     const errorBody = (await response.json()) as {
-      error: { code: string; message: string };
+      error: { code: string; userMessage: string };
     };
     expect(errorBody.error.code).toBe("not_launchable");
-    expect(errorBody.error.message).toMatch(/save its instructions/);
+    expect(errorBody.error.userMessage).toMatch(/save its instructions/);
 
     const tenancy = deps.tenancy as ReturnType<
       typeof createInMemoryWorkbenchTenancyStore
@@ -971,15 +973,13 @@ describe("POST /workbenches/:id/invite", () => {
 
     expect(response.status).toBe(409);
     const errorBody = (await response.json()) as {
-      error: { code: string; message: string };
+      error: { code: string; userMessage: string };
     };
     expect(errorBody.error.code).toBe("not_launchable");
-    expect(errorBody.error.message).toBe(
+    expect(errorBody.error.userMessage).toBe(
       "This agent's model isn't available here.",
     );
-    expect(errorBody.error.message).not.toMatch(/cannot resolve an inference/);
-    expect(errorBody.error.message).not.toMatch(/HTTP/);
-    expect(errorBody.error.message).not.toMatch(
+    expect(errorBody.error.userMessage).not.toMatch(
       /No launchable inference source/,
     );
   });
@@ -1008,10 +1008,10 @@ describe("POST /workbenches/:id/invite", () => {
 
     expect(response.status).toBe(409);
     const errorBody = (await response.json()) as {
-      error: { code: string; message: string };
+      error: { code: string; userMessage: string };
     };
     expect(errorBody.error.code).toBe("not_launchable");
-    expect(errorBody.error.message).toMatch(/save its instructions/);
+    expect(errorBody.error.userMessage).toMatch(/save its instructions/);
   });
 });
 
@@ -1871,9 +1871,11 @@ describe("POST /workbenches/:id/messages — invite pre-step (CL-5879 mention-pu
 
     expect(response.status).toBe(403);
     const body = (await response.json()) as {
-      error: { code: string; message: string };
+      error: { code: string; userMessage: string };
     };
-    expect(body.error.message).toBe("You can't add people to this workbench");
+    expect(body.error.userMessage).toBe(
+      "You can't add people to this workbench",
+    );
 
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     expect(platform.sentMail).toHaveLength(0);

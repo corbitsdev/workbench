@@ -1,6 +1,6 @@
 // The route's own error handling: a provisioning failure must never
 // reach the caller as a bare, unhandled 500 — it should come back as
-// the same `{ error: { code, message } }` envelope every other hub
+// the same `{ error: { code, userMessage, refId } }` envelope every other hub
 // route uses, so the web layer can tell "nothing to do" apart from
 // "this broke" instead of both looking like silence.
 

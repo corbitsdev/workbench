@@ -15,6 +15,7 @@ import {
   type SkillRegistryErrorReason,
 } from "./registry";
 import { parseSkillMd, SkillContentError } from "./skill-md";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 /** Which workflow definitions pin a given skill. */
 export type PinnedByResolver = {
@@ -74,10 +75,6 @@ const STATUS_BY_REASON: Record<
   conflict: 409,
 };
 
-function errorEnvelope(code: string, message: string) {
-  return { error: { code, message } };
-}
-
 export type CreateSkillRoutesDeps = {
   registry: SkillRegistry;
   pinnedBy: PinnedByResolver;
@@ -94,7 +91,7 @@ export function createSkillRoutes({
   app.onError((err, c) => {
     if (err instanceof SkillRegistryError) {
       return c.json(
-        errorEnvelope(err.reason, err.message),
+        makeErrorEnvelope({ code: err.reason, userMessage: err.message }),
         STATUS_BY_REASON[err.reason],
       );
     }
@@ -121,7 +118,10 @@ export function createSkillRoutes({
     const body = CreateSkillBody(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {
       return c.json(
-        errorEnvelope("bad_request", `invalid skill: ${body.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid skill: ${body.summary}`,
+        }),
         400,
       );
     }
@@ -131,7 +131,13 @@ export function createSkillRoutes({
         fields = parseSkillMd(body.source);
       } catch (cause) {
         if (cause instanceof SkillContentError) {
-          return c.json(errorEnvelope("bad_request", cause.message), 400);
+          return c.json(
+            makeErrorEnvelope({
+              code: "bad_request",
+              userMessage: cause.message,
+            }),
+            400,
+          );
         }
         throw cause;
       }
@@ -165,7 +171,10 @@ export function createSkillRoutes({
     const body = UpdateSkillBody(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {
       return c.json(
-        errorEnvelope("bad_request", `invalid update: ${body.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid update: ${body.summary}`,
+        }),
         400,
       );
     }
@@ -190,7 +199,10 @@ export function createSkillRoutes({
       const commitSha = commitShaSchema(c.req.param("commitSha"));
       if (commitSha instanceof type.errors) {
         return c.json(
-          errorEnvelope("bad_request", `invalid version: ${commitSha.summary}`),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid version: ${commitSha.summary}`,
+          }),
           400,
         );
       }
@@ -208,7 +220,10 @@ export function createSkillRoutes({
     const body = RestoreBody(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {
       return c.json(
-        errorEnvelope("bad_request", `invalid restore: ${body.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid restore: ${body.summary}`,
+        }),
         400,
       );
     }
@@ -224,7 +239,10 @@ export function createSkillRoutes({
     const body = ScopeBody(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {
       return c.json(
-        errorEnvelope("bad_request", `invalid scope: ${body.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid scope: ${body.summary}`,
+        }),
         400,
       );
     }

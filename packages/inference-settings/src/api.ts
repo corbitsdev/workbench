@@ -100,11 +100,13 @@ async function request<T>(
   }
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => undefined);
-    const envelope = type({ error: { message: "string" } })(body);
+    const envelope = type({
+      error: { code: "string", userMessage: "string", refId: "string" },
+    })(body);
     throw new InferenceSettingsApiError(
       envelope instanceof type.errors
         ? `The server answered ${response.status} while ${verb}.`
-        : envelope.error.message,
+        : envelope.error.userMessage,
       response.status,
     );
   }
@@ -141,11 +143,13 @@ async function requestVoid(
   }
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => undefined);
-    const envelope = type({ error: { message: "string" } })(body);
+    const envelope = type({
+      error: { code: "string", userMessage: "string", refId: "string" },
+    })(body);
     throw new InferenceSettingsApiError(
       envelope instanceof type.errors
         ? `The server answered ${response.status} while ${verb}.`
-        : envelope.error.message,
+        : envelope.error.userMessage,
       response.status,
     );
   }

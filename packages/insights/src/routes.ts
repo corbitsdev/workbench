@@ -28,10 +28,7 @@ import {
 } from "./queries";
 import type { UsageStore } from "./store";
 import type { TurnLatencyStore } from "./latency-store";
-
-const ErrorEnvelope = (code: string, message: string) => ({
-  error: { code, message },
-});
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 const RangeQuery = type({
   "from?": "string",
@@ -106,14 +103,20 @@ function parseRangeQuery(
   const raw = RangeQuery(query);
   if (raw instanceof type.errors) {
     return Response.json(
-      ErrorEnvelope("bad_request", `invalid query: ${raw.summary}`),
+      makeErrorEnvelope({
+        code: "bad_request",
+        userMessage: `invalid query: ${raw.summary}`,
+      }),
       { status: 400 },
     );
   }
   const range = parseRange(raw);
   if (range instanceof type.errors) {
     return Response.json(
-      ErrorEnvelope("bad_request", "invalid from/to timestamp"),
+      makeErrorEnvelope({
+        code: "bad_request",
+        userMessage: "invalid from/to timestamp",
+      }),
       { status: 400 },
     );
   }

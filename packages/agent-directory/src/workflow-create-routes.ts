@@ -55,14 +55,11 @@ import {
   CapabilityOutOfInventoryError,
   type CapabilityInventoryProvider,
 } from "./capability-inventory";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 import type {
   WorkflowCapabilityRunScope,
   WorkflowRunAuthenticator,
 } from "./workflow-capability-routes";
-
-function errorEnvelope(code: string, message: string) {
-  return { error: { code, message } };
-}
 
 export type WorkflowAgentCreateEnv = {
   Variables: { workflowCapabilityScope: WorkflowCapabilityRunScope };
@@ -119,10 +116,16 @@ export function createWorkflowAgentCreateRoutes(
 
   app.onError((err, c) => {
     if (err instanceof CapabilityOutOfInventoryError) {
-      return c.json(errorEnvelope("bad_request", err.message), 400);
+      return c.json(
+        makeErrorEnvelope({ code: "bad_request", userMessage: err.message }),
+        400,
+      );
     }
     if (err instanceof DuplicateAgentHandleError) {
-      return c.json(errorEnvelope("conflict", err.message), 409);
+      return c.json(
+        makeErrorEnvelope({ code: "conflict", userMessage: err.message }),
+        409,
+      );
     }
     throw err;
   });
@@ -136,10 +139,11 @@ export function createWorkflowAgentCreateRoutes(
     const scope = await deps.authenticator.resolve(token, address);
     if (scope === null) {
       return c.json(
-        errorEnvelope(
-          "unauthorized",
-          "Missing or unrecognized sidecar bearer token / run address",
-        ),
+        makeErrorEnvelope({
+          code: "unauthorized",
+          userMessage:
+            "Missing or unrecognized sidecar bearer token / run address",
+        }),
         401,
       );
     }
@@ -154,10 +158,10 @@ export function createWorkflowAgentCreateRoutes(
     );
     if (body instanceof type.errors) {
       return c.json(
-        errorEnvelope(
-          "bad_request",
-          `invalid agent definition: ${body.summary}`,
-        ),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid agent definition: ${body.summary}`,
+        }),
         400,
       );
     }

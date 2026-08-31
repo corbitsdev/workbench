@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@intx/hub-api": "workspace:*",
+    "@workbench/hub-client": "workspace:*",
     "arktype": "catalog:",
     "hono": "^4.11.9"
   },

@@ -105,8 +105,13 @@ test("PUT / enabling exclusive placement 409s when the hub has no provisioner", 
     body: JSON.stringify({ enabled: true }),
   });
   expect(response.status).toBe(409);
-  const body = (await response.json()) as { error: { code: string } };
+  const body = (await response.json()) as {
+    error: { code: string; userMessage: string; refId: string };
+  };
   expect(body.error.code).toBe("no_provisioner_configured");
+  expect(body.error.userMessage).toContain("Isolated capacity isn't available");
+  expect(typeof body.error.refId).toBe("string");
+  expect(body.error.refId.length).toBeGreaterThan(0);
   expect(await store.getEnabled(TENANT.id)).toBe(false);
 });
 
@@ -135,8 +140,14 @@ test("PUT / with a non-boolean enabled 400s", async () => {
     body: JSON.stringify({ enabled: "yes" }),
   });
   expect(response.status).toBe(400);
-  const body = (await response.json()) as { error: { code: string } };
+  const body = (await response.json()) as {
+    error: { code: string; userMessage: string; refId: string };
+  };
   expect(body.error.code).toBe("bad_request");
+  expect(typeof body.error.userMessage).toBe("string");
+  expect(body.error.userMessage.length).toBeGreaterThan(0);
+  expect(typeof body.error.refId).toBe("string");
+  expect(body.error.refId.length).toBeGreaterThan(0);
 });
 
 test("PUT / with no body / invalid JSON 400s rather than 500", async () => {

@@ -168,9 +168,12 @@ describeIfDb("extension mounting", () => {
       body: JSON.stringify({ tenantIds: [] }),
     });
     expect(gated.status).toBe(401);
-    expect(await gated.json()).toEqual({
-      error: { code: "unauthorized", message: "Authentication required" },
-    });
+    const kindsBody = (await gated.json()) as {
+      error: { code: string; userMessage: string; refId: string };
+    };
+    expect(kindsBody.error.code).toBe("unauthorized");
+    expect(kindsBody.error.userMessage).toBe("Authentication required");
+    expect(kindsBody.error.refId).toMatch(/\S/);
   });
 });
 

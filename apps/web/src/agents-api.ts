@@ -83,7 +83,9 @@ async function getJSON<T>(path: string, schema: Validator<T>): Promise<T> {
   return parsed;
 }
 
-const ErrorEnvelope = type({ error: { message: "string" } });
+const ErrorEnvelope = type({
+  error: { code: "string", userMessage: "string", refId: "string" },
+});
 
 async function postJSON<T>(
   path: string,
@@ -111,7 +113,7 @@ async function postJSON<T>(
     const message =
       envelope instanceof type.errors
         ? `The server answered ${response.status}.`
-        : envelope.error.message;
+        : envelope.error.userMessage;
     throw new ApiQueryError(message, response.status, path);
   }
   const parsed = schema(json);

@@ -25,6 +25,7 @@ import {
   createHubAPI,
   ensureCredential,
   ensureProvider,
+  makeErrorEnvelope,
   parseAs,
   type ApiCall,
 } from "@workbench/hub-client";
@@ -36,10 +37,6 @@ import { probeMcpServer } from "./mcp-probe";
 import { fireConnectedHook, type ServiceConnectedHook } from "./connected-hook";
 import { reportError } from "@corbits/error-sink";
 import { MCP_PRESETS, mcpPresetBySlug } from "./mcp-presets";
-
-const ErrorEnvelope = (code: string, message: string) => ({
-  error: { code, message },
-});
 
 /** Every stored MCP server provider is named `mcp:<slug>` — the same
  * convention `@corbits/mcp-tools`' `mcpCredentialHandle` builds from the
@@ -230,7 +227,10 @@ export function createMcpServerRoutes(
     const parsed = SubmitMcpServer(body);
     if (parsed instanceof type.errors) {
       return c.json(
-        ErrorEnvelope("bad_request", `Invalid MCP server: ${parsed.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `Invalid MCP server: ${parsed.summary}`,
+        }),
         400,
       );
     }
@@ -241,10 +241,10 @@ export function createMcpServerRoutes(
         : undefined;
     if (parsed.presetSlug !== undefined && preset === undefined) {
       return c.json(
-        ErrorEnvelope(
-          "bad_request",
-          `Unknown MCP server preset: "${parsed.presetSlug}"`,
-        ),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `Unknown MCP server preset: "${parsed.presetSlug}"`,
+        }),
         400,
       );
     }
@@ -253,10 +253,10 @@ export function createMcpServerRoutes(
       (parsed.token === undefined || parsed.token.length === 0)
     ) {
       return c.json(
-        ErrorEnvelope(
-          "token_required",
-          `${preset.displayName} needs an access token — create one at ${preset.docsUrl} and paste it in.`,
-        ),
+        makeErrorEnvelope({
+          code: "token_required",
+          userMessage: `${preset.displayName} needs an access token — create one at ${preset.docsUrl} and paste it in.`,
+        }),
         400,
       );
     }
@@ -264,10 +264,11 @@ export function createMcpServerRoutes(
     const url = preset?.url ?? parsed.url;
     if (name === undefined || url === undefined) {
       return c.json(
-        ErrorEnvelope(
-          "bad_request",
-          "Invalid MCP server: provide either presetSlug, or both name and url.",
-        ),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage:
+            "Invalid MCP server: provide either presetSlug, or both name and url.",
+        }),
         400,
       );
     }
@@ -276,8 +277,14 @@ export function createMcpServerRoutes(
     if (!test.ok) {
       return c.json(
         test.requiresOAuth === true
-          ? ErrorEnvelope("oauth_required", test.message)
-          : ErrorEnvelope("connect_failed", test.message),
+          ? makeErrorEnvelope({
+              code: "oauth_required",
+              userMessage: test.message,
+            })
+          : makeErrorEnvelope({
+              code: "connect_failed",
+              userMessage: test.message,
+            }),
         422,
       );
     }
@@ -345,16 +352,18 @@ export function createMcpServerRoutes(
       );
       // Never widen extra beyond identifiers safe to print — `cause` here
       // can carry the pasted bearer token in scope above.
-      reportError(cause, {
+      const refId = reportError(cause, {
         operation: "persist_mcp_server_connection",
         tenantId: tenant.id,
         extra: { slug },
       });
       return c.json(
-        ErrorEnvelope(
-          "connection_setup_failed",
-          "That MCP server checked out, but saving the connection failed. Try again in a moment.",
-        ),
+        makeErrorEnvelope({
+          code: "connection_setup_failed",
+          userMessage:
+            "That MCP server checked out, but saving the connection failed. Try again in a moment.",
+          refId,
+        }),
         500,
       );
     }
@@ -391,15 +400,18 @@ export function createMcpServerRoutes(
         );
         if (inheritedProvider !== undefined) {
           return c.json(
-            ErrorEnvelope(
-              "forbidden",
-              `"${slug}" is inherited from a parent workbench — disconnect it from the workbench that owns it, not from a child.`,
-            ),
+            makeErrorEnvelope({
+              code: "forbidden",
+              userMessage: `"${slug}" is inherited from a parent workbench — disconnect it from the workbench that owns it, not from a child.`,
+            }),
             403,
           );
         }
         return c.json(
-          ErrorEnvelope("not_found", `No MCP server connected at "${slug}"`),
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: `No MCP server connected at "${slug}"`,
+          }),
           404,
         );
       }

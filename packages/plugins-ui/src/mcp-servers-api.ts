@@ -43,7 +43,7 @@ const ConnectResult = type({
 });
 
 const ErrorEnvelope = type({
-  error: { message: "string", "code?": "string" },
+  error: { code: "string", userMessage: "string", refId: "string" },
 });
 
 export type McpPreset = {
@@ -89,9 +89,10 @@ async function readError(
   if (envelope instanceof type.errors) {
     return { message: `The server answered ${response.status} while ${verb}.` };
   }
-  return envelope.error.code === undefined
-    ? { message: envelope.error.message }
-    : { message: envelope.error.message, code: envelope.error.code };
+  return {
+    message: envelope.error.userMessage,
+    code: envelope.error.code,
+  };
 }
 
 async function readErrorMessage(
