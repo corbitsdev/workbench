@@ -9,9 +9,13 @@
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { reportError } from "@corbits/error-sink";
-import { InferenceResolutionError } from "@corbits/folded-runs";
 import { encodeParts } from "./codec";
 import type { Part as PartType } from "./parts";
+import {
+  consumerTurnError,
+  isModelUnavailableCause,
+  MODEL_UNAVAILABLE_CONSUMER_MESSAGE,
+} from "./model-unavailable";
 import { localPartOf } from "./agent-address";
 import { deriveDisplayName } from "./display-name";
 import { assertNoLeakedInternalId } from "./id-leak-guard";
@@ -1973,7 +1977,7 @@ export async function dispatchTurn(
         tenantId: input.tenantId,
         turnId: turn.id,
         status: "failed",
-        error: err instanceof Error ? err.message : String(err),
+        error: consumerTurnError(err),
       });
     }
     throw err;
@@ -1987,14 +1991,16 @@ const CREDENTIAL_UNDELIVERED_NOTICE =
   "Settings, then I'll pick this up.";
 const RETRYABLE_UNDELIVERED_NOTICE =
   "I didn't get that one — send it again and I'll pick it up.";
+const MODEL_UNAVAILABLE_UNDELIVERED_NOTICE = MODEL_UNAVAILABLE_CONSUMER_MESSAGE;
 
 /**
  * Whether a dispatch failure is a credential/inference-resolution
  * problem resending can never fix — as opposed to a genuinely transient
  * failure (sidecar hiccup, momentary network blip) where "send it again"
- * is honest advice. `InferenceResolutionError` (`@corbits/folded-runs`)
- * is the launch-time case: the agent's definition has no resolvable
- * inference source at all. A dispatch failure whose own status/code
+ * is honest advice. `InferenceResolutionError` / `ModelUnavailableError`
+ * is the launch/wake case: the agent's definition has no resolvable
+ * inference source at all — that gets its own model-unavailable notice,
+ * not the credential-key copy. A dispatch failure whose own status/code
  * marks it a 401 `credential_failure` is the runtime case: a source
  * resolved, but the credential itself was rejected. Every other cause —
  * unclassified, or missing that shape entirely — is treated as
@@ -2003,7 +2009,7 @@ const RETRYABLE_UNDELIVERED_NOTICE =
  * silence (here, the generic notice) over a wrong attribution.
  */
 function isCredentialDispatchFailure(cause: unknown): boolean {
-  if (cause instanceof InferenceResolutionError) return true;
+  if (isModelUnavailableCause(cause)) return false;
   if (cause !== null && typeof cause === "object") {
     const status = (cause as { status?: unknown; statusCode?: unknown }).status;
     const statusCode = (cause as { statusCode?: unknown }).statusCode;
@@ -2042,9 +2048,12 @@ async function postUndeliveredNotice(
   },
 ): Promise<void> {
   try {
-    const notice = isCredentialDispatchFailure(input.cause)
-      ? CREDENTIAL_UNDELIVERED_NOTICE
-      : RETRYABLE_UNDELIVERED_NOTICE;
+    const modelUnavailable = isModelUnavailableCause(input.cause);
+    const notice = modelUnavailable
+      ? MODEL_UNAVAILABLE_UNDELIVERED_NOTICE
+      : isCredentialDispatchFailure(input.cause)
+        ? CREDENTIAL_UNDELIVERED_NOTICE
+        : RETRYABLE_UNDELIVERED_NOTICE;
     await postRoomMessage(deps, {
       tenantId: input.tenantId,
       workbenchId: input.workbenchId,
@@ -2055,6 +2064,9 @@ async function postUndeliveredNotice(
           kind: "text",
           text: `${notice} (ref ${input.refId})`,
           turnFailed: true,
+          ...(modelUnavailable
+            ? { turnFailedReason: "model_unavailable" as const }
+            : {}),
         },
       ],
     });

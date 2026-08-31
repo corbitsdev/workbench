@@ -59,6 +59,7 @@ import { extractPartByPath } from "@intx/mime";
 import { workbenchLaunch } from "./schema";
 import { isWorkbenchHostDefinitionName } from "./workbench-host-naming";
 import { withTimeout } from "./with-timeout";
+import { wrapWakeInferenceError } from "./model-unavailable";
 import type { EventCollectorRegistry, SidecarRouter } from "@intx/hub-sessions";
 import type { InferencePreference } from "@intx/agent";
 import { formatRunAddress } from "@intx/types";
@@ -645,31 +646,35 @@ export function createHubChatPlatform(
         `No run found for address "${address}" (binding names run "${binding.currentRunId}")`,
       );
     }
-    if (await isBeyondWake(deps.db, live.run)) {
-      await relaunchTerminalRun(live);
-      return;
-    }
-    if (isRoutable(live.run.address)) {
-      await reconcileDriftedRun(address);
-      return;
-    }
+    try {
+      if (await isBeyondWake(deps.db, live.run)) {
+        await relaunchTerminalRun(live);
+        return;
+      }
+      if (isRoutable(live.run.address)) {
+        await reconcileDriftedRun(address);
+        return;
+      }
 
-    const wakeParams = {
-      tenantId: binding.tenantId,
-      instanceId: live.run.id,
-      triggerAddress: live.run.address,
-      principalId: live.run.principalId,
-      foldedBody: binding.foldedBody,
-    };
-    const deployed = await wakeFoldedRun(foldedRunsDeps, {
-      ...wakeParams,
-      ...(await deployShapeFor(binding)),
-    });
-    await recordSourcesDigest(
-      deps.db,
-      binding.stableId,
-      deployed.sourcesDigest,
-    );
+      const wakeParams = {
+        tenantId: binding.tenantId,
+        instanceId: live.run.id,
+        triggerAddress: live.run.address,
+        principalId: live.run.principalId,
+        foldedBody: binding.foldedBody,
+      };
+      const deployed = await wakeFoldedRun(foldedRunsDeps, {
+        ...wakeParams,
+        ...(await deployShapeFor(binding)),
+      });
+      await recordSourcesDigest(
+        deps.db,
+        binding.stableId,
+        deployed.sourcesDigest,
+      );
+    } catch (error) {
+      throw wrapWakeInferenceError(error);
+    }
   }
 
   /**
@@ -1194,7 +1199,11 @@ export function createHubChatPlatform(
       // reach `wakeByAddress`'s drift check above through that branch.
       // Run it unconditionally so every send through this choke point
       // — not only the ones that needed waking — reconciles staleness.
-      await reconcileDriftedRun(liveAddress);
+      try {
+        await reconcileDriftedRun(liveAddress);
+      } catch (error) {
+        throw wrapWakeInferenceError(error);
+      }
       const delivery = await requireLive(input.workbenchId);
       const deliveryAddress = delivery.binding.liveAddress;
       // Tracking here (not only at launch) brings instances that were
@@ -1333,19 +1342,23 @@ export function createHubChatPlatform(
       if (binding === undefined) {
         throw new Error(`No workbench_launch binding for address "${address}"`);
       }
-      if (lifecycle !== undefined) {
-        await lifecycle.ensureAwake(binding.liveAddress);
-        // CL-6588: see the matching note in `sendMail` — routability
-        // alone is what `lifecycle.ensureAwake` checks, so an
-        // already-routable-but-stale run needs this run unconditionally.
-        await reconcileDriftedRun(binding.liveAddress);
-        return;
+      try {
+        if (lifecycle !== undefined) {
+          await lifecycle.ensureAwake(binding.liveAddress);
+          // CL-6588: see the matching note in `sendMail` — routability
+          // alone is what `lifecycle.ensureAwake` checks, so an
+          // already-routable-but-stale run needs this run unconditionally.
+          await reconcileDriftedRun(binding.liveAddress);
+          return;
+        }
+        if (isRoutable(binding.liveAddress)) {
+          await reconcileDriftedRun(binding.liveAddress);
+          return;
+        }
+        await wakeByAddressBounded(binding.liveAddress);
+      } catch (error) {
+        throw wrapWakeInferenceError(error);
       }
-      if (isRoutable(binding.liveAddress)) {
-        await reconcileDriftedRun(binding.liveAddress);
-        return;
-      }
-      await wakeByAddressBounded(binding.liveAddress);
     },
   };
 

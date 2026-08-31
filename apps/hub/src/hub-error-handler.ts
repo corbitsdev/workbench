@@ -51,10 +51,9 @@ export function hubErrorHandler() {
     });
 
     if (hasGuidance(err)) {
-      return c.json(
-        { error: { code: err.name, message: err.message, refId } },
-        422,
-      );
+      const message =
+        err.name === "InferenceResolutionError" ? err.guidance : err.message;
+      return c.json({ error: { code: err.name, message, refId } }, 422);
     }
 
     return c.json(

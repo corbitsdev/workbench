@@ -119,6 +119,7 @@ import { monogramFromName } from "./workbench-share";
 import type { FederationTrustStore } from "./federation-trust";
 import type { InvitableDefinition as InvitableDefinitionRecord } from "./platform-port";
 import { isAgentAddress } from "./mentions";
+import { MODEL_UNAVAILABLE_CONSUMER_MESSAGE } from "./model-unavailable";
 
 export type {
   WorkbenchEvents,
@@ -1195,6 +1196,15 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           if (err instanceof DefinitionProjectionMissingError) {
             return c.json(ErrorEnvelope("not_launchable", err.guidance), 409);
           }
+          if (err instanceof InferenceResolutionError) {
+            return c.json(
+              ErrorEnvelope(
+                "not_launchable",
+                MODEL_UNAVAILABLE_CONSUMER_MESSAGE,
+              ),
+              409,
+            );
+          }
           throw err;
         }
 
@@ -1970,7 +1980,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             } catch (err) {
               if (err instanceof InferenceResolutionError) {
                 return c.json(
-                  ErrorEnvelope("not_launchable", err.resolutionMessage),
+                  ErrorEnvelope(
+                    "not_launchable",
+                    MODEL_UNAVAILABLE_CONSUMER_MESSAGE,
+                  ),
                   409,
                 );
               }

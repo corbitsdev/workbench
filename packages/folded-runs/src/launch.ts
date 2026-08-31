@@ -47,6 +47,8 @@ import type { FoldedRunsDeps } from "./types";
  */
 export class InferenceResolutionError extends Error {
   readonly resolutionMessage: string;
+  /** Consumer-facing sentence an HTTP boundary can return verbatim. */
+  readonly guidance: string;
   constructor(launchLabel: string, resolutionMessage: string) {
     super(
       `cannot resolve an inference source for ${launchLabel} ` +
@@ -55,6 +57,7 @@ export class InferenceResolutionError extends Error {
     );
     this.name = "InferenceResolutionError";
     this.resolutionMessage = resolutionMessage;
+    this.guidance = "This agent's model isn't available here.";
   }
 }
 

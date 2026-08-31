@@ -45,7 +45,10 @@
 // invite into a workbench it is not itself in.
 import { Hono } from "hono";
 import { type } from "arktype";
-import { DefinitionProjectionMissingError } from "@corbits/folded-runs";
+import {
+  DefinitionProjectionMissingError,
+  InferenceResolutionError,
+} from "@corbits/folded-runs";
 
 import {
   KindIsChatError,
@@ -63,6 +66,7 @@ import {
   pendingConnectionsOf,
 } from "./connect-pending";
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
+import { MODEL_UNAVAILABLE_CONSUMER_MESSAGE } from "./model-unavailable";
 
 function errorEnvelope(code: string, message: string) {
   return { error: { code, message } };
@@ -226,6 +230,12 @@ export function createWorkflowParticipantRoutes(
       if (err instanceof DefinitionProjectionMissingError) {
         return c.json(errorEnvelope("not_launchable", err.guidance), 409);
       }
+      if (err instanceof InferenceResolutionError) {
+        return c.json(
+          errorEnvelope("not_launchable", MODEL_UNAVAILABLE_CONSUMER_MESSAGE),
+          409,
+        );
+      }
       if (err instanceof KindIsChatError) {
         return c.json(errorEnvelope(err.code, err.message), 409);
       }
@@ -321,6 +331,12 @@ export function createWorkflowParticipantRoutes(
     } catch (err) {
       if (err instanceof DefinitionProjectionMissingError) {
         return c.json(errorEnvelope("not_launchable", err.guidance), 409);
+      }
+      if (err instanceof InferenceResolutionError) {
+        return c.json(
+          errorEnvelope("not_launchable", MODEL_UNAVAILABLE_CONSUMER_MESSAGE),
+          409,
+        );
       }
       if (err instanceof KindIsChatError) {
         return c.json(errorEnvelope(err.code, err.message), 409);
