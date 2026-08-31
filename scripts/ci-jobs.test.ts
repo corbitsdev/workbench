@@ -69,6 +69,18 @@ test("CI splits e2e, isolation, and db-suites onto their own Postgres jobs", asy
   expect(e2eSetupIndex).toBeLessThan(hubSuiteIndex);
 });
 
+test("the structural job runs the same list as local check:structural", async () => {
+  const yaml = await readFile(join(ROOT, ".github/workflows/ci.yml"), "utf8");
+  const structural = jobBodies(yaml).get("structural") ?? "";
+
+  expect(structural).toContain("bun run check:structural");
+  // One list: CI must not re-enumerate the structural sub-checks, or
+  // local and CI drift the moment a new check: script is added.
+  expect(structural).not.toContain("check:deletion");
+  expect(structural).not.toContain("check:report-error");
+  expect(structural).not.toContain("check:packages");
+});
+
 test("jobs that need merge-base fetch full history; the rest stay shallow", async () => {
   const yaml = await readFile(join(ROOT, ".github/workflows/ci.yml"), "utf8");
   const jobs = jobBodies(yaml);
