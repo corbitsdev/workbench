@@ -1923,11 +1923,17 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       let blob: string | Uint8Array;
       try {
         blob = await deps.platform.fetchBlob(workbenchId, blobId);
-      } catch {
+      } catch (err) {
+        const refId = reportError(err, {
+          operation: "chat.blob.fetch",
+          tenantId: tenant.id,
+          roomId: workbenchId,
+        });
         return c.json(
           makeErrorEnvelope({
             code: "not_found",
             userMessage: "blob not found",
+            refId,
           }),
           404,
         );
