@@ -86,3 +86,4 @@ export function reportError(
 }
 
 export type { ErrorContext } from "./context";
+export { generateRefId } from "./ref-id";
