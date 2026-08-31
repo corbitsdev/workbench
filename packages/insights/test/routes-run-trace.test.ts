@@ -5,7 +5,7 @@
 // inference_turn / turn_part tables, not the "reader not mounted" absent
 // envelope. trace-reader.test.ts already proves the reader function itself
 // in isolation; this proves the HTTP route built on top of it.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import postgres from "postgres";
@@ -20,6 +20,7 @@ import { createInsightsRoutes } from "../src/routes";
 import { createDrizzleRunTraceReader } from "../src/trace-reader";
 import { createMemoryUsageStore } from "../src/store";
 import type { RunTrace } from "../src/queries";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);
@@ -42,7 +43,7 @@ function dbConfigFromUrl(databaseUrl: string) {
 }
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const allowAll: RequireGrant = () => async (_c, next) => {
   await next();

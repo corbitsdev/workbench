@@ -4,17 +4,18 @@
 // tests; this only proves the composition-root wiring in `src/index.ts`
 // actually reaches a live app.
 
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { HubConfig } from "../src/config.ts";
 import { createHub } from "../src/index.ts";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 // DB-gated: skipped when DATABASE_URL is unset, matching this repo's
 // convention for tests that talk to a real Postgres.
 const databaseUrl = process.env["DATABASE_URL"] ?? "";
-const describeIfDb = databaseUrl === "" ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const root = mkdtempSync(path.join(tmpdir(), "hub-presence-mount-"));
 const staticDir = path.join(root, "static");

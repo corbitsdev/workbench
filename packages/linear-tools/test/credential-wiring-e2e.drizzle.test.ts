@@ -36,7 +36,7 @@
 // LLM inference cycle -- see the granola-tools e2e test's header comment
 // for why (no scripted tool-call inference adapter exists anywhere in
 // this repo today).
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import {
   buildCredentialDelivery,
   createDB,
@@ -64,9 +64,10 @@ import { dbTargetFromUrl } from "../../../scripts/db-setup";
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { LINEAR_LIST_RECENT_ISSUES_TOOL, linearTools } from "../src/tool";
 import type { LinearEnv } from "../src/tool";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const SCHEMA = "linear_tools_credential_wiring_e2e_test";
 const KEY = new Uint8Array(32).fill(13);

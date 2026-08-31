@@ -25,11 +25,12 @@
 // `scripts/db-setup.ts` no longer reads those tables, so this test no
 // longer seeds them either. The tables themselves are untouched in any
 // database that already has them.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import path from "node:path";
 
 import { dbTargetFromUrl } from "../db-setup.ts";
 import { connectE2eDb, e2eDatabaseUrl, REPO_ROOT } from "./harness.ts";
+import { dbGate } from "./db-gate";
 import {
   applyFoldedRunsMigrations,
   backfillFoldedRunMarkers,
@@ -72,7 +73,7 @@ async function loadIntxDb(): Promise<IntxDb> {
 }
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const TENANT = "tnt_backfill";
 

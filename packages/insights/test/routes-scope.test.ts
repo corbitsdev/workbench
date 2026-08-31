@@ -12,7 +12,7 @@
 // counterpart a switcher reads: parent identity, own identity, and the
 // sibling workbench list — filtered to tenants the caller actually holds
 // a principal in, never a sibling the caller has no membership in.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import postgres from "postgres";
@@ -26,6 +26,7 @@ import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { createInsightsRoutes } from "../src/routes";
 import { createMemoryUsageStore } from "../src/store";
 import type { OverallUsageSummary } from "../src/queries";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);
@@ -46,7 +47,7 @@ function dbConfigFromUrl(databaseUrl: string) {
 }
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const allowAll: RequireGrant = () => async (_c, next) => {
   await next();

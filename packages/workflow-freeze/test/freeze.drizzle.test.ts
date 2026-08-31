@@ -4,7 +4,7 @@
 // unlaunchable), and the in-place re-freeze both follows an edit and
 // heals a legacy row frozen before the projection was recorded.
 // Runs against its own scratch database, never the developer's.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import postgres from "postgres";
 import { eq } from "drizzle-orm";
 
@@ -23,6 +23,7 @@ import { defineWorkflow, step } from "@intx/workflow";
 
 import { setupDatabase, dbTargetFromUrl } from "../../../scripts/db-setup";
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 import {
   freezeInertWorkflowDefinition,
   refreezeWorkflowDefinitionProjection,
@@ -56,7 +57,7 @@ function agentWorkflowJson(systemPrompt: string): string {
 }
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 describeIfDb("freezeInertWorkflowDefinition against Postgres", () => {
   const scratchUrl = scratchUrlFor(

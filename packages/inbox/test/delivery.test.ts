@@ -7,7 +7,7 @@
 // the inbox/bell UI drives, grouped the same way `inboxGroupOf` groups it.
 // Runs against its own scratch database, never the developer's or the
 // walking-skeleton suite's.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import postgres from "postgres";
 
 import { createDB, schema } from "@intx/db";
@@ -28,6 +28,7 @@ import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { createWorkbenchMailboxDelivery } from "../src/delivery";
 import { inboxGroupOf } from "../src/group";
 import { WORKBENCH_INBOX_PRIORITIES } from "../src/vocabulary";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);
@@ -50,7 +51,7 @@ function dbConfigFromUrl(databaseUrl: string) {
 }
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 describeIfDb(
   "notify delivery writes a real mailbox row for every notification kind",

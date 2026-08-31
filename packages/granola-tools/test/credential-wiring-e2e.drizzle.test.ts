@@ -33,7 +33,7 @@
 // bundle directly with a `ToolCall`, exactly as `../src/tool.test.ts`
 // does, so what's new here is steps 1-3: a REAL seeded credential
 // reaching the tool through the REAL substrate composition.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import {
   buildCredentialDelivery,
   createDB,
@@ -58,9 +58,10 @@ import { dbTargetFromUrl } from "../../../scripts/db-setup";
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { GRANOLA_LIST_RECENT_NOTES_TOOL, granolaTools } from "../src/tool";
 import type { GranolaEnv } from "../src/tool";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const SCHEMA = "granola_tools_credential_wiring_e2e_test";
 const KEY = new Uint8Array(32).fill(11);

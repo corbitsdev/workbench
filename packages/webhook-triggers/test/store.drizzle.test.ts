@@ -10,7 +10,7 @@
 // exact plaintext on read — and that a real (non-noop) cipher's
 // ciphertext is not the plaintext secret, so a raw table dump does not
 // disclose it.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -21,6 +21,7 @@ import {
 import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { applyWebhookTriggersMigrations } from "../src/migrations";
 import { createDrizzleWebhookTriggerStore } from "../src/store";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);
@@ -30,7 +31,7 @@ function scratchUrlFor(e2eUrl: string): string {
 }
 
 const databaseUrl = e2eDatabaseUrl();
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const TENANT_ID = "tnt_1";
 const KEY = new Uint8Array(32).fill(7);
