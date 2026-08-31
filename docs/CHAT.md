@@ -166,6 +166,13 @@ that timeout plus a settle grace (`AGENT_TURN_STALE_MS`) on their next
 read or write: the room shows a failed turn instead of typing forever,
 and the reply path can never attribute a later reply to a dead row.
 
+**A model that cannot resolve is a failed turn, not a 500.** Wake and
+mint map an unresolvable inference source to a consumer 4xx and a
+failed-turn strip ("Jimmy's model isn't available here.") with an
+inline picker of tenant-available chat models and a hop into that
+agent's Settings — never a raw HTTP 500 or the technical resolution
+dump on the timeline.
+
 Proved live end to end by `scripts/e2e/cl-6329-turn-swap-proof.ts`: two
 agents replying in one room under distinct occurrences, three rapid
 messages serializing into ordered turns, and a sidecar killed
