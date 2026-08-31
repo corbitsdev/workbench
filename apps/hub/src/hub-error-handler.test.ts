@@ -43,9 +43,12 @@ describe("hubErrorHandler", () => {
 
     expect(res.status).toBe(500);
     const body = (await res.json()) as {
-      error: { code: string; refId: string };
+      error: { code: string; userMessage: string; refId: string };
     };
     expect(body.error.code).toBe("internal_error");
+    expect(body.error.userMessage).toBe(
+      "Something went wrong. Please try again.",
+    );
     expect(typeof body.error.refId).toBe("string");
     expect(body.error.refId.length).toBeGreaterThan(0);
 
@@ -74,10 +77,10 @@ describe("hubErrorHandler", () => {
 
     expect(res.status).toBe(422);
     const body = (await res.json()) as {
-      error: { code: string; message: string; refId: string };
+      error: { code: string; userMessage: string; refId: string };
     };
     expect(body.error.code).toBe("MultiStepFoldUnsupportedError");
-    expect(body.error.message).toBe(
+    expect(body.error.userMessage).toBe(
       "definition wfd_research is not single-step (2 steps)",
     );
     expect(typeof body.error.refId).toBe("string");
@@ -100,12 +103,14 @@ describe("hubErrorHandler", () => {
 
     expect(res.status).toBe(422);
     const body = (await res.json()) as {
-      error: { code: string; message: string; refId: string };
+      error: { code: string; userMessage: string; refId: string };
     };
     expect(body.error.code).toBe("InferenceResolutionError");
-    expect(body.error.message).toBe("This agent's model isn't available here.");
-    expect(body.error.message).not.toContain("claude-sonnet-5");
-    expect(body.error.message).not.toMatch(/cannot resolve an inference/);
+    expect(body.error.userMessage).toBe(
+      "This agent's model isn't available here.",
+    );
+    expect(body.error.userMessage).not.toContain("claude-sonnet-5");
+    expect(body.error.userMessage).not.toMatch(/cannot resolve an inference/);
     expect(typeof body.error.refId).toBe("string");
   });
 });

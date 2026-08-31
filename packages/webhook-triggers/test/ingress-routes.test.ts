@@ -78,9 +78,15 @@ describe("POST /:triggerId", () => {
     expect(trigger?.lastFiredAt).not.toBeNull();
   });
 
-  const expectedUnauthorizedBody = {
-    error: { code: "unauthorized", message: "invalid or missing signature" },
-  };
+  async function expectUnauthorizedEnvelope(response: Response): Promise<void> {
+    const body = (await response.json()) as {
+      error: { code: string; userMessage: string; refId: string };
+    };
+    expect(body.error.code).toBe("unauthorized");
+    expect(body.error.userMessage).toBe("invalid or missing signature");
+    expect(typeof body.error.refId).toBe("string");
+    expect(body.error.refId.length).toBeGreaterThan(0);
+  }
 
   test("rejects a missing signature header with the generic unauthorized response", async () => {
     const { app, store } = buildApp();
@@ -96,7 +102,7 @@ describe("POST /:triggerId", () => {
     });
 
     expect(response.status).toBe(401);
-    expect(await response.json()).toEqual(expectedUnauthorizedBody);
+    await expectUnauthorizedEnvelope(response);
   });
 
   test("rejects a missing timestamp header with the generic unauthorized response", async () => {
@@ -114,7 +120,7 @@ describe("POST /:triggerId", () => {
     });
 
     expect(response.status).toBe(401);
-    expect(await response.json()).toEqual(expectedUnauthorizedBody);
+    await expectUnauthorizedEnvelope(response);
   });
 
   test("rejects a stale timestamp (a replayed delivery) with the generic unauthorized response", async () => {
@@ -134,7 +140,7 @@ describe("POST /:triggerId", () => {
     });
 
     expect(response.status).toBe(401);
-    expect(await response.json()).toEqual(expectedUnauthorizedBody);
+    await expectUnauthorizedEnvelope(response);
   });
 
   test("rejects a signature computed with the wrong secret with the generic unauthorized response", async () => {
@@ -158,7 +164,7 @@ describe("POST /:triggerId", () => {
     });
 
     expect(response.status).toBe(401);
-    expect(await response.json()).toEqual(expectedUnauthorizedBody);
+    await expectUnauthorizedEnvelope(response);
   });
 
   test("responds to an unknown trigger id with the same generic unauthorized response, not a 404", async () => {
@@ -168,7 +174,7 @@ describe("POST /:triggerId", () => {
       body: "{}",
     });
     expect(response.status).toBe(401);
-    expect(await response.json()).toEqual(expectedUnauthorizedBody);
+    await expectUnauthorizedEnvelope(response);
   });
 
   test("responds to a disabled trigger with the same generic unauthorized response even with a valid signature", async () => {
@@ -187,7 +193,7 @@ describe("POST /:triggerId", () => {
     });
 
     expect(response.status).toBe(401);
-    expect(await response.json()).toEqual(expectedUnauthorizedBody);
+    await expectUnauthorizedEnvelope(response);
   });
 
   test("400s on a validly signed but non-JSON body", async () => {

@@ -186,7 +186,13 @@ describe("Connections disconnect", () => {
       }
       if (url === "/api/tenants/ten_1/connections/anthropic/disconnect") {
         return json(
-          { error: { code: "disconnect_failed", message: "nope" } },
+          {
+            error: {
+              code: "disconnect_failed",
+              userMessage: "nope",
+              refId: "ref_1",
+            },
+          },
           500,
         );
       }

@@ -115,8 +115,8 @@ describe("workflow inference-catalog routes", () => {
       post("/chain", { concept: "cheap-loop", capabilities: ["plain-text"] }),
     );
     expect(response.status).toBe(400);
-    const body = (await response.json()) as { error: { message: string } };
-    expect(body.error.message).toContain("exactly one");
+    const body = (await response.json()) as { error: { userMessage: string } };
+    expect(body.error.userMessage).toContain("exactly one");
   });
 
   test("naming neither is refused too", async () => {
@@ -136,8 +136,8 @@ describe("workflow inference-catalog routes", () => {
       post("/chain", { concept: "vibes-based" }),
     );
     expect(response.status).toBe(400);
-    const body = (await response.json()) as { error: { message: string } };
-    expect(body.error.message).toContain("cheap-loop");
+    const body = (await response.json()) as { error: { userMessage: string } };
+    expect(body.error.userMessage).toContain("cheap-loop");
   });
 
   test("POST /estimate prices the work before it is spent", async () => {

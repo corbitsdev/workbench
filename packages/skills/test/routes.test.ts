@@ -98,8 +98,12 @@ test("POST / with a malformed source SKILL.md is a 400 and creates nothing", asy
     }),
   });
   expect(response.status).toBe(400);
-  const payload = (await response.json()) as { error: { message: string } };
-  expect(payload.error.message).toContain("frontmatter delimiter");
+  const payload = (await response.json()) as {
+    error: { userMessage: string; refId: string };
+  };
+  expect(payload.error.userMessage).toContain("frontmatter delimiter");
+  expect(typeof payload.error.refId).toBe("string");
+  expect(payload.error.refId.length).toBeGreaterThan(0);
 
   const list = (await (await app.request("/")).json()) as {
     skills: unknown[];
