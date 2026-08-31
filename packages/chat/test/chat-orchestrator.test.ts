@@ -457,6 +457,52 @@ describe("createChatOrchestrator", () => {
     orchestrator.dispose();
   });
 
+  test("a connector.reply after a cancelled 1:1 turn is dropped, not posted unattached", async () => {
+    const room = fakeRoom();
+    const agentTurns = createInMemoryAgentTurnStore();
+    const agentAddress = "ins_echo1@ten1.workbench.test";
+    const turn = await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_workbench1",
+      agentAddress,
+      requestMessageIds: ["msg_1"],
+    });
+    await agentTurns.finishTurn({
+      tenantId: "ten_1",
+      turnId: turn.id,
+      status: "cancelled",
+      error: "Cancelled by user",
+    });
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+      store: {
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", [agentAddress]),
+        ],
+      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
+      events,
+      agentTurns,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_1",
+      event: { type: "connector.reply", data: { content: "late after stop" } },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(room.posted).toEqual([]);
+
+    orchestrator.dispose();
+  });
+
   test("a connector.reply correlated to room B does not finish room A's running turn", async () => {
     const room = fakeRoom();
     const agentTurns = createInMemoryAgentTurnStore();

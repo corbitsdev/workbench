@@ -252,4 +252,57 @@ describe("cancelWorkbenchTurn (CL-7201)", () => {
 
     expect(result.cancelledCount).toBe(0);
   });
+
+  test("timeout and cancel during in-flight sendMail produce exactly one notice", async () => {
+    const platform = fakePlatform({
+      invitable: [{ id: "wfd_echo", name: "echo" }],
+    });
+    platform.sendMail = () => new Promise<never>(() => {});
+    const agentTurns = createInMemoryAgentTurnStore();
+    const turnCancellation = createTurnCancelRegistry();
+    const workbenchSubscribers = createWorkbenchSubscriberRegistry();
+    const deps = buildDeps({
+      platform,
+      agentTurns,
+      turnCancellation,
+      workbenchSubscribers,
+      turnDispatchTimeoutMs: 20,
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+
+    void postHello(app, workbench.id);
+    await Bun.sleep(5);
+
+    const result = await cancelWorkbenchTurn(
+      {
+        agentTurns,
+        turnCancellation,
+        roomMessages: deps.roomMessages,
+        publish: workbenchSubscribers.publish,
+      },
+      { tenantId: TENANT.id, workbenchId: workbench.id },
+    );
+    await settleFanout();
+
+    expect(result.cancelledCount).toBe(1);
+
+    const timeline = await timelineOf(deps, workbench.id);
+    const notices = timeline.filter((message) =>
+      message.parts.some(
+        (part) =>
+          part.kind === "text" &&
+          (part.turnCancelled === true || part.turnFailed === true),
+      ),
+    );
+    expect(notices).toHaveLength(1);
+    expect(
+      notices[0]?.parts.some(
+        (part) => part.kind === "text" && part.turnCancelled === true,
+      ),
+    ).toBe(true);
+  });
 });
