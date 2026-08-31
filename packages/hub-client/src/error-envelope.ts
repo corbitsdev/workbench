@@ -6,7 +6,10 @@
 // hub's own logger, keyed by the same `refId`, so an operator can find
 // it without the client ever having seen it. See CL-6360.
 
+import { generateRefId } from "@corbits/error-sink";
 import { type } from "arktype";
+
+export { generateRefId };
 
 export const ErrorEnvelopeShape = type({
   error: {
@@ -17,14 +20,6 @@ export const ErrorEnvelopeShape = type({
 });
 
 export type ErrorEnvelope = typeof ErrorEnvelopeShape.infer;
-
-/** Short enough to read aloud, unique enough to grep a log for. Never a
- * secret and never derived from anything sensitive — it is a lookup key,
- * not a token. */
-export function generateRefId(): string {
-  const random = Math.random().toString(36).slice(2, 8);
-  return `${Date.now().toString(36)}-${random}`;
-}
 
 export function makeErrorEnvelope(args: {
   code: string;
