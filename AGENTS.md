@@ -65,6 +65,17 @@ behind human approval.
   To check whether a workspace package exists, look in `packages/`, not
   `node_modules` — an absent `node_modules` entry means "not installed
   yet," not "doesn't exist."
+- Bun loads repo-root `.env`, so an unset test inherits
+  `HUB_DATA_DIR=.data/hub` inside this work tree. The hub's git-on-disk
+  init then walks up to the enclosing `.git`, and a genesis commit can
+  land on the working branch and delete the checkout. Tests that boot
+  the hub or exercise seed/deploy git paths must call
+  `installDisposableHubDataDir()` from `test/disposable-hub-data-dir.ts`
+  (it mktemps outside any work tree and clears
+  `HUB_ALLOW_GIT_INSIDE_WORK_TREE`). Local `bun run dev` may set that
+  opt-in; tests must not. Run those suites with
+  `HUB_DATA_DIR=$(mktemp -d)` as a belt-and-suspenders override. Never
+  delete the `HUB_DATA_DIR` env key itself.
 - `scripts/checks/*` are heuristics over source text, not proof — they can
   and do false-positive (install artifacts read as vendored trees, comments
   read as imports, class names read as user copy). A check failure is a
