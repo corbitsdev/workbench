@@ -94,7 +94,13 @@ test("createAgentDefinition rejects a response whose currentVersion is a number,
 test("createAgentDefinition throws CreateAgentDefinitionError on a 400", async () => {
   const fetchImpl = (async () =>
     new Response(
-      JSON.stringify({ error: { code: "bad_request", message: "bad handle" } }),
+      JSON.stringify({
+        error: {
+          code: "bad_request",
+          userMessage: "bad handle",
+          refId: "ref_test",
+        },
+      }),
       { status: 400 },
     )) as unknown as typeof fetch;
 
@@ -111,7 +117,11 @@ test("createAgentDefinition throws CreateAgentDefinitionError on a 409 conflict"
   const fetchImpl = (async () =>
     new Response(
       JSON.stringify({
-        error: { code: "conflict", message: "already exists" },
+        error: {
+          code: "conflict",
+          userMessage: "already exists",
+          refId: "ref_test",
+        },
       }),
       { status: 409 },
     )) as unknown as typeof fetch;
@@ -189,7 +199,11 @@ test("inviteParticipant throws NoOwnChannelError on a 404", async () => {
   const fetchImpl = (async () =>
     new Response(
       JSON.stringify({
-        error: { code: "not_found", message: "no channel found" },
+        error: {
+          code: "not_found",
+          userMessage: "no channel found",
+          refId: "ref_test",
+        },
       }),
       { status: 404 },
     )) as unknown as typeof fetch;
@@ -231,7 +245,11 @@ test("mintAgentDm throws NoOwnWorkbenchError on a 404", async () => {
   const fetchImpl = (async () =>
     new Response(
       JSON.stringify({
-        error: { code: "not_found", message: "no workbench found" },
+        error: {
+          code: "not_found",
+          userMessage: "no workbench found",
+          refId: "ref_test",
+        },
       }),
       { status: 404 },
     )) as unknown as typeof fetch;

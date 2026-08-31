@@ -107,7 +107,11 @@ test("createRoutine surfaces the route's own error message on a non-ok response"
   const fetchImpl = (async () =>
     new Response(
       JSON.stringify({
-        error: { code: "not_found", message: "definition not found" },
+        error: {
+          code: "not_found",
+          userMessage: "definition not found",
+          refId: "ref_test",
+        },
       }),
       { status: 404 },
     )) as unknown as typeof fetch;

@@ -979,6 +979,9 @@ describe("POST /workbenches/:id/invite", () => {
     expect(errorBody.error.userMessage).toBe(
       "This agent's model isn't available here.",
     );
+    expect(errorBody.error.userMessage).not.toMatch(
+      /No launchable inference source/,
+    );
   });
 
   test("a definition with no stored launch body returns 409, not 500", async () => {

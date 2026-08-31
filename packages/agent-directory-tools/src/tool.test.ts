@@ -257,7 +257,13 @@ test("create_agent reports a create-succeeded/mint-failed half-failure honestly,
       );
     }
     return new Response(
-      JSON.stringify({ error: { code: "not_found", message: "no workbench" } }),
+      JSON.stringify({
+        error: {
+          code: "not_found",
+          userMessage: "no workbench",
+          refId: "ref_test",
+        },
+      }),
       { status: 404 },
     );
   }) as unknown as typeof fetch;
@@ -379,7 +385,11 @@ test("create_agent surfaces the create route's own rejection honestly on failure
   globalThis.fetch = (async () =>
     new Response(
       JSON.stringify({
-        error: { code: "conflict", message: "already exists" },
+        error: {
+          code: "conflict",
+          userMessage: "already exists",
+          refId: "ref_test",
+        },
       }),
       { status: 409 },
     )) as unknown as typeof fetch;
