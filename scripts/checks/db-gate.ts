@@ -1,7 +1,7 @@
 // check:db-gate — every DB-gated suite must skip through dbGate
 // (scripts/e2e/db-gate.ts), never a hand-rolled
 // `databaseUrl ? describe.skip : describe` ternary. A hand-rolled gate
-// skips in total silence and never honors E2E_REQUIRED=1 — exactly
+// skips in total silence and never honors CI=true — exactly
 // the gap CL-7279 closed, one file at a time, until the next merge
 // added a new hand-rolled copy the sweep never saw. This check makes
 // the invariant self-enforcing instead of a one-time sweep.
@@ -49,7 +49,7 @@ export function auditDbGate(
     report.violations.push(
       `${relPath}: hand-rolls a describeIfDb gate instead of using dbGate ` +
         `from scripts/e2e/db-gate.ts. A hand-rolled gate skips silently ` +
-        `and never honors E2E_REQUIRED=1 — replace it with ` +
+        `and never honors CI=true — replace it with ` +
         `\`const describeIfDb = dbGate(databaseUrl, import.meta.path);\`.`,
     );
   }

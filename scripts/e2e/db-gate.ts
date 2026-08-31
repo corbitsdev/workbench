@@ -4,10 +4,60 @@
 // total silence — a broken CI env would report green the same way a
 // real pass does. dbGate is the one place that decides what a skip
 // means: it counts the skip, prints an unmissable summary once the
-// run ends, and — under E2E_REQUIRED=1 (this repo's convention for
-// turning a DB skip into a hard failure, see harness.ts) — throws
-// instead of skipping.
+// run ends, and — when CI=true (except GitHub jobs that never
+// provision Postgres) — throws instead of skipping.
 import { afterAll, describe } from "bun:test";
+
+export const TEST_COMPOSE_FILE = "docker-compose.test.yml";
+export const TEST_COMPOSE_UP = `docker compose -f ${TEST_COMPOSE_FILE} up -d`;
+export const TEST_DATABASE_URL =
+  "postgres://postgres:postgres@localhost:5432/workbench";
+
+export const MISSING_DATABASE_HINT =
+  `Start Postgres with \`${TEST_COMPOSE_UP}\`, then ` +
+  `DATABASE_URL=${TEST_DATABASE_URL} bun test ...`;
+
+// GitHub Actions sets CI=true on every job. The unit/structural jobs
+// never provision Postgres; DB-gated suites skip there (loudly) and
+// run in e2e / isolation / db-suites, which do. Any other CI context
+// — including `CI=true bun test` locally — treats a missing
+// DATABASE_URL as a hard failure so a miswired pipeline cannot skip
+// green.
+const CI_JOBS_WITHOUT_POSTGRES = new Set([
+  "lint",
+  "typecheck",
+  "build-test",
+  "structural",
+]);
+
+export function databaseIsRequired(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (env["CI"] !== "true") return false;
+  const job = env["GITHUB_JOB"];
+  if (job !== undefined && job !== "" && CI_JOBS_WITHOUT_POSTGRES.has(job)) {
+    return false;
+  }
+  return true;
+}
+
+export function missingDatabaseError(label: string): Error {
+  return new Error(
+    `DATABASE_URL is not set; "${label}" cannot run. ${MISSING_DATABASE_HINT}`,
+  );
+}
+
+export function skippedDatabaseWarning(label: string): string {
+  return `${label}: DATABASE_URL is not set; suite skipped. ${MISSING_DATABASE_HINT}`;
+}
+
+export function assertDatabaseConfigured(
+  databaseUrl: string | undefined,
+  label: string,
+): void {
+  if (databaseUrl !== undefined && databaseUrl !== "") return;
+  if (databaseIsRequired()) throw missingDatabaseError(label);
+}
 
 // `bun test` never fires `process.on("exit"/"beforeExit")` handlers, so a
 // true end-of-run hook does not exist across files — each skipped file
@@ -25,9 +75,9 @@ function printSummary(): void {
     `SKIPPED ${skipped.length} DB-gated suite(s) so far — no DATABASE_URL. This is NOT a pass.`,
     ...skipped.map((label) => `  - ${label}`),
     "",
-    "To run them: docker compose -f docker-compose.test.yml up -d, then",
-    "DATABASE_URL=postgres://postgres:postgres@localhost:5432/workbench bun test ...",
-    "Set E2E_REQUIRED=1 to make a skip like this a hard failure (CI does).",
+    `To run them: ${TEST_COMPOSE_UP}, then`,
+    `DATABASE_URL=${TEST_DATABASE_URL} bun test ...`,
+    "CI=true turns a skip like this into a hard failure.",
     rule,
     "",
   ];
@@ -43,12 +93,8 @@ export function dbGate(
   label: string,
 ): typeof describe {
   if (databaseUrl !== undefined && databaseUrl !== "") return describe;
+  if (databaseIsRequired()) throw missingDatabaseError(label);
   skipped.push(label);
   afterAll(printSummary);
-  if (process.env["E2E_REQUIRED"] === "1") {
-    throw new Error(
-      `E2E_REQUIRED=1 but DATABASE_URL is not set; "${label}" would be skipped.`,
-    );
-  }
   return describe.skip;
 }

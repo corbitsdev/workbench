@@ -9,8 +9,8 @@
 // The suite owns a uniquely-named sibling scratch database (created by
 // setupDatabase on first use, dropped in teardown) so it never touches
 // the developer's own database. Like the walking skeleton it skips
-// without DATABASE_URL, and E2E_REQUIRED=1 turns that skip into a
-// loud failure in CI.
+// without DATABASE_URL, and CI=true turns that skip into a loud
+// failure.
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readdir } from "node:fs/promises";
@@ -22,6 +22,7 @@ import {
   resetSchema,
   setupDatabase,
 } from "../db-setup.ts";
+import { assertDatabaseConfigured, skippedDatabaseWarning } from "./db-gate.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..", "..");
 const HUB_DIR = path.join(REPO_ROOT, "apps", "hub");
@@ -36,12 +37,7 @@ const VENDORED_MIGRATIONS_DIR = path.join(
 function scratchDatabaseUrl(): string | undefined {
   const base = process.env["DATABASE_URL"];
   if (base === undefined || base === "") {
-    if (process.env["E2E_REQUIRED"] === "1") {
-      throw new Error(
-        "E2E_REQUIRED=1 but DATABASE_URL is not set; the db-setup suite " +
-          "would be skipped. Set DATABASE_URL to a reachable Postgres.",
-      );
-    }
+    assertDatabaseConfigured(undefined, "db-setup suite");
     return undefined;
   }
   const url = new URL(base);
@@ -56,11 +52,7 @@ function scratchDatabaseUrl(): string | undefined {
 
 const databaseUrl = scratchDatabaseUrl();
 if (databaseUrl === undefined) {
-  console.warn(
-    "db-setup: DATABASE_URL is not set; suite skipped. " +
-      "Set DATABASE_URL (see .env.example) to run it; " +
-      "CI sets E2E_REQUIRED=1 so this skip can never pass silently there.",
-  );
+  console.warn(skippedDatabaseWarning("db-setup"));
 }
 
 // Minimal local view of the postgres client, resolved out of the hub's

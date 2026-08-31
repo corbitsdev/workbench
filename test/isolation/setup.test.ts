@@ -1,8 +1,8 @@
 // Unit coverage for the isolation suite's database gate: a missing
 // DATABASE_URL/ISOLATION_DATABASE_URL must only ever skip quietly in
-// local dev, never in CI. E2E_REQUIRED=1 is this repo's one convention
-// for that (see scripts/e2e/harness.ts's e2eDatabaseUrl), so this test
-// proves resolveDatabaseUrl honors it identically.
+// local dev, never in CI. dbGate's CI=true convention is this repo's
+// one signal for that, so this test proves resolveDatabaseUrl honors
+// it identically.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { resolveDatabaseUrl } from "./setup.ts";
@@ -10,6 +10,8 @@ import { resolveDatabaseUrl } from "./setup.ts";
 const gatedKeys = [
   "DATABASE_URL",
   "ISOLATION_DATABASE_URL",
+  "CI",
+  "GITHUB_JOB",
   "E2E_REQUIRED",
 ] as const;
 const saved = new Map(gatedKeys.map((key) => [key, process.env[key]]));
@@ -28,32 +30,46 @@ afterEach(() => {
 });
 
 describe("resolveDatabaseUrl", () => {
-  test("returns undefined when no database is configured and E2E_REQUIRED is unset", () => {
+  test("returns undefined when no database is configured and CI is unset", () => {
     unset("DATABASE_URL");
     unset("ISOLATION_DATABASE_URL");
+    unset("CI");
+    unset("GITHUB_JOB");
     unset("E2E_REQUIRED");
     expect(resolveDatabaseUrl()).toBeUndefined();
   });
 
-  test("throws when E2E_REQUIRED=1 but no database is configured", () => {
+  test("throws when CI=true but no database is configured", () => {
     unset("DATABASE_URL");
     unset("ISOLATION_DATABASE_URL");
-    process.env["E2E_REQUIRED"] = "1";
-    expect(() => resolveDatabaseUrl()).toThrow(/E2E_REQUIRED=1/);
+    process.env["CI"] = "true";
+    unset("GITHUB_JOB");
+    expect(() => resolveDatabaseUrl()).toThrow(
+      /docker compose -f docker-compose\.test\.yml up -d/,
+    );
   });
 
   test("ISOLATION_DATABASE_URL wins over DATABASE_URL", () => {
     process.env["DATABASE_URL"] = "postgres://localhost:5432/other";
     process.env["ISOLATION_DATABASE_URL"] =
       "postgres://localhost:5432/isolation";
-    unset("E2E_REQUIRED");
+    unset("CI");
     expect(resolveDatabaseUrl()).toBe("postgres://localhost:5432/isolation");
   });
 
-  test("E2E_REQUIRED=1 does not throw once a database is configured", () => {
+  test("CI=true does not throw once a database is configured", () => {
     process.env["DATABASE_URL"] = "postgres://localhost:5432/workbench";
     unset("ISOLATION_DATABASE_URL");
-    process.env["E2E_REQUIRED"] = "1";
+    process.env["CI"] = "true";
+    unset("GITHUB_JOB");
     expect(resolveDatabaseUrl()).toBe("postgres://localhost:5432/workbench");
+  });
+
+  test("does not treat E2E_REQUIRED as a required-ness signal", () => {
+    unset("DATABASE_URL");
+    unset("ISOLATION_DATABASE_URL");
+    unset("CI");
+    process.env["E2E_REQUIRED"] = "1";
+    expect(resolveDatabaseUrl()).toBeUndefined();
   });
 });

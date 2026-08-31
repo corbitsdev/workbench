@@ -9,6 +9,7 @@
 // bounds stay as diagnostics; this is the backstop.
 import { describe, expect, test } from "bun:test";
 
+import { createInMemoryAgentTurnStore } from "../src/agent-turns";
 import { createChatRoutes } from "../src/routes";
 import {
   buildDeps,
@@ -16,6 +17,7 @@ import {
   fakePlatform,
   mountAs,
   settleFanout,
+  TENANT,
   timelineOf,
 } from "./test-support";
 
@@ -166,6 +168,41 @@ describe("dispatchTurnBatch's turn-level deadline (CL-6644)", () => {
     expect((platform as ReturnType<typeof fakePlatform>).sentMail).toHaveLength(
       1,
     );
+  });
+
+  // CL-7193: the timed-out `dispatchTurn` call used to be abandoned along
+  // with `sendMail` -- its turn row stayed `running` until the agent's
+  // real reply (if `sendMail` ever landed) closed it later, well behind
+  // the undelivered notice already on the timeline. The deadline now
+  // closes the row itself the instant it fires, before `sendMail` ever
+  // settles.
+  test("a timed-out dispatch closes its turn row immediately, not whenever sendMail eventually settles", async () => {
+    const platform = fakePlatform({
+      invitable: [{ id: "wfd_echo", name: "echo" }],
+    });
+    platform.sendMail = () => new Promise<never>(() => {});
+    const agentTurns = createInMemoryAgentTurnStore();
+
+    const deps = buildDeps({ platform, agentTurns, turnDispatchTimeoutMs: 20 });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "chat",
+      definitionId: "wfd_echo",
+    });
+
+    await app.request(`/workbenches/${workbench.id}/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ parts: [{ kind: "text", text: "hello" }] }),
+    });
+    await settleFanout();
+
+    const turns = await agentTurns.listTurns({
+      tenantId: TENANT.id,
+      workbenchId: workbench.id,
+    });
+    expect(turns).toHaveLength(1);
+    expect(turns[0]?.status).toBe("failed");
   });
 
   test("the timeout message names the turn's run address and its elapsed budget", async () => {

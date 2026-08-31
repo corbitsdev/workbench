@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createGitWorkflowPusher } from "../../packages/hub-client/src/index.ts";
 import { WORKFLOW_SOURCE_ENTRY } from "../../packages/workflow-source/src/index.ts";
+import { assertDatabaseConfigured } from "./db-gate.ts";
 
 export const REPO_ROOT = path.resolve(import.meta.dir, "..", "..");
 const HUB_DIR = path.join(REPO_ROOT, "apps", "hub");
@@ -21,9 +22,9 @@ const SIDECAR_DIR = path.join(REPO_ROOT, "apps", "sidecar");
 /**
  * The suite needs a real Postgres, named by DATABASE_URL. Locally a
  * missing DATABASE_URL skips the suite (a fresh checkout without a
- * database still runs the unit gates); in CI, E2E_REQUIRED=1 turns
- * that skip into a loud failure so the suite can never silently
- * vanish from the pipeline.
+ * database still runs the unit gates); in CI, CI=true turns that skip
+ * into a loud failure so the suite can never silently vanish from the
+ * pipeline.
  *
  * `bun test` workers do not always inherit process.env.DATABASE_URL
  * even when the shell sourced `.env`. Fall back to the same repo-root
@@ -36,12 +37,7 @@ export function e2eDatabaseUrl(): string | undefined {
       ? fromProcess
       : databaseUrlFromRepoEnvFile();
   if (url !== undefined && url !== "") return baseUrlToE2eUrl(url);
-  if (process.env["E2E_REQUIRED"] === "1") {
-    throw new Error(
-      "E2E_REQUIRED=1 but DATABASE_URL is not set; the walking-skeleton " +
-        "suite would be skipped. Set DATABASE_URL to a reachable Postgres.",
-    );
-  }
+  assertDatabaseConfigured(undefined, "walking-skeleton suite");
   return undefined;
 }
 

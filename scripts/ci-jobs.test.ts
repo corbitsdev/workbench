@@ -33,6 +33,9 @@ test("CI splits e2e, isolation, and db-suites onto their own Postgres jobs", asy
   const yaml = await readFile(join(ROOT, ".github/workflows/ci.yml"), "utf8");
   const jobs = jobBodies(yaml);
 
+  expect(yaml).not.toContain("E2E_REQUIRED");
+  expect(yaml).not.toContain("CHECK_BASE_REF");
+
   expect(jobs.has("walking-skeleton")).toBe(false);
   for (const name of DB_JOBS) {
     const body = jobs.get(name);
@@ -44,7 +47,6 @@ test("CI splits e2e, isolation, and db-suites onto their own Postgres jobs", asy
   }
 
   const dbSuites = jobs.get("db-suites") ?? "";
-  expect(dbSuites).toContain("E2E_REQUIRED:");
   expect(dbSuites).toContain("bun test apps/hub/test");
   expect(dbSuites).toContain("grep -rl DATABASE_URL");
 

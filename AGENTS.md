@@ -57,6 +57,31 @@ behind human approval.
   logical change per commit; commit messages are written for a public
   audience.
 - Worktrees live in `.worktrees/<branch>`; branch = `cl-<issue#>-<slug>`.
+- Remaining test/CI flags (what breaks if unset):
+  - `DATABASE_URL` — DB-gated suites skip locally with a banner naming
+    `docker compose -f docker-compose.test.yml up -d`. On CI jobs that
+    provision Postgres (`e2e`, `isolation`, `db-suites`), `CI=true`
+    turns a missing URL into a hard failure via `dbGate`. The unit
+    jobs (`build-test`, `structural`, `lint`, `typecheck`) never
+    provision Postgres and still skip.
+  - `HUB_DATA_DIR` — hub boot fails. This is required runtime config,
+    not a test flag.
+  - `CI` — set automatically by GitHub Actions (`true`). Not a caller
+    flag; `dbGate` infers required-ness from it.
+  - `ISOLATION_DATABASE_URL` — optional override for the isolation
+    suite; unset falls through to `DATABASE_URL`.
+  - `E2E_PROVIDER` / `E2E_PROVIDER_API_KEY` / `OLLAMA_BASE_URL` — live
+    inference e2e (walkthrough, greeting-delivery, play, proof
+    scripts). Unset stays on the noop/stub path; the suite still runs.
+  - `EVAL_PROVIDER` / `EVAL_PROVIDER_API_KEY` — live evals. Unset is
+    plumbing-only (`bun run eval` still runs against the stub).
+  - `WORKBENCH_CHECK_CONCURRENCY` — override `scripts/run-all.ts`
+    parallelism. Unset uses a core-count heuristic (all cores on
+    GitHub Actions, cores-2 locally).
+  - `E2E_LOG_DIR` — optional directory for hub/sidecar e2e logs.
+    Unset does not capture them.
+  - `CHROME_PATH` — browser walkthrough looks for Chrome here first.
+    Unset falls through to platform defaults and fails if none exist.
 - Tests are meaningful red/green tests only — no coverage theater. Unit
   tests for pure modules sit next to the source they cover
   (`src/**/*.test.ts`); multi-module / DOM / composition suites stay under
@@ -120,11 +145,12 @@ scripts/checks/report-error.ts --write-baseline` after fixing (or
   package's own `package.json` version — `check:tool-package-pins` catches
   the mismatch. A tool package's `src/` changing without a version bump is
   the other half of that class, caught separately by
-  `check:tool-package-freshness`: it diffs against the base ref (CI passes
-  `CHECK_BASE_REF`; locally it falls back to the merge base with
+  `check:tool-package-freshness`: it diffs against the base ref (a
+  GitHub `pull_request` job reads `pull_request.base.sha` from
+  `GITHUB_EVENT_PATH`; locally it falls back to the merge base with
   `origin/main`) and flags any tool package whose `src/` differs from that
   base while its version stayed the same. With no base ref available
-  (no `origin/main`, no `CHECK_BASE_REF`) it no-ops, deferring to CI as the
+  (no `origin/main`, no pull-request event) it no-ops, deferring to CI as the
   authoritative run.
 - Every package needs a `LICENSE` file (canonical LGPL-2.1-or-later text,
   copy from any existing `packages/*/LICENSE`) — `check:licenses` fails

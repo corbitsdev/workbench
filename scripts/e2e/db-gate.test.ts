@@ -1,44 +1,107 @@
 // Unit coverage for dbGate: a missing database must never skip in
-// total silence. Without E2E_REQUIRED it returns describe.skip (the
-// suite still skips quietly in local dev); with E2E_REQUIRED=1 (this
-// repo's convention, see harness.ts's e2eDatabaseUrl) it throws
-// instead, so CI can never report green on a suite that never ran.
+// total silence. Locally (CI unset) it returns describe.skip and the
+// summary names `docker-compose.test.yml`. Under CI=true it throws
+// instead, so a miswired pipeline cannot report green on a suite that
+// never ran. GitHub's unit/structural jobs have no Postgres and are
+// not required; they still skip with the same compose hint.
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { dbGate } from "./db-gate.ts";
+import { databaseIsRequired, dbGate } from "./db-gate.ts";
 
-const saved = process.env["E2E_REQUIRED"];
+const gatedKeys = ["CI", "GITHUB_JOB", "E2E_REQUIRED"] as const;
+const saved = new Map(gatedKeys.map((key) => [key, process.env[key]]));
+
+/** Unsets a gated variable for one test. Empty string is not `CI=true`
+ * and is not a named GITHUB_JOB, same as a variable the shell never set. */
+function unset(key: (typeof gatedKeys)[number]): void {
+  process.env[key] = "";
+}
 
 afterEach(() => {
-  if (saved === undefined) delete process.env["E2E_REQUIRED"];
-  else process.env["E2E_REQUIRED"] = saved;
+  for (const key of gatedKeys) {
+    process.env[key] = saved.get(key) ?? "";
+  }
+});
+
+describe("databaseIsRequired", () => {
+  test("is false when CI is unset, even if E2E_REQUIRED=1", () => {
+    unset("CI");
+    unset("GITHUB_JOB");
+    process.env["E2E_REQUIRED"] = "1";
+    expect(databaseIsRequired()).toBe(false);
+  });
+
+  test("is true when CI=true and the job is not a unit/structural job", () => {
+    process.env["CI"] = "true";
+    unset("GITHUB_JOB");
+    expect(databaseIsRequired()).toBe(true);
+    process.env["GITHUB_JOB"] = "e2e";
+    expect(databaseIsRequired()).toBe(true);
+    process.env["GITHUB_JOB"] = "isolation";
+    expect(databaseIsRequired()).toBe(true);
+    process.env["GITHUB_JOB"] = "db-suites";
+    expect(databaseIsRequired()).toBe(true);
+  });
+
+  test("is false on GitHub jobs that never provision Postgres", () => {
+    process.env["CI"] = "true";
+    process.env["GITHUB_JOB"] = "build-test";
+    expect(databaseIsRequired()).toBe(false);
+    process.env["GITHUB_JOB"] = "structural";
+    expect(databaseIsRequired()).toBe(false);
+    process.env["GITHUB_JOB"] = "lint";
+    expect(databaseIsRequired()).toBe(false);
+    process.env["GITHUB_JOB"] = "typecheck";
+    expect(databaseIsRequired()).toBe(false);
+  });
 });
 
 describe("dbGate", () => {
   test("returns describe when a database URL is configured", () => {
-    delete process.env["E2E_REQUIRED"];
+    process.env["CI"] = "true";
+    unset("GITHUB_JOB");
     expect(dbGate("postgres://localhost:5432/workbench", "example")).toBe(
       describe,
     );
   });
 
-  test("returns describe.skip when no database is configured and E2E_REQUIRED is unset", () => {
-    delete process.env["E2E_REQUIRED"];
+  test("returns describe.skip when no database is configured and CI is unset", () => {
+    unset("CI");
+    unset("GITHUB_JOB");
     expect(dbGate(undefined, "example")).toBe(describe.skip);
     expect(dbGate("", "example")).toBe(describe.skip);
   });
 
-  test("throws when E2E_REQUIRED=1 but no database is configured", () => {
+  test("does not treat E2E_REQUIRED as a required-ness signal", () => {
+    unset("CI");
+    unset("GITHUB_JOB");
     process.env["E2E_REQUIRED"] = "1";
+    expect(dbGate(undefined, "example")).toBe(describe.skip);
+  });
+
+  test("throws when CI=true but no database is configured", () => {
+    process.env["CI"] = "true";
+    unset("GITHUB_JOB");
+    expect(() => dbGate(undefined, "example-suite")).toThrow(/example-suite/);
     expect(() => dbGate(undefined, "example-suite")).toThrow(
-      /E2E_REQUIRED=1.*example-suite/,
+      /docker compose -f docker-compose\.test\.yml up -d/,
+    );
+    expect(() => dbGate("", "example-suite")).toThrow(
+      /postgres:\/\/postgres:postgres@localhost:5432\/workbench/,
     );
   });
 
-  test("does not throw under E2E_REQUIRED=1 once a database is configured", () => {
-    process.env["E2E_REQUIRED"] = "1";
+  test("does not throw under CI=true once a database is configured", () => {
+    process.env["CI"] = "true";
+    unset("GITHUB_JOB");
     expect(dbGate("postgres://localhost:5432/workbench", "example")).toBe(
       describe,
     );
+  });
+
+  test("skips on the GitHub unit job even when CI=true", () => {
+    process.env["CI"] = "true";
+    process.env["GITHUB_JOB"] = "build-test";
+    expect(dbGate(undefined, "example")).toBe(describe.skip);
   });
 });
