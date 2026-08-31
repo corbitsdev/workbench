@@ -185,9 +185,10 @@ in any order:
 [Running locally](#running-locally)). Each suite reuses a sibling
 `<database>_e2e` database that it owns outright — drops and rebuilds its
 own schema on every run — so it can never touch your working database.
-Without `DATABASE_URL` the suite skips with a warning; CI sets
-`E2E_REQUIRED=1` so that skip fails loudly there instead of silently
-passing.
+Without `DATABASE_URL` the suite skips with a warning naming
+`docker compose -f docker-compose.test.yml up -d`; CI infers
+required-ness from `CI=true` so that skip fails loudly there instead of
+silently passing.
 
 **Needs zero real credentials.** The whole suite — smoke and non-smoke
 files alike — runs with no API keys, no paid credentials, and no network
@@ -212,9 +213,9 @@ DB-gated tests (migrations, Drizzle-backed stores, route integration
 tests) that skip via `describeIfDb` when `DATABASE_URL` is unset. A
 skip is never silent: `scripts/e2e/db-gate.ts`'s `dbGate` — what
 `describeIfDb` is built on — prints an unmissable summary naming every
-skipped suite at the end of the run, and honors the same
-`E2E_REQUIRED=1` convention as the e2e suite above, turning a skip into
-a hard failure. CI sets `E2E_REQUIRED=1` for exactly this reason.
+skipped suite at the end of the run, and infers required-ness from
+`CI=true` the same way the e2e suite above does, turning a skip into
+a hard failure on CI jobs that provision Postgres.
 
 To run these locally against the same Postgres CI uses:
 

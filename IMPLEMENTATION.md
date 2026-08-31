@@ -99,9 +99,10 @@ suite needs zero real credentials: `startHub` only forwards an explicit
 env allowlist, so a real `ANTHROPIC_API_KEY` in the shell never reaches
 the spawned hub, and every inference source in a test points at the hub's
 own `noop-inference` endpoint or an unreachable placeholder host —
-enforced by `assertNeverRealProvider` in `scripts/e2e/harness.ts`. CI sets
-`E2E_REQUIRED=1` so a missing `DATABASE_URL` fails loudly there instead of
-silently skipping.
+enforced by `assertNeverRealProvider` in `scripts/e2e/harness.ts`. CI infers
+required-ness from `CI=true` so a missing `DATABASE_URL` fails loudly there
+instead of silently skipping. Start Postgres locally with
+`docker compose -f docker-compose.test.yml up -d`.
 
 ## Deployment
 
