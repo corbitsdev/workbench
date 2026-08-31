@@ -301,7 +301,8 @@ describe("CreateAgentPanel drafting failure — fails closed", () => {
           {
             error: {
               code: "drafting_failed",
-              message: "Myra couldn't draft a starting prompt for that.",
+              userMessage: "Myra couldn't draft a starting prompt for that.",
+              refId: "ref_1",
             },
           },
           422,

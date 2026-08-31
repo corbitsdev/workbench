@@ -42,7 +42,13 @@ describe("getAccessPolicy", () => {
   test("prefers the server's envelope message on a non-2xx", async () => {
     globalThis.fetch = (async () =>
       json(
-        { error: { message: "Not on this bench." } },
+        {
+          error: {
+            code: "forbidden",
+            userMessage: "Not on this bench.",
+            refId: "ref_1",
+          },
+        },
         403,
       )) as unknown as typeof fetch;
 

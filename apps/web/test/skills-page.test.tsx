@@ -315,7 +315,9 @@ describe("SkillsPage", () => {
         return new Response(
           JSON.stringify({
             error: {
-              message: "SKILL.md is missing its YAML frontmatter delimiter",
+              code: "invalid_skill",
+              userMessage: "SKILL.md is missing its YAML frontmatter delimiter",
+              refId: "ref_1",
             },
           }),
           { status: 400 },
@@ -396,7 +398,13 @@ describe("SkillsPage", () => {
       });
       if (method === "POST" && path.endsWith("/skills")) {
         return new Response(
-          JSON.stringify({ error: { message: REGISTRY_DESCRIPTION_ERROR } }),
+          JSON.stringify({
+            error: {
+              code: "invalid_skill",
+              userMessage: REGISTRY_DESCRIPTION_ERROR,
+              refId: "ref_1",
+            },
+          }),
           { status: 400 },
         );
       }
