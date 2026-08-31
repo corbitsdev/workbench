@@ -48,6 +48,7 @@ import {
 import { SessionLaunchError } from "@intx/hub-sessions";
 import type { EventCollectorRegistry, SidecarRouter } from "@intx/hub-sessions";
 import type { DefinitionSourceResolution } from "@intx/hub-api";
+import { MODEL_UNAVAILABLE_CONSUMER_MESSAGE } from "../src/model-unavailable";
 
 const actualHubApi = await import("@intx/hub-api");
 
@@ -1593,7 +1594,7 @@ describe("createHubChatPlatform", () => {
       definitionId: "wfd_echo",
     });
     await expect(platform.ensureAwake(launched.address)).rejects.toThrow(
-      /seed a tenant catalog source/,
+      MODEL_UNAVAILABLE_CONSUMER_MESSAGE,
     );
   });
 
@@ -1714,7 +1715,7 @@ describe("createHubChatPlatform", () => {
       definitionId: "wfd_echo",
     });
     await expect(platform.ensureAwake(launched.address)).rejects.toThrow(
-      /seed a tenant catalog source/,
+      MODEL_UNAVAILABLE_CONSUMER_MESSAGE,
     );
 
     expect(resolveDefinitionSourcesCalls).toHaveLength(1);
