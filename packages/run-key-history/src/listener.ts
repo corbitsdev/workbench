@@ -34,11 +34,11 @@ export type RunKeyHistoryListener = {
 
 /**
  * Subscribes to `agent.deploy.ack` and records every observed key
- * against `RunKeyHistoryStore`. Mirrors vendor's own guard: an
- * exclusive-allocation ack (`allocated !== undefined`) publishes its
- * key only after every deploy and asset pack succeeds under the
- * allocation generation fence, so it is skipped here exactly as
- * vendor skips its own `workflow_run` update for the same ack.
+ * against `RunKeyHistoryStore`, including exclusive-allocation acks
+ * (`allocated !== undefined`). Vendor's orchestrator listener skips
+ * those acks when writing `workflow_run.public_key`; the service path
+ * (`updateAnchorPublicKeyUnderAllocationLock`) still stamps the key,
+ * so history must record it too.
  */
 export function createRunKeyHistoryListener(
   deps: CreateRunKeyHistoryListenerDeps,
@@ -46,7 +46,6 @@ export function createRunKeyHistoryListener(
   const log = getLogger(["run-key-history", "listener"]);
 
   const unsubscribe = deps.events.on("agent.deploy.ack", (event) => {
-    if (event.allocated !== undefined) return;
     deps.store
       .recordObservedKey(event.agentAddress, event.publicKey)
       .catch((cause: unknown) => {
