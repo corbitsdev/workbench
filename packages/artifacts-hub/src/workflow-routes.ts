@@ -22,6 +22,7 @@
  * itself never holds a database handle.
  */
 import { type } from "arktype";
+import { createExpiringMap } from "@corbits/collections";
 import {
   ARTIFACT_UPLOAD_POLICY,
   anonymousIdentity,
@@ -58,8 +59,8 @@ const MAX_ARTIFACT_CONTENT_CHARS = 64_000;
 // A finalized turn can legitimately persist a handful of artifacts in
 // one burst; 30/minute per run comfortably covers that while still
 // catching a runaway loop before it floods Library storage.
-const MAX_CREATES_PER_RUN_PER_MINUTE = 30;
-const RATE_WINDOW_MS = 60_000;
+export const MAX_CREATES_PER_RUN_PER_MINUTE = 30;
+export const RATE_WINDOW_MS = 60_000;
 
 // Same per-file ceiling the tenant Library's own `POST /upload` enforces
 // (`MAX_UPLOAD_BYTES`) — one number for "how big a file artifact may be"
@@ -80,13 +81,30 @@ export const MAX_WORKFLOW_BINARY_BYTES = MAX_UPLOAD_BYTES;
  * only what it personally handled — a known fail-open gap, not a
  * fail-closed one, so it under-limits rather than wrongly rejecting a
  * caller a sibling replica hasn't seen yet.
+ *
+ * The per-run entry lives in a `createExpiringMap` (CL-7243) rather than
+ * a plain `Map`, so a run's entry is reclaimed once it goes idle instead
+ * of staying resident for the rest of the hub process's uptime. The TTL
+ * is exactly `RATE_WINDOW_MS`: every `allow()` call re-`set`s the entry,
+ * refreshing its expiry, so an entry can only lapse after a full window
+ * with no calls for that run — by which point every timestamp it held
+ * has already aged out of the sliding window's own `cutoff` filter below.
+ * A shorter TTL could evict an entry (and thus its still-in-window
+ * timestamps) before the window's filter would have dropped them,
+ * silently resetting a caller's quota early; this TTL can't.
  */
-function createRunCreateRateLimiter(maxPerWindow: number) {
-  const timestampsByRunId = new Map<string, number[]>();
+export function createRunCreateRateLimiter(
+  maxPerWindow: number,
+  now: () => number = Date.now,
+) {
+  const timestampsByRunId = createExpiringMap<string, number[]>({
+    ttlMs: RATE_WINDOW_MS,
+    now,
+  });
   return {
     allow(runId: string): boolean {
-      const now = Date.now();
-      const cutoff = now - RATE_WINDOW_MS;
+      const at = now();
+      const cutoff = at - RATE_WINDOW_MS;
       const recent = (timestampsByRunId.get(runId) ?? []).filter(
         (timestamp) => timestamp > cutoff,
       );
@@ -94,9 +112,13 @@ function createRunCreateRateLimiter(maxPerWindow: number) {
         timestampsByRunId.set(runId, recent);
         return false;
       }
-      recent.push(now);
+      recent.push(at);
       timestampsByRunId.set(runId, recent);
       return true;
+    },
+    /** Live entry count, for tests asserting the map stays bounded. */
+    get trackedRunCount(): number {
+      return timestampsByRunId.size;
     },
   };
 }
