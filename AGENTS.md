@@ -51,7 +51,9 @@ behind human approval.
 ## Working conventions
 
 - `bun run check` (typecheck, lint, test, structural checks) must pass
-  before every commit.
+  before every commit. CI's `structural` job runs the same
+  `check:structural` list as local, including `check:report-error`, so
+  the two cannot drift.
 - Commit sequence per change: tests first ("Add tests for X"), then
   implementation ("X: what changed"), then docs ("Update docs: X"). One
   logical change per commit; commit messages are written for a public
@@ -130,7 +132,8 @@ check:*` script, so a violation fails CI rather than waiting for review.
   the current change's diff touches its line; a pre-existing catch is
   instead recorded in `scripts/checks/report-error-baseline.txt`, a debt
   ledger — not an allowlist — of 280 violations as of this check landing,
-  each one a real bug still to fix. Regenerate it with `bun run
+  each one a real bug still to fix. The same script runs in CI via
+  `check:structural`. Regenerate it with `bun run
 scripts/checks/report-error.ts --write-baseline` after fixing (or
   newly opting out) entries; a stale entry with no matching violation
   fails the check, so the ledger can only shrink. A violation already
