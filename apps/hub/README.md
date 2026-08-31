@@ -27,6 +27,12 @@ native tenant middleware.
 - `credential-expiry-sweep.ts`, `cron-due.ts`, `routine-launcher.ts`,
   `routine-scheduler.ts`, `tenant-create-guard.ts` are host-level
   background jobs and guards wired at boot, alongside the route mounts.
+- `in-flight-requests.ts` and `shutdown.ts` bound SIGINT/SIGTERM: the hub
+  waits for Hono handlers that have not yet returned a Response (a
+  request still in a Postgres transaction, a git write), then
+  `server.stop(true)` so a live SSE bridge or sidecar websocket cannot
+  hang the drain. The sequence is capped at 10s; a lingering stream is
+  not a shutdown fault.
 
 ## Running
 

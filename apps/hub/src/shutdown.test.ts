@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { drainWithTimeout, shutdownHub } from "./shutdown";
+import { drainHubServer, drainWithTimeout, shutdownHub } from "./shutdown";
 
 test("drainWithTimeout resolves drained when the drain completes inside the bound", async () => {
   const outcome = await drainWithTimeout(() => Promise.resolve(), 1_000);
@@ -75,4 +75,20 @@ test("shutdownHub exits non-zero and reports the cause when the drain rejects", 
   });
   expect(exitCode).toBe(1);
   expect(reported).toEqual([error]);
+});
+
+test("drainHubServer waits for idle handlers then force-stops", async () => {
+  const order: string[] = [];
+  await drainHubServer({
+    whenRequestsIdle: async () => {
+      order.push("idle");
+    },
+    stop: (force) => {
+      order.push(force ? "stop-force" : "stop");
+    },
+    close: async () => {
+      order.push("close");
+    },
+  });
+  expect(order).toEqual(["idle", "stop-force", "close"]);
 });

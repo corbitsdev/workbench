@@ -367,7 +367,11 @@ import { createToolGrantsForPins } from "./tool-grants";
 import { createMcpCredentialBindingsFor } from "./mcp-credential-bindings";
 import { reconcilePinnedToolPackagesAfterConnect } from "./connection-live-reconcile";
 import { createPinnedPackageCredentialBindingsFor } from "./pinned-package-credential-bindings";
-import { shutdownHub } from "./shutdown";
+import { drainHubServer, shutdownHub } from "./shutdown";
+import {
+  createInFlightRequestTracker,
+  withInFlightRequestTracking,
+} from "./in-flight-requests";
 
 // Host policy constants, not configuration.
 const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
@@ -3492,6 +3496,8 @@ export async function createHub(config: HubConfig) {
     guardDeps.operatorTenantId = config.operatorTenantId;
   }
   const guardedApp = guardedHubApp(app, guardDeps);
+  const inFlight = createInFlightRequestTracker();
+  const servingApp = withInFlightRequestTracking(guardedApp, inFlight);
 
   // Env-key auto-plant (CL-6101): runs in-process against the app this
   // function is about to return, so it needs nothing more than that
@@ -3502,11 +3508,12 @@ export async function createHub(config: HubConfig) {
     envProviderKeys: config.envProviderKeys,
     envProviderBaseUrls: config.envProviderBaseUrls,
     admin: config.envCredentialPlantAdmin,
-    fetch: (request) => Promise.resolve(guardedApp.fetch(request)),
+    fetch: (request) => Promise.resolve(servingApp.fetch(request)),
   });
 
   return {
-    app: guardedApp,
+    app: servingApp,
+    whenRequestsIdle: () => inFlight.whenIdle(),
     db,
     close: async () => {
       sidecarAllocationReconciliationStopped = true;
@@ -3552,14 +3559,20 @@ if (import.meta.main) {
   const log = getLogger(["hub"]);
   log.info`Hub serving on port ${port}`;
   const SHUTDOWN_DRAIN_MS = 10_000;
-  // `server.stop()` waits for open connections and websockets by default,
-  // so it sits inside the same bound as the hub's own closes.
+  // In-flight Hono handlers (a request mid-Postgres-transaction, a git
+  // write, anything that has not returned a Response yet) must finish
+  // before connections are torn down. `server.stop()` with no argument
+  // also waits for SSE bridges and idle sidecar websockets, which never
+  // close on their own — so once handlers are idle, force-close what's
+  // left. A live stream must not turn this drain into a timeout fault.
   const shutdown = () =>
     shutdownHub({
-      drain: async () => {
-        await server.stop();
-        await hub.close();
-      },
+      drain: () =>
+        drainHubServer({
+          whenRequestsIdle: hub.whenRequestsIdle,
+          stop: (force) => server.stop(force),
+          close: hub.close,
+        }),
       timeoutMs: SHUTDOWN_DRAIN_MS,
       exit: (code) => process.exit(code),
     });

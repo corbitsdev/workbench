@@ -39,6 +39,27 @@ export async function drainWithTimeout(
   return outcome;
 }
 
+export type DrainHubServerArgs = {
+  whenRequestsIdle: () => Promise<void>;
+  stop: (force: boolean) => void | Promise<void>;
+  close: () => void | Promise<void>;
+};
+
+/**
+ * Wait for every in-flight Hono handler to return, then force-stop the
+ * listener so lingering SSE/websocket connections cannot hang `server.stop()`,
+ * then close hub resources.
+ */
+export async function drainHubServer({
+  whenRequestsIdle,
+  stop,
+  close,
+}: DrainHubServerArgs): Promise<void> {
+  await whenRequestsIdle();
+  await stop(true);
+  await close();
+}
+
 export type ShutdownHubDeps = {
   drain: () => Promise<void>;
   timeoutMs: number;
