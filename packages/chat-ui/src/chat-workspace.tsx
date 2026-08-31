@@ -14,6 +14,7 @@
 import { isAgentAddress } from "@corbits/chat/mentions";
 import { Button, EmptyState, toast } from "@corbits/react-ui";
 import { reportError } from "@corbits/error-sink";
+import { getResolvedCatalog } from "@corbits/inference-settings";
 import {
   CaretDown,
   ChatCircle,
@@ -34,6 +35,9 @@ import {
   inviteAgent,
   listWorkbenches,
   listInvitableDefinitions,
+  listWorkbenchAgents,
+  addAgentCapability,
+  refreshWorkbenchAgent,
   pingWorkbenchPresence,
   pinMessage,
   toggleReaction,
@@ -57,7 +61,7 @@ import {
 import type { BringInListFailure, BringInMember } from "./mentions";
 import { PinnedStrip } from "./pinned-strip";
 import { SLASH_COMMANDS } from "./slash-commands";
-
+import { failedTurnModelChoices } from "./failed-turn-models";
 import { CHAT_STRINGS } from "./strings";
 import { displayWorkbenchTitle } from "./workbench-display-title";
 import {
@@ -73,6 +77,7 @@ import {
   messageDomId,
   messageText,
 } from "./timeline";
+import type { FailedTurnRecovery } from "./timeline";
 import { NoUsableModelBanner } from "./no-usable-model-banner";
 import { ResumeFailedBanner } from "./resume-failed-banner";
 import type {
@@ -618,6 +623,7 @@ function ChatWorkspaceInner({
   readonly onSettingsOpenChange?: (
     open: boolean,
     section?: WorkbenchSettingsSectionId,
+    entityId?: string,
   ) => void;
   /** Which workbench settings tab is active while the surface is open —
    * host-controlled the same way `settingsOpen` is, driven from the URL
@@ -997,8 +1003,9 @@ function ChatWorkspaceInner({
    * that lands is always the one the caller meant to open. */
   function openWorkbenchSettings(
     section: WorkbenchSettingsSectionId = "general",
+    entityId?: string,
   ) {
-    onSettingsOpenChange?.(true, section);
+    onSettingsOpenChange?.(true, section, entityId);
   }
 
   async function handleInvite(definitionId: string) {
@@ -1124,6 +1131,51 @@ function ChatWorkspaceInner({
     },
     [handleSend],
   );
+
+  const catalogQuery = useQuery({
+    queryKey: ["tenant", tenantId, "resolved-catalog"],
+    queryFn: () => getResolvedCatalog(tenantId),
+  });
+  const workbenchAgentsQuery = useQuery({
+    queryKey: [
+      "tenant",
+      tenantId,
+      "chat",
+      "workbench-agents",
+      activeWorkbenchId,
+    ],
+    queryFn: () =>
+      activeWorkbenchId !== null
+        ? listWorkbenchAgents(tenantId, activeWorkbenchId)
+        : Promise.resolve([]),
+    enabled: activeWorkbenchId !== null,
+  });
+  const failedTurnRecovery = useMemo((): FailedTurnRecovery => {
+    const definitionIdByAddress: Record<string, string> = {};
+    for (const agent of workbenchAgentsQuery.data ?? []) {
+      definitionIdByAddress[agent.address] = agent.definitionId;
+    }
+    return {
+      models: failedTurnModelChoices(catalogQuery.data ?? []),
+      definitionIdByAddress,
+      onApplyModel: async ({ definitionId, address, canonicalName }) => {
+        if (activeWorkbenchId === null) return;
+        await addAgentCapability(tenantId, definitionId, {
+          kind: "model",
+          canonicalName,
+        });
+        await refreshWorkbenchAgent(tenantId, activeWorkbenchId, address);
+      },
+      onOpenAgentSettings: (definitionId) => {
+        openWorkbenchSettings("agents", definitionId);
+      },
+    };
+  }, [
+    catalogQuery.data,
+    workbenchAgentsQuery.data,
+    tenantId,
+    activeWorkbenchId,
+  ]);
 
   // The mention popover's "Bring in…" group: only a `workbench` grows its
   // participants after creation (a chat's counterpart is fixed at
@@ -1605,6 +1657,7 @@ function ChatWorkspaceInner({
                     reactionActions={reactionActions}
                     pinActions={pinActions}
                     onRetryFailedTurn={handleRetryFailedTurn}
+                    failedTurnRecovery={failedTurnRecovery}
                     pendingActions={{
                       onRetry: retryPendingSend,
                       onDiscard: discardPendingSend,
@@ -1753,6 +1806,7 @@ export function ChatWorkspace({
   readonly onSettingsOpenChange?: (
     open: boolean,
     section?: WorkbenchSettingsSectionId,
+    entityId?: string,
   ) => void;
   /** Which workbench settings tab is active — host-controlled from the URL
    * (`/w/:id/settings/:section`). */

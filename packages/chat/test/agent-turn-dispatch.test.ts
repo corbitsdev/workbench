@@ -5,6 +5,8 @@
 // rather than a race.
 import { describe, expect, test } from "bun:test";
 
+import { InferenceResolutionError } from "@corbits/folded-runs";
+
 import { createInMemoryAgentTurnStore } from "../src/agent-turns";
 import { createChatRoutes } from "../src/routes";
 import {
@@ -134,6 +136,44 @@ describe("dispatchTurn's turn projection", () => {
       error: "the agent is unreachable",
     });
     expect(turns[0]?.endedAt).not.toBeNull();
+  });
+
+  test("an InferenceResolutionError closes the turn with consumer copy, not the raw dump", async () => {
+    const platform = fakePlatform({
+      invitable: [{ id: "wfd_echo", name: "echo" }],
+    });
+    let refuse = false;
+    const refusing = {
+      ...platform,
+      sendMail: async (input: Parameters<typeof platform.sendMail>[0]) => {
+        if (refuse) {
+          throw new InferenceResolutionError(
+            "the woken instance",
+            'No launchable inference source for model "claude-sonnet-5"',
+          );
+        }
+        return platform.sendMail(input);
+      },
+    };
+    const { app, workbenchId, agentTurns } = await roomWithAgent({
+      platform: refusing,
+    });
+
+    refuse = true;
+    const response = await sendText(app, workbenchId, "hello");
+    expect(response.status).toBe(201);
+
+    const turns = await agentTurns.listTurns({
+      tenantId: TENANT.id,
+      workbenchId,
+    });
+    expect(turns).toHaveLength(1);
+    expect(turns[0]).toMatchObject({
+      status: "failed",
+      error: "This agent's model isn't available here.",
+    });
+    expect(turns[0]?.error).not.toContain("claude-sonnet-5");
+    expect(turns[0]?.error).not.toContain("cannot resolve an inference");
   });
 });
 

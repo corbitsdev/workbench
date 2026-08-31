@@ -323,4 +323,96 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
 
     expect(retryButton().disabled).toBe(false);
   });
+
+  test("a model-unavailable notice shows named copy, a picker, and a real Settings hop", async () => {
+    const applied: string[] = [];
+    const retried: (string | undefined)[] = [];
+    const opened: string[] = [];
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root?.render(
+        <WorkbenchTimeline
+          items={[
+            {
+              id: "msg_ok",
+              createdAt: "2026-01-01T00:00:00.000Z",
+              parts: [{ kind: "text", text: "hi @echo" }],
+              sender: { name: null, address: "prn_alice@agents.example" },
+            },
+            {
+              id: "msg_notice",
+              createdAt: "2026-01-01T00:00:05.000Z",
+              parts: [
+                {
+                  kind: "text",
+                  text: "This agent's model isn't available here. (ref abc)",
+                  turnFailed: true,
+                  turnFailedReason: "model_unavailable",
+                },
+              ],
+              sender: { name: "Jimmy", address: "ins_echo1@agents.example" },
+            },
+          ]}
+          participants={[
+            { address: "ins_echo1@agents.example", handle: "echo" },
+          ]}
+          failedTurnRecovery={{
+            models: [
+              { canonicalName: "anthropic/claude-sonnet", label: "Sonnet" },
+              { canonicalName: "openai/gpt-4.1", label: "GPT-4.1" },
+              { canonicalName: "google/gemini-2.5-pro", label: "Gemini" },
+            ],
+            definitionIdByAddress: {
+              "ins_echo1@agents.example": "wfd_echo",
+            },
+            onApplyModel: ({ canonicalName }) => {
+              applied.push(canonicalName);
+            },
+            onOpenAgentSettings: (definitionId) => {
+              opened.push(definitionId);
+            },
+          }}
+          onRetryFailedTurn={(_item, retryText) => {
+            retried.push(retryText);
+          }}
+        />,
+      );
+    });
+
+    const strip = container.querySelector(".chat-turn-failed");
+    expect(strip?.textContent).toContain("Jimmy's model isn't available here.");
+    expect(strip?.textContent).not.toContain("didn't reply");
+    expect(strip?.textContent).not.toMatch(/HTTP/);
+    expect(strip?.textContent).not.toContain("wfd_echo");
+    expect(container.querySelector(".chat-turn-failed-retry")).toBeNull();
+
+    const select = container.querySelector(
+      ".chat-turn-failed-models",
+    ) as HTMLSelectElement;
+    expect(select).not.toBeNull();
+    expect([...select.options].map((option) => option.textContent)).toEqual([
+      "Pick a model",
+      "Sonnet",
+      "GPT-4.1",
+      "Gemini",
+    ]);
+
+    await act(async () => {
+      select.value = "openai/gpt-4.1";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(applied).toEqual(["openai/gpt-4.1"]);
+    expect(retried).toEqual(["hi @echo"]);
+
+    act(() => {
+      (
+        container?.querySelector(
+          ".chat-turn-failed-settings",
+        ) as HTMLButtonElement
+      ).click();
+    });
+    expect(opened).toEqual(["wfd_echo"]);
+  });
 });

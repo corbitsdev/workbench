@@ -17,6 +17,16 @@ describe("Part schemas", () => {
     expect(result instanceof type.errors).toBe(false);
   });
 
+  test("TextPart accepts turnFailedReason on a failed-turn notice", () => {
+    const result = TextPart({
+      kind: "text",
+      text: "This agent's model isn't available here.",
+      turnFailed: true,
+      turnFailedReason: "model_unavailable",
+    });
+    expect(result instanceof type.errors).toBe(false);
+  });
+
   test("ReasoningPart accepts a valid reasoning part", () => {
     const result = ReasoningPart({ kind: "reasoning", text: "thinking..." });
     expect(result instanceof type.errors).toBe(false);

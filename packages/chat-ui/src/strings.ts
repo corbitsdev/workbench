@@ -319,6 +319,10 @@ export const CHAT_STRINGS = {
     `Couldn't resume the running reply — try again. (ref ${refId})`,
   resumeFailedRetryAction: "Retry",
   turnFailedTitle: (sender: string) => `${sender} didn't reply`,
+  turnFailedModelUnavailable: (sender: string) =>
+    `${sender}'s model isn't available here.`,
+  turnFailedPickModel: "Pick a model",
+  turnFailedMoreInSettings: "More in Settings",
   turnCancelledTitle: (sender: string) => `You stopped ${sender}'s turn`,
   turnFailedSub: "No reply arrived — the agent may be unavailable.",
   noUsableModelBannerText:

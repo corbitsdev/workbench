@@ -68,6 +68,7 @@ import type { ProfileSubject } from "./profile-subject";
 import { profileSubjectFromParticipant } from "./profile-subject";
 import { formatRelativeActivity } from "./relative-time";
 import { CHAT_STRINGS } from "./strings";
+import type { FailedTurnModelChoice } from "./failed-turn-models";
 
 /**
  * Which affordance a message's thread row offers:
@@ -717,6 +718,22 @@ function EventLine({
 }
 
 /**
+ * Host-supplied recovery for a model-unavailable failed turn: tenant
+ * chat models for the inline picker, the workbench's agent definition
+ * ids, apply (write the capability + refresh) and a real Settings hop.
+ */
+export type FailedTurnRecovery = {
+  readonly models: readonly FailedTurnModelChoice[];
+  readonly definitionIdByAddress: Readonly<Record<string, string>>;
+  readonly onApplyModel: (input: {
+    readonly definitionId: string;
+    readonly address: string;
+    readonly canonicalName: string;
+  }) => void | Promise<void>;
+  readonly onOpenAgentSettings: (definitionId: string) => void;
+};
+
+/**
  * The general chat timeline's failed-turn treatment (CL-6332, redesigned
  * CL-6376 to match the timeline's own idiom rather than borrow
  * `PrFailedTurnStrip`'s bordered banner — that component stays as-is for
@@ -727,7 +744,9 @@ function EventLine({
  * under the same left gutter every message bubble sits under: muted
  * danger-tinted copy, a small ghost Retry button, and "What happened" as
  * a subtle inline disclosure rather than a second button competing for
- * attention. `onRetry`/`onWhatHappened` are the host's own actions; a
+ * attention. A model-unavailable notice (`turnFailedReason`) replaces
+ * Retry with an inline model picker and a real Settings hop.
+ * `onRetry`/`onWhatHappened` are the host's own actions; a
  * host that wires neither still gets the row, just with inert controls —
  * matching the fixed-disabled framing every other undefined-action port
  * in this file already falls back to.
@@ -736,8 +755,10 @@ function FailedTurnStrip({
   item,
   detailText,
   retryText,
+  modelUnavailable,
   participants,
   currentUser,
+  failedTurnRecovery,
   onRetryFailedTurn,
   onWhatHappenedFailedTurn,
 }: {
@@ -754,8 +775,10 @@ function FailedTurnStrip({
    * `findRetryText` — handed to `onRetryFailedTurn` so Retry has
    * something to resend rather than nothing. */
   readonly retryText?: string;
+  readonly modelUnavailable?: boolean;
   readonly participants: readonly ParticipantRecord[];
   readonly currentUser: CurrentUser | undefined;
+  readonly failedTurnRecovery?: FailedTurnRecovery;
   readonly onRetryFailedTurn?: (
     item: TimelineMessageItem,
     retryText?: string,
@@ -769,6 +792,62 @@ function FailedTurnStrip({
   // Guards the resend itself against a double-click firing two sends —
   // not composer state, since Retry never touches the composer any more.
   const [retrying, setRetrying] = useState(false);
+  const definitionId =
+    failedTurnRecovery?.definitionIdByAddress[item.sender.address];
+
+  if (modelUnavailable === true) {
+    return (
+      <div className="chat-turn-failed" role="status">
+        <span className="chat-turn-failed-text">
+          {CHAT_STRINGS.turnFailedModelUnavailable(sender)}
+        </span>
+        {failedTurnRecovery !== undefined &&
+        definitionId !== undefined &&
+        failedTurnRecovery.models.length > 0 ? (
+          <select
+            className="chat-turn-failed-models"
+            aria-label={CHAT_STRINGS.turnFailedPickModel}
+            disabled={retrying}
+            defaultValue=""
+            onChange={async (event) => {
+              const canonicalName = event.target.value;
+              if (canonicalName === "" || retrying) return;
+              setRetrying(true);
+              try {
+                await failedTurnRecovery.onApplyModel({
+                  definitionId,
+                  address: item.sender.address,
+                  canonicalName,
+                });
+                await onRetryFailedTurn?.(item, retryText);
+              } finally {
+                setRetrying(false);
+              }
+            }}
+          >
+            <option value="" disabled>
+              {CHAT_STRINGS.turnFailedPickModel}
+            </option>
+            {failedTurnRecovery.models.map((model) => (
+              <option key={model.canonicalName} value={model.canonicalName}>
+                {model.label}
+              </option>
+            ))}
+          </select>
+        ) : null}
+        {failedTurnRecovery !== undefined && definitionId !== undefined ? (
+          <button
+            type="button"
+            className="chat-turn-failed-settings"
+            onClick={() => failedTurnRecovery.onOpenAgentSettings(definitionId)}
+          >
+            {CHAT_STRINGS.turnFailedMoreInSettings}
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div className="chat-turn-failed" role="status">
       <span className="chat-turn-failed-text">
@@ -1503,6 +1582,7 @@ function MessagePartsInner({
   reactionActions,
   pinActions,
   pendingActions,
+  failedTurnRecovery,
   onRetryFailedTurn,
   onWhatHappenedFailedTurn,
 }: {
@@ -1559,6 +1639,7 @@ function MessagePartsInner({
     retryText?: string,
   ) => void | Promise<void>;
   readonly onWhatHappenedFailedTurn?: (item: TimelineMessageItem) => void;
+  readonly failedTurnRecovery?: FailedTurnRecovery;
 }) {
   // A message this reader's own composer submitted and the server hasn't
   // issued an id for yet (see `TimelineMessageItem.pendingStatus`) offers
@@ -1632,9 +1713,15 @@ function MessagePartsInner({
                   key={key}
                   item={item}
                   detailText={part.text}
+                  modelUnavailable={
+                    part.turnFailedReason === "model_unavailable"
+                  }
                   participants={participants}
                   currentUser={currentUser}
                   {...(retryText !== undefined ? { retryText } : {})}
+                  {...(failedTurnRecovery !== undefined
+                    ? { failedTurnRecovery }
+                    : {})}
                   {...(onRetryFailedTurn !== undefined
                     ? { onRetryFailedTurn }
                     : {})}
@@ -1926,6 +2013,7 @@ export function WorkbenchTimeline({
   reactionActions,
   pinActions,
   pendingActions,
+  failedTurnRecovery,
   onRetryFailedTurn,
   onWhatHappenedFailedTurn,
   scrollRestore,
@@ -1999,6 +2087,8 @@ export function WorkbenchTimeline({
   /** The failed-turn strip's "what happened" action — same undefined
    * contract as `onRetryFailedTurn`. */
   readonly onWhatHappenedFailedTurn?: (item: TimelineMessageItem) => void;
+  /** Inline model picker + Settings hop for a model-unavailable notice. */
+  readonly failedTurnRecovery?: FailedTurnRecovery;
   /** The scroll position to restore on mount — the host's own memory of
    * where this workbench's reader last was, captured via `onScrollSnapshot`
    * the last time this component unmounted (e.g. opening Settings, which
@@ -2196,6 +2286,9 @@ export function WorkbenchTimeline({
             {...(onRetryFailedTurn !== undefined ? { onRetryFailedTurn } : {})}
             {...(onWhatHappenedFailedTurn !== undefined
               ? { onWhatHappenedFailedTurn }
+              : {})}
+            {...(failedTurnRecovery !== undefined
+              ? { failedTurnRecovery }
               : {})}
           />
         );

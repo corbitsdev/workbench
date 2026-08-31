@@ -261,11 +261,15 @@ export function ChatPage({
       onOpenProfile={openProfile}
       registerComposerInsert={registerComposerInsert}
       settingsOpen={settingsOpen}
-      onSettingsOpenChange={(open, section) => {
+      onSettingsOpenChange={(open, section, entityId) => {
         if (workbenchId === null) return;
         navigate(
           open
-            ? workbenchSettingsPath(workbenchId, section ?? settingsSection)
+            ? workbenchSettingsPath(
+                workbenchId,
+                section ?? settingsSection,
+                entityId,
+              )
             : workbenchPath(workbenchId),
         );
       }}
