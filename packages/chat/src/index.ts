@@ -141,6 +141,11 @@ export type {
   WorkbenchTurnQueue,
   WorkbenchTurnQueueDeps,
 } from "./turn-queue";
+export {
+  createTurnCancelRegistry,
+  TurnCancelledError,
+} from "./turn-cancellation";
+export type { TurnCancelRegistry } from "./turn-cancellation";
 export type {
   WorkbenchEvents,
   WorkbenchLauncher,
@@ -239,6 +244,7 @@ export {
   sendWorkbenchMessage,
   startWorkflowCommand,
   provisionSpaceWorkbench,
+  cancelWorkbenchTurn,
 } from "./workbench-service";
 export type {
   LaunchAndJoinAgentDeps,
@@ -253,6 +259,7 @@ export type {
   SendWorkbenchMessageDeps,
   SendWorkbenchMessageInput,
   SendWorkbenchMessageResult,
+  CancelWorkbenchTurnResult,
   StartWorkflowCommandDeps,
   StartWorkflowCommandInput,
   StartWorkflowCommandResult,

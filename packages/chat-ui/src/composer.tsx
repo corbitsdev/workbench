@@ -7,9 +7,10 @@
 // does not compose with an inline mention popover.
 
 import { Avatar, Button } from "@corbits/react-ui";
-import { ArrowUp, CircleNotch, Paperclip, X } from "@corbits/icons";
+import { ArrowUp, CircleNotch, Paperclip, Stop, X } from "@corbits/icons";
 import {
   forwardRef,
+  useEffect,
   useImperativeHandle,
   useLayoutEffect,
   useRef,
@@ -251,6 +252,20 @@ export function canSendComposerAction(
   return canSendComposer(text, attachments);
 }
 
+/**
+ * Whether the composer offers a Stop affordance (CL-7201) — a stand-in
+ * for "is there a turn to cancel," reported by the host from its own
+ * `isAwaitingReply` signal (the whole in-flight phase, including after
+ * tokens have started streaming — not the tokenless `isPendingReply`
+ * pulse). Deliberately independent of `sending`/
+ * `preparing`: a follow-up message can still be typed and queued while a
+ * turn runs (`turn-queue.ts` batches it), so Stop and Send coexist
+ * rather than one gating the other.
+ */
+export function canStopComposer(state: { readonly running: boolean }): boolean {
+  return state.running;
+}
+
 /** Attach stays blocked while a send or file read is in flight. */
 export function canAttachComposer(state: {
   readonly sending: boolean;
@@ -334,6 +349,20 @@ export const Composer = forwardRef<
     readonly onCreateRoutineInSpace: () => void;
     /** Defaults to the generic workbench copy — a chat passes one naming its counterpart. */
     readonly placeholder?: string;
+    /** Whether a turn is currently running for this workbench (CL-7201) —
+     * typically the host's own `isAwaitingReply(streamingReply)`. Absent
+     * or `false` renders no Stop affordance at all. */
+    readonly running?: boolean;
+    /**
+     * Cancels the running turn — `POST .../turns/cancel`. Required
+     * whenever `running` can be `true`; the composer never guesses at
+     * how to stop a turn on its own. May return a promise: a rejection
+     * re-enables the button immediately (the request itself failed —
+     * network, a denied grant — not merely a slow cancel, so there is
+     * no reason to make the person wait for `running` to change before
+     * they can try again).
+     */
+    readonly onStop?: () => void | Promise<unknown>;
   }
 >(function Composer(
   {
@@ -347,6 +376,8 @@ export const Composer = forwardRef<
     onOpenAgentsSettings,
     onCreateRoutineInSpace,
     placeholder = CHAT_STRINGS.composerPlaceholder,
+    running = false,
+    onStop,
   },
   ref,
 ) {
@@ -366,6 +397,12 @@ export const Composer = forwardRef<
   const [preparing, setPreparing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
+  // CL-7201: guards Stop against a double-click firing two cancel
+  // requests. A second cancel is harmless server-side (compare-and-set),
+  // but there is no reason to send it. Resets once the host reports the
+  // turn is no longer running -- not on a timer, since a slow cancel
+  // (CL-7230's ceiling) must stay disabled rather than re-arm early.
+  const [stopping, setStopping] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachGenerationRef = useRef(0);
@@ -376,6 +413,10 @@ export const Composer = forwardRef<
   // instant a send starts, synchronously ahead of any render, so a second
   // call in the same tick is turned away (CL-7198).
   const sendInFlightRef = useRef(false);
+
+  useEffect(() => {
+    if (!running) setStopping(false);
+  }, [running]);
 
   /** Auto-grow: the textarea reports its own content height, so the
    * measurement resets to the CSS-declared min-height before reading
@@ -701,6 +742,18 @@ export const Composer = forwardRef<
     void addFiles(event.target.files);
   }
 
+  function handleStop() {
+    if (stopping || onStop === undefined) return;
+    setStopping(true);
+    // CL-7201 (Critique finding): a rejected stop request is a FAILED
+    // cancel, not a slow one -- the `useEffect` above only re-enables
+    // once the host reports `running` has gone false, which never
+    // happens for a request that never reached the server. Without
+    // this catch the button stayed disabled for the rest of the turn's
+    // life with no way to retry.
+    Promise.resolve(onStop()).catch(() => setStopping(false));
+  }
+
   return (
     <div className="chat-composer">
       {slash !== null && (
@@ -907,6 +960,20 @@ export const Composer = forwardRef<
           >
             {CHAT_STRINGS.composerKeyboardHint}
           </span>
+          {canStopComposer({ running }) ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="chat-composer-icon-button"
+              disabled={stopping}
+              onClick={handleStop}
+              aria-label={CHAT_STRINGS.composerStop}
+              title={CHAT_STRINGS.composerStop}
+            >
+              <Stop aria-hidden="true" />
+            </Button>
+          ) : null}
           <Button
             type="button"
             variant={sendVisualState === "empty" ? "ghost" : "primary"}

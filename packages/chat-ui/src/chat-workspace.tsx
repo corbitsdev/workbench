@@ -28,6 +28,7 @@ import type { ReactNode } from "react";
 import {
   workbenchesQueryKey,
   workbenchesQueryKeyPrefix,
+  cancelWorkbenchTurn,
   describeChatError,
   fetchRunningTurn,
   inviteAgent,
@@ -59,7 +60,11 @@ import { SLASH_COMMANDS } from "./slash-commands";
 
 import { CHAT_STRINGS } from "./strings";
 import { displayWorkbenchTitle } from "./workbench-display-title";
-import { useStreamingReply, typingAgentNames } from "./streaming-reply";
+import {
+  useStreamingReply,
+  isAwaitingReply,
+  typingAgentNames,
+} from "./streaming-reply";
 import { useTurnActivity, TurnActivityStrip } from "./turn-activity";
 import type { StreamingReplyState } from "./streaming-reply";
 import {
@@ -806,6 +811,21 @@ function ChatWorkspaceInner({
     },
     [tenantId, activeWorkbenchId],
   );
+
+  // CL-7201: unlike the reaction/pin handlers above, this rethrows after
+  // toasting — the composer's own `onStop` awaits the returned promise
+  // and re-enables its Stop button on rejection, so a genuinely failed
+  // request (network, a denied grant) never leaves the button stuck
+  // disabled for the rest of the turn. The timeline's cancelled-turn
+  // notice, not this response, is what actually clears the typing
+  // indicator once (or if) the turn settles.
+  const handleStopTurn = useCallback(() => {
+    if (activeWorkbenchId === null) return Promise.resolve();
+    return cancelWorkbenchTurn(tenantId, activeWorkbenchId).catch((err) => {
+      toast(CHAT_STRINGS.turnCancelError);
+      throw err;
+    });
+  }, [tenantId, activeWorkbenchId]);
 
   const handlePinMessage = useCallback(
     (messageId: string) => {
@@ -1636,6 +1656,8 @@ function ChatWorkspaceInner({
                       bringInLoadError={bringInLoadError}
                       placeholder={composerPlaceholderFor(activeWorkbench)}
                       onSend={handleSend}
+                      running={isAwaitingReply(streamingReply)}
+                      onStop={handleStopTurn}
                       onInviteAgent={() => setInviteDialogOpen(true)}
                       onOpenAgentsSettings={() =>
                         openWorkbenchSettings("agents")

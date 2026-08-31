@@ -73,6 +73,7 @@ import {
   createWorkbenchSubscriberRegistry,
   createWorkbenchTenancyRoutes,
   createWorkbenchTurnQueue,
+  createTurnCancelRegistry,
   createChatOrchestrator,
   createChatRoutes,
   joinRunParticipant,
@@ -1358,6 +1359,10 @@ export async function createHub(config: HubConfig) {
     claims: createInMemoryTurnClaimStore({ ttlMs: DEFAULT_TURN_CLAIM_TTL_MS }),
     publish: workbenchSubscribers.publish,
   });
+  // The live abort seam a running turn is reachable through (CL-7201) —
+  // shared the same way `turnQueue` above is, so a cancel request lands
+  // wherever a workbench's turn was actually dispatched from.
+  const turnCancellation = createTurnCancelRegistry();
   // The room timeline store (CL-6327): a workbench's own messages, held
   // as workbench data rather than platform mail.
   const roomMessages = createDrizzleRoomMessageStore(db);
@@ -1572,6 +1577,7 @@ export async function createHub(config: HubConfig) {
     clientIds: createDrizzleClientIdStore(db),
     workbenchSubscribers,
     turnQueue,
+    turnCancellation,
     requireGrant: createRequireGrant({
       grantStore: chatGrantStore,
       conditionRegistry: chatConditionRegistry,
@@ -1618,6 +1624,7 @@ export async function createHub(config: HubConfig) {
       roomMessages,
       publish: workbenchSubscribers.publish,
       turnQueue,
+      turnCancellation,
       authenticator: createWorkflowRunAuthenticator({ db }),
       tenancy: chatTenancy,
       sessionFor,
@@ -1641,6 +1648,7 @@ export async function createHub(config: HubConfig) {
     sessionFor,
     workbenchSubscribers,
     turnQueue,
+    turnCancellation,
   });
   // Tells the routine trigger popover whether a Slack-bound webhook
   // trigger is honestly offerable in this deployment — no session or
@@ -2800,6 +2808,7 @@ export async function createHub(config: HubConfig) {
               roomMessages,
               publish: workbenchSubscribers.publish,
               turnQueue,
+              turnCancellation,
             },
             {
               tenantId: input.tenantId,

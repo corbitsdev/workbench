@@ -75,6 +75,7 @@ export {
   Smiley,
   Stack,
   Star,
+  Stop,
   SquaresFour,
   User,
   UserCircle,

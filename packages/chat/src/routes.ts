@@ -76,6 +76,7 @@ import {
   findExistingAgentChat,
   removeWorkbenchParticipant,
   sendWorkbenchMessage,
+  cancelWorkbenchTurn,
 } from "./workbench-service";
 import {
   bridgeWorkbenchStream,
@@ -92,6 +93,10 @@ import {
   createWorkbenchTurnQueue,
   type WorkbenchTurnQueue,
 } from "./turn-queue";
+import {
+  createTurnCancelRegistry,
+  type TurnCancelRegistry,
+} from "./turn-cancellation";
 import type { ChatPlatform } from "./platform-port";
 import type { ChatStore } from "./store";
 import {
@@ -296,6 +301,15 @@ export type CreateChatRoutesDeps = {
    * consumer of turn-claim state to share it with.
    */
   turnQueue?: WorkbenchTurnQueue;
+  /**
+   * The live abort seam a running turn is reachable through (CL-7201) —
+   * see `./turn-cancellation.ts` and `SendWorkbenchMessageDeps`'s field
+   * of the same name in `./workbench-service.ts`. Defaults to a fresh,
+   * router-scoped registry when omitted, the same "construct one
+   * instance, share it everywhere" pattern `turnQueue` follows — it is
+   * process-local, in-memory state with no cost to always have.
+   */
+  turnCancellation?: TurnCancelRegistry;
   /**
    * Slack-Connect-style workbench projection (CL-5882) — see
    * `./workbench-share.ts`. Omitted entirely, every `/workbenches/:id/shares*`
@@ -921,6 +935,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       claims: createInMemoryTurnClaimStore({ ttlMs: deps.turnTimeoutMs }),
       publish,
     });
+  const turnCancellation = deps.turnCancellation ?? createTurnCancelRegistry();
 
   app.post(
     "/workbenches",
@@ -2103,6 +2118,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           roomMessages: deps.roomMessages,
           publish,
           turnQueue,
+          turnCancellation,
           ...(deps.agentTurns !== undefined
             ? { agentTurns: deps.agentTurns }
             : {}),
@@ -2297,6 +2313,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                 roomMessages: deps.roomMessages,
                 publish,
                 turnQueue,
+                turnCancellation,
                 ...(deps.agentTurns !== undefined
                   ? { agentTurns: deps.agentTurns }
                   : {}),
@@ -3697,6 +3714,42 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         workbenchId,
       });
       return c.json({ items });
+    },
+  );
+
+  // CL-7201: the escape hatch for a wedged or wrongly-guessed turn — the
+  // only bound before this route existed was the dispatch/wait-until-free
+  // timeouts, measured in minutes. Write, not read: cancelling changes
+  // the workbench's state, exactly like posting a message does.
+  app.post(
+    "/workbenches/:id/turns/cancel",
+    deps.requireGrant(idResource("room", "id"), "write"),
+    async (c) => {
+      const tenant = c.get("tenant");
+      const principal = c.get("principal");
+      const workbenchId = c.req.param("id");
+      const access = await resolveWorkbenchAccess(
+        deps,
+        tenant.id,
+        workbenchId,
+        principal.id,
+        principal.refId,
+      );
+      if (access === undefined) {
+        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+      }
+      const result = await cancelWorkbenchTurn(
+        {
+          turnCancellation,
+          roomMessages: deps.roomMessages,
+          publish,
+          ...(deps.agentTurns !== undefined
+            ? { agentTurns: deps.agentTurns }
+            : {}),
+        },
+        { tenantId: access.ownerTenantId, workbenchId },
+      );
+      return c.json(result);
     },
   );
 

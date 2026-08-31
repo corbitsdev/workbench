@@ -3985,3 +3985,17 @@
   font-size: 0.75rem;
   color: var(--muted-foreground);
 }
+
+/* CL-7201's cancelled-turn row: the same quiet inline layout as
+   .chat-turn-failed, but neutral rather than danger-tinted — the user
+   asked for this outcome, so it reads as a plain fact, not a warning,
+   and carries no Retry (the person can just send again). */
+.chat-turn-cancelled {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.15rem 0 0.35rem 2.9rem;
+  max-width: 100%;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}

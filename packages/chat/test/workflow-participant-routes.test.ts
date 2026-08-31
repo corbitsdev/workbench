@@ -18,6 +18,7 @@ import {
 } from "../src/workflow-participant-routes";
 import { createInMemoryTurnClaimStore } from "../src/turn-claims";
 import { createWorkbenchTurnQueue } from "../src/turn-queue";
+import { createTurnCancelRegistry } from "../src/turn-cancellation";
 import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
 import { fakePlatform, TENANT } from "./test-support";
 
@@ -54,6 +55,7 @@ function buildApp(
         claims: createInMemoryTurnClaimStore({ ttlMs: 60_000 }),
         publish,
       }),
+    turnCancellation: overrides.turnCancellation ?? createTurnCancelRegistry(),
     authenticator: overrides.authenticator ?? authenticateAsRun,
     tenancy: overrides.tenancy ?? createInMemoryWorkbenchTenancyStore(),
     sessionFor: overrides.sessionFor ?? (async () => ["session=test"]),

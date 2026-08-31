@@ -126,6 +126,10 @@ export type CreateWorkflowParticipantRoutesDeps = {
    * workflow-child message and a person's own message for the same
    * workbench serialize against each other too. */
   readonly turnQueue: SendWorkbenchMessageDeps["turnQueue"];
+  /** The same cancellation registry `createChatRoutes` is given
+   * (CL-7201) — shared, never a second instance, so a cancel request
+   * reaches a controller registered from either entry point. */
+  readonly turnCancellation: SendWorkbenchMessageDeps["turnCancellation"];
   readonly authenticator: WorkflowRunAuthenticator;
   readonly tenancy: Pick<
     WorkbenchTenancyStore,
@@ -405,6 +409,7 @@ export function createWorkflowParticipantRoutes(
         roomMessages: deps.roomMessages,
         publish: deps.publish,
         turnQueue: deps.turnQueue,
+        turnCancellation: deps.turnCancellation,
       },
       {
         tenantId: scope.tenantId,
