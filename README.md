@@ -38,6 +38,13 @@ brew install postgresql@17 pgvector
 brew services start postgresql@17
 ```
 
+Or, to match what CI runs against exactly, bring up
+[`docker-compose.test.yml`](docker-compose.test.yml) instead:
+
+```sh
+docker compose -f docker-compose.test.yml up -d
+```
+
 Then:
 
 ```sh
@@ -197,6 +204,24 @@ prove (see `smoke-onboarding.test.ts`) or don't write that scenario.
 
 Run one file directly with `bun test scripts/e2e/smoke-auth.test.ts`
 (`DATABASE_URL` still required).
+
+### DB-gated package and hub suites
+
+Beyond the e2e suite, most packages and `apps/hub` carry their own
+DB-gated tests (migrations, Drizzle-backed stores, route integration
+tests) that skip via `describeIfDb` when `DATABASE_URL` is unset. A
+skip is never silent: `scripts/e2e/db-gate.ts`'s `dbGate` — what
+`describeIfDb` is built on — prints an unmissable summary naming every
+skipped suite at the end of the run, and honors the same
+`E2E_REQUIRED=1` convention as the e2e suite above, turning a skip into
+a hard failure. CI sets `E2E_REQUIRED=1` for exactly this reason.
+
+To run these locally against the same Postgres CI uses:
+
+```sh
+docker compose -f docker-compose.test.yml up -d
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/workbench bun test packages apps/hub/test
+```
 
 ## License
 
