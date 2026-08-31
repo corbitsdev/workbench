@@ -87,6 +87,24 @@ function authHeaders(config: CatalogToolClientConfig): Record<string, string> {
   };
 }
 
+/** Pulls `error.userMessage` out of the canonical hub envelope
+ * (`{error: {code, userMessage, refId}}`), if `body` matches that shape. */
+function errorMessageFrom(body: unknown): string | undefined {
+  if (body === null || typeof body !== "object" || !("error" in body)) {
+    return undefined;
+  }
+  const error = (body as { error: unknown }).error;
+  if (
+    error === null ||
+    typeof error !== "object" ||
+    !("userMessage" in error)
+  ) {
+    return undefined;
+  }
+  const userMessage = (error as { userMessage: unknown }).userMessage;
+  return typeof userMessage === "string" ? userMessage : undefined;
+}
+
 async function call<T>(
   config: CatalogToolClientConfig,
   path: string,
@@ -108,13 +126,7 @@ async function call<T>(
   if (!response.ok) {
     const detail: unknown = await response.json().catch(() => undefined);
     const message =
-      typeof detail === "object" &&
-      detail !== null &&
-      "error" in detail &&
-      typeof (detail as { error: { message?: unknown } }).error.message ===
-        "string"
-        ? (detail as { error: { message: string } }).error.message
-        : `${response.status} ${response.statusText}`;
+      errorMessageFrom(detail) ?? `${response.status} ${response.statusText}`;
     throw new Error(`${what} failed: ${message}`);
   }
   const parsed = schema(await response.json());

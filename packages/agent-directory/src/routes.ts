@@ -68,6 +68,7 @@ import {
 } from "./capability-inventory";
 import type { DefinitionAssetHistory } from "./definition-history";
 import { listVisibleAgentDefinitions } from "./visible-definitions";
+import { reportError } from "@corbits/error-sink";
 import { makeErrorEnvelope } from "@workbench/hub-client";
 
 /**
@@ -680,7 +681,11 @@ export function createAgentDefinitionRoutes({
             .set({ displayName: body.name, updatedAt: now })
             .where(eq(asset.id, row.assetId));
         });
-      } catch {
+      } catch (err) {
+        const refId = reportError(err, {
+          operation: "agentDirectory.updateInstructions.rename",
+          tenantId: tenant.id,
+        });
         return c.json(
           makeErrorEnvelope({
             code: "partial_failure",
@@ -688,6 +693,7 @@ export function createAgentDefinitionRoutes({
               `The instructions saved, but renaming "${row.name}" to ` +
               `"${body.name}" failed — the agent now answers with the new ` +
               `instructions under its old name. Retry to finish the rename.`,
+            refId,
           }),
           500,
         );

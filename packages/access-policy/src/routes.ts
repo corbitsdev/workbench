@@ -9,6 +9,7 @@
 import { Hono } from "hono";
 import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
+import { reportError } from "@corbits/error-sink";
 import {
   cookiesFromHeader,
   makeErrorEnvelope,
@@ -132,10 +133,20 @@ export function createAccessPolicyRoutes(
       cookies,
     );
     if (principalResponse.status !== 200) {
+      const userMessage = "Could not resolve your roles on this workbench.";
+      const refId = reportError(
+        new Error(`principal lookup returned ${principalResponse.status}`),
+        {
+          operation: "accessPolicy.childTenant.roleLookup",
+          tenantId: tenant.id,
+          extra: { status: principalResponse.status },
+        },
+      );
       return c.json(
         makeErrorEnvelope({
           code: "role_lookup_failed",
-          userMessage: "Could not resolve your roles on this workbench.",
+          userMessage,
+          refId,
         }),
         502,
       );

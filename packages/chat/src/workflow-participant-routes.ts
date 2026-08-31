@@ -67,6 +67,7 @@ import {
 } from "./connect-pending";
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
 import { MODEL_UNAVAILABLE_CONSUMER_MESSAGE } from "./model-unavailable";
+import { reportError } from "@corbits/error-sink";
 import { makeErrorEnvelope } from "@workbench/hub-client";
 
 /**
@@ -302,10 +303,16 @@ export function createWorkflowParticipantRoutes(
     const creatorUserId =
       await deps.tenancy.getWorkbenchOwnerUserId(ownerTenantId);
     if (creatorUserId === undefined) {
+      const userMessage = `No owner user id for tenant "${ownerTenantId}" — cannot mint an agent DM`;
+      const refId = reportError(new Error(userMessage), {
+        operation: "chat.mintDm.ownerUnresolved",
+        tenantId: ownerTenantId,
+      });
       return c.json(
         makeErrorEnvelope({
           code: "owner_unresolved",
-          userMessage: `No owner user id for tenant "${ownerTenantId}" — cannot mint an agent DM`,
+          userMessage,
+          refId,
         }),
         500,
       );
@@ -316,10 +323,16 @@ export function createWorkflowParticipantRoutes(
       tenantId: ownerTenantId,
     });
     if (cookies === undefined) {
+      const userMessage = `Could not mint a session for owner "${creatorUserId}" to create an agent DM`;
+      const refId = reportError(new Error(userMessage), {
+        operation: "chat.mintDm.sessionUnmintable",
+        tenantId: ownerTenantId,
+      });
       return c.json(
         makeErrorEnvelope({
           code: "session_unmintable",
-          userMessage: `Could not mint a session for owner "${creatorUserId}" to create an agent DM`,
+          userMessage,
+          refId,
         }),
         500,
       );

@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@corbits/chat": "workspace:*",
+    "@corbits/error-sink": "workspace:*",
     "@corbits/folded-run-one-shot": "workspace:*",
     "@corbits/skills": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",
