@@ -31,6 +31,7 @@
 // composition root decides how a session is minted for a user, and this
 // module stays out of the auth mechanism entirely.
 
+import { reportError } from "@corbits/error-sink";
 import { type ApiCall, type WorkflowPusher } from "@workbench/hub-client";
 import { ensureSeeded } from "./complete-credential";
 import { isFullySeeded } from "./provision";
@@ -116,24 +117,69 @@ export function createBenchProvisioner(
   const runIsFullySeeded = deps.isFullySeededFn ?? isFullySeeded;
 
   const inFlight = new Map<string, Promise<BenchProvisionOutcome>>();
-  const retryAfter = new Map<string, number>();
-  const failureCount = new Map<string, number>();
+  // Backoff bookkeeping for a failing bench, keyed the same way
+  // `inFlight` is. This is process-local, in-memory state — never a
+  // fact the system needs to be correct, only a hammering guard — but
+  // with no eviction it survives its own bench forever: a bench that
+  // fails permanently accumulates here even after its `pending_seed`
+  // row TTL-expires out from under it (CL-7233). `userId`/`tenantId`
+  // are carried alongside the counters (not re-derived from the map
+  // key) so `pruneOrphanedHolds` can ask the store directly whether a
+  // hold's row still exists, rather than assuming a compound string key
+  // splits back apart cleanly.
+  const holds = new Map<
+    string,
+    {
+      retryAfter: number;
+      failureCount: number;
+      userId: string;
+      tenantId: string;
+    }
+  >();
   let timer: ReturnType<typeof setInterval> | undefined;
   let scanAfter: PendingSeedListCursor | undefined;
 
-  function holdOff(key: string): void {
-    const failures = (failureCount.get(key) ?? 0) + 1;
-    failureCount.set(key, failures);
+  function holdOff(seed: { userId: string; tenantId: string }): void {
+    const key = benchKey(seed);
+    const failures = (holds.get(key)?.failureCount ?? 0) + 1;
     const backoff = Math.min(
       RETRY_BACKOFF_BASE_MS * 2 ** (failures - 1),
       RETRY_BACKOFF_CEILING_MS,
     );
-    retryAfter.set(key, now() + backoff);
+    holds.set(key, {
+      retryAfter: now() + backoff,
+      failureCount: failures,
+      userId: seed.userId,
+      tenantId: seed.tenantId,
+    });
   }
 
   function clearHold(key: string): void {
-    retryAfter.delete(key);
-    failureCount.delete(key);
+    holds.delete(key);
+  }
+
+  /**
+   * Reclaims a hold whose bench is permanently gone rather than merely
+   * quiet this tick (CL-7233). A hold already appearing in `due` is
+   * left alone unconditionally — its row still exists, backoff or not.
+   * For every other hold, `store.read` is the authoritative check
+   * (unlike `due`, which is `listDue`'s capped-and-unordered page and
+   * can omit a row that still exists): a row is deleted the moment it
+   * is read past its TTL, so `undefined` here means the row is truly
+   * gone, not just off this tick's page.
+   */
+  async function pruneOrphanedHolds(
+    due: readonly PendingSeed[],
+  ): Promise<void> {
+    const dueKeys = new Set(due.map(benchKey));
+    for (const [key, hold] of holds) {
+      if (dueKeys.has(key)) continue;
+      const row = await deps.store.read({
+        userId: hold.userId,
+        tenantId: hold.tenantId,
+      });
+      if (row === undefined) holds.delete(key);
+    }
   }
 
   async function runOnce(seed: PendingSeed): Promise<BenchProvisionOutcome> {
@@ -201,7 +247,7 @@ export function createBenchProvisioner(
       try {
         const outcome = await runOnce(seed);
         if (outcome === "converged") clearHold(key);
-        else holdOff(key);
+        else holdOff(seed);
         return outcome;
       } catch (cause) {
         // report-error-ignore: CL-7234 routes this drain catch through
@@ -210,7 +256,7 @@ export function createBenchProvisioner(
         logError(
           `bench provisioning for tenant ${seed.tenantId} failed; its pending row stays for a retry: ${message}`,
         );
-        holdOff(key);
+        holdOff(seed);
         return "failed";
       }
     })();
@@ -237,7 +283,7 @@ export function createBenchProvisioner(
 
     for (const seed of page.seeds) {
       const key = benchKey(seed);
-      const heldUntil = retryAfter.get(key);
+      const heldUntil = holds.get(key)?.retryAfter;
       if (
         args.ignoreBackoff !== true &&
         heldUntil !== undefined &&
@@ -261,6 +307,8 @@ export function createBenchProvisioner(
       scanAfter = undefined;
     }
 
+    await pruneOrphanedHolds(page.seeds);
+
     return {
       converged,
       pending,
@@ -274,6 +322,11 @@ export function createBenchProvisioner(
     void drainOnce().catch((cause: unknown) => {
       const message = cause instanceof Error ? cause.message : String(cause);
       logError(`bench provisioning drain failed: ${message}`);
+      // Not scoped to any one bench — a whole-tick failure (listDue
+      // itself throwing, say) rather than one seed's own provisioning
+      // failure, which already carries tenant context via holdOff
+      // (CL-7234).
+      reportError(cause, { operation: "bench_provisioning_drain" });
     });
   }
 

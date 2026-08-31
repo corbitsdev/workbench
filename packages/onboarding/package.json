@@ -14,6 +14,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/collections": "workspace:*",
     "@corbits/error-sink": "workspace:*",
     "@intx/crypto": "0.3.0",
     "@intx/hub-api": "workspace:*",

@@ -537,6 +537,14 @@
         "typescript": "catalog:",
       },
     },
+    "packages/collections": {
+      "name": "@corbits/collections",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/command-palette": {
       "name": "@corbits/command-palette",
       "version": "0.0.1",
@@ -1086,6 +1094,7 @@
       "name": "@workbench/onboarding",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/collections": "workspace:*",
         "@corbits/error-sink": "workspace:*",
         "@intx/crypto": "0.3.0",
         "@intx/hub-api": "workspace:*",
@@ -2179,6 +2188,8 @@
     "@corbits/code-review-workflow": ["@corbits/code-review-workflow@workspace:workflows/code-review"],
 
     "@corbits/collateral-generation-workflow": ["@corbits/collateral-generation-workflow@workspace:workflows/collateral-generation"],
+
+    "@corbits/collections": ["@corbits/collections@workspace:packages/collections"],
 
     "@corbits/command-palette": ["@corbits/command-palette@workspace:packages/command-palette"],
 
