@@ -26,6 +26,24 @@ function requireGit(): void {
   }
 }
 
+const GIT_DIR_VARS = new Set([
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+]);
+
+function gitProcessEnv(extra: Record<string, string>): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value === undefined) continue;
+    if (GIT_DIR_VARS.has(key)) continue;
+    env[key] = value;
+  }
+  return { ...env, ...extra };
+}
+
 async function runGit(
   args: string[],
   cwd: string,
@@ -33,7 +51,7 @@ async function runGit(
 ): Promise<{ code: number; output: string }> {
   const child = Bun.spawn(["git", "-c", "core.hooksPath=", ...args], {
     cwd,
-    env: { ...process.env, ...env },
+    env: gitProcessEnv(env),
     stdout: "pipe",
     stderr: "pipe",
   });

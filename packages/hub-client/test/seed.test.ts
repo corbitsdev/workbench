@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { installDisposableHubDataDir } from "../../../test/disposable-hub-data-dir";
 import { CliError, isSidecarUnavailableError } from "../src/errors";
 import {
   CATALOG_TEST_WORKFLOWS,
@@ -26,6 +27,8 @@ import {
   PRINCIPAL_ID,
   type FakeHandler,
 } from "./helpers";
+
+installDisposableHubDataDir();
 
 const MODEL = {
   provider: "anthropic",

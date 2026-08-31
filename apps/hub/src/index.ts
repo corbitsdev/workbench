@@ -632,7 +632,13 @@ export async function createHub(config: HubConfig) {
     config.signInRateLimit.max,
   );
   const { signingKey, agentRepoStore, assetService } =
-    await createBootAssetWiring({ db, dataDir: config.hubDataDir });
+    await createBootAssetWiring({
+      db,
+      dataDir: config.hubDataDir,
+      ...(config.allowGitInsideWorkTree === true
+        ? { allowGitInsideWorkTree: true }
+        : {}),
+    });
   const baseLookups = createHubSessionLookups({ db, agentRepoStore });
   // Shared with `createRunKeyHistoryListener` below: one store instance
   // for the process, read here ahead of `workflow_run` and written to

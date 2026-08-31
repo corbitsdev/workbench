@@ -88,10 +88,16 @@ const projectCommands = projectPaths.map((path) => [
 
 const projectsOk = await runInParallel(projectCommands);
 
-const [rootCode, isolationCode] = await Promise.all([
+const [rootCode, isolationCode, hubDataDirCode] = await Promise.all([
   run(["bunx", "tsc", "-p", "tsconfig.json", "--noEmit"]),
   run(["bunx", "tsc", "-p", "test/isolation/tsconfig.json", "--noEmit"]),
+  run(["bunx", "tsc", "-p", "test/tsconfig.json", "--noEmit"]),
 ]);
-if (!projectsOk || rootCode !== 0 || isolationCode !== 0) {
+if (
+  !projectsOk ||
+  rootCode !== 0 ||
+  isolationCode !== 0 ||
+  hubDataDirCode !== 0
+) {
   process.exit(1);
 }
