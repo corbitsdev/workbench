@@ -41,6 +41,7 @@ import {
   type SerializedArtifactListItem,
 } from "@corbits/artifacts";
 import { Hono } from "hono";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 import type {
   ResolvedWorkflowRunScope,
@@ -289,13 +290,11 @@ export function createWorkflowArtifactRoutes(
     const scope = await deps.authenticator.resolve(token, address);
     if (scope === null) {
       return c.json(
-        {
-          error: {
-            code: "unauthorized",
-            message:
-              "Missing or unrecognized sidecar bearer token / run address",
-          },
-        },
+        makeErrorEnvelope({
+          code: "unauthorized",
+          userMessage:
+            "Missing or unrecognized sidecar bearer token / run address",
+        }),
         401,
       );
     }
@@ -309,28 +308,32 @@ export function createWorkflowArtifactRoutes(
       body = await c.req.json();
     } catch {
       return c.json(
-        { error: { code: "bad_request", message: "Invalid JSON body" } },
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: "Invalid JSON body",
+        }),
         400,
       );
     }
     const parsed = CreateWorkflowArtifactBody(body);
     if (parsed instanceof type.errors) {
       return c.json(
-        { error: { code: "bad_request", message: parsed.summary } },
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: parsed.summary,
+        }),
         400,
       );
     }
     if (parsed.content.length > MAX_ARTIFACT_CONTENT_CHARS) {
       return c.json(
-        {
-          error: {
-            code: "content_too_large",
-            message:
-              `content is ${parsed.content.length} characters, over the ` +
-              `${MAX_ARTIFACT_CONTENT_CHARS}-character limit — shorten it ` +
-              "or split it into multiple artifacts and try again.",
-          },
-        },
+        makeErrorEnvelope({
+          code: "content_too_large",
+          userMessage:
+            `content is ${parsed.content.length} characters, over the ` +
+            `${MAX_ARTIFACT_CONTENT_CHARS}-character limit — shorten it ` +
+            "or split it into multiple artifacts and try again.",
+        }),
         413,
       );
     }
@@ -338,15 +341,13 @@ export function createWorkflowArtifactRoutes(
     const scope = c.get("workflowRunScope");
     if (!createRateLimiter.allow(scope.runId)) {
       return c.json(
-        {
-          error: {
-            code: "rate_limited",
-            message:
-              `too many artifact writes for this run in the last minute ` +
-              `(limit ${MAX_CREATES_PER_RUN_PER_MINUTE}/min) — wait a ` +
-              "moment before creating more.",
-          },
-        },
+        makeErrorEnvelope({
+          code: "rate_limited",
+          userMessage:
+            `too many artifact writes for this run in the last minute ` +
+            `(limit ${MAX_CREATES_PER_RUN_PER_MINUTE}/min) — wait a ` +
+            "moment before creating more.",
+        }),
         429,
       );
     }
@@ -367,14 +368,20 @@ export function createWorkflowArtifactRoutes(
       body = await c.req.json();
     } catch {
       return c.json(
-        { error: { code: "bad_request", message: "Invalid JSON body" } },
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: "Invalid JSON body",
+        }),
         400,
       );
     }
     const parsed = CreateWorkflowBinaryArtifactBody(body);
     if (parsed instanceof type.errors) {
       return c.json(
-        { error: { code: "bad_request", message: parsed.summary } },
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: parsed.summary,
+        }),
         400,
       );
     }
@@ -382,15 +389,13 @@ export function createWorkflowArtifactRoutes(
     const bytes = Buffer.from(parsed.contentBase64, "base64");
     if (bytes.byteLength > MAX_WORKFLOW_BINARY_BYTES) {
       return c.json(
-        {
-          error: {
-            code: "content_too_large",
-            message:
-              `content is ${bytes.byteLength} bytes, over the ` +
-              `${MAX_WORKFLOW_BINARY_BYTES}-byte limit — shorten it or ` +
-              "split it into multiple artifacts and try again.",
-          },
-        },
+        makeErrorEnvelope({
+          code: "content_too_large",
+          userMessage:
+            `content is ${bytes.byteLength} bytes, over the ` +
+            `${MAX_WORKFLOW_BINARY_BYTES}-byte limit — shorten it or ` +
+            "split it into multiple artifacts and try again.",
+        }),
         413,
       );
     }
@@ -398,15 +403,13 @@ export function createWorkflowArtifactRoutes(
     const scope = c.get("workflowRunScope");
     if (!createRateLimiter.allow(scope.runId)) {
       return c.json(
-        {
-          error: {
-            code: "rate_limited",
-            message:
-              `too many artifact writes for this run in the last minute ` +
-              `(limit ${MAX_CREATES_PER_RUN_PER_MINUTE}/min) — wait a ` +
-              "moment before creating more.",
-          },
-        },
+        makeErrorEnvelope({
+          code: "rate_limited",
+          userMessage:
+            `too many artifact writes for this run in the last minute ` +
+            `(limit ${MAX_CREATES_PER_RUN_PER_MINUTE}/min) — wait a ` +
+            "moment before creating more.",
+        }),
         429,
       );
     }
@@ -421,7 +424,10 @@ export function createWorkflowArtifactRoutes(
     } catch (err) {
       if (err instanceof UnsupportedUploadTypeError) {
         return c.json(
-          { error: { code: "unsupported_media_type", message: err.message } },
+          makeErrorEnvelope({
+            code: "unsupported_media_type",
+            userMessage: err.message,
+          }),
           415,
         );
       }
@@ -435,7 +441,10 @@ export function createWorkflowArtifactRoutes(
     const row = await deps.store.get(scope, artifactId);
     if (row === null) {
       return c.json(
-        { error: { code: "not_found", message: "Artifact not found" } },
+        makeErrorEnvelope({
+          code: "not_found",
+          userMessage: "Artifact not found",
+        }),
         404,
       );
     }
@@ -455,12 +464,10 @@ export function createUnavailableWorkflowArtifactRoutes(): Hono<WorkflowArtifact
     json: (body: unknown, status: 503) => Response | Promise<Response>;
   }) =>
     c.json(
-      {
-        error: {
-          code: "unavailable",
-          message: "Artifacts plane is not configured on this hub",
-        },
-      },
+      makeErrorEnvelope({
+        code: "unavailable",
+        userMessage: "Artifacts plane is not configured on this hub",
+      }),
       503,
     );
   app.post("/", unavailable);

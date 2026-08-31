@@ -21,6 +21,7 @@ import {
   type PresenceState,
   type PresenceStatePatch,
 } from "./room-registry";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 import {
   MAX_DOC_UPDATE_BYTES,
   maxBase64LengthFor,
@@ -30,10 +31,6 @@ import {
 } from "./schema";
 
 const DEFAULT_HEARTBEAT_TIMEOUT_MS = 45_000;
-
-function errorEnvelope(code: string, message: string) {
-  return { error: { code, message } };
-}
 
 export interface CreatePresenceRoutesDeps {
   registry?: PresenceRoomRegistry;
@@ -134,7 +131,10 @@ export function createPresenceRoutes(
     const body = PresenceJoinBody(await c.req.json().catch(() => ({})));
     if (body instanceof type.errors) {
       return c.json(
-        errorEnvelope("bad_request", `invalid join body: ${body.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid join body: ${body.summary}`,
+        }),
         400,
       );
     }
@@ -165,7 +165,10 @@ export function createPresenceRoutes(
     const body = PresenceHeartbeatBody(await c.req.json().catch(() => ({})));
     if (body instanceof type.errors) {
       return c.json(
-        errorEnvelope("bad_request", `invalid heartbeat body: ${body.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid heartbeat body: ${body.summary}`,
+        }),
         400,
       );
     }
@@ -186,7 +189,10 @@ export function createPresenceRoutes(
     const heartbeatResult = registry.heartbeat(key, principal.id, patch, now());
     if (heartbeatResult === undefined) {
       return c.json(
-        errorEnvelope("not_joined", "principal has not joined this room"),
+        makeErrorEnvelope({
+          code: "not_joined",
+          userMessage: "principal has not joined this room",
+        }),
         404,
       );
     }
@@ -201,7 +207,10 @@ export function createPresenceRoutes(
       const body = PresenceDocUpdateBody(await c.req.json().catch(() => ({})));
       if (body instanceof type.errors) {
         return c.json(
-          errorEnvelope("bad_request", `invalid update body: ${body.summary}`),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid update body: ${body.summary}`,
+          }),
           400,
         );
       }
@@ -213,10 +222,10 @@ export function createPresenceRoutes(
       // would have caught it anyway.
       if (body.update.length > maxBase64UpdateLength) {
         return c.json(
-          errorEnvelope(
-            "payload_too_large",
-            `update exceeds the ${maxDocUpdateBytes} byte limit`,
-          ),
+          makeErrorEnvelope({
+            code: "payload_too_large",
+            userMessage: `update exceeds the ${maxDocUpdateBytes} byte limit`,
+          }),
           413,
         );
       }
@@ -227,7 +236,10 @@ export function createPresenceRoutes(
       } catch (err) {
         if (err instanceof InvalidBase64Error) {
           return c.json(
-            errorEnvelope("bad_request", "update is not valid base64"),
+            makeErrorEnvelope({
+              code: "bad_request",
+              userMessage: "update is not valid base64",
+            }),
             400,
           );
         }
@@ -240,10 +252,10 @@ export function createPresenceRoutes(
       // count is still checked directly before it ever reaches Yjs.
       if (bytes.byteLength > maxDocUpdateBytes) {
         return c.json(
-          errorEnvelope(
-            "payload_too_large",
-            `update exceeds the ${maxDocUpdateBytes} byte limit`,
-          ),
+          makeErrorEnvelope({
+            code: "payload_too_large",
+            userMessage: `update exceeds the ${maxDocUpdateBytes} byte limit`,
+          }),
           413,
         );
       }
@@ -257,7 +269,10 @@ export function createPresenceRoutes(
         registry.applyDocUpdate(key, bytes, principal.id);
       } catch {
         return c.json(
-          errorEnvelope("bad_request", "update is not a valid Yjs update"),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: "update is not a valid Yjs update",
+          }),
           400,
         );
       }

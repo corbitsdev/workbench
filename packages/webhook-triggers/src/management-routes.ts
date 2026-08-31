@@ -20,10 +20,7 @@ import { pgErrorCode, PG_UNIQUE_VIOLATION } from "@intx/db";
 import { generateWebhookSecret } from "./signature";
 import type { WebhookTriggerRow } from "./schema";
 import type { WebhookTriggerStore } from "./store";
-
-const ErrorEnvelope = (code: string, message: string) => ({
-  error: { code, message },
-});
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 /**
  * True for a Postgres unique-violation (`23505`) — the shape a duplicate
@@ -91,7 +88,10 @@ export function createWebhookTriggerRoutes(
     const body = CreateTriggerBody(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {
       return c.json(
-        ErrorEnvelope("bad_request", `invalid trigger body: ${body.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid trigger body: ${body.summary}`,
+        }),
         400,
       );
     }
@@ -105,7 +105,13 @@ export function createWebhookTriggerRoutes(
         body.workflowDefinitionId,
       );
       if (!owned) {
-        return c.json(ErrorEnvelope("not_found", "definition not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "definition not found",
+          }),
+          404,
+        );
       }
     }
 
@@ -125,10 +131,11 @@ export function createWebhookTriggerRoutes(
     } catch (cause) {
       if (isUniqueViolation(cause)) {
         return c.json(
-          ErrorEnvelope(
-            "conflict",
-            "a trigger with this name already exists for this workflow definition",
-          ),
+          makeErrorEnvelope({
+            code: "conflict",
+            userMessage:
+              "a trigger with this name already exists for this workflow definition",
+          }),
           409,
         );
       }
@@ -151,7 +158,13 @@ export function createWebhookTriggerRoutes(
       const tenant = c.get("tenant");
       const row = await deps.store.get(tenant.id, c.req.param("id"));
       if (row === undefined) {
-        return c.json(ErrorEnvelope("not_found", "trigger not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "trigger not found",
+          }),
+          404,
+        );
       }
       return c.json(publicView(row));
     },
@@ -169,7 +182,13 @@ export function createWebhookTriggerRoutes(
         secret,
       );
       if (row === undefined) {
-        return c.json(ErrorEnvelope("not_found", "trigger not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "trigger not found",
+          }),
+          404,
+        );
       }
       return c.json({ ...publicView(row), secret });
     },
@@ -182,7 +201,10 @@ export function createWebhookTriggerRoutes(
       const body = SetEnabledBody(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
         return c.json(
-          ErrorEnvelope("bad_request", `invalid enabled body: ${body.summary}`),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid enabled body: ${body.summary}`,
+          }),
           400,
         );
       }
@@ -193,7 +215,13 @@ export function createWebhookTriggerRoutes(
         body.enabled,
       );
       if (row === undefined) {
-        return c.json(ErrorEnvelope("not_found", "trigger not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "trigger not found",
+          }),
+          404,
+        );
       }
       return c.json(publicView(row));
     },
@@ -206,7 +234,13 @@ export function createWebhookTriggerRoutes(
       const tenant = c.get("tenant");
       const removed = await deps.store.remove(tenant.id, c.req.param("id"));
       if (!removed) {
-        return c.json(ErrorEnvelope("not_found", "trigger not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "trigger not found",
+          }),
+          404,
+        );
       }
       return c.body(null, 204);
     },

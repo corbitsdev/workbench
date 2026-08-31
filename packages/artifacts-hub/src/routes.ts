@@ -33,6 +33,7 @@ import {
 import { isTextDecodableMediaType } from "@corbits/artifact-ui/renderer-kind";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { Hono } from "hono";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -320,7 +321,10 @@ export function createArtifactRoutes(
       >;
     } catch {
       return c.json(
-        { error: { code: "bad_request", message: "Invalid multipart body" } },
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: "Invalid multipart body",
+        }),
         400,
       );
     }
@@ -334,23 +338,19 @@ export function createArtifactRoutes(
 
     if (files.length === 0) {
       return c.json(
-        {
-          error: {
-            code: "bad_request",
-            message: "Expected at least one file field",
-          },
-        },
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: "Expected at least one file field",
+        }),
         400,
       );
     }
     if (files.length > MAX_UPLOAD_FILE_COUNT) {
       return c.json(
-        {
-          error: {
-            code: "payload_too_large",
-            message: `Too many files: ${files.length} exceeds the ${MAX_UPLOAD_FILE_COUNT} file limit`,
-          },
-        },
+        makeErrorEnvelope({
+          code: "payload_too_large",
+          userMessage: `Too many files: ${files.length} exceeds the ${MAX_UPLOAD_FILE_COUNT} file limit`,
+        }),
         413,
       );
     }
@@ -360,24 +360,20 @@ export function createArtifactRoutes(
     for (const file of files) {
       if (file.size > MAX_UPLOAD_BYTES) {
         return c.json(
-          {
-            error: {
-              code: "payload_too_large",
-              message: `File "${file.name}" exceeds the ${MAX_UPLOAD_BYTES} byte limit`,
-            },
-          },
+          makeErrorEnvelope({
+            code: "payload_too_large",
+            userMessage: `File "${file.name}" exceeds the ${MAX_UPLOAD_BYTES} byte limit`,
+          }),
           413,
         );
       }
       totalBytes += file.size;
       if (totalBytes > MAX_UPLOAD_TOTAL_BYTES) {
         return c.json(
-          {
-            error: {
-              code: "payload_too_large",
-              message: `Upload exceeds the ${MAX_UPLOAD_TOTAL_BYTES} byte aggregate limit`,
-            },
-          },
+          makeErrorEnvelope({
+            code: "payload_too_large",
+            userMessage: `Upload exceeds the ${MAX_UPLOAD_TOTAL_BYTES} byte aggregate limit`,
+          }),
           413,
         );
       }
@@ -394,7 +390,10 @@ export function createArtifactRoutes(
     } catch (err) {
       if (err instanceof UnsupportedUploadTypeError) {
         return c.json(
-          { error: { code: "unsupported_media_type", message: err.message } },
+          makeErrorEnvelope({
+            code: "unsupported_media_type",
+            userMessage: err.message,
+          }),
           415,
         );
       }
@@ -410,7 +409,10 @@ export function createArtifactRoutes(
     } catch (err) {
       if (err instanceof ArtifactCountsIncompleteError) {
         return c.json(
-          { error: { code: "counts_unavailable", message: err.message } },
+          makeErrorEnvelope({
+            code: "counts_unavailable",
+            userMessage: err.message,
+          }),
           503,
         );
       }
@@ -443,18 +445,19 @@ export function createArtifactRoutes(
       const result = await deps.store.preview(tenant.id, artifactId);
       if (result.status === "not_found") {
         return c.json(
-          { error: { code: "not_found", message: "Artifact not found" } },
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "Artifact not found",
+          }),
           404,
         );
       }
       if (result.status === "unsupported") {
         return c.json(
-          {
-            error: {
-              code: "unsupported_media_type",
-              message: "Artifact is not previewable HTML",
-            },
-          },
+          makeErrorEnvelope({
+            code: "unsupported_media_type",
+            userMessage: "Artifact is not previewable HTML",
+          }),
           415,
         );
       }
@@ -473,7 +476,10 @@ export function createArtifactRoutes(
     const row = await deps.store.get(tenant.id, artifactId);
     if (row === null) {
       return c.json(
-        { error: { code: "not_found", message: "Artifact not found" } },
+        makeErrorEnvelope({
+          code: "not_found",
+          userMessage: "Artifact not found",
+        }),
         404,
       );
     }
@@ -496,12 +502,10 @@ export function createUnavailableArtifactRoutes(
     json: (body: unknown, status: 503) => Response | Promise<Response>;
   }) =>
     c.json(
-      {
-        error: {
-          code: "unavailable",
-          message: "Artifacts plane is not configured on this hub",
-        },
-      },
+      makeErrorEnvelope({
+        code: "unavailable",
+        userMessage: "Artifacts plane is not configured on this hub",
+      }),
       503,
     );
 

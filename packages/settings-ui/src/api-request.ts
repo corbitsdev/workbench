@@ -2,24 +2,24 @@
 // (credentials-api.ts, connections-api.ts, access-policy-api.ts,
 // granola-webhook-api.ts): the same envelope-first error message on every
 // non-2xx response, matching `apps/web/src/onboarding.ts`'s
-// `readErrorEnvelope` — the hub's own `{error:{message}}` body wins when
-// present, and the fallback names what was happening ("while loading
-// credentials") rather than the raw route, which nobody reading a settings
-// panel should ever have to see. Each seam keeps its own `Error` subclass
-// so a catch site can still tell which API failed; only the request shape
-// is shared here.
+// `readErrorEnvelope` — the hub's own `{error:{userMessage, refId}}` body
+// wins when present, and the fallback names what was happening ("while
+// loading credentials") rather than the raw route, which nobody reading a
+// settings panel should ever have to see. Each seam keeps its own `Error`
+// subclass so a catch site can still tell which API failed; only the
+// request shape is shared here.
 
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 
 const ErrorEnvelope = type({
-  error: { message: "string", "code?": "string" },
+  error: { code: "string", userMessage: "string", refId: "string" },
 });
 
 /**
- * Resolves a non-2xx response's message: the hub's own envelope message
- * when the body carries one, otherwise a generic, path-free sentence
- * naming the status and what the caller was doing.
+ * Resolves a non-2xx response's message: the hub's own envelope
+ * `userMessage` when the body carries one, otherwise a generic, path-free
+ * sentence naming the status and what the caller was doing.
  */
 export function readErrorEnvelope(
   status: number,
@@ -29,7 +29,7 @@ export function readErrorEnvelope(
   const envelope = ErrorEnvelope(body);
   return envelope instanceof type.errors
     ? `The server answered ${status} while ${verb}.`
-    : envelope.error.message;
+    : envelope.error.userMessage;
 }
 
 export type Validator<T> = (data: unknown) => T | ArkErrors;

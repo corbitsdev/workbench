@@ -1,31 +1,8 @@
 {
-  "extends": "./tsconfig.src.json",
-  "compilerOptions": {
-    "composite": false,
-    "noEmit": true,
-    "disableSourceOfProjectReferenceRedirect": true,
-    "declaration": false,
-    "declarationMap": false,
-    "emitDeclarationOnly": false,
-    "rootDir": "../.."
-  },
+  "extends": "../../tsconfig.base.json",
   "include": ["src", "test"],
-  "exclude": [],
-  "references": [
-    {
-      "path": "../../vendor/intx/db/tsconfig.src.json"
-    },
-    {
-      "path": "../../vendor/intx/hub-api/tsconfig.src.json"
-    },
-    {
-      "path": "../../vendor/intx/types/tsconfig.src.json"
-    },
-    {
-      "path": "../migration-runner/tsconfig.src.json"
-    },
-    {
-      "path": "../ollama-adapter/tsconfig.src.json"
-    }
-  ]
+  "compilerOptions": {
+    "types": ["bun"],
+    "noEmit": true
+  }
 }

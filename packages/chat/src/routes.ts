@@ -110,7 +110,7 @@ import {
   DefinitionProjectionMissingError,
 } from "@corbits/folded-runs";
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
-import { cookiesFromHeader } from "@workbench/hub-client";
+import { cookiesFromHeader, makeErrorEnvelope } from "@workbench/hub-client";
 import type { AgentTurnStore } from "./agent-turns";
 import type { ThreadStore } from "./threads";
 import { ThreadDepthCapError } from "./threads";
@@ -344,10 +344,6 @@ export type CreateChatRoutesDeps = {
 };
 
 const log = getLogger(["chat", "routes"]);
-
-const ErrorEnvelope = (code: string, message: string) => ({
-  error: { code, message },
-});
 
 const CreateWorkbenchBody = type({
   kind: "string",
@@ -947,10 +943,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       );
       if (body instanceof type.errors) {
         return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            `invalid workbench body: ${body.summary}`,
-          ),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid workbench body: ${body.summary}`,
+          }),
           400,
         );
       }
@@ -961,12 +957,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         body.principalId === undefined
       ) {
         return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            "creating a chat requires either a definitionId naming the " +
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage:
+              "creating a chat requires either a definitionId naming the " +
               "one agent it launches with, or a principalId naming the " +
               "one bench member it's a direct conversation with",
-          ),
+          }),
           400,
         );
       }
@@ -976,11 +973,12 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         body.principalId !== undefined
       ) {
         return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            "a chat's counterpart is exactly one agent or one person, " +
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage:
+              "a chat's counterpart is exactly one agent or one person, " +
               "never both",
-          ),
+          }),
           400,
         );
       }
@@ -1022,10 +1020,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       if (isChatWithPrincipal(body)) {
         if (body.principalId === principal.id) {
           return c.json(
-            ErrorEnvelope(
-              "conflict",
-              "you cannot start a direct chat with yourself",
-            ),
+            makeErrorEnvelope({
+              code: "conflict",
+              userMessage: "you cannot start a direct chat with yourself",
+            }),
             409,
           );
         }
@@ -1039,10 +1037,11 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           target.status !== "active"
         ) {
           return c.json(
-            ErrorEnvelope(
-              "bad_request",
-              "principalId does not name an active member of this bench",
-            ),
+            makeErrorEnvelope({
+              code: "bad_request",
+              userMessage:
+                "principalId does not name an active member of this bench",
+            }),
             400,
           );
         }
@@ -1194,14 +1193,20 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           // 4xx — never an unhandled 500 — with the same compensation
           // every other agent-mint failure already ran above.
           if (err instanceof DefinitionProjectionMissingError) {
-            return c.json(ErrorEnvelope("not_launchable", err.guidance), 409);
+            return c.json(
+              makeErrorEnvelope({
+                code: "not_launchable",
+                userMessage: err.guidance,
+              }),
+              409,
+            );
           }
           if (err instanceof InferenceResolutionError) {
             return c.json(
-              ErrorEnvelope(
-                "not_launchable",
-                MODEL_UNAVAILABLE_CONSUMER_MESSAGE,
-              ),
+              makeErrorEnvelope({
+                code: "not_launchable",
+                userMessage: MODEL_UNAVAILABLE_CONSUMER_MESSAGE,
+              }),
               409,
             );
           }
@@ -1281,10 +1286,11 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         );
         if (memberPrincipal === undefined) {
           return c.json(
-            ErrorEnvelope(
-              "bad_request",
-              "principalId does not name an active member of this bench",
-            ),
+            makeErrorEnvelope({
+              code: "bad_request",
+              userMessage:
+                "principalId does not name an active member of this bench",
+            }),
             400,
           );
         }
@@ -1528,7 +1534,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const tenant = c.get("tenant");
       const workbenchId = c.req.param("id");
       if (!(await workbenchInTenant(deps.store, tenant.id, workbenchId))) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
       if (deps.threads === undefined) {
         return c.json({ rootThreadId: "", items: [] as const });
@@ -1594,10 +1606,22 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const tenant = c.get("tenant");
       const workbenchId = c.req.param("id");
       if (!(await workbenchInTenant(deps.store, tenant.id, workbenchId))) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
       if (deps.threads === undefined) {
-        return c.json(ErrorEnvelope("not_found", "threads not available"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "threads not available",
+          }),
+          404,
+        );
       }
       const body = type({
         parentMessageId: "string",
@@ -1605,7 +1629,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       })(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
         return c.json(
-          ErrorEnvelope("bad_request", `invalid body: ${body.summary}`),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid body: ${body.summary}`,
+          }),
           400,
         );
       }
@@ -1643,14 +1670,32 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const workbenchId = c.req.param("id");
       const threadId = c.req.param("threadId");
       if (!(await workbenchInTenant(deps.store, tenant.id, workbenchId))) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
       if (deps.threads === undefined) {
-        return c.json(ErrorEnvelope("not_found", "threads not available"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "threads not available",
+          }),
+          404,
+        );
       }
       const thread = await deps.threads.getThread(tenant.id, threadId);
       if (thread === undefined || thread.workbenchId !== workbenchId) {
-        return c.json(ErrorEnvelope("not_found", "thread not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "thread not found",
+          }),
+          404,
+        );
       }
       // A message's thread is the one it was assigned to, or the root
       // thread when it was never assigned at all — `workbench_thread_messages`
@@ -1663,7 +1708,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // of them, a fresh chat's very first agent reply included.
       const membership = await resolveThreadMembership(tenant.id, workbenchId);
       if (membership === undefined) {
-        return c.json(ErrorEnvelope("not_found", "threads not available"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "threads not available",
+          }),
+          404,
+        );
       }
       const listed = await deps.roomMessages.listMessages({
         tenantId: tenant.id,
@@ -1705,10 +1756,22 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const tenant = c.get("tenant");
       const workbenchId = c.req.param("id");
       if (!(await workbenchInTenant(deps.store, tenant.id, workbenchId))) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
       if (deps.threads === undefined) {
-        return c.json(ErrorEnvelope("not_found", "threads not available"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "threads not available",
+          }),
+          404,
+        );
       }
       const body = type({
         runRef: "string",
@@ -1716,7 +1779,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       })(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
         return c.json(
-          ErrorEnvelope("bad_request", `invalid body: ${body.summary}`),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid body: ${body.summary}`,
+          }),
           400,
         );
       }
@@ -1760,7 +1826,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         principal.refId,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
 
       const listParams = { tenantId: access.ownerTenantId, workbenchId };
@@ -1840,13 +1912,25 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           principal.refId,
         )) === undefined
       ) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
       let blob: string | Uint8Array;
       try {
         blob = await deps.platform.fetchBlob(workbenchId, blobId);
       } catch {
-        return c.json(ErrorEnvelope("not_found", "blob not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "blob not found",
+          }),
+          404,
+        );
       }
       const contentBase64 =
         typeof blob === "string"
@@ -1879,10 +1963,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const parsed = PostMessageBody(raw);
       if (parsed instanceof type.errors) {
         return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            `invalid message body: ${parsed.summary}`,
-          ),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid message body: ${parsed.summary}`,
+          }),
           400,
         );
       }
@@ -1900,7 +1984,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         principal.refId,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
       const ownerTenantId = access.ownerTenantId;
 
@@ -1928,10 +2018,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         );
         if (denied !== undefined) {
           return c.json(
-            ErrorEnvelope(
-              "forbidden",
-              "You can't add people to this workbench",
-            ),
+            makeErrorEnvelope({
+              code: "forbidden",
+              userMessage: "You can't add people to this workbench",
+            }),
             403,
           );
         }
@@ -1941,7 +2031,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           workbenchId,
         );
         if (existing === undefined) {
-          return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+          return c.json(
+            makeErrorEnvelope({
+              code: "not_found",
+              userMessage: "workbench not found",
+            }),
+            404,
+          );
         }
 
         let currentSettings = existing.settings;
@@ -1980,21 +2076,30 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             } catch (err) {
               if (err instanceof InferenceResolutionError) {
                 return c.json(
-                  ErrorEnvelope(
-                    "not_launchable",
-                    MODEL_UNAVAILABLE_CONSUMER_MESSAGE,
-                  ),
+                  makeErrorEnvelope({
+                    code: "not_launchable",
+                    userMessage: MODEL_UNAVAILABLE_CONSUMER_MESSAGE,
+                  }),
                   409,
                 );
               }
               if (err instanceof DefinitionProjectionMissingError) {
                 return c.json(
-                  ErrorEnvelope("not_launchable", err.guidance),
+                  makeErrorEnvelope({
+                    code: "not_launchable",
+                    userMessage: err.guidance,
+                  }),
                   409,
                 );
               }
               if (err instanceof KindIsChatError) {
-                return c.json(ErrorEnvelope(err.code, err.message), 409);
+                return c.json(
+                  makeErrorEnvelope({
+                    code: err.code,
+                    userMessage: err.message,
+                  }),
+                  409,
+                );
               }
               throw err;
             }
@@ -2011,10 +2116,11 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             target.status !== "active"
           ) {
             return c.json(
-              ErrorEnvelope(
-                "bad_request",
-                "principalId does not name an active member of this bench",
-              ),
+              makeErrorEnvelope({
+                code: "bad_request",
+                userMessage:
+                  "principalId does not name an active member of this bench",
+              }),
               400,
             );
           }
@@ -2056,7 +2162,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           });
         } catch (err) {
           if (err instanceof KindIsChatError) {
-            return c.json(ErrorEnvelope(err.code, err.message), 409);
+            return c.json(
+              makeErrorEnvelope({ code: err.code, userMessage: err.message }),
+              409,
+            );
           }
           throw err;
         }
@@ -2099,7 +2208,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             parsed.threadId,
           );
           if (existing === undefined || existing.workbenchId !== workbenchId) {
-            return c.json(ErrorEnvelope("not_found", "thread not found"), 404);
+            return c.json(
+              makeErrorEnvelope({
+                code: "not_found",
+                userMessage: "thread not found",
+              }),
+              404,
+            );
           }
           targetThreadId = existing.id;
         } else if (parsed.inReplyToMessageId !== undefined) {
@@ -2112,7 +2227,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             });
           } catch (cause) {
             if (cause instanceof ThreadDepthCapError) {
-              return c.json(ErrorEnvelope("conflict", cause.message), 409);
+              return c.json(
+                makeErrorEnvelope({
+                  code: "conflict",
+                  userMessage: cause.message,
+                }),
+                409,
+              );
             }
             throw cause;
           }
@@ -2209,7 +2330,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     async (c) => {
       if (deps.blockResponses === undefined) {
         return c.json(
-          ErrorEnvelope("not_found", "block responses not available"),
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "block responses not available",
+          }),
           404,
         );
       }
@@ -2228,7 +2352,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         principal.refId,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
       const ownerTenantId = access.ownerTenantId;
 
@@ -2237,10 +2367,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       );
       if (body instanceof type.errors) {
         return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            `invalid response body: ${body.summary}`,
-          ),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid response body: ${body.summary}`,
+          }),
           400,
         );
       }
@@ -2360,10 +2490,11 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               claimToken,
             );
             return c.json(
-              ErrorEnvelope(
-                "notify_failed",
-                `your answer was saved, but the agent couldn't be notified — try again (ref ${refId})`,
-              ),
+              makeErrorEnvelope({
+                code: "notify_failed",
+                userMessage: `your answer was saved, but the agent couldn't be notified — try again (ref ${refId})`,
+                refId,
+              }),
               500,
             );
           }
@@ -2380,7 +2511,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     async (c) => {
       if (deps.blockResponses === undefined) {
         return c.json(
-          ErrorEnvelope("not_found", "block responses not available"),
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "block responses not available",
+          }),
           404,
         );
       }
@@ -2399,7 +2533,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         principal.refId,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
 
       // Every response on file for this block, read once and filtered down
@@ -2427,7 +2567,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     async (c) => {
       if (deps.reactions === undefined) {
         return c.json(
-          ErrorEnvelope("not_found", "reactions not available"),
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "reactions not available",
+          }),
           404,
         );
       }
@@ -2445,7 +2588,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         principal.refId,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
       const ownerTenantId = access.ownerTenantId;
       if (
@@ -2456,7 +2605,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           messageId,
         ))
       ) {
-        return c.json(ErrorEnvelope("not_found", "message not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "message not found",
+          }),
+          404,
+        );
       }
 
       const body = ToggleReactionBody(
@@ -2464,19 +2619,19 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       );
       if (body instanceof type.errors) {
         return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            `invalid reaction body: ${body.summary}`,
-          ),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid reaction body: ${body.summary}`,
+          }),
           400,
         );
       }
       if (!isKnownReactionEmoji(body.emoji)) {
         return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            `${JSON.stringify(body.emoji)} is not a supported reaction`,
-          ),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `${JSON.stringify(body.emoji)} is not a supported reaction`,
+          }),
           400,
         );
       }
@@ -2515,7 +2670,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     deps.requireGrant(idResource("room", "id"), "write"),
     async (c) => {
       if (deps.pins === undefined) {
-        return c.json(ErrorEnvelope("not_found", "pins not available"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "pins not available",
+          }),
+          404,
+        );
       }
 
       const tenant = c.get("tenant");
@@ -2531,7 +2692,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         principal.refId,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
       const ownerTenantId = access.ownerTenantId;
       if (
@@ -2542,7 +2709,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           messageId,
         ))
       ) {
-        return c.json(ErrorEnvelope("not_found", "message not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "message not found",
+          }),
+          404,
+        );
       }
 
       const row = await deps.pins.pinMessage({
@@ -2575,7 +2748,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     deps.requireGrant(idResource("room", "id"), "write"),
     async (c) => {
       if (deps.pins === undefined) {
-        return c.json(ErrorEnvelope("not_found", "pins not available"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "pins not available",
+          }),
+          404,
+        );
       }
 
       const tenant = c.get("tenant");
@@ -2591,7 +2770,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         principal.refId,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
 
       await deps.pins.unpinMessage(
@@ -2614,7 +2799,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     deps.requireGrant(idResource("room", "id"), "read"),
     async (c) => {
       if (deps.pins === undefined) {
-        return c.json(ErrorEnvelope("not_found", "pins not available"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "pins not available",
+          }),
+          404,
+        );
       }
 
       const tenant = c.get("tenant");
@@ -2629,7 +2820,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         principal.refId,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
       const ownerTenantId = access.ownerTenantId;
 
@@ -2690,7 +2887,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         existing === undefined &&
         !(await workbenchInTenant(deps.store, tenant.id, workbenchId))
       ) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
 
       // A definition already in the room isn't invitable — resolve each
@@ -2735,7 +2938,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         workbenchId,
       );
       if (existing === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
 
       const agentParticipants = participantsOf(existing.settings).filter(
@@ -2780,7 +2989,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const body = RefreshAgentBody(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
         return c.json(
-          ErrorEnvelope("bad_request", `invalid refresh body: ${body.summary}`),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid refresh body: ${body.summary}`,
+          }),
           400,
         );
       }
@@ -2803,7 +3015,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const body = InviteAgentBody(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
         return c.json(
-          ErrorEnvelope("bad_request", `invalid invite body: ${body.summary}`),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid invite body: ${body.summary}`,
+          }),
           400,
         );
       }
@@ -2817,7 +3032,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         workbenchId,
       );
       if (existing === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
 
       try {
@@ -2845,15 +3066,27 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       } catch (err) {
         if (err instanceof InferenceResolutionError) {
           return c.json(
-            ErrorEnvelope("not_launchable", MODEL_UNAVAILABLE_CONSUMER_MESSAGE),
+            makeErrorEnvelope({
+              code: "not_launchable",
+              userMessage: MODEL_UNAVAILABLE_CONSUMER_MESSAGE,
+            }),
             409,
           );
         }
         if (err instanceof DefinitionProjectionMissingError) {
-          return c.json(ErrorEnvelope("not_launchable", err.guidance), 409);
+          return c.json(
+            makeErrorEnvelope({
+              code: "not_launchable",
+              userMessage: err.guidance,
+            }),
+            409,
+          );
         }
         if (err instanceof KindIsChatError) {
-          return c.json(ErrorEnvelope(err.code, err.message), 409);
+          return c.json(
+            makeErrorEnvelope({ code: err.code, userMessage: err.message }),
+            409,
+          );
         }
         throw err;
       }
@@ -2875,10 +3108,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       );
       if (step instanceof type.errors) {
         return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            `invalid onboarding step: ${step.summary}`,
-          ),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid onboarding step: ${step.summary}`,
+          }),
           400,
         );
       }
@@ -2890,7 +3123,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         workbenchId,
       );
       if (existing === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
 
       const data: ConnectGithubBlockData = {
@@ -2927,20 +3166,20 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const address = decodedOrNull(c.req.param("address"));
       if (address === null) {
         return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            "invalid participant: malformed address",
-          ),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: "invalid participant: malformed address",
+          }),
           400,
         );
       }
       const params = RemoveParticipantParams({ address });
       if (params instanceof type.errors) {
         return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            `invalid participant: ${params.summary}`,
-          ),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid participant: ${params.summary}`,
+          }),
           400,
         );
       }
@@ -2954,16 +3193,23 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         workbenchId,
       );
       if (existing === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
 
       if (kindOf(existing.settings) === "chat") {
         return c.json(
-          ErrorEnvelope(
-            "conflict",
-            "a chat's participants are fixed at creation; removal is " +
+          makeErrorEnvelope({
+            code: "conflict",
+            userMessage:
+              "a chat's participants are fixed at creation; removal is " +
               "only for workbenches",
-          ),
+          }),
           409,
         );
       }
@@ -2972,7 +3218,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         (candidate) => candidate.address === params.address,
       );
       if (participant === undefined) {
-        return c.json(ErrorEnvelope("not_found", "participant not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "participant not found",
+          }),
+          404,
+        );
       }
 
       await removeWorkbenchParticipant(
@@ -3001,7 +3253,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const body = MoveWorkbenchBody(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
         return c.json(
-          ErrorEnvelope("bad_request", `invalid move body: ${body.summary}`),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid move body: ${body.summary}`,
+          }),
           400,
         );
       }
@@ -3017,7 +3272,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         workbenchId,
       );
       if (existing === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
 
       const principal = c.get("principal");
@@ -3043,35 +3304,41 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       switch (outcome.kind) {
         case "no_tenancy":
           return c.json(
-            ErrorEnvelope(
-              "conflict",
-              "this workbench predates the child-tenancy rollout and carries " +
+            makeErrorEnvelope({
+              code: "conflict",
+              userMessage:
+                "this workbench predates the child-tenancy rollout and carries " +
                 "no native tenant of its own; it cannot be moved until it " +
                 "is backfilled a tenancy",
-            ),
+            }),
             409,
           );
         case "destination_not_found":
           return c.json(
-            ErrorEnvelope("not_found", "destination tenant not found"),
+            makeErrorEnvelope({
+              code: "not_found",
+              userMessage: "destination tenant not found",
+            }),
             404,
           );
         case "cycle":
           return c.json(
-            ErrorEnvelope(
-              "conflict",
-              "the destination is this workbench's own tenant, or a " +
+            makeErrorEnvelope({
+              code: "conflict",
+              userMessage:
+                "the destination is this workbench's own tenant, or a " +
                 "descendant of it; moving it there would make the " +
                 "workbench its own ancestor",
-            ),
+            }),
             409,
           );
         case "forbidden":
           return c.json(
-            ErrorEnvelope(
-              "forbidden",
-              "you do not have a manage grant in the destination tenant",
-            ),
+            makeErrorEnvelope({
+              code: "forbidden",
+              userMessage:
+                "you do not have a manage grant in the destination tenant",
+            }),
             403,
           );
         case "moved":
@@ -3099,12 +3366,21 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const body = CreateShareBody(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
         return c.json(
-          ErrorEnvelope("bad_request", `invalid share body: ${body.summary}`),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid share body: ${body.summary}`,
+          }),
           400,
         );
       }
       if (deps.shares === undefined) {
-        return c.json(ErrorEnvelope("not_found", "shares not available"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "shares not available",
+          }),
+          404,
+        );
       }
 
       const tenant = c.get("tenant");
@@ -3118,7 +3394,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         workbenchId,
       );
       if (existing === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
 
       const outcome = await deps.shares.createShare({
@@ -3131,19 +3413,21 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       switch (outcome.kind) {
         case "trust_missing":
           return c.json(
-            ErrorEnvelope(
-              "forbidden",
-              "no bilateral trust with the target tenant — establish " +
+            makeErrorEnvelope({
+              code: "forbidden",
+              userMessage:
+                "no bilateral trust with the target tenant — establish " +
                 "trust before sharing",
-            ),
+            }),
             403,
           );
         case "already_shared":
           return c.json(
-            ErrorEnvelope(
-              "conflict",
-              "this workbench is already shared with " + "that tenant",
-            ),
+            makeErrorEnvelope({
+              code: "conflict",
+              userMessage:
+                "this workbench is already shared with " + "that tenant",
+            }),
             409,
           );
         case "created": {
@@ -3182,7 +3466,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
     async (c) => {
       if (deps.shares === undefined) {
-        return c.json(ErrorEnvelope("not_found", "shares not available"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "shares not available",
+          }),
+          404,
+        );
       }
 
       const tenant = c.get("tenant");
@@ -3193,7 +3483,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         workbenchId,
       );
       if (existing === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
 
       const rows = await deps.shares.listSharesForWorkbench(
@@ -3217,7 +3513,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     deps.requireGrant(idResource("workflow-run", "id"), "manage"),
     async (c) => {
       if (deps.shares === undefined) {
-        return c.json(ErrorEnvelope("not_found", "shares not available"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "shares not available",
+          }),
+          404,
+        );
       }
 
       const tenant = c.get("tenant");
@@ -3229,7 +3531,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         workbenchId,
       );
       if (existing === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
 
       const revoked = await deps.shares.revokeShare(
@@ -3238,7 +3546,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         projectedTenantId,
       );
       if (!revoked) {
-        return c.json(ErrorEnvelope("not_found", "share not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "share not found",
+          }),
+          404,
+        );
       }
       return c.body(null, 204);
     },
@@ -3255,15 +3569,21 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       );
       if (body instanceof type.errors) {
         return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            `invalid share-member body: ${body.summary}`,
-          ),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid share-member body: ${body.summary}`,
+          }),
           400,
         );
       }
       if (deps.shares === undefined) {
-        return c.json(ErrorEnvelope("not_found", "shares not available"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "shares not available",
+          }),
+          404,
+        );
       }
 
       const tenant = c.get("tenant");
@@ -3280,7 +3600,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // workbench would.
       const share = await deps.shares.getShare(workbenchId, tenant.id);
       if (share === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
 
       const outcome = await deps.shares.addShareMember({
@@ -3290,7 +3616,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         addedBy: principal.id,
       });
       if (outcome === "no_share") {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
       return c.json({ principalId: body.principalId }, 200);
     },
@@ -3301,7 +3633,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     deps.requireGrant(idResource("workflow-run", "id"), "manage"),
     async (c) => {
       if (deps.shares === undefined) {
-        return c.json(ErrorEnvelope("not_found", "shares not available"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "shares not available",
+          }),
+          404,
+        );
       }
 
       const tenant = c.get("tenant");
@@ -3314,7 +3652,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         principalId,
       );
       if (!removed) {
-        return c.json(ErrorEnvelope("not_found", "member not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "member not found",
+          }),
+          404,
+        );
       }
       return c.body(null, 204);
     },
@@ -3364,7 +3708,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         );
       } catch (err) {
         if (err instanceof SettingsValidationError) {
-          return c.json(ErrorEnvelope("bad_request", err.message), 400);
+          return c.json(
+            makeErrorEnvelope({
+              code: "bad_request",
+              userMessage: err.message,
+            }),
+            400,
+          );
         }
         throw err;
       }
@@ -3392,7 +3742,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const workbenchId = c.req.param("id");
       const row = await deps.store.getWorkbenchSettings(tenant.id, workbenchId);
       if (row === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
       return c.json(await withResolvedContextWindow(tenant.id, row));
     },
@@ -3411,7 +3767,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         workbenchId,
       );
       if (existing === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
 
       let patch: Record<string, unknown>;
@@ -3421,7 +3783,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         );
       } catch (err) {
         if (err instanceof SettingsValidationError) {
-          return c.json(ErrorEnvelope("bad_request", err.message), 400);
+          return c.json(
+            makeErrorEnvelope({
+              code: "bad_request",
+              userMessage: err.message,
+            }),
+            400,
+          );
         }
         throw err;
       }
@@ -3431,7 +3799,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         patch["chat/participants"] !== undefined
       ) {
         const refusal = new KindIsChatError();
-        return c.json(ErrorEnvelope(refusal.code, refusal.message), 409);
+        return c.json(
+          makeErrorEnvelope({
+            code: refusal.code,
+            userMessage: refusal.message,
+          }),
+          409,
+        );
       }
 
       // `chat/participants` is normalized to records on write even when
@@ -3519,7 +3893,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         principal.refId,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
       const row = await deps.store.getReadState(
         access.ownerTenantId,
@@ -3543,10 +3923,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const body = PutReadStateBody(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
         return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            `invalid read-state body: ${body.summary}`,
-          ),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid read-state body: ${body.summary}`,
+          }),
           400,
         );
       }
@@ -3563,7 +3943,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         principal.refId,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
 
       const row = await deps.store.putReadState({
@@ -3597,7 +3983,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           principal.refId,
         )) === undefined
       ) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
       publish(workbenchId, {
         type: "chat.typing",
@@ -3630,15 +4022,21 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           principal.refId,
         )) === undefined
       ) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
       const before = presence.snapshot(workbenchId);
       if (!before.some((member) => member.principalId === principal.id)) {
         return c.json(
-          ErrorEnvelope(
-            "not_found",
-            "principal has no open stream on this workbench",
-          ),
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "principal has no open stream on this workbench",
+          }),
           404,
         );
       }
@@ -3671,7 +4069,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           principal.refId,
         )) === undefined
       ) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
 
       return streamSSE(c, async (stream) => {
@@ -3705,7 +4109,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     async (c) => {
       if (deps.agentTurns === undefined) {
         return c.json(
-          ErrorEnvelope("not_found", "turn history not available"),
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "turn history not available",
+          }),
           404,
         );
       }
@@ -3720,7 +4127,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         principal.refId,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
       const items = await deps.agentTurns.listTurns({
         tenantId: access.ownerTenantId,
@@ -3749,7 +4162,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         principal.refId,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
       const result = await cancelWorkbenchTurn(
         {
@@ -3772,7 +4191,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
     async (c) => {
       if (deps.agentTurns === undefined) {
         return c.json(
-          ErrorEnvelope("not_found", "turn history not available"),
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "turn history not available",
+          }),
           404,
         );
       }
@@ -3787,14 +4209,26 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         principal.refId,
       );
       if (access === undefined) {
-        return c.json(ErrorEnvelope("not_found", "workbench not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "workbench not found",
+          }),
+          404,
+        );
       }
       const turn = await deps.agentTurns.getTurn({
         tenantId: access.ownerTenantId,
         turnId: c.req.param("turnId"),
       });
       if (turn === undefined || turn.workbenchId !== workbenchId) {
-        return c.json(ErrorEnvelope("not_found", "turn not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "turn not found",
+          }),
+          404,
+        );
       }
       // Only a still-running turn gets a catch-up snapshot attached — a
       // settled turn's reply already lives in the timeline as an ordinary

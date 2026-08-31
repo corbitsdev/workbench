@@ -20,6 +20,7 @@ import {
   FoldedRunFailedError,
   FoldedRunTimedOutError,
 } from "@corbits/folded-run-one-shot";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 import {
   AgentDefinitionDraftReferenceOutOfInventoryError,
   AgentDefinitionDraftReplyUnparseableError,
@@ -28,10 +29,6 @@ import {
 } from "./agent-definition-drafting";
 
 const log = getLogger(["agent-directory", "agent-definition-draft-routes"]);
-
-const ErrorEnvelope = (code: string, message: string) => ({
-  error: { code, message },
-});
 
 const DRAFT_FAILED_MESSAGE =
   "Myra couldn't draft a starting prompt for that. Write one yourself, or try again.";
@@ -98,10 +95,10 @@ export function createAgentDefinitionDraftRoutes(
       const draftAgentDefinition = deps.draftAgentDefinition;
       if (draftAgentDefinition === undefined) {
         return c.json(
-          ErrorEnvelope(
-            "unavailable",
-            "Agent drafting is not configured on this hub.",
-          ),
+          makeErrorEnvelope({
+            code: "unavailable",
+            userMessage: "Agent drafting is not configured on this hub.",
+          }),
           503,
         );
       }
@@ -110,10 +107,10 @@ export function createAgentDefinitionDraftRoutes(
       );
       if (body instanceof type.errors) {
         return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            `This couldn't be read: ${body.summary}`,
-          ),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `This couldn't be read: ${body.summary}`,
+          }),
           400,
         );
       }
@@ -123,10 +120,10 @@ export function createAgentDefinitionDraftRoutes(
 
       if (inFlightDraftingPrincipals.has(principal.id)) {
         return c.json(
-          ErrorEnvelope(
-            "dispatch_in_progress",
-            "Myra is already drafting your last agent.",
-          ),
+          makeErrorEnvelope({
+            code: "dispatch_in_progress",
+            userMessage: "Myra is already drafting your last agent.",
+          }),
           409,
         );
       }
@@ -146,7 +143,10 @@ export function createAgentDefinitionDraftRoutes(
         }`;
         if (isDraftingFailure(err)) {
           return c.json(
-            ErrorEnvelope("drafting_failed", DRAFT_FAILED_MESSAGE),
+            makeErrorEnvelope({
+              code: "drafting_failed",
+              userMessage: DRAFT_FAILED_MESSAGE,
+            }),
             422,
           );
         }

@@ -7,10 +7,7 @@ import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 
 import type { BenchSettingsStore } from "./store";
-
-const ErrorEnvelope = (code: string, message: string) => ({
-  error: { code, message },
-});
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 // `BenchCreateType` in packages/bench-ui/src/create-bench-dialog.tsx allows
 // exactly "global" | "sub" today; validated strictly here rather than as a
@@ -44,7 +41,10 @@ export function createBenchRoutes(
     const patch = PatchBody(raw);
     if (patch instanceof type.errors) {
       return c.json(
-        ErrorEnvelope("bad_request", `invalid body: ${patch.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid body: ${patch.summary}`,
+        }),
         400,
       );
     }

@@ -41,6 +41,7 @@ import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { hexEncode } from "@intx/types";
 import { and, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 export const WORKBENCH_TEMPLATE_ARTIFACT_KIND = "workbench-template";
 
@@ -444,12 +445,10 @@ export function createTemplateLibraryRoutes(
         `template library seed failed for ${tenantId}: ${cause instanceof Error ? cause.message : String(cause)}`,
       );
       return Response.json(
-        {
-          error: {
-            code: "unavailable",
-            message: "The template library isn't ready yet",
-          },
-        },
+        makeErrorEnvelope({
+          code: "unavailable",
+          userMessage: "The template library isn't ready yet",
+        }),
         { status: 503 },
       );
     }
@@ -470,7 +469,10 @@ export function createTemplateLibraryRoutes(
     const entry = await deps.store.get(tenant.id, c.req.param("templateId"));
     if (entry === null) {
       return c.json(
-        { error: { code: "not_found", message: "Unknown template" } },
+        makeErrorEnvelope({
+          code: "not_found",
+          userMessage: "Unknown template",
+        }),
         404,
       );
     }
@@ -495,12 +497,10 @@ export function createUnavailableTemplateLibraryRoutes(
     json: (body: unknown, status: 503) => Response | Promise<Response>;
   }) =>
     c.json(
-      {
-        error: {
-          code: "unavailable",
-          message: "Artifacts plane is not configured on this hub",
-        },
-      },
+      makeErrorEnvelope({
+        code: "unavailable",
+        userMessage: "Artifacts plane is not configured on this hub",
+      }),
       503,
     );
 

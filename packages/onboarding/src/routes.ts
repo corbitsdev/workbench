@@ -1,7 +1,7 @@
 // `POST /provision`, mounted outside the hub's tenant-prefixed routes
 // because a brand-new user belongs to no tenant yet: authenticated,
 // idempotent, and answering either the provisioning result or the hub's
-// `{ error: { code, message } }` envelope. What it decides and why lives
+// `{ error: { code, userMessage, refId } }` envelope. What it decides and why lives
 // in ./provision.ts.
 
 import type { AppEnv } from "@intx/hub-api";

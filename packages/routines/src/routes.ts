@@ -29,6 +29,7 @@ import type {
   RoutineStore,
   UpdateRoutineInput,
 } from "./store";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 import {
   MyraRoutineDraftingUnavailableError,
   RoutineDraftReferenceOutOfInventoryError,
@@ -172,10 +173,6 @@ export type CreateRoutineRoutesDeps = {
   /** See `WorkbenchNoticePort`'s own doc comment. */
   workbenchNotice?: WorkbenchNoticePort | undefined;
 };
-
-const ErrorEnvelope = (code: string, message: string) => ({
-  error: { code, message },
-});
 
 const DRAFT_FAILED_MESSAGE =
   "Myra couldn't draft a routine from that. Try rephrasing, or build it from the catalog instead.";
@@ -511,7 +508,10 @@ export function createRoutineRoutes(
       const body = CreateRoutineBody(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
         return c.json(
-          ErrorEnvelope("bad_request", `invalid routine body: ${body.summary}`),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid routine body: ${body.summary}`,
+          }),
           400,
         );
       }
@@ -526,7 +526,10 @@ export function createRoutineRoutes(
         );
         if (!owned) {
           return c.json(
-            ErrorEnvelope("not_found", "definition not found"),
+            makeErrorEnvelope({
+              code: "not_found",
+              userMessage: "definition not found",
+            }),
             404,
           );
         }
@@ -541,7 +544,10 @@ export function createRoutineRoutes(
         ))
       ) {
         return c.json(
-          ErrorEnvelope("not_found", "webhook trigger not found"),
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "webhook trigger not found",
+          }),
           404,
         );
       }
@@ -563,10 +569,10 @@ export function createRoutineRoutes(
       // see this file's git history for the removed `deliverySpace` port).
       if (needsDelivery) {
         return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            "deliveryWorkbenchId is required for this workflow",
-          ),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: "deliveryWorkbenchId is required for this workflow",
+          }),
           400,
         );
       }
@@ -578,7 +584,13 @@ export function createRoutineRoutes(
           body.input ?? {},
         );
         if (!validated.ok) {
-          return c.json(ErrorEnvelope("bad_request", validated.message), 400);
+          return c.json(
+            makeErrorEnvelope({
+              code: "bad_request",
+              userMessage: validated.message,
+            }),
+            400,
+          );
         }
       }
 
@@ -685,7 +697,13 @@ export function createRoutineRoutes(
       const tenant = c.get("tenant");
       const row = await deps.store.getRoutine(tenant.id, c.req.param("id"));
       if (row === undefined) {
-        return c.json(ErrorEnvelope("not_found", "routine not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "routine not found",
+          }),
+          404,
+        );
       }
       return c.json(routineView(row));
     },
@@ -698,10 +716,10 @@ export function createRoutineRoutes(
       const body = UpdateRoutineBody(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
         return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            `invalid routine patch: ${body.summary}`,
-          ),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid routine patch: ${body.summary}`,
+          }),
           400,
         );
       }
@@ -711,7 +729,13 @@ export function createRoutineRoutes(
       const routineId = c.req.param("id");
       const existing = await deps.store.getRoutine(tenant.id, routineId);
       if (existing === undefined) {
-        return c.json(ErrorEnvelope("not_found", "routine not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "routine not found",
+          }),
+          404,
+        );
       }
 
       if (
@@ -724,7 +748,10 @@ export function createRoutineRoutes(
         ))
       ) {
         return c.json(
-          ErrorEnvelope("not_found", "webhook trigger not found"),
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "webhook trigger not found",
+          }),
           404,
         );
       }
@@ -770,7 +797,13 @@ export function createRoutineRoutes(
         c.req.param("id"),
       );
       if (!deleted) {
-        return c.json(ErrorEnvelope("not_found", "routine not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "routine not found",
+          }),
+          404,
+        );
       }
       return c.body(null, 204);
     },
@@ -790,7 +823,13 @@ export function createRoutineRoutes(
         routineId,
       );
       if (existing === undefined) {
-        return c.json(ErrorEnvelope("not_found", "routine not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "routine not found",
+          }),
+          404,
+        );
       }
       const rows = await deps.store.listRunsForRoutine(tenant.id, routineId);
       const items = await Promise.all(
@@ -807,7 +846,10 @@ export function createRoutineRoutes(
       const body = RunNowBody(await c.req.json().catch(() => ({})));
       if (body instanceof type.errors) {
         return c.json(
-          ErrorEnvelope("bad_request", `invalid run body: ${body.summary}`),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid run body: ${body.summary}`,
+          }),
           400,
         );
       }
@@ -817,7 +859,13 @@ export function createRoutineRoutes(
       const routineId = c.req.param("id");
       const existing = await deps.store.getRoutine(tenant.id, routineId);
       if (existing === undefined) {
-        return c.json(ErrorEnvelope("not_found", "routine not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "routine not found",
+          }),
+          404,
+        );
       }
 
       // "Run now" is an unscheduled fire of the exact launcher a
@@ -833,10 +881,11 @@ export function createRoutineRoutes(
           existing.deliveryWorkbenchId === "")
       ) {
         return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            "routine has no deliveryWorkbenchId; set one before running",
-          ),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage:
+              "routine has no deliveryWorkbenchId; set one before running",
+          }),
           400,
         );
       }
@@ -866,17 +915,20 @@ export function createRoutineRoutes(
     async (c) => {
       if (deps.drafts === undefined) {
         return c.json(
-          ErrorEnvelope(
-            "unavailable",
-            "Routine drafting is not configured on this hub.",
-          ),
+          makeErrorEnvelope({
+            code: "unavailable",
+            userMessage: "Routine drafting is not configured on this hub.",
+          }),
           503,
         );
       }
       const body = CreateDraftBody(await c.req.json().catch(() => undefined));
       if (body instanceof type.errors) {
         return c.json(
-          ErrorEnvelope("bad_request", `invalid draft body: ${body.summary}`),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid draft body: ${body.summary}`,
+          }),
           400,
         );
       }
@@ -886,10 +938,10 @@ export function createRoutineRoutes(
       if (deps.drafting !== undefined) {
         if (inFlightDraftingPrincipals.has(principal.id)) {
           return c.json(
-            ErrorEnvelope(
-              "dispatch_in_progress",
-              "Myra is already working on your last request.",
-            ),
+            makeErrorEnvelope({
+              code: "dispatch_in_progress",
+              userMessage: "Myra is already working on your last request.",
+            }),
             409,
           );
         }
@@ -919,7 +971,10 @@ export function createRoutineRoutes(
             }`;
             if (isDraftingFailure(err)) {
               return c.json(
-                ErrorEnvelope("drafting_failed", DRAFT_FAILED_MESSAGE),
+                makeErrorEnvelope({
+                  code: "drafting_failed",
+                  userMessage: DRAFT_FAILED_MESSAGE,
+                }),
                 422,
               );
             }
@@ -961,17 +1016,23 @@ export function createRoutineRoutes(
     async (c) => {
       if (deps.drafts === undefined) {
         return c.json(
-          ErrorEnvelope(
-            "unavailable",
-            "Routine drafting is not configured on this hub.",
-          ),
+          makeErrorEnvelope({
+            code: "unavailable",
+            userMessage: "Routine drafting is not configured on this hub.",
+          }),
           503,
         );
       }
       const tenant = c.get("tenant");
       const draft = await deps.drafts.getDraft(tenant.id, c.req.param("id"));
       if (draft === undefined) {
-        return c.json(ErrorEnvelope("not_found", "draft not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "draft not found",
+          }),
+          404,
+        );
       }
       return c.json(draftView(draft));
     },
@@ -983,17 +1044,20 @@ export function createRoutineRoutes(
     async (c) => {
       if (deps.drafts === undefined) {
         return c.json(
-          ErrorEnvelope(
-            "unavailable",
-            "Routine drafting is not configured on this hub.",
-          ),
+          makeErrorEnvelope({
+            code: "unavailable",
+            userMessage: "Routine drafting is not configured on this hub.",
+          }),
           503,
         );
       }
       const body = ApproveDraftBody(await c.req.json().catch(() => ({})));
       if (body instanceof type.errors) {
         return c.json(
-          ErrorEnvelope("bad_request", `invalid approve body: ${body.summary}`),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid approve body: ${body.summary}`,
+          }),
           400,
         );
       }
@@ -1002,14 +1066,20 @@ export function createRoutineRoutes(
       const draftId = c.req.param("id");
       const draft = await deps.drafts.getDraft(tenant.id, draftId);
       if (draft === undefined) {
-        return c.json(ErrorEnvelope("not_found", "draft not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "draft not found",
+          }),
+          404,
+        );
       }
       if (draft.status !== "reviewed") {
         return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            `draft is ${draft.status}; only reviewed drafts can be approved`,
-          ),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `draft is ${draft.status}; only reviewed drafts can be approved`,
+          }),
           400,
         );
       }
@@ -1023,10 +1093,11 @@ export function createRoutineRoutes(
           : draft.definitionId;
       if (definitionId === null || definitionId === "") {
         return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            "draft has no definitionId; review must pin a workflow definition",
-          ),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage:
+              "draft has no definitionId; review must pin a workflow definition",
+          }),
           400,
         );
       }
@@ -1034,7 +1105,10 @@ export function createRoutineRoutes(
         const owned = await deps.definitionInTenant(tenant.id, definitionId);
         if (!owned) {
           return c.json(
-            ErrorEnvelope("not_found", "definition not found"),
+            makeErrorEnvelope({
+              code: "not_found",
+              userMessage: "definition not found",
+            }),
             404,
           );
         }
@@ -1054,7 +1128,10 @@ export function createRoutineRoutes(
         ))
       ) {
         return c.json(
-          ErrorEnvelope("not_found", "webhook trigger not found"),
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "webhook trigger not found",
+          }),
           404,
         );
       }
@@ -1094,10 +1171,10 @@ export function createRoutineRoutes(
     async (c) => {
       if (deps.drafts === undefined) {
         return c.json(
-          ErrorEnvelope(
-            "unavailable",
-            "Routine drafting is not configured on this hub.",
-          ),
+          makeErrorEnvelope({
+            code: "unavailable",
+            userMessage: "Routine drafting is not configured on this hub.",
+          }),
           503,
         );
       }
@@ -1110,10 +1187,10 @@ export function createRoutineRoutes(
         return c.json(draftView(draft));
       } catch (err) {
         return c.json(
-          ErrorEnvelope(
-            "bad_request",
-            err instanceof Error ? err.message : "discard failed",
-          ),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: err instanceof Error ? err.message : "discard failed",
+          }),
           400,
         );
       }

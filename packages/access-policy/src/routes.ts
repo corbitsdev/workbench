@@ -9,15 +9,15 @@
 import { Hono } from "hono";
 import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
-import { cookiesFromHeader, type ApiCall } from "@workbench/hub-client";
+import {
+  cookiesFromHeader,
+  makeErrorEnvelope,
+  type ApiCall,
+} from "@workbench/hub-client";
 
 import { canCreateTenancy } from "./policy";
 import type { AccessPolicyStore } from "./store";
 import { CreatePendingInvite, UpdateAccessPolicy } from "./types";
-
-const ErrorEnvelope = (code: string, message: string) => ({
-  error: { code, message },
-});
 
 const CreateChildTenant = type({
   name: "string > 0",
@@ -47,7 +47,10 @@ export function createAccessPolicyRoutes(
     const patch = UpdateAccessPolicy(raw);
     if (patch instanceof type.errors) {
       return c.json(
-        ErrorEnvelope("bad_request", `invalid policy: ${patch.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid policy: ${patch.summary}`,
+        }),
         400,
       );
     }
@@ -75,7 +78,10 @@ export function createAccessPolicyRoutes(
       const parsed = CreatePendingInvite(raw);
       if (parsed instanceof type.errors) {
         return c.json(
-          ErrorEnvelope("bad_request", `invalid invite: ${parsed.summary}`),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid invite: ${parsed.summary}`,
+          }),
           400,
         );
       }
@@ -108,7 +114,10 @@ export function createAccessPolicyRoutes(
     const body = CreateChildTenant(raw);
     if (body instanceof type.errors) {
       return c.json(
-        ErrorEnvelope("bad_request", `invalid tenant: ${body.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid tenant: ${body.summary}`,
+        }),
         400,
       );
     }
@@ -124,10 +133,10 @@ export function createAccessPolicyRoutes(
     );
     if (principalResponse.status !== 200) {
       return c.json(
-        ErrorEnvelope(
-          "role_lookup_failed",
-          "Could not resolve your roles on this workbench.",
-        ),
+        makeErrorEnvelope({
+          code: "role_lookup_failed",
+          userMessage: "Could not resolve your roles on this workbench.",
+        }),
         502,
       );
     }
@@ -140,10 +149,11 @@ export function createAccessPolicyRoutes(
 
     if (!canCreateTenancy(policy, roleNames)) {
       return c.json(
-        ErrorEnvelope(
-          "tenancy_creation_forbidden",
-          "This workbench's policy doesn't allow you to create a sub-workbench here.",
-        ),
+        makeErrorEnvelope({
+          code: "tenancy_creation_forbidden",
+          userMessage:
+            "This workbench's policy doesn't allow you to create a sub-workbench here.",
+        }),
         403,
       );
     }

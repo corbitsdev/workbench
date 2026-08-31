@@ -68,6 +68,7 @@ import {
 } from "./capability-inventory";
 import type { DefinitionAssetHistory } from "./definition-history";
 import { listVisibleAgentDefinitions } from "./visible-definitions";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 /**
  * Resolves the pinned skill names a definition carries into the
@@ -99,19 +100,15 @@ export type CreateAgentDefinitionRoutesDeps = {
   tenantDefaultModel?: CreateAgentDefinitionCoreDeps["tenantDefaultModel"];
 };
 
-function errorEnvelope(code: string, message: string) {
-  return { error: { code, message } };
-}
-
 /** The same 404 shape a missing definition gets — deliberately reused
  * for a workbench host's definition too (see `hostGuardedRow`), so a
  * caller cannot distinguish "no such definition" from "that id names a
  * workbench host" by response shape alone. */
 function definitionNotFound(definitionId: string) {
-  return errorEnvelope(
-    "not_found",
-    `No agent definition "${definitionId}" in this workbench`,
-  );
+  return makeErrorEnvelope({
+    code: "not_found",
+    userMessage: `No agent definition "${definitionId}" in this workbench`,
+  });
 }
 
 /**
@@ -151,13 +148,22 @@ export function createAgentDefinitionRoutes({
   // one rather than letting it read as a 500.
   app.onError((err, c) => {
     if (err instanceof SkillRegistryError) {
-      return c.json(errorEnvelope("bad_request", err.message), 400);
+      return c.json(
+        makeErrorEnvelope({ code: "bad_request", userMessage: err.message }),
+        400,
+      );
     }
     if (err instanceof CapabilityOutOfInventoryError) {
-      return c.json(errorEnvelope("bad_request", err.message), 400);
+      return c.json(
+        makeErrorEnvelope({ code: "bad_request", userMessage: err.message }),
+        400,
+      );
     }
     if (err instanceof RetiredWorkflowEnvelopeError) {
-      return c.json(errorEnvelope("conflict", err.message), 409);
+      return c.json(
+        makeErrorEnvelope({ code: "conflict", userMessage: err.message }),
+        409,
+      );
     }
     throw err;
   });
@@ -168,10 +174,10 @@ export function createAgentDefinitionRoutes({
     );
     if (body instanceof type.errors) {
       return c.json(
-        errorEnvelope(
-          "bad_request",
-          `invalid agent definition: ${body.summary}`,
-        ),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid agent definition: ${body.summary}`,
+        }),
         400,
       );
     }
@@ -220,7 +226,10 @@ export function createAgentDefinitionRoutes({
       ));
     } catch (cause) {
       if (cause instanceof DuplicateAgentHandleError) {
-        return c.json(errorEnvelope("conflict", cause.message), 409);
+        return c.json(
+          makeErrorEnvelope({ code: "conflict", userMessage: cause.message }),
+          409,
+        );
       }
       throw cause;
     }
@@ -414,7 +423,10 @@ export function createAgentDefinitionRoutes({
       );
       if (body instanceof type.errors) {
         return c.json(
-          errorEnvelope("bad_request", `invalid restore: ${body.summary}`),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid restore: ${body.summary}`,
+          }),
           400,
         );
       }
@@ -438,10 +450,10 @@ export function createAgentDefinitionRoutes({
       });
       if (entryBytes === null) {
         return c.json(
-          errorEnvelope(
-            "not_found",
-            `agent "${row.name}" has no instructions at that point in its history`,
-          ),
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: `agent "${row.name}" has no instructions at that point in its history`,
+          }),
           404,
         );
       }
@@ -495,7 +507,10 @@ export function createAgentDefinitionRoutes({
       );
       if (body instanceof type.errors) {
         return c.json(
-          errorEnvelope("bad_request", `invalid capability: ${body.summary}`),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid capability: ${body.summary}`,
+          }),
           400,
         );
       }
@@ -598,10 +613,10 @@ export function createAgentDefinitionRoutes({
       );
       if (body instanceof type.errors) {
         return c.json(
-          errorEnvelope(
-            "bad_request",
-            `invalid agent instructions: ${body.summary}`,
-          ),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid agent instructions: ${body.summary}`,
+          }),
           400,
         );
       }
@@ -667,12 +682,13 @@ export function createAgentDefinitionRoutes({
         });
       } catch {
         return c.json(
-          errorEnvelope(
-            "partial_failure",
-            `The instructions saved, but renaming "${row.name}" to ` +
+          makeErrorEnvelope({
+            code: "partial_failure",
+            userMessage:
+              `The instructions saved, but renaming "${row.name}" to ` +
               `"${body.name}" failed — the agent now answers with the new ` +
               `instructions under its old name. Retry to finish the rename.`,
-          ),
+          }),
           500,
         );
       }
@@ -769,7 +785,10 @@ export function createAgentDefinitionRoutes({
       );
       if (body instanceof type.errors) {
         return c.json(
-          errorEnvelope("bad_request", `invalid status: ${body.summary}`),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid status: ${body.summary}`,
+          }),
           400,
         );
       }
@@ -809,7 +828,10 @@ export function createAgentDefinitionRoutes({
       );
       if (body instanceof type.errors) {
         return c.json(
-          errorEnvelope("bad_request", `invalid skills list: ${body.summary}`),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid skills list: ${body.summary}`,
+          }),
           400,
         );
       }
@@ -824,10 +846,10 @@ export function createAgentDefinitionRoutes({
       });
       if (row === undefined || row.assetId === null) {
         return c.json(
-          errorEnvelope(
-            "not_found",
-            `No agent definition "${definitionId}" in this workbench`,
-          ),
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: `No agent definition "${definitionId}" in this workbench`,
+          }),
           404,
         );
       }

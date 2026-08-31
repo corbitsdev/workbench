@@ -69,6 +69,7 @@ import {
 } from "./definition-asset";
 import type { PinnedSkillIndexResolver } from "./routes";
 import type { DefinitionSkillsStore } from "./skills-store";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 /**
  * The tenant + principal + run a presented sidecar token and run
@@ -96,15 +97,11 @@ export type WorkflowCapabilitiesEnv = {
   Variables: { workflowCapabilityScope: WorkflowCapabilityRunScope };
 };
 
-function errorEnvelope(code: string, message: string) {
-  return { error: { code, message } };
-}
-
 function definitionNotFound(definitionId: string) {
-  return errorEnvelope(
-    "not_found",
-    `No agent definition "${definitionId}" in this workbench`,
-  );
+  return makeErrorEnvelope({
+    code: "not_found",
+    userMessage: `No agent definition "${definitionId}" in this workbench`,
+  });
 }
 
 /** Same host-guard `./routes.ts` applies: a workbench host is never a
@@ -139,10 +136,16 @@ export function createWorkflowCapabilityRoutes(
 
   app.onError((err, c) => {
     if (err instanceof CapabilityOutOfInventoryError) {
-      return c.json(errorEnvelope("bad_request", err.message), 400);
+      return c.json(
+        makeErrorEnvelope({ code: "bad_request", userMessage: err.message }),
+        400,
+      );
     }
     if (err instanceof RetiredWorkflowEnvelopeError) {
-      return c.json(errorEnvelope("conflict", err.message), 409);
+      return c.json(
+        makeErrorEnvelope({ code: "conflict", userMessage: err.message }),
+        409,
+      );
     }
     throw err;
   });
@@ -156,10 +159,11 @@ export function createWorkflowCapabilityRoutes(
     const scope = await deps.authenticator.resolve(token, address);
     if (scope === null) {
       return c.json(
-        errorEnvelope(
-          "unauthorized",
-          "Missing or unrecognized sidecar bearer token / run address",
-        ),
+        makeErrorEnvelope({
+          code: "unauthorized",
+          userMessage:
+            "Missing or unrecognized sidecar bearer token / run address",
+        }),
         401,
       );
     }
@@ -190,10 +194,11 @@ export function createWorkflowCapabilityRoutes(
     });
     if (run === undefined || run.definitionId !== definitionId) {
       return c.json(
-        errorEnvelope(
-          "forbidden",
-          "A workflow run may only request capabilities for its own agent definition",
-        ),
+        makeErrorEnvelope({
+          code: "forbidden",
+          userMessage:
+            "A workflow run may only request capabilities for its own agent definition",
+        }),
         403,
       );
     }
@@ -201,7 +206,10 @@ export function createWorkflowCapabilityRoutes(
     const body = AddCapabilityInput(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {
       return c.json(
-        errorEnvelope("bad_request", `invalid capability: ${body.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid capability: ${body.summary}`,
+        }),
         400,
       );
     }

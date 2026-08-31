@@ -24,15 +24,15 @@ import {
 } from "./signature";
 import type { WebhookTriggerRow } from "./schema";
 import type { WebhookTriggerStore } from "./store";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 const log = getLogger(["webhook-triggers", "ingress"]);
 
-const ErrorEnvelope = (code: string, message: string) => ({
-  error: { code, message },
-});
-
 const unauthorizedResponse = () =>
-  ErrorEnvelope("unauthorized", "invalid or missing signature");
+  makeErrorEnvelope({
+    code: "unauthorized",
+    userMessage: "invalid or missing signature",
+  });
 
 export type CreateWebhookIngressRoutesDeps = {
   store: WebhookTriggerStore;
@@ -104,7 +104,10 @@ export function createWebhookIngressRoutes(
       payload = rawBody === "" ? {} : JSON.parse(rawBody);
     } catch {
       return c.json(
-        ErrorEnvelope("bad_request", "payload is not valid JSON"),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: "payload is not valid JSON",
+        }),
         400,
       );
     }

@@ -67,10 +67,7 @@ import {
 } from "./connect-pending";
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
 import { MODEL_UNAVAILABLE_CONSUMER_MESSAGE } from "./model-unavailable";
-
-function errorEnvelope(code: string, message: string) {
-  return { error: { code, message } };
-}
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 /**
  * The tenant + principal + run a presented sidecar token and run
@@ -166,10 +163,11 @@ export function createWorkflowParticipantRoutes(
     const scope = await deps.authenticator.resolve(token, address);
     if (scope === null) {
       return c.json(
-        errorEnvelope(
-          "unauthorized",
-          "Missing or unrecognized sidecar bearer token / run address",
-        ),
+        makeErrorEnvelope({
+          code: "unauthorized",
+          userMessage:
+            "Missing or unrecognized sidecar bearer token / run address",
+        }),
         401,
       );
     }
@@ -184,7 +182,10 @@ export function createWorkflowParticipantRoutes(
     );
     if (body instanceof type.errors) {
       return c.json(
-        errorEnvelope("bad_request", `invalid invite body: ${body.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid invite body: ${body.summary}`,
+        }),
         400,
       );
     }
@@ -195,10 +196,10 @@ export function createWorkflowParticipantRoutes(
     );
     if (workbench === undefined) {
       return c.json(
-        errorEnvelope(
-          "not_found",
-          `The calling run "${scope.address}" is not a participant of any workbench in this workbench`,
-        ),
+        makeErrorEnvelope({
+          code: "not_found",
+          userMessage: `The calling run "${scope.address}" is not a participant of any workbench in this workbench`,
+        }),
         404,
       );
     }
@@ -228,16 +229,28 @@ export function createWorkflowParticipantRoutes(
       // when every asset candidate for the definition has gone
       // unresolvable (DB/blob drift).
       if (err instanceof DefinitionProjectionMissingError) {
-        return c.json(errorEnvelope("not_launchable", err.guidance), 409);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_launchable",
+            userMessage: err.guidance,
+          }),
+          409,
+        );
       }
       if (err instanceof InferenceResolutionError) {
         return c.json(
-          errorEnvelope("not_launchable", MODEL_UNAVAILABLE_CONSUMER_MESSAGE),
+          makeErrorEnvelope({
+            code: "not_launchable",
+            userMessage: MODEL_UNAVAILABLE_CONSUMER_MESSAGE,
+          }),
           409,
         );
       }
       if (err instanceof KindIsChatError) {
-        return c.json(errorEnvelope(err.code, err.message), 409);
+        return c.json(
+          makeErrorEnvelope({ code: err.code, userMessage: err.message }),
+          409,
+        );
       }
       throw err;
     }
@@ -260,7 +273,10 @@ export function createWorkflowParticipantRoutes(
     const body = MintDmInput(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {
       return c.json(
-        errorEnvelope("bad_request", `invalid mint-dm body: ${body.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid mint-dm body: ${body.summary}`,
+        }),
         400,
       );
     }
@@ -271,10 +287,10 @@ export function createWorkflowParticipantRoutes(
     );
     if (workbench === undefined) {
       return c.json(
-        errorEnvelope(
-          "not_found",
-          `The calling run "${scope.address}" is not a participant of any workbench in this workbench`,
-        ),
+        makeErrorEnvelope({
+          code: "not_found",
+          userMessage: `The calling run "${scope.address}" is not a participant of any workbench in this workbench`,
+        }),
         404,
       );
     }
@@ -287,10 +303,10 @@ export function createWorkflowParticipantRoutes(
       await deps.tenancy.getWorkbenchOwnerUserId(ownerTenantId);
     if (creatorUserId === undefined) {
       return c.json(
-        errorEnvelope(
-          "owner_unresolved",
-          `No owner user id for tenant "${ownerTenantId}" — cannot mint an agent DM`,
-        ),
+        makeErrorEnvelope({
+          code: "owner_unresolved",
+          userMessage: `No owner user id for tenant "${ownerTenantId}" — cannot mint an agent DM`,
+        }),
         500,
       );
     }
@@ -301,10 +317,10 @@ export function createWorkflowParticipantRoutes(
     });
     if (cookies === undefined) {
       return c.json(
-        errorEnvelope(
-          "session_unmintable",
-          `Could not mint a session for owner "${creatorUserId}" to create an agent DM`,
-        ),
+        makeErrorEnvelope({
+          code: "session_unmintable",
+          userMessage: `Could not mint a session for owner "${creatorUserId}" to create an agent DM`,
+        }),
         500,
       );
     }
@@ -330,16 +346,28 @@ export function createWorkflowParticipantRoutes(
       );
     } catch (err) {
       if (err instanceof DefinitionProjectionMissingError) {
-        return c.json(errorEnvelope("not_launchable", err.guidance), 409);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_launchable",
+            userMessage: err.guidance,
+          }),
+          409,
+        );
       }
       if (err instanceof InferenceResolutionError) {
         return c.json(
-          errorEnvelope("not_launchable", MODEL_UNAVAILABLE_CONSUMER_MESSAGE),
+          makeErrorEnvelope({
+            code: "not_launchable",
+            userMessage: MODEL_UNAVAILABLE_CONSUMER_MESSAGE,
+          }),
           409,
         );
       }
       if (err instanceof KindIsChatError) {
-        return c.json(errorEnvelope(err.code, err.message), 409);
+        return c.json(
+          makeErrorEnvelope({ code: err.code, userMessage: err.message }),
+          409,
+        );
       }
       throw err;
     }
@@ -369,7 +397,10 @@ export function createWorkflowParticipantRoutes(
     const body = PostMessageInput(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {
       return c.json(
-        errorEnvelope("bad_request", `invalid message body: ${body.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid message body: ${body.summary}`,
+        }),
         400,
       );
     }
@@ -380,10 +411,10 @@ export function createWorkflowParticipantRoutes(
     );
     if (workbench === undefined) {
       return c.json(
-        errorEnvelope(
-          "not_found",
-          `The calling run "${scope.address}" is not a participant of any workbench in this workbench`,
-        ),
+        makeErrorEnvelope({
+          code: "not_found",
+          userMessage: `The calling run "${scope.address}" is not a participant of any workbench in this workbench`,
+        }),
         404,
       );
     }

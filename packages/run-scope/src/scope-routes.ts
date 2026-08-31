@@ -33,6 +33,7 @@ import { getDescendantTenants, type DB } from "@intx/db";
 import { workflowDefinition, workflowRun } from "@intx/db/schema";
 import type { WorkflowRunStatus } from "@intx/types";
 import { foldedRun } from "@corbits/folded-runs";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 /** A routine fire's parent, resolved by `resolveRoutineFires` below. */
 export type RoutineFireInfo = {
@@ -301,7 +302,10 @@ export function createTopLevelRunRoutes(
     const query = LimitQuery(rawLimit === undefined ? {} : { limit: rawLimit });
     if (query instanceof type.errors) {
       return c.json(
-        { error: { code: "bad_request", message: query.summary } },
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: query.summary,
+        }),
         400,
       );
     }
@@ -309,7 +313,10 @@ export function createTopLevelRunRoutes(
     const feedQuery = FeedQuery(rawFeed === undefined ? {} : { feed: rawFeed });
     if (feedQuery instanceof type.errors) {
       return c.json(
-        { error: { code: "bad_request", message: feedQuery.summary } },
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: feedQuery.summary,
+        }),
         400,
       );
     }

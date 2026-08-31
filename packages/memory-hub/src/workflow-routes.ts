@@ -24,6 +24,7 @@
  */
 import { type } from "arktype";
 import { Hono } from "hono";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 import type {
   ResolvedWorkflowRunScope,
   WorkflowRunAuthenticator,
@@ -189,13 +190,11 @@ export function createWorkflowMemoryRoutes(
     const scope = await deps.authenticator.resolve(token, address);
     if (scope === null) {
       return c.json(
-        {
-          error: {
-            code: "unauthorized",
-            message:
-              "Missing or unrecognized sidecar bearer token / run address",
-          },
-        },
+        makeErrorEnvelope({
+          code: "unauthorized",
+          userMessage:
+            "Missing or unrecognized sidecar bearer token / run address",
+        }),
         401,
       );
     }
@@ -209,14 +208,20 @@ export function createWorkflowMemoryRoutes(
       body = await c.req.json();
     } catch {
       return c.json(
-        { error: { code: "bad_request", message: "Invalid JSON body" } },
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: "Invalid JSON body",
+        }),
         400,
       );
     }
     const parsed = SearchBody(body);
     if (parsed instanceof type.errors) {
       return c.json(
-        { error: { code: "bad_request", message: parsed.summary } },
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: parsed.summary,
+        }),
         400,
       );
     }
@@ -239,28 +244,32 @@ export function createWorkflowMemoryRoutes(
       body = await c.req.json();
     } catch {
       return c.json(
-        { error: { code: "bad_request", message: "Invalid JSON body" } },
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: "Invalid JSON body",
+        }),
         400,
       );
     }
     const parsed = AddBody(body);
     if (parsed instanceof type.errors) {
       return c.json(
-        { error: { code: "bad_request", message: parsed.summary } },
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: parsed.summary,
+        }),
         400,
       );
     }
     if (parsed.text.length > MAX_ADD_TEXT_CHARS) {
       return c.json(
-        {
-          error: {
-            code: "text_too_large",
-            message:
-              `text is ${parsed.text.length} characters, over the ` +
-              `${MAX_ADD_TEXT_CHARS}-character limit — shorten it or split ` +
-              "it into multiple memory entries and try again.",
-          },
-        },
+        makeErrorEnvelope({
+          code: "text_too_large",
+          userMessage:
+            `text is ${parsed.text.length} characters, over the ` +
+            `${MAX_ADD_TEXT_CHARS}-character limit — shorten it or split ` +
+            "it into multiple memory entries and try again.",
+        }),
         413,
       );
     }
@@ -268,15 +277,13 @@ export function createWorkflowMemoryRoutes(
     const scope = c.get("workflowRunScope");
     if (!addRateLimiter.allow(scope.runId)) {
       return c.json(
-        {
-          error: {
-            code: "rate_limited",
-            message:
-              `too many memory writes for this run in the last minute ` +
-              `(limit ${MAX_ADDS_PER_RUN_PER_MINUTE}/min) — wait a moment ` +
-              "before adding more.",
-          },
-        },
+        makeErrorEnvelope({
+          code: "rate_limited",
+          userMessage:
+            `too many memory writes for this run in the last minute ` +
+            `(limit ${MAX_ADDS_PER_RUN_PER_MINUTE}/min) — wait a moment ` +
+            "before adding more.",
+        }),
         429,
       );
     }
@@ -313,12 +320,10 @@ export function createUnavailableWorkflowMemoryRoutes(): Hono<WorkflowMemoryEnv>
     json: (body: unknown, status: 503) => Response | Promise<Response>;
   }) =>
     c.json(
-      {
-        error: {
-          code: "unavailable",
-          message: "Memory plane is not configured on this hub",
-        },
-      },
+      makeErrorEnvelope({
+        code: "unavailable",
+        userMessage: "Memory plane is not configured on this hub",
+      }),
       503,
     );
   app.post("/search", unavailable);
