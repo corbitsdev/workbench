@@ -18,10 +18,10 @@
 // `@corbits/memory-tools`, and that pin only resolved once an operator
 // had published a `package-registry`-kind asset named "corbits-tools"
 // carrying its tarball. CL-7071 moved that publish off `seedTenant`
-// onto `workbench setup` (the root tenant; descendants inherit). This
-// suite has no operator-root split (`OPERATOR_TENANT_ID` is unset), so
-// the provisioned personal bench *is* the root: an explicit
-// `publishCorbitsToolsRegistry` hop onto that tenant stands in for
+// onto `workbench setup` (the root tenant; descendants inherit). The
+// boot-ensured root is the personal bench's parent, so the provisioned
+// personal bench is a child of the root: an explicit
+// `publishCorbitsToolsRegistry` hop onto that bench stands in for
 // setup, then `ensureSeeded` deploys without packing.
 //
 // Stubbing note: onboarding's own `POST /api/onboarding/complete` route
@@ -372,11 +372,11 @@ describe.skipIf(databaseUrl === undefined)(
         }
       }
 
-      // CL-7071: seedTenant/ensureSeeded no longer pack. This suite's
-      // provisioned personal bench is the root (`OPERATOR_TENANT_ID`
-      // unset), so publish `corbits-tools` onto it the same way
-      // `workbench setup` does onto the operator-created bench. Then
-      // ensureSeeded deploys assistant without packing.
+      // CL-7071: seedTenant/ensureSeeded no longer pack. The provisioned
+      // personal bench is a child of the boot-ensured root, so publish
+      // `corbits-tools` onto the bench itself the way `workbench setup`
+      // does onto the root. Then ensureSeeded deploys assistant without
+      // packing.
       await hop(
         "publish corbits-tools onto the provisioned root bench (setup's job, not seed's)",
         async () => {

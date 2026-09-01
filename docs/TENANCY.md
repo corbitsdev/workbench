@@ -11,14 +11,14 @@ requires an upstream Interchange change. **Do not patch `vendor/intx`.**
 
 ## What already works (consume, do not reimplement)
 
-| Capability                      | Where                                                                                                                    |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Tenant `parentId` hierarchy     | `@intx/db` tenant table; POST `/api/tenants` accepts `parentId`                                                          |
-| Live ancestor-chain inheritance | `getAncestorChain` in `@intx/db` — catalog, credentials, providers walk ancestors at read time                           |
-| Descendant walk                 | `getDescendantTenants` in `@intx/db`                                                                                     |
-| Roles                           | Interchange native `owner` / `admin` / `member` — mirror 1:1 in UI; never invent a parallel role table                   |
-| Personal bench parenting        | `packages/onboarding` parents under `OPERATOR_TENANT_ID`; `workbench setup` writes that id for the org tenant it creates |
-| Memberships                     | Native principal + membership routes                                                                                     |
+| Capability                      | Where                                                                                                              |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Tenant `parentId` hierarchy     | `@intx/db` tenant table; POST `/api/tenants` accepts `parentId`                                                    |
+| Live ancestor-chain inheritance | `getAncestorChain` in `@intx/db` — catalog, credentials, providers walk ancestors at read time                     |
+| Descendant walk                 | `getDescendantTenants` in `@intx/db`                                                                               |
+| Roles                           | Interchange native `owner` / `admin` / `member` — mirror 1:1 in UI; never invent a parallel role table             |
+| Personal bench parenting        | `packages/onboarding` parents under the boot-ensured root tenant (`WORKBENCH_DEFAULT_TENANT`, default `workbench`) |
+| Memberships                     | Native principal + membership routes                                                                               |
 
 Inheritance is **live**. Creating a sub-workbench must **not** copy
 catalog rows, credentials, or providers from the parent — resolution
@@ -38,9 +38,9 @@ is never patched into a vendor route. Two layers, in order:
    when the variable is unset, so a zero-edit `.env` can still seed the
    admin account; an explicit value in `.env` always wins; production
    deploys that do not use the dev launcher keep the closed default.
-2. **Policy row (operator tenant, once set)**: once `OPERATOR_TENANT_ID`
-   carries an explicit `access_policy.policy` row (editable from Settings
-   → People → "Who can join"), that row decides outright and the env
+2. **Policy row (root tenant)**: the boot-ensured root tenant can carry an
+   explicit `access_policy.policy` row (editable from Settings
+   → People → "Who can join"); that row decides outright and the env
    flag is no longer consulted — `selfSignup` is `"off"`, `"allowed-
 domains"` (with an `allowedDomains` list), or `"open"`. An absent row
    is closed defaults, identical in effect to `selfSignup: "off"`.
