@@ -63,6 +63,22 @@ describe("readSetupConfig", () => {
       readSetupConfig({ ...VALID_SHARED, ORG_SLUG: "Not A Slug" }),
     ).toThrow(CliError);
   });
+
+  test("ORG_SLUG sets the bench slug when WORKBENCH_DEFAULT_TENANT is unset", () => {
+    expect(readSetupConfig({ ...VALID_SHARED, ORG_SLUG: "acme" }).orgSlug).toBe(
+      "acme",
+    );
+  });
+
+  test("WORKBENCH_DEFAULT_TENANT wins over ORG_SLUG for the bench slug", () => {
+    expect(
+      readSetupConfig({
+        ...VALID_SHARED,
+        WORKBENCH_DEFAULT_TENANT: "root",
+        ORG_SLUG: "acme",
+      }).orgSlug,
+    ).toBe("root");
+  });
 });
 
 describe("readSeedConfig", () => {

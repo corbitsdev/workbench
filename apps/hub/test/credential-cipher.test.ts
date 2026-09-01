@@ -17,6 +17,7 @@ const baseConfig: HubConfig = {
   sessionSecret: "insecure-test-only-session-secret-0000",
   hubDataDir: ".data/hub",
   hubStaticDir: "apps/hub/public",
+  defaultTenantSlug: "workbench",
   signupRateLimit: { windowSeconds: 60, max: 5 },
   signInRateLimit: { windowSeconds: 60, max: 10 },
   socialProviders: {},

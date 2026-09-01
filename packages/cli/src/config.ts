@@ -36,7 +36,12 @@ const SharedEnv = {
     "the administrator password, at least 8 characters",
   ),
   "ORG_SLUG?": type(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/).describe(
-    "a lowercase-kebab bench slug, e.g. workbench",
+    "alias for WORKBENCH_DEFAULT_TENANT when that is unset — a lowercase-kebab root/operator bench slug, e.g. workbench",
+  ),
+  "WORKBENCH_DEFAULT_TENANT?": type(
+    /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/,
+  ).describe(
+    "slug of the root tenant the hub ensures at boot; setup and seed resolve the same slug — ORG_SLUG is an alias when this is unset; default workbench",
   ),
 } as const;
 
@@ -147,7 +152,7 @@ export function readSetupConfig(
     adminPassword: admin.adminPassword,
     adminDefaulted: admin.adminDefaulted,
     orgName: parsed.ORG_NAME ?? "Workbench",
-    orgSlug: parsed.ORG_SLUG ?? "workbench",
+    orgSlug: parsed.WORKBENCH_DEFAULT_TENANT ?? parsed.ORG_SLUG ?? "workbench",
   };
 }
 
@@ -172,7 +177,7 @@ export function readSeedConfig(
     adminEmail: admin.adminEmail,
     adminPassword: admin.adminPassword,
     adminDefaulted: admin.adminDefaulted,
-    orgSlug: parsed.ORG_SLUG ?? "workbench",
+    orgSlug: parsed.WORKBENCH_DEFAULT_TENANT ?? parsed.ORG_SLUG ?? "workbench",
     modelSource: {
       provider: DEFAULT_MODEL_PROVIDER,
       model: DEFAULT_MODEL,

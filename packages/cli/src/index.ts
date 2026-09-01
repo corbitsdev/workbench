@@ -10,7 +10,6 @@ import {
 } from "@workbench/hub-client";
 import { readSeedConfig, readSetupConfig } from "./config";
 import { createDbSetupRunner, createResetRunner } from "./db-setup";
-import { persistEnvVar } from "./env-file";
 import { runReset } from "./reset";
 import { runSeed } from "./seed";
 import { runSetup } from "./setup";
@@ -61,8 +60,6 @@ async function main(argv: string[]): Promise<void> {
         config,
         api: createHubAPI(config.hubUrl),
         runDbSetup: createDbSetupRunner(REPO_ROOT),
-        persistEnv: ({ key, value }) =>
-          persistEnvVar(resolve(REPO_ROOT, ".env"), key, value),
         log: out,
       });
       return;

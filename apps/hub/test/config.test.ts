@@ -28,6 +28,7 @@ describe("readHubConfig", () => {
       sessionSecret: validEnv.SESSION_SECRET,
       hubDataDir: validEnv.HUB_DATA_DIR,
       hubStaticDir: validEnv.HUB_STATIC_DIR,
+      defaultTenantSlug: "workbench",
       socialProviders: {},
       signupMode: "closed",
       allowedEmailDomains: [],
@@ -167,12 +168,49 @@ describe("readHubConfig", () => {
     });
   });
 
-  test("OPERATOR_TENANT_ID is optional and absent by default", () => {
-    expect(readHubConfig(validEnv).operatorTenantId).toBeUndefined();
+  test("WORKBENCH_DEFAULT_TENANT defaults to workbench and accepts an explicit slug", () => {
+    expect(readHubConfig(validEnv).defaultTenantSlug).toBe("workbench");
     expect(
-      readHubConfig({ ...validEnv, OPERATOR_TENANT_ID: "ten_operator" })
-        .operatorTenantId,
-    ).toBe("ten_operator");
+      readHubConfig({ ...validEnv, WORKBENCH_DEFAULT_TENANT: "acme" })
+        .defaultTenantSlug,
+    ).toBe("acme");
+  });
+
+  test("ORG_SLUG aliases WORKBENCH_DEFAULT_TENANT when the latter is unset", () => {
+    const config = readHubConfig({ ...validEnv, ORG_SLUG: "acme" });
+    expect(config.defaultTenantSlug).toBe("acme");
+    expect(config.envCredentialPlantAdmin.orgSlug).toBe("acme");
+  });
+
+  test("WORKBENCH_DEFAULT_TENANT wins over ORG_SLUG when both are set", () => {
+    const config = readHubConfig({
+      ...validEnv,
+      WORKBENCH_DEFAULT_TENANT: "root",
+      ORG_SLUG: "acme",
+    });
+    expect(config.defaultTenantSlug).toBe("root");
+    expect(config.envCredentialPlantAdmin.orgSlug).toBe("root");
+  });
+
+  test("OPERATOR_TENANT_ID fails loudly with an actionable message", () => {
+    const message = readExpectingError({
+      ...validEnv,
+      OPERATOR_TENANT_ID: "tnt_stale",
+    });
+    expect(message).toContain("OPERATOR_TENANT_ID");
+    expect(message).toContain("WORKBENCH_DEFAULT_TENANT");
+  });
+
+  test("WORKBENCH_DEFAULT_TENANT rejects a non-slug value", () => {
+    expect(
+      readExpectingError({ ...validEnv, WORKBENCH_DEFAULT_TENANT: "" }),
+    ).toContain("WORKBENCH_DEFAULT_TENANT");
+    expect(
+      readExpectingError({
+        ...validEnv,
+        WORKBENCH_DEFAULT_TENANT: "Not A Slug",
+      }),
+    ).toContain("WORKBENCH_DEFAULT_TENANT");
   });
 
   test("the signup rate limit is configurable and defaults sanely", () => {
