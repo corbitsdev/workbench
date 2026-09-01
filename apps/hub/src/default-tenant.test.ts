@@ -38,7 +38,8 @@ function fakeBootAuth(opts?: { preexistingUserWithoutCredential?: boolean }) {
     $context: Promise.resolve({
       internalAdapter: {
         findUserByEmail: async (email) =>
-          (userExistsFromStart || calls.userCreated > 0) && email === ADMIN.email
+          (userExistsFromStart || calls.userCreated > 0) &&
+          email === ADMIN.email
             ? { user: { id: ADMIN_USER_ID } }
             : null,
         createUser: async (user) => {
@@ -351,4 +352,3 @@ describeIfDb("ensureDefaultTenant", () => {
     expect(links[0]?.roleId).toBe(ownerRole[0]?.id);
   });
 });
-

@@ -152,8 +152,7 @@ export function readSetupConfig(
     adminPassword: admin.adminPassword,
     adminDefaulted: admin.adminDefaulted,
     orgName: parsed.ORG_NAME ?? "Workbench",
-    orgSlug:
-      parsed.WORKBENCH_DEFAULT_TENANT ?? parsed.ORG_SLUG ?? "workbench",
+    orgSlug: parsed.WORKBENCH_DEFAULT_TENANT ?? parsed.ORG_SLUG ?? "workbench",
   };
 }
 
@@ -178,8 +177,7 @@ export function readSeedConfig(
     adminEmail: admin.adminEmail,
     adminPassword: admin.adminPassword,
     adminDefaulted: admin.adminDefaulted,
-    orgSlug:
-      parsed.WORKBENCH_DEFAULT_TENANT ?? parsed.ORG_SLUG ?? "workbench",
+    orgSlug: parsed.WORKBENCH_DEFAULT_TENANT ?? parsed.ORG_SLUG ?? "workbench",
     modelSource: {
       provider: DEFAULT_MODEL_PROVIDER,
       model: DEFAULT_MODEL,

@@ -11,14 +11,14 @@ requires an upstream Interchange change. **Do not patch `vendor/intx`.**
 
 ## What already works (consume, do not reimplement)
 
-| Capability                      | Where                                                                                                              |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Tenant `parentId` hierarchy     | `@intx/db` tenant table; POST `/api/tenants` accepts `parentId`                                                    |
-| Live ancestor-chain inheritance | `getAncestorChain` in `@intx/db` — catalog, credentials, providers walk ancestors at read time                     |
-| Descendant walk                 | `getDescendantTenants` in `@intx/db`                                                                               |
-| Roles                           | Interchange native `owner` / `admin` / `member` — mirror 1:1 in UI; never invent a parallel role table             |
+| Capability                      | Where                                                                                                                                |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Tenant `parentId` hierarchy     | `@intx/db` tenant table; POST `/api/tenants` accepts `parentId`                                                                      |
+| Live ancestor-chain inheritance | `getAncestorChain` in `@intx/db` — catalog, credentials, providers walk ancestors at read time                                       |
+| Descendant walk                 | `getDescendantTenants` in `@intx/db`                                                                                                 |
+| Roles                           | Interchange native `owner` / `admin` / `member` — mirror 1:1 in UI; never invent a parallel role table                               |
 | Personal bench parenting        | `packages/onboarding` parents under the boot-ensured root tenant (`WORKBENCH_DEFAULT_TENANT`, alias `ORG_SLUG`, default `workbench`) |
-| Memberships                     | Native principal + membership routes                                                                               |
+| Memberships                     | Native principal + membership routes                                                                                                 |
 
 Inheritance is **live**. Creating a sub-workbench must **not** copy
 catalog rows, credentials, or providers from the parent — resolution
