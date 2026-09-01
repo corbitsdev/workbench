@@ -17,12 +17,35 @@ requires an upstream Interchange change. **Do not patch `vendor/intx`.**
 | Live ancestor-chain inheritance | `getAncestorChain` in `@intx/db` — catalog, credentials, providers walk ancestors at read time                     |
 | Descendant walk                 | `getDescendantTenants` in `@intx/db`                                                                               |
 | Roles                           | Interchange native `owner` / `admin` / `member` — mirror 1:1 in UI; never invent a parallel role table             |
-| Personal bench parenting        | `packages/onboarding` parents under the boot-ensured root tenant (`WORKBENCH_DEFAULT_TENANT`, default `workbench`) |
+| Personal bench parenting        | `packages/onboarding` parents under the boot-ensured root tenant (`WORKBENCH_DEFAULT_TENANT`, alias `ORG_SLUG`, default `workbench`) |
 | Memberships                     | Native principal + membership routes                                                                               |
 
 Inheritance is **live**. Creating a sub-workbench must **not** copy
 catalog rows, credentials, or providers from the parent — resolution
 walks the chain on every read.
+
+### Root tenant slug (one deployment fact)
+
+The hub ensures a root tenant at boot by slug. That same slug is the
+operator bench `workbench setup` / `workbench seed` and the env-key
+auto-plant resolve:
+
+1. `WORKBENCH_DEFAULT_TENANT` if set
+2. else `ORG_SLUG` (alias)
+3. else `workbench`
+
+Set only one. Custom-slug upgrades whose existing root is not
+`workbench` must set `WORKBENCH_DEFAULT_TENANT=<existing-org-slug>`
+before restarting — otherwise boot creates a new empty `workbench`
+root and personal-bench parenting moves under it. Leftover
+`OPERATOR_TENANT_ID` is no longer read: `readHubConfig` fails loudly
+and tells the operator to set `WORKBENCH_DEFAULT_TENANT` (or remove
+the stale key for the default slug).
+
+A freshly ensured root has no `access_policy` row yet, so signup falls
+back to `WORKBENCH_SIGNUP` until Settings → People → "Who can join"
+writes one. This cutover does not migrate policy rows from a previous
+operator tenant.
 
 ## Workbench-side contracts (this repo)
 
