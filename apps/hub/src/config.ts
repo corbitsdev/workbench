@@ -636,6 +636,7 @@ export function readHubConfig(
     sessionSecret: parsed.SESSION_SECRET,
     hubDataDir: parsed.HUB_DATA_DIR,
     hubStaticDir: parsed.HUB_STATIC_DIR,
+    defaultTenantSlug: parsed.WORKBENCH_DEFAULT_TENANT ?? "workbench",
     socialProviders,
     signupMode: parsed.WORKBENCH_SIGNUP ?? "closed",
     allowedEmailDomains,
@@ -671,7 +672,6 @@ export function readHubConfig(
       DEFAULT_CHAT_IDLE_REAP_MS,
     ),
   };
-  hubConfig.defaultTenantSlug = parsed.WORKBENCH_DEFAULT_TENANT ?? "workbench";
   if (parsed.HUB_ALLOW_GIT_INSIDE_WORK_TREE !== undefined)
     hubConfig.allowGitInsideWorkTree = true;
   if (parsed.PORT !== undefined) hubConfig.listenPort = Number(parsed.PORT);

@@ -107,7 +107,15 @@ async function ensureSystemRole(
     .select({ id: role.id })
     .from(role)
     .where(and(eq(role.tenantId, tenantId), eq(role.name, roleName)));
-  if (existing.length > 0) return existing[0].id;
+  if (existing.length > 0) {
+    const row = existing[0];
+    if (!row) {
+      throw new Error(
+        "ensureSystemRole: existing.length > 0 but existing[0] is missing",
+      );
+    }
+    return row.id;
+  }
 
   const now = new Date();
   const [inserted] = await db
@@ -122,6 +130,11 @@ async function ensureSystemRole(
       updatedAt: now,
     })
     .returning({ id: role.id });
+  if (!inserted) {
+    throw new Error(
+      "ensureSystemRole: insert returned no row; the role table is in an unexpected state",
+    );
+  }
   return inserted.id;
 }
 
@@ -222,9 +235,15 @@ async function ensureOwnerMembership(
         "unexpected state",
     );
   }
+  const createdPrincipal = created[0];
+  if (!createdPrincipal) {
+    throw new Error(
+      "ensureDefaultTenant: created.length > 0 but created[0] is missing",
+    );
+  }
 
   await db.insert(principalRole).values({
-    principalId: created[0].id,
+    principalId: createdPrincipal.id,
     roleId: ownerRoleId,
     createdAt: now,
   });
@@ -253,7 +272,13 @@ export async function ensureDefaultTenant(
     .where(eq(tenant.slug, slug));
   let tenantId: string;
   if (existing.length > 0) {
-    tenantId = existing[0].id;
+    const row = existing[0];
+    if (!row) {
+      throw new Error(
+        "ensureDefaultTenant: existing.length > 0 but existing[0] is missing",
+      );
+    }
+    tenantId = row.id;
   } else {
     await db
       .insert(tenant)
@@ -277,7 +302,13 @@ export async function ensureDefaultTenant(
           "in an unexpected state",
       );
     }
-    tenantId = winner[0].id;
+    const winnerRow = winner[0];
+    if (!winnerRow) {
+      throw new Error(
+        "ensureDefaultTenant: winner.length > 0 but winner[0] is missing",
+      );
+    }
+    tenantId = winnerRow.id;
   }
 
   const roleIds: Record<SystemRoleName, string> = {

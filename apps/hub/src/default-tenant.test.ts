@@ -139,10 +139,12 @@ describeIfDb("ensureDefaultTenant", () => {
       .from(role)
       .where(and(eq(role.tenantId, id), eq(role.name, "owner")));
     expect(ownerRole).toHaveLength(1);
+    const membership = memberships[0];
+    if (!membership) throw new Error("expected membership");
     const links = await db.db
       .select()
       .from(principalRole)
-      .where(eq(principalRole.principalId, memberships[0].id));
+      .where(eq(principalRole.principalId, membership.id));
     expect(links).toHaveLength(1);
     expect(links[0]?.roleId).toBe(ownerRole[0]?.id);
 
@@ -249,10 +251,12 @@ describeIfDb("ensureDefaultTenant", () => {
 
     const memberships = await membershipsFor(id);
     expect(memberships).toHaveLength(1);
+    const membership = memberships[0];
+    if (!membership) throw new Error("expected membership");
     const links = await db.db
       .select()
       .from(principalRole)
-      .where(eq(principalRole.principalId, memberships[0].id));
+      .where(eq(principalRole.principalId, membership.id));
     expect(links).toHaveLength(1);
     expect(links[0]?.roleId).toBe("rol_already_member");
   });
