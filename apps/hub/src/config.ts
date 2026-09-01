@@ -80,8 +80,10 @@ const HubEnv = type({
   HUB_STATIC_DIR: type("string > 0").describe(
     "a directory of built user-interface files the hub serves, e.g. apps/hub/public",
   ),
-  "OPERATOR_TENANT_ID?": type("string > 0").describe(
-    "the tenant id every self-served personal bench is parented under; workbench setup writes this for the org tenant it creates. Leave unset only for isolated tests that need an unparented personal bench",
+  "WORKBENCH_DEFAULT_TENANT?": type(
+    /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/,
+  ).describe(
+    'slug of the root tenant the hub ensures exists at boot; every self-served personal bench parents under it — unset falls back to "workbench"',
   ),
   "SIGNUP_RATE_LIMIT_WINDOW_SECONDS?": type(/^[1-9]\d*$/).describe(
     "the per-IP sign-up rate-limit window, in seconds, e.g. 60",
@@ -327,7 +329,7 @@ export type HubConfig = {
   readonly sessionSecret: string;
   readonly hubDataDir: string;
   readonly hubStaticDir: string;
-  readonly operatorTenantId?: string;
+  readonly defaultTenantSlug: string;
   readonly signupRateLimit: {
     readonly windowSeconds: number;
     readonly max: number;
@@ -669,8 +671,7 @@ export function readHubConfig(
       DEFAULT_CHAT_IDLE_REAP_MS,
     ),
   };
-  if (parsed.OPERATOR_TENANT_ID !== undefined)
-    hubConfig.operatorTenantId = parsed.OPERATOR_TENANT_ID;
+  hubConfig.defaultTenantSlug = parsed.WORKBENCH_DEFAULT_TENANT ?? "workbench";
   if (parsed.HUB_ALLOW_GIT_INSIDE_WORK_TREE !== undefined)
     hubConfig.allowGitInsideWorkTree = true;
   if (parsed.PORT !== undefined) hubConfig.listenPort = Number(parsed.PORT);
