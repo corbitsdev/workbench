@@ -30,13 +30,15 @@ const ADMIN_USER_ID = "usr_boot_seed_admin";
  * Structural double of the better-auth surface boot seeding uses,
  * recording what it was asked to do so tests can assert on the calls.
  */
-function fakeBootAuth() {
+function fakeBootAuth(opts?: { preexistingUserWithoutCredential?: boolean }) {
   const calls = { userCreated: 0, accountsLinked: 0, emailVerified: false };
+  const linkedProviders = new Set<string>();
+  const userExistsFromStart = opts?.preexistingUserWithoutCredential ?? false;
   const auth: BootAdminAuth = {
     $context: Promise.resolve({
       internalAdapter: {
         findUserByEmail: async (email) =>
-          calls.userCreated > 0 && email === ADMIN.email
+          (userExistsFromStart || calls.userCreated > 0) && email === ADMIN.email
             ? { user: { id: ADMIN_USER_ID } }
             : null,
         createUser: async (user) => {
@@ -44,8 +46,13 @@ function fakeBootAuth() {
           calls.emailVerified = user.emailVerified;
           return { id: ADMIN_USER_ID };
         },
-        linkAccount: async () => {
+        findAccounts: async (userId) => {
+          if (userId !== ADMIN_USER_ID) return [];
+          return [...linkedProviders].map((providerId) => ({ providerId }));
+        },
+        linkAccount: async (account) => {
           calls.accountsLinked += 1;
+          linkedProviders.add(account.providerId);
         },
       },
       password: { hash: async (password) => `hashed(${password})` },
@@ -291,4 +298,57 @@ describeIfDb("ensureDefaultTenant", () => {
     expect(memberships).toHaveLength(1);
     expect(memberships[0]?.refId).toBe("usr_someone_else");
   });
+
+  test("an existing admin user without a credential account gets one linked", async () => {
+    // Partial failure: createUser committed, linkAccount threw. Re-boot
+    // must still ensure a credential so sign-in works.
+    const { auth, calls } = fakeBootAuth({
+      preexistingUserWithoutCredential: true,
+    });
+    await ensureDefaultTenant(db.db, auth, ADMIN, "cred-repair");
+
+    expect(calls.userCreated).toBe(0);
+    expect(calls.accountsLinked).toBe(1);
+  });
+
+  test("an admin principal with no role gets the owner role attached on re-boot", async () => {
+    // Partial failure: principal insert committed, principalRole threw.
+    await db.db.insert(tenant).values({
+      id: "tnt_roleless",
+      name: "Roleless",
+      slug: "roleless",
+      domain: "roleless.localhost",
+      parentId: null,
+    });
+    await db.db.insert(principal).values({
+      id: "prl_roleless_admin",
+      tenantId: "tnt_roleless",
+      kind: "user",
+      refId: ADMIN_USER_ID,
+      status: "active",
+    });
+
+    const { auth } = fakeBootAuth();
+    const id = await ensureDefaultTenant(db.db, auth, ADMIN, "roleless");
+    expect(id).toBe("tnt_roleless");
+
+    const memberships = await membershipsFor(id);
+    expect(memberships).toHaveLength(1);
+    const membership = memberships[0];
+    if (!membership) throw new Error("expected membership");
+
+    const ownerRole = await db.db
+      .select()
+      .from(role)
+      .where(and(eq(role.tenantId, id), eq(role.name, "owner")));
+    expect(ownerRole).toHaveLength(1);
+
+    const links = await db.db
+      .select()
+      .from(principalRole)
+      .where(eq(principalRole.principalId, membership.id));
+    expect(links).toHaveLength(1);
+    expect(links[0]?.roleId).toBe(ownerRole[0]?.id);
+  });
 });
+

@@ -176,6 +176,31 @@ describe("readHubConfig", () => {
     ).toBe("acme");
   });
 
+  test("ORG_SLUG aliases WORKBENCH_DEFAULT_TENANT when the latter is unset", () => {
+    const config = readHubConfig({ ...validEnv, ORG_SLUG: "acme" });
+    expect(config.defaultTenantSlug).toBe("acme");
+    expect(config.envCredentialPlantAdmin.orgSlug).toBe("acme");
+  });
+
+  test("WORKBENCH_DEFAULT_TENANT wins over ORG_SLUG when both are set", () => {
+    const config = readHubConfig({
+      ...validEnv,
+      WORKBENCH_DEFAULT_TENANT: "root",
+      ORG_SLUG: "acme",
+    });
+    expect(config.defaultTenantSlug).toBe("root");
+    expect(config.envCredentialPlantAdmin.orgSlug).toBe("root");
+  });
+
+  test("OPERATOR_TENANT_ID fails loudly with an actionable message", () => {
+    const message = readExpectingError({
+      ...validEnv,
+      OPERATOR_TENANT_ID: "tnt_stale",
+    });
+    expect(message).toContain("OPERATOR_TENANT_ID");
+    expect(message).toContain("WORKBENCH_DEFAULT_TENANT");
+  });
+
   test("WORKBENCH_DEFAULT_TENANT rejects a non-slug value", () => {
     expect(
       readExpectingError({ ...validEnv, WORKBENCH_DEFAULT_TENANT: "" }),
