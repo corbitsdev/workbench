@@ -28,6 +28,7 @@ describe("readHubConfig", () => {
       sessionSecret: validEnv.SESSION_SECRET,
       hubDataDir: validEnv.HUB_DATA_DIR,
       hubStaticDir: validEnv.HUB_STATIC_DIR,
+      defaultTenantSlug: "workbench",
       socialProviders: {},
       signupMode: "closed",
       allowedEmailDomains: [],
@@ -167,12 +168,24 @@ describe("readHubConfig", () => {
     });
   });
 
-  test("OPERATOR_TENANT_ID is optional and absent by default", () => {
-    expect(readHubConfig(validEnv).operatorTenantId).toBeUndefined();
+  test("WORKBENCH_DEFAULT_TENANT defaults to workbench and accepts an explicit slug", () => {
+    expect(readHubConfig(validEnv).defaultTenantSlug).toBe("workbench");
     expect(
-      readHubConfig({ ...validEnv, OPERATOR_TENANT_ID: "ten_operator" })
-        .operatorTenantId,
-    ).toBe("ten_operator");
+      readHubConfig({ ...validEnv, WORKBENCH_DEFAULT_TENANT: "acme" })
+        .defaultTenantSlug,
+    ).toBe("acme");
+  });
+
+  test("WORKBENCH_DEFAULT_TENANT rejects a non-slug value", () => {
+    expect(
+      readExpectingError({ ...validEnv, WORKBENCH_DEFAULT_TENANT: "" }),
+    ).toContain("WORKBENCH_DEFAULT_TENANT");
+    expect(
+      readExpectingError({
+        ...validEnv,
+        WORKBENCH_DEFAULT_TENANT: "Not A Slug",
+      }),
+    ).toContain("WORKBENCH_DEFAULT_TENANT");
   });
 
   test("the signup rate limit is configurable and defaults sanely", () => {
