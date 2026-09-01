@@ -83,7 +83,7 @@ const HubEnv = type({
   "WORKBENCH_DEFAULT_TENANT?": type(
     /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/,
   ).describe(
-    'slug of the root tenant the hub ensures exists at boot; every self-served personal bench parents under it — unset falls back to "workbench"',
+    'slug of the root tenant the hub ensures at boot; every self-served personal bench parents under it, and setup/seed/plant resolve the same slug — ORG_SLUG is an alias when this is unset; default "workbench"',
   ),
   "SIGNUP_RATE_LIMIT_WINDOW_SECONDS?": type(/^[1-9]\d*$/).describe(
     "the per-IP sign-up rate-limit window, in seconds, e.g. 60",
@@ -149,7 +149,7 @@ const HubEnv = type({
     "the administrator password the env-key auto-plant signs in with; unset falls back to password123, the same default `workbench setup`/`workbench seed` use",
   ),
   "ORG_SLUG?": type(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/).describe(
-    'the operator bench slug the env-key auto-plant resolves; same variable `workbench setup`/`workbench seed` read — unset falls back to "workbench"',
+    'alias for WORKBENCH_DEFAULT_TENANT when that is unset — same root/operator slug the hub, setup, seed, and the env-key auto-plant resolve; default "workbench"',
   ),
   "GOOGLE_CLIENT_ID?": type("string > 0").describe(
     "Google OAuth client id; set together with GOOGLE_CLIENT_SECRET to enable Google sign-in",
@@ -608,6 +608,14 @@ function seedModelFrom(parsed: ParsedHubEnv): ModelSource | undefined {
 export function readHubConfig(
   env: Record<string, string | undefined>,
 ): HubConfig {
+  if (env.OPERATOR_TENANT_ID !== undefined) {
+    throw new Error(
+      "OPERATOR_TENANT_ID is no longer read: the hub ensures the root tenant by slug at boot. " +
+        "Set WORKBENCH_DEFAULT_TENANT to your existing root tenant's slug " +
+        '(or remove OPERATOR_TENANT_ID to keep the default slug "workbench"), then restart.',
+    );
+  }
+
   const parsed = HubEnv(env);
   if (parsed instanceof type.errors) {
     throw new Error(
@@ -630,13 +638,21 @@ export function readHubConfig(
           .map((d) => d.trim())
           .filter((d) => d.length > 0);
 
+  // One deployment fact shared by boot parenting, setup/seed, and the
+  // env-key auto-plant. WORKBENCH_DEFAULT_TENANT wins; ORG_SLUG is the
+  // alias when that is unset.
+  const defaultTenantSlug =
+    parsed.WORKBENCH_DEFAULT_TENANT ??
+    parsed.ORG_SLUG ??
+    DEFAULT_PLANT_ORG_SLUG;
+
   const hubConfig: { -readonly [K in keyof HubConfig]: HubConfig[K] } = {
     databaseUrl: parsed.DATABASE_URL,
     baseUrl: parsed.BASE_URL,
     sessionSecret: parsed.SESSION_SECRET,
     hubDataDir: parsed.HUB_DATA_DIR,
     hubStaticDir: parsed.HUB_STATIC_DIR,
-    defaultTenantSlug: parsed.WORKBENCH_DEFAULT_TENANT ?? "workbench",
+    defaultTenantSlug,
     socialProviders,
     signupMode: parsed.WORKBENCH_SIGNUP ?? "closed",
     allowedEmailDomains,
@@ -664,7 +680,7 @@ export function readHubConfig(
     envCredentialPlantAdmin: {
       email: parsed.HUB_ADMIN_EMAIL ?? DEFAULT_PLANT_ADMIN_EMAIL,
       password: parsed.HUB_ADMIN_PASSWORD ?? DEFAULT_PLANT_ADMIN_PASSWORD,
-      orgSlug: parsed.ORG_SLUG ?? DEFAULT_PLANT_ORG_SLUG,
+      orgSlug: defaultTenantSlug,
     },
     chatIdleReapMs: parsePositiveMsEnv(
       parsed.WORKBENCH_CHAT_IDLE_REAP_MS,

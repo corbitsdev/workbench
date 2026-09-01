@@ -33,6 +33,7 @@ export type BootAdminAuth = {
         name: string;
         emailVerified: boolean;
       }): Promise<{ id: string }>;
+      findAccounts(userId: string): Promise<{ providerId: string }[]>;
       linkAccount(account: {
         userId: string;
         providerId: string;
@@ -71,15 +72,42 @@ function tenantNameFromSlug(slug: string): string {
     .join(" ");
 }
 
+async function linkCredentialAccount(
+  context: Awaited<BootAdminAuth["$context"]>,
+  userId: string,
+  password: string,
+): Promise<void> {
+  const passwordHash = await context.password.hash(password);
+  await context.internalAdapter.linkAccount({
+    userId,
+    providerId: "credential",
+    accountId: userId,
+    password: passwordHash,
+  });
+}
+
 async function ensureAdminUser(
   auth: BootAdminAuth,
   admin: { email: string; password: string },
 ): Promise<string> {
   const context = await auth.$context;
   const existing = await context.internalAdapter.findUserByEmail(admin.email);
-  if (existing !== null) return existing.user.id;
+  if (existing !== null) {
+    // Partial-failure recovery: createUser may have committed while
+    // linkAccount threw. Re-boot must still ensure a credential account
+    // exists — otherwise the hub comes up and the admin cannot sign in.
+    const accounts = await context.internalAdapter.findAccounts(
+      existing.user.id,
+    );
+    const hasCredential = accounts.some(
+      (account) => account.providerId === "credential",
+    );
+    if (!hasCredential) {
+      await linkCredentialAccount(context, existing.user.id, admin.password);
+    }
+    return existing.user.id;
+  }
 
-  const passwordHash = await context.password.hash(admin.password);
   const user = await context.internalAdapter.createUser({
     email: admin.email,
     name: admin.email.split("@")[0] ?? admin.email,
@@ -89,12 +117,7 @@ async function ensureAdminUser(
     // is the honest reading of "verified", not a bypass.
     emailVerified: true,
   });
-  await context.internalAdapter.linkAccount({
-    userId: user.id,
-    providerId: "credential",
-    accountId: user.id,
-    password: passwordHash,
-  });
+  await linkCredentialAccount(context, user.id, admin.password);
   return user.id;
 }
 
@@ -177,8 +200,10 @@ async function ensureSystemRoleGrants(
 
 /**
  * Make `adminUserId` the root tenant's owner. A tenant the admin already
- * belongs to (at any role) or that already belongs to someone else is
- * left exactly as found — boot never rearranges existing memberships.
+ * belongs to with any role, or that already belongs to someone else, is
+ * left exactly as found — boot never rearranges intentional memberships.
+ * A principal with no role at all (create-then-link partial failure) is
+ * repaired by attaching the owner role.
  */
 async function ensureOwnerMembership(
   db: DB["db"],
@@ -196,7 +221,29 @@ async function ensureOwnerMembership(
         eq(principal.refId, adminUserId),
       ),
     );
-  if (adminMemberships.length > 0) return;
+  if (adminMemberships.length > 0) {
+    const adminPrincipal = adminMemberships[0];
+    if (!adminPrincipal) {
+      throw new Error(
+        "ensureOwnerMembership: adminMemberships.length > 0 but [0] is missing",
+      );
+    }
+    const existingRoles = await db
+      .select({ roleId: principalRole.roleId })
+      .from(principalRole)
+      .where(eq(principalRole.principalId, adminPrincipal.id));
+    if (existingRoles.length === 0) {
+      await db
+        .insert(principalRole)
+        .values({
+          principalId: adminPrincipal.id,
+          roleId: ownerRoleId,
+          createdAt: new Date(),
+        })
+        .onConflictDoNothing();
+    }
+    return;
+  }
 
   const userMemberships = await db
     .select({ id: principal.id })
@@ -242,11 +289,14 @@ async function ensureOwnerMembership(
     );
   }
 
-  await db.insert(principalRole).values({
-    principalId: createdPrincipal.id,
-    roleId: ownerRoleId,
-    createdAt: now,
-  });
+  await db
+    .insert(principalRole)
+    .values({
+      principalId: createdPrincipal.id,
+      roleId: ownerRoleId,
+      createdAt: now,
+    })
+    .onConflictDoNothing();
 }
 
 /**
