@@ -17,6 +17,7 @@
 // workflow push is content-addressed and skips an unchanged tree, so
 // the very next boot picks up exactly where this one left off.
 
+import { reportError } from "@corbits/error-sink";
 import { getLogger } from "@intx/log";
 import {
   createHubAPI,
@@ -147,6 +148,7 @@ export async function runSystemSeed(deps: SystemSeedDeps): Promise<void> {
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : String(cause);
       if (Date.now() >= deadline) {
+        reportError(cause, { operation: "system-seed.seedRootTenant" });
         log.error`root tenant seed did not complete before its deadline (last error: ${reason}); the next boot will retry`;
         return;
       }
