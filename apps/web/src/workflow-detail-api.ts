@@ -1,20 +1,20 @@
 // The workflow detail page's one seam to the hub's read route
-// (`@corbits/workflow-catalog/detail-route.ts`, mounted at
+// (`@corbits/workflows`'s `./detail/detail-route.ts`, mounted at
 // `${TENANT_PREFIX}/workflows/definitions/:definitionAssetId/detail` in
 // `apps/hub/src/index.ts`). Wire schema and pure display helpers live in
-// `@corbits/workflow-catalog`, browser-safe like `routines-api.ts`'s own
+// `@corbits/workflows/client`, browser-safe like `routines-api.ts`'s own
 // definitions listing — this file is fetch composition only.
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 import { ApiQueryError, UnauthenticatedError } from "@corbits/api-query";
-import { WorkflowDefinitionDetail } from "@corbits/workflow-catalog";
-import type { WorkflowDefinitionDetail as WorkflowDefinitionDetailT } from "@corbits/workflow-catalog";
+import { WorkflowDefinitionDetail } from "@corbits/workflows/client";
+import type { WorkflowDefinitionDetail as WorkflowDefinitionDetailT } from "@corbits/workflows/client";
 
-export type { WorkflowDefinitionDetail as WorkflowDefinitionDetailT } from "@corbits/workflow-catalog";
+export type { WorkflowDefinitionDetail as WorkflowDefinitionDetailT } from "@corbits/workflows/client";
 export {
   workflowDetailPath,
   workflowNotLaunchableReason,
-} from "@corbits/workflow-catalog";
+} from "@corbits/workflows/client";
 
 type Validator<T> = (data: unknown) => T | ArkErrors;
 

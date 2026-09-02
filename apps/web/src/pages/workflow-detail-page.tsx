@@ -6,7 +6,7 @@
 // lifecycle isn't `deployed`.
 //
 // Never renders a credential value — only the binding names the hub
-// route already redacted to (`@corbits/workflow-catalog`'s
+// route already redacted to (`@corbits/workflows`'s `./detail`'s
 // `detail-route.ts`) — and never reads `workflow.json` (see
 // docs/workflow-model.md's retirement).
 import {

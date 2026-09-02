@@ -1,8 +1,8 @@
 // Every read and write of an agent definition's asset tree goes through
 // here, so this lineage has exactly one notion of what a definition's
-// asset holds: the source codebase `@corbits/workflow-source` renders,
-// never the retired `workflow.json` envelope the push validator now
-// refuses.
+// asset holds: the source codebase `@corbits/workflows`'s `./source`
+// renders, never the retired `workflow.json` envelope the push validator
+// now refuses.
 //
 // The rendered package's name never leaves the asset — the tree is a
 // standalone codebase the sidecar evaluates, not something anyone
@@ -19,13 +19,11 @@ import {
   WORKFLOW_SOURCE_ENTRY_PATH,
   type WorkflowSourceBlobReader,
   type WorkflowSourceTree,
-} from "@corbits/workflow-source";
-import { DEFAULT_ASSET_REF } from "@intx/hub-sessions";
-import type { AssetService } from "@intx/hub-sessions";
-import {
   WorkflowAuthorError,
   type WorkflowDeployer,
-} from "@corbits/agent-workflow-authoring";
+} from "@corbits/workflows";
+import { DEFAULT_ASSET_REF } from "@intx/hub-sessions";
+import type { AssetService } from "@intx/hub-sessions";
 
 export {
   RetiredWorkflowEnvelopeError,
@@ -69,7 +67,7 @@ export function parseAgentDefinitionEntry(
  * registry surface, just the one call that deploys a commit through the
  * native source pipeline (install -> sidecar probe -> gate -> freeze).
  * The composition root (`apps/hub`) injects the SAME deployer
- * `@corbits/agent-workflow-authoring`'s own registry calls; this
+ * `@corbits/workflows`'s `./authoring`'s own registry calls; this
  * package never reimplements install/probe/gate/freeze itself. */
 export type AgentDefinitionDeployer = Pick<WorkflowDeployer, "deploy">;
 
@@ -118,7 +116,7 @@ export async function writeAndDeployAgentDefinition(args: {
 }
 
 /** The HTTP status a `WorkflowAuthorError` from `writeAndDeployAgentDefinition`
- * should surface as — the same mapping `@corbits/agent-workflow-authoring`'s
+ * should surface as — the same mapping `@corbits/workflows`'s `./authoring`'s
  * own `workflow-routes.ts` uses for the native deploy surface, reused here
  * so a sidecar-unavailable deploy reads as the same 502 envelope shape
  * everywhere a deploy can fail. */

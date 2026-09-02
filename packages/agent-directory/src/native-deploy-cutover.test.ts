@@ -2,7 +2,7 @@
 // through `@corbits/workflow-freeze`'s `DefinitionFreezer`, a hub-local
 // path that bypasses the native sidecar probe. This package now deploys
 // every definition write through the injected `WorkflowDeployer` — the
-// SAME seam `@corbits/agent-workflow-authoring`'s own registry calls
+// SAME seam `@corbits/workflows`'s `./authoring`'s own registry calls
 // (`sessionService.deployWorkflowFromSource`, install -> sidecar probe
 // -> gate -> freeze) — so `@corbits/workflow-freeze` must never again
 // appear in this package's source or its dependency manifest.

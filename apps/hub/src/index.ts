@@ -195,11 +195,11 @@ import {
 } from "@corbits/workflow-catalog";
 import { createConnectGithubRoutes } from "@corbits/workflow-catalog/connect-github-routes";
 import { createTemplateBlockRoutes } from "@corbits/workflow-catalog/template-block-routes";
-import { createWorkflowDetailRoute } from "@corbits/workflow-catalog/detail-route";
 import {
+  createWorkflowDetailRoute,
   renderWorkflowSourceTree,
   WORKFLOW_SOURCE_ENTRY,
-} from "@corbits/workflow-source";
+} from "@corbits/workflows";
 import {
   createDrizzleDraftStore,
   createDrizzleRoutineStore,
@@ -227,7 +227,7 @@ import {
 import {
   createDrizzleWorkflowDeploySourceStore,
   withDeploySourceRecording,
-} from "@corbits/workflow-deploy-source";
+} from "@corbits/workflows";
 import {
   FoldedRunFailedError,
   FoldedRunTimedOutError,
@@ -342,7 +342,7 @@ import {
   createWorkflowAuthorRoutes,
   WorkflowAuthorError,
   type WorkflowDeployer,
-} from "@corbits/agent-workflow-authoring";
+} from "@corbits/workflows";
 import { mountArtifacts } from "./artifacts-mount";
 import { mountWorkbenchSlackTag } from "./slack-tag-mount";
 import {
@@ -1730,8 +1730,8 @@ export async function createHub(config: HubConfig) {
   // `createWorkflowDefinitionRoutes` (`vendor/intx/hub-api/src/app.ts`
   // already mounts that one at this same `/workflows/definitions`
   // prefix): this GET is a Workbench-owned read composed over native
-  // rows plus `@corbits/workflow-deploy-source`, so it lives in
-  // `@corbits/workflow-catalog`, not the vendored tree.
+  // rows plus `@corbits/workflows`'s `./deploy-source`, so it lives in
+  // `@corbits/workflows`'s `./detail`, not the vendored tree.
   app.route(
     `${TENANT_PREFIX}/workflows/definitions`,
     createWorkflowDetailRoute({
@@ -2555,7 +2555,7 @@ export async function createHub(config: HubConfig) {
   // Template block workflows (CL-6405, cut over to native deploy in
   // CL-7364): the instantiate path's `deployBlockWorkflow` port lands
   // here — the same source-form materialization pattern (asset +
-  // `@corbits/workflow-source` tree) applied to a template's referenced
+  // `@corbits/workflows`'s `./source` tree) applied to a template's referenced
   // block definition (`code-review` today), now deployed through the
   // same `workflowDeployer` the agent-authored deploy path above uses
   // rather than a hub-local inert freeze.

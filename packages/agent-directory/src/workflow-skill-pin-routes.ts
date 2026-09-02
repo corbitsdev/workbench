@@ -94,7 +94,7 @@ export type CreateWorkflowSkillPinRoutesDeps = {
   authenticator: WorkflowRunAuthenticator;
   /** Deploys the definition's commit through the native source pipeline
    * after the rewrite; the composition root injects the SAME
-   * `WorkflowDeployer` `@corbits/agent-workflow-authoring`'s registry
+   * `WorkflowDeployer` `@corbits/workflows`'s `./authoring`'s registry
    * calls. */
   deployer: AgentDefinitionDeployer;
 };

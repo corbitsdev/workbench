@@ -3,7 +3,7 @@
 // resolves a manifest's participants through the agent-directory create
 // path, and this module resolves its `blocks` into the same
 // source-form deploy (a serialized definition rendered into a
-// `@corbits/workflow-source` tree and projected onto a
+// `@corbits/workflows`'s `./source` tree and projected onto a
 // `workflow_definition` row — see `./template-block-routes.ts` and the
 // hub's `deployWorkflowSource` binding).
 //

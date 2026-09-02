@@ -76,6 +76,10 @@ export const ENTRIES: readonly BrowserSafeEntry[] = [
   // gate; `headlineFor` is pure string work over a tool snapshot, so the
   // browser composes an approval's headline through this subpath.
   { package: "@corbits/approvals", subpath: "./headline" },
+  // CL-7373: the workflow source-tree constants, the definition-detail
+  // wire schema, and the pure lifecycle derivation — the same read
+  // `apps/web`'s workflow detail page (`workflow-detail-api.ts`) needs.
+  { package: "@corbits/workflows", subpath: "./client" },
 ];
 
 const DENYLIST_PATTERNS: readonly RegExp[] = [

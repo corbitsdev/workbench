@@ -1,4 +1,4 @@
-// Package-owned migrations for @corbits/workflow-deploy-source.
+// Package-owned migrations for @corbits/workflows's ./deploy-source.
 // Bookkeeping uses its own ledger table so the package can be extracted
 // without disentangling history from the platform drizzle journal. The
 // table this package owns lives in its own `workflow_deploy_source`

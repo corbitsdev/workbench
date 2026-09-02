@@ -8,8 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./connect-github-routes": "./src/connect-github-routes.ts",
-    "./template-block-routes": "./src/template-block-routes.ts",
-    "./detail-route": "./src/detail-route.ts"
+    "./template-block-routes": "./src/template-block-routes.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -23,7 +22,6 @@
     "@corbits/jimmy-agent": "workspace:*",
     "@corbits/scout-agent": "workspace:*",
     "@corbits/webhook-triggers": "workspace:*",
-    "@corbits/workflow-deploy-source": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@workbench/hub-client": "workspace:*",
