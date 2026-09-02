@@ -879,27 +879,6 @@ export function createRoutineRoutes(
         body.definitionAssetId ?? existing.definitionAssetId;
 
       if (
-        body.definitionAssetId !== undefined &&
-        body.definitionAssetId !== existing.definitionAssetId
-      ) {
-        const rejection = await rejectUnlaunchableTarget(
-          deps,
-          tenant.id,
-          principal.id,
-          body.definitionAssetId,
-        );
-        if (rejection !== undefined) {
-          return c.json(
-            makeErrorEnvelope({
-              code: rejection.code,
-              userMessage: rejection.userMessage,
-            }),
-            rejection.status,
-          );
-        }
-      }
-
-      if (
         body.trigger !== undefined &&
         !(await webhookTriggerValid(
           deps,
