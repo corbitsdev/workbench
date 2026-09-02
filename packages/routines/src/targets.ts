@@ -97,7 +97,7 @@ export async function listLaunchableDefinitions(
  * workflow" — both halves are checked: the catalog says the name is
  * conversational, and the frozen projection is one `step` primitive.
  */
-export function routineTargetKind(
+function computeRoutineTargetKind(
   name: string,
   wireProjection: unknown,
 ): RoutineTargetKind {
@@ -110,6 +110,27 @@ export function routineTargetKind(
   return !(step instanceof type.errors) && step.kind === "step"
     ? "agent"
     : "workflow";
+}
+
+// Re-parsing the same frozen wire projection on every call/candidate/page
+// is pure waste: the projection at one wire hash never changes once frozen.
+// Keyed by wire hash so a definition retargeted to a new deploy recomputes.
+const routineTargetKindCache = new Map<string, RoutineTargetKind>();
+
+export function routineTargetKind(
+  name: string,
+  wireProjection: unknown,
+  wireHash?: string,
+): RoutineTargetKind {
+  if (wireHash === undefined) {
+    return computeRoutineTargetKind(name, wireProjection);
+  }
+  const cacheKey = `${name}:${wireHash}`;
+  const cached = routineTargetKindCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+  const kind = computeRoutineTargetKind(name, wireProjection);
+  routineTargetKindCache.set(cacheKey, kind);
+  return kind;
 }
 
 function offeredAsRoutineTarget(name: string): boolean {
@@ -145,9 +166,16 @@ export class InvalidRoutineTargetCursorError extends Error {
   }
 }
 
-type CursorKey = { readonly name: string; readonly definitionAssetId: string };
+// Keyed on `assetName` (the stable catalog key), not the derived display
+// `name` (which can shift when a definition's description changes) — a
+// cursor built from a value that can move between two paginated requests
+// would silently skip or duplicate rows across pages.
+type CursorKey = { readonly assetName: string; readonly definitionAssetId: string };
 
-const CursorKeySchema = type({ name: "string", definitionAssetId: "string" });
+const CursorKeySchema = type({
+  assetName: "string",
+  definitionAssetId: "string",
+});
 
 function encodeCursor(key: CursorKey): string {
   return Buffer.from(JSON.stringify(key), "utf8").toString("base64url");
@@ -167,7 +195,9 @@ function decodeCursor(cursor: string): CursorKey {
 }
 
 function compareKeys(a: CursorKey, b: CursorKey): number {
-  if (a.name !== b.name) return a.name < b.name ? -1 : 1;
+  if (a.assetName !== b.assetName) {
+    return a.assetName < b.assetName ? -1 : 1;
+  }
   if (a.definitionAssetId !== b.definitionAssetId) {
     return a.definitionAssetId < b.definitionAssetId ? -1 : 1;
   }
@@ -189,41 +219,71 @@ export async function listRoutineTargets(
 ): Promise<RoutineTargetsPage> {
   const after = query.cursor === undefined ? null : decodeCursor(query.cursor);
   const candidates = await listLaunchableDefinitions(deps.db, query.tenantId);
+  const offered = candidates.filter((candidate) =>
+    offeredAsRoutineTarget(candidate.name),
+  );
+
+  // One authorize call per candidate, in parallel rather than one await
+  // per row serially — the row count this pays for is the same either
+  // way, but a tenant with hundreds of definitions no longer pays it as
+  // a strictly sequential round trip per row.
+  const decisions = await Promise.all(
+    offered.map((candidate) =>
+      authorize(
+        deps.grantStore,
+        query.principalId,
+        query.tenantId,
+        `workflow-definition:${candidate.definitionId}`,
+        "read",
+        deps.conditionRegistry,
+      ),
+    ),
+  );
 
   const visible: RoutineTarget[] = [];
-  for (const candidate of candidates) {
-    if (!offeredAsRoutineTarget(candidate.name)) continue;
-    const decision = await authorize(
-      deps.grantStore,
-      query.principalId,
-      query.tenantId,
-      `workflow-definition:${candidate.definitionId}`,
-      "read",
-      deps.conditionRegistry,
-    );
-    if (decision.effect !== "allow") continue;
+  offered.forEach((candidate, index) => {
+    const decision = decisions[index];
+    if (decision === undefined || decision.effect !== "allow") return;
     visible.push({
       definitionAssetId: candidate.definitionAssetId,
       definitionId: candidate.definitionId,
       assetName: candidate.name,
       name: workflowDisplayName(candidate.name, candidate.description),
       description: candidate.description,
-      kind: routineTargetKind(candidate.name, candidate.wireProjection),
+      kind: routineTargetKind(
+        candidate.name,
+        candidate.wireProjection,
+        candidate.wireHash,
+      ),
       wireHash: candidate.wireHash,
     });
-  }
+  });
 
-  visible.sort(compareKeys);
+  visible.sort((a, b) =>
+    compareKeys(
+      { assetName: a.assetName, definitionAssetId: a.definitionAssetId },
+      { assetName: b.assetName, definitionAssetId: b.definitionAssetId },
+    ),
+  );
   const remaining =
     after === null
       ? visible
-      : visible.filter((item) => compareKeys(item, after) > 0);
+      : visible.filter(
+          (item) =>
+            compareKeys(
+              {
+                assetName: item.assetName,
+                definitionAssetId: item.definitionAssetId,
+              },
+              after,
+            ) > 0,
+        );
   const items = remaining.slice(0, query.limit);
   const last = items.at(-1);
   const nextCursor =
     remaining.length > items.length && last !== undefined
       ? encodeCursor({
-          name: last.name,
+          assetName: last.assetName,
           definitionAssetId: last.definitionAssetId,
         })
       : null;
