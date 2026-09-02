@@ -154,14 +154,12 @@ const CreateWorkflowRoutineBody = type({
 const UpdateWorkflowRoutineBody = type({
   "enabled?": "boolean",
   "name?": "string",
-  /** Retargets the routine at a different workflow asset (CL-7359) —
-   * an explicit asset id, never a name search, same as `create`'s
-   * `definitionAssetId`. */
+  /** Retargets the routine at a different workflow asset (CL-7359,
+   * CL-7353) — an explicit asset id, never a name search, same as
+   * `create`'s `definitionAssetId`. */
   "definitionAssetId?": "string > 0",
   "trigger?": RoutineTrigger,
   "input?": "Record<string, unknown>",
-  // Retargets the routine (CL-7353) — same rule as `CreateWorkflowRoutineBody`.
-  "definitionAssetId?": "string > 0",
 });
 
 const RunNowBody = type({
@@ -423,6 +421,7 @@ export function createWorkflowRoutineRoutes(
       const rejection = await rejectUnlaunchableTarget(
         deps,
         scope.tenantId,
+        scope.principalId,
         body.definitionAssetId,
       );
       if (rejection !== undefined) {
@@ -438,27 +437,6 @@ export function createWorkflowRoutineRoutes(
 
     const effectiveDefinitionAssetId =
       body.definitionAssetId ?? existing.definitionAssetId;
-
-    if (
-      body.definitionAssetId !== undefined &&
-      body.definitionAssetId !== existing.definitionAssetId
-    ) {
-      const rejection = await rejectUnlaunchableTarget(
-        deps,
-        scope.tenantId,
-        scope.principalId,
-        body.definitionAssetId,
-      );
-      if (rejection !== undefined) {
-        return c.json(
-          makeErrorEnvelope({
-            code: rejection.code,
-            userMessage: rejection.userMessage,
-          }),
-          rejection.status,
-        );
-      }
-    }
 
     if (
       body.trigger !== undefined &&

@@ -95,22 +95,20 @@ export type CreateRoutineIfAbsentResult =
 
 export interface UpdateRoutineInput {
   readonly name?: string;
-  /** Retargets the routine at a different workflow asset (CL-7359) —
-   * see `CreateRoutineInput.definitionAssetId`'s own doc comment. */
+  /**
+   * Retargets the routine to a different workflow asset (CL-7359) — the
+   * same single UPDATE as every other field here, so a launch that reads
+   * the row once (`resolveLaunchableDefinition` at fire time,
+   * `./target.ts`) never sees a half-applied retarget. The route
+   * validates this through `resolveLaunchableDefinition` before it ever
+   * reaches the store (see `./routes.ts`'s `rejectUnlaunchableTarget`) —
+   * see `CreateRoutineInput.definitionAssetId`'s own doc comment.
+   */
   readonly definitionAssetId?: string;
   readonly trigger?: RoutineTriggerT;
   readonly input?: Record<string, unknown>;
   readonly enabled?: boolean;
   readonly deliveryWorkbenchId?: string | null;
-  /**
-   * Retargets the routine to a different workflow asset — the same
-   * single UPDATE as every other field here, so a launch that reads the
-   * row once (`resolveLaunchableDefinition` at fire time, `./target.ts`)
-   * never sees a half-applied retarget. The route validates this through
-   * `resolveLaunchableDefinition` before it ever reaches the store (see
-   * `./routes.ts`'s `rejectUnlaunchableTarget`).
-   */
-  readonly definitionAssetId?: string;
 }
 
 export interface RoutineRunRow {
