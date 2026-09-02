@@ -35,7 +35,18 @@ export function DefinitionTargetPicker({
 }) {
   const navigate = useNavigate();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+  // Bumping this re-runs the load effect below without depending on
+  // `tenantId` changing — the retry button's only job.
+  const [retryTick, setRetryTick] = useState(0);
 
+  // Deps are `[tenantId, retryTick]` only, not `[tenantId, value, onChange,
+  // preselectedAssetId]` — this picker has exactly one caller today
+  // (`RoutinePanel`), which remounts on subject change and passes a stable
+  // `onChange` (`useState`+ref, per its own comment), so a stale closure
+  // over those three can't happen in practice. If a second caller ever
+  // reuses this component without remounting on `preselectedAssetId`
+  // changes, add it to this array (and accept the extra re-fetch that
+  // implies) rather than relying on this invariant silently.
   useEffect(() => {
     if (tenantId === null) return;
     let cancelled = false;
@@ -64,11 +75,12 @@ export function DefinitionTargetPicker({
     return () => {
       cancelled = true;
     };
-  }, [tenantId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see comment above
+  }, [tenantId, retryTick]);
 
   if (state.kind === "loading") {
     return (
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1.5" aria-busy="true" aria-live="polite">
         <span className="text-xs font-medium">What should this routine run?</span>
         <Skeleton className="h-9 w-full" />
       </div>
@@ -77,11 +89,19 @@ export function DefinitionTargetPicker({
 
   if (state.kind === "error") {
     return (
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1.5" aria-live="polite">
         <span className="text-xs font-medium">What should this routine run?</span>
         <p className="text-xs text-[var(--ui-danger)]" role="alert">
           {state.message}
         </p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setRetryTick((tick) => tick + 1)}
+        >
+          Retry
+        </Button>
       </div>
     );
   }
@@ -122,7 +142,7 @@ export function DefinitionTargetPicker({
   const stale = value !== null && selected === null;
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1.5" aria-live="polite">
       <label htmlFor="routine-panel-target" className="text-xs font-medium">
         What should this routine run?
       </label>
@@ -135,6 +155,9 @@ export function DefinitionTargetPicker({
           Choose a target…
         </option>
         {stale ? (
+          // Intentionally the raw id, not `labelFor` — a stale target has
+          // no entry in `targets`/`nameCounts` to look a display name up
+          // against; showing the id honestly is the point.
           <option value={value as string} disabled>
             {value} (unavailable)
           </option>

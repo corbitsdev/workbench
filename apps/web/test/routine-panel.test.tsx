@@ -459,6 +459,29 @@ describe("RoutinePanel", () => {
       expect(createRoutineCalls).toHaveLength(0);
     });
 
+    // The bail-out above must not be a silent no-op: a person who blurs
+    // with nothing picked sees an inline hint, not just an absent network
+    // call.
+    test("blurring with no target picked shows a visible hint, which clears once a target is picked", async () => {
+      await renderPanel({ routineId: null, workbenchId: "ch_1" });
+      await settle();
+
+      const name = fieldByLabel("Name this routine") as HTMLInputElement;
+      fillAndBlur(name, "Morning digest");
+      await settle();
+
+      expect(container.textContent).toContain(
+        "Pick what this routine runs before the rest can save.",
+      );
+
+      selectTarget("asset_digest");
+      await settle();
+
+      expect(container.textContent).not.toContain(
+        "Pick what this routine runs before the rest can save.",
+      );
+    });
+
     test("picking a target, then naming the routine, creates with the picked definitionAssetId", async () => {
       await renderPanel({ routineId: null, workbenchId: "ch_1" });
       await settle();
