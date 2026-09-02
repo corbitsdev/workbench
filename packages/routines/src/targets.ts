@@ -170,7 +170,10 @@ export class InvalidRoutineTargetCursorError extends Error {
 // `name` (which can shift when a definition's description changes) — a
 // cursor built from a value that can move between two paginated requests
 // would silently skip or duplicate rows across pages.
-type CursorKey = { readonly assetName: string; readonly definitionAssetId: string };
+type CursorKey = {
+  readonly assetName: string;
+  readonly definitionAssetId: string;
+};
 
 const CursorKeySchema = type({
   assetName: "string",
