@@ -25,14 +25,14 @@
 // requests racing, as `pending-seed.ts` explicitly allows) can both
 // pass this check and both POST — the server-side conflict target is
 // what guarantees exactly one row and one "Created routine" notice.
-import { paginatedSchema } from "@intx/types";
+import { AssetWithOriginResponse } from "@intx/types";
 import { type } from "arktype";
 import { CliError } from "./errors";
 import { parseAs, type ApiCall } from "./hub";
 
-const WorkflowDefinitionListItem = type({
+const WorkflowDeploymentListItem = type({
   id: "string",
-  name: "string",
+  definitionAssetId: "string",
   status: "string",
 });
 
@@ -96,27 +96,56 @@ export const DEFAULT_ROUTINE_PRESETS: readonly DefaultRoutinePreset[] = [
   },
 ];
 
-async function resolveDeployedDefinitionId(
+/**
+ * Resolves an already-deployed default workflow to the stable
+ * `definitionAssetId` `POST /routines` now requires — the workflow
+ * asset's own id, not a `workflow_definition` row id. `/workflows/
+ * definitions` (vendored `@intx/hub-api`) never exposes an asset id, so
+ * this instead finds the asset by name (`/assets?kind=workflow`, the
+ * same lookup `ensureWorkflowAsset` in `seed.ts` uses) and confirms a
+ * live deployment exists for it (`/workflows/deployments`, matching
+ * `ensureDeployment`'s own check) before handing the asset id back.
+ */
+async function resolveDeployedDefinitionAssetId(
   api: ApiCall,
   cookies: string[],
   tenantId: string,
   assetName: string,
 ): Promise<string | undefined> {
-  const listed = await api(
+  const listedAssets = await api(
     "GET",
-    `/api/tenants/${tenantId}/workflows/definitions`,
+    `/api/tenants/${tenantId}/assets?kind=workflow&inherited=false`,
     undefined,
     cookies,
   );
-  const page = parseAs(
-    paginatedSchema(WorkflowDefinitionListItem),
-    listed.data,
-    "workflow definitions response",
+  const assets = parseAs(
+    AssetWithOriginResponse.array(),
+    listedAssets.data,
+    "assets response",
   );
-  return page.data.find(
-    (definition) =>
-      definition.name === assetName && definition.status === "deployed",
-  )?.id;
+  const asset = assets.find((a) => a.name === assetName);
+  if (asset === undefined) return undefined;
+
+  const listedDeployments = await api(
+    "GET",
+    `/api/tenants/${tenantId}/workflows/deployments`,
+    undefined,
+    cookies,
+  );
+  const deployments = parseAs(
+    WorkflowDeploymentListItem.array(),
+    listedDeployments.data,
+    "deployments response",
+  );
+  // Mirrors `isLiveDeploymentStatus` in `seed.ts` — duplicated locally
+  // rather than imported to avoid a circular import (`seed.ts` imports
+  // `ensureDefaultRoutines` from this file).
+  const isLiveDeploymentStatus = (status: string): boolean =>
+    status === "deployed" || status === "pending";
+  const isDeployed = deployments.some(
+    (d) => d.definitionAssetId === asset.id && isLiveDeploymentStatus(d.status),
+  );
+  return isDeployed ? asset.id : undefined;
 }
 
 /**
@@ -174,13 +203,13 @@ export async function ensureDefaultRoutines(
       continue;
     }
 
-    const definitionId = await resolveDeployedDefinitionId(
+    const definitionAssetId = await resolveDeployedDefinitionAssetId(
       api,
       cookies,
       tenantId,
       preset.assetName,
     );
-    if (definitionId === undefined) {
+    if (definitionAssetId === undefined) {
       log(
         `routine "${preset.name}" skipped: no deployed definition named ` +
           `"${preset.assetName}"`,
@@ -190,13 +219,7 @@ export async function ensureDefaultRoutines(
 
     const body: Record<string, unknown> = {
       name: preset.name,
-      // TODO(CL-7350): `/workflows/definitions` (vendored
-      // `@intx/hub-api`) returns only `{id, name, status}` — no
-      // `assetId` — so this is still the definition row id, not the
-      // stable asset id `POST /routines` now requires. Flagged for a
-      // human: this seed helper needs `assetId` added to that listing
-      // (or a different lookup) before it can create a routine again.
-      definitionAssetId: definitionId,
+      definitionAssetId,
       trigger: preset.trigger,
       scope: "bench",
       input: preset.input,
