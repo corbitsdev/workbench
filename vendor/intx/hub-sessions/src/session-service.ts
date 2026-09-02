@@ -87,11 +87,6 @@ import {
   installAndApproveWorkflowDefinition,
   type InstallAndApproveArgs,
   type InstallAndApproveResult,
-  // WORKBENCH DELTA (CL-7362, see VENDORED.md): imported so a caller can
-  // supply a probe-only approval policy (an empty `ApprovalSet`) to
-  // `installAndApproveWorkflowSource` instead of always freezing under
-  // `approve-probed`.
-  type ProbeApprovalPolicy,
 } from "./workflow-probe-gate";
 
 const logger = getLogger(["interchange", "hub", "session-service"]);
@@ -250,16 +245,6 @@ export type InstallAndApproveWorkflowSourceParams = {
   definitionAssetId: string;
   /** WORKBENCH DELTA (see VENDORED.md): see `DeployWorkflowFromSourceParams.sourceRef`. */
   sourceRef?: string;
-  /**
-   * WORKBENCH DELTA (CL-7362, see VENDORED.md): caller-supplied probe
-   * approval policy, threaded through `buildInstallArgs` in place of the
-   * hardcoded `approve-probed` default. Omitted, behavior is unchanged
-   * (`approve-probed`); an empty `ApprovalSet` lets a caller run
-   * install+probe+gate purely to walk the grant surface without ever
-   * approving it, so `installAndApproveWorkflowSource` returns a
-   * `grants_not_approved` `ProbeGateResult` instead of freezing anything.
-   */
-  approvals?: ProbeApprovalPolicy;
 };
 
 /**
@@ -1524,10 +1509,7 @@ export function createSessionService(
     const common = {
       entry: params.entry,
       assetId: params.definitionAssetId,
-      // WORKBENCH DELTA (CL-7362, see VENDORED.md): honor a caller-supplied
-      // `approvals` policy (e.g. an empty `ApprovalSet` for a probe-only
-      // preview) instead of always freezing under `approve-probed`.
-      approvals: params.approvals ?? ({ mode: "approve-probed" } as const),
+      approvals: { mode: "approve-probed" } as const,
       router: sidecarRouter,
       db: dbHandle,
     };
@@ -1651,15 +1633,13 @@ export function createSessionService(
   async function installAndApproveWorkflowSource(
     params: InstallAndApproveWorkflowSourceParams,
   ): Promise<InstallAndApproveResult> {
-    // WORKBENCH DELTA (CL-7362, see VENDORED.md): return the gate's
-    // `ProbeGateResult` verbatim instead of throwing on a non-approval. Under
-    // the default `approve-probed` policy `approved.approval.ok` is always
-    // true, so every existing caller (which never supplies `approvals`) sees
-    // no behavior change; a caller that supplies a non-approving policy
-    // (e.g. an empty `ApprovalSet` for a probe-only preview) now gets the
-    // `grants_not_approved`/`wire_hash_mismatch` result back to inspect
-    // rather than a thrown `WorkflowDefinitionInvalidError`.
     const { approved } = await prepareCodeSourcedApproval(params);
+    if (!approved.approval.ok) {
+      throw new WorkflowDefinitionInvalidError(
+        approved.projection.id,
+        `code-sourced workflow install did not approve (reason: ${approved.approval.reason})`,
+      );
+    }
     return approved;
   }
 

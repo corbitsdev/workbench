@@ -48,7 +48,7 @@ test("ignores a blank or non-string title rather than rendering an empty quote",
   expect(headlineFor({ name: "send_email" }, { title: 42 })).toBe("send_email");
 });
 
-test("workflow_deploy renders the asset, short sha, and grant surface directly, ignoring the tool's own description", () => {
+test("workflow_deploy renders the package name, short sha, and declared tool pins directly, ignoring the tool's own description", () => {
   expect(
     headlineFor(
       { name: "workflow_deploy", description: "Deploy a workflow asset..." },
@@ -56,24 +56,37 @@ test("workflow_deploy renders the asset, short sha, and grant surface directly, 
         assetId: "asset_daily_digest",
         commitSha: "abcdef1234567890",
         entry: "./workflow.ts",
-        expectedWireHash: "wire_abc",
-        grants: ["email:*/send", "http:api.example.com/*"],
+        packageName: "daily-digest",
+        toolPackagePins: [
+          { name: "@corbits/email-tools", version: "1.2.3" },
+          { name: "@corbits/http-tools", version: "0.4.0" },
+        ],
       },
     ),
   ).toBe(
-    "Deploy workflow asset_daily_digest @ abcdef1 — grants: email:*/send, http:api.example.com/*",
+    "Deploy workflow daily-digest @ abcdef1 — tools: @corbits/email-tools@1.2.3, @corbits/http-tools@0.4.0",
   );
 });
 
-test("workflow_deploy with no grants reads as 'no grants' rather than an empty list", () => {
+test("workflow_deploy with no declared pins reads as 'none declared' rather than an empty list", () => {
   expect(
     headlineFor(
       { name: "workflow_deploy" },
       {
         assetId: "asset_daily_digest",
         commitSha: "abcdef1234567890",
-        grants: [],
+        packageName: "daily-digest",
+        toolPackagePins: [],
       },
     ),
-  ).toBe("Deploy workflow asset_daily_digest @ abcdef1 — grants: no grants");
+  ).toBe("Deploy workflow daily-digest @ abcdef1 — tools: none declared");
+});
+
+test("workflow_deploy falls back to the bare assetId when packageName is missing", () => {
+  expect(
+    headlineFor(
+      { name: "workflow_deploy" },
+      { assetId: "asset_daily_digest", commitSha: "abcdef1234567890" },
+    ),
+  ).toBe("Deploy workflow asset_daily_digest @ abcdef1 — tools: none declared");
 });

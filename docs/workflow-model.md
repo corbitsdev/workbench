@@ -65,22 +65,31 @@ redeploy (`resolveDefinitionSources`).
 ### Deploy approval for agent-authored workflows
 
 Upstream's deploy route freezes with `approvals: { mode: "approve-probed" }`
-(`vendor/intx/hub-sessions/src/session-service.ts`); the `ApprovalSet`
-gate exists as a policy type but has no pending-approval record. The only
-native pending-approval store is the runtime `approval` resource that an
-`approval: "ask"` tool call parks on. Workbench composes those two seams and
-adds no approval table:
+(`vendor/intx/hub-sessions/src/session-service.ts`), unmodified — no
+vendored delta grants a caller-supplied approval policy or a
+probe-without-freeze entry point (one was prototyped for CL-7362 and
+reverted; see VENDORED.md). The only native pending-approval store is the
+runtime `approval` resource that an `approval: "ask"` tool call parks on.
+Workbench composes what exists, with no vendored delta and no approval
+table:
 
-1. Myra calls a preview operation that runs the native probe with an empty
-   `ApprovalSet` and returns the walked grant surface plus the wire hash. No
-   freeze.
+1. Myra calls `workflow_deploy_preview`, a STATIC, read-only render of the
+   already-committed source at `commitSha` — package name, file list, and
+   any `toolPackagePins` a plain `export default {...}` entry declares.
+   Never installs, probes, gates, or freezes anything, so it truly cannot
+   deploy.
 2. Myra calls `workflow_deploy` (`approval: "ask"`) with the asset id,
-   commit sha, expected wire hash, and that grant list. The tool call parks;
-   the human sees exactly what will be approved.
-3. On approval the tool posts to the native deployments route. The native
-   probe re-runs; a wire hash that differs from the approved one fails
-   closed. Rejection leaves the source intact and the definition
-   unlaunchable.
+   commit sha, entry, and the preview's `packageName`/`toolPackagePins`
+   carried along on the call. The tool call parks; the approval headline
+   reads "Deploy workflow \<packageName\> @ \<sha7\> — tools: \<pins or "none
+   declared"\>" — the committed source the human is approving, not yet the
+   grants/capabilities the deploy will freeze (no no-freeze probe seam
+   exists to preview those; see the vendored-delta revert above).
+3. On approval the tool posts to the native deployments route, which runs
+   the real install + probe + gate + freeze under the default
+   `approve-probed` policy. A rejection there leaves the source intact and
+   the definition unlaunchable; runtime tool calls against the deployed
+   definition remain approval-gated regardless.
 
 Myra cannot resolve approvals: `approval:*`/`resolve` is never minted for an
 agent principal.

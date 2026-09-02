@@ -66,12 +66,14 @@ const DeployPreviewInput = type({
   entry: "string > 0",
 });
 
+const ToolPackagePinInput = type({ name: "string > 0", version: "string > 0" });
+
 const DeployInput = type({
   assetId: "string > 0",
   commitSha: "string > 0",
   entry: "string > 0",
-  expectedWireHash: "string > 0",
-  grants: "string[]",
+  "packageName?": "string > 0",
+  "toolPackagePins?": ToolPackagePinInput.array(),
 });
 
 const PACKAGE_SHAPE_DESCRIPTION =
@@ -178,7 +180,6 @@ async function runDeploy(
     assetId: input.assetId,
     commitSha: input.commitSha,
     entry: input.entry,
-    expectedWireHash: input.expectedWireHash,
   });
   return textResult(
     call.id,
@@ -295,13 +296,14 @@ export const workflowAuthoringTools = defineTool<WorkflowAuthoringEnv>({
       {
         name: WORKFLOW_DEPLOY_PREVIEW_TOOL,
         description:
-          "Preview what deploying a workflow asset's committed source " +
-          "would grant, WITHOUT deploying it: runs the same install + " +
-          "probe as workflow_deploy but never freezes anything. Returns " +
-          "the wire hash and the walked grant surface. Call this BEFORE " +
-          "workflow_deploy and pass its wireHash as expectedWireHash and " +
-          "its grants as grants on that call, so the human approving the " +
-          "deploy sees exactly what will be granted.",
+          "Read what deploying a workflow asset's committed source would " +
+          "run, WITHOUT deploying it: a static read of the already-" +
+          "committed source at commitSha (never installs, probes, gates, " +
+          "or freezes anything). Returns the package name, the file list, " +
+          "and any toolPackagePins statically declared in the entry " +
+          "module. Call this BEFORE workflow_deploy and pass its " +
+          "packageName and toolPackagePins on that call, so the human " +
+          "approving the deploy sees the real package and tools it names.",
         inputSchema: {
           type: "object",
           properties: {
@@ -331,13 +333,15 @@ export const workflowAuthoringTools = defineTool<WorkflowAuthoringEnv>({
           "Deploy a workflow asset's committed source through " +
           "Interchange's native deploy pipeline (install, probe, capability " +
           "walk, gate, freeze), making it selectable as a routine target. " +
-          "Call workflow_deploy_preview FIRST and pass its wireHash as " +
-          "expectedWireHash and its grants as grants here — that is what " +
-          "the human sees on the approval card before this call parks. " +
-          "If the deploy re-probes to a different wire hash than " +
-          "expectedWireHash (the source moved between preview and " +
-          "approval), it fails closed even though the new definition is " +
-          "frozen; re-preview and retry. Inference sources come from the " +
+          "A human must approve this before it runs: the approval card " +
+          "shows the package and tools this call names, sourced from a " +
+          "prior workflow_deploy_preview call on the same commit — call " +
+          "that FIRST and pass its packageName and toolPackagePins here " +
+          "so the approval reflects the real committed source, not just " +
+          "an asset id. Grants/capabilities are stamped by the native " +
+          "install+probe+gate this call runs, which the human does not " +
+          "see a preview of yet (CL-7362); say so if you explain this " +
+          "approval to a human. Inference sources come from the " +
           "workbench's own catalog — never pass a model or credential.",
         inputSchema: {
           type: "object",
@@ -358,28 +362,28 @@ export const workflowAuthoringTools = defineTool<WorkflowAuthoringEnv>({
               description:
                 'The interchange.workflow entry module path, e.g. "./workflow.ts".',
             },
-            expectedWireHash: {
+            packageName: {
               type: "string",
               description:
-                "The wireHash returned by workflow_deploy_preview for this " +
-                "same asset/commit/entry.",
+                "The packageName returned by workflow_deploy_preview for " +
+                "this same asset/commit, shown on the approval card.",
             },
-            grants: {
+            toolPackagePins: {
               type: "array",
-              items: { type: "string" },
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  version: { type: "string" },
+                },
+                required: ["name", "version"],
+              },
               description:
-                "The grants returned by workflow_deploy_preview for this " +
-                "same asset/commit/entry, so the approval card shows what " +
-                "will be granted.",
+                "The toolPackagePins returned by workflow_deploy_preview " +
+                "for this same asset/commit, shown on the approval card.",
             },
           },
-          required: [
-            "assetId",
-            "commitSha",
-            "entry",
-            "expectedWireHash",
-            "grants",
-          ],
+          required: ["assetId", "commitSha", "entry"],
         },
       },
     ],

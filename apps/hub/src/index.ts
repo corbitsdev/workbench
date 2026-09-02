@@ -52,7 +52,6 @@ import type { HarnessConfig } from "@intx/types/runtime";
 // CL-7362: computes the preview's wire hash from the probed-but-unapproved
 // projection `installAndApproveWorkflowSource` returns on `grants_not_approved`
 // — the gate itself only stamps this hash on the `ok:true` arm.
-import { computeWireDefinitionHash } from "@intx/types/wire-definition-hash";
 
 import {
   createAgentDefinitionRoutes,
@@ -1896,11 +1895,13 @@ export async function createHub(config: HubConfig) {
   // tenant-default resolution above; deploy always resolves against the
   // tenant's default/first-preference model.
   //
-  // `previewDeploy` (CL-7362, below) is NOT a probe-without-freeze call
-  // into native `sessionService` — the reviewed vendored delta enabling
-  // that has been reverted (see VENDORED.md). It is a static, read-only
-  // rendering of the already-committed source at `commitSha`: parses
-  // `package.json` and the entry module text and never touches
+  // `workflow_deploy_preview` (CL-7362) is NOT wired through this
+  // deployer, and is not a probe-without-freeze call into native
+  // `sessionService` — a reviewed vendored delta that would have enabled
+  // that was reverted (see VENDORED.md). Instead `registry.previewDeploy`
+  // (packages/agent-workflow-authoring) does a static, read-only render of
+  // the already-committed source at `commitSha` straight off `RepoStore`,
+  // parsing `package.json` and the entry module text; it never touches
   // install/probe/gate/freeze, so it truly cannot deploy anything.
   const workflowDeployer: WorkflowDeployer = {
     async deploy({ tenantId, principalId, assetId, commitSha, entry }) {
@@ -1979,64 +1980,6 @@ export async function createHub(config: HubConfig) {
         throw new WorkflowAuthorError(
           "unavailable",
           err instanceof Error ? err.message : "Failed to deploy workflow",
-        );
-      }
-    },
-
-    async previewDeploy({ tenantId, assetId, commitSha, entry }) {
-      const assetRow = await db.query.asset.findFirst({
-        where: and(
-          eq(assetTable.id, assetId),
-          eq(assetTable.tenantId, tenantId),
-          eq(assetTable.kind, "workflow"),
-        ),
-      });
-      if (assetRow === undefined) {
-        throw new WorkflowAuthorError(
-          "not_found",
-          `workflow asset ${assetId} not found`,
-        );
-      }
-
-      try {
-        // Empty `ApprovalSet`: nothing is pre-approved, so the gate's
-        // `grants_not_approved` arm reports the FULL walked grant surface as
-        // `unapprovedGrants` — exactly what a preview needs to show. No
-        // freeze happens on this path.
-        const approved = await sessionService.installAndApproveWorkflowSource({
-          source: {
-            kind: "asset",
-            assetId,
-            package: { format: "source", commitSha },
-          },
-          entry,
-          definitionAssetId: assetRow.id,
-          approvals: new Set<string>(),
-        });
-
-        if (approved.approval.ok) {
-          return { wireHash: approved.approval.approvedWireHash, grants: [] };
-        }
-        if (approved.approval.reason === "grants_not_approved") {
-          const wireHash = await computeWireDefinitionHash(
-            approved.projection,
-          );
-          return { wireHash, grants: approved.approval.unapprovedGrants };
-        }
-        throw new WorkflowAuthorError(
-          "invalid",
-          `deploy preview: wire hash mismatch (shipped ` +
-            `${approved.approval.shippedWireHash}, recomputed ` +
-            `${approved.approval.recomputedWireHash})`,
-        );
-      } catch (err) {
-        if (err instanceof WorkflowAuthorError) throw err;
-        if (err instanceof WorkflowDefinitionInvalidError) {
-          throw new WorkflowAuthorError("invalid", err.message);
-        }
-        throw new WorkflowAuthorError(
-          "unavailable",
-          err instanceof Error ? err.message : "Failed to preview workflow deploy",
         );
       }
     },

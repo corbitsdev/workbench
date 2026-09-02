@@ -44,15 +44,16 @@ import {
   type RepoStore,
 } from "@intx/hub-sessions";
 import type { DB } from "@intx/db";
-import {
-  asset as assetTable,
-  workflowDefinition,
-  workflowDefinitionVersion,
-} from "@intx/db/schema";
-import { and, desc, eq } from "drizzle-orm";
+import { asset as assetTable } from "@intx/db/schema";
+import { and, eq } from "drizzle-orm";
+import { type } from "arktype";
+import { PackageJSON } from "@intx/types/package-json";
 
 import { WorkflowAuthorError } from "./errors";
-import { validateWorkflowSourceTree } from "./source-tree";
+import {
+  PACKAGE_JSON_PATH,
+  validateWorkflowSourceTree,
+} from "./source-tree";
 
 const WORKFLOW_ASSET_KIND = "workflow";
 const HUB_PRINCIPAL = { kind: "hub" } as const;
@@ -98,18 +99,6 @@ export type RepublishWorkflowInput = {
 export type DeployWorkflowInput = {
   readonly commitSha: string;
   readonly entry: string;
-  /**
-   * CL-7362: the wire hash the human approved (from a prior
-   * `previewDeploy`/`workflow_deploy_preview` call). After the native
-   * deploy re-probes and freezes, this registry compares it against the
-   * newest `workflow_definition_version.approved_wire_hash` for this
-   * asset; a mismatch fails the request as `wire_hash_mismatch` even
-   * though the deploy itself already succeeded and froze that row — the
-   * frozen row is NOT rolled back, so a caller that sees this error must
-   * treat the definition as deployed-but-unverified and re-review before
-   * routing anything at it.
-   */
-  readonly expectedWireHash?: string;
 };
 
 export type WorkflowDeployResult = {
@@ -119,8 +108,15 @@ export type WorkflowDeployResult = {
 };
 
 export type WorkflowDeployPreviewResult = {
-  readonly wireHash: string;
-  readonly grants: readonly string[];
+  readonly commitSha: string;
+  readonly entry: string;
+  /** Every repo-relative file path in the committed tree at `commitSha`. */
+  readonly files: readonly string[];
+  /** The `toolPackagePins` an inert `export default {...}` entry declares;
+   * empty when the entry isn't a plain object literal (a folded/built
+   * workflow — pins aren't statically knowable there without execution). */
+  readonly toolPackagePins: readonly { readonly name: string; readonly version: string }[];
+  readonly packageName: string;
 };
 
 /**
@@ -131,6 +127,11 @@ export type WorkflowDeployPreviewResult = {
  * failures are `WorkflowAuthorError`s with a reason this registry passes
  * straight through: `not_found` (asset/commit missing), `invalid`
  * (rejected package/definition), `unavailable` (sidecar unreachable).
+ *
+ * CL-7362: this seam carries no `previewDeploy` — the preview
+ * (`registry.previewDeploy` below) never touches `sessionService` at all,
+ * so it cannot freeze anything even by accident. It is a static read of
+ * the already-committed source through `RepoStore` alone.
  */
 export type WorkflowDeployer = {
   deploy(params: {
@@ -141,38 +142,6 @@ export type WorkflowDeployer = {
     commitSha: string;
     entry: string;
   }): Promise<WorkflowDeployResult>;
-  /**
-   * CL-7362: run the same install + probe as `deploy`, but under an empty
-   * `ApprovalSet` policy so `workflow-probe-gate.ts`'s gate fails closed
-   * without freezing, and return the walked grant surface instead of
-   * throwing. Optional because NO vendored `@intx/hub-sessions` entry
-   * point exposes this today:
-   * `vendor/intx/hub-sessions/src/session-service.ts`'s
-   * `buildInstallArgs` hardcodes `approvals: { mode: "approve-probed" }
-   * as const` into every `InstallAndApproveWorkflowSourceParams` it
-   * builds (~line 1512), and both callers that reach it
-   * (`installAndApproveWorkflowSource`, `deployWorkflowFromSource`, via
-   * the shared `prepareCodeSourcedApproval`) throw
-   * `WorkflowDefinitionInvalidError` whenever
-   * `approved.approval.ok` is false rather than returning the gate's
-   * `{ ok: false, reason: "grants_not_approved", unapprovedGrants }`
-   * result to the caller. Vendoring a probe-without-freeze entry needs
-   * `InstallAndApproveWorkflowSourceParams` to accept a caller-supplied
-   * `approvals: ProbeApprovalPolicy` (threaded through
-   * `buildInstallArgs`) and a sibling of `installAndApproveWorkflowSource`
-   * that returns `approved.approval` instead of throwing on
-   * `grants_not_approved` — deliberately not reimplemented here per
-   * AGENTS.md ("never reimplement `@intx/*`"). Left unwired in
-   * `apps/hub/src/index.ts`; when absent, `previewDeploy` on the registry
-   * throws `unavailable`.
-   */
-  previewDeploy?(params: {
-    tenantId: string;
-    principalId: string;
-    assetId: string;
-    commitSha: string;
-    entry: string;
-  }): Promise<WorkflowDeployPreviewResult>;
 };
 
 export type WorkflowAuthorRegistry = {
@@ -303,27 +272,54 @@ async function collectTree(
 }
 
 /**
- * CL-7362: the newest `workflow_definition_version.approved_wire_hash`
- * across every `workflow_definition` row for this asset, joined and
- * ordered by version creation time. `null` when the asset has never been
- * deployed (no definition row) or its latest version has not yet frozen
- * an approval.
+ * CL-7362: a best-effort, read-only render of an inert `export default
+ * {...}` object literal in an entry module — the shape a folded/single-step
+ * workflow package's entry commonly takes. Deliberately NOT a JS parser or
+ * evaluator (the source is untrusted agent output and must never be
+ * executed): strips the `export default` prefix and a trailing `;`, then
+ * accepts the remainder only if `JSON.parse` on it (after quoting bare
+ * object keys, the one common non-JSON literal shape) succeeds. Any import,
+ * function call, or other executable construct fails this and the caller
+ * falls back to listing files only.
  */
-async function newestApprovedWireHash(
-  db: DB["db"],
-  assetId: string,
-): Promise<string | null> {
-  const [row] = await db
-    .select({ approvedWireHash: workflowDefinitionVersion.approvedWireHash })
-    .from(workflowDefinitionVersion)
-    .innerJoin(
-      workflowDefinition,
-      eq(workflowDefinitionVersion.definitionId, workflowDefinition.id),
-    )
-    .where(eq(workflowDefinition.assetId, assetId))
-    .orderBy(desc(workflowDefinitionVersion.createdAt))
-    .limit(1);
-  return row?.approvedWireHash ?? null;
+function tryReadInertDefaultExport(source: string): unknown {
+  const trimmed = source.trim();
+  const match = /^export\s+default\s+([\s\S]*?);?\s*$/.exec(trimmed);
+  if (match === null || match[1] === undefined) return undefined;
+  const quotedKeys = match[1].replace(
+    /([{,]\s*)([A-Za-z_$][A-Za-z0-9_$]*)(\s*:)/g,
+    '$1"$2"$3',
+  );
+  try {
+    return JSON.parse(quotedKeys);
+  } catch {
+    return undefined;
+  }
+}
+
+function extractToolPackagePins(
+  literal: unknown,
+): readonly { readonly name: string; readonly version: string }[] {
+  if (literal === undefined || literal === null || typeof literal !== "object") {
+    return [];
+  }
+  const pins = (literal as Record<string, unknown>).toolPackagePins;
+  if (!Array.isArray(pins)) return [];
+  const out: { readonly name: string; readonly version: string }[] = [];
+  for (const pin of pins) {
+    if (
+      pin !== null &&
+      typeof pin === "object" &&
+      typeof (pin as Record<string, unknown>).name === "string" &&
+      typeof (pin as Record<string, unknown>).version === "string"
+    ) {
+      out.push({
+        name: (pin as { name: string }).name,
+        version: (pin as { version: string }).version,
+      });
+    }
+  }
+  return out;
 }
 
 export function createWorkflowAuthorRegistry(
@@ -451,48 +447,7 @@ export function createWorkflowAuthorRegistry(
       const row = await requireOwnWorkflowAsset(caller, assetId);
       await requireAuthorized(deps, caller, "workflow:*", "create");
 
-      const result = await deps.deployer.deploy({
-        tenantId: caller.tenantId,
-        principalId: caller.principalId,
-        assetId,
-        commitSha: input.commitSha,
-        entry: input.entry,
-      });
-
-      if (input.expectedWireHash !== undefined) {
-        const actualWireHash = await newestApprovedWireHash(db, assetId);
-        if (actualWireHash !== input.expectedWireHash) {
-          throw new WorkflowAuthorError(
-            "wire_hash_mismatch",
-            `deploy succeeded but the frozen wire hash ` +
-              `(${actualWireHash ?? "none"}) does not match the approved ` +
-              `wire hash (${input.expectedWireHash}); the deployed ` +
-              `definition is NOT rolled back and must be re-reviewed ` +
-              `before it is routed to`,
-          );
-        }
-      }
-
-      return result;
-    },
-
-    async previewDeploy(caller, assetId, input) {
-      // Own-tenant scoping and the same `workflow:*`/create authorization
-      // as `deploy`: a preview walks the same capability surface a deploy
-      // would, just without freezing it.
-      await requireOwnWorkflowAsset(caller, assetId);
-      await requireAuthorized(deps, caller, "workflow:*", "create");
-
-      if (deps.deployer.previewDeploy === undefined) {
-        throw new WorkflowAuthorError(
-          "unavailable",
-          "deploy preview is not wired: see WorkflowDeployer.previewDeploy's " +
-            "doc comment in @corbits/agent-workflow-authoring for the " +
-            "missing native seam (CL-7362)",
-        );
-      }
-
-      return deps.deployer.previewDeploy({
+      return deps.deployer.deploy({
         tenantId: caller.tenantId,
         principalId: caller.principalId,
         assetId,
@@ -500,6 +455,71 @@ export function createWorkflowAuthorRegistry(
         commitSha: input.commitSha,
         entry: input.entry,
       });
+    },
+
+    async previewDeploy(caller, assetId, input) {
+      // Own-tenant scoping and the same `workflow:*`/create authorization
+      // as `deploy`: a preview shows exactly what `deploy` would name.
+      const row = await requireOwnWorkflowAsset(caller, assetId);
+      await requireAuthorized(deps, caller, "workflow:*", "create");
+
+      // A STATIC read of the already-committed source at `commitSha` —
+      // never install/probe/gate/freeze, so this truly cannot deploy
+      // anything. See `WorkflowDeployer`'s doc comment.
+      const reads = await repoStore.openCommittedReadsAtCommit(
+        HUB_PRINCIPAL,
+        { kind: WORKFLOW_ASSET_KIND, id: assetId },
+        input.commitSha,
+      );
+      if (reads === null) {
+        throw new WorkflowAuthorError(
+          "not_found",
+          `workflow asset ${assetId} has no commit ${input.commitSha}`,
+        );
+      }
+      const files: Record<string, string> = {};
+      await collectTree(reads, "", files);
+      if (!(input.entry in files)) {
+        throw new WorkflowAuthorError(
+          "invalid",
+          `entry ${JSON.stringify(input.entry)} names no file in commit ${input.commitSha}`,
+        );
+      }
+      const manifestSource = files[PACKAGE_JSON_PATH];
+      if (manifestSource === undefined) {
+        throw new WorkflowAuthorError(
+          "invalid",
+          `commit ${input.commitSha} has no top-level ${PACKAGE_JSON_PATH}`,
+        );
+      }
+      let manifestJson: unknown;
+      try {
+        manifestJson = JSON.parse(manifestSource);
+      } catch (cause) {
+        throw new WorkflowAuthorError(
+          "invalid",
+          `${PACKAGE_JSON_PATH} is not valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`,
+        );
+      }
+      const manifest = PackageJSON(manifestJson);
+      if (manifest instanceof type.errors) {
+        throw new WorkflowAuthorError(
+          "invalid",
+          `${PACKAGE_JSON_PATH} failed validation: ${manifest.summary}`,
+        );
+      }
+      const packageName = manifest.name;
+      const entrySource = files[input.entry] ?? "";
+      const inertLiteral = tryReadInertDefaultExport(entrySource);
+      const toolPackagePins = extractToolPackagePins(inertLiteral);
+
+      return {
+        commitSha: input.commitSha,
+        entry: input.entry,
+        files: Object.keys(files),
+        toolPackagePins,
+        packageName,
+      };
     },
   };
 }
