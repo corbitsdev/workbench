@@ -9,7 +9,8 @@
 // Documented exceptions live in ALLOWLIST below. Each entry is an
 // explicit ruling that the named file may keep a helper because it
 // already wraps the canonical `makeErrorEnvelope` (onboarding,
-// workflow-catalog) or *is* the canonical helper (hub-client).
+// connections, the hub's own template routes) or *is* the canonical
+// helper (hub-client).
 import { Glob } from "bun";
 import path from "node:path";
 import {
@@ -24,8 +25,8 @@ const SCAN_DIRS = ["apps", "packages", "workflows"];
 const ALLOWLIST = new Set<string>([
   "packages/hub-client/src/error-envelope.ts",
   "packages/onboarding/src/routes.ts",
-  "packages/workflow-catalog/src/connect-github-routes.ts",
-  "packages/workflow-catalog/src/template-block-routes.ts",
+  "packages/connections/src/connect-github-routes.ts",
+  "apps/hub/src/templates/template-block-routes.ts",
 ]);
 
 // Arrow: `const ErrorEnvelope = (code: string, message: string) => ({

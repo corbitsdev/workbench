@@ -2,7 +2,7 @@
 
 A workflow definition's own page: `GET
 /api/tenants/:tenantId/workflows/definitions/:definitionAssetId/detail`
-(`packages/workflow-catalog/src/detail-route.ts`), read at `/workflows/
+(`packages/workflows/src/detail`), read at `/workflows/
 :definitionAssetId` (`apps/web/src/pages/workflow-detail-page.tsx`). First
 useful version — read-only, no editing surface here.
 
