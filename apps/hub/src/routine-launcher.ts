@@ -123,18 +123,24 @@ export function createHubRoutineLauncher(
           eq(workflowDefinition.tenantId, input.tenantId),
         ),
       });
-      if (definitionRow === undefined) {
-        throw new Error(`no definition "${definitionId}" for this tenant`);
-      }
-      if (definitionRow.status !== "deployed") {
-        throw new Error(
-          `definition "${definitionId}" is not in a launchable ` +
-            `state (status: ${definitionRow.status})`,
+      if (
+        definitionRow === undefined ||
+        definitionRow.status !== "deployed" ||
+        definitionRow.assetId === null
+      ) {
+        const reason =
+          definitionRow === undefined ? "not_found" : "not_deployed";
+        reportError(
+          new RoutineTargetUnresolvableError(input.definitionAssetId, reason),
+          {
+            operation: "routine-launcher.launchRoutineRun",
+            tenantId: input.tenantId,
+            extra: { definitionAssetId: input.definitionAssetId, definitionId },
+          },
         );
-      }
-      if (definitionRow.assetId === null) {
-        throw new Error(
-          `definition "${definitionId}" has not been materialized`,
+        throw new RoutineTargetUnresolvableError(
+          input.definitionAssetId,
+          reason,
         );
       }
 

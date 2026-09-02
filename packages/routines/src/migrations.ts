@@ -142,6 +142,10 @@ export const routineMigrations: readonly RoutineMigration[] = [
             RETURNING "id"
         )
         SELECT count(*) INTO dropped FROM gone;
+        UPDATE "routines"."routine_draft"
+          SET "approved_routine_id" = NULL
+          WHERE "approved_routine_id" IS NOT NULL
+            AND "approved_routine_id" NOT IN (SELECT "id" FROM "routines"."routine");
         IF dropped > 0 THEN
           RAISE WARNING '@corbits/routines 0006: deleted % routine row(s) whose definition_id no longer resolves to a workflow asset', dropped;
         END IF;
