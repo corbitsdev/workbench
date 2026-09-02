@@ -27,8 +27,7 @@ const AGENTS_ZERO_DEFINITION_ID_PATTERN =
   /\bagents\[0\](?:\?\.|\.)\s*definitionId\b/g;
 const WORKFLOW_JSON_LITERAL_PATTERN = /(["'`])workflow\.json\1/g;
 
-const WORKFLOW_JSON_ALLOWED_FILE =
-  "packages/workflow-source/src/index.ts";
+const WORKFLOW_JSON_ALLOWED_FILE = "packages/workflow-source/src/index.ts";
 
 export async function scanFiles(
   root: string,
