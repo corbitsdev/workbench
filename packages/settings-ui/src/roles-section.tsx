@@ -32,11 +32,7 @@ import {
   UnauthenticatedError,
   describeQueryError,
 } from "@corbits/api-query";
-import {
-  PRINCIPAL_KIND_LABEL,
-  PRINCIPAL_KIND_ORDER,
-  principalLabel,
-} from "./identity";
+import { principalLabel } from "./identity";
 import { SETTINGS_STRINGS } from "./strings";
 import {
   assignRole,
@@ -317,7 +313,13 @@ export function RoleAssignments({
   const [principalId, setPrincipalId] = useState("");
   const [roleId, setRoleId] = useState("");
 
-  const assignments = principals.flatMap((principal) =>
+  // CL-6664: Scope both picker and assignments to user-kind principals only.
+  // Agents and workflows are machine identities — the "Person" picker and
+  // its assignment table should match the People section's member roster,
+  // not the full tenant-wide principal list.
+  const people = principals.filter((p) => p.kind === "user");
+
+  const assignments = people.flatMap((principal) =>
     principal.roles.map((role) => ({ principal, role })),
   );
 
@@ -333,21 +335,11 @@ export function RoleAssignments({
             onChange={(event) => setPrincipalId(event.target.value)}
           >
             <option value="">—</option>
-            {PRINCIPAL_KIND_ORDER.map((kind) => {
-              const kindPrincipals = principals.filter(
-                (principal) => principal.kind === kind,
-              );
-              if (kindPrincipals.length === 0) return null;
-              return (
-                <optgroup key={kind} label={PRINCIPAL_KIND_LABEL[kind]}>
-                  {kindPrincipals.map((principal) => (
-                    <option key={principal.id} value={principal.id}>
-                      {principalLabel(principal.displayName).label}
-                    </option>
-                  ))}
-                </optgroup>
-              );
-            })}
+            {people.map((principal) => (
+              <option key={principal.id} value={principal.id}>
+                {principalLabel(principal.displayName).label}
+              </option>
+            ))}
           </select>
         </label>
         <label className="settings-form-field">
