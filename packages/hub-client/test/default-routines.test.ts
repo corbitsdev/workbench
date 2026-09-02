@@ -9,17 +9,22 @@ import { collector, fakeAPI, TENANT_ID, type FakeHandler } from "./helpers";
 const TIMESTAMP = "2026-01-01T00:00:00.000Z";
 const TOUCHED_TIMESTAMP = "2026-01-02T12:00:00.000Z";
 
-function definitionRow(id: string, name: string, status = "deployed") {
+function assetRow(id: string, name: string) {
   return {
     id,
     tenantId: TENANT_ID,
+    kind: "workflow",
     name,
-    description: null,
-    currentVersion: "1",
-    status,
+    displayName: null,
+    creatorPrincipalId: null,
     createdAt: TIMESTAMP,
     updatedAt: TIMESTAMP,
+    origin: { tenantId: TENANT_ID, direct: true },
   };
+}
+
+function deploymentRow(id: string, definitionAssetId: string, status = "deployed") {
+  return { id, tenantId: TENANT_ID, definitionAssetId, status, createdAt: TIMESTAMP };
 }
 
 function routineRow(overrides: {
@@ -41,16 +46,24 @@ function routineRow(overrides: {
   };
 }
 
-function deployedDefinitionsResponse() {
+function assetsResponse(rows: ReturnType<typeof assetRow>[]) {
+  return { status: 200, data: rows };
+}
+
+function deploymentsResponse(rows: ReturnType<typeof deploymentRow>[]) {
+  return { status: 200, data: rows };
+}
+
+function deployedAssetsAndDeployments() {
   return {
-    status: 200,
-    data: {
-      data: [
-        definitionRow("wfd_digest", "workbench-digest"),
-        definitionRow("wfd_research", "last-30-days-research"),
-      ],
-      nextCursor: null,
-    },
+    assets: [
+      assetRow("ast_digest", "workbench-digest"),
+      assetRow("ast_research", "last-30-days-research"),
+    ],
+    deployments: [
+      deploymentRow("dep_digest", "ast_digest"),
+      deploymentRow("dep_research", "ast_research"),
+    ],
   };
 }
 
@@ -93,9 +106,15 @@ describe("ensureDefaultRoutines", () => {
     const handler: FakeHandler = (method, path, body) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
-        return deployedDefinitionsResponse();
+        return assetsResponse(deployedAssetsAndDeployments().assets);
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        return deploymentsResponse(deployedAssetsAndDeployments().deployments);
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return { status: 200, data: { items: [] } };
@@ -149,9 +168,9 @@ describe("ensureDefaultRoutines", () => {
     const handler: FakeHandler = (method, path) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
-        return { status: 200, data: { data: [], nextCursor: null } };
+        return assetsResponse([]);
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return { status: 200, data: { items: [] } };
@@ -180,9 +199,15 @@ describe("ensureDefaultRoutines", () => {
     const handler: FakeHandler = (method, path) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
-        return deployedDefinitionsResponse();
+        return assetsResponse(deployedAssetsAndDeployments().assets);
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        return deploymentsResponse(deployedAssetsAndDeployments().deployments);
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return { status: 200, data: { items: [] } };
@@ -214,9 +239,15 @@ describe("ensureDefaultRoutines", () => {
     const handler: FakeHandler = (method, path) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
-        return deployedDefinitionsResponse();
+        return assetsResponse(deployedAssetsAndDeployments().assets);
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        return deploymentsResponse(deployedAssetsAndDeployments().deployments);
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return {
@@ -260,9 +291,15 @@ describe("ensureDefaultRoutines", () => {
     const handler: FakeHandler = (method, path) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
-        return deployedDefinitionsResponse();
+        return assetsResponse(deployedAssetsAndDeployments().assets);
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        return deploymentsResponse(deployedAssetsAndDeployments().deployments);
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return {
@@ -291,15 +328,15 @@ describe("ensureDefaultRoutines", () => {
     const handler: FakeHandler = (method, path, body) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
-        return {
-          status: 200,
-          data: {
-            data: [definitionRow("wfd_digest", "workbench-digest")],
-            nextCursor: null,
-          },
-        };
+        return assetsResponse([assetRow("ast_digest", "workbench-digest")]);
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        return deploymentsResponse([deploymentRow("dep_digest", "ast_digest")]);
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return { status: 200, data: { items: [] } };
@@ -336,15 +373,15 @@ describe("ensureDefaultRoutines", () => {
     const handler: FakeHandler = (method, path) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
-        return {
-          status: 200,
-          data: {
-            data: [definitionRow("wfd_digest", "workbench-digest")],
-            nextCursor: null,
-          },
-        };
+        return assetsResponse([assetRow("ast_digest", "workbench-digest")]);
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        return deploymentsResponse([deploymentRow("dep_digest", "ast_digest")]);
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         // The app-level pre-check itself raced and saw nothing yet —
@@ -382,9 +419,15 @@ describe("ensureDefaultRoutines", () => {
     const handler: FakeHandler = (method, path) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
-        return deployedDefinitionsResponse();
+        return assetsResponse(deployedAssetsAndDeployments().assets);
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        return deploymentsResponse(deployedAssetsAndDeployments().deployments);
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return { status: 200, data: { items: [] } };
@@ -408,9 +451,15 @@ describe("ensureDefaultRoutines", () => {
     const handler: FakeHandler = (method, path) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
-        return deployedDefinitionsResponse();
+        return assetsResponse(deployedAssetsAndDeployments().assets);
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        return deploymentsResponse(deployedAssetsAndDeployments().deployments);
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return {
@@ -469,15 +518,15 @@ describe("ensureDefaultRoutines", () => {
     const handler: FakeHandler = (method, path) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
-        return {
-          status: 200,
-          data: {
-            data: [definitionRow("wfd_digest", "workbench-digest")],
-            nextCursor: null,
-          },
-        };
+        return assetsResponse([assetRow("ast_digest", "workbench-digest")]);
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        return deploymentsResponse([deploymentRow("dep_digest", "ast_digest")]);
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return { status: 200, data: { items: [] } };

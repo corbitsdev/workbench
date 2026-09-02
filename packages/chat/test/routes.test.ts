@@ -1322,6 +1322,7 @@ describe("GET /workbenches/:id/agents", () => {
         invitable: [{ id: "wfd_echo", name: "Echo" }],
         resolveDefinitionIdByAddress: async (address) =>
           address === "ins_invited1@acme.example" ? "wfd_echo" : undefined,
+        resolveDefinitionAssetId: async (definitionId) => `ast_${definitionId}`,
       }),
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
@@ -1366,6 +1367,7 @@ describe("GET /workbenches/:id/agents", () => {
             : address === "ins_invited2@acme.example"
               ? "wfd_other"
               : undefined,
+        resolveDefinitionAssetId: async (definitionId) => `ast_${definitionId}`,
       }),
     });
     const app = mountAs(createChatRoutes(deps), "prn_alice");
