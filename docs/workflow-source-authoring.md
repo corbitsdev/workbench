@@ -38,8 +38,8 @@ not what an agent authors by hand.
 | 1    | `POST /api/workflow-workflow-authoring/author` (`@corbits/agent-workflow-authoring`) → `AssetService.createAsset` + `populateAsset` | Run bearer + run address → tenant/principal; `asset:*`/`create`         | `{ assetId, name, commitSha }`                                 |
 | 1'   | `.../republish` → `populateAsset` on `refs/heads/main`                                                                              | `asset:<assetId>`/`write`, own-tenant row check first                   | `{ assetId, name, commitSha }`                                 |
 | 1''  | `GET .../:assetId/source` → `RepoStore.resolveRef` + `openCommittedReads` on `refs/heads/main`                                      | `asset:<assetId>`/`read`, own-tenant row check first                    | `{ assetId, name, headSha, files }`                            |
-| 2    | Preview: native probe with empty `ApprovalSet`, no freeze                                                                           | Same run scope                                                          | `{ wireHash, grants[] }` or an invalid-package error           |
-| 3    | `POST /api/tenants/:tenantId/workflows/deployments`                                                                                 | `workflow:*`/`create`; parked on `approval: "ask"` when agent-initiated | `WorkflowDeploymentResponse { id, definitionAssetId, status }` |
+| 2    | Preview: native probe with empty `ApprovalSet`, no freeze (CL-7362, not yet built)                                                  | Same run scope                                                          | `{ wireHash, grants[] }` or an invalid-package error           |
+| 3    | `POST /api/workflow-workflow-authoring/:assetId/deploy` (CL-7361) → same `sessionService.deployWorkflowFromSource` call the native `POST /api/tenants/:tenantId/workflows/deployments` route drives, with `sources` resolved server-side from the tenant catalog | Run bearer + run address → tenant/principal; `workflow:*`/`create`, own-tenant row check first; the `workflow_deploy` tool call itself carries `approval: "ask"` | `{ deploymentId, definitionAssetId, status }` |
 | 4    | Human resolves the parked approval (native `approvals` route)                                                                       | `approval:*`/`resolve`                                                  | Deploy continues or is rejected                                |
 | 5    | `workflow_definition` row frozen; appears in routine target discovery                                                               | —                                                                       | Launchable                                                     |
 
@@ -130,10 +130,17 @@ sequenceDiagram
 
 ## Seams that exist
 
-- `@corbits/workflow-authoring-tools` (CL-7360): `workflow_author`,
-  `workflow_republish`, `workflow_source_read` over the routes above,
-  pinned into Myra's `ASSISTANT_TOOL_PACKAGE_PINS` and published to the
-  `corbits-tools` registry.
+- `@corbits/workflow-authoring-tools` (CL-7360, `workflow_deploy` CL-7361):
+  `workflow_author`, `workflow_republish`, `workflow_source_read`, and
+  `workflow_deploy` (the only one carrying `approval: "ask"`) over the
+  routes above, pinned into Myra's `ASSISTANT_TOOL_PACKAGE_PINS` and
+  published to the `corbits-tools` registry.
+- `POST /api/workflow-workflow-authoring/:assetId/deploy`
+  (`agent-workflow-authoring`, CL-7361): a run-authenticated mirror of the
+  native `/workflows/deployments` route, injected from `apps/hub/src/
+index.ts` as a `WorkflowDeployer` wrapping the same
+  `sessionService.deployWorkflowFromSource` call (through
+  `withDeploySourceRecording`) with sources resolved server-side.
 - Path/package validation in `agent-workflow-authoring`'s registry
   (`validateWorkflowSourceTree`, CL-7360): runs before any grant check or
   write; caps are `MAX_SOURCE_FILE_BYTES`, `MAX_SOURCE_TREE_BYTES`,
@@ -141,8 +148,12 @@ sequenceDiagram
 
 ## Seams that do not exist yet (and where they go)
 
-- A run-authenticated preview route and the `workflow_deploy` tool: CL-7361,
-  CL-7362.
+- A preview operation returning the probed capability surface before
+  `workflow_deploy` parks (step 2 in "Deploy approval for agent-authored
+  workflows", `workflow-model.md`): CL-7362. Until then, the parked
+  approval's snapshot is `workflow_deploy`'s own tool-call arguments
+  (asset id, commit, entry) — a human sees what will be deployed, not yet
+  the grants it will hold.
 - Deleting a file from an authored asset (a `writeTreeDelta`-backed
   republish, or a `clearPrefix` the substrate accepts at the root).
 - A compare-and-set republish (`expectedHeadSha` enforced under the repo
