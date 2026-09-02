@@ -12,15 +12,59 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  realpath,
   rm,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { installDisposableHubDataDir } from "../../../test/disposable-hub-data-dir";
 import { createGitWorkflowPusher } from "./workflow-push";
 
 installDisposableHubDataDir();
+
+let repositoryRoot: string | undefined;
+
+async function findRepositoryRoot(): Promise<string> {
+  if (repositoryRoot === undefined) {
+    const proc = Bun.spawn(["git", "rev-parse", "--show-toplevel"], {
+      cwd: process.cwd(),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    if (code !== 0) {
+      throw new Error(`git rev-parse --show-toplevel failed: ${stderr}`);
+    }
+    repositoryRoot = await realpath(stdout.trim());
+  }
+  return repositoryRoot;
+}
+
+// Every fixture repo this suite writes must live outside the repository's
+// own work tree (CL-7372) — a git-fixture test must never be able to
+// touch real history, however indirectly.
+async function assertOutsideRepository(work: string): Promise<void> {
+  const resolved = await realpath(work);
+  const root = await findRepositoryRoot();
+  if (resolved === root || resolved.startsWith(`${root}${sep}`)) {
+    throw new Error(
+      `git fixture directory ${resolved} is inside the repository root ` +
+        `${root} — fixtures must live in an mkdtemp scratch dir outside ` +
+        `any work tree.`,
+    );
+  }
+}
+
+async function scratchWorkDir(prefix: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
+  await assertOutsideRepository(dir);
+  return dir;
+}
 
 async function git(args: string[], cwd: string): Promise<string> {
   const env = { ...process.env };
@@ -46,7 +90,7 @@ async function git(args: string[], cwd: string): Promise<string> {
 
 describe("createGitWorkflowPusher", () => {
   test("force-repoints a seed-owned asset whose main has diverged, rather than failing the whole seed", async () => {
-    const work = await mkdtemp(join(tmpdir(), "workflow-push-test-"));
+    const work = await scratchWorkDir("workflow-push-test-");
     try {
       const remoteDir = join(work, "remote.git");
       // A bare repo whose default branch ("trunk") is not "main" and
@@ -105,7 +149,7 @@ describe("createGitWorkflowPusher", () => {
   });
 
   test("reports unchanged, without pushing, when the seed-owned content already matches", async () => {
-    const work = await mkdtemp(join(tmpdir(), "workflow-push-test-"));
+    const work = await scratchWorkDir("workflow-push-test-");
     try {
       const remoteDir = join(work, "remote.git");
       await git(["init", "--bare", "--initial-branch=main", remoteDir], work);
@@ -134,7 +178,7 @@ describe("createGitWorkflowPusher", () => {
   });
 
   test("commits the seed tree even when the operator's inherited hooksPath would reject seed@workbench.localhost", async () => {
-    const work = await mkdtemp(join(tmpdir(), "workflow-push-hooks-"));
+    const work = await scratchWorkDir("workflow-push-hooks-");
     const previousGlobal = process.env.GIT_CONFIG_GLOBAL;
     try {
       const hooksDir = join(work, "hooks");
@@ -186,7 +230,7 @@ describe("createGitWorkflowPusher", () => {
   });
 
   test("does not commit onto an inherited GIT_DIR pointing at another work tree", async () => {
-    const work = await mkdtemp(join(tmpdir(), "workflow-push-git-dir-"));
+    const work = await scratchWorkDir("workflow-push-git-dir-");
     const previousGitDir = process.env.GIT_DIR;
     const previousWorkTree = process.env.GIT_WORK_TREE;
     try {
