@@ -30,7 +30,7 @@ import {
 export const WORKFLOW_AUTHOR_TOOL = "workflow_author";
 export const WORKFLOW_REPUBLISH_TOOL = "workflow_republish";
 export const WORKFLOW_SOURCE_READ_TOOL = "workflow_source_read";
-export const WORKFLOW_DEPLOY_PREVIEW_TOOL = "workflow_deploy_preview";
+export const WORKFLOW_DEPLOY_PREVIEW_TOOL = "wf_deploy_preview";
 export const WORKFLOW_DEPLOY_TOOL = "workflow_deploy";
 
 /** Env this bundle needs beyond `BaseEnv`: the hub origin under its own
@@ -335,7 +335,7 @@ export const workflowAuthoringTools = defineTool<WorkflowAuthoringEnv>({
           "walk, gate, freeze), making it selectable as a routine target. " +
           "A human must approve this before it runs: the approval card " +
           "shows the package and tools this call names, sourced from a " +
-          "prior workflow_deploy_preview call on the same commit — call " +
+          "prior wf_deploy_preview call on the same commit — call " +
           "that FIRST and pass its packageName and toolPackagePins here " +
           "so the approval reflects the real committed source, not just " +
           "an asset id. Grants/capabilities are stamped by the native " +
@@ -365,7 +365,7 @@ export const workflowAuthoringTools = defineTool<WorkflowAuthoringEnv>({
             packageName: {
               type: "string",
               description:
-                "The packageName returned by workflow_deploy_preview for " +
+                "The packageName returned by wf_deploy_preview for " +
                 "this same asset/commit, shown on the approval card.",
             },
             toolPackagePins: {
@@ -379,7 +379,7 @@ export const workflowAuthoringTools = defineTool<WorkflowAuthoringEnv>({
                 required: ["name", "version"],
               },
               description:
-                "The toolPackagePins returned by workflow_deploy_preview " +
+                "The toolPackagePins returned by wf_deploy_preview " +
                 "for this same asset/commit, shown on the approval card.",
             },
           },

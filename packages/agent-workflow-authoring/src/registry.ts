@@ -50,10 +50,7 @@ import { type } from "arktype";
 import { PackageJSON } from "@intx/types/package-json";
 
 import { WorkflowAuthorError } from "./errors";
-import {
-  PACKAGE_JSON_PATH,
-  validateWorkflowSourceTree,
-} from "./source-tree";
+import { PACKAGE_JSON_PATH, validateWorkflowSourceTree } from "./source-tree";
 
 const WORKFLOW_ASSET_KIND = "workflow";
 const HUB_PRINCIPAL = { kind: "hub" } as const;
@@ -115,7 +112,10 @@ export type WorkflowDeployPreviewResult = {
   /** The `toolPackagePins` an inert `export default {...}` entry declares;
    * empty when the entry isn't a plain object literal (a folded/built
    * workflow — pins aren't statically knowable there without execution). */
-  readonly toolPackagePins: readonly { readonly name: string; readonly version: string }[];
+  readonly toolPackagePins: readonly {
+    readonly name: string;
+    readonly version: string;
+  }[];
   readonly packageName: string;
 };
 
@@ -300,7 +300,11 @@ function tryReadInertDefaultExport(source: string): unknown {
 function extractToolPackagePins(
   literal: unknown,
 ): readonly { readonly name: string; readonly version: string }[] {
-  if (literal === undefined || literal === null || typeof literal !== "object") {
+  if (
+    literal === undefined ||
+    literal === null ||
+    typeof literal !== "object"
+  ) {
     return [];
   }
   const pins = (literal as Record<string, unknown>).toolPackagePins;
@@ -460,7 +464,7 @@ export function createWorkflowAuthorRegistry(
     async previewDeploy(caller, assetId, input) {
       // Own-tenant scoping and the same `workflow:*`/create authorization
       // as `deploy`: a preview shows exactly what `deploy` would name.
-      const row = await requireOwnWorkflowAsset(caller, assetId);
+      await requireOwnWorkflowAsset(caller, assetId);
       await requireAuthorized(deps, caller, "workflow:*", "create");
 
       // A STATIC read of the already-committed source at `commitSha` —

@@ -243,7 +243,7 @@ test("workflow_deploy rejects a call missing required fields without calling the
   );
 });
 
-test("workflow_deploy_preview posts assetId, commitSha, and entry to the preview route and never approval-gates", async () => {
+test("wf_deploy_preview posts assetId, commitSha, and entry to the preview route and never approval-gates", async () => {
   const bundle = workflowAuthoringTools(testEnv());
   let seenUrl: string | undefined;
   const result = await withFetch(

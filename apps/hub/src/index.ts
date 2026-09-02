@@ -1895,7 +1895,7 @@ export async function createHub(config: HubConfig) {
   // tenant-default resolution above; deploy always resolves against the
   // tenant's default/first-preference model.
   //
-  // `workflow_deploy_preview` (CL-7362) is NOT wired through this
+  // `wf_deploy_preview` (CL-7362) is NOT wired through this
   // deployer, and is not a probe-without-freeze call into native
   // `sessionService` — a reviewed vendored delta that would have enabled
   // that was reverted (see VENDORED.md). Instead `registry.previewDeploy`
