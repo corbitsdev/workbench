@@ -1,5 +1,5 @@
 // check:error-envelope — a structural invariant: hub routes answer a
-// failure with `@workbench/hub-client`'s `makeErrorEnvelope` (`code`,
+// failure with `@corbits/error-sink`'s `makeErrorEnvelope` (`code`,
 // `userMessage`, `refId`). A locally-defined `{ error: { code, message } }`
 // factory is a second envelope, and a second envelope is how `refId`
 // support silently goes missing. This check greps for those factories —
@@ -10,7 +10,7 @@
 // explicit ruling that the named file may keep a helper because it
 // already wraps the canonical `makeErrorEnvelope` (onboarding,
 // connections, the hub's own template routes) or *is* the canonical
-// helper (hub-client).
+// helper (error-sink).
 import { Glob } from "bun";
 import path from "node:path";
 import {
@@ -23,7 +23,7 @@ import {
 const SCAN_DIRS = ["apps", "packages", "workflows"];
 
 const ALLOWLIST = new Set<string>([
-  "packages/hub-client/src/error-envelope.ts",
+  "packages/error-sink/src/error-envelope.ts",
   "packages/onboarding/src/routes.ts",
   "packages/connections/src/connect-github-routes.ts",
   "apps/hub/src/templates/template-block-routes.ts",
@@ -73,7 +73,7 @@ export function auditLocalErrorEnvelopeFactories(
     if (!arrow && !fn) continue;
     report.violations.push(
       `${relPath}: defines a local { error: { code, message } } factory. ` +
-        `Hub routes must use makeErrorEnvelope from @workbench/hub-client ` +
+        `Hub routes must use makeErrorEnvelope from @corbits/error-sink ` +
         `so every failure carries code, userMessage, and refId.`,
     );
   }

@@ -13,6 +13,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/error-sink": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/types": "workspace:*",

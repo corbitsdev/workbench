@@ -28,7 +28,7 @@ import {
   checkSignupGate,
   type AccessPolicyStore,
 } from "@workbench/access-policy";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 const NATIVE_TENANT_CREATE_PATH = "/api/tenants";
 

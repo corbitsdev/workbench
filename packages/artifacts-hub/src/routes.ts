@@ -33,7 +33,7 @@ import {
 import { isTextDecodableMediaType } from "@corbits/artifact-ui/renderer-kind";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { Hono } from "hono";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;

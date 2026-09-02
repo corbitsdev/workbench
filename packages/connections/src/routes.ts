@@ -22,13 +22,12 @@ import {
 } from "@intx/types";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { hasUsableModel } from "@corbits/inference-settings";
-import { reportError } from "@corbits/error-sink";
+import { makeErrorEnvelope, reportError } from "@corbits/error-sink";
 import {
   cookiesFromHeader,
   createHubAPI,
   ensureCredential,
   ensureProvider,
-  makeErrorEnvelope,
   parseAs,
   OLLAMA_PLACEHOLDER_SECRET,
   seedCatalog,

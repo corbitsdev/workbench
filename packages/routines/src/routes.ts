@@ -35,7 +35,7 @@ import {
   validateRetarget,
   isDeliveryWorkbenchRequired,
 } from "./routine-operations";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 const log = getLogger(["routines", "routes"]);
 

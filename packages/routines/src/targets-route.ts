@@ -7,7 +7,7 @@
 import { Hono } from "hono";
 import { type } from "arktype";
 import type { TenantEnv } from "@intx/hub-api";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 import {
   InvalidRoutineTargetCursorError,

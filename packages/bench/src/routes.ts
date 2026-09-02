@@ -7,7 +7,7 @@ import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 
 import type { BenchSettingsStore } from "./store";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 // `BenchCreateType` in packages/bench-ui/src/create-bench-dialog.tsx allows
 // exactly "global" | "sub" today; validated strictly here rather than as a

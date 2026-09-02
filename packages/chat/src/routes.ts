@@ -18,7 +18,7 @@ import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { type } from "arktype";
 import { decodedOrNull } from "@corbits/url-path";
-import { reportError } from "@corbits/error-sink";
+import { makeErrorEnvelope, reportError } from "@corbits/error-sink";
 
 import type { TenantEnv } from "@intx/hub-api";
 import type { RequireGrant } from "@intx/hub-api";
@@ -110,7 +110,7 @@ import {
   DefinitionProjectionMissingError,
 } from "@corbits/folded-runs";
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
-import { cookiesFromHeader, makeErrorEnvelope } from "@workbench/hub-client";
+import { cookiesFromHeader } from "@workbench/hub-client";
 import type { AgentTurnStore } from "./agent-turns";
 import type { ThreadStore } from "./threads";
 import { ThreadDepthCapError } from "./threads";

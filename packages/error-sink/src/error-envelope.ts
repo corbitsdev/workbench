@@ -6,10 +6,8 @@
 // hub's own logger, keyed by the same `refId`, so an operator can find
 // it without the client ever having seen it. See CL-6360.
 
-import { generateRefId } from "@corbits/error-sink";
 import { type } from "arktype";
-
-export { generateRefId };
+import { generateRefId } from "./ref-id";
 
 export const ErrorEnvelopeShape = type({
   error: {
