@@ -500,32 +500,38 @@ function RoutineEditorPanel({
     });
   };
 
-  // Picking a target never itself submits — it only clears the "no target
-  // yet" bail-out so the next field blur (Name/Instruction) can create.
-  // `targetAssetIdRef` is set synchronously here so a blur landing in the
-  // very same tick already sees the pick, not a stale pre-render snapshot.
-  const pickTarget = (definitionAssetId: string) => {
-    targetAssetIdRef.current = definitionAssetId;
-    setTargetAssetId(definitionAssetId);
-    setNeedsTargetHint(false);
-  };
-
-  // Retargeting an existing routine (CL-7358) autosaves immediately, like
-  // every other field, as a target-only PATCH — no other draft field rides
-  // along. A server rejection (404/409/403 — cross-tenant, unfrozen/
+  // Picking a target reads `routineIdRef.current` itself — the same "is
+  // there a routine yet" decision `runWrite`'s own `task` closures make —
+  // rather than the panel branching create-vs-edit at the picker's call
+  // site (`routineId === null ? pickTarget : pickTargetForEdit`, the
+  // shape this replaced). On a brand-new routine (no id yet) picking a
+  // target never itself submits — it only clears the "no target yet"
+  // bail-out so the next field blur (Name/Instruction) can create;
+  // `targetAssetIdRef` is set synchronously so a blur landing in the very
+  // same tick already sees the pick, not a stale pre-render snapshot. On
+  // an existing routine (CL-7358), picking a target autosaves immediately,
+  // like every other field, as a target-only PATCH — no other draft field
+  // rides along. A server rejection (404/409/403 — cross-tenant, unfrozen/
   // undeployed, forbidden; see `routineTargetRejection`) surfaces through
   // the panel's normal inline error path and reverts the picker to the
   // last-saved target, without touching any other unsaved input.
-  const pickTargetForEdit = (definitionAssetId: string) => {
+  const pickTarget = (definitionAssetId: string) => {
     const id = routineIdRef.current;
     if (id === null) {
-      pickTarget(definitionAssetId);
+      targetAssetIdRef.current = definitionAssetId;
+      setTargetAssetId(definitionAssetId);
+      setNeedsTargetHint(false);
       return;
     }
     const previous = targetAssetIdRef.current;
     targetAssetIdRef.current = definitionAssetId;
     setTargetAssetId(definitionAssetId);
     void runWrite(() =>
+      // This catch reverts ONLY `targetAssetIdRef`/`targetAssetId` — the
+      // two fields this PATCH ever sends. Do not fold another field's
+      // revert into this same catch if a future change widens this PATCH
+      // beyond target-only; give it its own previous/revert pair instead,
+      // the way this one is scoped to just the target.
       updateRoutine(tenantId as string, id, { definitionAssetId }).catch(
         (cause: unknown) => {
           targetAssetIdRef.current = previous;
@@ -676,7 +682,7 @@ function RoutineEditorPanel({
           <DefinitionTargetPicker
             tenantId={tenantId}
             value={targetAssetId}
-            onChange={routineId === null ? pickTarget : pickTargetForEdit}
+            onChange={pickTarget}
             onStaleChange={setTargetStale}
             {...(routineId === null && subject.preselectedAssetId !== undefined
               ? { preselectedAssetId: subject.preselectedAssetId }

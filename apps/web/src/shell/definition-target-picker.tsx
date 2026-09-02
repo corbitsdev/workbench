@@ -57,6 +57,13 @@ export function DefinitionTargetPicker({
     if (tenantId === null) return;
     let cancelled = false;
     setState({ kind: "loading" });
+    // A tenant/bench switch invalidates whatever the previous tenant's
+    // target list said about `value`'s staleness immediately, rather
+    // than leaving `onStaleChange`'s last answer (about a different
+    // tenant's targets) standing until this reload completes — a narrow
+    // window where "Run now" could otherwise stay wrongly enabled or
+    // disabled.
+    onStaleChange?.(false);
     void listAllRoutineTargets(tenantId).then(
       (targets) => {
         if (cancelled) return;
@@ -84,12 +91,26 @@ export function DefinitionTargetPicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see comment above
   }, [tenantId, retryTick]);
 
+  // The one place "is `value` stale" is computed — both the effect that
+  // reports it to `onStaleChange` and the render below (the `stale`
+  // local) read this, so a future change to the staleness rule can't
+  // drift between the two.
+  const isTargetStale = (
+    loaded: Extract<LoadState, { kind: "loaded" }>,
+    candidate: string | null,
+  ): boolean =>
+    candidate !== null &&
+    !loaded.targets.some((t) => t.definitionAssetId === candidate);
+
   useEffect(() => {
     if (state.kind !== "loaded") return;
-    const isStale =
-      value !== null &&
-      !state.targets.some((t) => t.definitionAssetId === value);
-    onStaleChange?.(isStale);
+    // `onStaleChange` is read here but deliberately not in the deps
+    // array — see this component's doc comment: the single caller
+    // passes a stable reference. A future caller passing an inline
+    // arrow would need `onStaleChange` added here (and would then
+    // re-run this effect on every render of that caller).
+    onStaleChange?.(isTargetStale(state, value));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onStaleChange must be stable; see comment above
   }, [state, value]);
 
   if (state.kind === "loading") {
@@ -161,7 +182,7 @@ export function DefinitionTargetPicker({
   const agents = targets.filter((t) => t.kind === "agent");
   const workflows = targets.filter((t) => t.kind === "workflow");
   const selected = targets.find((t) => t.definitionAssetId === value) ?? null;
-  const stale = value !== null && selected === null;
+  const stale = isTargetStale(state, value);
 
   return (
     <div className="flex flex-col gap-1.5" aria-live="polite">
