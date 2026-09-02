@@ -9,7 +9,11 @@
 import { expect, test } from "bun:test";
 import { Hono } from "hono";
 
-import type { ConditionRegistry, GrantRule, GrantStore } from "@intx/types/authz";
+import type {
+  ConditionRegistry,
+  GrantRule,
+  GrantStore,
+} from "@intx/types/authz";
 import {
   createWorkflowRoutineRoutes,
   type CreateWorkflowRoutineRoutesDeps,
