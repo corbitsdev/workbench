@@ -197,6 +197,8 @@ import {
   createRoutineRoutes,
   createRoutineTargetRoutes,
   createWorkflowRoutineRoutes,
+  listLaunchableDefinitions,
+  listRoutineTargets,
   resolveLaunchableDefinition,
   routine as routineTable,
   routineRun as routineRunTable,
@@ -2750,39 +2752,37 @@ export async function createHub(config: HubConfig) {
   }
 
   /**
-   * The routine-drafting inventory's workflow half: every deployed
-   * definition in the tenant whose catalog entry is `automatable`,
-   * carrying the exact `triggerFields`/`deliveryMode` Myra's drafted
-   * trigger input is checked against (`@corbits/routines`'
-   * `validateRoutineDraftReplyAgainstInventory`). Mirrors
-   * `listMyraConversationalAgents` below in shape, scoped to
-   * automatable rather than conversational definitions.
+   * The routine-drafting inventory's workflow half: every launchable
+   * definition (CL-7351's `listLaunchableDefinitions` — deployed,
+   * frozen, `authored`) in the tenant whose catalog entry is
+   * `automatable`, carrying the exact `triggerFields`/`deliveryMode`
+   * Myra's drafted trigger input is checked against (`@corbits/routines`'
+   * `validateRoutineDraftReplyAgainstInventory`). Sources its candidate
+   * rows from the one canonical launchable-definitions query
+   * (CL-7359) rather than a second, independently-filtered
+   * `workflowDefinition` scan. Mirrors `listMyraConversationalAgents`
+   * below in shape, scoped to automatable rather than conversational
+   * definitions.
    */
   async function listAutomatableWorkflowsForDraftInventory(
     tenantId: string,
   ): Promise<readonly RoutineDraftInventoryWorkflow[]> {
-    const rows = await db.query.workflowDefinition.findMany({
-      where: and(
-        eq(workflowDefinition.tenantId, tenantId),
-        eq(workflowDefinition.status, "deployed"),
-      ),
-    });
+    const candidates = await listLaunchableDefinitions(db, tenantId);
     const out: RoutineDraftInventoryWorkflow[] = [];
-    for (const row of rows) {
-      if (!isAutomatableWorkflowName(row.name)) continue;
-      if (row.assetId === null) continue;
-      const entry = workflowCatalogEntry(row.name);
+    for (const candidate of candidates) {
+      if (!isAutomatableWorkflowName(candidate.name)) continue;
+      const entry = workflowCatalogEntry(candidate.name);
       if (entry === undefined) continue;
       const workflow = {
-        definitionAssetId: row.assetId,
-        assetName: row.name,
-        displayName: workflowDisplayName(row.name, row.description),
+        definitionAssetId: candidate.definitionAssetId,
+        assetName: candidate.name,
+        displayName: workflowDisplayName(candidate.name, candidate.description),
         deliveryMode: entry.deliveryMode,
         triggerFields: entry.triggerFields ?? [],
       };
       out.push(
-        row.description !== null
-          ? { ...workflow, description: row.description }
+        candidate.description !== null
+          ? { ...workflow, description: candidate.description }
           : workflow,
       );
     }
@@ -2946,6 +2946,11 @@ export async function createHub(config: HubConfig) {
       authenticator: createWorkflowRunAuthenticator({ db }),
       resolveTarget: (tenantId, definitionAssetId) =>
         resolveLaunchableDefinition({ db, tenantId, definitionAssetId }),
+      listTargets: (query) =>
+        listRoutineTargets(
+          { db, grantStore: routineGrantStore, conditionRegistry: chatConditionRegistry },
+          query,
+        ),
       webhookTriggerInTenant,
       deliveryWorkbenchRequired: routineDeliveryWorkbenchRequired,
       // A routine created from inside a workbench delivers into that

@@ -1,6 +1,6 @@
-// The `@corbits/routines-tools` bundle: `routine_list`, `routine_create`,
-// `routine_update`, and `routine_run_now` — Myra's in-chat way to manage
-// the workbench's recurring/triggered automations.
+// The `@corbits/routines-tools` bundle: `routine_list`, `routine_targets`,
+// `routine_create`, `routine_update`, and `routine_run_now` — Myra's
+// in-chat way to manage the workbench's recurring/triggered automations.
 //
 // Only `routine_run_now` declares `approval: "ask"` (`@intx/agent`'s
 // native per-invocation gate): it fires a routine's target agent
@@ -21,11 +21,15 @@
 // read-only and carries no `approval` key either, mirroring
 // `@corbits/memory-tools`' `memory_list`.
 //
-// `definitionAssetId` is a required input on `routine_create`, never
-// auto-resolved: Myra must name the agent definition a routine runs
-// against, typically one she already knows from a prior `list_agents` /
-// `create_agent` call — this bundle has no opinion on which definition
-// is "right" for a given routine.
+// `definitionAssetId` is a required input on `routine_create` and
+// `routine_update`, never auto-resolved from a name inside this bundle
+// or the route behind it (CL-7359): the model resolves a user's
+// requested workflow to a `definitionAssetId` by calling
+// `routine_targets` first. When more than one target matches the name
+// the user gave, this bundle never guesses — it is the model's job (per
+// each tool's description below) to return the candidates and ask the
+// user to choose, not to pick the first match. Retargeting an existing
+// routine is `routine_update` called with a new `definitionAssetId`.
 //
 // See `./client.ts` for the workflow-run-authenticated routine routes
 // (`@corbits/routines`' `createWorkflowRoutineRoutes`) this bundle's
@@ -38,12 +42,14 @@ import { type } from "arktype";
 import {
   createRoutine,
   listRoutines,
+  listTargets,
   runRoutineNow,
   updateRoutine,
   type RoutineTriggerInput,
 } from "./client";
 
 export const ROUTINE_LIST_TOOL = "routine_list";
+export const ROUTINE_TARGETS_TOOL = "routine_targets";
 export const ROUTINE_CREATE_TOOL = "routine_create";
 export const ROUTINE_UPDATE_TOOL = "routine_update";
 export const ROUTINE_RUN_NOW_TOOL = "routine_run_now";
@@ -96,6 +102,7 @@ const RoutineUpdateInput = type({
   id: "string > 0",
   "enabled?": "boolean",
   "name?": "string > 0",
+  "definitionAssetId?": "string > 0",
   "instruction?": "string > 0",
   "input?": "Record<string, unknown>",
   "trigger?": TriggerInput,
@@ -246,6 +253,34 @@ async function runRoutineList(
   }
 }
 
+async function runRoutineTargets(
+  env: WorkflowRoutineEnv,
+  call: ToolCall,
+): Promise<ToolResult> {
+  try {
+    const items = await listTargets(clientConfig(env));
+    return {
+      callId: call.id,
+      isError: false,
+      content: JSON.stringify({
+        items: items.map((item) => ({
+          definitionAssetId: item.definitionAssetId,
+          name: item.name,
+          kind: item.kind,
+          description: item.description,
+        })),
+      }),
+    };
+  } catch (err) {
+    // report-error-ignore: mirrors runRoutineList/runRoutineCreate/
+    // runRoutineUpdate/runRoutineRunNow just above and below in this
+    // file — every tool call's own transport/HTTP failure surfaces as
+    // an honest `errorResult` a model can read and retry, the same
+    // pre-existing pattern tracked as debt for the rest of this bundle.
+    return errorResult(call.id, err);
+  }
+}
+
 async function runRoutineCreate(
   env: WorkflowRoutineEnv,
   call: ToolCall,
@@ -305,11 +340,15 @@ async function runRoutineUpdate(
   const patch: {
     enabled?: boolean;
     name?: string;
+    definitionAssetId?: string;
     trigger?: RoutineTriggerInput;
     input?: Record<string, unknown>;
   } = {};
   if (parsed.enabled !== undefined) patch.enabled = parsed.enabled;
   if (parsed.name !== undefined) patch.name = parsed.name;
+  if (parsed.definitionAssetId !== undefined) {
+    patch.definitionAssetId = parsed.definitionAssetId;
+  }
   if (parsed.trigger !== undefined) {
     patch.trigger = parsed.trigger as RoutineTriggerInput;
   }
@@ -433,6 +472,7 @@ export const routinesTools = defineTool<WorkflowRoutineEnv>({
   requires: ["hubRoutinesUrl", "sidecarToken", "address"],
   definitions: [
     { name: ROUTINE_LIST_TOOL },
+    { name: ROUTINE_TARGETS_TOOL },
     { name: ROUTINE_CREATE_TOOL },
     { name: ROUTINE_UPDATE_TOOL },
     { name: ROUTINE_RUN_NOW_TOOL, approval: "ask" },
@@ -448,10 +488,28 @@ export const routinesTools = defineTool<WorkflowRoutineEnv>({
         inputSchema: { type: "object", properties: {} },
       },
       {
+        name: ROUTINE_TARGETS_TOOL,
+        description:
+          "List the workflow definitions and agents a routine may " +
+          "target in this tenant — each with its definitionAssetId, " +
+          "name, kind (agent or workflow), and description. Always " +
+          "call this to resolve the workflow the user asked for by " +
+          "name before calling routine_create or routine_update: match " +
+          "the requested name against these results and use the " +
+          "matching definitionAssetId. If more than one target matches " +
+          "the name the user gave, do NOT pick one — show the user the " +
+          "matching candidates (name, kind, description) and ask them " +
+          "to choose before creating or updating anything.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
         name: ROUTINE_CREATE_TOOL,
         description:
           "Create a new routine: a recurring or triggered automation " +
-          "that runs an agent definition on a schedule or webhook.",
+          "that runs an agent definition on a schedule or webhook. " +
+          "Call routine_targets first to resolve the requested workflow " +
+          "to its definitionAssetId; if the name is ambiguous, ask the " +
+          "user to choose rather than creating against a guess.",
         inputSchema: {
           type: "object",
           properties: {
@@ -462,9 +520,9 @@ export const routinesTools = defineTool<WorkflowRoutineEnv>({
             definitionAssetId: {
               type: "string",
               description:
-                "The workflow asset id this routine runs — " +
-                "never invented; name one already known from a prior " +
-                "list_agents or create_agent call.",
+                "The workflow asset id this routine runs — never " +
+                "invented and never a name. Resolve it first with " +
+                "routine_targets.",
             },
             instruction: {
               type: "string",
@@ -495,7 +553,11 @@ export const routinesTools = defineTool<WorkflowRoutineEnv>({
         name: ROUTINE_UPDATE_TOOL,
         description:
           "Update an existing routine's enabled state, name, " +
-          "instruction, named input, or trigger.",
+          "instruction, named input, trigger, or target. To retarget a " +
+          "routine at a different agent or workflow, resolve the new " +
+          "target with routine_targets first (asking the user to " +
+          "choose if the name is ambiguous), then call this with the " +
+          "resolved definitionAssetId.",
         inputSchema: {
           type: "object",
           properties: {
@@ -507,6 +569,13 @@ export const routinesTools = defineTool<WorkflowRoutineEnv>({
             name: {
               type: "string",
               description: "A new name for the routine.",
+            },
+            definitionAssetId: {
+              type: "string",
+              description:
+                "Retargets the routine at a different workflow asset — " +
+                "never invented and never a name. Resolve it first with " +
+                "routine_targets.",
             },
             instruction: {
               type: "string",
@@ -551,6 +620,8 @@ export const routinesTools = defineTool<WorkflowRoutineEnv>({
       switch (call.name) {
         case ROUTINE_LIST_TOOL:
           return runRoutineList(env, call);
+        case ROUTINE_TARGETS_TOOL:
+          return runRoutineTargets(env, call);
         case ROUTINE_CREATE_TOOL:
           return runRoutineCreate(env, call);
         case ROUTINE_UPDATE_TOOL:

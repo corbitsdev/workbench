@@ -12,7 +12,11 @@
 // boundary; a transport, HTTP, or shape failure throws a plain `Error`,
 // never a fabricated result.
 import { type } from "arktype";
-import { Routine, type RoutineTriggerT } from "@corbits/routines/client";
+import {
+  Routine,
+  RoutineTargetsResponse,
+  type RoutineTriggerT,
+} from "@corbits/routines/client";
 
 export interface RoutineToolClientConfig {
   /** The hub's plain HTTP origin — same value memory-tools' `hubMemoryUrl`
@@ -49,6 +53,9 @@ export interface CreateRoutineRequest {
 export interface UpdateRoutineRequest {
   readonly enabled?: boolean;
   readonly name?: string;
+  /** Retargets the routine at a different workflow asset — see
+   * `CreateRoutineRequest.definitionAssetId`'s own doc comment. */
+  readonly definitionAssetId?: string;
   readonly trigger?: RoutineTriggerInput;
   readonly input?: Record<string, unknown>;
 }
@@ -56,6 +63,10 @@ export interface UpdateRoutineRequest {
 export interface RunRoutineNowResult {
   readonly runId: string;
 }
+
+/** A target this bundle reads back — `@corbits/routines/client`'s own
+ * wire shape, re-exported rather than duplicated. */
+export type RoutineTargetView = RoutineTargetsResponse["items"][number];
 
 const RoutineViewResponse = Routine;
 
@@ -231,4 +242,35 @@ export async function runRoutineNow(
     );
   }
   return parsed;
+}
+
+/** Lists the launchable workflow definitions/agents the calling run's
+ * tenant offers as a routine target — the same `listRoutineTargets`
+ * (`@corbits/routines/src/targets.ts`) the human picker calls, run for
+ * this run's own tenant/principal via `GET /targets`. Throws a plain
+ * `Error` on any transport, HTTP, or shape failure; never fabricates a
+ * list. */
+export async function listTargets(
+  config: RoutineToolClientConfig,
+): Promise<readonly RoutineTargetView[]> {
+  const doFetch = config.fetchImpl ?? fetch;
+  const response = await doFetch(endpoint(config, "/targets"), {
+    headers: authHeaders(config),
+  });
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(
+        response,
+        `Listing routine targets failed: ${response.status} ${response.statusText}`,
+      ),
+    );
+  }
+  const body: unknown = await response.json();
+  const parsed = RoutineTargetsResponse(body);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Routine targets response did not match the expected shape: ${parsed.summary}`,
+    );
+  }
+  return parsed.items;
 }

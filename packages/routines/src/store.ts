@@ -95,6 +95,9 @@ export type CreateRoutineIfAbsentResult =
 
 export interface UpdateRoutineInput {
   readonly name?: string;
+  /** Retargets the routine at a different workflow asset (CL-7359) —
+   * see `CreateRoutineInput.definitionAssetId`'s own doc comment. */
+  readonly definitionAssetId?: string;
   readonly trigger?: RoutineTriggerT;
   readonly input?: Record<string, unknown>;
   readonly enabled?: boolean;
