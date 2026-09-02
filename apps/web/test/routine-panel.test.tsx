@@ -87,6 +87,7 @@ let targets: TargetFixture[] = [
   },
 ];
 let targetsRequestFails = false;
+let patchTargetRejection: { status: number; message: string } | null = null;
 let chatWorkbenches: Record<string, unknown>[] = [];
 let runsByRoutineId: Record<string, Record<string, unknown>[]> = {};
 let topLevelRuns: Record<string, unknown>[] = [];
@@ -233,6 +234,21 @@ async function routeFetch(
   const patchMatch = url.match(/\/routines\/([^/?]+)$/);
   if (patchMatch && method === "PATCH") {
     const patch: Record<string, unknown> = JSON.parse(String(init?.body));
+    if (
+      patch["definitionAssetId"] !== undefined &&
+      patchTargetRejection !== null
+    ) {
+      updatedPatches.push(patch);
+      return new Response(
+        JSON.stringify({
+          error: { userMessage: patchTargetRejection.message },
+        }),
+        {
+          status: patchTargetRejection.status,
+          headers: { "content-type": "application/json" },
+        },
+      );
+    }
     updatedPatches.push(patch);
     createdRoutine = { ...(createdRoutine ?? routineRecord()), ...patch };
     routines = routines.map((r) =>
@@ -295,6 +311,7 @@ describe("RoutinePanel", () => {
     capabilitiesProbeFails = false;
     networkDelayMs = 0;
     targetsRequestFails = false;
+    patchTargetRejection = null;
     targets = [
       {
         definitionAssetId: "asset_myra",
@@ -697,14 +714,80 @@ describe("RoutinePanel", () => {
       expect(updatedPatches).toContainEqual({ enabled: true });
     });
 
-    test("existing-routine mode shows the current target's name, read-only", async () => {
+    test("existing-routine mode shows the current target already selected in the same editable picker as create mode (CL-7358)", async () => {
       createdRoutine = routineRecord({ definitionAssetId: "asset_digest" });
       routines = [createdRoutine];
       await renderPanel({ routineId: "rtn_1" });
       await settle();
 
-      expect(container.querySelector("#routine-panel-target")).toBeNull();
+      const select = container.querySelector(
+        "#routine-panel-target",
+      ) as HTMLSelectElement;
+      expect(select).not.toBeNull();
+      expect(select.value).toBe("asset_digest");
       expect(container.textContent).toContain("Morning digest workflow");
+    });
+
+    test("retargeting an existing routine sends a target-only PATCH — no other field rides along", async () => {
+      createdRoutine = routineRecord({ definitionAssetId: "asset_myra" });
+      routines = [createdRoutine];
+      await renderPanel({ routineId: "rtn_1" });
+      await settle();
+
+      selectTarget("asset_digest");
+      await settle();
+
+      expect(updatedPatches).toContainEqual({
+        definitionAssetId: "asset_digest",
+      });
+      expect(updatedPatches).toHaveLength(1);
+    });
+
+    test("a server rejection on retarget (409 unfrozen/undeployed) reverts the picker and shows the error, without losing other unsaved input", async () => {
+      createdRoutine = routineRecord({ definitionAssetId: "asset_myra" });
+      routines = [createdRoutine];
+      await renderPanel({ routineId: "rtn_1" });
+      await settle();
+
+      const instruction = fieldByLabel(
+        "What should this routine do each time it runs?",
+      ) as HTMLTextAreaElement;
+      const textareaSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value",
+      )?.set as (this: HTMLTextAreaElement, v: string) => void;
+      act(() => {
+        textareaSetter.call(instruction, "not yet blurred");
+        instruction.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+
+      patchTargetRejection = {
+        status: 409,
+        message: "That target isn't deployed yet.",
+      };
+      selectTarget("asset_digest");
+      await settle();
+
+      const select = container.querySelector(
+        "#routine-panel-target",
+      ) as HTMLSelectElement;
+      expect(select.value).toBe("asset_myra");
+      expect(container.textContent).toContain("That target isn't deployed yet.");
+      expect(instruction.value).toBe("not yet blurred");
+    });
+
+    test("an unavailable current target disables Run now until a valid target is chosen", async () => {
+      createdRoutine = routineRecord({ definitionAssetId: "asset_gone" });
+      routines = [createdRoutine];
+      await renderPanel({ routineId: "rtn_1" });
+      await settle();
+
+      expect(buttonWithText("Run now")?.hasAttribute("disabled")).toBe(true);
+
+      selectTarget("asset_digest");
+      await settle();
+
+      expect(buttonWithText("Run now")?.hasAttribute("disabled")).toBe(false);
     });
 
     test("Test run is disabled until the routine is saved, then fires the run-once call", async () => {
