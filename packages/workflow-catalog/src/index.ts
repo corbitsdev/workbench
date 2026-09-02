@@ -49,6 +49,24 @@ export {
   type ConnectGithubSetupPorts,
   type StartReviewingReposResult,
 } from "./connect-github-setup";
+export {
+  deriveWorkflowLifecycle,
+  type DefinitionLifecycleRow,
+  type WorkflowLifecycle,
+  type WorkflowLifecycleResult,
+} from "./definition-lifecycle";
+export {
+  WorkflowDefinitionDetail,
+  WorkflowDetailSource,
+  WorkflowDetailStep,
+  workflowDetailPath,
+  workflowNotLaunchableReason,
+} from "./definition-detail";
+export type {
+  WorkflowDefinitionDetail as WorkflowDefinitionDetailT,
+  WorkflowDetailSource as WorkflowDetailSourceT,
+  WorkflowDetailStep as WorkflowDetailStepT,
+} from "./definition-detail";
 
 /**
  * One named field a mail trigger reads by name — the create-time UI's only

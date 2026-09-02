@@ -195,6 +195,7 @@ import {
 } from "@corbits/workflow-catalog";
 import { createConnectGithubRoutes } from "@corbits/workflow-catalog/connect-github-routes";
 import { createTemplateBlockRoutes } from "@corbits/workflow-catalog/template-block-routes";
+import { createWorkflowDetailRoute } from "@corbits/workflow-catalog/detail-route";
 import { renderWorkflowSourceTree } from "@corbits/workflow-source";
 import { freezeInertWorkflowDefinition } from "@corbits/workflow-freeze";
 import {
@@ -1719,6 +1720,24 @@ export async function createHub(config: HubConfig) {
       // workspace parent's child workbenches (see resolveScope in
       // @corbits/insights' routes.ts).
       db,
+    }),
+  );
+  // A workflow definition's own detail page (CL-7371): what it is,
+  // whether it can run right now, its steps, and its access surface.
+  // Mounted alongside — not inside — the vendored
+  // `createWorkflowDefinitionRoutes` (`vendor/intx/hub-api/src/app.ts`
+  // already mounts that one at this same `/workflows/definitions`
+  // prefix): this GET is a Workbench-owned read composed over native
+  // rows plus `@corbits/workflow-deploy-source`, so it lives in
+  // `@corbits/workflow-catalog`, not the vendored tree.
+  app.route(
+    `${TENANT_PREFIX}/workflows/definitions`,
+    createWorkflowDetailRoute({
+      db,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
     }),
   );
   // Run key identity diagnostics: read side of the append-only

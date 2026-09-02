@@ -16,6 +16,7 @@ export const SKILLS_PATH_PREFIX = "/skills";
 export const FILES_PATH_PREFIX = "/files";
 export const PLUGINS_PATH_PREFIX = "/plugins";
 export const ROUTINES_PATH_PREFIX = "/routines";
+export const WORKFLOWS_PATH_PREFIX = "/workflows";
 export const INSIGHTS_PATH_PREFIX = "/insights";
 export const INSIGHTS_RUNS_PATH = `${INSIGHTS_PATH_PREFIX}/runs`;
 export const EVALS_PATH_PREFIX = "/evals";
@@ -66,6 +67,13 @@ export function skillIdFromPath(path: string): string | null {
  * Routines, or a segment whose percent-escapes cannot be decoded. */
 export function routineSegmentFromPath(path: string): string | null {
   return entityIdFromTopLevelPath(path, ROUTINES_PATH_PREFIX);
+}
+
+/** The definition asset id `/workflows/<id>` addresses — `null` for the
+ * bare prefix or a path outside it. A workflow definition has no slug of
+ * its own, so — like a routine — it is addressed by its opaque id. */
+export function workflowDefinitionAssetIdFromPath(path: string): string | null {
+  return entityIdFromTopLevelPath(path, WORKFLOWS_PATH_PREFIX);
 }
 
 /** Extract a settings section id from `/settings/:id` or `/settings/:id/…`
