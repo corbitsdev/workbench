@@ -6,6 +6,7 @@ import {
   ROUTINE_CREATE_TOOL,
   ROUTINE_LIST_TOOL,
   ROUTINE_RUN_NOW_TOOL,
+  ROUTINE_TARGETS_TOOL,
   ROUTINE_UPDATE_TOOL,
   type WorkflowRoutineEnv,
 } from "./tool";
@@ -41,10 +42,11 @@ function routineViewBody(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-test("declares exactly the four routine tools", () => {
+test("declares exactly the five routine tools", () => {
   const bundle = routinesTools(testEnv());
   expect(bundle.definitions.map((d) => d.name)).toEqual([
     ROUTINE_LIST_TOOL,
+    ROUTINE_TARGETS_TOOL,
     ROUTINE_CREATE_TOOL,
     ROUTINE_UPDATE_TOOL,
     ROUTINE_RUN_NOW_TOOL,
@@ -69,6 +71,7 @@ test("routine_list has no approval key — a read never needs a human gate", () 
 test('routine_create and routine_update grant no credentials and touch nothing external at call time — only routine_run_now, which fires external action immediately, keeps approval: "ask"', () => {
   expect(routinesTools.definitions).toEqual([
     { name: ROUTINE_LIST_TOOL },
+    { name: ROUTINE_TARGETS_TOOL },
     { name: ROUTINE_CREATE_TOOL },
     { name: ROUTINE_UPDATE_TOOL },
     { name: ROUTINE_RUN_NOW_TOOL, approval: "ask" },
@@ -476,6 +479,125 @@ test("returns an honest error result on an unreachable hub, never fabricating su
     );
     expect(result.isError).toBe(true);
     expect(result.content).toMatch(/connection refused/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+function routineTargetBody(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    definitionAssetId: "ast_1",
+    definitionId: "wfd_1",
+    assetName: "digest-writer",
+    name: "Digest writer",
+    description: "Summarizes overnight activity.",
+    kind: "workflow",
+    wireHash: "h",
+    ...overrides,
+  };
+}
+
+test("routine_targets, on success, returns each candidate's definitionAssetId, name, kind, and description", async () => {
+  let seenUrl: string | undefined;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL) => {
+    seenUrl = String(url);
+    return new Response(
+      JSON.stringify({ items: [routineTargetBody()], nextCursor: null }),
+    );
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = routinesTools(testEnv());
+    const result = await bundle.run(
+      callFor(ROUTINE_TARGETS_TOOL, {}),
+      new AbortController().signal,
+    );
+    expect(seenUrl).toBe(
+      "https://hub.example.com/api/workflow-routines/targets",
+    );
+    expect(result.isError).toBeFalsy();
+    expect(JSON.parse(String(result.content))).toEqual({
+      items: [
+        {
+          definitionAssetId: "ast_1",
+          name: "Digest writer",
+          kind: "workflow",
+          description: "Summarizes overnight activity.",
+        },
+      ],
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("an ambiguous name resolved through routine_targets returns every matching candidate, and the caller never proceeds to create against a guess", async () => {
+  const originalFetch = globalThis.fetch;
+  let createCalled = false;
+  globalThis.fetch = (async (url: string | URL) => {
+    if (String(url).endsWith("/targets")) {
+      return new Response(
+        JSON.stringify({
+          items: [
+            routineTargetBody({
+              definitionAssetId: "ast_1",
+              name: "Digest writer",
+            }),
+            routineTargetBody({
+              definitionAssetId: "ast_2",
+              name: "Digest writer",
+              description: "A second, differently-scoped digest writer.",
+            }),
+          ],
+          nextCursor: null,
+        }),
+      );
+    }
+    createCalled = true;
+    return new Response("unexpected create call", { status: 500 });
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = routinesTools(testEnv());
+    const result = await bundle.run(
+      callFor(ROUTINE_TARGETS_TOOL, {}),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBeFalsy();
+    const parsed = JSON.parse(String(result.content)) as {
+      items: { definitionAssetId: string; name: string }[];
+    };
+    const matches = parsed.items.filter((item) => item.name === "Digest writer");
+    expect(matches.map((item) => item.definitionAssetId)).toEqual([
+      "ast_1",
+      "ast_2",
+    ]);
+    // Two candidates share the requested name: per routine_create's own
+    // description, the caller must surface both and ask the user to
+    // choose rather than picking one — this bundle never disambiguates
+    // on its own, so no routine_create call ever happens here.
+    expect(createCalled).toBe(false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("routine_update retargets a routine by posting a resolved definitionAssetId", async () => {
+  let seenBody: unknown;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
+    seenBody = JSON.parse(String(init?.body));
+    return new Response(
+      JSON.stringify(routineViewBody({ definitionAssetId: "ast_2" })),
+    );
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = routinesTools(testEnv());
+    const result = await bundle.run(
+      callFor(ROUTINE_UPDATE_TOOL, { id: "rtn_1", definitionAssetId: "ast_2" }),
+      new AbortController().signal,
+    );
+    expect(seenBody).toEqual({ definitionAssetId: "ast_2" });
+    expect(result.isError).toBeFalsy();
   } finally {
     globalThis.fetch = originalFetch;
   }
