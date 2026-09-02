@@ -341,7 +341,11 @@ export async function rejectUnlaunchableTarget(
   tenantId: string,
   principalId: string,
   definitionAssetId: string,
-): Promise<ReturnType<typeof routineTargetRejection> | undefined> {
+): Promise<
+  | ReturnType<typeof routineTargetRejection>
+  | { readonly status: 403; readonly code: string; readonly userMessage: string }
+  | undefined
+> {
   if (deps.resolveTarget === undefined) return undefined;
   const target = await deps.resolveTarget(tenantId, definitionAssetId);
   if (!target.ok) return routineTargetRejection(target.reason);
@@ -880,6 +884,27 @@ export function createRoutineRoutes(
 
       const effectiveDefinitionAssetId =
         body.definitionAssetId ?? existing.definitionAssetId;
+
+      if (
+        body.definitionAssetId !== undefined &&
+        body.definitionAssetId !== existing.definitionAssetId
+      ) {
+        const rejection = await rejectUnlaunchableTarget(
+          deps,
+          tenant.id,
+          principal.id,
+          body.definitionAssetId,
+        );
+        if (rejection !== undefined) {
+          return c.json(
+            makeErrorEnvelope({
+              code: rejection.code,
+              userMessage: rejection.userMessage,
+            }),
+            rejection.status,
+          );
+        }
+      }
 
       if (
         body.trigger !== undefined &&
