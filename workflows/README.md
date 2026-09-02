@@ -2,10 +2,13 @@
 
 Each subdirectory is a deployable workflow package: an Interchange
 `defineWorkflow` plus a `corbits.workflow` block in its `package.json`
-that mirrors into `packages/workflow-catalog`'s `WORKFLOW_CATALOG` — the
-deploy-layer metadata the seed step and the web Routines picker both
-read (see that package's own doc comment for why the two must stay in
-lockstep).
+(`assetName`, `displayName`, `automatable`). `@workbench/templates`'s
+`WORKFLOW_CATALOG` (`templates/catalog.ts`) reads that block straight off
+each `package.json` at build time — via a static JSON import, not a
+runtime file read, so it stays importable from the browser bundle — and
+layers on the fields with no npm-visible home of their own (`whatItDoes`,
+`requiredConnections`, trigger fields, …). There is nothing to keep in
+lockstep: the `package.json` block IS the value the catalog reads.
 
 ## Status note
 
