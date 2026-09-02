@@ -272,11 +272,12 @@ async function runRoutineTargets(
       }),
     };
   } catch (err) {
-    // report-error-ignore: mirrors runRoutineList/runRoutineCreate/
-    // runRoutineUpdate/runRoutineRunNow just above and below in this
-    // file — every tool call's own transport/HTTP failure surfaces as
-    // an honest `errorResult` a model can read and retry, the same
-    // pre-existing pattern tracked as debt for the rest of this bundle.
+    // report-error-ignore: this tool call's own transport/HTTP failure
+    // surfaces as an honest `errorResult` a model can read and retry,
+    // the same pattern `runRoutineCreate`/`runRoutineUpdate`/
+    // `runRoutineRunNow` follow just below (their own catches are
+    // pre-existing and tracked as debt in the report-error baseline,
+    // not individually commented here).
     return errorResult(call.id, err);
   }
 }
