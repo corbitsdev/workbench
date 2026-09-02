@@ -86,6 +86,7 @@ function buildDeps(
     store: createInMemoryRoutineStore(),
     launcher: fakeLauncher(),
     authenticator: authenticateAsMyra,
+    listTargets: async () => ({ items: [], nextCursor: null }),
     ...overrides,
   };
 }
@@ -125,6 +126,44 @@ test("GET /routines is a 401 without a recognized run credential", async () => {
   const app = buildApp(buildDeps());
   const response = await app.request("/routines");
   expect(response.status).toBe(401);
+});
+
+test("GET /targets is a 401 without a recognized run credential", async () => {
+  const app = buildApp(buildDeps());
+  const response = await app.request("/targets");
+  expect(response.status).toBe(401);
+});
+
+test("GET /targets runs listTargets for the run's own tenant/principal", async () => {
+  const seen: unknown[] = [];
+  const app = buildApp(
+    buildDeps({
+      listTargets: async (query) => {
+        seen.push(query);
+        return {
+          items: [
+            {
+              definitionAssetId: "ast_digest",
+              definitionId: "wfd_digest",
+              assetName: "digest-writer",
+              name: "Digest writer",
+              description: null,
+              kind: "workflow",
+              wireHash: "h",
+            },
+          ],
+          nextCursor: null,
+        };
+      },
+    }),
+  );
+  const response = await app.request("/targets", { headers: AUTH_HEADERS });
+  expect(response.status).toBe(200);
+  expect(seen).toEqual([
+    { tenantId: TENANT_ID, principalId: PRINCIPAL_ID, limit: 50 },
+  ]);
+  const body = (await response.json()) as { items: { name: string }[] };
+  expect(body.items.map((item) => item.name)).toEqual(["Digest writer"]);
 });
 
 test("creates a routine scoped 'bench', never a raw id where a name belongs", async () => {

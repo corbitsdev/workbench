@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import {
   createRoutine,
   listRoutines,
+  listTargets,
   runRoutineNow,
   updateRoutine,
   type RoutineToolClientConfig,
@@ -53,6 +54,46 @@ test("listRoutines reaches the tenant's workflow-run routines endpoint with side
   expect(seenHeaders?.["authorization"]).toBe("Bearer sc-token");
   expect(seenHeaders?.["x-workflow-run-address"]).toBe("run_1@workflow");
   expect(items).toEqual([routineViewBody()] as never);
+});
+
+test("listTargets reaches the run's own /targets endpoint with sidecar auth", async () => {
+  let seenUrl: string | undefined;
+  let seenHeaders: Record<string, string> | undefined;
+  const targetBody = {
+    definitionAssetId: "ast_1",
+    definitionId: "wfd_1",
+    assetName: "digest-writer",
+    name: "Digest writer",
+    description: null,
+    kind: "workflow",
+    wireHash: "h",
+  };
+  const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+    seenUrl = String(url);
+    seenHeaders = init?.headers as Record<string, string>;
+    return new Response(
+      JSON.stringify({ items: [targetBody], nextCursor: null }),
+    );
+  }) as unknown as typeof fetch;
+
+  const items = await listTargets(testConfig(fetchImpl));
+
+  expect(seenUrl).toBe("https://hub.example.com/api/workflow-routines/targets");
+  expect(seenHeaders?.["authorization"]).toBe("Bearer sc-token");
+  expect(seenHeaders?.["x-workflow-run-address"]).toBe("run_1@workflow");
+  expect(items).toEqual([targetBody] as never);
+});
+
+test("listTargets throws an honest error on a non-ok response, never fabricating a list", async () => {
+  const fetchImpl = (async () =>
+    new Response("", {
+      status: 500,
+      statusText: "Internal Server Error",
+    })) as unknown as typeof fetch;
+
+  await expect(listTargets(testConfig(fetchImpl))).rejects.toThrow(
+    /Listing routine targets failed/,
+  );
 });
 
 test("listRoutines throws an honest error on a non-ok response, never fabricating a list", async () => {
