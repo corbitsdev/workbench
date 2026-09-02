@@ -97,7 +97,7 @@ agent principal.
 ## Deleted in CL-7364
 
 - Routine target inference from chat membership: `apps/web/src/shell/
-  routine-panel.tsx` picks a target only through `DefinitionTargetPicker`
+routine-panel.tsx` picks a target only through `DefinitionTargetPicker`
   now; no `resolveCreateTarget`, `agents[0]?.definitionId`, or "no agent
   invited" guard remains. `check:routine-target-inference` guards this —
   it fails on `agents[0]?.definitionId` / `agents[0].definitionId` in
