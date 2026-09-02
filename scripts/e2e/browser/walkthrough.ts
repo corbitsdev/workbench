@@ -1078,8 +1078,8 @@ async function run(): Promise<void> {
             () =>
               document
                 .querySelector(".shell-routine-pane")
-                ?.querySelector('[role="status"]')?.textContent
-                ?.includes("Saved") ?? false,
+                ?.querySelector('[role="status"]')
+                ?.textContent?.includes("Saved") ?? false,
             { timeout: 13_500 },
           )
           .then(() => true)
@@ -1104,8 +1104,8 @@ async function run(): Promise<void> {
             () =>
               document
                 .querySelector(".shell-routine-pane")
-                ?.querySelector('[role="status"]')?.textContent
-                ?.includes("Saved") ?? false,
+                ?.querySelector('[role="status"]')
+                ?.textContent?.includes("Saved") ?? false,
             { timeout: 15_000 },
           )
           .then(() => true)
