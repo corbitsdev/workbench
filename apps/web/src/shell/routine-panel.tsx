@@ -692,9 +692,7 @@ function RoutineEditorPanel({
           </div>
         ) : (
           <div className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium">
-              What this routine runs
-            </span>
+            <span className="text-xs font-medium">What this routine runs</span>
             <div className="rounded-[var(--ui-radius-md)] border border-[var(--ui-border)] px-2.5 py-1.5 text-sm">
               {existingTarget?.name ?? targetAssetId ?? "—"}
             </div>

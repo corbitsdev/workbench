@@ -494,9 +494,7 @@ describe("RoutinePanel", () => {
       await settle();
 
       expect(createRoutineCalls).toHaveLength(1);
-      expect(createRoutineCalls[0]?.["definitionAssetId"]).toBe(
-        "asset_digest",
-      );
+      expect(createRoutineCalls[0]?.["definitionAssetId"]).toBe("asset_digest");
       expect(createRoutineCalls[0]?.["deliveryWorkbenchId"]).toBe("ch_1");
       expect(toastMock).toHaveBeenCalled();
     });
