@@ -31,7 +31,12 @@ export const routine = routinesSchema.table("routine", {
   id: text("id").primaryKey(),
   tenantId: text("tenant_id").notNull(),
   name: text("name").notNull(),
-  definitionId: text("definition_id").notNull(),
+  // The routine's target is a workflow ASSET, not a definition row: the
+  // platform keys `workflow_definition` on `(asset_id, wire_hash)`, so
+  // every redeploy mints a new definition and only the asset is stable
+  // across them. Which definition actually runs is resolved at launch
+  // (`./target.ts`), never stored — see docs/workflow-model.md.
+  definitionAssetId: text("definition_asset_id").notNull(),
   trigger: jsonb("trigger"),
   scope: text("scope").notNull(),
   input: jsonb("input").notNull(),
@@ -116,7 +121,7 @@ export const routineDraft = routinesSchema.table("routine_draft", {
   proposedSteps: jsonb("proposed_steps").notNull().default([]),
   proposedTrigger: jsonb("proposed_trigger"),
   proposedName: text("proposed_name"),
-  definitionId: text("definition_id"),
+  definitionAssetId: text("definition_asset_id"),
   deliveryWorkbenchId: text("delivery_workbench_id").notNull(),
   scope: text("scope").notNull(),
   autonomy: jsonb("autonomy"),

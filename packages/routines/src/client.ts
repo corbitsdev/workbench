@@ -68,7 +68,12 @@ export type {
 export const Routine = type({
   id: "string",
   name: "string",
-  definitionId: "string",
+  // The routine's target: the workflow asset it follows across redeploys
+  // (stable identity), and the definition that would run right now —
+  // `null` when no deployed, approved definition currently resolves for
+  // that asset, which a UI should say plainly rather than hide.
+  definitionAssetId: "string",
+  definitionId: "string | null",
   trigger: RoutineTriggerWire,
   scope: "'personal' | 'bench'",
   input: "Record<string, unknown>",
@@ -152,7 +157,7 @@ export const RoutineDraft = type({
   proposedSteps: DraftedStep.array(),
   proposedTrigger: RoutineTriggerWire,
   proposedName: "string | null",
-  definitionId: "string | null",
+  definitionAssetId: "string | null",
   deliveryWorkbenchId: "string",
   scope: "'personal' | 'bench'",
   autonomy: "Record<string, unknown> | null",
@@ -164,7 +169,9 @@ export type RoutineDraft = typeof RoutineDraft.infer;
 
 export type CreateRoutineInput = {
   readonly name: string;
-  readonly definitionId: string;
+  /** The workflow asset this routine runs — always named explicitly by
+   * the caller; the server never infers a target. */
+  readonly definitionAssetId: string;
   readonly trigger: RoutineTriggerT;
   readonly scope: "personal" | "bench";
   /** Omitted only for a workflow whose result never posts to a workbench

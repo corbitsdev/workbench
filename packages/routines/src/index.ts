@@ -81,6 +81,19 @@ export type {
   RoutineDraftingRunnerDeps,
 } from "./myra-drafting";
 
+export {
+  pickLaunchableDefinition,
+  resolveLaunchableDefinition,
+  routineTargetRejection,
+  RoutineTargetUnresolvableError,
+} from "./target";
+export type {
+  LaunchableDefinitionCandidate,
+  LaunchableDefinitionRejection,
+  LaunchableDefinitionResolution,
+  LaunchableDefinitionResolver,
+} from "./target";
+
 export { createRoutineRoutes, fireScheduledRoutine } from "./routes";
 export type {
   CreateRoutineRoutesDeps,

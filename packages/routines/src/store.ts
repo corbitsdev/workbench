@@ -39,7 +39,7 @@ export interface RoutineRow {
   readonly id: string;
   readonly tenantId: string;
   readonly name: string;
-  readonly definitionId: string;
+  readonly definitionAssetId: string;
   readonly trigger: RoutineTriggerT;
   readonly scope: RoutineScope;
   readonly input: Record<string, unknown>;
@@ -61,7 +61,7 @@ export interface RoutineRow {
 export interface CreateRoutineInput {
   readonly tenantId: string;
   readonly name: string;
-  readonly definitionId: string;
+  readonly definitionAssetId: string;
   readonly trigger: RoutineTriggerT;
   readonly scope: RoutineScope;
   readonly input: Record<string, unknown>;
@@ -223,7 +223,7 @@ function mapRoutineRow(row: typeof routine.$inferSelect): RoutineRow {
     id: row.id,
     tenantId: row.tenantId,
     name: row.name,
-    definitionId: row.definitionId,
+    definitionAssetId: row.definitionAssetId,
     trigger: row.trigger as RoutineTriggerT,
     scope: row.scope as RoutineScope,
     input: row.input as Record<string, unknown>,
@@ -264,7 +264,7 @@ export function createDrizzleRoutineStore<
           id: generateId("workflowRun"),
           tenantId: input.tenantId,
           name: input.name,
-          definitionId: input.definitionId,
+          definitionAssetId: input.definitionAssetId,
           trigger: input.trigger,
           scope: input.scope,
           input: input.input,
@@ -329,7 +329,7 @@ export function createDrizzleRoutineStore<
           id: generateId("workflowRun"),
           tenantId: input.tenantId,
           name: input.name,
-          definitionId: input.definitionId,
+          definitionAssetId: input.definitionAssetId,
           trigger: input.trigger,
           scope: input.scope,
           input: input.input,
@@ -650,7 +650,7 @@ export function createInMemoryRoutineStore(): RoutineStore {
         id: generateId("workflowRun"),
         tenantId: input.tenantId,
         name: input.name,
-        definitionId: input.definitionId,
+        definitionAssetId: input.definitionAssetId,
         trigger: input.trigger,
         scope: input.scope,
         input: input.input,
@@ -687,7 +687,7 @@ export function createInMemoryRoutineStore(): RoutineStore {
         id: generateId("workflowRun"),
         tenantId: input.tenantId,
         name: input.name,
-        definitionId: input.definitionId,
+        definitionAssetId: input.definitionAssetId,
         trigger: input.trigger,
         scope: input.scope,
         input: input.input,

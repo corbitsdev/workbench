@@ -31,7 +31,7 @@ export type RoutineDraftRow = {
   readonly proposedSteps: readonly DraftedStep[];
   readonly proposedTrigger: RoutineTriggerT | null;
   readonly proposedName: string | null;
-  readonly definitionId: string | null;
+  readonly definitionAssetId: string | null;
   readonly deliveryWorkbenchId: string;
   readonly scope: "personal" | "bench";
   readonly autonomy: Record<string, unknown> | null;
@@ -53,7 +53,7 @@ export type ReviewDraftInput = {
   readonly proposedSteps: readonly DraftedStep[];
   readonly proposedTrigger?: RoutineTriggerT | null;
   readonly proposedName?: string | null;
-  readonly definitionId?: string | null;
+  readonly definitionAssetId?: string | null;
   readonly autonomy?: Record<string, unknown> | null;
 };
 
@@ -133,7 +133,7 @@ export interface RoutineDraftingPort {
     steps: readonly DraftedStep[];
     name?: string;
     trigger?: RoutineTriggerT | null;
-    definitionId?: string;
+    definitionAssetId?: string;
     autonomy?: Record<string, unknown>;
   }>;
 }
@@ -177,7 +177,7 @@ function mapDraft(row: typeof routineDraft.$inferSelect): RoutineDraftRow {
     proposedSteps: asSteps(row.proposedSteps),
     proposedTrigger: asTrigger(row.proposedTrigger),
     proposedName: row.proposedName ?? null,
-    definitionId: row.definitionId ?? null,
+    definitionAssetId: row.definitionAssetId ?? null,
     deliveryWorkbenchId: row.deliveryWorkbenchId,
     scope: row.scope === "personal" ? "personal" : "bench",
     autonomy:
@@ -209,7 +209,7 @@ export function createInMemoryDraftStore(): RoutineDraftStore {
         proposedSteps: [],
         proposedTrigger: null,
         proposedName: null,
-        definitionId: null,
+        definitionAssetId: null,
         deliveryWorkbenchId: input.deliveryWorkbenchId,
         scope: input.scope,
         autonomy: null,
@@ -249,10 +249,10 @@ export function createInMemoryDraftStore(): RoutineDraftStore {
           review.proposedName !== undefined
             ? review.proposedName
             : cur.proposedName,
-        definitionId:
-          review.definitionId !== undefined
-            ? review.definitionId
-            : cur.definitionId,
+        definitionAssetId:
+          review.definitionAssetId !== undefined
+            ? review.definitionAssetId
+            : cur.definitionAssetId,
         autonomy:
           review.autonomy !== undefined ? review.autonomy : cur.autonomy,
         updatedAt: new Date(),
@@ -308,7 +308,7 @@ export function createDrizzleDraftStore<
           proposedSteps: [],
           proposedTrigger: null,
           proposedName: null,
-          definitionId: null,
+          definitionAssetId: null,
           deliveryWorkbenchId: input.deliveryWorkbenchId,
           scope: input.scope,
           autonomy: null,
@@ -364,10 +364,10 @@ export function createDrizzleDraftStore<
             review.proposedName !== undefined
               ? review.proposedName
               : cur.proposedName,
-          definitionId:
-            review.definitionId !== undefined
-              ? review.definitionId
-              : cur.definitionId,
+          definitionAssetId:
+            review.definitionAssetId !== undefined
+              ? review.definitionAssetId
+              : cur.definitionAssetId,
           autonomy:
             review.autonomy !== undefined ? review.autonomy : cur.autonomy,
           updatedAt: new Date(),

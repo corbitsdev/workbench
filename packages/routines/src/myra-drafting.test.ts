@@ -17,7 +17,7 @@ const INVENTORY_SOURCES: RoutineDraftInventorySources = {
   async listAutomatableWorkflows() {
     return [
       {
-        definitionId: "wfd_relay_task",
+        definitionAssetId: "wfd_relay_task",
         assetName: "relay-task",
         displayName: "Relay task",
         deliveryMode: "inbox",
@@ -27,7 +27,7 @@ const INVENTORY_SOURCES: RoutineDraftInventorySources = {
         ],
       },
       {
-        definitionId: "wfd_digest",
+        definitionAssetId: "wfd_digest",
         assetName: "workbench-digest",
         displayName: "Workbench digest",
         deliveryMode: "workbench",
@@ -52,7 +52,7 @@ function buildDeps(
         content: JSON.stringify({
           steps: [{ title: "Summarize yesterday's messages" }],
           name: "Daily digest",
-          definitionId: "wfd_digest",
+          definitionAssetId: "wfd_digest",
           cadence: { kind: "daily", hour: 9, minute: 0 },
         }),
         runId: "wfr_draft_1",
@@ -77,7 +77,7 @@ describe("createMyraRoutineDrafting", () => {
       steps: [{ title: "Summarize yesterday's messages" }],
       name: "Daily digest",
       trigger: { kind: "daily", hour: 9, minute: 0 },
-      definitionId: "wfd_digest",
+      definitionAssetId: "wfd_digest",
     });
   });
 
@@ -87,7 +87,7 @@ describe("createMyraRoutineDrafting", () => {
         run: async () => ({
           content: JSON.stringify({
             steps: [{ title: "Run the relay task" }],
-            definitionId: "wfd_relay_task",
+            definitionAssetId: "wfd_relay_task",
             cadence: { kind: "interval", unit: "hours", every: 6 },
             triggerInput: { agent: "wfd_summarizer", prompt: "Summarize" },
           }),
@@ -97,7 +97,7 @@ describe("createMyraRoutineDrafting", () => {
     });
     const drafting = createMyraRoutineDrafting(deps);
     const proposal = await drafting.propose(INPUT);
-    expect(proposal.definitionId).toBe("wfd_relay_task");
+    expect(proposal.definitionAssetId).toBe("wfd_relay_task");
     expect(proposal.autonomy).toEqual({
       triggerInput: { agent: "wfd_summarizer", prompt: "Summarize" },
     });
@@ -118,7 +118,7 @@ describe("createMyraRoutineDrafting", () => {
     const drafting = createMyraRoutineDrafting(deps);
     const proposal = await drafting.propose(INPUT);
     expect(proposal.trigger).toBeNull();
-    expect(proposal.definitionId).toBeUndefined();
+    expect(proposal.definitionAssetId).toBeUndefined();
   });
 
   test("an out-of-catalog workflow reference fails closed", async () => {
@@ -127,7 +127,7 @@ describe("createMyraRoutineDrafting", () => {
         run: async () => ({
           content: JSON.stringify({
             steps: [{ title: "Do the thing" }],
-            definitionId: "wfd_unknown",
+            definitionAssetId: "wfd_unknown",
             cadence: null,
           }),
           runId: "wfr_draft_4",
@@ -146,7 +146,7 @@ describe("createMyraRoutineDrafting", () => {
         run: async () => ({
           content: JSON.stringify({
             steps: [{ title: "Run the relay task" }],
-            definitionId: "wfd_relay_task",
+            definitionAssetId: "wfd_relay_task",
             cadence: null,
             triggerInput: { agent: "wfd_unknown_agent", prompt: "Summarize" },
           }),
@@ -166,7 +166,7 @@ describe("createMyraRoutineDrafting", () => {
         run: async () => ({
           content: JSON.stringify({
             steps: [{ title: "Run the relay task" }],
-            definitionId: "wfd_relay_task",
+            definitionAssetId: "wfd_relay_task",
             cadence: null,
             triggerInput: { agent: "wfd_summarizer" },
           }),
@@ -277,7 +277,7 @@ describe("assembleRoutineDraftInventory", () => {
       async listAutomatableWorkflows() {
         return [
           {
-            definitionId: "wfd_digest",
+            definitionAssetId: "wfd_digest",
             assetName: "workbench-digest",
             displayName: "Workbench digest",
             deliveryMode: "workbench",
