@@ -1,8 +1,8 @@
-// The three tables `@corbits/routines` owns: the routine itself (the
-// named, product-facing entity), the link table correlating each
-// launched run back to the routine that launched it, and the drafting
-// table. These tables live in their own `routines` Postgres schema,
-// fully siloed from the platform's `public` schema — see
+// The two tables `@corbits/routines` owns: the routine itself (the
+// named, product-facing entity) and the link table correlating each
+// launched run back to the routine that launched it. These tables
+// live in their own `routines` Postgres schema, fully siloed from the
+// platform's `public` schema — see
 // docs/package-migrations.md. `tenantId` is a plain text identifier,
 // not a foreign key, so referencing platform tenant ids works
 // identically from a named schema.
@@ -107,30 +107,3 @@ export const routineRun = routinesSchema.table(
   },
   (table) => [primaryKey({ columns: [table.tenantId, table.runId] })],
 );
-
-/**
- * Free-text drafting path for routines. Only an approved draft creates
- * a `routine` row; until then nothing is schedulable.
- */
-export const routineDraft = routinesSchema.table("routine_draft", {
-  id: text("id").primaryKey(),
-  tenantId: text("tenant_id").notNull(),
-  prompt: text("prompt").notNull(),
-  /** draft | reviewed | approved | discarded */
-  status: text("status").notNull(),
-  proposedSteps: jsonb("proposed_steps").notNull().default([]),
-  proposedTrigger: jsonb("proposed_trigger"),
-  proposedName: text("proposed_name"),
-  definitionAssetId: text("definition_asset_id"),
-  deliveryWorkbenchId: text("delivery_workbench_id").notNull(),
-  scope: text("scope").notNull(),
-  autonomy: jsonb("autonomy"),
-  createdBy: text("created_by").notNull(),
-  approvedRoutineId: text("approved_routine_id"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});

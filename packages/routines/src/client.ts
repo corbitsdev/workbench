@@ -13,7 +13,6 @@ import { slugify } from "@corbits/slug";
 
 import { RoutineTriggerWire, type RoutineTriggerT } from "./trigger";
 
-export { suggestRoutineNameFromPrompt } from "./suggest-name";
 export {
   cronHasWallClock,
   cronSentence,
@@ -63,8 +62,8 @@ export type {
 // validated once; re-validating its cron/timezone narrows on every GET
 // would let an old row a stricter check now disagrees with hard-fail
 // parsing in the browser instead of just rendering. `RoutineTrigger`
-// (strict) stays on `CreateRoutineInput`/`UpdateRoutineInput`/
-// `CreateDraftInput` below, which describe what the client sends.
+// (strict) stays on `CreateRoutineInput`/`UpdateRoutineInput` below,
+// which describe what the client sends.
 export const Routine = type({
   id: "string",
   name: "string",
@@ -144,29 +143,6 @@ export type RoutineRun = typeof RoutineRun.infer;
 
 export const RoutineRunsResponse = type({ items: RoutineRun.array() });
 
-export const DraftedStep = type({
-  title: "string",
-  "detail?": "string",
-});
-export type DraftedStep = typeof DraftedStep.infer;
-
-export const RoutineDraft = type({
-  id: "string",
-  prompt: "string",
-  status: "'draft' | 'reviewed' | 'approved' | 'discarded'",
-  proposedSteps: DraftedStep.array(),
-  proposedTrigger: RoutineTriggerWire,
-  proposedName: "string | null",
-  definitionAssetId: "string | null",
-  deliveryWorkbenchId: "string",
-  scope: "'personal' | 'bench'",
-  autonomy: "Record<string, unknown> | null",
-  approvedRoutineId: "string | null",
-  createdAt: "string",
-  updatedAt: "string",
-});
-export type RoutineDraft = typeof RoutineDraft.infer;
-
 export type CreateRoutineInput = {
   readonly name: string;
   /** The workflow asset this routine runs — always named explicitly by
@@ -195,12 +171,6 @@ export type UpdateRoutineInput = {
   readonly definitionAssetId?: string;
 };
 
-export type CreateDraftInput = {
-  readonly prompt: string;
-  readonly deliveryWorkbenchId: string;
-  readonly scope: "personal" | "bench";
-};
-
 /** `GET/POST /api/tenants/:tenantId/routines`. */
 export function routinesPath(tenantId: string): string {
   return `/api/tenants/${tenantId}/routines`;
@@ -219,26 +189,6 @@ export function routineRunNowPath(tenantId: string, id: string): string {
 /** `GET /api/tenants/:tenantId/routines/:id/runs`. */
 export function routineRunsPath(tenantId: string, id: string): string {
   return `${routinePath(tenantId, id)}/runs`;
-}
-
-/** `GET/POST /api/tenants/:tenantId/routine-drafts`. */
-export function routineDraftsPath(tenantId: string): string {
-  return `/api/tenants/${tenantId}/routine-drafts`;
-}
-
-/** `GET /api/tenants/:tenantId/routine-drafts/:id`. */
-export function routineDraftPath(tenantId: string, id: string): string {
-  return `${routineDraftsPath(tenantId)}/${id}`;
-}
-
-/** `POST /api/tenants/:tenantId/routine-drafts/:id/approve`. */
-export function routineDraftApprovePath(tenantId: string, id: string): string {
-  return `${routineDraftPath(tenantId, id)}/approve`;
-}
-
-/** `POST /api/tenants/:tenantId/routine-drafts/:id/discard`. */
-export function routineDraftDiscardPath(tenantId: string, id: string): string {
-  return `${routineDraftPath(tenantId, id)}/discard`;
 }
 
 // One deployed, frozen definition a routine may target

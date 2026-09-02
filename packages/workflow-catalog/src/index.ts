@@ -527,35 +527,6 @@ export type TriggerFieldsValidation =
   { readonly ok: true } | { readonly ok: false; readonly message: string };
 
 /**
- * The shape half of a workflow's declared `triggerFields` contract: every
- * required field must be present as a non-empty string. NOT called at the
- * routine-create boundary (CL-6358: inputs bind at USE, never at
- * creation — see `validateTriggerFieldsAtCreate` below for that
- * boundary's actual, more permissive check). This stricter form is for
- * a context where "required" really does mean present right now: Myra's
- * routine-drafting flow (`@corbits/routines`' `myra-drafting.ts`) checks
- * the AI's own drafted trigger input against it, since a draft that left
- * a required field blank is a drafting failure worth surfacing
- * immediately, not an open input a person will fill in later.
- */
-export function validateTriggerFieldsInput(
-  fields: readonly WorkflowTriggerField[],
-  input: Record<string, unknown>,
-): TriggerFieldsValidation {
-  for (const field of fields) {
-    if (!field.required) continue;
-    const value = input[field.key];
-    if (typeof value !== "string" || value.trim() === "") {
-      return {
-        ok: false,
-        message: `"${field.label}" is required`,
-      };
-    }
-  }
-  return { ok: true };
-}
-
-/**
  * The create-time boundary check for a routine's stored `input`
  * (CL-6358): inputs bind at USE, never at creation, so a required
  * field with no value at all in `input` is never a create-time

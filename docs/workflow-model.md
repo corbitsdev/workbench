@@ -124,6 +124,24 @@ re-exports `@corbits/routines/client`.
 No compatibility shim, feature flag, or dual-write period accompanies any
 of the deletions above.
 
+## Deleted in CL-7375
+
+The routine draft/review state machine — `POST /routine-drafts` (create),
+`GET /routine-drafts`/`GET /routine-drafts/:id` (review), `POST
+/routine-drafts/:id/approve`, and `POST /routine-drafts/:id/discard`, the
+`routine_draft` table, `@corbits/routines`' `drafts.ts` and
+`myra-drafting.ts`, and `suggestRoutineNameFromPrompt`. Myra creates a
+routine only through `GET .../workflows/targets` → `routine_create` /
+`routine_update` (`@corbits/routines-tools`'s `tool.ts`) — the same
+tool-call surface a person's own create/retarget request goes through.
+Neither carries an `approval: "ask"` key (they grant no credentials and
+touch nothing external — only `routine_run_now` does), so the confirm
+seam here is `definitionAssetId` being a required input Myra must name
+explicitly, never auto-resolved from a name inside the tool. There was
+never a second, review-first path for her to fall back to; `routine_draft`
+is dropped by a migration (`0007_drop_routine_draft`), not left as inert
+dead weight.
+
 ## What is not native, and stays in Workbench
 
 Checked against upstream origin/main `d187e327`: Interchange has no
