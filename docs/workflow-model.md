@@ -94,22 +94,35 @@ table:
 Myra cannot resolve approvals: `approval:*`/`resolve` is never minted for an
 agent principal.
 
-## Behavior to delete, not retain
+## Deleted in CL-7364
 
-- Routine target inference from chat membership: `resolveCreateTarget` in
-  `apps/web/src/shell/routine-panel.tsx` (`agents[0]?.definitionId`,
-  `ensureMyraWorkbench` fallback) and the "no agent invited" guards around
-  it.
-- Hub-local self-freeze of agent-authored definitions:
-  `packages/agent-directory`'s use of `@corbits/workflow-freeze`
-  `DefinitionFreezer`, and the template-block inert freeze in
-  `apps/hub/src/index.ts`, once those callers deploy natively.
-- Duplicate routine wire shapes in `packages/routines-tools/src/client.ts`
-  (use `@corbits/routines/client`).
-- Any code path that reads or writes `workflow.json`.
+- Routine target inference from chat membership: `apps/web/src/shell/
+  routine-panel.tsx` picks a target only through `DefinitionTargetPicker`
+  now; no `resolveCreateTarget`, `agents[0]?.definitionId`, or "no agent
+  invited" guard remains. `check:routine-target-inference` guards this —
+  it fails on `agents[0]?.definitionId` / `agents[0].definitionId` in
+  `apps/web` and `packages/chat-ui`.
+- The template-block route's hub-local self-freeze: `apps/hub/src/index.ts`
+  (`createTemplateBlockRoutes`'s `deployWorkflowSource` binding) writes the
+  block's source tree and calls the same `workflowDeployer.deploy` the
+  agent-authored deploy path uses, instead of
+  `@corbits/workflow-freeze`'s `freezeInertWorkflowDefinition`.
+- `packages/workflow-host-actions` — already gone (no tracked source, no
+  importers) by the time this landed.
+- Any code path that reads or writes the retired `workflow.json` path,
+  except `@corbits/workflow-source`'s own `RetiredWorkflowEnvelopeError`;
+  `check:routine-target-inference` guards this too.
 
-No compatibility shim, feature flag, or dual-write period accompanies any of
-these deletions.
+**Not yet cut over:** `packages/agent-directory` still calls
+`@corbits/workflow-freeze`'s `DefinitionFreezer.freeze`/`.refreeze` for
+agent definitions (create, restore, skill-pin, and capability routes in
+`apps/hub/src/index.ts`) — `@corbits/workflow-freeze` stays until that
+caller also deploys natively, on its own ticket. `packages/routines-tools/
+src/client.ts` never carried duplicate wire shapes to delete; it already
+re-exports `@corbits/routines/client`.
+
+No compatibility shim, feature flag, or dual-write period accompanies any
+of the deletions above.
 
 ## What is not native, and stays in Workbench
 
