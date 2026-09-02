@@ -7,11 +7,37 @@ import type {
 import { AssetServiceError, type AssetService } from "@intx/hub-sessions";
 import type { DB } from "@intx/db";
 
+import { WorkflowAuthorError } from "./errors";
 import {
   createWorkflowAuthorRegistry,
-  WorkflowAuthorError,
   type CreateWorkflowAuthorRegistryDeps,
+  type WorkflowAuthorRepoReads,
 } from "./registry";
+
+const MANIFEST = JSON.stringify({
+  name: "daily-digest",
+  version: "0.0.1",
+  type: "module",
+  interchange: { workflow: "./workflow.ts" },
+});
+
+const ENTRY = "export default {};\n";
+
+function sourceTree(
+  extra: Record<string, string> = {},
+): Record<string, string> {
+  return { "package.json": MANIFEST, "workflow.ts": ENTRY, ...extra };
+}
+
+function fakeRepoStore(
+  overrides: Partial<WorkflowAuthorRepoReads> = {},
+): WorkflowAuthorRepoReads {
+  return {
+    resolveRef: async () => "sha_head",
+    openCommittedReads: async () => null,
+    ...overrides,
+  };
+}
 
 function allowGrant(action: string): GrantRule {
   return {
@@ -86,7 +112,12 @@ function deps(
   return {
     db: fakeDb(undefined),
     assetService: fakeAssetService(),
-    grantStore: fakeGrantStore([allowGrant("create"), allowGrant("write")]),
+    repoStore: fakeRepoStore(),
+    grantStore: fakeGrantStore([
+      allowGrant("create"),
+      allowGrant("write"),
+      allowGrant("read"),
+    ]),
     conditionRegistry,
     ...overrides,
   };
@@ -120,7 +151,7 @@ test("author publishes a workflow codebase as a workflow-kind asset", async () =
   const registry = createWorkflowAuthorRegistry(deps({ assetService }));
   const summary = await registry.author(caller, {
     name: "daily-digest",
-    files: { "package.json": '{"interchange":{"workflow":"index.ts"}}' },
+    files: sourceTree(),
   });
 
   expect(summary).toEqual({
@@ -143,7 +174,7 @@ test("author rejects a malformed name before ever calling the asset service", as
   const registry = createWorkflowAuthorRegistry(deps({ assetService }));
 
   await expect(
-    registry.author(caller, { name: "Not Kebab!", files: { "a.ts": "x" } }),
+    registry.author(caller, { name: "Not Kebab!", files: sourceTree() }),
   ).rejects.toMatchObject({ reason: "invalid" });
   expect(called).toBe(false);
 });
@@ -161,30 +192,52 @@ test("author refuses when the principal's grants do not include asset:*/create",
   );
 
   const err = await registry
-    .author(caller, { name: "daily-digest", files: { "a.ts": "x" } })
+    .author(caller, { name: "daily-digest", files: sourceTree() })
     .catch((e: unknown) => e);
   expect(err).toBeInstanceOf(WorkflowAuthorError);
   expect((err as WorkflowAuthorError).reason).toBe("forbidden");
   expect(called).toBe(false);
 });
 
-test("author surfaces a rejected codebase (e.g. missing interchange.workflow entry) as an invalid-source error, not a raw throw", async () => {
+test("author rejects a tree with no interchange.workflow entry before any asset is created", async () => {
+  let created = false;
+  const assetService = fakeAssetService({
+    createAsset: async () => {
+      created = true;
+      throw new Error("must not be called");
+    },
+  });
+  const registry = createWorkflowAuthorRegistry(deps({ assetService }));
+
+  const err = await registry
+    .author(caller, {
+      name: "daily-digest",
+      files: { "package.json": '{"name":"x","version":"0.0.1"}' },
+    })
+    .catch((e: unknown) => e);
+  expect(err).toBeInstanceOf(WorkflowAuthorError);
+  expect((err as WorkflowAuthorError).reason).toBe("invalid");
+  expect((err as Error).message).toMatch(/interchange\.workflow/);
+  expect(created).toBe(false);
+});
+
+test("author surfaces a substrate push rejection as an invalid-source error, not a raw throw", async () => {
   const assetService = fakeAssetService({
     populateAsset: async () => {
       throw new AssetServiceError(
         "path_violation",
-        'package.json must declare a non-empty "interchange.workflow" entry',
+        "a committed top-level node_modules directory is not allowed",
       );
     },
   });
   const registry = createWorkflowAuthorRegistry(deps({ assetService }));
 
   const err = await registry
-    .author(caller, { name: "daily-digest", files: { "package.json": "{}" } })
+    .author(caller, { name: "daily-digest", files: sourceTree() })
     .catch((e: unknown) => e);
   expect(err).toBeInstanceOf(WorkflowAuthorError);
   expect((err as WorkflowAuthorError).reason).toBe("invalid");
-  expect((err as Error).message).toMatch(/interchange\.workflow/);
+  expect((err as Error).message).toMatch(/node_modules/);
 });
 
 test("republish refuses an asset id that does not resolve in the caller's own tenant", async () => {
@@ -202,7 +255,7 @@ test("republish refuses an asset id that does not resolve in the caller's own te
   );
 
   const err = await registry
-    .republish(caller, "asset_from_another_tenant", { files: { "a.ts": "x" } })
+    .republish(caller, "asset_from_another_tenant", { files: sourceTree() })
     .catch((e: unknown) => e);
   expect(err).toBeInstanceOf(WorkflowAuthorError);
   expect((err as WorkflowAuthorError).reason).toBe("not_found");
@@ -228,7 +281,7 @@ test("republish writes a new commit once the asset resolves in-tenant and the gr
   );
 
   const summary = await registry.republish(caller, "asset_1", {
-    files: { "index.ts": "export {};" },
+    files: sourceTree(),
   });
   expect(summary).toEqual({
     assetId: "asset_1",
@@ -263,9 +316,136 @@ test("republish refuses when the grant store has no matching write grant", async
   );
 
   const err = await registry
-    .republish(caller, "asset_1", { files: { "index.ts": "x" } })
+    .republish(caller, "asset_1", { files: sourceTree() })
     .catch((e: unknown) => e);
   expect(err).toBeInstanceOf(WorkflowAuthorError);
   expect((err as WorkflowAuthorError).reason).toBe("forbidden");
   expect(populateCalled).toBe(false);
+});
+
+const ownRow: AssetRow = {
+  id: "asset_1",
+  tenantId: "tenant_1",
+  kind: "workflow",
+  name: "daily-digest",
+};
+
+test("republish with a stale expectedHeadSha is refused as a conflict carrying the current head, and writes nothing", async () => {
+  let populateCalled = false;
+  const registry = createWorkflowAuthorRegistry(
+    deps({
+      db: fakeDb(ownRow),
+      assetService: fakeAssetService({
+        populateAsset: async () => {
+          populateCalled = true;
+          return { commitSha: "sha_new" };
+        },
+      }),
+      repoStore: fakeRepoStore({ resolveRef: async () => "sha_current" }),
+    }),
+  );
+
+  const err = await registry
+    .republish(caller, "asset_1", {
+      files: sourceTree(),
+      expectedHeadSha: "sha_stale",
+    })
+    .catch((e: unknown) => e);
+  expect(err).toBeInstanceOf(WorkflowAuthorError);
+  expect((err as WorkflowAuthorError).reason).toBe("conflict");
+  expect((err as WorkflowAuthorError).currentHeadSha).toBe("sha_current");
+  expect(populateCalled).toBe(false);
+});
+
+test("republish with a matching expectedHeadSha proceeds", async () => {
+  const registry = createWorkflowAuthorRegistry(
+    deps({
+      db: fakeDb(ownRow),
+      repoStore: fakeRepoStore({ resolveRef: async () => "sha_current" }),
+    }),
+  );
+  const summary = await registry.republish(caller, "asset_1", {
+    files: sourceTree(),
+    expectedHeadSha: "sha_current",
+  });
+  expect(summary.commitSha).toBe("sha_1");
+});
+
+test("republish rejects a traversal path before the grant check or any write", async () => {
+  let authorized = false;
+  const registry = createWorkflowAuthorRegistry(
+    deps({
+      db: fakeDb(ownRow),
+      grantStore: {
+        collectGrants: async () => {
+          authorized = true;
+          return [allowGrant("write")];
+        },
+        collectGrantsInChain: async () => [allowGrant("write")],
+      },
+    }),
+  );
+  const err = await registry
+    .republish(caller, "asset_1", {
+      files: sourceTree({ "../escape.ts": "x" }),
+    })
+    .catch((e: unknown) => e);
+  expect((err as WorkflowAuthorError).reason).toBe("invalid");
+  expect(authorized).toBe(false);
+});
+
+test("readSource walks the whole committed tree, including subdirectories, and reports the head sha", async () => {
+  const blobs: Record<string, string> = {
+    oid_pkg: MANIFEST,
+    oid_entry: ENTRY,
+    oid_helper: "export const x = 1;\n",
+  };
+  const registry = createWorkflowAuthorRegistry(
+    deps({
+      db: fakeDb(ownRow),
+      repoStore: fakeRepoStore({
+        resolveRef: async () => "sha_head",
+        openCommittedReads: async () => ({
+          listDir: async (dir) =>
+            dir === ""
+              ? [
+                  { name: "package.json", oid: "oid_pkg", type: "blob" },
+                  { name: "workflow.ts", oid: "oid_entry", type: "blob" },
+                  { name: "lib", oid: "oid_lib", type: "tree" },
+                ]
+              : dir === "lib"
+                ? [{ name: "helper.ts", oid: "oid_helper", type: "blob" }]
+                : [],
+          readBlobByOid: async (oid) =>
+            new TextEncoder().encode(blobs[oid] ?? ""),
+          treeOid: async () => null,
+        }),
+      }),
+    }),
+  );
+
+  const snapshot = await registry.readSource(caller, "asset_1");
+  expect(snapshot).toEqual({
+    assetId: "asset_1",
+    name: "daily-digest",
+    headSha: "sha_head",
+    files: {
+      "package.json": MANIFEST,
+      "workflow.ts": ENTRY,
+      "lib/helper.ts": "export const x = 1;\n",
+    },
+  });
+});
+
+test("readSource refuses without an asset read grant", async () => {
+  const registry = createWorkflowAuthorRegistry(
+    deps({
+      db: fakeDb(ownRow),
+      grantStore: fakeGrantStore([allowGrant("write")]),
+    }),
+  );
+  const err = await registry
+    .readSource(caller, "asset_1")
+    .catch((e: unknown) => e);
+  expect((err as WorkflowAuthorError).reason).toBe("forbidden");
 });
