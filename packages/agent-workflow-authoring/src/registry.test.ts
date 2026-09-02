@@ -35,6 +35,7 @@ function fakeRepoStore(
   return {
     resolveRef: async () => "sha_head",
     openCommittedReads: async () => null,
+    openCommittedReadsAtCommit: async () => null,
     ...overrides,
   };
 }
@@ -405,7 +406,7 @@ test("readSource walks the whole committed tree, including subdirectories, and r
       db: fakeDb(ownRow),
       repoStore: fakeRepoStore({
         resolveRef: async () => "sha_head",
-        openCommittedReads: async () => ({
+        openCommittedReadsAtCommit: async () => ({
           listDir: async (dir) =>
             dir === ""
               ? [

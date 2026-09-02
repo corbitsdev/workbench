@@ -107,7 +107,7 @@ export type WorkflowAuthorRegistry = {
 
 export type WorkflowAuthorRepoReads = Pick<
   RepoStore,
-  "resolveRef" | "openCommittedReads"
+  "resolveRef" | "openCommittedReads" | "openCommittedReadsAtCommit"
 >;
 
 export type CreateWorkflowAuthorRegistryDeps = {
@@ -303,11 +303,14 @@ export function createWorkflowAuthorRegistry(
       const row = await requireOwnWorkflowAsset(caller, assetId);
       await requireAuthorized(deps, caller, `asset:${assetId}`, "read");
 
+      // Resolve the head sha and open the tree read from the SAME ref
+      // resolution so a concurrent republish landing between two separate
+      // calls can never produce a headSha/files mismatch.
       const headSha = await resolveHeadSha(repoStore, assetId);
-      const reads = await repoStore.openCommittedReads(
+      const reads = await repoStore.openCommittedReadsAtCommit(
         HUB_PRINCIPAL,
         { kind: WORKFLOW_ASSET_KIND, id: assetId },
-        DEFAULT_ASSET_REF,
+        headSha,
       );
       if (reads === null) {
         throw new WorkflowAuthorError(
