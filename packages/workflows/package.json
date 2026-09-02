@@ -7,7 +7,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./client": "./src/client.ts"
+    "./client": "./src/client.ts",
+    "./catalog": "./src/catalog.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -29,6 +30,7 @@
   },
   "devDependencies": {
     "@types/bun": "catalog:",
+    "@workbench/connections": "workspace:*",
     "typescript": "catalog:"
   }
 }

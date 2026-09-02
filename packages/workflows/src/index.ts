@@ -18,3 +18,15 @@ export {
   type LaunchableDefinitionResolution,
   type LaunchableDefinitionResolver,
 } from "./launchable/target";
+export {
+  WorkflowTriggerField,
+  WORKFLOW_CATALOG,
+  isAutomatableWorkflowName,
+  isConversationalWorkflowName,
+  deliveryWorkbenchRequiredForWorkflowName,
+  workflowCatalogEntry,
+  workflowDisplayName,
+  validateTriggerFieldsAtCreate,
+  type WorkflowCatalogEntry,
+  type TriggerFieldsValidation,
+} from "./catalog";
