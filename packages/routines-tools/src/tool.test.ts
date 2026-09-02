@@ -566,7 +566,9 @@ test("an ambiguous name resolved through routine_targets returns every matching 
     const parsed = JSON.parse(String(result.content)) as {
       items: { definitionAssetId: string; name: string }[];
     };
-    const matches = parsed.items.filter((item) => item.name === "Digest writer");
+    const matches = parsed.items.filter(
+      (item) => item.name === "Digest writer",
+    );
     expect(matches.map((item) => item.definitionAssetId)).toEqual([
       "ast_1",
       "ast_2",
