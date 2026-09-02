@@ -16,42 +16,25 @@ import {
   Stack,
 } from "@corbits/icons";
 
-export type PluginCategory =
-  | "Communication"
-  | "Productivity"
-  | "Sales & customer"
-  | "Engineering"
-  | "Research & data";
+export type PluginCatalogCategory = "work" | "developer" | "research";
 
-export const PLUGIN_CATEGORY_ORDER: readonly PluginCategory[] = [
-  "Communication",
-  "Productivity",
-  "Sales & customer",
-  "Engineering",
-  "Research & data",
-];
-
-const CATEGORY_BY_ID: Readonly<Record<string, PluginCategory>> = {
-  granola: "Productivity",
-  manus: "Productivity",
-  notion: "Productivity",
-  zoom: "Communication",
-  slack: "Communication",
-  google: "Productivity",
-  attio: "Sales & customer",
-  hubspot: "Sales & customer",
-  exa: "Research & data",
-  scrapecreators: "Research & data",
-  sumble: "Research & data",
-  linear: "Engineering",
-  github: "Engineering",
-  sentry: "Engineering",
-  vercel: "Engineering",
-  render: "Engineering",
-  railway: "Engineering",
-  posthog: "Engineering",
-  browserbase: "Engineering",
-};
+const CATEGORY_BY_ID: Readonly<Partial<Record<string, PluginCatalogCategory>>> =
+  {
+    granola: "work",
+    notion: "work",
+    attio: "work",
+    canva: "work",
+    manus: "work",
+    linear: "developer",
+    "github-mcp": "developer",
+    sentry: "developer",
+    railway: "developer",
+    posthog: "developer",
+    github: "developer",
+    exa: "research",
+    sumble: "research",
+    scrapecreators: "research",
+  };
 
 /** One honest sentence: what connecting this plugin actually lets an agent
  * do. No metrics, no hype — the same rule `WorkflowCatalogEntry.whatItDoes`
@@ -90,19 +73,10 @@ const ICON_BY_ID: Readonly<Record<string, Icon>> = {
   github: GitPullRequest,
 };
 
-/** The handful surfaced under "Featured", ahead of the category grid — a
- * short, owner-editable literal list, not a derived ranking. */
-export const FEATURED_CONNECTOR_IDS: readonly string[] = [
-  "granola",
-  "github",
-  "linear",
-  "openrouter",
-  "huggingface",
-  "exa",
-];
-
-export function pluginCategory(connectorId: string): PluginCategory {
-  return CATEGORY_BY_ID[connectorId] ?? "Productivity";
+export function pluginCatalogCategory(
+  catalogId: string,
+): PluginCatalogCategory | undefined {
+  return CATEGORY_BY_ID[catalogId];
 }
 
 export function pluginOutcome(

@@ -7,7 +7,6 @@ export type { SkillCardData } from "./skill-card";
 export { InstalledStrip } from "./installed-strip";
 export { PluginConnectPanel } from "./plugin-connect-panel";
 export { McpServersSection } from "./mcp-servers-section";
-export { McpPresetCardsSection } from "./mcp-preset-cards";
 
 export { PLUGINS_STRINGS } from "./strings";
 
@@ -27,10 +26,8 @@ export type {
 } from "./mcp-servers-api";
 
 export {
-  FEATURED_CONNECTOR_IDS,
-  PLUGIN_CATEGORY_ORDER,
-  pluginCategory,
+  pluginCatalogCategory,
   pluginIcon,
   pluginOutcome,
 } from "./plugin-meta";
-export type { PluginCategory } from "./plugin-meta";
+export type { PluginCatalogCategory } from "./plugin-meta";

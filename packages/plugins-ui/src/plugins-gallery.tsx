@@ -1,31 +1,78 @@
-// The Plugins gallery (CL-6090): Plugins | Skills tabs over compact,
-// categorized directory grids. Search is controlled by the composing page so
-// it can live in the shared top bar. Presentational
-// — every list arrives already loaded; the composing page (`apps/web`'s
-// `plugins-page.tsx`) owns fetching `listPluginsForTenant` and the skill
-// registry, the same split every other package in this repo draws between
-// "owns the domain" and "stays generic."
+import { useEffect, useMemo, useState } from "react";
 
-import { EmptyState, Tabs } from "@corbits/react-ui";
+import { Lightning } from "@corbits/icons";
+import { EmptyState, FilterChip, Tabs } from "@corbits/react-ui";
+import type { ConnectorDescriptor } from "@corbits/connections/registry";
 import type { ResolvedPlugin } from "@corbits/connections/plugins";
 import {
   MCP_PRESETS,
   MCP_PRESET_CONNECTOR_IDS,
 } from "@workbench/templates/connectors";
-import { Lightning } from "@corbits/icons";
-import { useMemo } from "react";
 
 import { McpServersSection } from "./mcp-servers-section";
-import { McpPresetCardsSection } from "./mcp-preset-cards";
+import { McpPresetCard, useMcpPresetCatalog } from "./mcp-preset-cards";
+import type { McpPreset } from "./mcp-servers-api";
 import {
-  FEATURED_CONNECTOR_IDS,
-  PLUGIN_CATEGORY_ORDER,
-  pluginCategory,
+  pluginCatalogCategory,
+  type PluginCatalogCategory,
+  pluginOutcome,
 } from "./plugin-meta";
 import { PluginCard } from "./plugin-card";
 import { SkillCard, type SkillCardData } from "./skill-card";
 
 export type PluginsGalleryTab = "plugins" | "skills";
+type PluginCatalogFilter = "all" | "connected" | PluginCatalogCategory;
+
+type PluginCatalogEntry =
+  | {
+      readonly kind: "preset";
+      readonly id: string;
+      readonly name: string;
+      readonly outcome: string;
+      readonly category: PluginCatalogCategory | undefined;
+      readonly connected: boolean;
+      readonly preset: McpPreset;
+    }
+  | {
+      readonly kind: "native";
+      readonly id: string;
+      readonly name: string;
+      readonly outcome: string;
+      readonly category: PluginCatalogCategory | undefined;
+      readonly connected: boolean;
+      readonly plugin: ResolvedPlugin;
+    };
+
+const PLUGIN_FILTERS = [
+  { id: "all", label: "All" },
+  { id: "connected", label: "Connected" },
+  { id: "work", label: "Work" },
+  { id: "developer", label: "Developer" },
+  { id: "research", label: "Research" },
+] satisfies readonly {
+  readonly id: PluginCatalogFilter;
+  readonly label: string;
+}[];
+
+const CATEGORY_LABELS: Record<PluginCatalogCategory, string> = {
+  work: "Work",
+  developer: "Developer",
+  research: "Research",
+};
+
+const MCP_PRESET_CATALOG_IDS = new Set([
+  ...MCP_PRESETS.map((preset) => preset.slug),
+  ...MCP_PRESET_CONNECTOR_IDS,
+]);
+
+export function isNativePluginCatalogDescriptor(
+  descriptor: ConnectorDescriptor,
+): boolean {
+  return (
+    descriptor.feedsTools.length > 0 &&
+    !MCP_PRESET_CATALOG_IDS.has(descriptor.id)
+  );
+}
 
 function matchesQuery(haystacks: readonly string[], query: string): boolean {
   const needle = query.trim().toLowerCase();
@@ -33,84 +80,123 @@ function matchesQuery(haystacks: readonly string[], query: string): boolean {
   return haystacks.some((value) => value.toLowerCase().includes(needle));
 }
 
-function PluginGrid({
-  plugins,
-  onOpen,
+function matchesFilter(
+  entry: PluginCatalogEntry,
+  filter: PluginCatalogFilter,
+): boolean {
+  if (filter === "all") return true;
+  if (filter === "connected") return entry.connected;
+  return entry.category === filter;
+}
+
+function PluginFilterBar({
+  entries,
+  active,
+  onChange,
 }: {
-  readonly plugins: readonly ResolvedPlugin[];
-  readonly onOpen: (plugin: ResolvedPlugin) => void;
+  readonly entries: readonly PluginCatalogEntry[];
+  readonly active: PluginCatalogFilter;
+  readonly onChange: (filter: PluginCatalogFilter) => void;
 }) {
   return (
-    <div className="border border-border [&>*:last-child]:border-b-0">
-      {plugins.map((plugin) => (
-        <PluginCard
-          key={plugin.descriptor.id}
-          plugin={plugin}
-          onOpen={() => onOpen(plugin)}
-        />
+    <div
+      className="flex flex-wrap gap-2"
+      role="group"
+      aria-label="Plugin catalog filters"
+    >
+      {PLUGIN_FILTERS.map((filter) => (
+        <FilterChip
+          key={filter.id}
+          selected={active === filter.id}
+          count={
+            entries.filter((entry) => matchesFilter(entry, filter.id)).length
+          }
+          onClick={() => onChange(filter.id)}
+        >
+          {filter.label}
+        </FilterChip>
       ))}
     </div>
   );
 }
 
-function PluginsTabPanel({
-  plugins,
+function PluginCatalogPanel({
+  tenantId,
+  entries,
   query,
-  onOpen,
+  activeFilter,
+  onFilterChange,
+  toolCounts,
+  onPresetChanged,
+  onOpenPlugin,
 }: {
-  readonly plugins: readonly ResolvedPlugin[];
+  readonly tenantId: string;
+  readonly entries: readonly PluginCatalogEntry[];
   readonly query: string;
-  readonly onOpen: (plugin: ResolvedPlugin) => void;
+  readonly activeFilter: PluginCatalogFilter;
+  readonly onFilterChange: (filter: PluginCatalogFilter) => void;
+  readonly toolCounts: ReadonlyMap<string, number>;
+  readonly onPresetChanged: (
+    slug: string,
+    toolCount: number | undefined,
+  ) => void;
+  readonly onOpenPlugin: (plugin: ResolvedPlugin) => void;
 }) {
-  const nonPreset = plugins.filter(
-    (plugin) => !MCP_PRESET_CONNECTOR_IDS.includes(plugin.descriptor.id),
-  );
-  const filtered = nonPreset.filter((plugin) =>
+  const queryMatches = entries.filter((entry) =>
     matchesQuery(
-      [plugin.descriptor.displayName, pluginCategory(plugin.descriptor.id)],
+      [
+        entry.name,
+        entry.outcome,
+        ...(entry.category === undefined
+          ? []
+          : [CATEGORY_LABELS[entry.category]]),
+      ],
       query,
     ),
   );
-
-  if (filtered.length === 0) return null;
-
-  const showFeatured = query.trim() === "";
-  const featured = showFeatured
-    ? filtered.filter((plugin) =>
-        FEATURED_CONNECTOR_IDS.includes(plugin.descriptor.id),
-      )
-    : [];
-  const rest = showFeatured
-    ? filtered.filter(
-        (plugin) => !FEATURED_CONNECTOR_IDS.includes(plugin.descriptor.id),
-      )
-    : filtered;
-
-  const byCategory = PLUGIN_CATEGORY_ORDER.map((category) => ({
-    category,
-    plugins: rest.filter(
-      (plugin) => pluginCategory(plugin.descriptor.id) === category,
-    ),
-  })).filter((group) => group.plugins.length > 0);
+  const visibleEntries = queryMatches.filter((entry) =>
+    matchesFilter(entry, activeFilter),
+  );
 
   return (
-    <div className="flex flex-col gap-6">
-      {featured.length > 0 ? (
-        <section className="flex flex-col gap-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Featured
-          </h3>
-          <PluginGrid plugins={featured} onOpen={onOpen} />
-        </section>
+    <div className="flex flex-col gap-4">
+      <PluginFilterBar
+        entries={queryMatches}
+        active={activeFilter}
+        onChange={onFilterChange}
+      />
+      {visibleEntries.length === 0 ? (
+        <EmptyState
+          icon={<Lightning />}
+          title="Nothing matches"
+          description={
+            query.trim() === ""
+              ? "No plugins are available in this filter."
+              : `No plugin matches "${query.trim()}" in this filter.`
+          }
+        />
       ) : null}
-      {byCategory.map((group) => (
-        <section key={group.category} className="flex flex-col gap-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {group.category}
-          </h3>
-          <PluginGrid plugins={group.plugins} onOpen={onOpen} />
-        </section>
-      ))}
+      {visibleEntries.length > 0 ? (
+        <div className="plugins-catalog-grid" aria-label="Plugin catalog">
+          {visibleEntries.map((entry) =>
+            entry.kind === "preset" ? (
+              <McpPresetCard
+                key={`preset:${entry.id}`}
+                tenantId={tenantId}
+                preset={entry.preset}
+                toolCount={toolCounts.get(entry.id)}
+                onChanged={(toolCount) => onPresetChanged(entry.id, toolCount)}
+              />
+            ) : (
+              <PluginCard
+                key={`native:${entry.id}`}
+                plugin={entry.plugin}
+                onOpen={() => onOpenPlugin(entry.plugin)}
+              />
+            ),
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -207,13 +293,56 @@ export function PluginsGallery({
   readonly autoConnectPresetSlug?: string | null;
   readonly onAutoConnectPresetHandled?: () => void;
 }) {
-  // An inference-provider connector names no tool package it feeds
-  // (`feedsTools: []`) — providers live only in Shared Settings'
-  // Connections section, never in this directory (CL-6272.2).
-  const installablePlugins = useMemo(
-    () => plugins.filter((plugin) => plugin.descriptor.feedsTools.length > 0),
+  const [activeFilter, setActiveFilter] = useState<PluginCatalogFilter>("all");
+  const presetCatalog = useMcpPresetCatalog(tenantId);
+
+  const nativeEntries = useMemo<readonly PluginCatalogEntry[]>(
+    () =>
+      plugins
+        .filter((plugin) => isNativePluginCatalogDescriptor(plugin.descriptor))
+        .map((plugin) => ({
+          kind: "native",
+          id: plugin.descriptor.id,
+          name: plugin.descriptor.displayName,
+          outcome: pluginOutcome(
+            plugin.descriptor.id,
+            plugin.descriptor.displayName,
+          ),
+          category: pluginCatalogCategory(plugin.descriptor.id),
+          connected: plugin.status !== "not_connected",
+          plugin,
+        })),
     [plugins],
   );
+  const catalogEntries = useMemo<readonly PluginCatalogEntry[]>(
+    () => [
+      ...presetCatalog.presets.map((preset) => ({
+        kind: "preset" as const,
+        id: preset.slug,
+        name: preset.displayName,
+        outcome: preset.description,
+        category: pluginCatalogCategory(preset.slug),
+        connected: preset.connected,
+        preset,
+      })),
+      ...nativeEntries,
+    ],
+    [nativeEntries, presetCatalog.presets],
+  );
+
+  useEffect(() => {
+    if (!presetCatalog.loaded || autoConnectPresetSlug === null) return;
+    const row = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-plugin-slug]"),
+    ).find((element) => element.dataset.pluginSlug === autoConnectPresetSlug);
+    row?.querySelector<HTMLButtonElement>("button")?.focus();
+    onAutoConnectPresetHandled?.();
+  }, [
+    autoConnectPresetSlug,
+    onAutoConnectPresetHandled,
+    presetCatalog.loaded,
+    presetCatalog.presets,
+  ]);
 
   const tabs = useMemo(
     () => [
@@ -221,14 +350,19 @@ export function PluginsGallery({
         id: "plugins" as const,
         label: "Plugins",
         count:
-          installablePlugins.filter(
-            (plugin) =>
-              !MCP_PRESET_CONNECTOR_IDS.includes(plugin.descriptor.id),
-          ).length + MCP_PRESETS.length,
+          nativeEntries.length +
+          (presetCatalog.loaded
+            ? presetCatalog.presets.length
+            : MCP_PRESETS.length),
       },
       { id: "skills" as const, label: "Skills", count: skills.length },
     ],
-    [installablePlugins.length, skills.length],
+    [
+      nativeEntries.length,
+      presetCatalog.loaded,
+      presetCatalog.presets.length,
+      skills.length,
+    ],
   );
 
   return (
@@ -243,21 +377,28 @@ export function PluginsGallery({
           <div className="flex flex-col gap-4 pt-3">
             {active === "plugins" ? (
               <>
-                <h1 className="text-xl font-extrabold">Plugins</h1>
-                <McpPresetCardsSection
-                  tenantId={tenantId}
-                  query={query}
-                  autoConnectSlug={autoConnectPresetSlug}
-                  {...(onAutoConnectPresetHandled !== undefined
-                    ? { onAutoConnectHandled: onAutoConnectPresetHandled }
-                    : {})}
-                />
+                {presetCatalog.loadError !== null ? (
+                  <p className="text-sm text-destructive" role="alert">
+                    {presetCatalog.loadError}
+                  </p>
+                ) : null}
+                {!presetCatalog.loaded ? (
+                  <p className="text-sm text-muted-foreground" role="status">
+                    Loading plugins…
+                  </p>
+                ) : (
+                  <PluginCatalogPanel
+                    tenantId={tenantId}
+                    entries={catalogEntries}
+                    query={query}
+                    activeFilter={activeFilter}
+                    onFilterChange={setActiveFilter}
+                    toolCounts={presetCatalog.toolCounts}
+                    onPresetChanged={presetCatalog.handleChanged}
+                    onOpenPlugin={onOpenPlugin}
+                  />
+                )}
                 <McpServersSection tenantId={tenantId} />
-                <PluginsTabPanel
-                  plugins={installablePlugins}
-                  query={query}
-                  onOpen={onOpenPlugin}
-                />
               </>
             ) : (
               <SkillsTabPanel

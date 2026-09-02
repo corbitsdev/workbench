@@ -1138,6 +1138,161 @@ async function run(): Promise<void> {
             };
       },
     );
+
+    await step(
+      () => page,
+      "12-plugins-catalog-filters-and-responsive-grid",
+      async () => {
+        await page.setViewport({ width: 1440, height: 900 });
+        await page.goto(`${webBaseUrl}/plugins`, {
+          waitUntil: "domcontentloaded",
+          timeout: 20_000,
+        });
+        await page.waitForSelector('[aria-label="Plugin catalog"]', {
+          timeout: 20_000,
+        });
+
+        const desktop = await page.evaluate(() => {
+          const grid = document.querySelector<HTMLElement>(
+            '[aria-label="Plugin catalog"]',
+          );
+          const filterGroup = document.querySelector(
+            '[aria-label="Plugin catalog filters"]',
+          );
+          if (grid === null || filterGroup === null) return null;
+          const cards = Array.from(
+            grid.querySelectorAll<HTMLElement>(".plugins-catalog-card"),
+          );
+          const lastCard = cards.at(-1);
+          return {
+            tablists: document.querySelectorAll('[role="tablist"]').length,
+            filterTabs: filterGroup.querySelectorAll('[role="tab"]').length,
+            searchControls: document.querySelectorAll(
+              '[aria-label="Filter plugins"]',
+            ).length,
+            columns: getComputedStyle(grid).gridTemplateColumns,
+            lastBorder:
+              lastCard === undefined
+                ? null
+                : getComputedStyle(lastCard).borderBottomWidth,
+          };
+        });
+        if (
+          desktop === null ||
+          desktop.tablists !== 1 ||
+          desktop.filterTabs !== 0 ||
+          desktop.searchControls !== 1 ||
+          desktop.columns.split(" ").length !== 2 ||
+          desktop.lastBorder !== "0px"
+        ) {
+          throw new Error(
+            `desktop catalog contract failed: ${JSON.stringify(desktop)}`,
+          );
+        }
+
+        const developerClicked = await page.evaluate(() => {
+          const buttons = Array.from(
+            document.querySelectorAll<HTMLButtonElement>(
+              '[aria-label="Plugin catalog filters"] button',
+            ),
+          );
+          const developer = buttons.find((button) =>
+            (button.textContent ?? "").startsWith("Developer"),
+          );
+          developer?.click();
+          return developer !== undefined;
+        });
+        if (!developerClicked) throw new Error("Developer chip was not found");
+        await page.waitForFunction(
+          () =>
+            document.querySelectorAll(
+              '[aria-label="Plugin catalog"] .plugins-catalog-card',
+            ).length === 6,
+        );
+        const evenFinalRowBorders = await page.$$eval(
+          '[aria-label="Plugin catalog"] .plugins-catalog-card',
+          (cards) =>
+            cards
+              .slice(-2)
+              .map((card) => getComputedStyle(card).borderBottomWidth),
+        );
+        if (evenFinalRowBorders.some((border) => border !== "0px")) {
+          throw new Error(
+            `even final row borders failed: ${JSON.stringify(evenFinalRowBorders)}`,
+          );
+        }
+
+        const researchClicked = await page.evaluate(() => {
+          const buttons = Array.from(
+            document.querySelectorAll<HTMLButtonElement>(
+              '[aria-label="Plugin catalog filters"] button',
+            ),
+          );
+          const research = buttons.find((button) =>
+            (button.textContent ?? "").startsWith("Research"),
+          );
+          research?.click();
+          return research !== undefined;
+        });
+        if (!researchClicked) throw new Error("Research chip was not found");
+        await page.waitForFunction(() => {
+          const cards = Array.from(
+            document.querySelectorAll<HTMLElement>("[data-plugin-name]"),
+          );
+          return (
+            cards.length === 3 &&
+            cards.every((card) =>
+              ["Exa", "Sumble", "ScrapeCreators"].includes(
+                card.dataset.pluginName ?? "",
+              ),
+            )
+          );
+        });
+        const oddFinalRowBorders = await page.$$eval(
+          '[aria-label="Plugin catalog"] .plugins-catalog-card',
+          (cards) =>
+            cards
+              .slice(-2)
+              .map((card) => getComputedStyle(card).borderBottomWidth),
+        );
+        if (
+          oddFinalRowBorders.length !== 2 ||
+          oddFinalRowBorders[0] === "0px" ||
+          oddFinalRowBorders[1] !== "0px"
+        ) {
+          throw new Error(
+            `odd final row borders failed: ${JSON.stringify(oddFinalRowBorders)}`,
+          );
+        }
+
+        await page.click('button[aria-label="Filter plugins"]');
+        await page.waitForSelector('input[aria-label="Filter plugins"]');
+        await page.type('input[aria-label="Filter plugins"]', "live web");
+        await page.waitForFunction(() => {
+          const cards = Array.from(
+            document.querySelectorAll<HTMLElement>("[data-plugin-name]"),
+          );
+          return cards.length === 1 && cards[0]?.dataset.pluginName === "Exa";
+        });
+
+        await page.setViewport({ width: 800, height: 900 });
+        const narrowColumns = await page.$eval(
+          '[aria-label="Plugin catalog"]',
+          (grid) => getComputedStyle(grid).gridTemplateColumns,
+        );
+        if (narrowColumns.split(" ").length !== 1) {
+          throw new Error(
+            `narrow catalog rendered ${narrowColumns} instead of one column`,
+          );
+        }
+
+        return {
+          status: "pass",
+          detail:
+            "one tablist, chip filtering, unique search label, odd/even final-row borders, two desktop columns, and one narrow column",
+        };
+      },
+    );
   } finally {
     for (const cleanup of cleanups.splice(0).reverse()) {
       await cleanup().catch((error) => {

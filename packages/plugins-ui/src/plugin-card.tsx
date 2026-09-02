@@ -38,7 +38,11 @@ export function PluginCard({
       : STATUS_CAPTION[plugin.status];
 
   return (
-    <div className="flex min-h-16 items-center gap-3 border-b border-border px-2 py-3">
+    <div
+      className="plugins-catalog-card flex min-h-16 min-w-0 items-center gap-3 px-2 py-3"
+      data-plugin-card
+      data-plugin-name={plugin.descriptor.displayName}
+    >
       <PluginLogo
         name={plugin.descriptor.displayName}
         icon={plugin.descriptor.icon}
@@ -52,33 +56,30 @@ export function PluginCard({
           {pluginOutcome(plugin.descriptor.id, plugin.descriptor.displayName)}
         </span>
       </div>
-      {/* A dense directory row's status column is core information, not
-       * an overflow item to drop on narrow viewports (CL-6467). */}
-      <span className="shrink-0 text-xs text-muted-foreground">{caption}</span>
-      {plugin.status === "not_connected" ? (
-        // The same single Connect verb the MCP preset rows use — one
-        // idiom for "not connected yet" across the whole gallery, never
-        // a bare "+" glyph that hides the action.
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          aria-label={`Connect ${plugin.descriptor.displayName}`}
-          onClick={onOpen}
-        >
-          Connect
-        </Button>
-      ) : (
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          aria-label={`Manage ${plugin.descriptor.displayName}`}
-          onClick={onOpen}
-        >
-          Manage
-        </Button>
-      )}
+      <div className="plugins-catalog-card-actions">
+        <span className="text-xs text-muted-foreground">{caption}</span>
+        {plugin.status === "not_connected" ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            aria-label={`Connect ${plugin.descriptor.displayName}`}
+            onClick={onOpen}
+          >
+            Connect
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            aria-label={`Manage ${plugin.descriptor.displayName}`}
+            onClick={onOpen}
+          >
+            Manage
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
