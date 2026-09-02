@@ -308,7 +308,7 @@ describeIfDb("routine target discovery", () => {
           definitionAssetId: "ast_digest",
           definitionId: "wfd_digest_new",
           assetName: "workbench-digest",
-          name: "Workbench Digest",
+          name: "Workbench digest",
           description: null,
           kind: "workflow",
           wireHash: "hash-wfd_digest_new",
