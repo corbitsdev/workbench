@@ -16,21 +16,21 @@
 // only here, so there is no second copy for them to drift from.
 import { type } from "arktype";
 
-import echoPkg from "../workflows/echo/package.json";
-import codeReviewPkg from "../workflows/code-review/package.json";
-import assistantPkg from "../workflows/assistant/package.json";
-import heartbeatPkg from "../workflows/heartbeat/package.json";
-import workbenchDigestPkg from "../workflows/workbench-digest/package.json";
-import granolaCallPkg from "../workflows/granola-call/package.json";
-import processGranolaCallPkg from "../workflows/process-granola-call/package.json";
-import morningBriefPkg from "../workflows/morning-brief/package.json";
-import painPointCollateralPkg from "../workflows/pain-point-collateral/package.json";
-import collateralGenerationPkg from "../workflows/collateral-generation/package.json";
-import redditOpportunityScannerPkg from "../workflows/reddit-opportunity-scanner/package.json";
-import last30DaysResearchPkg from "../workflows/last-30-days-research/package.json";
-import diligenceBriefPkg from "../workflows/diligence-brief/package.json";
-import exaTopicWatchPkg from "../workflows/exa-topic-watch/package.json";
-import attioTaskAgentPkg from "../workflows/attio-task-agent/package.json";
+import echoPkg from "../../../workflows/echo/package.json";
+import codeReviewPkg from "../../../workflows/code-review/package.json";
+import assistantPkg from "../../../workflows/assistant/package.json";
+import heartbeatPkg from "../../../workflows/heartbeat/package.json";
+import workbenchDigestPkg from "../../../workflows/workbench-digest/package.json";
+import granolaCallPkg from "../../../workflows/granola-call/package.json";
+import processGranolaCallPkg from "../../../workflows/process-granola-call/package.json";
+import morningBriefPkg from "../../../workflows/morning-brief/package.json";
+import painPointCollateralPkg from "../../../workflows/pain-point-collateral/package.json";
+import collateralGenerationPkg from "../../../workflows/collateral-generation/package.json";
+import redditOpportunityScannerPkg from "../../../workflows/reddit-opportunity-scanner/package.json";
+import last30DaysResearchPkg from "../../../workflows/last-30-days-research/package.json";
+import diligenceBriefPkg from "../../../workflows/diligence-brief/package.json";
+import exaTopicWatchPkg from "../../../workflows/exa-topic-watch/package.json";
+import attioTaskAgentPkg from "../../../workflows/attio-task-agent/package.json";
 
 const CorbitsWorkflowBlock = type({
   assetName: "string > 0",

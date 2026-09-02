@@ -34,3 +34,15 @@ export {
   type WorkflowLifecycle,
   type WorkflowLifecycleResult,
 } from "./detail/definition-lifecycle";
+export {
+  WorkflowTriggerField,
+  WORKFLOW_CATALOG,
+  isAutomatableWorkflowName,
+  isConversationalWorkflowName,
+  deliveryWorkbenchRequiredForWorkflowName,
+  workflowCatalogEntry,
+  workflowDisplayName,
+  validateTriggerFieldsAtCreate,
+  type WorkflowCatalogEntry,
+  type TriggerFieldsValidation,
+} from "./catalog";

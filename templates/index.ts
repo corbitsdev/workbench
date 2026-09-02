@@ -218,7 +218,7 @@ export {
   validateTriggerFieldsAtCreate,
   type WorkflowCatalogEntry,
   type TriggerFieldsValidation,
-} from "./catalog";
+} from "@corbits/workflows/catalog";
 
 import { GTM_TEMPLATE } from "./gtm";
 import { CODE_REVIEW_TEMPLATE } from "./code-review";

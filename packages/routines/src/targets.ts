@@ -20,8 +20,6 @@ import {
   isAutomatableWorkflowName,
   isConversationalWorkflowName,
   workflowDisplayName,
-} from "@workbench/templates";
-import {
   listLaunchableDefinitions,
   type LaunchableDefinition,
 } from "@corbits/workflows";
