@@ -300,7 +300,7 @@ describe.skipIf(databaseUrl === undefined)(
         },
       );
 
-      const definitionId = await hop("workflow deploy", async () => {
+      await hop("workflow deploy", async () => {
         const sourceId = "src-routine-trigger-input-e2e";
         assertNeverRealProvider(noopBaseUrl, "workflow deploy source baseURL");
         const body = workflowDeployBody({
@@ -511,7 +511,7 @@ describe.skipIf(databaseUrl === undefined)(
           `/api/tenants/${tenantId}/webhook-triggers`,
           {
             name: "Input webhook",
-            workflowDefinitionId: definitionId,
+            workflowDefinitionId: assetId,
             inputTemplate: "topic: {{topic}}\nsource: {{source}}",
           },
           cookies,

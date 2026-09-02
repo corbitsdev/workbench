@@ -257,7 +257,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
         },
       );
 
-      const definitionId = await hop("workflow deploy", async () => {
+      await hop("workflow deploy", async () => {
         const sourceId = "src-smoke-webhook-e2e";
         assertNeverRealProvider(noopBaseUrl, "workflow deploy source baseURL");
         const body = workflowDeployBody({
@@ -330,7 +330,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
             `/api/tenants/${tenantId}/webhook-triggers`,
             {
               name: "Smoke webhook",
-              workflowDefinitionId: definitionId,
+              workflowDefinitionId: assetId,
               inputTemplate: "webhook smoke: {{event}}",
             },
             cookies,
