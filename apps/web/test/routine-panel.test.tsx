@@ -772,7 +772,9 @@ describe("RoutinePanel", () => {
         "#routine-panel-target",
       ) as HTMLSelectElement;
       expect(select.value).toBe("asset_myra");
-      expect(container.textContent).toContain("That target isn't deployed yet.");
+      expect(container.textContent).toContain(
+        "That target isn't deployed yet.",
+      );
       expect(instruction.value).toBe("not yet blurred");
     });
 
