@@ -7,7 +7,11 @@ import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 
 import type { TenantEnv } from "@intx/hub-api";
-import type { ConditionRegistry, GrantRule, GrantStore } from "@intx/types/authz";
+import type {
+  ConditionRegistry,
+  GrantRule,
+  GrantStore,
+} from "@intx/types/authz";
 import {
   createRoutineRoutes,
   fireScheduledRoutine,
