@@ -38,7 +38,7 @@ import {
 import {
   renderWorkflowSourceTree,
   WORKFLOW_SOURCE_ENTRY,
-} from "../../packages/workflow-source/src/index.ts";
+} from "../../packages/workflows/src/source.ts";
 import {
   api,
   assertNeverRealProvider,
