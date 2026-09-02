@@ -1877,21 +1877,22 @@ export async function createHub(config: HubConfig) {
   // `agent-definitions`' `tenantDefaultModel` does above — an agent never
   // supplies or sees a provider secret. Exclusive sidecar placement is out
   // of scope: an agent-authored deploy always lands on shared capacity.
+  // Thin adapter over Interchange's native deploy: `registry.deploy()`
+  // (packages/agent-workflow-authoring) already resolves and authorizes the
+  // asset (own-tenant row check, `workflow:*`/create) before calling this,
+  // so this seam receives the already-resolved `assetId`/`assetName`
+  // rather than re-querying `assetTable` — the only work this adapter adds
+  // on top of native `sessionService.deployWorkflowFromSource` is
+  // server-side inference-source resolution (`resolveDefinitionSources`),
+  // because the native `/workflows/deployments` route requires the caller
+  // to supply `sources` directly and an agent caller must never see a
+  // provider secret to do that itself. `modelRequirements: null` is
+  // deliberate: a workflow's own declared model needs (if any) are not
+  // considered at this step, matching `agent-definitions`' identical
+  // tenant-default resolution above; deploy always resolves against the
+  // tenant's default/first-preference model.
   const workflowDeployer: WorkflowDeployer = {
-    async deploy({ tenantId, principalId, assetId, commitSha, entry }) {
-      const assetRow = await db.query.asset.findFirst({
-        where: and(
-          eq(assetTable.id, assetId),
-          eq(assetTable.tenantId, tenantId),
-          eq(assetTable.kind, "workflow"),
-        ),
-      });
-      if (assetRow === undefined) {
-        throw new WorkflowAuthorError(
-          "not_found",
-          `workflow asset ${assetId} not found`,
-        );
-      }
+    async deploy({ tenantId, principalId, assetId, assetName, commitSha, entry }) {
       const tenantRow = await db.query.tenant.findFirst({
         where: eq(tenantTable.id, tenantId),
       });
@@ -1947,12 +1948,12 @@ export async function createHub(config: HubConfig) {
             package: { format: "source", commitSha },
           },
           entry,
-          definitionAssetId: assetRow.id,
+          definitionAssetId: assetId,
           config,
         });
         return {
           deploymentId: result.anchorRunId,
-          definitionAssetId: assetRow.id,
+          definitionAssetId: assetId,
           status: "deployed",
         };
       } catch (err) {

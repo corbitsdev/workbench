@@ -271,10 +271,13 @@ export const workflowAuthoringTools = defineTool<WorkflowAuthoringEnv>({
           "Interchange's native deploy pipeline (install, probe, capability " +
           "walk, gate, freeze), making it selectable as a routine target. " +
           "A human must approve this before it runs: the approval card " +
-          "shows the asset, commit, and entry this call names. Inference " +
-          "sources come from the workbench's own catalog — never pass a " +
-          "model or credential. If the deploy fails because the probed " +
-          "capability surface changed, re-read the source and retry.",
+          "shows the asset, commit, and entry this call names — it does " +
+          "not yet show the grants/capabilities the deploy would freeze " +
+          "(CL-7362), so say so explicitly if you explain this approval " +
+          "to a human. Inference sources come from the workbench's own " +
+          "catalog — never pass a model or credential. If the deploy " +
+          "fails because the probed capability surface changed, re-read " +
+          "the source and retry.",
         inputSchema: {
           type: "object",
           properties: {

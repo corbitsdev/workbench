@@ -556,6 +556,7 @@ test("deploy calls the injected deployer with the caller's own scope once author
     tenantId: "tenant_1",
     principalId: "principal_1",
     assetId: "asset_1",
+    assetName: "daily-digest",
     commitSha: "sha_1",
     entry: "./workflow.ts",
   });
