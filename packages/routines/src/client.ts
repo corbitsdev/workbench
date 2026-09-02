@@ -189,6 +189,10 @@ export type UpdateRoutineInput = {
   readonly enabled?: boolean;
   readonly input?: Record<string, unknown>;
   readonly deliveryWorkbenchId?: string;
+  /** Retargets the routine to a different workflow asset (CL-7358) — the
+   * server validates it through `routineTargetRejection` (`./target.ts`)
+   * before applying, and rejects a stale/cross-tenant/undeployed asset. */
+  readonly definitionAssetId?: string;
 };
 
 export type CreateDraftInput = {
