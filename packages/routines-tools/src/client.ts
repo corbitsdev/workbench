@@ -131,7 +131,10 @@ export async function createRoutine(
   const doFetch = runBearerFetch(config);
   const response = await doFetch(endpoint(config, "/routines"), {
     method: "POST",
-    headers: { ...runBearerHeaders(config), "content-type": "application/json" },
+    headers: {
+      ...runBearerHeaders(config),
+      "content-type": "application/json",
+    },
     body: JSON.stringify(input),
   });
   if (!response.ok) {
@@ -162,7 +165,10 @@ export async function updateRoutine(
   const doFetch = runBearerFetch(config);
   const response = await doFetch(endpoint(config, `/routines/${routineId}`), {
     method: "PATCH",
-    headers: { ...runBearerHeaders(config), "content-type": "application/json" },
+    headers: {
+      ...runBearerHeaders(config),
+      "content-type": "application/json",
+    },
     body: JSON.stringify(patch),
   });
   if (!response.ok) {
