@@ -152,9 +152,6 @@
       "path": "./packages/workflow-deploy-source/tsconfig.src.json"
     },
     {
-      "path": "./packages/workflow-freeze/tsconfig.src.json"
-    },
-    {
       "path": "./packages/workflow-source/tsconfig.src.json"
     },
     {
