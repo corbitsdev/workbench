@@ -700,6 +700,8 @@ function stopButton(): HTMLButtonElement {
 function mountStoppable(
   running: boolean,
   onStop: () => void | Promise<unknown>,
+  onSend: (payload: ComposerSendPayload) => Promise<boolean> = () =>
+    Promise.resolve(true),
 ) {
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -708,7 +710,7 @@ function mountStoppable(
     root?.render(
       createElement(Composer, {
         agents: [],
-        onSend: () => Promise.resolve(true),
+        onSend,
         onInviteAgent: () => undefined,
         onOpenAgentsSettings: () => undefined,
         onCreateRoutineInSpace: () => undefined,
@@ -724,7 +726,7 @@ function mountStoppable(
         root?.render(
           createElement(Composer, {
             agents: [],
-            onSend: () => Promise.resolve(true),
+            onSend,
             onInviteAgent: () => undefined,
             onOpenAgentsSettings: () => undefined,
             onCreateRoutineInSpace: () => undefined,
@@ -742,8 +744,37 @@ describe("Composer stop affordance (CL-7201)", () => {
     mountStoppable(true, () => undefined);
 
     const actions = container?.querySelector(".chat-composer-actions");
+    const submitActions = stopButton().parentElement;
     expect(actions?.children).toHaveLength(3);
-    expect(stopButton().parentElement).toBe(sendButton().parentElement);
+    expect(
+      submitActions?.classList.contains("chat-composer-submit-actions"),
+    ).toBe(true);
+    expect(submitActions?.children).toHaveLength(2);
+    expect(submitActions?.lastElementChild).toBe(sendButton());
+    expect(actions?.lastElementChild).toBe(submitActions);
+  });
+
+  test("keeps queued sends available while Stop is visible", async () => {
+    const sent: ComposerSendPayload[] = [];
+    mountStoppable(
+      true,
+      () => undefined,
+      (payload) => {
+        sent.push(payload);
+        return Promise.resolve(true);
+      },
+    );
+
+    typeInto(textarea(), "follow-up");
+    await settle();
+
+    expect(sendButton().hasAttribute("disabled")).toBe(false);
+    act(() => {
+      sendButton().click();
+    });
+    await settle();
+
+    expect(sent).toEqual([{ text: "follow-up", attachments: [] }]);
   });
 
   test("renders no Stop button when no turn is running", () => {
