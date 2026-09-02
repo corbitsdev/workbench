@@ -10,13 +10,15 @@ import { createNoopCredentialCipher } from "@intx/crypto";
 import { CredentialResponse, paginatedSchema } from "@intx/types";
 import type { CredentialCipher } from "@intx/types";
 import {
+  supportedCredentialProviders,
+  type SupportedCredentialProvider,
+} from "@workbench/hub-client";
+import {
   inferenceCredentialName,
   SETUP_AGENT_ASSET_NAME,
-  supportedCredentialProviders,
   type ModelSource,
-  type SupportedCredentialProvider,
   type WorkflowPusher,
-} from "@workbench/hub-client";
+} from "@corbits/seeding";
 import {
   cookiesFromHeader,
   createHubAPI,

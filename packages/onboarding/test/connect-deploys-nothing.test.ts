@@ -15,7 +15,7 @@ import type { CredentialCipher } from "@intx/types";
 import {
   DEFAULT_WORKFLOWS,
   SETUP_AGENT_ASSET_NAME,
-} from "@workbench/hub-client";
+} from "@corbits/seeding";
 import { createOnboardingRoutes } from "../src/routes";
 import {
   createInMemoryPendingSeedStore,

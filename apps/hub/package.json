@@ -65,6 +65,7 @@
     "@workbench/access-policy": "workspace:*",
     "@workbench/connections": "workspace:*",
     "@corbits/hub-api-client": "workspace:*",
+    "@corbits/seeding": "workspace:*",
     "@workbench/hub-client": "workspace:*",
     "@workbench/onboarding": "workspace:*",
     "@workbench/templates": "workspace:*",

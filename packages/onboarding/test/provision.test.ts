@@ -3,8 +3,8 @@ import {
   DEFAULT_WORKFLOWS,
   SEED_GRANTS,
   SETUP_AGENT_ASSET_NAME,
-} from "@workbench/hub-client";
-import type { WorkflowPusher } from "@workbench/hub-client";
+} from "@corbits/seeding";
+import type { WorkflowPusher } from "@corbits/seeding";
 import type { ApiCall } from "@corbits/hub-api-client";
 import {
   isFullySeeded,

@@ -1,10 +1,22 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "include": ["src", "test"],
+  "extends": "./tsconfig.src.json",
   "compilerOptions": {
-    "jsx": "react-jsx",
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "types": ["bun"],
-    "noEmit": true
-  }
+    "composite": false,
+    "noEmit": true,
+    "disableSourceOfProjectReferenceRedirect": true,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "rootDir": "../.."
+  },
+  "include": ["src"],
+  "exclude": [],
+  "references": [
+    {
+      "path": "../../vendor/intx/types/tsconfig.src.json"
+    },
+    {
+      "path": "../hub-client/tsconfig.src.json"
+    }
+  ]
 }

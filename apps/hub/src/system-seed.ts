@@ -28,7 +28,7 @@ import {
   DEFAULT_WORKFLOWS,
   PLACEHOLDER_CATALOG_API_KEY,
   type ModelSource,
-} from "@workbench/hub-client";
+} from "@corbits/seeding";
 import { createHubAPI, signIn, type ApiCall } from "@corbits/hub-api-client";
 import { findPersonalTenant } from "@workbench/onboarding";
 

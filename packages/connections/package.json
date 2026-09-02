@@ -33,6 +33,7 @@
     "@intx/types": "workspace:*",
     "@modelcontextprotocol/sdk": "catalog:",
     "@corbits/hub-api-client": "workspace:*",
+    "@corbits/seeding": "workspace:*",
     "@workbench/hub-client": "workspace:*",
     "@workbench/templates": "workspace:*",
     "arktype": "catalog:",

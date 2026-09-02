@@ -20,7 +20,7 @@ import {
   ProviderResponse,
   paginatedSchema,
 } from "@intx/types";
-import { ensureCredential, ensureProvider } from "@workbench/hub-client";
+import { ensureCredential, ensureProvider } from "@corbits/seeding";
 import {
   cookiesFromHeader,
   createHubAPI,

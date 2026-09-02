@@ -65,7 +65,6 @@ export const ENTRIES: readonly BrowserSafeEntry[] = [
   // CL-6099: the Inference settings section (packages/inference-settings)
   // imports this for its known-provider base URL seeds — plain data, no
   // HTTP, so it is safe alongside the other browser-facing subpaths above.
-  { package: "@workbench/hub-client", subpath: "./catalog-seed-data" },
   // @corbits/presence's "." export reaches ./routes, and through it the
   // whole @intx/hub-api server graph. Its two browser halves — the
   // transport client and the pure per-principal color function — are

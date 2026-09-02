@@ -61,16 +61,18 @@ import {
   paginatedSchema,
 } from "@intx/types";
 import {
+  ollamaOpenAICompatBaseURL,
+  type SupportedCredentialProvider,
+} from "@workbench/hub-client";
+import { preferCompletionCapable } from "@workbench/hub-client/model-capability";
+import {
   CATALOG_SEEDS,
   DEFAULT_WORKFLOWS,
-  ollamaOpenAICompatBaseURL,
   seedTenant,
   type ModelSource,
   type SeedTenantArgs,
-  type SupportedCredentialProvider,
   type WorkflowPusher,
-} from "@workbench/hub-client";
-import { preferCompletionCapable } from "@workbench/hub-client/model-capability";
+} from "@corbits/seeding";
 import {
   isSidecarUnavailableError,
   parseAs,

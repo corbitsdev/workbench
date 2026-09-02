@@ -62,8 +62,8 @@ import {
   fetchOllamaModelCatalog,
   ollamaOpenAICompatBaseURL,
   type SupportedCredentialProvider,
-} from "./credential-test";
-import { hasCompletionCapableModel } from "./model-capability";
+} from "@workbench/hub-client/credential-test";
+import { hasCompletionCapableModel } from "@workbench/hub-client/model-capability";
 
 const GIT_TOKEN_TTL_MS = 10 * 60 * 1000;
 const ECHO_TURN_TIMEOUT_MS = 2 * 60 * 1000;
