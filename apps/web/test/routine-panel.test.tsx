@@ -568,9 +568,7 @@ describe("RoutinePanel", () => {
       await settle();
 
       expect(createRoutineCalls).toHaveLength(1);
-      expect(createRoutineCalls[0]?.["definitionAssetId"]).toBe(
-        "asset_digest",
-      );
+      expect(createRoutineCalls[0]?.["definitionAssetId"]).toBe("asset_digest");
     });
 
     test("empty target list shows the empty state with a link to Agents settings, not a picker", async () => {
