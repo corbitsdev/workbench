@@ -117,6 +117,7 @@ function recordingAgentDefinitionDeployer(db: ReturnType<typeof createDB>["db"])
     tenantId: string;
     principalId: string;
     assetId: string;
+    assetName: string;
     commitSha: string;
     entry: string;
   }[] = [];
@@ -126,6 +127,7 @@ function recordingAgentDefinitionDeployer(db: ReturnType<typeof createDB>["db"])
       tenantId: string;
       principalId: string;
       assetId: string;
+      assetName: string;
       commitSha: string;
       entry: string;
     }) => {
@@ -143,7 +145,7 @@ function recordingAgentDefinitionDeployer(db: ReturnType<typeof createDB>["db"])
       return {
         deploymentId: "dep_1",
         definitionAssetId: input.assetId,
-        status: "deployed",
+        status: "deployed" as const,
       };
     },
   };
