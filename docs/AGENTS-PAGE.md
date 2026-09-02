@@ -42,7 +42,7 @@ description) and definition (system prompt, model) and posts to
    `@corbits/assistant-workflow` and `@corbits/chat`'s workbench host produce,
    parametrized instead of fixed — and renders it as a source codebase
    (`@corbits/workflow-source`'s `renderWorkflowSourceTree`), never a bare
-   `workflow.json` envelope.
+   `workflow.json` envelope. `workflow.json` is retired; nothing writes it.
 2. Creates a `workflow`-kind asset and writes that source tree into it
    in-process (`AssetService.populateAsset` — no git subprocess), which
    produces a commit.
