@@ -4,6 +4,7 @@ import type { ToolCall } from "@intx/types/runtime";
 import {
   workflowAuthoringTools,
   WORKFLOW_AUTHOR_TOOL,
+  WORKFLOW_DEPLOY_PREVIEW_TOOL,
   WORKFLOW_DEPLOY_TOOL,
   WORKFLOW_REPUBLISH_TOOL,
   WORKFLOW_SOURCE_READ_TOOL,
@@ -36,11 +37,12 @@ async function withFetch<T>(
   }
 }
 
-test("declares the three source tools with no approval gate and workflow_deploy behind approval: ask", () => {
+test("declares the four no-approval tools with workflow_deploy alone behind approval: ask", () => {
   expect(workflowAuthoringTools.definitions).toEqual([
     { name: WORKFLOW_AUTHOR_TOOL },
     { name: WORKFLOW_REPUBLISH_TOOL },
     { name: WORKFLOW_SOURCE_READ_TOOL },
+    { name: WORKFLOW_DEPLOY_PREVIEW_TOOL },
     { name: WORKFLOW_DEPLOY_TOOL, approval: "ask" },
   ]);
   expect(workflowAuthoringTools.requires).toEqual([
@@ -174,7 +176,7 @@ test("workflow_source_read returns the snapshot as JSON the model can parse", as
   expect(JSON.parse(String(result.content))).toEqual(snapshot);
 });
 
-test("workflow_deploy posts assetId, commitSha, and entry to the deploy route", async () => {
+test("workflow_deploy posts assetId, commitSha, entry, and expectedWireHash to the deploy route", async () => {
   const bundle = workflowAuthoringTools(testEnv());
   let seenUrl: string | undefined;
   let seenBody: unknown;
@@ -200,6 +202,8 @@ test("workflow_deploy posts assetId, commitSha, and entry to the deploy route", 
           assetId: "asset_1",
           commitSha: "sha_1",
           entry: "./workflow.ts",
+          expectedWireHash: "wire_abc",
+          grants: ["email:*/send"],
         }),
         new AbortController().signal,
       ),
@@ -207,13 +211,20 @@ test("workflow_deploy posts assetId, commitSha, and entry to the deploy route", 
   expect(seenUrl).toBe(
     "https://hub.example.com/api/workflow-workflow-authoring/asset_1/deploy",
   );
-  expect(seenBody).toEqual({ commitSha: "sha_1", entry: "./workflow.ts" });
+  // `grants` is carried on the approval card via the tool call's own
+  // arguments (see @corbits/approvals' headline.ts), not re-sent to the
+  // hub — the deploy route only needs the wire hash it re-verifies against.
+  expect(seenBody).toEqual({
+    commitSha: "sha_1",
+    entry: "./workflow.ts",
+    expectedWireHash: "wire_abc",
+  });
   expect(result.isError).toBe(false);
   expect(result.content).toContain("run_1");
   expect(result.content).toContain("asset_1");
 });
 
-test("workflow_deploy rejects a call missing commitSha without calling the hub", async () => {
+test("workflow_deploy rejects a call missing expectedWireHash or grants without calling the hub", async () => {
   const bundle = workflowAuthoringTools(testEnv());
   await withFetch(
     () => {
@@ -224,6 +235,7 @@ test("workflow_deploy rejects a call missing commitSha without calling the hub",
         bundle.run(
           call(WORKFLOW_DEPLOY_TOOL, {
             assetId: "asset_1",
+            commitSha: "sha_1",
             entry: "./workflow.ts",
           }),
           new AbortController().signal,
@@ -231,6 +243,43 @@ test("workflow_deploy rejects a call missing commitSha without calling the hub",
       ).rejects.toThrow(/invalid input/);
     },
   );
+});
+
+test("workflow_deploy_preview posts assetId, commitSha, and entry to the preview route and never approval-gates", async () => {
+  const bundle = workflowAuthoringTools(testEnv());
+  let seenUrl: string | undefined;
+  const result = await withFetch(
+    (url) => {
+      seenUrl = url;
+      return new Response(
+        JSON.stringify({
+          data: { wireHash: "wire_abc", grants: ["email:*/send"] },
+        }),
+      );
+    },
+    () =>
+      bundle.run(
+        call(WORKFLOW_DEPLOY_PREVIEW_TOOL, {
+          assetId: "asset_1",
+          commitSha: "sha_1",
+          entry: "./workflow.ts",
+        }),
+        new AbortController().signal,
+      ),
+  );
+  expect(seenUrl).toBe(
+    "https://hub.example.com/api/workflow-workflow-authoring/asset_1/deploy/preview",
+  );
+  expect(result.isError).toBe(false);
+  expect(JSON.parse(String(result.content))).toEqual({
+    wireHash: "wire_abc",
+    grants: ["email:*/send"],
+  });
+  expect(
+    workflowAuthoringTools.definitions.find(
+      (d) => d.name === WORKFLOW_DEPLOY_PREVIEW_TOOL,
+    )?.approval,
+  ).toBeUndefined();
 });
 
 test("an unknown tool name rejects loudly, never a silent no-op", async () => {

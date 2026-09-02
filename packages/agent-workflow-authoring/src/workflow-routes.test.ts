@@ -30,6 +30,9 @@ function fakeRegistry(
     deploy: async () => {
       throw new Error("deploy not stubbed");
     },
+    previewDeploy: async () => {
+      throw new Error("previewDeploy not stubbed");
+    },
     ...overrides,
   };
 }
@@ -294,4 +297,69 @@ test("POST /:assetId/deploy surfaces a sidecar-unavailable deploy as 502", async
     req("/asset_1/deploy", { commitSha: "sha_1", entry: "./workflow.ts" }),
   );
   expect(res.status).toBe(502);
+});
+
+test("POST /:assetId/deploy/preview returns the walked grant surface without deploying", async () => {
+  let deployCalled = false;
+  let seen: { assetId: string; commitSha: string; entry: string } | undefined;
+  const app = createWorkflowAuthorRoutes({
+    authenticator: fakeAuthenticator({
+      tenantId: "tenant_1",
+      principalId: "principal_1",
+    }),
+    registry: fakeRegistry({
+      deploy: async () => {
+        deployCalled = true;
+        throw new Error("must not be called by a preview");
+      },
+      previewDeploy: async (_caller, assetId, input) => {
+        seen = { assetId, ...input };
+        return { wireHash: "wire_abc", grants: ["email:*/send"] };
+      },
+    }),
+  });
+  const res = await app.request(
+    req("/asset_1/deploy/preview", {
+      commitSha: "sha_1",
+      entry: "./workflow.ts",
+    }),
+  );
+  expect(res.status).toBe(200);
+  expect(seen).toEqual({
+    assetId: "asset_1",
+    commitSha: "sha_1",
+    entry: "./workflow.ts",
+  });
+  const body = (await res.json()) as {
+    data: { wireHash: string; grants: string[] };
+  };
+  expect(body.data).toEqual({ wireHash: "wire_abc", grants: ["email:*/send"] });
+  expect(deployCalled).toBe(false);
+});
+
+test("POST /:assetId/deploy surfaces a wire_hash_mismatch as 409, distinct from a plain conflict", async () => {
+  const app = createWorkflowAuthorRoutes({
+    authenticator: fakeAuthenticator({
+      tenantId: "tenant_1",
+      principalId: "principal_1",
+    }),
+    registry: fakeRegistry({
+      deploy: async () => {
+        throw new WorkflowAuthorError(
+          "wire_hash_mismatch",
+          "deploy succeeded but the frozen wire hash does not match the approved wire hash",
+        );
+      },
+    }),
+  });
+  const res = await app.request(
+    req("/asset_1/deploy", {
+      commitSha: "sha_1",
+      entry: "./workflow.ts",
+      expectedWireHash: "wire_approved",
+    }),
+  );
+  expect(res.status).toBe(409);
+  const body = (await res.json()) as { error: { code: string } };
+  expect(body.error.code).toBe("wire_hash_mismatch");
 });
