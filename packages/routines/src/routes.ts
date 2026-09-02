@@ -36,6 +36,7 @@ import {
   routineTargetRejection,
   type LaunchableDefinitionResolver,
 } from "./target";
+import { validateRetarget } from "./routine-operations";
 import { makeErrorEnvelope } from "@workbench/hub-client";
 import {
   MyraRoutineDraftingUnavailableError,
@@ -340,11 +341,7 @@ export async function rejectUnlaunchableTarget(
   tenantId: string,
   principalId: string,
   definitionAssetId: string,
-): Promise<
-  | ReturnType<typeof routineTargetRejection>
-  | { readonly status: 403; readonly code: string; readonly userMessage: string }
-  | undefined
-> {
+): Promise<ReturnType<typeof routineTargetRejection> | undefined> {
   if (deps.resolveTarget === undefined) return undefined;
   const target = await deps.resolveTarget(tenantId, definitionAssetId);
   if (!target.ok) return routineTargetRejection(target.reason);
@@ -360,11 +357,12 @@ export async function rejectUnlaunchableTarget(
     deps.conditionRegistry,
   );
   if (decision.effect === "allow") return undefined;
-  return {
-    status: 403,
-    code: "routine_target_forbidden",
-    userMessage: "You don't have access to that workflow.",
-  };
+  // A denial is reported identically to "not found" — naming a
+  // deployed-but-ungranted definition must not let a caller distinguish
+  // "exists, no access" from "doesn't exist" by probing different ids,
+  // same rule `target.ts`'s `routineTargetRejection` states for a
+  // cross-tenant asset.
+  return routineTargetRejection("not_found");
 }
 
 async function runView(
@@ -842,10 +840,11 @@ export function createRoutineRoutes(
         );
       }
 
-      if (
+      const isRetarget =
         body.definitionAssetId !== undefined &&
-        body.definitionAssetId !== existing.definitionAssetId
-      ) {
+        body.definitionAssetId !== existing.definitionAssetId;
+
+      if (isRetarget && body.definitionAssetId !== undefined) {
         const rejection = await rejectUnlaunchableTarget(
           deps,
           tenant.id,
@@ -861,7 +860,26 @@ export function createRoutineRoutes(
             rejection.status,
           );
         }
+
+        const retargetRejection = await validateRetarget(
+          deps,
+          tenant.id,
+          body.definitionAssetId,
+          existing,
+        );
+        if (retargetRejection !== undefined) {
+          return c.json(
+            makeErrorEnvelope({
+              code: retargetRejection.code,
+              userMessage: retargetRejection.userMessage,
+            }),
+            400,
+          );
+        }
       }
+
+      const effectiveDefinitionAssetId =
+        body.definitionAssetId ?? existing.definitionAssetId;
 
       if (
         body.trigger !== undefined &&
@@ -869,7 +887,7 @@ export function createRoutineRoutes(
           deps,
           tenant.id,
           body.trigger,
-          existing.definitionAssetId,
+          effectiveDefinitionAssetId,
         ))
       ) {
         return c.json(

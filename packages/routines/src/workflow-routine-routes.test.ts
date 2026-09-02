@@ -9,6 +9,7 @@
 import { expect, test } from "bun:test";
 import { Hono } from "hono";
 
+import type { ConditionRegistry, GrantRule, GrantStore } from "@intx/types/authz";
 import {
   createWorkflowRoutineRoutes,
   type CreateWorkflowRoutineRoutesDeps,
@@ -61,6 +62,29 @@ function fakeWorkbenchNotice(): WorkbenchNoticePort & {
     },
   };
 }
+
+function allowGrant(): GrantRule {
+  return {
+    id: "g_read",
+    resource: "workflow-definition:*",
+    action: "read",
+    effect: "allow",
+    origin: "system",
+    conditions: null,
+    expiresAt: null,
+    roleId: null,
+    principalId: null,
+  };
+}
+
+function fakeGrantStore(grants: readonly GrantRule[]): GrantStore {
+  return {
+    collectGrants: async () => [...grants],
+    collectGrantsInChain: async () => [...grants],
+  };
+}
+
+const conditionRegistry: ConditionRegistry = {};
 
 /** A store that always creates a routine already disabled — see the
  * identical helper in `./test/routes.test.ts` for why. */
@@ -351,6 +375,85 @@ test("PATCH /routines/:id updates enabled, name, trigger, and input", async () =
   expect(body["name"]).toBe("Evening digest");
   expect(body["trigger"]).toEqual({ kind: "daily", hour: 18, minute: 30 });
   expect(body["input"]).toEqual({ instruction: "Summarize today's threads" });
+});
+
+// Mirrors `./test/routes.test.ts`'s "retargeting a routine's definition
+// (CL-7353/CL-7354)" describe block on this file's own run-authenticated
+// (Myra) surface — `rejectUnlaunchableTarget` and the duplicate-patch fix
+// both live in this file's PATCH handler, not the tenant-session one.
+test("a retarget-only PATCH changes definitionAssetId and leaves every other field untouched", async () => {
+  const deps = buildDeps({
+    resolveTarget: async (_tenantId, definitionAssetId) => ({
+      ok: true,
+      definitionId: `wfd_${definitionAssetId}`,
+      wireHash: "h1",
+    }),
+  });
+  const app = buildApp(deps);
+  const { body: created } = await createRoutine(app, VALID_BODY);
+
+  const response = await app.request(`/routines/${String(created["id"])}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", ...AUTH_HEADERS },
+    body: JSON.stringify({ definitionAssetId: "ast_retargeted" }),
+  });
+  const body = (await response.json()) as Record<string, unknown>;
+
+  expect(response.status).toBe(200);
+  expect(body["definitionAssetId"]).toBe("ast_retargeted");
+  expect(body["name"]).toBe(created["name"]);
+  expect(body["trigger"]).toEqual(created["trigger"]);
+  expect(body["input"]).toEqual(created["input"]);
+});
+
+test("a retarget PATCH is refused 404 (indistinguishable from not-found) when the new target is not authorized", async () => {
+  const deps = buildDeps({
+    resolveTarget: async () => ({
+      ok: true,
+      definitionId: "wfd_v1",
+      wireHash: "h1",
+    }),
+    grantStore: fakeGrantStore([allowGrant()]),
+    conditionRegistry,
+  });
+  const app = buildApp(deps);
+  const { response: createResponse, body: created } = await createRoutine(
+    app,
+    VALID_BODY,
+  );
+  expect(createResponse.status).toBe(201);
+
+  deps.grantStore = fakeGrantStore([]);
+  const response = await app.request(`/routines/${String(created["id"])}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", ...AUTH_HEADERS },
+    body: JSON.stringify({ definitionAssetId: "ast_forbidden" }),
+  });
+  const body = (await response.json()) as Record<string, unknown>;
+
+  expect(response.status).toBe(404);
+  expect((body["error"] as Record<string, unknown>)["code"]).toBe(
+    "routine_target_not_found",
+  );
+});
+
+test("a create is refused 404 (indistinguishable from not-found) when the resolved target is not authorized", async () => {
+  const deps = buildDeps({
+    resolveTarget: async () => ({
+      ok: true,
+      definitionId: "wfd_v1",
+      wireHash: "h1",
+    }),
+    grantStore: fakeGrantStore([]),
+    conditionRegistry,
+  });
+  const app = buildApp(deps);
+  const { response, body } = await createRoutine(app, VALID_BODY);
+
+  expect(response.status).toBe(404);
+  expect((body["error"] as Record<string, unknown>)["code"]).toBe(
+    "routine_target_not_found",
+  );
 });
 
 test("POST /routines posts an honest notice when created enabled", async () => {
