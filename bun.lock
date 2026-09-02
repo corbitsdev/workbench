@@ -1237,7 +1237,7 @@
     },
     "packages/routines-tools": {
       "name": "@corbits/routines-tools",
-      "version": "0.0.7",
+      "version": "0.0.8",
       "dependencies": {
         "@corbits/routines": "workspace:*",
         "@intx/agent": "workspace:*",
@@ -1521,6 +1521,19 @@
       },
       "devDependencies": {
         "@intx/crypto": "0.3.0",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/workflow-authoring-tools": {
+      "name": "@corbits/workflow-authoring-tools",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
@@ -2362,6 +2375,8 @@
     "@corbits/webhook-triggers": ["@corbits/webhook-triggers@workspace:packages/webhook-triggers"],
 
     "@corbits/workbench-digest-workflow": ["@corbits/workbench-digest-workflow@workspace:workflows/workbench-digest"],
+
+    "@corbits/workflow-authoring-tools": ["@corbits/workflow-authoring-tools@workspace:packages/workflow-authoring-tools"],
 
     "@corbits/workflow-catalog": ["@corbits/workflow-catalog@workspace:packages/workflow-catalog"],
 

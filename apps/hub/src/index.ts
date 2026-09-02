@@ -1875,6 +1875,7 @@ export async function createHub(config: HubConfig) {
       registry: createWorkflowAuthorRegistry({
         db,
         assetService,
+        repoStore: agentRepoStore.repoStore,
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
       }),
@@ -3102,6 +3103,14 @@ export async function createHub(config: HubConfig) {
     entries.push({
       name: "@corbits/interaction-tools",
       connectorId: "interaction",
+      credentialBinding: null,
+    });
+    // Workflow-source authoring needs no credential either: every write is
+    // authorized against the run's own asset grants by
+    // `/api/workflow-workflow-authoring` (mounted above).
+    entries.push({
+      name: "@corbits/workflow-authoring-tools",
+      connectorId: "workflow-authoring",
       credentialBinding: null,
     });
     return entries;

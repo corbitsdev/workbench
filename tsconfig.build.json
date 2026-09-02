@@ -146,6 +146,9 @@
       "path": "./packages/web-search-tools/tsconfig.src.json"
     },
     {
+      "path": "./packages/workflow-authoring-tools/tsconfig.src.json"
+    },
+    {
       "path": "./packages/workflow-deploy-source/tsconfig.src.json"
     },
     {
