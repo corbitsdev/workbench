@@ -991,7 +991,7 @@ describe("createRoutineRoutes", () => {
       expect(stored?.definitionAssetId).toBe(VALID_BODY.definitionAssetId);
     });
 
-    test("a create is refused 403 when the resolved target is not authorized for the acting principal", async () => {
+    test("a create is refused 404 (indistinguishable from not-found) when the resolved target is not authorized for the acting principal", async () => {
       const deps = buildDeps({
         resolveTarget: async () => ({
           ok: true,
@@ -1004,14 +1004,18 @@ describe("createRoutineRoutes", () => {
       const app = mountAs(createRoutineRoutes(deps), "user_1");
       const { response, body } = await createRoutine(app, VALID_BODY);
 
-      expect(response.status).toBe(403);
+      // Authz denial reports the same 404 shape as "no such definition" —
+      // a tenant member who lacks a fine-grained grant on one definition
+      // must not be able to distinguish "exists, no access" from
+      // "doesn't exist" by probing create/PATCH with different ids.
+      expect(response.status).toBe(404);
       expect((body["error"] as Record<string, unknown>)["code"]).toBe(
-        "routine_target_forbidden",
+        "routine_target_not_found",
       );
       expect(await deps.store.listRoutines(TENANT.id)).toEqual([]);
     });
 
-    test("a retarget PATCH is refused 403 when the new target is not authorized, and an allowed create still succeeds", async () => {
+    test("a retarget PATCH is refused 404 (indistinguishable from not-found) when the new target is not authorized, and an allowed create still succeeds", async () => {
       const deps = buildDeps({
         resolveTarget: async () => ({
           ok: true,
@@ -1037,9 +1041,9 @@ describe("createRoutineRoutes", () => {
       });
       const body = (await response.json()) as Record<string, unknown>;
 
-      expect(response.status).toBe(403);
+      expect(response.status).toBe(404);
       expect((body["error"] as Record<string, unknown>)["code"]).toBe(
-        "routine_target_forbidden",
+        "routine_target_not_found",
       );
       const stored = await deps.store.getRoutine(
         TENANT.id,

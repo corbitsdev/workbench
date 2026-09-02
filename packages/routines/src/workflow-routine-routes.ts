@@ -44,6 +44,7 @@ import {
   type WorkbenchNoticePort,
   type RoutineLauncher,
 } from "./routes";
+import { validateRetarget } from "./routine-operations";
 import type { LaunchableDefinitionResolver } from "./target";
 import {
   InvalidRoutineTargetCursorError,
@@ -458,41 +459,24 @@ export function createWorkflowRoutineRoutes(
 
     // A retarget onto a different definition can leave a routine that
     // fails at next launch unless the same checks `POST /routines` runs
-    // for these fields are re-run against the new target: an unsuited
-    // delivery workbench (required/not-required can flip per-definition)
-    // and an existing `input` that no longer satisfies the new
-    // definition's input schema.
+    // for these fields are re-run against the new target — see
+    // `./routine-operations.ts`'s `validateRetarget`, shared with
+    // `./routes.ts`'s own PATCH handler so this can't drift a second time.
     if (body.definitionAssetId !== undefined) {
-      const deliveryRequired = await isDeliveryWorkbenchRequired(
+      const retargetRejection = await validateRetarget(
         deps,
         scope.tenantId,
         effectiveDefinitionAssetId,
+        existing,
       );
-      if (deliveryRequired && existing.deliveryWorkbenchId === null) {
+      if (retargetRejection !== undefined) {
         return c.json(
           makeErrorEnvelope({
-            code: "bad_request",
-            userMessage: "deliveryWorkbenchId is required for this workflow",
+            code: retargetRejection.code,
+            userMessage: retargetRejection.userMessage,
           }),
           400,
         );
-      }
-
-      if (deps.validateRoutineInput !== undefined) {
-        const validated = await deps.validateRoutineInput(
-          scope.tenantId,
-          effectiveDefinitionAssetId,
-          existing.input,
-        );
-        if (!validated.ok) {
-          return c.json(
-            makeErrorEnvelope({
-              code: "bad_request",
-              userMessage: validated.message,
-            }),
-            400,
-          );
-        }
       }
     }
 
@@ -504,9 +488,6 @@ export function createWorkflowRoutineRoutes(
     if (body.trigger !== undefined) patch = { ...patch, trigger: body.trigger };
     if (body.input !== undefined) patch = { ...patch, input: body.input };
     if (body.enabled !== undefined) patch = { ...patch, enabled: body.enabled };
-    if (body.definitionAssetId !== undefined) {
-      patch = { ...patch, definitionAssetId: body.definitionAssetId };
-    }
 
     const row = await deps.store.updateRoutine(
       scope.tenantId,
