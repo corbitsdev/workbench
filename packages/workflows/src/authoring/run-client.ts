@@ -51,8 +51,6 @@ export function runBearerErrorCode(body: unknown): string | undefined {
   return parsed instanceof type.errors ? undefined : parsed.error.code;
 }
 
-export function runBearerFetch(
-  config: RunBearerClientConfig,
-): typeof fetch {
+export function runBearerFetch(config: RunBearerClientConfig): typeof fetch {
   return config.fetchImpl ?? fetch;
 }
