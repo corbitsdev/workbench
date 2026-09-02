@@ -33,6 +33,7 @@
 import { and, eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
+import { reportError } from "@corbits/error-sink";
 import {
   domainOf,
   launchFoldedRun,
@@ -53,7 +54,12 @@ import {
   recordSourcesDigest,
   workbenchLaunchPersistExtra,
 } from "@corbits/chat";
-import { renderRoutineInput, type RoutineLauncher } from "@corbits/routines";
+import {
+  renderRoutineInput,
+  resolveLaunchableDefinition,
+  RoutineTargetUnresolvableError,
+  type RoutineLauncher,
+} from "@corbits/routines";
 import { triggerNativeWorkflowRoutineRun } from "./native-workflow-routine-launch";
 
 const log = getLogger(["hub", "routine-launcher"]);
@@ -87,26 +93,48 @@ export function createHubRoutineLauncher(
 ): RoutineLauncher {
   return {
     async launchRoutineRun(input) {
+      const resolution = await resolveLaunchableDefinition({
+        db: deps.db,
+        tenantId: input.tenantId,
+        definitionAssetId: input.definitionAssetId,
+      });
+      if (!resolution.ok) {
+        reportError(
+          new RoutineTargetUnresolvableError(
+            input.definitionAssetId,
+            resolution.reason,
+          ),
+          {
+            operation: "routine-launcher.launchRoutineRun",
+            tenantId: input.tenantId,
+            extra: { definitionAssetId: input.definitionAssetId },
+          },
+        );
+        throw new RoutineTargetUnresolvableError(
+          input.definitionAssetId,
+          resolution.reason,
+        );
+      }
+      const definitionId = resolution.definitionId;
+
       const definitionRow = await deps.db.query.workflowDefinition.findFirst({
         where: and(
-          eq(workflowDefinition.id, input.definitionId),
+          eq(workflowDefinition.id, definitionId),
           eq(workflowDefinition.tenantId, input.tenantId),
         ),
       });
       if (definitionRow === undefined) {
-        throw new Error(
-          `no definition "${input.definitionId}" for this tenant`,
-        );
+        throw new Error(`no definition "${definitionId}" for this tenant`);
       }
       if (definitionRow.status !== "deployed") {
         throw new Error(
-          `definition "${input.definitionId}" is not in a launchable ` +
+          `definition "${definitionId}" is not in a launchable ` +
             `state (status: ${definitionRow.status})`,
         );
       }
       if (definitionRow.assetId === null) {
         throw new Error(
-          `definition "${input.definitionId}" has not been materialized`,
+          `definition "${definitionId}" has not been materialized`,
         );
       }
 
@@ -142,7 +170,7 @@ export function createHubRoutineLauncher(
         const content = renderRoutineInput(input.input);
         const triggered = await triggerNativeWorkflowRoutineRun(deps, {
           tenantId: input.tenantId,
-          definitionId: input.definitionId,
+          definitionId,
           principalId: input.principalId,
           fromDomain: tenantRow.domain,
           // A native run only starts on its first trigger mail — unlike
@@ -185,7 +213,7 @@ export function createHubRoutineLauncher(
         tenantId: input.tenantId,
         instanceId,
         triggerAddress,
-        definitionId: input.definitionId,
+        definitionId,
         foldedBody,
         launchLabel: "a routine",
         // The same `onTrigger` section shape and stable-id → current-run

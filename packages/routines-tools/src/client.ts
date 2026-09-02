@@ -12,6 +12,7 @@
 // boundary; a transport, HTTP, or shape failure throws a plain `Error`,
 // never a fabricated result.
 import { type } from "arktype";
+import { Routine, type RoutineTriggerT } from "@corbits/routines/client";
 
 export interface RoutineToolClientConfig {
   /** The hub's plain HTTP origin — same value memory-tools' `hubMemoryUrl`
@@ -23,55 +24,22 @@ export interface RoutineToolClientConfig {
   readonly fetchImpl?: typeof fetch;
 }
 
-/**
- * The trigger a routine create/update call sends. Mirrors
- * `@corbits/routines`' own `RoutineTrigger` union
- * (`packages/routines/src/trigger.ts`) structurally rather than
- * importing it, so this bundle stays a thin HTTP client with no
- * dependency on the routines package's own validation internals — the
- * route on the other end (`RoutineTrigger` there) is still the single
- * source of truth on what's actually valid; a bad shape here comes back
- * as an honest 400, never silently accepted.
- */
-export type RoutineTriggerInput =
-  | {
-      readonly kind: "daily";
-      readonly hour: number;
-      readonly minute: number;
-      readonly timezone?: string;
-    }
-  | {
-      readonly kind: "weekly";
-      readonly dayOfWeek: number;
-      readonly hour: number;
-      readonly minute: number;
-      readonly timezone?: string;
-    }
-  | {
-      readonly kind: "cron";
-      readonly expression: string;
-      readonly timezone?: string;
-    }
-  | { readonly kind: "webhook"; readonly webhookTriggerId: string };
+/** The trigger a routine create/update call sends — `@corbits/routines`'
+ * own strict `RoutineTrigger` shape (`packages/routines/src/trigger.ts`),
+ * re-exported rather than duplicated: the route on the other end is
+ * still the single source of truth on what's actually valid; a bad shape
+ * here comes back as an honest 400, never silently accepted. */
+export type RoutineTriggerInput = RoutineTriggerT;
 
-export interface RoutineView {
-  readonly id: string;
-  readonly name: string;
-  readonly definitionId: string;
-  readonly trigger: unknown;
-  readonly scope: string;
-  readonly input: Record<string, unknown>;
-  readonly enabled: boolean;
-  readonly deliveryWorkbenchId: string | null;
-  readonly consecutiveFailures: number;
-  readonly deadLetteredAt: string | null;
-  readonly createdAt: string;
-  readonly updatedAt: string;
-}
+/** A routine as this bundle reads it back — `@corbits/routines/client`'s
+ * own wire shape, re-exported rather than duplicated. */
+export type RoutineView = typeof Routine.infer;
 
 export interface CreateRoutineRequest {
   readonly name: string;
-  readonly definitionId: string;
+  /** The workflow asset this routine runs — see `CreateRoutineInput`'s
+   * own doc comment in `@corbits/routines/client`. */
+  readonly definitionAssetId: string;
   readonly trigger: RoutineTriggerInput;
   readonly input?: Record<string, unknown>;
   readonly deliveryWorkbenchId?: string;
@@ -89,20 +57,7 @@ export interface RunRoutineNowResult {
   readonly runId: string;
 }
 
-const RoutineViewResponse = type({
-  id: "string",
-  name: "string",
-  definitionId: "string",
-  trigger: "unknown",
-  scope: "string",
-  input: "Record<string, unknown>",
-  enabled: "boolean",
-  deliveryWorkbenchId: "string | null",
-  consecutiveFailures: "number",
-  deadLetteredAt: "string | null",
-  createdAt: "string",
-  updatedAt: "string",
-});
+const RoutineViewResponse = Routine;
 
 const ListRoutinesResponse = type({
   items: RoutineViewResponse.array(),

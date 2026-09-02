@@ -190,7 +190,13 @@ export async function ensureDefaultRoutines(
 
     const body: Record<string, unknown> = {
       name: preset.name,
-      definitionId,
+      // TODO(CL-7350): `/workflows/definitions` (vendored
+      // `@intx/hub-api`) returns only `{id, name, status}` — no
+      // `assetId` — so this is still the definition row id, not the
+      // stable asset id `POST /routines` now requires. Flagged for a
+      // human: this seed helper needs `assetId` added to that listing
+      // (or a different lookup) before it can create a routine again.
+      definitionAssetId: definitionId,
       trigger: preset.trigger,
       scope: "bench",
       input: preset.input,

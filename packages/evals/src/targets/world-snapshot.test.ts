@@ -22,7 +22,7 @@ type FakeTables = {
     id: string;
     tenantId: string;
     name: string;
-    definitionId: string;
+    definitionAssetId: string;
     trigger: unknown;
     deliveryWorkbenchId: string | null;
     enabled: boolean;
@@ -192,7 +192,7 @@ test("captureWorldSnapshot reads routines with their trigger and delivery", asyn
       id: "r-1",
       tenantId: "tenant-1",
       name: "Daily digest",
-      definitionId: "def-1",
+      definitionAssetId: "def-1",
       trigger: { kind: "daily", time: "09:00" },
       deliveryWorkbenchId: "wb-1",
       enabled: true,
@@ -209,7 +209,7 @@ test("captureWorldSnapshot reads routines with their trigger and delivery", asyn
     {
       id: "r-1",
       name: "Daily digest",
-      definitionId: "def-1",
+      definitionAssetId: "def-1",
       trigger: { kind: "daily", time: "09:00" },
       deliveryWorkbenchId: "wb-1",
       enabled: true,

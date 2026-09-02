@@ -456,7 +456,7 @@ function useWorkflowName(row: GlobalRoutineRow | undefined): string {
   const match = definitions.data.find(
     (definition) => definition.id === row.routine.definitionId,
   );
-  return match?.name ?? row.routine.definitionId;
+  return match?.name ?? row.routine.definitionId ?? "";
 }
 
 /**

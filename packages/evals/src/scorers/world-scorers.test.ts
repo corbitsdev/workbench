@@ -81,7 +81,7 @@ describe("routineHasTrigger", () => {
         {
           id: "r-1",
           name: "Daily digest",
-          definitionId: "def-1",
+          definitionAssetId: "def-1",
           trigger: { kind: "daily", time: "09:00" },
           deliveryWorkbenchId: "wb-1",
           enabled: true,
@@ -98,7 +98,7 @@ describe("routineHasTrigger", () => {
         {
           id: "r-1",
           name: "Daily digest",
-          definitionId: "def-1",
+          definitionAssetId: "def-1",
           trigger: { kind: "weekly" },
           deliveryWorkbenchId: null,
           enabled: true,
@@ -122,7 +122,7 @@ describe("routineDeliversTo", () => {
         {
           id: "r-1",
           name: "Daily digest",
-          definitionId: "def-1",
+          definitionAssetId: "def-1",
           trigger: null,
           deliveryWorkbenchId: "wb-1",
           enabled: true,

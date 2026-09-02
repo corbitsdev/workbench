@@ -215,14 +215,16 @@ export function listRoutineDrafts(
 export function approveRoutineDraft(
   tenantId: string,
   id: string,
-  definitionId?: string,
+  definitionAssetId?: string,
 ): Promise<{ draft: RoutineDraft; routine: Routine }> {
   return request(
     routineDraftApprovePath(tenantId, id),
     type({ draft: RoutineDraft, routine: Routine }),
     {
       method: "POST",
-      body: JSON.stringify(definitionId !== undefined ? { definitionId } : {}),
+      body: JSON.stringify(
+        definitionAssetId !== undefined ? { definitionAssetId } : {},
+      ),
     },
   );
 }

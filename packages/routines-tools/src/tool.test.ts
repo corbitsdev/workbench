@@ -26,7 +26,8 @@ function routineViewBody(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "rtn_1",
     name: "Morning digest",
-    definitionId: "def_1",
+    definitionAssetId: "def_1",
+    definitionId: "wfd_1",
     trigger: { kind: "daily", hour: 9, minute: 0 },
     scope: "bench",
     input: { instruction: "Summarize overnight activity" },
@@ -74,14 +75,14 @@ test('routine_create and routine_update grant no credentials and touch nothing e
   ]);
 });
 
-test("routine_create's input schema requires name, definitionId, and trigger", () => {
+test("routine_create's input schema requires name, definitionAssetId, and trigger", () => {
   const bundle = routinesTools(testEnv());
   const definition = bundle.definitions.find(
     (d) => d.name === ROUTINE_CREATE_TOOL,
   ) as unknown as { inputSchema: { required: string[] } };
   expect(definition.inputSchema.required).toEqual([
     "name",
-    "definitionId",
+    "definitionAssetId",
     "trigger",
   ]);
 });
@@ -117,7 +118,7 @@ test("routine_create rejects an invalid trigger without calling out", async () =
   const result = await bundle.run(
     callFor(ROUTINE_CREATE_TOOL, {
       name: "x",
-      definitionId: "def_1",
+      definitionAssetId: "def_1",
       instruction: "do it",
       trigger: { kind: "yearly" },
     }),
@@ -131,7 +132,7 @@ test("routine_create rejects a genuinely invalid trigger with a correct example 
   const result = await bundle.run(
     callFor(ROUTINE_CREATE_TOOL, {
       name: "x",
-      definitionId: "def_1",
+      definitionAssetId: "def_1",
       instruction: "do it",
       trigger: { kind: "yearly" },
     }),
@@ -155,7 +156,7 @@ test("routine_create decodes a JSON-string-encoded daily trigger with a bare tim
     const result = await bundle.run(
       callFor(ROUTINE_CREATE_TOOL, {
         name: "Morning digest",
-        definitionId: "def_1",
+        definitionAssetId: "def_1",
         instruction: "Summarize overnight activity",
         trigger:
           '{"kind": "daily", "type": "daily", "time": "08:00", "hour": 8}',
@@ -185,7 +186,7 @@ test("routine_create decodes a JSON-string-encoded cron trigger using expr for e
     const result = await bundle.run(
       callFor(ROUTINE_CREATE_TOOL, {
         name: "Morning digest",
-        definitionId: "def_1",
+        definitionAssetId: "def_1",
         instruction: "Summarize overnight activity",
         trigger: '{"kind": "cron", "expr": "0 8 * * *"}',
       }),
@@ -265,7 +266,7 @@ test("routine_create posts the instruction as input.instruction and returns a pl
     const result = await bundle.run(
       callFor(ROUTINE_CREATE_TOOL, {
         name: "Morning digest",
-        definitionId: "def_1",
+        definitionAssetId: "def_1",
         instruction: "Summarize overnight activity",
         trigger: { kind: "daily", hour: 9, minute: 0 },
       }),
@@ -273,7 +274,7 @@ test("routine_create posts the instruction as input.instruction and returns a pl
     );
     expect(seenBody).toEqual({
       name: "Morning digest",
-      definitionId: "def_1",
+      definitionAssetId: "def_1",
       trigger: { kind: "daily", hour: 9, minute: 0 },
       input: { instruction: "Summarize overnight activity" },
     });
@@ -296,7 +297,7 @@ test("routine_create posts a named input object as stored input, not wrapped in 
     const result = await bundle.run(
       callFor(ROUTINE_CREATE_TOOL, {
         name: "Last 30 days",
-        definitionId: "def_1",
+        definitionAssetId: "def_1",
         input: { topic: "acme competitors" },
         trigger: { kind: "daily", hour: 9, minute: 0 },
       }),
@@ -304,7 +305,7 @@ test("routine_create posts a named input object as stored input, not wrapped in 
     );
     expect(seenBody).toEqual({
       name: "Last 30 days",
-      definitionId: "def_1",
+      definitionAssetId: "def_1",
       trigger: { kind: "daily", hour: 9, minute: 0 },
       input: { topic: "acme competitors" },
     });
@@ -326,7 +327,7 @@ test("routine_create prefers named input over instruction when both are sent", a
     await bundle.run(
       callFor(ROUTINE_CREATE_TOOL, {
         name: "Last 30 days",
-        definitionId: "def_1",
+        definitionAssetId: "def_1",
         instruction: "ignore me",
         input: { topic: "acme competitors" },
         trigger: { kind: "daily", hour: 9, minute: 0 },
@@ -335,7 +336,7 @@ test("routine_create prefers named input over instruction when both are sent", a
     );
     expect(seenBody).toEqual({
       name: "Last 30 days",
-      definitionId: "def_1",
+      definitionAssetId: "def_1",
       trigger: { kind: "daily", hour: 9, minute: 0 },
       input: { topic: "acme competitors" },
     });
@@ -356,7 +357,7 @@ test("routine_create rejects a call with neither input nor instruction", async (
     const result = await bundle.run(
       callFor(ROUTINE_CREATE_TOOL, {
         name: "Last 30 days",
-        definitionId: "def_1",
+        definitionAssetId: "def_1",
         trigger: { kind: "daily", hour: 9, minute: 0 },
       }),
       new AbortController().signal,

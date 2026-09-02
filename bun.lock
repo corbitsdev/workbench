@@ -241,7 +241,7 @@
     },
     "packages/agent-directory-tools": {
       "name": "@corbits/agent-directory-tools",
-      "version": "0.0.5",
+      "version": "0.0.6",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -414,7 +414,7 @@
     },
     "packages/capability-tools": {
       "name": "@corbits/capability-tools",
-      "version": "0.0.3",
+      "version": "0.0.4",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -427,7 +427,7 @@
     },
     "packages/catalog-tools": {
       "name": "@corbits/catalog-tools",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
@@ -1233,8 +1233,9 @@
     },
     "packages/routines-tools": {
       "name": "@corbits/routines-tools",
-      "version": "0.0.5",
+      "version": "0.0.7",
       "dependencies": {
+        "@corbits/routines": "workspace:*",
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
