@@ -18,8 +18,8 @@
   "dependencies": {
     "@corbits/assistant-workflow": "workspace:*",
     "@corbits/echo-workflow": "workspace:*",
-    "@corbits/error-sink": "workspace:*",
     "@corbits/heartbeat-workflow": "workspace:*",
+    "@corbits/hub-api-client": "workspace:*",
     "@corbits/inference-catalog": "workspace:*",
     "@corbits/last-30-days-research-workflow": "workspace:*",
     "@corbits/tool-registry-publish": "workspace:*",

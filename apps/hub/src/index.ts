@@ -289,9 +289,9 @@ import {
 } from "@corbits/presence";
 import {
   createGitWorkflowPusher,
-  createHubAPI,
   supportedCredentialProviders,
 } from "@workbench/hub-client";
+import { createHubAPI } from "@corbits/hub-api-client";
 import {
   createDrizzlePendingSeedStore,
   createBenchProvisioner,

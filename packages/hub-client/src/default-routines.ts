@@ -27,8 +27,7 @@
 // what guarantees exactly one row and one "Created routine" notice.
 import { AssetWithOriginResponse } from "@intx/types";
 import { type } from "arktype";
-import { CliError } from "./errors";
-import { parseAs, type ApiCall } from "./hub";
+import { HubApiError, parseAs, type ApiCall } from "@corbits/hub-api-client";
 
 const WorkflowDeploymentListItem = type({
   id: "string",
@@ -280,7 +279,7 @@ export async function ensureDefaultRoutines(
       continue;
     }
     if (created.status !== 201 && created.status !== 200) {
-      throw new CliError(
+      throw new HubApiError(
         `the hub rejected creation of the default routine "${preset.name}" with status ${created.status}: ${JSON.stringify(created.data)}`,
         "check the hub logs for the underlying failure, then re-run: workbench seed",
       );
@@ -339,7 +338,7 @@ async function pruneDroppedPresetRoutines(
       cookies,
     );
     if (deleted.status !== 204) {
-      throw new CliError(
+      throw new HubApiError(
         `the hub rejected deleting the retired preset routine "${routine.name}" with status ${deleted.status}: ${JSON.stringify(deleted.data)}`,
         "check the hub logs for the underlying failure, then re-run: workbench seed",
       );

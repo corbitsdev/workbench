@@ -12,7 +12,7 @@ import { createNoopCredentialCipher } from "@intx/crypto";
 import { createOnboardingRoutes } from "../src/routes";
 import { createInMemoryPendingSeedStore } from "../src/pending-seed";
 import { createProviderHealthStore } from "@workbench/connections/provider-health";
-import { CliError } from "@workbench/hub-client";
+import { HubApiError } from "@corbits/hub-api-client";
 
 // These tests never exercise the pending-seed store — it is required
 // wiring for `createOnboardingRoutes`, and its dedicated coverage lives
@@ -484,12 +484,12 @@ describe("POST /complete", () => {
     expect(body.error.code).toBe("credential_setup_failed");
   });
 
-  // CL-6360: a `CliError` whose message names an absolute path on the
+  // CL-6360: a `HubApiError` whose message names an absolute path on the
   // hub's own disk must never reach the client; only a fixed consumer
   // sentence and a refId may. The payload here is a historical
   // freshness-check wrap; signup no longer packs, but the redaction
-  // still applies to any seed/setup CliError that names a path.
-  test("a CliError naming an absolute file path never reaches the client", async () => {
+  // still applies to any seed/setup HubApiError that names a path.
+  test("a HubApiError naming an absolute file path never reaches the client", async () => {
     const lines: string[] = [];
     const routes = createOnboardingRoutes({
       hubUrl: "http://127.0.0.1:0",
@@ -501,7 +501,7 @@ describe("POST /complete", () => {
       logError: (line) => lines.push(line),
       pendingSeedStore,
       testAndPersistCredentialFn: async () => {
-        throw new CliError(
+        throw new HubApiError(
           "publishing the corbits-tools package-registry asset failed: " +
             "tool-package freshness: @corbits/memory-tools@1.2.0 changed " +
             "src/ without bumping version.\n  /Users/alice/abklabs/workbench/packages/memory-tools",

@@ -32,11 +32,13 @@ import { headlineFor } from "../../packages/approvals/src/headline.ts";
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
   createGitWorkflowPusher,
-  createHubAPI,
   DEFAULT_WORKFLOWS,
   seedTenant,
-  type ApiCall,
 } from "../../packages/hub-client/src/index.ts";
+import {
+  createHubAPI,
+  type ApiCall,
+} from "../../packages/hub-api-client/src/index.ts";
 import { WORKFLOW_SOURCE_ENTRY } from "../../packages/workflows/src/source.ts";
 import {
   agentRuntimeTurnRunId,

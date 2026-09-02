@@ -5,7 +5,7 @@
 // /tenants/:id/members/invite`) and an immediate status flip to
 // "active" (`PATCH /tenants/:id/principals/:id`), the same two native
 // primitives `packages/settings-ui` already drives by hand.
-import type { ApiCall } from "@workbench/hub-client";
+import type { ApiCall } from "@corbits/hub-api-client";
 
 import { evaluateSignupGate, type SignupGateResult } from "./policy";
 import type { AccessPolicyStore } from "./store";

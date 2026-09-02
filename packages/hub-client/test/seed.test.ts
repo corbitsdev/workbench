@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { installDisposableHubDataDir } from "../../../test/disposable-hub-data-dir";
-import { CliError, isSidecarUnavailableError } from "../src/errors";
+import {
+  HubApiError,
+  isSidecarUnavailableError,
+} from "@corbits/hub-api-client";
 import {
   CATALOG_TEST_WORKFLOWS,
   DEFAULT_WORKFLOWS,
@@ -740,9 +743,9 @@ describe("seedTenant", () => {
     } catch (error) {
       caught = error;
     }
-    expect(caught).toBeInstanceOf(CliError);
-    expect((caught as CliError).message).toContain("not routable");
-    expect((caught as CliError).fix).toContain("sidecar");
+    expect(caught).toBeInstanceOf(HubApiError);
+    expect((caught as HubApiError).message).toContain("not routable");
+    expect((caught as HubApiError).fix).toContain("sidecar");
   });
 
   test("a deploy that succeeds but never starts a run is a failure, not a success", async () => {
@@ -817,13 +820,13 @@ describe("seedTenant", () => {
     } catch (error) {
       caught = error;
     }
-    expect(caught).toBeInstanceOf(CliError);
-    expect((caught as CliError).fix).toContain("bun run dev");
+    expect(caught).toBeInstanceOf(HubApiError);
+    expect((caught as HubApiError).fix).toContain("bun run dev");
     // Onboarding's `ensureSeeded` parses this exact class to finish the
     // request successfully with a partial-seed report, rather than
-    // failing the whole onboarding flow the way a generic `CliError`
+    // failing the whole onboarding flow the way a generic `HubApiError`
     // still does — the 409/not-routable case above stays a plain
-    // `CliError` on purpose, since only this 502 branch is the "durable
+    // `HubApiError` on purpose, since only this 502 branch is the "durable
     // state intact, sidecar just isn't up yet" condition onboarding
     // recovers from.
     expect(isSidecarUnavailableError(caught)).toBe(true);
@@ -2342,6 +2345,6 @@ describe("seedCatalog", () => {
         apiKey: "sk-test",
         log,
       }),
-    ).rejects.toThrow(CliError);
+    ).rejects.toThrow(HubApiError);
   });
 });

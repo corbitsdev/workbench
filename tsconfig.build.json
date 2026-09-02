@@ -5,6 +5,9 @@
       "path": "./apps/sidecar/tsconfig.src.json"
     },
     {
+      "path": "./packages/access-policy/tsconfig.src.json"
+    },
+    {
       "path": "./packages/agent-directory-tools/tsconfig.src.json"
     },
     {
@@ -63,6 +66,9 @@
     },
     {
       "path": "./packages/granola-tools/tsconfig.src.json"
+    },
+    {
+      "path": "./packages/hub-api-client/tsconfig.src.json"
     },
     {
       "path": "./packages/icons/tsconfig.src.json"

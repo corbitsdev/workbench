@@ -63,17 +63,19 @@ import {
 import {
   CATALOG_SEEDS,
   DEFAULT_WORKFLOWS,
-  isSidecarUnavailableError,
   ollamaOpenAICompatBaseURL,
-  parseAs,
   seedTenant,
-  type ApiCall,
   type ModelSource,
   type SeedTenantArgs,
   type SupportedCredentialProvider,
   type WorkflowPusher,
 } from "@workbench/hub-client";
 import { preferCompletionCapable } from "@workbench/hub-client/model-capability";
+import {
+  isSidecarUnavailableError,
+  parseAs,
+  type ApiCall,
+} from "@corbits/hub-api-client";
 import {
   persistConnectorCredential,
   type PersistConnectorCredentialFns,

@@ -20,8 +20,6 @@
 import { reportError } from "@corbits/error-sink";
 import { getLogger } from "@intx/log";
 import {
-  createHubAPI,
-  signIn,
   seedTenant,
   seedCatalog,
   ensureDefaultRoutines,
@@ -29,9 +27,13 @@ import {
   publishCorbitsToolsRegistry,
   DEFAULT_WORKFLOWS,
   PLACEHOLDER_CATALOG_API_KEY,
-  type ApiCall,
   type ModelSource,
 } from "@workbench/hub-client";
+import {
+  createHubAPI,
+  signIn,
+  type ApiCall,
+} from "@corbits/hub-api-client";
 import { findPersonalTenant } from "@workbench/onboarding";
 
 const log = getLogger(["hub", "system-seed"]);

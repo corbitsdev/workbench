@@ -1,0 +1,22 @@
+{
+  "name": "@corbits/hub-api-client",
+  "private": true,
+  "description": "The hub's native HTTP API as a typed client: authenticate, sign in, and call any route with a validated response",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

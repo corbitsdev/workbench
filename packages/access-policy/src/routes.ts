@@ -10,7 +10,7 @@ import { Hono } from "hono";
 import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { makeErrorEnvelope, reportError } from "@corbits/error-sink";
-import { cookiesFromHeader, type ApiCall } from "@workbench/hub-client";
+import { cookiesFromHeader, type ApiCall } from "@corbits/hub-api-client";
 
 import { canCreateTenancy } from "./policy";
 import type { AccessPolicyStore } from "./store";

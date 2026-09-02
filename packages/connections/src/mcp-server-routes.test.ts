@@ -7,7 +7,7 @@ import * as errorSink from "@corbits/error-sink";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
-import type { ApiCall } from "@workbench/hub-client";
+import type { ApiCall } from "@corbits/hub-api-client";
 import { createMcpServerRoutes } from "./mcp-server-routes";
 import type { McpProbeResult } from "./mcp-probe";
 

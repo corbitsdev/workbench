@@ -29,11 +29,13 @@ import { join as pathJoin } from "node:path";
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
   createGitWorkflowPusher,
-  createHubAPI,
   DEFAULT_WORKFLOWS,
   seedTenant,
-  type ApiCall,
 } from "../../packages/hub-client/src/index.ts";
+import {
+  createHubAPI,
+  type ApiCall,
+} from "../../packages/hub-api-client/src/index.ts";
 import {
   findPersonalTenant,
   testAndPersistCredential,

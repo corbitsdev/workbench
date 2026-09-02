@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CliError } from "../src/errors";
+import { HubApiError } from "@corbits/hub-api-client";
 import {
   DEFAULT_ROUTINE_PRESETS,
   ensureDefaultRoutines,
@@ -559,6 +559,6 @@ describe("ensureDefaultRoutines", () => {
 
     expect(
       ensureDefaultRoutines(fakeAPI(handler), [], TENANT_ID, log),
-    ).rejects.toThrow(CliError);
+    ).rejects.toThrow(HubApiError);
   });
 });

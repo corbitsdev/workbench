@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import type { ApiCall, WorkflowPusher } from "@workbench/hub-client";
+import type { WorkflowPusher } from "@workbench/hub-client";
+import { CATALOG_SEEDS, SETUP_AGENT_ASSET_NAME } from "@workbench/hub-client";
 import {
-  CATALOG_SEEDS,
-  SETUP_AGENT_ASSET_NAME,
+  type ApiCall,
   SidecarUnavailableError,
-} from "@workbench/hub-client";
+} from "@corbits/hub-api-client";
 import {
   completeCredentialSetup,
   ensureSeeded,

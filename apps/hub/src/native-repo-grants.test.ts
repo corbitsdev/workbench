@@ -2,7 +2,7 @@
 // never a SQL insert into Interchange grant/role tables.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { configureSync, resetSync } from "@intx/log";
-import type { ApiCall } from "@workbench/hub-client";
+import type { ApiCall } from "@corbits/hub-api-client";
 
 import {
   hasRepoGrantViaHttp,

@@ -10,17 +10,19 @@ import { createNoopCredentialCipher } from "@intx/crypto";
 import { CredentialResponse, paginatedSchema } from "@intx/types";
 import type { CredentialCipher } from "@intx/types";
 import {
-  cookiesFromHeader,
-  createHubAPI,
   inferenceCredentialName,
-  parseAs,
   SETUP_AGENT_ASSET_NAME,
   supportedCredentialProviders,
-  type ApiCall,
   type ModelSource,
   type SupportedCredentialProvider,
   type WorkflowPusher,
 } from "@workbench/hub-client";
+import {
+  cookiesFromHeader,
+  createHubAPI,
+  parseAs,
+  type ApiCall,
+} from "@corbits/hub-api-client";
 import { Hono } from "hono";
 import { type } from "arktype";
 import type { AccessPolicyStore } from "@workbench/access-policy";

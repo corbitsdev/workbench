@@ -23,12 +23,11 @@ import path from "node:path";
 
 import {
   createGitWorkflowPusher,
-  createHubAPI,
-  type ApiCall,
+  OLLAMA_PLACEHOLDER_SECRET,
 } from "@workbench/hub-client";
+import { createHubAPI, type ApiCall } from "@corbits/hub-api-client";
 import { getLogger } from "@intx/log";
 import { completeCredentialSetup } from "@workbench/onboarding";
-import { OLLAMA_PLACEHOLDER_SECRET } from "@workbench/hub-client";
 import {
   instantiateWorkbenchTemplate,
   parseWorkbenchDefinition,
