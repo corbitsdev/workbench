@@ -32,10 +32,12 @@ scheduled fire) goes through `@corbits/folded-runs`, the same launch core
   builders only, no `drizzle-orm`/`postgres`/`@intx/hub-api` imports.
 - `src/migrations.ts` — this package's own `routine_migrations` ledger.
 
-Myra creates routines only through `routine_targets` →
+Myra creates and updates routines only through `routine_targets` →
 `routine_create`/`routine_update` (`@corbits/routines-tools`), the same
-tool-call surface a person's own create/retarget request goes through —
-never a separate draft/review state machine (deleted, CL-7375). See
+tool-call surface a person's own create request goes through — never a
+separate draft/review state machine (deleted, CL-7375); retargeting an
+existing routine at a different definition goes through the separately
+approved `routine_retarget` tool (CL-7359), never `routine_update`. See
 docs/workflow-model.md.
 
 ## Routine targets follow the latest deployed asset

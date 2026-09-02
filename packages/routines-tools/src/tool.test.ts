@@ -5,6 +5,7 @@ import {
   routinesTools,
   ROUTINE_CREATE_TOOL,
   ROUTINE_LIST_TOOL,
+  ROUTINE_RETARGET_TOOL,
   ROUTINE_RUN_NOW_TOOL,
   ROUTINE_TARGETS_TOOL,
   ROUTINE_UPDATE_TOOL,
@@ -42,13 +43,14 @@ function routineViewBody(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-test("declares exactly the five routine tools", () => {
+test("declares exactly the six routine tools", () => {
   const bundle = routinesTools(testEnv());
   expect(bundle.definitions.map((d) => d.name)).toEqual([
     ROUTINE_LIST_TOOL,
     ROUTINE_TARGETS_TOOL,
     ROUTINE_CREATE_TOOL,
     ROUTINE_UPDATE_TOOL,
+    ROUTINE_RETARGET_TOOL,
     ROUTINE_RUN_NOW_TOOL,
   ]);
 });
@@ -68,12 +70,13 @@ test("routine_list has no approval key — a read never needs a human gate", () 
   expect(listDef).toEqual({ name: ROUTINE_LIST_TOOL });
 });
 
-test('routine_create and routine_update grant no credentials and touch nothing external at call time — only routine_run_now, which fires external action immediately, keeps approval: "ask"', () => {
+test('routine_create and routine_update grant no credentials and touch nothing external at call time — routine_run_now, which fires external action immediately, and routine_retarget, which repoints what a routine runs, both keep approval: "ask"', () => {
   expect(routinesTools.definitions).toEqual([
     { name: ROUTINE_LIST_TOOL },
     { name: ROUTINE_TARGETS_TOOL },
     { name: ROUTINE_CREATE_TOOL },
     { name: ROUTINE_UPDATE_TOOL },
+    { name: ROUTINE_RETARGET_TOOL, approval: "ask" },
     { name: ROUTINE_RUN_NOW_TOOL, approval: "ask" },
   ]);
 });
@@ -583,10 +586,44 @@ test("an ambiguous name resolved through routine_targets returns every matching 
   }
 });
 
-test("routine_update retargets a routine by posting a resolved definitionAssetId", async () => {
+test("routine_update rejects a definitionAssetId argument without calling out — retargeting only goes through routine_retarget", async () => {
+  const originalFetch = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = (async () => {
+    called = true;
+    return new Response("unexpected update call", { status: 500 });
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = routinesTools(testEnv());
+    const result = await bundle.run(
+      callFor(ROUTINE_UPDATE_TOOL, { id: "rtn_1", definitionAssetId: "ast_2" }),
+      new AbortController().signal,
+    );
+    expect(called).toBe(false);
+    expect(result.isError).toBe(true);
+    expect(result.content).toMatch(/invalid input/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("routine_retarget's input schema requires routineId and definitionAssetId", () => {
+  const bundle = routinesTools(testEnv());
+  const definition = bundle.definitions.find(
+    (d) => d.name === ROUTINE_RETARGET_TOOL,
+  ) as unknown as { inputSchema: { required: string[] } };
+  expect(definition.inputSchema.required).toEqual([
+    "routineId",
+    "definitionAssetId",
+  ]);
+});
+
+test("routine_retarget sends the PATCH with the resolved definitionAssetId", async () => {
+  let seenUrl: string | undefined;
   let seenBody: unknown;
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
+  globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
+    seenUrl = String(url);
     seenBody = JSON.parse(String(init?.body));
     return new Response(
       JSON.stringify(routineViewBody({ definitionAssetId: "ast_2" })),
@@ -595,11 +632,20 @@ test("routine_update retargets a routine by posting a resolved definitionAssetId
   try {
     const bundle = routinesTools(testEnv());
     const result = await bundle.run(
-      callFor(ROUTINE_UPDATE_TOOL, { id: "rtn_1", definitionAssetId: "ast_2" }),
+      callFor(ROUTINE_RETARGET_TOOL, {
+        routineId: "rtn_1",
+        definitionAssetId: "ast_2",
+      }),
       new AbortController().signal,
+    );
+    expect(seenUrl).toBe(
+      "https://hub.example.com/api/workflow-routines/routines/rtn_1",
     );
     expect(seenBody).toEqual({ definitionAssetId: "ast_2" });
     expect(result.isError).toBeFalsy();
+    expect(result.content).toBe(
+      'Retargeted "Morning digest" (rtn_1) to ast_2.',
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }
