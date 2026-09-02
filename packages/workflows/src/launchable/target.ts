@@ -19,7 +19,7 @@
 // reduction — a second review pass (Greybeard pass 2) folded in
 // `@corbits/routines`' own duplicate `selectDistinctOn` query, which had
 // drifted to a second, un-shared tiebreak.
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { workflowDefinition, workflowDefinitionVersion } from "@intx/db/schema";
 
@@ -88,7 +88,8 @@ async function fetchLaunchableRows(
         ),
       ),
     )
-    .where(and(eq(workflowDefinition.origin, "authored"), extraWhere));
+    .where(and(eq(workflowDefinition.origin, "authored"), extraWhere))
+    .orderBy(desc(workflowDefinition.createdAt));
   return rows.map((row) => ({
     ...row,
     approvedWireHash: row.approvedWireHash ?? null,
