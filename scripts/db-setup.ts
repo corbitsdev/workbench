@@ -37,7 +37,7 @@ import {
   listWorkbenchLaunchFoldedRunIds,
 } from "../packages/chat/src/migrations";
 import { applyWebhookTriggersMigrations } from "../packages/webhook-triggers/src/migrations";
-import { reconcileDuplicateRepoGrants } from "../packages/workflow-catalog/src/reconcile-duplicate-repo-grants";
+import { reconcileDuplicateRepoGrants } from "../packages/connections/src/reconcile-duplicate-repo-grants";
 import { applyNotifyMigrations } from "../packages/notify/src/migrations";
 import { applyRoutineMigrations } from "../packages/routines/src/migrations";
 import {

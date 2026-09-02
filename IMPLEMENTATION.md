@@ -113,7 +113,7 @@ separate action.
 ## Workbench Definition (shipped)
 
 `WorkbenchDefinition` (`WorkbenchDefinitionSchema` in
-`@corbits/workflow-catalog`) is the one type for a named picker row:
+`templates/index.ts`) is the one type for a named picker row:
 default agents, routines, tools, plugins `{required, optional}`, and
 ordered `onboardingSteps`. A template is a shipped definition, not a
 second kind. `instantiateWorkbenchTemplate` resolves the definition
