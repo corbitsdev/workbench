@@ -80,8 +80,14 @@ export function DefinitionTargetPicker({
 
   if (state.kind === "loading") {
     return (
-      <div className="flex flex-col gap-1.5" aria-busy="true" aria-live="polite">
-        <span className="text-xs font-medium">What should this routine run?</span>
+      <div
+        className="flex flex-col gap-1.5"
+        aria-busy="true"
+        aria-live="polite"
+      >
+        <span className="text-xs font-medium">
+          What should this routine run?
+        </span>
         <Skeleton className="h-9 w-full" />
       </div>
     );
@@ -90,7 +96,9 @@ export function DefinitionTargetPicker({
   if (state.kind === "error") {
     return (
       <div className="flex flex-col gap-1.5" aria-live="polite">
-        <span className="text-xs font-medium">What should this routine run?</span>
+        <span className="text-xs font-medium">
+          What should this routine run?
+        </span>
         <p className="text-xs text-[var(--ui-danger)]" role="alert">
           {state.message}
         </p>
@@ -165,7 +173,10 @@ export function DefinitionTargetPicker({
         {agents.length > 0 ? (
           <optgroup label="Agents">
             {agents.map((target) => (
-              <option key={target.definitionAssetId} value={target.definitionAssetId}>
+              <option
+                key={target.definitionAssetId}
+                value={target.definitionAssetId}
+              >
                 {labelFor(target)}
               </option>
             ))}
@@ -174,7 +185,10 @@ export function DefinitionTargetPicker({
         {workflows.length > 0 ? (
           <optgroup label="Workflows">
             {workflows.map((target) => (
-              <option key={target.definitionAssetId} value={target.definitionAssetId}>
+              <option
+                key={target.definitionAssetId}
+                value={target.definitionAssetId}
+              >
                 {labelFor(target)}
               </option>
             ))}
@@ -185,8 +199,11 @@ export function DefinitionTargetPicker({
         <p className="text-xs text-[var(--ui-danger)]" role="alert">
           This routine's target is no longer available — pick a new one.
         </p>
-      ) : selected?.description !== null && selected?.description !== undefined ? (
-        <p className="text-xs text-[var(--ui-fg-muted)]">{selected.description}</p>
+      ) : selected?.description !== null &&
+        selected?.description !== undefined ? (
+        <p className="text-xs text-[var(--ui-fg-muted)]">
+          {selected.description}
+        </p>
       ) : null}
     </div>
   );

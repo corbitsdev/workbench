@@ -343,7 +343,11 @@ export async function rejectUnlaunchableTarget(
   definitionAssetId: string,
 ): Promise<
   | ReturnType<typeof routineTargetRejection>
-  | { readonly status: 403; readonly code: string; readonly userMessage: string }
+  | {
+      readonly status: 403;
+      readonly code: string;
+      readonly userMessage: string;
+    }
   | undefined
 > {
   if (deps.resolveTarget === undefined) return undefined;
