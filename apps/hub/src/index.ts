@@ -195,6 +195,7 @@ import {
   createDrizzleRoutineStore,
   createMyraRoutineDrafting,
   createRoutineRoutes,
+  createRoutineTargetRoutes,
   createWorkflowRoutineRoutes,
   resolveLaunchableDefinition,
   routine as routineTable,
@@ -2915,6 +2916,18 @@ export async function createHub(config: HubConfig) {
       webhookTriggerInTenant,
       deliveryWorkbenchRequired: routineDeliveryWorkbenchRequired,
       validateRoutineInput: routineInputValid,
+    }),
+  );
+  // Routine target discovery (CL-7351): the one list of deployed, frozen
+  // definitions a routine may reference, beside the platform's own
+  // `/workflows/definitions` listing but authorized per row for the
+  // acting principal — see `@corbits/routines`' targets.ts.
+  app.route(
+    `${TENANT_PREFIX}/workflows/targets`,
+    createRoutineTargetRoutes({
+      db,
+      grantStore: routineGrantStore,
+      conditionRegistry: chatConditionRegistry,
     }),
   );
   // Myra's own routine-management surface (`@corbits/routines-tools`'

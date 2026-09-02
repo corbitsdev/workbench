@@ -16,15 +16,18 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/chat": "workspace:*",
     "@corbits/folded-run-one-shot": "workspace:*",
     "@corbits/migration-runner": "workspace:*",
     "@corbits/slug": "workspace:*",
     "cronstrue": "^3.24.0",
     "@corbits/workflow-catalog": "workspace:*",
+    "@intx/authz": "0.3.0",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/hub-common": "0.3.0",
     "@intx/log": "0.3.0",
+    "@intx/types": "workspace:*",
     "@workbench/hub-client": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
