@@ -196,8 +196,11 @@ import {
 import { createConnectGithubRoutes } from "@corbits/workflow-catalog/connect-github-routes";
 import { createTemplateBlockRoutes } from "@corbits/workflow-catalog/template-block-routes";
 import { createWorkflowDetailRoute } from "@corbits/workflow-catalog/detail-route";
-import { renderWorkflowSourceTree } from "@corbits/workflow-source";
-import { freezeInertWorkflowDefinition } from "@corbits/workflow-freeze";
+import {
+  renderWorkflowSourceTree,
+  WORKFLOW_SOURCE_ENTRY,
+} from "@corbits/workflow-source";
+import { createDefinitionFreezer } from "@corbits/workflow-freeze";
 import {
   createDrizzleDraftStore,
   createDrizzleRoutineStore,
@@ -2550,11 +2553,13 @@ export async function createHub(config: HubConfig) {
       },
     }),
   );
-  // Template block workflows (CL-6405): the instantiate path's
-  // `deployBlockWorkflow` port lands here — the same source-form
-  // materialization pattern (asset + `@corbits/workflow-source` tree +
-  // `freezeInertWorkflowDefinition`) applied to a template's referenced
-  // block definition (`code-review` today).
+  // Template block workflows (CL-6405, cut over to native deploy in
+  // CL-7364): the instantiate path's `deployBlockWorkflow` port lands
+  // here — the same source-form materialization pattern (asset +
+  // `@corbits/workflow-source` tree) applied to a template's referenced
+  // block definition (`code-review` today), now deployed through the
+  // same `workflowDeployer` the agent-authored deploy path above uses
+  // rather than a hub-local inert freeze.
   app.route(
     `${TENANT_PREFIX}/template-blocks`,
     createTemplateBlockRoutes({
@@ -2610,7 +2615,7 @@ export async function createHub(config: HubConfig) {
           assetId = shell.id;
         }
 
-        await assetService.populateAsset({
+        const { commitSha } = await assetService.populateAsset({
           assetId,
           ref: DEFAULT_ASSET_REF,
           principal: { kind: "hub" },
@@ -2623,14 +2628,19 @@ export async function createHub(config: HubConfig) {
           },
         });
 
-        // Freeze, not a bare ensure: without the frozen wire projection
-        // the block's definition can never launch (CL-6439, the same
-        // disease CL-6447 fixed for the Agents page create path).
-        const { definitionId } = await freezeInertWorkflowDefinition(db, {
+        // Native deploy, not a hub-local inert freeze (CL-7364): the same
+        // `workflowDeployer` the agent-authored deploy path above drives,
+        // so a template block's definition goes through the real
+        // bundle → sidecar probe → capability walk → gate → freeze
+        // pipeline instead of a hub-side shortcut.
+        const result = await workflowDeployer.deploy({
+          tenantId,
+          principalId,
           assetId,
-          workflowJson,
+          commitSha,
+          entry: WORKFLOW_SOURCE_ENTRY,
         });
-        return { id: definitionId, created: true };
+        return { id: result.definitionAssetId, created: true };
       },
     }),
   );
