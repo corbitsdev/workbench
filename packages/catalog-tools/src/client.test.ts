@@ -62,7 +62,8 @@ describe("catalog tool client", () => {
         JSON.stringify({
           error: {
             code: "bad_request",
-            message: '"jazz" is not a kind of work',
+            userMessage: '"jazz" is not a kind of work',
+            refId: "ref_test",
           },
         }),
         { status: 400 },

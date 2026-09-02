@@ -354,8 +354,8 @@ test("a malformed body is rejected with a field-scoped 400", async () => {
     systemPrompt: "hello",
   });
   expect(response.status).toBe(400);
-  const body = (await response.json()) as { error: { message: string } };
-  expect(body.error.message).toContain("invalid agent definition");
+  const body = (await response.json()) as { error: { userMessage: string } };
+  expect(body.error.userMessage).toContain("invalid agent definition");
 });
 
 test("a missing system prompt is rejected before any asset is created", async () => {
@@ -886,10 +886,10 @@ test("GET /:definitionId answers 409, never a 500, for an asset still on the ret
   const response = await app.request("/def_1");
   expect(response.status).toBe(409);
   const body = (await response.json()) as {
-    error: { code: string; message: string };
+    error: { code: string; userMessage: string };
   };
   expect(body.error.code).toBe("conflict");
-  expect(body.error.message).toContain("workflow.json");
+  expect(body.error.userMessage).toContain("workflow.json");
 });
 
 test("PUT /:definitionId answers 409 and writes nothing for an asset still on the retired envelope", async () => {
@@ -1400,8 +1400,8 @@ test("pinning a skill the registry cannot resolve is a 400, not a 500", async ()
     skills: ["ghost"],
   });
   expect(response.status).toBe(400);
-  const body = (await response.json()) as { error: { message: string } };
-  expect(body.error.message).toContain("ghost");
+  const body = (await response.json()) as { error: { userMessage: string } };
+  expect(body.error.userMessage).toContain("ghost");
 });
 
 test("a create request with no pinned skills stores the author's prompt verbatim", async () => {
@@ -1649,8 +1649,8 @@ test("adding a tool package pin the tenant's inventory doesn't offer is a 400, n
   });
   expect(response.status).toBe(400);
   expect(populateCalled).toBe(false);
-  const body = (await response.json()) as { error: { message: string } };
-  expect(body.error.message).toContain("@corbits/nonexistent-tools");
+  const body = (await response.json()) as { error: { userMessage: string } };
+  expect(body.error.userMessage).toContain("@corbits/nonexistent-tools");
 });
 
 test("adding a skill the inventory doesn't offer is a 400, never written", async () => {

@@ -41,6 +41,7 @@ import {
 } from "./definition-asset";
 import type { PinnedSkillIndexResolver } from "./routes";
 import type { DefinitionSkillsStore } from "./skills-store";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 import type {
   WorkflowCapabilityRunScope,
   WorkflowRunAuthenticator as WorkflowCapabilityRunAuthenticator,
@@ -58,15 +59,11 @@ export type WorkflowSkillPinEnv = {
   Variables: { workflowSkillPinScope: WorkflowSkillPinRunScope };
 };
 
-function errorEnvelope(code: string, message: string) {
-  return { error: { code, message } };
-}
-
 function definitionNotFound(definitionId: string) {
-  return errorEnvelope(
-    "not_found",
-    `No agent definition "${definitionId}" in this workbench`,
-  );
+  return makeErrorEnvelope({
+    code: "not_found",
+    userMessage: `No agent definition "${definitionId}" in this workbench`,
+  });
 }
 
 /** Same host-guard `./routes.ts`/`./workflow-capability-routes.ts`
@@ -110,7 +107,10 @@ export function createWorkflowSkillPinRoutes(
   // conflict, never a server fault.
   app.onError((err, c) => {
     if (err instanceof RetiredWorkflowEnvelopeError) {
-      return c.json(errorEnvelope("conflict", err.message), 409);
+      return c.json(
+        makeErrorEnvelope({ code: "conflict", userMessage: err.message }),
+        409,
+      );
     }
     throw err;
   });
@@ -124,10 +124,11 @@ export function createWorkflowSkillPinRoutes(
     const scope = await deps.authenticator.resolve(token, address);
     if (scope === null) {
       return c.json(
-        errorEnvelope(
-          "unauthorized",
-          "Missing or unrecognized sidecar bearer token / run address",
-        ),
+        makeErrorEnvelope({
+          code: "unauthorized",
+          userMessage:
+            "Missing or unrecognized sidecar bearer token / run address",
+        }),
         401,
       );
     }
@@ -140,7 +141,10 @@ export function createWorkflowSkillPinRoutes(
     const body = PinBody(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {
       return c.json(
-        errorEnvelope("bad_request", `invalid pin: ${body.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid pin: ${body.summary}`,
+        }),
         400,
       );
     }

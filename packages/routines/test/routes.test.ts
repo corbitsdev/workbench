@@ -815,7 +815,7 @@ describe("createRoutineRoutes", () => {
       const app = mountAs(createRoutineRoutes(deps), "user_1");
       const { response, body } = await createRoutine(app, VALID_BODY);
       expect(response.status).toBe(400);
-      expect((body["error"] as Record<string, unknown>)["message"]).toBe(
+      expect((body["error"] as Record<string, unknown>)["userMessage"]).toBe(
         '"Agent" is required',
       );
     });

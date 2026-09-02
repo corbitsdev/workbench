@@ -147,7 +147,11 @@ test("an out-of-inventory request reports what's actually available, never a fab
     if (call === 1) {
       return new Response(
         JSON.stringify({
-          error: { code: "bad_request", message: "out of inventory" },
+          error: {
+            code: "bad_request",
+            userMessage: "out of inventory",
+            refId: "ref_test",
+          },
         }),
         { status: 400 },
       );
@@ -189,7 +193,11 @@ test("falls back to the route's own message if the inventory itself can't be fet
     if (call === 1) {
       return new Response(
         JSON.stringify({
-          error: { code: "bad_request", message: "nothing named that" },
+          error: {
+            code: "bad_request",
+            userMessage: "nothing named that",
+            refId: "ref_test",
+          },
         }),
         { status: 400 },
       );

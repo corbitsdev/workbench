@@ -123,10 +123,10 @@ test("an invalid codebase (rejected by the workflow kind handler) comes back 400
   );
   expect(res.status).toBe(400);
   const body = (await res.json()) as {
-    error: { code: string; message: string };
+    error: { code: string; userMessage: string; refId: string };
   };
   expect(body.error.code).toBe("invalid");
-  expect(body.error.message).toMatch(/interchange\.workflow/);
+  expect(body.error.userMessage).toMatch(/interchange\.workflow/);
 });
 
 test("a malformed request body is rejected 400 before the registry ever runs", async () => {

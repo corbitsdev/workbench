@@ -10,6 +10,7 @@
 import type { Context } from "hono";
 import type { TenantEnv } from "@intx/hub-api";
 import { reportError } from "@corbits/error-sink";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 /**
  * Duck-typed rather than an `instanceof` allowlist: any error carrying a
@@ -51,19 +52,24 @@ export function hubErrorHandler() {
     });
 
     if (hasGuidance(err)) {
-      const message =
+      const userMessage =
         err.name === "InferenceResolutionError" ? err.guidance : err.message;
-      return c.json({ error: { code: err.name, message, refId } }, 422);
+      return c.json(
+        makeErrorEnvelope({
+          code: err.name,
+          userMessage,
+          refId,
+        }),
+        422,
+      );
     }
 
     return c.json(
-      {
-        error: {
-          code: "internal_error",
-          message: "Something went wrong. Please try again.",
-          refId,
-        },
-      },
+      makeErrorEnvelope({
+        code: "internal_error",
+        userMessage: "Something went wrong. Please try again.",
+        refId,
+      }),
       500,
     );
   };

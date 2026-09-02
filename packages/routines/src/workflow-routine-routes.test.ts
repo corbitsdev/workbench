@@ -192,7 +192,7 @@ test("an unresolvable definitionId 404s with up to 8 candidate name (wfd_id) pai
   });
   expect(response.status).toBe(404);
   const message = (body["error"] as Record<string, unknown>)[
-    "message"
+    "userMessage"
   ] as string;
   expect(message).toContain("digest-writer (wfd_digest)");
   expect(message).toContain("other-agent (wfd_other)");

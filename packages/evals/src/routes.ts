@@ -16,10 +16,7 @@ import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 
 import { ALL_EVALS } from "./cases/index.ts";
 import type { EvalRunRecord, EvalRunStore } from "./store/store.ts";
-
-const ErrorEnvelope = (code: string, message: string) => ({
-  error: { code, message },
-});
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
@@ -103,17 +100,20 @@ export function createEvalRunRoutes(
     const raw = RunsQuery(c.req.query());
     if (raw instanceof type.errors) {
       return c.json(
-        ErrorEnvelope("bad_request", `invalid query: ${raw.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid query: ${raw.summary}`,
+        }),
         400,
       );
     }
     const limit = parseLimit(raw.limit);
     if (limit === undefined) {
       return c.json(
-        ErrorEnvelope(
-          "bad_request",
-          `limit must be an integer between 1 and ${MAX_LIMIT}`,
-        ),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `limit must be an integer between 1 and ${MAX_LIMIT}`,
+        }),
         400,
       );
     }
@@ -134,7 +134,13 @@ export function createEvalRunRoutes(
       const runId = c.req.param("runId");
       const record = await deps.store.get(runId);
       if (record === null) {
-        return c.json(ErrorEnvelope("not_found", "eval run not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "eval run not found",
+          }),
+          404,
+        );
       }
       return c.json(toDetail(record));
     },

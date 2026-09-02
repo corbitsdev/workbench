@@ -52,8 +52,8 @@ behind human approval.
 
 - `bun run check` (typecheck, lint, test, structural checks) must pass
   before every commit. CI's `structural` job runs the same
-  `check:structural` list as local, including `check:report-error`, so
-  the two cannot drift.
+  `check:structural` list as local, including `check:report-error` and
+  `check:error-envelope`, so the two cannot drift.
 - Commit sequence per change: tests first ("Add tests for X"), then
   implementation ("X: what changed"), then docs ("Update docs: X"). One
   logical change per commit; commit messages are written for a public

@@ -153,6 +153,8 @@ import {
   createSidecarPlacementRoutes,
 } from "@corbits/sidecar-placement";
 import { generateId } from "@intx/hub-common";
+
+import { ensureDefaultTenant } from "./default-tenant";
 import {
   createInMemoryMailboxEventBus,
   createMailboxDb,
@@ -629,6 +631,19 @@ export async function createHub(config: HubConfig) {
         }
       : undefined,
   });
+  // The root tenant must exist before the first sign-in can provision a
+  // personal bench under it; boot is the one moment the hub can
+  // guarantee that ordering. Boot seeds the admin account and its owner
+  // membership too — `workbench setup` then adopts the root instead of
+  // colliding with it, and the root's policy row has an editor. Failure
+  // here fails the boot loudly — a hub without its root tenant cannot
+  // serve first logins.
+  const operatorTenantId = await ensureDefaultTenant(
+    db,
+    auth,
+    config.envCredentialPlantAdmin,
+    config.defaultTenantSlug,
+  );
   // Account-keyed sign-in rate limit (CL-6494) — see `sign-in-rate-limit.ts`
   // for why this replaces better-auth's own IP-keyed sign-in enforcement
   // entirely rather than composing with it.
@@ -3309,8 +3324,7 @@ export async function createHub(config: HubConfig) {
     // routed someone to onboarding to fix.
     providerHealth: providerHealthStore,
   };
-  if (config.operatorTenantId !== undefined)
-    onboardingDeps.operatorTenantId = config.operatorTenantId;
+  onboardingDeps.operatorTenantId = operatorTenantId;
   if (config.seedModel !== undefined)
     onboardingDeps.seedModel = config.seedModel;
   if (config.huggingfaceOAuthClientId !== undefined)
@@ -3501,9 +3515,7 @@ export async function createHub(config: HubConfig) {
         : undefined;
     },
   };
-  if (config.operatorTenantId !== undefined) {
-    guardDeps.operatorTenantId = config.operatorTenantId;
-  }
+  guardDeps.operatorTenantId = operatorTenantId;
   const guardedApp = guardedHubApp(app, guardDeps);
   const inFlight = createInFlightRequestTracker();
   const servingApp = withInFlightRequestTracking(guardedApp, inFlight);

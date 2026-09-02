@@ -11,18 +11,41 @@ requires an upstream Interchange change. **Do not patch `vendor/intx`.**
 
 ## What already works (consume, do not reimplement)
 
-| Capability                      | Where                                                                                                                    |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Tenant `parentId` hierarchy     | `@intx/db` tenant table; POST `/api/tenants` accepts `parentId`                                                          |
-| Live ancestor-chain inheritance | `getAncestorChain` in `@intx/db` — catalog, credentials, providers walk ancestors at read time                           |
-| Descendant walk                 | `getDescendantTenants` in `@intx/db`                                                                                     |
-| Roles                           | Interchange native `owner` / `admin` / `member` — mirror 1:1 in UI; never invent a parallel role table                   |
-| Personal bench parenting        | `packages/onboarding` parents under `OPERATOR_TENANT_ID`; `workbench setup` writes that id for the org tenant it creates |
-| Memberships                     | Native principal + membership routes                                                                                     |
+| Capability                      | Where                                                                                                                                |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Tenant `parentId` hierarchy     | `@intx/db` tenant table; POST `/api/tenants` accepts `parentId`                                                                      |
+| Live ancestor-chain inheritance | `getAncestorChain` in `@intx/db` — catalog, credentials, providers walk ancestors at read time                                       |
+| Descendant walk                 | `getDescendantTenants` in `@intx/db`                                                                                                 |
+| Roles                           | Interchange native `owner` / `admin` / `member` — mirror 1:1 in UI; never invent a parallel role table                               |
+| Personal bench parenting        | `packages/onboarding` parents under the boot-ensured root tenant (`WORKBENCH_DEFAULT_TENANT`, alias `ORG_SLUG`, default `workbench`) |
+| Memberships                     | Native principal + membership routes                                                                                                 |
 
 Inheritance is **live**. Creating a sub-workbench must **not** copy
 catalog rows, credentials, or providers from the parent — resolution
 walks the chain on every read.
+
+### Root tenant slug (one deployment fact)
+
+The hub ensures a root tenant at boot by slug. That same slug is the
+operator bench `workbench setup` / `workbench seed` and the env-key
+auto-plant resolve:
+
+1. `WORKBENCH_DEFAULT_TENANT` if set
+2. else `ORG_SLUG` (alias)
+3. else `workbench`
+
+Set only one. Custom-slug upgrades whose existing root is not
+`workbench` must set `WORKBENCH_DEFAULT_TENANT=<existing-org-slug>`
+before restarting — otherwise boot creates a new empty `workbench`
+root and personal-bench parenting moves under it. Leftover
+`OPERATOR_TENANT_ID` is no longer read: `readHubConfig` fails loudly
+and tells the operator to set `WORKBENCH_DEFAULT_TENANT` (or remove
+the stale key for the default slug).
+
+A freshly ensured root has no `access_policy` row yet, so signup falls
+back to `WORKBENCH_SIGNUP` until Settings → People → "Who can join"
+writes one. This cutover does not migrate policy rows from a previous
+operator tenant.
 
 ## Workbench-side contracts (this repo)
 
@@ -38,9 +61,9 @@ is never patched into a vendor route. Two layers, in order:
    when the variable is unset, so a zero-edit `.env` can still seed the
    admin account; an explicit value in `.env` always wins; production
    deploys that do not use the dev launcher keep the closed default.
-2. **Policy row (operator tenant, once set)**: once `OPERATOR_TENANT_ID`
-   carries an explicit `access_policy.policy` row (editable from Settings
-   → People → "Who can join"), that row decides outright and the env
+2. **Policy row (root tenant)**: the boot-ensured root tenant can carry an
+   explicit `access_policy.policy` row (editable from Settings
+   → People → "Who can join"); that row decides outright and the env
    flag is no longer consulted — `selfSignup` is `"off"`, `"allowed-
 domains"` (with an `allowedDomains` list), or `"open"`. An absent row
    is closed defaults, identical in effect to `selfSignup: "off"`.

@@ -9,16 +9,13 @@ import { type } from "arktype";
 
 import type { DB } from "@intx/db";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 import {
   countRunIdentityStates,
   getRunIdentityStatus,
   getRunKeyLifecycle,
 } from "./diagnostics";
-
-const ErrorEnvelope = (code: string, message: string) => ({
-  error: { code, message },
-});
 
 const SummaryQuery = type({
   "sidecarId?": "string",
@@ -50,7 +47,13 @@ export function createRunKeyHistoryRoutes(
         getRunKeyLifecycle(deps.db, runAddress),
       ]);
       if (status === null) {
-        return c.json(ErrorEnvelope("not_found", "run not found"), 404);
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: "run not found",
+          }),
+          404,
+        );
       }
       return c.json({ status, lifecycle });
     },
@@ -69,7 +72,10 @@ export function createRunKeyHistoryRoutes(
       const raw = SummaryQuery(c.req.query());
       if (raw instanceof type.errors) {
         return c.json(
-          ErrorEnvelope("bad_request", `invalid query: ${raw.summary}`),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: `invalid query: ${raw.summary}`,
+          }),
           400,
         );
       }

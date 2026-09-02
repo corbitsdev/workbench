@@ -660,8 +660,8 @@ describe("POST /:connectorId/complete", () => {
     });
     // The probe's own message is still the thing the person who just
     // typed the key sees in the 422 body...
-    const body = (await response.json()) as { error: { message: string } };
-    expect(body.error.message).toBe("the key was rejected");
+    const body = (await response.json()) as { error: { userMessage: string } };
+    expect(body.error.userMessage).toBe("the key was rejected");
     // ...but the provider-health record never carries it — only a closed
     // category the shell banner maps to fixed copy (CL-6092).
     const record = providerHealth.get(TENANT.id, "rejecting-connector");

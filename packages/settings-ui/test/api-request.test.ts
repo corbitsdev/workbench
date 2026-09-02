@@ -20,7 +20,13 @@ describe("readErrorEnvelope", () => {
     expect(
       readErrorEnvelope(
         403,
-        { error: { code: "forbidden", message: "Not on this bench." } },
+        {
+          error: {
+            code: "forbidden",
+            userMessage: "Not on this bench.",
+            refId: "ref_1",
+          },
+        },
         "loading credentials",
       ),
     ).toBe("Not on this bench.");
@@ -50,7 +56,13 @@ describe("apiRequest", () => {
   }
 
   test("throws the caller's Error subclass with the envelope message on non-2xx", async () => {
-    stub(403, { error: { message: "Not permitted." } });
+    stub(403, {
+      error: {
+        code: "forbidden",
+        userMessage: "Not permitted.",
+        refId: "ref_1",
+      },
+    });
     await expect(
       apiRequest(
         "/api/tenants/tnt_1/credentials",

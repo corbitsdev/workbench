@@ -417,10 +417,10 @@ describe("block response routes — question answers", () => {
     const failed = await submit();
     expect(failed.status).toBe(500);
     const failedBody = (await failed.json()) as {
-      error: { code: string; message: string };
+      error: { code: string; userMessage: string };
     };
     expect(failedBody.error.code).toBe("notify_failed");
-    expect(failedBody.error.message).toMatch(/ref /);
+    expect(failedBody.error.userMessage).toMatch(/ref /);
 
     // The answer itself was already durable even though the notify failed.
     const afterFailure = await getResponses(

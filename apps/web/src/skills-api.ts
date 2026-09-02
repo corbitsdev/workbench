@@ -49,7 +49,9 @@ const SkillVersionsResponse = type({ versions: SkillVersion.array() });
 const SkillAtVersionResponse = type({ skill: SkillDetail });
 const SkillResponse = type({ skill: SkillSummary });
 
-const ErrorEnvelope = type({ error: { message: "string" } });
+const ErrorEnvelope = type({
+  error: { code: "string", userMessage: "string", refId: "string" },
+});
 
 type Validator<T> = (data: unknown) => T | ArkErrors;
 
@@ -91,7 +93,7 @@ async function request<T>(
     throw new ApiQueryError(
       envelope instanceof type.errors
         ? `The server answered ${String(response.status)}.`
-        : envelope.error.message,
+        : envelope.error.userMessage,
       response.status,
       path,
     );

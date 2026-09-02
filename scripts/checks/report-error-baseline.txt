@@ -112,7 +112,6 @@ packages/agent-directory-tools/src/tool.ts	1	// The agent was genuinely created 
 packages/agent-directory-tools/src/tool.ts	1	if (err instanceof CreateAgentDefinitionError) {
 packages/agent-directory-tools/src/tool.ts	1	return errorResult(call.id, err);
 packages/agent-directory/src/definition-history.ts	1	return null;
-packages/agent-directory/src/routes.ts	1	return c.json(
 packages/agent-lifecycle/src/index.ts	1	log.error`lifecycle sweep failed to undeploy ${address}: ${
 packages/approvals/src/allowance.ts	1	deps.log(
 packages/approvals/src/allowance.ts	1	return { outcome: "park", reason: "classification_failed" };
@@ -140,7 +139,6 @@ packages/chat/src/platform-adapter.ts	1	wakeLogger.error`inference-source reconc
 packages/chat/src/platform-adapter.ts	1	wakeLogger.error`pinned-tool-package reconcile for ${live.binding.roomAddress} (run ${live.run.id}) failed, leaving it as-is: ${
 packages/chat/src/platform-adapter.ts	1	wakeLogger.error`relaunch sweep: could not relaunch ${live.binding.roomAddress} (run ${live.run.id} is ${live.run.status}): ${
 packages/chat/src/routes.ts	1	log.error(
-packages/chat/src/routes.ts	1	return c.json(ErrorEnvelope("not_found", "blob not found"), 404);
 packages/chat/src/routes.ts	2	log.error(
 packages/chat/src/turn-context.ts	1	contextLog.warn`failed to assemble turn context on workbench ${input.workbenchId}: ${
 packages/chat/src/workbench-service.ts	1	fanoutLog.error(

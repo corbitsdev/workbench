@@ -12,6 +12,7 @@
 // skill.
 import { type } from "arktype";
 import { Hono } from "hono";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 import { SkillRegistryError, type SkillRegistry } from "./registry";
 
@@ -65,7 +66,10 @@ export function createWorkflowSkillRoutes(
   app.onError((err, c) => {
     if (err instanceof SkillRegistryError) {
       return c.json(
-        { error: { code: err.reason, message: err.message } },
+        makeErrorEnvelope({
+          code: err.reason,
+          userMessage: err.message,
+        }),
         err.reason === "not_found" ? 404 : 400,
       );
     }
@@ -81,13 +85,11 @@ export function createWorkflowSkillRoutes(
     const scope = await deps.authenticator.resolve(token, address);
     if (scope === null) {
       return c.json(
-        {
-          error: {
-            code: "unauthorized",
-            message:
-              "Missing or unrecognized sidecar bearer token / run address",
-          },
-        },
+        makeErrorEnvelope({
+          code: "unauthorized",
+          userMessage:
+            "Missing or unrecognized sidecar bearer token / run address",
+        }),
         401,
       );
     }
@@ -110,7 +112,10 @@ export function createWorkflowSkillRoutes(
     const body = SearchBody(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {
       return c.json(
-        { error: { code: "bad_request", message: body.summary } },
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: body.summary,
+        }),
         400,
       );
     }
@@ -128,7 +133,10 @@ export function createWorkflowSkillRoutes(
     const body = LoadBody(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {
       return c.json(
-        { error: { code: "bad_request", message: body.summary } },
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: body.summary,
+        }),
         400,
       );
     }
@@ -150,7 +158,10 @@ export function createWorkflowSkillRoutes(
     const body = CreateBody(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {
       return c.json(
-        { error: { code: "bad_request", message: body.summary } },
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: body.summary,
+        }),
         400,
       );
     }
@@ -173,7 +184,10 @@ export function createWorkflowSkillRoutes(
     const body = UpdateBody(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {
       return c.json(
-        { error: { code: "bad_request", message: body.summary } },
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: body.summary,
+        }),
         400,
       );
     }

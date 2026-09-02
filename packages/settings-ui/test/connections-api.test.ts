@@ -109,7 +109,16 @@ describe("completeConnectorCredential", () => {
   // straight from this call, with no separate test step beforehand.
   test("throws ConnectionsApiError with the probe's own message on a 422", async () => {
     stubFetch(() =>
-      json({ error: { code: "invalid_credential", message: "bad key" } }, 422),
+      json(
+        {
+          error: {
+            code: "invalid_credential",
+            userMessage: "bad key",
+            refId: "ref_1",
+          },
+        },
+        422,
+      ),
     );
     await expect(
       completeConnectorCredential("tnt_1", "granola", "key"),
@@ -129,7 +138,16 @@ describe("disconnectConnector", () => {
 
   test("throws ConnectionsApiError with the envelope message on a non-2xx", async () => {
     stubFetch(() =>
-      json({ error: { code: "disconnect_failed", message: "try again" } }, 500),
+      json(
+        {
+          error: {
+            code: "disconnect_failed",
+            userMessage: "try again",
+            refId: "ref_1",
+          },
+        },
+        500,
+      ),
     );
     await expect(disconnectConnector("tnt_1", "granola")).rejects.toThrow(
       "try again",

@@ -14,6 +14,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/error-sink": "workspace:*",
     "@corbits/migration-runner": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@workbench/hub-client": "workspace:*",

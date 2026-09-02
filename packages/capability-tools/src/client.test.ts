@@ -56,8 +56,9 @@ test("addCapability throws CapabilityOutOfInventoryError on the route's fail-clo
       JSON.stringify({
         error: {
           code: "bad_request",
-          message:
+          userMessage:
             '"@corbits/nonexistent" for "toolPackage" was never offered in this workbench\'s inventory',
+          refId: "ref_test",
         },
       }),
       { status: 400 },

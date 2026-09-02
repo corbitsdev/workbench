@@ -28,6 +28,7 @@ import {
   checkSignupGate,
   type AccessPolicyStore,
 } from "@workbench/access-policy";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 const NATIVE_TENANT_CREATE_PATH = "/api/tenants";
 
@@ -199,7 +200,10 @@ export function guardedHubApp(
     const user = await deps.getSessionUser(c.req.raw.headers);
     if (user === undefined) {
       return c.json(
-        { error: { code: "unauthorized", message: "Authentication required" } },
+        makeErrorEnvelope({
+          code: "unauthorized",
+          userMessage: "Authentication required",
+        }),
         401,
       );
     }
@@ -224,7 +228,10 @@ export function guardedHubApp(
     const verdict = await decideTenantCreate(deps, decideRequest);
     if (!verdict.allowed) {
       return c.json(
-        { error: { code: verdict.code, message: verdict.message } },
+        makeErrorEnvelope({
+          code: verdict.code,
+          userMessage: verdict.message,
+        }),
         verdict.status,
       );
     }

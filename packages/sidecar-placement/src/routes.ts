@@ -6,12 +6,9 @@ import { Hono } from "hono";
 import { type } from "arktype";
 
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
+import { makeErrorEnvelope } from "@workbench/hub-client";
 
 import type { SidecarPlacementStore } from "./store";
-
-const ErrorEnvelope = (code: string, message: string) => ({
-  error: { code, message },
-});
 
 const PutBody = type({ enabled: "boolean" });
 
@@ -48,17 +45,21 @@ export function createSidecarPlacementRoutes(
     const body = PutBody(raw);
     if (body instanceof type.errors) {
       return c.json(
-        ErrorEnvelope("bad_request", `invalid body: ${body.summary}`),
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `invalid body: ${body.summary}`,
+        }),
         400,
       );
     }
 
     if (body.enabled && !deps.hasProvisioner) {
       return c.json(
-        ErrorEnvelope(
-          "no_provisioner_configured",
-          "Isolated capacity isn't available on this server yet. Ask your operator to enable it before turning this on.",
-        ),
+        makeErrorEnvelope({
+          code: "no_provisioner_configured",
+          userMessage:
+            "Isolated capacity isn't available on this server yet. Ask your operator to enable it before turning this on.",
+        }),
         409,
       );
     }

@@ -147,7 +147,8 @@ describe("ConnectorCredentialDialog", () => {
         JSON.stringify({
           error: {
             code: "invalid_credential",
-            message: "That key doesn't work.",
+            userMessage: "That key doesn't work.",
+            refId: "ref_1",
           },
         }),
         { status: 422, headers: { "content-type": "application/json" } },

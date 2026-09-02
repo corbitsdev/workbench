@@ -104,12 +104,13 @@ tarball (see `apps/hub/src/index.ts`'s `CORBITS_TOOLS_REGISTRY` comment).
 `@corbits/tool-registry-publish` (bundles `@corbits/memory-tools` into a
 self-contained tarball and pushes it through the hub's native asset REST
 routes). Descendants inherit it; `seedTenant` does not pack. Isolated
-tests leave `OPERATOR_TENANT_ID` blank so the walkthrough's personal
+tests run with no explicit tenant config so the walkthrough's personal
 bench is itself the root — then the same publish happens once onto that
 bench, and **echo**, **workbench-digest**, and **assistant** all come up
 live. `scripts/e2e/local-rip.test.ts` asserts exactly that. The default
-self-serve story is the other way: setup writes `OPERATOR_TENANT_ID` for
-the org tenant, and first-login personal benches parent under it.
+self-serve story is the other way: the hub ensures a root tenant at boot
+(`WORKBENCH_DEFAULT_TENANT`, default `workbench`), and first-login
+personal benches parent under it.
 
 ## 5. Check the Connections surface
 

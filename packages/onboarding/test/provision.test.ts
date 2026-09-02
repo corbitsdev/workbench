@@ -1121,7 +1121,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
   });
 
   test("isFullySeeded lists tenant-local assets only (inherited=false)", async () => {
-    // OPERATOR_TENANT_ID trees can surface the parent's workflow assets when
+    // Root-tenant trees can surface the parent's workflow assets when
     // listing with inherited=true. Those must not satisfy the seed check —
     // only tenant-local assets count. Assert the query uses inherited=false
     // and that empty local assets trigger a re-seed when a seed model exists.

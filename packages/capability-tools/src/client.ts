@@ -87,18 +87,22 @@ function authHeaders(
   };
 }
 
-/** Pulls `error.message` out of a Hono `app.onError` envelope
- * (`{error: {code, message}}`), if `body` matches that shape. */
+/** Pulls `error.userMessage` out of the canonical hub envelope
+ * (`{error: {code, userMessage, refId}}`), if `body` matches that shape. */
 function errorMessageFrom(body: unknown): string | undefined {
   if (body === null || typeof body !== "object" || !("error" in body)) {
     return undefined;
   }
   const error = (body as { error: unknown }).error;
-  if (error === null || typeof error !== "object" || !("message" in error)) {
+  if (
+    error === null ||
+    typeof error !== "object" ||
+    !("userMessage" in error)
+  ) {
     return undefined;
   }
-  const message = (error as { message: unknown }).message;
-  return typeof message === "string" ? message : undefined;
+  const userMessage = (error as { userMessage: unknown }).userMessage;
+  return typeof userMessage === "string" ? userMessage : undefined;
 }
 
 function endpoint(config: CapabilityToolClientConfig, path: string): string {

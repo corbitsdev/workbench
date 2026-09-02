@@ -25,11 +25,11 @@ hosted provisioning, and every one of them is safe to re-run.
   a single arktype schema, and every missing/malformed variable is
   reported at once with the exact fix.
 - `setup.ts` — `workbench setup`: initializes the database, provisions
-  the bench through the hub's native tenant-creation route, writes
-  `OPERATOR_TENANT_ID` for that org tenant so first-login benches parent
-  under it, publishes the platform `corbits-tools` registry onto that
-  root tenant (descendants inherit it), and reports the role defaults
-  the platform created.
+  the org bench through the hub's native tenant-creation route (or
+  adopts the boot-ensured root when the operator is already a member),
+  publishes the platform `corbits-tools` registry onto that root tenant
+  (descendants inherit it), and reports the role defaults the platform
+  created.
 - `seed.ts` — `workbench seed`: authenticates as the administrator,
   resolves the configured bench by slug, and deploys the default
   workflow set. It does not pack tarballs.
