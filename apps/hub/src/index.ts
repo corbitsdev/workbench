@@ -1896,12 +1896,15 @@ export async function createHub(config: HubConfig) {
         where: eq(tenantTable.id, tenantId),
       });
       if (tenantRow === undefined) {
-        throw new WorkflowAuthorError("not_found", `tenant ${tenantId} not found`);
+        throw new WorkflowAuthorError(
+          "not_found",
+          `tenant ${tenantId} not found`,
+        );
       }
 
       const fallbackModel =
-        (await workbenchHostInferencePreferencesResolver(tenantId))[0]
-          ?.model ?? null;
+        (await workbenchHostInferencePreferencesResolver(tenantId))[0]?.model ??
+        null;
       const resolution = await resolveDefinitionSources({
         db,
         tenantId,

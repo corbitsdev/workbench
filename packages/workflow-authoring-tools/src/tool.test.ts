@@ -181,7 +181,8 @@ test("workflow_deploy posts assetId, commitSha, and entry to the deploy route", 
   const result = await withFetch(
     (url, init) => {
       seenUrl = url;
-      seenBody = init?.body !== undefined ? JSON.parse(String(init.body)) : undefined;
+      seenBody =
+        init?.body !== undefined ? JSON.parse(String(init.body)) : undefined;
       return new Response(
         JSON.stringify({
           data: {
