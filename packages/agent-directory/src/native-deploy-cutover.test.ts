@@ -34,8 +34,8 @@ describe("workflow-freeze cutover", () => {
     const packageJson = JSON.parse(
       readFileSync(path.join(import.meta.dir, "../package.json"), "utf8"),
     ) as { dependencies?: Record<string, string> };
-    expect(
-      Object.keys(packageJson.dependencies ?? {}),
-    ).not.toContain("@corbits/workflow-freeze");
+    expect(Object.keys(packageJson.dependencies ?? {})).not.toContain(
+      "@corbits/workflow-freeze",
+    );
   });
 });

@@ -112,7 +112,9 @@ async function post(app: Hono<TenantEnv>, body: unknown): Promise<Response> {
  * the stub still projects a `workflow_definition` row directly (the one
  * piece of the real deploy every route's read-back depends on) rather
  * than faking the whole install/probe/gate/freeze pipeline. */
-function recordingAgentDefinitionDeployer(db: ReturnType<typeof createDB>["db"]) {
+function recordingAgentDefinitionDeployer(
+  db: ReturnType<typeof createDB>["db"],
+) {
   const deploys: {
     tenantId: string;
     principalId: string;
@@ -259,6 +261,12 @@ describeIfDb("agent-directory routes against a real assetService", () => {
   });
 
   test("a created definition deploys its commit through the native source pipeline (CL-7363)", async () => {
+    // `deployer.deploys` is shared across this describe block's tests, so
+    // scope to what THIS test appends rather than the array's raw length —
+    // earlier tests deploy their own definitions too.
+    const deploysBefore = deployer.deploys.length;
+    const deploysSoFar = () => deployer.deploys.slice(deploysBefore);
+
     const handle = `launchable-${suffix}`;
     const created = await post(app, {
       name: "Launchable",
@@ -272,8 +280,8 @@ describeIfDb("agent-directory routes against a real assetService", () => {
     // produced — the same sequence a launch depends on being launchable
     // (CL-6447), now driven through the native install/probe/gate/freeze
     // pipeline instead of a bare freeze.
-    expect(deployer.deploys).toHaveLength(1);
-    const [firstDeploy] = deployer.deploys;
+    expect(deploysSoFar()).toHaveLength(1);
+    const [firstDeploy] = deploysSoFar();
     expect(firstDeploy?.tenantId).toBe(TENANT.id);
     expect(firstDeploy?.commitSha).toBeDefined();
 
@@ -289,8 +297,8 @@ describeIfDb("agent-directory routes against a real assetService", () => {
       }),
     });
     expect(updated.status).toBe(200);
-    expect(deployer.deploys).toHaveLength(2);
-    expect(deployer.deploys[1]?.assetId).toBe(firstDeploy?.assetId);
-    expect(deployer.deploys[1]?.commitSha).not.toBe(firstDeploy?.commitSha);
+    expect(deploysSoFar()).toHaveLength(2);
+    expect(deploysSoFar()[1]?.assetId).toBe(firstDeploy?.assetId);
+    expect(deploysSoFar()[1]?.commitSha).not.toBe(firstDeploy?.commitSha);
   });
 });
