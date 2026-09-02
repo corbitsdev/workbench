@@ -41,7 +41,7 @@ export type RoutineSchedulerDeps = {
    * workbench-required-or-not rule a manual "run now" does. */
   deliveryWorkbenchRequired?: (
     tenantId: string,
-    definitionId: string,
+    definitionAssetId: string,
   ) => Promise<boolean>;
   /** Injectable for deterministic tests; defaults to `Date.now`-backed wall time. */
   now?: () => Date;

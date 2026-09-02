@@ -451,12 +451,12 @@ function useWorkflowName(row: GlobalRoutineRow | undefined): string {
     () => listWorkflowDefinitions(tenantId),
   );
   if (definitions.kind !== "ready" || row === undefined) {
-    return row?.routine.definitionId ?? "";
+    return row?.routine.definitionAssetId ?? "";
   }
   const match = definitions.data.find(
-    (definition) => definition.id === row.routine.definitionId,
+    (definition) => definition.id === row.routine.definitionAssetId,
   );
-  return match?.name ?? row.routine.definitionId ?? "";
+  return match?.name ?? row.routine.definitionAssetId ?? "";
 }
 
 /**
