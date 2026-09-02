@@ -138,22 +138,33 @@ const authenticateAsTenant1: WorkflowRunAuthenticator = {
     ),
 };
 
-/** Records freeze/re-freeze calls instead of running the real
- * `@corbits/workflow-freeze` machinery (whose own suites cover the DB
- * half); routes here are asserted to invoke it on every content write. */
-function recordingDefinitionFreezer() {
-  const freezes: { assetId: string; workflowJson: string }[] = [];
-  const refreezes: { definitionId: string; workflowJson: string }[] = [];
+/** Records deploy calls instead of running a real
+ * `sessionService.deployWorkflowFromSource`; routes here are asserted to
+ * invoke it, with the commit the write produced, on every content
+ * write. */
+function recordingAgentDefinitionDeployer() {
+  const deploys: {
+    tenantId: string;
+    principalId: string;
+    assetId: string;
+    commitSha: string;
+    entry: string;
+  }[] = [];
   return {
-    freezes,
-    refreezes,
-    freeze: (input: { assetId: string; workflowJson: string }) => {
-      freezes.push(input);
-      return Promise.resolve({ definitionId: "def_new", wireHash: "hash_1" });
-    },
-    refreeze: (input: { definitionId: string; workflowJson: string }) => {
-      refreezes.push(input);
-      return Promise.resolve({ wireHash: "hash_2" });
+    deploys,
+    deploy: (input: {
+      tenantId: string;
+      principalId: string;
+      assetId: string;
+      commitSha: string;
+      entry: string;
+    }) => {
+      deploys.push(input);
+      return Promise.resolve({
+        deploymentId: "dep_1",
+        definitionAssetId: input.assetId,
+        status: "deployed",
+      });
     },
   };
 }
@@ -162,7 +173,7 @@ function buildApp(opts: {
   db?: DB["db"];
   authenticator?: WorkflowRunAuthenticator;
   skillsStore?: DefinitionSkillsStore;
-  definitionFreezer?: ReturnType<typeof recordingDefinitionFreezer>;
+  deployer?: ReturnType<typeof recordingAgentDefinitionDeployer>;
 }): Hono {
   return createWorkflowSkillPinRoutes({
     db: opts.db ?? fakeDbWithRows([]),
@@ -170,7 +181,7 @@ function buildApp(opts: {
     skillIndex: fakeSkillIndex,
     skillsStore: opts.skillsStore ?? createInMemoryDefinitionSkillsStore(),
     authenticator: opts.authenticator ?? authenticateAsTenant1,
-    definitionFreezer: opts.definitionFreezer ?? recordingDefinitionFreezer(),
+    deployer: opts.deployer ?? recordingAgentDefinitionDeployer(),
   }) as unknown as Hono;
 }
 
@@ -258,7 +269,7 @@ test("pins a skill onto another definition in the same tenant and re-indexes its
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
   let writtenMessage: string | undefined;
   const skillsStore = createInMemoryDefinitionSkillsStore();
-  const freezer = recordingDefinitionFreezer();
+  const deployer = recordingAgentDefinitionDeployer();
   const app = buildApp({
     db: fakeDbWithRows([
       {
@@ -276,17 +287,18 @@ test("pins a skill onto another definition in the same tenant and re-indexes its
       },
     }),
     skillsStore,
-    definitionFreezer: freezer,
+    deployer,
   });
   const response = await postPin(app, {
     definitionId: TARGET_DEFINITION_ID,
     skillName: "research",
   });
   expect(response.status).toBe(200);
-  // The pin's rewrite re-freezes the projection so the next launch
-  // advertises the pinned skill (CL-6447).
-  expect(freezer.refreezes).toHaveLength(1);
-  expect(freezer.refreezes[0]?.definitionId).toBe(TARGET_DEFINITION_ID);
+  // The pin's rewrite redeploys through the native source pipeline so
+  // the next launch advertises the pinned skill (CL-6447, cut over to
+  // native deploy by CL-7363).
+  expect(deployer.deploys).toHaveLength(1);
+  expect(deployer.deploys[0]?.commitSha).toBe("deadbeef");
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
   expect(writtenMessage).toBe("Pin research skill to research-buddy");
   expect(await skillsStore.getSkills("ast_1")).toEqual(["research"]);
