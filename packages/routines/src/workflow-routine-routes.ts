@@ -447,6 +447,46 @@ export function createWorkflowRoutineRoutes(
       );
     }
 
+    // A retarget onto a different definition can leave a routine that
+    // fails at next launch unless the same checks `POST /routines` runs
+    // for these fields are re-run against the new target: an unsuited
+    // delivery workbench (required/not-required can flip per-definition)
+    // and an existing `input` that no longer satisfies the new
+    // definition's input schema.
+    if (body.definitionAssetId !== undefined) {
+      const deliveryRequired = await isDeliveryWorkbenchRequired(
+        deps,
+        scope.tenantId,
+        effectiveDefinitionAssetId,
+      );
+      if (deliveryRequired && existing.deliveryWorkbenchId === null) {
+        return c.json(
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: "deliveryWorkbenchId is required for this workflow",
+          }),
+          400,
+        );
+      }
+
+      if (deps.validateRoutineInput !== undefined) {
+        const validated = await deps.validateRoutineInput(
+          scope.tenantId,
+          effectiveDefinitionAssetId,
+          existing.input,
+        );
+        if (!validated.ok) {
+          return c.json(
+            makeErrorEnvelope({
+              code: "bad_request",
+              userMessage: validated.message,
+            }),
+            400,
+          );
+        }
+      }
+    }
+
     let patch: UpdateRoutineInput = {};
     if (body.name !== undefined) patch = { ...patch, name: body.name };
     if (body.definitionAssetId !== undefined) {
