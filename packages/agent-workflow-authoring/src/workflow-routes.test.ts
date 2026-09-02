@@ -5,7 +5,8 @@ import {
   type WorkflowRunAuthenticator,
   type WorkflowRunScope,
 } from "./workflow-routes";
-import { WorkflowAuthorError, type WorkflowAuthorRegistry } from "./registry";
+import { WorkflowAuthorError } from "./errors";
+import type { WorkflowAuthorRegistry } from "./registry";
 
 function fakeAuthenticator(
   scope: WorkflowRunScope | null,
@@ -22,6 +23,9 @@ function fakeRegistry(
     },
     republish: async () => {
       throw new Error("republish not stubbed");
+    },
+    readSource: async () => {
+      throw new Error("readSource not stubbed");
     },
     ...overrides,
   };
@@ -146,4 +150,70 @@ test("a malformed request body is rejected 400 before the registry ever runs", a
   const res = await app.request(req("/author", { name: "daily-digest" }));
   expect(res.status).toBe(400);
   expect(called).toBe(false);
+});
+
+test("republish forwards expectedHeadSha and a conflict comes back 409 naming the current head", async () => {
+  let seenExpected: string | undefined;
+  const app = createWorkflowAuthorRoutes({
+    authenticator: fakeAuthenticator({
+      tenantId: "tenant_1",
+      principalId: "principal_1",
+    }),
+    registry: fakeRegistry({
+      republish: async (_caller, _assetId, input) => {
+        seenExpected = input.expectedHeadSha;
+        throw new WorkflowAuthorError("conflict", "asset moved", {
+          currentHeadSha: "sha_current",
+        });
+      },
+    }),
+  });
+  const res = await app.request(
+    req("/republish", {
+      assetId: "asset_1",
+      files: { "package.json": "{}" },
+      expectedHeadSha: "sha_stale",
+    }),
+  );
+  expect(res.status).toBe(409);
+  expect(seenExpected).toBe("sha_stale");
+  const body = (await res.json()) as {
+    error: { code: string };
+    currentHeadSha: string;
+  };
+  expect(body.error.code).toBe("conflict");
+  expect(body.currentHeadSha).toBe("sha_current");
+});
+
+test("GET /:assetId/source returns the registry's snapshot for the authenticated scope", async () => {
+  let seen: { tenantId: string; assetId: string } | undefined;
+  const app = createWorkflowAuthorRoutes({
+    authenticator: fakeAuthenticator({
+      tenantId: "tenant_1",
+      principalId: "principal_1",
+    }),
+    registry: fakeRegistry({
+      readSource: async (caller, assetId) => {
+        seen = { tenantId: caller.tenantId, assetId };
+        return {
+          assetId,
+          name: "daily-digest",
+          headSha: "sha_head",
+          files: { "package.json": "{}" },
+        };
+      },
+    }),
+  });
+  const res = await app.request(
+    new Request("https://hub.example.com/asset_1/source", {
+      headers: {
+        authorization: "Bearer sc-token",
+        "x-workflow-run-address": "run_1@workflow",
+      },
+    }),
+  );
+  expect(res.status).toBe(200);
+  expect(seen).toEqual({ tenantId: "tenant_1", assetId: "asset_1" });
+  const body = (await res.json()) as { data: { headSha: string } };
+  expect(body.data.headSha).toBe("sha_head");
 });
