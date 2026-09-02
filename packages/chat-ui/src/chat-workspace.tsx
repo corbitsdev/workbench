@@ -1157,7 +1157,14 @@ function ChatWorkspaceInner({
   // (CL-7356): exactly one agent participant hands its definition asset id
   // straight to the routine panel's picker, visibly and replaceably — zero
   // or several participants leave the picker with nothing chosen, same as
-  // opening it from `/routines` (CL-7357).
+  // opening it from `/routines` (CL-7357). Not a guarantee: this reads
+  // `workbenchAgentsQuery`'s current data, which can still be loading (or
+  // mid-refetch after a participant just joined/left) the moment `/routine`
+  // fires — a person who types it before the query resolves gets no
+  // preselection even with exactly one agent, silently. In the common case
+  // the query is already warm (`failedTurnRecovery` below reads the same
+  // data), so this is rarely hit in practice; it's a soft nicety, not
+  // something a caller should rely on always firing.
   const singleWorkbenchAgentDefinitionAssetId: string | undefined =
     workbenchAgentsQuery.data?.length === 1
       ? workbenchAgentsQuery.data[0]?.definitionAssetId
