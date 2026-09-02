@@ -135,11 +135,18 @@ describe("runSeed", () => {
         return { status: 201, data: {} };
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       )
-        return { status: 200, data: { data: [], nextCursor: null } };
+        return { status: 200, data: [] };
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`)
         return { status: 200, data: { items: [] } };
+      if (
+        method === "GET" &&
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+      )
+        return { status: 200, data: [] };
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
         return {
           status: 201,
@@ -331,11 +338,18 @@ describe("runSeed", () => {
         return { status: 201, data: {} };
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       )
-        return { status: 200, data: { data: [], nextCursor: null } };
+        return { status: 200, data: [] };
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`)
         return { status: 200, data: { items: [] } };
+      if (
+        method === "GET" &&
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+      )
+        return { status: 200, data: [] };
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
         return {
           status: 201,

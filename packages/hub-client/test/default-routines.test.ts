@@ -23,8 +23,18 @@ function assetRow(id: string, name: string) {
   };
 }
 
-function deploymentRow(id: string, definitionAssetId: string, status = "deployed") {
-  return { id, tenantId: TENANT_ID, definitionAssetId, status, createdAt: TIMESTAMP };
+function deploymentRow(
+  id: string,
+  definitionAssetId: string,
+  status = "deployed",
+) {
+  return {
+    id,
+    tenantId: TENANT_ID,
+    definitionAssetId,
+    status,
+    createdAt: TIMESTAMP,
+  };
 }
 
 function routineRow(overrides: {
@@ -106,7 +116,8 @@ describe("ensureDefaultRoutines", () => {
     const handler: FakeHandler = (method, path, body) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
         return assetsResponse(deployedAssetsAndDeployments().assets);
       }
@@ -168,7 +179,8 @@ describe("ensureDefaultRoutines", () => {
     const handler: FakeHandler = (method, path) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
         return assetsResponse([]);
       }
@@ -199,7 +211,8 @@ describe("ensureDefaultRoutines", () => {
     const handler: FakeHandler = (method, path) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
         return assetsResponse(deployedAssetsAndDeployments().assets);
       }
@@ -239,7 +252,8 @@ describe("ensureDefaultRoutines", () => {
     const handler: FakeHandler = (method, path) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
         return assetsResponse(deployedAssetsAndDeployments().assets);
       }
@@ -291,7 +305,8 @@ describe("ensureDefaultRoutines", () => {
     const handler: FakeHandler = (method, path) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
         return assetsResponse(deployedAssetsAndDeployments().assets);
       }
@@ -328,7 +343,8 @@ describe("ensureDefaultRoutines", () => {
     const handler: FakeHandler = (method, path, body) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
         return assetsResponse([assetRow("ast_digest", "workbench-digest")]);
       }
@@ -373,7 +389,8 @@ describe("ensureDefaultRoutines", () => {
     const handler: FakeHandler = (method, path) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
         return assetsResponse([assetRow("ast_digest", "workbench-digest")]);
       }
@@ -419,7 +436,8 @@ describe("ensureDefaultRoutines", () => {
     const handler: FakeHandler = (method, path) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
         return assetsResponse(deployedAssetsAndDeployments().assets);
       }
@@ -451,7 +469,8 @@ describe("ensureDefaultRoutines", () => {
     const handler: FakeHandler = (method, path) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
         return assetsResponse(deployedAssetsAndDeployments().assets);
       }
@@ -518,7 +537,8 @@ describe("ensureDefaultRoutines", () => {
     const handler: FakeHandler = (method, path) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
         return assetsResponse([assetRow("ast_digest", "workbench-digest")]);
       }
