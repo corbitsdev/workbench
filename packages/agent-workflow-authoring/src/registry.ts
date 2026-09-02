@@ -99,7 +99,7 @@ export type DeployWorkflowInput = {
 export type WorkflowDeployResult = {
   readonly deploymentId: string;
   readonly definitionAssetId: string;
-  readonly status: string;
+  readonly status: "deployed" | "pending";
 };
 
 /**
@@ -116,6 +116,7 @@ export type WorkflowDeployer = {
     tenantId: string;
     principalId: string;
     assetId: string;
+    assetName: string;
     commitSha: string;
     entry: string;
   }): Promise<WorkflowDeployResult>;
@@ -365,13 +366,14 @@ export function createWorkflowAuthorRegistry(
       // Own-tenant scoping resolved BEFORE the grant check, same as every
       // other write here: an asset id from another tenant reads as
       // not_found, never a 403 confirming the id exists.
-      await requireOwnWorkflowAsset(caller, assetId);
+      const row = await requireOwnWorkflowAsset(caller, assetId);
       await requireAuthorized(deps, caller, "workflow:*", "create");
 
       return deps.deployer.deploy({
         tenantId: caller.tenantId,
         principalId: caller.principalId,
         assetId,
+        assetName: row.name,
         commitSha: input.commitSha,
         entry: input.entry,
       });
