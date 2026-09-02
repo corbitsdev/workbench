@@ -190,8 +190,7 @@ export function createWorkflowDetailRoute({
             grantSnapshot:
               currentVersionByDefinitionId.get(row.id)?.grantSnapshot ?? null,
             wireProjection:
-              currentVersionByDefinitionId.get(row.id)?.wireProjection ??
-              null,
+              currentVersionByDefinitionId.get(row.id)?.wireProjection ?? null,
             status: row.status,
             createdAt: row.createdAt.toISOString(),
           })),

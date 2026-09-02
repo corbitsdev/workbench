@@ -88,9 +88,7 @@ async function fetchLaunchableRows(
         ),
       ),
     )
-    .where(
-      and(eq(workflowDefinition.origin, "authored"), extraWhere),
-    );
+    .where(and(eq(workflowDefinition.origin, "authored"), extraWhere));
   return rows.map((row) => ({
     ...row,
     approvedWireHash: row.approvedWireHash ?? null,
