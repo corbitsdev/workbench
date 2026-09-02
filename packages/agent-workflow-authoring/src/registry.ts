@@ -293,6 +293,9 @@ function tryReadInertDefaultExport(source: string): unknown {
   try {
     return JSON.parse(quotedKeys);
   } catch {
+    // report-error-ignore: a non-JSON entry (real code, not an inert
+    // literal) is the expected, common case for a folded/multi-step
+    // workflow — falling back to listing files only, not an error.
     return undefined;
   }
 }
