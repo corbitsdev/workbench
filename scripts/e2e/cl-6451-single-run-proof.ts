@@ -37,7 +37,7 @@ import {
   createGitWorkflowPusher,
   DEFAULT_WORKFLOWS,
   seedTenant,
-} from "../../packages/hub-client/src/index.ts";
+} from "../../packages/seeding/src/index.ts";
 import {
   createHubAPI,
   type ApiCall,

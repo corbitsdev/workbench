@@ -28,14 +28,16 @@ import {
 } from "@intx/types";
 import { reportError } from "@corbits/error-sink";
 import {
-  inferenceCredentialName,
   OLLAMA_PLACEHOLDER_SECRET,
-  seedCatalog,
   testProviderCredential,
-  type SeedCatalogArgs,
   type SupportedCredentialProvider,
   type TestProviderCredentialArgs,
 } from "@workbench/hub-client";
+import {
+  inferenceCredentialName,
+  seedCatalog,
+  type SeedCatalogArgs,
+} from "@corbits/seeding";
 import { parseAs, type ApiCall } from "@corbits/hub-api-client";
 
 /**

@@ -26,6 +26,9 @@
       "path": "./packages/artifact-ui/tsconfig.src.json"
     },
     {
+      "path": "./packages/bench/tsconfig.src.json"
+    },
+    {
       "path": "./packages/bench-ui/tsconfig.src.json"
     },
     {
@@ -42,6 +45,9 @@
     },
     {
       "path": "./packages/command-palette/tsconfig.src.json"
+    },
+    {
+      "path": "./packages/commands/tsconfig.src.json"
     },
     {
       "path": "./packages/context-menu/tsconfig.src.json"
@@ -71,10 +77,22 @@
       "path": "./packages/hub-api-client/tsconfig.src.json"
     },
     {
+      "path": "./packages/hub-client/tsconfig.src.json"
+    },
+    {
       "path": "./packages/icons/tsconfig.src.json"
     },
     {
       "path": "./packages/inbox/tsconfig.src.json"
+    },
+    {
+      "path": "./packages/inference-catalog/tsconfig.src.json"
+    },
+    {
+      "path": "./packages/inference-settings/tsconfig.src.json"
+    },
+    {
+      "path": "./packages/insights/tsconfig.src.json"
     },
     {
       "path": "./packages/interaction-tools/tsconfig.src.json"
@@ -107,7 +125,19 @@
       "path": "./packages/ollama-adapter/tsconfig.src.json"
     },
     {
+      "path": "./packages/preferences/tsconfig.src.json"
+    },
+    {
+      "path": "./packages/presence/tsconfig.src.json"
+    },
+    {
+      "path": "./packages/provider-pricing/tsconfig.src.json"
+    },
+    {
       "path": "./packages/reddit-tools/tsconfig.src.json"
+    },
+    {
+      "path": "./packages/run-key-history/tsconfig.src.json"
     },
     {
       "path": "./packages/sandbox-sidecar/tsconfig.src.json"
@@ -117,6 +147,12 @@
     },
     {
       "path": "./packages/shell-layout/tsconfig.src.json"
+    },
+    {
+      "path": "./packages/sidecar-placement/tsconfig.src.json"
+    },
+    {
+      "path": "./packages/skills/tsconfig.src.json"
     },
     {
       "path": "./packages/skills-tools/tsconfig.src.json"

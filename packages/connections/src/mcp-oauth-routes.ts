@@ -22,7 +22,7 @@ import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import type { CredentialCipher } from "@intx/types";
 import { MCP_STREAMABLE_HTTP_PROVIDER_KEY } from "@corbits/credential-providers";
-import { ensureCredential, ensureProvider } from "@workbench/hub-client";
+import { ensureCredential, ensureProvider } from "@corbits/seeding";
 import {
   cookiesFromHeader,
   createHubAPI,

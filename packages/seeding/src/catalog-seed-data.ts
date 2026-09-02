@@ -15,7 +15,7 @@
 import type {
   AdapterPluginId,
   SupportedCredentialProvider,
-} from "./credential-test";
+} from "@workbench/hub-client/credential-test";
 
 export type CatalogModelSpec = {
   readonly canonicalName: string;

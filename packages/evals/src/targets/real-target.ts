@@ -21,10 +21,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import {
-  createGitWorkflowPusher,
-  OLLAMA_PLACEHOLDER_SECRET,
-} from "@workbench/hub-client";
+import { OLLAMA_PLACEHOLDER_SECRET } from "@workbench/hub-client";
+import { createGitWorkflowPusher } from "@corbits/seeding";
 import { createHubAPI, type ApiCall } from "@corbits/hub-api-client";
 import { getLogger } from "@intx/log";
 import { completeCredentialSetup } from "@workbench/onboarding";

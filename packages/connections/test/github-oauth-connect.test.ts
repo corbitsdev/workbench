@@ -19,7 +19,7 @@ import type {
   EnsureCredentialArgs,
   EnsureProviderArgs,
   SeedCatalogArgs,
-} from "@workbench/hub-client";
+} from "@corbits/seeding";
 import type { ConnectorDescriptor } from "../src/descriptor";
 import {
   exchangeCodeForGithubToken,

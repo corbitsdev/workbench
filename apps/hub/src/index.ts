@@ -287,10 +287,8 @@ import {
   createPresenceRoutes,
   type PresenceRoomKey,
 } from "@corbits/presence";
-import {
-  createGitWorkflowPusher,
-  supportedCredentialProviders,
-} from "@workbench/hub-client";
+import { supportedCredentialProviders } from "@workbench/hub-client";
+import { createGitWorkflowPusher } from "@corbits/seeding";
 import { createHubAPI } from "@corbits/hub-api-client";
 import {
   createDrizzlePendingSeedStore,

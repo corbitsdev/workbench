@@ -4,7 +4,7 @@
 // parented under the operator tenant when one is configured, and
 // seeded with the default workflow set when the hub carries a seed
 // model credential. Every step reuses a native route or
-// `@workbench/hub-client`; nothing here re-implements tenant creation,
+// `@corbits/seeding`; nothing here re-implements tenant creation,
 // grant planting, or workflow deployment.
 
 import {
@@ -23,7 +23,7 @@ import {
   type ToolRegistryPublisher,
   type WorkflowPusher,
   isLiveDeploymentStatus,
-} from "@workbench/hub-client";
+} from "@corbits/seeding";
 import { parseAs, type ApiCall } from "@corbits/hub-api-client";
 import { reportError } from "@corbits/error-sink";
 import {

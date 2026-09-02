@@ -60,7 +60,7 @@ import {
   isLiveDeploymentStatus,
   publishCorbitsToolsRegistry,
   seedTenant,
-} from "../../packages/hub-client/src/index.ts";
+} from "../../packages/seeding/src/index.ts";
 import {
   createHubAPI,
   parseAs,

@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createGitWorkflowPusher } from "../../packages/hub-client/src/index.ts";
+import { createGitWorkflowPusher } from "../../packages/seeding/src/index.ts";
 import { WORKFLOW_SOURCE_ENTRY } from "../../packages/workflows/src/source.ts";
 import { assertDatabaseConfigured } from "./db-gate.ts";
 

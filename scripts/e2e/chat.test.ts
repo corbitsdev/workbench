@@ -29,7 +29,7 @@
 
 import { beforeAll, describe, expect, test } from "bun:test";
 
-import { seedCatalog } from "../../packages/hub-client/src/index.ts";
+import { seedCatalog } from "../../packages/seeding/src/index.ts";
 import {
   createHubAPI,
   type ApiCall,
