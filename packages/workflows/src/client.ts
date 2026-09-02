@@ -5,6 +5,22 @@
 // graph from here and fails if anything server-only leaks in.
 export * from "./source";
 export {
+  runBearerHeaders,
+  runBearerErrorMessage,
+  runBearerErrorCode,
+  runBearerFetch,
+  type RunBearerClientConfig,
+} from "./authoring/run-client";
+export {
+  pickLaunchableDefinition,
+  routineTargetRejection,
+  RoutineTargetUnresolvableError,
+  type LaunchableDefinitionCandidate,
+  type LaunchableDefinitionRejection,
+  type LaunchableDefinitionResolution,
+  type LaunchableDefinitionResolver,
+} from "./launchable/target-rule";
+export {
   workflowNotLaunchableReason,
   workflowDetailPath,
   WorkflowDefinitionDetail,

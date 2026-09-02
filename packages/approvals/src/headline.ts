@@ -55,13 +55,29 @@ function workflowDeployHeadline(toolArguments: object): string | undefined {
 }
 
 /**
- * Builds the headline for an approval. Prefers the tool's own
- * `description` — written by the tool's author to be human-readable —
- * over its bare `name`, which is a machine identifier. When the live
- * call's arguments carry a `title` (a tool author's own convention for
- * per-invocation context, e.g. "finalize this piece of collateral titled
- * X"), it is appended so the headline reflects what THIS approval is
- * actually about, not just which tool is asking.
+ * Per-tool headline renderers, keyed by tool name — a tool kind that wants
+ * its approval card to name what it will actually do, rather than fall
+ * back to its generic description, registers itself here instead of
+ * growing another `if (toolName === ...)` branch in `headlineFor`.
+ * Returning `undefined` (missing required args) falls through to the
+ * generic description/title rendering below.
+ */
+const TOOL_HEADLINE_RENDERERS: Readonly<
+  Record<string, (toolArguments: object) => string | undefined>
+> = {
+  workflow_deploy: workflowDeployHeadline,
+};
+
+/**
+ * Builds the headline for an approval. A registered per-tool renderer
+ * (`TOOL_HEADLINE_RENDERERS`) wins when the tool call's own arguments
+ * carry what it needs. Otherwise prefers the tool's own `description` —
+ * written by the tool's author to be human-readable — over its bare
+ * `name`, which is a machine identifier. When the live call's arguments
+ * carry a `title` (a tool author's own convention for per-invocation
+ * context, e.g. "finalize this piece of collateral titled X"), it is
+ * appended so the headline reflects what THIS approval is actually
+ * about, not just which tool is asking.
  */
 export function headlineFor(
   toolDefinition: unknown,
@@ -71,13 +87,15 @@ export function headlineFor(
     typeof toolDefinition === "object" && toolDefinition !== null
       ? stringField(toolDefinition, "name")
       : undefined;
+  const renderer =
+    toolName !== undefined ? TOOL_HEADLINE_RENDERERS[toolName] : undefined;
   if (
-    toolName === "workflow_deploy" &&
+    renderer !== undefined &&
     typeof toolArguments === "object" &&
     toolArguments !== null
   ) {
-    const deployHeadline = workflowDeployHeadline(toolArguments);
-    if (deployHeadline !== undefined) return deployHeadline;
+    const rendered = renderer(toolArguments);
+    if (rendered !== undefined) return rendered;
   }
 
   const base =

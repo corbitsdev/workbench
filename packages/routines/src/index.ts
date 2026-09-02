@@ -81,18 +81,22 @@ export type {
   RoutineDraftingRunnerDeps,
 } from "./myra-drafting";
 
+// "What is launchable" moved into @corbits/workflows (CL-7373 fold
+// review): it is definition-domain logic, not a routine concern. Kept
+// re-exported here so every existing `@corbits/routines` importer (this
+// package's own `routes.ts`, `apps/hub`) needs no change.
 export {
   pickLaunchableDefinition,
   resolveLaunchableDefinition,
   routineTargetRejection,
   RoutineTargetUnresolvableError,
-} from "./target";
+} from "@corbits/workflows";
 export type {
   LaunchableDefinitionCandidate,
   LaunchableDefinitionRejection,
   LaunchableDefinitionResolution,
   LaunchableDefinitionResolver,
-} from "./target";
+} from "@corbits/workflows";
 
 export { createRoutineRoutes, fireScheduledRoutine } from "./routes";
 export type {

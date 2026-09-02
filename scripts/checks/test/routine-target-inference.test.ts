@@ -71,7 +71,7 @@ test("a backtick-quoted mention of workflow.json inside a comment is not a viola
 test("workflow-source's own RetiredWorkflowEnvelopeError file is allowed", () => {
   const report = auditWorkflowJsonLiteral([
     {
-      relPath: "packages/workflow-source/src/index.ts",
+      relPath: "packages/workflows/src/source.ts",
       contents: 'const RETIRED_WORKFLOW_ENVELOPE_PATH = "workflow.json";',
     },
   ]);
