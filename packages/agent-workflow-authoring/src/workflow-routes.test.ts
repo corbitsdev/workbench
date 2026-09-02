@@ -27,6 +27,9 @@ function fakeRegistry(
     readSource: async () => {
       throw new Error("readSource not stubbed");
     },
+    deploy: async () => {
+      throw new Error("deploy not stubbed");
+    },
     ...overrides,
   };
 }
@@ -216,4 +219,79 @@ test("GET /:assetId/source returns the registry's snapshot for the authenticated
   expect(seen).toEqual({ tenantId: "tenant_1", assetId: "asset_1" });
   const body = (await res.json()) as { data: { headSha: string } };
   expect(body.data.headSha).toBe("sha_head");
+});
+
+test("POST /:assetId/deploy returns the deployment on the happy path", async () => {
+  let seen: { assetId: string; commitSha: string; entry: string } | undefined;
+  const app = createWorkflowAuthorRoutes({
+    authenticator: fakeAuthenticator({
+      tenantId: "tenant_1",
+      principalId: "principal_1",
+    }),
+    registry: fakeRegistry({
+      deploy: async (_caller, assetId, input) => {
+        seen = { assetId, ...input };
+        return {
+          deploymentId: "run_1",
+          definitionAssetId: assetId,
+          status: "deployed",
+        };
+      },
+    }),
+  });
+  const res = await app.request(
+    req("/asset_1/deploy", { commitSha: "sha_1", entry: "./workflow.ts" }),
+  );
+  expect(res.status).toBe(201);
+  expect(seen).toEqual({
+    assetId: "asset_1",
+    commitSha: "sha_1",
+    entry: "./workflow.ts",
+  });
+  const body = (await res.json()) as {
+    data: { deploymentId: string; status: string };
+  };
+  expect(body.data.deploymentId).toBe("run_1");
+  expect(body.data.status).toBe("deployed");
+});
+
+test("POST /:assetId/deploy surfaces a forbidden deploy as 403, not a 500", async () => {
+  const app = createWorkflowAuthorRoutes({
+    authenticator: fakeAuthenticator({
+      tenantId: "tenant_1",
+      principalId: "principal_1",
+    }),
+    registry: fakeRegistry({
+      deploy: async () => {
+        throw new WorkflowAuthorError(
+          "forbidden",
+          'principal principal_1 is not granted "create" on "workflow:*"',
+        );
+      },
+    }),
+  });
+  const res = await app.request(
+    req("/asset_1/deploy", { commitSha: "sha_1", entry: "./workflow.ts" }),
+  );
+  expect(res.status).toBe(403);
+  const body = (await res.json()) as { error: { code: string } };
+  expect(body.error.code).toBe("forbidden");
+});
+
+test("POST /:assetId/deploy surfaces a sidecar-unavailable deploy as 502", async () => {
+  const app = createWorkflowAuthorRoutes({
+    authenticator: fakeAuthenticator({
+      tenantId: "tenant_1",
+      principalId: "principal_1",
+    }),
+    registry: fakeRegistry({
+      deploy: async () => {
+        throw new WorkflowAuthorError("unavailable", "sidecar unreachable");
+      },
+    }),
+  });
+  const res = await app.request(
+    req("/asset_1/deploy", { commitSha: "sha_1", entry: "./workflow.ts" }),
+  );
+  expect(res.status).toBe(502);
 });

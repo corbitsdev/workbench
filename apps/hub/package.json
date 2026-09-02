@@ -63,6 +63,7 @@
     "@intx/mime": "workspace:*",
     "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
+    "@intx/workflow-deploy": "workspace:*",
     "@modelcontextprotocol/sdk": "catalog:",
     "@workbench/access-policy": "workspace:*",
     "@workbench/connections": "workspace:*",

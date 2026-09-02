@@ -39,9 +39,16 @@ import {
   createMailTriggeredRunGrantsMaterializer,
   createRequireGrant,
   readDurableWorkflowRunLifecycles,
+  resolveDefinitionSources,
   type AppEnv,
   type TenantEnv,
 } from "@intx/hub-api";
+import {
+  deriveRunAddress,
+  deriveRunAgentId,
+  WorkflowDefinitionInvalidError,
+} from "@intx/workflow-deploy";
+import type { HarnessConfig } from "@intx/types/runtime";
 
 import {
   createAgentDefinitionRoutes,
@@ -330,6 +337,8 @@ import { createSkillRoutes, createWorkflowSkillRoutes } from "@corbits/skills";
 import {
   createWorkflowAuthorRegistry,
   createWorkflowAuthorRoutes,
+  WorkflowAuthorError,
+  type WorkflowDeployer,
 } from "@corbits/agent-workflow-authoring";
 import { mountArtifacts } from "./artifacts-mount";
 import { mountWorkbenchSlackTag } from "./slack-tag-mount";
@@ -1858,16 +1867,118 @@ export async function createHub(config: HubConfig) {
       registry: skills.registry,
     }),
   );
-  // Agent-authored workflows (CL-agent-authored-workflows): an agent
-  // publishes a workflow codebase as a native `kind:"workflow"` asset
-  // through this workflow-run-authenticated surface, then deploys the
-  // resulting asset through the tenant-session `/workflows/deployments`
-  // route this hub already mounts (unchanged, below) — this package never
-  // reimplements that deploy gating. Unlike `/api/workflow-skills` above,
-  // every write here also runs a real `chatGrantStore` authorization
-  // check (`asset:*`/create, `asset:<id>`/write) before reaching
-  // `RepoStore`, because authoring is publishing executable code, not a
-  // markdown skill.
+  // CL-7361: the `deploy` half of the run-authenticated deployer this
+  // route's registry calls — the SAME `sessionService.
+  // deployWorkflowFromSource` call (already `withDeploySourceRecording`-
+  // wrapped above) the native `POST /workflows/deployments` route's own
+  // non-exclusive branch makes, not a reimplementation of install/probe/
+  // gate/freeze. Inference sources are resolved server-side from the
+  // tenant's catalog (`resolveDefinitionSources`) exactly as
+  // `agent-definitions`' `tenantDefaultModel` does above — an agent never
+  // supplies or sees a provider secret. Exclusive sidecar placement is out
+  // of scope: an agent-authored deploy always lands on shared capacity.
+  const workflowDeployer: WorkflowDeployer = {
+    async deploy({ tenantId, principalId, assetId, commitSha, entry }) {
+      const assetRow = await db.query.asset.findFirst({
+        where: and(
+          eq(assetTable.id, assetId),
+          eq(assetTable.tenantId, tenantId),
+          eq(assetTable.kind, "workflow"),
+        ),
+      });
+      if (assetRow === undefined) {
+        throw new WorkflowAuthorError(
+          "not_found",
+          `workflow asset ${assetId} not found`,
+        );
+      }
+      const tenantRow = await db.query.tenant.findFirst({
+        where: eq(tenantTable.id, tenantId),
+      });
+      if (tenantRow === undefined) {
+        throw new WorkflowAuthorError("not_found", `tenant ${tenantId} not found`);
+      }
+
+      const fallbackModel =
+        (await workbenchHostInferencePreferencesResolver(tenantId))[0]
+          ?.model ?? null;
+      const resolution = await resolveDefinitionSources({
+        db,
+        tenantId,
+        modelRequirements: null,
+        fallbackModel,
+        invokerPreferences: {},
+        credentialCipher,
+      });
+      if (!resolution.ok) {
+        throw new WorkflowAuthorError("invalid", resolution.message);
+      }
+
+      const anchorRunId = generateId("workflowRun");
+      const agentAddress = deriveRunAddress({
+        runId: anchorRunId,
+        domain: tenantRow.domain,
+      });
+      const config: HarnessConfig = {
+        sessionId: generateId("session"),
+        agentId: deriveRunAgentId({ runId: anchorRunId }),
+        tenantId,
+        principalId,
+        agentAddress,
+        systemPrompt: "",
+        tools: [],
+        grants: [],
+        sources: resolution.sources,
+        defaultSource: resolution.defaultSource,
+      };
+
+      try {
+        const result = await sessionService.deployWorkflowFromSource({
+          tenantId,
+          anchorRunId,
+          deploymentDomain: tenantRow.domain,
+          agentAddress,
+          source: {
+            kind: "asset",
+            assetId,
+            package: { format: "source", commitSha },
+          },
+          entry,
+          definitionAssetId: assetRow.id,
+          config,
+        });
+        return {
+          deploymentId: result.anchorRunId,
+          definitionAssetId: assetRow.id,
+          status: "deployed",
+        };
+      } catch (err) {
+        // Mirrors `@intx/hub-api`'s own `/workflows/deployments` route: an
+        // install/gate rejection or an unapproved source chain is a
+        // client/definition error; anything else (a missing commit, an
+        // unreachable sidecar) is reported as `unavailable` rather than
+        // guessed apart, exactly as the native route's own catch-all does.
+        if (err instanceof WorkflowDefinitionInvalidError) {
+          throw new WorkflowAuthorError("invalid", err.message);
+        }
+        throw new WorkflowAuthorError(
+          "unavailable",
+          err instanceof Error ? err.message : "Failed to deploy workflow",
+        );
+      }
+    },
+  };
+  // Agent-authored workflows (CL-7360, CL-7361): an agent publishes a
+  // workflow codebase as a native `kind:"workflow"` asset AND deploys it,
+  // both through this workflow-run-authenticated surface — `deploy`
+  // reaches the exact same `sessionService.deployWorkflowFromSource` the
+  // tenant-session `/workflows/deployments` route drives (`workflowDeployer`
+  // above), never a second gating path. Unlike `/api/workflow-skills`
+  // above, every write here also runs a real `chatGrantStore`
+  // authorization check (`asset:*`/create, `asset:<id>`/write,
+  // `workflow:*`/create) before reaching `RepoStore` or the deploy call,
+  // because authoring and deploying are side effects, not a markdown
+  // skill edit.
   app.route(
     "/api/workflow-workflow-authoring",
     createWorkflowAuthorRoutes({
@@ -1878,6 +1989,7 @@ export async function createHub(config: HubConfig) {
         repoStore: agentRepoStore.repoStore,
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
+        deployer: workflowDeployer,
       }),
     }),
   );

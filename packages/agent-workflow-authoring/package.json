@@ -1,7 +1,7 @@
 {
   "name": "@corbits/agent-workflow-authoring",
   "private": true,
-  "description": "Lets an agent author a workflow codebase as a native kind:\"workflow\" hub asset and republish it, gated by an explicit asset:*/create+write grant on the agent's own principal and tenant — the hub half of the agent-authored-workflows capability; deploy stays on @intx/hub-api's existing source-based deploy route",
+  "description": "Lets an agent author a workflow codebase as a native kind:\"workflow\" hub asset, republish it, and deploy it through Interchange's native source pipeline, each gated by an explicit grant on the agent's own principal and tenant — the hub half of the agent-authored-workflows capability",
   "version": "0.1.0",
   "license": "LGPL-2.1-or-later",
   "type": "module",

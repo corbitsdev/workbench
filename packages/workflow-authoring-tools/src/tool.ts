@@ -1,10 +1,14 @@
 // The `@corbits/workflow-authoring-tools` bundle: `workflow_author`,
-// `workflow_republish`, and `workflow_source_read` — an agent's way to
-// write a workflow code package into a `kind: "workflow"` hub asset and
-// read it back. None of the three carries `approval: "ask"`: writing
+// `workflow_republish`, `workflow_source_read`, and `workflow_deploy` — an
+// agent's way to write a workflow code package into a `kind: "workflow"`
+// hub asset, read it back, and deploy it through Interchange's native
+// source pipeline. The first three carry no `approval: "ask"`: writing
 // source is not a side effect (docs/workflow-model.md, "Authority
-// boundaries"). Deploying the asset is a separate, approval-gated step
-// owned by the `workflow_deploy` tool, never by this bundle.
+// boundaries"). `workflow_deploy` does — deploying is what makes a
+// workflow selectable as a routine target, so a human sees the deploy
+// intent and approves it before the tool call ever reaches the hub (CL-7362
+// still owns showing the probed capability surface on that approval card;
+// today's snapshot is the tool call's own arguments).
 //
 // A thrown error here is the honest result: `@intx/agent`'s tool runner
 // converts a rejected `run` into `ToolResult { isError: true }` carrying
@@ -16,6 +20,7 @@ import { type } from "arktype";
 
 import {
   authorWorkflow,
+  deployWorkflow,
   readWorkflowSource,
   republishWorkflow,
   type WorkflowAuthoringClientConfig,
@@ -24,6 +29,7 @@ import {
 export const WORKFLOW_AUTHOR_TOOL = "workflow_author";
 export const WORKFLOW_REPUBLISH_TOOL = "workflow_republish";
 export const WORKFLOW_SOURCE_READ_TOOL = "workflow_source_read";
+export const WORKFLOW_DEPLOY_TOOL = "workflow_deploy";
 
 /** Env this bundle needs beyond `BaseEnv`: the hub origin under its own
  * key plus the run's bearer token and address, threaded by
@@ -51,6 +57,12 @@ const RepublishInput = type({
 });
 
 const SourceReadInput = type({ assetId: "string > 0" });
+
+const DeployInput = type({
+  assetId: "string > 0",
+  commitSha: "string > 0",
+  entry: "string > 0",
+});
 
 const PACKAGE_SHAPE_DESCRIPTION =
   "The package is an ordinary code package: a top-level package.json " +
@@ -132,6 +144,22 @@ async function runSourceRead(
   return textResult(call.id, JSON.stringify(snapshot));
 }
 
+async function runDeploy(
+  env: WorkflowAuthoringEnv,
+  call: ToolCall,
+): Promise<ToolResult> {
+  const input = DeployInput(call.arguments);
+  if (input instanceof type.errors) {
+    throw invalidInput(WORKFLOW_DEPLOY_TOOL, input);
+  }
+  const result = await deployWorkflow(clientConfig(env), input);
+  return textResult(
+    call.id,
+    `Deployed workflow asset ${result.definitionAssetId} as deployment ${result.deploymentId} (status: ${result.status}). ` +
+      "It is now selectable as a routine target.",
+  );
+}
+
 /**
  * The bundle id's middle segment is not the package name, unlike every
  * other `@corbits/*-tools` bundle: `<id>:<tool name>` is what goes on the
@@ -149,6 +177,7 @@ export const workflowAuthoringTools = defineTool<WorkflowAuthoringEnv>({
     { name: WORKFLOW_AUTHOR_TOOL },
     { name: WORKFLOW_REPUBLISH_TOOL },
     { name: WORKFLOW_SOURCE_READ_TOOL },
+    { name: WORKFLOW_DEPLOY_TOOL, approval: "ask" },
   ],
   factory: (env) => ({
     definitions: [
@@ -235,6 +264,40 @@ export const workflowAuthoringTools = defineTool<WorkflowAuthoringEnv>({
           required: ["assetId"],
         },
       },
+      {
+        name: WORKFLOW_DEPLOY_TOOL,
+        description:
+          "Deploy a workflow asset's committed source through " +
+          "Interchange's native deploy pipeline (install, probe, capability " +
+          "walk, gate, freeze), making it selectable as a routine target. " +
+          "A human must approve this before it runs: the approval card " +
+          "shows the asset, commit, and entry this call names. Inference " +
+          "sources come from the workbench's own catalog — never pass a " +
+          "model or credential. If the deploy fails because the probed " +
+          "capability surface changed, re-read the source and retry.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            assetId: {
+              type: "string",
+              description: "The workflow asset id to deploy.",
+            },
+            commitSha: {
+              type: "string",
+              description:
+                "The exact commit to deploy — the commitSha from " +
+                "workflow_author, workflow_republish, or " +
+                "workflow_source_read's headSha.",
+            },
+            entry: {
+              type: "string",
+              description:
+                'The interchange.workflow entry module path, e.g. "./workflow.ts".',
+            },
+          },
+          required: ["assetId", "commitSha", "entry"],
+        },
+      },
     ],
     run: (call: ToolCall, _signal: AbortSignal) => {
       switch (call.name) {
@@ -244,6 +307,8 @@ export const workflowAuthoringTools = defineTool<WorkflowAuthoringEnv>({
           return runRepublish(env, call);
         case WORKFLOW_SOURCE_READ_TOOL:
           return runSourceRead(env, call);
+        case WORKFLOW_DEPLOY_TOOL:
+          return runDeploy(env, call);
         default:
           return Promise.reject(
             new Error(

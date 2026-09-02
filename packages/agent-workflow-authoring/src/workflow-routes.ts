@@ -11,8 +11,10 @@
 // never name a different tenant or write into another principal's
 // workflow asset.
 //
-// This surface stops at "author a workflow asset". Deploying it is
-// deliberately out of scope here — see `./registry.ts`'s doc comment.
+// `POST /:assetId/deploy` (CL-7361) extends this surface to deployment: a
+// run-authenticated mirror of the native `/workflows/deployments` route,
+// authorized and gated exactly the same way — see `./registry.ts`'s doc
+// comment on `deploy`.
 import { type } from "arktype";
 import { Hono } from "hono";
 import { makeErrorEnvelope } from "@workbench/hub-client";
@@ -48,9 +50,14 @@ const RepublishBody = type({
   "expectedHeadSha?": "string",
 });
 
+const DeployBody = type({
+  commitSha: "string",
+  entry: "string",
+});
+
 function statusFor(
   reason: WorkflowAuthorError["reason"],
-): 400 | 403 | 404 | 409 {
+): 400 | 403 | 404 | 409 | 502 {
   switch (reason) {
     case "not_found":
       return 404;
@@ -60,6 +67,8 @@ function statusFor(
       return 409;
     case "invalid":
       return 400;
+    case "unavailable":
+      return 502;
   }
 }
 
@@ -149,6 +158,26 @@ export function createWorkflowAuthorRoutes(
       c.req.param("assetId"),
     );
     return c.json({ data: snapshot });
+  });
+
+  app.post("/:assetId/deploy", async (c) => {
+    const body = DeployBody(await c.req.json().catch(() => undefined));
+    if (body instanceof type.errors) {
+      return c.json(
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: body.summary,
+        }),
+        400,
+      );
+    }
+    const scope = c.get("workflowRunScope");
+    const result = await deps.registry.deploy(
+      scope,
+      c.req.param("assetId"),
+      body,
+    );
+    return c.json({ data: result }, 201);
   });
 
   return app;
