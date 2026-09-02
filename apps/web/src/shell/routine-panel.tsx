@@ -48,6 +48,7 @@ import {
 } from "@corbits/react-ui";
 import { Clock, X } from "@corbits/icons";
 
+import { reportError } from "@corbits/error-sink";
 import { useBench } from "../bench-context";
 import { useNavigate } from "../navigation";
 import { ensureMyraWorkbench } from "../myra-workbench";
@@ -223,6 +224,11 @@ function RoutineEditorPanel({
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<readonly RoutineRun[]>([]);
   const [targetAssetId, setTargetAssetId] = useState<string | null>(null);
+  // Set when a field blur bails out because no target is picked yet on a
+  // brand-new routine — a silent `return` there gives the person no
+  // feedback that their edit didn't save, so this drives an inline hint
+  // under the picker instead.
+  const [needsTargetHint, setNeedsTargetHint] = useState(false);
   const [existingTarget, setExistingTarget] = useState<RoutineTarget | null>(
     null,
   );
@@ -347,7 +353,15 @@ function RoutineEditorPanel({
   };
 
   // Loads an existing routine's real fields once the tenant resolves —
-  // mirrors `ProfileCanvasPane`'s own "fetch once open" effect.
+  // mirrors `ProfileCanvasPane`'s own "fetch once open" effect. The
+  // existing-routine target's display name (read-only for this issue —
+  // editing it is CL-7358; a stale target, no longer in the tenant's
+  // deployable list, is shown honestly as its raw id rather than hidden)
+  // is fetched here too, sequenced after the routine itself resolves and
+  // keyed on the just-loaded `routine.definitionAssetId` directly, not
+  // component state — a separate effect keyed on `targetAssetId` would
+  // both re-fire an identical fetch right after `hydrateRoutine` sets it
+  // (no new information) and race it if the two fetches ran in parallel.
   useEffect(() => {
     if (tenantId === null || subject.routineId == null) return;
     let cancelled = false;
@@ -356,6 +370,24 @@ function RoutineEditorPanel({
         if (cancelled) return;
         hydrateRoutine(routine);
         loadRuns(routine.id);
+        void listAllRoutineTargets(tenantId).then(
+          (targets) => {
+            if (cancelled) return;
+            setExistingTarget(
+              targets.find(
+                (t) => t.definitionAssetId === routine.definitionAssetId,
+              ) ?? null,
+            );
+          },
+          (cause: unknown) => {
+            if (cancelled) return;
+            reportError(cause, {
+              operation: "routine-panel.load_existing_target",
+              tenantId,
+            });
+            setExistingTarget(null);
+          },
+        );
       },
       (cause: unknown) => {
         if (!cancelled) {
@@ -367,29 +399,6 @@ function RoutineEditorPanel({
       cancelled = true;
     };
   }, [tenantId, subject.routineId]);
-
-  // Existing-routine mode shows the current target's display name,
-  // read-only for this issue — editing it is CL-7358. A stale target (no
-  // longer in the tenant's deployable list) is shown honestly as its raw
-  // id rather than hidden.
-  useEffect(() => {
-    if (tenantId === null || subject.routineId == null) return;
-    let cancelled = false;
-    void listAllRoutineTargets(tenantId).then(
-      (targets) => {
-        if (cancelled) return;
-        setExistingTarget(
-          targets.find((t) => t.definitionAssetId === targetAssetId) ?? null,
-        );
-      },
-      () => {
-        if (!cancelled) setExistingTarget(null);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [tenantId, subject.routineId, targetAssetId]);
 
   /** This routine's delivery workbench: the conversation the panel was
    * opened beside (its own id), or, with no conversation in scope, this
@@ -473,7 +482,10 @@ function RoutineEditorPanel({
     const trimmed = name.trim();
     if (trimmed === "") return;
     if (routineIdRef.current !== null && trimmed === savedName) return;
-    if (routineIdRef.current === null && targetAssetIdRef.current === null) return;
+    if (routineIdRef.current === null && targetAssetIdRef.current === null) {
+      setNeedsTargetHint(true);
+      return;
+    }
     void runWrite((id) => {
       if (id === null) return doCreate({ name: trimmed, instruction, trigger });
       return updateRoutine(tenantId as string, id, { name: trimmed });
@@ -484,7 +496,10 @@ function RoutineEditorPanel({
     const trimmed = instruction.trim();
     if (routineIdRef.current === null && name.trim() === "") return;
     if (routineIdRef.current !== null && trimmed === savedInstruction) return;
-    if (routineIdRef.current === null && targetAssetIdRef.current === null) return;
+    if (routineIdRef.current === null && targetAssetIdRef.current === null) {
+      setNeedsTargetHint(true);
+      return;
+    }
     void runWrite((id) => {
       if (id === null) {
         return doCreate({ name: name.trim(), instruction, trigger });
@@ -500,7 +515,10 @@ function RoutineEditorPanel({
     draftRef.current.trigger = next;
     setTriggerSourceLabel(null);
     setAddingSchedule(false);
-    if (routineIdRef.current === null && targetAssetIdRef.current === null) return;
+    if (routineIdRef.current === null && targetAssetIdRef.current === null) {
+      setNeedsTargetHint(true);
+      return;
+    }
     void runWrite((id) => {
       if (id === null) {
         return doCreate({
@@ -520,6 +538,7 @@ function RoutineEditorPanel({
   const pickTarget = (definitionAssetId: string) => {
     targetAssetIdRef.current = definitionAssetId;
     setTargetAssetId(definitionAssetId);
+    setNeedsTargetHint(false);
   };
 
   const removeTrigger = () => {
@@ -659,11 +678,18 @@ function RoutineEditorPanel({
         </div>
 
         {routineId === null ? (
-          <DefinitionTargetPicker
-            tenantId={tenantId}
-            value={targetAssetId}
-            onChange={pickTarget}
-          />
+          <div className="flex flex-col gap-1.5">
+            <DefinitionTargetPicker
+              tenantId={tenantId}
+              value={targetAssetId}
+              onChange={pickTarget}
+            />
+            {needsTargetHint && targetAssetId === null ? (
+              <p className="text-xs text-[var(--ui-danger)]" role="alert">
+                Pick what this routine runs before the rest can save.
+              </p>
+            ) : null}
+          </div>
         ) : (
           <div className="flex flex-col gap-1.5">
             <span className="text-xs font-medium">
