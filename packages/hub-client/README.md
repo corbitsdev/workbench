@@ -28,8 +28,9 @@ duplicated here.
   deployment answers. Safe to re-run — every skipped step says so.
 - **`src/workflow-push.ts`** — `createGitWorkflowPusher`: pushes a
   workflow definition to its asset repo over the hub's smart-HTTP git
-  route using the system `git` binary; content-aware, so an identical
-  `workflow.json` is a reported skip, not a duplicate commit.
+  route using the system `git` binary, rendering the source tree via
+  `@corbits/workflows`'s `renderWorkflowSourceTree`; content-aware, so an
+  identical tree is a reported skip, not a duplicate commit.
 - **`src/credential-test.ts`** — a real, free test call for a credential
   before it's stored, one per `SupportedCredentialProvider`; exported from
   the `./credential-test` subpath so a browser bundle (the onboarding
