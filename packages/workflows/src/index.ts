@@ -6,3 +6,13 @@ export * from "./source";
 export * from "./deploy-source/index";
 export * from "./detail/index";
 export * from "./authoring/index";
+export {
+  pickLaunchableDefinition,
+  resolveLaunchableDefinition,
+  routineTargetRejection,
+  RoutineTargetUnresolvableError,
+  type LaunchableDefinitionCandidate,
+  type LaunchableDefinitionRejection,
+  type LaunchableDefinitionResolution,
+  type LaunchableDefinitionResolver,
+} from "./launchable/target";

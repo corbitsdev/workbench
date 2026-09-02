@@ -122,7 +122,7 @@ const ALLOWLIST: readonly {
     // union itself — that select and apply those bytes. This table is
     // that missing record, for shared placement (CL-6581 phase 1;
     // exclusive placement already has workflow_run_launch_spec).
-    relPath: "packages/workflow-deploy-source/src/schema.ts",
+    relPath: "packages/workflows/src/deploy-source/schema.ts",
     maxOccurrences: 1,
     tables: ["workflow_deploy_source.workflow_deploy_source"],
   },

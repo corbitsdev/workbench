@@ -45,7 +45,7 @@ import {
   type RoutineLauncher,
 } from "./routes";
 import { validateRetarget } from "./routine-operations";
-import type { LaunchableDefinitionResolver } from "./target";
+import type { LaunchableDefinitionResolver } from "@corbits/workflows";
 import {
   InvalidRoutineTargetCursorError,
   ROUTINE_TARGETS_DEFAULT_LIMIT,

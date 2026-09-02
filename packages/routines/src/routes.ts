@@ -35,7 +35,7 @@ import type {
 import {
   routineTargetRejection,
   type LaunchableDefinitionResolver,
-} from "./target";
+} from "@corbits/workflows";
 import { validateRetarget } from "./routine-operations";
 import { makeErrorEnvelope } from "@workbench/hub-client";
 import {

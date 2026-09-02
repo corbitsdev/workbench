@@ -828,7 +828,8 @@ folded-run-<runId>`), definition loaded from that closure, run grants
 The renderer that had been living in `@workbench/hub-client`'s
 `workflow-push.ts`, and a second copy of it in `@corbits/agent-runtime`'s
 `source-tree.ts`, moved into a new dependency-free package,
-`@corbits/workflow-source`. Every authoring path in the repo now writes
+`@corbits/workflow-source` (since folded into `@corbits/workflows`'s
+`./source`, CL-7373). Every authoring path in the repo now writes
 its asset tree through that one `renderWorkflowSourceTree` — the seed
 pusher, the per-run agent-runtime package, and the agent-directory
 lineage — so there is a single producer of the bytes a workflow-kind
@@ -849,7 +850,8 @@ renderer emits (the `export default ` prefix and `;\n` suffix), never an
 eval and never a pattern search. Anything else — in practice, an asset
 last written before this cutover, whose tree still holds a bare
 `workflow.json` — throws `RetiredWorkflowEnvelopeError`, defined in
-`@corbits/workflow-source` and re-exported from `@corbits/agent-directory`.
+`@corbits/workflow-source` (now `@corbits/workflows`'s `./source`) and
+re-exported from `@corbits/agent-directory`.
 It carries re-author-and-re-deploy guidance and is mapped to a 409 in
 every route module that can reach it: `routes.ts`,
 `workflow-capability-routes.ts`, and `workflow-skill-pin-routes.ts` each

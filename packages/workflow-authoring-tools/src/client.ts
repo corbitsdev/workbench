@@ -5,15 +5,16 @@
 // the same two headers `@corbits/capability-tools` sends — so the hub
 // resolves tenant and principal from the run, never from an argument.
 import { type } from "arktype";
+import {
+  runBearerHeaders,
+  runBearerFetch,
+  type RunBearerClientConfig,
+} from "@corbits/workflows/client";
 
-export interface WorkflowAuthoringClientConfig {
+export interface WorkflowAuthoringClientConfig extends RunBearerClientConfig {
   /** The hub's plain HTTP origin, the same value every other tool
    * bundle's `hub*Url` env key carries. */
   readonly hubWorkflowAuthoringUrl: string;
-  readonly sidecarToken: string;
-  readonly address: string;
-  /** Override for tests; defaults to the global `fetch`. */
-  readonly fetchImpl?: typeof fetch;
 }
 
 export type WorkflowSourceFiles = Readonly<Record<string, string>>;
@@ -133,14 +134,6 @@ const DeployPreviewResponse = type({
   },
 });
 
-function authHeaders(
-  config: WorkflowAuthoringClientConfig,
-): Record<string, string> {
-  return {
-    authorization: `Bearer ${config.sidecarToken}`,
-    "x-workflow-run-address": config.address,
-  };
-}
 
 function endpoint(config: WorkflowAuthoringClientConfig, path: string): string {
   return `${config.hubWorkflowAuthoringUrl}/api/workflow-workflow-authoring${path}`;
@@ -183,10 +176,10 @@ export async function authorWorkflow(
   config: WorkflowAuthoringClientConfig,
   input: AuthorWorkflowRequest,
 ): Promise<WorkflowAssetSummary> {
-  const doFetch = config.fetchImpl ?? fetch;
+  const doFetch = runBearerFetch(config);
   const response = await doFetch(endpoint(config, "/author"), {
     method: "POST",
-    headers: { ...authHeaders(config), "content-type": "application/json" },
+    headers: { ...runBearerHeaders(config), "content-type": "application/json" },
     body: JSON.stringify(input),
   });
   if (!response.ok) await throwForFailure(response, "Authoring a workflow");
@@ -201,10 +194,10 @@ export async function republishWorkflow(
   config: WorkflowAuthoringClientConfig,
   input: RepublishWorkflowRequest,
 ): Promise<WorkflowAssetSummary> {
-  const doFetch = config.fetchImpl ?? fetch;
+  const doFetch = runBearerFetch(config);
   const response = await doFetch(endpoint(config, "/republish"), {
     method: "POST",
-    headers: { ...authHeaders(config), "content-type": "application/json" },
+    headers: { ...runBearerHeaders(config), "content-type": "application/json" },
     body: JSON.stringify(input),
   });
   if (!response.ok) {
@@ -221,12 +214,12 @@ export async function deployWorkflow(
   config: WorkflowAuthoringClientConfig,
   input: DeployWorkflowRequest,
 ): Promise<WorkflowDeployResult> {
-  const doFetch = config.fetchImpl ?? fetch;
+  const doFetch = runBearerFetch(config);
   const response = await doFetch(
     endpoint(config, `/${encodeURIComponent(input.assetId)}/deploy`),
     {
       method: "POST",
-      headers: { ...authHeaders(config), "content-type": "application/json" },
+      headers: { ...runBearerHeaders(config), "content-type": "application/json" },
       body: JSON.stringify({
         commitSha: input.commitSha,
         entry: input.entry,
@@ -245,12 +238,12 @@ export async function previewDeployWorkflow(
   config: WorkflowAuthoringClientConfig,
   input: DeployWorkflowPreviewRequest,
 ): Promise<WorkflowDeployPreviewResult> {
-  const doFetch = config.fetchImpl ?? fetch;
+  const doFetch = runBearerFetch(config);
   const response = await doFetch(
     endpoint(config, `/${encodeURIComponent(input.assetId)}/deploy/preview`),
     {
       method: "POST",
-      headers: { ...authHeaders(config), "content-type": "application/json" },
+      headers: { ...runBearerHeaders(config), "content-type": "application/json" },
       body: JSON.stringify({
         commitSha: input.commitSha,
         entry: input.entry,
@@ -271,10 +264,10 @@ export async function readWorkflowSource(
   config: WorkflowAuthoringClientConfig,
   assetId: string,
 ): Promise<WorkflowSourceSnapshot> {
-  const doFetch = config.fetchImpl ?? fetch;
+  const doFetch = runBearerFetch(config);
   const response = await doFetch(
     endpoint(config, `/${encodeURIComponent(assetId)}/source`),
-    { headers: authHeaders(config) },
+    { headers: runBearerHeaders(config) },
   );
   if (!response.ok) {
     await throwForFailure(response, "Reading a workflow's source");

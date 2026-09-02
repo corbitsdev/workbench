@@ -1,16 +1,18 @@
+// The lifecycle/detail symbols are the browser-safe `../client` barrel's
+// canonical export site — re-exported here rather than redeclared, so
+// there is exactly one place that owns this list and the two barrels
+// cannot drift apart.
 export {
   deriveWorkflowLifecycle,
   type DefinitionLifecycleRow,
   type WorkflowLifecycle,
   type WorkflowLifecycleResult,
-} from "./definition-lifecycle";
-export {
   workflowNotLaunchableReason,
   workflowDetailPath,
   WorkflowDefinitionDetail,
   WorkflowDetailSource,
   WorkflowDetailStep,
-} from "./definition-detail";
+} from "../client";
 export {
   createWorkflowDetailRoute,
   type CreateWorkflowDetailRouteDeps,
