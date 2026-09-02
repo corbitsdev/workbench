@@ -53,7 +53,6 @@ const RepublishBody = type({
 const DeployBody = type({
   commitSha: "string",
   entry: "string",
-  "expectedWireHash?": "string",
 });
 
 const DeployPreviewBody = type({
@@ -70,8 +69,6 @@ function statusFor(
     case "forbidden":
       return 403;
     case "conflict":
-      return 409;
-    case "wire_hash_mismatch":
       return 409;
     case "invalid":
       return 400;
@@ -168,13 +165,11 @@ export function createWorkflowAuthorRoutes(
     return c.json({ data: snapshot });
   });
 
-  // CL-7362: a preview of `/:assetId/deploy` that runs the native
-  // install/probe with an empty approval set so it never freezes,
-  // returning the wire hash and the walked grant surface so the human
-  // sees exactly what a subsequent `workflow_deploy` approval would grant
-  // BEFORE that call parks. See `./registry.ts`'s `previewDeploy` doc
-  // comment for what native seam this depends on, and where that seam is
-  // currently missing.
+  // CL-7362: a preview of `/:assetId/deploy` — a STATIC read of the
+  // already-committed source at `commitSha` (package name, entry, file
+  // list, any statically-declared tool pins). Never calls install/probe/
+  // gate/freeze, so it cannot deploy anything; a human approves the real
+  // `workflow_deploy` call with this committed source already visible.
   app.post("/:assetId/deploy/preview", async (c) => {
     const body = DeployPreviewBody(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {

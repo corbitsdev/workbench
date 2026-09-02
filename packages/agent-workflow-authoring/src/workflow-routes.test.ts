@@ -299,7 +299,7 @@ test("POST /:assetId/deploy surfaces a sidecar-unavailable deploy as 502", async
   expect(res.status).toBe(502);
 });
 
-test("POST /:assetId/deploy/preview returns the walked grant surface without deploying", async () => {
+test("POST /:assetId/deploy/preview returns a static read of the committed source without deploying", async () => {
   let deployCalled = false;
   let seen: { assetId: string; commitSha: string; entry: string } | undefined;
   const app = createWorkflowAuthorRoutes({
@@ -314,7 +314,13 @@ test("POST /:assetId/deploy/preview returns the walked grant surface without dep
       },
       previewDeploy: async (_caller, assetId, input) => {
         seen = { assetId, ...input };
-        return { wireHash: "wire_abc", grants: ["email:*/send"] };
+        return {
+          commitSha: input.commitSha,
+          entry: input.entry,
+          files: ["package.json", "workflow.ts"],
+          toolPackagePins: [],
+          packageName: "daily-digest",
+        };
       },
     }),
   });
@@ -331,35 +337,20 @@ test("POST /:assetId/deploy/preview returns the walked grant surface without dep
     entry: "./workflow.ts",
   });
   const body = (await res.json()) as {
-    data: { wireHash: string; grants: string[] };
+    data: {
+      commitSha: string;
+      entry: string;
+      files: string[];
+      toolPackagePins: { name: string; version: string }[];
+      packageName: string;
+    };
   };
-  expect(body.data).toEqual({ wireHash: "wire_abc", grants: ["email:*/send"] });
-  expect(deployCalled).toBe(false);
-});
-
-test("POST /:assetId/deploy surfaces a wire_hash_mismatch as 409, distinct from a plain conflict", async () => {
-  const app = createWorkflowAuthorRoutes({
-    authenticator: fakeAuthenticator({
-      tenantId: "tenant_1",
-      principalId: "principal_1",
-    }),
-    registry: fakeRegistry({
-      deploy: async () => {
-        throw new WorkflowAuthorError(
-          "wire_hash_mismatch",
-          "deploy succeeded but the frozen wire hash does not match the approved wire hash",
-        );
-      },
-    }),
+  expect(body.data).toEqual({
+    commitSha: "sha_1",
+    entry: "./workflow.ts",
+    files: ["package.json", "workflow.ts"],
+    toolPackagePins: [],
+    packageName: "daily-digest",
   });
-  const res = await app.request(
-    req("/asset_1/deploy", {
-      commitSha: "sha_1",
-      entry: "./workflow.ts",
-      expectedWireHash: "wire_approved",
-    }),
-  );
-  expect(res.status).toBe(409);
-  const body = (await res.json()) as { error: { code: string } };
-  expect(body.error.code).toBe("wire_hash_mismatch");
+  expect(deployCalled).toBe(false);
 });

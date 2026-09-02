@@ -48,7 +48,6 @@ export type DeployWorkflowRequest = {
   readonly assetId: string;
   readonly commitSha: string;
   readonly entry: string;
-  readonly expectedWireHash?: string;
 };
 
 export type DeployWorkflowPreviewRequest = {
@@ -63,9 +62,17 @@ export type WorkflowDeployResult = {
   readonly status: string;
 };
 
+export type ToolPackagePin = {
+  readonly name: string;
+  readonly version: string;
+};
+
 export type WorkflowDeployPreviewResult = {
-  readonly wireHash: string;
-  readonly grants: readonly string[];
+  readonly commitSha: string;
+  readonly entry: string;
+  readonly files: readonly string[];
+  readonly toolPackagePins: readonly ToolPackagePin[];
+  readonly packageName: string;
 };
 
 /** The hub refused the request with a canonical error envelope. `code`
@@ -118,8 +125,11 @@ const DeployResponse = type({
 
 const DeployPreviewResponse = type({
   data: {
-    wireHash: "string",
-    grants: "string[]",
+    commitSha: "string",
+    entry: "string",
+    files: "string[]",
+    toolPackagePins: type({ name: "string", version: "string" }).array(),
+    packageName: "string",
   },
 });
 
@@ -220,9 +230,6 @@ export async function deployWorkflow(
       body: JSON.stringify({
         commitSha: input.commitSha,
         entry: input.entry,
-        ...(input.expectedWireHash !== undefined
-          ? { expectedWireHash: input.expectedWireHash }
-          : {}),
       }),
     },
   );

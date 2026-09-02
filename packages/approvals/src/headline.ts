@@ -11,33 +11,47 @@ function stringField(source: object, field: string): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value : undefined;
 }
 
-function stringArrayField(
+function toolPackagePinsField(
   source: object,
   field: string,
-): readonly string[] | undefined {
-  if (!(field in source)) return undefined;
+): readonly { readonly name: string; readonly version: string }[] {
+  if (!(field in source)) return [];
   const value = (source as Record<string, unknown>)[field];
-  return Array.isArray(value) && value.every((v) => typeof v === "string")
-    ? (value as string[])
-    : undefined;
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (pin): pin is { name: string; version: string } =>
+      pin !== null &&
+      typeof pin === "object" &&
+      typeof (pin as Record<string, unknown>).name === "string" &&
+      typeof (pin as Record<string, unknown>).version === "string",
+  );
 }
 
 /**
  * CL-7362: `workflow_deploy` (`@corbits/workflow-authoring-tools`) parks an
- * approval whose arguments carry the exact grant surface the human is
- * being asked to approve (`workflow_deploy_preview`'s output, passed
- * through). This renders that surface directly rather than falling back
- * to the tool's generic description, so the approval card reads as "what
- * will this actually grant" instead of "a tool wants to run".
+ * approval whose arguments carry the packageName/toolPackagePins a prior
+ * `workflow_deploy_preview` call (a static read of the committed source)
+ * reported, passed through. This renders that directly rather than
+ * falling back to the tool's generic description, so the approval card
+ * names the real package and tools instead of a bare asset id. It does
+ * NOT show grants/capabilities: those are stamped by the native
+ * install+probe+gate `workflow_deploy` itself runs, which has no
+ * no-freeze preview yet (CL-7362).
  */
 function workflowDeployHeadline(toolArguments: object): string | undefined {
-  const assetId = stringField(toolArguments, "assetId");
   const commitSha = stringField(toolArguments, "commitSha");
-  if (assetId === undefined || commitSha === undefined) return undefined;
+  if (commitSha === undefined) return undefined;
+  const packageName =
+    stringField(toolArguments, "packageName") ??
+    stringField(toolArguments, "assetId");
+  if (packageName === undefined) return undefined;
   const sha7 = commitSha.slice(0, 7);
-  const grants = stringArrayField(toolArguments, "grants") ?? [];
-  const grantsText = grants.length > 0 ? grants.join(", ") : "no grants";
-  return `Deploy workflow ${assetId} @ ${sha7} — grants: ${grantsText}`;
+  const pins = toolPackagePinsField(toolArguments, "toolPackagePins");
+  const toolsText =
+    pins.length > 0
+      ? pins.map((pin) => `${pin.name}@${pin.version}`).join(", ")
+      : "none declared";
+  return `Deploy workflow ${packageName} @ ${sha7} — tools: ${toolsText}`;
 }
 
 /**

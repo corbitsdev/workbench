@@ -176,7 +176,7 @@ test("workflow_source_read returns the snapshot as JSON the model can parse", as
   expect(JSON.parse(String(result.content))).toEqual(snapshot);
 });
 
-test("workflow_deploy posts assetId, commitSha, entry, and expectedWireHash to the deploy route", async () => {
+test("workflow_deploy posts only assetId, commitSha, and entry to the deploy route — packageName/toolPackagePins stay client-side for the approval headline", async () => {
   const bundle = workflowAuthoringTools(testEnv());
   let seenUrl: string | undefined;
   let seenBody: unknown;
@@ -202,8 +202,8 @@ test("workflow_deploy posts assetId, commitSha, entry, and expectedWireHash to t
           assetId: "asset_1",
           commitSha: "sha_1",
           entry: "./workflow.ts",
-          expectedWireHash: "wire_abc",
-          grants: ["email:*/send"],
+          packageName: "daily-digest",
+          toolPackagePins: [{ name: "@corbits/foo-tools", version: "1.2.3" }],
         }),
         new AbortController().signal,
       ),
@@ -211,20 +211,19 @@ test("workflow_deploy posts assetId, commitSha, entry, and expectedWireHash to t
   expect(seenUrl).toBe(
     "https://hub.example.com/api/workflow-workflow-authoring/asset_1/deploy",
   );
-  // `grants` is carried on the approval card via the tool call's own
-  // arguments (see @corbits/approvals' headline.ts), not re-sent to the
-  // hub — the deploy route only needs the wire hash it re-verifies against.
+  // `packageName`/`toolPackagePins` are carried on the approval card via
+  // the tool call's own arguments (see @corbits/approvals' headline.ts),
+  // not re-sent to the hub — the deploy route only needs commitSha/entry.
   expect(seenBody).toEqual({
     commitSha: "sha_1",
     entry: "./workflow.ts",
-    expectedWireHash: "wire_abc",
   });
   expect(result.isError).toBe(false);
   expect(result.content).toContain("run_1");
   expect(result.content).toContain("asset_1");
 });
 
-test("workflow_deploy rejects a call missing expectedWireHash or grants without calling the hub", async () => {
+test("workflow_deploy rejects a call missing required fields without calling the hub", async () => {
   const bundle = workflowAuthoringTools(testEnv());
   await withFetch(
     () => {
@@ -235,7 +234,6 @@ test("workflow_deploy rejects a call missing expectedWireHash or grants without 
         bundle.run(
           call(WORKFLOW_DEPLOY_TOOL, {
             assetId: "asset_1",
-            commitSha: "sha_1",
             entry: "./workflow.ts",
           }),
           new AbortController().signal,
@@ -253,7 +251,13 @@ test("workflow_deploy_preview posts assetId, commitSha, and entry to the preview
       seenUrl = url;
       return new Response(
         JSON.stringify({
-          data: { wireHash: "wire_abc", grants: ["email:*/send"] },
+          data: {
+            commitSha: "sha_1",
+            entry: "./workflow.ts",
+            files: ["package.json", "workflow.ts"],
+            toolPackagePins: [{ name: "@corbits/foo-tools", version: "1.2.3" }],
+            packageName: "daily-digest",
+          },
         }),
       );
     },
@@ -272,8 +276,11 @@ test("workflow_deploy_preview posts assetId, commitSha, and entry to the preview
   );
   expect(result.isError).toBe(false);
   expect(JSON.parse(String(result.content))).toEqual({
-    wireHash: "wire_abc",
-    grants: ["email:*/send"],
+    commitSha: "sha_1",
+    entry: "./workflow.ts",
+    files: ["package.json", "workflow.ts"],
+    toolPackagePins: [{ name: "@corbits/foo-tools", version: "1.2.3" }],
+    packageName: "daily-digest",
   });
   expect(
     workflowAuthoringTools.definitions.find(

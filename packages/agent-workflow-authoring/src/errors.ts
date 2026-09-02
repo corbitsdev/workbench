@@ -3,12 +3,7 @@ export type WorkflowAuthorErrorReason =
   | "not_found"
   | "conflict"
   | "invalid"
-  | "unavailable"
-  // CL-7362: the native deploy re-probed and froze a definition whose wire
-  // hash differs from the one the human approved via `expectedWireHash`.
-  // Distinct from `conflict` (an `expectedHeadSha` race) so a caller can
-  // tell the two apart without parsing the message.
-  | "wire_hash_mismatch";
+  | "unavailable";
 
 export class WorkflowAuthorError extends Error {
   readonly reason: WorkflowAuthorErrorReason;
