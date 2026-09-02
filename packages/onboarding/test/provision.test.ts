@@ -143,13 +143,9 @@ function firstLoginSeedHub(args: { expectedParentId?: string }) {
     }
     if (
       method === "GET" &&
-      path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+      path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
     ) {
-      return {
-        status: 200,
-        data: { data: [], nextCursor: null },
-        cookies: [],
-      };
+      return { status: 200, data: [], cookies: [] };
     }
     if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
       return { status: 200, data: { items: [] }, cookies: [] };
@@ -661,13 +657,10 @@ describe("provisionPersonalTenantIfNeeded", () => {
       }
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
-        return {
-          status: 200,
-          data: { data: [], nextCursor: null },
-          cookies: [],
-        };
+        return { status: 200, data: [], cookies: [] };
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return { status: 200, data: { items: [] }, cookies: [] };
@@ -1235,13 +1228,10 @@ describe("provisionPersonalTenantIfNeeded", () => {
       }
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
-        return {
-          status: 200,
-          data: { data: [], nextCursor: null },
-          cookies: [],
-        };
+        return { status: 200, data: [], cookies: [] };
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return { status: 200, data: { items: [] }, cookies: [] };
@@ -1447,18 +1437,29 @@ describe("provisionPersonalTenantIfNeeded", () => {
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
         return { status: 201, data: {}, cookies: [] };
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
-      ) {
-        return {
-          status: 200,
-          data: { data: [], nextCursor: null },
-          cookies: [],
-        };
-      }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return { status: 200, data: { items: [] }, cookies: [] };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/routines`) {
+        const routineBody = body as {
+          name: string;
+          presetKey: string;
+          deliveryWorkbenchId?: string;
+        };
+        return {
+          status: 201,
+          data: {
+            id: `rtn_${routineBody.presetKey}`,
+            tenantId: TENANT_ID,
+            name: routineBody.name,
+            enabled: false,
+            deliveryWorkbenchId: routineBody.deliveryWorkbenchId ?? null,
+            presetKey: routineBody.presetKey,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+          cookies: [],
+        };
       }
       if (
         method === "GET" &&

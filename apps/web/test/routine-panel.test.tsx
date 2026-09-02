@@ -56,7 +56,12 @@ let capabilitiesProbeFails = false;
 let networkDelayMs = 0;
 let workbenchAgentsByWorkbench: Record<
   string,
-  { address: string; handle: string; definitionId: string; definitionAssetId: string }[]
+  {
+    address: string;
+    handle: string;
+    definitionId: string;
+    definitionAssetId: string;
+  }[]
 > = {
   ch_1: [
     {
