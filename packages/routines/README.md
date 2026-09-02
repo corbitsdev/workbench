@@ -93,12 +93,12 @@ otherwise) only groups the picker.
   then applies the product filter (`@corbits/workflow-catalog`'s
   `isAutomatableWorkflowName` or `isConversationalWorkflowName`, never a
   workbench-host anchor name) and orders by `(name asc, definitionAssetId
-  asc)`. Pagination is an opaque cursor over that key; `limit` defaults to
+asc)`. Pagination is an opaque cursor over that key; `limit` defaults to
   50 and caps at 200. A principal holding no definition grant gets an empty
   page, not a 403.
 - Wire shape (`@corbits/routines/client`): `RoutineTarget`
   `{ definitionAssetId, definitionId, assetName, name, description, kind,
-  wireHash }`, `RoutineTargetsResponse` `{ items, nextCursor }`, and
+wireHash }`, `RoutineTargetsResponse` `{ items, nextCursor }`, and
   `routineTargetsPath(tenantId, { limit?, cursor? })`.
   `definitionAssetId` is the identity a routine stores; `definitionId` /
   `wireHash` name what would run right now.

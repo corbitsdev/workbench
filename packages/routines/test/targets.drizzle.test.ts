@@ -9,7 +9,13 @@ import { type } from "arktype";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 
-import { createDB, createGrantStore, dropSchema, runMigrations, schema } from "@intx/db";
+import {
+  createDB,
+  createGrantStore,
+  dropSchema,
+  runMigrations,
+  schema,
+} from "@intx/db";
 import type { TenantEnv } from "@intx/hub-api";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
@@ -46,8 +52,14 @@ const WORKFLOW_PROJECTION = {
   triggers: [],
   stepOrder: ["gather", "write"],
   steps: {
-    gather: { kind: "step", agent: { systemPrompt: "Gather.", modelSources: [] } },
-    write: { kind: "step", agent: { systemPrompt: "Write.", modelSources: [] } },
+    gather: {
+      kind: "step",
+      agent: { systemPrompt: "Gather.", modelSources: [] },
+    },
+    write: {
+      kind: "step",
+      agent: { systemPrompt: "Write.", modelSources: [] },
+    },
   },
 };
 
@@ -141,8 +153,20 @@ describeIfDb("routine target discovery", () => {
         },
       ]);
       await db.insert(schema.principal).values([
-        { id: READER, tenantId: TENANT, kind: "user", refId: "reader", status: "active" },
-        { id: STRANGER, tenantId: TENANT, kind: "user", refId: "stranger", status: "active" },
+        {
+          id: READER,
+          tenantId: TENANT,
+          kind: "user",
+          refId: "reader",
+          status: "active",
+        },
+        {
+          id: STRANGER,
+          tenantId: TENANT,
+          kind: "user",
+          refId: "stranger",
+          status: "active",
+        },
         {
           id: OTHER_TENANT_READER,
           tenantId: OTHER_TENANT,
@@ -335,7 +359,9 @@ describeIfDb("routine target discovery", () => {
         principalId: READER,
         limit: 1,
       });
-      expect(first.items.map((item) => item.definitionId)).toEqual(["wfd_agent"]);
+      expect(first.items.map((item) => item.definitionId)).toEqual([
+        "wfd_agent",
+      ]);
       expect(first.nextCursor).not.toBeNull();
       const second = await listRoutineTargets(targetsFor(db), {
         tenantId: TENANT,
@@ -359,7 +385,10 @@ describeIfDb("routine target discovery", () => {
       };
       const app = new Hono<TenantEnv>();
       app.use("*", asReader);
-      app.route("/workflows/targets", createRoutineTargetRoutes(targetsFor(db)));
+      app.route(
+        "/workflows/targets",
+        createRoutineTargetRoutes(targetsFor(db)),
+      );
 
       const res = await app.request("/workflows/targets?limit=1");
       expect(res.status).toBe(200);

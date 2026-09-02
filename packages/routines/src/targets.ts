@@ -57,7 +57,10 @@ export async function listLaunchableDefinitions(
       workflowDefinitionVersion,
       and(
         eq(workflowDefinitionVersion.definitionId, workflowDefinition.id),
-        eq(workflowDefinitionVersion.version, workflowDefinition.currentVersion),
+        eq(
+          workflowDefinitionVersion.version,
+          workflowDefinition.currentVersion,
+        ),
       ),
     )
     .where(
@@ -79,7 +82,13 @@ export async function listLaunchableDefinitions(
   return rows.flatMap((row) =>
     row.definitionAssetId === null || row.wireHash === null
       ? []
-      : [{ ...row, definitionAssetId: row.definitionAssetId, wireHash: row.wireHash }],
+      : [
+          {
+            ...row,
+            definitionAssetId: row.definitionAssetId,
+            wireHash: row.wireHash,
+          },
+        ],
   );
 }
 
@@ -213,7 +222,10 @@ export async function listRoutineTargets(
   const last = items.at(-1);
   const nextCursor =
     remaining.length > items.length && last !== undefined
-      ? encodeCursor({ name: last.name, definitionAssetId: last.definitionAssetId })
+      ? encodeCursor({
+          name: last.name,
+          definitionAssetId: last.definitionAssetId,
+        })
       : null;
   return { items, nextCursor };
 }

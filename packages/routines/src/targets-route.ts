@@ -21,13 +21,17 @@ const LimitParam = type("string.integer.parse").narrow(
   (limit) => limit >= 1 && limit <= ROUTINE_TARGETS_MAX_LIMIT,
 );
 
-export function createRoutineTargetRoutes(deps: RoutineTargetsDeps): Hono<TenantEnv> {
+export function createRoutineTargetRoutes(
+  deps: RoutineTargetsDeps,
+): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
 
   app.get("/", async (c) => {
     const rawLimit = c.req.query("limit");
     const limit =
-      rawLimit === undefined ? ROUTINE_TARGETS_DEFAULT_LIMIT : LimitParam(rawLimit);
+      rawLimit === undefined
+        ? ROUTINE_TARGETS_DEFAULT_LIMIT
+        : LimitParam(rawLimit);
     if (limit instanceof type.errors) {
       return c.json(
         makeErrorEnvelope({
@@ -49,7 +53,10 @@ export function createRoutineTargetRoutes(deps: RoutineTargetsDeps): Hono<Tenant
     } catch (error) {
       if (error instanceof InvalidRoutineTargetCursorError) {
         return c.json(
-          makeErrorEnvelope({ code: "bad_request", userMessage: error.message }),
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: error.message,
+          }),
           400,
         );
       }
