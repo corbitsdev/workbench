@@ -25,15 +25,12 @@ import { eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 
-import {
-  createDB,
-  loadFrozenGrantSnapshot,
-  loadFrozenWireProjection,
-} from "@intx/db";
+import { createDB } from "@intx/db";
 import {
   asset as assetTable,
   principal as principalTable,
   tenant as tenantTable,
+  workflowDefinition,
 } from "@intx/db/schema";
 import { createAgentRepoStore, createAssetService } from "@intx/hub-sessions";
 import { generateKeyPair } from "@intx/crypto";
@@ -43,7 +40,6 @@ import { dbTargetFromUrl } from "../../../scripts/db-setup";
 import { applyAgentDirectoryMigrations } from "../src/migrations";
 import { definitionSkills } from "../src/schema";
 import { createAgentDefinitionRoutes } from "../src/routes";
-import { createDefinitionFreezer } from "@corbits/workflow-freeze";
 import type { PinnedSkillIndexResolver } from "../src/routes";
 import { createDrizzleDefinitionSkillsStore } from "../src/skills-store";
 import type { DefinitionAssetHistory } from "../src/definition-history";
@@ -108,11 +104,57 @@ async function post(app: Hono<TenantEnv>, body: unknown): Promise<Response> {
   });
 }
 
+/** Records deploy calls instead of running a real
+ * `sessionService.deployWorkflowFromSource`, which needs a connected
+ * sidecar this DB-only integration harness does not stand up — the same
+ * stub `routes.test.ts` uses. This suite's own job is proving the real
+ * `AssetService`'s tree validator accepts what this package writes, so
+ * the stub still projects a `workflow_definition` row directly (the one
+ * piece of the real deploy every route's read-back depends on) rather
+ * than faking the whole install/probe/gate/freeze pipeline. */
+function recordingAgentDefinitionDeployer(db: ReturnType<typeof createDB>["db"]) {
+  const deploys: {
+    tenantId: string;
+    principalId: string;
+    assetId: string;
+    commitSha: string;
+    entry: string;
+  }[] = [];
+  return {
+    deploys,
+    deploy: async (input: {
+      tenantId: string;
+      principalId: string;
+      assetId: string;
+      commitSha: string;
+      entry: string;
+    }) => {
+      deploys.push(input);
+      await db
+        .insert(workflowDefinition)
+        .values({
+          id: `wfd_${randomUUID()}`,
+          tenantId: input.tenantId,
+          assetId: input.assetId,
+          wireHash: input.commitSha,
+          name: input.assetId,
+        })
+        .onConflictDoNothing();
+      return {
+        deploymentId: "dep_1",
+        definitionAssetId: input.assetId,
+        status: "deployed",
+      };
+    },
+  };
+}
+
 describeIfDb("agent-directory routes against a real assetService", () => {
   let dataDir: string;
   let db: ReturnType<typeof createDB>["db"];
   let close: () => Promise<void>;
   let app: Hono<TenantEnv>;
+  let deployer: ReturnType<typeof recordingAgentDefinitionDeployer>;
 
   beforeAll(async () => {
     if (databaseUrl === undefined) {
@@ -135,6 +177,7 @@ describeIfDb("agent-directory routes against a real assetService", () => {
       repoStore: agentRepoStore.repoStore,
     });
     const skillsStore = createDrizzleDefinitionSkillsStore(db);
+    deployer = recordingAgentDefinitionDeployer(db);
 
     const routes = createAgentDefinitionRoutes({
       db,
@@ -144,7 +187,7 @@ describeIfDb("agent-directory routes against a real assetService", () => {
       history: fakeHistory,
       capabilityInventory: fakeCapabilityInventory,
       requireGrant: allowAllRequireGrant,
-      definitionFreezer: createDefinitionFreezer(db),
+      deployer,
     });
     const asPrincipal: MiddlewareHandler<TenantEnv> = async (c, next) => {
       c.set("tenant", TENANT);
@@ -213,7 +256,7 @@ describeIfDb("agent-directory routes against a real assetService", () => {
     expect(gotAfterBody.skills).toEqual([]);
   });
 
-  test("a created definition is launch-resolvable: its projection and grant snapshot are frozen (CL-6447)", async () => {
+  test("a created definition deploys its commit through the native source pipeline (CL-7363)", async () => {
     const handle = `launchable-${suffix}`;
     const created = await post(app, {
       name: "Launchable",
@@ -222,19 +265,19 @@ describeIfDb("agent-directory routes against a real assetService", () => {
       skills: [],
     });
     expect(created.status).toBe(201);
+
+    // Create deploys exactly once, with the commit the asset write just
+    // produced — the same sequence a launch depends on being launchable
+    // (CL-6447), now driven through the native install/probe/gate/freeze
+    // pipeline instead of a bare freeze.
+    expect(deployer.deploys).toHaveLength(1);
+    const [firstDeploy] = deployer.deploys;
+    expect(firstDeploy?.tenantId).toBe(TENANT.id);
+    expect(firstDeploy?.commitSha).toBeDefined();
+
+    // An instructions save deploys again, in place: the same definition
+    // asset, a new commit.
     const { id: definitionId } = (await created.json()) as { id: string };
-
-    // The exact reads the chat invite path (`readDefinitionProjection`)
-    // and the mail-triggered turn path (`loadFrozenGrantSnapshot`) fail
-    // closed on: both must be frozen at create or the agent 409s
-    // `not_launchable` forever.
-    const projection = await loadFrozenWireProjection(db, definitionId);
-    expect(projection).not.toBeNull();
-    expect(JSON.stringify(projection)).toContain("You answer launch checks.");
-    expect(await loadFrozenGrantSnapshot(db, definitionId)).not.toBeNull();
-
-    // An instructions save re-freezes in place: the frozen projection
-    // follows the edit under the same definition id.
     const updated = await app.request(`/${definitionId}`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -244,9 +287,8 @@ describeIfDb("agent-directory routes against a real assetService", () => {
       }),
     });
     expect(updated.status).toBe(200);
-    const refrozen = await loadFrozenWireProjection(db, definitionId);
-    expect(JSON.stringify(refrozen)).toContain(
-      "You answer edited launch checks.",
-    );
+    expect(deployer.deploys).toHaveLength(2);
+    expect(deployer.deploys[1]?.assetId).toBe(firstDeploy?.assetId);
+    expect(deployer.deploys[1]?.commitSha).not.toBe(firstDeploy?.commitSha);
   });
 });
