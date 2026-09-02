@@ -47,3 +47,33 @@ test("ignores a blank or non-string title rather than rendering an empty quote",
   );
   expect(headlineFor({ name: "send_email" }, { title: 42 })).toBe("send_email");
 });
+
+test("workflow_deploy renders the asset, short sha, and grant surface directly, ignoring the tool's own description", () => {
+  expect(
+    headlineFor(
+      { name: "workflow_deploy", description: "Deploy a workflow asset..." },
+      {
+        assetId: "asset_daily_digest",
+        commitSha: "abcdef1234567890",
+        entry: "./workflow.ts",
+        expectedWireHash: "wire_abc",
+        grants: ["email:*/send", "http:api.example.com/*"],
+      },
+    ),
+  ).toBe(
+    "Deploy workflow asset_daily_digest @ abcdef1 — grants: email:*/send, http:api.example.com/*",
+  );
+});
+
+test("workflow_deploy with no grants reads as 'no grants' rather than an empty list", () => {
+  expect(
+    headlineFor(
+      { name: "workflow_deploy" },
+      {
+        assetId: "asset_daily_digest",
+        commitSha: "abcdef1234567890",
+        grants: [],
+      },
+    ),
+  ).toBe("Deploy workflow asset_daily_digest @ abcdef1 — grants: no grants");
+});

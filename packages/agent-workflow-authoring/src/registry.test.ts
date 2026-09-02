@@ -119,6 +119,32 @@ function fakeDeployer(
   };
 }
 
+/** Extends `fakeDb` with a `db.select().from().innerJoin().where()
+ * .orderBy().limit()` stub for `newestApprovedWireHash`, so a `deploy`
+ * carrying `expectedWireHash` can be tested without a real database.
+ * `wireHash: null` models "no version row yet" the same way an empty
+ * result set does for the real query. */
+function fakeDbWithWireHash(
+  row: AssetRow | undefined,
+  wireHash: string | null,
+): DB["db"] {
+  return {
+    query: { asset: { findFirst: async () => row } },
+    select: () => ({
+      from: () => ({
+        innerJoin: () => ({
+          where: () => ({
+            orderBy: () => ({
+              limit: async () =>
+                wireHash === null ? [] : [{ approvedWireHash: wireHash }],
+            }),
+          }),
+        }),
+      }),
+    }),
+  } as unknown as DB["db"];
+}
+
 function deps(
   overrides: Partial<CreateWorkflowAuthorRegistryDeps> = {},
 ): CreateWorkflowAuthorRegistryDeps {
@@ -560,4 +586,133 @@ test("deploy calls the injected deployer with the caller's own scope once author
     commitSha: "sha_1",
     entry: "./workflow.ts",
   });
+});
+
+test("previewDeploy delegates to the deployer's previewDeploy and never calls deploy (no freeze)", async () => {
+  let deployCalled = false;
+  let previewSeen: unknown;
+  const registry = createWorkflowAuthorRegistry(
+    deps({
+      db: fakeDb(ownRow),
+      grantStore: fakeGrantStore([workflowGrant("create")]),
+      deployer: fakeDeployer({
+        deploy: async () => {
+          deployCalled = true;
+          throw new Error("must not be called");
+        },
+        previewDeploy: async (params) => {
+          previewSeen = params;
+          return { wireHash: "wire_abc", grants: ["email:*/send"] };
+        },
+      }),
+    }),
+  );
+
+  const result = await registry.previewDeploy(caller, "asset_1", {
+    commitSha: "sha_1",
+    entry: "./workflow.ts",
+  });
+
+  expect(result).toEqual({ wireHash: "wire_abc", grants: ["email:*/send"] });
+  expect(previewSeen).toEqual({
+    tenantId: "tenant_1",
+    principalId: "principal_1",
+    assetId: "asset_1",
+    commitSha: "sha_1",
+    entry: "./workflow.ts",
+  });
+  expect(deployCalled).toBe(false);
+});
+
+test("previewDeploy with no grants returns an empty grants list", async () => {
+  const registry = createWorkflowAuthorRegistry(
+    deps({
+      db: fakeDb(ownRow),
+      grantStore: fakeGrantStore([workflowGrant("create")]),
+      deployer: fakeDeployer({
+        previewDeploy: async () => ({ wireHash: "wire_abc", grants: [] }),
+      }),
+    }),
+  );
+
+  const result = await registry.previewDeploy(caller, "asset_1", {
+    commitSha: "sha_1",
+    entry: "./workflow.ts",
+  });
+  expect(result.grants).toEqual([]);
+});
+
+test("previewDeploy fails unavailable when the injected deployer has no previewDeploy wired", async () => {
+  const registry = createWorkflowAuthorRegistry(
+    deps({
+      db: fakeDb(ownRow),
+      grantStore: fakeGrantStore([workflowGrant("create")]),
+      deployer: fakeDeployer(), // no previewDeploy override
+    }),
+  );
+
+  const err = await registry
+    .previewDeploy(caller, "asset_1", {
+      commitSha: "sha_1",
+      entry: "./workflow.ts",
+    })
+    .catch((e: unknown) => e);
+  expect(err).toBeInstanceOf(WorkflowAuthorError);
+  expect((err as WorkflowAuthorError).reason).toBe("unavailable");
+});
+
+test("deploy with a matching expectedWireHash succeeds", async () => {
+  const registry = createWorkflowAuthorRegistry(
+    deps({
+      db: fakeDbWithWireHash(ownRow, "wire_abc"),
+      grantStore: fakeGrantStore([workflowGrant("create")]),
+      deployer: fakeDeployer({
+        deploy: async () => ({
+          deploymentId: "run_1",
+          definitionAssetId: "asset_1",
+          status: "deployed",
+        }),
+      }),
+    }),
+  );
+
+  const result = await registry.deploy(caller, "asset_1", {
+    commitSha: "sha_1",
+    entry: "./workflow.ts",
+    expectedWireHash: "wire_abc",
+  });
+  expect(result.status).toBe("deployed");
+});
+
+test("deploy with an expectedWireHash that does not match the newest frozen version fails wire_hash_mismatch, even though the deploy already succeeded and froze that row", async () => {
+  let deployCalled = false;
+  const registry = createWorkflowAuthorRegistry(
+    deps({
+      db: fakeDbWithWireHash(ownRow, "wire_actually_frozen"),
+      grantStore: fakeGrantStore([workflowGrant("create")]),
+      deployer: fakeDeployer({
+        deploy: async () => {
+          deployCalled = true;
+          return {
+            deploymentId: "run_1",
+            definitionAssetId: "asset_1",
+            status: "deployed",
+          };
+        },
+      }),
+    }),
+  );
+
+  const err = await registry
+    .deploy(caller, "asset_1", {
+      commitSha: "sha_1",
+      entry: "./workflow.ts",
+      expectedWireHash: "wire_approved_by_human",
+    })
+    .catch((e: unknown) => e);
+  expect(err).toBeInstanceOf(WorkflowAuthorError);
+  expect((err as WorkflowAuthorError).reason).toBe("wire_hash_mismatch");
+  // The deploy call itself already ran and froze the (different) row; this
+  // registry does not roll it back.
+  expect(deployCalled).toBe(true);
 });
