@@ -12,6 +12,7 @@ import {
   createWorkflowAuthorRegistry,
   type CreateWorkflowAuthorRegistryDeps,
   type WorkflowAuthorRepoReads,
+  type WorkflowDeployer,
 } from "./registry";
 
 const MANIFEST = JSON.stringify({
@@ -107,6 +108,17 @@ function fakeDb(row: AssetRow | undefined): DB["db"] {
   } as unknown as DB["db"];
 }
 
+function fakeDeployer(
+  overrides: Partial<WorkflowDeployer> = {},
+): WorkflowDeployer {
+  return {
+    deploy: async () => {
+      throw new Error("deploy not stubbed");
+    },
+    ...overrides,
+  };
+}
+
 function deps(
   overrides: Partial<CreateWorkflowAuthorRegistryDeps> = {},
 ): CreateWorkflowAuthorRegistryDeps {
@@ -120,7 +132,22 @@ function deps(
       allowGrant("read"),
     ]),
     conditionRegistry,
+    deployer: fakeDeployer(),
     ...overrides,
+  };
+}
+
+function workflowGrant(action: string): GrantRule {
+  return {
+    id: `g_workflow_${action}`,
+    resource: "workflow:*",
+    action,
+    effect: "allow",
+    origin: "system",
+    conditions: null,
+    expiresAt: null,
+    roleId: null,
+    principalId: null,
   };
 }
 
@@ -449,4 +476,87 @@ test("readSource refuses without an asset read grant", async () => {
     .readSource(caller, "asset_1")
     .catch((e: unknown) => e);
   expect((err as WorkflowAuthorError).reason).toBe("forbidden");
+});
+
+test("deploy refuses an asset id that does not resolve in the caller's own tenant", async () => {
+  let deployCalled = false;
+  const registry = createWorkflowAuthorRegistry(
+    deps({
+      db: fakeDb(undefined),
+      grantStore: fakeGrantStore([workflowGrant("create")]),
+      deployer: fakeDeployer({
+        deploy: async () => {
+          deployCalled = true;
+          throw new Error("must not be called");
+        },
+      }),
+    }),
+  );
+  const err = await registry
+    .deploy(caller, "asset_from_another_tenant", {
+      commitSha: "sha_1",
+      entry: "./workflow.ts",
+    })
+    .catch((e: unknown) => e);
+  expect(err).toBeInstanceOf(WorkflowAuthorError);
+  expect((err as WorkflowAuthorError).reason).toBe("not_found");
+  expect(deployCalled).toBe(false);
+});
+
+test("deploy refuses when the grant store has no matching workflow:*/create grant", async () => {
+  let deployCalled = false;
+  const registry = createWorkflowAuthorRegistry(
+    deps({
+      db: fakeDb(ownRow),
+      grantStore: fakeGrantStore([allowGrant("create")]), // asset:*/create, not workflow:*/create
+      deployer: fakeDeployer({
+        deploy: async () => {
+          deployCalled = true;
+          throw new Error("must not be called");
+        },
+      }),
+    }),
+  );
+  const err = await registry
+    .deploy(caller, "asset_1", { commitSha: "sha_1", entry: "./workflow.ts" })
+    .catch((e: unknown) => e);
+  expect(err).toBeInstanceOf(WorkflowAuthorError);
+  expect((err as WorkflowAuthorError).reason).toBe("forbidden");
+  expect(deployCalled).toBe(false);
+});
+
+test("deploy calls the injected deployer with the caller's own scope once authorized", async () => {
+  let seen: unknown;
+  const registry = createWorkflowAuthorRegistry(
+    deps({
+      db: fakeDb(ownRow),
+      grantStore: fakeGrantStore([workflowGrant("create")]),
+      deployer: fakeDeployer({
+        deploy: async (params) => {
+          seen = params;
+          return {
+            deploymentId: "run_1",
+            definitionAssetId: "asset_1",
+            status: "deployed",
+          };
+        },
+      }),
+    }),
+  );
+  const result = await registry.deploy(caller, "asset_1", {
+    commitSha: "sha_1",
+    entry: "./workflow.ts",
+  });
+  expect(result).toEqual({
+    deploymentId: "run_1",
+    definitionAssetId: "asset_1",
+    status: "deployed",
+  });
+  expect(seen).toEqual({
+    tenantId: "tenant_1",
+    principalId: "principal_1",
+    assetId: "asset_1",
+    commitSha: "sha_1",
+    entry: "./workflow.ts",
+  });
 });

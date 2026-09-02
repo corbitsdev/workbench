@@ -44,6 +44,18 @@ export type WorkflowSourceSnapshot = {
   readonly files: WorkflowSourceFiles;
 };
 
+export type DeployWorkflowRequest = {
+  readonly assetId: string;
+  readonly commitSha: string;
+  readonly entry: string;
+};
+
+export type WorkflowDeployResult = {
+  readonly deploymentId: string;
+  readonly definitionAssetId: string;
+  readonly status: string;
+};
+
 /** The hub refused the request with a canonical error envelope. `code`
  * is the envelope's code (`invalid`, `forbidden`, `not_found`,
  * `conflict`, ...); `currentHeadSha` is set on a republish `conflict` so
@@ -81,6 +93,14 @@ const SnapshotResponse = type({
     name: "string",
     headSha: "string",
     files: "Record<string, string>",
+  },
+});
+
+const DeployResponse = type({
+  data: {
+    deploymentId: "string",
+    definitionAssetId: "string",
+    status: "string",
   },
 });
 
@@ -165,6 +185,30 @@ export async function republishWorkflow(
     SummaryResponse,
     await response.json(),
     "Republishing a workflow",
+  ).data;
+}
+
+export async function deployWorkflow(
+  config: WorkflowAuthoringClientConfig,
+  input: DeployWorkflowRequest,
+): Promise<WorkflowDeployResult> {
+  const doFetch = config.fetchImpl ?? fetch;
+  const response = await doFetch(
+    endpoint(config, `/${encodeURIComponent(input.assetId)}/deploy`),
+    {
+      method: "POST",
+      headers: { ...authHeaders(config), "content-type": "application/json" },
+      body: JSON.stringify({
+        commitSha: input.commitSha,
+        entry: input.entry,
+      }),
+    },
+  );
+  if (!response.ok) await throwForFailure(response, "Deploying a workflow");
+  return parseOrThrow(
+    DeployResponse,
+    await response.json(),
+    "Deploying a workflow",
   ).data;
 }
 

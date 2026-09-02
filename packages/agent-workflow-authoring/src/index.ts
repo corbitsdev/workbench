@@ -4,11 +4,14 @@ export {
   WORKFLOW_ASSET_NAME_PATTERN,
   type AuthorWorkflowInput,
   type CreateWorkflowAuthorRegistryDeps,
+  type DeployWorkflowInput,
   type RepublishWorkflowInput,
   type WorkflowAssetSummary,
   type WorkflowAuthorCaller,
   type WorkflowAuthorRegistry,
   type WorkflowAuthorRepoReads,
+  type WorkflowDeployer,
+  type WorkflowDeployResult,
   type WorkflowSourceSnapshot,
 } from "./registry";
 export {

@@ -6,12 +6,14 @@
 // grant-store authorization call (`asset:*`/create for a new asset,
 // `asset:<id>`/write for a republish, `asset:<id>`/read for a source read)
 // — and by `validateWorkflowSourceTree` before anything reaches
-// `RepoStore`. Deploying an authored asset is deliberately NOT this
-// package's job: deploy stays on `@intx/hub-api`'s existing source-based
-// `POST .../workflows/deployments` route (`WorkflowDefinitionSource` +
-// `entry`), which already installs, probes, gates, and freezes the
-// definition. Building a second deploy path here would duplicate that
-// gating, not strengthen it.
+// `RepoStore`. `deploy` (CL-7361) is a run-authenticated mirror of
+// `@intx/hub-api`'s existing source-based `POST .../workflows/deployments`
+// route: it checks `workflow:*`/`create` itself, then calls a
+// `WorkflowDeployer` apps/hub injects that wraps the SAME
+// `sessionService.deployWorkflowFromSource` call the native route makes
+// (`withDeploySourceRecording` included) with inference sources resolved
+// server-side from the tenant's catalog, never supplied by the caller.
+// No install/probe/gate/freeze logic is reimplemented here.
 //
 // `populateAsset` is called with `principal: { kind: "hub" }`, the same
 // principal `@corbits/skills`' `writeSkillMd` uses. This is deliberate,
@@ -89,6 +91,36 @@ export type RepublishWorkflowInput = {
   readonly expectedHeadSha?: string;
 };
 
+export type DeployWorkflowInput = {
+  readonly commitSha: string;
+  readonly entry: string;
+};
+
+export type WorkflowDeployResult = {
+  readonly deploymentId: string;
+  readonly definitionAssetId: string;
+  readonly status: string;
+};
+
+/**
+ * The apps/hub-supplied seam onto the same operation the native
+ * `POST /workflows/deployments` route drives (`sessionService.
+ * deployWorkflowFromSource`, wrapped by `withDeploySourceRecording`), with
+ * inference sources resolved server-side from the tenant's catalog. Thrown
+ * failures are `WorkflowAuthorError`s with a reason this registry passes
+ * straight through: `not_found` (asset/commit missing), `invalid`
+ * (rejected package/definition), `unavailable` (sidecar unreachable).
+ */
+export type WorkflowDeployer = {
+  deploy(params: {
+    tenantId: string;
+    principalId: string;
+    assetId: string;
+    commitSha: string;
+    entry: string;
+  }): Promise<WorkflowDeployResult>;
+};
+
 export type WorkflowAuthorRegistry = {
   author(
     caller: WorkflowAuthorCaller,
@@ -103,6 +135,11 @@ export type WorkflowAuthorRegistry = {
     caller: WorkflowAuthorCaller,
     assetId: string,
   ): Promise<WorkflowSourceSnapshot>;
+  deploy(
+    caller: WorkflowAuthorCaller,
+    assetId: string,
+    input: DeployWorkflowInput,
+  ): Promise<WorkflowDeployResult>;
 };
 
 export type WorkflowAuthorRepoReads = Pick<
@@ -116,6 +153,7 @@ export type CreateWorkflowAuthorRegistryDeps = {
   repoStore: WorkflowAuthorRepoReads;
   grantStore: GrantStore;
   conditionRegistry: ConditionRegistry;
+  deployer: WorkflowDeployer;
 };
 
 async function requireAuthorized(
@@ -321,6 +359,22 @@ export function createWorkflowAuthorRegistry(
       const files: Record<string, string> = {};
       await collectTree(reads, "", files);
       return { assetId, name: row.name, headSha, files };
+    },
+
+    async deploy(caller, assetId, input) {
+      // Own-tenant scoping resolved BEFORE the grant check, same as every
+      // other write here: an asset id from another tenant reads as
+      // not_found, never a 403 confirming the id exists.
+      await requireOwnWorkflowAsset(caller, assetId);
+      await requireAuthorized(deps, caller, "workflow:*", "create");
+
+      return deps.deployer.deploy({
+        tenantId: caller.tenantId,
+        principalId: caller.principalId,
+        assetId,
+        commitSha: input.commitSha,
+        entry: input.entry,
+      });
     },
   };
 }

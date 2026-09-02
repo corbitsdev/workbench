@@ -4,6 +4,7 @@ import type { ToolCall } from "@intx/types/runtime";
 import {
   workflowAuthoringTools,
   WORKFLOW_AUTHOR_TOOL,
+  WORKFLOW_DEPLOY_TOOL,
   WORKFLOW_REPUBLISH_TOOL,
   WORKFLOW_SOURCE_READ_TOOL,
   type WorkflowAuthoringEnv,
@@ -35,11 +36,12 @@ async function withFetch<T>(
   }
 }
 
-test("declares the three authoring tools with no approval gate — writing source is not a side effect", () => {
+test("declares the three source tools with no approval gate and workflow_deploy behind approval: ask", () => {
   expect(workflowAuthoringTools.definitions).toEqual([
     { name: WORKFLOW_AUTHOR_TOOL },
     { name: WORKFLOW_REPUBLISH_TOOL },
     { name: WORKFLOW_SOURCE_READ_TOOL },
+    { name: WORKFLOW_DEPLOY_TOOL, approval: "ask" },
   ]);
   expect(workflowAuthoringTools.requires).toEqual([
     "hubWorkflowAuthoringUrl",
@@ -170,6 +172,64 @@ test("workflow_source_read returns the snapshot as JSON the model can parse", as
       ),
   );
   expect(JSON.parse(String(result.content))).toEqual(snapshot);
+});
+
+test("workflow_deploy posts assetId, commitSha, and entry to the deploy route", async () => {
+  const bundle = workflowAuthoringTools(testEnv());
+  let seenUrl: string | undefined;
+  let seenBody: unknown;
+  const result = await withFetch(
+    (url, init) => {
+      seenUrl = url;
+      seenBody = init?.body !== undefined ? JSON.parse(String(init.body)) : undefined;
+      return new Response(
+        JSON.stringify({
+          data: {
+            deploymentId: "run_1",
+            definitionAssetId: "asset_1",
+            status: "deployed",
+          },
+        }),
+        { status: 201 },
+      );
+    },
+    () =>
+      bundle.run(
+        call(WORKFLOW_DEPLOY_TOOL, {
+          assetId: "asset_1",
+          commitSha: "sha_1",
+          entry: "./workflow.ts",
+        }),
+        new AbortController().signal,
+      ),
+  );
+  expect(seenUrl).toBe(
+    "https://hub.example.com/api/workflow-workflow-authoring/asset_1/deploy",
+  );
+  expect(seenBody).toEqual({ commitSha: "sha_1", entry: "./workflow.ts" });
+  expect(result.isError).toBe(false);
+  expect(result.content).toContain("run_1");
+  expect(result.content).toContain("asset_1");
+});
+
+test("workflow_deploy rejects a call missing commitSha without calling the hub", async () => {
+  const bundle = workflowAuthoringTools(testEnv());
+  await withFetch(
+    () => {
+      throw new Error("must not be called");
+    },
+    async () => {
+      await expect(
+        bundle.run(
+          call(WORKFLOW_DEPLOY_TOOL, {
+            assetId: "asset_1",
+            entry: "./workflow.ts",
+          }),
+          new AbortController().signal,
+        ),
+      ).rejects.toThrow(/invalid input/);
+    },
+  );
 });
 
 test("an unknown tool name rejects loudly, never a silent no-op", async () => {
