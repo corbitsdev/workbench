@@ -1212,6 +1212,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/chat": "workspace:*",
+        "@corbits/error-sink": "workspace:*",
         "@corbits/folded-run-one-shot": "workspace:*",
         "@corbits/migration-runner": "workspace:*",
         "@corbits/slug": "workspace:*",

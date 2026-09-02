@@ -2901,6 +2901,11 @@ export async function createHub(config: HubConfig) {
         grantStore: routineGrantStore,
         conditionRegistry: chatConditionRegistry,
       }),
+      // CL-7354: a create or retarget's resolved target must also
+      // authorize for the acting principal — same `grantStore` the grant
+      // check above already uses.
+      grantStore: routineGrantStore,
+      conditionRegistry: chatConditionRegistry,
       // A run-now or a scheduled fire's result is a message into the
       // routine's delivery workbench root timeline — never a pre-opened
       // thread; see `@corbits/routines`' `RoutineLauncher` doc comment
@@ -2955,6 +2960,10 @@ export async function createHub(config: HubConfig) {
           },
           query,
         ),
+      // CL-7354: same authorization the tenant-session surface enforces
+      // above, for Myra's own create/retarget path.
+      grantStore: routineGrantStore,
+      conditionRegistry: chatConditionRegistry,
       webhookTriggerInTenant,
       deliveryWorkbenchRequired: routineDeliveryWorkbenchRequired,
       // A routine created from inside a workbench delivers into that

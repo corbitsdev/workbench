@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 
 import type { TenantEnv } from "@intx/hub-api";
+import type { ConditionRegistry, GrantRule, GrantStore } from "@intx/types/authz";
 import {
   createRoutineRoutes,
   fireScheduledRoutine,
@@ -97,6 +98,29 @@ function storeCreatingDisabled(): RoutineStore {
     },
   };
 }
+
+function allowGrant(): GrantRule {
+  return {
+    id: "g_read",
+    resource: "workflow-definition:*",
+    action: "read",
+    effect: "allow",
+    origin: "system",
+    conditions: null,
+    expiresAt: null,
+    roleId: null,
+    principalId: null,
+  };
+}
+
+function fakeGrantStore(grants: readonly GrantRule[]): GrantStore {
+  return {
+    collectGrants: async () => [...grants],
+    collectGrantsInChain: async () => [...grants],
+  };
+}
+
+const conditionRegistry: ConditionRegistry = {};
 
 function mountAs(
   routes: Hono<TenantEnv>,
@@ -908,8 +932,10 @@ describe("createRoutineRoutes", () => {
     });
   });
 
-  // CL-7353: PATCH can replace the deployed-definition target.
-  describe("retargeting a routine's definition (CL-7353)", () => {
+  // CL-7353/CL-7354: PATCH can replace the deployed-definition target, and
+  // every retarget (create or PATCH) is validated the same way a create's
+  // own target is — resolved and, when authz deps are wired, authorized.
+  describe("retargeting a routine's definition (CL-7353/CL-7354)", () => {
     test("a retarget-only PATCH changes definitionAssetId and leaves every other field untouched", async () => {
       const deps = buildDeps();
       const app = mountAs(createRoutineRoutes(deps), "user_1");
@@ -934,6 +960,92 @@ describe("createRoutineRoutes", () => {
       expect(body["trigger"]).toEqual(created["trigger"]);
       expect(body["input"]).toEqual(created["input"]);
       expect(body["deliveryWorkbenchId"]).toBe(created["deliveryWorkbenchId"]);
+    });
+
+    test("PATCH rejects an unresolvable retarget with the typed status, leaving the stored target unchanged", async () => {
+      const deps = buildDeps({
+        resolveTarget: async (_tenantId, definitionAssetId) =>
+          definitionAssetId === VALID_BODY.definitionAssetId
+            ? { ok: true, definitionId: "wfd_v1", wireHash: "h1" }
+            : { ok: false, reason: "not_deployed" },
+      });
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const { body: created } = await createRoutine(app, VALID_BODY);
+
+      const response = await app.request(`/routines/${created["id"]}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ definitionAssetId: "def_not_deployed" }),
+      });
+      const body = (await response.json()) as Record<string, unknown>;
+
+      expect(response.status).toBe(409);
+      expect((body["error"] as Record<string, unknown>)["code"]).toBe(
+        "routine_target_not_deployed",
+      );
+
+      const stored = await deps.store.getRoutine(
+        TENANT.id,
+        created["id"] as string,
+      );
+      expect(stored?.definitionAssetId).toBe(VALID_BODY.definitionAssetId);
+    });
+
+    test("a create is refused 403 when the resolved target is not authorized for the acting principal", async () => {
+      const deps = buildDeps({
+        resolveTarget: async () => ({
+          ok: true,
+          definitionId: "wfd_v1",
+          wireHash: "h1",
+        }),
+        grantStore: fakeGrantStore([]),
+        conditionRegistry,
+      });
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const { response, body } = await createRoutine(app, VALID_BODY);
+
+      expect(response.status).toBe(403);
+      expect((body["error"] as Record<string, unknown>)["code"]).toBe(
+        "routine_target_forbidden",
+      );
+      expect(await deps.store.listRoutines(TENANT.id)).toEqual([]);
+    });
+
+    test("a retarget PATCH is refused 403 when the new target is not authorized, and an allowed create still succeeds", async () => {
+      const deps = buildDeps({
+        resolveTarget: async () => ({
+          ok: true,
+          definitionId: "wfd_v1",
+          wireHash: "h1",
+        }),
+        grantStore: fakeGrantStore([allowGrant()]),
+        conditionRegistry,
+      });
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const { response: createResponse, body: created } = await createRoutine(
+        app,
+        VALID_BODY,
+      );
+      expect(createResponse.status).toBe(201);
+
+      // Flip to a denying grant store for the retarget itself.
+      deps.grantStore = fakeGrantStore([]);
+      const response = await app.request(`/routines/${created["id"]}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ definitionAssetId: "def_forbidden" }),
+      });
+      const body = (await response.json()) as Record<string, unknown>;
+
+      expect(response.status).toBe(403);
+      expect((body["error"] as Record<string, unknown>)["code"]).toBe(
+        "routine_target_forbidden",
+      );
+      const stored = await deps.store.getRoutine(
+        TENANT.id,
+        created["id"] as string,
+      );
+      expect(stored?.definitionAssetId).toBe(VALID_BODY.definitionAssetId);
     });
   });
 });

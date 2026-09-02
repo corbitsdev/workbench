@@ -52,6 +52,7 @@ import {
   type RoutineTargetsPage,
   type RoutineTargetsQuery,
 } from "./targets";
+import type { ConditionRegistry, GrantStore } from "@intx/types/authz";
 
 const TargetsLimitParam = type("string.integer.parse").narrow(
   (limit) => limit >= 1 && limit <= ROUTINE_TARGETS_MAX_LIMIT,
@@ -96,6 +97,12 @@ export type CreateWorkflowRoutineRoutesDeps = {
   listTargets: (query: RoutineTargetsQuery) => Promise<RoutineTargetsPage>;
   /** Same contract as `CreateRoutineRoutesDeps.resolveTarget`. */
   resolveTarget?: LaunchableDefinitionResolver;
+  /** Same contract as `CreateRoutineRoutesDeps.grantStore` /
+   * `conditionRegistry` — both wired authorizes a create/retarget's
+   * resolved target for Myra's own acting principal, same as the
+   * tenant-session surface. */
+  grantStore?: GrantStore;
+  conditionRegistry?: ConditionRegistry;
   /** Same contract as `CreateRoutineRoutesDeps.webhookTriggerInTenant`. */
   webhookTriggerInTenant?: (
     tenantId: string,
@@ -254,6 +261,7 @@ export function createWorkflowRoutineRoutes(
     const rejection = await rejectUnlaunchableTarget(
       deps,
       scope.tenantId,
+      scope.principalId,
       definitionAssetId,
     );
     if (rejection !== undefined) {
@@ -430,6 +438,27 @@ export function createWorkflowRoutineRoutes(
 
     const effectiveDefinitionAssetId =
       body.definitionAssetId ?? existing.definitionAssetId;
+
+    if (
+      body.definitionAssetId !== undefined &&
+      body.definitionAssetId !== existing.definitionAssetId
+    ) {
+      const rejection = await rejectUnlaunchableTarget(
+        deps,
+        scope.tenantId,
+        scope.principalId,
+        body.definitionAssetId,
+      );
+      if (rejection !== undefined) {
+        return c.json(
+          makeErrorEnvelope({
+            code: rejection.code,
+            userMessage: rejection.userMessage,
+          }),
+          rejection.status,
+        );
+      }
+    }
 
     if (
       body.trigger !== undefined &&
