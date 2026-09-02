@@ -7,7 +7,8 @@
 // gate working rather than dead routes.
 //
 // To extend coverage to a new extension, see the registry note in
-// surfaces.ts and the echo describe block below.
+// surfaces.ts and the "chat workbench move" describe block below for
+// the pattern of an extension-specific assertion.
 
 import { afterAll, describe, expect, test } from "bun:test";
 import {
@@ -198,35 +199,8 @@ if (!databaseUrl) {
 
   // Extension-specific block — the pattern every future extension
   // copies: the generic sweep above already covers its surface entry;
-  // this block asserts the behavior only that extension has.
-  describe("echo extension", () => {
-    test("echoes for a member of the tenant it is mounted under", async () => {
-      const response = await app.request(
-        `/api/tenants/${tenantA.tenantId}/echo`,
-        {
-          method: "POST",
-          headers: { cookie: tenantA.cookie, "content-type": "text/plain" },
-          body: "hello from tenant a",
-        },
-      );
-      expect(response.status).toBe(200);
-      expect(await response.text()).toBe("hello from tenant a");
-    });
-
-    test("refuses a foreign principal before the handler runs", async () => {
-      const response = await app.request(
-        `/api/tenants/${tenantB.tenantId}/echo`,
-        {
-          method: "POST",
-          headers: { cookie: tenantA.cookie, "content-type": "text/plain" },
-          body: "should never be echoed",
-        },
-      );
-      await expectRefusal(response, 403, "forbidden", tenantB.markers);
-      // The refusal must come from the platform's tenant gate, not the
-      // extension: the body is the error envelope, never the echo.
-    });
-  });
+  // a block like this asserts the behavior only that extension has (the
+  // echo demo agent that used to live here was deleted in CL-7381).
 
   describe("chat workbench move", () => {
     /** The `tenancy` annotation `GET .../chat/workbenches` carries for one

@@ -82,14 +82,6 @@ export const tenantSurfaces: TenantSurface[] = [
   },
   // Extension surfaces. One entry per extension route the hub mounts.
   {
-    name: "echo extension",
-    method: "POST",
-    path: (t) => `/api/tenants/${t}/echo`,
-    body: "isolation-ping",
-    contentType: "text/plain",
-    memberStatus: 200,
-  },
-  {
     // Every workbench is now minted as a child tenant of the bench that
     // creates it (see packages/chat/src/workbench-tenancy.ts); this
     // covers the listing seam that owns "which workbenches belong to this
