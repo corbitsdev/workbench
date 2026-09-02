@@ -99,7 +99,8 @@ describe("wire schemas", () => {
     const out = Routine({
       id: "r1",
       name: "Morning brief",
-      definitionId: "wfd_1",
+      definitionAssetId: "wfd_1",
+      definitionId: null,
       trigger: null,
       scope: "personal",
       input: {},
@@ -122,7 +123,8 @@ describe("wire schemas", () => {
     const out = Routine({
       id: "r1",
       name: "Morning brief",
-      definitionId: "wfd_1",
+      definitionAssetId: "wfd_1",
+      definitionId: null,
       trigger: null,
       scope: "personal",
       input: {},
@@ -143,7 +145,8 @@ describe("wire schemas", () => {
     const out = Routine({
       id: "r1",
       name: "Morning brief",
-      definitionId: "wfd_1",
+      definitionAssetId: "wfd_1",
+      definitionId: null,
       trigger: {
         kind: "daily",
         hour: 9,
@@ -171,7 +174,7 @@ describe("wire schemas", () => {
       proposedSteps: [{ title: "Summarize inbox" }],
       proposedTrigger: { kind: "daily", hour: 9, minute: 0 },
       proposedName: "Morning brief",
-      definitionId: null,
+      definitionAssetId: null,
       deliveryWorkbenchId: "ch_1",
       scope: "personal",
       autonomy: null,

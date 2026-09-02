@@ -140,7 +140,7 @@ async function createRoutine(
 
 const VALID_BODY = {
   name: "Morning digest",
-  definitionId: "def_digest",
+  definitionAssetId: "def_digest",
   trigger: { kind: "daily", hour: 9, minute: 0 },
   scope: "bench",
   deliveryWorkbenchId: "ch_delivery",
@@ -158,24 +158,94 @@ describe("createRoutineRoutes", () => {
     expect(typeof body["id"]).toBe("string");
   });
 
-  test("rejects a definition that is not in the tenant", async () => {
-    const deps = buildDeps();
-    deps.definitionInTenant = async () => false;
+  test("a body with no definitionAssetId is a 400 — the server never infers a target", async () => {
+    const app = mountAs(createRoutineRoutes(buildDeps()), "user_1");
+    const { definitionAssetId: _omitted, ...withoutTarget } = VALID_BODY;
+    const { response, body } = await createRoutine(app, withoutTarget);
+    expect(response.status).toBe(400);
+    expect((body["error"] as Record<string, unknown>)["code"]).toBe(
+      "bad_request",
+    );
+  });
+
+  test("a target with no definition row anywhere is a typed 404", async () => {
+    const deps = buildDeps({
+      resolveTarget: async () => ({ ok: false, reason: "not_found" }),
+    });
     const app = mountAs(createRoutineRoutes(deps), "user_1");
     const { response, body } = await createRoutine(app, VALID_BODY);
     expect(response.status).toBe(404);
     expect((body["error"] as Record<string, unknown>)["code"]).toBe(
-      "not_found",
+      "routine_target_not_found",
     );
   });
 
-  test("accepts a definition that is in the tenant when a checker is wired", async () => {
-    const deps = buildDeps();
-    deps.definitionInTenant = async (tenantId, definitionId) =>
-      tenantId === TENANT.id && definitionId === VALID_BODY.definitionId;
+  test("another tenant's asset reads as not found, never confirming it exists", async () => {
+    const deps = buildDeps({
+      resolveTarget: async () => ({ ok: false, reason: "cross_tenant" }),
+    });
     const app = mountAs(createRoutineRoutes(deps), "user_1");
-    const { response } = await createRoutine(app, VALID_BODY);
+    const { response, body } = await createRoutine(app, VALID_BODY);
+    expect(response.status).toBe(404);
+    expect((body["error"] as Record<string, unknown>)["code"]).toBe(
+      "routine_target_not_found",
+    );
+  });
+
+  test("an unfrozen or undeployed target is a typed 409, not a create", async () => {
+    for (const [reason, code] of [
+      ["unfrozen", "routine_target_not_approved"],
+      ["not_deployed", "routine_target_not_deployed"],
+    ] as const) {
+      const store = createInMemoryRoutineStore();
+      const deps = buildDeps({
+        store,
+        resolveTarget: async () => ({ ok: false, reason }),
+      });
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const { response, body } = await createRoutine(app, VALID_BODY);
+      expect(response.status).toBe(409);
+      expect((body["error"] as Record<string, unknown>)["code"]).toBe(code);
+      expect(await store.listRoutines(TENANT.id)).toEqual([]);
+    }
+  });
+
+  test("a launchable target is accepted and every read reports the resolved definition beside the asset", async () => {
+    const deps = buildDeps({
+      resolveTarget: async (tenantId, definitionAssetId) =>
+        tenantId === TENANT.id &&
+        definitionAssetId === VALID_BODY.definitionAssetId
+          ? { ok: true, definitionId: "wfd_digest_v3", wireHash: "h3" }
+          : { ok: false, reason: "not_found" },
+    });
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { response, body } = await createRoutine(app, VALID_BODY);
     expect(response.status).toBe(201);
+    expect(body["definitionAssetId"]).toBe(VALID_BODY.definitionAssetId);
+    expect(body["definitionId"]).toBe("wfd_digest_v3");
+
+    const listed = (await (await app.request("/routines")).json()) as {
+      items: Record<string, unknown>[];
+    };
+    expect(listed.items[0]?.["definitionId"]).toBe("wfd_digest_v3");
+  });
+
+  test("a stored routine whose target no longer resolves reads definitionId: null rather than a stale id", async () => {
+    let launchable = true;
+    const deps = buildDeps({
+      resolveTarget: async () =>
+        launchable
+          ? { ok: true, definitionId: "wfd_digest_v3", wireHash: "h3" }
+          : { ok: false, reason: "not_deployed" },
+    });
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { body: created } = await createRoutine(app, VALID_BODY);
+    launchable = false;
+    const read = (await (
+      await app.request(`/routines/${String(created["id"])}`)
+    ).json()) as Record<string, unknown>;
+    expect(read["definitionAssetId"]).toBe(VALID_BODY.definitionAssetId);
+    expect(read["definitionId"]).toBeNull();
   });
 
   test("rejects an invalid trigger with a 400", async () => {
@@ -361,15 +431,15 @@ describe("createRoutineRoutes", () => {
     );
   });
 
-  test("passes the routine's tenant, webhookTriggerId, and definitionId to the checker", async () => {
+  test("passes the routine's tenant, webhookTriggerId, and definitionAssetId to the checker", async () => {
     const deps = buildDeps();
     const calls: [string, string, string][] = [];
     deps.webhookTriggerInTenant = async (
       tenantId,
       webhookTriggerId,
-      definitionId,
+      definitionAssetId,
     ) => {
-      calls.push([tenantId, webhookTriggerId, definitionId]);
+      calls.push([tenantId, webhookTriggerId, definitionAssetId]);
       return true;
     };
     const app = mountAs(createRoutineRoutes(deps), "user_1");
@@ -378,7 +448,7 @@ describe("createRoutineRoutes", () => {
       trigger: { kind: "webhook", webhookTriggerId: "wht_1" },
     });
 
-    expect(calls).toEqual([[TENANT.id, "wht_1", VALID_BODY.definitionId]]);
+    expect(calls).toEqual([[TENANT.id, "wht_1", VALID_BODY.definitionAssetId]]);
   });
 
   test("never invokes the webhook checker for a non-webhook trigger", async () => {
@@ -410,14 +480,14 @@ describe("createRoutineRoutes", () => {
     expect(response.status).toBe(404);
   });
 
-  test("PATCH accepts switching to a webhook trigger the checker allows, using the routine's own definitionId", async () => {
+  test("PATCH accepts switching to a webhook trigger the checker allows, using the routine's own definitionAssetId", async () => {
     const deps = buildDeps();
     const app = mountAs(createRoutineRoutes(deps), "user_1");
     const { body: created } = await createRoutine(app, VALID_BODY);
 
     let seenDefinitionId: string | undefined;
-    deps.webhookTriggerInTenant = async (_tenantId, _id, definitionId) => {
-      seenDefinitionId = definitionId;
+    deps.webhookTriggerInTenant = async (_tenantId, _id, definitionAssetId) => {
+      seenDefinitionId = definitionAssetId;
       return true;
     };
     const response = await app.request(`/routines/${created["id"]}`, {
@@ -429,7 +499,7 @@ describe("createRoutineRoutes", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(seenDefinitionId).toBe(VALID_BODY.definitionId);
+    expect(seenDefinitionId).toBe(VALID_BODY.definitionAssetId);
     const body = (await response.json()) as Record<string, unknown>;
     expect(body["trigger"]).toEqual({
       kind: "webhook",
@@ -823,7 +893,7 @@ describe("createRoutineRoutes", () => {
     test("accepts a create when the port says the input is valid", async () => {
       let seenInput: Record<string, unknown> | undefined;
       const deps = buildDeps({
-        validateRoutineInput: async (_tenantId, _definitionId, input) => {
+        validateRoutineInput: async (_tenantId, _definitionAssetId, input) => {
           seenInput = input;
           return { ok: true };
         },
@@ -846,7 +916,7 @@ describe("fireScheduledRoutine", () => {
     const created = await store.createRoutine({
       tenantId: TENANT.id,
       name: "Nightly sync",
-      definitionId: "def_sync",
+      definitionAssetId: "def_sync",
       trigger: { kind: "interval", unit: "hours", every: 6 },
       scope: "bench",
       input: {},
@@ -872,7 +942,7 @@ describe("fireScheduledRoutine", () => {
     const created = await store.createRoutine({
       tenantId: TENANT.id,
       name: "Paused digest",
-      definitionId: "def_digest",
+      definitionAssetId: "def_digest",
       trigger: { kind: "daily", hour: 9, minute: 0 },
       scope: "bench",
       input: {},
@@ -897,7 +967,7 @@ describe("fireScheduledRoutine", () => {
     const created = await store.createRoutine({
       tenantId: TENANT.id,
       name: "Workbench-less digest",
-      definitionId: "def_digest",
+      definitionAssetId: "def_digest",
       trigger: { kind: "daily", hour: 9, minute: 0 },
       scope: "bench",
       input: {},
@@ -919,7 +989,7 @@ describe("fireScheduledRoutine", () => {
     const created = await store.createRoutine({
       tenantId: TENANT.id,
       name: "Inbox-only task",
-      definitionId: "def_inbox_only",
+      definitionAssetId: "def_inbox_only",
       trigger: { kind: "daily", hour: 9, minute: 0 },
       scope: "bench",
       input: { agent: "wfd_agent", prompt: "Do it" },

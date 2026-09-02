@@ -24,7 +24,7 @@ const MAX_REPLY_EXCERPT = 400;
 // --- inventory ---
 
 export type RoutineDraftInventoryWorkflow = {
-  readonly definitionId: string;
+  readonly definitionAssetId: string;
   readonly assetName: string;
   readonly displayName: string;
   readonly deliveryMode: "workbench" | "inbox";
@@ -131,7 +131,7 @@ export async function assembleRoutineDraftInventory(
 export const RoutineDraftReply = type({
   steps: DraftedStepSchema.array().atLeastLength(1),
   "name?": "string > 0",
-  "definitionId?": "string > 0",
+  "definitionAssetId?": "string > 0",
   cadence: RoutineScheduleTrigger,
   "triggerInput?": "Record<string, string>",
 });
@@ -194,7 +194,7 @@ export function parseRoutineDraftReply(raw: string): RoutineDraftReply {
  * Asserts every reference a validated-shape `RoutineDraftReply` makes
  * actually appears in `inventory` — the inventory that was actually
  * offered to Myra. Throws `RoutineDraftReferenceOutOfInventoryError` on
- * the first violation found: an out-of-catalog `definitionId`, trigger
+ * the first violation found: an out-of-catalog `definitionAssetId`, trigger
  * input that doesn't satisfy the picked workflow's own declared
  * `triggerFields` contract (shape, then — for an `"agent"`-kind field —
  * that the value is an agent id actually offered), or trigger input
@@ -206,14 +206,14 @@ export function validateRoutineDraftReplyAgainstInventory(
   inventory: RoutineDraftInventory,
 ): void {
   let workflow: RoutineDraftInventoryWorkflow | undefined;
-  if (reply.definitionId !== undefined) {
+  if (reply.definitionAssetId !== undefined) {
     workflow = inventory.workflows.find(
-      (entry) => entry.definitionId === reply.definitionId,
+      (entry) => entry.definitionAssetId === reply.definitionAssetId,
     );
     if (workflow === undefined) {
       throw new RoutineDraftReferenceOutOfInventoryError(
-        "definitionId",
-        reply.definitionId,
+        "definitionAssetId",
+        reply.definitionAssetId,
       );
     }
   }
@@ -223,7 +223,7 @@ export function validateRoutineDraftReplyAgainstInventory(
   if (workflow === undefined) {
     throw new RoutineDraftReferenceOutOfInventoryError(
       "triggerInput",
-      "no definitionId was picked to validate trigger input against",
+      "no definitionAssetId was picked to validate trigger input against",
     );
   }
 
@@ -291,7 +291,7 @@ function buildRoutineDraftPrompt(
     "",
     "Reply with ONLY a JSON object — no prose, no markdown fences — shaped",
     "exactly like this:",
-    '  {"steps": [{"title": "<a short step title>", "detail": "<optional detail>"}, ...], "name": "<optional short routine name>", "definitionId": "<optional workflow id from inventory.workflows, verbatim>", "cadence": <a cadence object below, or null>, "triggerInput": {"<field key>": "<value>", ...}}',
+    '  {"steps": [{"title": "<a short step title>", "detail": "<optional detail>"}, ...], "name": "<optional short routine name>", "definitionAssetId": "<optional workflow asset id from inventory.workflows, verbatim>", "cadence": <a cadence object below, or null>, "triggerInput": {"<field key>": "<value>", ...}}',
     "",
     "cadence is REQUIRED — null for a manual, run-now-only routine, or",
     "exactly one of:",
@@ -300,15 +300,15 @@ function buildRoutineDraftPrompt(
     '  {"kind": "weekly", "dayOfWeek": <0-6, 0=Sunday>, "hour": <0-23>, "minute": <0-59>}',
     '  {"kind": "cron", "expression": "<5-field cron expression>"}',
     "",
-    "Only include triggerInput when you picked a definitionId whose",
+    "Only include triggerInput when you picked a definitionAssetId whose",
     "inventory entry declares triggerFields — its keys and values must",
     'match that entry\'s triggerFields exactly: a "text"-kind field takes',
     'any non-empty string; an "agent"-kind field\'s value MUST be an',
     "agent id from inventory.agents, verbatim.",
     "",
-    "Every definitionId and every agent id you use MUST come from the",
+    "Every definitionAssetId and every agent id you use MUST come from the",
     "inventory above, verbatim. Never invent one — if nothing in the",
-    "inventory fits the description, omit definitionId and triggerInput",
+    "inventory fits the description, omit definitionAssetId and triggerInput",
     "entirely rather than guessing.",
   ].join("\n");
 }
@@ -357,16 +357,16 @@ export function createMyraRoutineDrafting(
       const base = { steps: parsed.steps, trigger: parsed.cadence };
       const withName =
         parsed.name !== undefined ? { ...base, name: parsed.name } : base;
-      const withDefinitionId =
-        parsed.definitionId !== undefined
-          ? { ...withName, definitionId: parsed.definitionId }
+      const withTarget =
+        parsed.definitionAssetId !== undefined
+          ? { ...withName, definitionAssetId: parsed.definitionAssetId }
           : withName;
       return parsed.triggerInput !== undefined
         ? {
-            ...withDefinitionId,
+            ...withTarget,
             autonomy: { triggerInput: parsed.triggerInput },
           }
-        : withDefinitionId;
+        : withTarget;
     },
   };
 }

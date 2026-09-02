@@ -114,7 +114,7 @@ describe("POST /routine-drafts with a Myra-backed drafting port", () => {
           ],
           name: "Daily digest",
           trigger: { kind: "daily", hour: 9, minute: 0 },
-          definitionId: "wfd_digest",
+          definitionAssetId: "wfd_digest",
           autonomy: { triggerInput: { topic: "general" } },
         };
       },
@@ -130,7 +130,7 @@ describe("POST /routine-drafts with a Myra-backed drafting port", () => {
     ]);
     expect(body.proposedTrigger).toEqual({ kind: "daily", hour: 9, minute: 0 });
     expect(body.proposedName).toBe("Daily digest");
-    expect(body.definitionId).toBe("wfd_digest");
+    expect(body.definitionAssetId).toBe("wfd_digest");
     expect(body.autonomy).toEqual({ triggerInput: { topic: "general" } });
   });
 
@@ -278,7 +278,7 @@ describe("POST /routine-drafts/:id/approve webhook defense in depth", () => {
       async propose() {
         return {
           steps: [{ title: "step one" }],
-          definitionId: "def_1",
+          definitionAssetId: "def_1",
           trigger: { kind: "webhook", webhookTriggerId: "not-a-real-trigger" },
         };
       },
@@ -320,7 +320,7 @@ describe("POST /routine-drafts/:id/approve webhook defense in depth", () => {
       async propose() {
         return {
           steps: [{ title: "step one" }],
-          definitionId: "def_1",
+          definitionAssetId: "def_1",
           trigger: { kind: "webhook", webhookTriggerId: "wht_real" },
         };
       },
@@ -345,8 +345,8 @@ describe("POST /routine-drafts/:id/approve webhook defense in depth", () => {
   });
 });
 
-describe("POST /routine-drafts/:id/approve definitionId recovery", () => {
-  test("a draft with no definitionId is approvable once the request body supplies one — no dead end", async () => {
+describe("POST /routine-drafts/:id/approve definitionAssetId recovery", () => {
+  test("a draft with no definitionAssetId is approvable once the request body supplies one — no dead end", async () => {
     const drafting: RoutineDraftingPort = {
       async propose() {
         return { steps: [{ title: "step one" }], trigger: null };
@@ -356,7 +356,7 @@ describe("POST /routine-drafts/:id/approve definitionId recovery", () => {
 
     const { body: createBody } = await createDraft(app, DRAFT_BODY);
     const draftId = createBody.id as string;
-    expect(createBody.definitionId).toBeNull();
+    expect(createBody.definitionAssetId).toBeNull();
 
     const withoutPick = await app.request(
       `/routine-drafts/${draftId}/approve`,
@@ -371,13 +371,13 @@ describe("POST /routine-drafts/:id/approve definitionId recovery", () => {
     const withPick = await app.request(`/routine-drafts/${draftId}/approve`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ definitionId: "def_picked" }),
+      body: JSON.stringify({ definitionAssetId: "def_picked" }),
     });
     expect(withPick.status).toBe(201);
     const approved = (await withPick.json()) as {
-      routine: { definitionId: string };
+      routine: { definitionAssetId: string };
     };
-    expect(approved.routine.definitionId).toBe("def_picked");
+    expect(approved.routine.definitionAssetId).toBe("def_picked");
   });
 });
 

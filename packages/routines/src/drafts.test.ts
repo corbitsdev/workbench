@@ -37,7 +37,7 @@ describe("in-memory draft store", () => {
     const reviewed = await store.markReviewed("t1", draft.id, {
       proposedSteps: [{ title: "Collect messages" }, { title: "Write digest" }],
       proposedName: "Daily digest",
-      definitionId: "def_digest",
+      definitionAssetId: "def_digest",
       proposedTrigger: null,
     });
     expect(reviewed.status).toBe("reviewed");

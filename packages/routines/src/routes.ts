@@ -29,6 +29,10 @@ import type {
   RoutineStore,
   UpdateRoutineInput,
 } from "./store";
+import {
+  routineTargetRejection,
+  type LaunchableDefinitionResolver,
+} from "./target";
 import { makeErrorEnvelope } from "@workbench/hub-client";
 import {
   MyraRoutineDraftingUnavailableError,
@@ -44,10 +48,14 @@ export interface LaunchedRoutineRun {
 
 /**
  * The launcher port: routines never launch a run themselves — they
- * hand the definition/input off to whatever launches folded runs on
- * the host (`@corbits/folded-runs` in this repo), then record the
+ * hand the target asset/input off to whatever launches runs on the
+ * host (`@corbits/folded-runs` in this repo), then record the
  * correlation. Keeping this a port, not a direct dependency, is what
- * keeps `@corbits/routines` hosted-service-agnostic.
+ * keeps `@corbits/routines` hosted-service-agnostic. The launcher
+ * resolves `definitionAssetId` to the definition that runs via
+ * `resolveLaunchableDefinition` (`./target.ts`) at fire time and fails
+ * closed when nothing launchable exists — a routine follows its
+ * target's latest approved deployment and never pins one.
  *
  * A run's delivery is a message into `deliveryWorkbenchId`'s root
  * timeline — never a pre-opened thread. If a single run's delivery ever
@@ -62,7 +70,7 @@ export interface RoutineLauncher {
   launchRoutineRun(input: {
     tenantId: string;
     principalId: string;
-    definitionId: string;
+    definitionAssetId: string;
     input: Record<string, unknown>;
     deliveryWorkbenchId?: string | null | undefined;
     runRef?: string | undefined;
@@ -110,26 +118,27 @@ export type CreateRoutineRoutesDeps = {
   requireGrant: RequireGrant;
   runSummaryResolver?: RunSummaryResolver;
   /**
-   * When provided, `POST /routines` rejects with 404 if the definition
-   * is not in the request tenant. Tests may omit (always-allow).
+   * Resolves a routine's target asset to the definition it would run
+   * now (`resolveLaunchableDefinition`, `./target.ts`). When provided,
+   * a create whose target does not resolve is refused with the typed
+   * envelope `routineTargetRejection` names, and every read reports the
+   * currently resolved `definitionId` beside the stable asset id. Tests
+   * may omit: creates are then unvalidated and reads report
+   * `definitionId: null`.
    */
-  definitionInTenant?: (
-    tenantId: string,
-    definitionId: string,
-  ) => Promise<boolean>;
+  resolveTarget?: LaunchableDefinitionResolver;
   /**
    * When provided, a `{kind: "webhook"}` trigger is rejected with 404
    * unless the referenced `@corbits/webhook-triggers` row exists in the
-   * request tenant *and* points at the same `definitionId` the routine
-   * itself is being created/updated with — a webhook trigger and the
-   * routine it fires are two views of one binding, so the two ids
-   * disagreeing is corruption, not a valid state. Tests may omit
-   * (always-allow).
+   * request tenant *and* fires the same workflow asset the routine
+   * itself targets — a webhook trigger and the routine it fires are two
+   * views of one binding, so the two disagreeing is corruption, not a
+   * valid state. Tests may omit (always-allow).
    */
   webhookTriggerInTenant?: (
     tenantId: string,
     webhookTriggerId: string,
-    definitionId: string,
+    definitionAssetId: string,
   ) => Promise<boolean>;
   /**
    * Whether a routine on this definition must carry a `deliveryWorkbenchId`
@@ -146,7 +155,7 @@ export type CreateRoutineRoutesDeps = {
    */
   deliveryWorkbenchRequired?: (
     tenantId: string,
-    definitionId: string,
+    definitionAssetId: string,
   ) => Promise<boolean>;
   /**
    * Validates `input` against the definition's own declared
@@ -160,7 +169,7 @@ export type CreateRoutineRoutesDeps = {
    */
   validateRoutineInput?: (
     tenantId: string,
-    definitionId: string,
+    definitionAssetId: string,
     input: Record<string, unknown>,
   ) => Promise<
     { readonly ok: true } | { readonly ok: false; readonly message: string }
@@ -196,7 +205,10 @@ function isDraftingFailure(err: unknown): boolean {
 
 const CreateRoutineBody = type({
   name: "string",
-  definitionId: "string",
+  // The target: a workflow asset id, always explicit. The server never
+  // searches for "the agent in this conversation" or any other implied
+  // target — an absent value is an ordinary 400 from this schema.
+  definitionAssetId: "string > 0",
   trigger: RoutineTrigger,
   scope: "'personal' | 'bench'",
   "input?": "Record<string, unknown>",
@@ -234,29 +246,33 @@ const CreateDraftBody = type({
 
 /**
  * Optional body for approving a draft: when Myra's proposal didn't pin
- * a `definitionId` (a valid, honest outcome — see
+ * a `definitionAssetId` (a valid, honest outcome — see
  * `RoutineDraftingPort`'s own doc comment), the review UI collects one
  * from the person instead and sends it here, rather than leaving
  * Approve permanently disabled with no recovery. Omitted (or an empty
- * body) falls back to the draft's own `definitionId`, unchanged
- * behavior for a draft that already has one.
+ * body) uses the draft's own `definitionAssetId`, unchanged behavior
+ * for a draft that already has one.
  */
 const ApproveDraftBody = type({
-  "definitionId?": "string",
+  "definitionAssetId?": "string",
 });
 
 /**
  * The wire shape for a routine — never a raw id-only reference, always
  * the name and structured trigger a UI can render directly, per the
- * platform's "no raw IDs on screen" floor. Exported: `./workflow-routine-routes.ts`
- * (Myra's own tenant-scoped routine surface) renders the exact same shape,
- * never a second, drifting view of a routine row.
+ * platform's "no raw IDs on screen" floor. `definitionAssetId` is the
+ * routine's stable identity; `definitionId` is the definition that
+ * would run right now (`null` when nothing launchable resolves), so a
+ * UI or Myra can show both. Exported: `./workflow-routine-routes.ts`
+ * (Myra's own tenant-scoped routine surface) renders the exact same
+ * shape, never a second, drifting view of a routine row.
  */
-export function routineView(row: RoutineRow) {
+export function routineView(row: RoutineRow, definitionId: string | null) {
   return {
     id: row.id,
     name: row.name,
-    definitionId: row.definitionId,
+    definitionAssetId: row.definitionAssetId,
+    definitionId,
     trigger: row.trigger,
     scope: row.scope,
     input: row.input,
@@ -269,6 +285,37 @@ export function routineView(row: RoutineRow) {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+/**
+ * `routineView` with the target resolved through `deps.resolveTarget`
+ * — the one read path every list/get/create/patch response goes
+ * through, so "what would run now" is never computed two ways.
+ * Exported for `./workflow-routine-routes.ts`.
+ */
+export async function resolvedRoutineView(
+  deps: Pick<CreateRoutineRoutesDeps, "resolveTarget">,
+  row: RoutineRow,
+) {
+  if (deps.resolveTarget === undefined) return routineView(row, null);
+  const target = await deps.resolveTarget(row.tenantId, row.definitionAssetId);
+  return routineView(row, target.ok ? target.definitionId : null);
+}
+
+/**
+ * Refuses a create/retarget whose target does not resolve — the typed
+ * envelope UI and Myra branch on. `undefined` means the target is
+ * launchable (or no resolver is wired). Exported for
+ * `./workflow-routine-routes.ts`.
+ */
+export async function rejectUnlaunchableTarget(
+  deps: Pick<CreateRoutineRoutesDeps, "resolveTarget">,
+  tenantId: string,
+  definitionAssetId: string,
+): Promise<ReturnType<typeof routineTargetRejection> | undefined> {
+  if (deps.resolveTarget === undefined) return undefined;
+  const target = await deps.resolveTarget(tenantId, definitionAssetId);
+  return target.ok ? undefined : routineTargetRejection(target.reason);
 }
 
 async function runView(
@@ -307,7 +354,7 @@ export async function launchAndCorrelate(
   input: {
     tenantId: string;
     principalId: string;
-    definitionId: string;
+    definitionAssetId: string;
     input: Record<string, unknown>;
     routineId: string;
     triggeredBy: string;
@@ -318,7 +365,7 @@ export async function launchAndCorrelate(
   const launched = await deps.launcher.launchRoutineRun({
     tenantId: input.tenantId,
     principalId: input.principalId,
-    definitionId: input.definitionId,
+    definitionAssetId: input.definitionAssetId,
     input: input.input,
     deliveryWorkbenchId: input.deliveryWorkbenchId,
     routineName: input.routineName,
@@ -370,7 +417,7 @@ export async function fireOnceTriggerIfNeeded(
     await launchAndCorrelate(deps, {
       tenantId: input.tenantId,
       principalId: input.principalId,
-      definitionId: row.definitionId,
+      definitionAssetId: row.definitionAssetId,
       input: row.input,
       routineId: row.id,
       triggeredBy: "once",
@@ -396,8 +443,8 @@ export async function fireOnceTriggerIfNeeded(
 /**
  * `true` when `trigger` is not a webhook binding (nothing to check), or
  * when it is and the referenced webhook-triggers row checks out for this
- * tenant and definition. See `webhookTriggerInTenant`'s doc comment on
- * why the definition id must match.
+ * tenant and target asset. See `webhookTriggerInTenant`'s doc comment
+ * on why the two must agree.
  *
  * Exported: `./workflow-routine-routes.ts` runs the exact same check on
  * Myra's own create/update path, never a looser one.
@@ -406,14 +453,14 @@ export async function webhookTriggerValid(
   deps: Pick<CreateRoutineRoutesDeps, "webhookTriggerInTenant">,
   tenantId: string,
   trigger: RoutineTriggerT,
-  definitionId: string,
+  definitionAssetId: string,
 ): Promise<boolean> {
   if (trigger === null || trigger.kind !== "webhook") return true;
   if (deps.webhookTriggerInTenant === undefined) return true;
   return deps.webhookTriggerInTenant(
     tenantId,
     trigger.webhookTriggerId,
-    definitionId,
+    definitionAssetId,
   );
 }
 
@@ -427,10 +474,10 @@ export async function webhookTriggerValid(
 export async function isDeliveryWorkbenchRequired(
   deps: Pick<CreateRoutineRoutesDeps, "deliveryWorkbenchRequired">,
   tenantId: string,
-  definitionId: string,
+  definitionAssetId: string,
 ): Promise<boolean> {
   if (deps.deliveryWorkbenchRequired === undefined) return true;
-  return deps.deliveryWorkbenchRequired(tenantId, definitionId);
+  return deps.deliveryWorkbenchRequired(tenantId, definitionAssetId);
 }
 
 /**
@@ -519,20 +566,19 @@ export function createRoutineRoutes(
       const tenant = c.get("tenant");
       const principal = c.get("principal");
 
-      if (deps.definitionInTenant !== undefined) {
-        const owned = await deps.definitionInTenant(
-          tenant.id,
-          body.definitionId,
+      const rejection = await rejectUnlaunchableTarget(
+        deps,
+        tenant.id,
+        body.definitionAssetId,
+      );
+      if (rejection !== undefined) {
+        return c.json(
+          makeErrorEnvelope({
+            code: rejection.code,
+            userMessage: rejection.userMessage,
+          }),
+          rejection.status,
         );
-        if (!owned) {
-          return c.json(
-            makeErrorEnvelope({
-              code: "not_found",
-              userMessage: "definition not found",
-            }),
-            404,
-          );
-        }
       }
 
       if (
@@ -540,7 +586,7 @@ export function createRoutineRoutes(
           deps,
           tenant.id,
           body.trigger,
-          body.definitionId,
+          body.definitionAssetId,
         ))
       ) {
         return c.json(
@@ -556,7 +602,7 @@ export function createRoutineRoutes(
         (await isDeliveryWorkbenchRequired(
           deps,
           tenant.id,
-          body.definitionId,
+          body.definitionAssetId,
         )) &&
         (body.deliveryWorkbenchId === undefined ||
           body.deliveryWorkbenchId === "");
@@ -580,7 +626,7 @@ export function createRoutineRoutes(
       if (deps.validateRoutineInput !== undefined) {
         const validated = await deps.validateRoutineInput(
           tenant.id,
-          body.definitionId,
+          body.definitionAssetId,
           body.input ?? {},
         );
         if (!validated.ok) {
@@ -602,7 +648,7 @@ export function createRoutineRoutes(
         const result = await deps.store.createRoutineIfAbsent({
           tenantId: tenant.id,
           name: body.name,
-          definitionId: body.definitionId,
+          definitionAssetId: body.definitionAssetId,
           trigger: body.trigger,
           scope: body.scope,
           input: body.input ?? {},
@@ -622,7 +668,7 @@ export function createRoutineRoutes(
         row = await deps.store.createRoutine({
           tenantId: tenant.id,
           name: body.name,
-          definitionId: body.definitionId,
+          definitionAssetId: body.definitionAssetId,
           trigger: body.trigger,
           scope: body.scope,
           input: body.input ?? {},
@@ -641,7 +687,7 @@ export function createRoutineRoutes(
       }
 
       if (!created) {
-        return c.json(routineView(row), 200);
+        return c.json(await resolvedRoutineView(deps, row), 200);
       }
 
       if (body.runOnceNow === true) {
@@ -650,7 +696,7 @@ export function createRoutineRoutes(
           {
             tenantId: tenant.id,
             principalId: principal.id,
-            definitionId: row.definitionId,
+            definitionAssetId: row.definitionAssetId,
             input: row.input,
             routineId: row.id,
             triggeredBy: "manual",
@@ -676,7 +722,7 @@ export function createRoutineRoutes(
         });
       }
 
-      return c.json(routineView(row), 201);
+      return c.json(await resolvedRoutineView(deps, row), 201);
     },
   );
 
@@ -686,7 +732,10 @@ export function createRoutineRoutes(
     async (c) => {
       const tenant = c.get("tenant");
       const rows = await deps.store.listRoutines(tenant.id);
-      return c.json({ items: rows.map(routineView) });
+      const items = await Promise.all(
+        rows.map((row) => resolvedRoutineView(deps, row)),
+      );
+      return c.json({ items });
     },
   );
 
@@ -705,7 +754,7 @@ export function createRoutineRoutes(
           404,
         );
       }
-      return c.json(routineView(row));
+      return c.json(await resolvedRoutineView(deps, row));
     },
   );
 
@@ -744,7 +793,7 @@ export function createRoutineRoutes(
           deps,
           tenant.id,
           body.trigger,
-          existing.definitionId,
+          existing.definitionAssetId,
         ))
       ) {
         return c.json(
@@ -783,7 +832,7 @@ export function createRoutineRoutes(
         });
       }
 
-      return c.json(routineView(row));
+      return c.json(await resolvedRoutineView(deps, row));
     },
   );
 
@@ -875,7 +924,7 @@ export function createRoutineRoutes(
         (await isDeliveryWorkbenchRequired(
           deps,
           tenant.id,
-          existing.definitionId,
+          existing.definitionAssetId,
         )) &&
         (existing.deliveryWorkbenchId === null ||
           existing.deliveryWorkbenchId === "")
@@ -894,7 +943,7 @@ export function createRoutineRoutes(
         {
           tenantId: tenant.id,
           principalId: principal.id,
-          definitionId: existing.definitionId,
+          definitionAssetId: existing.definitionAssetId,
           input: body.input ?? existing.input,
           routineId,
           triggeredBy: "manual",
@@ -984,7 +1033,7 @@ export function createRoutineRoutes(
             proposedSteps: proposal.steps,
             proposedTrigger: proposal.trigger ?? null,
             proposedName: proposal.name ?? null,
-            definitionId: proposal.definitionId ?? null,
+            definitionAssetId: proposal.definitionAssetId ?? null,
             autonomy: proposal.autonomy ?? null,
           });
           return c.json(draftView(reviewed), 201);
@@ -1083,40 +1132,42 @@ export function createRoutineRoutes(
           400,
         );
       }
-      // A draft's own `definitionId` wins when set; otherwise the
-      // review UI's own pick (Myra proposing steps with no workflow
-      // pinned is a valid, honest outcome — see `RoutineDraftingPort`'s
-      // doc comment) — never silently falling back to nothing pinned.
-      const definitionId =
-        body.definitionId !== undefined && body.definitionId !== ""
-          ? body.definitionId
-          : draft.definitionId;
-      if (definitionId === null || definitionId === "") {
+      // The review UI's own pick wins when sent; otherwise the draft's
+      // pinned target (Myra proposing steps with no workflow pinned is a
+      // valid, honest outcome — see `RoutineDraftingPort`'s doc comment)
+      // — never silently falling back to nothing pinned.
+      const definitionAssetId =
+        body.definitionAssetId !== undefined && body.definitionAssetId !== ""
+          ? body.definitionAssetId
+          : draft.definitionAssetId;
+      if (definitionAssetId === null || definitionAssetId === "") {
         return c.json(
           makeErrorEnvelope({
             code: "bad_request",
             userMessage:
-              "draft has no definitionId; review must pin a workflow definition",
+              "draft has no definitionAssetId; review must pin a workflow",
           }),
           400,
         );
       }
-      if (deps.definitionInTenant !== undefined) {
-        const owned = await deps.definitionInTenant(tenant.id, definitionId);
-        if (!owned) {
-          return c.json(
-            makeErrorEnvelope({
-              code: "not_found",
-              userMessage: "definition not found",
-            }),
-            404,
-          );
-        }
+      const rejection = await rejectUnlaunchableTarget(
+        deps,
+        tenant.id,
+        definitionAssetId,
+      );
+      if (rejection !== undefined) {
+        return c.json(
+          makeErrorEnvelope({
+            code: rejection.code,
+            userMessage: rejection.userMessage,
+          }),
+          rejection.status,
+        );
       }
       // Defense in depth: `POST /routines` never lets a `{kind:
       // "webhook"}` trigger through without this same check
       // (`webhookTriggerValid`'s own doc comment explains why the two
-      // ids must agree) — a drafted proposal is no more trusted than a
+      // must agree) — a drafted proposal is no more trusted than a
       // request body a person typed by hand, so approve runs the exact
       // same check, never a second, looser path.
       if (
@@ -1124,7 +1175,7 @@ export function createRoutineRoutes(
           deps,
           tenant.id,
           draft.proposedTrigger,
-          definitionId,
+          definitionAssetId,
         ))
       ) {
         return c.json(
@@ -1143,7 +1194,7 @@ export function createRoutineRoutes(
       const routine = await deps.store.createRoutine({
         tenantId: tenant.id,
         name,
-        definitionId,
+        definitionAssetId,
         trigger,
         scope: draft.scope,
         input:
@@ -1159,7 +1210,10 @@ export function createRoutineRoutes(
         routine.id,
       );
       return c.json(
-        { draft: draftView(approved), routine: routineView(routine) },
+        {
+          draft: draftView(approved),
+          routine: await resolvedRoutineView(deps, routine),
+        },
         201,
       );
     },
@@ -1208,7 +1262,7 @@ function draftView(row: import("./drafts").RoutineDraftRow) {
     proposedSteps: row.proposedSteps,
     proposedTrigger: row.proposedTrigger,
     proposedName: row.proposedName,
-    definitionId: row.definitionId,
+    definitionAssetId: row.definitionAssetId,
     deliveryWorkbenchId: row.deliveryWorkbenchId,
     scope: row.scope,
     autonomy: row.autonomy,
@@ -1232,7 +1286,7 @@ export async function fireScheduledRoutine(
     launcher: RoutineLauncher;
     deliveryWorkbenchRequired?: (
       tenantId: string,
-      definitionId: string,
+      definitionAssetId: string,
     ) => Promise<boolean>;
   },
   params: { tenantId: string; routine: RoutineRow },
@@ -1246,7 +1300,7 @@ export async function fireScheduledRoutine(
     (await isDeliveryWorkbenchRequired(
       deps,
       params.tenantId,
-      params.routine.definitionId,
+      params.routine.definitionAssetId,
     )) &&
     (params.routine.deliveryWorkbenchId === null ||
       params.routine.deliveryWorkbenchId === "")
@@ -1258,7 +1312,7 @@ export async function fireScheduledRoutine(
   return launchAndCorrelate(deps, {
     tenantId: params.tenantId,
     principalId: params.routine.createdBy,
-    definitionId: params.routine.definitionId,
+    definitionAssetId: params.routine.definitionAssetId,
     input: params.routine.input,
     routineId: params.routine.id,
     triggeredBy: "schedule",
