@@ -1,5 +1,5 @@
-// The sanctioned path for a workflow-process child to author or republish
-// a workflow-kind asset, mirroring `@corbits/skills`' own
+// The sanctioned path for a workflow-process child to author, republish,
+// or read back a workflow-kind asset, mirroring `@corbits/skills`' own
 // `createWorkflowSkillRoutes`: a workflow child has no browser session,
 // only its sidecar bearer token and the run's address, so it
 // authenticates through a `WorkflowRunAuthenticator` rather than the
@@ -17,7 +17,8 @@ import { type } from "arktype";
 import { Hono } from "hono";
 import { makeErrorEnvelope } from "@workbench/hub-client";
 
-import { WorkflowAuthorError, type WorkflowAuthorRegistry } from "./registry";
+import { WorkflowAuthorError } from "./errors";
+import type { WorkflowAuthorRegistry } from "./registry";
 
 export type WorkflowRunScope = {
   readonly tenantId: string;
@@ -44,6 +45,7 @@ const RepublishBody = type({
   assetId: "string",
   files: FilesInput,
   "message?": "string",
+  "expectedHeadSha?": "string",
 });
 
 function statusFor(
@@ -73,11 +75,14 @@ export function createWorkflowAuthorRoutes(
 
   app.onError((err, c) => {
     if (err instanceof WorkflowAuthorError) {
+      const envelope = makeErrorEnvelope({
+        code: err.reason,
+        userMessage: err.message,
+      });
       return c.json(
-        makeErrorEnvelope({
-          code: err.reason,
-          userMessage: err.message,
-        }),
+        err.currentHeadSha === undefined
+          ? envelope
+          : { ...envelope, currentHeadSha: err.currentHeadSha },
         statusFor(err.reason),
       );
     }
@@ -135,6 +140,15 @@ export function createWorkflowAuthorRoutes(
     const scope = c.get("workflowRunScope");
     const summary = await deps.registry.republish(scope, body.assetId, body);
     return c.json({ data: summary });
+  });
+
+  app.get("/:assetId/source", async (c) => {
+    const scope = c.get("workflowRunScope");
+    const snapshot = await deps.registry.readSource(
+      scope,
+      c.req.param("assetId"),
+    );
+    return c.json({ data: snapshot });
   });
 
   return app;

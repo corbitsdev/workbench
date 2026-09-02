@@ -1,0 +1,24 @@
+{
+  "name": "@corbits/workflow-authoring-tools",
+  "private": true,
+  "description": "Myra's workflow-authoring tool bundle (workflow_author, workflow_republish, workflow_source_read): an @intx/agent tool bundle calling @corbits/agent-workflow-authoring's workflow-run-authenticated routes so an agent can write a workflow code package into a kind:\"workflow\" hub asset and read it back; deploying that asset is a separate, approval-gated step",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@intx/agent": "workspace:*",
+    "@intx/types": "workspace:*",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}
