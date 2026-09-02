@@ -50,10 +50,20 @@ const WORKBENCH_WIRE = {
   participants: [] as { address: string; handle: string }[],
 };
 
+type WorkbenchAgentFixture = {
+  readonly address: string;
+  readonly handle: string;
+  readonly definitionId: string;
+  readonly definitionAssetId: string;
+};
+
 function stubFetch(
   sentMessages?: unknown[],
   workbench: typeof WORKBENCH_WIRE = WORKBENCH_WIRE,
-  options: { readonly turnsFail?: boolean } = {},
+  options: {
+    readonly turnsFail?: boolean;
+    readonly workbenchAgents?: readonly WorkbenchAgentFixture[];
+  } = {},
 ) {
   globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -81,6 +91,9 @@ function stubFetch(
     if (/\/chat\/workbenches\/[^/]+\/read-state$/.test(path)) return json({});
     if (/\/chat\/workbenches\/[^/]+\/invitable$/.test(path)) {
       return json({ items: [] });
+    }
+    if (/\/chat\/workbenches\/[^/]+\/agents$/.test(path)) {
+      return json({ items: options.workbenchAgents ?? [] });
     }
     // CL-6380 catch-up: empty list = nothing running. Returning this by
     // default keeps agent-participant mounts from treating an unstubbed
@@ -930,6 +943,99 @@ describe("composer slash commands — each wired command's real action", () => {
 
     expect(opened).toEqual(["ch_1"]);
     expect(textarea.value).toBe("");
+    harness.unmount();
+  });
+
+  test("/routine with zero agent participants passes no preselection (CL-7356)", async () => {
+    stubFetch(undefined, WORKBENCH_WIRE, { workbenchAgents: [] });
+    const opened: (string | undefined)[] = [];
+    const harness = await mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "ch_1",
+      onCreateRoutineInSpace: (
+        workbenchId: string,
+        preselectedAssetId?: string,
+      ) => {
+        opened.push(workbenchId, preselectedAssetId);
+      },
+    });
+    await harness.settle();
+
+    const textarea = typeInComposer(harness.container, "/routine");
+    pressEnter(textarea);
+    await harness.settle();
+
+    expect(opened).toEqual(["ch_1", undefined]);
+    harness.unmount();
+  });
+
+  test("/routine with two agent participants passes no preselection (CL-7356)", async () => {
+    stubFetch(undefined, WORKBENCH_WIRE, {
+      workbenchAgents: [
+        {
+          address: "agent:asset_echo/ins_1",
+          handle: "echo",
+          definitionId: "def_echo",
+          definitionAssetId: "asset_echo",
+        },
+        {
+          address: "agent:asset_digest/ins_2",
+          handle: "digest",
+          definitionId: "def_digest",
+          definitionAssetId: "asset_digest",
+        },
+      ],
+    });
+    const opened: (string | undefined)[] = [];
+    const harness = await mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "ch_1",
+      onCreateRoutineInSpace: (
+        workbenchId: string,
+        preselectedAssetId?: string,
+      ) => {
+        opened.push(workbenchId, preselectedAssetId);
+      },
+    });
+    await harness.settle();
+
+    const textarea = typeInComposer(harness.container, "/routine");
+    pressEnter(textarea);
+    await harness.settle();
+
+    expect(opened).toEqual(["ch_1", undefined]);
+    harness.unmount();
+  });
+
+  test("/routine with exactly one agent participant preselects its definition asset id (CL-7356)", async () => {
+    stubFetch(undefined, WORKBENCH_WIRE, {
+      workbenchAgents: [
+        {
+          address: "agent:asset_echo/ins_1",
+          handle: "echo",
+          definitionId: "def_echo",
+          definitionAssetId: "asset_echo",
+        },
+      ],
+    });
+    const opened: (string | undefined)[] = [];
+    const harness = await mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "ch_1",
+      onCreateRoutineInSpace: (
+        workbenchId: string,
+        preselectedAssetId?: string,
+      ) => {
+        opened.push(workbenchId, preselectedAssetId);
+      },
+    });
+    await harness.settle();
+
+    const textarea = typeInComposer(harness.container, "/routine");
+    pressEnter(textarea);
+    await harness.settle();
+
+    expect(opened).toEqual(["ch_1", "asset_echo"]);
     harness.unmount();
   });
 
