@@ -15,6 +15,9 @@ import type { RequireGrant } from "@intx/hub-api";
 import { idResource } from "@intx/hub-api";
 import { getLogger } from "@intx/log";
 import { generateId } from "@intx/hub-common";
+import { authorize } from "@intx/authz";
+import type { ConditionRegistry, GrantStore } from "@intx/types/authz";
+import { reportError } from "@corbits/error-sink";
 import {
   FoldedRunFailedError,
   FoldedRunTimedOutError,
@@ -127,6 +130,17 @@ export type CreateRoutineRoutesDeps = {
    * `definitionId: null`.
    */
   resolveTarget?: LaunchableDefinitionResolver;
+  /**
+   * When wired alongside `resolveTarget`, a create/retarget's resolved
+   * definition is also authorized (`workflow-definition:<definitionId>`
+   * / `read`, the same verb `listRoutineTargets` checks in
+   * `./targets.ts`) for the acting principal before the target is
+   * accepted — a denial is the typed 403 `rejectUnlaunchableTarget`
+   * returns. Both must be wired together; either omitted (the prior
+   * default) skips authorization, unchanged behavior.
+   */
+  grantStore?: GrantStore;
+  conditionRegistry?: ConditionRegistry;
   /**
    * When provided, a `{kind: "webhook"}` trigger is rejected with 404
    * unless the referenced `@corbits/webhook-triggers` row exists in the
@@ -306,19 +320,51 @@ export async function resolvedRoutineView(
 }
 
 /**
- * Refuses a create/retarget whose target does not resolve — the typed
- * envelope UI and Myra branch on. `undefined` means the target is
- * launchable (or no resolver is wired). Exported for
- * `./workflow-routine-routes.ts`.
+ * Refuses a create/retarget whose target does not resolve, or that the
+ * acting principal is not authorized to reference — the typed envelope
+ * UI and Myra branch on. `undefined` means the target is launchable (or
+ * no resolver is wired). Exported for `./workflow-routine-routes.ts`.
+ *
+ * Authorization checks the same `workflow-definition:<definitionId>` /
+ * `read` verb `listRoutineTargets` (`./targets.ts`) checks per row, so a
+ * routine can never be pointed at a definition its own target listing
+ * would never have offered — but only when `grantStore` and
+ * `conditionRegistry` are both wired; either omitted skips it (CL-7351's
+ * prior default), matching every caller's existing tests.
  */
 export async function rejectUnlaunchableTarget(
-  deps: Pick<CreateRoutineRoutesDeps, "resolveTarget">,
+  deps: Pick<
+    CreateRoutineRoutesDeps,
+    "resolveTarget" | "grantStore" | "conditionRegistry"
+  >,
   tenantId: string,
+  principalId: string,
   definitionAssetId: string,
-): Promise<ReturnType<typeof routineTargetRejection> | undefined> {
+): Promise<
+  | ReturnType<typeof routineTargetRejection>
+  | { readonly status: 403; readonly code: string; readonly userMessage: string }
+  | undefined
+> {
   if (deps.resolveTarget === undefined) return undefined;
   const target = await deps.resolveTarget(tenantId, definitionAssetId);
-  return target.ok ? undefined : routineTargetRejection(target.reason);
+  if (!target.ok) return routineTargetRejection(target.reason);
+  if (deps.grantStore === undefined || deps.conditionRegistry === undefined) {
+    return undefined;
+  }
+  const decision = await authorize(
+    deps.grantStore,
+    principalId,
+    tenantId,
+    `workflow-definition:${target.definitionId}`,
+    "read",
+    deps.conditionRegistry,
+  );
+  if (decision.effect === "allow") return undefined;
+  return {
+    status: 403,
+    code: "routine_target_forbidden",
+    userMessage: "You don't have access to that workflow.",
+  };
 }
 
 async function runView(
@@ -530,14 +576,11 @@ export async function postRoutineEnabledNotice(
       text,
     });
   } catch (err) {
-    log.error(
-      "Failed to post routine-{verb} notice into workbench {workbenchId}",
-      {
-        verb: input.verb,
-        workbenchId: input.workbenchId,
-        err,
-      },
-    );
+    reportError(err, {
+      operation: "routines.postRoutineEnabledNotice",
+      tenantId: input.tenantId,
+      extra: { verb: input.verb, workbenchId: input.workbenchId },
+    });
   }
 }
 
@@ -580,6 +623,7 @@ export function createRoutineRoutes(
       const rejection = await rejectUnlaunchableTarget(
         deps,
         tenant.id,
+        principal.id,
         body.definitionAssetId,
       );
       if (rejection !== undefined) {
@@ -796,6 +840,27 @@ export function createRoutineRoutes(
           }),
           404,
         );
+      }
+
+      if (
+        body.definitionAssetId !== undefined &&
+        body.definitionAssetId !== existing.definitionAssetId
+      ) {
+        const rejection = await rejectUnlaunchableTarget(
+          deps,
+          tenant.id,
+          principal.id,
+          body.definitionAssetId,
+        );
+        if (rejection !== undefined) {
+          return c.json(
+            makeErrorEnvelope({
+              code: rejection.code,
+              userMessage: rejection.userMessage,
+            }),
+            rejection.status,
+          );
+        }
       }
 
       if (
@@ -1167,6 +1232,7 @@ export function createRoutineRoutes(
       const rejection = await rejectUnlaunchableTarget(
         deps,
         tenant.id,
+        principal.id,
         definitionAssetId,
       );
       if (rejection !== undefined) {
