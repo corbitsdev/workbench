@@ -212,9 +212,9 @@ const PAGE_LIMIT = 100;
  * Every workflow definition on the tenant, walking pagination, reduced to
  * `{id, name}` — enough to find which definition id(s) belong to the
  * `granola-call` asset. Mirrors
- * `apps/web/src/routines-api.ts:listWorkflowDefinitions`'s pagination walk
- * without pulling in that module's catalog-enrichment concerns, which the
- * card doesn't need.
+ * `apps/web/src/routines-api.ts:listAllRoutineTargets`'s pagination walk
+ * over the platform's raw definitions listing, without that endpoint's
+ * routine-target filtering, which the card doesn't need.
  */
 export async function listGranolaWorkflowDefinitions(
   tenantId: string,

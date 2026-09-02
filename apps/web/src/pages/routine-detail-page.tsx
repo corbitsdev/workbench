@@ -63,7 +63,7 @@ import { ROUTINE_HEALTH_TONE } from "../routine-health-tone";
 import { useOpenRoutineInCanvas } from "../shell/canvas-availability";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { nextRunLabel, RunStatusCell, TriggeredByCell } from "./routines-page";
-import { listWorkflowDefinitions, useTenantQuery } from "../routines-api";
+import { listAllRoutineTargets, useTenantQuery } from "../routines-api";
 import { tenantKeys } from "../query-client";
 
 /** The cron expression behind a routine's schedule — `null` for the
@@ -439,22 +439,22 @@ function RoutineNotice({
   );
 }
 
-/** The workflow's own display name for `definitionId`. Falls back to the
- * id only while the catalog is still loading or when the definition is no
- * longer listed — a routine pointing at a retired workflow still has to
+/** The target's own display name for `definitionId`. Falls back to the
+ * id only while targets are still loading or when the definition is no
+ * longer offered — a routine pointing at a retired workflow still has to
  * render. */
 function useWorkflowName(row: GlobalRoutineRow | undefined): string {
   const tenantId = row?.tenantId ?? "";
-  const definitions = useTenantQuery(
-    [...tenantKeys.routines(tenantId), "definitions"],
+  const targets = useTenantQuery(
+    [...tenantKeys.routines(tenantId), "targets"],
     tenantId !== "",
-    () => listWorkflowDefinitions(tenantId),
+    () => listAllRoutineTargets(tenantId),
   );
-  if (definitions.kind !== "ready" || row === undefined) {
+  if (targets.kind !== "ready" || row === undefined) {
     return row?.routine.definitionAssetId ?? "";
   }
-  const match = definitions.data.find(
-    (definition) => definition.id === row.routine.definitionAssetId,
+  const match = targets.data.find(
+    (target) => target.definitionAssetId === row.routine.definitionAssetId,
   );
   return match?.name ?? row.routine.definitionAssetId ?? "";
 }

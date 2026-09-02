@@ -109,3 +109,19 @@ export type {
   WorkflowRoutinesEnv,
   WorkflowRunAuthenticator as WorkflowRoutineRunAuthenticator,
 } from "./workflow-routine-routes";
+
+export {
+  listLaunchableDefinitions,
+  listRoutineTargets,
+  routineTargetKind,
+  InvalidRoutineTargetCursorError,
+  ROUTINE_TARGETS_DEFAULT_LIMIT,
+  ROUTINE_TARGETS_MAX_LIMIT,
+} from "./targets";
+export type {
+  LaunchableDefinition,
+  RoutineTargetsDeps,
+  RoutineTargetsQuery,
+  RoutineTargetsPage,
+} from "./targets";
+export { createRoutineTargetRoutes } from "./targets-route";

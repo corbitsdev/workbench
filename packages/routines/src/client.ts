@@ -237,6 +237,47 @@ export function routineDraftDiscardPath(tenantId: string, id: string): string {
   return `${routineDraftPath(tenantId, id)}/discard`;
 }
 
+// One deployed, frozen definition a routine may target
+// (`GET /api/tenants/:tenantId/workflows/targets`, see ./targets.ts).
+// `definitionAssetId` is the stable identity a routine stores;
+// `definitionId`/`wireHash` name the row that would run right now.
+// `kind` groups the picker without changing execution semantics: an
+// "agent" is a single-step conversational fold, everything else a
+// "workflow". `assetName` is the raw catalog key
+// (`@corbits/workflow-catalog`'s `workflowCatalogEntry`); `name` is the
+// display label.
+export const RoutineTargetKind = type("'agent' | 'workflow'");
+export type RoutineTargetKind = typeof RoutineTargetKind.infer;
+
+export const RoutineTarget = type({
+  definitionAssetId: "string",
+  definitionId: "string",
+  assetName: "string",
+  name: "string",
+  description: "string | null",
+  kind: RoutineTargetKind,
+  wireHash: "string",
+});
+export type RoutineTarget = typeof RoutineTarget.infer;
+
+export const RoutineTargetsResponse = type({
+  items: RoutineTarget.array(),
+  nextCursor: "string | null",
+});
+export type RoutineTargetsResponse = typeof RoutineTargetsResponse.infer;
+
+/** `GET /api/tenants/:tenantId/workflows/targets?limit=&cursor=`. */
+export function routineTargetsPath(
+  tenantId: string,
+  query: { readonly cursor?: string; readonly limit?: number } = {},
+): string {
+  const params = new URLSearchParams();
+  if (query.limit !== undefined) params.set("limit", String(query.limit));
+  if (query.cursor !== undefined) params.set("cursor", query.cursor);
+  const suffix = params.size === 0 ? "" : `?${params.toString()}`;
+  return `/api/tenants/${tenantId}/workflows/targets${suffix}`;
+}
+
 export function routineCreatedToast(name: string): string {
   return `Routine created · ${name}`;
 }
