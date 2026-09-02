@@ -230,7 +230,6 @@ packages/routines-tools/src/tool.ts	4	return errorResult(call.id, err);
 packages/routines/src/cron.ts	1	return false;
 packages/routines/src/cron.ts	2	return false;
 packages/routines/src/routes.ts	1	log.error(
-packages/routines/src/routes.ts	1	return c.json(
 packages/routines/src/schedule-language.ts	1	return null;
 packages/sandbox-sidecar/src/provisioner.ts	1	log.error`failed to sweep obsolete unit ${externalRef} for allocation ${allocationId}: ${
 packages/sandbox-sidecar/src/provisioner.ts	1	return rejected(...classify(error, "destroy_unit_failed"));

@@ -163,6 +163,18 @@ export const routineMigrations: readonly RoutineMigration[] = [
       ALTER TABLE "routines"."routine_draft" DROP COLUMN "definition_id";
     `,
   },
+  // CL-7375: the draft/review state machine is deleted (Myra creates
+  // routines only through `routine_targets` → `routine_create`/
+  // `routine_update`, see docs/workflow-model.md). No code path reads or
+  // writes `routine_draft` any more; drop it. Every earlier migration
+  // above that mentions it is left untouched — it is the historical
+  // record of a table that used to exist.
+  {
+    name: "0007_drop_routine_draft",
+    sql: `
+      DROP TABLE IF EXISTS "routines"."routine_draft";
+    `,
+  },
 ];
 
 // Named distinctly from the platform's setup ledger and from any

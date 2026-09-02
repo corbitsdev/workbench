@@ -24,15 +24,11 @@ import {
 } from "@corbits/api-query";
 import {
   Routine,
-  RoutineDraft,
   RoutineRun,
   RoutinesResponse,
   RoutineRunsResponse,
   RoutineTargetsResponse,
   routineCreatedToast,
-  routineDraftApprovePath,
-  routineDraftDiscardPath,
-  routineDraftsPath,
   routinePath,
   routineRunNowPath,
   routineRunStartedToast,
@@ -41,19 +37,14 @@ import {
   routineTargetsPath,
 } from "@corbits/routines/client";
 import type {
-  CreateDraftInput,
   CreateRoutineInput,
   RoutineTarget,
   UpdateRoutineInput,
 } from "@corbits/routines/client";
 
 export {
-  DraftedStep,
-  suggestRoutineNameFromPrompt,
-  type CreateDraftInput,
   type CreateRoutineInput,
   type Routine,
-  type RoutineDraft,
   type RoutineRun,
   type RoutineTarget,
   type RoutineTargetKind,
@@ -172,52 +163,6 @@ export function listRoutineRuns(
   return request(routineRunsPath(tenantId, id), RoutineRunsResponse).then(
     (page) => page.items,
   );
-}
-
-export function createRoutineDraft(
-  tenantId: string,
-  input: CreateDraftInput,
-): Promise<RoutineDraft> {
-  return request(routineDraftsPath(tenantId), RoutineDraft, {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}
-
-export function listRoutineDrafts(
-  tenantId: string,
-): Promise<readonly RoutineDraft[]> {
-  return request(
-    routineDraftsPath(tenantId),
-    type({ items: RoutineDraft.array() }),
-  ).then((page) => page.items);
-}
-
-export function approveRoutineDraft(
-  tenantId: string,
-  id: string,
-  definitionAssetId?: string,
-): Promise<{ draft: RoutineDraft; routine: Routine }> {
-  return request(
-    routineDraftApprovePath(tenantId, id),
-    type({ draft: RoutineDraft, routine: Routine }),
-    {
-      method: "POST",
-      body: JSON.stringify(
-        definitionAssetId !== undefined ? { definitionAssetId } : {},
-      ),
-    },
-  );
-}
-
-export function discardRoutineDraft(
-  tenantId: string,
-  id: string,
-): Promise<RoutineDraft> {
-  return request(routineDraftDiscardPath(tenantId, id), RoutineDraft, {
-    method: "POST",
-    body: JSON.stringify({}),
-  });
 }
 
 /** One page of definitions the signed-in principal may target from a

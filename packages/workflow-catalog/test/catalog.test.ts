@@ -9,7 +9,6 @@ import {
   isAutomatableWorkflowName,
   isConversationalWorkflowName,
   validateTriggerFieldsAtCreate,
-  validateTriggerFieldsInput,
   workflowDisplayName,
   workflowCatalogEntry,
   WorkflowTriggerField,
@@ -323,54 +322,6 @@ describe("workflow catalog", () => {
     { key: "prompt", kind: "text", label: "Prompt", required: true },
   ];
 
-  describe("validateTriggerFieldsInput", () => {
-    const fields = AGENT_AND_PROMPT_FIELDS;
-
-    test("accepts input with every required field non-empty", () => {
-      expect(
-        validateTriggerFieldsInput(fields, {
-          agent: "wfd_1",
-          prompt: "Do it",
-        }),
-      ).toEqual({ ok: true });
-    });
-
-    test("rejects a missing required field, naming it", () => {
-      const result = validateTriggerFieldsInput(fields, { prompt: "Do it" });
-      expect(result.ok).toBe(false);
-      expect(!result.ok && result.message).toContain("Agent");
-    });
-
-    test("rejects a blank (whitespace-only) required field", () => {
-      const result = validateTriggerFieldsInput(fields, {
-        agent: "   ",
-        prompt: "Do it",
-      });
-      expect(result.ok).toBe(false);
-    });
-
-    test("rejects a non-string value for a required field", () => {
-      const result = validateTriggerFieldsInput(fields, {
-        agent: 12345,
-        prompt: "Do it",
-      });
-      expect(result.ok).toBe(false);
-    });
-
-    test("an optional field's absence never fails validation", () => {
-      const optionalFields = workflowCatalogEntry("last-30-days-research")
-        ?.triggerFields as readonly WorkflowTriggerField[];
-      expect(
-        validateTriggerFieldsInput(optionalFields, { topic: "AI agents" }),
-      ).toEqual({ ok: true });
-    });
-
-    test("no declared fields means any input passes", () => {
-      expect(validateTriggerFieldsInput([], { anything: "goes" })).toEqual({
-        ok: true,
-      });
-    });
-  });
 
   // CL-6358: inputs bind at USE, never at creation — a routine (or a
   // seed preset) must be creatable with a required trigger field left

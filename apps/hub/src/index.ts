@@ -185,7 +185,6 @@ import {
 } from "@corbits/webhook-triggers";
 import {
   deliveryWorkbenchRequiredForWorkflowName,
-  isAutomatableWorkflowName,
   isConversationalWorkflowName,
   validateTriggerFieldsAtCreate,
   webhookTriggerName,
@@ -201,18 +200,14 @@ import {
   WORKFLOW_SOURCE_ENTRY,
 } from "@corbits/workflows";
 import {
-  createDrizzleDraftStore,
   createDrizzleRoutineStore,
-  createMyraRoutineDrafting,
   createRoutineRoutes,
   createRoutineTargetRoutes,
   createWorkflowRoutineRoutes,
-  listLaunchableDefinitions,
   listRoutineTargets,
   resolveLaunchableDefinition,
   routine as routineTable,
   routineRun as routineRunTable,
-  type RoutineDraftInventoryWorkflow,
 } from "@corbits/routines";
 import {
   createSidecarProvisioner as createE2BSidecarProvisioner,
@@ -2754,8 +2749,8 @@ export async function createHub(config: HubConfig) {
     bus: mailboxBus,
   });
 
-  // Shared `FoldedRunsDeps` for every one-shot Myra prompt below (routine
-  // drafting, agent-definition drafting): a real one-shot inference call
+  // Shared `FoldedRunsDeps` for every one-shot Myra prompt below
+  // (agent-definition drafting): a real one-shot inference call
   // that launches a folded run, awaits its single reply, and tears the run
   // down immediately — never a resident that outlives the request, so no
   // idle-sleep lifecycle is needed for it.
@@ -2826,7 +2821,6 @@ export async function createHub(config: HubConfig) {
   // real status instead of a bare run id.
   const routineGrantStore = createGrantStore(db);
   const routineStore = createDrizzleRoutineStore(db);
-  const routineDraftStore = createDrizzleDraftStore(db);
   // The honest end-to-end delivery-destination rule: a workflow that
   // never posts to a workbench (e.g. recurring-task, always delivering
   // to its creator's Inbox — see @corbits/workflow-catalog's
@@ -2905,51 +2899,6 @@ export async function createHub(config: HubConfig) {
     return { ok: true };
   }
 
-  /**
-   * The routine-drafting inventory's workflow half: every launchable
-   * definition (CL-7351's `listLaunchableDefinitions` — deployed,
-   * frozen, `authored`) in the tenant whose catalog entry is
-   * `automatable`, carrying the exact `triggerFields`/`deliveryMode`
-   * Myra's drafted trigger input is checked against (`@corbits/routines`'
-   * `validateRoutineDraftReplyAgainstInventory`). Sources its candidate
-   * rows from the one canonical launchable-definitions query
-   * (CL-7359) rather than a second, independently-filtered
-   * `workflowDefinition` scan. Mirrors `listMyraConversationalAgents`
-   * below in shape, scoped to automatable rather than conversational
-   * definitions.
-   */
-  async function listAutomatableWorkflowsForDraftInventory(
-    tenantId: string,
-  ): Promise<readonly RoutineDraftInventoryWorkflow[]> {
-    const candidates = await listLaunchableDefinitions(db, tenantId);
-    const out: RoutineDraftInventoryWorkflow[] = [];
-    for (const candidate of candidates) {
-      if (!isAutomatableWorkflowName(candidate.name)) continue;
-      const entry = workflowCatalogEntry(candidate.name);
-      if (entry === undefined) continue;
-      const workflow = {
-        definitionAssetId: candidate.definitionAssetId,
-        assetName: candidate.name,
-        displayName: workflowDisplayName(candidate.name, candidate.description),
-        deliveryMode: entry.deliveryMode,
-        triggerFields: entry.triggerFields ?? [],
-      };
-      out.push(
-        candidate.description !== null
-          ? { ...workflow, description: candidate.description }
-          : workflow,
-      );
-    }
-    return out;
-  }
-
-  // A separate `CryptoProviderCache` from `foldedRunCryptoProviders`
-  // above and `agentDefinitionDraftingCryptoProviders` below: a
-  // routine-drafting one-shot run's instance id has nothing to do with
-  // either, so a separate cache keeps them from ever contending over the
-  // same key space.
-  const routineDraftingCryptoProviders = createCryptoProviderCache();
-
   const routineLauncher = createHubRoutineLauncher({
     db,
     sessionService,
@@ -3015,41 +2964,14 @@ export async function createHub(config: HubConfig) {
         )
         .then(() => undefined),
   };
-  // Routines routes own their `/routines` and `/routine-drafts` prefixes, so
-  // mount at the tenant root (same pattern as a package that ships absolute
+  // Routines routes own their `/routines` prefix, so mount at the
+  // tenant root (same pattern as a package that ships absolute
   // resource paths) rather than under a second `/routines` segment.
   app.route(
     TENANT_PREFIX,
     createRoutineRoutes({
       store: routineStore,
-      drafts: routineDraftStore,
       workbenchNotice: routineWorkbenchNotice,
-      // Myra-backed drafting (CL-5917): a real one-shot inference call,
-      // mirroring the agent-definition drafting wiring below — resolve
-      // Myra's definition, offer her the automatable-workflow and
-      // conversational-agent inventory, and never trust her reply beyond
-      // what `@corbits/routines`' own fail-closed validation proves.
-      drafting: createMyraRoutineDrafting({
-        resolveMyraDefinitionId: (tenantId) =>
-          resolveMyraDefinitionIdFromDb(db, tenantId),
-        runner: {
-          run: (runnerInput) =>
-            runOneShotFoldedPrompt(
-              {
-                foldedRuns: oneShotFoldedRunsDeps,
-                events: sidecarRouter.events,
-                cryptoProviders: routineDraftingCryptoProviders,
-                undeploy: (address, reason) =>
-                  sidecarRouter.sendAgentUndeploy(address, reason),
-              },
-              runnerInput,
-            ),
-        },
-        inventorySources: {
-          listAutomatableWorkflows: listAutomatableWorkflowsForDraftInventory,
-          listTaskableAgents: listMyraConversationalAgents,
-        },
-      }),
       launcher: routineLauncher,
       requireGrant: createRequireGrant({
         grantStore: routineGrantStore,
@@ -3292,9 +3214,10 @@ export async function createHub(config: HubConfig) {
     listModels: listMyraModels,
   };
 
-  // An agent-definition drafting one-shot run's instance id has nothing
-  // to do with a routine draft's, same rationale as
-  // `routineDraftingCryptoProviders`' own comment above.
+  // A separate `CryptoProviderCache` from `foldedRunCryptoProviders`
+  // above: an agent-definition drafting one-shot run's instance id has
+  // nothing to do with a folded run's, so a separate cache keeps them
+  // from ever contending over the same key space.
   const agentDefinitionDraftingCryptoProviders = createCryptoProviderCache();
 
   // The create-agent panel's "Describe" step (CL-6074): a real one-shot

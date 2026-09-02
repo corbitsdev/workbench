@@ -18,11 +18,6 @@ import { generateId } from "@intx/hub-common";
 import { authorize } from "@intx/authz";
 import type { ConditionRegistry, GrantStore } from "@intx/types/authz";
 import { reportError } from "@corbits/error-sink";
-import {
-  FoldedRunFailedError,
-  FoldedRunTimedOutError,
-  OneShotDefinitionNotFoundError,
-} from "@corbits/folded-run-one-shot";
 
 import { RoutineTrigger, type RoutineTriggerT } from "./trigger";
 import { routineScheduleSentence } from "./schedule-language";
@@ -41,11 +36,6 @@ import {
   isDeliveryWorkbenchRequired,
 } from "./routine-operations";
 import { makeErrorEnvelope } from "@workbench/hub-client";
-import {
-  MyraRoutineDraftingUnavailableError,
-  RoutineDraftReferenceOutOfInventoryError,
-  RoutineDraftReplyUnparseableError,
-} from "./myra-drafting";
 
 const log = getLogger(["routines", "routes"]);
 
@@ -192,34 +182,9 @@ export type CreateRoutineRoutesDeps = {
   ) => Promise<
     { readonly ok: true } | { readonly ok: false; readonly message: string }
   >;
-  /**
-   * Describe-to-agent drafting. When omitted, draft routes return 404.
-   */
-  drafts?: import("./drafts").RoutineDraftStore | undefined;
-  drafting?: import("./drafts").RoutineDraftingPort | undefined;
   /** See `WorkbenchNoticePort`'s own doc comment. */
   workbenchNotice?: WorkbenchNoticePort | undefined;
 };
-
-const DRAFT_FAILED_MESSAGE =
-  "Myra couldn't draft a routine from that. Try rephrasing, or build it from the catalog instead.";
-
-/** Every fail-closed error the Myra drafting path (`./myra-drafting.ts`)
- * can throw — Myra unresolvable, the one-shot run timing out or
- * failing, an unparseable reply, an out-of-inventory reference — reads
- * as the same honest "couldn't draft" 422 to the person who typed the
- * description. Anything else is a platform fault and is re-thrown for
- * the host's own error handling to surface. */
-function isDraftingFailure(err: unknown): boolean {
-  return (
-    err instanceof MyraRoutineDraftingUnavailableError ||
-    err instanceof OneShotDefinitionNotFoundError ||
-    err instanceof FoldedRunTimedOutError ||
-    err instanceof FoldedRunFailedError ||
-    err instanceof RoutineDraftReplyUnparseableError ||
-    err instanceof RoutineDraftReferenceOutOfInventoryError
-  );
-}
 
 const CreateRoutineBody = type({
   name: "string",
@@ -257,25 +222,6 @@ const UpdateRoutineBody = type({
 
 const RunNowBody = type({
   "input?": "Record<string, unknown>",
-});
-
-const CreateDraftBody = type({
-  prompt: "string",
-  deliveryWorkbenchId: "string",
-  scope: "'personal' | 'bench'",
-});
-
-/**
- * Optional body for approving a draft: when Myra's proposal didn't pin
- * a `definitionAssetId` (a valid, honest outcome — see
- * `RoutineDraftingPort`'s own doc comment), the review UI collects one
- * from the person instead and sends it here, rather than leaving
- * Approve permanently disabled with no recovery. Omitted (or an empty
- * body) uses the draft's own `definitionAssetId`, unchanged behavior
- * for a draft that already has one.
- */
-const ApproveDraftBody = type({
-  "definitionAssetId?": "string",
 });
 
 /**
@@ -583,19 +529,6 @@ export function createRoutineRoutes(
   deps: CreateRoutineRoutesDeps,
 ): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
-
-  // A person can't have two "describe it, Myra drafts it" calls racing
-  // at once — a real one-shot inference call with no other
-  // serialization (CL-5917 wires a live `runOneShotFoldedPrompt`, not a
-  // stub) — the same `inFlightPrincipals` guard shape other one-shot
-  // drafting surfaces in this codebase use: a plain-language 409
-  // rejection of a same-principal concurrent second request, released
-  // in a `finally` once the first
-  // settles. Single-principal-in-flight only; broader per-tenant rate
-  // limiting is tracked separately as CL-5285. This Set is in-memory and
-  // resets on process restart — it guards within a single running
-  // instance only, never cluster-wide across replicas.
-  const inFlightDraftingPrincipals = new Set<string>();
 
   app.post(
     "/routines",
@@ -1071,321 +1004,7 @@ export function createRoutineRoutes(
     },
   );
 
-  // --- Describe-to-agent drafting (path b) ---
-
-  app.post(
-    "/routine-drafts",
-    deps.requireGrant("workflow-run:*", "create"),
-    async (c) => {
-      if (deps.drafts === undefined) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "unavailable",
-            userMessage: "Routine drafting is not configured on this hub.",
-          }),
-          503,
-        );
-      }
-      const body = CreateDraftBody(await c.req.json().catch(() => undefined));
-      if (body instanceof type.errors) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "bad_request",
-            userMessage: `invalid draft body: ${body.summary}`,
-          }),
-          400,
-        );
-      }
-      const tenant = c.get("tenant");
-      const principal = c.get("principal");
-
-      if (deps.drafting !== undefined) {
-        if (inFlightDraftingPrincipals.has(principal.id)) {
-          return c.json(
-            makeErrorEnvelope({
-              code: "dispatch_in_progress",
-              userMessage: "Myra is already working on your last request.",
-            }),
-            409,
-          );
-        }
-        inFlightDraftingPrincipals.add(principal.id);
-      }
-
-      try {
-        const draft = await deps.drafts.createDraft({
-          tenantId: tenant.id,
-          prompt: body.prompt,
-          deliveryWorkbenchId: body.deliveryWorkbenchId,
-          scope: body.scope,
-          createdBy: principal.id,
-        });
-
-        if (deps.drafting !== undefined) {
-          let proposal: Awaited<ReturnType<typeof deps.drafting.propose>>;
-          try {
-            proposal = await deps.drafting.propose({
-              tenantId: tenant.id,
-              principalId: principal.id,
-              prompt: body.prompt,
-            });
-          } catch (err) {
-            log.error`routine drafting failed for tenant ${tenant.id}: ${
-              err instanceof Error ? err.message : String(err)
-            }`;
-            if (isDraftingFailure(err)) {
-              return c.json(
-                makeErrorEnvelope({
-                  code: "drafting_failed",
-                  userMessage: DRAFT_FAILED_MESSAGE,
-                }),
-                422,
-              );
-            }
-            throw err;
-          }
-          const reviewed = await deps.drafts.markReviewed(tenant.id, draft.id, {
-            proposedSteps: proposal.steps,
-            proposedTrigger: proposal.trigger ?? null,
-            proposedName: proposal.name ?? null,
-            definitionAssetId: proposal.definitionAssetId ?? null,
-            autonomy: proposal.autonomy ?? null,
-          });
-          return c.json(draftView(reviewed), 201);
-        }
-
-        return c.json(draftView(draft), 201);
-      } finally {
-        inFlightDraftingPrincipals.delete(principal.id);
-      }
-    },
-  );
-
-  app.get(
-    "/routine-drafts",
-    deps.requireGrant("workflow-run:*", "read"),
-    async (c) => {
-      if (deps.drafts === undefined) {
-        return c.json({ items: [] as const });
-      }
-      const tenant = c.get("tenant");
-      const items = await deps.drafts.listDrafts(tenant.id);
-      return c.json({ items: items.map(draftView) });
-    },
-  );
-
-  app.get(
-    "/routine-drafts/:id",
-    deps.requireGrant(idResource("workflow-run", "id"), "read"),
-    async (c) => {
-      if (deps.drafts === undefined) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "unavailable",
-            userMessage: "Routine drafting is not configured on this hub.",
-          }),
-          503,
-        );
-      }
-      const tenant = c.get("tenant");
-      const draft = await deps.drafts.getDraft(tenant.id, c.req.param("id"));
-      if (draft === undefined) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "not_found",
-            userMessage: "draft not found",
-          }),
-          404,
-        );
-      }
-      return c.json(draftView(draft));
-    },
-  );
-
-  app.post(
-    "/routine-drafts/:id/approve",
-    deps.requireGrant(idResource("workflow-run", "id"), "create"),
-    async (c) => {
-      if (deps.drafts === undefined) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "unavailable",
-            userMessage: "Routine drafting is not configured on this hub.",
-          }),
-          503,
-        );
-      }
-      const body = ApproveDraftBody(await c.req.json().catch(() => ({})));
-      if (body instanceof type.errors) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "bad_request",
-            userMessage: `invalid approve body: ${body.summary}`,
-          }),
-          400,
-        );
-      }
-      const tenant = c.get("tenant");
-      const principal = c.get("principal");
-      const draftId = c.req.param("id");
-      const draft = await deps.drafts.getDraft(tenant.id, draftId);
-      if (draft === undefined) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "not_found",
-            userMessage: "draft not found",
-          }),
-          404,
-        );
-      }
-      if (draft.status !== "reviewed") {
-        return c.json(
-          makeErrorEnvelope({
-            code: "bad_request",
-            userMessage: `draft is ${draft.status}; only reviewed drafts can be approved`,
-          }),
-          400,
-        );
-      }
-      // The review UI's own pick wins when sent; otherwise the draft's
-      // pinned target (Myra proposing steps with no workflow pinned is a
-      // valid, honest outcome — see `RoutineDraftingPort`'s doc comment)
-      // — never silently falling back to nothing pinned.
-      const definitionAssetId =
-        body.definitionAssetId !== undefined && body.definitionAssetId !== ""
-          ? body.definitionAssetId
-          : draft.definitionAssetId;
-      if (definitionAssetId === null || definitionAssetId === "") {
-        return c.json(
-          makeErrorEnvelope({
-            code: "bad_request",
-            userMessage:
-              "draft has no definitionAssetId; review must pin a workflow",
-          }),
-          400,
-        );
-      }
-      const rejection = await rejectUnlaunchableTarget(
-        deps,
-        tenant.id,
-        principal.id,
-        definitionAssetId,
-      );
-      if (rejection !== undefined) {
-        return c.json(
-          makeErrorEnvelope({
-            code: rejection.code,
-            userMessage: rejection.userMessage,
-          }),
-          rejection.status,
-        );
-      }
-      // Defense in depth: `POST /routines` never lets a `{kind:
-      // "webhook"}` trigger through without this same check
-      // (`webhookTriggerValid`'s own doc comment explains why the two
-      // must agree) — a drafted proposal is no more trusted than a
-      // request body a person typed by hand, so approve runs the exact
-      // same check, never a second, looser path.
-      if (
-        !(await webhookTriggerValid(
-          deps,
-          tenant.id,
-          draft.proposedTrigger,
-          definitionAssetId,
-        ))
-      ) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "not_found",
-            userMessage: "webhook trigger not found",
-          }),
-          404,
-        );
-      }
-      const name =
-        draft.proposedName !== null && draft.proposedName !== ""
-          ? draft.proposedName
-          : draft.prompt.slice(0, 80);
-      const trigger = draft.proposedTrigger ?? null;
-      const routine = await deps.store.createRoutine({
-        tenantId: tenant.id,
-        name,
-        definitionAssetId,
-        trigger,
-        scope: draft.scope,
-        input:
-          draft.autonomy !== null
-            ? { draftedSteps: draft.proposedSteps, autonomy: draft.autonomy }
-            : { draftedSteps: draft.proposedSteps },
-        deliveryWorkbenchId: draft.deliveryWorkbenchId,
-        createdBy: principal.id,
-      });
-      const approved = await deps.drafts.markApproved(
-        tenant.id,
-        draftId,
-        routine.id,
-      );
-      return c.json(
-        {
-          draft: draftView(approved),
-          routine: await resolvedRoutineView(deps, routine),
-        },
-        201,
-      );
-    },
-  );
-
-  app.post(
-    "/routine-drafts/:id/discard",
-    deps.requireGrant(idResource("workflow-run", "id"), "write"),
-    async (c) => {
-      if (deps.drafts === undefined) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "unavailable",
-            userMessage: "Routine drafting is not configured on this hub.",
-          }),
-          503,
-        );
-      }
-      const tenant = c.get("tenant");
-      try {
-        const draft = await deps.drafts.markDiscarded(
-          tenant.id,
-          c.req.param("id"),
-        );
-        return c.json(draftView(draft));
-      } catch (err) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "bad_request",
-            userMessage: err instanceof Error ? err.message : "discard failed",
-          }),
-          400,
-        );
-      }
-    },
-  );
-
   return app;
-}
-
-function draftView(row: import("./drafts").RoutineDraftRow) {
-  return {
-    id: row.id,
-    prompt: row.prompt,
-    status: row.status,
-    proposedSteps: row.proposedSteps,
-    proposedTrigger: row.proposedTrigger,
-    proposedName: row.proposedName,
-    definitionAssetId: row.definitionAssetId,
-    deliveryWorkbenchId: row.deliveryWorkbenchId,
-    scope: row.scope,
-    autonomy: row.autonomy,
-    approvedRoutineId: row.approvedRoutineId,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  };
 }
 
 /**

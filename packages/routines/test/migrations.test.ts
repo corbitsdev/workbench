@@ -82,7 +82,6 @@ describeIfDb("applyRoutineMigrations", () => {
       );
       expect(tables.map((row) => String(row["table_name"])).sort()).toEqual([
         "routine",
-        "routine_draft",
         "routine_run",
       ]);
 
@@ -279,7 +278,17 @@ describeIfDb("0006_routine_definition_asset_id backfill", () => {
           ` ('drf_2', 'tnt_1', 'stale', 'reviewed', 'wfd_deleted_long_ago', 'wb_1', 'bench', 'user_1')`,
       );
 
-      const report = await applyRoutineMigrations(scratchUrl);
+      // Apply only through 0006 here, not the full ledger: 0007 drops
+      // `routine_draft` outright (CL-7375), and this test's whole point
+      // is asserting 0006's historical backfill behavior against that
+      // table while it still exists.
+      const report = await applyPackageMigrations({
+        databaseUrl: scratchUrl,
+        schema: "routines",
+        ledgerTable: "routine_migrations",
+        migrations: routineMigrations.slice(0, backfillIndex + 1),
+        packageLabel: "@corbits/routines (through 0006)",
+      });
       expect(report.applied).toContain("0006_routine_definition_asset_id");
 
       const routines = await sql.unsafe(

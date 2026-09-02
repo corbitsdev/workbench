@@ -30,9 +30,13 @@ scheduled fire) goes through `@corbits/folded-runs`, the same launch core
   layer, including dead-letter bookkeeping.
 - `src/client.ts` — the browser-safe subpath: wire schemas and path
   builders only, no `drizzle-orm`/`postgres`/`@intx/hub-api` imports.
-- `src/drafts.ts` / `src/myra-drafting.ts` — routine-draft creation and
-  Myra-assisted drafting flow.
 - `src/migrations.ts` — this package's own `routine_migrations` ledger.
+
+Myra creates routines only through `routine_targets` →
+`routine_create`/`routine_update` (`@corbits/routines-tools`), the same
+tool-call surface a person's own create/retarget request goes through —
+never a separate draft/review state machine (deleted, CL-7375). See
+docs/workflow-model.md.
 
 ## Routine targets follow the latest deployed asset
 
