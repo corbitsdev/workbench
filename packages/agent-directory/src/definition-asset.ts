@@ -132,8 +132,6 @@ export function statusForAgentDefinitionDeployError(
       return 403;
     case "conflict":
       return 409;
-    case "wire_hash_mismatch":
-      return 409;
     case "invalid":
       return 400;
     case "unavailable":

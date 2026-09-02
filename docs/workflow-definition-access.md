@@ -30,7 +30,7 @@ and no update path.
 
 Spread: `packages/agent-directory` (7 files), `apps/hub/src/index.ts` (12 sites),
 `packages/chat/src/platform-adapter.ts` (7), plus `folded-runs`,
-`folded-run-one-shot`, `webhook-triggers`, `evals`, `workflow-freeze`,
+`folded-run-one-shot`, `webhook-triggers`, `evals`,
 `routine-launcher`, `skills-mount`.
 
 ## What a prototype migration surfaced
