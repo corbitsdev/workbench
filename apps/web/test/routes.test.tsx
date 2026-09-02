@@ -30,6 +30,7 @@ import type { SessionState } from "../src/session";
  * until CL-6417 — the stub was unlinked in CL-6817. */
 const DETAIL_ROUTE_PATHS = new Set([
   ROUTINE_DETAIL_PATH,
+  WORKFLOW_DETAIL_PATH,
   AGENT_DETAIL_PATH,
   SKILL_DETAIL_PATH,
 ]);
@@ -150,6 +151,7 @@ describe("route table", () => {
       "/inbox",
       "/routines/:routine",
       "/routines",
+      "/workflows/:workflow",
       "/files",
       "/library",
       "/agents/:slug",
