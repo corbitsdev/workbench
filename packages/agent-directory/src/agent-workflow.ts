@@ -19,7 +19,7 @@ import type { CredentialBinding } from "@intx/types";
 import { and, desc, eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { asset, workflowDefinition } from "@intx/db/schema";
-import { AssetServiceError, DEFAULT_ASSET_REF } from "@intx/hub-sessions";
+import { AssetServiceError } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
 import {
   withAvailableSkills,
@@ -28,7 +28,6 @@ import {
 import { type } from "arktype";
 
 import {
-  agentDefinitionSourceTree,
   writeAndDeployAgentDefinition,
   type AgentDefinitionDeployer,
 } from "./definition-asset";
