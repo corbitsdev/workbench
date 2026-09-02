@@ -683,6 +683,9 @@ function RoutineEditorPanel({
               tenantId={tenantId}
               value={targetAssetId}
               onChange={pickTarget}
+              {...(subject.preselectedAssetId !== undefined
+                ? { preselectedAssetId: subject.preselectedAssetId }
+                : {})}
             />
             {needsTargetHint && targetAssetId === null ? (
               <p className="text-xs text-[var(--ui-danger)]" role="alert">

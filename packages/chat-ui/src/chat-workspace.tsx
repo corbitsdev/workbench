@@ -694,7 +694,10 @@ function ChatWorkspaceInner({
    * CL-6099) are global-only pages now — reached from the shell rail, not
    * a per-workbench header button or composer command.
    */
-  readonly onCreateRoutineInSpace?: (workbenchId: string) => void;
+  readonly onCreateRoutineInSpace?: (
+    workbenchId: string,
+    preselectedAssetId?: string,
+  ) => void;
   /** Fired when the routed workbench 404s — a deleted workbench, or a stale
    * Recents entry that outlived it. The host owns Recents (this package
    * never touches localStorage), so it's told rather than reaching out. */
@@ -1150,6 +1153,15 @@ function ChatWorkspaceInner({
         : Promise.resolve([]),
     enabled: activeWorkbenchId !== null,
   });
+  // `/routine`'s and "New routine in this space"'s optional preselection
+  // (CL-7356): exactly one agent participant hands its definition asset id
+  // straight to the routine panel's picker, visibly and replaceably — zero
+  // or several participants leave the picker with nothing chosen, same as
+  // opening it from `/routines` (CL-7357).
+  const singleWorkbenchAgentDefinitionAssetId: string | undefined =
+    workbenchAgentsQuery.data?.length === 1
+      ? workbenchAgentsQuery.data[0]?.definitionAssetId
+      : undefined;
   const failedTurnRecovery = useMemo((): FailedTurnRecovery => {
     const definitionIdByAddress: Record<string, string> = {};
     for (const agent of workbenchAgentsQuery.data ?? []) {
@@ -1720,7 +1732,10 @@ function ChatWorkspaceInner({
                           onCreateRoutineInSpace !== undefined &&
                           activeWorkbenchId !== null
                         ) {
-                          onCreateRoutineInSpace(activeWorkbenchId);
+                          onCreateRoutineInSpace(
+                            activeWorkbenchId,
+                            singleWorkbenchAgentDefinitionAssetId,
+                          );
                           return;
                         }
                         toast(CHAT_STRINGS.runRoutineUnavailable);
@@ -1855,7 +1870,10 @@ export function ChatWorkspace({
     tenantId: string,
   ) => Promise<readonly BringInMember[]>;
   /** "New routine in this space" — see `ChatWorkspaceInner`'s prop note. */
-  readonly onCreateRoutineInSpace?: (workbenchId: string) => void;
+  readonly onCreateRoutineInSpace?: (
+    workbenchId: string,
+    preselectedAssetId?: string,
+  ) => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
   readonly onWorkbenchNotFound?: (workbenchId: string) => void;
   /** See `ChatWorkspaceInner`'s prop of the same name. */
