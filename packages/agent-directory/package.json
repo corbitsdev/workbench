@@ -14,12 +14,12 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/agent-workflow-authoring": "workspace:*",
     "@corbits/chat": "workspace:*",
     "@corbits/error-sink": "workspace:*",
     "@corbits/folded-run-one-shot": "workspace:*",
     "@corbits/skills": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",
-    "@corbits/workflow-freeze": "workspace:*",
     "@corbits/workflow-source": "workspace:*",
     "@intx/agent": "workspace:*",
     "@intx/db": "workspace:*",
