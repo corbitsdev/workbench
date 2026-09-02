@@ -13,6 +13,7 @@ export {
 } from "./authoring/run-client";
 export {
   pickLaunchableDefinition,
+  isFrozen,
   routineTargetRejection,
   RoutineTargetUnresolvableError,
   type LaunchableDefinitionCandidate,

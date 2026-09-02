@@ -9,6 +9,8 @@ function row(patch: Partial<DefinitionLifecycleRow>): DefinitionLifecycleRow {
     id: "wfd_1",
     wireHash: "hash_1",
     approvedWireHash: "hash_1",
+    grantSnapshot: { perStep: [], grantRequirements: [] },
+    wireProjection: { stepOrder: [], steps: {} },
     status: "deployed",
     createdAt: "2026-01-01T00:00:00.000Z",
     ...patch,

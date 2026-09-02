@@ -37,12 +37,16 @@ export type LaunchableDefinitionCandidate = {
   readonly createdAt: Date;
 };
 
-// This module's `isFrozen` and `../detail/definition-lifecycle.ts`'s
-// frozen check are NOT yet unified into one predicate — both
-// independently encode "frozen means non-null approvedWireHash/
-// grantSnapshot/wireProjection" but over row shapes that don't (yet)
-// match; a follow-up should widen one to subsume the other.
-function isFrozen(candidate: LaunchableDefinitionCandidate): boolean {
+/** A deploy freeze stamps `approvedWireHash`, `grantSnapshot`, and
+ * `wireProjection` onto a definition's current version atomically — this
+ * is the one predicate for "did that freeze land," shared by the
+ * follow-latest rule below and `../detail/definition-lifecycle.ts`'s
+ * lifecycle derivation. */
+export function isFrozen(candidate: {
+  readonly approvedWireHash: string | null;
+  readonly grantSnapshot: unknown;
+  readonly wireProjection: unknown;
+}): boolean {
   return (
     candidate.approvedWireHash !== null &&
     candidate.grantSnapshot !== null &&
@@ -73,9 +77,15 @@ export function pickLaunchableDefinition(
   if (deployed.length === 0) return { ok: false, reason: "not_deployed" };
   const frozen = deployed.filter(isFrozen);
   if (frozen.length === 0) return { ok: false, reason: "unfrozen" };
-  const newest = [...frozen].sort(
-    (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
-  )[0];
+  // Newest wins; a `createdAt` tie (redeploys minted in the same request,
+  // at timestamp granularity that doesn't separate them) breaks on `id`
+  // desc so the pick is a deterministic total order, never array-input
+  // order — the one tiebreak this rule uses, everywhere it's used.
+  const newest = [...frozen].sort((a, b) => {
+    const byCreatedAt = b.createdAt.getTime() - a.createdAt.getTime();
+    if (byCreatedAt !== 0) return byCreatedAt;
+    return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+  })[0];
   if (newest === undefined || newest.approvedWireHash === null) {
     return { ok: false, reason: "unfrozen" };
   }

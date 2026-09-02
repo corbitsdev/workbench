@@ -12,11 +12,9 @@
 // independently; this module is the seam that stops the next fix from
 // needing the same double patch for retarget validation specifically.
 // No import from `./routes` here on purpose: `./routes.ts` imports
-// `validateRetarget` from this module, so this module importing back from
-// `./routes.ts` would be a cycle. `deliveryWorkbenchRequired`'s
-// "omitted means required" default is duplicated from
-// `routes.ts`'s `isDeliveryWorkbenchRequired` (one line, unlikely to
-// drift; both are covered by the same tests via each route's PATCH).
+// `validateRetarget` (and, below, `isDeliveryWorkbenchRequired`) from
+// this module, so this module importing back from `./routes.ts` would be
+// a cycle.
 export type RetargetValidationDeps = {
   readonly deliveryWorkbenchRequired?: (
     tenantId: string,
@@ -36,6 +34,19 @@ export type RetargetValidationRejection = {
   readonly userMessage: string;
 };
 
+/** Every definition defaults to workbench-required — an omitted port
+ * must never change prior behavior. Shared by `./routes.ts`'s
+ * tenant-session create/PATCH and `./workflow-routine-routes.ts`'s
+ * run-authenticated mirror, alongside `validateRetarget` below. */
+export async function isDeliveryWorkbenchRequired(
+  deps: Pick<RetargetValidationDeps, "deliveryWorkbenchRequired">,
+  tenantId: string,
+  definitionAssetId: string,
+): Promise<boolean> {
+  if (deps.deliveryWorkbenchRequired === undefined) return true;
+  return deps.deliveryWorkbenchRequired(tenantId, definitionAssetId);
+}
+
 /**
  * Re-runs create's delivery-workbench-required and input-schema checks
  * against a routine being retargeted at `effectiveDefinitionAssetId`,
@@ -53,13 +64,11 @@ export async function validateRetarget(
     readonly input: Record<string, unknown>;
   },
 ): Promise<RetargetValidationRejection | undefined> {
-  const deliveryRequired =
-    deps.deliveryWorkbenchRequired === undefined
-      ? true
-      : await deps.deliveryWorkbenchRequired(
-          tenantId,
-          effectiveDefinitionAssetId,
-        );
+  const deliveryRequired = await isDeliveryWorkbenchRequired(
+    deps,
+    tenantId,
+    effectiveDefinitionAssetId,
+  );
   if (deliveryRequired && existing.deliveryWorkbenchId === null) {
     return {
       code: "bad_request",
