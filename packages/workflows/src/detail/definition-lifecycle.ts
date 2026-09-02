@@ -7,7 +7,7 @@
 // a new row rather than mutating one. What a person needs is a single
 // reading of the newest row for the asset, folded against the one
 // Workbench-owned signal native rows don't carry: whether a deploy was ever
-// attempted at all (`@corbits/workflow-deploy-source`'s per-anchor-run
+// attempted at all (`@corbits/workflows`'s `./deploy-source`'s per-anchor-run
 // record). Kept in its own module, with no DB import, so the four states
 // below are covered by a plain unit test rather than a route fixture.
 export type WorkflowLifecycle =

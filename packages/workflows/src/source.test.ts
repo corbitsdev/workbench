@@ -6,7 +6,7 @@ import {
   renderWorkflowSourceTree,
   RetiredWorkflowEnvelopeError,
   WORKFLOW_SOURCE_ENTRY,
-} from "./index";
+} from "./source";
 
 const WORKFLOW_JSON = JSON.stringify({ id: "wf_agent_research-buddy" });
 

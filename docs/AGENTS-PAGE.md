@@ -41,14 +41,14 @@ description) and definition (system prompt, model) and posts to
    fields (`buildAgentDefinitionWorkflow`) — the same shape
    `@corbits/assistant-workflow` and `@corbits/chat`'s workbench host produce,
    parametrized instead of fixed — and renders it as a source codebase
-   (`@corbits/workflow-source`'s `renderWorkflowSourceTree`), never a bare
+   (`@corbits/workflows`'s `./source`'s `renderWorkflowSourceTree`), never a bare
    `workflow.json` envelope. `workflow.json` is retired; nothing writes it.
 2. Creates a `workflow`-kind asset and writes that source tree into it
    in-process (`AssetService.populateAsset` — no git subprocess), which
    produces a commit.
 3. Deploys that commit through Interchange's native source pipeline
    (install -> sidecar probe -> gate -> freeze) via the same
-   `WorkflowDeployer` `@corbits/agent-workflow-authoring`'s
+   `WorkflowDeployer` `@corbits/workflows`'s `./authoring`'s
    agent-authored-workflow registry calls, which projects the first-class
    `workflow_definition` row over the asset (CL-7363).
 

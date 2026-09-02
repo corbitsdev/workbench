@@ -9,12 +9,12 @@ import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import { createDB, runMigrations, dropSchema, schema } from "@intx/db";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
-import { applyWorkflowDeploySourceMigrations } from "@corbits/workflow-deploy-source/migrations";
+import { applyWorkflowDeploySourceMigrations } from "../deploy-source/migrations";
 
-import { dbTargetFromUrl } from "../../../scripts/db-setup";
-import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
-import { dbGate } from "../../../scripts/e2e/db-gate";
-import { createWorkflowDetailRoute } from "../src/detail-route";
+import { dbTargetFromUrl } from "../../../../scripts/db-setup";
+import { e2eDatabaseUrl } from "../../../../scripts/e2e/harness";
+import { dbGate } from "../../../../scripts/e2e/db-gate";
+import { createWorkflowDetailRoute } from "./detail-route";
 
 const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = dbGate(databaseUrl, import.meta.path);

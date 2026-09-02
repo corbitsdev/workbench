@@ -6,7 +6,7 @@
 // alongside the vendored `createWorkflowDefinitionRoutes` at
 // `${TENANT_PREFIX}/workflows/definitions` (`apps/hub/src/index.ts`), not
 // inside it: this is a Workbench-owned read composed over native rows plus
-// `@corbits/workflow-deploy-source`'s deploy-attempt record, not something
+// `@corbits/workflows`'s `./deploy-source`'s deploy-attempt record, not something
 // `vendor/intx/hub-api` knows about.
 //
 // Every field is read-only and native: `workflow_definition` /
@@ -25,8 +25,8 @@ import {
 } from "@intx/db";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { idResource } from "@intx/hub-api";
-import type { WorkflowDeploySourceDb } from "@corbits/workflow-deploy-source";
-import { workflowDeploySource } from "@corbits/workflow-deploy-source";
+import type { WorkflowDeploySourceDb } from "../deploy-source/store";
+import { workflowDeploySource } from "../deploy-source/schema";
 
 import { deriveWorkflowLifecycle } from "./definition-lifecycle";
 import type { WorkflowDefinitionDetail } from "./definition-detail";

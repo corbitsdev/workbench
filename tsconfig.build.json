@@ -14,9 +14,6 @@
       "path": "./packages/agent-lifecycle/tsconfig.src.json"
     },
     {
-      "path": "./packages/agent-runtime/tsconfig.src.json"
-    },
-    {
       "path": "./packages/api-query/tsconfig.src.json"
     },
     {
@@ -147,12 +144,6 @@
     },
     {
       "path": "./packages/workflow-authoring-tools/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/workflow-deploy-source/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/workflow-source/tsconfig.src.json"
     },
     {
       "path": "./vendor/intx/agent/tsconfig.src.json"

@@ -5,7 +5,7 @@
 // convention. Content-aware: an identical tree is a reported skip, not
 // a duplicate commit, which is what makes re-running seed safe.
 //
-// The pushed tree is the source codebase `@corbits/workflow-source`
+// The pushed tree is the source codebase `@corbits/workflows`'s `./source`
 // renders — the one shape a workflow-kind asset accepts (see
 // `vendor/intx/hub-sessions/src/workflow-kind.ts`), shared with every
 // other authoring path in this repo.
@@ -13,7 +13,7 @@
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { renderWorkflowSourceTree } from "@corbits/workflow-source";
+import { renderWorkflowSourceTree } from "@corbits/workflows";
 import { CliError } from "./errors";
 import type { WorkflowPusher } from "./seed";
 

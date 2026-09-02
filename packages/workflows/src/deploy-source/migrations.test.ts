@@ -4,9 +4,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import postgres from "postgres";
 
-import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
-import { applyWorkflowDeploySourceMigrations } from "../src/migrations";
-import { dbGate } from "../../../scripts/e2e/db-gate";
+import { e2eDatabaseUrl } from "../../../../scripts/e2e/harness";
+import { applyWorkflowDeploySourceMigrations } from "./migrations";
+import { dbGate } from "../../../../scripts/e2e/db-gate";
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);

@@ -49,24 +49,10 @@ export {
   type ConnectGithubSetupPorts,
   type StartReviewingReposResult,
 } from "./connect-github-setup";
-export {
-  deriveWorkflowLifecycle,
-  type DefinitionLifecycleRow,
-  type WorkflowLifecycle,
-  type WorkflowLifecycleResult,
-} from "./definition-lifecycle";
-export {
-  WorkflowDefinitionDetail,
-  WorkflowDetailSource,
-  WorkflowDetailStep,
-  workflowDetailPath,
-  workflowNotLaunchableReason,
-} from "./definition-detail";
-export type {
-  WorkflowDefinitionDetail as WorkflowDefinitionDetailT,
-  WorkflowDetailSource as WorkflowDetailSourceT,
-  WorkflowDetailStep as WorkflowDetailStepT,
-} from "./definition-detail";
+// CL-7373: the workflow definition lifecycle/detail types moved to
+// @corbits/workflows (`.` for the detail route, `./client` for the
+// browser-safe wire schema and pure lifecycle derivation) alongside the
+// deploy-source record they read.
 
 /**
  * One named field a mail trigger reads by name — the create-time UI's only

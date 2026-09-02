@@ -8,7 +8,7 @@
 //   picks a target explicitly through `DefinitionTargetPicker` (see
 //   docs/workflow-model.md, "Behavior to delete, not retain").
 // - No non-vendor source may read or write a literal `workflow.json`
-//   path, except `@corbits/workflow-source`'s own
+//   path, except `@corbits/workflows`'s `./source`'s own
 //   `RetiredWorkflowEnvelopeError` message, which exists only to name
 //   the retired path in order to reject it.
 import { Glob } from "bun";
@@ -27,7 +27,7 @@ const AGENTS_ZERO_DEFINITION_ID_PATTERN =
   /\bagents\[0\](?:\?\.|\.)\s*definitionId\b/g;
 const WORKFLOW_JSON_LITERAL_PATTERN = /(["'`])workflow\.json\1/g;
 
-const WORKFLOW_JSON_ALLOWED_FILE = "packages/workflow-source/src/index.ts";
+const WORKFLOW_JSON_ALLOWED_FILE = "packages/workflows/src/source.ts";
 
 export async function scanFiles(
   root: string,

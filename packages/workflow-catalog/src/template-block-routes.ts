@@ -34,7 +34,7 @@ export type TemplateBlockRoutesDeps = {
     tenantId: string,
   ): Promise<BlockWorkflowBuildInput["inferencePreferences"]>;
   /** The source-form deploy itself: renders `workflowJson` into a
-   * `@corbits/workflow-source` tree on a `workflow`-kind asset and
+   * `@corbits/workflows`'s `./source` tree on a `workflow`-kind asset and
    * projects it onto a `workflow_definition` row — the exact
    * materialization `createAgentDefinitionCore` runs for a participant
    * agent, minus its agent-only prompt/skills machinery. `created` is

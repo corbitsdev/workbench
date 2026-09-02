@@ -48,7 +48,7 @@ import { WORKFLOW_CATALOG } from "@corbits/workflow-catalog";
 import { capabilitiesForDeployment } from "@corbits/inference-catalog/offering-capabilities";
 import { quirksForDeployment } from "@corbits/inference-catalog/ollama-context-defaults";
 import { type PublishCorbitsToolsRegistryArgs } from "@corbits/tool-registry-publish";
-import { WORKFLOW_SOURCE_ENTRY } from "@corbits/workflow-source";
+import { WORKFLOW_SOURCE_ENTRY } from "@corbits/workflows";
 import { CliError, SidecarUnavailableError } from "./errors";
 import { DEFAULT_SKILLS } from "./default-skills";
 import { ensureDefaultRoutines } from "./default-routines";
@@ -357,7 +357,7 @@ export const SEED_GRANTS: readonly { resource: string; action: string }[] = [
   // CL-6465: the eval-run read routes (`GET .../eval-runs/runs`,
   // `GET .../eval-runs/runs/:runId`) gate on this resource.
   { resource: "eval-run:*", action: "read" },
-  // Agent-authored workflows (`@corbits/agent-workflow-authoring`'s
+  // Agent-authored workflows (`@corbits/workflows`'s `./authoring`
   // `author`/`republish` routes): a seeded principal was never granted
   // "create"/"write" on "asset:*" before, because no workflow-run write
   // surface checked it — every prior workflow-run write route (skills,

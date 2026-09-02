@@ -42,6 +42,7 @@
     "@corbits/text-diff": "workspace:*",
     "@corbits/url-path": "workspace:*",
     "@corbits/workflow-catalog": "workspace:*",
+    "@corbits/workflows": "workspace:*",
     "@corbits/icons": "workspace:*",
     "@intx/types": "workspace:*",
     "@radix-ui/react-dialog": "^1.1.15",

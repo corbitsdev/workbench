@@ -391,7 +391,7 @@ export type CreateAgentDefinitionCoreDeps = {
   /** Deploys the definition's commit through the native source pipeline
    * (install -> sidecar probe -> gate -> freeze) at create; the
    * composition root injects the SAME `WorkflowDeployer`
-   * `@corbits/agent-workflow-authoring`'s registry calls, wrapping
+   * `@corbits/workflows`'s `./authoring`'s registry calls, wrapping
    * `sessionService.deployWorkflowFromSource`. */
   readonly deployer: AgentDefinitionDeployer;
   readonly skillIndex: {

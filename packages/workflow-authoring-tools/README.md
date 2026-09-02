@@ -1,6 +1,6 @@
 # @corbits/workflow-authoring-tools
 
-The `@intx/agent` tool bundle over `@corbits/agent-workflow-authoring`'s
+The `@intx/agent` tool bundle over `@corbits/workflows`'s `./authoring`'s
 workflow-run-authenticated routes (CL-7360): an agent writes an ordinary
 workflow code package into a `kind: "workflow"` hub asset, republishes it,
 and reads it back. See [docs/workflow-source-authoring.md](../../docs/workflow-source-authoring.md)

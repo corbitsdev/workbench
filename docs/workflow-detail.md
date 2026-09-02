@@ -10,9 +10,9 @@ useful version — read-only, no editing surface here.
 
 - **Lifecycle**: `source-only`, `pending-approval`, `deployed`,
   `superseded`, or `build-failed` — derived by the pure
-  `deriveWorkflowLifecycle` (`packages/workflow-catalog/src/
-definition-lifecycle.ts`) from the asset's newest `workflow_definition`
-  row plus whether `@corbits/workflow-deploy-source` ever recorded a
+  `deriveWorkflowLifecycle` (`packages/workflows/src/
+  definition-lifecycle.ts`) from the asset's newest `workflow_definition`
+  row plus whether `@corbits/workflows`'s `./deploy-source` ever recorded a
   deploy attempt for it. No new Postgres column: everything it reads is
   native or already Workbench-owned.
 - **Steps**: read from the frozen `wire_projection` (`@intx/db`'s
@@ -30,7 +30,7 @@ definition-lifecycle.ts`) from the asset's newest `workflow_definition`
   (`workflow_definition.credential_bindings[].handle`); no value is ever
   read or returned.
 - **Source**: the deploying commit sha, entry module, and origin kind, from
-  `@corbits/workflow-deploy-source`'s per-asset deploy record — `null` when
+  `@corbits/workflows`'s `./deploy-source`'s per-asset deploy record — `null` when
   no deploy was ever attempted.
 
 ## Authorization

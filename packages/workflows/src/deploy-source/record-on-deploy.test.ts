@@ -23,11 +23,11 @@ afterEach(() => {
   mock.restore();
 });
 
-const { withDeploySourceRecording } = await import("../src/record-on-deploy");
+const { withDeploySourceRecording } = await import("./record-on-deploy");
 import type {
   WorkflowDeploySourceRecord,
   WorkflowDeploySourceStore,
-} from "../src/store";
+} from "./store";
 
 function fakeDeployer(): SessionService & AdoptingWorkflowDeployer {
   const result: DeployWorkflowDefinitionResult = {

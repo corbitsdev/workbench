@@ -1,7 +1,7 @@
 {
   "name": "@corbits/workflow-authoring-tools",
   "private": true,
-  "description": "Myra's workflow-authoring tool bundle (workflow_author, workflow_republish, workflow_source_read, workflow_deploy_preview, workflow_deploy): an @intx/agent tool bundle calling @corbits/agent-workflow-authoring's workflow-run-authenticated routes so an agent can write a workflow code package into a kind:\"workflow\" hub asset, read it back, preview a deploy's grant surface, and deploy it through Interchange's native source pipeline behind a human approval",
+  "description": "Myra's workflow-authoring tool bundle (workflow_author, workflow_republish, workflow_source_read, workflow_deploy_preview, workflow_deploy): an @intx/agent tool bundle calling @corbits/workflows's `./authoring`'s workflow-run-authenticated routes so an agent can write a workflow code package into a kind:\"workflow\" hub asset, read it back, preview a deploy's grant surface, and deploy it through Interchange's native source pipeline behind a human approval",
   "version": "0.0.3",
   "license": "LGPL-2.1-or-later",
   "type": "module",

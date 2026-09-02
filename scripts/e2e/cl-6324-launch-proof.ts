@@ -37,7 +37,7 @@ import {
   seedTenant,
   type ApiCall,
 } from "../../packages/hub-client/src/index.ts";
-import { WORKFLOW_SOURCE_ENTRY } from "../../packages/workflow-source/src/index.ts";
+import { WORKFLOW_SOURCE_ENTRY } from "../../packages/workflows/src/source.ts";
 import {
   agentRuntimeTurnRunId,
   buildAgentRuntimeWorkflow,

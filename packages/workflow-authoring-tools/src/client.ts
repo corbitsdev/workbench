@@ -1,5 +1,5 @@
 // A minimal client for the workflow-run-authenticated authoring surface
-// (`@corbits/agent-workflow-authoring`'s `createWorkflowAuthorRoutes`,
+// (`@corbits/workflows`'s `./authoring`'s `createWorkflowAuthorRoutes`,
 // mounted in `apps/hub` at `/api/workflow-workflow-authoring`). Every
 // call carries the run's own sidecar bearer token and run address —
 // the same two headers `@corbits/capability-tools` sends — so the hub

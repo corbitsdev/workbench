@@ -19,7 +19,7 @@ changes.
 `workflow.json` is retired. It is not an authoring format, not a
 compatibility format, and no path may read or write it. The push validator
 (`vendor/intx/hub-sessions/src/workflow-kind.ts`) refuses it;
-`@corbits/workflow-source`'s `RetiredWorkflowEnvelopeError` is the only
+`@corbits/workflows`'s `./source`'s `RetiredWorkflowEnvelopeError` is the only
 remaining mention, and it exists to reject.
 
 ## Definition identity and the follow-latest rule
@@ -51,14 +51,14 @@ storage.
 
 | Operation                         | Canonical operation                                                                                                                                   | Authorized as                                                                                          | Human approval                                                                                                   |
 | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| Store source (create / republish) | `@corbits/agent-workflow-authoring` registry → `AssetService.createAsset` / `populateAsset` (hub-signed commit)                                       | Initiating tenant + principal; `@intx/authz` `authorize` on `asset:*`/`create` or `asset:<id>`/`write` | None (writing source is not a side effect)                                                                       |
+| Store source (create / republish) | `@corbits/workflows`'s `./authoring` registry → `AssetService.createAsset` / `populateAsset` (hub-signed commit)                                       | Initiating tenant + principal; `@intx/authz` `authorize` on `asset:*`/`create` or `asset:<id>`/`write` | None (writing source is not a side effect)                                                                       |
 | Deploy source                     | `POST /api/tenants/:tenantId/workflows/deployments` → vendored `SessionService.deployWorkflowFromSource`                                              | Tenant session or run bearer; `workflow:*`/`create`                                                    | Agent-initiated deploys go through an `approval: "ask"` tool call carrying the probed capability surface (below) |
 | Create / update a routine         | `createRoutineRoutes` `POST /routines`, `PATCH /routines/:id`; the run-authenticated mirror `createWorkflowRoutineRoutes` delegates to the same store | Tenant + principal; target validated against the resolution rule above before persisting               | None; a routine only references a definition asset — nothing executes at create/update time                      |
 | Launch                            | `launchAndCorrelate` (`packages/routines/src/routes.ts`) → hub `RoutineLauncher`                                                                      | Routine's tenant; grants materialized by the native launch path                                        | Runtime tool calls with `approval: "ask"` park on the native `approval` resource                                 |
 | Approve                           | Native `POST /api/tenants/:tenantId/approvals/:id/approve`                                                                                            | A principal holding `approval:*`/`resolve` — a human; no agent holds it                                | This is the approval                                                                                             |
 
 Credentials and resolved provider secrets never enter source trees, deploy
-requests recorded by `@corbits/workflow-deploy-source`, or routine rows.
+requests recorded by `@corbits/workflows`'s `./deploy-source`, or routine rows.
 Inference sources are re-resolved from the tenant catalog at deploy and
 redeploy (`resolveDefinitionSources`).
 
@@ -110,7 +110,7 @@ routine-panel.tsx` picks a target only through `DefinitionTargetPicker`
 - `packages/workflow-host-actions` — already gone (no tracked source, no
   importers) by the time this landed.
 - Any code path that reads or writes the retired `workflow.json` path,
-  except `@corbits/workflow-source`'s own `RetiredWorkflowEnvelopeError`;
+  except `@corbits/workflows`'s `./source`'s own `RetiredWorkflowEnvelopeError`;
   `check:routine-target-inference` guards this too.
 
 `@corbits/workflow-freeze` itself is deleted: `packages/agent-directory`

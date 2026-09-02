@@ -8,7 +8,7 @@
 import { expect, test } from "bun:test";
 import { workflowKindHandler } from "@intx/hub-sessions";
 
-import { renderWorkflowSourceTree } from "./index";
+import { renderWorkflowSourceTree } from "./source";
 
 const WORKFLOW_JSON = JSON.stringify({ id: "wf_agent_research-buddy" });
 
