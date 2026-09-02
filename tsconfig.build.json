@@ -113,9 +113,6 @@
       "path": "./packages/reddit-tools/tsconfig.src.json"
     },
     {
-      "path": "./packages/routines-tools/tsconfig.src.json"
-    },
-    {
       "path": "./packages/sandbox-sidecar/tsconfig.src.json"
     },
     {
