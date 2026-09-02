@@ -73,7 +73,7 @@ runtime `approval` resource that an `approval: "ask"` tool call parks on.
 Workbench composes what exists, with no vendored delta and no approval
 table:
 
-1. Myra calls `workflow_deploy_preview`, a STATIC, read-only render of the
+1. Myra calls `wf_deploy_preview`, a STATIC, read-only render of the
    already-committed source at `commitSha` — package name, file list, and
    any `toolPackagePins` a plain `export default {...}` entry declares.
    Never installs, probes, gates, or freezes anything, so it truly cannot

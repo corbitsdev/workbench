@@ -30,7 +30,7 @@ function toolPackagePinsField(
 /**
  * CL-7362: `workflow_deploy` (`@corbits/workflow-authoring-tools`) parks an
  * approval whose arguments carry the packageName/toolPackagePins a prior
- * `workflow_deploy_preview` call (a static read of the committed source)
+ * `wf_deploy_preview` call (a static read of the committed source)
  * reported, passed through. This renders that directly rather than
  * falling back to the tool's generic description, so the approval card
  * names the real package and tools instead of a bare asset id. It does
