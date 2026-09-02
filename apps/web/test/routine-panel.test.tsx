@@ -1,13 +1,15 @@
 // The routine panel (CL-6125, reworked CL-6139, trimmed to editor-only by
-// CL-6362): create/edit one routine, inline in the canvas column — the
-// back chevron closes the canvas, never a route hop. Browsing/running
-// existing routines lives on the global `/routines` page now. Every write
-// autosaves and is serialized through one queue (`saveState` shows
-// "Saving…"/"Saved"/an honest error). A routine created from the panel
-// always targets the conversation it was opened beside — that workbench's
-// own host agent and its own id as the delivery destination — or, with no
-// workbench in scope, this workbench's existing Myra workbench; never a
-// newly minted one.
+// CL-6362; target inference replaced by an explicit picker in CL-7355):
+// create/edit one routine, inline in the canvas column — the back chevron
+// closes the canvas, never a route hop. Browsing/running existing routines
+// lives on the global `/routines` page now. Every write autosaves and is
+// serialized through one queue (`saveState` shows "Saving…"/"Saved"/an
+// honest error). A routine's delivery destination is the conversation the
+// panel was opened beside — its own id, or, with no workbench in scope,
+// this workbench's existing Myra workbench; never a newly minted one. What
+// the routine *runs* is a separate, explicit pick from
+// `GET /api/tenants/:tenantId/workflows/targets` — never inferred from the
+// conversation's own agent.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
@@ -44,6 +46,16 @@ function jsonResponse(body: unknown): Response {
   });
 }
 
+type TargetFixture = {
+  definitionAssetId: string;
+  definitionId: string;
+  assetName: string;
+  name: string;
+  description: string | null;
+  kind: "agent" | "workflow";
+  wireHash: string;
+};
+
 let routines: Record<string, unknown>[] = [];
 let createdRoutine: Record<string, unknown> | null = null;
 let updatedPatches: Record<string, unknown>[] = [];
@@ -54,24 +66,27 @@ let slackConfigured = false;
 let granolaConnected = false;
 let capabilitiesProbeFails = false;
 let networkDelayMs = 0;
-let workbenchAgentsByWorkbench: Record<
-  string,
+let targets: TargetFixture[] = [
   {
-    address: string;
-    handle: string;
-    definitionId: string;
-    definitionAssetId: string;
-  }[]
-> = {
-  ch_1: [
-    {
-      address: "myra_1@wf_1.tnt_1",
-      handle: "myra",
-      definitionId: "wfd_1",
-      definitionAssetId: "wfd_1",
-    },
-  ],
-};
+    definitionAssetId: "asset_myra",
+    definitionId: "wfd_1",
+    assetName: "myra",
+    name: "Myra",
+    description: "This workbench's own assistant.",
+    kind: "agent",
+    wireHash: "hash_1",
+  },
+  {
+    definitionAssetId: "asset_digest",
+    definitionId: "wfd_2",
+    assetName: "digest-workflow",
+    name: "Morning digest workflow",
+    description: "Summarizes overnight activity.",
+    kind: "workflow",
+    wireHash: "hash_2",
+  },
+];
+let targetsRequestFails = false;
 let chatWorkbenches: Record<string, unknown>[] = [];
 let runsByRoutineId: Record<string, Record<string, unknown>[]> = {};
 let topLevelRuns: Record<string, unknown>[] = [];
@@ -83,7 +98,7 @@ function routineRecord(
   return {
     id: "rtn_1",
     name: "Morning digest",
-    definitionAssetId: "wfd_1",
+    definitionAssetId: "asset_myra",
     definitionId: "wfd_1",
     trigger: null,
     scope: "personal",
@@ -138,17 +153,14 @@ async function routeFetch(
   if (url.includes("/credentials/resolve/")) {
     return new Response(null, { status: 404 });
   }
-  if (url.includes("/workflows/definitions")) {
-    return jsonResponse({
-      data: [{ id: "wfd_myra", name: "assistant", status: "deployed" }],
-      nextCursor: null,
-    });
-  }
-  const agentsMatch = url.match(/\/chat\/workbenches\/([^/]+)\/agents$/);
-  if (agentsMatch) {
-    return jsonResponse({
-      items: workbenchAgentsByWorkbench[agentsMatch[1] as string] ?? [],
-    });
+  if (url.includes("/workflows/targets")) {
+    if (targetsRequestFails) {
+      return new Response(
+        JSON.stringify({ error: { userMessage: "Not authorized." } }),
+        { status: 403, headers: { "content-type": "application/json" } },
+      );
+    }
+    return jsonResponse({ items: targets, nextCursor: null });
   }
   if (
     url.includes("/chat/workbenches") &&
@@ -177,17 +189,6 @@ async function routeFetch(
       updatedAt: "2026-01-01T00:00:00.000Z",
     };
     chatWorkbenches = [...chatWorkbenches, workbench];
-    workbenchAgentsByWorkbench = {
-      ...workbenchAgentsByWorkbench,
-      ch_myra_new: [
-        {
-          address: "myra_2@wf_2.tnt_1",
-          handle: "myra",
-          definitionId: "wfd_myra",
-          definitionAssetId: "wfd_myra",
-        },
-      ],
-    };
     return jsonResponse(workbench);
   }
   if (url.includes("/webhook-triggers") && method === "POST") {
@@ -258,7 +259,6 @@ async function routeFetch(
       id: `rtn_${createRoutineCalls.length}`,
       name: body["name"],
       definitionAssetId: body["definitionAssetId"],
-      definitionId: body["definitionAssetId"],
       deliveryWorkbenchId: body["deliveryWorkbenchId"] ?? null,
       trigger: body["trigger"] ?? null,
       input: body["input"] ?? {},
@@ -294,20 +294,31 @@ describe("RoutinePanel", () => {
     granolaConnected = false;
     capabilitiesProbeFails = false;
     networkDelayMs = 0;
+    targetsRequestFails = false;
+    targets = [
+      {
+        definitionAssetId: "asset_myra",
+        definitionId: "wfd_1",
+        assetName: "myra",
+        name: "Myra",
+        description: "This workbench's own assistant.",
+        kind: "agent",
+        wireHash: "hash_1",
+      },
+      {
+        definitionAssetId: "asset_digest",
+        definitionId: "wfd_2",
+        assetName: "digest-workflow",
+        name: "Morning digest workflow",
+        description: "Summarizes overnight activity.",
+        kind: "workflow",
+        wireHash: "hash_2",
+      },
+    ];
     chatWorkbenches = [];
     runsByRoutineId = {};
     topLevelRuns = [];
     runTraces = {};
-    workbenchAgentsByWorkbench = {
-      ch_1: [
-        {
-          address: "myra_1@wf_1.tnt_1",
-          handle: "myra",
-          definitionId: "wfd_1",
-          definitionAssetId: "wfd_1",
-        },
-      ],
-    };
     toastMock.mockClear();
   });
 
@@ -393,6 +404,22 @@ describe("RoutinePanel", () => {
     });
   }
 
+  function selectTarget(definitionAssetId: string) {
+    const select = container.querySelector(
+      "#routine-panel-target",
+    ) as HTMLSelectElement;
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLSelectElement.prototype,
+      "value",
+    )?.set;
+    if (setter === undefined)
+      throw new Error("native value setter unavailable");
+    act(() => {
+      setter.call(select, definitionAssetId);
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  }
+
   describe("shared canvas-pane chrome (CL-6200)", () => {
     test("the editor view renders through the shared CanvasPaneHeader, not a hand-rolled one", async () => {
       await renderPanel({ routineId: null, workbenchId: "ch_1" });
@@ -419,20 +446,85 @@ describe("RoutinePanel", () => {
       expect(closed).toBe(true);
     });
 
-    test("creating a routine targets the panel's own workbench: its host agent, and delivers back into it", async () => {
+    // CL-7355: no target is ever inferred from the conversation's own
+    // agent — typing a name and blurring with no target picked must not
+    // create anything.
+    test("no target is inferred from chat participants: naming a routine with nothing picked never creates", async () => {
       await renderPanel({ routineId: null, workbenchId: "ch_1" });
 
       const name = fieldByLabel("Name this routine") as HTMLInputElement;
       fillAndBlur(name, "Morning digest");
       await settle();
 
+      expect(createRoutineCalls).toHaveLength(0);
+    });
+
+    test("picking a target, then naming the routine, creates with the picked definitionAssetId", async () => {
+      await renderPanel({ routineId: null, workbenchId: "ch_1" });
+      await settle();
+
+      selectTarget("asset_digest");
+      await settle();
+
+      const name = fieldByLabel("Name this routine") as HTMLInputElement;
+      fillAndBlur(name, "Morning digest");
+      await settle();
+
       expect(createRoutineCalls).toHaveLength(1);
-      expect(createRoutineCalls[0]?.["definitionAssetId"]).toBe("wfd_1");
+      expect(createRoutineCalls[0]?.["definitionAssetId"]).toBe(
+        "asset_digest",
+      );
       expect(createRoutineCalls[0]?.["deliveryWorkbenchId"]).toBe("ch_1");
       expect(toastMock).toHaveBeenCalled();
     });
 
-    test("no workbench in scope: falls back to the workbench's existing Myra workbench, never minting a new one", async () => {
+    test("groups targets by kind (Agents / Workflows) and lists both", async () => {
+      await renderPanel({ routineId: null, workbenchId: "ch_1" });
+      await settle();
+
+      const select = container.querySelector(
+        "#routine-panel-target",
+      ) as HTMLSelectElement;
+      const groupLabels = [...select.querySelectorAll("optgroup")].map(
+        (group) => group.getAttribute("label"),
+      );
+      expect(groupLabels).toEqual(["Agents", "Workflows"]);
+      const optionLabels = [...select.querySelectorAll("option")].map(
+        (option) => option.textContent,
+      );
+      expect(optionLabels).toContain("Myra");
+      expect(optionLabels).toContain("Morning digest workflow");
+    });
+
+    test("no target is preselected — the picker opens with nothing chosen", async () => {
+      await renderPanel({ routineId: null, workbenchId: "ch_1" });
+      await settle();
+      const select = container.querySelector(
+        "#routine-panel-target",
+      ) as HTMLSelectElement;
+      expect(select.value).toBe("");
+    });
+
+    test("empty target list shows the empty state with a link to Agents settings, not a picker", async () => {
+      targets = [];
+      await renderPanel({ routineId: null, workbenchId: "ch_1" });
+      await settle();
+      expect(container.querySelector("#routine-panel-target")).toBeNull();
+      expect(container.textContent).toContain(
+        "No deployable workflows yet — author or install one",
+      );
+      expect(buttonWithText("Go to Agents")).toBeDefined();
+    });
+
+    test("a failed targets fetch shows an honest inline error, not a silent empty picker", async () => {
+      targetsRequestFails = true;
+      await renderPanel({ routineId: null, workbenchId: "ch_1" });
+      await settle();
+      expect(container.querySelector("#routine-panel-target")).toBeNull();
+      expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    });
+
+    test("no workbench in scope: falls back to the workbench's existing Myra workbench for delivery, never minting a new one", async () => {
       chatWorkbenches = [
         {
           id: "ch_myra",
@@ -444,18 +536,11 @@ describe("RoutinePanel", () => {
           updatedAt: "2026-01-01T00:00:00.000Z",
         },
       ];
-      workbenchAgentsByWorkbench = {
-        ...workbenchAgentsByWorkbench,
-        ch_myra: [
-          {
-            address: "myra_9@wf_9.tnt_1",
-            handle: "myra",
-            definitionId: "wfd_myra",
-            definitionAssetId: "wfd_myra",
-          },
-        ],
-      };
       await renderPanel({ routineId: null });
+      await settle();
+
+      selectTarget("asset_myra");
+      await settle();
 
       const name = fieldByLabel("Name this routine") as HTMLInputElement;
       fillAndBlur(name, "Nightly summary");
@@ -463,12 +548,15 @@ describe("RoutinePanel", () => {
 
       expect(createRoutineCalls).toHaveLength(1);
       expect(createRoutineCalls[0]?.["deliveryWorkbenchId"]).toBe("ch_myra");
-      expect(createRoutineCalls[0]?.["definitionAssetId"]).toBe("wfd_myra");
+      expect(createRoutineCalls[0]?.["definitionAssetId"]).toBe("asset_myra");
       expect(createWorkbenchCalls).toHaveLength(0);
     });
 
     test("rapid Name and Instruction blur in the same tick serialize into one create, then one update — never two creates", async () => {
       await renderPanel({ routineId: null, workbenchId: "ch_1" });
+      await settle();
+      selectTarget("asset_myra");
+      await settle();
 
       const name = fieldByLabel("Name this routine") as HTMLInputElement;
       const instruction = fieldByLabel(
@@ -504,8 +592,11 @@ describe("RoutinePanel", () => {
     });
 
     test("shows Saving… while a write is in flight, then Saved", async () => {
-      networkDelayMs = 30;
       await renderPanel({ routineId: null, workbenchId: "ch_1" });
+      await settle();
+      selectTarget("asset_myra");
+      await settle();
+      networkDelayMs = 30;
       const name = fieldByLabel("Name this routine") as HTMLInputElement;
       const setter = Object.getOwnPropertyDescriptor(
         window.HTMLInputElement.prototype,
@@ -525,21 +616,6 @@ describe("RoutinePanel", () => {
       expect(container.textContent).toContain("Saved");
     });
 
-    test("an honest inline error when the write fails", async () => {
-      await renderPanel({ routineId: null });
-      // No workbenchId and no Myra workbench exists, and no assistant
-      // definition is deployed for this fixture tenant either — the
-      // fallback fails honestly rather than silently minting anything.
-      const originalDefs = workbenchAgentsByWorkbench;
-      workbenchAgentsByWorkbench = { ...originalDefs, ch_myra_new: [] };
-
-      const name = fieldByLabel("Name this routine") as HTMLInputElement;
-      fillAndBlur(name, "Morning digest");
-      await settle();
-
-      expect(container.querySelector('[role="alert"]')).not.toBeNull();
-    });
-
     test("Active toggle is optimistic — flips immediately, before the PATCH resolves", async () => {
       createdRoutine = routineRecord({ enabled: false });
       routines = [createdRoutine];
@@ -553,6 +629,16 @@ describe("RoutinePanel", () => {
       expect(toggle.getAttribute("aria-checked")).toBe("true");
       await settle();
       expect(updatedPatches).toContainEqual({ enabled: true });
+    });
+
+    test("existing-routine mode shows the current target's name, read-only", async () => {
+      createdRoutine = routineRecord({ definitionAssetId: "asset_digest" });
+      routines = [createdRoutine];
+      await renderPanel({ routineId: "rtn_1" });
+      await settle();
+
+      expect(container.querySelector("#routine-panel-target")).toBeNull();
+      expect(container.textContent).toContain("Morning digest workflow");
     });
 
     test("Test run is disabled until the routine is saved, then fires the run-once call", async () => {
@@ -645,6 +731,9 @@ describe("RoutinePanel", () => {
 
     test("picking a schedule preset commits the trigger in one click — no sub-menu chain", async () => {
       await renderPanel({ routineId: null, workbenchId: "ch_1" });
+      await settle();
+      selectTarget("asset_myra");
+      await settle();
       act(() => openMenu(buttonWithText("+ Add trigger")));
       await settle();
       const onSchedule = [
@@ -678,6 +767,9 @@ describe("RoutinePanel", () => {
     // schedule picked while instruction was mid-edit).
     test("committing a schedule does not wipe an in-progress instruction that was never blurred", async () => {
       await renderPanel({ routineId: null, workbenchId: "ch_1" });
+      await settle();
+      selectTarget("asset_myra");
+      await settle();
 
       const name = fieldByLabel("Name this routine") as HTMLInputElement;
       fillAndBlur(name, "Morning digest");
@@ -714,8 +806,11 @@ describe("RoutinePanel", () => {
     });
 
     test("typing instruction while name create is in flight survives the create ack", async () => {
-      networkDelayMs = 40;
       await renderPanel({ routineId: null, workbenchId: "ch_1" });
+      await settle();
+      selectTarget("asset_myra");
+      await settle();
+      networkDelayMs = 40;
 
       const name = fieldByLabel("Name this routine") as HTMLInputElement;
       const instruction = fieldByLabel(
