@@ -30,7 +30,6 @@ import {
   type PinnedSkillIndexEntry,
 } from "@corbits/skills";
 import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
-import type { DefinitionFreezer } from "@corbits/workflow-freeze";
 
 import {
   createAgentDefinitionCore,
@@ -51,6 +50,10 @@ import {
   parseAgentDefinitionEntry,
   readAgentDefinitionWorkflowJson,
   RetiredWorkflowEnvelopeError,
+  statusForAgentDefinitionDeployError,
+  writeAndDeployAgentDefinition,
+  WorkflowAuthorError,
+  type AgentDefinitionDeployer,
 } from "./definition-asset";
 import type { DefinitionSkillsStore } from "./skills-store";
 import {
@@ -93,11 +96,11 @@ export type CreateAgentDefinitionRoutesDeps = {
   history: DefinitionAssetHistory;
   capabilityInventory: CapabilityInventoryProvider;
   requireGrant: RequireGrant;
-  /** Freezes/re-freezes the definition's wire projection on every
-   * content write; the composition root binds
-   * `@corbits/workflow-freeze`'s `createDefinitionFreezer` to its own
-   * `db`. */
-  definitionFreezer: DefinitionFreezer;
+  /** Deploys the definition's commit through the native source pipeline
+   * on every content write; the composition root injects the SAME
+   * `WorkflowDeployer` `@corbits/agent-workflow-authoring`'s registry
+   * calls. */
+  deployer: AgentDefinitionDeployer;
   tenantDefaultModel?: CreateAgentDefinitionCoreDeps["tenantDefaultModel"];
 };
 
@@ -138,7 +141,7 @@ export function createAgentDefinitionRoutes({
   history,
   capabilityInventory,
   requireGrant,
-  definitionFreezer,
+  deployer,
   tenantDefaultModel,
 }: CreateAgentDefinitionRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
@@ -164,6 +167,12 @@ export function createAgentDefinitionRoutes({
       return c.json(
         makeErrorEnvelope({ code: "conflict", userMessage: err.message }),
         409,
+      );
+    }
+    if (err instanceof WorkflowAuthorError) {
+      return c.json(
+        makeErrorEnvelope({ code: err.reason, userMessage: err.message }),
+        statusForAgentDefinitionDeployError(err.reason),
       );
     }
     throw err;
@@ -220,7 +229,7 @@ export function createAgentDefinitionRoutes({
           assetService,
           skillIndex,
           skillsStore,
-          definitionFreezer,
+          deployer,
           ...(tenantDefaultModel !== undefined ? { tenantDefaultModel } : {}),
         },
         coreInput,
@@ -433,6 +442,7 @@ export function createAgentDefinitionRoutes({
       }
 
       const tenant = c.get("tenant");
+      const principal = c.get("principal");
       const definitionId = c.req.param("definitionId");
       const row = await db.query.workflowDefinition.findFirst({
         where: and(
@@ -468,21 +478,15 @@ export function createAgentDefinitionRoutes({
       // rewrites the definition's source tree — the definition's
       // currently pinned skills are untouched by restoring an earlier
       // instructions revision.
-      await assetService.populateAsset({
+      await writeAndDeployAgentDefinition({
+        assetService,
+        deployer,
+        tenantId: tenant.id,
+        principalId: principal.id,
         assetId: row.assetId,
-        ref: DEFAULT_ASSET_REF,
-        principal: { kind: "hub" },
-        tree: {
-          files: agentDefinitionSourceTree({
-            handle: row.name,
-            workflowJson: restoredWorkflowJson,
-          }),
-          message: `Restore agent ${row.name} to ${body.commitSha.slice(0, 8)}`,
-        },
-      });
-      await definitionFreezer.refreeze({
-        definitionId: row.id,
+        handle: row.name,
         workflowJson: restoredWorkflowJson,
+        message: `Restore agent ${row.name} to ${body.commitSha.slice(0, 8)}`,
       });
 
       const capabilities = readAgentCapabilities(restoredWorkflowJson);
@@ -576,21 +580,15 @@ export function createAgentDefinitionRoutes({
         }
       }
 
-      await assetService.populateAsset({
+      await writeAndDeployAgentDefinition({
+        assetService,
+        deployer,
+        tenantId: tenant.id,
+        principalId: principal.id,
         assetId: row.assetId,
-        ref: DEFAULT_ASSET_REF,
-        principal: { kind: "hub" },
-        tree: {
-          files: agentDefinitionSourceTree({
-            handle: row.name,
-            workflowJson: nextWorkflowJson,
-          }),
-          message,
-        },
-      });
-      await definitionFreezer.refreeze({
-        definitionId: row.id,
+        handle: row.name,
         workflowJson: nextWorkflowJson,
+        message,
       });
       if (nextSkills !== null) {
         await skillsStore.setSkills(row.assetId, nextSkills);
@@ -623,6 +621,7 @@ export function createAgentDefinitionRoutes({
       }
 
       const tenant = c.get("tenant");
+      const principal = c.get("principal");
       const definitionId = c.req.param("definitionId");
       const row = await db.query.workflowDefinition.findFirst({
         where: and(
@@ -647,21 +646,15 @@ export function createAgentDefinitionRoutes({
         workflowJson,
         body.systemPrompt,
       );
-      await assetService.populateAsset({
+      await writeAndDeployAgentDefinition({
+        assetService,
+        deployer,
+        tenantId: tenant.id,
+        principalId: principal.id,
         assetId: row.assetId,
-        ref: DEFAULT_ASSET_REF,
-        principal: { kind: "hub" },
-        tree: {
-          files: agentDefinitionSourceTree({
-            handle: row.name,
-            workflowJson: nextWorkflowJson,
-          }),
-          message: `Update agent instructions for ${row.name}`,
-        },
-      });
-      await definitionFreezer.refreeze({
-        definitionId: row.id,
+        handle: row.name,
         workflowJson: nextWorkflowJson,
+        message: `Update agent instructions for ${row.name}`,
       });
 
       const now = new Date();
@@ -870,21 +863,15 @@ export function createAgentDefinitionRoutes({
         workflowJson,
         await skillIndex.resolve(tenant.id, principal.id, body.skills),
       );
-      await assetService.populateAsset({
+      await writeAndDeployAgentDefinition({
+        assetService,
+        deployer,
+        tenantId: tenant.id,
+        principalId: principal.id,
         assetId: row.assetId,
-        ref: DEFAULT_ASSET_REF,
-        principal: { kind: "hub" },
-        tree: {
-          files: agentDefinitionSourceTree({
-            handle: row.name,
-            workflowJson: nextWorkflowJson,
-          }),
-          message: `Update agent skills for ${row.name}`,
-        },
-      });
-      await definitionFreezer.refreeze({
-        definitionId: row.id,
+        handle: row.name,
         workflowJson: nextWorkflowJson,
+        message: `Update agent skills for ${row.name}`,
       });
       await skillsStore.setSkills(row.assetId, body.skills);
 

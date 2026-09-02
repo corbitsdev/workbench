@@ -16,19 +16,22 @@ import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
 import type { CredentialBinding } from "@intx/types";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { asset, workflowDefinition } from "@intx/db/schema";
 import { AssetServiceError, DEFAULT_ASSET_REF } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
-import type { DefinitionFreezer } from "@corbits/workflow-freeze";
 import {
   withAvailableSkills,
   type PinnedSkillIndexEntry,
 } from "@corbits/skills";
 import { type } from "arktype";
 
-import { agentDefinitionSourceTree } from "./definition-asset";
+import {
+  agentDefinitionSourceTree,
+  writeAndDeployAgentDefinition,
+  type AgentDefinitionDeployer,
+} from "./definition-asset";
 import type { DefinitionSkillsStore } from "./skills-store";
 
 export const AGENT_DEFINITION_STEP_ID = "agent";
@@ -386,10 +389,12 @@ export function serializeAgentDefinitionWorkflow(
 export type CreateAgentDefinitionCoreDeps = {
   readonly db: DB["db"];
   readonly assetService: AssetService;
-  /** Freezes the definition's wire projection at create; the
-   * composition root binds `@corbits/workflow-freeze`'s
-   * `createDefinitionFreezer` to its own `db`. */
-  readonly definitionFreezer: Pick<DefinitionFreezer, "freeze">;
+  /** Deploys the definition's commit through the native source pipeline
+   * (install -> sidecar probe -> gate -> freeze) at create; the
+   * composition root injects the SAME `WorkflowDeployer`
+   * `@corbits/agent-workflow-authoring`'s registry calls, wrapping
+   * `sessionService.deployWorkflowFromSource`. */
+  readonly deployer: AgentDefinitionDeployer;
   readonly skillIndex: {
     resolve(
       tenantId: string,
@@ -550,36 +555,33 @@ export async function createAgentDefinitionCore(
     }
   }
 
-  await deps.assetService.populateAsset({
+  await writeAndDeployAgentDefinition({
+    assetService: deps.assetService,
+    deployer: deps.deployer,
+    tenantId: input.tenantId,
+    principalId: input.principalId,
     assetId,
-    ref: DEFAULT_ASSET_REF,
-    principal: { kind: "hub" },
-    tree: {
-      files: agentDefinitionSourceTree({ handle: input.handle, workflowJson }),
-      message: `Define agent ${input.name}`,
-    },
+    handle: input.handle,
+    workflowJson,
+    message: `Define agent ${input.name}`,
   });
   await deps.skillsStore.setSkills(assetId, input.skills);
 
-  // Freeze, not a bare ensure: `ensureWorkflowDefinitionForAsset` alone
-  // leaves the version row's `wire_projection` NULL, and a definition
-  // without a frozen projection can never launch (CL-6447's 409
-  // `not_launchable`). The freeze projects, walks, and stamps in one
-  // transaction — the same machinery the sidecar probe deploy rides.
-  const { definitionId } = await deps.definitionFreezer.freeze({
-    assetId,
-    workflowJson,
-  });
-
+  // The deploy above projects, walks, and stamps the definition row in
+  // one transaction — the same machinery the sidecar probe deploy
+  // rides. Read the row back by asset, newest first: a content-unchanged
+  // redeploy dedupes onto the existing `(assetId, wireHash)` row, so
+  // this still resolves to the one row a fresh create just produced.
   const row = await deps.db.query.workflowDefinition.findFirst({
     where: and(
-      eq(workflowDefinition.id, definitionId),
+      eq(workflowDefinition.assetId, assetId),
       eq(workflowDefinition.tenantId, input.tenantId),
     ),
+    orderBy: desc(workflowDefinition.createdAt),
   });
   if (row === undefined) {
     throw new Error(
-      `agent definition "${definitionId}" was created but is not readable back`,
+      `agent definition for asset "${assetId}" was created but is not readable back`,
     );
   }
   return { row };

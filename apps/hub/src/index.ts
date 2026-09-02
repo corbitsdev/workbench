@@ -196,10 +196,7 @@ import {
 import { createConnectGithubRoutes } from "@corbits/workflow-catalog/connect-github-routes";
 import { createTemplateBlockRoutes } from "@corbits/workflow-catalog/template-block-routes";
 import { renderWorkflowSourceTree } from "@corbits/workflow-source";
-import {
-  createDefinitionFreezer,
-  freezeInertWorkflowDefinition,
-} from "@corbits/workflow-freeze";
+import { freezeInertWorkflowDefinition } from "@corbits/workflow-freeze";
 import {
   createDrizzleDraftStore,
   createDrizzleRoutineStore,
@@ -2034,13 +2031,12 @@ export async function createHub(config: HubConfig) {
     },
   };
 
-  const definitionFreezer = createDefinitionFreezer(db);
   app.route(
     `${TENANT_PREFIX}/agent-definitions`,
     createAgentDefinitionRoutes({
       db,
       assetService,
-      definitionFreezer,
+      deployer: workflowDeployer,
       skillIndex: skills.skillIndex,
       skillsStore: definitionSkillsStore,
       history: createDefinitionAssetHistory({
@@ -2070,7 +2066,7 @@ export async function createHub(config: HubConfig) {
     createWorkflowAgentCreateRoutes({
       db,
       assetService,
-      definitionFreezer,
+      deployer: workflowDeployer,
       skillIndex: skills.skillIndex,
       skillsStore: definitionSkillsStore,
       capabilityInventory,
@@ -2092,7 +2088,7 @@ export async function createHub(config: HubConfig) {
     createWorkflowCapabilityRoutes({
       db,
       assetService,
-      definitionFreezer,
+      deployer: workflowDeployer,
       skillIndex: skills.skillIndex,
       skillsStore: definitionSkillsStore,
       capabilityInventory,
@@ -2109,7 +2105,7 @@ export async function createHub(config: HubConfig) {
     createWorkflowSkillPinRoutes({
       db,
       assetService,
-      definitionFreezer,
+      deployer: workflowDeployer,
       skillIndex: skills.skillIndex,
       skillsStore: definitionSkillsStore,
       authenticator: createWorkflowRunAuthenticator({ db }),
