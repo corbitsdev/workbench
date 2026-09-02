@@ -113,11 +113,11 @@ agent principal.
   except `@corbits/workflow-source`'s own `RetiredWorkflowEnvelopeError`;
   `check:routine-target-inference` guards this too.
 
-**Not yet cut over:** `packages/agent-directory` still calls
-`@corbits/workflow-freeze`'s `DefinitionFreezer.freeze`/`.refreeze` for
-agent definitions (create, restore, skill-pin, and capability routes in
-`apps/hub/src/index.ts`) — `@corbits/workflow-freeze` stays until that
-caller also deploys natively, on its own ticket. `packages/routines-tools/
+`@corbits/workflow-freeze` itself is deleted: `packages/agent-directory`
+(create, restore, skill-pin, and capability routes in `apps/hub/src/
+index.ts`) now deploys agent definitions through the same injected
+`WorkflowDeployer` the template-block path uses, instead of
+`DefinitionFreezer.freeze`/`.refreeze` (CL-7364). `packages/routines-tools/
 src/client.ts` never carried duplicate wire shapes to delete; it already
 re-exports `@corbits/routines/client`.
 
