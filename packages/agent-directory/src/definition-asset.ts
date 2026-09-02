@@ -110,6 +110,7 @@ export async function writeAndDeployAgentDefinition(args: {
     tenantId: args.tenantId,
     principalId: args.principalId,
     assetId: args.assetId,
+    assetName: args.handle,
     commitSha,
     entry: WORKFLOW_SOURCE_ENTRY,
   });
