@@ -21,17 +21,23 @@ type LoadState =
 /** `value`/`onChange` carry a `definitionAssetId` — the stable identity a
  * routine stores. `preselectedAssetId` lets a caller that already knows
  * which target it wants seed the initial selection explicitly; the picker
- * itself never guesses one on the person's behalf. */
+ * itself never guesses one on the person's behalf. `onStaleChange` reports
+ * whether `value` is currently absent from the loaded target list (CL-7358)
+ * — a caller that needs to gate another affordance (e.g. disabling
+ * "Run now" on an edited routine's picker) on that without refetching or
+ * re-deriving the target list itself. */
 export function DefinitionTargetPicker({
   tenantId,
   value,
   onChange,
   preselectedAssetId,
+  onStaleChange,
 }: {
   readonly tenantId: string | null;
   readonly value: string | null;
   readonly onChange: (definitionAssetId: string) => void;
   readonly preselectedAssetId?: string;
+  readonly onStaleChange?: (stale: boolean) => void;
 }) {
   const navigate = useNavigate();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
@@ -77,6 +83,14 @@ export function DefinitionTargetPicker({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see comment above
   }, [tenantId, retryTick]);
+
+  useEffect(() => {
+    if (state.kind !== "loaded") return;
+    const isStale =
+      value !== null &&
+      !state.targets.some((t) => t.definitionAssetId === value);
+    onStaleChange?.(isStale);
+  }, [state, value]);
 
   if (state.kind === "loading") {
     return (
