@@ -62,9 +62,15 @@ export function deriveWorkflowLifecycle(
     };
   }
 
-  const newest = [...rows].sort((a, b) =>
-    a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0,
-  )[0];
+  // A tie on `createdAt` (redeploys can mint rows in the same request, at
+  // timestamp granularity that doesn't separate them) breaks on `id` so
+  // "newest" is a deterministic total order, never array-input-order.
+  const newest = [...rows].sort((a, b) => {
+    if (a.createdAt !== b.createdAt) {
+      return a.createdAt < b.createdAt ? 1 : -1;
+    }
+    return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+  })[0];
   if (newest === undefined) {
     throw new Error("deriveWorkflowLifecycle: unreachable — rows non-empty");
   }

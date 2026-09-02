@@ -43,6 +43,7 @@ import {
   WORKFLOWS_PATH_PREFIX,
   detailSlugFromPath,
   routineSegmentFromPath,
+  workflowDefinitionAssetIdFromPath,
 } from "./path-ids";
 import { WORKBENCH_PATH_PREFIX, isWorkbenchPath } from "./workbench-path";
 import {
@@ -232,7 +233,8 @@ export function matchesRoute(routePath: string, path: string): boolean {
     return segment !== null && !segment.includes("/");
   }
   if (routePath === WORKFLOW_DETAIL_PATH) {
-    return path.startsWith(`${WORKFLOWS_PATH_PREFIX}/`) && !path.slice(WORKFLOWS_PATH_PREFIX.length + 1).includes("/");
+    const assetId = workflowDefinitionAssetIdFromPath(path);
+    return assetId !== null && !assetId.includes("/");
   }
   if (routePath.endsWith(SLUG_SEGMENT)) {
     return slugForDetailRoute(routePath, path) !== null;
