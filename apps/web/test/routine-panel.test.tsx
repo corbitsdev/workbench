@@ -56,10 +56,15 @@ let capabilitiesProbeFails = false;
 let networkDelayMs = 0;
 let workbenchAgentsByWorkbench: Record<
   string,
-  { address: string; handle: string; definitionId: string }[]
+  { address: string; handle: string; definitionId: string; definitionAssetId: string }[]
 > = {
   ch_1: [
-    { address: "myra_1@wf_1.tnt_1", handle: "myra", definitionId: "wfd_1" },
+    {
+      address: "myra_1@wf_1.tnt_1",
+      handle: "myra",
+      definitionId: "wfd_1",
+      definitionAssetId: "wfd_1",
+    },
   ],
 };
 let chatWorkbenches: Record<string, unknown>[] = [];
@@ -73,6 +78,7 @@ function routineRecord(
   return {
     id: "rtn_1",
     name: "Morning digest",
+    definitionAssetId: "wfd_1",
     definitionId: "wfd_1",
     trigger: null,
     scope: "personal",
@@ -173,6 +179,7 @@ async function routeFetch(
           address: "myra_2@wf_2.tnt_1",
           handle: "myra",
           definitionId: "wfd_myra",
+          definitionAssetId: "wfd_myra",
         },
       ],
     };
@@ -245,7 +252,8 @@ async function routeFetch(
     createdRoutine = routineRecord({
       id: `rtn_${createRoutineCalls.length}`,
       name: body["name"],
-      definitionId: body["definitionId"],
+      definitionAssetId: body["definitionAssetId"],
+      definitionId: body["definitionAssetId"],
       deliveryWorkbenchId: body["deliveryWorkbenchId"] ?? null,
       trigger: body["trigger"] ?? null,
       input: body["input"] ?? {},
@@ -287,7 +295,12 @@ describe("RoutinePanel", () => {
     runTraces = {};
     workbenchAgentsByWorkbench = {
       ch_1: [
-        { address: "myra_1@wf_1.tnt_1", handle: "myra", definitionId: "wfd_1" },
+        {
+          address: "myra_1@wf_1.tnt_1",
+          handle: "myra",
+          definitionId: "wfd_1",
+          definitionAssetId: "wfd_1",
+        },
       ],
     };
     toastMock.mockClear();
@@ -409,7 +422,7 @@ describe("RoutinePanel", () => {
       await settle();
 
       expect(createRoutineCalls).toHaveLength(1);
-      expect(createRoutineCalls[0]?.["definitionId"]).toBe("wfd_1");
+      expect(createRoutineCalls[0]?.["definitionAssetId"]).toBe("wfd_1");
       expect(createRoutineCalls[0]?.["deliveryWorkbenchId"]).toBe("ch_1");
       expect(toastMock).toHaveBeenCalled();
     });
@@ -433,6 +446,7 @@ describe("RoutinePanel", () => {
             address: "myra_9@wf_9.tnt_1",
             handle: "myra",
             definitionId: "wfd_myra",
+            definitionAssetId: "wfd_myra",
           },
         ],
       };
@@ -444,7 +458,7 @@ describe("RoutinePanel", () => {
 
       expect(createRoutineCalls).toHaveLength(1);
       expect(createRoutineCalls[0]?.["deliveryWorkbenchId"]).toBe("ch_myra");
-      expect(createRoutineCalls[0]?.["definitionId"]).toBe("wfd_myra");
+      expect(createRoutineCalls[0]?.["definitionAssetId"]).toBe("wfd_myra");
       expect(createWorkbenchCalls).toHaveLength(0);
     });
 

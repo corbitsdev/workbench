@@ -84,16 +84,25 @@ function baseRoutes(method: string, path: string) {
   if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`)
     return { status: 201, data: {} };
   // CL-6201: `ensureDefaultRoutines` runs at the end of every seed and
-  // lists both surfaces before deciding what (if anything) to plant.
-  // Every test in this file that doesn't care about routine seeding
-  // gets an empty answer from both, so the preset loop finds no
-  // deployed definition to target and skips quietly rather than the
-  // fake handler throwing "unexpected hub call".
+  // lists the deployed workflow assets, their live deployments, and the
+  // tenant's existing routines before deciding what (if anything) to
+  // plant. Every test in this file that doesn't care about routine
+  // seeding gets an empty answer from all three, so the preset loop
+  // finds no deployed asset to target and skips quietly rather than the
+  // fake handler throwing "unexpected hub call". A test that defines
+  // its own handler for the assets/deployments paths (to drive the
+  // earlier asset-conflict or already-deployed flow) checks that
+  // handler before falling back to this one, so its own answer wins.
   if (
     method === "GET" &&
-    path === `/api/tenants/${TENANT_ID}/workflows/definitions`
+    path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
   )
-    return emptyPage();
+    return { status: 200, data: [] };
+  if (
+    method === "GET" &&
+    path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+  )
+    return { status: 200, data: [] };
   if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`)
     return { status: 200, data: { items: [] } };
   return undefined;
@@ -513,8 +522,6 @@ describe("seedTenant", () => {
     });
     let runsCalls = 0;
     const handler: FakeHandler = (method, path) => {
-      const base = baseRoutes(method, path);
-      if (base) return base;
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
         return { status: 409, data: { error: "name taken" } };
       if (
@@ -569,7 +576,7 @@ describe("seedTenant", () => {
             messageId: "<m2@workbench.localhost>",
           },
         };
-      return undefined;
+      return baseRoutes(method, path);
     };
 
     const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
@@ -601,8 +608,6 @@ describe("seedTenant", () => {
     });
     let runsCalls = 0;
     const handler: FakeHandler = (method, path) => {
-      const base = baseRoutes(method, path);
-      if (base) return base;
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
         return { status: 409, data: { error: "name taken" } };
       if (
@@ -672,7 +677,7 @@ describe("seedTenant", () => {
             messageId: "<m3@workbench.localhost>",
           },
         };
-      return undefined;
+      return baseRoutes(method, path);
     };
 
     const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
