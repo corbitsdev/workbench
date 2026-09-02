@@ -69,3 +69,41 @@ cd packages/routines && bun test
 
 `test/store.drizzle.test.ts` and `test/migrations.test.ts` need a live
 Postgres: `DATABASE_URL=postgres://localhost:5432/workbench_e2e`.
+
+## Routine target discovery
+
+`GET /api/tenants/:tenantId/workflows/targets` (`src/targets-route.ts`,
+mounted by the hub beside the platform's `/workflows/definitions` listing)
+is the one list every routine-authoring surface reads: the deployed,
+frozen definitions the acting principal may target from a routine in this
+tenant (CL-7351). Agents and multi-step workflows share it — a target's
+`kind` (`"agent"` for a single-step conversational fold, `"workflow"`
+otherwise) only groups the picker.
+
+- `listLaunchableDefinitions(db, tenantId)` (`src/targets.ts`) is the
+  follow-latest rule from `docs/workflow-model.md` as one query: the newest
+  `authored` `workflow_definition` row per `asset_id` with
+  `status = 'deployed'` whose current version row carries a non-null
+  `approved_wire_hash`, `grant_snapshot`, and `wire_projection`. Source-only,
+  unfrozen, stopped, per-run (`origin = 'run'`), and cross-tenant rows never
+  qualify. The routine launch resolver reads the same rows for one asset.
+- `listRoutineTargets(deps, query)` authorizes every candidate with
+  `@intx/authz`'s `authorize` on `workflow-definition:<id>` / `read` before
+  it is counted, sorted, or returned — a denied row never shapes the page —
+  then applies the product filter (`@corbits/workflow-catalog`'s
+  `isAutomatableWorkflowName` or `isConversationalWorkflowName`, never a
+  workbench-host anchor name) and orders by `(name asc, definitionAssetId
+  asc)`. Pagination is an opaque cursor over that key; `limit` defaults to
+  50 and caps at 200. A principal holding no definition grant gets an empty
+  page, not a 403.
+- Wire shape (`@corbits/routines/client`): `RoutineTarget`
+  `{ definitionAssetId, definitionId, assetName, name, description, kind,
+  wireHash }`, `RoutineTargetsResponse` `{ items, nextCursor }`, and
+  `routineTargetsPath(tenantId, { limit?, cursor? })`.
+  `definitionAssetId` is the identity a routine stores; `definitionId` /
+  `wireHash` name what would run right now.
+
+`test/targets.drizzle.test.ts` covers tenant isolation, unfrozen and
+per-run exclusion, newest-per-asset, agent vs. workflow kind, a principal
+without the grant, the empty tenant, and cursor continuation. It needs the
+same live Postgres as the other Drizzle suites.
