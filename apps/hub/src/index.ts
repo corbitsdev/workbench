@@ -2809,6 +2809,28 @@ export async function createHub(config: HubConfig) {
     joinDeliveryWorkbench: (input) =>
       joinRunParticipant({ store: chatStore }, input),
   });
+  // A `{kind: "webhook"}` routine trigger and the `@corbits/webhook-
+  // triggers` row it names are two views of one binding: the row still
+  // points at a `workflow_definition` row id (`workflowDefinitionId`),
+  // while a routine now names its stable `definitionAssetId` — so
+  // agreement means the definition row's own `assetId` equals the
+  // routine's `definitionAssetId`, not a direct id comparison.
+  const webhookTriggerInTenant = async (
+    tenantId: string,
+    webhookTriggerId: string,
+    definitionAssetId: string,
+  ): Promise<boolean> => {
+    const trigger = await webhookTriggerStore.get(tenantId, webhookTriggerId);
+    if (trigger === undefined) return false;
+    const definitionRow = await db.query.workflowDefinition.findFirst({
+      where: and(
+        eq(workflowDefinition.id, trigger.workflowDefinitionId),
+        eq(workflowDefinition.tenantId, tenantId),
+      ),
+      columns: { assetId: true },
+    });
+    return definitionRow?.assetId === definitionAssetId;
+  };
   const routineWorkbenchNotice = {
     postWorkbenchNotice: (input: {
       tenantId: string;
@@ -2890,14 +2912,7 @@ export async function createHub(config: HubConfig) {
       // exact same workflow definition the routine itself runs — see
       // `webhookTriggerValid`'s doc comment in
       // `@corbits/routines`' routes.ts for why the two ids must agree.
-      webhookTriggerInTenant: async (
-        tenantId,
-        webhookTriggerId,
-        definitionId,
-      ) => {
-        const row = await webhookTriggerStore.get(tenantId, webhookTriggerId);
-        return row !== undefined && row.workflowDefinitionId === definitionId;
-      },
+      webhookTriggerInTenant,
       deliveryWorkbenchRequired: routineDeliveryWorkbenchRequired,
       validateRoutineInput: routineInputValid,
     }),
@@ -2918,14 +2933,7 @@ export async function createHub(config: HubConfig) {
       authenticator: createWorkflowRunAuthenticator({ db }),
       resolveTarget: (tenantId, definitionAssetId) =>
         resolveLaunchableDefinition({ db, tenantId, definitionAssetId }),
-      webhookTriggerInTenant: async (
-        tenantId,
-        webhookTriggerId,
-        definitionId,
-      ) => {
-        const row = await webhookTriggerStore.get(tenantId, webhookTriggerId);
-        return row !== undefined && row.workflowDefinitionId === definitionId;
-      },
+      webhookTriggerInTenant,
       deliveryWorkbenchRequired: routineDeliveryWorkbenchRequired,
       // A routine created from inside a workbench delivers into that
       // workbench: the creating run is a workbench participant, so its
