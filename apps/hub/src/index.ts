@@ -2948,7 +2948,11 @@ export async function createHub(config: HubConfig) {
         resolveLaunchableDefinition({ db, tenantId, definitionAssetId }),
       listTargets: (query) =>
         listRoutineTargets(
-          { db, grantStore: routineGrantStore, conditionRegistry: chatConditionRegistry },
+          {
+            db,
+            grantStore: routineGrantStore,
+            conditionRegistry: chatConditionRegistry,
+          },
           query,
         ),
       webhookTriggerInTenant,
