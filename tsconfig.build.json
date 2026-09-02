@@ -53,9 +53,6 @@
       "path": "./packages/e2b-sandbox-sidecar/tsconfig.src.json"
     },
     {
-      "path": "./packages/echo/tsconfig.src.json"
-    },
-    {
       "path": "./packages/error-sink/tsconfig.src.json"
     },
     {
