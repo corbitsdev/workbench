@@ -7,7 +7,7 @@
 import { and, eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { workflowDefinition } from "@intx/db/schema";
-import { WORKFLOW_CATALOG } from "@corbits/workflow-catalog";
+import { WORKFLOW_CATALOG } from "@workbench/templates";
 
 /** Myra's asset name in the seeded workflow catalog — the same lookup
  * `apps/web/src/myra-workbench.ts` does client-side, mirrored here for

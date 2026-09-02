@@ -41,7 +41,7 @@ import type { AssetService } from "@intx/hub-sessions";
 
 import { skillNameSchema } from "@corbits/skills";
 import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
-import { isAutomatableWorkflowName } from "@corbits/workflow-catalog";
+import { isAutomatableWorkflowName } from "@workbench/templates";
 
 import {
   createAgentDefinitionCore,

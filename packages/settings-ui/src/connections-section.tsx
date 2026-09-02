@@ -26,7 +26,7 @@ import {
   type ConnectorDescriptor,
 } from "@workbench/connections/registry";
 import { MCP_PRESET_CONNECTOR_IDS } from "@workbench/connections/mcp-presets";
-import { workflowDisplayName } from "@corbits/workflow-catalog";
+import { workflowDisplayName } from "@workbench/templates";
 import {
   buildEffectiveInferenceRows,
   computeGlobalRoutePatches,

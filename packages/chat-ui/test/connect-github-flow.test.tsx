@@ -4,7 +4,7 @@
 // `WorkbenchTimeline` (the real registry, the real container, the real
 // presentational `ConnectGithubBlockView`), drives it through connect →
 // list repos → pick three → "Start reviewing", and proves:
-//   1. `@corbits/workflow-catalog`'s real `startReviewingRepos` mints
+//   1. `@workbench/connections`'s real `startReviewingRepos` mints
 //      one grant and one webhook trigger per selected repo, and records
 //      the selection.
 //   2. The card settles into its connected state by the host fanning an
@@ -18,7 +18,7 @@ import type { Root } from "react-dom/client";
 import {
   startReviewingRepos,
   type ConnectGithubSetupPorts,
-} from "@corbits/workflow-catalog";
+} from "@workbench/connections/connect-github-setup";
 
 import type { MessageItem } from "../src/api";
 import type {

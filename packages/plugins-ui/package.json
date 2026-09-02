@@ -16,7 +16,6 @@
   "dependencies": {
     "@corbits/react-ui": "github:corbitsdev/react-ui#3b122812a307ccb35be31386f7696020c5a84635",
     "@corbits/settings-ui": "workspace:*",
-    "@corbits/workflow-catalog": "workspace:*",
     "@workbench/connections": "workspace:*",
     "arktype": "catalog:",
     "@corbits/icons": "workspace:*",

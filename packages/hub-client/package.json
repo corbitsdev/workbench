@@ -24,7 +24,7 @@
     "@corbits/last-30-days-research-workflow": "workspace:*",
     "@corbits/tool-registry-publish": "workspace:*",
     "@corbits/workbench-digest-workflow": "workspace:*",
-    "@corbits/workflow-catalog": "workspace:*",
+    "@workbench/templates": "workspace:*",
     "@corbits/workflows": "workspace:*",
     "@intx/inference": "workspace:*",
     "@intx/types": "workspace:*",

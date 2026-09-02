@@ -33,7 +33,7 @@ import {
   instantiateWorkbenchTemplate,
   parseWorkbenchDefinition,
   templateSettingsPatch,
-} from "@corbits/workflow-catalog";
+} from "@workbench/templates";
 import {
   signPayload,
   WEBHOOK_SIGNATURE_HEADER,

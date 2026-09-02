@@ -23,7 +23,7 @@
     "@corbits/error-sink": "workspace:*",
     "@corbits/inference-settings": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#3b122812a307ccb35be31386f7696020c5a84635",
-    "@corbits/workflow-catalog": "workspace:*",
+    "@workbench/templates": "workspace:*",
     "@intx/types": "workspace:*",
     "@workbench/connections": "workspace:*",
     "arktype": "catalog:",

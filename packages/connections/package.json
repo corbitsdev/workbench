@@ -11,15 +11,20 @@
     "./persist-credential": "./src/persist-credential.ts",
     "./plugins": "./src/plugins.ts",
     "./provider-health": "./src/provider-health.ts",
-    "./mcp-presets": "./src/mcp-presets.ts"
+    "./mcp-presets": "./src/mcp-presets.ts",
+    "./connect-github-routes": "./src/connect-github-routes.ts",
+    "./connect-github-setup": "./src/connect-github-setup.ts",
+    "./reconcile-duplicate-repo-grants": "./src/reconcile-duplicate-repo-grants.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/code-review": "workspace:*",
     "@corbits/credential-providers": "workspace:*",
     "@corbits/error-sink": "workspace:*",
+    "@corbits/github-tools": "workspace:*",
     "@corbits/inference-settings": "workspace:*",
     "@corbits/mcp-tools": "workspace:*",
     "@intx/crypto": "0.3.0",
@@ -28,9 +33,11 @@
     "@intx/types": "workspace:*",
     "@modelcontextprotocol/sdk": "catalog:",
     "@workbench/hub-client": "workspace:*",
+    "@workbench/templates": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "hono": "^4.11.9",
+    "postgres": "catalog:",
     "simple-icons": "^16.28.0"
   },
   "devDependencies": {
