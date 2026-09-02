@@ -47,7 +47,7 @@ fires an actual trigger.
 | 2   | `agentDefinitionsHaveToolGrants`           | **PASS**                    | The three reviewer definitions materialize via the real install, and the install now also deploys the `code-review` block workflow carrying the `@corbits/github-tools` pin (CL-6405's product fix). The snapshot's `name` is the stable definition handle (`displayName` carries the label), so handle matching is exact.                                                                                                     |
 | 3   | `triggerIsWebhookPerPr`                    | **PASS**                    | Install drives start-reviewing against the fake REST origin's repo list; one enabled `webhook_trigger` row mints per repo, bound to the deployed `code-review` definition.                                                                                                                                                                                                                                                     |
 | 4   | `reviewCommentsAttributable`               | **SKIP** (product gap)      | `WorldSnapshot` has no `reviewComments` field — blocked on CL-6322 Phase 1 (`onTrigger` adoption giving each fired occurrence its own child run id).                                                                                                                                                                                                                                                                           |
-| 5   | `suggestedFixesStructurallyValid`          | **FAIL** (gap 1 below)      | The launch itself now succeeds: the template-block deploy freezes its definition through `@corbits/workflow-freeze` (CL-6439), so the fired trigger answers 202 with a real run instance instead of `DefinitionProjectionMissingError`. What remains is that a posted review needs genuine model tool calls, i.e. a live `EVAL_PROVIDER_API_KEY` run — plumbing mode's stub credential can never call `github_post_pr_review`. |
+| 5   | `suggestedFixesStructurallyValid`          | **FAIL** (gap 1 below)      | The launch itself now succeeds: the template-block deploy freezes its definition through the native `workflowDeployer.deploy` path (CL-6439, cut over to native deploy in CL-7364), so the fired trigger answers 202 with a real run instance instead of `DefinitionProjectionMissingError`. What remains is that a posted review needs genuine model tool calls, i.e. a live `EVAL_PROVIDER_API_KEY` run — plumbing mode's stub credential can never call `github_post_pr_review`. |
 | 6   | `outwardGitHubActionsRespectGrantBoundary` | **FAIL** (gap 1 below)      | Same blocker as #5.                                                                                                                                                                                                                                                                                                                                                                                                            |
 | 7   | `wholeRunInspectable`                      | **SKIP** (product gap)      | `WorldSnapshot` has no `runs` field. Blocked on CL-6322 Phase 1.                                                                                                                                                                                                                                                                                                                                                               |
 
@@ -64,13 +64,13 @@ Closed in the CL-6439 pass: the block-workflow deploy used to record no
 frozen wire projection, so a webhook-fired launch
 (`launchWebhookTrigger` -> `readDefinitionProjection`) answered
 `DefinitionProjectionMissingError` ("No stored launch body for
-definition \"code-review\""). The hub's `deployWorkflowSource` binding
-now freezes the serialized definition through
-`@corbits/workflow-freeze` (the hub-local counterpart of the sidecar
-probe gate, shared with the Agents page create path since CL-6447), and
-a plumbing-mode run confirms the fired trigger answers 202 with a real
-run instance. `packages/workflow-catalog/test/block-workflow-freeze.test.ts`
-locks the block source's freezability.
+definition \"code-review\""). CL-7364 cut the hub's template-block
+deploy binding (`createTemplateBlockRoutes`'s `deployWorkflowSource`)
+over from the retired `@corbits/workflow-freeze` package to the native
+`workflowDeployer.deploy` path — the same install → sidecar probe →
+capability walk → gate → freeze `sessionService.deployWorkflowFromSource`
+call the agent-authored deploy path uses — and a plumbing-mode run
+confirms the fired trigger still answers 202 with a real run instance.
 
 Also closed in the CL-6405 pass: `workflows/code-review` pinned
 `@corbits/github-tools@0.0.3` while CL-6403 released 0.0.4 (the

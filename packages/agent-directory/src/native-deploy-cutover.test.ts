@@ -22,6 +22,14 @@ function tsFilesUnder(dir: string): string[] {
   });
 }
 
+// The composition root that injects every `WorkflowDeployer` this package
+// (and `@corbits/agent-workflow-authoring`) calls into — exactly where a
+// straggler `@corbits/workflow-freeze` import landed once before (the
+// deleted package's own import line survived a rebase in apps/hub/src/
+// index.ts until this ticket's own review caught it). Scanning only this
+// package would have missed that regression again.
+const HUB_SRC_DIR = path.join(import.meta.dir, "../../../apps/hub/src");
+
 describe("workflow-freeze cutover", () => {
   test("no source file in this package imports @corbits/workflow-freeze", () => {
     const offenders = tsFilesUnder(SRC_DIR).filter((file) =>
@@ -37,5 +45,12 @@ describe("workflow-freeze cutover", () => {
     expect(Object.keys(packageJson.dependencies ?? {})).not.toContain(
       "@corbits/workflow-freeze",
     );
+  });
+
+  test("no source file in apps/hub imports @corbits/workflow-freeze", () => {
+    const offenders = tsFilesUnder(HUB_SRC_DIR).filter((file) =>
+      readFileSync(file, "utf8").includes("@corbits/workflow-freeze"),
+    );
+    expect(offenders).toEqual([]);
   });
 });

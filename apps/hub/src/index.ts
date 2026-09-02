@@ -200,7 +200,6 @@ import {
   renderWorkflowSourceTree,
   WORKFLOW_SOURCE_ENTRY,
 } from "@corbits/workflow-source";
-import { createDefinitionFreezer } from "@corbits/workflow-freeze";
 import {
   createDrizzleDraftStore,
   createDrizzleRoutineStore,
@@ -2637,6 +2636,7 @@ export async function createHub(config: HubConfig) {
           tenantId,
           principalId,
           assetId,
+          assetName,
           commitSha,
           entry: WORKFLOW_SOURCE_ENTRY,
         });
