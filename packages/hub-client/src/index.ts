@@ -62,6 +62,7 @@ export type {
   WorkbenchHostInferencePreference,
 } from "./catalog-seed-data";
 export { createGitWorkflowPusher } from "./workflow-push";
+export { ensureDefaultRoutines } from "./default-routines";
 export {
   fetchOllamaModelCatalog,
   ollamaApiRoot,

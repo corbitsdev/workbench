@@ -3,10 +3,11 @@ export {
   provisionPersonalTenantIfNeeded,
 } from "./provision";
 export type { ProvisionArgs, ProvisionResult } from "./provision";
-export { completeCredentialSetup } from "./complete-credential";
+export { completeCredentialSetup, findPersonalTenant } from "./complete-credential";
 export type {
   CompleteCredentialArgs,
   CompleteCredentialResult,
+  PersonalTenant,
 } from "./complete-credential";
 export {
   createConnectStateStore,
