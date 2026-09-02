@@ -322,7 +322,6 @@ describe("workflow catalog", () => {
     { key: "prompt", kind: "text", label: "Prompt", required: true },
   ];
 
-
   // CL-6358: inputs bind at USE, never at creation — a routine (or a
   // seed preset) must be creatable with a required trigger field left
   // entirely unbound. `validateTriggerFieldsAtCreate` is the boundary
