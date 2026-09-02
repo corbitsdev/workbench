@@ -29,6 +29,7 @@
     "@intx/workflow": "workspace:*",
     "@modelcontextprotocol/sdk": "catalog:",
     "@workbench/connections": "workspace:*",
+    "@corbits/hub-api-client": "workspace:*",
     "@workbench/hub-client": "workspace:*",
     "@workbench/onboarding": "workspace:*",
     "arktype": "catalog:",

@@ -49,10 +49,14 @@ import { capabilitiesForDeployment } from "@corbits/inference-catalog/offering-c
 import { quirksForDeployment } from "@corbits/inference-catalog/ollama-context-defaults";
 import { type PublishCorbitsToolsRegistryArgs } from "@corbits/tool-registry-publish";
 import { WORKFLOW_SOURCE_ENTRY } from "@corbits/workflows";
-import { CliError, SidecarUnavailableError } from "./errors";
+import {
+  HubApiError,
+  SidecarUnavailableError,
+  parseAs,
+  type ApiCall,
+} from "@corbits/hub-api-client";
 import { DEFAULT_SKILLS } from "./default-skills";
 import { ensureDefaultRoutines } from "./default-routines";
-import { parseAs, type ApiCall } from "./hub";
 import { CATALOG_SEEDS, type CatalogModelSpec } from "./catalog-seed-data";
 import {
   fetchOllamaModelCatalog,
@@ -425,7 +429,7 @@ async function plantGrant(
     cookies,
   );
   if (created.status !== 201) {
-    throw new CliError(
+    throw new HubApiError(
       `the hub rejected the ${args.resource}/${args.action} grant with status ${created.status}: ${JSON.stringify(created.data)}`,
       "check the hub logs for the underlying failure, then re-run: workbench seed",
     );
@@ -498,7 +502,7 @@ async function plantDefaultSkills(
       continue;
     }
     if (created.status !== 201) {
-      throw new CliError(
+      throw new HubApiError(
         `the hub rejected the default skill "${skill.name}" with status ${created.status}: ${JSON.stringify(created.data)}`,
         "check the hub logs for the underlying failure, then re-run: workbench seed",
       );
@@ -529,7 +533,7 @@ async function ensureWorkflowAsset(
     return asset.id;
   }
   if (created.status !== 409) {
-    throw new CliError(
+    throw new HubApiError(
       `the hub rejected creation of workflow asset ${args.assetName} with status ${created.status}: ${JSON.stringify(created.data)}`,
       "check the hub logs for the underlying failure, then re-run: workbench seed",
     );
@@ -548,7 +552,7 @@ async function ensureWorkflowAsset(
   );
   const existing = assets.find((a) => a.name === args.assetName);
   if (!existing) {
-    throw new CliError(
+    throw new HubApiError(
       `workflow asset ${args.assetName} reported a name conflict but is not listable on the bench`,
       "check the hub logs for the underlying failure, then re-run: workbench seed",
     );
@@ -579,7 +583,7 @@ async function mintGitToken(
     cookies,
   );
   if (minted.status !== 201) {
-    throw new CliError(
+    throw new HubApiError(
       `the hub refused to mint a git token for the workflow push (status ${minted.status}): ${JSON.stringify(minted.data)}`,
       "check the hub logs for the underlying failure, then re-run: workbench seed",
     );
@@ -628,7 +632,7 @@ async function isDeploymentRoutable(
   );
   if (health.status === 404 || health.status === 410) return false;
   if (health.status !== 200) {
-    throw new CliError(
+    throw new HubApiError(
       `the hub answered deployment ${deploymentId}'s health check with status ${health.status}: ${JSON.stringify(health.data)}`,
       "check the hub logs for the underlying failure, then re-run: workbench seed",
     );
@@ -716,7 +720,7 @@ async function ensureDeployment(
     );
   }
   if (deployed.status !== 201) {
-    throw new CliError(
+    throw new HubApiError(
       `the hub rejected deployment of workflow ${args.assetName} with status ${deployed.status}: ${JSON.stringify(deployed.data)}`,
       "re-run: workbench seed (it re-pushes the workflow definition); if this persists, check the hub logs for the hydration failure",
     );
@@ -757,13 +761,13 @@ async function confirmDeploymentAnswers(
     cookies,
   );
   if (triggered.status === 409) {
-    throw new CliError(
+    throw new HubApiError(
       `deployment ${args.deploymentId} of workflow ${args.assetName} is deployed but its address is not routable — the sidecar that hosts it is not connected`,
       "start the stack (`bun run dev` runs the hub and sidecar together), wait for the sidecar to connect, then re-run: workbench seed",
     );
   }
   if (triggered.status !== 202) {
-    throw new CliError(
+    throw new HubApiError(
       `the validation trigger for workflow ${args.assetName} was rejected with status ${triggered.status}: ${JSON.stringify(triggered.data)}`,
       "check the hub logs for the underlying failure, then re-run: workbench seed",
     );
@@ -784,7 +788,7 @@ async function confirmDeploymentAnswers(
     await args.sleep(args.intervalMs);
   }
 
-  throw new CliError(
+  throw new HubApiError(
     `deployment ${args.deploymentId} of workflow ${args.assetName} accepted the validation trigger but no run started within ${Math.round(args.timeoutMs / 1000)}s`,
     "check the sidecar logs for the run failure, fix it, then re-run: workbench seed",
   );
@@ -867,7 +871,7 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
   const intervalMs = args.runPollIntervalMs ?? RUN_POLL_INTERVAL_MS;
 
   if (workflows.length === 0) {
-    throw new CliError(
+    throw new HubApiError(
       "the default workflow set is empty; seeding zero workflows is a failure, not a success",
       "restore the default workflow set in @workbench/hub-client before running: workbench seed",
     );
@@ -942,7 +946,7 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
   }
 
   if (confirmed !== workflows.length) {
-    throw new CliError(
+    throw new HubApiError(
       `only ${confirmed} of ${workflows.length} default workflows were confirmed`,
       "check the failures reported above, fix them, then re-run: workbench seed",
     );
@@ -1008,7 +1012,7 @@ export async function ensureProvider(
     return provider.id;
   }
   if (created.status !== 409) {
-    throw new CliError(
+    throw new HubApiError(
       `the hub rejected creation of provider ${args.name} with status ${created.status}: ${JSON.stringify(created.data)}`,
       "check the hub logs for the underlying failure, then re-run: workbench seed",
     );
@@ -1027,7 +1031,7 @@ export async function ensureProvider(
   ).data;
   const existing = providers.find((p) => p.name === args.name);
   if (!existing) {
-    throw new CliError(
+    throw new HubApiError(
       `provider ${args.name} reported a name conflict but is not listable on the bench`,
       "check the hub logs for the underlying failure, then re-run: workbench seed",
     );
@@ -1096,7 +1100,7 @@ export async function ensureCredential(
     return credential.id;
   }
   if (created.status !== 409) {
-    throw new CliError(
+    throw new HubApiError(
       `the hub rejected creation of credential ${args.name} with status ${created.status}: ${JSON.stringify(created.data)}`,
       "check the hub logs for the underlying failure, then re-run: workbench seed",
     );
@@ -1115,7 +1119,7 @@ export async function ensureCredential(
   ).data;
   const existing = credentials.find((c) => c.name === args.name);
   if (!existing) {
-    throw new CliError(
+    throw new HubApiError(
       `credential ${args.name} reported a name conflict but is not listable on the bench`,
       "check the hub logs for the underlying failure, then re-run: workbench seed",
     );
@@ -1174,7 +1178,7 @@ export async function ensureCredential(
       cookies,
     );
     if (rotated.status !== 200) {
-      throw new CliError(
+      throw new HubApiError(
         `the hub rejected rotating credential ${args.name} with status ${rotated.status}: ${JSON.stringify(rotated.data)}`,
         "check the hub logs for the underlying failure, then re-run: workbench seed",
       );
@@ -1218,7 +1222,7 @@ async function ensureCatalogModel(
     return model.id;
   }
   if (created.status !== 409) {
-    throw new CliError(
+    throw new HubApiError(
       `the hub rejected creation of catalog model ${args.canonicalName} with status ${created.status}: ${JSON.stringify(created.data)}`,
       "check the hub logs for the underlying failure, then re-run: workbench seed",
     );
@@ -1237,7 +1241,7 @@ async function ensureCatalogModel(
   ).data;
   const existing = models.find((m) => m.canonicalName === args.canonicalName);
   if (!existing) {
-    throw new CliError(
+    throw new HubApiError(
       `catalog model ${args.canonicalName} reported a name conflict but is not listable on the bench`,
       "check the hub logs for the underlying failure, then re-run: workbench seed",
     );
@@ -1279,7 +1283,7 @@ async function ensureCatalogProvider(
     return provider.id;
   }
   if (created.status !== 409) {
-    throw new CliError(
+    throw new HubApiError(
       `the hub rejected creation of catalog provider ${args.name} with status ${created.status}: ${JSON.stringify(created.data)}`,
       "check the hub logs for the underlying failure, then re-run: workbench seed",
     );
@@ -1298,7 +1302,7 @@ async function ensureCatalogProvider(
   ).data;
   const existing = providers.find((p) => p.name === args.name);
   if (!existing) {
-    throw new CliError(
+    throw new HubApiError(
       `catalog provider ${args.name} reported a name conflict but is not listable on the bench`,
       "check the hub logs for the underlying failure, then re-run: workbench seed",
     );
@@ -1342,7 +1346,7 @@ async function ensureCatalogOffering(
     log("catalog offering already exists (skipped)");
     return;
   }
-  throw new CliError(
+  throw new HubApiError(
     `the hub rejected creation of the catalog offering with status ${created.status}: ${JSON.stringify(created.data)}`,
     "check the hub logs for the underlying failure, then re-run: workbench seed",
   );

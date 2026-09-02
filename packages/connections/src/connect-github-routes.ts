@@ -25,7 +25,7 @@
 import { Hono } from "hono";
 import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
-import { cookiesFromHeader } from "@workbench/hub-client";
+import { cookiesFromHeader } from "@corbits/hub-api-client";
 import { makeErrorEnvelope, reportError } from "@corbits/error-sink";
 
 import {

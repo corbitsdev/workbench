@@ -18,7 +18,7 @@
 // there is no separate probe step here (unlike `/complete`'s pasted-key
 // path, which has nothing else vouching for the secret).
 import type { TenantEnv } from "@intx/hub-api";
-import { createHubAPI } from "@workbench/hub-client";
+import { createHubAPI } from "@corbits/hub-api-client";
 import { reportError } from "@corbits/error-sink";
 import type { ConnectorDescriptor } from "./descriptor";
 import type { ProviderHealthStore } from "./provider-health";

@@ -12,7 +12,7 @@ import type { MiddlewareHandler } from "hono";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import type { ModelInfo } from "@intx/types";
 import type { ConnectorDescriptor } from "./descriptor";
-import type { ApiCall } from "@workbench/hub-client";
+import type { ApiCall } from "@corbits/hub-api-client";
 import { createProviderHealthStore } from "./provider-health";
 import { createConnectionRoutes, disconnectConnector } from "./routes";
 

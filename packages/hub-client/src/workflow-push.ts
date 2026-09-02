@@ -14,12 +14,12 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { renderWorkflowSourceTree } from "@corbits/workflows";
-import { CliError } from "./errors";
+import { HubApiError } from "@corbits/hub-api-client";
 import type { WorkflowPusher } from "./seed";
 
 function requireGit(): void {
   if (Bun.which("git") === null) {
-    throw new CliError(
+    throw new HubApiError(
       "git is not installed or not on PATH; the workflow push uses the system git binary",
       "install git (macOS: `xcode-select --install`), then re-run: workbench seed",
     );
@@ -71,7 +71,7 @@ async function runGit(
 async function headSha(repoDir: string): Promise<string> {
   const result = await runGit(["rev-parse", "HEAD"], repoDir, {});
   if (result.code !== 0) {
-    throw new CliError(
+    throw new HubApiError(
       `reading the pushed workflow commit failed: ${result.output}`,
       "confirm the hub is running (`bun run dev`) and re-run: workbench seed",
     );
@@ -115,7 +115,7 @@ export function createGitWorkflowPusher(): WorkflowPusher {
         gitEnv,
       );
       if (clone.code !== 0) {
-        throw new CliError(
+        throw new HubApiError(
           `cloning the workflow asset repo failed: ${clone.output}`,
           "confirm the hub is running (`bun run dev`) and re-run: workbench seed",
         );
@@ -176,7 +176,7 @@ export function createGitWorkflowPusher(): WorkflowPusher {
       for (const step of steps) {
         const result = await runGit(step.args, repoDir, gitEnv);
         if (result.code !== 0) {
-          throw new CliError(
+          throw new HubApiError(
             `the workflow source ${step.label} failed: ${result.output}`,
             "confirm the hub is running (`bun run dev`) and re-run: workbench seed",
           );

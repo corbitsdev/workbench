@@ -30,14 +30,13 @@ import { reportError } from "@corbits/error-sink";
 import {
   inferenceCredentialName,
   OLLAMA_PLACEHOLDER_SECRET,
-  parseAs,
   seedCatalog,
   testProviderCredential,
-  type ApiCall,
   type SeedCatalogArgs,
   type SupportedCredentialProvider,
   type TestProviderCredentialArgs,
 } from "@workbench/hub-client";
+import { parseAs, type ApiCall } from "@corbits/hub-api-client";
 
 /**
  * The conventional environment variable name(s) each curated provider's

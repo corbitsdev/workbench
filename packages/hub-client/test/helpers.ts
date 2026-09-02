@@ -3,7 +3,7 @@
 // one dispatch function per test; an unmatched call fails the test
 // loudly instead of vanishing into a stubbed default.
 
-import type { ApiCall } from "../src/hub";
+import type { ApiCall } from "@corbits/hub-api-client";
 
 export type FakeResponse = { status: number; data: unknown };
 

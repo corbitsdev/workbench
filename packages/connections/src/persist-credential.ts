@@ -19,12 +19,12 @@ import {
   ensureProvider,
   PROVIDER_TEST_CONFIG,
   seedCatalog,
-  type ApiCall,
   type EnsureCredentialArgs,
   type EnsureProviderArgs,
   type SeedCatalogArgs,
   type SupportedCredentialProvider,
 } from "@workbench/hub-client";
+import type { ApiCall } from "@corbits/hub-api-client";
 import type { ConnectorDescriptor } from "./descriptor";
 
 export function isInferenceProvider(

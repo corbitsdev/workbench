@@ -24,18 +24,20 @@ import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { hasUsableModel } from "@corbits/inference-settings";
 import { makeErrorEnvelope, reportError } from "@corbits/error-sink";
 import {
-  cookiesFromHeader,
-  createHubAPI,
   ensureCredential,
   ensureProvider,
-  parseAs,
   OLLAMA_PLACEHOLDER_SECRET,
   seedCatalog,
-  type ApiCall,
   type EnsureCredentialArgs,
   type EnsureProviderArgs,
   type SeedCatalogArgs,
 } from "@workbench/hub-client";
+import {
+  cookiesFromHeader,
+  createHubAPI,
+  parseAs,
+  type ApiCall,
+} from "@corbits/hub-api-client";
 import type { ConnectorDescriptor } from "./descriptor";
 import {
   fireConnectedHook,

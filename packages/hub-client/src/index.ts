@@ -3,15 +3,6 @@
 // verb and the first-login provisioning hook consume this so the
 // tenant-seeding logic is implemented once.
 
-export type { ApiCall, ApiResult, Session } from "./hub";
-export { authenticate, createHubAPI, parseAs, signIn } from "./hub";
-export {
-  CliError,
-  isCliError,
-  isSidecarUnavailableError,
-  SidecarUnavailableError,
-} from "./errors";
-export { cookiesFromHeader } from "./cookies";
 export type {
   DefaultWorkflow,
   EnsureCredentialArgs,

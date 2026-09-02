@@ -4,7 +4,7 @@
 // substitute the whole hub with a function.
 
 import { type, type Type } from "arktype";
-import { CliError } from "./errors";
+import { HubApiError } from "./errors";
 
 export type ApiResult = {
   status: number;
@@ -44,7 +44,7 @@ export function createHubAPI(
         redirect: "manual",
       });
     } catch (cause) {
-      throw new CliError(
+      throw new HubApiError(
         `the hub at ${baseUrl} is not reachable (${cause instanceof Error ? cause.message : String(cause)})`,
         "start the stack first — `bun run dev` from the repository root — wait for the hub to report it is serving, then re-run this command",
         { cause },
@@ -82,7 +82,7 @@ export function parseAs<T extends Type>(
 ): T["infer"] {
   const result = schema(data);
   if (result instanceof type.errors) {
-    throw new CliError(
+    throw new HubApiError(
       `the hub returned an unexpected ${label}: ${result.summary}`,
       "the running hub does not match this checkout; restart it from this checkout (`bun run dev`) and re-run the command",
     );
@@ -130,7 +130,7 @@ export async function signIn(
 ): Promise<Session> {
   const result = await trySignIn(api, args);
   if (!("failedStatus" in result)) return result;
-  throw new CliError(
+  throw new HubApiError(
     `sign-in failed for ${args.email} (status ${result.failedStatus})`,
     "verify HUB_ADMIN_EMAIL/HUB_ADMIN_PASSWORD match an existing admin account",
   );
@@ -169,7 +169,7 @@ export async function authenticate(
   // better-auth answers 422 when the address is already registered —
   // that means the password did not match on sign-in above.
   if (signUp.status === 422) {
-    throw new CliError(
+    throw new HubApiError(
       `${args.email} already exists on the hub but HUB_ADMIN_PASSWORD does not match it (sign-in returned ${signInAttempt.failedStatus})`,
       "set HUB_ADMIN_PASSWORD to the password this account was created with, or use a fresh HUB_ADMIN_EMAIL, then re-run the command",
     );
@@ -182,13 +182,13 @@ export async function authenticate(
     "error" in signUp.data &&
     (signUp.data as { error: unknown }).error === "signup_closed";
   if (closed) {
-    throw new CliError(
+    throw new HubApiError(
       `self-serve signup is closed and ${args.email} does not exist yet`,
       "set WORKBENCH_SIGNUP=open in .env, restart the hub, re-run this command once to create the admin, then set WORKBENCH_SIGNUP=closed again if you want a closed deploy",
     );
   }
 
-  throw new CliError(
+  throw new HubApiError(
     `the hub rejected sign-up for ${args.email} with status ${signUp.status}: ${JSON.stringify(signUp.data)}`,
     "check the hub logs for the underlying failure, fix it, then re-run the command",
   );

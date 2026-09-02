@@ -43,7 +43,7 @@ import {
   parseAs,
   type ApiCall,
   type Session,
-} from "@workbench/hub-client";
+} from "@corbits/hub-api-client";
 import {
   plantEnvProviderCredentials,
   type PlantEnvProviderCredentialsOutcome,

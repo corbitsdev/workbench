@@ -13,7 +13,7 @@ import * as errorSink from "@corbits/error-sink";
 import { Hono, type MiddlewareHandler } from "hono";
 import { createNoopCredentialCipher } from "@intx/crypto";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
-import type { ApiCall } from "@workbench/hub-client";
+import type { ApiCall } from "@corbits/hub-api-client";
 import { createMcpOAuthRoutes } from "./mcp-oauth-routes";
 import { mcpPresetBySlug } from "./mcp-presets";
 import type { McpProbeResult } from "./mcp-probe";

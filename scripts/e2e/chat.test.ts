@@ -29,11 +29,11 @@
 
 import { beforeAll, describe, expect, test } from "bun:test";
 
+import { seedCatalog } from "../../packages/hub-client/src/index.ts";
 import {
   createHubAPI,
-  seedCatalog,
   type ApiCall,
-} from "../../packages/hub-client/src/index.ts";
+} from "../../packages/hub-api-client/src/index.ts";
 import type { Part } from "../../packages/chat/src/index.ts";
 import {
   buildEchoWorkflow,

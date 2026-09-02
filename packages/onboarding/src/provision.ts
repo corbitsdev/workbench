@@ -16,16 +16,15 @@ import {
 import { type } from "arktype";
 import {
   DEFAULT_WORKFLOWS,
-  parseAs,
   reconcileSeedGrants,
   seedTenant,
   publishCorbitsToolsRegistry,
-  type ApiCall,
   type ModelSource,
   type ToolRegistryPublisher,
   type WorkflowPusher,
   isLiveDeploymentStatus,
 } from "@workbench/hub-client";
+import { parseAs, type ApiCall } from "@corbits/hub-api-client";
 import { reportError } from "@corbits/error-sink";
 import {
   checkSignupGate,

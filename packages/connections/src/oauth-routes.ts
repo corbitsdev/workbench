@@ -35,7 +35,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { type } from "arktype";
 import type { AppEnv } from "@intx/hub-api";
 import type { CredentialCipher } from "@intx/types";
-import { cookiesFromHeader } from "@workbench/hub-client";
+import { cookiesFromHeader } from "@corbits/hub-api-client";
 import {
   createConnectStateStore,
   generatePKCEPair,

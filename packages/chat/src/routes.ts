@@ -110,7 +110,7 @@ import {
   DefinitionProjectionMissingError,
 } from "@corbits/folded-runs";
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
-import { cookiesFromHeader } from "@workbench/hub-client";
+import { cookiesFromHeader } from "@corbits/hub-api-client";
 import type { AgentTurnStore } from "./agent-turns";
 import type { ThreadStore } from "./threads";
 import { ThreadDepthCapError } from "./threads";

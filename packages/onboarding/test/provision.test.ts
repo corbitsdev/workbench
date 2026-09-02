@@ -4,7 +4,8 @@ import {
   SEED_GRANTS,
   SETUP_AGENT_ASSET_NAME,
 } from "@workbench/hub-client";
-import type { ApiCall, WorkflowPusher } from "@workbench/hub-client";
+import type { WorkflowPusher } from "@workbench/hub-client";
+import type { ApiCall } from "@corbits/hub-api-client";
 import {
   isFullySeeded,
   personalTenantSlug,

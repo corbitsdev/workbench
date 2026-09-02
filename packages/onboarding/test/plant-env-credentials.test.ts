@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { ApiCall, SeedCatalogArgs } from "@workbench/hub-client";
+import type { SeedCatalogArgs } from "@workbench/hub-client";
+import type { ApiCall } from "@corbits/hub-api-client";
 import {
   envProviderBaseUrlsFrom,
   envProviderKeysFrom,

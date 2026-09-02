@@ -56,14 +56,16 @@ import { describe, expect, test } from "bun:test";
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
   createGitWorkflowPusher,
-  createHubAPI,
   DEFAULT_WORKFLOWS,
   isLiveDeploymentStatus,
-  parseAs,
   publishCorbitsToolsRegistry,
   seedTenant,
-  type ApiCall,
 } from "../../packages/hub-client/src/index.ts";
+import {
+  createHubAPI,
+  parseAs,
+  type ApiCall,
+} from "../../packages/hub-api-client/src/index.ts";
 import {
   findPersonalTenant,
   testAndPersistCredential,

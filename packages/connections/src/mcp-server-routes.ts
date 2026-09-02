@@ -20,14 +20,13 @@ import {
   ProviderResponse,
   paginatedSchema,
 } from "@intx/types";
+import { ensureCredential, ensureProvider } from "@workbench/hub-client";
 import {
   cookiesFromHeader,
   createHubAPI,
-  ensureCredential,
-  ensureProvider,
   parseAs,
   type ApiCall,
-} from "@workbench/hub-client";
+} from "@corbits/hub-api-client";
 import {
   MCP_NO_TOKEN_SENTINEL,
   MCP_STREAMABLE_HTTP_PROVIDER_KEY,
