@@ -1,6 +1,10 @@
 // CL-7366: prove the aligned routine and workflow-authoring paths end to
 // end, against a real Postgres and a real hub+sidecar pair, driving only
-// PUBLIC APIs (no seeded internal rows to fake success). Scenarios:
+// PUBLIC APIs (no seeded internal rows to fake success) — with one
+// sanctioned exception: `readRunAddress` below reads `workflow_run`
+// directly from Postgres, because no public route exposes a run's own
+// address by run id (consistent with `routine-trigger-input.test.ts`'s
+// existing precedent; see that function's own doc comment). Scenarios:
 //
 //   1. Bench-level routine create with no invited agent, targeting a
 //      deployed definition discovered via `GET .../workflows/targets`;
@@ -11,12 +15,10 @@
 //      is real but belongs to a different tenant, both 404.
 //   4. Myra-shaped author -> preview -> deploy over the run-authenticated
 //      `/api/workflow-workflow-authoring` surface: authoring an asset,
-//      previewing its deploy (CL-7362's native preview seam is not wired
-//      yet — the route answers a documented `unavailable` envelope,
-//      asserted here rather than faked; see the inline note below),
-//      deploying it directly (now a routine target, previously not),
-//      and a wrong `expectedWireHash` on redeploy failing closed with
-//      `wire_hash_mismatch`.
+//      previewing its deploy (a static, read-only render of the committed
+//      source — package name, file list, declared tool pins; CL-7362's
+//      probe-without-freeze vendored delta was reverted, see VENDORED.md),
+//      and deploying it directly (now a routine target, previously not).
 //   5. The routine run's own agent principal holds no `approval:*`
 //      grant — approving a deploy is never something an agent can do
 //      to itself.
@@ -652,40 +654,31 @@ describe.skipIf(databaseUrl === undefined)(
             },
           );
           const previewData: unknown = await preview.json();
-          if (preview.status === 502) {
-            // CL-7362 ("Preview: native probe with empty ApprovalSet, no
-            // freeze") is not wired yet — `docs/workflow-source-authoring.md`
-            // lists this seam under "Seams that do not exist yet" as of
-            // this proof landing. The route answers a canonical
-            // `unavailable` envelope rather than pretending to preview, so
-            // this asserts exactly that fail-closed shape instead of a
-            // real wireHash/grants preview, and the deploy below proceeds
-            // without a preview-derived expectedWireHash.
-            const previewError = record(
-              record(previewData, "preview response")["error"],
-              "preview error",
-            );
-            if (previewError["code"] !== "unavailable") {
-              throw new Error(
-                `deploy preview: expected the documented CL-7362 ` +
-                  `"unavailable" envelope, got ${JSON.stringify(previewData)}`,
-              );
-            }
-          } else if (preview.status !== 200 && preview.status !== 201) {
+          if (preview.status !== 200 && preview.status !== 201) {
             throw new Error(
               `deploy preview: expected 200/201, got ${preview.status}: ${JSON.stringify(previewData)}`,
             );
-          } else {
-            const previewBody = record(
-              record(previewData, "preview response")["data"],
-              "preview response data",
+          }
+          const previewBody = record(
+            record(previewData, "preview response")["data"],
+            "preview response data",
+          );
+          // The preview is a STATIC read of the already-committed source
+          // (never install/probe/gate/freeze, see VENDORED.md) — asserted
+          // unconditionally, not as a fallback branch: the vendored delta
+          // that would have made this a real no-freeze probe was reverted.
+          stringField(previewBody, "commitSha", "preview response");
+          stringField(previewBody, "entry", "preview response");
+          stringField(previewBody, "packageName", "preview response");
+          if (!Array.isArray(previewBody["files"])) {
+            throw new Error(
+              `preview response missing a files array: ${JSON.stringify(previewData)}`,
             );
-            stringField(previewBody, "wireHash", "preview response");
-            if (!Array.isArray(previewBody["grants"])) {
-              throw new Error(
-                `preview response missing a grants array: ${JSON.stringify(previewData)}`,
-              );
-            }
+          }
+          if (!Array.isArray(previewBody["toolPackagePins"])) {
+            throw new Error(
+              `preview response missing a toolPackagePins array: ${JSON.stringify(previewData)}`,
+            );
           }
 
           const notYetTargets = await api(
@@ -746,40 +739,6 @@ describe.skipIf(databaseUrl === undefined)(
               );
             }
             await Bun.sleep(200);
-          }
-
-          const wrongHash = await fetch(
-            `${hub.baseUrl}/api/workflow-workflow-authoring/${assetId}/deploy`,
-            {
-              method: "POST",
-              headers: runHeaders,
-              body: JSON.stringify({
-                commitSha,
-                entry: WORKFLOW_SOURCE_ENTRY,
-                expectedWireHash: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
-              }),
-            },
-          );
-          const wrongHashData: unknown = await wrongHash.json();
-          if (wrongHash.status !== 409) {
-            throw new Error(
-              `redeploy with a wrong expectedWireHash: expected 409, got ` +
-                `${wrongHash.status}: ${JSON.stringify(wrongHashData)}`,
-            );
-          }
-          const wrongHashError = record(
-            wrongHashData,
-            "wrong-expectedWireHash response",
-          )["error"];
-          const errorCode = record(
-            wrongHashError,
-            "wrong-expectedWireHash error",
-          )["code"];
-          if (errorCode !== "wire_hash_mismatch") {
-            throw new Error(
-              `redeploy with a wrong expectedWireHash: expected code ` +
-                `"wire_hash_mismatch", got ${JSON.stringify(errorCode)}`,
-            );
           }
 
           return { assetId, principalId };
@@ -869,8 +828,8 @@ describe.skipIf(databaseUrl === undefined)(
       console.log(
         "routine-alignment: gate achieved: routine target discovery, " +
           "retarget (success and fail-closed), agent-authored author/" +
-          "preview/deploy, deploy wire-hash fail-closed, agent-cannot-" +
-          "approve, and the workflow detail route all hold end to end.",
+          "preview/deploy, agent-cannot-approve, and the workflow detail " +
+          "route all hold end to end.",
       );
     }, 240_000);
   },

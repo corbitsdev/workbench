@@ -50,7 +50,11 @@ import { type } from "arktype";
 import { PackageJSON } from "@intx/types/package-json";
 
 import { WorkflowAuthorError } from "./errors";
-import { PACKAGE_JSON_PATH, validateWorkflowSourceTree } from "./source-tree";
+import {
+  normalizeEntryPath,
+  PACKAGE_JSON_PATH,
+  validateWorkflowSourceTree,
+} from "./source-tree";
 
 const WORKFLOW_ASSET_KIND = "workflow";
 const HUB_PRINCIPAL = { kind: "hub" } as const;
@@ -486,7 +490,12 @@ export function createWorkflowAuthorRegistry(
       }
       const files: Record<string, string> = {};
       await collectTree(reads, "", files);
-      if (!(input.entry in files)) {
+      // Normalized the same way `validateWorkflowSourceTree` normalizes an
+      // author-time `interchange.workflow` entry: the tree's keys carry no
+      // leading `./`, but a caller (this same test suite included) may
+      // still pass the entry as written in `package.json`.
+      const entry = normalizeEntryPath(input.entry);
+      if (!(entry in files)) {
         throw new WorkflowAuthorError(
           "invalid",
           `entry ${JSON.stringify(input.entry)} names no file in commit ${input.commitSha}`,
@@ -516,13 +525,13 @@ export function createWorkflowAuthorRegistry(
         );
       }
       const packageName = manifest.name;
-      const entrySource = files[input.entry] ?? "";
+      const entrySource = files[entry] ?? "";
       const inertLiteral = tryReadInertDefaultExport(entrySource);
       const toolPackagePins = extractToolPackagePins(inertLiteral);
 
       return {
         commitSha: input.commitSha,
-        entry: input.entry,
+        entry,
         files: Object.keys(files),
         toolPackagePins,
         packageName,

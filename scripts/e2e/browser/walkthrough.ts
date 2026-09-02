@@ -1065,10 +1065,23 @@ async function run(): Promise<void> {
         const name = `Walkthrough routine ${Date.now()}`;
         await page.type("#routine-panel-name", name);
         await page.keyboard.press("Tab"); // blur with no target picked yet
+        // A fixed grace period, not a race against the positive wait below:
+        // an asymmetric short/long timeout pair invites a flaky false pass
+        // (this negative wait could elapse with no autosave firing purely
+        // because it's short, even if the blocked-save bug exists). Poll
+        // for the same 15s window as the positive assertion, and read
+        // `role="status"` inside the panel — not `document.body` — so a
+        // stale "Saved" toast elsewhere on the page can't false-positive.
+        await Bun.sleep(1_500);
         const savedBeforePick = await page
-          .waitForFunction(() => document.body.textContent?.includes("Saved"), {
-            timeout: 1_500,
-          })
+          .waitForFunction(
+            () =>
+              document
+                .querySelector(".shell-routine-pane")
+                ?.querySelector('[role="status"]')?.textContent
+                ?.includes("Saved") ?? false,
+            { timeout: 13_500 },
+          )
           .then(() => true)
           .catch(() => false);
 
@@ -1087,9 +1100,14 @@ async function run(): Promise<void> {
         await page.type("#routine-panel-name", " picked");
         await page.keyboard.press("Tab");
         const saved = await page
-          .waitForFunction(() => document.body.textContent?.includes("Saved"), {
-            timeout: 15_000,
-          })
+          .waitForFunction(
+            () =>
+              document
+                .querySelector(".shell-routine-pane")
+                ?.querySelector('[role="status"]')?.textContent
+                ?.includes("Saved") ?? false,
+            { timeout: 15_000 },
+          )
           .then(() => true)
           .catch(() => false);
         if (savedBeforePick || !saved) {
