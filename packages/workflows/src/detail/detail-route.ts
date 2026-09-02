@@ -187,6 +187,11 @@ export function createWorkflowDetailRoute({
             approvedWireHash:
               currentVersionByDefinitionId.get(row.id)?.approvedWireHash ??
               null,
+            grantSnapshot:
+              currentVersionByDefinitionId.get(row.id)?.grantSnapshot ?? null,
+            wireProjection:
+              currentVersionByDefinitionId.get(row.id)?.wireProjection ??
+              null,
             status: row.status,
             createdAt: row.createdAt.toISOString(),
           })),

@@ -1219,9 +1219,10 @@
     },
     "packages/routines-tools": {
       "name": "@corbits/routines-tools",
-      "version": "0.0.8",
+      "version": "0.0.9",
       "dependencies": {
         "@corbits/routines": "workspace:*",
+        "@corbits/workflows": "workspace:*",
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",

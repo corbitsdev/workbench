@@ -36,7 +36,10 @@ import {
   routineTargetRejection,
   type LaunchableDefinitionResolver,
 } from "@corbits/workflows";
-import { validateRetarget } from "./routine-operations";
+import {
+  validateRetarget,
+  isDeliveryWorkbenchRequired,
+} from "./routine-operations";
 import { makeErrorEnvelope } from "@workbench/hub-client";
 import {
   MyraRoutineDraftingUnavailableError,
@@ -527,21 +530,7 @@ export async function webhookTriggerValid(
   );
 }
 
-/** Every definition defaults to workbench-required — see
- * `CreateRoutineRoutesDeps.deliveryWorkbenchRequired`'s own doc comment
- * for why an omitted port must never change prior behavior.
- *
- * Exported: `./workflow-routine-routes.ts` consults the same rule for
- * Myra's own create/run-now path.
- */
-export async function isDeliveryWorkbenchRequired(
-  deps: Pick<CreateRoutineRoutesDeps, "deliveryWorkbenchRequired">,
-  tenantId: string,
-  definitionAssetId: string,
-): Promise<boolean> {
-  if (deps.deliveryWorkbenchRequired === undefined) return true;
-  return deps.deliveryWorkbenchRequired(tenantId, definitionAssetId);
-}
+export { isDeliveryWorkbenchRequired };
 
 /**
  * Posts the "created enabled" / "enabled" honest-notice — see

@@ -9,8 +9,10 @@ export * from "./authoring/index";
 export {
   pickLaunchableDefinition,
   resolveLaunchableDefinition,
+  listLaunchableDefinitions,
   routineTargetRejection,
   RoutineTargetUnresolvableError,
+  type LaunchableDefinition,
   type LaunchableDefinitionCandidate,
   type LaunchableDefinitionRejection,
   type LaunchableDefinitionResolution,

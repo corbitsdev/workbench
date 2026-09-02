@@ -10,6 +10,8 @@
 // attempted at all (`@corbits/workflows`'s `./deploy-source`'s per-anchor-run
 // record). Kept in its own module, with no DB import, so the four states
 // below are covered by a plain unit test rather than a route fixture.
+import { isFrozen } from "../launchable/target-rule";
+
 export type WorkflowLifecycle =
   | "source-only"
   | "pending-approval"
@@ -25,6 +27,10 @@ export type DefinitionLifecycleRow = {
   /** `workflow_definition_version.approved_wire_hash` for this row's
    * current version — `null` means the freeze never landed. */
   readonly approvedWireHash: string | null;
+  /** The rest of the same freeze, alongside `approvedWireHash` — folded
+   * into `isFrozen` below rather than read alone. */
+  readonly grantSnapshot: unknown;
+  readonly wireProjection: unknown;
   readonly status: "deployed" | "stopped";
   /** ISO timestamp, used only to pick the newest row when more than one
    * is passed in. */
@@ -45,10 +51,10 @@ export type WorkflowLifecycleResult = {
  *   tried to run this asset.
  * - No rows, a deploy attempt IS on record → `build-failed`: a deploy was
  *   asked for and never produced a definition row at all.
- * - Rows exist: the newest one decides. Unapproved (`approvedWireHash`
- *   still null) → `pending-approval`. Approved and `status: "deployed"` →
- *   `deployed`. Approved but rolled back / replaced (`status: "stopped"`)
- *   → `superseded`.
+ * - Rows exist: the newest one decides. Not yet frozen (see `isFrozen`) →
+ *   `pending-approval`. Frozen and `status: "deployed"` → `deployed`.
+ *   Frozen but rolled back / replaced (`status: "stopped"`) →
+ *   `superseded`.
  */
 export function deriveWorkflowLifecycle(
   rows: readonly DefinitionLifecycleRow[],
@@ -75,7 +81,7 @@ export function deriveWorkflowLifecycle(
     throw new Error("deriveWorkflowLifecycle: unreachable — rows non-empty");
   }
 
-  if (newest.approvedWireHash === null) {
+  if (!isFrozen(newest)) {
     return {
       lifecycle: "pending-approval",
       currentDefinitionId: newest.id,

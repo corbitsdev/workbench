@@ -17,15 +17,17 @@ import {
   RoutineTargetsResponse,
   type RoutineTriggerT,
 } from "@corbits/routines/client";
+import {
+  runBearerHeaders,
+  runBearerErrorMessage,
+  runBearerFetch,
+  type RunBearerClientConfig,
+} from "@corbits/workflows/client";
 
-export interface RoutineToolClientConfig {
+export interface RoutineToolClientConfig extends RunBearerClientConfig {
   /** The hub's plain HTTP origin — same value memory-tools' `hubMemoryUrl`
    * and capability-tools' `hubCapabilitiesUrl` reach the hub through. */
   readonly hubRoutinesUrl: string;
-  readonly sidecarToken: string;
-  readonly address: string;
-  /** Override for tests; defaults to the global `fetch`. */
-  readonly fetchImpl?: typeof fetch;
 }
 
 /** The trigger a routine create/update call sends — `@corbits/routines`'
@@ -78,31 +80,6 @@ const RunRoutineNowResponse = type({
   runId: "string",
 });
 
-/** Pulls `error.userMessage` out of the canonical hub envelope
- * (`{error: {code, userMessage, refId}}`), if `body` matches that shape. */
-function errorMessageFrom(body: unknown): string | undefined {
-  if (body === null || typeof body !== "object" || !("error" in body)) {
-    return undefined;
-  }
-  const error = (body as { error: unknown }).error;
-  if (
-    error === null ||
-    typeof error !== "object" ||
-    !("userMessage" in error)
-  ) {
-    return undefined;
-  }
-  const userMessage = (error as { userMessage: unknown }).userMessage;
-  return typeof userMessage === "string" ? userMessage : undefined;
-}
-
-function authHeaders(config: RoutineToolClientConfig): Record<string, string> {
-  return {
-    authorization: `Bearer ${config.sidecarToken}`,
-    "x-workflow-run-address": config.address,
-  };
-}
-
 function endpoint(config: RoutineToolClientConfig, path: string): string {
   return `${config.hubRoutinesUrl}/api/workflow-routines${path}`;
 }
@@ -112,7 +89,7 @@ async function readErrorMessage(
   fallback: string,
 ): Promise<string> {
   const body: unknown = await response.json().catch(() => undefined);
-  return errorMessageFrom(body) ?? fallback;
+  return runBearerErrorMessage(body) ?? fallback;
 }
 
 /** Lists every routine in the calling run's own tenant. Throws a plain
@@ -121,9 +98,9 @@ async function readErrorMessage(
 export async function listRoutines(
   config: RoutineToolClientConfig,
 ): Promise<readonly RoutineView[]> {
-  const doFetch = config.fetchImpl ?? fetch;
+  const doFetch = runBearerFetch(config);
   const response = await doFetch(endpoint(config, "/routines"), {
-    headers: authHeaders(config),
+    headers: runBearerHeaders(config),
   });
   if (!response.ok) {
     throw new Error(
@@ -151,10 +128,10 @@ export async function createRoutine(
   config: RoutineToolClientConfig,
   input: CreateRoutineRequest,
 ): Promise<RoutineView> {
-  const doFetch = config.fetchImpl ?? fetch;
+  const doFetch = runBearerFetch(config);
   const response = await doFetch(endpoint(config, "/routines"), {
     method: "POST",
-    headers: { ...authHeaders(config), "content-type": "application/json" },
+    headers: { ...runBearerHeaders(config), "content-type": "application/json" },
     body: JSON.stringify(input),
   });
   if (!response.ok) {
@@ -182,10 +159,10 @@ export async function updateRoutine(
   routineId: string,
   patch: UpdateRoutineRequest,
 ): Promise<RoutineView> {
-  const doFetch = config.fetchImpl ?? fetch;
+  const doFetch = runBearerFetch(config);
   const response = await doFetch(endpoint(config, `/routines/${routineId}`), {
     method: "PATCH",
-    headers: { ...authHeaders(config), "content-type": "application/json" },
+    headers: { ...runBearerHeaders(config), "content-type": "application/json" },
     body: JSON.stringify(patch),
   });
   if (!response.ok) {
@@ -214,15 +191,15 @@ export async function runRoutineNow(
   routineId: string,
   input?: Record<string, unknown>,
 ): Promise<RunRoutineNowResult> {
-  const doFetch = config.fetchImpl ?? fetch;
+  const doFetch = runBearerFetch(config);
   const response = await doFetch(
     endpoint(config, `/routines/${routineId}/run`),
     {
       method: "POST",
       headers:
         input === undefined
-          ? authHeaders(config)
-          : { ...authHeaders(config), "content-type": "application/json" },
+          ? runBearerHeaders(config)
+          : { ...runBearerHeaders(config), "content-type": "application/json" },
       body: input === undefined ? undefined : JSON.stringify({ input }),
     },
   );
@@ -253,9 +230,9 @@ export async function runRoutineNow(
 export async function listTargets(
   config: RoutineToolClientConfig,
 ): Promise<readonly RoutineTargetView[]> {
-  const doFetch = config.fetchImpl ?? fetch;
+  const doFetch = runBearerFetch(config);
   const response = await doFetch(endpoint(config, "/targets"), {
-    headers: authHeaders(config),
+    headers: runBearerHeaders(config),
   });
   if (!response.ok) {
     throw new Error(
