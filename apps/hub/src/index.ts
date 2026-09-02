@@ -1892,7 +1892,7 @@ export async function createHub(config: HubConfig) {
   // tenant-default resolution above; deploy always resolves against the
   // tenant's default/first-preference model.
   const workflowDeployer: WorkflowDeployer = {
-    async deploy({ tenantId, principalId, assetId, assetName, commitSha, entry }) {
+    async deploy({ tenantId, principalId, assetId, commitSha, entry }) {
       const tenantRow = await db.query.tenant.findFirst({
         where: eq(tenantTable.id, tenantId),
       });
