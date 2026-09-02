@@ -232,6 +232,9 @@ const UpdateRoutineBody = type({
   "input?": "Record<string, unknown>",
   "enabled?": "boolean",
   "deliveryWorkbenchId?": "string",
+  // Retargets the routine (CL-7353): a workflow asset id, same rule as
+  // `CreateRoutineBody`'s own field — an explicit target, never inferred.
+  "definitionAssetId?": "string > 0",
 });
 
 const RunNowBody = type({
@@ -341,6 +344,14 @@ async function runView(
  * A run's result always delivers as a message into `deliveryWorkbenchId`'s
  * root timeline — see `RoutineLauncher`'s own doc comment for the
  * multi-message contract.
+ *
+ * A retarget (CL-7353) is safe against an in-flight fire because the
+ * launcher itself re-resolves `definitionAssetId` through
+ * `resolveLaunchableDefinition` exactly once, at the moment this call
+ * launches (see `RoutineLauncher`'s doc comment and the hub's own
+ * `createHubRoutineLauncher`) — a run always launches against whatever
+ * one definition that single read named, never a definition read before
+ * the retarget landed spliced with one read after.
  *
  * Exported: `./workflow-routine-routes.ts`'s "run now" reuses this exact
  * launch-then-correlate call, never a second launch path for Myra's own
@@ -816,6 +827,9 @@ export function createRoutineRoutes(
       }
       if (body.deliveryWorkbenchId !== undefined) {
         patch = { ...patch, deliveryWorkbenchId: body.deliveryWorkbenchId };
+      }
+      if (body.definitionAssetId !== undefined) {
+        patch = { ...patch, definitionAssetId: body.definitionAssetId };
       }
 
       const row = await deps.store.updateRoutine(tenant.id, routineId, patch);

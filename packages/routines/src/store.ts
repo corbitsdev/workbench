@@ -102,6 +102,15 @@ export interface UpdateRoutineInput {
   readonly input?: Record<string, unknown>;
   readonly enabled?: boolean;
   readonly deliveryWorkbenchId?: string | null;
+  /**
+   * Retargets the routine to a different workflow asset — the same
+   * single UPDATE as every other field here, so a launch that reads the
+   * row once (`resolveLaunchableDefinition` at fire time, `./target.ts`)
+   * never sees a half-applied retarget. The route validates this through
+   * `resolveLaunchableDefinition` before it ever reaches the store (see
+   * `./routes.ts`'s `rejectUnlaunchableTarget`).
+   */
+  readonly definitionAssetId?: string;
 }
 
 export interface RoutineRunRow {

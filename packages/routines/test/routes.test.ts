@@ -907,6 +907,35 @@ describe("createRoutineRoutes", () => {
       expect(seenInput).toEqual({ agent: "wfd_agent", prompt: "Do it" });
     });
   });
+
+  // CL-7353: PATCH can replace the deployed-definition target.
+  describe("retargeting a routine's definition (CL-7353)", () => {
+    test("a retarget-only PATCH changes definitionAssetId and leaves every other field untouched", async () => {
+      const deps = buildDeps();
+      const app = mountAs(createRoutineRoutes(deps), "user_1");
+      const { body: created } = await createRoutine(app, {
+        ...VALID_BODY,
+        input: { topic: "AI coding agents" },
+      });
+
+      const response = await app.request(`/routines/${created["id"]}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ definitionAssetId: "def_other" }),
+      });
+      const body = (await response.json()) as Record<string, unknown>;
+
+      expect(response.status).toBe(200);
+      expect(body["definitionAssetId"]).toBe("def_other");
+      // Everything else — name, trigger, scope, input, deliveryWorkbenchId
+      // — survives the retarget, a single UPDATE alongside every other
+      // patchable field, never a second write.
+      expect(body["name"]).toBe(created["name"]);
+      expect(body["trigger"]).toEqual(created["trigger"]);
+      expect(body["input"]).toEqual(created["input"]);
+      expect(body["deliveryWorkbenchId"]).toBe(created["deliveryWorkbenchId"]);
+    });
+  });
 });
 
 describe("fireScheduledRoutine", () => {

@@ -153,6 +153,8 @@ const UpdateWorkflowRoutineBody = type({
   "definitionAssetId?": "string > 0",
   "trigger?": RoutineTrigger,
   "input?": "Record<string, unknown>",
+  // Retargets the routine (CL-7353) — same rule as `CreateWorkflowRoutineBody`.
+  "definitionAssetId?": "string > 0",
 });
 
 const RunNowBody = type({
@@ -495,6 +497,9 @@ export function createWorkflowRoutineRoutes(
     if (body.trigger !== undefined) patch = { ...patch, trigger: body.trigger };
     if (body.input !== undefined) patch = { ...patch, input: body.input };
     if (body.enabled !== undefined) patch = { ...patch, enabled: body.enabled };
+    if (body.definitionAssetId !== undefined) {
+      patch = { ...patch, definitionAssetId: body.definitionAssetId };
+    }
 
     const row = await deps.store.updateRoutine(
       scope.tenantId,
