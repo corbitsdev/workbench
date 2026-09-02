@@ -64,7 +64,6 @@
     "@modelcontextprotocol/sdk": "catalog:",
     "@workbench/access-policy": "workspace:*",
     "@workbench/connections": "workspace:*",
-    "@workbench/echo": "workspace:*",
     "@workbench/hub-client": "workspace:*",
     "@workbench/onboarding": "workspace:*",
     "@workbench/templates": "workspace:*",

@@ -280,7 +280,6 @@ import {
   createWorkflowArtifactRoutes,
   createWorkflowRunAuthenticator,
 } from "@corbits/artifacts-hub";
-import { createEchoRoutes } from "@workbench/echo";
 import {
   createArtifactDocPersistence,
   createPresenceRoomRegistry,
@@ -1167,10 +1166,6 @@ export async function createHub(config: HubConfig) {
   // nothing reported. See `hubErrorHandler`'s own doc comment.
   app.onError(hubErrorHandler());
 
-  // Extension routes mount under the tenant prefix, inside the
-  // platform's native tenant middleware, so every extension handler
-  // runs with c.get("tenant") / c.get("principal") resolved.
-  app.route(`${TENANT_PREFIX}/echo`, createEchoRoutes());
   // One in-process presence room registry for this process, constructed
   // here in the composition root — the same pattern `workbenchSubscribers`
   // above uses. Presence rooms are ephemeral and process-local by design
