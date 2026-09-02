@@ -281,6 +281,30 @@ export function ConnectionsSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, reloadKey]);
 
+  // Connections can change elsewhere (another tab, the Plugins gallery's
+  // connect panel, or a credential expiring during a long agent run).
+  // Re-read on visibility/focus and poll while the page sits open so a
+  // "Connected" pill never lies silently — the same live-surface concern
+  // that `ConnectServiceBlockContainer` and `ConnectGithubBlockContainer`
+  // solve via `subscribeConnectState`.
+  useEffect(() => {
+    if (tenantId === null) return;
+    const refresh = () => {
+      if (document.visibilityState === "visible") {
+        setReloadKey((value) => value + 1);
+      }
+    };
+    const onFocus = () => setReloadKey((value) => value + 1);
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", onFocus);
+    const interval = setInterval(refresh, 30_000);
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", onFocus);
+      clearInterval(interval);
+    };
+  }, [tenantId]);
+
   if (tenantId === null) {
     return (
       <EmptyState

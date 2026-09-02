@@ -2,13 +2,20 @@
    shell's contextual panel. Layout glue only: visual styling comes from
    `@corbits/react-ui`'s prebuilt stylesheet and the theme's tokens. */
 
+/* Motion is gated centrally by react-ui's `theme.css` blanket
+   `prefers-reduced-motion` rule (`animation-duration: 0.01ms` etc.),
+   so every animation below may also be wrapped in a local
+   `@media (prefers-reduced-motion: no-preference)` guard or left to
+   that central override — either way it collapses when the user asks
+   for reduced motion. */
+
 :root {
   /* Deliberately not an invented curve: this aliases react-ui's own
      `--ease-out` (DESIGN.md's "out" — straightforward entrances/exits, no
      overshoot) so the chat surface never carries a third easing curve of
      its own. Falls back to the equivalent cubic-bezier only for the rare
      test/story context that doesn't load react-ui's theme stylesheet. */
-  --chat-ease: var(--ease-out, cubic-bezier(0.2, 0.8, 0.3, 1));
+  --chat-ease: var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
 }
 
 .chat-workspace {
@@ -2214,13 +2221,13 @@
   padding: 0.35rem 0.75rem 0.35rem 0.4rem;
   transition:
     transform var(--duration-standard, 180ms)
-      var(--ease-out, cubic-bezier(0.2, 0.8, 0.3, 1)),
+      var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
     background-color var(--duration-standard, 180ms)
-      var(--ease-out, cubic-bezier(0.2, 0.8, 0.3, 1)),
+      var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
     border-color var(--duration-standard, 180ms)
-      var(--ease-out, cubic-bezier(0.2, 0.8, 0.3, 1)),
+      var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
     color var(--duration-standard, 180ms)
-      var(--ease-out, cubic-bezier(0.2, 0.8, 0.3, 1));
+      var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
 }
 
 .chat-tool-activity-trigger {
@@ -2380,7 +2387,7 @@
   font-size: 11px;
   color: var(--muted-foreground);
   transition: transform var(--duration-standard, 180ms)
-    var(--ease-out, cubic-bezier(0.2, 0.8, 0.3, 1));
+    var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
 }
 
 .chat-tool-activity-caret[data-open="true"] {

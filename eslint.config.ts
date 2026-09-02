@@ -12,6 +12,7 @@ export default defineConfig(
     "**/node_modules/**",
     "**/dist/**",
     ".data/**",
+    "apps/hub/.data/**",
     "coverage/**",
     "tmp/**",
     "vendor/**",

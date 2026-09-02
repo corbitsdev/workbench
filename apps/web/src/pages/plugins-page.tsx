@@ -145,6 +145,30 @@ export function PluginsRoute({
     };
   }, [selectedTenantId, pluginsReloadKey]);
 
+  // Keep plugin connection status live while the gallery sits open —
+  // a credential expiring or a disconnect in another tab/window would
+  // otherwise leave "Connected" stale indefinitely. Re-read on
+  // visibility/focus and poll every 30s while visible, mirroring the
+  // pattern `ConnectionsSection` and the `subscribeConnectState` containers
+  // use for in-room connect cards.
+  useEffect(() => {
+    if (selectedTenantId === null) return;
+    const refresh = () => {
+      if (document.visibilityState === "visible") {
+        setPluginsReloadKey((key) => key + 1);
+      }
+    };
+    const onFocus = () => setPluginsReloadKey((key) => key + 1);
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", onFocus);
+    const interval = setInterval(refresh, 30_000);
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", onFocus);
+      clearInterval(interval);
+    };
+  }, [selectedTenantId]);
+
   useEffect(() => {
     if (selectedTenantId === null) return;
     let cancelled = false;
