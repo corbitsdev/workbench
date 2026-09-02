@@ -21,6 +21,12 @@ const SECRET_LIKE_BASENAME_PATTERNS: readonly RegExp[] = [
   /\.key$/,
   /^id_rsa/,
   /\.p12$/,
+  /\.pfx$/,
+  /\.ppk$/,
+  /^credentials\.json$/,
+  /^service-account.*\.json$/,
+  /^\.npmrc$/,
+  /^\.netrc$/,
 ];
 
 const FORBIDDEN_SEGMENTS = new Set([".", "..", ".git"]);
@@ -60,7 +66,7 @@ export function assertRepoRelativePath(path: string): void {
         `file path ${JSON.stringify(path)} has an empty segment (trailing or doubled "/")`,
       );
     }
-    if (FORBIDDEN_SEGMENTS.has(segment)) {
+    if (FORBIDDEN_SEGMENTS.has(segment.toLowerCase())) {
       throw invalid(
         `file path ${JSON.stringify(path)} may not contain a ${JSON.stringify(segment)} segment`,
       );
