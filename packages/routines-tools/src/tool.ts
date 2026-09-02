@@ -401,6 +401,8 @@ async function runRoutineRetarget(
       content: `Retargeted "${routine.name}" (${routine.id}) to ${parsed.definitionAssetId}.`,
     };
   } catch (err) {
+    // report-error-ignore: the hub already reported the rejection with its
+    // own refId; the model needs the typed envelope text to explain or retry.
     return errorResult(call.id, err);
   }
 }
@@ -430,6 +432,8 @@ async function runRoutineRunNow(
       content: `Started run ${result.runId}.`,
     };
   } catch (err) {
+    // report-error-ignore: the hub already reported the failure with its
+    // own refId; the model needs the envelope text to explain or retry.
     return errorResult(call.id, err);
   }
 }
