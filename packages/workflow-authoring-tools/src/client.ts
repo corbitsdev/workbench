@@ -48,12 +48,24 @@ export type DeployWorkflowRequest = {
   readonly assetId: string;
   readonly commitSha: string;
   readonly entry: string;
+  readonly expectedWireHash?: string;
+};
+
+export type DeployWorkflowPreviewRequest = {
+  readonly assetId: string;
+  readonly commitSha: string;
+  readonly entry: string;
 };
 
 export type WorkflowDeployResult = {
   readonly deploymentId: string;
   readonly definitionAssetId: string;
   readonly status: string;
+};
+
+export type WorkflowDeployPreviewResult = {
+  readonly wireHash: string;
+  readonly grants: readonly string[];
 };
 
 /** The hub refused the request with a canonical error envelope. `code`
@@ -101,6 +113,13 @@ const DeployResponse = type({
     deploymentId: "string",
     definitionAssetId: "string",
     status: "string",
+  },
+});
+
+const DeployPreviewResponse = type({
+  data: {
+    wireHash: "string",
+    grants: "string[]",
   },
 });
 
@@ -201,6 +220,9 @@ export async function deployWorkflow(
       body: JSON.stringify({
         commitSha: input.commitSha,
         entry: input.entry,
+        ...(input.expectedWireHash !== undefined
+          ? { expectedWireHash: input.expectedWireHash }
+          : {}),
       }),
     },
   );
@@ -209,6 +231,32 @@ export async function deployWorkflow(
     DeployResponse,
     await response.json(),
     "Deploying a workflow",
+  ).data;
+}
+
+export async function previewDeployWorkflow(
+  config: WorkflowAuthoringClientConfig,
+  input: DeployWorkflowPreviewRequest,
+): Promise<WorkflowDeployPreviewResult> {
+  const doFetch = config.fetchImpl ?? fetch;
+  const response = await doFetch(
+    endpoint(config, `/${encodeURIComponent(input.assetId)}/deploy/preview`),
+    {
+      method: "POST",
+      headers: { ...authHeaders(config), "content-type": "application/json" },
+      body: JSON.stringify({
+        commitSha: input.commitSha,
+        entry: input.entry,
+      }),
+    },
+  );
+  if (!response.ok) {
+    await throwForFailure(response, "Previewing a workflow deploy");
+  }
+  return parseOrThrow(
+    DeployPreviewResponse,
+    await response.json(),
+    "Previewing a workflow deploy",
   ).data;
 }
 
