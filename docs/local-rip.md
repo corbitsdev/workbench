@@ -36,12 +36,14 @@ bun run dev
 ```
 
 `bun run reset` drops the schema and every on-disk asset directory
-`bun run dev`/`bun run setup`/`bun run seed` created — skip it on a
+`bun run dev` and its boot-time seeding created — skip it on a
 genuinely fresh checkout. `bun run dev` validates `.env`, confirms
 `DATABASE_URL` is reachable, applies pending migrations, builds the web
 UI, seeds the administrator account, and starts the hub, one sidecar, and
-the web dev server together (see [README.md](../README.md#running-locally)
-for exactly what it checks). Leave `ANTHROPIC_API_KEY` unset in `.env` for
+the web dev server together — the hub then provisions and seeds the root
+tenant itself once it is serving (see
+[README.md](../README.md#running-locally) for exactly what it checks).
+Leave `ANTHROPIC_API_KEY` unset in `.env` for
 this walkthrough — the point is proving a bench with no hub-owned seed
 model gets fully seeded through a person's own connected credential, not
 through the operator's key.
@@ -100,10 +102,11 @@ The **assistant** default workflow pins the `@corbits/memory-tools` tool
 package (`workflows/assistant/src/index.ts`), and that pin only resolves
 once a `package-registry`-kind asset named `corbits-tools` carries its
 tarball (see `apps/hub/src/index.ts`'s `CORBITS_TOOLS_REGISTRY` comment).
-`workbench setup` publishes that asset onto the root tenant via
-`@corbits/tool-registry-publish` (bundles `@corbits/memory-tools` into a
-self-contained tarball and pushes it through the hub's native asset REST
-routes). Descendants inherit it; `seedTenant` does not pack. Isolated
+Boot-time seeding (`apps/hub/src/system-seed.ts`) publishes that asset onto
+the root tenant via `@corbits/tool-registry-publish` (bundles
+`@corbits/memory-tools` into a self-contained tarball and pushes it
+through the hub's native asset REST routes). Descendants inherit it;
+`seedTenant` does not pack. Isolated
 tests run with no explicit tenant config so the walkthrough's personal
 bench is itself the root — then the same publish happens once onto that
 bench, and **echo**, **workbench-digest**, and **assistant** all come up

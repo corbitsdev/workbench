@@ -16,7 +16,8 @@ API — never discovered at runtime:
 - **`packages/hub-client/src/catalog-seed-data.ts` (`CATALOG_SEEDS`)** — one
   curated seed per supported credential provider: a provider row (its
   adapter plugin and base URL) and a small hand-picked model set. This is
-  what `workbench seed` plants for the operator's anthropic key and what
+  what boot-time seeding (`apps/hub/src/system-seed.ts`) plants for the
+  operator's anthropic key and what
   onboarding plants for whichever provider a person connects — including
   the OpenRouter PKCE connect
   (see [onboarding-openrouter-connect.md](onboarding-openrouter-connect.md)).
@@ -102,8 +103,8 @@ Not as a cutover, for three independent reasons:
    which providers/models a bench's catalog knows about. Discovery answers
    a narrower, different question (capability tags for a model workbench
    already named), and does so via paid, non-CI, human-triggered capture
-   runs against real provider accounts, not a runtime service the hub or
-   `workbench seed` could call.
+   runs against real provider accounts, not a runtime service boot-time
+   seeding could call.
 2. **Not consumable without vendoring.** `@intx/inference-discovery` and
    `@intx/inference-testing` are published on npm, but only at `0.2.2` —
    the same pre-folded-model version that is the stated reason every other
