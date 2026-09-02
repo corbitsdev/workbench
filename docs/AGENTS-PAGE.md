@@ -37,18 +37,32 @@ description) and definition (system prompt, model) and posts to
 `POST /api/tenants/:tenantId/agent-definitions`, added by
 `@corbits/agent-directory`. The route:
 
-1. Builds a single-step, folded `workflow.json` from the submitted fields
-   (`buildAgentDefinitionWorkflow`) — the same shape
+1. Builds a single-step, folded workflow definition from the submitted
+   fields (`buildAgentDefinitionWorkflow`) — the same shape
    `@corbits/assistant-workflow` and `@corbits/chat`'s workbench host produce,
-   parametrized instead of fixed.
-2. Creates a `workflow`-kind asset and writes that JSON into it in-process
-   (`AssetService.populateAsset` — no git subprocess).
-3. Projects a first-class `workflow_definition` row over the asset
-   (`ensureWorkflowDefinitionForAsset`).
+   parametrized instead of fixed — and renders it as a source codebase
+   (`@corbits/workflow-source`'s `renderWorkflowSourceTree`), never a bare
+   `workflow.json` envelope.
+2. Creates a `workflow`-kind asset and writes that source tree into it
+   in-process (`AssetService.populateAsset` — no git subprocess), which
+   produces a commit.
+3. Deploys that commit through Interchange's native source pipeline
+   (install -> sidecar probe -> gate -> freeze) via the same
+   `WorkflowDeployer` `@corbits/agent-workflow-authoring`'s
+   agent-authored-workflow registry calls, which projects the first-class
+   `workflow_definition` row over the asset (CL-7363).
 
 The definition lands with the schema's default status (`deployed`) and a
 materialized asset, so it is immediately invitable and launchable — no
-separate deploy step, and no page reload needed to see it appear.
+separate deploy step, and no page reload needed to see it appear. Every
+subsequent edit (instructions, model, tools, skills, restore) writes a new
+commit and redeploys the same way; a definition frozen before CL-7363
+stays launchable as-is and only redeploys through the native pipeline on
+its next edit — no data migration.
+
+A deploy that finds no connected sidecar fails the write outright (502,
+`unavailable`) rather than falling back to the old bare-freeze path — no
+fallback, per this repo's ground rules.
 
 **Tools and a model provider are not exposed on the create form.** The
 platform's wire contract for a workflow definition
