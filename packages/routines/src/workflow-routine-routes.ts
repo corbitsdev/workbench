@@ -45,6 +45,17 @@ import {
   type RoutineLauncher,
 } from "./routes";
 import type { LaunchableDefinitionResolver } from "./target";
+import {
+  InvalidRoutineTargetCursorError,
+  ROUTINE_TARGETS_DEFAULT_LIMIT,
+  ROUTINE_TARGETS_MAX_LIMIT,
+  type RoutineTargetsPage,
+  type RoutineTargetsQuery,
+} from "./targets";
+
+const TargetsLimitParam = type("string.integer.parse").narrow(
+  (limit) => limit >= 1 && limit <= ROUTINE_TARGETS_MAX_LIMIT,
+);
 
 /**
  * The tenant + principal + run a presented sidecar token and run address
@@ -76,6 +87,13 @@ export type CreateWorkflowRoutineRoutesDeps = {
   store: RoutineStore;
   launcher: RoutineLauncher;
   authenticator: WorkflowRunAuthenticator;
+  /** Backs `GET /targets`. Callers wire this to `listRoutineTargets`
+   * (./targets.ts) — the same function the human-session
+   * `createRoutineTargetRoutes` calls — so Myra can resolve a requested
+   * workflow name to its `definitionAssetId` before creating or
+   * retargeting a routine. No second implementation of target
+   * discovery; this is only where the run's tenant/principal meet it. */
+  listTargets: (query: RoutineTargetsQuery) => Promise<RoutineTargetsPage>;
   /** Same contract as `CreateRoutineRoutesDeps.resolveTarget`. */
   resolveTarget?: LaunchableDefinitionResolver;
   /** Same contract as `CreateRoutineRoutesDeps.webhookTriggerInTenant`. */
@@ -129,6 +147,10 @@ const CreateWorkflowRoutineBody = type({
 const UpdateWorkflowRoutineBody = type({
   "enabled?": "boolean",
   "name?": "string",
+  /** Retargets the routine at a different workflow asset (CL-7359) —
+   * an explicit asset id, never a name search, same as `create`'s
+   * `definitionAssetId`. */
+  "definitionAssetId?": "string > 0",
   "trigger?": RoutineTrigger,
   "input?": "Record<string, unknown>",
 });
@@ -161,6 +183,45 @@ export function createWorkflowRoutineRoutes(
     }
     c.set("workflowRoutineScope", scope);
     await next();
+  });
+
+  app.get("/targets", async (c) => {
+    const scope = c.get("workflowRoutineScope");
+    const rawLimit = c.req.query("limit");
+    const limit =
+      rawLimit === undefined
+        ? ROUTINE_TARGETS_DEFAULT_LIMIT
+        : TargetsLimitParam(rawLimit);
+    if (limit instanceof type.errors) {
+      return c.json(
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `limit must be an integer between 1 and ${String(ROUTINE_TARGETS_MAX_LIMIT)}.`,
+        }),
+        400,
+      );
+    }
+    const cursor = c.req.query("cursor");
+    try {
+      const page = await deps.listTargets({
+        tenantId: scope.tenantId,
+        principalId: scope.principalId,
+        limit,
+        ...(cursor !== undefined ? { cursor } : {}),
+      });
+      return c.json(page);
+    } catch (error) {
+      if (error instanceof InvalidRoutineTargetCursorError) {
+        return c.json(
+          makeErrorEnvelope({
+            code: "bad_request",
+            userMessage: error.message,
+          }),
+          400,
+        );
+      }
+      throw error;
+    }
   });
 
   app.get("/routines", async (c) => {
@@ -348,13 +409,33 @@ export function createWorkflowRoutineRoutes(
       );
     }
 
+    if (body.definitionAssetId !== undefined) {
+      const rejection = await rejectUnlaunchableTarget(
+        deps,
+        scope.tenantId,
+        body.definitionAssetId,
+      );
+      if (rejection !== undefined) {
+        return c.json(
+          makeErrorEnvelope({
+            code: rejection.code,
+            userMessage: rejection.userMessage,
+          }),
+          rejection.status,
+        );
+      }
+    }
+
+    const effectiveDefinitionAssetId =
+      body.definitionAssetId ?? existing.definitionAssetId;
+
     if (
       body.trigger !== undefined &&
       !(await webhookTriggerValid(
         deps,
         scope.tenantId,
         body.trigger,
-        existing.definitionAssetId,
+        effectiveDefinitionAssetId,
       ))
     ) {
       return c.json(
@@ -368,6 +449,9 @@ export function createWorkflowRoutineRoutes(
 
     let patch: UpdateRoutineInput = {};
     if (body.name !== undefined) patch = { ...patch, name: body.name };
+    if (body.definitionAssetId !== undefined) {
+      patch = { ...patch, definitionAssetId: body.definitionAssetId };
+    }
     if (body.trigger !== undefined) patch = { ...patch, trigger: body.trigger };
     if (body.input !== undefined) patch = { ...patch, input: body.input };
     if (body.enabled !== undefined) patch = { ...patch, enabled: body.enabled };
