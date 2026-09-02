@@ -11,7 +11,10 @@ import { WorkflowDefinitionDetail } from "@corbits/workflow-catalog";
 import type { WorkflowDefinitionDetail as WorkflowDefinitionDetailT } from "@corbits/workflow-catalog";
 
 export type { WorkflowDefinitionDetail as WorkflowDefinitionDetailT } from "@corbits/workflow-catalog";
-export { workflowDetailPath, workflowNotLaunchableReason } from "@corbits/workflow-catalog";
+export {
+  workflowDetailPath,
+  workflowNotLaunchableReason,
+} from "@corbits/workflow-catalog";
 
 type Validator<T> = (data: unknown) => T | ArkErrors;
 

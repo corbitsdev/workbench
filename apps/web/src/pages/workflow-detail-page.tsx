@@ -24,7 +24,10 @@ import type { BadgeTone } from "@corbits/react-ui";
 import { Clock, FlowArrow } from "@corbits/icons";
 
 import { useBench } from "../bench-context";
-import { WORKFLOWS_PATH_PREFIX, workflowDefinitionAssetIdFromPath } from "../path-ids";
+import {
+  WORKFLOWS_PATH_PREFIX,
+  workflowDefinitionAssetIdFromPath,
+} from "../path-ids";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { tenantKeys } from "../query-client";
 import { useTenantQuery } from "../routines-api";
@@ -65,9 +68,10 @@ function WorkflowDetailHeader({
 }: {
   readonly detail: WorkflowDefinitionDetailT;
 }) {
-  const sha = detail.source !== undefined && detail.source !== null
-    ? shortSha(detail.source.commitSha)
-    : "";
+  const sha =
+    detail.source !== undefined && detail.source !== null
+      ? shortSha(detail.source.commitSha)
+      : "";
   return (
     <section className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
@@ -213,7 +217,10 @@ export function WorkflowDetailPage({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
-        crumbs={[{ label: "Workflows", href: WORKFLOWS_PATH_PREFIX }, { label: detail.displayName }]}
+        crumbs={[
+          { label: "Workflows", href: WORKFLOWS_PATH_PREFIX },
+          { label: detail.displayName },
+        ]}
       />
       <PageShell width="full" className="page-fill">
         <div className="flex flex-col gap-6">
@@ -239,7 +246,11 @@ function WorkflowNotice({
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar crumbs={[{ label: title }]} />
       <PageShell width="full" className="page-fill">
-        <EmptyState icon={<FlowArrow />} title={title} description={description} />
+        <EmptyState
+          icon={<FlowArrow />}
+          title={title}
+          description={description}
+        />
       </PageShell>
     </div>
   );
@@ -266,10 +277,15 @@ export function WorkflowDetailRoute({ path }: { readonly path: string }) {
     );
   }
 
-  if (detailQuery.kind === "loading" || detailQuery.kind === "unauthenticated") {
+  if (
+    detailQuery.kind === "loading" ||
+    detailQuery.kind === "unauthenticated"
+  ) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar crumbs={[{ label: "Workflows", href: WORKFLOWS_PATH_PREFIX }]} />
+        <StageTopBar
+          crumbs={[{ label: "Workflows", href: WORKFLOWS_PATH_PREFIX }]}
+        />
         <PageShell width="full" className="page-fill">
           <EmptyState icon={<Clock />} title="Loading workflow…" />
         </PageShell>

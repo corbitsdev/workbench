@@ -17,7 +17,11 @@ const baseDetail: WorkflowDefinitionDetailT = {
   lifecycle: "deployed",
   currentDefinitionId: "wfd_1",
   wireHash: "hash_1",
-  source: { commitSha: "abcdef1234567890", entry: "src/index.ts", origin: "asset" },
+  source: {
+    commitSha: "abcdef1234567890",
+    entry: "src/index.ts",
+    origin: "asset",
+  },
   steps: [
     {
       id: "s1",
@@ -37,14 +41,18 @@ const baseDetail: WorkflowDefinitionDetailT = {
 
 describe("WorkflowDetailPage", () => {
   test("a deployed workflow shows no not-launchable strip and renders its steps", () => {
-    const html = renderToStaticMarkup(<WorkflowDetailPage detail={baseDetail} />);
+    const html = renderToStaticMarkup(
+      <WorkflowDetailPage detail={baseDetail} />,
+    );
     expect(html).toContain("Deployed");
     expect(html).toContain("abcdef1");
     expect(html).toContain("outreach-agent");
     expect(html).toContain("claude-sonnet-5");
     expect(html).toContain("@corbits/mail-tools");
     expect(html).toContain("mail:send");
-    expect(html).not.toContain("This workflow's source has never been deployed");
+    expect(html).not.toContain(
+      "This workflow's source has never been deployed",
+    );
   });
 
   test("a pending-approval workflow shows the why-not-launchable strip", () => {
@@ -59,7 +67,9 @@ describe("WorkflowDetailPage", () => {
   });
 
   test("access section reads declared vs. approved grants and credential names only", () => {
-    const html = renderToStaticMarkup(<WorkflowDetailPage detail={baseDetail} />);
+    const html = renderToStaticMarkup(
+      <WorkflowDetailPage detail={baseDetail} />,
+    );
     expect(html).toContain("Declared grants");
     expect(html).toContain("Approved grants");
     expect(html).toContain("gmail");

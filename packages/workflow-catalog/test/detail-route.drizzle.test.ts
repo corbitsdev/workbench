@@ -39,10 +39,7 @@ const allowAll: RequireGrant = () => async (_c, next) => {
   await next();
 };
 const denyAll: RequireGrant = () => async (c) =>
-  c.json(
-    { error: { code: "forbidden", message: "denied" } },
-    403,
-  );
+  c.json({ error: { code: "forbidden", message: "denied" } }, 403);
 
 function mount(routes: Hono<TenantEnv>): Hono<TenantEnv> {
   const asTenant: MiddlewareHandler<TenantEnv> = async (c, next) => {

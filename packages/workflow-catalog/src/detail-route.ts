@@ -48,7 +48,9 @@ function projectStep(
   perStepGrants: ReadonlyMap<string, readonly string[]>,
 ): WorkflowDefinitionDetail["steps"][number] {
   const step =
-    raw !== null && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+    raw !== null && typeof raw === "object"
+      ? (raw as Record<string, unknown>)
+      : {};
   const agent =
     step.agent !== null && typeof step.agent === "object"
       ? (step.agent as Record<string, unknown>)
@@ -112,7 +114,10 @@ export function createWorkflowDetailRoute({
 
   app.get(
     "/:definitionAssetId/detail",
-    requireGrant(idResource("workflow-definition", "definitionAssetId"), "read"),
+    requireGrant(
+      idResource("workflow-definition", "definitionAssetId"),
+      "read",
+    ),
     async (c) => {
       const tenantCtx = c.get("tenant");
       const definitionAssetId = c.req.param("definitionAssetId");
@@ -153,7 +158,8 @@ export function createWorkflowDetailRoute({
         definitionRows.map((row) => [
           row.id,
           versionRows.find(
-            (v) => v.definitionId === row.id && v.version === row.currentVersion,
+            (v) =>
+              v.definitionId === row.id && v.version === row.currentVersion,
           ),
         ]),
       );
@@ -173,26 +179,37 @@ export function createWorkflowDetailRoute({
         .limit(1);
       const deploySource = deploySourceRows[0] ?? null;
 
-      const { lifecycle, currentDefinitionId, wireHash } = deriveWorkflowLifecycle(
-        definitionRows.map((row) => ({
-          id: row.id,
-          wireHash: row.wireHash,
-          approvedWireHash:
-            currentVersionByDefinitionId.get(row.id)?.approvedWireHash ?? null,
-          status: row.status,
-          createdAt: row.createdAt.toISOString(),
-        })),
-        deploySource !== null,
-      );
+      const { lifecycle, currentDefinitionId, wireHash } =
+        deriveWorkflowLifecycle(
+          definitionRows.map((row) => ({
+            id: row.id,
+            wireHash: row.wireHash,
+            approvedWireHash:
+              currentVersionByDefinitionId.get(row.id)?.approvedWireHash ??
+              null,
+            status: row.status,
+            createdAt: row.createdAt.toISOString(),
+          })),
+          deploySource !== null,
+        );
 
-      const current = definitionRows.find((row) => row.id === currentDefinitionId);
+      const current = definitionRows.find(
+        (row) => row.id === currentDefinitionId,
+      );
       const grantSnapshot =
-        current !== undefined ? await loadFrozenGrantSnapshot(db, current.id) : null;
+        current !== undefined
+          ? await loadFrozenGrantSnapshot(db, current.id)
+          : null;
       const wireProjection =
-        current !== undefined ? await loadFrozenWireProjection(db, current.id) : null;
+        current !== undefined
+          ? await loadFrozenWireProjection(db, current.id)
+          : null;
 
       const perStepGrants = new Map<string, readonly string[]>(
-        (grantSnapshot?.perStep ?? []).map((step) => [step.stepId, step.grants]),
+        (grantSnapshot?.perStep ?? []).map((step) => [
+          step.stepId,
+          step.grants,
+        ]),
       );
       const steps =
         wireProjection === null
@@ -204,8 +221,12 @@ export function createWorkflowDetailRoute({
       const declaredGrants = current?.grantRequirements ?? [];
       const approvedGrants = grantSnapshot?.grantRequirements ?? [];
       const credentialBindings = current?.credentialBindings ?? [];
-      const declaredGrantNames = declaredGrants.map((g) => `${g.resource}:${g.action}`);
-      const approvedGrantNames = approvedGrants.map((g) => `${g.resource}:${g.action}`);
+      const declaredGrantNames = declaredGrants.map(
+        (g) => `${g.resource}:${g.action}`,
+      );
+      const approvedGrantNames = approvedGrants.map(
+        (g) => `${g.resource}:${g.action}`,
+      );
       const credentialBindingNames = credentialBindings.map((b) => b.handle);
 
       const body: WorkflowDefinitionDetail = {
