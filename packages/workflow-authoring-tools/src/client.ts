@@ -134,7 +134,6 @@ const DeployPreviewResponse = type({
   },
 });
 
-
 function endpoint(config: WorkflowAuthoringClientConfig, path: string): string {
   return `${config.hubWorkflowAuthoringUrl}/api/workflow-workflow-authoring${path}`;
 }
@@ -179,7 +178,10 @@ export async function authorWorkflow(
   const doFetch = runBearerFetch(config);
   const response = await doFetch(endpoint(config, "/author"), {
     method: "POST",
-    headers: { ...runBearerHeaders(config), "content-type": "application/json" },
+    headers: {
+      ...runBearerHeaders(config),
+      "content-type": "application/json",
+    },
     body: JSON.stringify(input),
   });
   if (!response.ok) await throwForFailure(response, "Authoring a workflow");
@@ -197,7 +199,10 @@ export async function republishWorkflow(
   const doFetch = runBearerFetch(config);
   const response = await doFetch(endpoint(config, "/republish"), {
     method: "POST",
-    headers: { ...runBearerHeaders(config), "content-type": "application/json" },
+    headers: {
+      ...runBearerHeaders(config),
+      "content-type": "application/json",
+    },
     body: JSON.stringify(input),
   });
   if (!response.ok) {
@@ -219,7 +224,10 @@ export async function deployWorkflow(
     endpoint(config, `/${encodeURIComponent(input.assetId)}/deploy`),
     {
       method: "POST",
-      headers: { ...runBearerHeaders(config), "content-type": "application/json" },
+      headers: {
+        ...runBearerHeaders(config),
+        "content-type": "application/json",
+      },
       body: JSON.stringify({
         commitSha: input.commitSha,
         entry: input.entry,
@@ -243,7 +251,10 @@ export async function previewDeployWorkflow(
     endpoint(config, `/${encodeURIComponent(input.assetId)}/deploy/preview`),
     {
       method: "POST",
-      headers: { ...runBearerHeaders(config), "content-type": "application/json" },
+      headers: {
+        ...runBearerHeaders(config),
+        "content-type": "application/json",
+      },
       body: JSON.stringify({
         commitSha: input.commitSha,
         entry: input.entry,
