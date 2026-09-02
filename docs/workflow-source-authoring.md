@@ -37,6 +37,7 @@ not what an agent authors by hand.
 | ---- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------- |
 | 1    | `POST /api/workflow-workflow-authoring/author` (`@corbits/agent-workflow-authoring`) → `AssetService.createAsset` + `populateAsset` | Run bearer + run address → tenant/principal; `asset:*`/`create`         | `{ assetId, name, commitSha }`                                 |
 | 1'   | `.../republish` → `populateAsset` on `refs/heads/main`                                                                              | `asset:<assetId>`/`write`, own-tenant row check first                   | `{ assetId, name, commitSha }`                                 |
+| 1''  | `GET .../:assetId/source` → `RepoStore.resolveRef` + `openCommittedReads` on `refs/heads/main`                                      | `asset:<assetId>`/`read`, own-tenant row check first                    | `{ assetId, name, headSha, files }`                            |
 | 2    | Preview: native probe with empty `ApprovalSet`, no freeze                                                                           | Same run scope                                                          | `{ wireHash, grants[] }` or an invalid-package error           |
 | 3    | `POST /api/tenants/:tenantId/workflows/deployments`                                                                                 | `workflow:*`/`create`; parked on `approval: "ask"` when agent-initiated | `WorkflowDeploymentResponse { id, definitionAssetId, status }` |
 | 4    | Human resolves the parked approval (native `approvals` route)                                                                       | `approval:*`/`resolve`                                                  | Deploy continues or is rejected                                |
@@ -77,8 +78,16 @@ recorded initiating principal.
 - Asset identity is the asset id; the human-readable name is unique per
   tenant (`duplicate_asset` → 409 conflict).
 - A republish carries `expectedHeadSha`. If the ref moved, the write is
-  rejected with 409 and the current head; the caller re-reads and retries.
-  Nothing is silently overwritten.
+  rejected with 409 and the current head (`currentHeadSha` beside the error
+  envelope); the caller re-reads and retries. Nothing is silently
+  overwritten. The check is a read-then-write against `RepoStore.resolveRef`
+  rather than a compare-and-set inside `writeTree` — `receivePack` has CAS,
+  `writeTree` does not — so two republishes racing inside that window are
+  serialized by the repo lock, not refused.
+- `populateAsset` is additive. A republish overwrites the paths it names and
+  carries every other committed file forward; `workflow_source_read` shows
+  the whole resulting tree. Deleting a file needs a seam that does not exist
+  yet.
 - Writing an identical tree is a no-op commit (content-aware, like the CLI
   pusher). Retrying an `author` after a network failure hits
   `duplicate_asset`; the caller then republishes.
@@ -119,13 +128,24 @@ sequenceDiagram
   R-->>H: definition selectable as routine target
 ```
 
+## Seams that exist
+
+- `@corbits/workflow-authoring-tools` (CL-7360): `workflow_author`,
+  `workflow_republish`, `workflow_source_read` over the routes above,
+  pinned into Myra's `ASSISTANT_TOOL_PACKAGE_PINS` and published to the
+  `corbits-tools` registry.
+- Path/package validation in `agent-workflow-authoring`'s registry
+  (`validateWorkflowSourceTree`, CL-7360): runs before any grant check or
+  write; caps are `MAX_SOURCE_FILE_BYTES`, `MAX_SOURCE_TREE_BYTES`,
+  `MAX_SOURCE_FILE_COUNT`.
+
 ## Seams that do not exist yet (and where they go)
 
-- An `@intx/agent` tool bundle over the authoring routes
-  (`@corbits/workflow-authoring-tools`): CL-7360.
 - A run-authenticated preview route and the `workflow_deploy` tool: CL-7361,
   CL-7362.
-- Path/package validation in `agent-workflow-authoring`'s registry:
-  CL-7360.
+- Deleting a file from an authored asset (a `writeTreeDelta`-backed
+  republish, or a `clearPrefix` the substrate accepts at the root).
+- A compare-and-set republish (`expectedHeadSha` enforced under the repo
+  lock rather than before it).
 
 Nothing here adds a repository, compiler, probe, freezer, or approval store.
