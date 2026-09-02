@@ -17,7 +17,7 @@
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/hub-sessions": "workspace:*",
-    "@workbench/hub-client": "workspace:*",
+    "@corbits/error-sink": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "hono": "^4.11.9",

@@ -29,7 +29,7 @@ import type {
   RoutineStore,
   UpdateRoutineInput,
 } from "./store";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 import {
   MyraRoutineDraftingUnavailableError,
   RoutineDraftReferenceOutOfInventoryError,

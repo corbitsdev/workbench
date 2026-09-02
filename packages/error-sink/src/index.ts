@@ -87,3 +87,9 @@ export function reportError(
 
 export type { ErrorContext } from "./context";
 export { generateRefId } from "./ref-id";
+export {
+  ErrorEnvelopeShape,
+  makeErrorEnvelope,
+  parseErrorEnvelope,
+} from "./error-envelope";
+export type { ErrorEnvelope } from "./error-envelope";

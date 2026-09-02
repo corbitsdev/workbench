@@ -20,7 +20,7 @@ import {
   FoldedRunFailedError,
   FoldedRunTimedOutError,
 } from "@corbits/folded-run-one-shot";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 import {
   AgentDefinitionDraftReferenceOutOfInventoryError,
   AgentDefinitionDraftReplyUnparseableError,

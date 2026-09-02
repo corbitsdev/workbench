@@ -15,7 +15,7 @@
 // deliberately out of scope here — see `./registry.ts`'s doc comment.
 import { type } from "arktype";
 import { Hono } from "hono";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 import { WorkflowAuthorError, type WorkflowAuthorRegistry } from "./registry";
 

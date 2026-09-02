@@ -13,7 +13,7 @@ import { Hono } from "hono";
 import { type } from "arktype";
 import type { ModelPricingRow, ResolvedOffering } from "@intx/db";
 import { Capability } from "@intx/types";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 import { CONCEPTS } from "./concepts";
 import { EMPTY_POLICY, type BenchModelPolicy } from "./policy";

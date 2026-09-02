@@ -24,7 +24,7 @@ import {
 import { Hono } from "hono";
 import { type } from "arktype";
 import type { AccessPolicyStore } from "@workbench/access-policy";
-import { generateRefId, makeErrorEnvelope } from "@workbench/hub-client";
+import { generateRefId, makeErrorEnvelope } from "@corbits/error-sink";
 import { reportError } from "@corbits/error-sink";
 
 import {

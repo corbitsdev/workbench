@@ -72,7 +72,7 @@ export function auditLocalErrorEnvelopeFactories(
     if (!arrow && !fn) continue;
     report.violations.push(
       `${relPath}: defines a local { error: { code, message } } factory. ` +
-        `Hub routes must use makeErrorEnvelope from @workbench/hub-client ` +
+        `Hub routes must use makeErrorEnvelope from @corbits/error-sink ` +
         `so every failure carries code, userMessage, and refId.`,
     );
   }

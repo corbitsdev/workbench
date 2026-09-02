@@ -33,7 +33,7 @@ import { getDescendantTenants, type DB } from "@intx/db";
 import { workflowDefinition, workflowRun } from "@intx/db/schema";
 import type { WorkflowRunStatus } from "@intx/types";
 import { foldedRun } from "@corbits/folded-runs";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 /** A routine fire's parent, resolved by `resolveRoutineFires` below. */
 export type RoutineFireInfo = {

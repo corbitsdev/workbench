@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@intx/hub-api": "workspace:*",
-    "@workbench/hub-client": "workspace:*",
+    "@corbits/error-sink": "workspace:*",
     "arktype": "catalog:",
     "hono": "^4.11.9"
   },

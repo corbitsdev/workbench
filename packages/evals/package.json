@@ -27,6 +27,7 @@
     "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
     "@modelcontextprotocol/sdk": "catalog:",
+    "@corbits/error-sink": "workspace:*",
     "@workbench/connections": "workspace:*",
     "@workbench/hub-client": "workspace:*",
     "@workbench/onboarding": "workspace:*",

@@ -41,7 +41,7 @@ import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { hexEncode } from "@intx/types";
 import { and, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 export const WORKBENCH_TEMPLATE_ARTIFACT_KIND = "workbench-template";
 

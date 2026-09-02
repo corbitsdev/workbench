@@ -15,7 +15,7 @@ import {
   type SkillRegistryErrorReason,
 } from "./registry";
 import { parseSkillMd, SkillContentError } from "./skill-md";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 /** Which workflow definitions pin a given skill. */
 export type PinnedByResolver = {

@@ -16,7 +16,7 @@ import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 
 import { ALL_EVALS } from "./cases/index.ts";
 import type { EvalRunRecord, EvalRunStore } from "./store/store.ts";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;

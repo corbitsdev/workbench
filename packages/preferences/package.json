@@ -18,7 +18,7 @@
     "@corbits/api-query": "workspace:*",
     "@corbits/migration-runner": "workspace:*",
     "@intx/hub-api": "workspace:*",
-    "@workbench/hub-client": "workspace:*",
+    "@corbits/error-sink": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "hono": "^4.11.9",

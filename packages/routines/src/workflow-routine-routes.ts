@@ -30,7 +30,7 @@ import { type } from "arktype";
 
 import { RoutineTrigger } from "./trigger";
 import type { RoutineStore, UpdateRoutineInput } from "./store";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 import {
   fireOnceTriggerIfNeeded,
   isDeliveryWorkbenchRequired,

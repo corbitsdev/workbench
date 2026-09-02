@@ -55,7 +55,7 @@ import {
   CapabilityOutOfInventoryError,
   type CapabilityInventoryProvider,
 } from "./capability-inventory";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 import type {
   WorkflowCapabilityRunScope,
   WorkflowRunAuthenticator,

@@ -69,7 +69,7 @@ import {
 import type { DefinitionAssetHistory } from "./definition-history";
 import { listVisibleAgentDefinitions } from "./visible-definitions";
 import { reportError } from "@corbits/error-sink";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 /**
  * Resolves the pinned skill names a definition carries into the

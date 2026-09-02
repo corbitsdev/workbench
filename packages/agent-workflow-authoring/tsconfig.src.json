@@ -1,16 +1,15 @@
 {
-  "extends": "./tsconfig.src.json",
+  "extends": "../../tsconfig.base.json",
+  "include": ["src", "package.json", "src/**/*.json"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
   "compilerOptions": {
-    "composite": false,
+    "types": ["bun"],
     "noEmit": true,
-    "disableSourceOfProjectReferenceRedirect": true,
-    "declaration": false,
-    "declarationMap": false,
-    "emitDeclarationOnly": false,
-    "rootDir": "../.."
+    "composite": true,
+    "emitDeclarationOnly": true,
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
   },
-  "include": ["src"],
-  "exclude": [],
   "references": [
     {
       "path": "../../vendor/intx/db/tsconfig.src.json"
