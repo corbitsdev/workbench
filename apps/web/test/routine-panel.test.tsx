@@ -526,6 +526,53 @@ describe("RoutinePanel", () => {
       expect(select.value).toBe("");
     });
 
+    // CL-7356: `/routine`'s (and the palette action's) optional
+    // preselection — computed upstream from the conversation's own agent
+    // participants — is carried on the subject and shown visibly here,
+    // never inferred by the panel itself.
+    test("a subject with no preselectedAssetId opens with nothing chosen (zero or several agent participants upstream)", async () => {
+      await renderPanel({ routineId: null, workbenchId: "ch_1" });
+      await settle();
+      const select = container.querySelector(
+        "#routine-panel-target",
+      ) as HTMLSelectElement;
+      expect(select.value).toBe("");
+    });
+
+    test("a subject with preselectedAssetId shows that target already chosen, visibly", async () => {
+      await renderPanel({
+        routineId: null,
+        workbenchId: "ch_1",
+        preselectedAssetId: "asset_myra",
+      });
+      await settle();
+      const select = container.querySelector(
+        "#routine-panel-target",
+      ) as HTMLSelectElement;
+      expect(select.value).toBe("asset_myra");
+    });
+
+    test("a preselected target is replaceable: picking a different one, then naming the routine, creates with the newly picked definitionAssetId", async () => {
+      await renderPanel({
+        routineId: null,
+        workbenchId: "ch_1",
+        preselectedAssetId: "asset_myra",
+      });
+      await settle();
+
+      selectTarget("asset_digest");
+      await settle();
+
+      const name = fieldByLabel("Name this routine") as HTMLInputElement;
+      fillAndBlur(name, "Morning digest");
+      await settle();
+
+      expect(createRoutineCalls).toHaveLength(1);
+      expect(createRoutineCalls[0]?.["definitionAssetId"]).toBe(
+        "asset_digest",
+      );
+    });
+
     test("empty target list shows the empty state with a link to Agents settings, not a picker", async () => {
       targets = [];
       await renderPanel({ routineId: null, workbenchId: "ch_1" });
