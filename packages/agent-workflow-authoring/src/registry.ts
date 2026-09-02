@@ -44,8 +44,12 @@ import {
   type RepoStore,
 } from "@intx/hub-sessions";
 import type { DB } from "@intx/db";
-import { asset as assetTable } from "@intx/db/schema";
-import { and, eq } from "drizzle-orm";
+import {
+  asset as assetTable,
+  workflowDefinition,
+  workflowDefinitionVersion,
+} from "@intx/db/schema";
+import { and, desc, eq } from "drizzle-orm";
 
 import { WorkflowAuthorError } from "./errors";
 import { validateWorkflowSourceTree } from "./source-tree";
@@ -94,12 +98,29 @@ export type RepublishWorkflowInput = {
 export type DeployWorkflowInput = {
   readonly commitSha: string;
   readonly entry: string;
+  /**
+   * CL-7362: the wire hash the human approved (from a prior
+   * `previewDeploy`/`workflow_deploy_preview` call). After the native
+   * deploy re-probes and freezes, this registry compares it against the
+   * newest `workflow_definition_version.approved_wire_hash` for this
+   * asset; a mismatch fails the request as `wire_hash_mismatch` even
+   * though the deploy itself already succeeded and froze that row — the
+   * frozen row is NOT rolled back, so a caller that sees this error must
+   * treat the definition as deployed-but-unverified and re-review before
+   * routing anything at it.
+   */
+  readonly expectedWireHash?: string;
 };
 
 export type WorkflowDeployResult = {
   readonly deploymentId: string;
   readonly definitionAssetId: string;
   readonly status: "deployed" | "pending";
+};
+
+export type WorkflowDeployPreviewResult = {
+  readonly wireHash: string;
+  readonly grants: readonly string[];
 };
 
 /**
@@ -120,6 +141,38 @@ export type WorkflowDeployer = {
     commitSha: string;
     entry: string;
   }): Promise<WorkflowDeployResult>;
+  /**
+   * CL-7362: run the same install + probe as `deploy`, but under an empty
+   * `ApprovalSet` policy so `workflow-probe-gate.ts`'s gate fails closed
+   * without freezing, and return the walked grant surface instead of
+   * throwing. Optional because NO vendored `@intx/hub-sessions` entry
+   * point exposes this today:
+   * `vendor/intx/hub-sessions/src/session-service.ts`'s
+   * `buildInstallArgs` hardcodes `approvals: { mode: "approve-probed" }
+   * as const` into every `InstallAndApproveWorkflowSourceParams` it
+   * builds (~line 1512), and both callers that reach it
+   * (`installAndApproveWorkflowSource`, `deployWorkflowFromSource`, via
+   * the shared `prepareCodeSourcedApproval`) throw
+   * `WorkflowDefinitionInvalidError` whenever
+   * `approved.approval.ok` is false rather than returning the gate's
+   * `{ ok: false, reason: "grants_not_approved", unapprovedGrants }`
+   * result to the caller. Vendoring a probe-without-freeze entry needs
+   * `InstallAndApproveWorkflowSourceParams` to accept a caller-supplied
+   * `approvals: ProbeApprovalPolicy` (threaded through
+   * `buildInstallArgs`) and a sibling of `installAndApproveWorkflowSource`
+   * that returns `approved.approval` instead of throwing on
+   * `grants_not_approved` — deliberately not reimplemented here per
+   * AGENTS.md ("never reimplement `@intx/*`"). Left unwired in
+   * `apps/hub/src/index.ts`; when absent, `previewDeploy` on the registry
+   * throws `unavailable`.
+   */
+  previewDeploy?(params: {
+    tenantId: string;
+    principalId: string;
+    assetId: string;
+    commitSha: string;
+    entry: string;
+  }): Promise<WorkflowDeployPreviewResult>;
 };
 
 export type WorkflowAuthorRegistry = {
@@ -141,6 +194,11 @@ export type WorkflowAuthorRegistry = {
     assetId: string,
     input: DeployWorkflowInput,
   ): Promise<WorkflowDeployResult>;
+  previewDeploy(
+    caller: WorkflowAuthorCaller,
+    assetId: string,
+    input: DeployWorkflowInput,
+  ): Promise<WorkflowDeployPreviewResult>;
 };
 
 export type WorkflowAuthorRepoReads = Pick<
@@ -242,6 +300,30 @@ async function collectTree(
       into[path] = decoder.decode(await reads.readBlobByOid(entry.oid));
     }
   }
+}
+
+/**
+ * CL-7362: the newest `workflow_definition_version.approved_wire_hash`
+ * across every `workflow_definition` row for this asset, joined and
+ * ordered by version creation time. `null` when the asset has never been
+ * deployed (no definition row) or its latest version has not yet frozen
+ * an approval.
+ */
+async function newestApprovedWireHash(
+  db: DB["db"],
+  assetId: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ approvedWireHash: workflowDefinitionVersion.approvedWireHash })
+    .from(workflowDefinitionVersion)
+    .innerJoin(
+      workflowDefinition,
+      eq(workflowDefinitionVersion.definitionId, workflowDefinition.id),
+    )
+    .where(eq(workflowDefinition.assetId, assetId))
+    .orderBy(desc(workflowDefinitionVersion.createdAt))
+    .limit(1);
+  return row?.approvedWireHash ?? null;
 }
 
 export function createWorkflowAuthorRegistry(
@@ -369,7 +451,48 @@ export function createWorkflowAuthorRegistry(
       const row = await requireOwnWorkflowAsset(caller, assetId);
       await requireAuthorized(deps, caller, "workflow:*", "create");
 
-      return deps.deployer.deploy({
+      const result = await deps.deployer.deploy({
+        tenantId: caller.tenantId,
+        principalId: caller.principalId,
+        assetId,
+        commitSha: input.commitSha,
+        entry: input.entry,
+      });
+
+      if (input.expectedWireHash !== undefined) {
+        const actualWireHash = await newestApprovedWireHash(db, assetId);
+        if (actualWireHash !== input.expectedWireHash) {
+          throw new WorkflowAuthorError(
+            "wire_hash_mismatch",
+            `deploy succeeded but the frozen wire hash ` +
+              `(${actualWireHash ?? "none"}) does not match the approved ` +
+              `wire hash (${input.expectedWireHash}); the deployed ` +
+              `definition is NOT rolled back and must be re-reviewed ` +
+              `before it is routed to`,
+          );
+        }
+      }
+
+      return result;
+    },
+
+    async previewDeploy(caller, assetId, input) {
+      // Own-tenant scoping and the same `workflow:*`/create authorization
+      // as `deploy`: a preview walks the same capability surface a deploy
+      // would, just without freezing it.
+      await requireOwnWorkflowAsset(caller, assetId);
+      await requireAuthorized(deps, caller, "workflow:*", "create");
+
+      if (deps.deployer.previewDeploy === undefined) {
+        throw new WorkflowAuthorError(
+          "unavailable",
+          "deploy preview is not wired: see WorkflowDeployer.previewDeploy's " +
+            "doc comment in @corbits/agent-workflow-authoring for the " +
+            "missing native seam (CL-7362)",
+        );
+      }
+
+      return deps.deployer.previewDeploy({
         tenantId: caller.tenantId,
         principalId: caller.principalId,
         assetId,

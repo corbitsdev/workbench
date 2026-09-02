@@ -54,7 +54,7 @@ export const ASSISTANT_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
   { name: "@corbits/mcp-tools", version: "0.0.10" },
   { name: "@corbits/interaction-tools", version: "0.0.4" },
   { name: "@corbits/manus-tools", version: "0.0.11" },
-  { name: "@corbits/workflow-authoring-tools", version: "0.0.2" },
+  { name: "@corbits/workflow-authoring-tools", version: "0.0.3" },
 ];
 
 /**

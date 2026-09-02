@@ -1890,7 +1890,8 @@ export async function createHub(config: HubConfig) {
   // deliberate: a workflow's own declared model needs (if any) are not
   // considered at this step, matching `agent-definitions`' identical
   // tenant-default resolution above; deploy always resolves against the
-  // tenant's default/first-preference model.
+  // tenant's default/first-preference model. `previewDeploy` (CL-7362,
+  // below) runs the SAME native probe-without-freeze seam.
   const workflowDeployer: WorkflowDeployer = {
     async deploy({ tenantId, principalId, assetId, commitSha, entry }) {
       const tenantRow = await db.query.tenant.findFirst({

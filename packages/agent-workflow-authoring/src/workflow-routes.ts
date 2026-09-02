@@ -53,6 +53,12 @@ const RepublishBody = type({
 const DeployBody = type({
   commitSha: "string",
   entry: "string",
+  "expectedWireHash?": "string",
+});
+
+const DeployPreviewBody = type({
+  commitSha: "string",
+  entry: "string",
 });
 
 function statusFor(
@@ -64,6 +70,8 @@ function statusFor(
     case "forbidden":
       return 403;
     case "conflict":
+      return 409;
+    case "wire_hash_mismatch":
       return 409;
     case "invalid":
       return 400;
@@ -158,6 +166,33 @@ export function createWorkflowAuthorRoutes(
       c.req.param("assetId"),
     );
     return c.json({ data: snapshot });
+  });
+
+  // CL-7362: a preview of `/:assetId/deploy` that runs the native
+  // install/probe with an empty approval set so it never freezes,
+  // returning the wire hash and the walked grant surface so the human
+  // sees exactly what a subsequent `workflow_deploy` approval would grant
+  // BEFORE that call parks. See `./registry.ts`'s `previewDeploy` doc
+  // comment for what native seam this depends on, and where that seam is
+  // currently missing.
+  app.post("/:assetId/deploy/preview", async (c) => {
+    const body = DeployPreviewBody(await c.req.json().catch(() => undefined));
+    if (body instanceof type.errors) {
+      return c.json(
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: body.summary,
+        }),
+        400,
+      );
+    }
+    const scope = c.get("workflowRunScope");
+    const result = await deps.registry.previewDeploy(
+      scope,
+      c.req.param("assetId"),
+      body,
+    );
+    return c.json({ data: result });
   });
 
   app.post("/:assetId/deploy", async (c) => {
