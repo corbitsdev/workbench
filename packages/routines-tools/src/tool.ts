@@ -13,7 +13,7 @@
 //
 // `routine_create` and `routine_update` (CL-6209) grant no credentials
 // or capability pins and write only a tenant-internal routine row —
-// scheduling metadata pointing at a definitionId whose own capabilities
+// scheduling metadata pointing at a definitionAssetId whose own capabilities
 // were already approved separately. Neither call touches anything
 // external itself, so neither carries an `approval` key; the human gate
 // that matters is the one on the definition's own tools, which fires
@@ -21,7 +21,7 @@
 // read-only and carries no `approval` key either, mirroring
 // `@corbits/memory-tools`' `memory_list`.
 //
-// `definitionId` is a required input on `routine_create`, never
+// `definitionAssetId` is a required input on `routine_create`, never
 // auto-resolved: Myra must name the agent definition a routine runs
 // against, typically one she already knows from a prior `list_agents` /
 // `create_agent` call — this bundle has no opinion on which definition
@@ -50,7 +50,7 @@ export const ROUTINE_RUN_NOW_TOOL = "routine_run_now";
 
 /** Env this bundle needs beyond `BaseEnv`: the run's hub-reach
  * credential, mirroring `@corbits/memory-tools`' `WorkflowMemoryEnv` —
- * no `definitionId` env key, since this bundle is tenant-scoped, not
+ * no `definitionAssetId` env key, since this bundle is tenant-scoped, not
  * self-definition-scoped (Myra manages routines against ANY definition
  * in her tenant, not just her own). */
 export interface WorkflowRoutineEnv extends BaseEnv {
@@ -84,7 +84,7 @@ const TriggerInput = type({
 
 const RoutineCreateInput = type({
   name: "string > 0",
-  definitionId: "string > 0",
+  definitionAssetId: "string > 0",
   "instruction?": "string > 0",
   "input?": "Record<string, unknown>",
   trigger: TriggerInput,
@@ -272,7 +272,7 @@ async function runRoutineCreate(
   try {
     const routine = await createRoutine(clientConfig(env), {
       name: parsed.name,
-      definitionId: parsed.definitionId,
+      definitionAssetId: parsed.definitionAssetId,
       trigger: parsed.trigger as RoutineTriggerInput,
       input,
     });
@@ -459,10 +459,10 @@ export const routinesTools = defineTool<WorkflowRoutineEnv>({
               type: "string",
               description: "A short, human-readable name for the routine.",
             },
-            definitionId: {
+            definitionAssetId: {
               type: "string",
               description:
-                "The id of the agent definition this routine runs — " +
+                "The workflow asset id this routine runs — " +
                 "never invented; name one already known from a prior " +
                 "list_agents or create_agent call.",
             },
@@ -488,7 +488,7 @@ export const routinesTools = defineTool<WorkflowRoutineEnv>({
                 "Whether the routine starts enabled. Defaults to true.",
             },
           },
-          required: ["name", "definitionId", "trigger"],
+          required: ["name", "definitionAssetId", "trigger"],
         },
       },
       {

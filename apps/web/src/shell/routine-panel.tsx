@@ -178,7 +178,7 @@ export function RoutinePanel() {
 type SaveState = "idle" | "saving" | "saved" | "error";
 
 type CreateTarget = {
-  readonly definitionId: string;
+  readonly definitionAssetId: string;
   readonly deliveryWorkbenchId: string;
 };
 
@@ -372,24 +372,24 @@ function RoutineEditorPanel({
     if (subject.workbenchId !== undefined) {
       const workbenchId = subject.workbenchId;
       const agents = await listWorkbenchAgents(tenantId, workbenchId);
-      const definitionId = agents[0]?.definitionId;
-      if (definitionId === undefined) {
+      const definitionAssetId = agents[0]?.definitionAssetId;
+      if (definitionAssetId === undefined) {
         throw new Error(
           "This conversation has no agent to run this routine yet.",
         );
       }
-      return { definitionId, deliveryWorkbenchId: workbenchId };
+      return { definitionAssetId, deliveryWorkbenchId: workbenchId };
     }
     const result = await ensureMyraWorkbench(tenantId);
     if (result.kind === "error") throw new Error(result.message);
     const agents = await listWorkbenchAgents(tenantId, result.workbenchId);
-    const definitionId = agents[0]?.definitionId;
-    if (definitionId === undefined) {
+    const definitionAssetId = agents[0]?.definitionAssetId;
+    if (definitionAssetId === undefined) {
       throw new Error(
         "This workbench has no assistant to run this routine yet.",
       );
     }
-    return { definitionId, deliveryWorkbenchId: result.workbenchId };
+    return { definitionAssetId, deliveryWorkbenchId: result.workbenchId };
   };
 
   /** Every create/update this panel makes funnels through this one chain —
@@ -424,7 +424,7 @@ function RoutineEditorPanel({
     const target = await resolveCreateTarget();
     const routine = await createRoutine(tenantId as string, {
       name: fields.name,
-      definitionId: target.definitionId,
+      definitionAssetId: target.definitionAssetId,
       deliveryWorkbenchId: target.deliveryWorkbenchId,
       scope: "personal",
       trigger: fields.trigger,
@@ -506,12 +506,12 @@ function RoutineEditorPanel({
         throw new Error("No workbench to create this in yet");
       }
       let targetRoutineId = id;
-      let definitionId: string;
+      let definitionAssetId: string;
       if (targetRoutineId === null) {
         const target = await resolveCreateTarget();
         const created = await createRoutine(tenantId, {
           name: name.trim() || "Untitled routine",
-          definitionId: target.definitionId,
+          definitionAssetId: target.definitionAssetId,
           deliveryWorkbenchId: target.deliveryWorkbenchId,
           scope: "personal",
           trigger: null,
@@ -521,14 +521,14 @@ function RoutineEditorPanel({
             : {}),
         });
         targetRoutineId = created.id;
-        definitionId = created.definitionId;
+        definitionAssetId = created.definitionAssetId;
         toast(routineCreatedToast(created.name));
       } else {
-        definitionId = (await resolveCreateTarget()).definitionId;
+        definitionAssetId = (await resolveCreateTarget()).definitionAssetId;
       }
       const binding = await createWebhookTrigger(tenantId, {
         name: `${name.trim() || "Untitled routine"} — ${sourceLabel}`,
-        workflowDefinitionId: definitionId,
+        workflowDefinitionId: definitionAssetId,
         inputTemplate: DEFAULT_WEBHOOK_INPUT_TEMPLATE,
       });
       setTriggerSourceLabel(sourceLabel);

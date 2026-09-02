@@ -2963,12 +2963,16 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               await deps.platform.resolveDefinitionIdByAddress(
                 participant.address,
               );
-            return definitionId === undefined
+            if (definitionId === undefined) return null;
+            const definitionAssetId =
+              await deps.platform.resolveDefinitionAssetId(definitionId);
+            return definitionAssetId === undefined
               ? null
               : {
                   address: participant.address,
                   handle: participant.handle,
                   definitionId,
+                  definitionAssetId,
                 };
           }),
         )

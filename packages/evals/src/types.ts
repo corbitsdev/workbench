@@ -50,7 +50,7 @@ export interface WorldAgentDefinition {
 export interface WorldRoutine {
   readonly id: string;
   readonly name: string;
-  readonly definitionId: string;
+  readonly definitionAssetId: string;
   readonly trigger: unknown;
   readonly deliveryWorkbenchId: string | null;
   readonly enabled: boolean;

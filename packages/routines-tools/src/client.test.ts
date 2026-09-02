@@ -21,7 +21,8 @@ function routineViewBody(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "rtn_1",
     name: "Morning digest",
-    definitionId: "def_1",
+    definitionAssetId: "def_1",
+    definitionId: "wfd_1",
     trigger: { kind: "daily", hour: 9, minute: 0 },
     scope: "bench",
     input: { instruction: "Summarize overnight activity" },
@@ -75,7 +76,7 @@ test("listRoutines throws when the response doesn't match the expected shape", a
   );
 });
 
-test("createRoutine posts name/definitionId/trigger/input to the routines endpoint", async () => {
+test("createRoutine posts name/definitionAssetId/trigger/input to the routines endpoint", async () => {
   let seenUrl: string | undefined;
   let seenBody: unknown;
   const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
@@ -86,7 +87,7 @@ test("createRoutine posts name/definitionId/trigger/input to the routines endpoi
 
   const routine = await createRoutine(testConfig(fetchImpl), {
     name: "Morning digest",
-    definitionId: "def_1",
+    definitionAssetId: "def_1",
     trigger: { kind: "daily", hour: 9, minute: 0 },
     input: { instruction: "Summarize overnight activity" },
   });
@@ -96,7 +97,7 @@ test("createRoutine posts name/definitionId/trigger/input to the routines endpoi
   );
   expect(seenBody).toEqual({
     name: "Morning digest",
-    definitionId: "def_1",
+    definitionAssetId: "def_1",
     trigger: { kind: "daily", hour: 9, minute: 0 },
     input: { instruction: "Summarize overnight activity" },
   });
@@ -119,7 +120,7 @@ test("createRoutine surfaces the route's own error message on a non-ok response"
   await expect(
     createRoutine(testConfig(fetchImpl), {
       name: "x",
-      definitionId: "def_missing",
+      definitionAssetId: "def_missing",
       trigger: { kind: "daily", hour: 9, minute: 0 },
     }),
   ).rejects.toThrow("definition not found");

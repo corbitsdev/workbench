@@ -157,6 +157,7 @@ function stubFetch(options: {
           address: agent.address,
           handle: agent.handle,
           definitionId: agent.definitionId,
+          definitionAssetId: `ast_${agent.definitionId}`,
         })),
       });
     }

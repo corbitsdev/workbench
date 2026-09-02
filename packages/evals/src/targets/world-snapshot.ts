@@ -98,7 +98,7 @@ async function readRoutines(db: DB["db"], tenantId: string) {
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
-    definitionId: row.definitionId,
+    definitionAssetId: row.definitionAssetId,
     trigger: row.trigger,
     deliveryWorkbenchId: row.deliveryWorkbenchId,
     enabled: row.enabled,

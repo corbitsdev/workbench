@@ -196,6 +196,7 @@ import {
   createMyraRoutineDrafting,
   createRoutineRoutes,
   createWorkflowRoutineRoutes,
+  resolveLaunchableDefinition,
   routine as routineTable,
   routineRun as routineRunTable,
   type RoutineDraftInventoryWorkflow,
@@ -2768,10 +2769,11 @@ export async function createHub(config: HubConfig) {
     const out: RoutineDraftInventoryWorkflow[] = [];
     for (const row of rows) {
       if (!isAutomatableWorkflowName(row.name)) continue;
+      if (row.assetId === null) continue;
       const entry = workflowCatalogEntry(row.name);
       if (entry === undefined) continue;
       const workflow = {
-        definitionId: row.id,
+        definitionAssetId: row.assetId,
         assetName: row.name,
         displayName: workflowDisplayName(row.name, row.description),
         deliveryMode: entry.deliveryMode,
@@ -2881,16 +2883,8 @@ export async function createHub(config: HubConfig) {
       // thread; see `@corbits/routines`' `RoutineLauncher` doc comment
       // for the multi-message contract.
       runSummaryResolver: createHubRunSummaryResolver(db),
-      definitionInTenant: async (tenantId, definitionId) => {
-        const row = await db.query.workflowDefinition.findFirst({
-          where: and(
-            eq(workflowDefinition.id, definitionId),
-            eq(workflowDefinition.tenantId, tenantId),
-          ),
-          columns: { id: true },
-        });
-        return row !== undefined;
-      },
+      resolveTarget: (tenantId, definitionAssetId) =>
+        resolveLaunchableDefinition({ db, tenantId, definitionAssetId }),
       // A `{kind: "webhook"}` trigger's `webhookTriggerId` must resolve
       // to a real `webhook_trigger` row in this tenant, pointed at the
       // exact same workflow definition the routine itself runs — see
@@ -2922,42 +2916,8 @@ export async function createHub(config: HubConfig) {
       launcher: routineLauncher,
       workbenchNotice: routineWorkbenchNotice,
       authenticator: createWorkflowRunAuthenticator({ db }),
-      definitionInTenant: async (tenantId, definitionId) => {
-        const row = await db.query.workflowDefinition.findFirst({
-          where: and(
-            eq(workflowDefinition.id, definitionId),
-            eq(workflowDefinition.tenantId, tenantId),
-          ),
-          columns: { id: true },
-        });
-        return row !== undefined;
-      },
-      // Myra's `routine_create` tool receives a definition's NAME from
-      // `list_agents`, not its `wfd_` id — resolve an exact, deployed-only
-      // name match within the tenant before the `definitionInTenant`
-      // check above runs a second time against the resolved id.
-      resolveDefinitionId: async (tenantId, idOrName) => {
-        const rows = await db.query.workflowDefinition.findMany({
-          where: and(
-            eq(workflowDefinition.name, idOrName),
-            eq(workflowDefinition.tenantId, tenantId),
-            eq(workflowDefinition.status, "deployed"),
-          ),
-          columns: { id: true },
-        });
-        return rows.length === 1 ? rows[0]?.id : undefined;
-      },
-      listDefinitionCandidates: async (tenantId) => {
-        const rows = await db.query.workflowDefinition.findMany({
-          where: and(
-            eq(workflowDefinition.tenantId, tenantId),
-            eq(workflowDefinition.status, "deployed"),
-          ),
-          columns: { id: true, name: true },
-          limit: 8,
-        });
-        return rows;
-      },
+      resolveTarget: (tenantId, definitionAssetId) =>
+        resolveLaunchableDefinition({ db, tenantId, definitionAssetId }),
       webhookTriggerInTenant: async (
         tenantId,
         webhookTriggerId,

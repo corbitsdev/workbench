@@ -34,6 +34,25 @@ scheduled fire) goes through `@corbits/folded-runs`, the same launch core
   Myra-assisted drafting flow.
 - `src/migrations.ts` — this package's own `routine_migrations` ledger.
 
+## Routine targets follow the latest deployed asset
+
+A routine stores `definitionAssetId`, not a pinned `workflow_definition`
+row: the workflow asset it follows across redeploys, never a snapshot of
+one version of it. `src/target.ts`'s `resolveLaunchableDefinition` is the
+one place that asset resolves to the definition that actually runs — the
+newest `workflow_definition` for that asset, in the caller's tenant, that
+is both `deployed` and frozen (has an approved wire hash, grant snapshot,
+and wire projection). Every caller that needs "the definition this routine
+runs right now" — create/retarget validation, a read's `definitionId`
+field, and a fire (`fireScheduledRoutine` or "run now") — resolves through
+this one function rather than trusting anything pinned at creation, so a
+routine automatically follows its asset's latest approved deployment. A
+target that does not currently resolve (not found, cross-tenant, not
+deployed, or not yet approved) reports `definitionId: null` on read and
+fails a fire closed, via `RoutineTargetUnresolvableError` /
+`routineTargetRejection`, rather than launching a stale or wrong
+definition.
+
 ## Scheduling caveat
 
 `fireScheduledRoutine` is exposed but this package ships no scheduler of

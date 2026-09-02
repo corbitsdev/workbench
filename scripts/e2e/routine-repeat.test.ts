@@ -239,7 +239,7 @@ describe.skipIf(databaseUrl === undefined)("routine repeat fires", () => {
 
     // Materializes the workflow definition row a routine binds to. The
     // sidecar must be dial-in complete first, so poll through the 502s.
-    const definitionId = await hop("workflow deploy", async () => {
+    await hop("workflow deploy", async () => {
       const sourceId = "src-routine-repeat-e2e";
       const body = workflowDeployBody({
         assetId,
@@ -322,7 +322,7 @@ describe.skipIf(databaseUrl === undefined)("routine repeat fires", () => {
         `/api/tenants/${tenantId}/routines`,
         {
           name: "Heartbeat check",
-          definitionId,
+          definitionAssetId: assetId,
           trigger: { kind: "interval", unit: "hours", every: 1 },
           scope: "bench",
           deliveryWorkbenchId: workbenchId,
