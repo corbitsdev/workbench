@@ -18,6 +18,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/error-sink": "workspace:*",
     "@corbits/migration-runner": "workspace:*",
     "@corbits/ollama-adapter": "workspace:*",
     "@intx/db": "workspace:*",

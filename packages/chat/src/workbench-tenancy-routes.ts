@@ -9,7 +9,7 @@
 import type { AppEnv } from "@intx/hub-api";
 import { Hono } from "hono";
 import { type } from "arktype";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
 

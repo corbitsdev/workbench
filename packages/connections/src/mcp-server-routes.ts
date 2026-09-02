@@ -25,7 +25,6 @@ import {
   createHubAPI,
   ensureCredential,
   ensureProvider,
-  makeErrorEnvelope,
   parseAs,
   type ApiCall,
 } from "@workbench/hub-client";
@@ -35,7 +34,7 @@ import {
 } from "@corbits/credential-providers";
 import { probeMcpServer } from "./mcp-probe";
 import { fireConnectedHook, type ServiceConnectedHook } from "./connected-hook";
-import { reportError } from "@corbits/error-sink";
+import { makeErrorEnvelope, reportError } from "@corbits/error-sink";
 import { MCP_PRESETS, mcpPresetBySlug } from "./mcp-presets";
 
 /** Every stored MCP server provider is named `mcp:<slug>` — the same

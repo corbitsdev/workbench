@@ -42,7 +42,7 @@ import {
 } from "./definition-asset";
 import type { PinnedSkillIndexResolver } from "./routes";
 import type { DefinitionSkillsStore } from "./skills-store";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 import type {
   WorkflowCapabilityRunScope,
   WorkflowRunAuthenticator as WorkflowCapabilityRunAuthenticator,

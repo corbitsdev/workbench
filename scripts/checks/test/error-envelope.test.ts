@@ -65,7 +65,7 @@ test("makeErrorEnvelope usage is not a violation", () => {
   const report = auditLocalErrorEnvelopeFactories([
     {
       relPath: "packages/sidecar-placement/src/routes.ts",
-      contents: `import { makeErrorEnvelope } from "@workbench/hub-client";
+      contents: `import { makeErrorEnvelope } from "@corbits/error-sink";
 return c.json(makeErrorEnvelope({ code: "bad_request", userMessage: "no" }), 400);`,
     },
   ]);
@@ -100,7 +100,7 @@ test("allowlisted files that wrap makeErrorEnvelope pass", () => {
 }`,
     },
     {
-      relPath: "packages/hub-client/src/error-envelope.ts",
+      relPath: "packages/error-sink/src/error-envelope.ts",
       contents: `export function makeErrorEnvelope(args: {
   code: string;
   userMessage: string;

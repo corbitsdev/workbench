@@ -28,7 +28,7 @@ import {
 } from "./queries";
 import type { UsageStore } from "./store";
 import type { TurnLatencyStore } from "./latency-store";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 const RangeQuery = type({
   "from?": "string",

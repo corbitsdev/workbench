@@ -9,7 +9,7 @@ import { type } from "arktype";
 
 import type { DB } from "@intx/db";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 import {
   countRunIdentityStates,

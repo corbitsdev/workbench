@@ -20,7 +20,7 @@ import { pgErrorCode, PG_UNIQUE_VIOLATION } from "@intx/db";
 import { generateWebhookSecret } from "./signature";
 import type { WebhookTriggerRow } from "./schema";
 import type { WebhookTriggerStore } from "./store";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 /**
  * True for a Postgres unique-violation (`23505`) — the shape a duplicate

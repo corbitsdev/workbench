@@ -24,7 +24,7 @@ import {
 } from "./signature";
 import type { WebhookTriggerRow } from "./schema";
 import type { WebhookTriggerStore } from "./store";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 const log = getLogger(["webhook-triggers", "ingress"]);
 

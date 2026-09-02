@@ -15,6 +15,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/error-sink": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@workbench/hub-client": "workspace:*",
     "arktype": "catalog:",
