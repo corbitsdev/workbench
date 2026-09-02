@@ -113,7 +113,7 @@ for itself instead (`chat`, `routines`, `insights`, `notify`,
 key, so nothing about the reference actually required sharing `public`.
 Schema changes like this are hard cutovers, not data-preserving migrations:
 pre-GA there is nothing to migrate, and an existing dev database picks up
-the new schema by running `workbench reset` rather than by an in-place
+the new schema by running `bun run reset` rather than by an in-place
 `ALTER TABLE ... SET SCHEMA`.
 
 ## Which shape to use for a new package
