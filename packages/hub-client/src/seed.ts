@@ -7,7 +7,7 @@
 //
 // Workflow package metadata (automatable, displayName) lives in each
 // workflows/*/package.json under `corbits.workflow` and is mirrored in
-// `@corbits/workflow-catalog`. Seed stamps displayName onto the asset so
+// `@workbench/templates`. Seed stamps displayName onto the asset so
 // the routines picker can show a friendly label without reading package.json.
 
 import {
@@ -44,7 +44,7 @@ import {
   buildLast30DaysResearchWorkflow,
   serializeLast30DaysResearchWorkflow,
 } from "@corbits/last-30-days-research-workflow";
-import { WORKFLOW_CATALOG } from "@corbits/workflow-catalog";
+import { WORKFLOW_CATALOG } from "@workbench/templates";
 import { capabilitiesForDeployment } from "@corbits/inference-catalog/offering-capabilities";
 import { quirksForDeployment } from "@corbits/inference-catalog/ollama-context-defaults";
 import { type PublishCorbitsToolsRegistryArgs } from "@corbits/tool-registry-publish";

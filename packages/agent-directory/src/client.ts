@@ -15,7 +15,7 @@ import {
   withDisplayNames,
   type WithDisplayName,
 } from "@corbits/chat/display-name";
-import { isConversationalWorkflowName } from "@corbits/workflow-catalog";
+import { isConversationalWorkflowName } from "@workbench/templates";
 
 // `deriveDisplayName`/`humanizeSlug` (CL-6413) live in `@corbits/chat`
 // itself, not here: this package already depends on `@corbits/chat` (for

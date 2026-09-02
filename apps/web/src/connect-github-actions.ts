@@ -10,7 +10,7 @@
 // (`connect-github-block.tsx`'s `DisconnectedBody`) is what actually asks
 // for the token, so this binding never needs a prompt or a modal of its
 // own. Reading state and starting reviews call the workbench-scoped routes
-// `@corbits/workflow-catalog`'s `createConnectGithubRoutes` exposes.
+// `@workbench/connections`'s `createConnectGithubRoutes` exposes.
 //
 // `subscribeConnectState` has no server push to fold from yet (connecting a
 // credential publishes no `chat.settings` event of its own — only

@@ -151,7 +151,7 @@ export type CreateRoutineInput = {
   readonly trigger: RoutineTriggerT;
   readonly scope: "personal" | "bench";
   /** Omitted only for a workflow whose result never posts to a workbench
-   * (see `@corbits/workflow-catalog`'s `WorkflowCatalogEntry.deliveryMode`)
+   * (see `@workbench/templates`'s `WorkflowCatalogEntry.deliveryMode`)
    * — the server itself still rejects a missing value for every other
    * workflow (`deliveryWorkbenchRequired`, routes.ts). */
   readonly deliveryWorkbenchId?: string;
@@ -198,7 +198,7 @@ export function routineRunsPath(tenantId: string, id: string): string {
 // `kind` groups the picker without changing execution semantics: an
 // "agent" is a single-step conversational fold, everything else a
 // "workflow". `assetName` is the raw catalog key
-// (`@corbits/workflow-catalog`'s `workflowCatalogEntry`); `name` is the
+// (`@workbench/templates`'s `workflowCatalogEntry`); `name` is the
 // display label.
 export const RoutineTargetKind = type("'agent' | 'workflow'");
 export type RoutineTargetKind = typeof RoutineTargetKind.infer;

@@ -18,7 +18,7 @@
     "@corbits/error-sink": "workspace:*",
     "@corbits/folded-run-one-shot": "workspace:*",
     "@corbits/skills": "workspace:*",
-    "@corbits/workflow-catalog": "workspace:*",
+    "@workbench/templates": "workspace:*",
     "@corbits/workflows": "workspace:*",
     "@intx/agent": "workspace:*",
     "@intx/db": "workspace:*",

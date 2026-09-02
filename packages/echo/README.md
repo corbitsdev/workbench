@@ -3,7 +3,7 @@
 The smallest hub extension, kept deliberately trivial: a tenant-scoped
 route that echoes a `POST` body back verbatim as plain text. It exists as a
 wiring check for the mail-triggered contract, not as a real assistant —
-the `echo` entry in `@corbits/workflow-catalog`'s `WORKFLOW_CATALOG`
+the `echo` entry in `@workbench/templates`'s `WORKFLOW_CATALOG`
 describes it the same way.
 
 ## Composition with @intx/*

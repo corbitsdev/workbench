@@ -187,13 +187,13 @@ import {
   deliveryWorkbenchRequiredForWorkflowName,
   isConversationalWorkflowName,
   validateTriggerFieldsAtCreate,
-  webhookTriggerName,
   workflowCatalogEntry,
   workflowDisplayName,
   workbenchTemplateLibraryEntries,
-} from "@corbits/workflow-catalog";
-import { createConnectGithubRoutes } from "@corbits/workflow-catalog/connect-github-routes";
-import { createTemplateBlockRoutes } from "@corbits/workflow-catalog/template-block-routes";
+} from "@workbench/templates";
+import { createConnectGithubRoutes } from "@workbench/connections/connect-github-routes";
+import { webhookTriggerName } from "@workbench/connections/connect-github-setup";
+import { createTemplateBlockRoutes } from "./templates/template-block-routes";
 import {
   createWorkflowDetailRoute,
   renderWorkflowSourceTree,
@@ -2823,7 +2823,7 @@ export async function createHub(config: HubConfig) {
   const routineStore = createDrizzleRoutineStore(db);
   // The honest end-to-end delivery-destination rule: a workflow that
   // never posts to a workbench (e.g. recurring-task, always delivering
-  // to its creator's Inbox — see @corbits/workflow-catalog's
+  // to its creator's Inbox — see @workbench/templates's
   // `deliveryMode`) must never be forced to collect, or block on
   // missing, a `deliveryWorkbenchId` it would just discard. An unknown
   // definitionId (row missing, or its asset name isn't catalog-known)

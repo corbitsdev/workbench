@@ -12,7 +12,7 @@ import {
   CODE_REVIEW_TEMPLATE,
   DUE_DILIGENCE_TEMPLATE,
   serializeWorkbenchDefinition,
-} from "@corbits/workflow-catalog";
+} from "@workbench/templates";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 

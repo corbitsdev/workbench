@@ -68,7 +68,7 @@ export const CreateAgentDefinitionInput = type({
   // core resolves each to `*`, matching `./workflow-create-routes.ts`'s
   // own handling of the same field). Absent for a person hand-authoring
   // an agent through a form, which has no affordance for typing one; the
-  // one caller that supplies it is `@corbits/workflow-catalog`'s
+  // one caller that supplies it is `@workbench/templates`'s
   // `instantiateWorkbenchTemplate`, installing a template participant
   // (Scout, Jimmy) whose tools ship as pinned packages rather than
   // inline capabilities.

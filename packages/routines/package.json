@@ -22,7 +22,7 @@
     "@corbits/migration-runner": "workspace:*",
     "@corbits/slug": "workspace:*",
     "cronstrue": "^3.24.0",
-    "@corbits/workflow-catalog": "workspace:*",
+    "@workbench/templates": "workspace:*",
     "@corbits/workflows": "workspace:*",
     "@intx/authz": "0.3.0",
     "@intx/db": "workspace:*",

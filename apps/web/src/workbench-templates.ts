@@ -1,7 +1,7 @@
 // The picker's prefab catalog: one entry per one-click shortcut card
 // (CL-6628). `code-review` and `blank` are pinned to the approved mock
 // (CL-6342) verbatim; `due-diligence` mirrors the backend's
-// `DUE_DILIGENCE_TEMPLATE` (`@corbits/workflow-catalog`, CL-6499) — it and
+// `DUE_DILIGENCE_TEMPLATE` (`@workbench/templates`, CL-6499) — it and
 // every other id here are still gated by what this bench's library
 // actually serves before either is offered as a live card (see
 // `NewWorkbenchPickerRoute`'s `servedTemplateIds`). See

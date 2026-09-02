@@ -10,7 +10,7 @@ import {
   isWorkbenchTitleMatch,
   type Workbench,
 } from "@corbits/chat-ui";
-import { WORKFLOW_CATALOG } from "@corbits/workflow-catalog";
+import { WORKFLOW_CATALOG } from "@workbench/templates";
 
 import { listAgentDefinitions, type AgentDefinition } from "./agents-api";
 

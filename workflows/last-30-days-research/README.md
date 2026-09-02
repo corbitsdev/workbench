@@ -174,7 +174,7 @@ gathering steps to reach real data.
 
 Every run is triggered by mail to the deployment's address
 (`triggerAddress` above); the `ground`/`gather` steps read two fields off
-the intake signal payload, matching `packages/workflow-catalog`'s
+the intake signal payload, matching `@corbits/workflows`'s
 `triggerFields` for this workflow exactly:
 
 - `topic` (required) — the free-text subject to research.

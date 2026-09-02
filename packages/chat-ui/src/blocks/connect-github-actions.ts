@@ -6,7 +6,7 @@
 // `@workbench/connections`' generic `/:connectorId/complete` route
 // (`github`'s PAT test-and-store — already fully generic, no bespoke
 // GitHub route needed), `@corbits/github-tools`' `listRepos`, and
-// `@corbits/workflow-catalog`'s `startReviewingRepos`.
+// `@workbench/connections`'s `startReviewingRepos`.
 import type { ConnectGithubRepo } from "./connect-github-block";
 export type { ConnectGithubRepo };
 
@@ -34,7 +34,7 @@ export type ConnectGithubActions = {
    * `startReviewing`, `skip`) change something, re-reading
    * `getConnectState`. A credential completed elsewhere (the Plugins
    * page, another tab) settles this connector's entry on
-   * `@corbits/workflow-catalog`'s `template/pendingConnections`
+   * `@workbench/templates`'s `template/pendingConnections`
    * (CL-6463's `settleConnectedService`) so the *next* fresh
    * `getConnectState` — e.g. on this card's next mount — already reads
    * connected, since that read resolves against the real credential,
@@ -72,7 +72,7 @@ export type ConnectGithubActions = {
     { readonly ok: true } | { readonly ok: false; readonly message: string }
   >;
   /** Mints a grant and a live webhook trigger per repo id, then
-   * records the selection — `@corbits/workflow-catalog`'s
+   * records the selection — `@workbench/templates`'s
    * `startReviewingRepos`, called through the host's own binding. */
   readonly startReviewing: (
     repoIds: readonly string[],

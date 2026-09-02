@@ -9,7 +9,7 @@
 // as the connecting person.
 //
 // The code-review template's own GitHub connect card registers
-// under a second, template-owned key (`@corbits/workflow-catalog`'s
+// under a second, template-owned key (`@workbench/templates`'s
 // `template/pendingConnections`) instead of `connections/pending` — a
 // credential completed anywhere other than that card's own submit (the
 // Plugins page, another tab) never reached it. Rather than stand up a
@@ -44,7 +44,7 @@ export const CONNECTIONS_PENDING_KEY = "connections/pending";
 export const CONNECTION_CONNECTED_EVENT = "connection.connected";
 
 /** The code-review template's own pending-connections key
- * (`@corbits/workflow-catalog`'s `templateSettingsPatch`/
+ * (`@workbench/templates`'s `templateSettingsPatch`/
  * `templateReposSettingsPatch`) — a room minted from that template
  * tracks its GitHub card's pending state here instead of under
  * `CONNECTIONS_PENDING_KEY`. `settleConnectedService` knows this one

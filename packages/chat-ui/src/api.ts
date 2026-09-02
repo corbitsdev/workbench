@@ -15,7 +15,7 @@ import { parseParticipants } from "@corbits/chat/participants";
 import type { ParticipantRecord } from "@corbits/chat/participants";
 import type { WorkbenchOnboardingStep } from "@corbits/chat/blocks";
 import { UnauthenticatedError } from "@corbits/api-query";
-import { jimmyAgentRequest } from "@corbits/workflow-catalog";
+import { jimmyAgentRequest } from "@workbench/templates";
 import { CHAT_STRINGS } from "./strings";
 
 export {
@@ -742,7 +742,7 @@ export function postWorkbenchOnboardingStep(
   );
 }
 
-// Jimmy's own request shape, the same `@corbits/workflow-catalog` object a
+// Jimmy's own request shape, the same `@workbench/templates` object a
 // workbench template's participant create used to resolve — CL-6499 removed
 // Jimmy's template (he is not a "kind of workbench"), so this dialog's own
 // "Add Jimmy" quick-create row (see `invite-agent-dialog.tsx`) is his only
@@ -1203,7 +1203,7 @@ export type WorkbenchSettingsPatch = {
   readonly "chat/contextWindow"?: number | null;
   /**
    * `template/*` keys: the room's own record of which template minted
-   * it and what it still needs connected, per `@corbits/workflow-catalog`'s
+   * it and what it still needs connected, per `@workbench/templates`'s
    * own schema for this namespace. `chat`'s settings route validates
    * only its own `chat/*` keys and passes any other namespace through
    * opaquely (see `packages/chat/src/workbench-settings.ts`) — a
@@ -1228,7 +1228,7 @@ export function patchWorkbenchSettings(
 }
 
 // The room's GitHub connect card (CL-6344): the live read and the
-// start-reviewing write, backed by `@corbits/workflow-catalog`'s
+// start-reviewing write, backed by `@workbench/templates`'s
 // `createConnectGithubRoutes` (mounted at
 // `/api/tenants/:tenantId/workbenches/:workbenchId/github/*`). Connecting
 // the PAT itself is a separate, already-generic surface —

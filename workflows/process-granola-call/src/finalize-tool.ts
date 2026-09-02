@@ -5,7 +5,7 @@
 // rather than a shared tool package — this behavior (what "finalize"
 // means for a process-granola-call run) is specific to this workflow, not
 // a reusable integration, so it stays folded into the definition per the
-// workflow-catalog's "workflow-specific logic lives in the definition"
+// @corbits/workflows's "workflow-specific logic lives in the definition"
 // convention.
 //
 // Approval mechanics: `defineTool`'s `definitions` array marks this

@@ -8,7 +8,7 @@
 //
 // "Granola-ish" means bound to the `granola-call` workflow definition
 // specifically — the one automatable Granola workflow in
-// `@corbits/workflow-catalog` (`process-granola-call` is a child run,
+// `@workbench/templates` (`process-granola-call` is a child run,
 // never a routine). A routine picker is deliberately not built: with
 // exactly one candidate workflow, offering a picker over a list of one
 // would be UI theater, not a real choice.

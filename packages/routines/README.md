@@ -14,7 +14,7 @@ Built on `@intx/hub-api`'s `TenantEnv`/`requireGrant` route convention and
 session orchestration directly — launching a run (manual "run now" or a
 scheduled fire) goes through `@corbits/folded-runs`, the same launch core
 `@corbits/chat`'s invite flow uses. It also depends on
-`@corbits/workflow-catalog` to resolve a definition's delivery mode
+`@workbench/templates` to resolve a definition's delivery mode
 (workbench vs. inbox-only) so a routine's create/fire path never requires a
 `deliveryWorkbenchId` a workflow would silently discard.
 
@@ -96,7 +96,7 @@ otherwise) only groups the picker.
 - `listRoutineTargets(deps, query)` authorizes every candidate with
   `@intx/authz`'s `authorize` on `workflow-definition:<id>` / `read` before
   it is counted, sorted, or returned — a denied row never shapes the page —
-  then applies the product filter (`@corbits/workflow-catalog`'s
+  then applies the product filter (`@workbench/templates`'s
   `isAutomatableWorkflowName` or `isConversationalWorkflowName`, never a
   workbench-host anchor name) and orders by `(name asc, definitionAssetId
 asc)`. Pagination is an opaque cursor over that key; `limit` defaults to

@@ -61,7 +61,7 @@
 // provider the OG used) and `github_activity` (`@corbits/github-tools`,
 // GitHub's public REST search) — the same scope this repo's prior ports
 // already carried and the same `topic`/`focus` intake shape the OG's own
-// `INTAKE_FIELDS` and this repo's `workflow-catalog` entry already agree
+// `INTAKE_FIELDS` and this repo's catalog entry already agree
 // on. The remaining five stay named as "not yet connected" rather than
 // silently dropped (see `LAST_30_DAYS_RESEARCH_PENDING_SOURCES`).
 //
