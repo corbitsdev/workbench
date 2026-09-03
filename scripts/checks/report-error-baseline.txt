@@ -177,7 +177,6 @@ packages/hub-client/src/credential-test.ts	1	// Not JSON, or didn't match either
 packages/hub-client/src/credential-test.ts	1	return [];
 packages/hub-client/src/credential-test.ts	1	return undefined;
 packages/hub-client/src/credential-test.ts	1	return {
-packages/hub-client/src/workflow-push.ts	1	existing = null;
 packages/inbox/src/routes.ts	1	publishLog.error(
 packages/interaction-tools/src/tool.ts	1	if (err instanceof NoOwnChannelError) {
 packages/jimmy-agent/src/gif-search-tool.ts	1	return false;
@@ -238,6 +237,7 @@ packages/sandbox-sidecar/src/provisioner.ts	1	return rejected(...classify(error,
 packages/sandbox-sidecar/src/provisioner.ts	1	return rejected(...classify(error, "start_unit_failed"));
 packages/scout-agent/src/artifact-tool.ts	1	return {
 packages/scout-agent/src/artifact-tool.ts	2	return {
+packages/seeding/src/workflow-push.ts	1	existing = null;
 packages/settings-ui/src/account-section.tsx	1	toast(SETTINGS_STRINGS.accountEmailCopyError);
 packages/skills-tools/src/tool.ts	1	return errorResult(call.id, err);
 packages/skills-tools/src/tool.ts	2	return errorResult(call.id, err);
