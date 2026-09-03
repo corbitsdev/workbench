@@ -865,11 +865,10 @@ export async function createHub(config: HubConfig) {
     db: withTurnPartPersistGuard(withTurnPartWriteDefaults(db)),
     onTurnFinalized: (agentAddress, turn) => {
       artifactDeliveryHandlerRef.current?.(agentAddress, turn);
-      void settleRoutineFireFromTurn(
-        routineFireSettlePort,
-        agentAddress,
-        turn,
-      ).catch((err: unknown) => {
+      void settleRoutineFireFromTurn(routineFireSettlePort, agentAddress, {
+        status: turn.status,
+        hadReply: turn.hadReply,
+      }).catch((err: unknown) => {
         log.warn`Failed to settle routine fire for ${agentAddress}: ${err instanceof Error ? err.message : String(err)}`;
       });
     },

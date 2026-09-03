@@ -51,13 +51,19 @@ export async function settleRoutineFire(
 /**
  * `settleRoutineFire` from a finalized turn: look the run up by the
  * turn's agent address, then persist the turn's own terminal status.
+ *
+ * Intermediate tool-use steps finalize as `completed` with `hadReply:
+ * false`. Those must not stamp the fire — `markTerminal` is single-shot,
+ * so an early completed would hide a later failure. A real reply
+ * (`hadReply: true`) or a failed turn settles immediately.
  */
 export async function settleRoutineFireFromTurn(
   port: RoutineFireTurnSettlePort,
   address: string,
-  turn: { readonly status: "completed" | "failed" },
+  turn: { readonly status: "completed" | "failed"; readonly hadReply: boolean },
   endedAt: Date = new Date(),
 ): Promise<boolean> {
+  if (turn.status === "completed" && !turn.hadReply) return false;
   const run = await port.lookupRunByAddress(address);
   if (run === undefined) return false;
   return settleRoutineFire(port, {

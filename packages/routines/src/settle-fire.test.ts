@@ -99,7 +99,7 @@ describe("settleRoutineFireFromTurn", () => {
         },
       },
       "run_fire1@acme.workbench.test",
-      { status: "completed" },
+      { status: "completed", hadReply: true },
       endedAt,
     );
 
@@ -122,7 +122,7 @@ describe("settleRoutineFireFromTurn", () => {
         },
       },
       "run_fire1@acme.workbench.test",
-      { status: "failed" },
+      { status: "failed", hadReply: false },
       new Date("2026-01-01T00:02:00.000Z"),
     );
 
@@ -142,10 +142,81 @@ describe("settleRoutineFireFromTurn", () => {
         },
       },
       "run_missing@acme.workbench.test",
-      { status: "completed" },
+      { status: "completed", hadReply: true },
     );
 
     expect(won).toBe(false);
     expect(marked).toBe(false);
+  });
+
+  test("skips an intermediate completed turn that had no reply", async () => {
+    let marked = false;
+
+    const won = await settleRoutineFireFromTurn(
+      {
+        lookupRunByAddress: async () => ({ id: "run_fire1" }),
+        isRoutineFire: async () => true,
+        markTerminal: async () => {
+          marked = true;
+          return {};
+        },
+      },
+      "run_fire1@acme.workbench.test",
+      { status: "completed", hadReply: false },
+    );
+
+    expect(won).toBe(false);
+    expect(marked).toBe(false);
+  });
+
+  test("persists completed when the turn had a reply", async () => {
+    const calls: string[] = [];
+
+    const won = await settleRoutineFireFromTurn(
+      {
+        lookupRunByAddress: async () => ({ id: "run_fire1" }),
+        isRoutineFire: async () => true,
+        markTerminal: async (_runId, status) => {
+          calls.push(status);
+          return { status };
+        },
+      },
+      "run_fire1@acme.workbench.test",
+      { status: "completed", hadReply: true },
+    );
+
+    expect(won).toBe(true);
+    expect(calls).toEqual(["completed"]);
+  });
+
+  test("persists failed after a skipped intermediate tool step", async () => {
+    const calls: string[] = [];
+    const port = {
+      lookupRunByAddress: async () => ({ id: "run_fire1" }),
+      isRoutineFire: async () => true,
+      markTerminal: async (
+        _runId: string,
+        status: "completed" | "failed" | "cancelled",
+      ) => {
+        if (calls.length > 0) return null;
+        calls.push(status);
+        return { status };
+      },
+    };
+
+    const skipped = await settleRoutineFireFromTurn(
+      port,
+      "run_fire1@acme.workbench.test",
+      { status: "completed", hadReply: false },
+    );
+    const won = await settleRoutineFireFromTurn(
+      port,
+      "run_fire1@acme.workbench.test",
+      { status: "failed", hadReply: false },
+    );
+
+    expect(skipped).toBe(false);
+    expect(won).toBe(true);
+    expect(calls).toEqual(["failed"]);
   });
 });
