@@ -62,8 +62,5 @@ export function isClassifiedInferenceFailureText(text: string): boolean {
  */
 export function activityPreviewText(raw: string): string {
   const facing = consumerFacingInferenceText(raw);
-  if (isClassifiedInferenceFailureText(facing)) {
-    return CONSUMER_INFERENCE_FAILURE_NOTICE;
-  }
   return facing;
 }

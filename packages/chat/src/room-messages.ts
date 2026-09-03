@@ -18,7 +18,6 @@ import {
   activityPreviewText,
   CONSUMER_INFERENCE_FAILURE_NOTICE,
   consumerFacingInferenceText,
-  isClassifiedInferenceFailureText,
 } from "./consumer-inference-text";
 
 import { ChatMessageEventData } from "./stream-events";
@@ -175,10 +174,7 @@ function isFailurePreviewParts(parts: readonly Part[]): boolean {
     .trim();
   if (joined.length === 0) return false;
   const facing = consumerFacingInferenceText(joined);
-  return (
-    isClassifiedInferenceFailureText(facing) ||
-    facing === CONSUMER_INFERENCE_FAILURE_NOTICE
-  );
+  return facing === CONSUMER_INFERENCE_FAILURE_NOTICE;
 }
 
 /**
