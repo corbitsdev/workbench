@@ -111,6 +111,28 @@ describe("createInMemoryAgentTurnStore", () => {
     expect(listed.map((turn) => turn.id)).toEqual([second.id, first.id]);
   });
 
+  // CL-7200: listing used to sort by startedAt string alone, while
+  // findRunningTurn sorted by occurrence. Two turns sharing a timestamp
+  // (same-millisecond ISO strings compare equal) then disagreed — listing
+  // kept Map insertion order, the running-turn resolver picked the later
+  // occurrence. Both orderings share startedAt then occurrence as the
+  // deterministic tiebreak so they name the same newest turn.
+  test("listing and findRunningTurn agree when two turns share a timestamp", async () => {
+    const clock = 1_000;
+    const store = createInMemoryAgentTurnStore({ now: () => clock });
+    const first = await store.startTurn(BASE);
+    const second = await store.startTurn(BASE);
+    expect(first.startedAt).toBe(second.startedAt);
+    expect(second.occurrence).toBeGreaterThan(first.occurrence);
+
+    expect((await store.findRunningTurn(BASE))?.id).toBe(second.id);
+    const listed = await store.listTurns({
+      tenantId: BASE.tenantId,
+      workbenchId: BASE.workbenchId,
+    });
+    expect(listed.map((turn) => turn.id)).toEqual([second.id, first.id]);
+  });
+
   // CL-6451: a dispatch the supervisor failed (or a hub that died
   // mid-turn) never sends the event that closes its row, so a turn
   // still `running` past the occurrence timeout is dead by construction
