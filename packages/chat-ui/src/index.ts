@@ -65,6 +65,11 @@ export {
   mentionOptionsFromWorkbench,
   resolveBringInLists,
 } from "./mentions";
+export {
+  agentDisplayNamesFromAgents,
+  displayNameForAddress,
+} from "./agent-display-names";
+export type { AgentDisplayNames } from "./agent-display-names";
 export type {
   BringInAgentDefinition,
   BringInListFailure,

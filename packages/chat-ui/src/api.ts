@@ -811,6 +811,7 @@ const WorkbenchAgentWire = type({
   handle: "string",
   definitionId: "string",
   definitionAssetId: "string",
+  displayName: "string",
 });
 export type WorkbenchAgent = typeof WorkbenchAgentWire.infer;
 

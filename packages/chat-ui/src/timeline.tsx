@@ -25,6 +25,10 @@ import {
   toast,
 } from "@corbits/react-ui";
 import { toReactUiReasoning } from "./agent-part-adapter";
+import {
+  displayNameForAddress,
+  type AgentDisplayNames,
+} from "./agent-display-names";
 import { AVATAR_IDENTITY_CLASS, generatedAvatarStyle } from "./avatar-identity";
 import { groupTimelineParts } from "./tool-activity";
 import { ToolActivityGroup } from "./tool-activity-view";
@@ -289,6 +293,7 @@ function senderDisplay(
   sender: MessageSender | undefined,
   participants: readonly ParticipantRecord[],
   currentUser: CurrentUser | undefined,
+  displayNames?: AgentDisplayNames,
 ): SenderDisplay | undefined {
   if (sender === undefined) return undefined;
 
@@ -311,21 +316,27 @@ function senderDisplay(
   if (matched !== undefined) {
     const isAgent = isAgentAddress(matched.address);
     const senderName = sender.name;
-    const displayName =
+    const wireName =
       senderName !== null && senderName.trim().length > 0
         ? senderName
         : undefined;
-    // An agent whose wire message carries no display name still gets a
-    // human one derived from its handle ("myra" -> "Myra") — the raw
-    // @handle is a wire identifier, kept to the tooltip only.
+    // An agent renders its resolved display name (CL-6424) — the wire
+    // name when the server sent one, else the `/agents` snapshot's — and
+    // only then falls back to a human reading of its handle ("myra" ->
+    // "Myra"). The raw @handle is a wire identifier, kept to the tooltip
+    // only.
+    const resolvedName =
+      isAgent === true
+        ? (displayNameForAddress(matched.address, displayNames) ?? wireName)
+        : wireName;
     const label =
-      displayName ??
+      resolvedName ??
       (isAgent ? displayNameFromHandle(matched.handle) : matched.handle);
     return {
       label,
       handle: matched.handle,
       isAgent,
-      initials: initialsOf(displayName ?? matched.handle),
+      initials: initialsOf(resolvedName ?? matched.handle),
       id: matched.address,
     };
   }
@@ -437,12 +448,16 @@ function TextBubble({
   pendingStatus,
   pendingNonce,
   pendingActions,
+  agentDisplayNames,
 }: {
   text: string;
   createdAt: string;
   sender: MessageSender | undefined;
   participants: readonly ParticipantRecord[];
   currentUser: CurrentUser | undefined;
+  /** Resolved agent display names (CL-6424) — the message header shows
+   * these, never the raw handle slug. */
+  readonly agentDisplayNames?: AgentDisplayNames;
   onOpenProfile?: (subject: ProfileSubject) => void;
   onFixConnection?: () => void;
   /** `false` when this bubble continues an unbroken run of messages from
@@ -463,7 +478,12 @@ function TextBubble({
   pendingActions?: PendingActions;
 }) {
   const consumerText = consumerFacingInferenceText(text);
-  const display = senderDisplay(sender, participants, currentUser);
+  const display = senderDisplay(
+    sender,
+    participants,
+    currentUser,
+    agentDisplayNames,
+  );
   const isOwn =
     currentUser !== undefined &&
     sender !== undefined &&
@@ -593,6 +613,7 @@ function TextBubble({
 function joinedAgentName(
   part: Part & { kind: "event" },
   participants: readonly ParticipantRecord[],
+  displayNames?: AgentDisplayNames,
 ): string | undefined {
   const data =
     typeof part.data === "object" && part.data !== null
@@ -603,6 +624,8 @@ function joinedAgentName(
       ? data.address
       : undefined;
   if (address === undefined) return undefined;
+  const resolved = displayNameForAddress(address, displayNames);
+  if (resolved !== undefined) return resolved;
   const handle =
     participants.find((participant) => participant.address === address)
       ?.handle ?? localPartOf(address);
@@ -612,6 +635,7 @@ function joinedAgentName(
 export function friendlyEventText(
   part: Part & { kind: "event" },
   participants: readonly ParticipantRecord[],
+  displayNames?: AgentDisplayNames,
 ): string {
   const data =
     typeof part.data === "object" && part.data !== null
@@ -619,7 +643,7 @@ export function friendlyEventText(
       : undefined;
   switch (part.event) {
     case "workbench.agent-joined": {
-      const name = joinedAgentName(part, participants);
+      const name = joinedAgentName(part, participants, displayNames);
       return name !== undefined
         ? CHAT_STRINGS.eventAgentJoined(name)
         : CHAT_STRINGS.eventAgentJoinedUnknown;
@@ -677,6 +701,7 @@ function EventLine({
   createdAt,
   participants,
   collapsedText,
+  agentDisplayNames,
 }: {
   part: Part & { kind: "event" };
   createdAt: string;
@@ -684,6 +709,7 @@ function EventLine({
   /** The one line that stands in for a whole run of consecutive joins —
    * see `collapseAgentJoinRuns`. Undefined on every other event row. */
   collapsedText?: string;
+  readonly agentDisplayNames?: AgentDisplayNames;
 }) {
   const data =
     typeof part.data === "object" && part.data !== null
@@ -711,7 +737,7 @@ function EventLine({
             </a>
           </>
         ) : (
-          friendlyEventText(part, participants)
+          friendlyEventText(part, participants, agentDisplayNames)
         )}
       </span>
       <span className="chat-event-time">{formatTimestamp(createdAt)}</span>
@@ -766,8 +792,12 @@ function FailedTurnStrip({
   failedTurnRecovery,
   onRetryFailedTurn,
   onWhatHappenedFailedTurn,
+  agentDisplayNames,
 }: {
   readonly item: TimelineMessageItem;
+  /** Resolved agent display names (CL-6424) — the strip names the agent
+   * whose turn failed, never its raw handle slug. */
+  readonly agentDisplayNames?: AgentDisplayNames;
   /** The undelivered-turn notice's own text (`postUndeliveredNotice`,
    * `@corbits/chat`) — already cause-aware server-side (a missing model
    * credential reads "add or check your model key," a generic dispatch
@@ -790,7 +820,12 @@ function FailedTurnStrip({
   ) => void | Promise<void>;
   readonly onWhatHappenedFailedTurn?: (item: TimelineMessageItem) => void;
 }) {
-  const display = senderDisplay(item.sender, participants, currentUser);
+  const display = senderDisplay(
+    item.sender,
+    participants,
+    currentUser,
+    agentDisplayNames,
+  );
   const sender = display?.label ?? CHAT_STRINGS.senderFallbackMember;
   const consumerDetail = consumerFacingInferenceText(detailText);
   const [expanded, setExpanded] = useState(false);
@@ -914,12 +949,19 @@ function CancelledTurnStrip({
   item,
   participants,
   currentUser,
+  agentDisplayNames,
 }: {
   readonly item: TimelineMessageItem;
   readonly participants: readonly ParticipantRecord[];
   readonly currentUser: CurrentUser | undefined;
+  readonly agentDisplayNames?: AgentDisplayNames;
 }) {
-  const display = senderDisplay(item.sender, participants, currentUser);
+  const display = senderDisplay(
+    item.sender,
+    participants,
+    currentUser,
+    agentDisplayNames,
+  );
   const sender = display?.label ?? CHAT_STRINGS.senderFallbackMember;
   return (
     <div className="chat-turn-cancelled" role="status">
@@ -1124,6 +1166,7 @@ export function isSystemSenderItem(item: MessageItem): boolean {
 function agentJoinName(
   item: TimelineMessageItem,
   participants: readonly ParticipantRecord[],
+  displayNames?: AgentDisplayNames,
 ): string | undefined {
   if (item.parts.length !== 1) return undefined;
   const part = item.parts[0];
@@ -1134,7 +1177,7 @@ function agentJoinName(
   ) {
     return undefined;
   }
-  return joinedAgentName(part, participants);
+  return joinedAgentName(part, participants, displayNames);
 }
 
 /**
@@ -1150,6 +1193,7 @@ function agentJoinName(
 export function collapseAgentJoinRuns(
   items: readonly TimelineMessageItem[],
   participants: readonly ParticipantRecord[],
+  displayNames?: AgentDisplayNames,
 ): {
   readonly textByLeadId: ReadonlyMap<string, string>;
   readonly absorbedIds: ReadonlySet<string>;
@@ -1163,7 +1207,7 @@ export function collapseAgentJoinRuns(
     while (end < items.length) {
       const item = items[end];
       if (item === undefined) break;
-      const name = agentJoinName(item, participants);
+      const name = agentJoinName(item, participants, displayNames);
       if (name === undefined) break;
       names.push(name);
       end += 1;
@@ -1237,14 +1281,21 @@ function StreamingMessageGroup({
   participants,
   currentUser,
   showDayDivider,
+  agentDisplayNames,
 }: {
   readonly item: TimelineMessageItem;
   readonly participants: readonly ParticipantRecord[];
   readonly currentUser: CurrentUser | undefined;
   readonly showDayDivider: boolean;
+  readonly agentDisplayNames?: AgentDisplayNames;
 }) {
   const text = messageText(item);
-  const display = senderDisplay(item.sender, participants, currentUser);
+  const display = senderDisplay(
+    item.sender,
+    participants,
+    currentUser,
+    agentDisplayNames,
+  );
 
   return (
     <div className="chat-message-group" id={messageDomId(item.id)}>
@@ -1600,6 +1651,7 @@ function MessagePartsInner({
   failedTurnRecovery,
   onRetryFailedTurn,
   onWhatHappenedFailedTurn,
+  agentDisplayNames,
 }: {
   readonly item: TimelineMessageItem;
   /** The full timeline, oldest→newest — only read to recover the request
@@ -1655,6 +1707,9 @@ function MessagePartsInner({
   ) => void | Promise<void>;
   readonly onWhatHappenedFailedTurn?: (item: TimelineMessageItem) => void;
   readonly failedTurnRecovery?: FailedTurnRecovery;
+  /** Resolved agent display names (CL-6424) — headers, strips, and event
+   * lines show these, never raw handle slugs. */
+  readonly agentDisplayNames?: AgentDisplayNames;
 }) {
   // A message this reader's own composer submitted and the server hasn't
   // issued an id for yet (see `TimelineMessageItem.pendingStatus`) offers
@@ -1734,6 +1789,9 @@ function MessagePartsInner({
                   part.turnFailedReason === "tools_unsupported"
                     ? { namedRecovery: part.turnFailedReason }
                     : {})}
+                  {...(agentDisplayNames !== undefined
+                    ? { agentDisplayNames }
+                    : {})}
                   {...(retryText !== undefined ? { retryText } : {})}
                   {...(failedTurnRecovery !== undefined
                     ? { failedTurnRecovery }
@@ -1754,6 +1812,9 @@ function MessagePartsInner({
                   item={item}
                   participants={participants}
                   currentUser={currentUser}
+                  {...(agentDisplayNames !== undefined
+                    ? { agentDisplayNames }
+                    : {})}
                 />
               );
             }
@@ -1767,6 +1828,9 @@ function MessagePartsInner({
                   participants={participants}
                   currentUser={currentUser}
                   showHeader={showHeader}
+                  {...(agentDisplayNames !== undefined
+                    ? { agentDisplayNames }
+                    : {})}
                   {...(item.pendingStatus !== undefined
                     ? { pendingStatus: item.pendingStatus, pendingNonce }
                     : {})}
@@ -1787,6 +1851,9 @@ function MessagePartsInner({
                   participants={participants}
                   {...(collapsedJoinText !== undefined
                     ? { collapsedText: collapsedJoinText }
+                    : {})}
+                  {...(agentDisplayNames !== undefined
+                    ? { agentDisplayNames }
                     : {})}
                 />
               );
@@ -1880,6 +1947,7 @@ function MessagePartsInner({
             mode={threadAffordanceMode}
             participants={participants}
             onOpen={() => onOpenThread(item.id)}
+            {...(agentDisplayNames !== undefined ? { agentDisplayNames } : {})}
           />
         ) : null}
         {offersSocialChrome ? (
@@ -1948,17 +2016,20 @@ function ThreadAffordance({
   mode,
   participants,
   onOpen,
+  agentDisplayNames,
 }: {
   readonly messageId: string;
   readonly meta: ThreadAffordanceMeta | undefined;
   readonly mode: ThreadAffordanceMode;
   readonly participants: readonly ParticipantRecord[];
   readonly onOpen: () => void;
+  readonly agentDisplayNames?: AgentDisplayNames;
 }) {
   const replyCount = meta?.replyCount ?? 0;
   const addresses = meta?.participantAddresses ?? [];
   const initials = addresses.slice(0, 3).map((address) => {
     const handle =
+      displayNameForAddress(address, agentDisplayNames) ??
       participants.find((p) => p.address === address)?.handle ??
       address.slice(0, 1);
     return initialsOf(handle);
@@ -2035,6 +2106,7 @@ export function WorkbenchTimeline({
   scrollRestore,
   onScrollSnapshot,
   footer,
+  agentDisplayNames,
 }: {
   /** Server-issued messages, oldest→newest, plus any optimistic entries
    * the host is still resolving — see `TimelineMessageItem`'s
@@ -2118,6 +2190,11 @@ export function WorkbenchTimeline({
   /** Incoming-slot pulse (typing / pending-reply) rendered after the last
    * message so it sits where the next agent reply will land. */
   readonly footer?: ReactNode;
+  /** Resolved agent display names (CL-6424) — headers, join lines, and
+   * empty states show these, never raw handle slugs. Undefined keeps the
+   * slug-derived fallback, so a host that never resolves names renders
+   * exactly what it always did. */
+  readonly agentDisplayNames?: AgentDisplayNames;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Starts pinned (true) unless a restored snapshot says otherwise — a
@@ -2187,7 +2264,11 @@ export function WorkbenchTimeline({
     return () => observer.disconnect();
   }, []);
 
-  const joinRuns = collapseAgentJoinRuns(items, participants);
+  const joinRuns = collapseAgentJoinRuns(
+    items,
+    participants,
+    agentDisplayNames,
+  );
 
   if (items.length === 0) {
     // A freshly created agent chat answers before it finishes setting up
@@ -2211,11 +2292,14 @@ export function WorkbenchTimeline({
       isAgentAddress(participant.address),
     );
     if (readyAgent !== undefined) {
+      const readyAgentName =
+        displayNameForAddress(readyAgent.address, agentDisplayNames) ??
+        displayNameFromHandle(readyAgent.handle);
       return (
         <div className="chat-timeline-empty">
           <EmptyState
             icon={<ChatCircle />}
-            title={`Say hello to ${displayNameFromHandle(readyAgent.handle)}`}
+            title={`Say hello to ${readyAgentName}`}
             description={CHAT_STRINGS.emptyAgentTimelineDescription}
           />
         </div>
@@ -2259,6 +2343,9 @@ export function WorkbenchTimeline({
               participants={participants}
               currentUser={currentUser}
               showDayDivider={showDayDivider}
+              {...(agentDisplayNames !== undefined
+                ? { agentDisplayNames }
+                : {})}
             />
           );
         }
@@ -2277,6 +2364,9 @@ export function WorkbenchTimeline({
             currentUser={currentUser}
             showDayDivider={showDayDivider}
             showHeader={showHeader}
+            {...(agentDisplayNames !== undefined
+              ? { agentDisplayNames }
+              : {})}
             {...(collapsedJoinText !== undefined ? { collapsedJoinText } : {})}
             threadMeta={threadMetaByMessageId?.get(item.id)}
             threadAffordanceMode={threadAffordanceMode}

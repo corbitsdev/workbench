@@ -20,6 +20,7 @@ import type { ChangeEvent, CSSProperties, KeyboardEvent } from "react";
 
 import { AVATAR_IDENTITY_CLASS, generatedAvatarStyle } from "./avatar-identity";
 import type { Part, ParticipantRecord } from "./api";
+import type { AgentDisplayNames } from "./agent-display-names";
 import {
   activeMentionQuery,
   filterMentionOptions,
@@ -326,6 +327,9 @@ export const Composer = forwardRef<
      * "Bring in…" group de-dupes against — omitted candidates are
      * already in the workbench. Defaults to empty. */
     readonly participants?: readonly ParticipantRecord[];
+    /** Resolved agent display names (CL-6424) — the popover rows show
+     * these, never raw handle slugs. */
+    readonly agentDisplayNames?: AgentDisplayNames;
     /** Workspace members not yet in this workbench — the "Bring in…"
      * group's person half. Defaults to empty (no group rendered). */
     readonly members?: readonly BringInMember[];
@@ -371,6 +375,7 @@ export const Composer = forwardRef<
     members = [],
     invitableAgents = [],
     bringInLoadError = null,
+    agentDisplayNames,
     onSend,
     onInviteAgent,
     onOpenAgentsSettings,
@@ -481,7 +486,12 @@ export const Composer = forwardRef<
   const mentionOptions: readonly MentionOption[] =
     mention !== null
       ? filterMentionOptions(
-          mentionOptionsFromWorkbench(participants, members, invitableAgents),
+          mentionOptionsFromWorkbench(
+            participants,
+            members,
+            invitableAgents,
+            agentDisplayNames,
+          ),
           mention.query,
         )
       : [];

@@ -16,6 +16,10 @@ import { useEffect, useRef, useState } from "react";
 import { isAgentAddress, mentionedParticipants } from "@corbits/chat/mentions";
 import { reportError } from "@corbits/error-sink";
 import type { Part, ParticipantRecord } from "./api";
+import {
+  displayNameForAddress,
+  type AgentDisplayNames,
+} from "./agent-display-names";
 import { displayNameFromHandle } from "./timeline";
 
 /**
@@ -465,6 +469,7 @@ export function typingAgentNames(
   streamingReply: StreamingReplyState,
   participants: readonly ParticipantRecord[],
   parts?: readonly Part[],
+  displayNames?: AgentDisplayNames,
 ): readonly string[] {
   if (!isPendingReply(streamingReply)) return [];
   const agents = participants.filter((participant) =>
@@ -480,7 +485,11 @@ export function typingAgentNames(
       : agents.length === 1
         ? agents
         : [];
-  return named.map((agent) => displayNameFromHandle(agent.handle));
+  return named.map(
+    (agent) =>
+      displayNameForAddress(agent.address, displayNames) ??
+      displayNameFromHandle(agent.handle),
+  );
 }
 
 /** The latest human (non-agent, non-streaming) message's parts — what

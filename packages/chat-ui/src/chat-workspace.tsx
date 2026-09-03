@@ -78,10 +78,16 @@ import type { StreamingReplyState } from "./streaming-reply";
 import {
   AgentBadge,
   WorkbenchTimeline,
+  displayNameFromHandle,
   messageDomId,
   messageText,
 } from "./timeline";
 import type { FailedTurnRecovery } from "./timeline";
+import {
+  agentDisplayNamesFromAgents,
+  displayNameForAddress,
+  type AgentDisplayNames,
+} from "./agent-display-names";
 import { NoUsableModelBanner } from "./no-usable-model-banner";
 import { ResumeFailedBanner } from "./resume-failed-banner";
 import type {
@@ -198,15 +204,19 @@ export const TEAM_AVATAR_STACK_LIMIT = 6;
 export function buildTeamAvatarStack(
   participants: readonly ParticipantRecord[],
   presenceMembers: readonly PresenceMember[],
+  displayNames?: AgentDisplayNames,
 ): readonly TeamAvatarEntry[] {
   const agents = participants
     .filter((participant) => isAgentAddress(participant.address))
     .map((participant) => {
       const style = generatedAvatarStyle(participant.address);
+      const label =
+        displayNameForAddress(participant.address, displayNames) ??
+        displayNameFromHandle(participant.handle);
       return {
         key: participant.address,
-        initials: participant.handle.slice(0, 1).toUpperCase(),
-        label: participant.handle,
+        initials: label.slice(0, 1).toUpperCase(),
+        label,
         tone: "agent" as const,
         color: style["--avatar-identity-bg"],
         textColor: style["--avatar-identity-fg"],
@@ -1201,6 +1211,14 @@ function ChatWorkspaceInner({
     workbenchAgentsQuery.data?.length === 1
       ? workbenchAgentsQuery.data[0]?.definitionAssetId
       : undefined;
+  // Person-facing display names for this workbench's agents (CL-6424),
+  // keyed by participant address. Memoized so `MessageParts`'s memo guard
+  // (CL-6625) keeps working: a fresh Map every render would read as new
+  // props on every row and re-render the whole timeline per token.
+  const agentDisplayNames: AgentDisplayNames = useMemo(
+    () => agentDisplayNamesFromAgents(workbenchAgentsQuery.data ?? []),
+    [workbenchAgentsQuery.data],
+  );
   const failedTurnRecovery = useMemo((): FailedTurnRecovery => {
     const definitionIdByAddress: Record<string, string> = {};
     for (const agent of workbenchAgentsQuery.data ?? []) {
@@ -1349,6 +1367,7 @@ function ChatWorkspaceInner({
   const teamStack = buildTeamAvatarStack(
     activeWorkbench?.participants ?? [],
     presenceMembers,
+    agentDisplayNames,
   );
   const visibleTeamStack = teamStack.slice(0, TEAM_AVATAR_STACK_LIMIT);
   const teamStackOverflow = teamStack.length - visibleTeamStack.length;
@@ -1685,6 +1704,7 @@ function ChatWorkspaceInner({
                     )}
                     participants={activeWorkbench?.participants ?? []}
                     {...(currentUser !== undefined ? { currentUser } : {})}
+                    agentDisplayNames={agentDisplayNames}
                     threadMetaByMessageId={threadMetaByMessageId}
                     threadAffordanceMode={inThreadView ? "fork" : "reply"}
                     onOpenThread={
@@ -1747,6 +1767,7 @@ function ChatWorkspaceInner({
                             streamingReply,
                             activeWorkbench?.participants ?? [],
                             addressedMessageParts,
+                            agentDisplayNames,
                           )}
                         />
                       )
@@ -1769,8 +1790,10 @@ function ChatWorkspaceInner({
                       ref={composerRef}
                       agents={mentionCandidatesFromParticipants(
                         activeWorkbench?.participants ?? [],
+                        agentDisplayNames,
                       )}
                       participants={activeWorkbench?.participants ?? []}
+                      agentDisplayNames={agentDisplayNames}
                       members={bringInLists.members}
                       invitableAgents={bringInLists.invitableAgents}
                       bringInLoadError={bringInLoadError}

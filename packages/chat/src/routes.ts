@@ -76,6 +76,7 @@ import {
   launchAndJoinAgent,
   findExistingAgentChat,
   removeWorkbenchParticipant,
+  resolveInvitedDisplayName,
   sendWorkbenchMessage,
   cancelWorkbenchTurn,
 } from "./workbench-service";
@@ -2974,12 +2975,15 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   // Every one of the workbench's own agent participants, each resolved
-  // back to its definition id — the settings surface's Assistant
-  // section reads this before it can look up each definition's
+  // back to its definition id and person-facing display name — the
+  // timeline, mention picker, and presence stack render this name, never
+  // the raw handle slug (CL-6424). The settings surface's Assistant
+  // section reads the definition id before it looks up each definition's
   // name/instructions through `@corbits/agent-directory`. A workbench
   // with several invited agents lists every one of them, not just the
-  // first; a participant whose address no longer resolves to a live
-  // definition is simply omitted rather than failing the whole list.
+  // first; a participant whose address no longer resolves to a live,
+  // nameable definition is simply omitted rather than failing the whole
+  // list.
   app.get(
     "/workbenches/:id/agents",
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
@@ -3003,6 +3007,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const agentParticipants = participantsOf(existing.settings).filter(
         (participant) => isAgentAddress(participant.address),
       );
+      const invitable = await deps.platform.listInvitableDefinitions(tenant.id);
       const items = (
         await Promise.all(
           agentParticipants.map(async (participant) => {
@@ -3013,14 +3018,29 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             if (definitionId === undefined) return null;
             const definitionAssetId =
               await deps.platform.resolveDefinitionAssetId(definitionId);
-            return definitionAssetId === undefined
-              ? null
-              : {
-                  address: participant.address,
-                  handle: participant.handle,
-                  definitionId,
-                  definitionAssetId,
-                };
+            if (definitionAssetId === undefined) return null;
+            let displayName: string;
+            try {
+              displayName = await resolveInvitedDisplayName(
+                deps.platform,
+                invitable,
+                definitionId,
+              );
+            } catch (err) {
+              reportError(err, {
+                operation: "chat.workbenchAgents.displayName",
+                tenantId: tenant.id,
+                roomId: workbenchId,
+              });
+              return null;
+            }
+            return {
+              address: participant.address,
+              handle: participant.handle,
+              definitionId,
+              definitionAssetId,
+              displayName,
+            };
           }),
         )
       ).filter((item) => item !== null);
