@@ -61,7 +61,7 @@ import { parseParticipants, type ParticipantRecord } from "./participants";
 import type { Part, TextPart } from "./parts";
 import type { ChatPlatform } from "./platform-port";
 import { postRoomMessage, type RoomMessageStore } from "./room-messages";
-import type { AgentTurnStore } from "./agent-turns";
+import type { AgentTurn, AgentTurnStore } from "./agent-turns";
 import {
   mailIdFromBracketMessageId,
   type TurnMailCorrelationStore,
@@ -523,10 +523,10 @@ async function threadForSourceMessage(
  * The thread for a post produced inside one dispatch mail's bracket
  * (CL-6314): the mail's recorded source message, resolved through
  * `threadForSourceMessage`. Undefined when nothing was ever recorded
- * for the mail (a pre-rollout mail, a restart that dropped the open
- * bracket), when the correlation names another workbench (a post must
- * never inherit a thread from a room it isn't in), or when threads are
- * unwired — every one of those posts unthreaded, never lost.
+ * for the mail (a pre-rollout mail), when the correlation names another
+ * workbench (a post must never inherit a thread from a room it isn't
+ * in), or when threads are unwired — every one of those falls through
+ * to the running turn's own source, never lost.
  */
 async function threadForBracketMail(
   deps: Pick<ChatOrchestratorDeps, "threads" | "turnMailCorrelation">,
@@ -546,6 +546,43 @@ async function threadForBracketMail(
     tenantId,
     workbenchId,
     source.sourceMessageId,
+  );
+}
+
+/**
+ * The thread a mid-turn post belongs in (CL-6314): the dispatch mail's
+ * recorded source when this process still names that mail (the open
+ * bracket, or the close event's own mail), otherwise the latest
+ * message the running turn was asked to answer — the same source
+ * `dispatchTurn` recorded, still on the turn projection after a hub
+ * restart dropped the process-local bracket. Undefined when neither
+ * names a source in this workbench, or threads are unwired: the post
+ * lands unthreaded, never lost.
+ */
+async function threadForTurnPost(
+  deps: Pick<ChatOrchestratorDeps, "threads" | "turnMailCorrelation">,
+  tenantId: string,
+  workbenchId: string,
+  mailId: string | undefined,
+  turn: Pick<AgentTurn, "requestMessageIds"> | undefined,
+): Promise<string | undefined> {
+  if (mailId !== undefined) {
+    const fromMail = await threadForBracketMail(
+      deps,
+      tenantId,
+      workbenchId,
+      mailId,
+    );
+    if (fromMail !== undefined) return fromMail;
+  }
+  const sourceMessageId =
+    turn?.requestMessageIds[turn.requestMessageIds.length - 1];
+  if (sourceMessageId === undefined) return undefined;
+  return threadForSourceMessage(
+    deps.threads,
+    tenantId,
+    workbenchId,
+    sourceMessageId,
   );
 }
 
@@ -644,8 +681,9 @@ async function postReply(
   /**
    * The dispatch mail whose bracket this post was produced inside, when
    * known — the open bracket's mail for a reply, the close event's own
-   * mail for a silent-turn notice. Undefined, the post lands
-   * unthreaded.
+   * mail for a silent-turn notice. Undefined after a restart that
+   * dropped the process-local bracket: `threadForTurnPost` then reads
+   * the running turn's own source instead of posting unthreaded.
    */
   mailId?: string,
 ): Promise<void> {
@@ -723,15 +761,13 @@ async function postReply(
       agentAddress: resolved.roomAddress,
       ...(childRunId !== undefined ? { childRunId } : {}),
     });
-    const threadId =
-      mailId !== undefined
-        ? await threadForBracketMail(
-            deps,
-            resolved.tenantId,
-            workbenchId,
-            mailId,
-          )
-        : undefined;
+    const threadId = await threadForTurnPost(
+      deps,
+      resolved.tenantId,
+      workbenchId,
+      mailId,
+      turn,
+    );
     const posted = await postRoomMessage(deps, {
       tenantId: resolved.tenantId,
       workbenchId,
@@ -848,7 +884,9 @@ async function postApproveBlock(
   /**
    * The dispatch mail whose open bracket this gate parked inside, when
    * known — the card threads under the turn that produced it by the
-   * same rule a reply follows. Undefined, the card posts unthreaded.
+   * same rule a reply follows. Undefined after a restart that dropped
+   * the process-local bracket: `threadForTurnPost` then reads the
+   * running turn's own source instead of posting unthreaded.
    */
   mailId: string | undefined,
 ): Promise<void> {
@@ -868,15 +906,18 @@ async function postApproveBlock(
     title: headlineFor(approval.toolDefinition, approval.toolArguments),
   };
   for (const workbenchId of resolved.workbenchIds) {
-    const threadId =
-      mailId !== undefined
-        ? await threadForBracketMail(
-            deps,
-            resolved.tenantId,
-            workbenchId,
-            mailId,
-          )
-        : undefined;
+    const turn = await deps.agentTurns?.findRunningTurn({
+      tenantId: resolved.tenantId,
+      workbenchId,
+      agentAddress: resolved.roomAddress,
+    });
+    const threadId = await threadForTurnPost(
+      deps,
+      resolved.tenantId,
+      workbenchId,
+      mailId,
+      turn,
+    );
     const posted = await postRoomMessage(deps, {
       tenantId: resolved.tenantId,
       workbenchId,
