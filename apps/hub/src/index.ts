@@ -1331,13 +1331,14 @@ export async function createHub(config: HubConfig) {
   const relaunchNoticeRef: RelaunchNoticePort = {};
   // One CryptoProviderCache for the whole hub process (CL-7284). Chat
   // sendMail keys by workbench id; webhook, routine, and agent-definition
-  // drafting first-turn mail key by the launched run's instance id. Both
-  // are `generateId("workflowRun")` (older workbenches:
-  // `generateId("instance")`), so they share a string shape — a second
-  // cache for the same id would mint a different signing key. generateId
-  // uniqueness keeps distinct entities from colliding; sharing the cache
-  // keeps the same entity from rotating keys across consumers. TTL-bounded
-  // by `createCryptoProviderCache` itself (CL-7223).
+  // drafting first-turn mail key by the launched run's instance id. New
+  // workbenches and run ids are `run_` (`generateId("workflowRun")`);
+  // older workbenches are `ins_` (`generateId("instance")`). They share a
+  // string shape — a second cache for the same id would mint a different
+  // signing key. generateId uniqueness keeps distinct entities from
+  // colliding; sharing the cache keeps the same entity from rotating keys
+  // across consumers. TTL-bounded by `createCryptoProviderCache` itself
+  // (CL-7223).
   const cryptoProviders = createCryptoProviderCache();
   const chatPlatform = createHubChatPlatform({
     db,
