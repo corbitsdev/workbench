@@ -79,9 +79,56 @@ test("ask_user posts a question block and suspends on a message_response gate", 
   expect(decision.pendingOp.kind).toBe("message_response");
   expect(decision.pendingOp.suspendedCall).toEqual(call);
   expect(decision.pendingOp.correlationId).toBe(decision.gate.correlationId);
-  // Minted by `postQuestion` (`q_<hex32>`), not a separately-minted
-  // `crypto.randomUUID()` — the gate and the question card share one id.
+  // Derived from the tool-call id (`q_<hex32>`), not minted per attempt —
+  // the gate and the question card share one id, and a retry of the same
+  // call reuses it.
   expect(decision.gate.correlationId).toMatch(/^q_[0-9a-f]{32}$/);
+});
+
+test("retrying ask_user for the same call reuses the questionId so a crash between post and suspend cannot orphan a second card", async () => {
+  const postedQuestionIds: string[] = [];
+  const fetchImpl = (async (_url: string | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as {
+      parts: readonly {
+        block: { data: Record<string, unknown> };
+      }[];
+    };
+    const questionId = body.parts[0]?.block.data["questionId"];
+    if (typeof questionId === "string") postedQuestionIds.push(questionId);
+    return new Response(
+      JSON.stringify({
+        id: `msg_${postedQuestionIds.length}`,
+        createdAt: "2026-08-17T00:00:00.000Z",
+      }),
+      { status: 201 },
+    );
+  }) as unknown as typeof fetch;
+
+  const bundle = interactionTools(testEnv());
+  const call = {
+    id: "call_1",
+    name: ASK_USER_TOOL,
+    arguments: {
+      question: "Which environment?",
+      options: ["Staging", "Production"],
+    },
+  };
+
+  const first = await withFetch(fetchImpl, () => beforeTool(bundle, call));
+  const second = await withFetch(fetchImpl, () => beforeTool(bundle, call));
+
+  expect(postedQuestionIds).toHaveLength(2);
+  const reusedId = postedQuestionIds[0];
+  if (reusedId === undefined) {
+    throw new Error("expected a posted questionId");
+  }
+  expect(postedQuestionIds[1]).toBe(reusedId);
+  expect(reusedId).toMatch(/^q_[0-9a-f]{32}$/);
+  if (first.type !== "suspend" || second.type !== "suspend") {
+    throw new Error("expected both retries to suspend");
+  }
+  expect(first.gate.correlationId).toBe(reusedId);
+  expect(second.gate.correlationId).toBe(reusedId);
 });
 
 test("ask_user rejects fewer than 2 options before ever posting", async () => {
