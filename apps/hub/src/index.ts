@@ -14,6 +14,7 @@ import {
   createSidecarAllocationStore,
   createSignalCorrelationStore,
   createWorkflowRunDispatchStore,
+  createWorkflowRunStore,
   listVisibleOfferings,
   resolveCredentialByName,
   resolveCredentialRequirement,
@@ -118,6 +119,7 @@ import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
 import { decodedOrNull } from "@corbits/url-path";
 import {
   createCryptoProviderCache,
+  findFoldedRunByAddress,
   lookupFoldedRunReconnectKey,
 } from "@corbits/folded-runs";
 import { createTopLevelRunRoutes } from "@corbits/run-scope";
@@ -209,6 +211,7 @@ import {
   resolveLaunchableDefinition,
   routine as routineTable,
   routineRun as routineRunTable,
+  settleRoutineFireFromTurn,
 } from "@corbits/routines";
 import {
   createSidecarProvisioner as createE2BSidecarProvisioner,
@@ -817,6 +820,31 @@ export async function createHub(config: HubConfig) {
     store: insightsUsage.store,
     generateId: () => generateId("inferenceTurn"),
   });
+  // CL-6778: a routine fire's folded delivery agent stays deployed after
+  // it replies, so `workflow_run.status` would linger on `running` unless
+  // something stamps it terminal. `onTurnFinalized` is that stamp —
+  // `markTerminal` + `endedAt`, gated on a `routine_run` row so a
+  // workbench host or invited agent is never settled by accident.
+  const workflowRunStore = createWorkflowRunStore(db);
+  const routineFireSettlePort = {
+    async lookupRunByAddress(address: string) {
+      const row = await findFoldedRunByAddress(db, address);
+      return row === undefined ? undefined : { id: row.id };
+    },
+    async isRoutineFire(runId: string) {
+      const rows = await db
+        .select({ runId: routineRunTable.runId })
+        .from(routineRunTable)
+        .where(eq(routineRunTable.runId, runId))
+        .limit(1);
+      return rows.length > 0;
+    },
+    markTerminal: (
+      runId: string,
+      status: "completed" | "failed" | "cancelled",
+      endedAt: Date,
+    ) => workflowRunStore.markTerminal(runId, status, endedAt),
+  };
   // CL-6257: per-message-run stage latency (message-received →
   // reactor.start → inference.start → first-token → reply-posted). The
   // vendored event collector never persists the events this reads (see
@@ -835,8 +863,16 @@ export async function createHub(config: HubConfig) {
     // surviving loss loud (error-level cause, counted) instead of a
     // swallowed WRN.
     db: withTurnPartPersistGuard(withTurnPartWriteDefaults(db)),
-    onTurnFinalized: (agentAddress, turn) =>
-      artifactDeliveryHandlerRef.current?.(agentAddress, turn),
+    onTurnFinalized: (agentAddress, turn) => {
+      artifactDeliveryHandlerRef.current?.(agentAddress, turn);
+      void settleRoutineFireFromTurn(
+        routineFireSettlePort,
+        agentAddress,
+        turn,
+      ).catch((err: unknown) => {
+        log.warn`Failed to settle routine fire for ${agentAddress}: ${err instanceof Error ? err.message : String(err)}`;
+      });
+    },
     // Per-turn usage, emitted once when the collector finalizes a turn.
     onUsage: (_agentAddress, usage) => {
       void usageSink

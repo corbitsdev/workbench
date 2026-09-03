@@ -20,6 +20,7 @@ export type RoutineActivityItem = {
   readonly name: string;
   readonly status: string;
   readonly startedAt: string;
+  readonly endedAt?: string | null;
 };
 
 function toRoutineActivityItem(run: RunFire, now: number): RoutineActivityItem {
@@ -28,6 +29,7 @@ function toRoutineActivityItem(run: RunFire, now: number): RoutineActivityItem {
     name: run.routineName ?? run.definitionName,
     status: runOutcomeStatus(run, now) ?? run.status,
     startedAt: run.createdAt,
+    ...(run.endedAt !== undefined ? { endedAt: run.endedAt } : {}),
   };
 }
 

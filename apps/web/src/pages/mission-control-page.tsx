@@ -70,7 +70,11 @@ function routineInFlightRow(
 ): InFlightRow {
   const status =
     runOutcomeStatus(
-      { createdAt: routine.startedAt, status: routine.status },
+      {
+        createdAt: routine.startedAt,
+        status: routine.status,
+        ...(routine.endedAt !== undefined ? { endedAt: routine.endedAt } : {}),
+      },
       now,
     ) ?? routine.status;
   return {
@@ -94,7 +98,13 @@ export function computeInFlightRows(
     .filter(
       (routine) =>
         runOutcomeStatus(
-          { createdAt: routine.startedAt, status: routine.status },
+          {
+            createdAt: routine.startedAt,
+            status: routine.status,
+            ...(routine.endedAt !== undefined
+              ? { endedAt: routine.endedAt }
+              : {}),
+          },
           now,
         ) === "running",
     )

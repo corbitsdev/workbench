@@ -100,6 +100,19 @@ describe("listRoutineActivity", () => {
     expect(item?.status).not.toBe("running");
   });
 
+  test("endedAt drops a just-finished running fire from running immediately", async () => {
+    stubTopLevelRunsFetch([
+      {
+        ...runningFire,
+        endedAt: new Date().toISOString(),
+      },
+    ]);
+
+    const [item] = await listRoutineActivity("tnt_1");
+
+    expect(item?.status).not.toBe("running");
+  });
+
   // Warm-keep (CL-6681 / CL-6778): the fires feed still reports `running`
   // because the delivery agent stays deployed. Past the fire window that
   // row must not count as routine activity in flight.

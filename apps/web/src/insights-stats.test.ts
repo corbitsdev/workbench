@@ -126,6 +126,21 @@ describe("computeInsightsStats", () => {
     expect(stats.running).toBe(0);
   });
 
+  test("endedAt drops a just-finished running run from the running count immediately", () => {
+    const stats = computeInsightsStats(
+      [
+        run({
+          id: "just-finished",
+          status: "running",
+          createdAt: new Date().toISOString(),
+          endedAt: new Date().toISOString(),
+        }),
+      ],
+      [],
+    );
+    expect(stats.running).toBe(0);
+  });
+
   test("limits recent runs", () => {
     const runs = Array.from({ length: 5 }, (_, i) =>
       run({

@@ -69,6 +69,13 @@ export type {
   RunSummaryResolver,
 } from "./routes";
 
+export { settleRoutineFire, settleRoutineFireFromTurn } from "./settle-fire";
+export type {
+  RoutineFireSettlePort,
+  RoutineFireSettleStatus,
+  RoutineFireTurnSettlePort,
+} from "./settle-fire";
+
 export { createWorkflowRoutineRoutes } from "./workflow-routine-routes";
 export type {
   CreateWorkflowRoutineRoutesDeps,

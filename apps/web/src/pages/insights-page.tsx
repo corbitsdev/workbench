@@ -467,9 +467,9 @@ function useTickingNow(enabled: boolean): number {
 
 /** A run actually in flight right now (`status: running | updating`) —
  * liveness is not a windowed property, so this filters the full run set,
- * never the range-filtered one. Warm-keep (CL-6681) leaves a finished
- * fire's delivery agent deployed, so a lingering `running` past the fire
- * window is not in flight — `runOutcomeStatus` is the one reading.
+ * never the range-filtered one. A persisted `endedAt` means the fire
+ * already finished, even if `status` still reads `running`. The fire
+ * window is last-resort for abandoned fires that never got that stamp.
  */
 export function isRunningNow(
   run: InsightsRun,

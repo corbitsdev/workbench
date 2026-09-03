@@ -222,6 +222,19 @@ describe("isRunningNow", () => {
   // after it replies, so workflow_run.status lingers on `running`. Past the
   // fire window that is not an in-flight job — Insights must not keep it in
   // "Running now" forever.
+  test("endedAt drops in-flight immediately, even while status is still running inside the window", () => {
+    expect(
+      isRunningNow(
+        run({
+          id: "just-finished",
+          createdAt: new Date().toISOString(),
+          status: "running",
+          endedAt: new Date().toISOString(),
+        }),
+      ),
+    ).toBe(false);
+  });
+
   test("warm-keep: a running run past the fire window is not in flight", () => {
     expect(
       isRunningNow(

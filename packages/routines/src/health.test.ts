@@ -68,6 +68,33 @@ describe("fireOutcomeStatus", () => {
   test("null when the platform has no run to report", () => {
     expect(fireOutcomeStatus(fire("r1", {}, {}), NOW)).toBeNull();
   });
+
+  test("endedAt on a still-running column is finished immediately, not at T+window", () => {
+    expect(
+      fireOutcomeStatus(
+        fire(
+          "r1",
+          {},
+          { status: "running", endedAt: "2026-01-01T00:00:30.000Z" },
+        ),
+        NOW,
+      ),
+    ).toBe("completed");
+  });
+
+  test("a persisted failed fire stays failed past the window — never remapped to completed", () => {
+    const longAfter = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS * 10;
+    expect(
+      fireOutcomeStatus(
+        fire(
+          "r1",
+          {},
+          { status: "failed", endedAt: "2026-01-01T00:00:30.000Z" },
+        ),
+        longAfter,
+      ),
+    ).toBe("failed");
+  });
 });
 
 describe("runOutcomeStatus", () => {
@@ -83,6 +110,19 @@ describe("runOutcomeStatus", () => {
       runOutcomeStatus(
         { createdAt: FIRE_CREATED_AT, status: "running" },
         staleNow,
+      ),
+    ).toBe("completed");
+  });
+
+  test("endedAt drops a top-level running status immediately", () => {
+    expect(
+      runOutcomeStatus(
+        {
+          createdAt: FIRE_CREATED_AT,
+          status: "running",
+          endedAt: "2026-01-01T00:00:30.000Z",
+        },
+        NOW,
       ),
     ).toBe("completed");
   });
@@ -225,6 +265,22 @@ describe("routineHealth", () => {
     ).toBe("running");
   });
 
+  test("endedAt on the latest fire is not Running now, even inside the window", () => {
+    expect(
+      routineHealth(
+        healthy,
+        [
+          fire(
+            "r1",
+            {},
+            { status: "running", endedAt: "2026-01-01T00:00:30.000Z" },
+          ),
+        ],
+        NOW,
+      ).state,
+    ).not.toBe("running");
+  });
+
   test("warm-keep (CL-6681): a latest run stuck 'running' past its window reads as healthy, not stuck Running now forever", () => {
     const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
     const health = routineHealth(
@@ -234,6 +290,23 @@ describe("routineHealth", () => {
     );
     expect(health.state).toBe("ok");
     expect(health.label).not.toBe("Running now");
+  });
+
+  test("a persisted failed latest fire is Last run failed, even past the window", () => {
+    const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+    const health = routineHealth(
+      healthy,
+      [
+        fire(
+          "r1",
+          {},
+          { status: "failed", endedAt: "2026-01-01T00:00:30.000Z" },
+        ),
+      ],
+      staleNow,
+    );
+    expect(health.state).toBe("failing");
+    expect(health.label).toBe("Last run failed");
   });
 
   test("consecutive failures are stated in the caption, not just the pill", () => {

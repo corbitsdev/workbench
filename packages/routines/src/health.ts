@@ -73,24 +73,26 @@ function statusOf(fire: {
 }
 
 /**
- * How long a fire may credibly still be doing work before its lingering
- * `running` status is read as warm-keep (CL-6681) — a routine's delivery
- * agent deliberately stays deployed after it replies, so
- * `workflow_run.status` never settles out of `running` on its own. Past
- * this window a `running` fire is presumed to have already delivered its
- * reply, so every surface badging its status reads it through
+ * How long a fire may credibly still be doing work before a lingering
+ * `running` status with no `endedAt` is read as an abandoned fire
+ * (warm-keep CL-6681 / CL-6778). A routine fire that finished is
+ * supposed to land `completed`/`failed`/`cancelled` plus `endedAt` via
+ * `markTerminal`; this window is the last-resort reading for a fire
+ * that never got that write — never the happy path. Past it, a
+ * still-`running` fire with no end stamp is presumed to have already
+ * delivered, so every surface badging its status reads it through
  * `fireOutcomeStatus` rather than the raw column.
  */
 export const FIRE_RUNNING_WINDOW_MS = 10 * 60 * 1000;
 
 /**
- * A fire's status the way this build should show it: the raw `run.status`
- * for every terminal value, but a `running` status older than
- * `FIRE_RUNNING_WINDOW_MS` is read as `completed` instead of taken
- * literally — see that constant's own comment. This is the one place that
- * tells a fire still doing work apart from one merely staying warm; every
- * caller that needs a fire's displayed status goes through here, never
- * `fire.run?.status` directly.
+ * A fire's status the way this build should show it: the raw
+ * `run.status` for every non-running value; a `running` row that
+ * already carries `endedAt` is finished immediately (the persist
+ * path); a `running` row with no `endedAt` older than
+ * `FIRE_RUNNING_WINDOW_MS` is an abandoned fire read as `completed`.
+ * Every caller that needs a fire's displayed status goes through here,
+ * never `fire.run?.status` directly.
  */
 export function fireOutcomeStatus(
   fire: Pick<RoutineFire, "createdAt"> & {
@@ -100,6 +102,8 @@ export function fireOutcomeStatus(
 ): string | null {
   const status = statusOf(fire);
   if (status !== "running") return status;
+  const endedAt = fire.run?.endedAt;
+  if (typeof endedAt === "string" && endedAt !== "") return "completed";
   const startedAt = Date.parse(fire.createdAt);
   if (Number.isNaN(startedAt)) return status;
   return now - startedAt > FIRE_RUNNING_WINDOW_MS ? "completed" : "running";
@@ -109,15 +113,23 @@ export function fireOutcomeStatus(
  * `fireOutcomeStatus` for a platform run whose status lives at the top
  * level (`workflow_run.status`), not nested on a routine fire's `run`.
  * Insights, Mission Control, and the shell activity feed all see that
- * shape; they must not read the raw column while warm-keep (CL-6681)
- * leaves a finished fire's delivery agent deployed.
+ * shape. `endedAt` is the persist-path signal that the fire already
+ * finished; the running-window is only for abandoned fires that never
+ * got that stamp.
  */
 export function runOutcomeStatus(
-  run: { readonly createdAt: string; readonly status: string },
+  run: {
+    readonly createdAt: string;
+    readonly status: string;
+    readonly endedAt?: string | null;
+  },
   now: number,
 ): string | null {
   return fireOutcomeStatus(
-    { createdAt: run.createdAt, run: { status: run.status } },
+    {
+      createdAt: run.createdAt,
+      run: { status: run.status, endedAt: run.endedAt },
+    },
     now,
   );
 }

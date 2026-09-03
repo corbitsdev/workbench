@@ -84,6 +84,18 @@ describe("computeInFlightRows", () => {
   // Warm-keep (CL-6681 / CL-6778): Mission Control's active-run count and
   // in-flight table must not keep a finished fire as "Running" forever just
   // because the delivery agent is still deployed.
+  test("endedAt drops a just-finished running routine from in-flight immediately", () => {
+    const rows = computeInFlightRows([
+      routine({
+        id: "just-finished",
+        status: "running",
+        startedAt: new Date().toISOString(),
+        endedAt: new Date().toISOString(),
+      }),
+    ]);
+    expect(rows).toEqual([]);
+  });
+
   test("warm-keep: a running routine past the fire window is not in-flight", () => {
     const rows = computeInFlightRows([
       routine({
