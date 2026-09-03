@@ -29,6 +29,10 @@ import {
 import { createAgentDefinitionRoutes } from "../src/routes";
 import type { PinnedSkillIndexResolver } from "../src/routes";
 import {
+  createWorkflowSkillPinRoutes,
+  type WorkflowRunAuthenticator,
+} from "../src/workflow-skill-pin-routes";
+import {
   createInMemoryDefinitionSkillsStore,
   type DefinitionSkillsStore,
 } from "../src/skills-store";
@@ -1977,4 +1981,70 @@ test("concurrent DELETE model and a capability-add both land", async () => {
   expect(pinsFrom(workflowJson).map((pin) => pin.name)).toContain(
     "@corbits/github-tools",
   );
+});
+
+test("concurrent pin_skill and DELETE model both land", async () => {
+  const skillsStore = createInMemoryDefinitionSkillsStore();
+  const assetService = liveDefinitionAsset(
+    storedDefinitionBytesWithModel("anthropic/claude-sonnet"),
+  );
+  const db = fakeInstructionsDb({
+    id: "def_1",
+    assetId: "ast_1",
+    name: "research-buddy",
+  });
+  const definitionApp = buildApp(
+    assetService,
+    db,
+    allowAllRequireGrant,
+    fakeHistory(),
+    fakeCapabilityInventory,
+    skillsStore,
+  );
+  const pinAuthenticator: WorkflowRunAuthenticator = {
+    resolve: (token, address) =>
+      Promise.resolve(
+        token === "sidecar-token" && address === "run_1@example.com"
+          ? {
+              tenantId: TENANT.id,
+              principalId: PRINCIPAL.id,
+              runId: "run_1",
+            }
+          : null,
+      ),
+  };
+  const pinApp = createWorkflowSkillPinRoutes({
+    db,
+    assetService,
+    skillIndex: fakeSkillIndex,
+    skillsStore,
+    authenticator: pinAuthenticator,
+    deployer: recordingAgentDefinitionDeployer(),
+  });
+
+  const [pinRes, delRes] = await Promise.all([
+    pinApp.request("/pin", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer sidecar-token",
+        "x-workflow-run-address": "run_1@example.com",
+      },
+      body: JSON.stringify({
+        definitionId: "def_1",
+        skillName: "research",
+      }),
+    }),
+    definitionApp.request("/def_1/capabilities/model", { method: "DELETE" }),
+  ]);
+  expect(pinRes.status).toBe(200);
+  expect(delRes.status).toBe(200);
+
+  const workflowJson = await readAgentDefinitionWorkflowJson(
+    assetService,
+    "ast_1",
+  );
+  expect(await skillsStore.getSkills("ast_1")).toEqual(["research"]);
+  expect(promptFrom(workflowJson)).toContain("- research: What research does.");
+  expect(modelFrom(workflowJson)).toBeUndefined();
 });
