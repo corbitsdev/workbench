@@ -240,8 +240,9 @@ describe("the failed-turn notice renders through PrFailedTurnStrip", () => {
 
     const detail = container.querySelector(".chat-turn-failed-detail");
     expect(detail?.textContent).toBe(
-      "This agent could not complete your request due to a credential error",
+      "This didn't go through. Try again, or check the connection in Settings.",
     );
+    expect(detail?.textContent).not.toMatch(/credential error/i);
     expect(detail?.textContent).not.toMatch(/\[HTTP/);
     expect(detail?.textContent).not.toContain("401");
     expect(detail?.textContent).not.toContain("API key is invalid");
