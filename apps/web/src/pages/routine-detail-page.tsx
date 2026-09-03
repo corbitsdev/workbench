@@ -365,14 +365,26 @@ export function RoutineDetailPage({
         subtitle={row.tenantName}
         actions={
           <>
-            <RunNowButton variant="outline" size="sm" onRun={onRunNow} />
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => onToggleEnabled(!row.routine.enabled)}
-            >
-              {row.routine.enabled ? "Pause" : "Resume"}
-            </Button>
+            {!row.routine.enabled || health.state === "paused" ? (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => onToggleEnabled(true)}
+              >
+                Resume
+              </Button>
+            ) : (
+              <>
+                <RunNowButton variant="outline" size="sm" onRun={onRunNow} />
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => onToggleEnabled(false)}
+                >
+                  Pause
+                </Button>
+              </>
+            )}
             <Button type="button" variant="outline" size="sm" onClick={onEdit}>
               Edit
             </Button>

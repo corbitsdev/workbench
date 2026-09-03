@@ -351,7 +351,7 @@ export function GlobalRoutinesList({
               <TableCell>
                 <Switch
                   checked={row.routine.enabled}
-                  label={`${row.routine.enabled ? "Pause" : "Resume"} ${row.routine.name}`}
+                  label={`${row.routine.enabled ? "On" : "Off"} ${row.routine.name}`}
                   onCheckedChange={(enabled) => onToggleEnabled(row, enabled)}
                 />
               </TableCell>
