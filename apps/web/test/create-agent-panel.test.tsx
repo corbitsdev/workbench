@@ -330,6 +330,7 @@ describe("CreateAgentPanel drafting failure — fails closed", () => {
     expect(document.body.textContent).toContain(
       "Myra couldn't draft a starting prompt for that.",
     );
+    expect(document.body.textContent).toContain("Reference: ref_1");
     expect(document.body.textContent).toContain(
       "Write a system prompt below to continue.",
     );
@@ -350,6 +351,36 @@ describe("CreateAgentPanel drafting failure — fails closed", () => {
     await settle();
 
     expect(createCalled).toBe(true);
+  });
+
+  test("a 500 envelope shows the consumer sentence plus Reference, not a dead-end", async () => {
+    stubFetch({
+      draft: () =>
+        json(
+          {
+            error: {
+              code: "internal_error",
+              userMessage: "Something went wrong. Please try again.",
+              refId: "ref_sink_1",
+            },
+          },
+          500,
+        ),
+    });
+
+    await mount();
+    fillField("create-agent-name", "Research Buddy");
+    await act(async () => {
+      findButton("Get started")?.click();
+    });
+    await settle();
+
+    expect(document.body.textContent).toContain(
+      "Something went wrong. Please try again.",
+    );
+    expect(document.body.textContent).toContain("Reference: ref_sink_1");
+    expect(document.body.textContent).not.toContain("The server answered 500.");
+    expect(document.body.textContent).not.toContain("at draft");
   });
 });
 
