@@ -216,6 +216,9 @@ export const CHAT_STRINGS = {
   blockQuestionSubmit: "Send",
   blockQuestionSubmitting: "Sending…",
   blockQuestionAnswerError: "Couldn't send your answer — try again.",
+  blockQuestionNotifyFailed:
+    "Your answer was saved, but the agent couldn't be notified — try again.",
+  blockQuestionRetry: "Try again",
   blockQuestionAnsweredLabel: "Your answer",
   blockConnectGithubPickHeadline: "Choose what gets reviewed",
   blockConnectGithubStepDone: "Done",
