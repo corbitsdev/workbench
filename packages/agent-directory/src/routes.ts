@@ -37,13 +37,12 @@ import {
   readAgentCapabilities,
   readAgentSystemPrompt,
   reindexPinnedSkills,
-  withAgentModel,
   withAgentSystemPrompt,
-  withAgentToolPackagePin,
   withoutAgentModel,
   type CreateAgentDefinitionCoreDeps,
   type CreateAgentDefinitionCoreInput,
 } from "./agent-workflow";
+import { commitAgentCapabilityAdd } from "./capability-add";
 import {
   agentDefinitionSourceTree,
   AGENT_DEFINITION_ENTRY_PATH,
@@ -542,64 +541,18 @@ export function createAgentDefinitionRoutes({
       // fetched, never a stale or wider one.
       assertCapabilityInInventory(body, inventory);
 
-      const workflowJson = await readAgentDefinitionWorkflowJson(
-        assetService,
-        row.assetId,
-      );
-
-      let nextWorkflowJson: string;
-      let message: string;
-      let skills = await skillsStore.getSkills(row.assetId);
-      let nextSkills: readonly string[] | null = null;
-
-      switch (body.kind) {
-        case "toolPackage": {
-          nextWorkflowJson = withAgentToolPackagePin(workflowJson, {
-            name: body.name,
-            version: "*",
-          });
-          message = `Add ${body.name} to ${row.name}`;
-          break;
-        }
-        case "skill": {
-          nextSkills = skills.includes(body.name)
-            ? skills
-            : [...skills, body.name];
-          nextWorkflowJson = reindexPinnedSkills(
-            workflowJson,
-            await skillIndex.resolve(tenant.id, principal.id, nextSkills),
-          );
-          skills = nextSkills;
-          message = `Add ${body.name} skill to ${row.name}`;
-          break;
-        }
-        case "model": {
-          nextWorkflowJson = withAgentModel(workflowJson, body.canonicalName);
-          message = `Set ${row.name}'s model to ${body.canonicalName}`;
-          break;
-        }
-      }
-
-      await writeAndDeployAgentDefinition({
+      const added = await commitAgentCapabilityAdd({
         assetService,
         deployer,
+        skillsStore,
+        skillIndex,
         tenantId: tenant.id,
         principalId: principal.id,
         assetId: row.assetId,
         handle: row.name,
-        workflowJson: nextWorkflowJson,
-        message,
+        body,
       });
-      if (nextSkills !== null) {
-        await skillsStore.setSkills(row.assetId, nextSkills);
-      }
-
-      const capabilities = readAgentCapabilities(nextWorkflowJson);
-      return c.json({
-        toolPackagePins: capabilities.toolPackagePins,
-        skills,
-        model: capabilities.model,
-      });
+      return c.json(added);
     },
   );
 
