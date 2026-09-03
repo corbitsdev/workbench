@@ -72,6 +72,10 @@ function stubFetch(options: {
   })[];
   /** When true, every catalog (`/models`) read fails. */
   readonly catalogFails?: boolean;
+  /** HTTP status for a failing catalog read (default 500). */
+  readonly catalogFailStatus?: number;
+  /** When true, a failing catalog read throws (network), not an HTTP envelope. */
+  readonly catalogNetworkFails?: boolean;
   /** Fail the first N catalog reads, then succeed — used to exercise Retry. */
   readonly catalogFailUntil?: number;
   readonly addCapabilityFails?: boolean;
@@ -135,18 +139,24 @@ function stubFetch(options: {
       catalogCalls += 1;
       const catalogShouldFail =
         options.catalogFails === true ||
+        options.catalogNetworkFails === true ||
+        options.catalogFailStatus !== undefined ||
         (options.catalogFailUntil !== undefined &&
           catalogCalls <= options.catalogFailUntil);
       if (catalogShouldFail) {
+        if (options.catalogNetworkFails === true) {
+          throw new TypeError("Failed to fetch");
+        }
+        const status = options.catalogFailStatus ?? 500;
         return json(
           {
             error: {
-              code: "internal",
-              userMessage: "catalog boom",
+              code: status === 401 ? "unauthenticated" : "internal",
+              userMessage: status === 401 ? "signed out boom" : "catalog boom",
               refId: "ref_catalog",
             },
           },
-          500,
+          status,
         );
       }
       return json(
@@ -893,7 +903,8 @@ describe("Agents section — Model select (CL-6272.3)", () => {
     expect(select?.disabled).toBe(true);
 
     const alert = el.querySelector(".chat-dialog-error")?.textContent;
-    expect(alert).toBe("Couldn't load the models.");
+    expect(alert).toBe("catalog boom");
+    expect(alert).not.toBe("Couldn't load the models.");
     expect(el.textContent).not.toContain(
       "No connected providers yet — connect one in Shared Settings.",
     );
@@ -905,6 +916,33 @@ describe("Agents section — Model select (CL-6272.3)", () => {
     ) as HTMLAnchorElement | null;
     expect(settingsHop).not.toBeNull();
     expect(settingsHop?.textContent).toBe("Shared Settings");
+  });
+
+  test("a catalog 401 reads as signed-out copy, not the envelope or generic fallback", async () => {
+    stubFetch({ catalogFailStatus: 401 });
+    const el = mount(baseProps());
+    await settle();
+    openAgent(el, "myra");
+    await settle();
+
+    const alert = el.querySelector(".chat-dialog-error")?.textContent;
+    expect(alert).toBe("You're signed out. Sign in again to continue.");
+    expect(alert).not.toBe("signed out boom");
+    expect(alert).not.toBe("Couldn't load the models.");
+  });
+
+  test("a catalog network failure reads as a connection error, not the generic fallback", async () => {
+    stubFetch({ catalogNetworkFails: true });
+    const el = mount(baseProps());
+    await settle();
+    openAgent(el, "myra");
+    await settle();
+
+    const alert = el.querySelector(".chat-dialog-error")?.textContent;
+    expect(alert).toBe(
+      "Couldn't reach the server. Check your connection and try again.",
+    );
+    expect(alert).not.toBe("Couldn't load the models.");
   });
 
   test("Retry after a catalog load failure recovers the picker", async () => {
@@ -925,7 +963,7 @@ describe("Agents section — Model select (CL-6272.3)", () => {
 
     expect(modelSelect(el)?.disabled).toBe(true);
     expect(el.querySelector(".chat-dialog-error")?.textContent).toBe(
-      "Couldn't load the models.",
+      "catalog boom",
     );
 
     act(() => {
