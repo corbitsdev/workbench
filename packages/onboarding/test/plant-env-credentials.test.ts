@@ -308,6 +308,7 @@ describe("plantEnvProviderCredentials", () => {
       cookies: ["session=abc"],
       tenantId: TENANT_ID,
       envProviderKeys: { anthropic: "sk-ant-real" },
+      envProviderPreferredModels: { anthropic: "claude-opus-5" },
       log,
       testCredential: async (args) => {
         expect(args.provider).toBe("anthropic");
@@ -328,6 +329,7 @@ describe("plantEnvProviderCredentials", () => {
     expect(seedCatalogCalls[0]?.provider).toBe("anthropic");
     expect(seedCatalogCalls[0]?.apiKey).toBe("sk-ant-real");
     expect(seedCatalogCalls[0]?.tenantId).toBe(TENANT_ID);
+    expect(seedCatalogCalls[0]?.preferredModel).toBe("claude-opus-5");
 
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("anthropic");

@@ -39,6 +39,7 @@ describe("readHubConfig", () => {
       sidecarProvisioners: [],
       envProviderKeys: {},
       envProviderBaseUrls: {},
+      envProviderPreferredModels: {},
       envCredentialPlantAdmin: {
         email: "alice@example.com",
         password: "password123",
@@ -279,6 +280,45 @@ describe("readHubConfig", () => {
       baseURL: "https://api.anthropic.com",
       apiKey: "sk-ant-test",
     });
+    expect(config.envProviderPreferredModels).toEqual({
+      anthropic: "claude-sonnet-5",
+    });
+  });
+
+  test("ANTHROPIC_MODEL selects the model used for Anthropic seeding", () => {
+    const config = readHubConfig({
+      ...validEnv,
+      ANTHROPIC_API_KEY: "sk-ant-test",
+      ANTHROPIC_MODEL: "claude-opus-5",
+    });
+    expect(config.seedModel).toEqual({
+      provider: "anthropic",
+      model: "claude-opus-5",
+      baseURL: "https://api.anthropic.com",
+      apiKey: "sk-ant-test",
+    });
+    expect(config.envProviderPreferredModels).toEqual({
+      anthropic: "claude-opus-5",
+    });
+  });
+
+  test("ANTHROPIC_MODEL rejects a model outside the curated catalog", () => {
+    expect(() =>
+      readHubConfig({
+        ...validEnv,
+        ANTHROPIC_API_KEY: "sk-ant-test",
+        ANTHROPIC_MODEL: "claude-not-real",
+      }),
+    ).toThrow("ANTHROPIC_MODEL must name a curated Anthropic model");
+  });
+
+  test("ANTHROPIC_MODEL requires ANTHROPIC_API_KEY", () => {
+    expect(() =>
+      readHubConfig({
+        ...validEnv,
+        ANTHROPIC_MODEL: "claude-opus-5",
+      }),
+    ).toThrow("ANTHROPIC_MODEL requires ANTHROPIC_API_KEY");
   });
 
   test("huggingfaceOAuthClientId is absent by default", () => {

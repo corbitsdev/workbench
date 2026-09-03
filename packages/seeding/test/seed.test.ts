@@ -1629,7 +1629,7 @@ describe("seedCatalog", () => {
     expect(sonnet?.priority).toBe(Math.min(...priorities));
   });
 
-  test("re-run updates a legacy offering to its computed priority", async () => {
+  test("re-run makes the configured model the preferred offering", async () => {
     const { log } = collector();
     const patchedOfferings: { id: string; priority: number }[] = [];
     const handler: FakeHandler = (method, path, body) => {
@@ -1698,7 +1698,12 @@ describe("seedCatalog", () => {
         return {
           status: 200,
           data: {
-            data: [catalogOfferingRow("off_legacy", "mdl_legacy", "cpv_1")],
+            data: [
+              {
+                ...catalogOfferingRow("off_legacy", "mdl_legacy", "cpv_1"),
+                priority: 5,
+              },
+            ],
             nextCursor: null,
           },
         };
@@ -1724,10 +1729,11 @@ describe("seedCatalog", () => {
       cookies: [],
       tenantId: TENANT_ID,
       apiKey: "sk-test",
+      preferredModel: "claude-opus-5",
       log,
     });
 
-    expect(patchedOfferings).toEqual([{ id: "off_legacy", priority: 1 }]);
+    expect(patchedOfferings).toEqual([{ id: "off_legacy", priority: 0 }]);
   });
 
   test("an Ollama offering's quirks carry that model's real context-window ceiling, not the built-in 4096 default", async () => {
