@@ -24,6 +24,7 @@ import {
 import {
   agentDefinitionSourceTree,
   AGENT_DEFINITION_ENTRY_PATH,
+  readAgentDefinitionWorkflowJson,
 } from "../src/definition-asset";
 import { createAgentDefinitionRoutes } from "../src/routes";
 import type { PinnedSkillIndexResolver } from "../src/routes";
@@ -109,6 +110,29 @@ function fakeAssetService(overrides: Partial<AssetService> = {}): AssetService {
     },
     ...overrides,
   };
+}
+
+/** An asset whose reads observe writes — the race two concurrent
+ * capability-adds hit is only visible when the second read can see the
+ * first write, or when both reads share a snapshot the later write then
+ * clobbers. */
+function liveDefinitionAsset(initial: Uint8Array): AssetService {
+  let current = initial;
+  return fakeAssetService({
+    readAssetBlob: async () => {
+      await Promise.resolve();
+      return current;
+    },
+    populateAsset: async (params) => {
+      const entry = params.tree.files[AGENT_DEFINITION_ENTRY_PATH];
+      if (typeof entry !== "string") {
+        throw new Error("populateAsset wrote no entry module");
+      }
+      await Promise.resolve();
+      current = new TextEncoder().encode(entry);
+      return { commitSha: "deadbeef" };
+    },
+  });
 }
 
 /** The entry module a stored definition's asset carries, so the PUT
@@ -1805,4 +1829,52 @@ test("capabilities route 404s for an unknown definition", async () => {
     canonicalName: "anthropic/claude-sonnet",
   });
   expect(response.status).toBe(404);
+});
+
+test("two concurrent capability-adds on the same definition both land", async () => {
+  const inventory: CapabilityInventoryProvider = {
+    resolve: () =>
+      Promise.resolve({
+        toolPackages: [
+          { name: "@corbits/github-tools" },
+          { name: "@corbits/memory-tools" },
+        ],
+        skills: [{ name: "research" }],
+        models: [{ canonicalName: "anthropic/claude-sonnet" }],
+      }),
+  };
+  const assetService = liveDefinitionAsset(storedDefinitionBytes());
+  const app = buildApp(
+    assetService,
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+    allowAllRequireGrant,
+    fakeHistory(),
+    inventory,
+  );
+
+  const [first, second] = await Promise.all([
+    postTo(app, "/def_1/capabilities", {
+      kind: "toolPackage",
+      name: "@corbits/github-tools",
+    }),
+    postTo(app, "/def_1/capabilities", {
+      kind: "toolPackage",
+      name: "@corbits/memory-tools",
+    }),
+  ]);
+  expect(first.status).toBe(200);
+  expect(second.status).toBe(200);
+
+  const workflowJson = await readAgentDefinitionWorkflowJson(
+    assetService,
+    "ast_1",
+  );
+  const names = pinsFrom(workflowJson)
+    .map((pin) => pin.name)
+    .toSorted();
+  expect(names).toEqual(["@corbits/github-tools", "@corbits/memory-tools"]);
 });
