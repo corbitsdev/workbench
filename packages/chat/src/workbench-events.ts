@@ -13,13 +13,16 @@
 //    stream immediately rather than leaving it registered until
 //    `stream.onAbort` eventually runs — a dangling subscriber between
 //    disconnect and abort is a zombie: every event published in that
-//    window still attempts a write. In practice Hono's own
-//    `StreamingApi.write` swallows writer errors internally and never
-//    rejects, so `stream.onAbort` (wired by the route) is the only
-//    signal that actually fires for a disconnected client today; this
-//    path exists for any write that does throw (a custom `stream`
-//    passed in tests, or a future Hono release that stops swallowing)
-//    and is otherwise inert rather than load-bearing (CL-7197).
+//    window still attempts a write. Hono's own `StreamingApi.write`
+//    swallows writer errors internally and never rejects, so a
+//    `writeSSE` that "succeeds" is not proof the bytes landed: after
+//    every write we check whether the underlying writer is errored
+//    (`desiredSize === null`) or the stream aborted/closed, and we
+//    bound the write itself with a timeout so a stalled TCP sink
+//    cannot pin the delivery queue forever (CL-7246). A write that
+//    does throw is still handled the same way. `stream.onAbort`
+//    (wired by the route) remains the disconnect path for a client
+//    that goes away between writes.
 // 2. Access must be re-checked on every delivered event, not only at
 //    connect time. The route resolves access once before opening the
 //    stream, but a share or a share member's row can be revoked at
@@ -61,6 +64,47 @@ const DEFAULT_KEEPALIVE_INTERVAL_MS = 25_000;
 // useful than an unbounded queue holding every event since the backup
 // started.
 const MAX_QUEUED_DELIVERIES = 200;
+
+// Hono's `StreamingApi.write` awaits `writer.write` inside a bare
+// `catch {}`, so a failed or stalled sink never rejects `writeSSE`.
+// Bound every write so a client that has stopped reading cannot pin
+// the delivery queue; well below the keepalive interval, since a
+// write of a small SSE frame that has not flushed in this long is
+// already a dead connection, not a slow one.
+const DEFAULT_WRITE_TIMEOUT_MS = 10_000;
+
+function underlyingWriterIsErrored(stream: SSEStreamingApi): boolean {
+  const writer = Reflect.get(stream, "writer");
+  if (typeof writer !== "object" || writer === null) return false;
+  if (!("desiredSize" in writer)) return false;
+  return writer.desiredSize === null;
+}
+
+async function writeSSEObservingFailure(
+  stream: SSEStreamingApi,
+  message: { event?: string; data: string },
+  timeoutMs: number,
+): Promise<void> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const write = stream.writeSSE(message).then(() => {
+    if (stream.aborted || stream.closed || underlyingWriterIsErrored(stream)) {
+      throw new Error("workbench SSE write failed");
+    }
+  });
+  const stalled = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error("workbench SSE write stalled"));
+    }, timeoutMs);
+  });
+  try {
+    await Promise.race([write, stalled]);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+    // If the timeout won, the in-flight write may still reject later;
+    // swallow that so it cannot surface as an unhandled rejection.
+    void write.catch(() => undefined);
+  }
+}
 
 export type WorkbenchSubscriber = (event: ChatWorkbenchEvent) => void;
 
@@ -173,11 +217,12 @@ export interface WorkbenchStreamBridge {
  * member stops receiving events on the very next one published. A
  * `writeSSE` that throws (the client is already gone) unsubscribes
  * that source immediately, closes the stream, and reports the
- * failure — Hono's own `write` swallows writer errors today, so in
- * practice `stream.onAbort` is what actually catches a disconnected
- * client, but this path covers any write that does throw rather than
- * silently degrading. A periodic keepalive keeps idle connections
- * alive behind proxies that time out on silence.
+ * failure. Hono's own `write` swallows writer errors today, so a
+ * resolved `writeSSE` is inspected for an errored writer, an aborted
+ * or closed stream, or a write that never settles within
+ * `writeTimeoutMs` — any of those is treated as the same failure. A
+ * periodic keepalive keeps idle connections alive behind proxies
+ * that time out on silence.
  */
 export function bridgeWorkbenchStream(input: {
   registry: WorkbenchSubscriberRegistry;
@@ -202,6 +247,8 @@ export function bridgeWorkbenchStream(input: {
   };
   /** Overrides `DEFAULT_KEEPALIVE_INTERVAL_MS`; exists for tests. */
   keepaliveIntervalMs?: number;
+  /** Overrides `DEFAULT_WRITE_TIMEOUT_MS`; exists for tests. */
+  writeTimeoutMs?: number;
 }): WorkbenchStreamBridge {
   let tornDown = false;
   let resolveClosed: () => void = () => undefined;
@@ -239,6 +286,7 @@ export function bridgeWorkbenchStream(input: {
     resolveClosed();
   };
   const closeStream = () => input.stream.close().catch(() => undefined);
+  const writeTimeoutMs = input.writeTimeoutMs ?? DEFAULT_WRITE_TIMEOUT_MS;
 
   // Every write to this stream — the presence snapshot, each delivered
   // event, and the keepalive ping — is chained onto this one promise so
@@ -292,10 +340,14 @@ export function bridgeWorkbenchStream(input: {
       return;
     }
     try {
-      await input.stream.writeSSE({
-        event: event.type,
-        data: JSON.stringify(event.data),
-      });
+      await writeSSEObservingFailure(
+        input.stream,
+        {
+          event: event.type,
+          data: JSON.stringify(event.data),
+        },
+        writeTimeoutMs,
+      );
     } catch (error) {
       reportError(error, {
         operation: "chat.workbenchStream.write",
@@ -317,10 +369,14 @@ export function bridgeWorkbenchStream(input: {
     });
     enqueue(async () => {
       try {
-        await input.stream.writeSSE({
-          event: "chat.presence.snapshot",
-          data: JSON.stringify(snapshot),
-        });
+        await writeSSEObservingFailure(
+          input.stream,
+          {
+            event: "chat.presence.snapshot",
+            data: JSON.stringify(snapshot),
+          },
+          writeTimeoutMs,
+        );
       } catch (error) {
         reportError(error, {
           operation: "chat.workbenchStream.presenceSnapshot",
@@ -376,7 +432,11 @@ export function bridgeWorkbenchStream(input: {
     if (tornDown || queuedCount > 0) return;
     enqueue(async () => {
       try {
-        await input.stream.writeSSE({ event: "keepalive", data: "" });
+        await writeSSEObservingFailure(
+          input.stream,
+          { event: "keepalive", data: "" },
+          writeTimeoutMs,
+        );
       } catch (error) {
         reportError(error, {
           operation: "chat.workbenchStream.keepalive",
