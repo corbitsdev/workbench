@@ -96,8 +96,10 @@ export type ChatOrchestratorDeps = {
    * The turn projection (CL-6329). A room agent runs as an `onTrigger`
    * section, so the reply this orchestrator posts belongs to one
    * occurrence — its own child run — and the projection is what names
-   * that child: the sidecar's `agent.event` frames carry the agent's
-   * address and nothing finer. Omitted, replies carry no run id at all
+   * that child. `agent.event` frames carry an optional `childRunId`
+   * (`turn__<n>`) so a reply can name the occurrence that produced it;
+   * an old sidecar omits that field and this module falls back to the
+   * newest running turn. Omitted store, replies carry no run id at all
    * rather than a guessed one; there is no second way to name a run.
    */
   agentTurns?: Pick<
@@ -214,11 +216,17 @@ function gateBlockedCorrelationId(event: unknown): string | undefined {
  * `agent.event` frame carries a `sessionId` regardless of which inner
  * event type it wraps (`vendor/intx/hub-sessions/src/ws/sidecar-events.ts`'s
  * `SidecarEventMap["agent.event"]`), scoped to the one sidecar connection
- * that turn's occurrence runs on — the correlator this module's in-flight
- * turn state (below) keys on instead of the address alone.
+ * that turn's occurrence runs on. When the frame also names an occurrence
+ * (`childRunId`), that is the correlator — two overlapping turns share a
+ * session and must not share this key. An old sidecar omits `childRunId`
+ * and today's session id remains the key.
  */
-function turnKeyFor(agentAddress: string, sessionId: string): string {
-  return `${agentAddress}:${sessionId}`;
+function turnKeyFor(
+  agentAddress: string,
+  sessionId: string,
+  childRunId?: string,
+): string {
+  return `${agentAddress}:${childRunId ?? sessionId}`;
 }
 
 /**
@@ -575,6 +583,7 @@ async function postReply(
   parts: readonly Part[],
   outcome: TurnOutcome,
   event?: unknown,
+  childRunId?: string,
 ): Promise<void> {
   const resolved = await resolveMemberWorkbenches(deps, agentAddress);
   if (resolved === undefined) return;
@@ -585,6 +594,7 @@ async function postReply(
       tenantId: resolved.tenantId,
       workbenchId,
       agentAddress: resolved.roomAddress,
+      ...(childRunId !== undefined ? { childRunId } : {}),
     });
     members.push({
       workbenchId,
@@ -647,6 +657,7 @@ async function postReply(
       tenantId: resolved.tenantId,
       workbenchId,
       agentAddress: resolved.roomAddress,
+      ...(childRunId !== undefined ? { childRunId } : {}),
     });
     const posted = await postRoomMessage(deps, {
       tenantId: resolved.tenantId,
@@ -1108,12 +1119,13 @@ export function createChatOrchestrator(
   // Every turn with a `connector.reply` pending delivery — added the
   // moment reply content is seen, cleared the moment that same turn's own
   // `message.run.ended` bracket closes (see below). Keyed by `turnKeyFor`
-  // (agent address + sidecar session id), never by address alone: one
+  // (agent address + occurrence run id when the sidecar supplied one,
+  // otherwise the sidecar session id), never by address alone: one
   // address can be mid-turn in several benches at once
   // (`resolveMemberWorkbenches` returns workbench ids plural by design),
-  // and each such turn runs its own sidecar connection with its own
-  // `sessionId` — the correlator every `agent.event` frame carries
-  // regardless of which inner event type it wraps.
+  // two overlapping turns on one sidecar share a `sessionId`, and each
+  // `agent.event` frame carries that session id regardless of which
+  // inner event type it wraps.
   const repliedTurns = new Set<string>();
 
   // Process-lifetime idempotency guard for the turn-drop notice below,
@@ -1142,14 +1154,14 @@ export function createChatOrchestrator(
 
   const unsubscribe = deps.events.on(
     "agent.event",
-    ({ agentAddress, sessionId, event }) => {
+    ({ agentAddress, sessionId, event, childRunId }) => {
       // Any event at all counts as activity, not just `connector.reply`
       // below — an agent mid-inference must never be undeployed out
       // from under itself by the idle sweep just because it hasn't
       // replied yet.
       deps.recordActivity?.(agentAddress);
 
-      const turnKey = turnKeyFor(agentAddress, sessionId);
+      const turnKey = turnKeyFor(agentAddress, sessionId, childRunId);
 
       if (messageRunStarted(event)) {
         notifiedDropTurns.delete(turnKey);
@@ -1196,6 +1208,7 @@ export function createChatOrchestrator(
             status: "completed",
           },
           event,
+          childRunId,
         ).catch((cause: unknown) => {
           log.error`chat orchestrator: failed to post ${agentAddress}'s reply: ${
             cause instanceof Error ? cause.message : String(cause)
@@ -1253,6 +1266,7 @@ export function createChatOrchestrator(
               [{ kind: "text", text: noticeContent }],
               { status: "failed", error: errorMessage },
               event,
+              childRunId,
             ).catch((cause: unknown) => {
               log.error`chat orchestrator: failed to post ${agentAddress}'s turn-drop notice: ${
                 cause instanceof Error ? cause.message : String(cause)
