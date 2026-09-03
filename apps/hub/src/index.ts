@@ -94,6 +94,7 @@ import {
   createDrizzleReactionStore,
   createDrizzleRoomMessageStore,
   createDrizzleThreadStore,
+  createDrizzleTurnMailCorrelationStore,
   createDrizzleWriteClaimStore,
   createHubChatPlatform,
   createNoopInferenceRoutes,
@@ -1333,6 +1334,10 @@ export async function createHub(config: HubConfig) {
   // handle as every other Drizzle store above, never a second
   // connection.
   const writeClaims = createDrizzleWriteClaimStore(db);
+  // Durable dispatch-mail -> source-message correlation (CL-6314) — the
+  // record the reply path reads back to thread an agent's answer under
+  // the message that woke its turn. Same `db` handle, same reasoning.
+  const turnMailCorrelation = createDrizzleTurnMailCorrelationStore(db);
   // Mounted outside the tenant prefix — the sidecar reaches it as a
   // plain inference endpoint, never through tenant-scoped auth, the
   // same way it reaches a real provider's API. Pinned by the heartbeat
@@ -1463,6 +1468,8 @@ export async function createHub(config: HubConfig) {
     approvals: createApprovalStore(db),
     recordActivity: chatPlatform.recordActivity,
     claims: writeClaims,
+    threads: threadStore,
+    turnMailCorrelation,
     connectorRegistry: CONNECTOR_REGISTRY,
   };
   if (memoryHandle !== undefined) {
@@ -1550,6 +1557,9 @@ export async function createHub(config: HubConfig) {
     events: sidecarRouter.events,
     approvals: createApprovalStore(db),
     claims: writeClaims,
+    agentTurns,
+    threads: threadStore,
+    turnMailCorrelation,
     providerHealth: createProviderHealthPort(providerHealthStore),
     listConnectedProviders: (tenantId) => listConnectedProviders(db, tenantId),
   };
@@ -1637,6 +1647,7 @@ export async function createHub(config: HubConfig) {
     platform: chatPlatform,
     tenancy: chatTenancy,
     threads: threadStore,
+    turnMailCorrelation,
     agentTurns,
     turnTextSnapshot: (input) =>
       createDrizzleTurnTextSnapshotReader(db).read(input),
@@ -1694,6 +1705,7 @@ export async function createHub(config: HubConfig) {
       publish: workbenchSubscribers.publish,
       turnQueue,
       turnCancellation,
+      turnMailCorrelation,
       authenticator: createWorkflowRunAuthenticator({ db }),
       tenancy: chatTenancy,
       sessionFor,
@@ -1718,6 +1730,7 @@ export async function createHub(config: HubConfig) {
     workbenchSubscribers,
     turnQueue,
     turnCancellation,
+    turnMailCorrelation,
   });
   // Tells the routine trigger popover whether a Slack-bound webhook
   // trigger is honestly offerable in this deployment — no session or
@@ -2996,6 +3009,7 @@ export async function createHub(config: HubConfig) {
               publish: workbenchSubscribers.publish,
               turnQueue,
               turnCancellation,
+              turnMailCorrelation,
             },
             {
               tenantId: input.tenantId,

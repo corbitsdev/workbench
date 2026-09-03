@@ -24,6 +24,7 @@ import { headlineFor } from "@corbits/approvals";
 import {
   connectorReplyContent,
   inferenceDoneBlocks,
+  messageRunBracket,
   messageRunEnded,
   messageRunStarted,
   toolDoneResult,
@@ -60,7 +61,11 @@ import { parseParticipants, type ParticipantRecord } from "./participants";
 import type { Part, TextPart } from "./parts";
 import type { ChatPlatform } from "./platform-port";
 import { postRoomMessage, type RoomMessageStore } from "./room-messages";
-import { AGENT_TURN_STALE_MS, type AgentTurnStore } from "./agent-turns";
+import type { AgentTurnStore } from "./agent-turns";
+import {
+  mailIdFromBracketMessageId,
+  type TurnMailCorrelationStore,
+} from "./turn-mail-correlation";
 import type { ChatStore } from "./store";
 import type { ThreadStore } from "./threads";
 import {
@@ -109,7 +114,7 @@ export type ChatOrchestratorDeps = {
    */
   agentTurns?: Pick<
     AgentTurnStore,
-    "findRunningTurn" | "finishTurn" | "listTurns"
+    "findRunningTurn" | "finishTurn" | "listTurns" | "getTurn"
   >;
   /**
    * Resolves a gate-blocked event's `correlationId` to the approval row the
@@ -170,14 +175,27 @@ export type ChatOrchestratorDeps = {
    */
   listConnectedProviders?: ConnectedProviderLister;
   /**
-   * Threads a delegated specialist's reply under the message that
-   * delegated to it (CL-5879) — the same `openReplyThread`/`assignMessage`
-   * pair `routes.ts`'s human-send path already uses. Absent when no
-   * thread store is mounted, matching `memory`'s own optional shape: a
-   * deploy that never wires threads keeps every reply on the root feed
-   * exactly as before this landed.
+   * Threads an agent's posts under the turn that produced them (CL-6314):
+   * a reply — or its silent-turn notice — lands in its source message's
+   * thread, an approve block in its turn's, a finalized turn's artifact
+   * chips in theirs. The same row-plus-membership pair `routes.ts`'s
+   * human-send path writes. Absent when no thread store is mounted,
+   * matching `memory`'s own optional shape: a deploy that never wires
+   * threads keeps every post on the root feed exactly as before this
+   * landed.
    */
-  threads?: Pick<ThreadStore, "openReplyThread" | "assignMessage">;
+  threads?: Pick<
+    ThreadStore,
+    "ensureRootThread" | "threadIdForMessage" | "assignMessage"
+  >;
+  /**
+   * Durable dispatch-mail -> source-message correlation (CL-6314): what
+   * lets a reply find the message that woke its turn, whether a human
+   * mention or another agent's delegation sent it. Absent, replies post
+   * unthreaded — the same "no store, no feature" contract `threads`
+   * follows.
+   */
+  turnMailCorrelation?: TurnMailCorrelationStore;
 };
 
 export type ChatOrchestrator = {
@@ -463,71 +481,72 @@ async function resolveMemberWorkbenches(
 }
 
 /**
- * The delegating message a mentioned specialist's *next* reply should
- * thread under (CL-5879) — set the moment `postReply`'s own mention
- * fan-out below wakes that specialist, read (and cleared) the moment
- * that specialist's own `postReply` call posts into the same workbench.
- * Keyed by the specialist's run id (`localPartOf` its agent address, the
- * same id every posted message carries as its `runId`): that id
- * is stable across the fan-out send and the specialist's own later
- * reply, unlike a workbench id, which the specialist's reply shares with
- * the host's (see the module's own postReply doc below) but arrives
- * once per member workbench rather than once per specialist.
- *
- * Only the specialist's first reply after being delegated to is
- * threaded — the entry is deleted on read, matching this package's
- * "thread machinery that already exists" scope for CL-5879 rather than
- * tracking an open-ended delegation session. A specialist mentioned
- * again gets a fresh entry from that later delegating message.
- *
- * Bounded with a TTL (CL-7229) rather than a plain `Map`: a specialist
- * that never replies (crashed, never woke, or was mentioned by mistake)
- * left its entry here forever, one per abandoned delegation for the
- * life of the hub process. The TTL is `AGENT_TURN_STALE_MS` — the same
- * threshold `./agent-turns.ts` already uses to decide a `running` turn
- * row is no longer believable and fails it outright. That threshold is
- * exactly the point past which this entry stops mattering too: once a
- * specialist's occurrence has run longer than any turn is allowed to,
- * the rest of the system has already given up on it ever finishing, so
- * evicting the pending-thread entry at the same age can't drop a reply
- * a running turn still needs. If a reply somehow still lands after
- * that (a very late, already-abandoned occurrence), it just posts
- * unthreaded into the main feed instead of nested under the delegating
- * message — a cosmetic degrade, never a lost message. The common case
- * (event-driven delete) is unchanged: `threadDelegatedReply` below
- * still deletes the entry the moment the specialist's first reply
- * consumes it, long before the TTL would ever fire.
+ * One open `message.run.started` bracket, keyed by turn (see
+ * `turnKeyFor`): the dispatch mail's bare id plus the reactor-minted run
+ * id that pairs this open with its own close. Set on every bracket open
+ * that carries both ids, cleared when its matching close lands — a
+ * redelivered close for an older run never clears a newer turn's
+ * bracket, and a close that carries no ids at all clears nothing.
  */
-type PendingDelegationThread = {
-  readonly tenantId: string;
-  readonly workbenchId: string;
-  readonly messageId: string;
+type OpenBracket = {
+  readonly mailId: string;
+  readonly messageRunId: string;
 };
 
-async function threadDelegatedReply(
-  deps: ChatOrchestratorDeps,
-  pendingDelegationThreads: ExpiringMap<string, PendingDelegationThread>,
-  agentAddress: string,
+/**
+ * The thread a post belongs in, resolved from the workbench message
+ * that woke its turn (CL-6314) — the thread that message lives in, or
+ * the root thread when it lives in none. A reply to a root-feed message
+ * resolves to the root thread by this same lookup, never a special
+ * case. Undefined when threads are unwired: the caller posts
+ * unthreaded, exactly as before this landed.
+ */
+async function threadForSourceMessage(
+  threads:
+    Pick<ThreadStore, "ensureRootThread" | "threadIdForMessage"> | undefined,
+  tenantId: string,
   workbenchId: string,
-  messageId: string,
-): Promise<void> {
-  if (deps.threads === undefined) return;
-  const runId = localPartOf(agentAddress);
-  const pending = pendingDelegationThreads.get(runId);
-  if (pending === undefined || pending.workbenchId !== workbenchId) return;
-  pendingDelegationThreads.delete(runId);
+  sourceMessageId: string,
+): Promise<string | undefined> {
+  if (threads === undefined) return undefined;
+  const root = await threads.ensureRootThread(tenantId, workbenchId);
+  return (
+    (await threads.threadIdForMessage(
+      tenantId,
+      workbenchId,
+      sourceMessageId,
+    )) ?? root.id
+  );
+}
 
-  const reply = await deps.threads.openReplyThread({
-    tenantId: pending.tenantId,
-    workbenchId: pending.workbenchId,
-    parentMessageId: pending.messageId,
+/**
+ * The thread for a post produced inside one dispatch mail's bracket
+ * (CL-6314): the mail's recorded source message, resolved through
+ * `threadForSourceMessage`. Undefined when nothing was ever recorded
+ * for the mail (a pre-rollout mail, a restart that dropped the open
+ * bracket), when the correlation names another workbench (a post must
+ * never inherit a thread from a room it isn't in), or when threads are
+ * unwired — every one of those posts unthreaded, never lost.
+ */
+async function threadForBracketMail(
+  deps: Pick<ChatOrchestratorDeps, "threads" | "turnMailCorrelation">,
+  tenantId: string,
+  workbenchId: string,
+  mailId: string,
+): Promise<string | undefined> {
+  const source = await deps.turnMailCorrelation?.findTurnMailSource({
+    tenantId,
+    mailId,
   });
-  await deps.threads.assignMessage({
-    tenantId: pending.tenantId,
-    workbenchId: pending.workbenchId,
-    threadId: reply.id,
-    messageId,
-  });
+  if (source === undefined || source.workbenchId !== workbenchId) {
+    return undefined;
+  }
+  return threadForSourceMessage(
+    deps.threads,
+    tenantId,
+    workbenchId,
+    source.sourceMessageId,
+  );
 }
 
 /**
@@ -617,12 +636,18 @@ async function latestTurnForAgent(
 
 async function postReply(
   deps: ChatOrchestratorDeps,
-  pendingDelegationThreads: ExpiringMap<string, PendingDelegationThread>,
   agentAddress: string,
   parts: readonly Part[],
   outcome: TurnOutcome,
   event?: unknown,
   childRunId?: string,
+  /**
+   * The dispatch mail whose bracket this post was produced inside, when
+   * known — the open bracket's mail for a reply, the close event's own
+   * mail for a silent-turn notice. Undefined, the post lands
+   * unthreaded.
+   */
+  mailId?: string,
 ): Promise<void> {
   const resolved = await resolveMemberWorkbenches(deps, agentAddress);
   if (resolved === undefined) return;
@@ -698,12 +723,22 @@ async function postReply(
       agentAddress: resolved.roomAddress,
       ...(childRunId !== undefined ? { childRunId } : {}),
     });
+    const threadId =
+      mailId !== undefined
+        ? await threadForBracketMail(
+            deps,
+            resolved.tenantId,
+            workbenchId,
+            mailId,
+          )
+        : undefined;
     const posted = await postRoomMessage(deps, {
       tenantId: resolved.tenantId,
       workbenchId,
       sender: { name: null, address: resolved.roomAddress },
       parts: [...parts],
       ...(turn !== undefined ? { runId: turn.childRunId } : {}),
+      ...(threadId !== undefined ? { threadId } : {}),
     });
     if (turn !== undefined) {
       await deps.agentTurns?.finishTurn({
@@ -714,14 +749,14 @@ async function postReply(
         ...(outcome.status === "failed" ? { error: outcome.error } : {}),
       });
     }
-
-    await threadDelegatedReply(
-      deps,
-      pendingDelegationThreads,
-      resolved.roomAddress,
-      workbenchId,
-      posted.id,
-    );
+    if (threadId !== undefined && deps.threads !== undefined) {
+      await deps.threads.assignMessage({
+        tenantId: resolved.tenantId,
+        workbenchId,
+        threadId,
+        messageId: posted.id,
+      });
+    }
 
     // The delegation hop: when the host's reply @mentions other agent
     // teammates, they must receive it exactly as they would a human's
@@ -733,7 +768,7 @@ async function postReply(
       (address) => localPartOf(address) !== localPartOf(resolved.roomAddress),
     );
     for (const recipient of mentioned) {
-      await deps.platform.sendMail({
+      const sent = await deps.platform.sendMail({
         tenantId: resolved.tenantId,
         workbenchId: localPartOf(recipient),
         content: encodeParts([...parts], {
@@ -741,14 +776,31 @@ async function postReply(
         }),
         fromWorkbenchId: workbenchId,
       });
-      // The delegating host's own replies stay in main (never
-      // recorded here for its own address) — only the mentioned
-      // specialist's *next* reply threads, under this exact message.
-      pendingDelegationThreads.set(localPartOf(recipient), {
-        tenantId: resolved.tenantId,
-        workbenchId,
-        messageId: posted.id,
-      });
+      // The hop wakes the specialist with its own mail, so it records
+      // the same correlation a human mention's dispatch records: when
+      // the specialist's bracket names this mail, its reply inherits
+      // this message's thread by the general rule above — no separate
+      // delegation mechanism. A record that fails is reported, never
+      // thrown: the reply already posted, and threading degrades to
+      // unthreaded rather than failing the turn.
+      if (deps.turnMailCorrelation !== undefined) {
+        try {
+          await deps.turnMailCorrelation.recordTurnMail({
+            tenantId: resolved.tenantId,
+            mailId: sent.id,
+            workbenchId,
+            sourceMessageId: posted.id,
+          });
+        } catch (err) {
+          reportError(err, {
+            operation: "chat.postReply.recordDelegation",
+            tenantId: resolved.tenantId,
+            roomId: workbenchId,
+            agentId: recipient,
+            extra: { delegatingMessageId: posted.id },
+          });
+        }
+      }
     }
   }
 }
@@ -793,6 +845,12 @@ async function postApproveBlock(
   agentAddress: string,
   correlationId: string,
   postedApprovalIds: ExpiringMap<string, true>,
+  /**
+   * The dispatch mail whose open bracket this gate parked inside, when
+   * known — the card threads under the turn that produced it by the
+   * same rule a reply follows. Undefined, the card posts unthreaded.
+   */
+  mailId: string | undefined,
 ): Promise<void> {
   const approval = await deps.approvals.findByCorrelationId(correlationId);
   if (approval === null || approval.status !== "pending") return;
@@ -810,13 +868,31 @@ async function postApproveBlock(
     title: headlineFor(approval.toolDefinition, approval.toolArguments),
   };
   for (const workbenchId of resolved.workbenchIds) {
-    await postRoomMessage(deps, {
+    const threadId =
+      mailId !== undefined
+        ? await threadForBracketMail(
+            deps,
+            resolved.tenantId,
+            workbenchId,
+            mailId,
+          )
+        : undefined;
+    const posted = await postRoomMessage(deps, {
       tenantId: resolved.tenantId,
       workbenchId,
       sender: { name: null, address: resolved.roomAddress },
       parts: [{ kind: "block", block: { type: "approve", data } }],
       runId: localPartOf(resolved.roomAddress),
+      ...(threadId !== undefined ? { threadId } : {}),
     });
+    if (threadId !== undefined && deps.threads !== undefined) {
+      await deps.threads.assignMessage({
+        tenantId: resolved.tenantId,
+        workbenchId,
+        threadId,
+        messageId: posted.id,
+      });
+    }
   }
 }
 
@@ -866,18 +942,63 @@ async function postFinalizedTurnArtifacts(
     if (!claimed) continue;
 
     try {
-      await postRoomMessage(deps, {
+      const threadId = await threadForFinalizedTurn(
+        deps,
+        resolved.tenantId,
+        workbenchId,
+        turnId,
+      );
+      const posted = await postRoomMessage(deps, {
         tenantId: resolved.tenantId,
         workbenchId,
         sender: { name: null, address: resolved.roomAddress },
         parts,
         runId: localPartOf(resolved.roomAddress),
+        ...(threadId !== undefined ? { threadId } : {}),
       });
+      if (threadId !== undefined && deps.threads !== undefined) {
+        await deps.threads.assignMessage({
+          tenantId: resolved.tenantId,
+          workbenchId,
+          threadId,
+          messageId: posted.id,
+        });
+      }
     } catch (error) {
       await deps.claims.release(claim);
       throw error;
     }
   }
+}
+
+/**
+ * The thread a finalized turn's artifact chips belong in (CL-6314): the
+ * thread of the latest message the turn was asked to answer, read off
+ * the turn projection's own `requestMessageIds` — the same source a
+ * batched dispatch records its mail correlation under, so the chips
+ * land where the turn's reply did. Undefined when the turn row is gone
+ * (or never existed), names another workbench, or threads are unwired:
+ * the chips post unthreaded, exactly as before this landed.
+ */
+async function threadForFinalizedTurn(
+  deps: Pick<ChatOrchestratorDeps, "threads" | "agentTurns">,
+  tenantId: string,
+  workbenchId: string,
+  turnId: string,
+): Promise<string | undefined> {
+  const turn = await deps.agentTurns?.getTurn({ tenantId, turnId });
+  if (turn === undefined || turn.workbenchId !== workbenchId) {
+    return undefined;
+  }
+  const sourceMessageId =
+    turn.requestMessageIds[turn.requestMessageIds.length - 1];
+  if (sourceMessageId === undefined) return undefined;
+  return threadForSourceMessage(
+    deps.threads,
+    tenantId,
+    workbenchId,
+    sourceMessageId,
+  );
 }
 
 /**
@@ -1182,11 +1303,15 @@ export function createChatOrchestrator(
   // looks permanently dead with no trace anywhere it ever tried again.
   const notifiedDropTurns = new Set<string>();
 
-  // See `PendingDelegationThread`'s own doc comment above `postReply`.
-  const pendingDelegationThreads = createExpiringMap<
-    string,
-    PendingDelegationThread
-  >({ ttlMs: AGENT_TURN_STALE_MS, now });
+  // Every turn with a `message.run.started` bracket currently open —
+  // the dispatch mail each bracket names, paired with its own close by
+  // `messageRunId` (see `OpenBracket`). Keyed by `turnKeyFor` for the
+  // same reason `repliedTurns` is: one address runs one bracket per
+  // sidecar session, and sessions are what tell two benches' turns
+  // apart. Process-local by nature — a bracket only lives as long as
+  // the turn it opened for — while the mail->message correlation it
+  // points at is the durable row `dispatchTurn` wrote.
+  const openBrackets = new Map<string, OpenBracket>();
 
   // See `createReplyPartsAccumulator`'s own doc comment above.
   const replyParts = createReplyPartsAccumulator(deps.connectorRegistry);
@@ -1203,6 +1328,13 @@ export function createChatOrchestrator(
       const turnKey = turnKeyFor(agentAddress, sessionId, childRunId);
 
       if (messageRunStarted(event)) {
+        const bracket = messageRunBracket(event);
+        if (bracket !== undefined) {
+          openBrackets.set(turnKey, {
+            mailId: mailIdFromBracketMessageId(bracket.messageId),
+            messageRunId: bracket.messageRunId,
+          });
+        }
         notifiedDropTurns.delete(turnKey);
         return;
       }
@@ -1242,7 +1374,6 @@ export function createChatOrchestrator(
         const parts = toolsUnsupportedParts ?? rawParts;
         void postReply(
           deps,
-          pendingDelegationThreads,
           agentAddress,
           parts,
           toolsUnsupportedParts !== undefined
@@ -1250,6 +1381,7 @@ export function createChatOrchestrator(
             : { status: "completed" },
           event,
           childRunId,
+          openBrackets.get(turnKey)?.mailId,
         ).catch((cause: unknown) => {
           log.error`chat orchestrator: failed to post ${agentAddress}'s reply: ${
             cause instanceof Error ? cause.message : String(cause)
@@ -1289,6 +1421,24 @@ export function createChatOrchestrator(
         // for it (if any) belongs to a future turn, not this one.
         replyParts.take(turnKey);
 
+        // The close pairs with its own open by `messageRunId`: a
+        // redelivered close for an older run must never clear a newer
+        // turn's bracket, and a close carrying no ids clears nothing.
+        // Either way the close itself names the waking mail, which is
+        // what the notice below threads under.
+        const bracket = messageRunBracket(event);
+        const open = openBrackets.get(turnKey);
+        if (
+          bracket !== undefined &&
+          (open === undefined || open.messageRunId === bracket.messageRunId)
+        ) {
+          openBrackets.delete(turnKey);
+        }
+        const endedMailId =
+          bracket !== undefined
+            ? mailIdFromBracketMessageId(bracket.messageId)
+            : undefined;
+
         const hadReply = repliedTurns.delete(turnKey);
         if (!hadReply) {
           const errorMessage = ended.errorMessage ?? "no error reported";
@@ -1307,12 +1457,12 @@ export function createChatOrchestrator(
                   ];
             void postReply(
               deps,
-              pendingDelegationThreads,
               agentAddress,
               noticeParts,
               { status: "failed", error: errorMessage },
               event,
               childRunId,
+              endedMailId,
             ).catch((cause: unknown) => {
               log.error`chat orchestrator: failed to post ${agentAddress}'s turn-drop notice: ${
                 cause instanceof Error ? cause.message : String(cause)
@@ -1331,6 +1481,7 @@ export function createChatOrchestrator(
         agentAddress,
         correlationId,
         postedApprovalIds,
+        openBrackets.get(turnKey)?.mailId,
       ).catch((cause: unknown) => {
         log.error`chat orchestrator: failed to post ${agentAddress}'s approve block: ${
           cause instanceof Error ? cause.message : String(cause)

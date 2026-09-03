@@ -527,6 +527,24 @@ export const chatMigrations: readonly ChatMigration[] = [
         ADD COLUMN IF NOT EXISTS "notification_claim_token" text;
     `,
   },
+  {
+    // CL-6314: which workbench message a dispatch mail answers, so an
+    // agent's reply inherits its source message's thread. Insert-only
+    // correlation — no backfill, nothing to migrate: mails sent before
+    // this landed simply have no row, and replies to them post
+    // unthreaded exactly as before.
+    name: "0028_turn_mail_correlation",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "chat"."turn_mail_correlation" (
+        "tenant_id" text NOT NULL,
+        "mail_id" text NOT NULL,
+        "workbench_id" text NOT NULL,
+        "source_message_id" text NOT NULL,
+        "recorded_at" timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY ("tenant_id", "mail_id")
+      );
+    `,
+  },
 ];
 
 /**
