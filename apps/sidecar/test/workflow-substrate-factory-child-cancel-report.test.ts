@@ -1,0 +1,151 @@
+// Force handle.cancel to reject during parent abort and prove the
+// fire-and-forget call reports through reportError instead of becoming
+// an unhandled rejection.
+
+import { afterAll, beforeAll, expect, mock, test } from "bun:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+import { defineAgent } from "@intx/agent";
+import { generateKeyPair } from "@intx/crypto";
+import {
+  createRepoStore,
+  workflowRunKindHandler,
+  WORKFLOW_RUN_GITIGNORE_PATH,
+} from "@intx/hub-sessions";
+import type { AuthorizeFn } from "@intx/hub-sessions";
+import type {
+  RepoId,
+  WorkflowRunWorkflowProcessPrincipal,
+} from "@intx/hub-sessions/substrate";
+import type { KeyPair } from "@intx/types/runtime";
+import * as workflow from "@intx/workflow";
+import {
+  createInMemoryRepoStore,
+  createInMemoryScheduler,
+  defineWorkflow,
+  step,
+} from "@intx/workflow";
+import type { RunChildWorkflow } from "@intx/workflow-host";
+
+const REF = "refs/heads/main";
+const DEPLOYMENT_ID = "deployment-cancel-report";
+const WORKFLOW_RUN_REPO_ID: RepoId = {
+  kind: "workflow-run",
+  id: DEPLOYMENT_ID,
+};
+const allowAll: AuthorizeFn = () => ({ allowed: true });
+const PRINCIPAL: WorkflowRunWorkflowProcessPrincipal = {
+  kind: "workflow-process",
+  anchorRunId: DEPLOYMENT_ID,
+};
+
+const tempDirs: string[] = [];
+let signingKey: KeyPair;
+
+beforeAll(async () => {
+  signingKey = await generateKeyPair();
+});
+
+afterAll(async () => {
+  for (const d of tempDirs.splice(0)) {
+    await fs.promises.rm(d, { recursive: true, force: true }).catch(() => {
+      /* best effort */
+    });
+  }
+});
+
+test("a cancel rejection during abort is reported and is not unhandled", async () => {
+  const forced = new Error("forced cancel reject");
+  const cancelMock = mock(() => Promise.reject(forced));
+  const reportErrorMock = mock(
+    (_error: unknown, _context: unknown) => "ref-test",
+  );
+
+  mock.module("@intx/workflow", () => ({
+    ...workflow,
+    runtimeRun: () => ({
+      runId: "run-child-forced-cancel",
+      complete: new Promise(() => undefined),
+      cancel: cancelMock,
+      signal: async () => undefined,
+    }),
+  }));
+  mock.module("@corbits/error-sink", () => ({
+    reportError: reportErrorMock,
+  }));
+
+  const { createSidecarRunChild } =
+    await import("../src/workflow-substrate-factory/child-runtime");
+
+  const dataDir = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), "run-child-cancel-report-"),
+  );
+  tempDirs.push(dataDir);
+  const substrate = createRepoStore({
+    dataDir,
+    signingKey,
+    handlers: { "workflow-run": workflowRunKindHandler },
+    authorize: allowAll,
+  });
+  await substrate.writeTree({ kind: "hub" }, WORKFLOW_RUN_REPO_ID, REF, {
+    files: { [WORKFLOW_RUN_GITIGNORE_PATH]: "" },
+    message: "genesis",
+  });
+
+  const runChild: RunChildWorkflow = createSidecarRunChild({
+    substrate,
+    workflowRunRepoId: WORKFLOW_RUN_REPO_ID,
+    workflowRunRef: REF,
+    principal: PRINCIPAL,
+    scheduler: createInMemoryScheduler({
+      repoStore: createInMemoryRepoStore(),
+      clock: () => new Date(),
+    }),
+    invokeStep: async () => ({ output: { done: true } }),
+  });
+
+  const agent = defineAgent({
+    id: "child-step",
+    systemPrompt: "s",
+    tools: [],
+    capabilities: [],
+    inference: { sources: [{ provider: "anthropic", model: "m" }] },
+  });
+  const definition = defineWorkflow({
+    id: "child-wf-cancel-report",
+    trigger: { type: "manual" },
+    steps: { s: step({ agent }) },
+  });
+
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => {
+    unhandled.push(reason);
+  };
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    const abort = new AbortController();
+    abort.abort();
+    void runChild({
+      definition,
+      definitionRef: REF,
+      childRunId: "run-child-cancel-report",
+      input: { text: "event" },
+      parentRunId: "run-parent",
+      parentStepId: "section",
+      signal: abort.signal,
+    });
+    await Bun.sleep(50);
+    expect(cancelMock).toHaveBeenCalled();
+    expect(reportErrorMock).toHaveBeenCalledTimes(1);
+    expect(reportErrorMock.mock.calls[0]?.[0]).toBe(forced);
+    expect(reportErrorMock.mock.calls[0]?.[1]).toMatchObject({
+      operation: "sidecar.child-runtime.cancel",
+    });
+    expect(unhandled).toEqual([]);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+    mock.restore();
+  }
+});
