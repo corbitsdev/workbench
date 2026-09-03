@@ -1,5 +1,4 @@
-import { expect, spyOn, test } from "bun:test";
-import * as errorSink from "@corbits/error-sink";
+import { expect, test } from "bun:test";
 import {
   attachShutdownRejectionHandler,
   drainWithTimeout,
@@ -63,30 +62,31 @@ test("a throw from close exits 1 and does not reject", async () => {
 test("a drain failure reports through reportError and exits 1 without rejecting", async () => {
   const exits: number[] = [];
   const error = new Error("drain fault");
-  const report = spyOn(errorSink, "reportError").mockReturnValue("ref-test");
-  try {
-    const promise = runSidecarShutdown({
-      signal: "SIGINT",
-      close: () => undefined,
-      drain: async () => {
-        throw error;
-      },
-      drainTimeoutMs: 1_000,
-      exit: (code) => {
-        exits.push(code);
-      },
-      log: capturingLog(),
-    });
-    await expect(promise).resolves.toBeUndefined();
-    expect(exits).toEqual([1]);
-    expect(report).toHaveBeenCalledTimes(1);
-    expect(report.mock.calls[0]?.[0]).toBe(error);
-    expect(report.mock.calls[0]?.[1]).toMatchObject({
-      operation: "sidecar.shutdown",
-    });
-  } finally {
-    report.mockRestore();
-  }
+  const reported: unknown[] = [];
+  const contexts: unknown[] = [];
+  const promise = runSidecarShutdown({
+    signal: "SIGINT",
+    close: () => undefined,
+    drain: async () => {
+      throw error;
+    },
+    drainTimeoutMs: 1_000,
+    exit: (code) => {
+      exits.push(code);
+    },
+    log: capturingLog(),
+    report: (reportedError, context) => {
+      reported.push(reportedError);
+      contexts.push(context);
+      return "ref-test";
+    },
+  });
+  await expect(promise).resolves.toBeUndefined();
+  expect(exits).toEqual([1]);
+  expect(reported).toEqual([error]);
+  expect(contexts[0]).toMatchObject({
+    operation: "sidecar.shutdown",
+  });
 });
 
 test("a clean drain exits 0", async () => {

@@ -54,34 +54,40 @@ export type RunSidecarShutdownArgs = {
   drainTimeoutMs: number;
   exit: (code: number) => void;
   log: SidecarShutdownLog;
+  report?: typeof reportError;
 };
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export async function runSidecarShutdown(
-  args: RunSidecarShutdownArgs,
-): Promise<void> {
-  args.log.info`Received ${args.signal}; draining before exit`;
+export async function runSidecarShutdown({
+  signal,
+  close,
+  drain,
+  drainTimeoutMs,
+  exit,
+  log,
+  report = reportError,
+}: RunSidecarShutdownArgs): Promise<void> {
+  log.info`Received ${signal}; draining before exit`;
   try {
-    args.close();
-    const outcome = await drainWithTimeout(args.drain, args.drainTimeoutMs);
+    close();
+    const outcome = await drainWithTimeout(drain, drainTimeoutMs);
     // Drained and timed-out both exit 0: the process is going down either
     // way and a bound cutting a slow drain short is not a crash. A drain
     // that threw is a genuine fault and exits non-zero.
     if (outcome.kind === "failed") {
-      reportError(outcome.error, { operation: "sidecar.shutdown" });
-      args.log
-        .error`Drain threw during shutdown; exiting non-zero: ${errorMessage(outcome.error)}`;
-      args.exit(1);
+      report(outcome.error, { operation: "sidecar.shutdown" });
+      log.error`Drain threw during shutdown; exiting non-zero: ${errorMessage(outcome.error)}`;
+      exit(1);
       return;
     }
-    args.exit(0);
+    exit(0);
   } catch (error) {
     reportError(error, { operation: "sidecar.shutdown" });
-    args.log.error`Shutdown threw; exiting non-zero: ${errorMessage(error)}`;
-    args.exit(1);
+    log.error`Shutdown threw; exiting non-zero: ${errorMessage(error)}`;
+    exit(1);
   }
 }
 
