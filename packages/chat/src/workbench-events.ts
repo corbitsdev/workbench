@@ -20,9 +20,12 @@
 //    (`desiredSize === null`) or the stream aborted/closed, and we
 //    bound the write itself with a timeout so a stalled TCP sink
 //    cannot pin the delivery queue forever (CL-7246). A write that
-//    does throw is still handled the same way. `stream.onAbort`
-//    (wired by the route) remains the disconnect path for a client
-//    that goes away between writes.
+//    does throw is still handled the same way. Stall teardown aborts
+//    the underlying writer rather than awaiting Hono `close()`, which
+//    queues behind the same in-flight write and never drops the
+//    socket. `stream.onAbort` (wired by the route) remains the
+//    disconnect path for a client that goes away between writes; a
+//    clean abort already torn down that way is not a new incident.
 // 2. Access must be re-checked on every delivered event, not only at
 //    connect time. The route resolves access once before opening the
 //    stream, but a share or a share member's row can be revoked at
@@ -78,6 +81,30 @@ function underlyingWriterIsErrored(stream: SSEStreamingApi): boolean {
   if (typeof writer !== "object" || writer === null) return false;
   if (!("desiredSize" in writer)) return false;
   return writer.desiredSize === null;
+}
+
+function abortUnderlyingWriter(stream: SSEStreamingApi): boolean {
+  const writer = Reflect.get(stream, "writer");
+  if (typeof writer !== "object" || writer === null) return false;
+  const abort = Reflect.get(writer, "abort");
+  if (typeof abort !== "function") return false;
+  try {
+    void Promise.resolve(abort.call(writer)).catch(() => undefined);
+    return true;
+  } catch {
+    // report-error-ignore: aborting an already-closed writer is not an incident
+    return true;
+  }
+}
+
+function dropStream(stream: SSEStreamingApi): void {
+  const abortedWriter = abortUnderlyingWriter(stream);
+  if (typeof stream.abort === "function") {
+    stream.abort();
+    return;
+  }
+  if (abortedWriter) return;
+  void stream.close().catch(() => undefined);
 }
 
 async function writeSSEObservingFailure(
@@ -221,8 +248,12 @@ export interface WorkbenchStreamBridge {
  * resolved `writeSSE` is inspected for an errored writer, an aborted
  * or closed stream, or a write that never settles within
  * `writeTimeoutMs` — any of those is treated as the same failure. A
- * periodic keepalive keeps idle connections alive behind proxies
- * that time out on silence.
+ * stalled write aborts the underlying writer so the client's
+ * EventSource sees a disconnect; Hono `close()` is not awaited
+ * because it queues behind the in-flight write. A client abort that
+ * already ran `teardown` via `stream.onAbort` is not reported as a
+ * new incident. A periodic keepalive keeps idle connections alive
+ * behind proxies that time out on silence.
  */
 export function bridgeWorkbenchStream(input: {
   registry: WorkbenchSubscriberRegistry;
@@ -285,7 +316,6 @@ export function bridgeWorkbenchStream(input: {
     if (keepaliveTimer !== undefined) clearInterval(keepaliveTimer);
     resolveClosed();
   };
-  const closeStream = () => input.stream.close().catch(() => undefined);
   const writeTimeoutMs = input.writeTimeoutMs ?? DEFAULT_WRITE_TIMEOUT_MS;
 
   // Every write to this stream — the presence snapshot, each delivered
@@ -305,7 +335,7 @@ export function bridgeWorkbenchStream(input: {
         roomId: input.workbenchId,
       });
       teardown();
-      void closeStream();
+      dropStream(input.stream);
       return;
     }
     queuedCount += 1;
@@ -331,12 +361,12 @@ export function bridgeWorkbenchStream(input: {
         roomId: input.workbenchId,
       });
       teardown();
-      await closeStream();
+      dropStream(input.stream);
       return;
     }
     if (!authorized) {
       teardown();
-      await closeStream();
+      dropStream(input.stream);
       return;
     }
     try {
@@ -349,12 +379,16 @@ export function bridgeWorkbenchStream(input: {
         writeTimeoutMs,
       );
     } catch (error) {
+      if (tornDown || input.stream.aborted) {
+        teardown();
+        return;
+      }
       reportError(error, {
         operation: "chat.workbenchStream.write",
         roomId: input.workbenchId,
       });
       teardown();
-      await closeStream();
+      dropStream(input.stream);
     }
   };
 
@@ -378,12 +412,16 @@ export function bridgeWorkbenchStream(input: {
           writeTimeoutMs,
         );
       } catch (error) {
+        if (tornDown || input.stream.aborted) {
+          teardown();
+          return;
+        }
         reportError(error, {
           operation: "chat.workbenchStream.presenceSnapshot",
           roomId: input.workbenchId,
         });
         teardown();
-        await closeStream();
+        dropStream(input.stream);
       }
     });
   }
@@ -438,12 +476,16 @@ export function bridgeWorkbenchStream(input: {
           writeTimeoutMs,
         );
       } catch (error) {
+        if (tornDown || input.stream.aborted) {
+          teardown();
+          return;
+        }
         reportError(error, {
           operation: "chat.workbenchStream.keepalive",
           roomId: input.workbenchId,
         });
         teardown();
-        await closeStream();
+        dropStream(input.stream);
       }
     });
   }, input.keepaliveIntervalMs ?? DEFAULT_KEEPALIVE_INTERVAL_MS);

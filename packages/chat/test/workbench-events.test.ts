@@ -318,6 +318,82 @@ describe("bridgeWorkbenchStream", () => {
     });
   });
 
+  test("a stalled write aborts the writer instead of awaiting a hung close()", async () => {
+    const registry = createWorkbenchSubscriberRegistry();
+    let abortCount = 0;
+    let closeCount = 0;
+    const stream = Object.assign(
+      fakeStream(
+        () => new Promise(() => undefined),
+        () => {
+          closeCount += 1;
+          return new Promise(() => undefined);
+        },
+      ),
+      {
+        writer: {
+          desiredSize: 1,
+          abort: () => {
+            abortCount += 1;
+          },
+        },
+      },
+    );
+    const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
+
+    const { closed } = bridgeWorkbenchStream({
+      registry,
+      platform: noopPlatformEvents(),
+      workbenchId: "chan_1",
+      stream,
+      authorize: alwaysAuthorized,
+      writeTimeoutMs: 20,
+    });
+
+    registry.publish("chan_1", { type: "chat.typing", data: {} });
+
+    await Promise.race([
+      closed,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("hung on close()")), 200),
+      ),
+    ]);
+
+    expect(abortCount).toBe(1);
+    expect(closeCount).toBe(0);
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ message: "workbench SSE write stalled" }),
+    );
+  });
+
+  test("a client abort mid-write does not reportError after onAbort teardown", async () => {
+    const registry = createWorkbenchSubscriberRegistry();
+    const stream = Object.assign(
+      fakeStream(() => new Promise(() => undefined)),
+      { aborted: false },
+    );
+    const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
+
+    const { teardown } = bridgeWorkbenchStream({
+      registry,
+      platform: noopPlatformEvents(),
+      workbenchId: "chan_1",
+      stream,
+      authorize: alwaysAuthorized,
+      writeTimeoutMs: 20,
+    });
+
+    registry.publish("chan_1", { type: "chat.typing", data: {} });
+    await flush();
+
+    stream.aborted = true;
+    teardown();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(report).not.toHaveBeenCalled();
+  });
+
   test("a platform subscribe that throws still opens the stream, registry-only, and reports the failure", async () => {
     const registry = createWorkbenchSubscriberRegistry();
     const writes: unknown[] = [];
