@@ -795,6 +795,73 @@ describe("createChatOrchestrator", () => {
     orchestrator.dispose();
   });
 
+  // CL-6396: a failed-turn notice is the same `postReply` path as a
+  // successful `connector.reply`. Naming turn__0 must close that row
+  // failed, leave the overlapping turn__1 running, and stamp the notice
+  // with turn__0 — never the newest-occurrence pick.
+  test("a failed-turn notice named for turn__0 does not close an overlapping turn__1", async () => {
+    const room = fakeRoom();
+    const agentTurns = createInMemoryAgentTurnStore();
+    const agentAddress = "ins_echo1@ten1.workbench.test";
+    const first = await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_workbench1",
+      agentAddress,
+      requestMessageIds: ["msg_0"],
+    });
+    const second = await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_workbench1",
+      agentAddress,
+      requestMessageIds: ["msg_1"],
+    });
+    expect(first.childRunId).toBe("turn__0");
+    expect(second.childRunId).toBe("turn__1");
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+      store: {
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", [agentAddress]),
+        ],
+      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
+      events,
+      agentTurns,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_1",
+      childRunId: "turn__0",
+      event: {
+        type: "message.run.ended",
+        data: { status: "failed", error: { message: "provider timed out" } },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(room.posted).toHaveLength(1);
+    expect(room.posted[0]).toMatchObject({
+      runId: "turn__0",
+      parts: [{ kind: "text", text: "provider timed out" }],
+    });
+    expect(
+      (await agentTurns.getTurn({ tenantId: "ten_1", turnId: first.id }))
+        ?.status,
+    ).toBe("failed");
+    expect(
+      (await agentTurns.getTurn({ tenantId: "ten_1", turnId: second.id }))
+        ?.status,
+    ).toBe("running");
+
+    orchestrator.dispose();
+  });
+
   // CL-6396: an old sidecar's agent.event frames omit childRunId. The one
   // documented fallback is newest-occurrence — the later overlapping row
   // receives the reply, not a spray and not a late-reply invent.
