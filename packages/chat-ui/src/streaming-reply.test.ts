@@ -602,6 +602,17 @@ describe("typingAgentNames", () => {
     expect(typingAgentNames(awaiting(""), [HUMAN])).toEqual([]);
   });
 
+  test("a resolved display name wins over the slug-derived one (CL-6424)", () => {
+    expect(
+      typingAgentNames(
+        awaiting(""),
+        [HUMAN, MYRA],
+        undefined,
+        new Map([[MYRA.address, "Myra the Helper"]]),
+      ),
+    ).toEqual(["Myra the Helper"]);
+  });
+
   test("names the mentioned agent, not the first agent on the workbench", () => {
     const jimmy = { address: "jimmy@agents.example", handle: "jimmy" };
     expect(

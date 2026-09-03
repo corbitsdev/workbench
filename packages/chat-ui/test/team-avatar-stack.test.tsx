@@ -51,6 +51,7 @@ afterEach(() => {
 
 function stubFetch(workbenchWire: {
   participants: { address: string; handle: string }[];
+  agents?: { address: string; handle: string; displayName: string }[];
 }) {
   globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -60,6 +61,17 @@ function stubFetch(workbenchWire: {
         status: 200,
         headers: { "content-type": "application/json" },
       });
+    if (/\/chat\/workbenches\/[^/]+\/agents$/.test(path)) {
+      return json({
+        items: (workbenchWire.agents ?? []).map((agent, index) => ({
+          address: agent.address,
+          handle: agent.handle,
+          definitionId: `wfd_${String(index)}`,
+          definitionAssetId: `ast_wfd_${String(index)}`,
+          displayName: agent.displayName,
+        })),
+      });
+    }
     if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
       return json({
         items: [
@@ -206,6 +218,31 @@ describe("workbench header team avatar stack", () => {
     );
     expect(myraText).not.toBe("");
     expect(scoutText).not.toBe("");
+    harness.unmount();
+  });
+
+  test("shows the resolved agent display name, never the raw handle slug (CL-6424)", async () => {
+    stubFetch({
+      participants: [{ address: "myra@agents.example", handle: "myra" }],
+      agents: [
+        {
+          address: "myra@agents.example",
+          handle: "myra",
+          displayName: "Myra the Helper",
+        },
+      ],
+    });
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "ch_1",
+    });
+    await harness.settle();
+
+    const agentAvatars = harness.container.querySelectorAll(
+      '.chat-presence-avatar[data-agent="true"]',
+    );
+    expect(agentAvatars).toHaveLength(1);
+    expect((agentAvatars[0] as HTMLElement).title).toBe("Myra the Helper");
     harness.unmount();
   });
 

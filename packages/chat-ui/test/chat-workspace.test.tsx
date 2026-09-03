@@ -55,6 +55,7 @@ type WorkbenchAgentFixture = {
   readonly handle: string;
   readonly definitionId: string;
   readonly definitionAssetId: string;
+  readonly displayName: string;
 };
 
 function stubFetch(
@@ -977,12 +978,14 @@ describe("composer slash commands — each wired command's real action", () => {
           handle: "echo",
           definitionId: "def_echo",
           definitionAssetId: "asset_echo",
+          displayName: "Echo",
         },
         {
           address: "agent:asset_digest/ins_2",
           handle: "digest",
           definitionId: "def_digest",
           definitionAssetId: "asset_digest",
+          displayName: "Digest",
         },
       ],
     });
@@ -1015,6 +1018,7 @@ describe("composer slash commands — each wired command's real action", () => {
           handle: "echo",
           definitionId: "def_echo",
           definitionAssetId: "asset_echo",
+          displayName: "Echo",
         },
       ],
     });
@@ -2003,7 +2007,7 @@ describe("Workbench header polish (CL-6106)", () => {
     harness.unmount();
   });
 
-  test("agent participant chips share the roster's circular avatar, keeping the handle as a hover tooltip", async () => {
+  test("agent participant chips share the roster's circular avatar, naming the agent by display name (CL-6424 supersedes the raw-handle tooltip)", async () => {
     stubFetch(undefined, WORKBENCH_WITH_AGENT_WIRE);
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
@@ -2015,7 +2019,7 @@ describe("Workbench header polish (CL-6106)", () => {
       '.chat-presence-avatar[data-agent="true"]',
     );
     expect(chip).not.toBeNull();
-    expect((chip as HTMLElement).title).toBe("researcher");
+    expect((chip as HTMLElement).title).toBe("Researcher");
     expect((chip as HTMLElement).textContent).toBe("R");
     harness.unmount();
   });

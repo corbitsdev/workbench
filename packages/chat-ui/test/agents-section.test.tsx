@@ -190,6 +190,7 @@ function stubFetch(options: {
           handle: agent.handle,
           definitionId: agent.definitionId,
           definitionAssetId: `ast_${agent.definitionId}`,
+          displayName: agent.name,
         })),
       });
     }

@@ -18,7 +18,7 @@ describe("buildTeamAvatarStack (CL-6594)", () => {
 
     expect(stack).toHaveLength(2);
     expect(stack.map((entry) => entry.initials)).toEqual(["M", "S"]);
-    expect(stack.map((entry) => entry.label)).toEqual(["myra", "scout"]);
+    expect(stack.map((entry) => entry.label)).toEqual(["Myra", "Scout"]);
     expect(stack.every((entry) => entry.tone === "agent")).toBe(true);
 
     const [myra, scout] = stack;
@@ -47,8 +47,8 @@ describe("buildTeamAvatarStack (CL-6594)", () => {
     ]);
 
     expect(stack.map((entry) => entry.label)).toEqual([
-      "myra",
-      "scout",
+      "Myra",
+      "Scout",
       "Dana",
     ]);
   });
@@ -63,7 +63,7 @@ describe("buildTeamAvatarStack (CL-6594)", () => {
 
     const stack = buildTeamAvatarStack(participants, []);
 
-    expect(stack.map((entry) => entry.label)).toEqual(["myra", "Dana"]);
+    expect(stack.map((entry) => entry.label)).toEqual(["Myra", "Dana"]);
     expect(stack.map((entry) => entry.tone)).toEqual(["agent", "neutral"]);
     const human = stack[1];
     expect(human?.key).toBe("prn_dana");
@@ -86,8 +86,23 @@ describe("buildTeamAvatarStack (CL-6594)", () => {
       },
     ]);
 
-    expect(stack.map((entry) => entry.label)).toEqual(["myra", "Dana Live"]);
+    expect(stack.map((entry) => entry.label)).toEqual(["Myra", "Dana Live"]);
     expect(stack[1]?.color).toBe("hsl(10 70% 60%)");
+  });
+
+  test("prefers resolved agent display names over handle slugs (CL-6424)", () => {
+    const participants: readonly ParticipantRecord[] = [
+      { address: "run_myra@dana.localhost", handle: "myra" },
+    ];
+
+    const stack = buildTeamAvatarStack(
+      participants,
+      [],
+      new Map([["run_myra@dana.localhost", "Myra the Helper"]]),
+    );
+
+    expect(stack.map((entry) => entry.label)).toEqual(["Myra the Helper"]);
+    expect(stack.map((entry) => entry.initials)).toEqual(["M"]);
   });
 });
 
