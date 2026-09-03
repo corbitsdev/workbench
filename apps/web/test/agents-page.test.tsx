@@ -144,6 +144,43 @@ describe("agentModelSettledContent (CL-6848)", () => {
     ).toEqual({ kind: "model", label: "Default" });
   });
 
+  test("an unset model stays Default when the catalog winner changes (CL-6782)", () => {
+    const unset = {
+      status: "ready" as const,
+      data: { name: "triage-bot" },
+    };
+    expect(
+      agentModelSettledContent(unset, [
+        { canonicalName: "claude-sonnet-4", displayName: "Claude Sonnet 4" },
+      ]),
+    ).toEqual({ kind: "model", label: "Default" });
+    expect(
+      agentModelSettledContent(unset, [
+        { canonicalName: "claude-haiku-5", displayName: "Claude Haiku 5" },
+        { canonicalName: "claude-sonnet-4", displayName: "Claude Sonnet 4" },
+      ]),
+    ).toEqual({ kind: "model", label: "Default" });
+  });
+
+  test("a stored model is unchanged when the catalog default becomes a different winner (CL-6782)", () => {
+    const stored = {
+      status: "ready" as const,
+      data: { name: "triage-bot", model: "claude-sonnet-4" },
+    };
+    expect(
+      agentModelSettledContent(stored, [
+        { canonicalName: "claude-sonnet-4", displayName: "Claude Sonnet 4" },
+        { canonicalName: "claude-haiku-5", displayName: "Claude Haiku 5" },
+      ]),
+    ).toEqual({ kind: "model", label: "Claude Sonnet 4" });
+    expect(
+      agentModelSettledContent(stored, [
+        { canonicalName: "claude-haiku-5", displayName: "Claude Haiku 5" },
+        { canonicalName: "claude-sonnet-4", displayName: "Claude Sonnet 4" },
+      ]),
+    ).toEqual({ kind: "model", label: "Claude Sonnet 4" });
+  });
+
   test("a ready model maps to the catalog displayName, not the raw id", () => {
     expect(
       agentModelSettledContent(
