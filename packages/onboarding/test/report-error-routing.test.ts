@@ -231,3 +231,65 @@ describe("plant-env-credentials.ts catches report through reportError and never 
     expect(cause).toBeInstanceOf(Error);
   });
 });
+
+describe("recentlyConnectedCredential reports through reportError and still finds nothing", () => {
+  test("a hub failure during duplicate-callback recovery reports operation + userId and still ends as state_expired", async () => {
+    // A malformed principals page that parseAs will reject, carrying a
+    // token-shaped string so this test can prove the recovery catch never
+    // interpolates the raw cause into deps.log (the same redaction bar
+    // plant-env-credentials.ts holds — CL-7255).
+    const SECRET = "sk-or-v1-thisisafakesecretvalue";
+    const logs: string[] = [];
+    const hub = new Hono();
+    hub.get("/api/me/principals", (c) =>
+      c.json({ data: SECRET, nextCursor: null }),
+    );
+    const server = Bun.serve({ port: 0, fetch: hub.fetch });
+    try {
+      const routes = createOnboardingRoutes({
+        hubUrl: `http://localhost:${server.port}`,
+        pushWorkflow: async () => ({
+          outcome: "pushed" as const,
+          commitSha: "a".repeat(40),
+        }),
+        log: (line) => {
+          logs.push(line);
+        },
+        pendingSeedStore,
+      });
+      const app = mountAuthenticated(routes);
+
+      const response = await app.request(
+        "/oauth/openrouter/callback?code=auth_code_1",
+        {
+          headers: {
+            cookie: "workbench_openrouter_connect=not-a-real-state",
+          },
+        },
+      );
+
+      expect(response.status).toBe(302);
+      const redirect = new URL(
+        response.headers.get("location") ?? "",
+        "https://x",
+      );
+      expect(redirect.searchParams.get("outcome")).toBe("error");
+      expect(redirect.searchParams.get("code")).toBe("state_expired");
+
+      expect(reportErrorCalls).toHaveLength(1);
+      const [cause, context] = reportErrorCalls[0] as [
+        unknown,
+        Record<string, unknown>,
+      ];
+      expect(context.operation).toBe("onboarding_duplicate_callback_recovery");
+      expect(context.tenantId).toBeUndefined();
+      expect((context.extra as { userId: string }).userId).toBe("user_1");
+      // reportError is the one place the unredacted cause may travel —
+      // error-sink redacts before anything reaches a log sink.
+      expect(cause).toBeInstanceOf(Error);
+      expect(logs.join("\n")).not.toContain(SECRET);
+    } finally {
+      server.stop(true);
+    }
+  });
+});
