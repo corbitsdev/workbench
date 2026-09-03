@@ -137,10 +137,17 @@ describe("bindPresenceStream", () => {
   });
 
   test("a client abort mid-write does not reportError after onAbort teardown", async () => {
+    let abortCount = 0;
     const stream = Object.assign(
       fakeStream(() => new Promise(() => undefined)),
       { aborted: false },
     );
+    Reflect.set(stream, "writer", {
+      desiredSize: 1,
+      abort: () => {
+        abortCount += 1;
+      },
+    });
     const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
 
     const { teardown } = bindPresenceStream({
@@ -156,6 +163,7 @@ describe("bindPresenceStream", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(report).not.toHaveBeenCalled();
+    expect(abortCount).toBe(1);
   });
 
   test("an errored writer after a swallowed write reports and tears down", async () => {

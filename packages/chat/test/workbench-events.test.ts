@@ -369,10 +369,17 @@ describe("bridgeWorkbenchStream", () => {
 
   test("a client abort mid-write does not reportError after onAbort teardown", async () => {
     const registry = createWorkbenchSubscriberRegistry();
+    let abortCount = 0;
     const stream = Object.assign(
       fakeStream(() => new Promise(() => undefined)),
       { aborted: false },
     );
+    Reflect.set(stream, "writer", {
+      desiredSize: 1,
+      abort: () => {
+        abortCount += 1;
+      },
+    });
     const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
 
     const { teardown } = bridgeWorkbenchStream({
@@ -392,6 +399,7 @@ describe("bridgeWorkbenchStream", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(report).not.toHaveBeenCalled();
+    expect(abortCount).toBe(1);
   });
 
   test("a platform subscribe that throws still opens the stream, registry-only, and reports the failure", async () => {
