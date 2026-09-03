@@ -1365,7 +1365,7 @@ async function ensureCatalogOffering(
       cursor = page.nextCursor;
     } while (existing === undefined && cursor !== null);
     if (!existing) {
-      throw new CliError(
+      throw new HubApiError(
         "catalog offering reported a conflict but is not listable on the bench",
         "check the hub logs for the underlying failure, then re-run: workbench seed",
       );
@@ -1382,7 +1382,7 @@ async function ensureCatalogOffering(
       cookies,
     );
     if (updated.status !== 200) {
-      throw new CliError(
+      throw new HubApiError(
         `the hub rejected updating the catalog offering priority with status ${updated.status}: ${JSON.stringify(updated.data)}`,
         "check the hub logs for the underlying failure, then re-run: workbench seed",
       );
@@ -1481,6 +1481,13 @@ export type SeedCatalogArgs = {
    * Ignored for every provider except `ollama`.
    */
   baseURLOverride?: string;
+  /**
+   * The model this seed run makes first among the provider's offerings.
+   * Hub boot passes its configured seed model so runtime deployment and
+   * Settings resolve the same choice. Unset preserves the provider's
+   * declared first model as the default.
+   */
+  preferredModel?: string;
 };
 
 export type SeedCatalogResult = {
@@ -1527,6 +1534,18 @@ export async function seedCatalog(
       ? await fetchOllamaModelCatalog(providerBaseURL)
       : undefined;
   const models = dynamicModels ?? seed.models;
+  const preferredModelIndex =
+    args.preferredModel === undefined
+      ? 0
+      : models.findIndex(
+          (model) => model.canonicalName === args.preferredModel,
+        );
+  if (preferredModelIndex < 0) {
+    throw new HubApiError(
+      `preferred model ${JSON.stringify(args.preferredModel)} is not present in the ${provider} seed catalog`,
+      "choose a model declared by this provider's catalog seed, then re-run the seed",
+    );
+  }
 
   const seededModels: {
     id: string;
@@ -1676,7 +1695,13 @@ export async function seedCatalog(
         tenantId,
         modelId: model.id,
         providerId: catalogProviderId,
-        priority: offeringPriorityOffset + modelIndex,
+        priority:
+          offeringPriorityOffset +
+          (modelIndex === preferredModelIndex
+            ? 0
+            : modelIndex < preferredModelIndex
+              ? modelIndex + 1
+              : modelIndex),
         capabilities,
         ...(quirks !== undefined ? { quirks } : {}),
       },

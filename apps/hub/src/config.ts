@@ -5,13 +5,15 @@
 // Anything else the hub learns is data in the database, never
 // configuration.
 //
-// ANTHROPIC_API_KEY is the one model-related variable a freshly
+// ANTHROPIC_API_KEY is the one credential variable a freshly
 // self-served personal bench needs: when set, the hub carries a seed
-// model credential (anthropic/claude-sonnet-5) it hands to
+// model credential it hands to
 // `@workbench/onboarding` so that bench gets the default workflow set
 // deployed at first login. Left unset, that deployment step is skipped
 // — the bench is still provisioned, only the default workflow
 // deployment is skipped, and the skip is logged.
+// ANTHROPIC_MODEL optionally selects which curated Anthropic model that
+// seed uses; unset keeps claude-sonnet-5 as the product default.
 //
 // ANTHROPIC_API_KEY and every other curated provider's conventional key
 // (`@workbench/onboarding`'s `PROVIDER_ENV_VARS` — OPENAI_API_KEY,
@@ -45,6 +47,7 @@ import {
   envProviderKeysFrom,
 } from "@workbench/onboarding";
 import type { SupportedCredentialProvider } from "@corbits/connections/credential-test";
+import { CATALOG_SEEDS } from "@corbits/seeding";
 
 const HTTP_URL = /^https?:\/\/.+$/;
 
@@ -108,6 +111,9 @@ const HubEnv = type({
   ),
   "ANTHROPIC_API_KEY?": type("string > 0").describe(
     "your Anthropic API key; optional, enables the default workflow set for freshly self-served benches, and auto-plants a probed catalog credential on the operator bench at hub start",
+  ),
+  "ANTHROPIC_MODEL?": type("string > 0").describe(
+    "the curated Anthropic model to prefer for seeded workflows and catalog resolution; optional, defaults to claude-sonnet-5",
   ),
   "OPENAI_API_KEY?": type("string > 0").describe(
     "your OpenAI API key; optional, auto-plants a probed catalog credential on the operator bench at hub start",
@@ -394,6 +400,11 @@ export type HubConfig = {
   readonly envProviderBaseUrls: Partial<
     Record<SupportedCredentialProvider, string>
   >;
+  /** Provider model choices that must remain aligned between the fast
+   * env-key catalog plant and the sidecar-dependent system seed. */
+  readonly envProviderPreferredModels?: Partial<
+    Record<SupportedCredentialProvider, string>
+  >;
   /** The identity the env-key auto-plant signs in as to find the
    * operator bench — the same identity `workbench setup`/`workbench
    * seed` use, defaulted the same way when unset. Always populated
@@ -588,10 +599,27 @@ function sidecarProvisionerConfigFor(
 
 function seedModelFrom(parsed: ParsedHubEnv): ModelSource | undefined {
   const apiKey = parsed.ANTHROPIC_API_KEY;
-  if (apiKey === undefined) return undefined;
+  if (apiKey === undefined) {
+    if (parsed.ANTHROPIC_MODEL !== undefined) {
+      throw new Error(
+        "invalid hub environment: ANTHROPIC_MODEL requires ANTHROPIC_API_KEY",
+      );
+    }
+    return undefined;
+  }
+  const model = parsed.ANTHROPIC_MODEL ?? SEED_MODEL;
+  if (
+    !CATALOG_SEEDS.anthropic.models.some(
+      (candidate) => candidate.canonicalName === model,
+    )
+  ) {
+    throw new Error(
+      `invalid hub environment: ANTHROPIC_MODEL must name a curated Anthropic model; got ${JSON.stringify(model)}`,
+    );
+  }
   return {
     provider: SEED_MODEL_PROVIDER,
-    model: SEED_MODEL,
+    model,
     baseURL: SEED_MODEL_BASE_URL,
     apiKey,
   };
@@ -676,6 +704,8 @@ export function readHubConfig(
     },
     envProviderKeys: envProviderKeysFrom(parsed),
     envProviderBaseUrls: envProviderBaseUrlsFrom(parsed),
+    envProviderPreferredModels:
+      seedModel === undefined ? {} : { anthropic: seedModel.model },
     envCredentialPlantAdmin: {
       email: parsed.HUB_ADMIN_EMAIL ?? DEFAULT_PLANT_ADMIN_EMAIL,
       password: parsed.HUB_ADMIN_PASSWORD ?? DEFAULT_PLANT_ADMIN_PASSWORD,

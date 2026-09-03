@@ -128,6 +128,7 @@ export async function runSystemSeed(deps: SystemSeedDeps): Promise<void> {
         api,
         cookies: session.cookies,
         tenantId: tenant.tenantId,
+        preferredModel: model.model,
         log: (line) => log.info`${line}`,
         ...(deps.seedModel !== undefined
           ? { apiKey: deps.seedModel.apiKey }

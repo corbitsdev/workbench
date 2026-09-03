@@ -3616,6 +3616,7 @@ export async function createHub(config: HubConfig) {
     baseUrl: config.baseUrl,
     envProviderKeys: config.envProviderKeys,
     envProviderBaseUrls: config.envProviderBaseUrls,
+    envProviderPreferredModels: config.envProviderPreferredModels,
     admin: config.envCredentialPlantAdmin,
     fetch: (request) => Promise.resolve(servingApp.fetch(request)),
   });

@@ -60,6 +60,7 @@ export type EnvCredentialPlantDeps = {
   baseUrl: string;
   envProviderKeys: HubConfig["envProviderKeys"];
   envProviderBaseUrls: HubConfig["envProviderBaseUrls"];
+  envProviderPreferredModels?: HubConfig["envProviderPreferredModels"];
   admin: HubConfig["envCredentialPlantAdmin"];
   /** The fully composed, guarded app's own request entry point. */
   fetch: (request: Request) => Promise<Response>;
@@ -182,6 +183,9 @@ async function attemptPlant(
     tenantId: resolved.tenantId,
     envProviderKeys: deps.envProviderKeys,
     envProviderBaseUrls: deps.envProviderBaseUrls,
+    ...(deps.envProviderPreferredModels !== undefined
+      ? { envProviderPreferredModels: deps.envProviderPreferredModels }
+      : {}),
     log: (line) => log.info`${line}`,
   });
   return { status: "ran", outcomes, session: resolved.session };

@@ -152,6 +152,10 @@ export type PlantEnvProviderCredentialsArgs = {
    * probe and seed run against its own fixed origin regardless of what
    * (if anything) this map holds for it. */
   envProviderBaseUrls?: Partial<Record<SupportedCredentialProvider, string>>;
+  /** provider -> model that the seed must make first in catalog resolution. */
+  envProviderPreferredModels?: Partial<
+    Record<SupportedCredentialProvider, string>
+  >;
   /** One line per provider: name, outcome, and (on failure) a probe
    * error summary — never the key. */
   log: (line: string) => void;
@@ -290,6 +294,7 @@ export async function plantEnvProviderCredentials(
       { readonly apiKey: string } | { readonly existingCredentialId: string },
   ): SeedCatalogArgs {
     const baseURL = args.envProviderBaseUrls?.[provider];
+    const preferredModel = args.envProviderPreferredModels?.[provider];
     return {
       api: args.api,
       cookies: args.cookies,
@@ -298,6 +303,7 @@ export async function plantEnvProviderCredentials(
       log: suppressedLog,
       ...extra,
       ...(baseURL !== undefined ? { baseURLOverride: baseURL } : {}),
+      ...(preferredModel !== undefined ? { preferredModel } : {}),
     };
   }
 
