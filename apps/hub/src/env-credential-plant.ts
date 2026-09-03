@@ -22,7 +22,7 @@
 // virgin, open-signup database. Falling through to sign-up the way
 // those interactive commands do would let a boot-time retry tick mint
 // the default admin account (and its default password) on its own —
-// so this module authenticates with `@workbench/hub-client`'s
+// so this module authenticates with `@corbits/hub-api-client`'s
 // sign-in-only `signIn`, and an unresolved admin account is treated
 // exactly like an unresolved bench: retried quietly, never a reason to
 // self-provision the account.

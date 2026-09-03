@@ -90,7 +90,7 @@ account: anyone who signs up gets a personal bench with no default routines
 deployed, and first-run tells them exactly that. Onboarding walks them
 through picking a provider — Anthropic, OpenAI, Google, OpenRouter, Hugging
 Face, Groq, or another of the curated providers in
-[`packages/hub-client/src/catalog-seed-data.ts`](packages/hub-client/src/catalog-seed-data.ts)
+[`packages/seeding/src/catalog-seed-data.ts`](packages/seeding/src/catalog-seed-data.ts)
 — and pasting their own key (or, for OpenRouter, completing a PKCE OAuth
 connect), which is stored right away — no separate seeding step, no
 docs to read. A wrong key isn't caught up front; it surfaces the first time

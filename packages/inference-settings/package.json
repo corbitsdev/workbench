@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@intx/types": "workspace:*",
-    "@workbench/hub-client": "workspace:*",
+    "@workbench/connections": "workspace:*",
     "arktype": "catalog:"
   },
   "devDependencies": {

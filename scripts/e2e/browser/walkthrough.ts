@@ -43,7 +43,7 @@ import {
   ensureSeeded,
   testAndPersistCredential,
 } from "../../../packages/onboarding/src/complete-credential.ts";
-import { OLLAMA_PLACEHOLDER_SECRET } from "../../../packages/hub-client/src/credential-test.ts";
+import { OLLAMA_PLACEHOLDER_SECRET } from "../../../packages/connections/src/credential-test.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..", "..", "..");
 const WEB_DIR = path.join(REPO_ROOT, "apps", "web");

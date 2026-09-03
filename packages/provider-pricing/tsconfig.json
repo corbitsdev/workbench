@@ -1,19 +1,8 @@
 {
-  "extends": "./tsconfig.src.json",
+  "extends": "../../tsconfig.base.json",
+  "include": ["src", "test"],
   "compilerOptions": {
-    "composite": false,
-    "noEmit": true,
-    "disableSourceOfProjectReferenceRedirect": true,
-    "declaration": false,
-    "declarationMap": false,
-    "emitDeclarationOnly": false,
-    "rootDir": "../.."
-  },
-  "include": ["src"],
-  "exclude": [],
-  "references": [
-    {
-      "path": "../hub-client/tsconfig.src.json"
-    }
-  ]
+    "types": ["bun"],
+    "noEmit": true
+  }
 }

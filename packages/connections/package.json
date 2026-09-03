@@ -14,7 +14,9 @@
     "./mcp-presets": "./src/mcp-presets.ts",
     "./connect-github-routes": "./src/connect-github-routes.ts",
     "./connect-github-setup": "./src/connect-github-setup.ts",
-    "./reconcile-duplicate-repo-grants": "./src/reconcile-duplicate-repo-grants.ts"
+    "./reconcile-duplicate-repo-grants": "./src/reconcile-duplicate-repo-grants.ts",
+    "./credential-test": "./src/credential-test.ts",
+    "./model-capability": "./src/model-capability.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -34,7 +36,6 @@
     "@modelcontextprotocol/sdk": "catalog:",
     "@corbits/hub-api-client": "workspace:*",
     "@corbits/seeding": "workspace:*",
-    "@workbench/hub-client": "workspace:*",
     "@workbench/templates": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",

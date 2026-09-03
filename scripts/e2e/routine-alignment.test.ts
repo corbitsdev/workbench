@@ -28,7 +28,7 @@
 // Approval of the `workflow_deploy` *tool call* itself (the `ask`-gated
 // step a real Myra turn would hit before ever reaching the deploy route)
 // is a runtime-approval concern exercised elsewhere; scenario 4 below
-// calls the deploy route directly, the same way `packages/hub-client`'s
+// calls the deploy route directly, the same way `packages/seeding`'s
 // seed and CL-7361's own route tests do.
 import { describe, test } from "bun:test";
 

@@ -16,7 +16,7 @@ import { listAgentDefinitions, type AgentDefinition } from "./agents-api";
 
 export const MYRA_WORKBENCH_TITLE = "Myra";
 
-/** The seeded workflow asset backing Myra (`packages/hub-client/src/seed.ts`
+/** The seeded workflow asset backing Myra (`packages/seeding/src/seed.ts`
  * deploys it as `assistant`, stamped with catalog displayName "Myra"). A
  * chat's `definitionId` names this deployed definition's row id, never the
  * asset name itself. */

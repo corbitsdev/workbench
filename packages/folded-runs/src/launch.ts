@@ -119,7 +119,7 @@ export type FoldedRunMode = AgentRuntimeConfig["mode"];
  * run config.
  *
  * `ollamaOfferingIds` names every offering whose provider row is
- * literally `"ollama"` (`@corbits/hub-client`'s `CATALOG_SEEDS.ollama`) —
+ * literally `"ollama"` (`@corbits/seeding`'s `CATALOG_SEEDS.ollama`) —
  * the same identity `quirksForDeployment` keys its own override on
  * (`@corbits/inference-catalog`'s `ollama-context-defaults.ts`). A
  * source whose id names none of them is returned unchanged.

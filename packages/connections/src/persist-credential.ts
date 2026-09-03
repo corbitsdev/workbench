@@ -17,7 +17,7 @@
 import {
   PROVIDER_TEST_CONFIG,
   type SupportedCredentialProvider,
-} from "@workbench/hub-client";
+} from "./credential-test";
 import {
   ensureCredential,
   ensureProvider,

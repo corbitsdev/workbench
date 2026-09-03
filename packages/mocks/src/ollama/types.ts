@@ -1,7 +1,7 @@
 import { type } from "arktype";
 
 // Ollama's own `/api/show` capability vocabulary — the same strings
-// `@workbench/hub-client`'s `OLLAMA_CAPABILITY_MAP` translates from. A
+// `@workbench/connections`'s `OLLAMA_CAPABILITY_MAP` translates from. A
 // catalogue entry scripts these directly so model-selection logic
 // (`preferCompletionCapable`, capability probing) is testable against the
 // exact values the real instance would answer, with no translation layer

@@ -64,5 +64,4 @@ Naming conventions for this repository's packages:
   package is one of a family (`-agent`, `-tool`).
 - `@workbench/*` is a legacy scope being migrated to `@corbits/*` package
   by package; a handful of packages still carry it (`access-policy`,
-  `cli`, `connections`, `echo`, `hub-client`, `onboarding`). New packages
-  never use it.
+  `connections`, `onboarding`). New packages never use it.

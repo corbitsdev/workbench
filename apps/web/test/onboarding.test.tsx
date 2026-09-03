@@ -13,7 +13,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   OLLAMA_PLACEHOLDER_SECRET,
   supportedCredentialProviders,
-} from "@workbench/hub-client/credential-test";
+} from "@workbench/connections/credential-test";
 
 import { App } from "../src/app";
 import { NavigationProvider } from "../src/navigation";
@@ -62,7 +62,7 @@ const signedIn: SessionState = {
 describe("CREDENTIAL_PROVIDERS", () => {
   // ProviderPicker (onboarding-page.tsx) renders one card per entry here —
   // this is the data the cards are built from, so covering it covers what
-  // actually shows up: one card per `@workbench/hub-client` provider the
+  // actually shows up: one card per `@workbench/connections` provider the
   // hub can actually test a credential against, each with a distinct
   // honest one-liner and a real key-console link. Compared against
   // `supportedCredentialProviders()` directly, not a second hand-copied

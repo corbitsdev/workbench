@@ -287,7 +287,7 @@ import {
   createPresenceRoutes,
   type PresenceRoomKey,
 } from "@corbits/presence";
-import { supportedCredentialProviders } from "@workbench/hub-client";
+import { supportedCredentialProviders } from "@workbench/connections/credential-test";
 import { createGitWorkflowPusher } from "@corbits/seeding";
 import { createHubAPI } from "@corbits/hub-api-client";
 import {
@@ -1300,7 +1300,7 @@ export async function createHub(config: HubConfig) {
   // Mounted outside the tenant prefix — the sidecar reaches it as a
   // plain inference endpoint, never through tenant-scoped auth, the
   // same way it reaches a real provider's API. Pinned by the heartbeat
-  // and workbench-digest workflows' seeds (`@corbits/hub-client`), whose
+  // and workbench-digest workflows' seeds (`@corbits/seeding`), whose
   // agents never produce text. `config.baseUrl` (not `localhost`) is
   // what makes the URL usable from a sidecar on another machine.
   app.route("/api/chat/noop-inference", createNoopInferenceRoutes());

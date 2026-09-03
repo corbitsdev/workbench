@@ -29,7 +29,6 @@
     "@intx/hub-common": "0.3.0",
     "@intx/log": "0.3.0",
     "@intx/types": "workspace:*",
-    "@workbench/hub-client": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "hono": "catalog:",

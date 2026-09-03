@@ -46,7 +46,7 @@ import { templateReposSettingsPatch } from "@workbench/templates/settings";
 // client failure both carry provider/internal detail (a rejected repo id,
 // an HTTP status line) that a person pasting a token never needs to read —
 // the CL-6360 idiom this route follows throughout via
-// `@workbench/hub-client`'s `makeErrorEnvelope`: log the real cause behind
+// `@corbits/error-sink`'s `makeErrorEnvelope`: log the real cause behind
 // a `refId`, answer with one honest, actionable `userMessage`.
 const REPOS_UNREADABLE_MESSAGE =
   "Couldn't read your GitHub repositories. Try reconnecting.";

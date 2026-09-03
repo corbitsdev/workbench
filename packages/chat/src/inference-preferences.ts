@@ -18,7 +18,7 @@ import {
   type ResolvedOffering,
 } from "@intx/db";
 import type { InferencePreference } from "@intx/agent";
-import { preferCompletionCapable } from "@workbench/hub-client/model-capability";
+import { preferCompletionCapable } from "@workbench/connections/model-capability";
 
 /** Reads back the provider names a tenant (or an ancestor it inherits
  * catalog rows from) actually has a usable credential for. */

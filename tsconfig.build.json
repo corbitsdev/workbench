@@ -77,9 +77,6 @@
       "path": "./packages/hub-api-client/tsconfig.src.json"
     },
     {
-      "path": "./packages/hub-client/tsconfig.src.json"
-    },
-    {
       "path": "./packages/icons/tsconfig.src.json"
     },
     {
@@ -87,12 +84,6 @@
     },
     {
       "path": "./packages/inference-catalog/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/inference-settings/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/insights/tsconfig.src.json"
     },
     {
       "path": "./packages/interaction-tools/tsconfig.src.json"
@@ -129,9 +120,6 @@
     },
     {
       "path": "./packages/presence/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/provider-pricing/tsconfig.src.json"
     },
     {
       "path": "./packages/reddit-tools/tsconfig.src.json"

@@ -18,13 +18,13 @@ a real inference provider wired up end to end.
   [README.md](../README.md#running-locally) for the `brew install` line
 - `git` on your `PATH` — the onboarding connect flow pushes the default
   workflow definitions into the hub over git smart-HTTP
-  (`packages/hub-client/src/workflow-push.ts`'s `createGitWorkflowPusher`
+  (`packages/seeding/src/workflow-push.ts`'s `createGitWorkflowPusher`
   shells out to the system `git` binary; it fails loud with an install
   hint if `git` isn't found)
 - A real API key for the provider you want to connect (this walkthrough
   uses OpenRouter's OAuth connect, which needs no key of your own to
   paste — see below — but any of the providers in
-  [`packages/hub-client/src/catalog-seed-data.ts`](../packages/hub-client/src/catalog-seed-data.ts)
+  [`packages/seeding/src/catalog-seed-data.ts`](../packages/seeding/src/catalog-seed-data.ts)
   works the same way with a pasted key)
 
 ## 1. Bring up a clean stack
@@ -83,12 +83,12 @@ Either path:
 
 1. proves your key or exchanged token with a real, free call against the
    provider's own auth-gated endpoint (`testProviderCredential` —
-   `packages/hub-client/src/credential-test.ts`) before storing anything;
+   `packages/connections/src/credential-test.ts`) before storing anything;
 2. plants it as a credential on your bench alongside that provider's
    curated model catalog;
 3. deploys and (unlike the OAuth callback's own fast half) confirms every
    default workflow the platform ships: **echo**, **assistant**, and
-   **workbench-digest** (`packages/hub-client/src/seed.ts`'s
+   **workbench-digest** (`packages/seeding/src/seed.ts`'s
    `DEFAULT_WORKFLOWS`).
 
 Expect the page to show a short "setting up your workbench" wait while
@@ -122,7 +122,7 @@ Back in Settings → Connections, the provider you connected shows as
 (`GET /api/tenants/:id/credentials`) the same way
 `packages/settings-ui/src/connections-status.ts`'s `connectorStatus`
 does — the credential named `<provider>-default`
-(`inferenceCredentialName`, `packages/hub-client/src/seed.ts`), `status:
+(`inferenceCredentialName`, `packages/seeding/src/seed.ts`), `status:
 "active"`.
 
 That's the onboard → connect leg, proven with your own real key end to

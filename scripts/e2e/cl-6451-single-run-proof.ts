@@ -50,7 +50,7 @@ import {
 import {
   OLLAMA_PLACEHOLDER_SECRET,
   ollamaOpenAICompatBaseURL,
-} from "../../packages/hub-client/src/credential-test.ts";
+} from "../../packages/connections/src/credential-test.ts";
 import {
   api,
   e2eDatabaseUrl,

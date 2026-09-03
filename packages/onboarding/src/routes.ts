@@ -12,7 +12,7 @@ import type { CredentialCipher } from "@intx/types";
 import {
   supportedCredentialProviders,
   type SupportedCredentialProvider,
-} from "@workbench/hub-client";
+} from "@workbench/connections/credential-test";
 import {
   inferenceCredentialName,
   SETUP_AGENT_ASSET_NAME,

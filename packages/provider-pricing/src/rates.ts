@@ -1,4 +1,4 @@
-import type { SupportedCredentialProvider } from "@workbench/hub-client/credential-test";
+import type { SupportedCredentialProvider } from "@workbench/connections/credential-test";
 
 import type { CatalogModelName } from "./catalog-models";
 import type { ModelPrice, RateTier, TokenRates } from "./types";

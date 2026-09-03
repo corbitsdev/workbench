@@ -23,7 +23,7 @@ import {
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { hasUsableModel } from "@corbits/inference-settings";
 import { makeErrorEnvelope, reportError } from "@corbits/error-sink";
-import { OLLAMA_PLACEHOLDER_SECRET } from "@workbench/hub-client";
+import { OLLAMA_PLACEHOLDER_SECRET } from "./credential-test";
 import {
   ensureCredential,
   ensureProvider,

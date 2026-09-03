@@ -92,7 +92,7 @@ export async function packToolPackageTarball(
 // nondeterministically — a bundler-internal "Unexpected reading file"
 // on a package this exact process had already loaded fine moments
 // earlier — once the calling process has itself transpiled a large
-// module graph (this monorepo's own onboarding/hub-client/e2e code, in
+// module graph (this monorepo's own onboarding/seeding/e2e code, in
 // particular) and other `bun` processes (a spawned hub, a spawned
 // sidecar) are alive alongside it. Shelling out to the `bun build` CLI
 // as an isolated subprocess sidesteps whatever shared, reentrant

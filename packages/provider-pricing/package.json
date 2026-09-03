@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@intx/inference-catalog": "0.3.0",
-    "@workbench/hub-client": "workspace:*"
+    "@workbench/connections": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

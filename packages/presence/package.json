@@ -17,7 +17,6 @@
   "dependencies": {
     "@corbits/error-sink": "workspace:*",
     "@intx/hub-api": "workspace:*",
-    "@workbench/hub-client": "workspace:*",
     "arktype": "catalog:",
     "hono": "^4.11.9",
     "y-protocols": "^1.0.7",
