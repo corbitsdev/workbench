@@ -754,6 +754,13 @@ describe("Composer stop affordance (CL-7201)", () => {
     expect(actions?.lastElementChild).toBe(submitActions);
   });
 
+  test("gives Stop and Send distinct accessible names while both are visible", () => {
+    mountStoppable(true, () => undefined);
+
+    expect(stopButton().getAttribute("aria-label")).toBe("Stop");
+    expect(sendButton().getAttribute("aria-label")).toBe("Send");
+  });
+
   test("keeps queued sends available while Stop is visible", async () => {
     const sent: ComposerSendPayload[] = [];
     mountStoppable(
