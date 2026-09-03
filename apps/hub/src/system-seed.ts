@@ -29,11 +29,7 @@ import {
   PLACEHOLDER_CATALOG_API_KEY,
   type ModelSource,
 } from "@workbench/hub-client";
-import {
-  createHubAPI,
-  signIn,
-  type ApiCall,
-} from "@corbits/hub-api-client";
+import { createHubAPI, signIn, type ApiCall } from "@corbits/hub-api-client";
 import { findPersonalTenant } from "@workbench/onboarding";
 
 const log = getLogger(["hub", "system-seed"]);
