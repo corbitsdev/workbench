@@ -84,6 +84,10 @@ re-seeds idempotently. `ANTHROPIC_API_KEY` is the one optional line
 worth setting before boot — with it, seeding plants a real credential
 and the catalog is actually launchable; without it, everything above
 still runs, but inference errors until you set it and restart the hub.
+Alongside that key, `ANTHROPIC_MODEL` optionally selects which curated
+Anthropic model the seeded workflows use and Settings shows first; it defaults to
+`claude-sonnet-5`. The boot seed is authoritative, so a restart restores
+that configured model after a manual catalog reorder.
 
 Leaving `ANTHROPIC_API_KEY` unset doesn't just apply to the administrator
 account: anyone who signs up gets a personal bench with no default routines

@@ -35,6 +35,12 @@ API — never discovered at runtime:
   open-weight relay — is seeded with an empty list, said out loud in the
   seed log, because a guessed capability routes real work to a model that
   cannot do it.
+- **`ANTHROPIC_MODEL`** — alongside `ANTHROPIC_API_KEY`, optionally selects a model from the curated
+  Anthropic seed for boot-time workflow deployment. `seedCatalog` gives
+  that model the provider's first offering priority, so runtime resolution
+  and Settings agree. When unset, the first declared Anthropic model,
+  `claude-sonnet-5`, remains the default. Boot seeding is authoritative:
+  reseeding restores the configured order after a manual priority change.
 - **`packages/connections/src/credential-test.ts` (`PROVIDER_TEST_CONFIG`)** —
   a second, independent hardcoded table: each provider's free auth-gated
   probe endpoint, used to prove a freshly-entered key works before it is
