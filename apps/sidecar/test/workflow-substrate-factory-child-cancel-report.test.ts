@@ -1,6 +1,8 @@
 // Force handle.cancel to reject during parent abort and prove the
 // fire-and-forget call reports through reportError instead of becoming
-// an unhandled rejection.
+// an unhandled rejection. Injected via SidecarRunChildDeps test seams
+// rather than bun's `mock.module`, whose process-wide registry swap
+// cannot be undone for later files in the same `bun test` process.
 
 import { afterAll, beforeAll, expect, mock, test } from "bun:test";
 import fs from "node:fs";
@@ -20,7 +22,6 @@ import type {
   WorkflowRunWorkflowProcessPrincipal,
 } from "@intx/hub-sessions/substrate";
 import type { KeyPair } from "@intx/types/runtime";
-import * as workflow from "@intx/workflow";
 import {
   createInMemoryRepoStore,
   createInMemoryScheduler,
@@ -28,6 +29,8 @@ import {
   step,
 } from "@intx/workflow";
 import type { RunChildWorkflow } from "@intx/workflow-host";
+
+import { createSidecarRunChild } from "../src/workflow-substrate-factory/child-runtime";
 
 const REF = "refs/heads/main";
 const DEPLOYMENT_ID = "deployment-cancel-report";
@@ -63,22 +66,6 @@ test("a cancel rejection during abort is reported and is not unhandled", async (
     (_error: unknown, _context: unknown) => "ref-test",
   );
 
-  mock.module("@intx/workflow", () => ({
-    ...workflow,
-    runtimeRun: () => ({
-      runId: "run-child-forced-cancel",
-      complete: new Promise(() => undefined),
-      cancel: cancelMock,
-      signal: async () => undefined,
-    }),
-  }));
-  mock.module("@corbits/error-sink", () => ({
-    reportError: reportErrorMock,
-  }));
-
-  const { createSidecarRunChild } =
-    await import("../src/workflow-substrate-factory/child-runtime");
-
   const dataDir = await fs.promises.mkdtemp(
     path.join(os.tmpdir(), "run-child-cancel-report-"),
   );
@@ -104,6 +91,13 @@ test("a cancel rejection during abort is reported and is not unhandled", async (
       clock: () => new Date(),
     }),
     invokeStep: async () => ({ output: { done: true } }),
+    runtimeRun: () => ({
+      runId: "run-child-forced-cancel",
+      complete: new Promise(() => undefined),
+      cancel: cancelMock,
+      signal: async () => undefined,
+    }),
+    reportError: reportErrorMock,
   });
 
   const agent = defineAgent({
@@ -146,6 +140,5 @@ test("a cancel rejection during abort is reported and is not unhandled", async (
     expect(unhandled).toEqual([]);
   } finally {
     process.off("unhandledRejection", onUnhandled);
-    mock.restore();
   }
 });

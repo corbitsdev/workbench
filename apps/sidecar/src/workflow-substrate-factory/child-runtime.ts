@@ -50,24 +50,17 @@ import {
   type StepInferenceSourceTable,
 } from "./config";
 
-function reportChildRuntimeRejection(
-  error: unknown,
-  operation: string,
-  childRunId: string,
-): void {
-  reportError(error, {
-    operation,
-    extra: { childRunId },
-  });
-}
-
 function fireAndForget(
   work: Promise<unknown>,
   operation: string,
   childRunId: string,
+  report: typeof reportError,
 ): void {
   void work.catch((error: unknown) => {
-    reportChildRuntimeRejection(error, operation, childRunId);
+    report(error, {
+      operation,
+      extra: { childRunId },
+    });
   });
 }
 
@@ -176,6 +169,20 @@ export interface SidecarRunChildDeps {
    * a monotonic counter combined with a random suffix.
    */
   newId?: (prefix: string) => string;
+  /**
+   * Test seam only — no production caller ever sets this. Defaults to
+   * `@intx/workflow`'s `runtimeRun`. Exists because bun's `mock.module`
+   * replaces a module process-wide and cannot be undone for later files
+   * in the same `bun test` process.
+   */
+  runtimeRun?: typeof runtimeRun;
+  /**
+   * Test seam only — no production caller ever sets this. Defaults to
+   * `@corbits/error-sink`'s `reportError`. Paired with `runtimeRun` so a
+   * cancel-rejection test can observe reports without a process-wide
+   * module swap.
+   */
+  reportError?: typeof reportError;
 }
 
 /**
@@ -206,6 +213,8 @@ export function createSidecarRunChild(
   const directors = deps.directors ?? createDefaultDirectorRegistry();
   const clock = deps.clock ?? defaultClock;
   const newId = deps.newId ?? defaultNewId;
+  const startRun = deps.runtimeRun ?? runtimeRun;
+  const report = deps.reportError ?? reportError;
   // The in-process child runs under real supervisor authority; its
   // control-plane cancel (`CancelRequested`) must be signed by a supervisor
   // principal, which the kind handler requires and the substrate authorizes
@@ -256,7 +265,7 @@ export function createSidecarRunChild(
       childRunId,
     });
     try {
-      const handle = runtimeRun(rewrittenDefinition, env, {
+      const handle = startRun(rewrittenDefinition, env, {
         runId: childRunId,
         triggerPayload: input,
       });
@@ -271,6 +280,7 @@ export function createSidecarRunChild(
           handle.cancel("supervisor-operator", "parent cancelled"),
           "sidecar.child-runtime.cancel",
           childRunId,
+          report,
         );
       };
       if (signal.aborted) {
@@ -329,6 +339,8 @@ export function createSidecarSpawnSuspendableChild(
   const directors = deps.directors ?? createDefaultDirectorRegistry();
   const clock = deps.clock ?? defaultClock;
   const newId = deps.newId ?? defaultNewId;
+  const startRun = deps.runtimeRun ?? runtimeRun;
+  const report = deps.reportError ?? reportError;
   // The in-process body child runs under real supervisor authority; its
   // control-plane cancel (`CancelRequested`) must be signed by a supervisor
   // principal, which the kind handler requires and the substrate authorizes
@@ -481,7 +493,7 @@ export function createSidecarSpawnSuspendableChild(
     // silently (a re-park does not re-fire onPark), and the caller relays
     // the grant via resume on the correlation it recovered from its own
     // log. On a fresh spawn, seed the run with the event's trigger payload.
-    const handle = runtimeRun(
+    const handle = startRun(
       rewrittenDefinition,
       env,
       resumeFromEvents !== undefined
@@ -500,6 +512,7 @@ export function createSidecarSpawnSuspendableChild(
         handle.cancel("supervisor-operator", "parent cancelled"),
         "sidecar.child-runtime.cancel",
         childRunId,
+        report,
       );
     };
     if (signal.aborted) {
@@ -525,6 +538,7 @@ export function createSidecarSpawnSuspendableChild(
           signalChannel.stop(),
           "sidecar.child-runtime.signal-channel-stop",
           childRunId,
+          report,
         );
         notify();
       });
@@ -546,6 +560,7 @@ export function createSidecarSpawnSuspendableChild(
                 ),
                 "sidecar.child-runtime.cancel",
                 childRunId,
+                report,
               );
               throw event.error;
             }
