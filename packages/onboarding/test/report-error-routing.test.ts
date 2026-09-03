@@ -234,15 +234,28 @@ describe("plant-env-credentials.ts catches report through reportError and never 
 
 describe("recentlyConnectedCredential reports through reportError and still finds nothing", () => {
   test("a hub failure during duplicate-callback recovery reports operation + userId and still ends as state_expired", async () => {
-    // A malformed principals page that parseAs will reject, carrying a
-    // token-shaped string so this test can prove the recovery catch never
-    // interpolates the raw cause into deps.log (the same redaction bar
-    // plant-env-credentials.ts holds — CL-7255).
+    // A principals page arktype will reject, with the secret in a union
+    // field so the parse summary echoes it. `not.toContain` is otherwise a
+    // tautology — a type-mismatch summary is `was string` and never
+    // mentions the value (CL-7255).
     const SECRET = "sk-or-v1-thisisafakesecretvalue";
     const logs: string[] = [];
     const hub = new Hono();
     hub.get("/api/me/principals", (c) =>
-      c.json({ data: SECRET, nextCursor: null }),
+      c.json({
+        data: [
+          {
+            principalId: "prn_1",
+            tenantId: "ten_1",
+            tenantName: "user_1's workbench",
+            tenantSlug: "user-1-user1",
+            kind: SECRET,
+            status: "active",
+            roles: [],
+          },
+        ],
+        nextCursor: null,
+      }),
     );
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
@@ -287,7 +300,10 @@ describe("recentlyConnectedCredential reports through reportError and still find
       // reportError is the one place the unredacted cause may travel —
       // error-sink redacts before anything reaches a log sink.
       expect(cause).toBeInstanceOf(Error);
-      expect(logs.join("\n")).not.toContain(SECRET);
+      const causeMessage =
+        cause instanceof Error ? cause.message : String(cause);
+      expect(causeMessage).toContain(SECRET);
+      expect(JSON.stringify({ logs, context })).not.toContain(SECRET);
     } finally {
       server.stop(true);
     }
