@@ -11,7 +11,9 @@ import {
 } from "./streaming-reply";
 
 const HUMAN = { address: "prn_sawyer", handle: "Sawyer" };
+const ADA = { address: "prn_ada@acme.example", handle: "Ada" };
 const MYRA = { address: "myra@agents.example", handle: "Myra" };
+const SCOUT = { address: "scout@agents.example", handle: "Scout" };
 
 function agentEvent(inner: unknown) {
   return { eventType: "chat.agent", data: inner };
@@ -631,6 +633,26 @@ describe("typingAgentNames", () => {
       ),
     ).toEqual([]);
   });
+
+  test("a principal@domain human @mention of Scout among two agents names Scout", () => {
+    expect(
+      typingAgentNames(
+        awaiting(""),
+        [ADA, MYRA, SCOUT],
+        lastHumanMessageParts([
+          {
+            sender: { address: ADA.address },
+            parts: [{ kind: "text", text: "hey @Scout take a look" }],
+          },
+          {
+            sender: { address: SCOUT.address },
+            parts: [{ kind: "text", text: "stream" }],
+            streaming: true,
+          },
+        ]),
+      ),
+    ).toEqual(["Scout"]);
+  });
 });
 
 describe("lastHumanMessageParts", () => {
@@ -638,15 +660,15 @@ describe("lastHumanMessageParts", () => {
     expect(
       lastHumanMessageParts([
         {
-          sender: { address: "prn_sawyer" },
+          sender: { address: "prn_ada@acme.example" },
           parts: [{ kind: "text", text: "older" }],
         },
         {
-          sender: { address: "prn_sawyer" },
-          parts: [{ kind: "text", text: "hey @jimmy" }],
+          sender: { address: "prn_ada@acme.example" },
+          parts: [{ kind: "text", text: "hey @Scout" }],
         },
         {
-          sender: { address: "jimmy@agents.example" },
+          sender: { address: "scout@agents.example" },
           parts: [{ kind: "text", text: "on it" }],
         },
         {
@@ -655,7 +677,7 @@ describe("lastHumanMessageParts", () => {
           streaming: true,
         },
       ]),
-    ).toEqual([{ kind: "text", text: "hey @jimmy" }]);
+    ).toEqual([{ kind: "text", text: "hey @Scout" }]);
   });
 
   test("empty timeline means no addressed parts", () => {

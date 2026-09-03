@@ -57,6 +57,19 @@ describe("isToolsUnsupportedInferenceText", () => {
       ),
     ).toBe(false);
   });
+
+  test("does not classify ordinary tool-not-supported connector prose", () => {
+    expect(
+      isToolsUnsupportedInferenceText(
+        "The grep tool is not supported in this sandbox.",
+      ),
+    ).toBe(false);
+    expect(
+      isToolsUnsupportedInferenceText(
+        "The search tool is not supported in this environment.",
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("TOOLS_UNSUPPORTED_CONSUMER_MESSAGE", () => {

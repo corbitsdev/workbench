@@ -1422,6 +1422,57 @@ describe("createChatOrchestrator", () => {
     orchestrator.dispose();
   });
 
+  test("a connector.reply of ordinary tool-not-supported prose stays completed with original text", async () => {
+    const room = fakeRoom();
+    const agentTurns = createInMemoryAgentTurnStore();
+    await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_workbench1",
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      requestMessageIds: ["msg_1"],
+    });
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+      store: {
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
+        ],
+      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
+      events,
+      agentTurns,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    const original = "The grep tool is not supported in this sandbox.";
+    events.emit("agent.event", {
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      sessionId: "ses_1",
+      event: {
+        type: "connector.reply",
+        data: { content: original },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(room.posted).toHaveLength(1);
+    expect(room.posted[0]?.parts).toEqual([{ kind: "text", text: original }]);
+    const [settled] = await agentTurns.listTurns({
+      tenantId: "ten_1",
+      workbenchId: "ins_workbench1",
+    });
+    expect(settled).toMatchObject({
+      status: "completed",
+      replyMessageId: room.posted[0]?.id,
+    });
+
+    orchestrator.dispose();
+  });
+
   test("ignores non-reply events for posting but still bumps activity", async () => {
     const room = fakeRoom();
     const recordActivityCalls: string[] = [];
