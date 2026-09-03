@@ -1056,6 +1056,7 @@ const BlockResponsePayloadWire = type({
       kind: "'question'",
       answer: "string",
       "optionIndex?": "number",
+      notifiedAt: "string | null",
     }),
   );
 export type BlockResponsePayload = typeof BlockResponsePayloadWire.infer;
