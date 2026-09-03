@@ -155,7 +155,7 @@ export class OllamaMock {
   /**
    * The whole mock as a `fetch`-shaped function — `(input, init?)`, the
    * same two-argument shape as global `fetch` and, load-bearingly,
-   * `@workbench/hub-client`'s `FetchLike` (the seam every real caller —
+   * `@corbits/connections`'s `FetchLike` (the seam every real caller —
    * `testProviderCredential`, `fetchOllamaModelCatalog`,
    * `fetchOllamaModelCapabilities` — actually threads a `fetchImpl`
    * through as). A caller passing a bare `Request`

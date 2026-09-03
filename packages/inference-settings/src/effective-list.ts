@@ -5,8 +5,8 @@
 // a plain unit test, no DOM or network stub required.
 
 import type { Capability, ModelInfo, ModelOfferingResponse } from "@intx/types";
-import { PROVIDER_TEST_CONFIG } from "@workbench/hub-client/credential-test";
-import { preferCompletionCapable } from "@workbench/hub-client/model-capability";
+import { PROVIDER_TEST_CONFIG } from "@corbits/connections/credential-test";
+import { preferCompletionCapable } from "@corbits/connections/model-capability";
 
 /**
  * The provider's own display name (e.g. "Ollama (local)", "Opencode Zen")

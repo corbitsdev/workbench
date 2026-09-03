@@ -17,18 +17,20 @@ import { headlineFor } from "../../packages/approvals/src/headline.ts";
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
   createGitWorkflowPusher,
-  createHubAPI,
   DEFAULT_WORKFLOWS,
   seedTenant,
+} from "../../packages/seeding/src/index.ts";
+import {
+  createHubAPI,
   type ApiCall,
-} from "../../packages/hub-client/src/index.ts";
+} from "../../packages/hub-api-client/src/index.ts";
 import {
   findPersonalTenant,
   testAndPersistCredential,
   ensureSeeded,
   modelSourceFor,
 } from "../../packages/onboarding/src/complete-credential.ts";
-import { OLLAMA_PLACEHOLDER_SECRET } from "../../packages/hub-client/src/credential-test.ts";
+import { OLLAMA_PLACEHOLDER_SECRET } from "../../packages/connections/src/credential-test.ts";
 import {
   api,
   e2eDatabaseUrl,

@@ -44,7 +44,7 @@ import {
   envProviderBaseUrlsFrom,
   envProviderKeysFrom,
 } from "@workbench/onboarding";
-import type { SupportedCredentialProvider } from "@workbench/hub-client";
+import type { SupportedCredentialProvider } from "@corbits/connections/credential-test";
 
 const HTTP_URL = /^https?:\/\/.+$/;
 
@@ -268,11 +268,10 @@ const SEED_MODEL_PROVIDER = "anthropic";
 const SEED_MODEL = "claude-sonnet-5";
 const SEED_MODEL_BASE_URL = "https://api.anthropic.com";
 
-// Matches `workbench setup`/`workbench seed`'s own defaults
-// (packages/cli/src/config.ts) exactly, so a zero-.env-edit local
-// checkout that seeds its admin account through `bun run dev` also
-// resolves the same operator bench for the env-key auto-plant with no
-// extra configuration.
+// Matches boot-time seeding's own defaults (`system-seed.ts`) exactly,
+// so a zero-.env-edit local checkout that seeds its admin account
+// through `bun run dev` also resolves the same operator bench for the
+// env-key auto-plant with no extra configuration.
 const DEFAULT_PLANT_ADMIN_EMAIL = "alice@example.com";
 const DEFAULT_PLANT_ADMIN_PASSWORD = "password123";
 const DEFAULT_PLANT_ORG_SLUG = "workbench";

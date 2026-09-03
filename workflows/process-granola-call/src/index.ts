@@ -7,7 +7,7 @@
 // one run per unprocessed call — never scheduled directly, and never
 // exposed as an independent Routine (see this package's `automatable:
 // false` in `package.json`'s `corbits.workflow` block, mirrored into
-// `@corbits/workflow-catalog`).
+// `@corbits/workflows`).
 //
 // This package is installable data. It imports only published platform
 // packages, and nothing imports it statically: a host publishes the

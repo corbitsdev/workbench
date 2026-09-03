@@ -37,15 +37,13 @@ import {
   type HubHandle,
   type SpawnedApp,
 } from "../harness.ts";
-import {
-  createGitWorkflowPusher,
-  createHubAPI,
-} from "../../../packages/hub-client/src/index.ts";
+import { createGitWorkflowPusher } from "../../../packages/seeding/src/index.ts";
+import { createHubAPI } from "../../../packages/hub-api-client/src/index.ts";
 import {
   ensureSeeded,
   testAndPersistCredential,
 } from "../../../packages/onboarding/src/complete-credential.ts";
-import { OLLAMA_PLACEHOLDER_SECRET } from "../../../packages/hub-client/src/credential-test.ts";
+import { OLLAMA_PLACEHOLDER_SECRET } from "../../../packages/connections/src/credential-test.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..", "..", "..");
 const WEB_DIR = path.join(REPO_ROOT, "apps", "web");
@@ -1027,6 +1025,117 @@ async function run(): Promise<void> {
           detail:
             "chat neither loaded normally nor showed the documented error state",
         };
+      },
+    );
+
+    // --- Step 11 (CL-7366): the routines page's target picker must offer
+    // at least one real option (CL-7351 target discovery) and creation
+    // must stay blocked until one is picked (CL-7355) — the panel has no
+    // Save button, it autosaves on blur once a target is chosen.
+    await step(
+      () => page,
+      "11-routine-target-picker-blocks-until-picked",
+      async () => {
+        await page.goto(`${webBaseUrl}/routines`, {
+          waitUntil: "domcontentloaded",
+          timeout: 20_000,
+        });
+        await page.evaluate(() => {
+          const button = Array.from(document.querySelectorAll("button")).find(
+            (b) => (b.textContent ?? "").includes("New routine"),
+          );
+          (button as HTMLButtonElement | undefined)?.click();
+        });
+        await page.waitForSelector("#routine-panel-target", {
+          timeout: 15_000,
+        });
+        const optionCount = await countMatching(
+          page,
+          "#routine-panel-target option[value]:not([value=''])",
+        );
+        if (optionCount < 1) {
+          return {
+            status: "fail",
+            detail: `target picker rendered ${optionCount} options; expected >= 1`,
+          };
+        }
+
+        const name = `Walkthrough routine ${Date.now()}`;
+        await page.type("#routine-panel-name", name);
+        await page.keyboard.press("Tab"); // blur with no target picked yet
+        // A fixed grace period, not a race against the positive wait below:
+        // an asymmetric short/long timeout pair invites a flaky false pass
+        // (this negative wait could elapse with no autosave firing purely
+        // because it's short, even if the blocked-save bug exists). Poll
+        // for the same 15s window as the positive assertion, and read
+        // `role="status"` inside the panel — not `document.body` — so a
+        // stale "Saved" toast elsewhere on the page can't false-positive.
+        await Bun.sleep(1_500);
+        const savedBeforePick = await page
+          .waitForFunction(
+            () =>
+              document
+                .querySelector(".shell-routine-pane")
+                ?.querySelector('[role="status"]')
+                ?.textContent?.includes("Saved") ?? false,
+            { timeout: 13_500 },
+          )
+          .then(() => true)
+          .catch(() => false);
+
+        await page.evaluate(() => {
+          const select = document.querySelector<HTMLSelectElement>(
+            "#routine-panel-target",
+          );
+          const option = select?.querySelector<HTMLOptionElement>(
+            "option[value]:not([value=''])",
+          );
+          if (select && option) {
+            select.value = option.value;
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+        });
+        await page.type("#routine-panel-name", " picked");
+        await page.keyboard.press("Tab");
+        const saved = await page
+          .waitForFunction(
+            () =>
+              document
+                .querySelector(".shell-routine-pane")
+                ?.querySelector('[role="status"]')
+                ?.textContent?.includes("Saved") ?? false,
+            { timeout: 15_000 },
+          )
+          .then(() => true)
+          .catch(() => false);
+        if (savedBeforePick || !saved) {
+          return {
+            status: "fail",
+            detail: `savedBeforePick=${String(savedBeforePick)} saved=${String(saved)} — expected blocked-then-created`,
+          };
+        }
+
+        await page.goto(`${webBaseUrl}/routines`, {
+          waitUntil: "domcontentloaded",
+          timeout: 20_000,
+        });
+        const rowAppeared = await page
+          .waitForFunction(
+            (needle: string) => document.body.textContent?.includes(needle),
+            { timeout: 15_000 },
+            `${name} picked`,
+          )
+          .then(() => true)
+          .catch(() => false);
+        return rowAppeared
+          ? {
+              status: "pass",
+              detail: `target picker offered ${optionCount} option(s); creation stayed blocked until one was picked, then autosaved and now lists in /routines`,
+            }
+          : {
+              status: "fail",
+              detail: `"${name} picked" never appeared in the routines list after saving`,
+            };
       },
     );
   } finally {

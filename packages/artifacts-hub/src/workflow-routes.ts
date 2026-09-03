@@ -41,7 +41,7 @@ import {
   type SerializedArtifactListItem,
 } from "@corbits/artifacts";
 import { Hono } from "hono";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 import type {
   ResolvedWorkflowRunScope,

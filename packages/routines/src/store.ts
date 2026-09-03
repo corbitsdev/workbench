@@ -39,7 +39,7 @@ export interface RoutineRow {
   readonly id: string;
   readonly tenantId: string;
   readonly name: string;
-  readonly definitionId: string;
+  readonly definitionAssetId: string;
   readonly trigger: RoutineTriggerT;
   readonly scope: RoutineScope;
   readonly input: Record<string, unknown>;
@@ -61,7 +61,7 @@ export interface RoutineRow {
 export interface CreateRoutineInput {
   readonly tenantId: string;
   readonly name: string;
-  readonly definitionId: string;
+  readonly definitionAssetId: string;
   readonly trigger: RoutineTriggerT;
   readonly scope: RoutineScope;
   readonly input: Record<string, unknown>;
@@ -95,6 +95,16 @@ export type CreateRoutineIfAbsentResult =
 
 export interface UpdateRoutineInput {
   readonly name?: string;
+  /**
+   * Retargets the routine to a different workflow asset (CL-7359) — the
+   * same single UPDATE as every other field here, so a launch that reads
+   * the row once (`resolveLaunchableDefinition` at fire time,
+   * `./target.ts`) never sees a half-applied retarget. The route
+   * validates this through `resolveLaunchableDefinition` before it ever
+   * reaches the store (see `./routes.ts`'s `rejectUnlaunchableTarget`) —
+   * see `CreateRoutineInput.definitionAssetId`'s own doc comment.
+   */
+  readonly definitionAssetId?: string;
   readonly trigger?: RoutineTriggerT;
   readonly input?: Record<string, unknown>;
   readonly enabled?: boolean;
@@ -223,7 +233,7 @@ function mapRoutineRow(row: typeof routine.$inferSelect): RoutineRow {
     id: row.id,
     tenantId: row.tenantId,
     name: row.name,
-    definitionId: row.definitionId,
+    definitionAssetId: row.definitionAssetId,
     trigger: row.trigger as RoutineTriggerT,
     scope: row.scope as RoutineScope,
     input: row.input as Record<string, unknown>,
@@ -264,7 +274,7 @@ export function createDrizzleRoutineStore<
           id: generateId("workflowRun"),
           tenantId: input.tenantId,
           name: input.name,
-          definitionId: input.definitionId,
+          definitionAssetId: input.definitionAssetId,
           trigger: input.trigger,
           scope: input.scope,
           input: input.input,
@@ -329,7 +339,7 @@ export function createDrizzleRoutineStore<
           id: generateId("workflowRun"),
           tenantId: input.tenantId,
           name: input.name,
-          definitionId: input.definitionId,
+          definitionAssetId: input.definitionAssetId,
           trigger: input.trigger,
           scope: input.scope,
           input: input.input,
@@ -650,7 +660,7 @@ export function createInMemoryRoutineStore(): RoutineStore {
         id: generateId("workflowRun"),
         tenantId: input.tenantId,
         name: input.name,
-        definitionId: input.definitionId,
+        definitionAssetId: input.definitionAssetId,
         trigger: input.trigger,
         scope: input.scope,
         input: input.input,
@@ -687,7 +697,7 @@ export function createInMemoryRoutineStore(): RoutineStore {
         id: generateId("workflowRun"),
         tenantId: input.tenantId,
         name: input.name,
-        definitionId: input.definitionId,
+        definitionAssetId: input.definitionAssetId,
         trigger: input.trigger,
         scope: input.scope,
         input: input.input,

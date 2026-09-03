@@ -1,5 +1,5 @@
 // Exercises the hub's own wiring: platform routes answering at boot,
-// the echo extension mounted inside the native tenant middleware, and
+// an extension route mounted inside the native tenant middleware, and
 // same-origin static serving. Platform behavior behind the mounted
 // routes belongs to its own packages and is not re-proven here. Booting
 // the hub runs package migrations, so a reachable DATABASE_URL is
@@ -122,15 +122,14 @@ describeIfDb("shutdown", () => {
 });
 
 describeIfDb("extension mounting", () => {
-  test("echo mounts inside the native tenant middleware", async () => {
+  test("chat mounts inside the native tenant middleware", async () => {
     const hub = await bootHub();
 
-    // Anonymous request to the echo route: the platform's tenant
+    // Anonymous request to an extension route: the platform's tenant
     // middleware answers 401 before the extension's handler runs.
-    const gated = await hub.app.request("/api/tenants/some-tenant/echo", {
-      method: "POST",
-      body: "hello",
-    });
+    const gated = await hub.app.request(
+      "/api/tenants/some-tenant/chat/workbenches",
+    );
     expect(gated.status).toBe(401);
     expect(await gated.json()).toEqual({
       error: { code: "unauthorized", message: "Authentication required" },
@@ -138,7 +137,7 @@ describeIfDb("extension mounting", () => {
 
     // The route exists only under the tenant scope; outside it the
     // path falls through to the interface shell.
-    const outside = await hub.app.request("/echo");
+    const outside = await hub.app.request("/chat/workbenches");
     expect(await outside.text()).toBe("<html>shell</html>");
   });
 

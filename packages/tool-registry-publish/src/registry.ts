@@ -38,6 +38,7 @@ export const CORBITS_TOOL_PACKAGE_DIRS: readonly string[] = [
   new URL("../../granola-tools", import.meta.url).pathname,
   new URL("../../manus-tools", import.meta.url).pathname,
   new URL("../../linear-tools", import.meta.url).pathname,
+  new URL("../../workflow-authoring-tools", import.meta.url).pathname,
   // Scout's own artifact-save/list tool bundle (`scoutArtifactTools`) and
   // Jimmy's `gif_search` bundle: each package pins itself in its own
   // `toolPackagePins` (`SCOUT_TOOL_PACKAGE_PINS`, `JIMMY_TOOL_PACKAGE_PINS`),

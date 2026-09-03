@@ -11,7 +11,7 @@
 //   mcp_call({server, tool, arguments}) -- invoke one of those tools.
 //
 // Credentials: each connected server is a `mcp.<slug>` credential
-// handle (`@workbench/connections`'s MCP connector, stored under a
+// handle (`@corbits/connections`'s MCP connector, stored under a
 // `mcp:<slug>` provider row name -- see that package's registry for the
 // provider/credential shape). The slug is dynamic
 // tenant data, unknown at package-publish time, so this package's
@@ -69,7 +69,7 @@ export const MCP_CALL_TOOL = "mcp_call";
  * MCP server binds to (see this file's header comment). Dots, not a
  * colon, so the handle conforms to `@intx/types`' `ToolCredentialHandle`
  * grammar (`/^[a-z0-9][a-z0-9._-]*$/`) -- distinct from the `mcp:<slug>`
- * PROVIDER row naming `@workbench/connections` stores, which has no such
+ * PROVIDER row naming `@corbits/connections` stores, which has no such
  * constraint. */
 export function mcpCredentialHandle(slug: string): string {
   return `mcp.${slug}`;

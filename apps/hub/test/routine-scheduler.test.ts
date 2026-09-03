@@ -24,7 +24,7 @@ describe("tickRoutineScheduler", () => {
     const routine = await store.createRoutine({
       tenantId: "t1",
       name: "hourly",
-      definitionId: "def_1",
+      definitionAssetId: "def_1",
       trigger: CRON,
       scope: "bench",
       input: { x: 1 },
@@ -39,7 +39,7 @@ describe("tickRoutineScheduler", () => {
       {
         store,
         launcher: launcher(async (input) => {
-          launches.push(input.definitionId);
+          launches.push(input.definitionAssetId);
           return { runId: "run_1" };
         }),
       },
@@ -57,7 +57,7 @@ describe("tickRoutineScheduler", () => {
     const routine = await store.createRoutine({
       tenantId: "t1",
       name: "inbox-only task",
-      definitionId: "def_inbox_only",
+      definitionAssetId: "def_inbox_only",
       trigger: CRON,
       scope: "bench",
       input: { agent: "wfd_agent", prompt: "Do it" },
@@ -71,7 +71,7 @@ describe("tickRoutineScheduler", () => {
       {
         store,
         launcher: launcher(async (input) => {
-          launches.push(input.definitionId);
+          launches.push(input.definitionAssetId);
           return { runId: "run_task_1" };
         }),
         deliveryWorkbenchRequired: async () => false,
@@ -88,7 +88,7 @@ describe("tickRoutineScheduler", () => {
     const routine = await store.createRoutine({
       tenantId: "t1",
       name: "hourly digest",
-      definitionId: "def_1",
+      definitionAssetId: "def_1",
       trigger: CRON,
       scope: "bench",
       input: {},
@@ -118,7 +118,7 @@ describe("tickRoutineScheduler", () => {
     const routine = await store.createRoutine({
       tenantId: "t1",
       name: "flaky",
-      definitionId: "def_1",
+      definitionAssetId: "def_1",
       trigger: CRON,
       scope: "bench",
       input: {},
@@ -158,7 +158,7 @@ describe("tickRoutineScheduler", () => {
     const routine = await store.createRoutine({
       tenantId: "t1",
       name: "retry",
-      definitionId: "def_1",
+      definitionAssetId: "def_1",
       trigger: CRON,
       scope: "bench",
       input: {},
@@ -203,7 +203,7 @@ describe("tickRoutineScheduler", () => {
     const routine = await store.createRoutine({
       tenantId: "t1",
       name: "dead",
-      definitionId: "def_1",
+      definitionAssetId: "def_1",
       trigger: CRON,
       scope: "bench",
       input: {},
@@ -258,7 +258,7 @@ describe("createRoutineScheduler's setInterval wiring", () => {
     await store.createRoutine({
       tenantId: "t1",
       name: "hourly",
-      definitionId: "def_1",
+      definitionAssetId: "def_1",
       trigger: CRON,
       scope: "bench",
       input: {},
@@ -294,7 +294,7 @@ describe("createRoutineScheduler's setInterval wiring", () => {
     await store.createRoutine({
       tenantId: "t1",
       name: "hourly",
-      definitionId: "def_1",
+      definitionAssetId: "def_1",
       trigger: CRON,
       scope: "bench",
       input: {},

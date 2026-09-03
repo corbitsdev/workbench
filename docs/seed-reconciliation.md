@@ -2,7 +2,7 @@
 
 How workbench's automatic seeding converges on the shipped defaults
 without ever fighting a member. Every seed pass — a hub boot, an
-onboarding run, a `workbench seed` — must satisfy four properties:
+onboarding run, boot-time seeding — must satisfy four properties:
 
 1. **Idempotent restart** — re-running creates nothing twice.
 2. **Content convergence** — a changed shipped default updates the
@@ -47,9 +47,9 @@ answers 503 — never a 404, which would read as "no such template".
 - A member-created artifact sharing a template's title is never touched
   and never duplicated.
 
-## Default routine presets (onboarding / `workbench seed`)
+## Default routine presets (onboarding / boot-time seeding)
 
-`ensureDefaultRoutines` (`packages/hub-client/src/default-routines.ts`)
+`ensureDefaultRoutines` (`packages/seeding/src/default-routines.ts`)
 plants `DEFAULT_ROUTINE_PRESETS` through `POST /routines` with a
 `presetKey`, backed by `@corbits/routines`' `createRoutineIfAbsent`.
 
@@ -66,9 +66,9 @@ plants `DEFAULT_ROUTINE_PRESETS` through `POST /routines` with a
 - A routine whose preset no longer ships is deleted only while pristine
   (`updatedAt` still equals `createdAt`); a member-touched row is kept.
 
-## Default skills (`workbench seed`)
+## Default skills (boot-time seeding)
 
-`plantDefaultSkills` (`packages/hub-client/src/seed.ts`) plants each
+`plantDefaultSkills` (`packages/seeding/src/seed.ts`) plants each
 `DEFAULT_SKILLS` entry through `POST /api/tenants/:id/skills`, after
 first checking `GET /api/tenants/:id/skills/:name`.
 
@@ -79,13 +79,14 @@ first checking `GET /api/tenants/:id/skills/:name`.
   "already exists" as done, not as a reason to abort the run the
   hub's own error advice told the operator to re-run.
 
-## Tool registry publish (`workbench setup`, onto the root tenant)
+## Tool registry publish (boot-time seeding, onto the root tenant)
 
 `publishCorbitsToolsRegistry` (`packages/tool-registry-publish/src/publish.ts`)
 finds-or-creates the tenant's `corbits-tools` package-registry asset,
-then PUTs whatever tarball is missing. `workbench setup` calls this
-onto the root tenant so descendants inherit tarballs; `workbench seed`
-does not pack. Two properties keep a failed publish from stranding a
+then PUTs whatever tarball is missing. Boot-time seeding
+(`apps/hub/src/system-seed.ts`) calls this onto the root tenant so
+descendants inherit tarballs; the rest of seeding does not pack. Two
+properties keep a failed publish from stranding a
 usable-looking-but-empty asset:
 
 - `checkToolPackageFreshness` runs **before** the asset is ever
@@ -99,11 +100,11 @@ usable-looking-but-empty asset:
   a brand-new registry and pushes every package, which is what
   actually creates the repo's first commit. Repairing a tenant with
   this history is the same operation as publishing the registry for
-  the first time: re-run `workbench setup`.
+  the first time: restart the hub.
 
-## Workflow deployments (`workbench seed`)
+## Workflow deployments (boot-time seeding)
 
-`ensureDeployment` (`packages/hub-client/src/seed.ts`) treats a
+`ensureDeployment` (`packages/seeding/src/seed.ts`) treats a
 workflow's `workflow_run` deployment row as seed-owned state, but the
 row's `status` column is not the whole story: the hub only routes mail
 to a deployment through an in-memory table (`sidecarRouter`'s

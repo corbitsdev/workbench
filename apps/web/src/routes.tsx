@@ -40,8 +40,10 @@ import {
   EVALS_PATH_PREFIX,
   SKILLS_PATH_PREFIX,
   ROUTINES_PATH_PREFIX,
+  WORKFLOWS_PATH_PREFIX,
   detailSlugFromPath,
   routineSegmentFromPath,
+  workflowDefinitionAssetIdFromPath,
 } from "./path-ids";
 import { WORKBENCH_PATH_PREFIX, isWorkbenchPath } from "./workbench-path";
 import {
@@ -99,6 +101,9 @@ const SkillDetailRoute = lazy(async () => ({
 }));
 const RoutineDetailRoute = lazy(async () => ({
   default: (await import("./pages/routine-detail-page")).RoutineDetailRoute,
+}));
+const WorkflowDetailRoute = lazy(async () => ({
+  default: (await import("./pages/workflow-detail-page")).WorkflowDetailRoute,
 }));
 
 /** The signed-out screen (CL-6369) — a real route, not a conditional swap:
@@ -159,6 +164,14 @@ export const SKILL_DETAIL_PATH = `${SKILLS_PATH_PREFIX}${SLUG_SEGMENT}`;
 const ROUTINE_SEGMENT = "/:routine";
 export const ROUTINE_DETAIL_PATH = `${ROUTINES_PATH_PREFIX}${ROUTINE_SEGMENT}`;
 
+/**
+ * A workflow definition has no slug either — same reasoning as a routine
+ * above — so `/workflows/:id` claims any single segment under
+ * `/workflows`, addressed by the definition's own opaque asset id.
+ */
+const WORKFLOW_SEGMENT = "/:workflow";
+export const WORKFLOW_DETAIL_PATH = `${WORKFLOWS_PATH_PREFIX}${WORKFLOW_SEGMENT}`;
+
 function slugForDetailRoute(routePath: string, path: string): Slug | null {
   return detailSlugFromPath(path, routePath.slice(0, -SLUG_SEGMENT.length));
 }
@@ -218,6 +231,10 @@ export function matchesRoute(routePath: string, path: string): boolean {
   if (routePath === ROUTINE_DETAIL_PATH) {
     const segment = routineSegmentFromPath(path);
     return segment !== null && !segment.includes("/");
+  }
+  if (routePath === WORKFLOW_DETAIL_PATH) {
+    const assetId = workflowDefinitionAssetIdFromPath(path);
+    return assetId !== null && !assetId.includes("/");
   }
   if (routePath.endsWith(SLUG_SEGMENT)) {
     return slugForDetailRoute(routePath, path) !== null;
@@ -311,6 +328,14 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: (_path: string, navigate: (to: string) => void) => (
       <RoutinesRoute navigate={navigate} />
     ),
+  },
+  {
+    // A workflow definition's own page (CL-7371) — no roster of its own
+    // yet, only reached by a deep link (e.g. from a routine's target).
+    path: WORKFLOW_DETAIL_PATH,
+    label: "Workflow",
+    icon: <FlowArrow />,
+    render: (path: string) => <WorkflowDetailRoute path={path} />,
   },
   {
     // The renamed, remounted Library page (CL-6353) — "Library" stays out

@@ -8,13 +8,67 @@ import type {
   EnsureCredentialArgs,
   EnsureProviderArgs,
   SeedCatalogArgs,
-} from "@workbench/hub-client";
+} from "@corbits/seeding";
 import type { ConnectorDescriptor } from "./descriptor";
 import {
   isInferenceProvider,
   persistConnectorCredential,
 } from "./persist-credential";
-import { CONNECTOR_REGISTRY } from "./registry";
+/** Minimal fixtures standing in for the real connector set a build's own
+ * `templates/connectors.ts` carries — this package holds no concrete
+ * connector set of its own (CL-7384), so its own tests build only the
+ * fields `persistConnectorCredential` actually reads. */
+const FIXTURE_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> = {
+  github: {
+    id: "github",
+    displayName: "GitHub",
+    authKind: "api-key",
+    credentialPlugin: "http",
+    docsUrl: "https://github.com/settings/tokens",
+    feedsTools: ["@corbits/github-tools"],
+  },
+  manus: {
+    id: "manus",
+    displayName: "Manus",
+    authKind: "api-key",
+    credentialPlugin: "http-x-manus-api-key",
+    docsUrl: "https://open.manus.ai/docs/v2/introduction",
+    feedsTools: ["@corbits/manus-tools"],
+  },
+  openrouter: {
+    id: "openrouter",
+    displayName: "OpenRouter",
+    authKind: "oauth-pkce",
+    credentialPlugin: "http",
+    docsUrl: "https://openrouter.ai",
+    feedsTools: [],
+  },
+  huggingface: {
+    id: "huggingface",
+    displayName: "Hugging Face",
+    authKind: "oauth-pkce",
+    credentialPlugin: "http",
+    docsUrl: "https://huggingface.co/settings/tokens",
+    feedsTools: [],
+  },
+  ollama: {
+    id: "ollama",
+    displayName: "Ollama",
+    authKind: "api-key",
+    credentialPlugin: "http",
+    docsUrl: "https://ollama.com",
+    feedsTools: [],
+    credentialInputKind: "url",
+  },
+  gmail: {
+    id: "gmail",
+    displayName: "Gmail",
+    authKind: "oauth-code",
+    credentialPlugin: "http",
+    docsUrl: "https://developers.google.com/gmail/api",
+    feedsTools: [],
+  },
+};
 
 const noApi = () => {
   throw new Error("the api must only be reached through the injected fns");
@@ -54,7 +108,7 @@ function recordingFns() {
 }
 
 function descriptorOrThrow(id: string): ConnectorDescriptor {
-  const descriptor = CONNECTOR_REGISTRY[id];
+  const descriptor = FIXTURE_REGISTRY[id];
   if (descriptor === undefined) throw new Error(`no descriptor for ${id}`);
   return descriptor;
 }

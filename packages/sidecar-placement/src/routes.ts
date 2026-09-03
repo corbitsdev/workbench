@@ -6,7 +6,7 @@ import { Hono } from "hono";
 import { type } from "arktype";
 
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 import type { SidecarPlacementStore } from "./store";
 

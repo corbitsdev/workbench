@@ -2,7 +2,7 @@
 // `/api/tenants/:id/grants` surface as the requesting user. Never
 // SQL-inserts Interchange grant/role rows.
 import { GrantResponse, RoleResponse, paginatedSchema } from "@intx/types";
-import { parseAs, type ApiCall } from "@workbench/hub-client";
+import { parseAs, type ApiCall } from "@corbits/hub-api-client";
 import { reportError } from "@corbits/error-sink";
 
 type RepoName = { name: string };

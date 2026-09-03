@@ -68,7 +68,7 @@ import {
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
 import { MODEL_UNAVAILABLE_CONSUMER_MESSAGE } from "./model-unavailable";
 import { reportError } from "@corbits/error-sink";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 /**
  * The tenant + principal + run a presented sidecar token and run

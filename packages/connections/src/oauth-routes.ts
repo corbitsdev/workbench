@@ -35,7 +35,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { type } from "arktype";
 import type { AppEnv } from "@intx/hub-api";
 import type { CredentialCipher } from "@intx/types";
-import { cookiesFromHeader } from "@workbench/hub-client";
+import { cookiesFromHeader } from "@corbits/hub-api-client";
 import {
   createConnectStateStore,
   generatePKCEPair,
@@ -44,7 +44,6 @@ import {
 import { fireConnectedHook, type ServiceConnectedHook } from "./connected-hook";
 import { reportError } from "@corbits/error-sink";
 import type { ConnectorDescriptor } from "./descriptor";
-import { CONNECTOR_REGISTRY } from "./registry";
 
 /**
  * The two return surfaces this wave's callers actually mount at
@@ -157,8 +156,9 @@ export type CreateOAuthConnectRoutesDeps<E extends AppEnv = AppEnv> = {
    * `/callback`. The same `CredentialCipher` every other secret-at-rest
    * seam in the hub shares. */
   readonly credentialCipher: CredentialCipher;
-  /** Test-only override, defaulting to `CONNECTOR_REGISTRY`. */
-  readonly registry?: Readonly<Record<string, ConnectorDescriptor>>;
+  /** The connector set this build ships — this package carries none of
+   * its own (CL-7384), so a caller always supplies one. */
+  readonly registry: Readonly<Record<string, ConnectorDescriptor>>;
   /** The env bag a descriptor's `oauth.clientId(env)` reads a
    * registered app id from (e.g. `{huggingfaceClientId}`). */
   readonly oauthEnv?: Readonly<Record<string, string | undefined>>;
@@ -246,7 +246,7 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
   deps: CreateOAuthConnectRoutesDeps<E>,
 ): Hono<E> {
   const app = new Hono<E>();
-  const registry = deps.registry ?? CONNECTOR_REGISTRY;
+  const registry = deps.registry;
   const oauthEnv = deps.oauthEnv ?? {};
   const defaultReturnPath = deps.defaultReturnPath ?? "/onboarding";
   const returnPathAllowlist =

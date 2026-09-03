@@ -265,7 +265,7 @@ export type ShadowOfferingInput = {
  * module doc for why that is not even reachable from here), then a
  * tenant-local model and model-provider that reference it, then the
  * offering itself. Each step tolerates the row already existing
- * (idempotent, mirroring `@workbench/hub-client`'s `seedCatalog` helpers)
+ * (idempotent, mirroring `@corbits/seeding`'s `seedCatalog` helpers)
  * so retrying a partial failure never 409s the whole flow.
  *
  * Order matters beyond idempotency: creating this tenant's model-provider

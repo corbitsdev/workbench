@@ -1,19 +1,22 @@
-// The `@corbits/routines-tools` bundle: `routine_list`, `routine_create`,
-// `routine_update`, and `routine_run_now` — Myra's in-chat way to manage
-// the workbench's recurring/triggered automations.
+// The `@corbits/routines-tools` bundle: `routine_list`, `routine_targets`,
+// `routine_create`, `routine_update`, `routine_retarget`, and
+// `routine_run_now` — Myra's in-chat way to manage the workbench's
+// recurring/triggered automations.
 //
-// Only `routine_run_now` declares `approval: "ask"` (`@intx/agent`'s
-// native per-invocation gate): it fires a routine's target agent
-// definition immediately, taking whatever external action that
-// definition's own already-granted capabilities allow — the reactor
-// suspends the call as a pending approval BEFORE this bundle's `run`
-// ever executes, renders it in-chat as an approve/deny card, and only
-// resumes into `run` once a human allows it, the same shape
+// `routine_run_now` and `routine_retarget` declare `approval: "ask"`
+// (`@intx/agent`'s native per-invocation gate); `routine_run_now` fires a
+// routine's target agent definition immediately, taking whatever external
+// action that definition's own already-granted capabilities allow, and
+// `routine_retarget` repoints an existing routine at a different
+// definition asset — both meaningfully change what a routine will do
+// externally, so both park as a pending approval BEFORE this bundle's
+// `run` ever executes, rendered in-chat as an approve/deny card, and only
+// resume into `run` once a human allows it, the same shape
 // `@corbits/capability-tools`' `request_capability` uses.
 //
 // `routine_create` and `routine_update` (CL-6209) grant no credentials
 // or capability pins and write only a tenant-internal routine row —
-// scheduling metadata pointing at a definitionId whose own capabilities
+// scheduling metadata pointing at a definitionAssetId whose own capabilities
 // were already approved separately. Neither call touches anything
 // external itself, so neither carries an `approval` key; the human gate
 // that matters is the one on the definition's own tools, which fires
@@ -21,11 +24,17 @@
 // read-only and carries no `approval` key either, mirroring
 // `@corbits/memory-tools`' `memory_list`.
 //
-// `definitionId` is a required input on `routine_create`, never
-// auto-resolved: Myra must name the agent definition a routine runs
-// against, typically one she already knows from a prior `list_agents` /
-// `create_agent` call — this bundle has no opinion on which definition
-// is "right" for a given routine.
+// `definitionAssetId` is a required input on `routine_create` and
+// `routine_retarget`, never auto-resolved from a name inside this bundle
+// or the route behind it (CL-7359): the model resolves a user's
+// requested workflow to a `definitionAssetId` by calling
+// `routine_targets` first. When more than one target matches the name
+// the user gave, this bundle never guesses — it is the model's job (per
+// each tool's description below) to return the candidates and ask the
+// user to choose, not to pick the first match. `routine_update` rejects a
+// `definitionAssetId` argument outright (CL-7359): retargeting an existing
+// routine at a different definition goes through the approved
+// `routine_retarget` tool, never the unapproved `routine_update` path.
 //
 // See `./client.ts` for the workflow-run-authenticated routine routes
 // (`@corbits/routines`' `createWorkflowRoutineRoutes`) this bundle's
@@ -38,19 +47,22 @@ import { type } from "arktype";
 import {
   createRoutine,
   listRoutines,
+  listTargets,
   runRoutineNow,
   updateRoutine,
   type RoutineTriggerInput,
 } from "./client";
 
 export const ROUTINE_LIST_TOOL = "routine_list";
+export const ROUTINE_TARGETS_TOOL = "routine_targets";
 export const ROUTINE_CREATE_TOOL = "routine_create";
 export const ROUTINE_UPDATE_TOOL = "routine_update";
+export const ROUTINE_RETARGET_TOOL = "routine_retarget";
 export const ROUTINE_RUN_NOW_TOOL = "routine_run_now";
 
 /** Env this bundle needs beyond `BaseEnv`: the run's hub-reach
  * credential, mirroring `@corbits/memory-tools`' `WorkflowMemoryEnv` —
- * no `definitionId` env key, since this bundle is tenant-scoped, not
+ * no `definitionAssetId` env key, since this bundle is tenant-scoped, not
  * self-definition-scoped (Myra manages routines against ANY definition
  * in her tenant, not just her own). */
 export interface WorkflowRoutineEnv extends BaseEnv {
@@ -84,7 +96,7 @@ const TriggerInput = type({
 
 const RoutineCreateInput = type({
   name: "string > 0",
-  definitionId: "string > 0",
+  definitionAssetId: "string > 0",
   "instruction?": "string > 0",
   "input?": "Record<string, unknown>",
   trigger: TriggerInput,
@@ -92,6 +104,11 @@ const RoutineCreateInput = type({
 });
 type RoutineCreateInput = typeof RoutineCreateInput.infer;
 
+// `definitionAssetId` is deliberately absent here (CL-7359): retargeting a
+// routine at a different definition is only possible through the approved
+// `routine_retarget` tool below, never through this one. `.onUndeclaredKey
+// ("reject")` turns a `definitionAssetId` sent on this call into a parse
+// error rather than a silently-stripped no-op.
 const RoutineUpdateInput = type({
   id: "string > 0",
   "enabled?": "boolean",
@@ -99,8 +116,13 @@ const RoutineUpdateInput = type({
   "instruction?": "string > 0",
   "input?": "Record<string, unknown>",
   "trigger?": TriggerInput,
-});
+}).onUndeclaredKey("reject");
 type RoutineUpdateInput = typeof RoutineUpdateInput.infer;
+
+const RoutineRetargetInput = type({
+  routineId: "string > 0",
+  definitionAssetId: "string > 0",
+});
 
 const RoutineRunNowInput = type({
   id: "string > 0",
@@ -246,6 +268,35 @@ async function runRoutineList(
   }
 }
 
+async function runRoutineTargets(
+  env: WorkflowRoutineEnv,
+  call: ToolCall,
+): Promise<ToolResult> {
+  try {
+    const items = await listTargets(clientConfig(env));
+    return {
+      callId: call.id,
+      isError: false,
+      content: JSON.stringify({
+        items: items.map((item) => ({
+          definitionAssetId: item.definitionAssetId,
+          name: item.name,
+          kind: item.kind,
+          description: item.description,
+        })),
+      }),
+    };
+  } catch (err) {
+    // report-error-ignore: this tool call's own transport/HTTP failure
+    // surfaces as an honest `errorResult` a model can read and retry,
+    // the same pattern `runRoutineCreate`/`runRoutineUpdate`/
+    // `runRoutineRunNow` follow just below (their own catches are
+    // pre-existing and tracked as debt in the report-error baseline,
+    // not individually commented here).
+    return errorResult(call.id, err);
+  }
+}
+
 async function runRoutineCreate(
   env: WorkflowRoutineEnv,
   call: ToolCall,
@@ -272,7 +323,7 @@ async function runRoutineCreate(
   try {
     const routine = await createRoutine(clientConfig(env), {
       name: parsed.name,
-      definitionId: parsed.definitionId,
+      definitionAssetId: parsed.definitionAssetId,
       trigger: parsed.trigger as RoutineTriggerInput,
       input,
     });
@@ -327,6 +378,35 @@ async function runRoutineUpdate(
   }
 }
 
+async function runRoutineRetarget(
+  env: WorkflowRoutineEnv,
+  call: ToolCall,
+): Promise<ToolResult> {
+  const parsed = RoutineRetargetInput(
+    call.arguments as Record<string, unknown>,
+  );
+  if (parsed instanceof type.errors) {
+    return errorResult(
+      call.id,
+      invalidInputError(ROUTINE_RETARGET_TOOL, parsed.summary),
+    );
+  }
+  try {
+    const routine = await updateRoutine(clientConfig(env), parsed.routineId, {
+      definitionAssetId: parsed.definitionAssetId,
+    });
+    return {
+      callId: call.id,
+      isError: false,
+      content: `Retargeted "${routine.name}" (${routine.id}) to ${parsed.definitionAssetId}.`,
+    };
+  } catch (err) {
+    // report-error-ignore: the hub already reported the rejection with its
+    // own refId; the model needs the typed envelope text to explain or retry.
+    return errorResult(call.id, err);
+  }
+}
+
 async function runRoutineRunNow(
   env: WorkflowRoutineEnv,
   call: ToolCall,
@@ -352,6 +432,8 @@ async function runRoutineRunNow(
       content: `Started run ${result.runId}.`,
     };
   } catch (err) {
+    // report-error-ignore: the hub already reported the failure with its
+    // own refId; the model needs the envelope text to explain or retry.
     return errorResult(call.id, err);
   }
 }
@@ -433,8 +515,10 @@ export const routinesTools = defineTool<WorkflowRoutineEnv>({
   requires: ["hubRoutinesUrl", "sidecarToken", "address"],
   definitions: [
     { name: ROUTINE_LIST_TOOL },
+    { name: ROUTINE_TARGETS_TOOL },
     { name: ROUTINE_CREATE_TOOL },
     { name: ROUTINE_UPDATE_TOOL },
+    { name: ROUTINE_RETARGET_TOOL, approval: "ask" },
     { name: ROUTINE_RUN_NOW_TOOL, approval: "ask" },
   ],
   factory: (env) => ({
@@ -448,10 +532,28 @@ export const routinesTools = defineTool<WorkflowRoutineEnv>({
         inputSchema: { type: "object", properties: {} },
       },
       {
+        name: ROUTINE_TARGETS_TOOL,
+        description:
+          "List the workflow definitions and agents a routine may " +
+          "target in this tenant — each with its definitionAssetId, " +
+          "name, kind (agent or workflow), and description. Always " +
+          "call this to resolve the workflow the user asked for by " +
+          "name before calling routine_create or routine_update: match " +
+          "the requested name against these results and use the " +
+          "matching definitionAssetId. If more than one target matches " +
+          "the name the user gave, do NOT pick one — show the user the " +
+          "matching candidates (name, kind, description) and ask them " +
+          "to choose before creating or updating anything.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
         name: ROUTINE_CREATE_TOOL,
         description:
           "Create a new routine: a recurring or triggered automation " +
-          "that runs an agent definition on a schedule or webhook.",
+          "that runs an agent definition on a schedule or webhook. " +
+          "Call routine_targets first to resolve the requested workflow " +
+          "to its definitionAssetId; if the name is ambiguous, ask the " +
+          "user to choose rather than creating against a guess.",
         inputSchema: {
           type: "object",
           properties: {
@@ -459,12 +561,12 @@ export const routinesTools = defineTool<WorkflowRoutineEnv>({
               type: "string",
               description: "A short, human-readable name for the routine.",
             },
-            definitionId: {
+            definitionAssetId: {
               type: "string",
               description:
-                "The id of the agent definition this routine runs — " +
-                "never invented; name one already known from a prior " +
-                "list_agents or create_agent call.",
+                "The workflow asset id this routine runs — never " +
+                "invented and never a name. Resolve it first with " +
+                "routine_targets.",
             },
             instruction: {
               type: "string",
@@ -488,14 +590,17 @@ export const routinesTools = defineTool<WorkflowRoutineEnv>({
                 "Whether the routine starts enabled. Defaults to true.",
             },
           },
-          required: ["name", "definitionId", "trigger"],
+          required: ["name", "definitionAssetId", "trigger"],
         },
       },
       {
         name: ROUTINE_UPDATE_TOOL,
         description:
           "Update an existing routine's enabled state, name, " +
-          "instruction, named input, or trigger.",
+          "instruction, named input, or trigger. Does NOT retarget a " +
+          "routine at a different agent or workflow — this call rejects " +
+          "a definitionAssetId argument outright. Use routine_retarget " +
+          "for that, which requires human approval.",
         inputSchema: {
           type: "object",
           properties: {
@@ -526,6 +631,31 @@ export const routinesTools = defineTool<WorkflowRoutineEnv>({
         },
       },
       {
+        name: ROUTINE_RETARGET_TOOL,
+        description:
+          "Retarget an existing routine at a different workflow or " +
+          "agent definition. This is the only way to change what a " +
+          "routine runs — routine_update rejects definitionAssetId. A " +
+          "human must approve before the retarget takes effect. Resolve " +
+          "the new target with routine_targets first (asking the user " +
+          "to choose if the name is ambiguous), then call this with the " +
+          "resolved definitionAssetId.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            routineId: { type: "string", description: "The routine's id." },
+            definitionAssetId: {
+              type: "string",
+              description:
+                "The workflow asset id to retarget the routine at — " +
+                "never invented and never a name. Resolve it first with " +
+                "routine_targets.",
+            },
+          },
+          required: ["routineId", "definitionAssetId"],
+        },
+      },
+      {
         name: ROUTINE_RUN_NOW_TOOL,
         description:
           "Run a routine immediately, outside its schedule. A human " +
@@ -551,10 +681,14 @@ export const routinesTools = defineTool<WorkflowRoutineEnv>({
       switch (call.name) {
         case ROUTINE_LIST_TOOL:
           return runRoutineList(env, call);
+        case ROUTINE_TARGETS_TOOL:
+          return runRoutineTargets(env, call);
         case ROUTINE_CREATE_TOOL:
           return runRoutineCreate(env, call);
         case ROUTINE_UPDATE_TOOL:
           return runRoutineUpdate(env, call);
+        case ROUTINE_RETARGET_TOOL:
+          return runRoutineRetarget(env, call);
         case ROUTINE_RUN_NOW_TOOL:
           return runRoutineRunNow(env, call);
         default:

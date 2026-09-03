@@ -13,7 +13,6 @@ import { slugify } from "@corbits/slug";
 
 import { RoutineTriggerWire, type RoutineTriggerT } from "./trigger";
 
-export { suggestRoutineNameFromPrompt } from "./suggest-name";
 export {
   cronHasWallClock,
   cronSentence,
@@ -63,12 +62,17 @@ export type {
 // validated once; re-validating its cron/timezone narrows on every GET
 // would let an old row a stricter check now disagrees with hard-fail
 // parsing in the browser instead of just rendering. `RoutineTrigger`
-// (strict) stays on `CreateRoutineInput`/`UpdateRoutineInput`/
-// `CreateDraftInput` below, which describe what the client sends.
+// (strict) stays on `CreateRoutineInput`/`UpdateRoutineInput` below,
+// which describe what the client sends.
 export const Routine = type({
   id: "string",
   name: "string",
-  definitionId: "string",
+  // The routine's target: the workflow asset it follows across redeploys
+  // (stable identity), and the definition that would run right now —
+  // `null` when no deployed, approved definition currently resolves for
+  // that asset, which a UI should say plainly rather than hide.
+  definitionAssetId: "string",
+  definitionId: "string | null",
   trigger: RoutineTriggerWire,
   scope: "'personal' | 'bench'",
   input: "Record<string, unknown>",
@@ -139,36 +143,15 @@ export type RoutineRun = typeof RoutineRun.infer;
 
 export const RoutineRunsResponse = type({ items: RoutineRun.array() });
 
-export const DraftedStep = type({
-  title: "string",
-  "detail?": "string",
-});
-export type DraftedStep = typeof DraftedStep.infer;
-
-export const RoutineDraft = type({
-  id: "string",
-  prompt: "string",
-  status: "'draft' | 'reviewed' | 'approved' | 'discarded'",
-  proposedSteps: DraftedStep.array(),
-  proposedTrigger: RoutineTriggerWire,
-  proposedName: "string | null",
-  definitionId: "string | null",
-  deliveryWorkbenchId: "string",
-  scope: "'personal' | 'bench'",
-  autonomy: "Record<string, unknown> | null",
-  approvedRoutineId: "string | null",
-  createdAt: "string",
-  updatedAt: "string",
-});
-export type RoutineDraft = typeof RoutineDraft.infer;
-
 export type CreateRoutineInput = {
   readonly name: string;
-  readonly definitionId: string;
+  /** The workflow asset this routine runs — always named explicitly by
+   * the caller; the server never infers a target. */
+  readonly definitionAssetId: string;
   readonly trigger: RoutineTriggerT;
   readonly scope: "personal" | "bench";
   /** Omitted only for a workflow whose result never posts to a workbench
-   * (see `@corbits/workflow-catalog`'s `WorkflowCatalogEntry.deliveryMode`)
+   * (see `@corbits/workflows`'s `WorkflowCatalogEntry.deliveryMode`)
    * — the server itself still rejects a missing value for every other
    * workflow (`deliveryWorkbenchRequired`, routes.ts). */
   readonly deliveryWorkbenchId?: string;
@@ -182,12 +165,10 @@ export type UpdateRoutineInput = {
   readonly enabled?: boolean;
   readonly input?: Record<string, unknown>;
   readonly deliveryWorkbenchId?: string;
-};
-
-export type CreateDraftInput = {
-  readonly prompt: string;
-  readonly deliveryWorkbenchId: string;
-  readonly scope: "personal" | "bench";
+  /** Retargets the routine to a different workflow asset (CL-7358) — the
+   * server validates it through `routineTargetRejection` (`./target.ts`)
+   * before applying, and rejects a stale/cross-tenant/undeployed asset. */
+  readonly definitionAssetId?: string;
 };
 
 /** `GET/POST /api/tenants/:tenantId/routines`. */
@@ -210,24 +191,45 @@ export function routineRunsPath(tenantId: string, id: string): string {
   return `${routinePath(tenantId, id)}/runs`;
 }
 
-/** `GET/POST /api/tenants/:tenantId/routine-drafts`. */
-export function routineDraftsPath(tenantId: string): string {
-  return `/api/tenants/${tenantId}/routine-drafts`;
-}
+// One deployed, frozen definition a routine may target
+// (`GET /api/tenants/:tenantId/workflows/targets`, see ./targets.ts).
+// `definitionAssetId` is the stable identity a routine stores;
+// `definitionId`/`wireHash` name the row that would run right now.
+// `kind` groups the picker without changing execution semantics: an
+// "agent" is a single-step conversational fold, everything else a
+// "workflow". `assetName` is the raw catalog key
+// (`@corbits/workflows`'s `workflowCatalogEntry`); `name` is the
+// display label.
+export const RoutineTargetKind = type("'agent' | 'workflow'");
+export type RoutineTargetKind = typeof RoutineTargetKind.infer;
 
-/** `GET /api/tenants/:tenantId/routine-drafts/:id`. */
-export function routineDraftPath(tenantId: string, id: string): string {
-  return `${routineDraftsPath(tenantId)}/${id}`;
-}
+export const RoutineTarget = type({
+  definitionAssetId: "string",
+  definitionId: "string",
+  assetName: "string",
+  name: "string",
+  description: "string | null",
+  kind: RoutineTargetKind,
+  wireHash: "string",
+});
+export type RoutineTarget = typeof RoutineTarget.infer;
 
-/** `POST /api/tenants/:tenantId/routine-drafts/:id/approve`. */
-export function routineDraftApprovePath(tenantId: string, id: string): string {
-  return `${routineDraftPath(tenantId, id)}/approve`;
-}
+export const RoutineTargetsResponse = type({
+  items: RoutineTarget.array(),
+  nextCursor: "string | null",
+});
+export type RoutineTargetsResponse = typeof RoutineTargetsResponse.infer;
 
-/** `POST /api/tenants/:tenantId/routine-drafts/:id/discard`. */
-export function routineDraftDiscardPath(tenantId: string, id: string): string {
-  return `${routineDraftPath(tenantId, id)}/discard`;
+/** `GET /api/tenants/:tenantId/workflows/targets?limit=&cursor=`. */
+export function routineTargetsPath(
+  tenantId: string,
+  query: { readonly cursor?: string; readonly limit?: number } = {},
+): string {
+  const params = new URLSearchParams();
+  if (query.limit !== undefined) params.set("limit", String(query.limit));
+  if (query.cursor !== undefined) params.set("cursor", query.cursor);
+  const suffix = params.size === 0 ? "" : `?${params.toString()}`;
+  return `/api/tenants/${tenantId}/workflows/targets${suffix}`;
 }
 
 export function routineCreatedToast(name: string): string {

@@ -17,7 +17,7 @@ import {
   type RefreshableMcpCredential,
 } from "../src/credential-expiry-sweep";
 import type { ExpiringCredential } from "@corbits/notify";
-import type { McpOAuthRefreshResult } from "@workbench/connections";
+import type { McpOAuthRefreshResult } from "@corbits/connections";
 
 const HUB_URL = "http://hub.test";
 

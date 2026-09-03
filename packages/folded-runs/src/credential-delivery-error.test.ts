@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { MissingCredentialError } from "@workbench/connections";
+import { MissingCredentialError } from "@corbits/connections";
 import type { CredentialDeliveryFailure } from "@intx/db";
 
 import { credentialDeliveryError } from "./credential-delivery-error";
@@ -20,7 +20,11 @@ describe("credentialDeliveryError", () => {
 
     expect(error).toBeInstanceOf(MissingCredentialError);
     expect((error as MissingCredentialError).connectorId).toBe("github");
-    expect((error as MissingCredentialError).displayName).toBe("GitHub");
+    // No connector set is reachable here (CL-7384 moved it out of
+    // `@corbits/connections`), so the display name falls back to the raw
+    // connector id — the caller-facing UI resolves the real display name
+    // itself from `MissingCredentialError.connectorId`.
+    expect((error as MissingCredentialError).displayName).toBe("github");
   });
 
   test("keeps a generic error for a non-missing-credential failure", () => {

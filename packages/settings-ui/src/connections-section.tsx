@@ -21,12 +21,14 @@ import {
   toast,
 } from "@corbits/react-ui";
 import {
-  CONNECTOR_REGISTRY,
   connectorDescriptors,
   type ConnectorDescriptor,
-} from "@workbench/connections/registry";
-import { MCP_PRESET_CONNECTOR_IDS } from "@workbench/connections/mcp-presets";
-import { workflowDisplayName } from "@corbits/workflow-catalog";
+} from "@corbits/connections/registry";
+import { workflowDisplayName } from "@workbench/templates";
+import {
+  CONNECTOR_REGISTRY,
+  MCP_PRESET_CONNECTOR_IDS,
+} from "@workbench/templates/connectors";
 import {
   buildEffectiveInferenceRows,
   computeGlobalRoutePatches,
@@ -67,7 +69,7 @@ import {
 } from "./credentials-api";
 import { SETTINGS_STRINGS } from "./strings";
 
-// `@workbench/connections/registry` is the only subpath this browser
+// `@corbits/connections/registry` is the only subpath this browser
 // bundle may import — its main export pulls in server-only hono routing.
 
 type OAuthConnectorCard = {
@@ -171,7 +173,7 @@ export function ConnectorRowList({
       .catch(() => onError?.(SETTINGS_STRINGS.connectionsDisconnectError));
   }
 
-  const descriptors = connectorDescriptors()
+  const descriptors = connectorDescriptors(CONNECTOR_REGISTRY)
     .filter((descriptor) => descriptor.probe !== undefined)
     .filter((descriptor) => !MCP_PRESET_CONNECTOR_IDS.includes(descriptor.id))
     .filter(filter ?? (() => true));
@@ -278,6 +280,37 @@ export function ConnectionsSection({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId, reloadKey]);
+
+  // Connections can change elsewhere (another tab, the Plugins gallery's
+  // connect panel, or a credential expiring during a long agent run).
+  // Re-read on visibility/focus and poll while the page sits open so a
+  // "Connected" pill never lies silently — the same live-surface concern
+  // that `ConnectServiceBlockContainer` and `ConnectGithubBlockContainer`
+  // solve via `subscribeConnectState`.
+  useEffect(() => {
+    if (tenantId === null) return;
+    // `visibilitychange` and `focus` both fire in the same tick when a tab
+    // regains focus; the microtask guard collapses that pair into one
+    // scheduled bump instead of two back-to-back reloads.
+    let bumpScheduled = false;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (bumpScheduled) return;
+      bumpScheduled = true;
+      queueMicrotask(() => {
+        bumpScheduled = false;
+        setReloadKey((value) => value + 1);
+      });
+    };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("focus", refreshWhenVisible);
+    const interval = setInterval(refreshWhenVisible, 30_000);
+    return () => {
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("focus", refreshWhenVisible);
+      clearInterval(interval);
+    };
+  }, [tenantId]);
 
   if (tenantId === null) {
     return (

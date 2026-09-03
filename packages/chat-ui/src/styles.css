@@ -2,13 +2,20 @@
    shell's contextual panel. Layout glue only: visual styling comes from
    `@corbits/react-ui`'s prebuilt stylesheet and the theme's tokens. */
 
+/* Motion is gated centrally by react-ui's `theme.css` blanket
+   `prefers-reduced-motion` rule (`animation-duration: 0.01ms` etc.),
+   so every animation below may also be wrapped in a local
+   `@media (prefers-reduced-motion: no-preference)` guard or left to
+   that central override — either way it collapses when the user asks
+   for reduced motion. */
+
 :root {
   /* Deliberately not an invented curve: this aliases react-ui's own
      `--ease-out` (DESIGN.md's "out" — straightforward entrances/exits, no
      overshoot) so the chat surface never carries a third easing curve of
      its own. Falls back to the equivalent cubic-bezier only for the rare
      test/story context that doesn't load react-ui's theme stylesheet. */
-  --chat-ease: var(--ease-out, cubic-bezier(0.2, 0.8, 0.3, 1));
+  --chat-ease: var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
 }
 
 .chat-workspace {
@@ -712,12 +719,20 @@
   overflow: hidden;
 }
 
-/* Mock `.messages`: tight column, modest horizontal pad. */
+/* Mock `.messages`: tight column, modest horizontal pad.
+   `gap` is the visible breathing room between groups; `align-items`
+   keeps every group at full width so its own left gutter (2.9rem) reads
+   consistently. `flex-shrink: 0` on the group (below) is what stops a
+   flex column from collapsing two groups onto the same line when content
+   overflows — the layout crash CL-6784. */
 .chat-timeline {
   display: flex;
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   flex-direction: column;
-  gap: 0.1rem;
+  align-items: stretch;
+  gap: 0.35rem;
   overflow-y: auto;
   padding: 0.75rem clamp(0.85rem, 3vw, 1.75rem) 1rem;
 }
@@ -2206,13 +2221,13 @@
   padding: 0.35rem 0.75rem 0.35rem 0.4rem;
   transition:
     transform var(--duration-standard, 180ms)
-      var(--ease-out, cubic-bezier(0.2, 0.8, 0.3, 1)),
+      var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
     background-color var(--duration-standard, 180ms)
-      var(--ease-out, cubic-bezier(0.2, 0.8, 0.3, 1)),
+      var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
     border-color var(--duration-standard, 180ms)
-      var(--ease-out, cubic-bezier(0.2, 0.8, 0.3, 1)),
+      var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
     color var(--duration-standard, 180ms)
-      var(--ease-out, cubic-bezier(0.2, 0.8, 0.3, 1));
+      var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
 }
 
 .chat-tool-activity-trigger {
@@ -2372,7 +2387,7 @@
   font-size: 11px;
   color: var(--muted-foreground);
   transition: transform var(--duration-standard, 180ms)
-    var(--ease-out, cubic-bezier(0.2, 0.8, 0.3, 1));
+    var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
 }
 
 .chat-tool-activity-caret[data-open="true"] {
@@ -3119,12 +3134,23 @@
 
 /* Message body column: bubble/parts + reaction/pin row share one flex
    column so chips sit under the bubble instead of as a loose sibling of
-   the whole header+bubble cluster (CL-6661). */
+   the whole header+bubble cluster (CL-6661). Each direct child is a
+   block that must keep its own height — no shrinking that would let
+   the tool-activity stack or a failed-turn strip collapse onto the row
+   below (CL-6784). */
 .chat-message-body {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
+  gap: 0.2rem;
   min-width: 0;
   max-width: 100%;
+  width: 100%;
+}
+
+.chat-message-body > * {
+  flex-shrink: 0;
+  min-width: 0;
 }
 
 /* Existing reaction chips + pin toggle, indented to align under the bubble
@@ -3244,8 +3270,21 @@
    whole: anchoring to the outer group let the toolbar float up into the
    day divider's own space on the first message of a new day, detached
    from the row a reader was actually hovering. */
+.chat-message-group {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  flex-shrink: 0;
+  contain: layout;
+}
+
 .chat-message-row {
   position: relative;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  isolation: isolate;
 }
 
 /* Entrance for new message groups and the failed-send card: a subtle
@@ -3276,7 +3315,7 @@
 
 .chat-hover-toolbar {
   position: absolute;
-  top: -0.4rem;
+  top: -0.25rem;
   right: 0.4rem;
   z-index: 5;
   display: inline-flex;
@@ -3950,28 +3989,42 @@
    inline system line under the same left gutter every message sits
    under, not a bordered banner: muted danger-tinted text, a small ghost
    Retry, and "What happened" as an inline disclosure. Reads as part of
-   the conversation rather than an alert dropped into it. */
+   the conversation rather than an alert dropped into it. Collapsed it
+   is a single flex line (consumer sentence + recovery); the detail
+   disclosure, when open, is the only thing that wraps to a second line
+   (CL-6784 — not stacked chrome). Width is `calc`'d against the 2.9rem
+   gutter so `max-width:100%` plus that margin never overflows the
+   message column and collapses the next row's height. */
 .chat-turn-failed {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 0.5rem;
   margin: 0.15rem 0 0.35rem 2.9rem;
-  max-width: 100%;
+  max-width: calc(100% - 2.9rem);
+  width: calc(100% - 2.9rem);
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 1.75rem;
   font-size: 0.8125rem;
 }
 
 .chat-turn-failed-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: color-mix(in srgb, var(--destructive) 78%, var(--muted-foreground));
 }
 
 .chat-turn-failed-retry {
+  flex-shrink: 0;
   height: auto;
   padding: 0.05rem 0.45rem;
   font-size: 0.75rem;
 }
 
 .chat-turn-failed-models {
+  flex-shrink: 0;
   height: auto;
   max-width: 12rem;
   padding: 0.05rem 0.45rem;
@@ -3979,6 +4032,7 @@
 }
 
 .chat-turn-failed-settings {
+  flex-shrink: 0;
   border: 0;
   background: transparent;
   padding: 0;
@@ -3994,6 +4048,7 @@
 }
 
 .chat-turn-failed-disclosure {
+  flex-shrink: 0;
   border: 0;
   background: transparent;
   padding: 0;
@@ -4010,6 +4065,8 @@
 
 .chat-turn-failed-detail {
   flex-basis: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 0.75rem;
   color: var(--muted-foreground);
 }
@@ -4017,13 +4074,19 @@
 /* CL-7201's cancelled-turn row: the same quiet inline layout as
    .chat-turn-failed, but neutral rather than danger-tinted — the user
    asked for this outcome, so it reads as a plain fact, not a warning,
-   and carries no Retry (the person can just send again). */
+   and carries no Retry (the person can just send again). Same width
+   fix as `.chat-turn-failed` — `calc` against the gutter so the row
+   never overflows and collapses the next message (CL-6784). */
 .chat-turn-cancelled {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   margin: 0.15rem 0 0.35rem 2.9rem;
-  max-width: 100%;
+  max-width: calc(100% - 2.9rem);
+  width: calc(100% - 2.9rem);
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 1.75rem;
   font-size: 0.8125rem;
   color: var(--muted-foreground);
 }

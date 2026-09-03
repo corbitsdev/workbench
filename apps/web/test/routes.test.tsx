@@ -19,6 +19,7 @@ import {
   NAV_ROUTES,
   ROUTINE_DETAIL_PATH,
   SKILL_DETAIL_PATH,
+  WORKFLOW_DETAIL_PATH,
 } from "../src/routes";
 import type { SessionState } from "../src/session";
 
@@ -29,6 +30,7 @@ import type { SessionState } from "../src/session";
  * until CL-6417 — the stub was unlinked in CL-6817. */
 const DETAIL_ROUTE_PATHS = new Set([
   ROUTINE_DETAIL_PATH,
+  WORKFLOW_DETAIL_PATH,
   AGENT_DETAIL_PATH,
   SKILL_DETAIL_PATH,
 ]);
@@ -149,6 +151,7 @@ describe("route table", () => {
       "/inbox",
       "/routines/:routine",
       "/routines",
+      "/workflows/:workflow",
       "/files",
       "/library",
       "/agents/:slug",
@@ -268,6 +271,20 @@ describe("route table", () => {
     expect(matchesRoute("/plugins", "/plugins/%")).toBe(false);
     expect(matchesRoute(ROUTINE_DETAIL_PATH, "/routines/%E0%A4%A")).toBe(false);
     expect(matchesRoute(AGENT_DETAIL_PATH, "/agents/%2Ftriage-bot")).toBe(
+      false,
+    );
+    // A workflow detail path reuses workflowDefinitionAssetIdFromPath
+    // (CL-7371 review): a malformed percent-escape segment must never
+    // match the route at all, not match and then fail to resolve an id.
+    expect(matchesRoute(WORKFLOW_DETAIL_PATH, "/workflows/%E0%A4%A")).toBe(
+      false,
+    );
+  });
+
+  test("workflow detail path matches a single opaque segment only", () => {
+    expect(matchesRoute(WORKFLOW_DETAIL_PATH, "/workflows/wfd_1")).toBe(true);
+    expect(matchesRoute(WORKFLOW_DETAIL_PATH, "/workflows")).toBe(false);
+    expect(matchesRoute(WORKFLOW_DETAIL_PATH, "/workflows/wfd_1/runs")).toBe(
       false,
     );
   });

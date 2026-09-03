@@ -11,7 +11,7 @@ import { and, eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { getAncestorChain, schema } from "@intx/db";
 import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
-import { isConversationalWorkflowName } from "@corbits/workflow-catalog";
+import { isConversationalWorkflowName } from "@workbench/templates";
 import { deriveDisplayName } from "./client";
 
 export type VisibleAgentDefinition = {

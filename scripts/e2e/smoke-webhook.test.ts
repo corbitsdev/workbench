@@ -364,7 +364,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
             `/api/tenants/${tenantId}/routines`,
             {
               name: "Webhook-fired heartbeat",
-              definitionId,
+              definitionAssetId: assetId,
               trigger: { kind: "webhook", webhookTriggerId: triggerId },
               scope: "bench",
               deliveryWorkbenchId: workbenchId,

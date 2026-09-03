@@ -15,16 +15,18 @@
 // `credentialName` so its own internal `ensureCredential` resolves to
 // the row planted here rather than a second `<provider>-default` row.
 import {
+  PROVIDER_TEST_CONFIG,
+  type SupportedCredentialProvider,
+} from "./credential-test";
+import {
   ensureCredential,
   ensureProvider,
-  PROVIDER_TEST_CONFIG,
   seedCatalog,
-  type ApiCall,
   type EnsureCredentialArgs,
   type EnsureProviderArgs,
   type SeedCatalogArgs,
-  type SupportedCredentialProvider,
-} from "@workbench/hub-client";
+} from "@corbits/seeding";
+import type { ApiCall } from "@corbits/hub-api-client";
 import type { ConnectorDescriptor } from "./descriptor";
 
 export function isInferenceProvider(

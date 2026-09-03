@@ -21,7 +21,7 @@ import {
   type PresenceState,
   type PresenceStatePatch,
 } from "./room-registry";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 import {
   MAX_DOC_UPDATE_BYTES,
   maxBase64LengthFor,

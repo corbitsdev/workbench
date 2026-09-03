@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ApiCall, ApiResult } from "@workbench/hub-client";
+import type { ApiCall, ApiResult } from "@corbits/hub-api-client";
 
 import { checkSignupGate, resolvePendingInviteOnLogin } from "./gate";
 import { createInMemoryAccessPolicyStore } from "./store";

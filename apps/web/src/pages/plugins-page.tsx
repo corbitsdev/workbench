@@ -21,10 +21,12 @@ import {
   PluginConnectPanel,
   type PluginsGalleryTab,
 } from "@corbits/plugins-ui";
-import type { ResolvedPlugin } from "@workbench/connections/plugins";
-import { listPluginsForTenant } from "@workbench/connections/plugins";
-import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
-import { MCP_PRESETS } from "@workbench/connections/mcp-presets";
+import type { ResolvedPlugin } from "@corbits/connections/plugins";
+import { listPluginsForTenant } from "@corbits/connections/plugins";
+import {
+  CONNECTOR_REGISTRY,
+  MCP_PRESETS,
+} from "@workbench/templates/connectors";
 import { Plus, SquaresFour, Warning } from "@corbits/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -130,7 +132,7 @@ export function PluginsRoute({
     const isTenantChange = pluginsLoadedTenantRef.current !== selectedTenantId;
     pluginsLoadedTenantRef.current = selectedTenantId;
     if (isTenantChange) setPluginsState({ status: "loading" });
-    listPluginsForTenant(selectedTenantId)
+    listPluginsForTenant(selectedTenantId, CONNECTOR_REGISTRY)
       .then((plugins) => {
         if (!cancelled) setPluginsState({ status: "ready", plugins });
       })
@@ -142,6 +144,37 @@ export function PluginsRoute({
       cancelled = true;
     };
   }, [selectedTenantId, pluginsReloadKey]);
+
+  // Keep plugin connection status live while the gallery sits open —
+  // a credential expiring or a disconnect in another tab/window would
+  // otherwise leave "Connected" stale indefinitely. Re-read on
+  // visibility/focus and poll every 30s while visible, mirroring the
+  // pattern `ConnectionsSection` and the `subscribeConnectState` containers
+  // use for in-room connect cards.
+  useEffect(() => {
+    if (selectedTenantId === null) return;
+    // `visibilitychange` and `focus` both fire in the same tick when a tab
+    // regains focus; the microtask guard collapses that pair into one
+    // scheduled bump instead of two back-to-back reloads.
+    let bumpScheduled = false;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (bumpScheduled) return;
+      bumpScheduled = true;
+      queueMicrotask(() => {
+        bumpScheduled = false;
+        setPluginsReloadKey((key) => key + 1);
+      });
+    };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("focus", refreshWhenVisible);
+    const interval = setInterval(refreshWhenVisible, 30_000);
+    return () => {
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("focus", refreshWhenVisible);
+      clearInterval(interval);
+    };
+  }, [selectedTenantId]);
 
   useEffect(() => {
     if (selectedTenantId === null) return;

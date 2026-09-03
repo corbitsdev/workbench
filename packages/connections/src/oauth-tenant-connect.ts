@@ -18,11 +18,10 @@
 // there is no separate probe step here (unlike `/complete`'s pasted-key
 // path, which has nothing else vouching for the secret).
 import type { TenantEnv } from "@intx/hub-api";
-import { createHubAPI } from "@workbench/hub-client";
+import { createHubAPI } from "@corbits/hub-api-client";
 import { reportError } from "@corbits/error-sink";
 import type { ConnectorDescriptor } from "./descriptor";
 import type { ProviderHealthStore } from "./provider-health";
-import { CONNECTOR_REGISTRY } from "./registry";
 import type { CreateOAuthConnectRoutesDeps } from "./oauth-routes";
 import {
   persistConnectorCredential,
@@ -33,8 +32,9 @@ export type CreateTenantConnectCredentialDeps =
   PersistConnectorCredentialFns & {
     readonly hubUrl: string;
     readonly log: (line: string) => void;
-    /** Test-only override, matching every other route factory here. */
-    readonly registry?: Readonly<Record<string, ConnectorDescriptor>>;
+    /** The connector set this build ships — this package carries none
+     * of its own (CL-7384), so a caller always supplies one. */
+    readonly registry: Readonly<Record<string, ConnectorDescriptor>>;
     /** Cleared on a successful connect, same store `createConnectionRoutes`'
      * `/complete` and `GET /provider-health` share (CL-6092). */
     readonly providerHealth?: ProviderHealthStore;
@@ -49,7 +49,7 @@ export function createTenantConnectCredential(
   deps: CreateTenantConnectCredentialDeps,
 ): CreateOAuthConnectRoutesDeps<TenantEnv>["connectCredential"] {
   const api = createHubAPI(deps.hubUrl);
-  const registry = deps.registry ?? CONNECTOR_REGISTRY;
+  const registry = deps.registry;
 
   return async (args) => {
     const tenant = args.c.get("tenant");

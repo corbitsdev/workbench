@@ -9,6 +9,11 @@
 import { expect, test } from "bun:test";
 import { Hono } from "hono";
 
+import type {
+  ConditionRegistry,
+  GrantRule,
+  GrantStore,
+} from "@intx/types/authz";
 import {
   createWorkflowRoutineRoutes,
   type CreateWorkflowRoutineRoutesDeps,
@@ -62,6 +67,29 @@ function fakeWorkbenchNotice(): WorkbenchNoticePort & {
   };
 }
 
+function allowGrant(): GrantRule {
+  return {
+    id: "g_read",
+    resource: "workflow-definition:*",
+    action: "read",
+    effect: "allow",
+    origin: "system",
+    conditions: null,
+    expiresAt: null,
+    roleId: null,
+    principalId: null,
+  };
+}
+
+function fakeGrantStore(grants: readonly GrantRule[]): GrantStore {
+  return {
+    collectGrants: async () => [...grants],
+    collectGrantsInChain: async () => [...grants],
+  };
+}
+
+const conditionRegistry: ConditionRegistry = {};
+
 /** A store that always creates a routine already disabled — see the
  * identical helper in `./test/routes.test.ts` for why. */
 function storeCreatingDisabled(): RoutineStore {
@@ -86,6 +114,7 @@ function buildDeps(
     store: createInMemoryRoutineStore(),
     launcher: fakeLauncher(),
     authenticator: authenticateAsMyra,
+    listTargets: async () => ({ items: [], nextCursor: null }),
     ...overrides,
   };
 }
@@ -97,7 +126,7 @@ const AUTH_HEADERS = {
 
 const VALID_BODY = {
   name: "Morning digest",
-  definitionId: "def_digest",
+  definitionAssetId: "def_digest",
   trigger: { kind: "daily", hour: 9, minute: 0 },
   deliveryWorkbenchId: "ch_delivery",
 };
@@ -127,6 +156,44 @@ test("GET /routines is a 401 without a recognized run credential", async () => {
   expect(response.status).toBe(401);
 });
 
+test("GET /targets is a 401 without a recognized run credential", async () => {
+  const app = buildApp(buildDeps());
+  const response = await app.request("/targets");
+  expect(response.status).toBe(401);
+});
+
+test("GET /targets runs listTargets for the run's own tenant/principal", async () => {
+  const seen: unknown[] = [];
+  const app = buildApp(
+    buildDeps({
+      listTargets: async (query) => {
+        seen.push(query);
+        return {
+          items: [
+            {
+              definitionAssetId: "ast_digest",
+              definitionId: "wfd_digest",
+              assetName: "digest-writer",
+              name: "Digest writer",
+              description: null,
+              kind: "workflow",
+              wireHash: "h",
+            },
+          ],
+          nextCursor: null,
+        };
+      },
+    }),
+  );
+  const response = await app.request("/targets", { headers: AUTH_HEADERS });
+  expect(response.status).toBe(200);
+  expect(seen).toEqual([
+    { tenantId: TENANT_ID, principalId: PRINCIPAL_ID, limit: 50 },
+  ]);
+  const body = (await response.json()) as { items: { name: string }[] };
+  expect(body.items.map((item) => item.name)).toEqual(["Digest writer"]);
+});
+
 test("creates a routine scoped 'bench', never a raw id where a name belongs", async () => {
   const app = buildApp(buildDeps());
   const { response, body } = await createRoutine(app, VALID_BODY);
@@ -137,78 +204,60 @@ test("creates a routine scoped 'bench', never a raw id where a name belongs", as
   expect(typeof body["id"]).toBe("string");
 });
 
-test("creates a routine targeting a definition other than Myra's own — tenant-scoped, not self-definition-scoped", async () => {
+test("creates a routine targeting an asset other than Myra's own — tenant-scoped, not self-definition-scoped", async () => {
   const deps = buildDeps({
-    definitionInTenant: async (tenantId, definitionId) =>
-      tenantId === TENANT_ID && definitionId === "def_some_other_agent",
+    resolveTarget: async (tenantId, definitionAssetId) =>
+      tenantId === TENANT_ID && definitionAssetId === "ast_some_other_agent"
+        ? { ok: true, definitionId: "wfd_other_v2", wireHash: "h" }
+        : { ok: false, reason: "not_found" },
   });
   const app = buildApp(deps);
-  const { response } = await createRoutine(app, {
+  const { response, body } = await createRoutine(app, {
     ...VALID_BODY,
-    definitionId: "def_some_other_agent",
+    definitionAssetId: "ast_some_other_agent",
   });
   expect(response.status).toBe(201);
+  expect(body["definitionAssetId"]).toBe("ast_some_other_agent");
+  expect(body["definitionId"]).toBe("wfd_other_v2");
 });
 
-test("rejects a definition that is not in the run's own tenant", async () => {
-  const deps = buildDeps({ definitionInTenant: async () => false });
+test("rejects a target that does not resolve in the run's own tenant with a typed 404", async () => {
+  const deps = buildDeps({
+    resolveTarget: async () => ({ ok: false, reason: "cross_tenant" }),
+  });
   const app = buildApp(deps);
   const { response, body } = await createRoutine(app, VALID_BODY);
   expect(response.status).toBe(404);
-  expect((body["error"] as Record<string, unknown>)["code"]).toBe("not_found");
+  expect((body["error"] as Record<string, unknown>)["code"]).toBe(
+    "routine_target_not_found",
+  );
 });
 
-test("resolves a definition NAME to its id via resolveDefinitionId and stores the resolved id", async () => {
+test("a definition NAME is not a target — there is no server-side name search", async () => {
+  const seen: string[] = [];
   const deps = buildDeps({
-    definitionInTenant: async (tenantId, definitionId) =>
-      tenantId === TENANT_ID && definitionId === "wfd_digest",
-    resolveDefinitionId: async (tenantId, idOrName) =>
-      tenantId === TENANT_ID && idOrName === "digest-writer"
-        ? "wfd_digest"
-        : undefined,
-  });
-  const app = buildApp(deps);
-  const { response, body } = await createRoutine(app, {
-    ...VALID_BODY,
-    definitionId: "digest-writer",
-  });
-  expect(response.status).toBe(201);
-  expect(body["definitionId"]).toBe("wfd_digest");
-});
-
-test("an unresolvable definitionId 404s with up to 8 candidate name (wfd_id) pairs", async () => {
-  const deps = buildDeps({
-    definitionInTenant: async () => false,
-    resolveDefinitionId: async () => undefined,
-    listDefinitionCandidates: async () => [
-      { id: "wfd_digest", name: "digest-writer" },
-      { id: "wfd_other", name: "other-agent" },
-    ],
-  });
-  const app = buildApp(deps);
-  const { response, body } = await createRoutine(app, {
-    ...VALID_BODY,
-    definitionId: "nonexistent",
-  });
-  expect(response.status).toBe(404);
-  const message = (body["error"] as Record<string, unknown>)[
-    "userMessage"
-  ] as string;
-  expect(message).toContain("digest-writer (wfd_digest)");
-  expect(message).toContain("other-agent (wfd_other)");
-});
-
-test("an ambiguous name resolves to undefined and 404s", async () => {
-  const deps = buildDeps({
-    definitionInTenant: async () => false,
-    resolveDefinitionId: async () => undefined,
+    resolveTarget: async (_tenantId, definitionAssetId) => {
+      seen.push(definitionAssetId);
+      return { ok: false, reason: "not_found" };
+    },
   });
   const app = buildApp(deps);
   const { response } = await createRoutine(app, {
     ...VALID_BODY,
-    definitionId: "digest-writer",
+    definitionAssetId: "digest-writer",
   });
   expect(response.status).toBe(404);
+  expect(seen).toEqual(["digest-writer"]);
+});
+
+test("a body with no definitionAssetId is a 400", async () => {
+  const app = buildApp(buildDeps());
+  const { definitionAssetId: _omitted, ...withoutTarget } = VALID_BODY;
+  const { response, body } = await createRoutine(app, withoutTarget);
+  expect(response.status).toBe(400);
+  expect((body["error"] as Record<string, unknown>)["code"]).toBe(
+    "bad_request",
+  );
 });
 
 test("rejects an invalid trigger with a 400", async () => {
@@ -289,7 +338,7 @@ test("GET /routines lists this tenant's routines only", async () => {
   await store.createRoutine({
     tenantId: TENANT_ID,
     name: "Mine",
-    definitionId: "def_1",
+    definitionAssetId: "def_1",
     trigger: null,
     scope: "bench",
     input: {},
@@ -298,7 +347,7 @@ test("GET /routines lists this tenant's routines only", async () => {
   await store.createRoutine({
     tenantId: "tnt_other",
     name: "Not mine",
-    definitionId: "def_1",
+    definitionAssetId: "def_1",
     trigger: null,
     scope: "bench",
     input: {},
@@ -330,6 +379,85 @@ test("PATCH /routines/:id updates enabled, name, trigger, and input", async () =
   expect(body["name"]).toBe("Evening digest");
   expect(body["trigger"]).toEqual({ kind: "daily", hour: 18, minute: 30 });
   expect(body["input"]).toEqual({ instruction: "Summarize today's threads" });
+});
+
+// Mirrors `./test/routes.test.ts`'s "retargeting a routine's definition
+// (CL-7353/CL-7354)" describe block on this file's own run-authenticated
+// (Myra) surface — `rejectUnlaunchableTarget` and the duplicate-patch fix
+// both live in this file's PATCH handler, not the tenant-session one.
+test("a retarget-only PATCH changes definitionAssetId and leaves every other field untouched", async () => {
+  const deps = buildDeps({
+    resolveTarget: async (_tenantId, definitionAssetId) => ({
+      ok: true,
+      definitionId: `wfd_${definitionAssetId}`,
+      wireHash: "h1",
+    }),
+  });
+  const app = buildApp(deps);
+  const { body: created } = await createRoutine(app, VALID_BODY);
+
+  const response = await app.request(`/routines/${String(created["id"])}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", ...AUTH_HEADERS },
+    body: JSON.stringify({ definitionAssetId: "ast_retargeted" }),
+  });
+  const body = (await response.json()) as Record<string, unknown>;
+
+  expect(response.status).toBe(200);
+  expect(body["definitionAssetId"]).toBe("ast_retargeted");
+  expect(body["name"]).toBe(created["name"]);
+  expect(body["trigger"]).toEqual(created["trigger"]);
+  expect(body["input"]).toEqual(created["input"]);
+});
+
+test("a retarget PATCH is refused 404 (indistinguishable from not-found) when the new target is not authorized", async () => {
+  const deps = buildDeps({
+    resolveTarget: async () => ({
+      ok: true,
+      definitionId: "wfd_v1",
+      wireHash: "h1",
+    }),
+    grantStore: fakeGrantStore([allowGrant()]),
+    conditionRegistry,
+  });
+  const app = buildApp(deps);
+  const { response: createResponse, body: created } = await createRoutine(
+    app,
+    VALID_BODY,
+  );
+  expect(createResponse.status).toBe(201);
+
+  deps.grantStore = fakeGrantStore([]);
+  const response = await app.request(`/routines/${String(created["id"])}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", ...AUTH_HEADERS },
+    body: JSON.stringify({ definitionAssetId: "ast_forbidden" }),
+  });
+  const body = (await response.json()) as Record<string, unknown>;
+
+  expect(response.status).toBe(404);
+  expect((body["error"] as Record<string, unknown>)["code"]).toBe(
+    "routine_target_not_found",
+  );
+});
+
+test("a create is refused 404 (indistinguishable from not-found) when the resolved target is not authorized", async () => {
+  const deps = buildDeps({
+    resolveTarget: async () => ({
+      ok: true,
+      definitionId: "wfd_v1",
+      wireHash: "h1",
+    }),
+    grantStore: fakeGrantStore([]),
+    conditionRegistry,
+  });
+  const app = buildApp(deps);
+  const { response, body } = await createRoutine(app, VALID_BODY);
+
+  expect(response.status).toBe(404);
+  expect((body["error"] as Record<string, unknown>)["code"]).toBe(
+    "routine_target_not_found",
+  );
 });
 
 test("POST /routines posts an honest notice when created enabled", async () => {
@@ -399,7 +527,7 @@ test("PATCH /routines/:id 404s for a routine outside the run's own tenant", asyn
   const other = await store.createRoutine({
     tenantId: "tnt_other",
     name: "Not mine",
-    definitionId: "def_1",
+    definitionAssetId: "def_1",
     trigger: null,
     scope: "bench",
     input: {},

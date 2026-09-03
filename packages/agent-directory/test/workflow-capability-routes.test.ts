@@ -130,22 +130,35 @@ const authenticateAsOwnRun: WorkflowRunAuthenticator = {
     ),
 };
 
-/** Records freeze/re-freeze calls instead of running the real
- * `@corbits/workflow-freeze` machinery (whose own suites cover the DB
- * half); routes here are asserted to invoke it on every content write. */
-function recordingDefinitionFreezer() {
-  const freezes: { assetId: string; workflowJson: string }[] = [];
-  const refreezes: { definitionId: string; workflowJson: string }[] = [];
+/** Records deploy calls instead of running a real
+ * `sessionService.deployWorkflowFromSource`; routes here are asserted to
+ * invoke it, with the commit the write produced, on every content
+ * write. */
+function recordingAgentDefinitionDeployer() {
+  const deploys: {
+    tenantId: string;
+    principalId: string;
+    assetId: string;
+    assetName: string;
+    commitSha: string;
+    entry: string;
+  }[] = [];
   return {
-    freezes,
-    refreezes,
-    freeze: (input: { assetId: string; workflowJson: string }) => {
-      freezes.push(input);
-      return Promise.resolve({ definitionId: "def_new", wireHash: "hash_1" });
-    },
-    refreeze: (input: { definitionId: string; workflowJson: string }) => {
-      refreezes.push(input);
-      return Promise.resolve({ wireHash: "hash_2" });
+    deploys,
+    deploy: (input: {
+      tenantId: string;
+      principalId: string;
+      assetId: string;
+      assetName: string;
+      commitSha: string;
+      entry: string;
+    }) => {
+      deploys.push(input);
+      return Promise.resolve({
+        deploymentId: "dep_1",
+        definitionAssetId: input.assetId,
+        status: "deployed" as const,
+      });
     },
   };
 }
@@ -155,7 +168,7 @@ function buildApp(opts: {
   authenticator?: WorkflowRunAuthenticator;
   capabilityInventory?: CapabilityInventoryProvider;
   skillsStore?: DefinitionSkillsStore;
-  definitionFreezer?: ReturnType<typeof recordingDefinitionFreezer>;
+  deployer?: ReturnType<typeof recordingAgentDefinitionDeployer>;
 }): Hono {
   return createWorkflowCapabilityRoutes({
     db: opts.db ?? fakeDb(),
@@ -164,7 +177,7 @@ function buildApp(opts: {
     skillsStore: opts.skillsStore ?? createInMemoryDefinitionSkillsStore(),
     capabilityInventory: opts.capabilityInventory ?? fakeCapabilityInventory,
     authenticator: opts.authenticator ?? authenticateAsOwnRun,
-    definitionFreezer: opts.definitionFreezer ?? recordingDefinitionFreezer(),
+    deployer: opts.deployer ?? recordingAgentDefinitionDeployer(),
   }) as unknown as Hono;
 }
 
@@ -232,7 +245,7 @@ test("a run targeting another definition's capabilities is a 403", async () => {
 test("a run may add a capability to its own definition without any grant check", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
   let writtenMessage: string | undefined;
-  const freezer = recordingDefinitionFreezer();
+  const deployer = recordingAgentDefinitionDeployer();
   const app = buildApp({
     assetService: fakeAssetService({
       readAssetBlob: readAssetBlobFor(storedDefinitionBytes()),
@@ -242,17 +255,18 @@ test("a run may add a capability to its own definition without any grant check",
         return Promise.resolve({ commitSha: "deadbeef" });
       },
     }),
-    definitionFreezer: freezer,
+    deployer,
   });
   const response = await postCapability(app, OWN_DEFINITION_ID, {
     kind: "toolPackage",
     name: "@corbits/capability-tools",
   });
   expect(response.status).toBe(200);
-  // The rewrite re-freezes the definition's projection so the next
-  // launch carries the added capability (CL-6447).
-  expect(freezer.refreezes).toHaveLength(1);
-  expect(freezer.refreezes[0]?.definitionId).toBe(OWN_DEFINITION_ID);
+  // The rewrite redeploys the definition through the native source
+  // pipeline so the next launch carries the added capability (CL-6447,
+  // cut over to native deploy by CL-7363).
+  expect(deployer.deploys).toHaveLength(1);
+  expect(deployer.deploys[0]?.commitSha).toBe("deadbeef");
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
   expect(writtenMessage).toBe(
     "Add @corbits/capability-tools to research-buddy",

@@ -179,25 +179,28 @@ alone.
 ## Motion
 
 Durations run 150–300ms; entrances ease out, never linear or bouncy-in.
-Two named easings cover the system:
+Three named easings cover the system (all sourced from `@corbits/react-ui`'s
+`theme.css` — never re-declared locally):
 
-- `spring` — `cubic-bezier(.2, .9, .3, 1.15)` — for things that pop into
-  place with a little overshoot.
-- `out` — `cubic-bezier(.2, .8, .3, 1)` — for straightforward entrances and
-  exits with no overshoot.
+- `out` (`--ease-out`) — `cubic-bezier(.23, 1, .32, 1)` — straightforward
+  entrances and exits with no overshoot. The default for most motion.
+- `spring` (`--ease-spring`) — `cubic-bezier(.2, .9, .3, 1.15)` — for things
+  that pop into place with a little overshoot (docks, popovers, toasts
+  arriving).
+- `in-out` (`--ease-in-out`) — `cubic-bezier(.65, 0, .35, 1)` — for something
+  that grows or shrinks _in place_ — the search bar's morph, a rail resizing,
+  a composer height change — where overshoot would drag every neighbour in the
+  row along with it. This supersedes the earlier reading of `spring` as the
+  search morph's curve (CL-6410 review).
 
-Something that grows or shrinks _in place_ — the search bar's morph, a rail
-resizing — takes `--ease-in-out` instead: an overshoot there does not read as
-liveliness, it drags every neighbour in the row along with it. This
-supersedes the earlier reading of `spring` as the search morph's curve
-(CL-6410 review); the curves themselves are react-ui's, and its `theme.css`
-documents `--ease-in-out` as the morph curve.
-
-These are tokens on `@corbits/react-ui`'s theme, not Tailwind utilities the
-product can name: the app imports react-ui's _prebuilt_ stylesheet, so a
-`duration-standard` or `ease-spring` class compiles to nothing here. Product
-motion is authored as a real `transition` declaration reading
-`var(--duration-*)` / `var(--ease-*)`.
+Named durations are also react-ui tokens: `--duration-micro` (150ms) for a
+hover/pressed state or icon swap, `--duration-standard` (200ms) for a toast or
+dropdown, and `--duration-large` (300ms) for a dialog, drawer, or panel swap —
+all declared on `:root` in `theme.css` and re-exposed as Tailwind's
+`--transition-duration-*` utilities. Hand-written motion reads
+`var(--duration-*)` / `var(--ease-*)` rather than Tailwind's
+`duration-standard` / `ease-out` classes, since the app imports react-ui's
+_prebuilt_ stylesheet where those utilities are already compiled.
 
 Motion always encodes a state change — something entering, something
 transforming, focus moving — never plain decoration. If removing an

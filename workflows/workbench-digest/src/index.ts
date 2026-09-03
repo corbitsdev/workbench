@@ -14,7 +14,7 @@
 // definition is deployed with its `inferencePreferences` pinned to the
 // hub's `noop-inference` endpoint (see
 // `packages/chat/src/noop-inference.ts` and
-// `packages/hub-client/src/seed.ts`'s `NOOP_MODEL_SOURCE`). Under that
+// `packages/seeding/src/seed.ts`'s `NOOP_MODEL_SOURCE`). Under that
 // pin the turn completes instantly against a constant, empty reply —
 // by design, `noop-inference` never produces real text (see that
 // file's header comment) — so this deployment proves the scheduling

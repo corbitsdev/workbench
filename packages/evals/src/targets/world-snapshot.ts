@@ -18,7 +18,7 @@
 //   - routines: `routines.routine`, queried the same
 //     `tenantId`/`deletedAt IS NULL` shape `RoutineStore.listRoutines`
 //     uses.
-//   - connections: `@workbench/connections`'
+//   - connections: `@corbits/connections`'
 //     `listMcpServerConnections` verbatim — it already filters to an
 //     active credential, so everything it returns is "live".
 import { and, eq, isNull } from "drizzle-orm";
@@ -34,7 +34,8 @@ import { webhookTrigger as webhookTriggerTable } from "@corbits/webhook-triggers
 import {
   connectorDescriptors,
   listMcpServerConnections,
-} from "@workbench/connections";
+} from "@corbits/connections";
+import { CONNECTOR_REGISTRY } from "@workbench/templates/connectors";
 
 import type { FakeReceipt, WorldSnapshot } from "../types.ts";
 
@@ -98,7 +99,7 @@ async function readRoutines(db: DB["db"], tenantId: string) {
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
-    definitionId: row.definitionId,
+    definitionAssetId: row.definitionAssetId,
     trigger: row.trigger,
     deliveryWorkbenchId: row.deliveryWorkbenchId,
     enabled: row.enabled,
@@ -120,13 +121,13 @@ async function readConnections(
 
   // Connector credentials (the Plugins layer): a connector's credential
   // row is named after its descriptor's displayName — the exact
-  // resolution `@workbench/connections`' plugins module and the hub's
+  // resolution `@corbits/connections`' plugins module and the hub's
   // own `resolveGithubConfig` binding use — so a GitHub PAT connected
   // through the connections layer shows up here as slug "github",
   // which is not an MCP server and was invisible to this snapshot
   // before.
   const fromConnectors: typeof fromMcp = [];
-  for (const descriptor of connectorDescriptors()) {
+  for (const descriptor of connectorDescriptors(CONNECTOR_REGISTRY)) {
     const row = await resolveByName(db, tenantId, descriptor.displayName);
     if (row === null) continue;
     fromConnectors.push({

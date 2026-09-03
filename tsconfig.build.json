@@ -5,6 +5,9 @@
       "path": "./apps/sidecar/tsconfig.src.json"
     },
     {
+      "path": "./packages/access-policy/tsconfig.src.json"
+    },
+    {
       "path": "./packages/agent-directory-tools/tsconfig.src.json"
     },
     {
@@ -12,9 +15,6 @@
     },
     {
       "path": "./packages/agent-lifecycle/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/agent-runtime/tsconfig.src.json"
     },
     {
       "path": "./packages/api-query/tsconfig.src.json"
@@ -26,10 +26,10 @@
       "path": "./packages/artifact-ui/tsconfig.src.json"
     },
     {
-      "path": "./packages/bench-ui/tsconfig.src.json"
+      "path": "./packages/bench/tsconfig.src.json"
     },
     {
-      "path": "./packages/capability-tools/tsconfig.src.json"
+      "path": "./packages/bench-ui/tsconfig.src.json"
     },
     {
       "path": "./packages/catalog-tools/tsconfig.src.json"
@@ -47,6 +47,9 @@
       "path": "./packages/command-palette/tsconfig.src.json"
     },
     {
+      "path": "./packages/commands/tsconfig.src.json"
+    },
+    {
       "path": "./packages/context-menu/tsconfig.src.json"
     },
     {
@@ -57,9 +60,6 @@
     },
     {
       "path": "./packages/e2b-sandbox-sidecar/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/echo/tsconfig.src.json"
     },
     {
       "path": "./packages/error-sink/tsconfig.src.json"
@@ -74,10 +74,16 @@
       "path": "./packages/granola-tools/tsconfig.src.json"
     },
     {
+      "path": "./packages/hub-api-client/tsconfig.src.json"
+    },
+    {
       "path": "./packages/icons/tsconfig.src.json"
     },
     {
       "path": "./packages/inbox/tsconfig.src.json"
+    },
+    {
+      "path": "./packages/inference-catalog/tsconfig.src.json"
     },
     {
       "path": "./packages/interaction-tools/tsconfig.src.json"
@@ -110,10 +116,16 @@
       "path": "./packages/ollama-adapter/tsconfig.src.json"
     },
     {
+      "path": "./packages/preferences/tsconfig.src.json"
+    },
+    {
+      "path": "./packages/presence/tsconfig.src.json"
+    },
+    {
       "path": "./packages/reddit-tools/tsconfig.src.json"
     },
     {
-      "path": "./packages/routines-tools/tsconfig.src.json"
+      "path": "./packages/run-key-history/tsconfig.src.json"
     },
     {
       "path": "./packages/sandbox-sidecar/tsconfig.src.json"
@@ -123,6 +135,12 @@
     },
     {
       "path": "./packages/shell-layout/tsconfig.src.json"
+    },
+    {
+      "path": "./packages/sidecar-placement/tsconfig.src.json"
+    },
+    {
+      "path": "./packages/skills/tsconfig.src.json"
     },
     {
       "path": "./packages/skills-tools/tsconfig.src.json"
@@ -147,15 +165,6 @@
     },
     {
       "path": "./packages/web-search-tools/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/workflow-deploy-source/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/workflow-freeze/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/workflow-source/tsconfig.src.json"
     },
     {
       "path": "./vendor/intx/agent/tsconfig.src.json"

@@ -41,7 +41,7 @@ import type { AssetService } from "@intx/hub-sessions";
 
 import { skillNameSchema } from "@corbits/skills";
 import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
-import { isAutomatableWorkflowName } from "@corbits/workflow-catalog";
+import { isAutomatableWorkflowName } from "@workbench/templates";
 
 import {
   createAgentDefinitionCore,
@@ -55,7 +55,7 @@ import {
   CapabilityOutOfInventoryError,
   type CapabilityInventoryProvider,
 } from "./capability-inventory";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 import type {
   WorkflowCapabilityRunScope,
   WorkflowRunAuthenticator,
@@ -105,7 +105,7 @@ export type CreateWorkflowAgentCreateRoutesDeps = {
   readonly skillsStore: CreateAgentDefinitionCoreDeps["skillsStore"];
   readonly capabilityInventory: CapabilityInventoryProvider;
   readonly authenticator: WorkflowRunAuthenticator;
-  readonly definitionFreezer: CreateAgentDefinitionCoreDeps["definitionFreezer"];
+  readonly deployer: CreateAgentDefinitionCoreDeps["deployer"];
   readonly tenantDefaultModel?: CreateAgentDefinitionCoreDeps["tenantDefaultModel"];
 };
 
@@ -249,7 +249,7 @@ export function createWorkflowAgentCreateRoutes(
         assetService: deps.assetService,
         skillIndex: deps.skillIndex,
         skillsStore: deps.skillsStore,
-        definitionFreezer: deps.definitionFreezer,
+        deployer: deps.deployer,
         ...(deps.tenantDefaultModel !== undefined
           ? { tenantDefaultModel: deps.tenantDefaultModel }
           : {}),

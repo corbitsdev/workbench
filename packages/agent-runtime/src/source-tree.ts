@@ -12,7 +12,7 @@
 // rather than shipping a call to it: an asset tree is a standalone
 // codebase, so a `workspace:*` dependency on `@corbits/agent-runtime`
 // has no workspace to resolve against and the closure resolver rejects
-// it outright. `@corbits/workflow-source` renders the tree itself —
+// it outright. `@corbits/workflows`'s `./source` renders the tree itself —
 // the same two files every other authoring path writes — which keeps
 // the config-IS-the-bytes property the retirement requires:
 // everything that varies per run is inside the hashed source, nothing
@@ -25,7 +25,7 @@
 import {
   renderWorkflowSourceTree,
   WORKFLOW_SOURCE_ENTRY,
-} from "@corbits/workflow-source";
+} from "@corbits/workflows";
 import { parseAgentRuntimeConfig, type AgentRuntimeConfig } from "./config";
 import { buildAgentRuntimeWorkflow } from "./definition";
 

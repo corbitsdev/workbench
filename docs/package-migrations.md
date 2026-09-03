@@ -73,7 +73,7 @@ package onto the transactional pattern — see below):
    `@corbits/webhook-triggers`, `@corbits/routines`, `@corbits/insights`,
    `@corbits/skills`, `@corbits/bench`, `@corbits/preferences`,
    `@corbits/inference-catalog`, `@corbits/evals`, `@corbits/access-policy`,
-   `@corbits/workflow-deploy-source`.
+   `@corbits/workflows`'s `./deploy-source`.
    The package's `src/migrations.ts` owns only a literal `{ name, sql }[]`
    array and a thin `applyXMigrations(databaseUrl)` wrapper; the mechanics —
    schema/ledger bootstrap, the transactional apply loop, and the advisory
@@ -113,7 +113,7 @@ for itself instead (`chat`, `routines`, `insights`, `notify`,
 key, so nothing about the reference actually required sharing `public`.
 Schema changes like this are hard cutovers, not data-preserving migrations:
 pre-GA there is nothing to migrate, and an existing dev database picks up
-the new schema by running `workbench reset` rather than by an in-place
+the new schema by running `bun run reset` rather than by an in-place
 `ALTER TABLE ... SET SCHEMA`.
 
 ## Which shape to use for a new package

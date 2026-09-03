@@ -5,7 +5,9 @@ import {
   routinesTools,
   ROUTINE_CREATE_TOOL,
   ROUTINE_LIST_TOOL,
+  ROUTINE_RETARGET_TOOL,
   ROUTINE_RUN_NOW_TOOL,
+  ROUTINE_TARGETS_TOOL,
   ROUTINE_UPDATE_TOOL,
   type WorkflowRoutineEnv,
 } from "./tool";
@@ -26,7 +28,8 @@ function routineViewBody(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "rtn_1",
     name: "Morning digest",
-    definitionId: "def_1",
+    definitionAssetId: "def_1",
+    definitionId: "wfd_1",
     trigger: { kind: "daily", hour: 9, minute: 0 },
     scope: "bench",
     input: { instruction: "Summarize overnight activity" },
@@ -40,12 +43,14 @@ function routineViewBody(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-test("declares exactly the four routine tools", () => {
+test("declares exactly the six routine tools", () => {
   const bundle = routinesTools(testEnv());
   expect(bundle.definitions.map((d) => d.name)).toEqual([
     ROUTINE_LIST_TOOL,
+    ROUTINE_TARGETS_TOOL,
     ROUTINE_CREATE_TOOL,
     ROUTINE_UPDATE_TOOL,
+    ROUTINE_RETARGET_TOOL,
     ROUTINE_RUN_NOW_TOOL,
   ]);
 });
@@ -65,23 +70,25 @@ test("routine_list has no approval key — a read never needs a human gate", () 
   expect(listDef).toEqual({ name: ROUTINE_LIST_TOOL });
 });
 
-test('routine_create and routine_update grant no credentials and touch nothing external at call time — only routine_run_now, which fires external action immediately, keeps approval: "ask"', () => {
+test('routine_create and routine_update grant no credentials and touch nothing external at call time — routine_run_now, which fires external action immediately, and routine_retarget, which repoints what a routine runs, both keep approval: "ask"', () => {
   expect(routinesTools.definitions).toEqual([
     { name: ROUTINE_LIST_TOOL },
+    { name: ROUTINE_TARGETS_TOOL },
     { name: ROUTINE_CREATE_TOOL },
     { name: ROUTINE_UPDATE_TOOL },
+    { name: ROUTINE_RETARGET_TOOL, approval: "ask" },
     { name: ROUTINE_RUN_NOW_TOOL, approval: "ask" },
   ]);
 });
 
-test("routine_create's input schema requires name, definitionId, and trigger", () => {
+test("routine_create's input schema requires name, definitionAssetId, and trigger", () => {
   const bundle = routinesTools(testEnv());
   const definition = bundle.definitions.find(
     (d) => d.name === ROUTINE_CREATE_TOOL,
   ) as unknown as { inputSchema: { required: string[] } };
   expect(definition.inputSchema.required).toEqual([
     "name",
-    "definitionId",
+    "definitionAssetId",
     "trigger",
   ]);
 });
@@ -117,7 +124,7 @@ test("routine_create rejects an invalid trigger without calling out", async () =
   const result = await bundle.run(
     callFor(ROUTINE_CREATE_TOOL, {
       name: "x",
-      definitionId: "def_1",
+      definitionAssetId: "def_1",
       instruction: "do it",
       trigger: { kind: "yearly" },
     }),
@@ -131,7 +138,7 @@ test("routine_create rejects a genuinely invalid trigger with a correct example 
   const result = await bundle.run(
     callFor(ROUTINE_CREATE_TOOL, {
       name: "x",
-      definitionId: "def_1",
+      definitionAssetId: "def_1",
       instruction: "do it",
       trigger: { kind: "yearly" },
     }),
@@ -155,7 +162,7 @@ test("routine_create decodes a JSON-string-encoded daily trigger with a bare tim
     const result = await bundle.run(
       callFor(ROUTINE_CREATE_TOOL, {
         name: "Morning digest",
-        definitionId: "def_1",
+        definitionAssetId: "def_1",
         instruction: "Summarize overnight activity",
         trigger:
           '{"kind": "daily", "type": "daily", "time": "08:00", "hour": 8}',
@@ -185,7 +192,7 @@ test("routine_create decodes a JSON-string-encoded cron trigger using expr for e
     const result = await bundle.run(
       callFor(ROUTINE_CREATE_TOOL, {
         name: "Morning digest",
-        definitionId: "def_1",
+        definitionAssetId: "def_1",
         instruction: "Summarize overnight activity",
         trigger: '{"kind": "cron", "expr": "0 8 * * *"}',
       }),
@@ -265,7 +272,7 @@ test("routine_create posts the instruction as input.instruction and returns a pl
     const result = await bundle.run(
       callFor(ROUTINE_CREATE_TOOL, {
         name: "Morning digest",
-        definitionId: "def_1",
+        definitionAssetId: "def_1",
         instruction: "Summarize overnight activity",
         trigger: { kind: "daily", hour: 9, minute: 0 },
       }),
@@ -273,7 +280,7 @@ test("routine_create posts the instruction as input.instruction and returns a pl
     );
     expect(seenBody).toEqual({
       name: "Morning digest",
-      definitionId: "def_1",
+      definitionAssetId: "def_1",
       trigger: { kind: "daily", hour: 9, minute: 0 },
       input: { instruction: "Summarize overnight activity" },
     });
@@ -296,7 +303,7 @@ test("routine_create posts a named input object as stored input, not wrapped in 
     const result = await bundle.run(
       callFor(ROUTINE_CREATE_TOOL, {
         name: "Last 30 days",
-        definitionId: "def_1",
+        definitionAssetId: "def_1",
         input: { topic: "acme competitors" },
         trigger: { kind: "daily", hour: 9, minute: 0 },
       }),
@@ -304,7 +311,7 @@ test("routine_create posts a named input object as stored input, not wrapped in 
     );
     expect(seenBody).toEqual({
       name: "Last 30 days",
-      definitionId: "def_1",
+      definitionAssetId: "def_1",
       trigger: { kind: "daily", hour: 9, minute: 0 },
       input: { topic: "acme competitors" },
     });
@@ -326,7 +333,7 @@ test("routine_create prefers named input over instruction when both are sent", a
     await bundle.run(
       callFor(ROUTINE_CREATE_TOOL, {
         name: "Last 30 days",
-        definitionId: "def_1",
+        definitionAssetId: "def_1",
         instruction: "ignore me",
         input: { topic: "acme competitors" },
         trigger: { kind: "daily", hour: 9, minute: 0 },
@@ -335,7 +342,7 @@ test("routine_create prefers named input over instruction when both are sent", a
     );
     expect(seenBody).toEqual({
       name: "Last 30 days",
-      definitionId: "def_1",
+      definitionAssetId: "def_1",
       trigger: { kind: "daily", hour: 9, minute: 0 },
       input: { topic: "acme competitors" },
     });
@@ -356,7 +363,7 @@ test("routine_create rejects a call with neither input nor instruction", async (
     const result = await bundle.run(
       callFor(ROUTINE_CREATE_TOOL, {
         name: "Last 30 days",
-        definitionId: "def_1",
+        definitionAssetId: "def_1",
         trigger: { kind: "daily", hour: 9, minute: 0 },
       }),
       new AbortController().signal,
@@ -475,6 +482,170 @@ test("returns an honest error result on an unreachable hub, never fabricating su
     );
     expect(result.isError).toBe(true);
     expect(result.content).toMatch(/connection refused/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+function routineTargetBody(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    definitionAssetId: "ast_1",
+    definitionId: "wfd_1",
+    assetName: "digest-writer",
+    name: "Digest writer",
+    description: "Summarizes overnight activity.",
+    kind: "workflow",
+    wireHash: "h",
+    ...overrides,
+  };
+}
+
+test("routine_targets, on success, returns each candidate's definitionAssetId, name, kind, and description", async () => {
+  let seenUrl: string | undefined;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL) => {
+    seenUrl = String(url);
+    return new Response(
+      JSON.stringify({ items: [routineTargetBody()], nextCursor: null }),
+    );
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = routinesTools(testEnv());
+    const result = await bundle.run(
+      callFor(ROUTINE_TARGETS_TOOL, {}),
+      new AbortController().signal,
+    );
+    expect(seenUrl).toBe(
+      "https://hub.example.com/api/workflow-routines/targets",
+    );
+    expect(result.isError).toBeFalsy();
+    expect(JSON.parse(String(result.content))).toEqual({
+      items: [
+        {
+          definitionAssetId: "ast_1",
+          name: "Digest writer",
+          kind: "workflow",
+          description: "Summarizes overnight activity.",
+        },
+      ],
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("an ambiguous name resolved through routine_targets returns every matching candidate, and the caller never proceeds to create against a guess", async () => {
+  const originalFetch = globalThis.fetch;
+  let createCalled = false;
+  globalThis.fetch = (async (url: string | URL) => {
+    if (String(url).endsWith("/targets")) {
+      return new Response(
+        JSON.stringify({
+          items: [
+            routineTargetBody({
+              definitionAssetId: "ast_1",
+              name: "Digest writer",
+            }),
+            routineTargetBody({
+              definitionAssetId: "ast_2",
+              name: "Digest writer",
+              description: "A second, differently-scoped digest writer.",
+            }),
+          ],
+          nextCursor: null,
+        }),
+      );
+    }
+    createCalled = true;
+    return new Response("unexpected create call", { status: 500 });
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = routinesTools(testEnv());
+    const result = await bundle.run(
+      callFor(ROUTINE_TARGETS_TOOL, {}),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBeFalsy();
+    const parsed = JSON.parse(String(result.content)) as {
+      items: { definitionAssetId: string; name: string }[];
+    };
+    const matches = parsed.items.filter(
+      (item) => item.name === "Digest writer",
+    );
+    expect(matches.map((item) => item.definitionAssetId)).toEqual([
+      "ast_1",
+      "ast_2",
+    ]);
+    // Two candidates share the requested name: per routine_create's own
+    // description, the caller must surface both and ask the user to
+    // choose rather than picking one — this bundle never disambiguates
+    // on its own, so no routine_create call ever happens here.
+    expect(createCalled).toBe(false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("routine_update rejects a definitionAssetId argument without calling out — retargeting only goes through routine_retarget", async () => {
+  const originalFetch = globalThis.fetch;
+  let called = false;
+  globalThis.fetch = (async () => {
+    called = true;
+    return new Response("unexpected update call", { status: 500 });
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = routinesTools(testEnv());
+    const result = await bundle.run(
+      callFor(ROUTINE_UPDATE_TOOL, { id: "rtn_1", definitionAssetId: "ast_2" }),
+      new AbortController().signal,
+    );
+    expect(called).toBe(false);
+    expect(result.isError).toBe(true);
+    expect(result.content).toMatch(/invalid input/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("routine_retarget's input schema requires routineId and definitionAssetId", () => {
+  const bundle = routinesTools(testEnv());
+  const definition = bundle.definitions.find(
+    (d) => d.name === ROUTINE_RETARGET_TOOL,
+  ) as unknown as { inputSchema: { required: string[] } };
+  expect(definition.inputSchema.required).toEqual([
+    "routineId",
+    "definitionAssetId",
+  ]);
+});
+
+test("routine_retarget sends the PATCH with the resolved definitionAssetId", async () => {
+  let seenUrl: string | undefined;
+  let seenBody: unknown;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
+    seenUrl = String(url);
+    seenBody = JSON.parse(String(init?.body));
+    return new Response(
+      JSON.stringify(routineViewBody({ definitionAssetId: "ast_2" })),
+    );
+  }) as unknown as typeof fetch;
+  try {
+    const bundle = routinesTools(testEnv());
+    const result = await bundle.run(
+      callFor(ROUTINE_RETARGET_TOOL, {
+        routineId: "rtn_1",
+        definitionAssetId: "ast_2",
+      }),
+      new AbortController().signal,
+    );
+    expect(seenUrl).toBe(
+      "https://hub.example.com/api/workflow-routines/routines/rtn_1",
+    );
+    expect(seenBody).toEqual({ definitionAssetId: "ast_2" });
+    expect(result.isError).toBeFalsy();
+    expect(result.content).toBe(
+      'Retargeted "Morning digest" (rtn_1) to ast_2.',
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }

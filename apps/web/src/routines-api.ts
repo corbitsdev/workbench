@@ -6,19 +6,16 @@
 // and `agents-directory.ts` / `@corbits/agent-directory/client`).
 // `@corbits/routines` itself is never imported directly — its public
 // surface also exports Drizzle schema tables and a Postgres-backed store,
-// none of which belong in a browser bundle. Definitions come from the
-// platform's own `/api/tenants/:tenantId/workflows/definitions` listing
-// (native to `@intx/hub-api`, not part of routines), the same catalog a
-// routine's `definitionId` points into.
-//
-// The create-flow picker only surfaces automatable workflows (see
-// `purpose-definitions.ts` + `@corbits/workflow-catalog`). Labels prefer
-// the catalog display name over raw asset names.
+// none of which belong in a browser bundle. Targets a routine may
+// reference come from `GET /api/tenants/:tenantId/workflows/targets`
+// (`@corbits/routines`' targets.ts): deployed, frozen, authorized for the
+// signed-in principal, already filtered to what the product offers, with
+// display names attached — the browser never re-derives that list from
+// the platform's raw definitions listing.
 
 import { type } from "arktype";
 import type { ArkErrors } from "arktype";
 import { useQuery } from "@tanstack/react-query";
-import { workflowDisplayName } from "@corbits/workflow-catalog";
 import type { APIQuery } from "@corbits/api-query";
 import {
   ApiQueryError,
@@ -27,62 +24,37 @@ import {
 } from "@corbits/api-query";
 import {
   Routine,
-  RoutineDraft,
   RoutineRun,
   RoutinesResponse,
   RoutineRunsResponse,
+  RoutineTargetsResponse,
   routineCreatedToast,
-  routineDraftApprovePath,
-  routineDraftDiscardPath,
-  routineDraftsPath,
   routinePath,
   routineRunNowPath,
   routineRunStartedToast,
   routineRunsPath,
   routinesPath,
+  routineTargetsPath,
 } from "@corbits/routines/client";
 import type {
-  CreateDraftInput,
   CreateRoutineInput,
+  RoutineTarget,
   UpdateRoutineInput,
 } from "@corbits/routines/client";
-import { purposeDefinitions, withCatalogFields } from "./purpose-definitions";
-import type { CatalogFields } from "./purpose-definitions";
 
 export {
-  DraftedStep,
-  suggestRoutineNameFromPrompt,
-  type CreateDraftInput,
   type CreateRoutineInput,
   type Routine,
-  type RoutineDraft,
   type RoutineRun,
+  type RoutineTarget,
+  type RoutineTargetKind,
   type RoutineTriggerT as RoutineTrigger,
   type UpdateRoutineInput,
 } from "@corbits/routines/client";
 
-const WorkflowDefinitionRecord = type({
-  id: "string",
-  name: "string",
-  status: "string",
-  "description?": "string | null",
-});
-type WorkflowDefinitionRecord = typeof WorkflowDefinitionRecord.infer;
-
-/** An automatable workflow definition, enriched with its catalog
- * demo-card fields (see `withCatalogFields`) — the shape the Routines
- * create picker renders a card from. */
-export type WorkflowDefinitionSummary = WorkflowDefinitionRecord &
-  CatalogFields;
-
-const DefinitionsPage = type({
-  data: WorkflowDefinitionRecord.array(),
-  "nextCursor?": "string | null",
-});
-
-/** One page is enough for a seeded bench; walk cursors so a large catalog
- * never silently truncates automatable options. */
-const PAGE_LIMIT = 100;
+/** One page is enough for a seeded bench; `listAllRoutineTargets` walks
+ * cursors so a large tenant never silently truncates options. */
+const TARGETS_PAGE_LIMIT = 100;
 
 type Validator<T> = (data: unknown) => T | ArkErrors;
 
@@ -193,82 +165,34 @@ export function listRoutineRuns(
   );
 }
 
-export function createRoutineDraft(
+/** One page of definitions the signed-in principal may target from a
+ * routine, ordered by name; pass the previous page's `nextCursor` to
+ * continue. */
+export function listRoutineTargets(
   tenantId: string,
-  input: CreateDraftInput,
-): Promise<RoutineDraft> {
-  return request(routineDraftsPath(tenantId), RoutineDraft, {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}
-
-export function listRoutineDrafts(
-  tenantId: string,
-): Promise<readonly RoutineDraft[]> {
+  cursor?: string,
+): Promise<RoutineTargetsResponse> {
   return request(
-    routineDraftsPath(tenantId),
-    type({ items: RoutineDraft.array() }),
-  ).then((page) => page.items);
-}
-
-export function approveRoutineDraft(
-  tenantId: string,
-  id: string,
-  definitionId?: string,
-): Promise<{ draft: RoutineDraft; routine: Routine }> {
-  return request(
-    routineDraftApprovePath(tenantId, id),
-    type({ draft: RoutineDraft, routine: Routine }),
-    {
-      method: "POST",
-      body: JSON.stringify(definitionId !== undefined ? { definitionId } : {}),
-    },
+    routineTargetsPath(tenantId, {
+      limit: TARGETS_PAGE_LIMIT,
+      ...(cursor !== undefined ? { cursor } : {}),
+    }),
+    RoutineTargetsResponse,
   );
 }
 
-export function discardRoutineDraft(
+/** Every routine target in the tenant, cursor-walked. */
+export async function listAllRoutineTargets(
   tenantId: string,
-  id: string,
-): Promise<RoutineDraft> {
-  return request(routineDraftDiscardPath(tenantId, id), RoutineDraft, {
-    method: "POST",
-    body: JSON.stringify({}),
-  });
-}
-
-async function listAllDefinitions(
-  tenantId: string,
-): Promise<readonly WorkflowDefinitionRecord[]> {
-  const collected: WorkflowDefinitionRecord[] = [];
-  let cursor: string | null = null;
+): Promise<readonly RoutineTarget[]> {
+  const collected: RoutineTarget[] = [];
+  let cursor: string | undefined;
   for (;;) {
-    const query = new URLSearchParams({ limit: String(PAGE_LIMIT) });
-    if (cursor !== null) query.set("cursor", cursor);
-    const page = await request(
-      `/api/tenants/${tenantId}/workflows/definitions?${query}`,
-      DefinitionsPage,
-    );
-    collected.push(...page.data);
-    if (page.nextCursor === undefined || page.nextCursor === null) break;
+    const page = await listRoutineTargets(tenantId, cursor);
+    collected.push(...page.items);
+    if (page.nextCursor === null) return collected;
     cursor = page.nextCursor;
   }
-  return collected;
-}
-
-/**
- * All automatable workflow definitions for the Routines create picker.
- * Walks pagination, filters via the catalog allowlist, and attaches a
- * friendly label for Menu items (never a raw id).
- */
-export async function listWorkflowDefinitions(
-  tenantId: string,
-): Promise<readonly WorkflowDefinitionSummary[]> {
-  const collected = await listAllDefinitions(tenantId);
-  return withCatalogFields(purposeDefinitions(collected)).map((definition) => ({
-    ...definition,
-    name: workflowDisplayName(definition.name, definition.description),
-  }));
 }
 
 /**

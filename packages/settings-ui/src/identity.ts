@@ -7,12 +7,10 @@
 // only, never as visible text.
 //
 // `PRINCIPAL_KIND_LABEL` and `PRINCIPAL_KIND_ORDER` live here too, shared by
-// every picker that lists principals (Grants' target select and filter,
-// Roles' assignment select): Grants/Roles assign to people, agents, *and*
-// workflows (see `people-section.tsx`'s own header comment), and a picker
-// that shows only names with no kind is kind-blind — a workflow's machine
-// principal can look identical to a person's account. Every such picker
-// must show which kind an option is, not just its name.
+// every picker that lists principals (Grants' target select and filter).
+// Grants assign to people, agents, *and* workflows. Roles' assignment picker
+// is scoped to user-kind principals only (CL-6664): agents/workflows are
+// machine identities that belong on separate surfaces.
 
 import { SETTINGS_STRINGS } from "./strings";
 

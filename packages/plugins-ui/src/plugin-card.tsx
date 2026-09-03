@@ -6,7 +6,7 @@
 // scan, not a set of tiles to admire (CL-6272.1).
 
 import { Button } from "@corbits/react-ui";
-import type { ResolvedPlugin } from "@workbench/connections/plugins";
+import type { ResolvedPlugin } from "@corbits/connections/plugins";
 
 import { pluginIcon, pluginOutcome } from "./plugin-meta";
 import { PluginLogo } from "./plugin-logo";

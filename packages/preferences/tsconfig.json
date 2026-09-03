@@ -1,8 +1,28 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "include": ["src", "test"],
+  "extends": "./tsconfig.src.json",
   "compilerOptions": {
-    "types": ["bun"],
-    "noEmit": true
-  }
+    "composite": false,
+    "noEmit": true,
+    "disableSourceOfProjectReferenceRedirect": true,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "rootDir": "../.."
+  },
+  "include": ["src", "test"],
+  "exclude": [],
+  "references": [
+    {
+      "path": "../../vendor/intx/hub-api/tsconfig.src.json"
+    },
+    {
+      "path": "../api-query/tsconfig.src.json"
+    },
+    {
+      "path": "../error-sink/tsconfig.src.json"
+    },
+    {
+      "path": "../migration-runner/tsconfig.src.json"
+    }
+  ]
 }

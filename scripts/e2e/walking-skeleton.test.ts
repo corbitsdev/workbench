@@ -3,10 +3,10 @@
 // as spawned processes, and a real Postgres named by DATABASE_URL.
 //
 // The path proven, hop by hop: database setup → hub boot → sidecar
-// dial-in → sign-up → tenant creation → the echo extension route inside
-// that tenant → workflow-asset publication over the platform's git
-// smart-HTTP surface → the native workflow deploy → the deployment
-// answering at its mail address (trigger accepted for delivery).
+// dial-in → sign-up → tenant creation → workflow-asset publication over
+// the platform's git smart-HTTP surface → the native workflow deploy →
+// the deployment answering at its mail address (trigger accepted for
+// delivery).
 //
 // The gate this suite holds is deployment-addressable: the trigger mail
 // is minted and accepted (HTTP 202) at the deployment's address. Full
@@ -146,29 +146,6 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
       );
       expectStatus("create tenant", res, 201);
       return stringField(res.data, "id", "create tenant");
-    });
-
-    // Hop: echo extension route. The one extension the hub mounts,
-    // reached inside the platform's native tenant middleware: an
-    // anonymous request is refused, a member's body comes back
-    // verbatim.
-    await hop("echo extension route", async () => {
-      const anonymous = await api(
-        hub.baseUrl,
-        "POST",
-        `/api/tenants/${tenantId}/echo`,
-        { probe: true },
-      );
-      expectStatus("echo without a session", anonymous, 401);
-
-      const body = `hello from the walking skeleton ${crypto.randomUUID()}`;
-      const res = await fetch(`${hub.baseUrl}/api/tenants/${tenantId}/echo`, {
-        method: "POST",
-        headers: { cookie: user.cookies.join("; ") },
-        body,
-      });
-      expect(res.status).toBe(200);
-      expect(await res.text()).toBe(body);
     });
 
     // Hop: workflow asset. The echo workflow definition, built by its

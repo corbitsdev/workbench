@@ -28,7 +28,7 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import type { CredentialCipher } from "@intx/types";
-import { DEFAULT_WORKFLOWS } from "@workbench/hub-client";
+import { DEFAULT_WORKFLOWS } from "@corbits/seeding";
 import { createOnboardingRoutes } from "../src/routes";
 import {
   createInMemoryPendingSeedStore,

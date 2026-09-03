@@ -2,8 +2,8 @@
 // operation that failed, optional tenant/room/agent identifiers scoping
 // it, and a `refId` a person can quote back to support -- the same
 // `refId` pattern `packages/onboarding/src/routes.ts`'s
-// `reportOnboardingError` already establishes (see `generateRefId` /
-// `makeErrorEnvelope` in `@workbench/hub-client`). Free-form detail
+// `reportOnboardingError` already establishes (see this package's own
+// `generateRefId` / `makeErrorEnvelope`). Free-form detail
 // beyond these named fields belongs in `extra`, never inlined into a
 // string message.
 import { type } from "arktype";

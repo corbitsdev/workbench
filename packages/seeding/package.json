@@ -1,0 +1,35 @@
+{
+  "name": "@corbits/seeding",
+  "private": true,
+  "description": "Tenant seeding: deploy the default workflow set, plant preset routines and skills, and confirm every deployment answers",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/assistant-workflow": "workspace:*",
+    "@corbits/echo-workflow": "workspace:*",
+    "@corbits/heartbeat-workflow": "workspace:*",
+    "@corbits/hub-api-client": "workspace:*",
+    "@corbits/inference-catalog": "workspace:*",
+    "@corbits/last-30-days-research-workflow": "workspace:*",
+    "@corbits/tool-registry-publish": "workspace:*",
+    "@corbits/workbench-digest-workflow": "workspace:*",
+    "@corbits/workflows": "workspace:*",
+    "@intx/inference": "workspace:*",
+    "@intx/types": "workspace:*",
+    "@corbits/connections": "workspace:*",
+    "@workbench/templates": "workspace:*",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

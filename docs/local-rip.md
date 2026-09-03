@@ -18,13 +18,13 @@ a real inference provider wired up end to end.
   [README.md](../README.md#running-locally) for the `brew install` line
 - `git` on your `PATH` — the onboarding connect flow pushes the default
   workflow definitions into the hub over git smart-HTTP
-  (`packages/hub-client/src/workflow-push.ts`'s `createGitWorkflowPusher`
+  (`packages/seeding/src/workflow-push.ts`'s `createGitWorkflowPusher`
   shells out to the system `git` binary; it fails loud with an install
   hint if `git` isn't found)
 - A real API key for the provider you want to connect (this walkthrough
   uses OpenRouter's OAuth connect, which needs no key of your own to
   paste — see below — but any of the providers in
-  [`packages/hub-client/src/catalog-seed-data.ts`](../packages/hub-client/src/catalog-seed-data.ts)
+  [`packages/seeding/src/catalog-seed-data.ts`](../packages/seeding/src/catalog-seed-data.ts)
   works the same way with a pasted key)
 
 ## 1. Bring up a clean stack
@@ -36,12 +36,14 @@ bun run dev
 ```
 
 `bun run reset` drops the schema and every on-disk asset directory
-`bun run dev`/`bun run setup`/`bun run seed` created — skip it on a
+`bun run dev` and its boot-time seeding created — skip it on a
 genuinely fresh checkout. `bun run dev` validates `.env`, confirms
 `DATABASE_URL` is reachable, applies pending migrations, builds the web
 UI, seeds the administrator account, and starts the hub, one sidecar, and
-the web dev server together (see [README.md](../README.md#running-locally)
-for exactly what it checks). Leave `ANTHROPIC_API_KEY` unset in `.env` for
+the web dev server together — the hub then provisions and seeds the root
+tenant itself once it is serving (see
+[README.md](../README.md#running-locally) for exactly what it checks).
+Leave `ANTHROPIC_API_KEY` unset in `.env` for
 this walkthrough — the point is proving a bench with no hub-owned seed
 model gets fully seeded through a person's own connected credential, not
 through the operator's key.
@@ -81,12 +83,12 @@ Either path:
 
 1. proves your key or exchanged token with a real, free call against the
    provider's own auth-gated endpoint (`testProviderCredential` —
-   `packages/hub-client/src/credential-test.ts`) before storing anything;
+   `packages/connections/src/credential-test.ts`) before storing anything;
 2. plants it as a credential on your bench alongside that provider's
    curated model catalog;
 3. deploys and (unlike the OAuth callback's own fast half) confirms every
    default workflow the platform ships: **echo**, **assistant**, and
-   **workbench-digest** (`packages/hub-client/src/seed.ts`'s
+   **workbench-digest** (`packages/seeding/src/seed.ts`'s
    `DEFAULT_WORKFLOWS`).
 
 Expect the page to show a short "setting up your workbench" wait while
@@ -100,10 +102,11 @@ The **assistant** default workflow pins the `@corbits/memory-tools` tool
 package (`workflows/assistant/src/index.ts`), and that pin only resolves
 once a `package-registry`-kind asset named `corbits-tools` carries its
 tarball (see `apps/hub/src/index.ts`'s `CORBITS_TOOLS_REGISTRY` comment).
-`workbench setup` publishes that asset onto the root tenant via
-`@corbits/tool-registry-publish` (bundles `@corbits/memory-tools` into a
-self-contained tarball and pushes it through the hub's native asset REST
-routes). Descendants inherit it; `seedTenant` does not pack. Isolated
+Boot-time seeding (`apps/hub/src/system-seed.ts`) publishes that asset onto
+the root tenant via `@corbits/tool-registry-publish` (bundles
+`@corbits/memory-tools` into a self-contained tarball and pushes it
+through the hub's native asset REST routes). Descendants inherit it;
+`seedTenant` does not pack. Isolated
 tests run with no explicit tenant config so the walkthrough's personal
 bench is itself the root — then the same publish happens once onto that
 bench, and **echo**, **workbench-digest**, and **assistant** all come up
@@ -119,7 +122,7 @@ Back in Settings → Connections, the provider you connected shows as
 (`GET /api/tenants/:id/credentials`) the same way
 `packages/settings-ui/src/connections-status.ts`'s `connectorStatus`
 does — the credential named `<provider>-default`
-(`inferenceCredentialName`, `packages/hub-client/src/seed.ts`), `status:
+(`inferenceCredentialName`, `packages/seeding/src/seed.ts`), `status:
 "active"`.
 
 That's the onboard → connect leg, proven with your own real key end to

@@ -1,10 +1,10 @@
 // Each of the four tool connector probes against a fake `FetchLike`: no
 // real network calls, no real keys — a 401 must reject, a 2xx must
-// accept, matching `@workbench/hub-client/credential-test`'s own
+// accept, matching `./credential-test`'s own
 // contract for `testProviderCredential`.
 import { describe, expect, spyOn, test } from "bun:test";
 import * as errorSink from "@corbits/error-sink";
-import type { FetchLike } from "@workbench/hub-client/credential-test";
+import type { FetchLike } from "./credential-test";
 import {
   testExaCredential,
   testGitHubCredential,

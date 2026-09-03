@@ -1,5 +1,5 @@
 {
-  "name": "@workbench/connections",
+  "name": "@corbits/connections",
   "private": true,
   "description": "The Connections settings surface: shared PKCE/state primitives for OAuth connect flows, the connector registry (inference providers plus tool-credential connectors), and the route factory that tests and stores a connector's credential",
   "version": "0.0.1",
@@ -11,15 +11,28 @@
     "./persist-credential": "./src/persist-credential.ts",
     "./plugins": "./src/plugins.ts",
     "./provider-health": "./src/provider-health.ts",
-    "./mcp-presets": "./src/mcp-presets.ts"
+    "./mcp-presets": "./src/mcp-presets.ts",
+    "./connect-github-routes": "./src/connect-github-routes.ts",
+    "./connect-github-setup": "./src/connect-github-setup.ts",
+    "./reconcile-duplicate-repo-grants": "./src/reconcile-duplicate-repo-grants.ts",
+    "./credential-test": "./src/credential-test.ts",
+    "./model-capability": "./src/model-capability.ts",
+    "./template-settings": "./src/template-settings.ts",
+    "./probes": "./src/probes.ts",
+    "./huggingface-connect": "./src/huggingface-connect.ts",
+    "./gmail-connect": "./src/gmail-connect.ts",
+    "./openrouter-connect": "./src/openrouter-connect.ts",
+    "./github-connect": "./src/github-connect.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/code-review": "workspace:*",
     "@corbits/credential-providers": "workspace:*",
     "@corbits/error-sink": "workspace:*",
+    "@corbits/github-tools": "workspace:*",
     "@corbits/inference-settings": "workspace:*",
     "@corbits/mcp-tools": "workspace:*",
     "@intx/crypto": "0.3.0",
@@ -27,10 +40,12 @@
     "@intx/hub-api": "workspace:*",
     "@intx/types": "workspace:*",
     "@modelcontextprotocol/sdk": "catalog:",
-    "@workbench/hub-client": "workspace:*",
+    "@corbits/hub-api-client": "workspace:*",
+    "@corbits/seeding": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "hono": "^4.11.9",
+    "postgres": "catalog:",
     "simple-icons": "^16.28.0"
   },
   "devDependencies": {

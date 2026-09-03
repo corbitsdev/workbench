@@ -113,7 +113,7 @@ separate action.
 ## Workbench Definition (shipped)
 
 `WorkbenchDefinition` (`WorkbenchDefinitionSchema` in
-`@corbits/workflow-catalog`) is the one type for a named picker row:
+`templates/index.ts`) is the one type for a named picker row:
 default agents, routines, tools, plugins `{required, optional}`, and
 ordered `onboardingSteps`. A template is a shipped definition, not a
 second kind. `instantiateWorkbenchTemplate` resolves the definition
@@ -152,7 +152,7 @@ them).
 
 The in-room `connect-github` card and the Plugins/Connections GitHub row
 are **PAT-first** (CL-6345): the person pastes a personal access token;
-the host tests and stores it through `@workbench/connections`' generic
+the host tests and stores it through `@corbits/connections`' generic
 `github/complete` route. The card then flips in place to pick repos
 (`startReviewingRepos`), including when GitHub is already connected —
 the in-room card reads live state; there is no `/new` already-connected
@@ -206,7 +206,7 @@ names both halves, not a bare error.
 
 ## Canva MCP connect (shipped)
 
-Canva is the `canva` MCP preset (`packages/connections/src/mcp-presets.ts`):
+Canva is the `canva` MCP preset (`templates/connectors.ts`):
 `https://mcp.canva.com/mcp`, `connectionMode: "oauth"`, with the 16
 advertised PRM scopes space-joined onto RFC 7591 DCR `clientMetadata.scope`
 (`createMcpOAuthProvider` in `packages/connections/src/mcp-oauth.ts`).
@@ -244,7 +244,7 @@ handshake.
 list a workbench host launches with (`workbenchHostInferencePreferences`
 on the chat adapter; also `tenantDefaultModel` on agent-definition
 routes). It keeps credentialed completion-capable offerings
-(`preferCompletionCapable` in `@workbench/hub-client/model-capability`
+(`preferCompletionCapable` in `@corbits/connections/model-capability`
 — embedding names never win) and, when any survivor is
 `origin.direct`, picks from that direct set only. Inherit-only catalogs
 still sort among inherited completion rows.

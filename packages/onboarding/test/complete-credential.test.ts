@@ -1,10 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { ApiCall, WorkflowPusher } from "@workbench/hub-client";
-import {
-  CATALOG_SEEDS,
-  SETUP_AGENT_ASSET_NAME,
-  SidecarUnavailableError,
-} from "@workbench/hub-client";
+import type { WorkflowPusher } from "@corbits/seeding";
+import { CATALOG_SEEDS, SETUP_AGENT_ASSET_NAME } from "@corbits/seeding";
+import { type ApiCall, SidecarUnavailableError } from "@corbits/hub-api-client";
 import {
   completeCredentialSetup,
   ensureSeeded,
@@ -795,6 +792,8 @@ describe("completeCredentialSetup", () => {
     // confirm a deployment by triggering real inference — the fix for
     // the false "setup failed" a credit-less but valid key used to get.
     const TIMESTAMP = "2026-01-01T00:00:00.000Z";
+    const assets: { name: string; id: string }[] = [];
+    const deployments: { definitionAssetId: string; id: string }[] = [];
     const api: ApiCall = async (method, path, body) => {
       if (method === "GET" && path === "/api/me/principals") {
         return principalsResponse();
@@ -817,10 +816,12 @@ describe("completeCredentialSetup", () => {
       }
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`) {
         const name = (body as { name: string }).name;
+        const id = `ast_${name}`;
+        assets.push({ name, id });
         return {
           status: 201,
           data: {
-            id: `ast_${name}`,
+            id,
             tenantId: TENANT_ID,
             kind: "workflow",
             name,
@@ -829,6 +830,27 @@ describe("completeCredentialSetup", () => {
             createdAt: TIMESTAMP,
             updatedAt: TIMESTAMP,
           },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+      ) {
+        return {
+          status: 200,
+          data: assets.map((a) => ({
+            id: a.id,
+            tenantId: TENANT_ID,
+            kind: "workflow",
+            name: a.name,
+            displayName: a.name,
+            creatorPrincipalId: PRINCIPAL_ID,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+            origin: { tenantId: TENANT_ID, direct: true },
+          })),
           cookies: [],
         };
       }
@@ -864,11 +886,42 @@ describe("completeCredentialSetup", () => {
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return { status: 200, data: { items: [] }, cookies: [] };
       }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/routines`) {
+        const routineBody = body as {
+          name: string;
+          presetKey: string;
+          deliveryWorkbenchId?: string;
+        };
+        return {
+          status: 201,
+          data: {
+            id: `rtn_${routineBody.presetKey}`,
+            tenantId: TENANT_ID,
+            name: routineBody.name,
+            enabled: false,
+            deliveryWorkbenchId: routineBody.deliveryWorkbenchId ?? null,
+            presetKey: routineBody.presetKey,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+          cookies: [],
+        };
+      }
       if (
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
-        return { status: 200, data: [], cookies: [] };
+        return {
+          status: 200,
+          data: deployments.map((d) => ({
+            id: d.id,
+            tenantId: TENANT_ID,
+            definitionAssetId: d.definitionAssetId,
+            status: "deployed",
+            createdAt: TIMESTAMP,
+          })),
+          cookies: [],
+        };
       }
       if (
         method === "POST" &&
@@ -876,10 +929,12 @@ describe("completeCredentialSetup", () => {
       ) {
         const assetId = (body as { source: { assetId: string } }).source
           .assetId;
+        const id = `dep_${assetId}`;
+        deployments.push({ definitionAssetId: assetId, id });
         return {
           status: 201,
           data: {
-            id: `dep_${assetId}`,
+            id,
             tenantId: TENANT_ID,
             definitionAssetId: assetId,
             status: "deployed",
@@ -1069,6 +1124,27 @@ describe("completeCredentialSetup", () => {
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return { status: 200, data: { items: [] }, cookies: [] };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/routines`) {
+        const routineBody = body as {
+          name: string;
+          presetKey: string;
+          deliveryWorkbenchId?: string;
+        };
+        return {
+          status: 201,
+          data: {
+            id: `rtn_${routineBody.presetKey}`,
+            tenantId: TENANT_ID,
+            name: routineBody.name,
+            enabled: false,
+            deliveryWorkbenchId: routineBody.deliveryWorkbenchId ?? null,
+            presetKey: routineBody.presetKey,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+          cookies: [],
+        };
       }
       if (
         method === "GET" &&
@@ -1740,6 +1816,12 @@ describe("ensureSeeded (the slow half)", () => {
     const grants: { resource: string; action: string }[] = [];
     const assets: Row[] = [];
     const deployments: { definitionAssetId: string; id: string }[] = [];
+    const routines: {
+      id: string;
+      name: string;
+      presetKey: string;
+      deliveryWorkbenchId: string | null;
+    }[] = [];
     let assetCreatePosts = 0;
     let deploymentCreatePosts = 0;
 
@@ -1845,7 +1927,49 @@ describe("ensureSeeded (the slow half)", () => {
         };
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
-        return { status: 200, data: { items: [] }, cookies: [] };
+        return {
+          status: 200,
+          data: {
+            items: routines.map((r) => ({
+              id: r.id,
+              name: r.name,
+              enabled: false,
+              deliveryWorkbenchId: r.deliveryWorkbenchId,
+              presetKey: r.presetKey,
+              createdAt: TIMESTAMP,
+              updatedAt: TIMESTAMP,
+            })),
+          },
+          cookies: [],
+        };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/routines`) {
+        const routineBody = body as {
+          name: string;
+          presetKey: string;
+          deliveryWorkbenchId?: string;
+        };
+        const id = `rtn_${routineBody.presetKey}`;
+        routines.push({
+          id,
+          name: routineBody.name,
+          presetKey: routineBody.presetKey,
+          deliveryWorkbenchId: routineBody.deliveryWorkbenchId ?? null,
+        });
+        return {
+          status: 201,
+          data: {
+            id,
+            tenantId: TENANT_ID,
+            name: routineBody.name,
+            enabled: false,
+            deliveryWorkbenchId: routineBody.deliveryWorkbenchId ?? null,
+            presetKey: routineBody.presetKey,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+          cookies: [],
+        };
       }
       if (
         method === "GET" &&

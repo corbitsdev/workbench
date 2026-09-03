@@ -19,10 +19,11 @@ import type {
   EnsureCredentialArgs,
   EnsureProviderArgs,
   SeedCatalogArgs,
-} from "@workbench/hub-client";
+} from "@corbits/seeding";
 import type { ConnectorDescriptor } from "../src/descriptor";
 import {
   exchangeCodeForGithubToken,
+  GITHUB_AUTHORIZE_URL,
   GITHUB_TOKEN_EXCHANGE_URL,
 } from "../src/github-connect";
 import {
@@ -30,7 +31,52 @@ import {
   DEFAULT_RETURN_PATH_ALLOWLIST,
 } from "../src/oauth-routes";
 import { createTenantConnectCredential } from "../src/oauth-tenant-connect";
-import { CONNECTOR_REGISTRY } from "../src/registry";
+
+/** A fixture standing in for the real `github` connector descriptor a
+ * build's own connector set (`templates/connectors.ts`) carries — this
+ * package holds no concrete connector set of its own (CL-7384). Mirrors
+ * that descriptor's oauth wiring exactly (see its own comments there),
+ * with `exchange` pointed at the fake GitHub token server below instead
+ * of github.com. */
+const REAL_GITHUB: ConnectorDescriptor = {
+  id: "github",
+  displayName: "GitHub",
+  credentialPlugin: "http",
+  authKind: "api-key",
+  docsUrl: "https://github.com/settings/tokens",
+  feedsTools: ["@corbits/github-tools"],
+  oauth: {
+    authorizeUrl: GITHUB_AUTHORIZE_URL,
+    usesPKCE: false,
+    echoesState: true,
+    deploysDefaultWorkflows: false,
+    clientId: (env) => env["githubAppClientId"],
+    clientSecret: (env) => env["githubAppClientSecret"],
+    buildAuthorizeUrl: ({ callbackUrl, state, clientId }) => {
+      const url = new URL(GITHUB_AUTHORIZE_URL);
+      if (clientId !== undefined) url.searchParams.set("client_id", clientId);
+      url.searchParams.set("redirect_uri", callbackUrl);
+      url.searchParams.set("scope", "repo");
+      url.searchParams.set("state", state);
+      return url;
+    },
+    exchange: async ({ code, redirectUri, clientId, clientSecret }) => {
+      if (clientId === undefined || clientSecret === undefined) {
+        return {
+          ok: false,
+          message: "github app connect is not configured",
+        };
+      }
+      const result = await exchangeCodeForGithubToken({
+        code,
+        redirectUri,
+        clientId,
+        clientSecret,
+      });
+      return result.ok ? { ok: true, apiKey: result.key } : result;
+    },
+  },
+};
 
 // What `oauthStartHref("tnt_1", "github", "/plugins")` renders into the
 // plugins gallery's Connect link.
@@ -70,12 +116,12 @@ function fakeGithubExchangeServer(exchangeBodies: unknown[]) {
 }
 
 function mountHubShaped() {
-  const realGithub = CONNECTOR_REGISTRY["github"];
-  if (realGithub?.oauth === undefined) {
-    throw new Error("registry is missing the github oauth entry");
+  const realGithub = REAL_GITHUB;
+  if (realGithub.oauth === undefined) {
+    throw new Error("fixture is missing the github oauth entry");
   }
   const exchangeBodies: unknown[] = [];
-  // The real descriptor, with its exchange pointed at the fake GitHub
+  // The fixture descriptor, with its exchange pointed at the fake GitHub
   // token server instead of github.com — same seam the descriptor's own
   // `fetchImpl` exposes.
   const github: ConnectorDescriptor = {

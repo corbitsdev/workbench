@@ -367,6 +367,7 @@ export function createSidecarStepBuildEnv(
       hubCatalogUrl: string;
       hubAgentDirectoryUrl: string;
       hubChatUrl: string;
+      hubWorkflowAuthoringUrl: string;
       sidecarToken: string;
       definitionId: string;
     } = {
@@ -421,6 +422,10 @@ export function createSidecarStepBuildEnv(
       hubCatalogUrl: deps.hubArtifactsUrl,
       hubAgentDirectoryUrl: deps.hubArtifactsUrl,
       hubChatUrl: deps.hubArtifactsUrl,
+      // And under the key `@corbits/workflow-authoring-tools` declares
+      // (`requires: ["hubWorkflowAuthoringUrl", "sidecarToken", "address"]`)
+      // for `@corbits/workflows`'s `./authoring`'s run-authenticated routes.
+      hubWorkflowAuthoringUrl: deps.hubArtifactsUrl,
       sidecarToken: deps.sidecarToken,
       definitionId: deps.definitionId,
     };

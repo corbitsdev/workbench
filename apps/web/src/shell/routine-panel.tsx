@@ -20,16 +20,15 @@
 // picking a schedule while another field's save is in flight keeps the
 // in-progress values.
 //
-// A routine created from this panel always targets the conversation it
-// was opened beside: every workbench's host participant is Myra, so "this
-// workbench's own agent" resolves to that workbench's host agent
-// (`listWorkbenchAgents`), and the routine delivers back into that same
-// workbench — never a new one. A panel opened with no workbench in scope (a
-// deliberate `/routines` visit) falls back to the workbench's own default
-// Myra workbench (`ensureMyraWorkbench`, the one deliberate find-or-create
-// path in the product) rather than the old tenant-wide "assistant"
-// definition lookup, which had no workbench to deliver into at all and
-// silently minted a fresh one server-side whenever delivery was required.
+// The routine's delivery destination is the conversation this panel was
+// opened beside — its own id is where the routine delivers back into. A
+// panel opened with no workbench in scope (a deliberate `/routines` visit)
+// falls back to the workbench's own default Myra workbench
+// (`ensureMyraWorkbench`, the one deliberate find-or-create path in the
+// product). What the routine *runs* is a separate, explicit choice (CL-7355):
+// the panel no longer infers it from the conversation's own agent — a
+// person picks a target from `DefinitionTargetPicker`, backed by
+// `GET /api/tenants/:tenantId/workflows/targets`.
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -47,7 +46,6 @@ import {
   Textarea,
   toast,
 } from "@corbits/react-ui";
-import { listWorkbenchAgents } from "@corbits/chat-ui";
 import { Clock, X } from "@corbits/icons";
 
 import { useBench } from "../bench-context";
@@ -55,6 +53,7 @@ import { useNavigate } from "../navigation";
 import { ensureMyraWorkbench } from "../myra-workbench";
 import { routineScheduleSentence } from "@corbits/routines/client";
 import { ScheduleEditor } from "../routine-schedule";
+import { DefinitionTargetPicker } from "./definition-target-picker";
 import {
   createRoutine,
   deleteRoutine,
@@ -177,11 +176,6 @@ export function RoutinePanel() {
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
-type CreateTarget = {
-  readonly definitionId: string;
-  readonly deliveryWorkbenchId: string;
-};
-
 /** The editor view: create/edit one routine. Self-fetching — handed only
  * the subject, loads the rest itself, exactly like `ProfileCanvasPane`. */
 function RoutineEditorPanel({
@@ -222,6 +216,13 @@ function RoutineEditorPanel({
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<readonly RoutineRun[]>([]);
+  const [targetAssetId, setTargetAssetId] = useState<string | null>(null);
+  // Set when a field blur bails out because no target is picked yet on a
+  // brand-new routine — a silent `return` there gives the person no
+  // feedback that their edit didn't save, so this drives an inline hint
+  // under the picker instead.
+  const [needsTargetHint, setNeedsTargetHint] = useState(false);
+  const [targetStale, setTargetStale] = useState(false);
 
   // Every write (create or update) this panel session makes runs through
   // this one chain — never two in flight at once. `routineIdRef` is the
@@ -229,6 +230,8 @@ function RoutineEditorPanel({
   // resolves, so a second commit queued before the first finished sees the
   // *post*-first-write id, not a stale snapshot from before either ran.
   const routineIdRef = useRef<string | null>(routineId);
+  const targetAssetIdRef = useRef<string | null>(targetAssetId);
+  targetAssetIdRef.current = targetAssetId;
   const writeChainRef = useRef<Promise<void>>(Promise.resolve());
   const draftRef = useRef<DraftSnapshot>({
     name: "",
@@ -270,6 +273,8 @@ function RoutineEditorPanel({
     setSaveState("idle");
     setError(null);
     setRuns([]);
+    setTargetAssetId(null);
+    setTargetStale(false);
   }, [subject]);
 
   const loadRuns = (id: string) => {
@@ -292,6 +297,7 @@ function RoutineEditorPanel({
     setTrigger(routine.trigger);
     setSavedTrigger(routine.trigger);
     setEnabled(routine.enabled);
+    setTargetAssetId(routine.definitionAssetId);
     draftRef.current = {
       name: routine.name,
       savedName: routine.name,
@@ -338,7 +344,11 @@ function RoutineEditorPanel({
   };
 
   // Loads an existing routine's real fields once the tenant resolves —
-  // mirrors `ProfileCanvasPane`'s own "fetch once open" effect.
+  // mirrors `ProfileCanvasPane`'s own "fetch once open" effect. The
+  // existing-routine target is now owned by `DefinitionTargetPicker`
+  // itself (CL-7358: editing a routine can retarget it), which reports
+  // staleness back via `onStaleChange` — this effect no longer fetches
+  // the target list a second time.
   useEffect(() => {
     if (tenantId === null || subject.routineId == null) return;
     let cancelled = false;
@@ -359,37 +369,20 @@ function RoutineEditorPanel({
     };
   }, [tenantId, subject.routineId]);
 
-  /** This routine's own agent + delivery workbench: the conversation the
-   * panel was opened beside (its host participant — every workbench's
-   * host is Myra), or, with no conversation in scope, this workbench's
-   * own default Myra workbench. Never mints a new workbench — `ensureMyraWorkbench`
-   * finds-or-creates the one singleton Myra conversation this tenant
-   * already has. */
-  const resolveCreateTarget = async (): Promise<CreateTarget> => {
+  /** This routine's delivery workbench: the conversation the panel was
+   * opened beside (its own id), or, with no conversation in scope, this
+   * workbench's own default Myra workbench. Never mints a new workbench —
+   * `ensureMyraWorkbench` finds-or-creates the one singleton Myra
+   * conversation this tenant already has. Delivery is independent of what
+   * the routine runs (CL-7355) — that's `targetAssetId`, picked explicitly. */
+  const resolveDeliveryWorkbenchId = async (): Promise<string> => {
     if (tenantId === null) {
       throw new Error("No workbench to create this in yet");
     }
-    if (subject.workbenchId !== undefined) {
-      const workbenchId = subject.workbenchId;
-      const agents = await listWorkbenchAgents(tenantId, workbenchId);
-      const definitionId = agents[0]?.definitionId;
-      if (definitionId === undefined) {
-        throw new Error(
-          "This conversation has no agent to run this routine yet.",
-        );
-      }
-      return { definitionId, deliveryWorkbenchId: workbenchId };
-    }
+    if (subject.workbenchId !== undefined) return subject.workbenchId;
     const result = await ensureMyraWorkbench(tenantId);
     if (result.kind === "error") throw new Error(result.message);
-    const agents = await listWorkbenchAgents(tenantId, result.workbenchId);
-    const definitionId = agents[0]?.definitionId;
-    if (definitionId === undefined) {
-      throw new Error(
-        "This workbench has no assistant to run this routine yet.",
-      );
-    }
-    return { definitionId, deliveryWorkbenchId: result.workbenchId };
+    return result.workbenchId;
   };
 
   /** Every create/update this panel makes funnels through this one chain —
@@ -421,11 +414,15 @@ function RoutineEditorPanel({
     readonly instruction: string;
     readonly trigger: RoutineTrigger;
   }): Promise<Routine> => {
-    const target = await resolveCreateTarget();
+    const definitionAssetId = targetAssetIdRef.current;
+    if (definitionAssetId === null) {
+      throw new Error("Pick what this routine runs before saving.");
+    }
+    const deliveryWorkbenchId = await resolveDeliveryWorkbenchId();
     const routine = await createRoutine(tenantId as string, {
       name: fields.name,
-      definitionId: target.definitionId,
-      deliveryWorkbenchId: target.deliveryWorkbenchId,
+      definitionAssetId,
+      deliveryWorkbenchId,
       scope: "personal",
       trigger: fields.trigger,
       runOnceNow: false,
@@ -447,10 +444,17 @@ function RoutineEditorPanel({
   // write's result, so it correctly updates instead. The bail-outs below
   // (blank name, unchanged value) are safe to read eagerly — being a tick
   // stale there costs at most one redundant PATCH, never a second POST.
+  // A brand-new routine requires a picked target before its first write can
+  // fire at all (CL-7355) — a blur with no target selected yet is not a
+  // failed save, it's simply not ready to submit.
   const commitName = () => {
     const trimmed = name.trim();
     if (trimmed === "") return;
     if (routineIdRef.current !== null && trimmed === savedName) return;
+    if (routineIdRef.current === null && targetAssetIdRef.current === null) {
+      setNeedsTargetHint(true);
+      return;
+    }
     void runWrite((id) => {
       if (id === null) return doCreate({ name: trimmed, instruction, trigger });
       return updateRoutine(tenantId as string, id, { name: trimmed });
@@ -461,6 +465,10 @@ function RoutineEditorPanel({
     const trimmed = instruction.trim();
     if (routineIdRef.current === null && name.trim() === "") return;
     if (routineIdRef.current !== null && trimmed === savedInstruction) return;
+    if (routineIdRef.current === null && targetAssetIdRef.current === null) {
+      setNeedsTargetHint(true);
+      return;
+    }
     void runWrite((id) => {
       if (id === null) {
         return doCreate({ name: name.trim(), instruction, trigger });
@@ -476,6 +484,10 @@ function RoutineEditorPanel({
     draftRef.current.trigger = next;
     setTriggerSourceLabel(null);
     setAddingSchedule(false);
+    if (routineIdRef.current === null && targetAssetIdRef.current === null) {
+      setNeedsTargetHint(true);
+      return;
+    }
     void runWrite((id) => {
       if (id === null) {
         return doCreate({
@@ -486,6 +498,48 @@ function RoutineEditorPanel({
       }
       return updateRoutine(tenantId as string, id, { trigger: next });
     });
+  };
+
+  // Picking a target reads `routineIdRef.current` itself — the same "is
+  // there a routine yet" decision `runWrite`'s own `task` closures make —
+  // rather than the panel branching create-vs-edit at the picker's call
+  // site (`routineId === null ? pickTarget : pickTargetForEdit`, the
+  // shape this replaced). On a brand-new routine (no id yet) picking a
+  // target never itself submits — it only clears the "no target yet"
+  // bail-out so the next field blur (Name/Instruction) can create;
+  // `targetAssetIdRef` is set synchronously so a blur landing in the very
+  // same tick already sees the pick, not a stale pre-render snapshot. On
+  // an existing routine (CL-7358), picking a target autosaves immediately,
+  // like every other field, as a target-only PATCH — no other draft field
+  // rides along. A server rejection (404/409/403 — cross-tenant, unfrozen/
+  // undeployed, forbidden; see `routineTargetRejection`) surfaces through
+  // the panel's normal inline error path and reverts the picker to the
+  // last-saved target, without touching any other unsaved input.
+  const pickTarget = (definitionAssetId: string) => {
+    const id = routineIdRef.current;
+    if (id === null) {
+      targetAssetIdRef.current = definitionAssetId;
+      setTargetAssetId(definitionAssetId);
+      setNeedsTargetHint(false);
+      return;
+    }
+    const previous = targetAssetIdRef.current;
+    targetAssetIdRef.current = definitionAssetId;
+    setTargetAssetId(definitionAssetId);
+    void runWrite(() =>
+      // This catch reverts ONLY `targetAssetIdRef`/`targetAssetId` — the
+      // two fields this PATCH ever sends. Do not fold another field's
+      // revert into this same catch if a future change widens this PATCH
+      // beyond target-only; give it its own previous/revert pair instead,
+      // the way this one is scoped to just the target.
+      updateRoutine(tenantId as string, id, { definitionAssetId }).catch(
+        (cause: unknown) => {
+          targetAssetIdRef.current = previous;
+          setTargetAssetId(previous);
+          throw cause;
+        },
+      ),
+    );
   };
 
   const removeTrigger = () => {
@@ -506,29 +560,25 @@ function RoutineEditorPanel({
         throw new Error("No workbench to create this in yet");
       }
       let targetRoutineId = id;
-      let definitionId: string;
+      let definitionAssetId: string;
       if (targetRoutineId === null) {
-        const target = await resolveCreateTarget();
-        const created = await createRoutine(tenantId, {
+        const created = await doCreate({
           name: name.trim() || "Untitled routine",
-          definitionId: target.definitionId,
-          deliveryWorkbenchId: target.deliveryWorkbenchId,
-          scope: "personal",
+          instruction,
           trigger: null,
-          runOnceNow: false,
-          ...(instruction.trim() !== ""
-            ? { input: { instruction: instruction.trim() } }
-            : {}),
         });
         targetRoutineId = created.id;
-        definitionId = created.definitionId;
-        toast(routineCreatedToast(created.name));
+        definitionAssetId = created.definitionAssetId;
       } else {
-        definitionId = (await resolveCreateTarget()).definitionId;
+        const existing = targetAssetIdRef.current;
+        if (existing === null) {
+          throw new Error("Pick what this routine runs before saving.");
+        }
+        definitionAssetId = existing;
       }
       const binding = await createWebhookTrigger(tenantId, {
         name: `${name.trim() || "Untitled routine"} — ${sourceLabel}`,
-        workflowDefinitionId: definitionId,
+        workflowDefinitionId: definitionAssetId,
         inputTemplate: DEFAULT_WEBHOOK_INPUT_TEMPLATE,
       });
       setTriggerSourceLabel(sourceLabel);
@@ -600,7 +650,7 @@ function RoutineEditorPanel({
         <RunNowButton
           variant="outline"
           size="sm"
-          disabled={routineId === null}
+          disabled={routineId === null || targetStale}
           onRun={() => {
             if (tenantId === null || routineId === null) return;
             return runRoutineNow(tenantId, routineId).then(() => {
@@ -626,6 +676,23 @@ function RoutineEditorPanel({
             }}
             onBlur={commitName}
           />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <DefinitionTargetPicker
+            tenantId={tenantId}
+            value={targetAssetId}
+            onChange={pickTarget}
+            onStaleChange={setTargetStale}
+            {...(routineId === null && subject.preselectedAssetId !== undefined
+              ? { preselectedAssetId: subject.preselectedAssetId }
+              : {})}
+          />
+          {needsTargetHint && targetAssetId === null ? (
+            <p className="text-xs text-[var(--ui-danger)]" role="alert">
+              Pick what this routine runs before the rest can save.
+            </p>
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-1.5">

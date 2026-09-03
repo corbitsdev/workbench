@@ -94,10 +94,56 @@ const TENANT_ROW = {
   domain: "acme.workbench.test",
 };
 
+// One `workflow_definition` candidate for `resolveLaunchableDefinition`'s
+// asset-id lookup — deployed and frozen, so it resolves to `wfd_1`
+// (`DEFINITION_ROW`'s id) exactly like every existing fixture expects.
+const DEFINITION_CANDIDATE_ROW = {
+  id: DEFINITION_ROW.id,
+  tenantId: DEFINITION_ROW.tenantId,
+  status: DEFINITION_ROW.status,
+  createdAt: new Date("2024-01-01T00:00:00.000Z"),
+  approvedWireHash: "hash_1",
+  grantSnapshot: {},
+  wireProjection: {},
+};
+
+// A stand-in `.select().from()...` chain covering both drizzle queries
+// this launcher and `triggerNativeWorkflowRoutineRun` run: the native
+// anchor-run lookup (`.orderBy().limit()`) and
+// `resolveLaunchableDefinition`'s asset lookup (`.leftJoin()...orderBy()`,
+// awaited directly, no `.limit()`). A `.leftJoin()` call is what tells
+// the two apart.
+function makeSelectMock(
+  nativeRows: readonly unknown[],
+  candidateRows: readonly unknown[],
+) {
+  return () => {
+    let sawLeftJoin = false;
+    const chain = {
+      from: () => chain,
+      leftJoin: () => {
+        sawLeftJoin = true;
+        return chain;
+      },
+      where: () => chain,
+      orderBy: () => {
+        const rows = sawLeftJoin ? candidateRows : nativeRows;
+        const result = Promise.resolve(rows) as Promise<unknown> & {
+          limit: (n: number) => Promise<unknown>;
+        };
+        result.limit = async () => nativeRows;
+        return result;
+      },
+    };
+    return chain;
+  };
+}
+
 function createFakeDb(
   overrides: {
     definition?: unknown;
     tenant?: unknown;
+    candidateRows?: readonly unknown[];
   } = {},
 ) {
   return {
@@ -114,15 +160,10 @@ function createFakeDb(
     // Drives `triggerNativeWorkflowRoutineRun`'s real anchor-run
     // lookup for the multi-step tests below — see that module's own
     // test file for coverage of its query shape in isolation.
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          orderBy: () => ({
-            limit: async () => [NATIVE_ANCHOR_ROW],
-          }),
-        }),
-      }),
-    }),
+    select: makeSelectMock(
+      [NATIVE_ANCHOR_ROW],
+      overrides.candidateRows ?? [DEFINITION_CANDIDATE_ROW],
+    ),
     // `recordSourcesDigest` writes the deployed inference chain's digest
     // onto the launch row once `launchFoldedRun` returns (CL-6687).
     update: () => ({
@@ -139,7 +180,7 @@ function baseInput(input: Record<string, unknown>) {
   return {
     tenantId: "ten_1",
     principalId: "usr_1",
-    definitionId: "wfd_1",
+    definitionAssetId: "ast_1",
     input,
   };
 }
@@ -413,13 +454,7 @@ describe("createHubRoutineLauncher — multi-step native routing", () => {
           workflowDefinition: { findFirst: async () => DEFINITION_ROW },
           tenant: { findFirst: async () => TENANT_ROW },
         },
-        select: () => ({
-          from: () => ({
-            where: () => ({
-              orderBy: () => ({ limit: async () => [] }),
-            }),
-          }),
-        }),
+        select: makeSelectMock([], [DEFINITION_CANDIDATE_ROW]),
       } as never,
       sessionService: {} as never,
       assetService: {} as never,

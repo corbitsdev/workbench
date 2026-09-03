@@ -15,11 +15,9 @@ import type { RequireGrant } from "@intx/hub-api";
 import { idResource } from "@intx/hub-api";
 import { getLogger } from "@intx/log";
 import { generateId } from "@intx/hub-common";
-import {
-  FoldedRunFailedError,
-  FoldedRunTimedOutError,
-  OneShotDefinitionNotFoundError,
-} from "@corbits/folded-run-one-shot";
+import { authorize } from "@intx/authz";
+import type { ConditionRegistry, GrantStore } from "@intx/types/authz";
+import { reportError } from "@corbits/error-sink";
 
 import { RoutineTrigger, type RoutineTriggerT } from "./trigger";
 import { routineScheduleSentence } from "./schedule-language";
@@ -29,12 +27,15 @@ import type {
   RoutineStore,
   UpdateRoutineInput,
 } from "./store";
-import { makeErrorEnvelope } from "@workbench/hub-client";
 import {
-  MyraRoutineDraftingUnavailableError,
-  RoutineDraftReferenceOutOfInventoryError,
-  RoutineDraftReplyUnparseableError,
-} from "./myra-drafting";
+  routineTargetRejection,
+  type LaunchableDefinitionResolver,
+} from "@corbits/workflows";
+import {
+  validateRetarget,
+  isDeliveryWorkbenchRequired,
+} from "./routine-operations";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 const log = getLogger(["routines", "routes"]);
 
@@ -44,10 +45,14 @@ export interface LaunchedRoutineRun {
 
 /**
  * The launcher port: routines never launch a run themselves — they
- * hand the definition/input off to whatever launches folded runs on
- * the host (`@corbits/folded-runs` in this repo), then record the
+ * hand the target asset/input off to whatever launches runs on the
+ * host (`@corbits/folded-runs` in this repo), then record the
  * correlation. Keeping this a port, not a direct dependency, is what
- * keeps `@corbits/routines` hosted-service-agnostic.
+ * keeps `@corbits/routines` hosted-service-agnostic. The launcher
+ * resolves `definitionAssetId` to the definition that runs via
+ * `resolveLaunchableDefinition` (`./target.ts`) at fire time and fails
+ * closed when nothing launchable exists — a routine follows its
+ * target's latest approved deployment and never pins one.
  *
  * A run's delivery is a message into `deliveryWorkbenchId`'s root
  * timeline — never a pre-opened thread. If a single run's delivery ever
@@ -62,7 +67,7 @@ export interface RoutineLauncher {
   launchRoutineRun(input: {
     tenantId: string;
     principalId: string;
-    definitionId: string;
+    definitionAssetId: string;
     input: Record<string, unknown>;
     deliveryWorkbenchId?: string | null | undefined;
     runRef?: string | undefined;
@@ -110,26 +115,38 @@ export type CreateRoutineRoutesDeps = {
   requireGrant: RequireGrant;
   runSummaryResolver?: RunSummaryResolver;
   /**
-   * When provided, `POST /routines` rejects with 404 if the definition
-   * is not in the request tenant. Tests may omit (always-allow).
+   * Resolves a routine's target asset to the definition it would run
+   * now (`resolveLaunchableDefinition`, `./target.ts`). When provided,
+   * a create whose target does not resolve is refused with the typed
+   * envelope `routineTargetRejection` names, and every read reports the
+   * currently resolved `definitionId` beside the stable asset id. Tests
+   * may omit: creates are then unvalidated and reads report
+   * `definitionId: null`.
    */
-  definitionInTenant?: (
-    tenantId: string,
-    definitionId: string,
-  ) => Promise<boolean>;
+  resolveTarget?: LaunchableDefinitionResolver;
+  /**
+   * When wired alongside `resolveTarget`, a create/retarget's resolved
+   * definition is also authorized (`workflow-definition:<definitionId>`
+   * / `read`, the same verb `listRoutineTargets` checks in
+   * `./targets.ts`) for the acting principal before the target is
+   * accepted — a denial is the typed 403 `rejectUnlaunchableTarget`
+   * returns. Both must be wired together; either omitted (the prior
+   * default) skips authorization, unchanged behavior.
+   */
+  grantStore?: GrantStore;
+  conditionRegistry?: ConditionRegistry;
   /**
    * When provided, a `{kind: "webhook"}` trigger is rejected with 404
    * unless the referenced `@corbits/webhook-triggers` row exists in the
-   * request tenant *and* points at the same `definitionId` the routine
-   * itself is being created/updated with — a webhook trigger and the
-   * routine it fires are two views of one binding, so the two ids
-   * disagreeing is corruption, not a valid state. Tests may omit
-   * (always-allow).
+   * request tenant *and* fires the same workflow asset the routine
+   * itself targets — a webhook trigger and the routine it fires are two
+   * views of one binding, so the two disagreeing is corruption, not a
+   * valid state. Tests may omit (always-allow).
    */
   webhookTriggerInTenant?: (
     tenantId: string,
     webhookTriggerId: string,
-    definitionId: string,
+    definitionAssetId: string,
   ) => Promise<boolean>;
   /**
    * Whether a routine on this definition must carry a `deliveryWorkbenchId`
@@ -146,7 +163,7 @@ export type CreateRoutineRoutesDeps = {
    */
   deliveryWorkbenchRequired?: (
     tenantId: string,
-    definitionId: string,
+    definitionAssetId: string,
   ) => Promise<boolean>;
   /**
    * Validates `input` against the definition's own declared
@@ -160,43 +177,21 @@ export type CreateRoutineRoutesDeps = {
    */
   validateRoutineInput?: (
     tenantId: string,
-    definitionId: string,
+    definitionAssetId: string,
     input: Record<string, unknown>,
   ) => Promise<
     { readonly ok: true } | { readonly ok: false; readonly message: string }
   >;
-  /**
-   * Describe-to-agent drafting. When omitted, draft routes return 404.
-   */
-  drafts?: import("./drafts").RoutineDraftStore | undefined;
-  drafting?: import("./drafts").RoutineDraftingPort | undefined;
   /** See `WorkbenchNoticePort`'s own doc comment. */
   workbenchNotice?: WorkbenchNoticePort | undefined;
 };
 
-const DRAFT_FAILED_MESSAGE =
-  "Myra couldn't draft a routine from that. Try rephrasing, or build it from the catalog instead.";
-
-/** Every fail-closed error the Myra drafting path (`./myra-drafting.ts`)
- * can throw — Myra unresolvable, the one-shot run timing out or
- * failing, an unparseable reply, an out-of-inventory reference — reads
- * as the same honest "couldn't draft" 422 to the person who typed the
- * description. Anything else is a platform fault and is re-thrown for
- * the host's own error handling to surface. */
-function isDraftingFailure(err: unknown): boolean {
-  return (
-    err instanceof MyraRoutineDraftingUnavailableError ||
-    err instanceof OneShotDefinitionNotFoundError ||
-    err instanceof FoldedRunTimedOutError ||
-    err instanceof FoldedRunFailedError ||
-    err instanceof RoutineDraftReplyUnparseableError ||
-    err instanceof RoutineDraftReferenceOutOfInventoryError
-  );
-}
-
 const CreateRoutineBody = type({
   name: "string",
-  definitionId: "string",
+  // The target: a workflow asset id, always explicit. The server never
+  // searches for "the agent in this conversation" or any other implied
+  // target — an absent value is an ordinary 400 from this schema.
+  definitionAssetId: "string > 0",
   trigger: RoutineTrigger,
   scope: "'personal' | 'bench'",
   "input?": "Record<string, unknown>",
@@ -220,43 +215,31 @@ const UpdateRoutineBody = type({
   "input?": "Record<string, unknown>",
   "enabled?": "boolean",
   "deliveryWorkbenchId?": "string",
+  // Retargets the routine (CL-7353): a workflow asset id, same rule as
+  // `CreateRoutineBody`'s own field — an explicit target, never inferred.
+  "definitionAssetId?": "string > 0",
 });
 
 const RunNowBody = type({
   "input?": "Record<string, unknown>",
 });
 
-const CreateDraftBody = type({
-  prompt: "string",
-  deliveryWorkbenchId: "string",
-  scope: "'personal' | 'bench'",
-});
-
-/**
- * Optional body for approving a draft: when Myra's proposal didn't pin
- * a `definitionId` (a valid, honest outcome — see
- * `RoutineDraftingPort`'s own doc comment), the review UI collects one
- * from the person instead and sends it here, rather than leaving
- * Approve permanently disabled with no recovery. Omitted (or an empty
- * body) falls back to the draft's own `definitionId`, unchanged
- * behavior for a draft that already has one.
- */
-const ApproveDraftBody = type({
-  "definitionId?": "string",
-});
-
 /**
  * The wire shape for a routine — never a raw id-only reference, always
  * the name and structured trigger a UI can render directly, per the
- * platform's "no raw IDs on screen" floor. Exported: `./workflow-routine-routes.ts`
- * (Myra's own tenant-scoped routine surface) renders the exact same shape,
- * never a second, drifting view of a routine row.
+ * platform's "no raw IDs on screen" floor. `definitionAssetId` is the
+ * routine's stable identity; `definitionId` is the definition that
+ * would run right now (`null` when nothing launchable resolves), so a
+ * UI or Myra can show both. Exported: `./workflow-routine-routes.ts`
+ * (Myra's own tenant-scoped routine surface) renders the exact same
+ * shape, never a second, drifting view of a routine row.
  */
-export function routineView(row: RoutineRow) {
+export function routineView(row: RoutineRow, definitionId: string | null) {
   return {
     id: row.id,
     name: row.name,
-    definitionId: row.definitionId,
+    definitionAssetId: row.definitionAssetId,
+    definitionId,
     trigger: row.trigger,
     scope: row.scope,
     input: row.input,
@@ -269,6 +252,74 @@ export function routineView(row: RoutineRow) {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+/**
+ * `routineView` with the target resolved through `deps.resolveTarget`
+ * — the one read path every list/get/create/patch response goes
+ * through, so "what would run now" is never computed two ways.
+ * Exported for `./workflow-routine-routes.ts`.
+ */
+export async function resolvedRoutineView(
+  deps: Pick<CreateRoutineRoutesDeps, "resolveTarget">,
+  row: RoutineRow,
+) {
+  if (deps.resolveTarget === undefined) return routineView(row, null);
+  const target = await deps.resolveTarget(row.tenantId, row.definitionAssetId);
+  return routineView(row, target.ok ? target.definitionId : null);
+}
+
+/**
+ * Refuses a create/retarget whose target does not resolve, or that the
+ * acting principal is not authorized to reference — the typed envelope
+ * UI and Myra branch on. `undefined` means the target is launchable (or
+ * no resolver is wired). Exported for `./workflow-routine-routes.ts`.
+ *
+ * Authorization checks the same `workflow-definition:<definitionId>` /
+ * `read` verb `listRoutineTargets` (`./targets.ts`) checks per row, so a
+ * routine can never be pointed at a definition its own target listing
+ * would never have offered — but only when `grantStore` and
+ * `conditionRegistry` are both wired; either omitted skips it (CL-7351's
+ * prior default), matching every caller's existing tests.
+ */
+export async function rejectUnlaunchableTarget(
+  deps: Pick<
+    CreateRoutineRoutesDeps,
+    "resolveTarget" | "grantStore" | "conditionRegistry"
+  >,
+  tenantId: string,
+  principalId: string,
+  definitionAssetId: string,
+): Promise<
+  | ReturnType<typeof routineTargetRejection>
+  | {
+      readonly status: 403;
+      readonly code: string;
+      readonly userMessage: string;
+    }
+  | undefined
+> {
+  if (deps.resolveTarget === undefined) return undefined;
+  const target = await deps.resolveTarget(tenantId, definitionAssetId);
+  if (!target.ok) return routineTargetRejection(target.reason);
+  if (deps.grantStore === undefined || deps.conditionRegistry === undefined) {
+    return undefined;
+  }
+  const decision = await authorize(
+    deps.grantStore,
+    principalId,
+    tenantId,
+    `workflow-definition:${target.definitionId}`,
+    "read",
+    deps.conditionRegistry,
+  );
+  if (decision.effect === "allow") return undefined;
+  // A denial is reported identically to "not found" — naming a
+  // deployed-but-ungranted definition must not let a caller distinguish
+  // "exists, no access" from "doesn't exist" by probing different ids,
+  // same rule `target.ts`'s `routineTargetRejection` states for a
+  // cross-tenant asset.
+  return routineTargetRejection("not_found");
 }
 
 async function runView(
@@ -295,6 +346,14 @@ async function runView(
  * root timeline — see `RoutineLauncher`'s own doc comment for the
  * multi-message contract.
  *
+ * A retarget (CL-7353) is safe against an in-flight fire because the
+ * launcher itself re-resolves `definitionAssetId` through
+ * `resolveLaunchableDefinition` exactly once, at the moment this call
+ * launches (see `RoutineLauncher`'s doc comment and the hub's own
+ * `createHubRoutineLauncher`) — a run always launches against whatever
+ * one definition that single read named, never a definition read before
+ * the retarget landed spliced with one read after.
+ *
  * Exported: `./workflow-routine-routes.ts`'s "run now" reuses this exact
  * launch-then-correlate call, never a second launch path for Myra's own
  * tenant-scoped routine surface either.
@@ -307,7 +366,7 @@ export async function launchAndCorrelate(
   input: {
     tenantId: string;
     principalId: string;
-    definitionId: string;
+    definitionAssetId: string;
     input: Record<string, unknown>;
     routineId: string;
     triggeredBy: string;
@@ -318,7 +377,7 @@ export async function launchAndCorrelate(
   const launched = await deps.launcher.launchRoutineRun({
     tenantId: input.tenantId,
     principalId: input.principalId,
-    definitionId: input.definitionId,
+    definitionAssetId: input.definitionAssetId,
     input: input.input,
     deliveryWorkbenchId: input.deliveryWorkbenchId,
     routineName: input.routineName,
@@ -370,7 +429,7 @@ export async function fireOnceTriggerIfNeeded(
     await launchAndCorrelate(deps, {
       tenantId: input.tenantId,
       principalId: input.principalId,
-      definitionId: row.definitionId,
+      definitionAssetId: row.definitionAssetId,
       input: row.input,
       routineId: row.id,
       triggeredBy: "once",
@@ -396,8 +455,8 @@ export async function fireOnceTriggerIfNeeded(
 /**
  * `true` when `trigger` is not a webhook binding (nothing to check), or
  * when it is and the referenced webhook-triggers row checks out for this
- * tenant and definition. See `webhookTriggerInTenant`'s doc comment on
- * why the definition id must match.
+ * tenant and target asset. See `webhookTriggerInTenant`'s doc comment
+ * on why the two must agree.
  *
  * Exported: `./workflow-routine-routes.ts` runs the exact same check on
  * Myra's own create/update path, never a looser one.
@@ -406,32 +465,18 @@ export async function webhookTriggerValid(
   deps: Pick<CreateRoutineRoutesDeps, "webhookTriggerInTenant">,
   tenantId: string,
   trigger: RoutineTriggerT,
-  definitionId: string,
+  definitionAssetId: string,
 ): Promise<boolean> {
   if (trigger === null || trigger.kind !== "webhook") return true;
   if (deps.webhookTriggerInTenant === undefined) return true;
   return deps.webhookTriggerInTenant(
     tenantId,
     trigger.webhookTriggerId,
-    definitionId,
+    definitionAssetId,
   );
 }
 
-/** Every definition defaults to workbench-required — see
- * `CreateRoutineRoutesDeps.deliveryWorkbenchRequired`'s own doc comment
- * for why an omitted port must never change prior behavior.
- *
- * Exported: `./workflow-routine-routes.ts` consults the same rule for
- * Myra's own create/run-now path.
- */
-export async function isDeliveryWorkbenchRequired(
-  deps: Pick<CreateRoutineRoutesDeps, "deliveryWorkbenchRequired">,
-  tenantId: string,
-  definitionId: string,
-): Promise<boolean> {
-  if (deps.deliveryWorkbenchRequired === undefined) return true;
-  return deps.deliveryWorkbenchRequired(tenantId, definitionId);
-}
+export { isDeliveryWorkbenchRequired };
 
 /**
  * Posts the "created enabled" / "enabled" honest-notice — see
@@ -472,14 +517,11 @@ export async function postRoutineEnabledNotice(
       text,
     });
   } catch (err) {
-    log.error(
-      "Failed to post routine-{verb} notice into workbench {workbenchId}",
-      {
-        verb: input.verb,
-        workbenchId: input.workbenchId,
-        err,
-      },
-    );
+    reportError(err, {
+      operation: "routines.postRoutineEnabledNotice",
+      tenantId: input.tenantId,
+      extra: { verb: input.verb, workbenchId: input.workbenchId },
+    });
   }
 }
 
@@ -487,19 +529,6 @@ export function createRoutineRoutes(
   deps: CreateRoutineRoutesDeps,
 ): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
-
-  // A person can't have two "describe it, Myra drafts it" calls racing
-  // at once — a real one-shot inference call with no other
-  // serialization (CL-5917 wires a live `runOneShotFoldedPrompt`, not a
-  // stub) — the same `inFlightPrincipals` guard shape other one-shot
-  // drafting surfaces in this codebase use: a plain-language 409
-  // rejection of a same-principal concurrent second request, released
-  // in a `finally` once the first
-  // settles. Single-principal-in-flight only; broader per-tenant rate
-  // limiting is tracked separately as CL-5285. This Set is in-memory and
-  // resets on process restart — it guards within a single running
-  // instance only, never cluster-wide across replicas.
-  const inFlightDraftingPrincipals = new Set<string>();
 
   app.post(
     "/routines",
@@ -519,20 +548,20 @@ export function createRoutineRoutes(
       const tenant = c.get("tenant");
       const principal = c.get("principal");
 
-      if (deps.definitionInTenant !== undefined) {
-        const owned = await deps.definitionInTenant(
-          tenant.id,
-          body.definitionId,
+      const rejection = await rejectUnlaunchableTarget(
+        deps,
+        tenant.id,
+        principal.id,
+        body.definitionAssetId,
+      );
+      if (rejection !== undefined) {
+        return c.json(
+          makeErrorEnvelope({
+            code: rejection.code,
+            userMessage: rejection.userMessage,
+          }),
+          rejection.status,
         );
-        if (!owned) {
-          return c.json(
-            makeErrorEnvelope({
-              code: "not_found",
-              userMessage: "definition not found",
-            }),
-            404,
-          );
-        }
       }
 
       if (
@@ -540,7 +569,7 @@ export function createRoutineRoutes(
           deps,
           tenant.id,
           body.trigger,
-          body.definitionId,
+          body.definitionAssetId,
         ))
       ) {
         return c.json(
@@ -556,7 +585,7 @@ export function createRoutineRoutes(
         (await isDeliveryWorkbenchRequired(
           deps,
           tenant.id,
-          body.definitionId,
+          body.definitionAssetId,
         )) &&
         (body.deliveryWorkbenchId === undefined ||
           body.deliveryWorkbenchId === "");
@@ -580,7 +609,7 @@ export function createRoutineRoutes(
       if (deps.validateRoutineInput !== undefined) {
         const validated = await deps.validateRoutineInput(
           tenant.id,
-          body.definitionId,
+          body.definitionAssetId,
           body.input ?? {},
         );
         if (!validated.ok) {
@@ -602,7 +631,7 @@ export function createRoutineRoutes(
         const result = await deps.store.createRoutineIfAbsent({
           tenantId: tenant.id,
           name: body.name,
-          definitionId: body.definitionId,
+          definitionAssetId: body.definitionAssetId,
           trigger: body.trigger,
           scope: body.scope,
           input: body.input ?? {},
@@ -622,7 +651,7 @@ export function createRoutineRoutes(
         row = await deps.store.createRoutine({
           tenantId: tenant.id,
           name: body.name,
-          definitionId: body.definitionId,
+          definitionAssetId: body.definitionAssetId,
           trigger: body.trigger,
           scope: body.scope,
           input: body.input ?? {},
@@ -641,7 +670,7 @@ export function createRoutineRoutes(
       }
 
       if (!created) {
-        return c.json(routineView(row), 200);
+        return c.json(await resolvedRoutineView(deps, row), 200);
       }
 
       if (body.runOnceNow === true) {
@@ -650,7 +679,7 @@ export function createRoutineRoutes(
           {
             tenantId: tenant.id,
             principalId: principal.id,
-            definitionId: row.definitionId,
+            definitionAssetId: row.definitionAssetId,
             input: row.input,
             routineId: row.id,
             triggeredBy: "manual",
@@ -676,7 +705,7 @@ export function createRoutineRoutes(
         });
       }
 
-      return c.json(routineView(row), 201);
+      return c.json(await resolvedRoutineView(deps, row), 201);
     },
   );
 
@@ -686,7 +715,10 @@ export function createRoutineRoutes(
     async (c) => {
       const tenant = c.get("tenant");
       const rows = await deps.store.listRoutines(tenant.id);
-      return c.json({ items: rows.map(routineView) });
+      const items = await Promise.all(
+        rows.map((row) => resolvedRoutineView(deps, row)),
+      );
+      return c.json({ items });
     },
   );
 
@@ -705,7 +737,7 @@ export function createRoutineRoutes(
           404,
         );
       }
-      return c.json(routineView(row));
+      return c.json(await resolvedRoutineView(deps, row));
     },
   );
 
@@ -738,13 +770,75 @@ export function createRoutineRoutes(
         );
       }
 
+      const isRetarget =
+        body.definitionAssetId !== undefined &&
+        body.definitionAssetId !== existing.definitionAssetId;
+
+      if (isRetarget && body.definitionAssetId !== undefined) {
+        const rejection = await rejectUnlaunchableTarget(
+          deps,
+          tenant.id,
+          principal.id,
+          body.definitionAssetId,
+        );
+        if (rejection !== undefined) {
+          return c.json(
+            makeErrorEnvelope({
+              code: rejection.code,
+              userMessage: rejection.userMessage,
+            }),
+            rejection.status,
+          );
+        }
+
+        const retargetRejection = await validateRetarget(
+          deps,
+          tenant.id,
+          body.definitionAssetId,
+          existing,
+        );
+        if (retargetRejection !== undefined) {
+          return c.json(
+            makeErrorEnvelope({
+              code: retargetRejection.code,
+              userMessage: retargetRejection.userMessage,
+            }),
+            400,
+          );
+        }
+      }
+
+      const effectiveDefinitionAssetId =
+        body.definitionAssetId ?? existing.definitionAssetId;
+
+      if (
+        body.definitionAssetId !== undefined &&
+        body.definitionAssetId !== existing.definitionAssetId
+      ) {
+        const rejection = await rejectUnlaunchableTarget(
+          deps,
+          tenant.id,
+          principal.id,
+          body.definitionAssetId,
+        );
+        if (rejection !== undefined) {
+          return c.json(
+            makeErrorEnvelope({
+              code: rejection.code,
+              userMessage: rejection.userMessage,
+            }),
+            rejection.status,
+          );
+        }
+      }
+
       if (
         body.trigger !== undefined &&
         !(await webhookTriggerValid(
           deps,
           tenant.id,
           body.trigger,
-          existing.definitionId,
+          effectiveDefinitionAssetId,
         ))
       ) {
         return c.json(
@@ -768,6 +862,9 @@ export function createRoutineRoutes(
       if (body.deliveryWorkbenchId !== undefined) {
         patch = { ...patch, deliveryWorkbenchId: body.deliveryWorkbenchId };
       }
+      if (body.definitionAssetId !== undefined) {
+        patch = { ...patch, definitionAssetId: body.definitionAssetId };
+      }
 
       const row = await deps.store.updateRoutine(tenant.id, routineId, patch);
 
@@ -783,7 +880,7 @@ export function createRoutineRoutes(
         });
       }
 
-      return c.json(routineView(row));
+      return c.json(await resolvedRoutineView(deps, row));
     },
   );
 
@@ -875,7 +972,7 @@ export function createRoutineRoutes(
         (await isDeliveryWorkbenchRequired(
           deps,
           tenant.id,
-          existing.definitionId,
+          existing.definitionAssetId,
         )) &&
         (existing.deliveryWorkbenchId === null ||
           existing.deliveryWorkbenchId === "")
@@ -894,7 +991,7 @@ export function createRoutineRoutes(
         {
           tenantId: tenant.id,
           principalId: principal.id,
-          definitionId: existing.definitionId,
+          definitionAssetId: existing.definitionAssetId,
           input: body.input ?? existing.input,
           routineId,
           triggeredBy: "manual",
@@ -907,315 +1004,7 @@ export function createRoutineRoutes(
     },
   );
 
-  // --- Describe-to-agent drafting (path b) ---
-
-  app.post(
-    "/routine-drafts",
-    deps.requireGrant("workflow-run:*", "create"),
-    async (c) => {
-      if (deps.drafts === undefined) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "unavailable",
-            userMessage: "Routine drafting is not configured on this hub.",
-          }),
-          503,
-        );
-      }
-      const body = CreateDraftBody(await c.req.json().catch(() => undefined));
-      if (body instanceof type.errors) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "bad_request",
-            userMessage: `invalid draft body: ${body.summary}`,
-          }),
-          400,
-        );
-      }
-      const tenant = c.get("tenant");
-      const principal = c.get("principal");
-
-      if (deps.drafting !== undefined) {
-        if (inFlightDraftingPrincipals.has(principal.id)) {
-          return c.json(
-            makeErrorEnvelope({
-              code: "dispatch_in_progress",
-              userMessage: "Myra is already working on your last request.",
-            }),
-            409,
-          );
-        }
-        inFlightDraftingPrincipals.add(principal.id);
-      }
-
-      try {
-        const draft = await deps.drafts.createDraft({
-          tenantId: tenant.id,
-          prompt: body.prompt,
-          deliveryWorkbenchId: body.deliveryWorkbenchId,
-          scope: body.scope,
-          createdBy: principal.id,
-        });
-
-        if (deps.drafting !== undefined) {
-          let proposal: Awaited<ReturnType<typeof deps.drafting.propose>>;
-          try {
-            proposal = await deps.drafting.propose({
-              tenantId: tenant.id,
-              principalId: principal.id,
-              prompt: body.prompt,
-            });
-          } catch (err) {
-            log.error`routine drafting failed for tenant ${tenant.id}: ${
-              err instanceof Error ? err.message : String(err)
-            }`;
-            if (isDraftingFailure(err)) {
-              return c.json(
-                makeErrorEnvelope({
-                  code: "drafting_failed",
-                  userMessage: DRAFT_FAILED_MESSAGE,
-                }),
-                422,
-              );
-            }
-            throw err;
-          }
-          const reviewed = await deps.drafts.markReviewed(tenant.id, draft.id, {
-            proposedSteps: proposal.steps,
-            proposedTrigger: proposal.trigger ?? null,
-            proposedName: proposal.name ?? null,
-            definitionId: proposal.definitionId ?? null,
-            autonomy: proposal.autonomy ?? null,
-          });
-          return c.json(draftView(reviewed), 201);
-        }
-
-        return c.json(draftView(draft), 201);
-      } finally {
-        inFlightDraftingPrincipals.delete(principal.id);
-      }
-    },
-  );
-
-  app.get(
-    "/routine-drafts",
-    deps.requireGrant("workflow-run:*", "read"),
-    async (c) => {
-      if (deps.drafts === undefined) {
-        return c.json({ items: [] as const });
-      }
-      const tenant = c.get("tenant");
-      const items = await deps.drafts.listDrafts(tenant.id);
-      return c.json({ items: items.map(draftView) });
-    },
-  );
-
-  app.get(
-    "/routine-drafts/:id",
-    deps.requireGrant(idResource("workflow-run", "id"), "read"),
-    async (c) => {
-      if (deps.drafts === undefined) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "unavailable",
-            userMessage: "Routine drafting is not configured on this hub.",
-          }),
-          503,
-        );
-      }
-      const tenant = c.get("tenant");
-      const draft = await deps.drafts.getDraft(tenant.id, c.req.param("id"));
-      if (draft === undefined) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "not_found",
-            userMessage: "draft not found",
-          }),
-          404,
-        );
-      }
-      return c.json(draftView(draft));
-    },
-  );
-
-  app.post(
-    "/routine-drafts/:id/approve",
-    deps.requireGrant(idResource("workflow-run", "id"), "create"),
-    async (c) => {
-      if (deps.drafts === undefined) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "unavailable",
-            userMessage: "Routine drafting is not configured on this hub.",
-          }),
-          503,
-        );
-      }
-      const body = ApproveDraftBody(await c.req.json().catch(() => ({})));
-      if (body instanceof type.errors) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "bad_request",
-            userMessage: `invalid approve body: ${body.summary}`,
-          }),
-          400,
-        );
-      }
-      const tenant = c.get("tenant");
-      const principal = c.get("principal");
-      const draftId = c.req.param("id");
-      const draft = await deps.drafts.getDraft(tenant.id, draftId);
-      if (draft === undefined) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "not_found",
-            userMessage: "draft not found",
-          }),
-          404,
-        );
-      }
-      if (draft.status !== "reviewed") {
-        return c.json(
-          makeErrorEnvelope({
-            code: "bad_request",
-            userMessage: `draft is ${draft.status}; only reviewed drafts can be approved`,
-          }),
-          400,
-        );
-      }
-      // A draft's own `definitionId` wins when set; otherwise the
-      // review UI's own pick (Myra proposing steps with no workflow
-      // pinned is a valid, honest outcome — see `RoutineDraftingPort`'s
-      // doc comment) — never silently falling back to nothing pinned.
-      const definitionId =
-        body.definitionId !== undefined && body.definitionId !== ""
-          ? body.definitionId
-          : draft.definitionId;
-      if (definitionId === null || definitionId === "") {
-        return c.json(
-          makeErrorEnvelope({
-            code: "bad_request",
-            userMessage:
-              "draft has no definitionId; review must pin a workflow definition",
-          }),
-          400,
-        );
-      }
-      if (deps.definitionInTenant !== undefined) {
-        const owned = await deps.definitionInTenant(tenant.id, definitionId);
-        if (!owned) {
-          return c.json(
-            makeErrorEnvelope({
-              code: "not_found",
-              userMessage: "definition not found",
-            }),
-            404,
-          );
-        }
-      }
-      // Defense in depth: `POST /routines` never lets a `{kind:
-      // "webhook"}` trigger through without this same check
-      // (`webhookTriggerValid`'s own doc comment explains why the two
-      // ids must agree) — a drafted proposal is no more trusted than a
-      // request body a person typed by hand, so approve runs the exact
-      // same check, never a second, looser path.
-      if (
-        !(await webhookTriggerValid(
-          deps,
-          tenant.id,
-          draft.proposedTrigger,
-          definitionId,
-        ))
-      ) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "not_found",
-            userMessage: "webhook trigger not found",
-          }),
-          404,
-        );
-      }
-      const name =
-        draft.proposedName !== null && draft.proposedName !== ""
-          ? draft.proposedName
-          : draft.prompt.slice(0, 80);
-      const trigger = draft.proposedTrigger ?? null;
-      const routine = await deps.store.createRoutine({
-        tenantId: tenant.id,
-        name,
-        definitionId,
-        trigger,
-        scope: draft.scope,
-        input:
-          draft.autonomy !== null
-            ? { draftedSteps: draft.proposedSteps, autonomy: draft.autonomy }
-            : { draftedSteps: draft.proposedSteps },
-        deliveryWorkbenchId: draft.deliveryWorkbenchId,
-        createdBy: principal.id,
-      });
-      const approved = await deps.drafts.markApproved(
-        tenant.id,
-        draftId,
-        routine.id,
-      );
-      return c.json(
-        { draft: draftView(approved), routine: routineView(routine) },
-        201,
-      );
-    },
-  );
-
-  app.post(
-    "/routine-drafts/:id/discard",
-    deps.requireGrant(idResource("workflow-run", "id"), "write"),
-    async (c) => {
-      if (deps.drafts === undefined) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "unavailable",
-            userMessage: "Routine drafting is not configured on this hub.",
-          }),
-          503,
-        );
-      }
-      const tenant = c.get("tenant");
-      try {
-        const draft = await deps.drafts.markDiscarded(
-          tenant.id,
-          c.req.param("id"),
-        );
-        return c.json(draftView(draft));
-      } catch (err) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "bad_request",
-            userMessage: err instanceof Error ? err.message : "discard failed",
-          }),
-          400,
-        );
-      }
-    },
-  );
-
   return app;
-}
-
-function draftView(row: import("./drafts").RoutineDraftRow) {
-  return {
-    id: row.id,
-    prompt: row.prompt,
-    status: row.status,
-    proposedSteps: row.proposedSteps,
-    proposedTrigger: row.proposedTrigger,
-    proposedName: row.proposedName,
-    definitionId: row.definitionId,
-    deliveryWorkbenchId: row.deliveryWorkbenchId,
-    scope: row.scope,
-    autonomy: row.autonomy,
-    approvedRoutineId: row.approvedRoutineId,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  };
 }
 
 /**
@@ -1232,7 +1021,7 @@ export async function fireScheduledRoutine(
     launcher: RoutineLauncher;
     deliveryWorkbenchRequired?: (
       tenantId: string,
-      definitionId: string,
+      definitionAssetId: string,
     ) => Promise<boolean>;
   },
   params: { tenantId: string; routine: RoutineRow },
@@ -1246,7 +1035,7 @@ export async function fireScheduledRoutine(
     (await isDeliveryWorkbenchRequired(
       deps,
       params.tenantId,
-      params.routine.definitionId,
+      params.routine.definitionAssetId,
     )) &&
     (params.routine.deliveryWorkbenchId === null ||
       params.routine.deliveryWorkbenchId === "")
@@ -1258,7 +1047,7 @@ export async function fireScheduledRoutine(
   return launchAndCorrelate(deps, {
     tenantId: params.tenantId,
     principalId: params.routine.createdBy,
-    definitionId: params.routine.definitionId,
+    definitionAssetId: params.routine.definitionAssetId,
     input: params.routine.input,
     routineId: params.routine.id,
     triggeredBy: "schedule",

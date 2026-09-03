@@ -49,6 +49,7 @@ function routine(
 ): Routine {
   return {
     name: "Daily dig",
+    definitionAssetId: "ast_def",
     definitionId: "def",
     trigger: { kind: "interval", unit: "hours", every: 24 },
     scope: "bench",

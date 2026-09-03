@@ -306,8 +306,12 @@ export function ChatPage({
       // are global-only pages now, reached from the shell rail — no
       // per-workbench header button or `/run` command opens a scoped view
       // of either here.
-      onCreateRoutineInSpace={(inSpaceWorkbenchId) =>
-        openRoutine({ routineId: null, workbenchId: inSpaceWorkbenchId })
+      onCreateRoutineInSpace={(inSpaceWorkbenchId, preselectedAssetId) =>
+        openRoutine({
+          routineId: null,
+          workbenchId: inSpaceWorkbenchId,
+          ...(preselectedAssetId !== undefined ? { preselectedAssetId } : {}),
+        })
       }
       onWorkbenchNotFound={reportWorkbenchNotFound}
       onGoToMissionControl={() => navigate(MISSION_CONTROL_PATH)}

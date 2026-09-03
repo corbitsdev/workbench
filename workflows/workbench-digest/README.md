@@ -21,7 +21,7 @@ input.
 **Pinned to `noop-inference` (default, zero cost):** deployed the same
 way as `@corbits/heartbeat-workflow` — `inferencePreferences` pointed at
 the hub's `noop-inference` endpoint (see `NOOP_MODEL_SOURCE` in
-`packages/hub-client/src/seed.ts`). Every run resolves against a
+`packages/seeding/src/seed.ts`). Every run resolves against a
 constant, locally served SSE response, so running this on a tight
 schedule costs nothing. The trade-off: `noop-inference` always replies
 with empty text by design (see its header comment), so under this pin

@@ -384,7 +384,7 @@ describe.skipIf(databaseUrl === undefined)(
           `/api/tenants/${tenantId}/routines`,
           {
             name: "Run-now input routine",
-            definitionId,
+            definitionAssetId: assetId,
             trigger: null,
             scope: "bench",
             deliveryWorkbenchId: workbenchId,
@@ -435,7 +435,7 @@ describe.skipIf(databaseUrl === undefined)(
           `/api/tenants/${tenantId}/routines`,
           {
             name: "Scheduled input routine",
-            definitionId,
+            definitionAssetId: assetId,
             trigger: { kind: "interval", unit: "minutes", every: 1 },
             scope: "bench",
             deliveryWorkbenchId: workbenchId,
@@ -534,7 +534,7 @@ describe.skipIf(databaseUrl === undefined)(
           `/api/tenants/${tenantId}/routines`,
           {
             name: "Webhook input routine",
-            definitionId,
+            definitionAssetId: assetId,
             trigger: { kind: "webhook", webhookTriggerId: triggerId },
             scope: "bench",
             deliveryWorkbenchId: workbenchId,

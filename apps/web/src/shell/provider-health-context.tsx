@@ -35,7 +35,7 @@ import {
   fetchProviderHealth,
   type ClassifiedInferenceFailureCategory,
   type ProviderHealthRecord,
-} from "@workbench/connections/provider-health";
+} from "@corbits/connections/provider-health";
 
 import { useBench } from "../bench-context";
 

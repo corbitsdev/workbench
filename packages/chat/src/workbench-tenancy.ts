@@ -27,7 +27,7 @@ import {
   TenantResponse,
 } from "@intx/types";
 import { reportError } from "@corbits/error-sink";
-import { parseAs, type ApiCall } from "@workbench/hub-client";
+import { parseAs, type ApiCall } from "@corbits/hub-api-client";
 import { workbenchTenancy } from "./schema";
 
 const log = getLogger(["chat", "workbench-tenancy"]);

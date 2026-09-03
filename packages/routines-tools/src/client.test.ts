@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import {
   createRoutine,
   listRoutines,
+  listTargets,
   runRoutineNow,
   updateRoutine,
   type RoutineToolClientConfig,
@@ -21,7 +22,8 @@ function routineViewBody(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "rtn_1",
     name: "Morning digest",
-    definitionId: "def_1",
+    definitionAssetId: "def_1",
+    definitionId: "wfd_1",
     trigger: { kind: "daily", hour: 9, minute: 0 },
     scope: "bench",
     input: { instruction: "Summarize overnight activity" },
@@ -54,6 +56,46 @@ test("listRoutines reaches the tenant's workflow-run routines endpoint with side
   expect(items).toEqual([routineViewBody()] as never);
 });
 
+test("listTargets reaches the run's own /targets endpoint with sidecar auth", async () => {
+  let seenUrl: string | undefined;
+  let seenHeaders: Record<string, string> | undefined;
+  const targetBody = {
+    definitionAssetId: "ast_1",
+    definitionId: "wfd_1",
+    assetName: "digest-writer",
+    name: "Digest writer",
+    description: null,
+    kind: "workflow",
+    wireHash: "h",
+  };
+  const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
+    seenUrl = String(url);
+    seenHeaders = init?.headers as Record<string, string>;
+    return new Response(
+      JSON.stringify({ items: [targetBody], nextCursor: null }),
+    );
+  }) as unknown as typeof fetch;
+
+  const items = await listTargets(testConfig(fetchImpl));
+
+  expect(seenUrl).toBe("https://hub.example.com/api/workflow-routines/targets");
+  expect(seenHeaders?.["authorization"]).toBe("Bearer sc-token");
+  expect(seenHeaders?.["x-workflow-run-address"]).toBe("run_1@workflow");
+  expect(items).toEqual([targetBody] as never);
+});
+
+test("listTargets throws an honest error on a non-ok response, never fabricating a list", async () => {
+  const fetchImpl = (async () =>
+    new Response("", {
+      status: 500,
+      statusText: "Internal Server Error",
+    })) as unknown as typeof fetch;
+
+  await expect(listTargets(testConfig(fetchImpl))).rejects.toThrow(
+    /Listing routine targets failed/,
+  );
+});
+
 test("listRoutines throws an honest error on a non-ok response, never fabricating a list", async () => {
   const fetchImpl = (async () =>
     new Response("", {
@@ -75,7 +117,7 @@ test("listRoutines throws when the response doesn't match the expected shape", a
   );
 });
 
-test("createRoutine posts name/definitionId/trigger/input to the routines endpoint", async () => {
+test("createRoutine posts name/definitionAssetId/trigger/input to the routines endpoint", async () => {
   let seenUrl: string | undefined;
   let seenBody: unknown;
   const fetchImpl = (async (url: string | URL, init?: RequestInit) => {
@@ -86,7 +128,7 @@ test("createRoutine posts name/definitionId/trigger/input to the routines endpoi
 
   const routine = await createRoutine(testConfig(fetchImpl), {
     name: "Morning digest",
-    definitionId: "def_1",
+    definitionAssetId: "def_1",
     trigger: { kind: "daily", hour: 9, minute: 0 },
     input: { instruction: "Summarize overnight activity" },
   });
@@ -96,7 +138,7 @@ test("createRoutine posts name/definitionId/trigger/input to the routines endpoi
   );
   expect(seenBody).toEqual({
     name: "Morning digest",
-    definitionId: "def_1",
+    definitionAssetId: "def_1",
     trigger: { kind: "daily", hour: 9, minute: 0 },
     input: { instruction: "Summarize overnight activity" },
   });
@@ -119,7 +161,7 @@ test("createRoutine surfaces the route's own error message on a non-ok response"
   await expect(
     createRoutine(testConfig(fetchImpl), {
       name: "x",
-      definitionId: "def_missing",
+      definitionAssetId: "def_missing",
       trigger: { kind: "daily", hour: 9, minute: 0 },
     }),
   ).rejects.toThrow("definition not found");

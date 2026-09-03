@@ -14,7 +14,7 @@ import type { TenantEnv } from "@intx/hub-api";
 import type { RequireGrant } from "@intx/hub-api";
 import { dispatchSlashCommand } from "./dispatch";
 import type { CommandListing, CommandRegistry } from "./registry";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 export type CreateCommandRoutesDeps = {
   registry: CommandRegistry;
