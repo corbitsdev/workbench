@@ -153,18 +153,25 @@ export function PluginsRoute({
   // use for in-room connect cards.
   useEffect(() => {
     if (selectedTenantId === null) return;
-    const refresh = () => {
-      if (document.visibilityState === "visible") {
+    // `visibilitychange` and `focus` both fire in the same tick when a tab
+    // regains focus; the microtask guard collapses that pair into one
+    // scheduled bump instead of two back-to-back reloads.
+    let bumpScheduled = false;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (bumpScheduled) return;
+      bumpScheduled = true;
+      queueMicrotask(() => {
+        bumpScheduled = false;
         setPluginsReloadKey((key) => key + 1);
-      }
+      });
     };
-    const onFocus = () => setPluginsReloadKey((key) => key + 1);
-    document.addEventListener("visibilitychange", refresh);
-    window.addEventListener("focus", onFocus);
-    const interval = setInterval(refresh, 30_000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("focus", refreshWhenVisible);
+    const interval = setInterval(refreshWhenVisible, 30_000);
     return () => {
-      document.removeEventListener("visibilitychange", refresh);
-      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("focus", refreshWhenVisible);
       clearInterval(interval);
     };
   }, [selectedTenantId]);

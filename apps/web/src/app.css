@@ -649,9 +649,9 @@ select:disabled,
   color: var(--muted-foreground);
   opacity: 0;
   transition:
-    opacity 120ms var(--ease-out, ease),
-    background 120ms var(--ease-out, ease),
-    color 120ms var(--ease-out, ease);
+    opacity var(--duration-micro, 150ms) var(--ease-out, ease),
+    background var(--duration-micro, 150ms) var(--ease-out, ease),
+    color var(--duration-micro, 150ms) var(--ease-out, ease);
 }
 
 .chat-sidebar-row-menu-trigger::after {
@@ -2321,7 +2321,8 @@ select:disabled,
    attention-seeking animation, fully off under reduced motion.
    DESIGN.md's motion ceiling is 300ms — stays at 280ms. */
 .onboarding-phase {
-  animation: onboarding-phase-in 0.28s ease both;
+  animation: onboarding-phase-in var(--duration-large, 300ms)
+    var(--ease-out, ease) both;
 }
 
 @keyframes onboarding-phase-in {
