@@ -110,7 +110,7 @@ describe("computeInsightsStats", () => {
     expect(stats.recentRuns.map((r) => r.id)).toEqual(["1", "2", "3"]);
   });
 
-  test("warm-keep: a running run past the fire window is not counted as running", () => {
+  test("a live running run past the fire window is still counted as running", () => {
     const stats = computeInsightsStats(
       [
         run({
@@ -123,7 +123,7 @@ describe("computeInsightsStats", () => {
       ],
       [],
     );
-    expect(stats.running).toBe(0);
+    expect(stats.running).toBe(1);
   });
 
   test("endedAt drops a just-finished running run from the running count immediately", () => {

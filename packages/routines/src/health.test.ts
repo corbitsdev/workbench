@@ -41,17 +41,37 @@ describe("fireOutcomeStatus", () => {
     );
   });
 
-  test("warm-keep (CL-6681): a running fire past its window reads as completed", () => {
+  test("a live fire past the window still reads as running until persist settles", () => {
     const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
     expect(
       fireOutcomeStatus(fire("r1", {}, { status: "running" }), staleNow),
+    ).toBe("running");
+  });
+
+  test("an 8-day still-running live fire stays running", () => {
+    const eightDays = Date.parse(FIRE_CREATED_AT) + 8 * 24 * 60 * 60 * 1000;
+    expect(
+      fireOutcomeStatus(fire("r1", {}, { status: "running" }), eightDays),
+    ).toBe("running");
+  });
+
+  test("abandoned: a running fire past its window reads as completed", () => {
+    const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+    expect(
+      fireOutcomeStatus(
+        fire("r1", { abandoned: true }, { status: "running" }),
+        staleNow,
+      ),
     ).toBe("completed");
   });
 
-  test("a running fire one millisecond inside its window still reads as running", () => {
+  test("abandoned: a running fire one millisecond inside its window still reads as running", () => {
     const stillInside = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS;
     expect(
-      fireOutcomeStatus(fire("r1", {}, { status: "running" }), stillInside),
+      fireOutcomeStatus(
+        fire("r1", { abandoned: true }, { status: "running" }),
+        stillInside,
+      ),
     ).toBe("running");
   });
 
@@ -104,11 +124,21 @@ describe("runOutcomeStatus", () => {
     ).toBe("running");
   });
 
-  test("warm-keep: a top-level running status past its window reads as completed", () => {
+  test("a live top-level running status past the window still reads as running", () => {
     const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
     expect(
       runOutcomeStatus(
         { createdAt: FIRE_CREATED_AT, status: "running" },
+        staleNow,
+      ),
+    ).toBe("running");
+  });
+
+  test("abandoned: a top-level running status past its window reads as completed", () => {
+    const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+    expect(
+      runOutcomeStatus(
+        { createdAt: FIRE_CREATED_AT, status: "running", abandoned: true },
         staleNow,
       ),
     ).toBe("completed");
@@ -161,11 +191,21 @@ describe("cleanFireStreak", () => {
     ).toBe(1);
   });
 
-  test("a stale running fire (warm-keep) counts as a success, not in-flight forever", () => {
+  test("a live running fire past the window stays in-flight and does not extend the streak", () => {
     const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
     expect(
       cleanFireStreak(
         [fire("r2", {}, { status: "running" }), fire("r1")],
+        staleNow,
+      ),
+    ).toBe(1);
+  });
+
+  test("an abandoned stale running fire counts as a success, not in-flight forever", () => {
+    const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+    expect(
+      cleanFireStreak(
+        [fire("r2", { abandoned: true }, { status: "running" }), fire("r1")],
         staleNow,
       ),
     ).toBe(2);
@@ -281,11 +321,22 @@ describe("routineHealth", () => {
     ).not.toBe("running");
   });
 
-  test("warm-keep (CL-6681): a latest run stuck 'running' past its window reads as healthy, not stuck Running now forever", () => {
+  test("a live latest run past the window still reports Running now", () => {
     const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
     const health = routineHealth(
       healthy,
       [fire("r1", {}, { status: "running" })],
+      staleNow,
+    );
+    expect(health.state).toBe("running");
+    expect(health.label).toBe("Running now");
+  });
+
+  test("abandoned: a latest run stuck 'running' past its window reads as healthy, not stuck Running now forever", () => {
+    const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+    const health = routineHealth(
+      healthy,
+      [fire("r1", { abandoned: true }, { status: "running" })],
       staleNow,
     );
     expect(health.state).toBe("ok");

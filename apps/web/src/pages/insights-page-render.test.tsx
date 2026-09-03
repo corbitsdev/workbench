@@ -135,10 +135,12 @@ describe("InsightsPage 'Running now' strip", () => {
     expect(el.textContent).toContain("Weekly digest");
   });
 
-  // Warm-keep (CL-6681 / CL-6778): a lingering `running` status from 8
-  // days ago is not an in-flight job. "Running now" still reads the full
-  // run set (not the 7-day range), but `runOutcomeStatus` is the reading.
-  test("warm-keep: a running run started 8 days ago is not in the strip or the KPI", () => {
+  // Liveness is not a windowed property: a run that started long before the
+  // 7-day window and is still running must not disappear from the strip or
+  // read 0 in the "Running now" KPI just because its start time falls
+  // outside `range`. Persist has not settled (`endedAt` absent), so the
+  // fire is live — not remapped to completed by the abandoned-fire window.
+  test("a run started 8 days ago that is still running stays in the strip and the KPI", () => {
     const eightDaysAgo = new Date(
       Date.now() - 8 * 24 * 60 * 60 * 1000,
     ).toISOString();
@@ -159,9 +161,10 @@ describe("InsightsPage 'Running now' strip", () => {
       ],
       nextCursor: null,
     });
-    expect(el.textContent).not.toContain("Running now");
-    expect(el.textContent).not.toContain("1 in progress");
-    expect(el.textContent).not.toContain("in flight");
+    expect(el.textContent).toContain("Running now");
+    expect(el.textContent).toContain("1 in progress");
+    expect(el.textContent).toContain("Long haul");
+    expect(el.textContent).toContain("in flight");
   });
 
   test("the elapsed label ticks forward while a run is live, not frozen at first render", async () => {

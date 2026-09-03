@@ -19,6 +19,12 @@ export type RoutineFire = {
   readonly createdAt: string;
   readonly error?: string | null;
   readonly run?: Record<string, unknown>;
+  /**
+   * True when this fire is already known abandoned (sidecar dead, no
+   * in-flight turn). The running-window is only applied then — a live
+   * fire still doing work stays `running` however old it is.
+   */
+  readonly abandoned?: boolean;
 };
 
 /** The routine fields health depends on — every one of them already
@@ -73,15 +79,13 @@ function statusOf(fire: {
 }
 
 /**
- * How long a fire may credibly still be doing work before a lingering
- * `running` status with no `endedAt` is read as an abandoned fire
- * (warm-keep CL-6681 / CL-6778). A routine fire that finished is
- * supposed to land `completed`/`failed`/`cancelled` plus `endedAt` via
- * `markTerminal`; this window is the last-resort reading for a fire
- * that never got that write — never the happy path. Past it, a
- * still-`running` fire with no end stamp is presumed to have already
- * delivered, so every surface badging its status reads it through
- * `fireOutcomeStatus` rather than the raw column.
+ * How long an *abandoned* fire may linger as `running` with no `endedAt`
+ * before it is read as completed (warm-keep CL-6681 / CL-6778). A finished
+ * fire is supposed to land `completed`/`failed`/`cancelled` plus `endedAt`
+ * via `markTerminal`; this window is last-resort for a fire already known
+ * abandoned that never got that write. It is never applied to a live
+ * in-flight fire — a tool loop can outlast ten minutes, and persist has
+ * not settled yet.
  */
 export const FIRE_RUNNING_WINDOW_MS = 10 * 60 * 1000;
 
@@ -89,14 +93,16 @@ export const FIRE_RUNNING_WINDOW_MS = 10 * 60 * 1000;
  * A fire's status the way this build should show it: the raw
  * `run.status` for every non-running value; a `running` row that
  * already carries `endedAt` is finished immediately (the persist
- * path); a `running` row with no `endedAt` older than
- * `FIRE_RUNNING_WINDOW_MS` is an abandoned fire read as `completed`.
+ * path); a `running` row with no `endedAt` stays `running` until
+ * persist settles, unless the fire is already known abandoned —
+ * only then does `FIRE_RUNNING_WINDOW_MS` remap it to `completed`.
  * Every caller that needs a fire's displayed status goes through here,
  * never `fire.run?.status` directly.
  */
 export function fireOutcomeStatus(
   fire: Pick<RoutineFire, "createdAt"> & {
     readonly run?: Record<string, unknown>;
+    readonly abandoned?: boolean;
   },
   now: number,
 ): string | null {
@@ -104,6 +110,7 @@ export function fireOutcomeStatus(
   if (status !== "running") return status;
   const endedAt = fire.run?.endedAt;
   if (typeof endedAt === "string" && endedAt !== "") return "completed";
+  if (fire.abandoned !== true) return status;
   const startedAt = Date.parse(fire.createdAt);
   if (Number.isNaN(startedAt)) return status;
   return now - startedAt > FIRE_RUNNING_WINDOW_MS ? "completed" : "running";
@@ -114,20 +121,23 @@ export function fireOutcomeStatus(
  * level (`workflow_run.status`), not nested on a routine fire's `run`.
  * Insights, Mission Control, and the shell activity feed all see that
  * shape. `endedAt` is the persist-path signal that the fire already
- * finished; the running-window is only for abandoned fires that never
- * got that stamp.
+ * finished. The running-window is only for fires already known
+ * abandoned (`abandoned: true`) that never got that stamp — a live
+ * in-flight run stays `running` however old it is.
  */
 export function runOutcomeStatus(
   run: {
     readonly createdAt: string;
     readonly status: string;
     readonly endedAt?: string | null;
+    readonly abandoned?: boolean;
   },
   now: number,
 ): string | null {
   return fireOutcomeStatus(
     {
       createdAt: run.createdAt,
+      ...(run.abandoned === true ? { abandoned: true } : {}),
       run: { status: run.status, endedAt: run.endedAt },
     },
     now,

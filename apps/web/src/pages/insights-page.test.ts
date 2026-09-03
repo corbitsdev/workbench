@@ -235,7 +235,7 @@ describe("isRunningNow", () => {
     ).toBe(false);
   });
 
-  test("warm-keep: a running run past the fire window is not in flight", () => {
+  test("a live running run past the fire window is still in flight", () => {
     expect(
       isRunningNow(
         run({
@@ -246,6 +246,6 @@ describe("isRunningNow", () => {
           status: "running",
         }),
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 });

@@ -113,10 +113,9 @@ describe("listRoutineActivity", () => {
     expect(item?.status).not.toBe("running");
   });
 
-  // Warm-keep (CL-6681 / CL-6778): the fires feed still reports `running`
-  // because the delivery agent stays deployed. Past the fire window that
-  // row must not count as routine activity in flight.
-  test("warm-keep: a running fire past the window no longer reads as running", async () => {
+  // A live fire still in a tool loop can outlast the abandoned-fire
+  // window. Persist has not settled, so the row stays running.
+  test("a live running fire past the window still reads as running", async () => {
     stubTopLevelRunsFetch([
       {
         ...runningFire,
@@ -128,7 +127,7 @@ describe("listRoutineActivity", () => {
 
     const [item] = await listRoutineActivity("tnt_1");
 
-    expect(item?.status).not.toBe("running");
+    expect(item?.status).toBe("running");
   });
 
   // A directly-triggered deployment run is also a `feed=fires` row (it is

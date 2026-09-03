@@ -96,7 +96,7 @@ describe("computeInFlightRows", () => {
     expect(rows).toEqual([]);
   });
 
-  test("warm-keep: a running routine past the fire window is not in-flight", () => {
+  test("a live running routine past the fire window stays in-flight", () => {
     const rows = computeInFlightRows([
       routine({
         id: "stale",
@@ -106,7 +106,7 @@ describe("computeInFlightRows", () => {
         ).toISOString(),
       }),
     ]);
-    expect(rows).toEqual([]);
+    expect(rows.map((row) => row.key)).toEqual(["routine:stale"]);
   });
 });
 
