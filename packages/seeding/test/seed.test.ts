@@ -1560,6 +1560,188 @@ describe("seedCatalog", () => {
     );
   });
 
+  test.failing(
+    "fresh run gives the declared Anthropic default the lowest distinct priority",
+    async () => {
+      const { log } = collector();
+      const modelNamesById = new Map<string, string>();
+      const offeringPosts: { modelId: string; priority: number }[] = [];
+      const handler: FakeHandler = (method, path, body) => {
+        if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
+          return { status: 201, data: providerRow("prv_1", "anthropic") };
+        if (
+          method === "POST" &&
+          path === `/api/tenants/${TENANT_ID}/credentials`
+        )
+          return {
+            status: 201,
+            data: credentialRow("cre_1", "prv_1", "anthropic-default"),
+          };
+        if (
+          method === "POST" &&
+          path === `/api/tenants/${TENANT_ID}/catalog/models`
+        ) {
+          const canonicalName = (body as { canonicalName: string })
+            .canonicalName;
+          const modelId = `mdl_${modelNamesById.size + 1}`;
+          modelNamesById.set(modelId, canonicalName);
+          return {
+            status: 201,
+            data: catalogModelRow(modelId, canonicalName),
+          };
+        }
+        if (
+          method === "POST" &&
+          path === `/api/tenants/${TENANT_ID}/catalog/providers`
+        )
+          return {
+            status: 201,
+            data: catalogProviderRow("cpv_1", "anthropic", "cre_1"),
+          };
+        if (
+          method === "POST" &&
+          path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+        ) {
+          const offering = body as { modelId: string; priority: number };
+          offeringPosts.push(offering);
+          return {
+            status: 201,
+            data: catalogOfferingRow(
+              `off_${offeringPosts.length}`,
+              offering.modelId,
+              "cpv_1",
+            ),
+          };
+        }
+        return undefined;
+      };
+
+      await seedCatalog({
+        api: fakeAPI(handler),
+        cookies: [],
+        tenantId: TENANT_ID,
+        apiKey: "sk-test",
+        log,
+      });
+
+      const priorities = offeringPosts.map((offering) => offering.priority);
+      const sonnet = offeringPosts.find(
+        (offering) =>
+          modelNamesById.get(offering.modelId) === "claude-sonnet-5",
+      );
+      expect(new Set(priorities).size).toBe(offeringPosts.length);
+      expect(sonnet?.priority).toBe(Math.min(...priorities));
+    },
+  );
+
+  test.failing(
+    "re-run updates a legacy offering to its computed priority",
+    async () => {
+      const { log } = collector();
+      const patchedOfferings: { id: string; priority: number }[] = [];
+      const handler: FakeHandler = (method, path, body) => {
+        if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
+          return { status: 201, data: providerRow("prv_1", "anthropic") };
+        if (
+          method === "POST" &&
+          path === `/api/tenants/${TENANT_ID}/credentials`
+        )
+          return {
+            status: 201,
+            data: credentialRow("cre_1", "prv_1", "anthropic-default"),
+          };
+        if (
+          method === "POST" &&
+          path === `/api/tenants/${TENANT_ID}/catalog/models`
+        ) {
+          const canonicalName = (body as { canonicalName: string })
+            .canonicalName;
+          const modelId =
+            canonicalName === "claude-opus-5" ? "mdl_legacy" : "mdl_new";
+          return { status: 201, data: catalogModelRow(modelId, canonicalName) };
+        }
+        if (
+          method === "POST" &&
+          path === `/api/tenants/${TENANT_ID}/catalog/providers`
+        )
+          return {
+            status: 201,
+            data: catalogProviderRow("cpv_1", "anthropic", "cre_1"),
+          };
+        if (
+          method === "POST" &&
+          path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+        ) {
+          const offering = body as { modelId: string };
+          if (offering.modelId === "mdl_legacy")
+            return { status: 409, data: { error: "already exists" } };
+          return {
+            status: 201,
+            data: catalogOfferingRow(
+              `off_${offering.modelId}`,
+              offering.modelId,
+              "cpv_1",
+            ),
+          };
+        }
+        if (
+          method === "GET" &&
+          path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+        )
+          return {
+            status: 200,
+            data: {
+              data: [
+                catalogOfferingRow(
+                  "off_other_provider",
+                  "mdl_legacy",
+                  "cpv_other",
+                ),
+              ],
+              nextCursor: "second-page",
+            },
+          };
+        if (
+          method === "GET" &&
+          path ===
+            `/api/tenants/${TENANT_ID}/catalog/offerings?cursor=second-page`
+        )
+          return {
+            status: 200,
+            data: {
+              data: [catalogOfferingRow("off_legacy", "mdl_legacy", "cpv_1")],
+              nextCursor: null,
+            },
+          };
+        if (
+          method === "PATCH" &&
+          path === `/api/tenants/${TENANT_ID}/catalog/offerings/off_legacy`
+        ) {
+          const patch = body as { priority: number };
+          patchedOfferings.push({ id: "off_legacy", priority: patch.priority });
+          return {
+            status: 200,
+            data: {
+              ...catalogOfferingRow("off_legacy", "mdl_legacy", "cpv_1"),
+              priority: patch.priority,
+            },
+          };
+        }
+        return undefined;
+      };
+
+      await seedCatalog({
+        api: fakeAPI(handler),
+        cookies: [],
+        tenantId: TENANT_ID,
+        apiKey: "sk-test",
+        log,
+      });
+
+      expect(patchedOfferings).toEqual([{ id: "off_legacy", priority: 1 }]);
+    },
+  );
+
   test("an Ollama offering's quirks carry that model's real context-window ceiling, not the built-in 4096 default", async () => {
     const { log } = collector();
     const offeringBodies: Record<string, unknown>[] = [];
