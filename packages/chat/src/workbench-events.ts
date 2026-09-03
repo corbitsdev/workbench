@@ -252,7 +252,9 @@ export interface WorkbenchStreamBridge {
  * EventSource sees a disconnect; Hono `close()` is not awaited
  * because it queues behind the in-flight write. A client abort that
  * already ran `teardown` via `stream.onAbort` is not reported as a
- * new incident. A periodic keepalive keeps idle connections alive
+ * new incident, but still aborts the in-flight writer so Hono
+ * `close()` does not wait on it. A periodic keepalive keeps idle
+ * connections alive
  * behind proxies that time out on silence.
  */
 export function bridgeWorkbenchStream(input: {
@@ -379,14 +381,12 @@ export function bridgeWorkbenchStream(input: {
         writeTimeoutMs,
       );
     } catch (error) {
-      if (tornDown || input.stream.aborted) {
-        teardown();
-        return;
+      if (!(tornDown || input.stream.aborted)) {
+        reportError(error, {
+          operation: "chat.workbenchStream.write",
+          roomId: input.workbenchId,
+        });
       }
-      reportError(error, {
-        operation: "chat.workbenchStream.write",
-        roomId: input.workbenchId,
-      });
       teardown();
       dropStream(input.stream);
     }
@@ -412,14 +412,12 @@ export function bridgeWorkbenchStream(input: {
           writeTimeoutMs,
         );
       } catch (error) {
-        if (tornDown || input.stream.aborted) {
-          teardown();
-          return;
+        if (!(tornDown || input.stream.aborted)) {
+          reportError(error, {
+            operation: "chat.workbenchStream.presenceSnapshot",
+            roomId: input.workbenchId,
+          });
         }
-        reportError(error, {
-          operation: "chat.workbenchStream.presenceSnapshot",
-          roomId: input.workbenchId,
-        });
         teardown();
         dropStream(input.stream);
       }
@@ -476,14 +474,12 @@ export function bridgeWorkbenchStream(input: {
           writeTimeoutMs,
         );
       } catch (error) {
-        if (tornDown || input.stream.aborted) {
-          teardown();
-          return;
+        if (!(tornDown || input.stream.aborted)) {
+          reportError(error, {
+            operation: "chat.workbenchStream.keepalive",
+            roomId: input.workbenchId,
+          });
         }
-        reportError(error, {
-          operation: "chat.workbenchStream.keepalive",
-          roomId: input.workbenchId,
-        });
         teardown();
         dropStream(input.stream);
       }

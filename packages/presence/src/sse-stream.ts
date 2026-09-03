@@ -108,15 +108,13 @@ export function bindPresenceStream(input: {
       try {
         await writeSSEObservingFailure(input.stream, message, writeTimeoutMs);
       } catch (error) {
-        if (tornDown || input.stream.aborted) {
-          teardown();
-          return;
+        if (!(tornDown || input.stream.aborted)) {
+          reportError(error, {
+            operation: "presence.stream.write",
+            tenantId: input.key.tenantId,
+            extra: { surface: input.key.surface },
+          });
         }
-        reportError(error, {
-          operation: "presence.stream.write",
-          tenantId: input.key.tenantId,
-          extra: { surface: input.key.surface },
-        });
         teardown();
         dropStream(input.stream);
       }
