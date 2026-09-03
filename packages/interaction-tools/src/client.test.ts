@@ -65,9 +65,38 @@ test("a 404 from the route surfaces as NoOwnChannelError", async () => {
   const fetchImpl = (async () =>
     new Response(
       JSON.stringify({
-        error: { code: "not_found", message: "no channel" },
+        error: {
+          code: "not_found",
+          userMessage: "no channel",
+          refId: "ref_test",
+        },
       }),
       { status: 404 },
+    )) as unknown as typeof fetch;
+
+  try {
+    await postQuestion(testConfig(fetchImpl), {
+      question: "Q?",
+      options: ["a", "b"],
+    });
+    throw new Error("expected NoOwnChannelError");
+  } catch (error) {
+    expect(error).toBeInstanceOf(NoOwnChannelError);
+    expect((error as Error).message).toBe("no channel");
+  }
+});
+
+test("a non-ok, non-404 response surfaces the envelope userMessage", async () => {
+  const fetchImpl = (async () =>
+    new Response(
+      JSON.stringify({
+        error: {
+          code: "internal_error",
+          userMessage: "the hub could not post the question",
+          refId: "ref_test",
+        },
+      }),
+      { status: 500 },
     )) as unknown as typeof fetch;
 
   await expect(
@@ -75,17 +104,5 @@ test("a 404 from the route surfaces as NoOwnChannelError", async () => {
       question: "Q?",
       options: ["a", "b"],
     }),
-  ).rejects.toBeInstanceOf(NoOwnChannelError);
-});
-
-test("a non-ok, non-404 response throws a plain error", async () => {
-  const fetchImpl = (async () =>
-    new Response("boom", { status: 500 })) as unknown as typeof fetch;
-
-  await expect(
-    postQuestion(testConfig(fetchImpl), {
-      question: "Q?",
-      options: ["a", "b"],
-    }),
-  ).rejects.toThrow();
+  ).rejects.toThrow("the hub could not post the question");
 });
