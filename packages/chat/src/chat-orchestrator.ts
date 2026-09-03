@@ -51,6 +51,7 @@ import {
 import { artifactPartsForFinalizedTurn } from "./artifact-delivery";
 import type { ApproveBlockData } from "./blocks";
 import { encodeParts } from "./codec";
+import { consumerFacingInferenceText } from "./consumer-inference-text";
 import type { ConnectedProviderLister } from "./inference-preferences";
 import { mentionedParticipants } from "./mentions";
 import { localPartOf } from "./agent-address";
@@ -62,6 +63,10 @@ import { postRoomMessage, type RoomMessageStore } from "./room-messages";
 import { AGENT_TURN_STALE_MS, type AgentTurnStore } from "./agent-turns";
 import type { ChatStore } from "./store";
 import type { ThreadStore } from "./threads";
+import {
+  TOOLS_UNSUPPORTED_CONSUMER_MESSAGE,
+  isToolsUnsupportedInferenceText,
+} from "./tools-unsupported";
 import type { WorkbenchSubscriberRegistry } from "./workbench-events";
 import type { WriteClaimStore } from "./write-claims";
 
@@ -334,6 +339,40 @@ function flattenReplyText(parts: readonly Part[]): string {
     .filter((part): part is TextPart => part.kind === "text")
     .map((part) => part.text)
     .join("");
+}
+
+function toolsUnsupportedNoticeParts(): TextPart[] {
+  return [
+    {
+      kind: "text",
+      text: TOOLS_UNSUPPORTED_CONSUMER_MESSAGE,
+      turnFailed: true,
+      turnFailedReason: "tools_unsupported",
+    },
+  ];
+}
+
+/** A failed turn's timeline notice: never a raw provider/HTTP dump. */
+function failedTurnNoticeParts(errorMessage: string): TextPart[] {
+  if (isToolsUnsupportedInferenceText(errorMessage)) {
+    return toolsUnsupportedNoticeParts();
+  }
+  return [
+    {
+      kind: "text",
+      text: consumerFacingInferenceText(errorMessage),
+      turnFailed: true,
+    },
+  ];
+}
+
+function rewriteToolsUnsupportedReply(
+  parts: readonly Part[],
+): readonly Part[] | undefined {
+  if (!isToolsUnsupportedInferenceText(flattenReplyText(parts))) {
+    return undefined;
+  }
+  return toolsUnsupportedNoticeParts();
 }
 
 /**
@@ -1183,18 +1222,20 @@ export function createChatOrchestrator(
         // structured parts exist, or a leaked JSON-shaped tool call
         // sitting in that string would still show up as prose.
         const accumulated = replyParts.take(turnKey);
-        const parts: Part[] =
+        const rawParts: Part[] =
           accumulated !== undefined && accumulated.length > 0
             ? accumulated
             : [{ kind: "text", text: content }];
+        const toolsUnsupportedParts = rewriteToolsUnsupportedReply(rawParts);
+        const parts = toolsUnsupportedParts ?? rawParts;
         void postReply(
           deps,
           pendingDelegationThreads,
           agentAddress,
           parts,
-          {
-            status: "completed",
-          },
+          toolsUnsupportedParts !== undefined
+            ? { status: "failed", error: content }
+            : { status: "completed" },
           event,
         ).catch((cause: unknown) => {
           log.error`chat orchestrator: failed to post ${agentAddress}'s reply: ${
@@ -1242,15 +1283,20 @@ export function createChatOrchestrator(
 
           if (!notifiedDropTurns.has(turnKey)) {
             notifiedDropTurns.add(turnKey);
-            const noticeContent =
+            const noticeParts: Part[] =
               ended.status === "failed"
-                ? errorMessage
-                : "I didn't manage to answer that one — say it again and I'll pick it up.";
+                ? failedTurnNoticeParts(errorMessage)
+                : [
+                    {
+                      kind: "text",
+                      text: "I didn't manage to answer that one — say it again and I'll pick it up.",
+                    },
+                  ];
             void postReply(
               deps,
               pendingDelegationThreads,
               agentAddress,
-              [{ kind: "text", text: noticeContent }],
+              noticeParts,
               { status: "failed", error: errorMessage },
               event,
             ).catch((cause: unknown) => {

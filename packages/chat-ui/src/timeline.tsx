@@ -726,6 +726,9 @@ function EventLine({
  */
 export type FailedTurnRecovery = {
   readonly models: readonly FailedTurnModelChoice[];
+  /** Tool-capable subset for a tools-unsupported recovery. Empty means
+   * the strip still hops to Settings, with no inline picker. */
+  readonly toolCapableModels?: readonly FailedTurnModelChoice[];
   readonly definitionIdByAddress: Readonly<Record<string, string>>;
   readonly onApplyModel: (input: {
     readonly definitionId: string;
@@ -746,7 +749,7 @@ export type FailedTurnRecovery = {
  * under the same left gutter every message bubble sits under: muted
  * danger-tinted copy, a small ghost Retry button, and "What happened" as
  * a subtle inline disclosure rather than a second button competing for
- * attention. A model-unavailable notice (`turnFailedReason`) replaces
+ * attention. A named-recovery notice (`turnFailedReason`) replaces
  * Retry with an inline model picker and a real Settings hop.
  * `onRetry`/`onWhatHappened` are the host's own actions; a
  * host that wires neither still gets the row, just with inert controls —
@@ -757,7 +760,7 @@ function FailedTurnStrip({
   item,
   detailText,
   retryText,
-  modelUnavailable,
+  namedRecovery,
   participants,
   currentUser,
   failedTurnRecovery,
@@ -777,7 +780,7 @@ function FailedTurnStrip({
    * `findRetryText` — handed to `onRetryFailedTurn` so Retry has
    * something to resend rather than nothing. */
   readonly retryText?: string;
-  readonly modelUnavailable?: boolean;
+  readonly namedRecovery?: "model_unavailable" | "tools_unsupported";
   readonly participants: readonly ParticipantRecord[];
   readonly currentUser: CurrentUser | undefined;
   readonly failedTurnRecovery?: FailedTurnRecovery;
@@ -797,15 +800,21 @@ function FailedTurnStrip({
   const definitionId =
     failedTurnRecovery?.definitionIdByAddress[item.sender.address];
 
-  if (modelUnavailable === true) {
+  if (namedRecovery !== undefined) {
+    const recoveryTitle =
+      namedRecovery === "tools_unsupported"
+        ? CHAT_STRINGS.turnFailedToolsUnsupported(sender)
+        : CHAT_STRINGS.turnFailedModelUnavailable(sender);
+    const pickerModels =
+      namedRecovery === "tools_unsupported"
+        ? (failedTurnRecovery?.toolCapableModels ?? [])
+        : (failedTurnRecovery?.models ?? []);
     return (
       <div className="chat-turn-failed" role="status">
-        <span className="chat-turn-failed-text">
-          {CHAT_STRINGS.turnFailedModelUnavailable(sender)}
-        </span>
+        <span className="chat-turn-failed-text">{recoveryTitle}</span>
         {failedTurnRecovery !== undefined &&
         definitionId !== undefined &&
-        failedTurnRecovery.models.length > 0 ? (
+        pickerModels.length > 0 ? (
           <select
             className="chat-turn-failed-models"
             aria-label={CHAT_STRINGS.turnFailedPickModel}
@@ -830,7 +839,7 @@ function FailedTurnStrip({
             <option value="" disabled>
               {CHAT_STRINGS.turnFailedPickModel}
             </option>
-            {failedTurnRecovery.models.map((model) => (
+            {pickerModels.map((model) => (
               <option key={model.canonicalName} value={model.canonicalName}>
                 {model.label}
               </option>
@@ -1719,11 +1728,12 @@ function MessagePartsInner({
                   key={key}
                   item={item}
                   detailText={part.text}
-                  modelUnavailable={
-                    part.turnFailedReason === "model_unavailable"
-                  }
                   participants={participants}
                   currentUser={currentUser}
+                  {...(part.turnFailedReason === "model_unavailable" ||
+                  part.turnFailedReason === "tools_unsupported"
+                    ? { namedRecovery: part.turnFailedReason }
+                    : {})}
                   {...(retryText !== undefined ? { retryText } : {})}
                   {...(failedTurnRecovery !== undefined
                     ? { failedTurnRecovery }

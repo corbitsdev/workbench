@@ -4,6 +4,11 @@
  * or next to the composer — DESIGN.md Honesty is one consumer sentence.
  */
 
+import {
+  TOOLS_UNSUPPORTED_CONSUMER_MESSAGE,
+  isToolsUnsupportedInferenceText,
+} from "./tools-unsupported";
+
 const HTTP_STATUS_MARK = /\[HTTP\s+\d+\]/i;
 const TRAILING_HTTP_DUMP = /\s*\[HTTP\s+\d+\]:[\s\S]*$/i;
 
@@ -34,6 +39,9 @@ function needsSanitization(raw: string): boolean {
 
 /** Drop HTTP status, raw provider text, and classified failure preambles. */
 export function consumerFacingInferenceText(raw: string): string {
+  if (isToolsUnsupportedInferenceText(raw)) {
+    return TOOLS_UNSUPPORTED_CONSUMER_MESSAGE;
+  }
   if (!needsSanitization(raw) && !isClassifiedInferenceFailureText(raw)) {
     return raw;
   }

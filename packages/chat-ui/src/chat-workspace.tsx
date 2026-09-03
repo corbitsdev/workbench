@@ -61,12 +61,16 @@ import {
 import type { BringInListFailure, BringInMember } from "./mentions";
 import { PinnedStrip } from "./pinned-strip";
 import { SLASH_COMMANDS } from "./slash-commands";
-import { failedTurnModelChoices } from "./failed-turn-models";
+import {
+  failedTurnModelChoices,
+  failedTurnToolCapableModelChoices,
+} from "./failed-turn-models";
 import { CHAT_STRINGS } from "./strings";
 import { displayWorkbenchTitle } from "./workbench-display-title";
 import {
   useStreamingReply,
   isAwaitingReply,
+  lastHumanMessageParts,
   typingAgentNames,
 } from "./streaming-reply";
 import { useTurnActivity, TurnActivityStrip } from "./turn-activity";
@@ -1197,6 +1201,9 @@ function ChatWorkspaceInner({
     }
     return {
       models: failedTurnModelChoices(catalogQuery.data ?? []),
+      toolCapableModels: failedTurnToolCapableModelChoices(
+        catalogQuery.data ?? [],
+      ),
       definitionIdByAddress,
       onApplyModel: async ({ definitionId, address, canonicalName }) => {
         if (activeWorkbenchId === null) return;
@@ -1216,6 +1223,18 @@ function ChatWorkspaceInner({
     tenantId,
     activeWorkbenchId,
   ]);
+
+  const addressedMessageParts = useMemo(
+    () =>
+      lastHumanMessageParts(
+        mergePendingSends(
+          messagesState.kind === "ready" ? messagesState.items : [],
+          pendingSends,
+          currentUser?.principalId,
+        ),
+      ),
+    [messagesState, pendingSends, currentUser?.principalId],
+  );
 
   // The mention popover's "Bring in…" group: only a `workbench` grows its
   // participants after creation (a chat's counterpart is fixed at
@@ -1720,6 +1739,7 @@ function ChatWorkspaceInner({
                           names={typingAgentNames(
                             streamingReply,
                             activeWorkbench?.participants ?? [],
+                            addressedMessageParts,
                           )}
                         />
                       )

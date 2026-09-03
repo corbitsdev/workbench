@@ -324,6 +324,8 @@ export const CHAT_STRINGS = {
   turnFailedTitle: (sender: string) => `${sender} didn't reply`,
   turnFailedModelUnavailable: (sender: string) =>
     `${sender}'s model isn't available here.`,
+  turnFailedToolsUnsupported: (sender: string) =>
+    `${sender}'s model can't use tools.`,
   turnFailedPickModel: "Pick a model",
   turnFailedMoreInSettings: "More in Settings",
   turnCancelledTitle: (sender: string) => `You stopped ${sender}'s turn`,
