@@ -156,6 +156,7 @@ export const CHAT_STRINGS = {
   reactionPickerLabel: "Choose a reaction",
   reactionPickerOptionLabel: (emoji: string) => `React with ${emoji}`,
   reactionToggleError: "Couldn't update that reaction — try again.",
+  streamMessageDropped: "Couldn't apply that message live — refreshing.",
   pinMessageAction: "Pin message",
   unpinMessageAction: "Unpin message",
   pinMessageError: "Couldn't pin that message — try again.",
