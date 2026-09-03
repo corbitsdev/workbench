@@ -119,6 +119,7 @@ import {
   createCryptoProviderCache,
   findFoldedRunByAddress,
   lookupFoldedRunReconnectKey,
+  tagCredentialCipher,
 } from "@corbits/folded-runs";
 import { createTopLevelRunRoutes } from "@corbits/run-scope";
 import {
@@ -514,6 +515,18 @@ export function credentialCipherFrom(
 }
 
 /**
+ * Hub-boot mint of the process-wide credential cipher: build from
+ * config, then runtime-tag the result. Missing or wrong-shape input
+ * fails closed — the hub does not boot.
+ */
+export function hubCredentialCipher(
+  config: HubConfig,
+  log: ReturnType<typeof getLogger>,
+): CredentialCipher {
+  return tagCredentialCipher(credentialCipherFrom(config, log));
+}
+
+/**
  * Instantiates one configured sidecar-provisioner backend. This is the
  * extension point named in `.env.example` and `apps/hub/src/config.ts`:
  * a new backend gets a case here once its config member exists on
@@ -571,9 +584,9 @@ export async function createHub(config: HubConfig) {
     bus: mailboxBus,
   });
   const log = getLogger(["hub", "auth"]);
-  // Built once and shared by every secret-at-rest seam in this
-  // composition root — see `credentialCipherFrom`'s own doc comment.
-  const credentialCipher = credentialCipherFrom(config, log);
+  // Built once, tagged, and shared by every secret-at-rest seam in this
+  // composition root — see `hubCredentialCipher`.
+  const credentialCipher = hubCredentialCipher(config, log);
 
   const auth = betterAuth({
     baseURL: config.baseUrl,

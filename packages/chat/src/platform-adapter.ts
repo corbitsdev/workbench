@@ -27,6 +27,7 @@ import {
   resolveNewestProjectedDefinition,
   sendFoldedMail,
   wakeFoldedRun,
+  tagCredentialCipher,
   type FoldedRunMode,
   type FoldedRunsDeps,
   type SendFoldedMailParams,
@@ -62,7 +63,7 @@ import { withTimeout } from "./with-timeout";
 import { wrapWakeInferenceError } from "./model-unavailable";
 import type { EventCollectorRegistry, SidecarRouter } from "@intx/hub-sessions";
 import type { InferencePreference } from "@intx/agent";
-import { formatRunAddress } from "@intx/types";
+import { formatRunAddress, type CredentialCipher } from "@intx/types";
 import type { FoldedBody } from "@intx/workflow-deploy";
 import {
   AgentUnreachableError,
@@ -87,13 +88,11 @@ export type CreateHubChatPlatformDeps = {
   /**
    * Decrypts credential secrets when an invited agent's launch resolves
    * inference sources against the tenant catalog — see
-   * `@corbits/folded-runs`' `FoldedRunsDeps.credentialCipher`; every
-   * invited-agent launch and wake needs it.
-   * Omitted, `resolveDefinitionSources` falls back to a noop cipher and
-   * hands the raw stored secret to the provider unchanged — correct only
-   * when the credential was itself written unencrypted.
+   * `@corbits/folded-runs`' `FoldedRunsDeps.credentialCipher`. Tagged at
+   * construction: missing or wrong-shape input fails closed and the
+   * platform is not minted.
    */
-  credentialCipher?: FoldedRunsDeps["credentialCipher"];
+  credentialCipher: CredentialCipher;
   /**
    * Every caller of `createHubChatPlatform` builds this via
    * `createEventCollectorRegistry` and passes it through — without it,
@@ -240,6 +239,7 @@ export type HubChatPlatform = ChatPlatform & {
 export function createHubChatPlatform(
   deps: CreateHubChatPlatformDeps,
 ): HubChatPlatform {
+  const credentialCipher = tagCredentialCipher(deps.credentialCipher);
   const foldedRunsDeps: FoldedRunsDeps = {
     db: deps.db,
     sessionService: deps.sessionService,
@@ -247,9 +247,7 @@ export function createHubChatPlatform(
     sidecarRouter: deps.sidecarRouter,
     eventCollectors: deps.eventCollectors,
     toolGrantsForPins: deps.toolGrantsForPins,
-    ...(deps.credentialCipher !== undefined
-      ? { credentialCipher: deps.credentialCipher }
-      : {}),
+    credentialCipher,
     ...(deps.mcpCredentialBindingsFor !== undefined
       ? { mcpCredentialBindingsFor: deps.mcpCredentialBindingsFor }
       : {}),
