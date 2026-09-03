@@ -62,8 +62,8 @@ import {
   fetchOllamaModelCatalog,
   ollamaOpenAICompatBaseURL,
   type SupportedCredentialProvider,
-} from "@workbench/connections/credential-test";
-import { hasCompletionCapableModel } from "@workbench/connections/model-capability";
+} from "@corbits/connections/credential-test";
+import { hasCompletionCapableModel } from "@corbits/connections/model-capability";
 
 const GIT_TOKEN_TTL_MS = 10 * 60 * 1000;
 const ECHO_TURN_TIMEOUT_MS = 2 * 60 * 1000;
@@ -1419,7 +1419,7 @@ export type SeedCatalogArgs = {
   credentialVerified?: boolean;
   /**
    * A credential row the caller already planted (the shared
-   * persist-and-seed sequence, `@workbench/connections`'
+   * persist-and-seed sequence, `@corbits/connections`'
    * `persistConnectorCredential`). When set, this function plants only
    * the catalog side — provider/credential ensure is skipped entirely,
    * so the caller's single `ensureCredential` stays the one write (no

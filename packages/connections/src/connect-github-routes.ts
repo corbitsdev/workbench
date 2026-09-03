@@ -4,11 +4,11 @@
 // Mounted per-workbench, inside the platform's native tenant middleware
 // (`TenantEnv`'s `tenant`/`principal` resolved before any handler here
 // runs), the same way `@corbits/webhook-triggers`' management routes and
-// `@workbench/connections`' routes are.
+// `@corbits/connections`' routes are.
 //
 // Connecting the PAT itself is deliberately NOT a route here —
 // `@corbits/chat-ui`'s `connect-github-actions.ts` header already says
-// why: `@workbench/connections`' generic `/:connectorId/complete` (with
+// why: `@corbits/connections`' generic `/:connectorId/complete` (with
 // `connectorId: "github"`, already registered in `CONNECTOR_REGISTRY`) is
 // the credential test-and-store surface, and this module never
 // reimplements it. What this module owns is the two things that need the
@@ -19,7 +19,7 @@
 // credential, minting a grant, creating a live `webhook_trigger` row,
 // resolving the deployed code-review workflow definition, and patching
 // the room's settings — arrives as an injected port, exactly like
-// `@workbench/connections`' `createConnectionRoutes`. `apps/hub` is the
+// `@corbits/connections`' `createConnectionRoutes`. `apps/hub` is the
 // only caller that binds these against drizzle; this module never touches
 // it, so it stays testable with plain fakes (`./connect-github-routes.test.ts`).
 import { Hono } from "hono";

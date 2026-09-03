@@ -1,6 +1,6 @@
 // The MCP-server credential provider, sibling to
 // `http-x-api-key-provider.ts`: a tenant-connected MCP server
-// (`@workbench/connections`' `mcp:<slug>` rows) authenticates with
+// (`@corbits/connections`' `mcp:<slug>` rows) authenticates with
 // `authorization: Bearer <token>` when the person supplied a token, and
 // with NO authorization header at all when they connected keyless. The
 // vendored `http` (Bearer) plugin cannot express the keyless case — it
@@ -29,7 +29,7 @@ import { mcpOriginPinnedFetch } from "./mcp-origin-pinned-fetch";
  * Credential storage requires a non-empty secret, so a tokenless server
  * stores this value; this provider reads it back as "send no
  * authorization header". Owned here so both the writer
- * (`@workbench/connections`' MCP connector) and the reader (this
+ * (`@corbits/connections`' MCP connector) and the reader (this
  * provider) import the one constant.
  */
 export const MCP_NO_TOKEN_SENTINEL = "unauthenticated-mcp-server";
@@ -41,7 +41,7 @@ export interface McpStreamableHttpCredentialProviderOptions {
 
 /**
  * Provider plugin key an MCP-server provider row's `plugin` column
- * names. `@workbench/connections`' MCP connector writes this key on
+ * names. `@corbits/connections`' MCP connector writes this key on
  * connect; the sidecar registers the provider alongside the other
  * workbench-owned plugins.
  */

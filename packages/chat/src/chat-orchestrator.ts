@@ -43,11 +43,11 @@ import {
   isClassifiedInferenceFailure,
   type ClassifiedInferenceFailureCategory,
   type ProviderHealthPort,
-} from "@workbench/connections/provider-health";
+} from "@corbits/connections/provider-health";
 import {
   CONNECTOR_REGISTRY,
   parseMissingCredentialDetail,
-} from "@workbench/connections/registry";
+} from "@corbits/connections/registry";
 import { artifactPartsForFinalizedTurn } from "./artifact-delivery";
 import type { ApproveBlockData } from "./blocks";
 import { encodeParts } from "./codec";
@@ -143,7 +143,7 @@ export type ChatOrchestratorDeps = {
    * own optional shape; every call site below is a no-op when this is
    * undefined. This orchestrator never marks a provider healthy — only a
    * passing credential re-test does that, and that write happens in
-   * `@workbench/connections`'s own routes, not here.
+   * `@corbits/connections`'s own routes, not here.
    */
   providerHealth?: ProviderHealthPort;
   /**

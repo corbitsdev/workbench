@@ -152,7 +152,7 @@ them).
 
 The in-room `connect-github` card and the Plugins/Connections GitHub row
 are **PAT-first** (CL-6345): the person pastes a personal access token;
-the host tests and stores it through `@workbench/connections`' generic
+the host tests and stores it through `@corbits/connections`' generic
 `github/complete` route. The card then flips in place to pick repos
 (`startReviewingRepos`), including when GitHub is already connected —
 the in-room card reads live state; there is no `/new` already-connected
@@ -244,7 +244,7 @@ handshake.
 list a workbench host launches with (`workbenchHostInferencePreferences`
 on the chat adapter; also `tenantDefaultModel` on agent-definition
 routes). It keeps credentialed completion-capable offerings
-(`preferCompletionCapable` in `@workbench/connections/model-capability`
+(`preferCompletionCapable` in `@corbits/connections/model-capability`
 — embedding names never win) and, when any survivor is
 `origin.direct`, picks from that direct set only. Inherit-only catalogs
 still sort among inherited completion rows.

@@ -63,7 +63,7 @@
     "@intx/workflow-deploy": "workspace:*",
     "@modelcontextprotocol/sdk": "catalog:",
     "@workbench/access-policy": "workspace:*",
-    "@workbench/connections": "workspace:*",
+    "@corbits/connections": "workspace:*",
     "@corbits/hub-api-client": "workspace:*",
     "@corbits/seeding": "workspace:*",
     "@workbench/onboarding": "workspace:*",

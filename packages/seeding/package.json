@@ -24,7 +24,7 @@
     "@corbits/workflows": "workspace:*",
     "@intx/inference": "workspace:*",
     "@intx/types": "workspace:*",
-    "@workbench/connections": "workspace:*",
+    "@corbits/connections": "workspace:*",
     "@workbench/templates": "workspace:*",
     "arktype": "catalog:"
   },

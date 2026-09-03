@@ -2,7 +2,7 @@
 // the orchestrated `/connections/:id/disconnect` route -- never
 // `DELETE /credentials/:id` directly, which 500s for any inference
 // provider once a catalog provider row exists against its credential
-// (see `@workbench/connections`' `disconnectConnector`). This also covers
+// (see `@corbits/connections`' `disconnectConnector`). This also covers
 // the provider row's new default-model caption, the Models page's
 // replacement (CL-6258 item 1).
 

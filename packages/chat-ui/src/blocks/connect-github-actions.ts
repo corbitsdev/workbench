@@ -3,10 +3,10 @@
 // `@corbits/chat-ui` owns no session, no credential, and no query cache,
 // so it never resolves a GitHub connection or lists repos itself. The
 // host supplies this port, and is expected to bind it against
-// `@workbench/connections`' generic `/:connectorId/complete` route
+// `@corbits/connections`' generic `/:connectorId/complete` route
 // (`github`'s PAT test-and-store — already fully generic, no bespoke
 // GitHub route needed), `@corbits/github-tools`' `listRepos`, and
-// `@workbench/connections`'s `startReviewingRepos`.
+// `@corbits/connections`'s `startReviewingRepos`.
 import type { ConnectGithubRepo } from "./connect-github-block";
 export type { ConnectGithubRepo };
 
@@ -58,7 +58,7 @@ export type ConnectGithubActions = {
   /**
    * Submits a pasted personal access token — the actual PAT-first
    * connect path (CL-6345/CL-6344's follow-up slice): the host tests
-   * and stores it through `@workbench/connections`' generic
+   * and stores it through `@corbits/connections`' generic
    * `github/complete` route, then clears this room's own
    * `template/pendingConnections` entry for `"github"` so the same
    * `subscribeConnectState` channel `requestConnect`'s own doc

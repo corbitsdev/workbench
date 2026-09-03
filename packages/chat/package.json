@@ -50,7 +50,7 @@
     "@intx/workflow": "workspace:*",
     "@intx/workflow-deploy": "workspace:*",
     "@corbits/url-path": "workspace:*",
-    "@workbench/connections": "workspace:*",
+    "@corbits/connections": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "hono": "^4.11.9",

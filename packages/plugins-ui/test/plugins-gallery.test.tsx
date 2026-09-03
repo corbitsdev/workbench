@@ -9,9 +9,9 @@ import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import type { ConnectorDescriptor } from "@workbench/connections/registry";
-import type { ResolvedPlugin } from "@workbench/connections/plugins";
-import { MCP_PRESETS } from "@workbench/connections/mcp-presets";
+import type { ConnectorDescriptor } from "@corbits/connections/registry";
+import type { ResolvedPlugin } from "@corbits/connections/plugins";
+import { MCP_PRESETS } from "@corbits/connections/mcp-presets";
 
 import { PluginsGallery } from "../src/plugins-gallery";
 import type { SkillCardData } from "../src/skill-card";

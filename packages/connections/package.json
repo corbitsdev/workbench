@@ -1,5 +1,5 @@
 {
-  "name": "@workbench/connections",
+  "name": "@corbits/connections",
   "private": true,
   "description": "The Connections settings surface: shared PKCE/state primitives for OAuth connect flows, the connector registry (inference providers plus tool-credential connectors), and the route factory that tests and stores a connector's credential",
   "version": "0.0.1",

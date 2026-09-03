@@ -64,7 +64,7 @@ import type { CredentialCipher } from "@intx/types";
 import {
   supportedCredentialProviders,
   type SupportedCredentialProvider,
-} from "@workbench/connections/credential-test";
+} from "@corbits/connections/credential-test";
 import { pendingSeed } from "./schema";
 
 /**

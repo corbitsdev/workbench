@@ -8,7 +8,7 @@ owns fetching data and passes it down.
 
 ## How it composes
 
-- Reads `ResolvedPlugin` from `@workbench/connections/plugins` — the
+- Reads `ResolvedPlugin` from `@corbits/connections/plugins` — the
   tenant-inheritance-aware resolver — rather than re-deriving connection
   status itself.
 - `PluginConnectPanel` reuses the exact mutations `@corbits/settings-ui`'s

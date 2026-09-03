@@ -24,8 +24,8 @@ import {
   CONNECTOR_REGISTRY,
   connectorDescriptors,
   type ConnectorDescriptor,
-} from "@workbench/connections/registry";
-import { MCP_PRESET_CONNECTOR_IDS } from "@workbench/connections/mcp-presets";
+} from "@corbits/connections/registry";
+import { MCP_PRESET_CONNECTOR_IDS } from "@corbits/connections/mcp-presets";
 import { workflowDisplayName } from "@workbench/templates";
 import {
   buildEffectiveInferenceRows,
@@ -67,7 +67,7 @@ import {
 } from "./credentials-api";
 import { SETTINGS_STRINGS } from "./strings";
 
-// `@workbench/connections/registry` is the only subpath this browser
+// `@corbits/connections/registry` is the only subpath this browser
 // bundle may import — its main export pulls in server-only hono routing.
 
 type OAuthConnectorCard = {

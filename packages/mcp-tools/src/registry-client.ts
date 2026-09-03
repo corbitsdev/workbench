@@ -1,7 +1,7 @@
 // Lists the MCP servers this tenant has connected, via the same
 // workflow-run-authenticated connections surface
 // `@corbits/connections-tools`' `client.ts` calls for `list_connections`
-// (`@workbench/connections`'s `createWorkflowConnectionRoutes`, mounted
+// (`@corbits/connections`'s `createWorkflowConnectionRoutes`, mounted
 // in `apps/hub` at `/api/workflow-connections`). This is a SEPARATE
 // endpoint (`/mcp-servers`) from the generic `/connections` one that
 // route exposes: an MCP server is a tenant-created, dynamically-slugged

@@ -13,7 +13,7 @@
 import type { CredentialBinding } from "@intx/types";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
 import type { PinnedPackageCredentialBindingsFor } from "@corbits/folded-runs";
-import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
+import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
 
 export type IsConnectorConnected = (
   tenantId: string,

@@ -32,8 +32,8 @@ import {
   fetchOAuthConfigured,
   oauthStartHref,
 } from "@corbits/settings-ui";
-import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
-import type { ResolvedPlugin } from "@workbench/connections/plugins";
+import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
+import type { ResolvedPlugin } from "@corbits/connections/plugins";
 import { useEffect, useState } from "react";
 
 import { pluginOutcome } from "./plugin-meta";

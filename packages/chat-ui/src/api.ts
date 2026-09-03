@@ -1232,7 +1232,7 @@ export function patchWorkbenchSettings(
 // `createConnectGithubRoutes` (mounted at
 // `/api/tenants/:tenantId/workbenches/:workbenchId/github/*`). Connecting
 // the PAT itself is a separate, already-generic surface —
-// `@workbench/connections`' `POST /:connectorId/complete` — never
+// `@corbits/connections`' `POST /:connectorId/complete` — never
 // duplicated here.
 const ConnectGithubRepoResponse = type({
   id: "string",

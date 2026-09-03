@@ -28,7 +28,7 @@ export async function fetchGranolaPluginConnected(
   const parsed = ResolvedCredential(body);
   if (parsed instanceof type.errors) return false;
   // Revoked reads as not connected — same rule as
-  // `@workbench/connections/plugins`' resolveOne.
+  // `@corbits/connections/plugins`' resolveOne.
   return (
     parsed.status === "active" ||
     parsed.status === "expired" ||

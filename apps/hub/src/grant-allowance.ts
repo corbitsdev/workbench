@@ -5,7 +5,7 @@
 //   - `createMcpServerToolsAllowanceLoader` — the live `tools/list`
 //     read `@corbits/mcp-tools`' `mcp_call` classifier verifies a
 //     downstream tool's `readOnlyHint` claim against, built from the
-//     tenant's stored MCP connection (`@workbench/connections`) and its
+//     tenant's stored MCP connection (`@corbits/connections`) and its
 //     decrypted token, mirroring how `mcp-credential-bindings.ts` names
 //     the same connections for tool delivery.
 //   - `createAllowanceAutoApprover` — the native-resolve binding that
@@ -27,7 +27,7 @@ import {
   withMcpConnection,
   type McpServerToolsLoader,
 } from "@corbits/mcp-tools";
-import { listMcpServerConnections } from "@workbench/connections";
+import { listMcpServerConnections } from "@corbits/connections";
 import { MCP_NO_TOKEN_SENTINEL } from "@corbits/credential-providers";
 
 function bearerFetch(token: string | undefined): typeof fetch {

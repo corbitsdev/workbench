@@ -23,7 +23,7 @@ import {
   UnauthenticatedError,
   toAPIQuery,
 } from "@corbits/api-query";
-import { isChatPickerModelName } from "@workbench/connections/model-capability";
+import { isChatPickerModelName } from "@corbits/connections/model-capability";
 import { tenantKeys } from "./query-client";
 
 export type AgentDefinition = typeof WorkflowDefinitionResponse.infer;

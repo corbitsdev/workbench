@@ -94,7 +94,7 @@ export type CreateWorkflowConnectionRoutesDeps = {
   ) => Promise<boolean>;
   /** Backs `GET /mcp-servers` (`@corbits/mcp-tools`' `mcp_list_servers`):
    * every `mcp:<slug>` server this tenant has connected. `apps/hub`
-   * supplies `@workbench/connections`' own `listMcpServerConnections`
+   * supplies `@corbits/connections`' own `listMcpServerConnections`
    * (`mcp-server-store.ts`) — a direct DB read, since this route has no
    * tenant-session cookies to reuse `./mcp-server-routes.ts`'s hub-HTTP
    * listing. Optional so an environment that hasn't wired MCP support

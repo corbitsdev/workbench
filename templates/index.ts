@@ -164,7 +164,7 @@ export type WorkbenchDefinition = {
   readonly promise: string;
   readonly blocks: readonly WorkbenchTemplateBlock[];
   /**
-   * Connector ids (see `@workbench/connections`' `CONNECTOR_REGISTRY` and
+   * Connector ids (see `@corbits/connections`' `CONNECTOR_REGISTRY` and
    * `MCP_PRESETS`): `required` is what this definition cannot work
    * without, in the order the walkthrough asks for them; `optional`
    * makes it better and never gates the create.

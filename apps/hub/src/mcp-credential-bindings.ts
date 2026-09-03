@@ -3,7 +3,7 @@
 // supplied by the composition root rather than derived by the deploy-time
 // capability walk. `@corbits/mcp-tools`' credential handles are dynamic
 // (one `mcp.<slug>` per tenant-connected server), so this builds one
-// `CredentialBinding` per connection `@workbench/connections`' own
+// `CredentialBinding` per connection `@corbits/connections`' own
 // `listMcpServerConnections` lists for the tenant: `handle` mirrors the
 // `mcp.<slug>` convention `@corbits/mcp-tools`' `mcpCredentialHandle(slug)`
 // resolves against (conforms to `@intx/types`' `ToolCredentialHandle`
@@ -13,7 +13,7 @@
 import type { DB } from "@intx/db";
 import type { CredentialBinding } from "@intx/types";
 import type { McpCredentialBindingsFor } from "@corbits/folded-runs";
-import { listMcpServerConnections } from "@workbench/connections";
+import { listMcpServerConnections } from "@corbits/connections";
 
 const MCP_TOOLS_PACKAGE = "@corbits/mcp-tools";
 

@@ -1,5 +1,5 @@
 // CL-6463: the room's GitHub connect card submits a PAT through
-// `@workbench/connections`' generic `persistConnectorCredential` (the
+// `@corbits/connections`' generic `persistConnectorCredential` (the
 // exact sequence `POST /:connectorId/complete` runs) and reads its own
 // connected state back through `createConnectGithubRoutes`' injected
 // `resolveGithubConfig`. A host binds both against one real credential
@@ -18,7 +18,7 @@ import type { ApiCall } from "@corbits/hub-api-client";
 import {
   CONNECTOR_REGISTRY,
   persistConnectorCredential,
-} from "@workbench/connections";
+} from "@corbits/connections";
 
 import { createConnectGithubRoutes } from "./connect-github-routes";
 

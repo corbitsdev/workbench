@@ -63,8 +63,8 @@ import {
 import {
   ollamaOpenAICompatBaseURL,
   type SupportedCredentialProvider,
-} from "@workbench/connections/credential-test";
-import { preferCompletionCapable } from "@workbench/connections/model-capability";
+} from "@corbits/connections/credential-test";
+import { preferCompletionCapable } from "@corbits/connections/model-capability";
 import {
   CATALOG_SEEDS,
   DEFAULT_WORKFLOWS,
@@ -81,8 +81,8 @@ import {
 import {
   persistConnectorCredential,
   type PersistConnectorCredentialFns,
-} from "@workbench/connections/persist-credential";
-import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
+} from "@corbits/connections/persist-credential";
+import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
 import { personalTenantSlug, seededWorkflowStatus } from "./provision";
 
 /** The onboarding UI's copy for a partial seed: every durable step
@@ -104,7 +104,7 @@ export type PersonalTenant = {
 export type TestAndPersistCredentialResult =
   /**
    * Kept for API compatibility with dependents that accept it as a
-   * possible outcome (`@workbench/connections`' `OAuthStoreOutcome`,
+   * possible outcome (`@corbits/connections`' `OAuthStoreOutcome`,
    * matched "exactly" per that module's own doc comment) — the default
    * implementation below never produces it, since CL-6123 dropped the
    * probe that used to be the only thing that could.

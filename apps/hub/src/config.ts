@@ -44,7 +44,7 @@ import {
   envProviderBaseUrlsFrom,
   envProviderKeysFrom,
 } from "@workbench/onboarding";
-import type { SupportedCredentialProvider } from "@workbench/connections/credential-test";
+import type { SupportedCredentialProvider } from "@corbits/connections/credential-test";
 
 const HTTP_URL = /^https?:\/\/.+$/;
 

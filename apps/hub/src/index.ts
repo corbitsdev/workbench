@@ -192,8 +192,8 @@ import {
   workflowDisplayName,
   workbenchTemplateLibraryEntries,
 } from "@workbench/templates";
-import { createConnectGithubRoutes } from "@workbench/connections/connect-github-routes";
-import { webhookTriggerName } from "@workbench/connections/connect-github-setup";
+import { createConnectGithubRoutes } from "@corbits/connections/connect-github-routes";
+import { webhookTriggerName } from "@corbits/connections/connect-github-setup";
 import { createTemplateBlockRoutes } from "./templates/template-block-routes";
 import {
   createWorkflowDetailRoute,
@@ -287,7 +287,7 @@ import {
   createPresenceRoutes,
   type PresenceRoomKey,
 } from "@corbits/presence";
-import { supportedCredentialProviders } from "@workbench/connections/credential-test";
+import { supportedCredentialProviders } from "@corbits/connections/credential-test";
 import { createGitWorkflowPusher } from "@corbits/seeding";
 import { createHubAPI } from "@corbits/hub-api-client";
 import {
@@ -305,13 +305,13 @@ import {
   createWorkflowConnectionRoutes,
   DEFAULT_RETURN_PATH_ALLOWLIST,
   listMcpServerConnections,
-} from "@workbench/connections";
-import type { ServiceConnectedHook } from "@workbench/connections";
-import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
+} from "@corbits/connections";
+import type { ServiceConnectedHook } from "@corbits/connections";
+import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
 import {
   createProviderHealthPort,
   createProviderHealthStore,
-} from "@workbench/connections/provider-health";
+} from "@corbits/connections/provider-health";
 import {
   applyAccessPolicyMigrations,
   createAccessPolicyRoutes,
@@ -762,7 +762,7 @@ export async function createHub(config: HubConfig) {
   // See `./mcp-credential-bindings.ts`'s own doc.
   const mcpCredentialBindingsFor = createMcpCredentialBindingsFor(db);
   // Same owning check GET /connections uses — see
-  // `@workbench/connections`' `workflow-connection-routes.ts` and the
+  // `@corbits/connections`' `workflow-connection-routes.ts` and the
   // `createWorkflowConnectionRoutes` wiring below. Not
   // `listConnectedProviders` (catalog-only).
   const isConnectorConnected = async (tenantId: string, connectorId: string) =>
@@ -2335,7 +2335,7 @@ export async function createHub(config: HubConfig) {
     }),
   );
   // Connections' own OAuth connect flow (CL-6389): `createOAuthConnectRoutes`
-  // (`@workbench/connections`) was exported but never mounted here — every
+  // (`@corbits/connections`) was exported but never mounted here — every
   // provider whose descriptor sets `oauth` (OpenRouter, Hugging Face, and
   // the GitHub App path) needs this to complete a one-click connect from
   // the settings surface above. Follows #115's `mcp-servers/oauth` mount
@@ -3396,7 +3396,7 @@ export async function createHub(config: HubConfig) {
       envAllowedDomains: config.allowedEmailDomains,
       allowUnverifiedEmails: config.allowUnverifiedEmails,
     },
-    // Same provider-health store `@workbench/connections`' own routes
+    // Same provider-health store `@corbits/connections`' own routes
     // report to and clear (CL-6092) — a successful `/complete` here must
     // clear the same record the shell banner's zero-provider "Fix it"
     // routed someone to onboarding to fix.

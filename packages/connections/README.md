@@ -1,4 +1,4 @@
-# @workbench/connections
+# @corbits/connections
 
 The Connections settings surface: shared PKCE/state primitives for OAuth
 connect flows, the connector registry (inference providers plus

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { MissingCredentialError } from "@workbench/connections";
+import { MissingCredentialError } from "@corbits/connections";
 import type { CredentialDeliveryFailure } from "@intx/db";
 
 import { credentialDeliveryError } from "./credential-delivery-error";

@@ -8,7 +8,7 @@
 // `"ambiguous"` are configuration faults, not a missing connection, so
 // they stay generic.
 import type { CredentialDeliveryFailure } from "@intx/db";
-import { MissingCredentialError } from "@workbench/connections";
+import { MissingCredentialError } from "@corbits/connections";
 
 export function credentialDeliveryError(
   launchLabel: string,

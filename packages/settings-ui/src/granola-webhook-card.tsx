@@ -24,7 +24,7 @@ import {
   DialogTitle,
   formatRelativeTime,
 } from "@corbits/react-ui";
-import type { ConnectorDescriptor } from "@workbench/connections/registry";
+import type { ConnectorDescriptor } from "@corbits/connections/registry";
 import { useEffect, useRef, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
