@@ -226,6 +226,98 @@ describe("bridgeWorkbenchStream", () => {
     expect(closeCount).toBe(1);
   });
 
+  test("a writeSSE that resolves while the underlying writer is errored (Hono swallows writer failures) removes that subscriber and closes the stream", async () => {
+    const registry = createWorkbenchSubscriberRegistry();
+    let writeCount = 0;
+    let closeCount = 0;
+    const stream = Object.assign(
+      fakeStream(
+        () => {
+          writeCount += 1;
+          return Promise.resolve();
+        },
+        () => {
+          closeCount += 1;
+          return Promise.resolve();
+        },
+      ),
+      { writer: { desiredSize: null } },
+    );
+    const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
+
+    bridgeWorkbenchStream({
+      registry,
+      platform: noopPlatformEvents(),
+      workbenchId: "chan_1",
+      stream,
+      authorize: alwaysAuthorized,
+    });
+
+    registry.publish("chan_1", { type: "chat.typing", data: {} });
+    await flush();
+
+    registry.publish("chan_1", { type: "chat.typing", data: {} });
+    await flush();
+
+    // Hono's StreamingApi.write catches the writer's rejection and
+    // resolves anyway, so the throw-path test above never fires on a
+    // real stream. The errored writer (`desiredSize === null`) is the
+    // signal that the write actually failed (CL-7246).
+    expect(writeCount).toBe(1);
+    expect(closeCount).toBe(1);
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ message: "workbench SSE write failed" }),
+    );
+    expect(report.mock.calls[0]?.[1]).toMatchObject({
+      operation: "chat.workbenchStream.write",
+      roomId: "chan_1",
+    });
+  });
+
+  test("a writeSSE that never resolves is treated as stalled, reported, and closes the stream", async () => {
+    const registry = createWorkbenchSubscriberRegistry();
+    let writeCount = 0;
+    let closeCount = 0;
+    const stream = fakeStream(
+      () => {
+        writeCount += 1;
+        return new Promise(() => undefined);
+      },
+      () => {
+        closeCount += 1;
+        return Promise.resolve();
+      },
+    );
+    const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
+
+    bridgeWorkbenchStream({
+      registry,
+      platform: noopPlatformEvents(),
+      workbenchId: "chan_1",
+      stream,
+      authorize: alwaysAuthorized,
+      writeTimeoutMs: 20,
+    });
+
+    registry.publish("chan_1", { type: "chat.typing", data: {} });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    registry.publish("chan_1", { type: "chat.typing", data: {} });
+    await flush();
+
+    expect(writeCount).toBe(1);
+    expect(closeCount).toBe(1);
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ message: "workbench SSE write stalled" }),
+    );
+    expect(report.mock.calls[0]?.[1]).toMatchObject({
+      operation: "chat.workbenchStream.write",
+      roomId: "chan_1",
+    });
+  });
+
   test("a platform subscribe that throws still opens the stream, registry-only, and reports the failure", async () => {
     const registry = createWorkbenchSubscriberRegistry();
     const writes: unknown[] = [];
