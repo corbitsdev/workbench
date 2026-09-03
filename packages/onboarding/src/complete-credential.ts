@@ -82,7 +82,7 @@ import {
   persistConnectorCredential,
   type PersistConnectorCredentialFns,
 } from "@corbits/connections/persist-credential";
-import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
+import { CONNECTOR_REGISTRY } from "@workbench/templates/connectors";
 import { personalTenantSlug, seededWorkflowStatus } from "./provision";
 
 /** The onboarding UI's copy for a partial seed: every durable step

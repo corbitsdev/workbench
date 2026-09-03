@@ -27,8 +27,11 @@ import {
   listMcpPresets,
   McpServersApiError,
 } from "@corbits/plugins-ui";
-import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
 import { mcpPresetBySlug } from "@corbits/connections/mcp-presets";
+import {
+  CONNECTOR_REGISTRY,
+  MCP_PRESETS,
+} from "@workbench/templates/connectors";
 
 function bareConnectorId(connectorId: string): string {
   return connectorId.startsWith("mcp:")
@@ -48,7 +51,7 @@ export function createChatConnectServiceActions(
 
   async function readState(connectorId: string): Promise<ConnectServiceQuery> {
     const slug = bareConnectorId(connectorId);
-    const preset = mcpPresetBySlug(slug);
+    const preset = mcpPresetBySlug(MCP_PRESETS, slug);
     if (preset !== undefined) {
       const presets = await listMcpPresets(tenantId);
       const listed = presets.find((entry) => entry.slug === preset.slug);
@@ -115,7 +118,7 @@ export function createChatConnectServiceActions(
     },
     async connect(connectorId) {
       const slug = bareConnectorId(connectorId);
-      const preset = mcpPresetBySlug(slug);
+      const preset = mcpPresetBySlug(MCP_PRESETS, slug);
       if (preset !== undefined && preset.connectionMode === "keyless") {
         try {
           await connectMcpPreset(tenantId, preset.slug, undefined);
@@ -134,7 +137,7 @@ export function createChatConnectServiceActions(
     },
     async submitKey(connectorId, key) {
       const slug = bareConnectorId(connectorId);
-      const preset = mcpPresetBySlug(slug);
+      const preset = mcpPresetBySlug(MCP_PRESETS, slug);
       if (preset !== undefined && preset.connectionMode === "token") {
         try {
           await connectMcpPreset(tenantId, preset.slug, key);

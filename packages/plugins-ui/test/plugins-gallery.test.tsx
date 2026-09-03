@@ -11,7 +11,7 @@ import type { Root } from "react-dom/client";
 
 import type { ConnectorDescriptor } from "@corbits/connections/registry";
 import type { ResolvedPlugin } from "@corbits/connections/plugins";
-import { MCP_PRESETS } from "@corbits/connections/mcp-presets";
+import { MCP_PRESETS } from "@workbench/templates/connectors";
 
 import { PluginsGallery } from "../src/plugins-gallery";
 import type { SkillCardData } from "../src/skill-card";

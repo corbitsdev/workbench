@@ -9,7 +9,7 @@
 // advertising a URL/token form as an installation path.
 
 import { ConfirmButton, toast } from "@corbits/react-ui";
-import { MCP_PRESETS } from "@corbits/connections/mcp-presets";
+import { MCP_PRESETS } from "@workbench/templates/connectors";
 import { PuzzlePiece } from "@corbits/icons";
 import { useEffect, useState } from "react";
 

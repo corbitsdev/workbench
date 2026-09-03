@@ -21,12 +21,14 @@ import {
   toast,
 } from "@corbits/react-ui";
 import {
-  CONNECTOR_REGISTRY,
   connectorDescriptors,
   type ConnectorDescriptor,
 } from "@corbits/connections/registry";
-import { MCP_PRESET_CONNECTOR_IDS } from "@corbits/connections/mcp-presets";
 import { workflowDisplayName } from "@workbench/templates";
+import {
+  CONNECTOR_REGISTRY,
+  MCP_PRESET_CONNECTOR_IDS,
+} from "@workbench/templates/connectors";
 import {
   buildEffectiveInferenceRows,
   computeGlobalRoutePatches,
@@ -171,7 +173,7 @@ export function ConnectorRowList({
       .catch(() => onError?.(SETTINGS_STRINGS.connectionsDisconnectError));
   }
 
-  const descriptors = connectorDescriptors()
+  const descriptors = connectorDescriptors(CONNECTOR_REGISTRY)
     .filter((descriptor) => descriptor.probe !== undefined)
     .filter((descriptor) => !MCP_PRESET_CONNECTOR_IDS.includes(descriptor.id))
     .filter(filter ?? (() => true));

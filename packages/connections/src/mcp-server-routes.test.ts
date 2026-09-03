@@ -10,6 +10,57 @@ import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import type { ApiCall } from "@corbits/hub-api-client";
 import { createMcpServerRoutes } from "./mcp-server-routes";
 import type { McpProbeResult } from "./mcp-probe";
+import type { McpPreset } from "./mcp-presets";
+
+/** Fixtures standing in for the real curated preset list a build's own
+ * `templates/connectors.ts` carries — this package holds no concrete
+ * preset list of its own (CL-7384). */
+const TEST_PRESETS: readonly McpPreset[] = [
+  {
+    slug: "granola",
+    displayName: "Granola",
+    description: "Search meeting notes, transcripts, and action items.",
+    url: "https://mcp.granola.ai/mcp",
+    connectionMode: "oauth",
+    docsUrl: "https://docs.granola.ai/help-center/sharing/integrations/mcp",
+    nativeConnectorId: "granola",
+  },
+  {
+    slug: "exa",
+    displayName: "Exa",
+    description: "Search and research the live web.",
+    url: "https://mcp.exa.ai/mcp",
+    connectionMode: "keyless",
+    docsUrl: "https://docs.exa.ai/reference/exa-mcp",
+    nativeConnectorId: "exa",
+  },
+  {
+    slug: "github-mcp",
+    displayName: "GitHub MCP",
+    description: "Search code, work with issues and pull requests.",
+    url: "https://api.githubcopilot.com/mcp/",
+    connectionMode: "token",
+    docsUrl: "https://github.com/settings/tokens",
+    tokenSteps: ["Open github.com/settings/tokens and generate a new token."],
+  },
+  {
+    slug: "linear",
+    displayName: "Linear",
+    description: "Read and update issues, projects, and comments.",
+    url: "https://mcp.linear.app/mcp",
+    connectionMode: "oauth",
+    docsUrl: "https://linear.app/docs/mcp",
+    nativeConnectorId: "linear",
+  },
+  {
+    slug: "notion",
+    displayName: "Notion",
+    description: "Search and update pages, databases, and workspace content.",
+    url: "https://mcp.notion.com/mcp",
+    connectionMode: "oauth",
+    docsUrl: "https://developers.notion.com/guides/mcp/get-started-with-mcp",
+  },
+];
 
 const TENANT = {
   id: "tnt_1",
@@ -173,6 +224,7 @@ function buildApp(opts: {
     hubUrl: "http://hub.test",
     requireGrant: opts.requireGrant ?? allowAll,
     log: () => {},
+    presets: TEST_PRESETS,
     apiCall: opts.apiCall,
     probe: opts.probe ?? (async () => ({ ok: true, toolCount: 3 })),
     ...(opts.onConnected !== undefined

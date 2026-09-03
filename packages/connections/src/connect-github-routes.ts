@@ -40,7 +40,7 @@ import {
 } from "@corbits/code-review/introductions";
 
 import { startReviewingRepos } from "./connect-github-setup";
-import { templateReposSettingsPatch } from "@workbench/templates/settings";
+import { templateReposSettingsPatch } from "./template-settings";
 
 // `startReviewingRepos`' own selected-repo mismatch throw and a GitHub
 // client failure both carry provider/internal detail (a rejected repo id,

@@ -23,8 +23,10 @@ import {
 } from "@corbits/plugins-ui";
 import type { ResolvedPlugin } from "@corbits/connections/plugins";
 import { listPluginsForTenant } from "@corbits/connections/plugins";
-import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
-import { MCP_PRESETS } from "@corbits/connections/mcp-presets";
+import {
+  CONNECTOR_REGISTRY,
+  MCP_PRESETS,
+} from "@workbench/templates/connectors";
 import { Plus, SquaresFour, Warning } from "@corbits/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -130,7 +132,7 @@ export function PluginsRoute({
     const isTenantChange = pluginsLoadedTenantRef.current !== selectedTenantId;
     pluginsLoadedTenantRef.current = selectedTenantId;
     if (isTenantChange) setPluginsState({ status: "loading" });
-    listPluginsForTenant(selectedTenantId)
+    listPluginsForTenant(selectedTenantId, CONNECTOR_REGISTRY)
       .then((plugins) => {
         if (!cancelled) setPluginsState({ status: "ready", plugins });
       })

@@ -307,7 +307,10 @@ import {
   listMcpServerConnections,
 } from "@corbits/connections";
 import type { ServiceConnectedHook } from "@corbits/connections";
-import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
+import {
+  CONNECTOR_REGISTRY,
+  MCP_PRESETS,
+} from "@workbench/templates/connectors";
 import {
   createProviderHealthPort,
   createProviderHealthStore,
@@ -1415,6 +1418,7 @@ export async function createHub(config: HubConfig) {
     approvals: createApprovalStore(db),
     recordActivity: chatPlatform.recordActivity,
     claims: writeClaims,
+    connectorRegistry: CONNECTOR_REGISTRY,
   };
   if (memoryHandle !== undefined) {
     chatOrchestratorDeps.memory = memoryHandle.memory;
@@ -2275,6 +2279,7 @@ export async function createHub(config: HubConfig) {
     `${TENANT_PREFIX}/connections`,
     createConnectionRoutes({
       hubUrl: config.baseUrl,
+      registry: CONNECTOR_REGISTRY,
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
@@ -2349,6 +2354,7 @@ export async function createHub(config: HubConfig) {
       hubUrl: config.baseUrl,
       log: (line) => log.info`${line}`,
       credentialCipher,
+      registry: CONNECTOR_REGISTRY,
       // Same env bag `GET .../connections/oauth-configured` reads above.
       oauthEnv: {
         huggingfaceClientId: config.huggingfaceOAuthClientId,
@@ -2360,6 +2366,7 @@ export async function createHub(config: HubConfig) {
       connectCredential: createTenantConnectCredential({
         hubUrl: config.baseUrl,
         log: (line) => log.info`${line}`,
+        registry: CONNECTOR_REGISTRY,
         providerHealth: providerHealthStore,
       }),
       onConnected: settleServiceConnection,
@@ -2646,6 +2653,7 @@ export async function createHub(config: HubConfig) {
         conditionRegistry: chatConditionRegistry,
       }),
       log: (line) => log.info`${line}`,
+      presets: MCP_PRESETS,
       onConnected: settleServiceConnection,
     }),
   );
@@ -2663,6 +2671,7 @@ export async function createHub(config: HubConfig) {
       }),
       log: (line) => log.info`${line}`,
       credentialCipher,
+      presets: MCP_PRESETS,
       onConnected: settleServiceConnection,
       // `/w/` for the same reason as the connections/oauth mount above.
       returnPathAllowlist: [
@@ -2680,6 +2689,7 @@ export async function createHub(config: HubConfig) {
     "/api/workflow-connections",
     createWorkflowConnectionRoutes({
       authenticator: createWorkflowRunAuthenticator({ db }),
+      registry: CONNECTOR_REGISTRY,
       // Same `isConnectorConnected` the pinned-package factory is wired
       // with above (CL-6492).
       isConnectorConnected,

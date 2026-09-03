@@ -50,12 +50,12 @@ import {
 } from "./complete-credential";
 import type { BenchProvisioner } from "./bench-provisioning";
 import {
-  CONNECTOR_REGISTRY,
   createOAuthConnectRoutes,
   DEFAULT_RETURN_PATH_ALLOWLIST,
   type ConnectorDescriptor,
   type OAuthExchangeResult,
 } from "@corbits/connections";
+import { CONNECTOR_REGISTRY } from "@workbench/templates/connectors";
 import type { PendingSeedStore } from "./pending-seed";
 import { exchangeCodeForKey } from "./openrouter-connect";
 import { exchangeCodeForToken as exchangeHuggingFaceCodeForToken } from "./huggingface-connect";

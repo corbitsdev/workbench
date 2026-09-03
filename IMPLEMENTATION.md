@@ -206,7 +206,7 @@ names both halves, not a bare error.
 
 ## Canva MCP connect (shipped)
 
-Canva is the `canva` MCP preset (`packages/connections/src/mcp-presets.ts`):
+Canva is the `canva` MCP preset (`templates/connectors.ts`):
 `https://mcp.canva.com/mcp`, `connectionMode: "oauth"`, with the 16
 advertised PRM scopes space-joined onto RFC 7591 DCR `clientMetadata.scope`
 (`createMcpOAuthProvider` in `packages/connections/src/mcp-oauth.ts`).

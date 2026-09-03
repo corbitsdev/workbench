@@ -19,7 +19,11 @@ export type {
   ConnectorOAuthConfig,
   OAuthExchangeResult,
 } from "./descriptor";
-export { CONNECTOR_REGISTRY, connectorDescriptors } from "./registry";
+export {
+  connectorDescriptors,
+  createConnectorRegistry,
+  type ConnectorRegistry,
+} from "./registry";
 export { MissingCredentialError } from "./credential-error";
 export {
   missingCredentialDetail,
@@ -48,11 +52,11 @@ export {
 } from "./mcp-server-routes";
 export { probeMcpServer, type McpProbeResult } from "./mcp-probe";
 export {
-  MCP_PRESETS,
-  MCP_PRESET_CONNECTOR_IDS,
   mcpPresetBySlug,
   mcpPresetByName,
+  mcpPresetConnectorIds,
   type McpPreset,
+  type McpPresetConnectionMode,
 } from "./mcp-presets";
 export {
   createMcpOAuthProvider,

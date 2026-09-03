@@ -33,7 +33,7 @@
 import { type } from "arktype";
 
 import type { ConnectorDescriptor } from "./descriptor";
-import { connectorDescriptors } from "./registry";
+import { connectorDescriptors, type ConnectorRegistry } from "./registry";
 
 /** Where a resolved plugin's credential actually lives relative to the
  * tenant that asked: `"this-workbench"` when this exact tenant owns it,
@@ -132,9 +132,10 @@ async function resolveOne(
  */
 export function listPluginsForTenant(
   tenantId: string,
+  registry: ConnectorRegistry,
 ): Promise<readonly ResolvedPlugin[]> {
   return Promise.all(
-    connectorDescriptors()
+    connectorDescriptors(registry)
       .filter((descriptor) => descriptor.authKind !== "webhook-secret")
       .map((descriptor) => resolveOne(tenantId, descriptor)),
   );

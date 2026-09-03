@@ -35,8 +35,8 @@ owns fetching data and passes it down.
 - `plugin-connect-panel.tsx` — the right-docked connect flow for every
   connector kind (OAuth, api-key, Granola's key-plus-webhook).
 - `plugin-meta.ts` — presentation-only sidecar lookups (icon, category,
-  outcome copy) keyed by connector id; `CONNECTOR_REGISTRY` itself stays
-  UI-agnostic.
+  outcome copy) keyed by connector id; the connector set itself
+  (`templates/connectors.ts`'s `CONNECTOR_REGISTRY`) stays UI-agnostic.
 
 ## Running tests
 

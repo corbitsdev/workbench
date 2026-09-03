@@ -74,7 +74,8 @@ own template card does not ride that path.
 ## Gmail
 
 `gmail` is a pure hosted-OAuth connector
-(`packages/connections/src/gmail-connect.ts` + the registry entry):
+(`packages/connections/src/gmail-connect.ts` + its descriptor in
+`templates/connectors.ts`):
 Google's code flow with PKCE, the `gmail.modify` scope, and
 `access_type=offline` so the exchange captures a refresh token — stored
 as the credential row's `refreshSecret` next to the one-hour access

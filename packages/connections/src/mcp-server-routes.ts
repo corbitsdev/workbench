@@ -34,7 +34,7 @@ import {
 import { probeMcpServer } from "./mcp-probe";
 import { fireConnectedHook, type ServiceConnectedHook } from "./connected-hook";
 import { makeErrorEnvelope, reportError } from "@corbits/error-sink";
-import { MCP_PRESETS, mcpPresetBySlug } from "./mcp-presets";
+import { mcpPresetBySlug, type McpPreset } from "./mcp-presets";
 
 /** Every stored MCP server provider is named `mcp:<slug>` — the same
  * convention `@corbits/mcp-tools`' `mcpCredentialHandle` builds from the
@@ -94,6 +94,10 @@ export type CreateMcpServerRoutesDeps = {
   hubUrl: string;
   requireGrant: RequireGrant;
   log: (line: string) => void;
+  /** The curated MCP preset list this build ships — this package
+   * carries none of its own (CL-7384), so a caller always supplies
+   * one. */
+  presets: readonly McpPreset[];
   /** Test-only override, matching `routes.ts`' own `ensureProviderFn`
    * pattern — lets `mcp-server-routes.test.ts` stub credential storage
    * without a network. */
@@ -195,7 +199,7 @@ export function createMcpServerRoutes(
     const providerBySlug = new Map(
       providers.map((provider) => [slugOf(provider.name), provider]),
     );
-    const presets = MCP_PRESETS.map((preset) => {
+    const presets = deps.presets.map((preset) => {
       const provider = providerBySlug.get(preset.slug);
       const credential =
         provider === undefined
@@ -235,7 +239,7 @@ export function createMcpServerRoutes(
 
     const preset =
       parsed.presetSlug !== undefined
-        ? mcpPresetBySlug(parsed.presetSlug)
+        ? mcpPresetBySlug(deps.presets, parsed.presetSlug)
         : undefined;
     if (parsed.presetSlug !== undefined && preset === undefined) {
       return c.json(
