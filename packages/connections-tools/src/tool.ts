@@ -31,10 +31,7 @@ import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
 import { CONNECTOR_REGISTRY } from "@corbits/connections";
-import {
-  MCP_PRESETS,
-  mcpPresetByName,
-} from "@corbits/connections/mcp-presets";
+import { MCP_PRESETS, mcpPresetByName } from "@corbits/connections/mcp-presets";
 import { type } from "arktype";
 
 import {
