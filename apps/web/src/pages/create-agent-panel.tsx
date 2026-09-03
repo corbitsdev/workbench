@@ -27,8 +27,9 @@
 // Drafting fails closed, on purpose: if Myra can't draft a prompt
 // (unavailable, timed out, an unparseable reply), this panel never
 // falls back to a canned template — it surfaces the plain-language
-// failure and reveals a manual "System prompt" field in Advanced
-// instead, so the person can write their own and try again.
+// failure, keeps Advanced collapsed, and the disabled primary names
+// the blocker so the person can open Advanced, write their own
+// system prompt, and try again.
 //
 // The identity swatch is preview-only: `@corbits/agent-directory` has
 // no field to persist a chosen avatar tone today, so picking one only
@@ -156,7 +157,9 @@ function advancedFields(
               value: model.canonicalName,
               label: model.displayName ?? model.canonicalName,
             })),
-            help: "Left unset, Myra picks one — or the workbench default if drafting fails.",
+            help: draftFailed
+              ? "Left unset, the agent uses the workbench default."
+              : "Left unset, Myra picks one — or the workbench default if drafting fails.",
           },
         ];
   if (!draftFailed) return withModel;
@@ -208,10 +211,11 @@ const SUGGESTIONS: readonly Suggestion[] = [
   },
 ];
 
-/** The single reason "Get started" is disabled, in plain language — the
- * disabled state explains itself rather than leaving a person to guess.
- * `null` once nothing blocks submission. Purpose is never a gate — a
- * name alone is a supported happy path. */
+/** The single reason the primary is disabled, in plain language — the
+ * disabled label names the blocker rather than leaving "Get started"
+ * on a button that cannot be used. `null` once nothing blocks
+ * submission. Purpose is never a gate — a name alone is a supported
+ * happy path. */
 function blockedReason(
   values: FormValues,
   draftFailed: boolean,
@@ -221,7 +225,7 @@ function blockedReason(
     return "Fix the handle below — lowercase letters, digits, and hyphens only.";
   }
   if (draftFailed && values.manualSystemPrompt.trim() === "") {
-    return "Write a system prompt below to continue.";
+    return "Open Advanced and write a system prompt to continue.";
   }
   return null;
 }
@@ -366,7 +370,6 @@ export function CreateAgentPanel({
         }
       } catch (cause) {
         setDraftFailed(true);
-        setAdvancedOpen(true);
         setSubmitError(
           submitErrorFromCause(
             cause,
@@ -483,15 +486,12 @@ export function CreateAgentPanel({
           </label>
 
           <div className="mt-3 flex flex-col gap-2">
-            {blocked !== null && (
-              <p className="text-xs text-muted-foreground">{blocked}</p>
-            )}
             <Button
               type="button"
               onClick={() => void handleSubmit()}
               disabled={submitting || blocked !== null}
             >
-              {submitting ? "Creating…" : "Get started"}
+              {submitting ? "Creating…" : (blocked ?? "Get started")}
             </Button>
           </div>
 
