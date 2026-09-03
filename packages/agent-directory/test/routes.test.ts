@@ -1878,3 +1878,103 @@ test("two concurrent capability-adds on the same definition both land", async ()
     .toSorted();
   expect(names).toEqual(["@corbits/github-tools", "@corbits/memory-tools"]);
 });
+
+test("concurrent PUT instructions and DELETE model both land", async () => {
+  const assetService = liveDefinitionAsset(
+    storedDefinitionBytesWithModel("anthropic/claude-sonnet"),
+  );
+  const app = buildApp(
+    assetService,
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+  );
+
+  const [putRes, delRes] = await Promise.all([
+    put(app, "/def_1", {
+      name: "Research Buddy",
+      systemPrompt: "You are now a blunt researcher.",
+    }),
+    app.request("/def_1/capabilities/model", { method: "DELETE" }),
+  ]);
+  expect(putRes.status).toBe(200);
+  expect(delRes.status).toBe(200);
+
+  const workflowJson = await readAgentDefinitionWorkflowJson(
+    assetService,
+    "ast_1",
+  );
+  expect(promptFrom(workflowJson)).toBe("You are now a blunt researcher.");
+  expect(modelFrom(workflowJson)).toBeUndefined();
+});
+
+test("concurrent PUT skills and DELETE model both land", async () => {
+  const skillsStore = createInMemoryDefinitionSkillsStore();
+  const assetService = liveDefinitionAsset(
+    storedDefinitionBytesWithModel("anthropic/claude-sonnet"),
+  );
+  const app = buildApp(
+    assetService,
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+    allowAllRequireGrant,
+    fakeHistory(),
+    fakeCapabilityInventory,
+    skillsStore,
+  );
+
+  const [skillsRes, delRes] = await Promise.all([
+    put(app, "/def_1/skills", { skills: ["long-form-write"] }),
+    app.request("/def_1/capabilities/model", { method: "DELETE" }),
+  ]);
+  expect(skillsRes.status).toBe(200);
+  expect(delRes.status).toBe(200);
+
+  const workflowJson = await readAgentDefinitionWorkflowJson(
+    assetService,
+    "ast_1",
+  );
+  expect(await skillsStore.getSkills("ast_1")).toEqual(["long-form-write"]);
+  expect(promptFrom(workflowJson)).toContain(
+    "- long-form-write: What long-form-write does.",
+  );
+  expect(modelFrom(workflowJson)).toBeUndefined();
+});
+
+test("concurrent DELETE model and a capability-add both land", async () => {
+  const assetService = liveDefinitionAsset(
+    storedDefinitionBytesWithModel("anthropic/claude-sonnet"),
+  );
+  const app = buildApp(
+    assetService,
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+  );
+
+  const [delRes, capRes] = await Promise.all([
+    app.request("/def_1/capabilities/model", { method: "DELETE" }),
+    postTo(app, "/def_1/capabilities", {
+      kind: "toolPackage",
+      name: "@corbits/github-tools",
+    }),
+  ]);
+  expect(delRes.status).toBe(200);
+  expect(capRes.status).toBe(200);
+
+  const workflowJson = await readAgentDefinitionWorkflowJson(
+    assetService,
+    "ast_1",
+  );
+  expect(modelFrom(workflowJson)).toBeUndefined();
+  expect(pinsFrom(workflowJson).map((pin) => pin.name)).toContain(
+    "@corbits/github-tools",
+  );
+});
