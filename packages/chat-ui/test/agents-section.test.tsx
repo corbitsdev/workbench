@@ -70,6 +70,10 @@ function stubFetch(options: {
   readonly catalogModels?: readonly (ModelFixture & {
     readonly offerings: readonly OfferingFixture[];
   })[];
+  /** When true, every catalog (`/models`) read fails. */
+  readonly catalogFails?: boolean;
+  /** Fail the first N catalog reads, then succeed — used to exercise Retry. */
+  readonly catalogFailUntil?: number;
   readonly addCapabilityFails?: boolean;
   readonly restoreFails?: boolean;
   readonly onSave?: (
@@ -100,6 +104,7 @@ function stubFetch(options: {
       offerings: [{ providerName: "anthropic" }],
     },
   ];
+  let catalogCalls = 0;
 
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = typeof input === "string" ? input : String(input);
@@ -127,6 +132,23 @@ function stubFetch(options: {
       return json({ settings: {}, contextWindow: 20 });
     }
     if (/\/models$/.test(path)) {
+      catalogCalls += 1;
+      const catalogShouldFail =
+        options.catalogFails === true ||
+        (options.catalogFailUntil !== undefined &&
+          catalogCalls <= options.catalogFailUntil);
+      if (catalogShouldFail) {
+        return json(
+          {
+            error: {
+              code: "internal",
+              userMessage: "catalog boom",
+              refId: "ref_catalog",
+            },
+          },
+          500,
+        );
+      }
       return json(
         catalogModels.map((model, index) => ({
           id: `model_${String(index)}`,
@@ -858,6 +880,65 @@ describe("Agents section — Model select (CL-6272.3)", () => {
 
     expect(modelSelect(el)?.value).toBe("");
     expect(modelSelect(el)?.options[0]?.textContent).toBe("No model set");
+  });
+
+  test("a catalog load failure reads as an error, not an empty picker (CL-6831)", async () => {
+    stubFetch({ catalogFails: true });
+    const el = mount(baseProps());
+    await settle();
+    openAgent(el, "myra");
+    await settle();
+
+    const select = modelSelect(el);
+    expect(select?.disabled).toBe(true);
+
+    const alert = el.querySelector(".chat-dialog-error")?.textContent;
+    expect(alert).toBe("Couldn't load the models.");
+    expect(el.textContent).not.toContain(
+      "No connected providers yet — connect one in Shared Settings.",
+    );
+    expect(el.textContent).not.toContain("No connected providers yet");
+
+    expect(findButton(el, "Retry")).toBeDefined();
+    const settingsHop = el.querySelector(
+      'a[href="/settings/connections"]',
+    ) as HTMLAnchorElement | null;
+    expect(settingsHop).not.toBeNull();
+    expect(settingsHop?.textContent).toBe("Shared Settings");
+  });
+
+  test("Retry after a catalog load failure recovers the picker", async () => {
+    stubFetch({
+      catalogFailUntil: 1,
+      catalogModels: [
+        {
+          canonicalName: "anthropic/claude-sonnet",
+          displayName: "Claude Sonnet",
+          offerings: [{ providerName: "anthropic" }],
+        },
+      ],
+    });
+    const el = mount(baseProps());
+    await settle();
+    openAgent(el, "myra");
+    await settle();
+
+    expect(modelSelect(el)?.disabled).toBe(true);
+    expect(el.querySelector(".chat-dialog-error")?.textContent).toBe(
+      "Couldn't load the models.",
+    );
+
+    act(() => {
+      findButton(el, "Retry")?.click();
+    });
+    await settle();
+
+    expect(el.querySelector(".chat-dialog-error")).toBeNull();
+    const select = modelSelect(el);
+    expect(select?.disabled).toBe(false);
+    expect(
+      Array.from(select?.options ?? []).map((option) => option.textContent),
+    ).toContain("Claude Sonnet · Anthropic");
   });
 });
 
