@@ -23,7 +23,21 @@
 // exercised without a real Postgres.
 
 import { describe, expect, mock, test } from "bun:test";
-import type { FoldedRunsDeps } from "@corbits/folded-runs";
+import { IDLE_HIBERNATE_UNDEPLOY_REASON } from "@corbits/agent-lifecycle";
+import { AGENT_RUNTIME_SECTION_ID } from "@corbits/agent-runtime";
+import {
+  createCryptoProviderCache,
+  foldedRun,
+  inferenceSourcesDigest,
+  DefinitionProjectionMissingError,
+  type CryptoProviderCache,
+  type FoldedRunsDeps,
+} from "@corbits/folded-runs";
+import {
+  parseWorkflowSourceEntry,
+  WORKFLOW_SOURCE_ENTRY_PATH,
+} from "@corbits/workflows";
+import type { DefinitionSourceResolution } from "@intx/hub-api";
 import {
   agentSession,
   asset,
@@ -33,21 +47,10 @@ import {
   workflowDefinitionVersion,
   workflowRun,
 } from "@intx/db/schema";
-import { workbenchLaunch } from "../src/schema";
-import {
-  foldedRun,
-  inferenceSourcesDigest,
-  DefinitionProjectionMissingError,
-} from "@corbits/folded-runs";
-import { IDLE_HIBERNATE_UNDEPLOY_REASON } from "@corbits/agent-lifecycle";
-import { AGENT_RUNTIME_SECTION_ID } from "@corbits/agent-runtime";
-import {
-  parseWorkflowSourceEntry,
-  WORKFLOW_SOURCE_ENTRY_PATH,
-} from "@corbits/workflows";
 import { SessionLaunchError } from "@intx/hub-sessions";
 import type { EventCollectorRegistry, SidecarRouter } from "@intx/hub-sessions";
-import type { DefinitionSourceResolution } from "@intx/hub-api";
+import { workbenchLaunch } from "../src/schema";
+import type { CreateHubChatPlatformDeps } from "../src/platform-adapter";
 import { MODEL_UNAVAILABLE_CONSUMER_MESSAGE } from "../src/model-unavailable";
 
 const actualHubApi = await import("@intx/hub-api");
@@ -103,7 +106,19 @@ mock.module("@intx/db", () => ({
   listVisibleOfferings: async () => [],
 }));
 
-const { createHubChatPlatform } = await import("../src/platform-adapter");
+const { createHubChatPlatform: buildHubChatPlatform } =
+  await import("../src/platform-adapter");
+
+function createHubChatPlatform(
+  deps: Omit<CreateHubChatPlatformDeps, "cryptoProviders"> & {
+    cryptoProviders?: CryptoProviderCache;
+  },
+) {
+  return buildHubChatPlatform({
+    ...deps,
+    cryptoProviders: deps.cryptoProviders ?? createCryptoProviderCache(),
+  });
+}
 
 type SelectChain = PromiseLike<unknown[]> & {
   where(...args: unknown[]): SelectChain;
@@ -989,6 +1004,76 @@ describe("createHubChatPlatform", () => {
     expect(sidecarRouter.dispatchAgentEventCalls[0]?.address).toBe(
       "ins_workbench1@ten1.workbench.test",
     );
+  });
+
+  test("sendMail signs with the injected crypto cache keyed by workbenchId", async () => {
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          apiKey: "placeholder",
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "workbench-1",
+        displayName: null,
+      },
+      definitionId: "wfd_workbench1",
+      workflowRunRow: {
+        id: "ins_workbench1",
+        address: "ins_workbench1@ten1.workbench.test",
+        principalId: "prin_run1",
+      },
+    });
+    db.inserted.push({
+      table: agentSession,
+      values: { id: "ses_run1", principalId: "prin_run1" },
+    });
+
+    const sessionService = createFakeSessionService();
+    const getKeys: string[] = [];
+    const injectedProvider = {
+      getPublicKey: () => new Uint8Array([7, 2, 8, 4]),
+    };
+    const cryptoProviders: CryptoProviderCache = {
+      get: async (key) => {
+        getKeys.push(key);
+        return injectedProvider as never;
+      },
+    };
+
+    const platform = createHubChatPlatform({
+      toolGrantsForPins: () => [],
+      db: db as never,
+      sessionService,
+      assetService: createFakeAssetService(),
+      sidecarRouter: createFakeSidecarRouter(),
+      eventCollectors: createFakeEventCollectors(),
+      cryptoProviders,
+    });
+
+    await platform.sendMail({
+      tenantId: "ten_1",
+      workbenchId: "ins_workbench1",
+      principalId: "prin_sender",
+      content: { content: "hello workbench" },
+    });
+
+    expect(getKeys).toEqual(["ins_workbench1"]);
+    const call = sessionService.sendUserMessageCalls[0] as {
+      cryptoProvider: unknown;
+    };
+    expect(call.cryptoProvider).toBe(injectedProvider);
   });
 
   test("sendMail rejects within the mail-delivery deadline instead of hanging forever when delivery never settles (CL-6644)", async () => {

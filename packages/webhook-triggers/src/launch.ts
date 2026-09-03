@@ -164,6 +164,9 @@ export async function launchWebhookTrigger(
   });
 
   const content = renderInputTemplate(trigger.inputTemplate, payload);
+  // Keyed by the launched run's instance id (`generateId("workflowRun")`),
+  // the same string shape chat uses for workbench ids — share the host's
+  // process-wide cache so those lookups cannot mint different keys.
   const cryptoProvider = await deps.cryptoProviderCache.get(instanceId);
   const result = await sendFoldedMailWithRetry(deps, {
     tenantId: trigger.tenantId,
