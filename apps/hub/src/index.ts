@@ -2251,6 +2251,7 @@ export async function createHub(config: HubConfig) {
             assetService,
             sidecarRouter,
             eventCollectors,
+            credentialCipher,
             toolGrantsForPins,
             mcpCredentialBindingsFor,
             pinnedPackageCredentialBindingsFor,
