@@ -54,6 +54,7 @@ import type { HarnessConfig } from "@intx/types/runtime";
 // — the gate itself only stamps this hash on the `ok:true` arm.
 
 import {
+  createAgentDefinitionDraftRoutes,
   createAgentDefinitionRoutes,
   createDefinitionAssetHistory,
   createDrizzleDefinitionSkillsStore,
@@ -61,11 +62,8 @@ import {
   createWorkflowCapabilityRoutes,
   createWorkflowSkillPinRoutes,
   type CapabilityInventoryProvider,
-  AgentDefinitionDraftReferenceOutOfInventoryError,
-  AgentDefinitionDraftReplyUnparseableError,
   createMyraAgentDefinitionDrafting,
   isPlannerCreatedDefinitionName,
-  MyraAgentDefinitionDraftingUnavailableError,
   resolveMyraDefinitionIdFromDb,
   type InventoryAgent,
   type InventoryModel,
@@ -224,11 +222,7 @@ import {
   createDrizzleWorkflowDeploySourceStore,
   withDeploySourceRecording,
 } from "@corbits/workflows";
-import {
-  FoldedRunFailedError,
-  FoldedRunTimedOutError,
-  runOneShotFoldedPrompt,
-} from "@corbits/folded-run-one-shot";
+import { runOneShotFoldedPrompt } from "@corbits/folded-run-one-shot";
 
 import {
   createEventCollectorRegistry,
@@ -3229,106 +3223,34 @@ export async function createHub(config: HubConfig) {
   // from a name + plain-language purpose, offering her the same
   // inventory `capabilityInventory` above reads through. Never deploys
   // on its own — the panel submits the validated draft through the
-  // ordinary create-agent-definition path once the person confirms. This
-  // route is hand-wired here rather than through a factory the package
-  // exports, since agent-directory's own route factories are each scoped
-  // to a narrower concern.
-  const CreateAgentDefinitionDraftBody = type({
-    name: "string > 0",
-    "purpose?": "string > 0",
-  });
-  const agentDefinitionDraftingInFlightPrincipals = new Set<string>();
-  function isAgentDefinitionDraftingFailure(err: unknown): boolean {
-    return (
-      err instanceof MyraAgentDefinitionDraftingUnavailableError ||
-      err instanceof FoldedRunTimedOutError ||
-      err instanceof FoldedRunFailedError ||
-      err instanceof AgentDefinitionDraftReplyUnparseableError ||
-      err instanceof AgentDefinitionDraftReferenceOutOfInventoryError
-    );
-  }
-  const plannerRoutes = new Hono<TenantEnv>();
-  plannerRoutes.post(
-    "/agent-definitions/draft",
-    createRequireGrant({
+  // ordinary create-agent-definition path once the person confirms.
+  // Failure copy is the package route's `makeErrorEnvelope` +
+  // `reportError` (CL-6749), not a local `{ code, message }` body.
+  const plannerRoutes = createAgentDefinitionDraftRoutes({
+    requireGrant: createRequireGrant({
       grantStore: chatGrantStore,
       conditionRegistry: chatConditionRegistry,
-    })("workflow-definition:*", "create"),
-    async (c) => {
-      const body = CreateAgentDefinitionDraftBody(
-        await c.req.json().catch(() => undefined),
-      );
-      if (body instanceof type.errors) {
-        return c.json(
-          {
-            error: {
-              code: "bad_request",
-              message: `This couldn't be read: ${body.summary}`,
-            },
-          },
-          400,
-        );
-      }
-
-      const tenant = c.get("tenant");
-      const principal = c.get("principal");
-
-      if (agentDefinitionDraftingInFlightPrincipals.has(principal.id)) {
-        return c.json(
-          {
-            error: {
-              code: "dispatch_in_progress",
-              message: "Myra is already drafting your last agent.",
-            },
-          },
-          409,
-        );
-      }
-      agentDefinitionDraftingInFlightPrincipals.add(principal.id);
-      try {
-        const draft = await createMyraAgentDefinitionDrafting({
-          resolveMyraDefinitionId: (tenantId) =>
-            resolveMyraDefinitionIdFromDb(db, tenantId),
-          runner: {
-            run: (runnerInput) =>
-              runOneShotFoldedPrompt(
-                {
-                  foldedRuns: oneShotFoldedRunsDeps,
-                  events: sidecarRouter.events,
-                  cryptoProviders: agentDefinitionDraftingCryptoProviders,
-                  undeploy: (address, reason) =>
-                    sidecarRouter.sendAgentUndeploy(address, reason),
-                },
-                runnerInput,
-              ),
-          },
-          inventorySources: plannerInventorySources,
-        }).propose({
-          tenantId: tenant.id,
-          principalId: principal.id,
-          name: body.name,
-          ...(body.purpose !== undefined ? { purpose: body.purpose } : {}),
-        });
-        return c.json({ draft }, 201);
-      } catch (err) {
-        if (isAgentDefinitionDraftingFailure(err)) {
-          return c.json(
-            {
-              error: {
-                code: "drafting_failed",
-                message:
-                  "Myra couldn't draft a starting prompt for that. Write one yourself, or try again.",
+    }),
+    draftAgentDefinition: (input) =>
+      createMyraAgentDefinitionDrafting({
+        resolveMyraDefinitionId: (tenantId) =>
+          resolveMyraDefinitionIdFromDb(db, tenantId),
+        runner: {
+          run: (runnerInput) =>
+            runOneShotFoldedPrompt(
+              {
+                foldedRuns: oneShotFoldedRunsDeps,
+                events: sidecarRouter.events,
+                cryptoProviders: agentDefinitionDraftingCryptoProviders,
+                undeploy: (address, reason) =>
+                  sidecarRouter.sendAgentUndeploy(address, reason),
               },
-            },
-            422,
-          );
-        }
-        throw err;
-      } finally {
-        agentDefinitionDraftingInFlightPrincipals.delete(principal.id);
-      }
-    },
-  );
+              runnerInput,
+            ),
+        },
+        inventorySources: plannerInventorySources,
+      }).propose(input),
+  });
   app.route(`${TENANT_PREFIX}/planner`, plannerRoutes);
 
   // The sanctioned path for a workflow run to reach the memory plane
