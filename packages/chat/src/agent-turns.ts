@@ -188,6 +188,19 @@ function sectionKey(input: {
 }
 
 /**
+ * Newest-first order shared by `listTurns` and `findRunningTurn`
+ * (CL-7200): `startedAt` descending, then `occurrence` descending as
+ * the deterministic tiebreak when two turns share a timestamp. Listing
+ * used to sort by the started-at string alone and the running-turn
+ * resolver by occurrence alone, so same-millisecond rows could disagree
+ * on which turn was newest.
+ */
+function compareTurnsNewestFirst(left: AgentTurn, right: AgentTurn): number {
+  const byStarted = right.startedAt.localeCompare(left.startedAt);
+  return byStarted !== 0 ? byStarted : right.occurrence - left.occurrence;
+}
+
+/**
  * The process-local pubsub `waitUntilFree` is built on: a (workbench,
  * agent) key's waiters all resolve the moment `notify` fires for that
  * key, or on their own individual backstop timer, whichever comes
@@ -298,7 +311,7 @@ export function createInMemoryAgentTurnStore(
           turn.agentAddress === input.agentAddress &&
           turn.status === "running",
       )
-      .sort((a, b) => b.occurrence - a.occurrence)[0];
+      .sort(compareTurnsNewestFirst)[0];
   }
 
   return {
@@ -391,7 +404,7 @@ export function createInMemoryAgentTurnStore(
             turn.tenantId === input.tenantId &&
             turn.workbenchId === input.workbenchId,
         )
-        .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+        .sort(compareTurnsNewestFirst)
         .slice(0, input.limit ?? AGENT_TURNS_PAGE_SIZE);
     },
 
@@ -505,7 +518,7 @@ export function createDrizzleAgentTurnStore<
           eq(agentTurns.status, "running"),
         ),
       )
-      .orderBy(desc(agentTurns.occurrence))
+      .orderBy(desc(agentTurns.startedAt), desc(agentTurns.occurrence))
       .limit(1);
     return row === undefined ? undefined : toAgentTurn(row as AgentTurnRow);
   }
@@ -614,7 +627,7 @@ export function createDrizzleAgentTurnStore<
             eq(agentTurns.workbenchId, input.workbenchId),
           ),
         )
-        .orderBy(desc(agentTurns.startedAt))
+        .orderBy(desc(agentTurns.startedAt), desc(agentTurns.occurrence))
         .limit(input.limit ?? AGENT_TURNS_PAGE_SIZE);
       return rows.map((row) => toAgentTurn(row as AgentTurnRow));
     },
