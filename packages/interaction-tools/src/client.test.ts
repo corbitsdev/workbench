@@ -106,3 +106,73 @@ test("a non-ok, non-404 response surfaces the envelope userMessage", async () =>
     }),
   ).rejects.toThrow("the hub could not post the question");
 });
+
+test("reads userMessage even when a legacy message field is also present", async () => {
+  const fetchImpl = (async () =>
+    new Response(
+      JSON.stringify({
+        error: {
+          code: "internal_error",
+          message: "legacy",
+          userMessage: "canonical",
+          refId: "ref_test",
+        },
+      }),
+      { status: 500 },
+    )) as unknown as typeof fetch;
+
+  try {
+    await postQuestion(testConfig(fetchImpl), {
+      question: "Q?",
+      options: ["a", "b"],
+    });
+    throw new Error("expected postQuestion to throw");
+  } catch (error) {
+    expect((error as Error).message).toBe(
+      "Posting the question failed: canonical",
+    );
+  }
+});
+
+test("a 404 envelope with only error.message falls back, never the legacy field", async () => {
+  const fetchImpl = (async () =>
+    new Response(
+      JSON.stringify({
+        error: { code: "not_found", message: "legacy" },
+      }),
+      { status: 404 },
+    )) as unknown as typeof fetch;
+
+  try {
+    await postQuestion(testConfig(fetchImpl), {
+      question: "Q?",
+      options: ["a", "b"],
+    });
+    throw new Error("expected NoOwnChannelError");
+  } catch (error) {
+    expect(error).toBeInstanceOf(NoOwnChannelError);
+    expect((error as Error).message).toBe(
+      "The caller has no channel of its own to post into",
+    );
+  }
+});
+
+test("a non-ok, non-envelope response falls back to status text", async () => {
+  const fetchImpl = (async () =>
+    new Response("boom", {
+      status: 500,
+      statusText: "Internal Server Error",
+    })) as unknown as typeof fetch;
+
+  try {
+    await postQuestion(testConfig(fetchImpl), {
+      question: "Q?",
+      options: ["a", "b"],
+    });
+    throw new Error("expected postQuestion to throw");
+  } catch (error) {
+    expect((error as Error).message).toBe(
+      "Posting the question failed: 500 Internal Server Error",
+    );
+  }
+});
