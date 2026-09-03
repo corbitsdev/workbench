@@ -377,6 +377,12 @@ import { withTurnPartWriteDefaults } from "./turn-part-content-default";
 import { createHubRunSummaryResolver } from "./routine-run-summary";
 import { createBootAssetWiring, REGISTRIES } from "./asset-service-factory";
 import { createRoutineScheduler } from "./routine-scheduler";
+import {
+  claimScheduleMinuteFromDb,
+  createWorkflowScheduler,
+  launchScheduledDefinitionFromDb,
+  listScheduledDefinitionsFromDb,
+} from "./workflow-scheduler";
 import { createToolGrantsForPins } from "./tool-grants";
 import { createMcpCredentialBindingsFor } from "./mcp-credential-bindings";
 import { reconcilePinnedToolPackagesAfterConnect } from "./connection-live-reconcile";
@@ -3132,19 +3138,39 @@ export async function createHub(config: HubConfig) {
       validateRoutineInput: routineInputValid,
     }),
   );
-  // Recurring auto-fire: a minimal in-process poller (routine-scheduler.ts)
-  // over `@corbits/routines`' own `fireScheduledRoutine` — this hub has no
-  // general job-runner today, so this loop is scoped to exactly one job
-  // (fire due routines) rather than standing up a bespoke cron daemon as a
-  // hidden dependency. Every hub replica can safely run this poller: each
-  // fire is claimed with a conditional update on the routine's persisted
-  // `nextFireAt` before anything launches, so two replicas racing the same
-  // fire never both win, and a fire that falls due while every replica is
-  // down is caught up (not lost) the next time any of them polls.
+  // Recurring auto-fire: two pollers. `routine-scheduler.ts` ticks enabled
+  // `@corbits/routines` rows so a user-created daily/cron routine keeps firing.
+  // `workflow-scheduler.ts` ticks authored, deployed definitions whose frozen
+  // projection carries a native ScheduleTrigger (workbench-digest). This hub
+  // has no general job-runner today, so each loop is scoped to exactly one
+  // job rather than standing up a bespoke cron daemon as a hidden dependency.
+  // Every hub replica can safely run both: each routine fire is claimed on
+  // `nextFireAt`, each native fire on `workflow_definition.schedule_claimed_minute`.
   const routineScheduler = createRoutineScheduler({
     store: routineStore,
     launcher: routineLauncher,
     deliveryWorkbenchRequired: routineDeliveryWorkbenchRequired,
+    ...(config.routineSchedulerPollIntervalMs !== undefined
+      ? { pollIntervalMs: config.routineSchedulerPollIntervalMs }
+      : {}),
+  });
+  const workflowScheduler = createWorkflowScheduler({
+    listScheduledDefinitions: listScheduledDefinitionsFromDb(db),
+    claimScheduleMinute: claimScheduleMinuteFromDb(db),
+    launch: launchScheduledDefinitionFromDb({
+      db,
+      sidecarRouter,
+      deliveryWorkbenchRequired: deliveryWorkbenchRequiredForWorkflowName,
+      resolveDeliveryWorkbench: async (tenantId) => {
+        const rows = await chatStore.listWorkbenchSettings(tenantId);
+        const first = [...rows].sort((a, b) =>
+          a.workbenchId.localeCompare(b.workbenchId),
+        )[0];
+        return first?.workbenchId;
+      },
+      joinDeliveryWorkbench: (input) =>
+        joinRunParticipant({ store: chatStore }, input),
+    }),
     ...(config.routineSchedulerPollIntervalMs !== undefined
       ? { pollIntervalMs: config.routineSchedulerPollIntervalMs }
       : {}),
@@ -3622,6 +3648,7 @@ export async function createHub(config: HubConfig) {
       envCredentialPlant.stop();
       chatOrchestrator.dispose();
       routineScheduler.stop();
+      workflowScheduler.stop();
       credentialExpirySweep.stop();
       inboxUnsnoozeSweep.stop();
       benchProvisioner.stop();

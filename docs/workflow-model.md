@@ -145,9 +145,11 @@ dead weight.
 ## What is not native, and stays in Workbench
 
 Checked against upstream origin/main `d187e327`: Interchange has no
-routine or scheduler (its `ScheduleTrigger` type has zero consumers), no
-per-principal "launchable definitions" query, and no agent-facing tool that
-writes assets. Those three compositions are Workbench's, built over native
-rows and `@intx/authz`. Before adding anything else, check upstream first;
-if upstream has it past our pin, re-vendor at that commit rather than
-reimplementing.
+routine table and no definition-level scheduler — its `ScheduleTrigger`
+type is projected, and Workbench's hub poller (`workflow-scheduler.ts`)
+is the consumer (per-minute CAS on
+`workflow_definition.schedule_claimed_minute`, skip-missed). Per-principal
+"launchable definitions" and the agent-facing tool that writes assets
+remain Workbench compositions, built over native rows and `@intx/authz`.
+Before adding anything else, check upstream first; if upstream has it
+past our pin, re-vendor at that commit rather than reimplementing.

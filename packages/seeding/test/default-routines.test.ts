@@ -78,16 +78,20 @@ function deployedAssetsAndDeployments() {
 }
 
 describe("DEFAULT_ROUTINE_PRESETS", () => {
-  test("declares the daily digest and the un-stranded last-30-days-research presets", () => {
+  test("declares only the un-stranded last-30-days-research preset", () => {
     expect(DEFAULT_ROUTINE_PRESETS.map((p) => p.name)).toEqual([
-      "Daily digest",
       "Last 30 days research",
     ]);
   });
 
-  test("targets the workbench-digest and last-30-days-research assets", () => {
+  test("does not plant a scheduled digest wrapper — native ScheduleTrigger is the cadence", () => {
+    expect(
+      DEFAULT_ROUTINE_PRESETS.some((p) => p.assetName === "workbench-digest"),
+    ).toBe(false);
+  });
+
+  test("targets the last-30-days-research asset", () => {
     expect(DEFAULT_ROUTINE_PRESETS.map((p) => p.assetName)).toEqual([
-      "workbench-digest",
       "last-30-days-research",
     ]);
   });
@@ -97,13 +101,6 @@ describe("DEFAULT_ROUTINE_PRESETS", () => {
       (p) => p.assetName === "last-30-days-research",
     );
     expect(research?.trigger).toBeNull();
-  });
-
-  test("daily digest fires on a fixed daily cadence", () => {
-    const digest = DEFAULT_ROUTINE_PRESETS.find(
-      (p) => p.assetName === "workbench-digest",
-    );
-    expect(digest?.trigger).toEqual({ kind: "daily", hour: 9, minute: 0 });
   });
 });
 
@@ -158,17 +155,12 @@ describe("ensureDefaultRoutines", () => {
 
     await ensureDefaultRoutines(fakeAPI(handler), [], TENANT_ID, log);
 
-    expect(createCalls).toHaveLength(2);
-    expect(createCalls[0]?.name).toBe("Daily digest");
+    expect(createCalls).toHaveLength(1);
+    expect(createCalls[0]?.name).toBe("Last 30 days research");
     expect(createCalls[0]?.body).not.toHaveProperty("deliveryWorkbenchId");
     expect(createCalls[0]?.body).not.toHaveProperty("enabled");
-    expect(createCalls[1]?.name).toBe("Last 30 days research");
-    expect(createCalls[1]?.body).toMatchObject({
-      deliveryWorkbenchId: "ch_provisioned",
-    });
 
     const output = lines.join("\n");
-    expect(output).toContain('seeded routine "Daily digest" (disabled)');
     expect(output).toContain(
       'seeded routine "Last 30 days research" (disabled)',
     );
@@ -194,15 +186,12 @@ describe("ensureDefaultRoutines", () => {
 
     const output = lines.join("\n");
     expect(output).toContain(
-      'routine "Daily digest" skipped: no deployed definition named "workbench-digest"',
-    );
-    expect(output).toContain(
       'routine "Last 30 days research" skipped: no deployed definition named "last-30-days-research"',
     );
   });
 
   // The hub never auto-provisions a delivery workbench (that pollution —
-  // a workbench literally named "Daily digest" — is exactly what this
+  // a workbench literally named after the preset — is exactly what this
   // fix removes): a delivery-required preset seeded with no workbench
   // named gets this 400, and seeding must skip it honestly rather than
   // failing the whole seed or fabricating a destination.
@@ -243,7 +232,7 @@ describe("ensureDefaultRoutines", () => {
 
     const output = lines.join("\n");
     expect(output).toContain(
-      'routine "Daily digest" skipped: its workflow needs a delivery workbench and this preset names none — create it by hand and pick one',
+      'routine "Last 30 days research" skipped: its workflow needs a delivery workbench and this preset names none — create it by hand and pick one',
     );
   });
 
@@ -269,13 +258,6 @@ describe("ensureDefaultRoutines", () => {
           data: {
             items: [
               routineRow({
-                id: "rtn_1",
-                name: "My renamed digest",
-                deliveryWorkbenchId: "ch_existing",
-                enabled: false,
-                presetKey: "workbench-digest",
-              }),
-              routineRow({
                 id: "rtn_2",
                 name: "Last 30 days research",
                 deliveryWorkbenchId: "ch_existing",
@@ -294,7 +276,6 @@ describe("ensureDefaultRoutines", () => {
     await ensureDefaultRoutines(fakeAPI(handler), [], TENANT_ID, log);
 
     const output = lines.join("\n");
-    expect(output).toContain('routine "Daily digest" already exists (skipped)');
     expect(output).toContain(
       'routine "Last 30 days research" already exists (skipped)',
     );
@@ -346,13 +327,17 @@ describe("ensureDefaultRoutines", () => {
         path ===
           `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
-        return assetsResponse([assetRow("ast_digest", "workbench-digest")]);
+        return assetsResponse([
+          assetRow("ast_research", "last-30-days-research"),
+        ]);
       }
       if (
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
-        return deploymentsResponse([deploymentRow("dep_digest", "ast_digest")]);
+        return deploymentsResponse([
+          deploymentRow("dep_research", "ast_research"),
+        ]);
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return { status: 200, data: { items: [] } };
@@ -363,9 +348,9 @@ describe("ensureDefaultRoutines", () => {
           status: 201,
           data: routineRow({
             id: "rtn_1",
-            name: "Daily digest",
+            name: "Last 30 days research",
             enabled: false,
-            presetKey: "workbench-digest",
+            presetKey: "last-30-days-research",
           }),
         };
       }
@@ -375,7 +360,7 @@ describe("ensureDefaultRoutines", () => {
     await ensureDefaultRoutines(fakeAPI(handler), [], TENANT_ID, log);
 
     expect(createCalls[0]?.body).toMatchObject({
-      presetKey: "workbench-digest",
+      presetKey: "last-30-days-research",
     });
   });
 
@@ -392,13 +377,17 @@ describe("ensureDefaultRoutines", () => {
         path ===
           `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
-        return assetsResponse([assetRow("ast_digest", "workbench-digest")]);
+        return assetsResponse([
+          assetRow("ast_research", "last-30-days-research"),
+        ]);
       }
       if (
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
-        return deploymentsResponse([deploymentRow("dep_digest", "ast_digest")]);
+        return deploymentsResponse([
+          deploymentRow("dep_research", "ast_research"),
+        ]);
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         // The app-level pre-check itself raced and saw nothing yet —
@@ -410,10 +399,10 @@ describe("ensureDefaultRoutines", () => {
           status: 200,
           data: routineRow({
             id: "rtn_winner",
-            name: "Daily digest",
+            name: "Last 30 days research",
             deliveryWorkbenchId: "ch_winner",
             enabled: false,
-            presetKey: "workbench-digest",
+            presetKey: "last-30-days-research",
           }),
         };
       }
@@ -423,7 +412,7 @@ describe("ensureDefaultRoutines", () => {
     await ensureDefaultRoutines(fakeAPI(handler), [], TENANT_ID, log);
 
     expect(lines.join("\n")).toContain(
-      'routine "Daily digest" already exists (skipped)',
+      'routine "Last 30 days research" already exists (skipped)',
     );
   });
 
@@ -532,6 +521,62 @@ describe("ensureDefaultRoutines", () => {
     );
   });
 
+  test("a pristine Daily digest wrapper is retired once digest is no longer a routine preset", async () => {
+    const { lines, log } = collector();
+    const deleteCalls: string[] = [];
+    const handler: FakeHandler = (method, path) => {
+      if (
+        method === "GET" &&
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+      ) {
+        return assetsResponse(deployedAssetsAndDeployments().assets);
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        return deploymentsResponse(deployedAssetsAndDeployments().deployments);
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
+        return {
+          status: 200,
+          data: {
+            items: [
+              routineRow({
+                id: "rtn_digest",
+                name: "Daily digest",
+                enabled: false,
+                presetKey: "workbench-digest",
+              }),
+              routineRow({
+                id: "rtn_research",
+                name: "Last 30 days research",
+                enabled: false,
+                presetKey: "last-30-days-research",
+              }),
+            ],
+          },
+        };
+      }
+      if (
+        method === "DELETE" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/routines/`)
+      ) {
+        deleteCalls.push(path.split("/").pop() ?? "");
+        return { status: 204, data: undefined };
+      }
+      return undefined;
+    };
+
+    await ensureDefaultRoutines(fakeAPI(handler), [], TENANT_ID, log);
+
+    expect(deleteCalls).toEqual(["rtn_digest"]);
+    expect(lines.join("\n")).toContain(
+      'routine "Daily digest" retired (its preset no longer ships)',
+    );
+  });
+
   test("a non-201 create response is a loud failure naming the preset", async () => {
     const { log } = collector();
     const handler: FakeHandler = (method, path) => {
@@ -540,13 +585,17 @@ describe("ensureDefaultRoutines", () => {
         path ===
           `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
       ) {
-        return assetsResponse([assetRow("ast_digest", "workbench-digest")]);
+        return assetsResponse([
+          assetRow("ast_research", "last-30-days-research"),
+        ]);
       }
       if (
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
       ) {
-        return deploymentsResponse([deploymentRow("dep_digest", "ast_digest")]);
+        return deploymentsResponse([
+          deploymentRow("dep_research", "ast_research"),
+        ]);
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
         return { status: 200, data: { items: [] } };

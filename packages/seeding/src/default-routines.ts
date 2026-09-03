@@ -1,18 +1,19 @@
 // Preset Routine rows every real tenant starts with, planted after
 // `seedTenant`'s own workflow-deploy loop (see seed.ts's `seedTenant`,
 // which calls `ensureDefaultRoutines` last). Deploying a workflow only
-// makes it launchable; nothing shows up in the Routines picker until a
-// `routine` row actually references its deployed definition — CL-6201
-// is exactly that gap: every default workflow deployed, zero routine
-// rows ever created.
+// makes it launchable; a run-now-only utility still needs a `routine`
+// row before it shows up in the Routines picker (CL-6201).
 //
-// Every preset is created DISABLED (`enabled: false`): a scheduled
-// preset must never start firing just because a bench was minted. A
-// disabled routine's "Run now" still works (the run-now route never
-// checks `enabled` — see `packages/routines/src/routes.ts`), so a
-// preset is inspectable and runnable the moment it's seeded, exactly
-// what CL-6201 asks of the previously-stranded last-30-days-research
-// definition.
+// workbench-digest is not a preset here: its cadence is the native
+// `ScheduleTrigger` on the frozen definition (CL-4455), so a wrapper
+// row would be a second schedule. A previously-planted pristine
+// "Daily digest" row is retired by `pruneDroppedPresetRoutines`.
+//
+// Every remaining preset is created DISABLED (`enabled: false`): a
+// scheduled preset must never start firing just because a bench was
+// minted. A disabled routine's "Run now" still works (the run-now
+// route never checks `enabled` — see `packages/routines/src/routes.ts`),
+// so a preset is inspectable and runnable the moment it's seeded.
 //
 // Idempotent by a stable `presetKey` (each preset's own `assetName`),
 // enforced server-side by `@corbits/routines`' `createRoutineIfAbsent`
@@ -74,15 +75,6 @@ export type DefaultRoutinePreset = {
 };
 
 export const DEFAULT_ROUTINE_PRESETS: readonly DefaultRoutinePreset[] = [
-  {
-    name: "Daily digest",
-    assetName: "workbench-digest",
-    trigger: { kind: "daily", hour: 9, minute: 0 },
-    input: {
-      summary:
-        "Daily digest — nothing computed yet; edit this routine's input.",
-    },
-  },
   {
     name: "Last 30 days research",
     assetName: "last-30-days-research",

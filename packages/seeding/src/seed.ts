@@ -20,6 +20,7 @@ import {
   ModelResponse,
   ProviderResponse,
   WorkflowRunHealth,
+  WorkflowDefinitionResponse,
   paginatedSchema,
   Capability,
 } from "@intx/types";
@@ -188,6 +189,12 @@ export type DefaultWorkflow = {
    * model.
    */
   modelSource?: (hubUrl: string) => ModelSource;
+  /**
+   * When true, PUT the authored definition to `stopped` after deploy so
+   * a native ScheduleTrigger does not fire every tenant at the next
+   * matching minute. Absent means leave the schema default (`deployed`).
+   */
+  startStopped?: true;
 };
 
 function catalogDisplayName(assetName: string): string {
@@ -278,6 +285,7 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
           turnTimeoutMs: WORKBENCH_DIGEST_TURN_TIMEOUT_MS,
         }),
       ),
+    startStopped: true,
   },
   {
     assetName: "last-30-days-research",
@@ -347,6 +355,7 @@ export const SEED_GRANTS: readonly { resource: string; action: string }[] = [
   // (POST/PATCH .../routines) — none of the grants above cover those
   // routes, which gate on their own resource/action pairs.
   { resource: "workflow-definition:*", action: "read" },
+  { resource: "workflow-definition:*", action: "update" },
   { resource: "workflow-run:*", action: "create" },
   { resource: "workflow-run:*", action: "write" },
   // CL-6346 moved the room routes (post a message, read-state, typing,
@@ -733,6 +742,94 @@ async function ensureDeployment(
   return deployment.id;
 }
 
+/**
+ * After deploy, PUT a pristine authored definition to `stopped` so a native
+ * ScheduleTrigger does not fire every tenant. A member-restored row
+ * (`updatedAt !== createdAt`) or an already-stopped row is left alone —
+ * re-seed must never re-archive an enablement the member already chose.
+ * Uses the existing agent-directory status route (grant:
+ * `workflow-definition:<id>` `update`).
+ */
+async function stopPristineScheduledDefinition(
+  api: ApiCall,
+  cookies: string[],
+  args: { tenantId: string; assetName: string },
+  log: (line: string) => void,
+): Promise<void> {
+  const definitions = await listAllWorkflowDefinitions(
+    api,
+    cookies,
+    args.tenantId,
+  );
+  const row = definitions.find((definition) => definition.name === args.assetName);
+  if (row === undefined) {
+    throw new HubApiError(
+      `seeded workflow ${args.assetName} has no authored definition to stop`,
+      "re-run: workbench seed after the deploy has projected a definition row",
+    );
+  }
+  if (row.status === "stopped") {
+    log(`definition ${args.assetName} already stopped (skipped)`);
+    return;
+  }
+  if (row.createdAt !== row.updatedAt) {
+    log(
+      `definition ${args.assetName} was touched; leaving status ${row.status}`,
+    );
+    return;
+  }
+  const updated = await api(
+    "PUT",
+    `/api/tenants/${args.tenantId}/agent-definitions/${row.id}/status`,
+    { status: "stopped" },
+    cookies,
+  );
+  if (updated.status !== 200) {
+    throw new HubApiError(
+      `the hub rejected stopping definition ${args.assetName} with status ${updated.status}: ${JSON.stringify(updated.data)}`,
+      "check the hub logs for the underlying failure, then re-run: workbench seed",
+    );
+  }
+  log(
+    `stopped definition ${args.assetName} so its native schedule does not fire until restored`,
+  );
+}
+
+async function listAllWorkflowDefinitions(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+): Promise<(typeof WorkflowDefinitionResponse.infer)[]> {
+  const items: (typeof WorkflowDefinitionResponse.infer)[] = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const query =
+      cursor === undefined
+        ? "limit=200"
+        : `limit=200&cursor=${encodeURIComponent(cursor)}`;
+    const listed = await api(
+      "GET",
+      `/api/tenants/${tenantId}/workflows/definitions?${query}`,
+      undefined,
+      cookies,
+    );
+    const page = parseAs(
+      paginatedSchema(WorkflowDefinitionResponse),
+      listed.data,
+      "definitions response",
+    );
+    items.push(...page.data);
+    if (page.nextCursor === null) return items;
+    if (items.length > 10_000) {
+      throw new HubApiError(
+        `definitions list for tenant ${tenantId} did not terminate while paging`,
+        "check the hub logs for the underlying failure, then re-run: workbench seed",
+      );
+    }
+    cursor = page.nextCursor;
+  }
+}
+
 async function confirmDeploymentAnswers(
   api: ApiCall,
   cookies: string[],
@@ -926,6 +1023,14 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
       log,
     );
 
+    if (workflow.startStopped === true) {
+      await stopPristineScheduledDefinition(
+        api,
+        cookies,
+        { tenantId: tenant.tenantId, assetName: workflow.assetName },
+        log,
+      );
+    }
     if (confirmDeployments) {
       await confirmDeploymentAnswers(
         api,
