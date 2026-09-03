@@ -753,6 +753,17 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
+      if (
+        method === "GET" &&
+        (path === `/api/tenants/${TENANT_ID}/catalog/offerings` ||
+          path.startsWith(`/api/tenants/${TENANT_ID}/catalog/offerings?`))
+      ) {
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
+      }
       throw new Error(`unexpected call: ${method} ${path}`);
     };
 
@@ -1004,7 +1015,12 @@ describe("completeCredentialSetup", () => {
     const deployments: { definitionAssetId: string; id: string }[] = [];
     const catalogModels: Row[] = [];
     const catalogProviders: Row[] = [];
-    const catalogOfferings: { modelId: string; providerId: string }[] = [];
+    const catalogOfferings: {
+      id: string;
+      modelId: string;
+      providerId: string;
+      priority: number;
+    }[] = [];
     const providers: Row[] = [];
     const credentials: Row[] = [];
     let assetCreatePosts = 0;
@@ -1407,27 +1423,63 @@ describe("completeCredentialSetup", () => {
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/catalog/offerings`
       ) {
-        const b = body as { modelId: string; providerId: string };
+        const b = body as {
+          modelId: string;
+          providerId: string;
+          priority: number;
+        };
         const existing = catalogOfferings.find(
           (o) => o.modelId === b.modelId && o.providerId === b.providerId,
         );
         if (existing) return { status: 409, data: {}, cookies: [] };
         catalogOfferingCreatePosts += 1;
-        catalogOfferings.push({ modelId: b.modelId, providerId: b.providerId });
+        const id = `off_${catalogOfferings.length + 1}`;
+        catalogOfferings.push({
+          id,
+          modelId: b.modelId,
+          providerId: b.providerId,
+          priority: b.priority,
+        });
         return {
           status: 201,
           data: {
-            id: `off_${catalogOfferings.length}`,
+            id,
             tenantId: TENANT_ID,
             modelId: b.modelId,
             providerId: b.providerId,
-            priority: 0,
+            priority: b.priority,
             deploymentTags: [],
             capabilities: [],
             quirks: null,
             disabled: false,
             createdAt: TIMESTAMP,
             updatedAt: TIMESTAMP,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        (path === `/api/tenants/${TENANT_ID}/catalog/offerings` ||
+          path.startsWith(`/api/tenants/${TENANT_ID}/catalog/offerings?`))
+      ) {
+        return {
+          status: 200,
+          data: {
+            data: catalogOfferings.map((o) => ({
+              id: o.id,
+              tenantId: TENANT_ID,
+              modelId: o.modelId,
+              providerId: o.providerId,
+              priority: o.priority,
+              deploymentTags: [],
+              capabilities: [],
+              quirks: null,
+              disabled: false,
+              createdAt: TIMESTAMP,
+              updatedAt: TIMESTAMP,
+            })),
+            nextCursor: null,
           },
           cookies: [],
         };
