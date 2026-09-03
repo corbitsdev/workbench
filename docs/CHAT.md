@@ -256,11 +256,13 @@ An agent's reply lands in the thread of the message that woke its turn
 (CL-6314) — the same thread, whether that message lives on the root feed
 or inside a sub-thread. The dispatch records its mail id against the
 message it answers, and the reply path matches the turn's
-`message.run.started` bracket back to that record; delegation needs no
+`message.run.started` bracket back to that record; after a hub restart
+that dropped the process-local bracket, the running turn's last
+`requestMessageIds` names the same source. Delegation needs no
 separate mechanism, since a delegating message has a thread like any
 other. Approve blocks and artifact deliveries thread under the turn that
 produced them the same way. A reply whose waking mail was never recorded
-(a pre-rollout mail, a restart that dropped the open bracket) posts
+and whose running turn names no source (a pre-rollout mail) posts
 unthreaded rather than vanishing.
 
 Every non-root thread carries a `parentThreadId` — the thread it hangs
