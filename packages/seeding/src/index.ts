@@ -1,8 +1,8 @@
 // The library entry for `@corbits/seeding`: deploys the default workflow
-// set for an already-known tenant, plants preset routines and skills, and
-// confirms every deployment answers. Both the boot-time root-tenant seed
-// and the first-login provisioning hook consume this so the tenant-seeding
-// logic is implemented once.
+// set for an already-known tenant, plants skills, prunes leftover preset
+// routine wrappers, and confirms every deployment answers. Both the
+// boot-time root-tenant seed and the first-login provisioning hook
+// consume this so the tenant-seeding logic is implemented once.
 
 export type {
   DefaultWorkflow,
@@ -47,4 +47,3 @@ export type {
   WorkbenchHostInferencePreference,
 } from "./catalog-seed-data";
 export { createGitWorkflowPusher } from "./workflow-push";
-export { ensureDefaultRoutines } from "./default-routines";

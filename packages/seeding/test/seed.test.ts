@@ -86,16 +86,11 @@ function baseRoutes(method: string, path: string) {
     return { status: 404, data: {} };
   if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`)
     return { status: 201, data: {} };
-  // CL-6201: `ensureDefaultRoutines` runs at the end of every seed and
-  // lists the deployed workflow assets, their live deployments, and the
-  // tenant's existing routines before deciding what (if anything) to
-  // plant. Every test in this file that doesn't care about routine
-  // seeding gets an empty answer from all three, so the preset loop
-  // finds no deployed asset to target and skips quietly rather than the
-  // fake handler throwing "unexpected hub call". A test that defines
-  // its own handler for the assets/deployments paths (to drive the
-  // earlier asset-conflict or already-deployed flow) checks that
-  // handler before falling back to this one, so its own answer wins.
+  // `pruneDroppedPresetRoutines` runs at the end of every seed and
+  // lists the tenant's existing routines before deciding what (if
+  // anything) to DELETE. Every test in this file that doesn't care
+  // about leftover wrappers gets an empty list, so prune is a no-op
+  // rather than the fake handler throwing "unexpected hub call".
   if (
     method === "GET" &&
     path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
@@ -917,10 +912,9 @@ describe("seedTenant", () => {
   test("the default set consumed by real tenant provisioning is assistant, echo, workbench-digest, and last-30-days-research", () => {
     // provisionPersonalTenantIfNeeded (@workbench/onboarding) deploys
     // DEFAULT_WORKFLOWS for every real signup. workbench-digest is the
-    // seed automation the Routines picker can honestly offer.
-    // last-30-days-research (CL-6201) is deployed so
-    // `ensureDefaultRoutines` has a real definition to un-strand into a
-    // routine. The remaining catalog-test workflows exist only to
+    // seed automation the native ScheduleTrigger ticks. last-30-days-
+    // research is a deployed automation, not a routine wrapper.
+    // The remaining catalog-test workflows exist only to
     // exercise the platform continuously and must never reach a real
     // user through this array — they are seeded only via the explicit
     // CATALOG_TEST_WORKFLOWS opt-in.

@@ -57,7 +57,7 @@ import {
   type ApiCall,
 } from "@corbits/hub-api-client";
 import { DEFAULT_SKILLS } from "./default-skills";
-import { ensureDefaultRoutines } from "./default-routines";
+import { pruneDroppedPresetRoutines } from "./default-routines";
 import { CATALOG_SEEDS, type CatalogModelSpec } from "./catalog-seed-data";
 import {
   fetchOllamaModelCatalog,
@@ -291,10 +291,9 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     assetName: "last-30-days-research",
     displayName: catalogDisplayName("last-30-days-research"),
     automatable: catalogAutomatable("last-30-days-research"),
-    // CL-6201: deployed so `ensureDefaultRoutines` (default-routines.ts)
-    // has a real definition to un-strand into a routine row. It was
-    // never in this array before that ticket, which is exactly why the
-    // routine could never appear: nothing deployed its definition.
+    // Deployed automation in the default set — not because a routine
+    // wrapper row needs a definition. Native schedule and member-created
+    // routines target this asset; seed no longer POSTs a wrapper.
     buildJson: (tenantDomain, model) =>
       serializeLast30DaysResearchWorkflow(
         buildLast30DaysResearchWorkflow({
@@ -350,10 +349,9 @@ export const SEED_GRANTS: readonly { resource: string; action: string }[] = [
   { resource: "workflow:*", action: "read" },
   { resource: "workflow-run:*", action: "manage" },
   { resource: "workflow-run:*", action: "read" },
-  // CL-6201: `ensureDefaultRoutines` lists deployed definitions (GET
-  // .../workflows/definitions) and creates/disables preset routines
-  // (POST/PATCH .../routines) — none of the grants above cover those
-  // routes, which gate on their own resource/action pairs.
+  // Workflow-definition read/update (stop a startStopped deploy, list
+  // definitions) and extra workflow-run verbs none of the grants above
+  // cover. Those routes gate on their own resource/action pairs.
   { resource: "workflow-definition:*", action: "read" },
   { resource: "workflow-definition:*", action: "update" },
   { resource: "workflow-run:*", action: "create" },
@@ -946,9 +944,10 @@ export type SeedTenantArgs = {
  * seeds it without re-authenticating or re-resolving the tenant by
  * slug.
  *
- * Grants + workflows/routines only. Assumes the tenant hierarchy
- * already exposes `corbits-tools` (published at `workbench setup` onto
- * the root); seed does not pack tarballs or run freshness.
+ * Grants + workflows, then prune of leftover preset routine wrappers.
+ * Assumes the tenant hierarchy already exposes `corbits-tools`
+ * (published at `workbench setup` onto the root); seed does not pack
+ * tarballs or run freshness.
  */
 export async function seedTenant(args: SeedTenantArgs): Promise<void> {
   const {
@@ -1056,13 +1055,10 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
     );
   }
 
-  // CL-6201: every default workflow above is now deployed, so any
-  // preset routine whose definition just landed can be planted. Runs
-  // after the deploy loop (never before) — a preset targeting a
-  // workflow this call didn't deploy is skipped with a log line rather
-  // than failing seeding outright, which keeps a narrowed `workflows`
-  // list (as several tests here pass) a partial-but-valid seed.
-  await ensureDefaultRoutines(api, cookies, tenant.tenantId, log);
+  // Native ScheduleTrigger + deployed automations already tick; seed
+  // no longer POSTs `/routines` wrappers. Re-seed still retires
+  // pristine leftover preset rows (Daily digest, last-30-days-research).
+  await pruneDroppedPresetRoutines(api, cookies, tenant.tenantId, log);
 
   log(
     confirmDeployments

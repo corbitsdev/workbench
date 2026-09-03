@@ -49,22 +49,17 @@ answers 503 — never a 404, which would read as "no such template".
 
 ## Default routine presets (onboarding / boot-time seeding)
 
-`ensureDefaultRoutines` (`packages/seeding/src/default-routines.ts`)
-plants `DEFAULT_ROUTINE_PRESETS` through `POST /routines` with a
-`presetKey`, backed by `@corbits/routines`' `createRoutineIfAbsent`.
+`pruneDroppedPresetRoutines` (`packages/seeding/src/default-routines.ts`)
+runs at the end of `seedTenant`. Seed never POSTs `/routines`. Native
+`ScheduleTrigger` ticks digest; last-30-days-research stays a deployed
+workflow in `DEFAULT_WORKFLOWS`, not a wrapper row.
 
-- Preset routines are born disabled server-side — no "Created routine"
-  notice, no fire, no follow-up PATCH. The member enabling one is the
-  announcement.
-- A member-deleted preset routine leaves a soft-delete tombstone; the
-  hub answers a re-create with 204 and refuses to resurrect it.
-- Existing rows are matched by `presetKey` (name only for rows planted
-  before the key existed), so renaming a routine does not cause a
-  re-plant.
-- Once planted, a routine's schedule, input, and name belong to the
-  bench: a moved preset shapes only freshly-planted rows.
-- A routine whose preset no longer ships is deleted only while pristine
-  (`updatedAt` still equals `createdAt`); a member-touched row is kept.
+- A leftover row whose `presetKey` is a retired preset
+  (`workbench-digest`, `last-30-days-research`) is deleted only while
+  pristine (`updatedAt` still equals `createdAt`); a member-touched row
+  is kept.
+- Pre-`presetKey` legacy rows are never deleted — there is no honest
+  way to tell them apart from a person-authored routine.
 
 ## Default skills (boot-time seeding)
 
