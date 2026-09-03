@@ -71,6 +71,7 @@ export async function runSidecarShutdown(
     // way and a bound cutting a slow drain short is not a crash. A drain
     // that threw is a genuine fault and exits non-zero.
     if (outcome.kind === "failed") {
+      reportError(outcome.error, { operation: "sidecar.shutdown" });
       args.log
         .error`Drain threw during shutdown; exiting non-zero: ${errorMessage(outcome.error)}`;
       args.exit(1);
