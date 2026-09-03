@@ -7,6 +7,7 @@ import {
   nextStreamingReplyState,
   openPendingReply,
   typingAgentNames,
+  lastHumanMessageParts,
 } from "./streaming-reply";
 
 const HUMAN = { address: "prn_sawyer", handle: "Sawyer" };
@@ -597,6 +598,68 @@ describe("typingAgentNames", () => {
 
   test("no agent participant on the workbench means nobody is named", () => {
     expect(typingAgentNames(awaiting(""), [HUMAN])).toEqual([]);
+  });
+
+  test("names the mentioned agent, not the first agent on the workbench", () => {
+    const jimmy = { address: "jimmy@agents.example", handle: "jimmy" };
+    expect(
+      typingAgentNames(
+        awaiting(""),
+        [HUMAN, MYRA, jimmy],
+        [{ kind: "text", text: "hey @jimmy take a look" }],
+      ),
+    ).toEqual(["Jimmy"]);
+  });
+
+  test("a 1:1 with no mention still names the only agent", () => {
+    expect(
+      typingAgentNames(
+        awaiting(""),
+        [HUMAN, MYRA],
+        [{ kind: "text", text: "hello" }],
+      ),
+    ).toEqual(["Myra"]);
+  });
+
+  test("two agents and no mention names nobody — we do not guess Myra", () => {
+    const jimmy = { address: "jimmy@agents.example", handle: "jimmy" };
+    expect(
+      typingAgentNames(
+        awaiting(""),
+        [HUMAN, MYRA, jimmy],
+        [{ kind: "text", text: "hello everyone" }],
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("lastHumanMessageParts", () => {
+  test("returns the latest human message, skipping agents and streaming bubbles", () => {
+    expect(
+      lastHumanMessageParts([
+        {
+          sender: { address: "prn_sawyer" },
+          parts: [{ kind: "text", text: "older" }],
+        },
+        {
+          sender: { address: "prn_sawyer" },
+          parts: [{ kind: "text", text: "hey @jimmy" }],
+        },
+        {
+          sender: { address: "jimmy@agents.example" },
+          parts: [{ kind: "text", text: "on it" }],
+        },
+        {
+          sender: { address: "myra@agents.example" },
+          parts: [{ kind: "text", text: "stream" }],
+          streaming: true,
+        },
+      ]),
+    ).toEqual([{ kind: "text", text: "hey @jimmy" }]);
+  });
+
+  test("empty timeline means no addressed parts", () => {
+    expect(lastHumanMessageParts([])).toBeUndefined();
   });
 });
 

@@ -28,6 +28,16 @@ describe("consumerFacingInferenceText", () => {
     expect(facing).not.toContain("API key is invalid");
   });
 
+  test("a tools-unsupported dump is one honest sentence, never HTTP or registry copy", () => {
+    const text = consumerFacingInferenceText(
+      "This agent could not complete your request due to an unrecoverable inference error [HTTP 400]: 'tools' is not supported with this model.",
+    );
+    expect(text).toBe("This agent's model can't use tools.");
+    expect(text).not.toMatch(/HTTP/i);
+    expect(text).not.toContain("function-calling");
+    expect(text).not.toContain("unrecoverable inference error");
+  });
+
   test("leaves cause-aware undelivered-notice copy untouched", () => {
     const notice =
       "I can't reach a model right now — add or check your model key in Settings, then I'll pick this up.";
