@@ -49,7 +49,7 @@ answers 503 — never a 404, which would read as "no such template".
 
 ## Default routine presets (onboarding / boot-time seeding)
 
-`ensureDefaultRoutines` (`packages/hub-client/src/default-routines.ts`)
+`ensureDefaultRoutines` (`packages/seeding/src/default-routines.ts`)
 plants `DEFAULT_ROUTINE_PRESETS` through `POST /routines` with a
 `presetKey`, backed by `@corbits/routines`' `createRoutineIfAbsent`.
 
@@ -68,7 +68,7 @@ plants `DEFAULT_ROUTINE_PRESETS` through `POST /routines` with a
 
 ## Default skills (boot-time seeding)
 
-`plantDefaultSkills` (`packages/hub-client/src/seed.ts`) plants each
+`plantDefaultSkills` (`packages/seeding/src/seed.ts`) plants each
 `DEFAULT_SKILLS` entry through `POST /api/tenants/:id/skills`, after
 first checking `GET /api/tenants/:id/skills/:name`.
 
@@ -104,7 +104,7 @@ usable-looking-but-empty asset:
 
 ## Workflow deployments (boot-time seeding)
 
-`ensureDeployment` (`packages/hub-client/src/seed.ts`) treats a
+`ensureDeployment` (`packages/seeding/src/seed.ts`) treats a
 workflow's `workflow_run` deployment row as seed-owned state, but the
 row's `status` column is not the whole story: the hub only routes mail
 to a deployment through an in-memory table (`sidecarRouter`'s

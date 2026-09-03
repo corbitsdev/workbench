@@ -25,6 +25,6 @@ re-explaining these three independent flags each time:
   approval gate is a poor fit for unattended scheduling.
 - **Seeded** — whether the workflow is provisioned into every tenant's
   bench by default, via `DEFAULT_WORKFLOWS` in
-  `packages/hub-client/src/seed.ts`. A workflow can be `automatable`
+  `packages/seeding/src/seed.ts`. A workflow can be `automatable`
   without being seeded (opt-in, e.g. because it needs a credential not
   every tenant has connected) — the two are independent decisions.

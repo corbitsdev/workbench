@@ -1,7 +1,7 @@
 // A hub-served stand-in for a real Anthropic endpoint, spoken by
 // agents that must never produce text: `workflows/heartbeat` and
 // `workflows/workbench-digest` pin their `ModelSource` here (see
-// `@corbits/hub-client`'s `seed.ts`) so their scheduled turns complete
+// `@corbits/seeding`'s `seed.ts`) so their scheduled turns complete
 // instantly against a constant empty reply instead of burning a live
 // model call whose output would be discarded.
 //

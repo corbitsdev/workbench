@@ -63,8 +63,8 @@ import {
 import {
   ollamaOpenAICompatBaseURL,
   type SupportedCredentialProvider,
-} from "@workbench/hub-client";
-import { preferCompletionCapable } from "@workbench/hub-client/model-capability";
+} from "@workbench/connections/credential-test";
+import { preferCompletionCapable } from "@workbench/connections/model-capability";
 import {
   CATALOG_SEEDS,
   DEFAULT_WORKFLOWS,
@@ -447,7 +447,7 @@ export async function testAndPersistCredential(
   // UI — a pasted key or a completed OAuth exchange — always rotates a
   // name-conflicting credential (a regenerated key, or a retry after a
   // bad paste): see `ensureCredential`'s own `verified` doc comment in
-  // `@workbench/hub-client`'s `seed.ts` for the full rotation rule.
+  // `@corbits/seeding`'s `seed.ts` for the full rotation rule.
   await persistConnectorCredential({
     api: args.api,
     cookies: args.cookies,

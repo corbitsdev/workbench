@@ -2,15 +2,12 @@
 // adds — Granola, Exa, ScrapeCreators, Linear, GitHub, and Manus — each hitting the
 // same production endpoint its tool client (`packages/*-tools/src/
 // client.ts`) already calls, authenticated with the real key. This
-// mirrors `@workbench/hub-client/credential-test`'s
+// mirrors `./credential-test`'s
 // `testProviderCredential` pattern exactly: a 5s timeout, a network
 // failure caught as a plain rejection, `response.ok` (or a
 // provider-specific override) as acceptance, and a 401 as the standard
 // "key rejected" signal. No credential is ever stored here.
-import type {
-  CredentialTestResult,
-  FetchLike,
-} from "@workbench/hub-client/credential-test";
+import type { CredentialTestResult, FetchLike } from "./credential-test";
 import { reportError } from "@corbits/error-sink";
 
 const PROBE_TIMEOUT_MS = 5000;

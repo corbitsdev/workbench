@@ -1,5 +1,5 @@
 // Wires the mock into the REAL call sites it exists to plug into —
-// `@workbench/hub-client`'s `FetchLike`-shaped functions — rather than
+// `@workbench/connections`'s `FetchLike`-shaped functions — rather than
 // calling `mock.fetch` directly the way `mock.test.ts` does. That
 // distinction matters: `mock.fetch(new Request(...))` typechecking says
 // nothing about whether the mock satisfies the two-argument
@@ -15,13 +15,13 @@ import {
   fetchOllamaModelCatalog,
   testProviderCredential,
   OLLAMA_PLACEHOLDER_SECRET,
-} from "@workbench/hub-client/credential-test";
-import { preferCompletionCapable } from "@workbench/hub-client/model-capability";
+} from "@workbench/connections/credential-test";
+import { preferCompletionCapable } from "@workbench/connections/model-capability";
 import { createOllamaMock } from "./index";
 
 const BASE_URL = "http://mock-ollama";
 
-describe("OllamaMock as a real hub-client FetchLike consumer", () => {
+describe("OllamaMock as a real connections FetchLike consumer", () => {
   test("testProviderCredential proves reachability through the mock with no cast", async () => {
     const ollama = createOllamaMock({ models: [{ name: "qwen3.8:27b" }] });
 

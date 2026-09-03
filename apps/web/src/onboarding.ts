@@ -6,7 +6,7 @@
 // so a broken provisioning call never leaves the user silently benchless.
 
 import { type } from "arktype";
-import type { SupportedCredentialProvider } from "@workbench/hub-client/credential-test";
+import type { SupportedCredentialProvider } from "@workbench/connections/credential-test";
 
 const ProvisionResult = type({
   kind: "'existing-member' | 'provisioned' | 'needs-onboarding'",

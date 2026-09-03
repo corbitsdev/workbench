@@ -11,8 +11,8 @@
 // 1. A composite project's `references` must form a DAG, and test files
 //    routinely break that: they import `scripts/e2e/harness.ts` (a shared
 //    test helper, not a workspace package) which itself imports production
-//    packages like `@corbits/hub-client` -- so a package upstream of
-//    `hub-client` whose *tests* import the harness would otherwise put
+//    packages like `@corbits/seeding` -- so a package upstream of
+//    `seeding` whose *tests* import the harness would otherwise put
 //    that package's own composite project in a cycle with itself.
 // 2. Every tool that discovers a project by convention -- ESLint's
 //    `projectService`, an editor's language server, a bare `tsc` in the
@@ -199,7 +199,7 @@ function srcReferencePathsFor(
  * are shared test/setup helpers that many packages import by relative path
  * -- they are not workspace packages (no `package.json` dependency records
  * the edge), are not composite, and pull in production packages themselves
- * (`harness.ts` imports `@workbench/hub-client`), so they can never
+ * (`harness.ts` imports `@corbits/seeding`), so they can never
  * legally appear in a `references` array. A package's `test/` directory
  * importing one is fine -- the combined non-composite project resolves it
  * via plain source, same as any other undeclared import. A package's `src`

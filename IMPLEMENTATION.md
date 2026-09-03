@@ -244,7 +244,7 @@ handshake.
 list a workbench host launches with (`workbenchHostInferencePreferences`
 on the chat adapter; also `tenantDefaultModel` on agent-definition
 routes). It keeps credentialed completion-capable offerings
-(`preferCompletionCapable` in `@workbench/hub-client/model-capability`
+(`preferCompletionCapable` in `@workbench/connections/model-capability`
 — embedding names never win) and, when any survivor is
 `origin.direct`, picks from that direct set only. Inherit-only catalogs
 still sort among inherited completion rows.

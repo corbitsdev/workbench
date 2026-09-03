@@ -32,7 +32,7 @@ import { Key, WarningCircle } from "@corbits/icons";
 import { WorkbenchLoadingState } from "@corbits/chat-ui";
 import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { OLLAMA_PLACEHOLDER_SECRET } from "@workbench/hub-client/credential-test";
+import { OLLAMA_PLACEHOLDER_SECRET } from "@workbench/connections/credential-test";
 
 import { useNavigate } from "../navigation";
 import {

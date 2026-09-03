@@ -7,7 +7,7 @@ resolve a connector's credential across a tenant chain.
 
 ## How it composes with Interchange
 
-- Credentials are stored and read through `@workbench/hub-client`'s
+- Credentials are stored and read through `@corbits/seeding`'s
   `ensureProvider`/`ensureCredential` helpers over the native hub API —
   this package never reimplements credential storage.
 - `plugins.ts`'s tenant-inheritance resolution calls the native, already

@@ -11,7 +11,7 @@
 //
 // Never reimplements credential planting: the live probe is
 // `testProviderCredential` and the actual plant is `seedCatalog` (same
-// `@workbench/hub-client` functions `completeCredentialSetup` calls),
+// `@workbench/connections` functions `completeCredentialSetup` calls),
 // reused here exactly as onboarding's own guided step uses them. This
 // module's only job is the env-map-to-provider translation, the
 // idempotency check that skips overwriting a provider already carrying
@@ -32,7 +32,7 @@ import {
   testProviderCredential,
   type SupportedCredentialProvider,
   type TestProviderCredentialArgs,
-} from "@workbench/hub-client";
+} from "@workbench/connections/credential-test";
 import {
   inferenceCredentialName,
   seedCatalog,

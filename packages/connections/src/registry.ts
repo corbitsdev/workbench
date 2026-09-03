@@ -2,11 +2,10 @@
 // connector this ticket exposes, as one `ConnectorDescriptor` map. This
 // is the `./registry` subpath — imported directly by
 // `packages/settings-ui`, a browser bundle — so it imports only from
-// `./descriptor.ts`, `./probes.ts`, and `@workbench/hub-client`'s own
-// light `./credential-test` subpath, never `hono`, `./routes.ts`, or
-// `@workbench/hub-client`'s main index (which pulls in `@intx/inference`
-// and every workflow package). See `credential-test.ts`'s own header
-// comment for why that subpath exists in the first place.
+// `./descriptor.ts`, `./probes.ts`, and this package's own light
+// `./credential-test` subpath, never `hono` or `./routes.ts`. See
+// `credential-test.ts`'s own header comment for why that subpath exists
+// in the first place.
 //
 // The eight non-OAuth inference providers come straight from
 // `PROVIDER_TEST_CONFIG` — the one source of provider metadata,
@@ -20,7 +19,7 @@ import {
   PROVIDER_TEST_CONFIG,
   testProviderCredential,
   type SupportedCredentialProvider,
-} from "@workbench/hub-client/credential-test";
+} from "./credential-test";
 export {
   missingCredentialDetail,
   parseMissingCredentialDetail,

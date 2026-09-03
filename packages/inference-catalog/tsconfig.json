@@ -25,9 +25,6 @@
       "path": "../error-sink/tsconfig.src.json"
     },
     {
-      "path": "../hub-client/tsconfig.src.json"
-    },
-    {
       "path": "../migration-runner/tsconfig.src.json"
     },
     {
