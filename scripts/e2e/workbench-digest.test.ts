@@ -187,7 +187,6 @@ describe.skipIf(databaseUrl === undefined)("workbench-digest workflow", () => {
         expectStatus("mint git token", minted, 201);
 
         const definition = buildWorkbenchDigestWorkflow({
-          triggerAddress: `workbench-digest@${slug}.localhost`,
           inferencePreferences: [{ provider: "anthropic", model: "noop" }],
           turnTimeoutMs: DIGEST_TURN_TIMEOUT_MS,
         });

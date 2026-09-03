@@ -1113,13 +1113,13 @@ describe("seedTenant", () => {
     if (!push0) throw new Error("expected one workflow push");
     const definition = JSON.parse(push0.workflowJson) as {
       id: string;
-      triggers: { type: string; to: string }[];
+      triggers: { type: string; cron?: string }[];
       stepOrder: string[];
     };
     expect(definition.id).toBe("wf_workbench_digest");
-    expect(definition.triggers[0]?.to).toBe(
-      `workbench-digest@${TENANT_DOMAIN}`,
-    );
+    expect(definition.triggers).toEqual([
+      { type: "schedule", cron: "0 9 * * *" },
+    ]);
     expect(definition.stepOrder).toEqual(["workbench-digest"]);
 
     // Defaults deploy against the tenant's real model (not noop).

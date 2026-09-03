@@ -269,10 +269,9 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     assetName: "workbench-digest",
     displayName: catalogDisplayName("workbench-digest"),
     automatable: catalogAutomatable("workbench-digest"),
-    buildJson: (tenantDomain, model) =>
+    buildJson: (_tenantDomain, model) =>
       serializeWorkbenchDigestWorkflow(
         buildWorkbenchDigestWorkflow({
-          triggerAddress: `workbench-digest@${tenantDomain}`,
           inferencePreferences: [
             { provider: model.provider, model: model.model },
           ],
