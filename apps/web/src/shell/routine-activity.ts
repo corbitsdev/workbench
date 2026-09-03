@@ -10,6 +10,8 @@
 // toward Mission Control's "Active runs" — exactly CL-6595's desync
 // between the Routines page's own "Running now" pill and Mission Control's
 // "0 / nothing running".
+import { runOutcomeStatus } from "@corbits/routines/client";
+
 import { listRoutineRunFires } from "../agents-api";
 import type { RunFire } from "../agents-api";
 
@@ -20,19 +22,22 @@ export type RoutineActivityItem = {
   readonly startedAt: string;
 };
 
-function toRoutineActivityItem(run: RunFire): RoutineActivityItem {
+function toRoutineActivityItem(run: RunFire, now: number): RoutineActivityItem {
   return {
     id: run.id,
     name: run.routineName ?? run.definitionName,
-    status: run.status,
+    status: runOutcomeStatus(run, now) ?? run.status,
     startedAt: run.createdAt,
   };
 }
 
 export function listRoutineActivity(
   tenantId: string,
+  now: number = Date.now(),
 ): Promise<readonly RoutineActivityItem[]> {
   return listRoutineRunFires(tenantId).then((runs) =>
-    runs.filter((run) => run.routineId !== null).map(toRoutineActivityItem),
+    runs
+      .filter((run) => run.routineId !== null)
+      .map((run) => toRoutineActivityItem(run, now)),
   );
 }

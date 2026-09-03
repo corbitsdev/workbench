@@ -9,8 +9,10 @@ import {
 describe("runStatusLabel", () => {
   test("every status a routine surface can show reads as words", () => {
     expect(runStatusLabel("running")).toBe("Running now");
+    expect(runStatusLabel("updating")).toBe("Running now");
     expect(runStatusLabel("completed")).toBe("Finished");
     expect(runStatusLabel("failed")).toBe("Failed");
+    expect(runStatusLabel("error")).toBe("Failed");
     expect(runStatusLabel("cancelled")).toBe("Cancelled");
     expect(runStatusLabel("queued")).toBe("Waiting to start");
   });

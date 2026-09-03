@@ -9,6 +9,8 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { FIRE_RUNNING_WINDOW_MS } from "@corbits/routines/client";
+
 import { listRoutineActivity } from "../src/shell/routine-activity";
 
 const realFetch = globalThis.fetch;
@@ -38,8 +40,8 @@ const runningFire = {
   tenantId: "tnt_1",
   address: "run_1@tnt1.example",
   status: "running",
-  createdAt: "2026-01-01T00:00:00.000Z",
-  updatedAt: "2026-01-01T00:00:00.000Z",
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
   routineId: "rtn_1",
   routineName: "Weekly digest",
 };
@@ -81,7 +83,7 @@ describe("listRoutineActivity", () => {
         id: "run_1",
         name: "Weekly digest",
         status: "running",
-        startedAt: "2026-01-01T00:00:00.000Z",
+        startedAt: runningFire.createdAt,
       },
     ]);
   });
@@ -92,6 +94,24 @@ describe("listRoutineActivity", () => {
   // item leaving that status here is what makes the two surfaces agree.
   test("a completed routine fire no longer reads as running", async () => {
     stubTopLevelRunsFetch([completedFire]);
+
+    const [item] = await listRoutineActivity("tnt_1");
+
+    expect(item?.status).not.toBe("running");
+  });
+
+  // Warm-keep (CL-6681 / CL-6778): the fires feed still reports `running`
+  // because the delivery agent stays deployed. Past the fire window that
+  // row must not count as routine activity in flight.
+  test("warm-keep: a running fire past the window no longer reads as running", async () => {
+    stubTopLevelRunsFetch([
+      {
+        ...runningFire,
+        createdAt: new Date(
+          Date.now() - FIRE_RUNNING_WINDOW_MS - 1,
+        ).toISOString(),
+      },
+    ]);
 
     const [item] = await listRoutineActivity("tnt_1");
 

@@ -31,6 +31,7 @@ export {
   lastFailedFire,
   medianFireDurationMs,
   routineHealth,
+  runOutcomeStatus,
 } from "./health";
 export type {
   RoutineFire,

@@ -65,7 +65,9 @@ export type RoutineHealth = {
   readonly medianDurationMs: number | null;
 };
 
-function statusOf(fire: RoutineFire): string | null {
+function statusOf(fire: {
+  readonly run?: Record<string, unknown>;
+}): string | null {
   const status = fire.run?.status;
   return typeof status === "string" ? status : null;
 }
@@ -91,7 +93,9 @@ export const FIRE_RUNNING_WINDOW_MS = 10 * 60 * 1000;
  * `fire.run?.status` directly.
  */
 export function fireOutcomeStatus(
-  fire: RoutineFire,
+  fire: Pick<RoutineFire, "createdAt"> & {
+    readonly run?: Record<string, unknown>;
+  },
   now: number,
 ): string | null {
   const status = statusOf(fire);
@@ -99,6 +103,23 @@ export function fireOutcomeStatus(
   const startedAt = Date.parse(fire.createdAt);
   if (Number.isNaN(startedAt)) return status;
   return now - startedAt > FIRE_RUNNING_WINDOW_MS ? "completed" : "running";
+}
+
+/**
+ * `fireOutcomeStatus` for a platform run whose status lives at the top
+ * level (`workflow_run.status`), not nested on a routine fire's `run`.
+ * Insights, Mission Control, and the shell activity feed all see that
+ * shape; they must not read the raw column while warm-keep (CL-6681)
+ * leaves a finished fire's delivery agent deployed.
+ */
+export function runOutcomeStatus(
+  run: { readonly createdAt: string; readonly status: string },
+  now: number,
+): string | null {
+  return fireOutcomeStatus(
+    { createdAt: run.createdAt, run: { status: run.status } },
+    now,
+  );
 }
 
 /** A fire failed when it recorded a launch error (the synthetic

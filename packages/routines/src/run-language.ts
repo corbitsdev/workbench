@@ -11,8 +11,10 @@
 
 const RUN_STATUS_WORDS: Readonly<Record<string, string>> = {
   running: "Running now",
+  updating: "Running now",
   completed: "Finished",
   failed: "Failed",
+  error: "Failed",
   cancelled: "Cancelled",
   queued: "Waiting to start",
   pending: "Waiting to start",

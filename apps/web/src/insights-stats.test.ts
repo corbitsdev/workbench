@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
+import { FIRE_RUNNING_WINDOW_MS } from "@corbits/routines/client";
+
 import {
   computeInsightsStats,
   computeTraceStats,
   filterRunsByCreatedAt,
   groupRunsByDefinition,
+  INSIGHTS_RECENT_LIMIT,
   purposeRunsForInsights,
   runDisplayName,
 } from "./insights-stats";
@@ -94,6 +97,8 @@ describe("computeInsightsStats", () => {
         routine({ id: "r1", enabled: true }),
         routine({ id: "r2", enabled: false }),
       ],
+      INSIGHTS_RECENT_LIMIT,
+      Date.parse("2026-01-03T00:01:00.000Z"),
     );
 
     expect(stats.totalRuns).toBe(3);
@@ -103,6 +108,22 @@ describe("computeInsightsStats", () => {
     expect(stats.routineCount).toBe(2);
     expect(stats.enabledRoutines).toBe(1);
     expect(stats.recentRuns.map((r) => r.id)).toEqual(["1", "2", "3"]);
+  });
+
+  test("warm-keep: a running run past the fire window is not counted as running", () => {
+    const stats = computeInsightsStats(
+      [
+        run({
+          id: "stale",
+          status: "running",
+          createdAt: new Date(
+            Date.now() - FIRE_RUNNING_WINDOW_MS - 1,
+          ).toISOString(),
+        }),
+      ],
+      [],
+    );
+    expect(stats.running).toBe(0);
   });
 
   test("limits recent runs", () => {

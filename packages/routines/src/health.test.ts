@@ -7,6 +7,7 @@ import {
   lastFailedFire,
   medianFireDurationMs,
   routineHealth,
+  runOutcomeStatus,
 } from "./health";
 import type { RoutineFire, RoutineHealthSubject } from "./health";
 
@@ -47,6 +48,13 @@ describe("fireOutcomeStatus", () => {
     ).toBe("completed");
   });
 
+  test("a running fire one millisecond inside its window still reads as running", () => {
+    const stillInside = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS;
+    expect(
+      fireOutcomeStatus(fire("r1", {}, { status: "running" }), stillInside),
+    ).toBe("running");
+  });
+
   test("every terminal status passes through unchanged, however old", () => {
     const longAfter = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS * 10;
     expect(
@@ -59,6 +67,36 @@ describe("fireOutcomeStatus", () => {
 
   test("null when the platform has no run to report", () => {
     expect(fireOutcomeStatus(fire("r1", {}, {}), NOW)).toBeNull();
+  });
+});
+
+describe("runOutcomeStatus", () => {
+  test("a top-level running status still inside its window reads as running", () => {
+    expect(
+      runOutcomeStatus({ createdAt: FIRE_CREATED_AT, status: "running" }, NOW),
+    ).toBe("running");
+  });
+
+  test("warm-keep: a top-level running status past its window reads as completed", () => {
+    const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+    expect(
+      runOutcomeStatus(
+        { createdAt: FIRE_CREATED_AT, status: "running" },
+        staleNow,
+      ),
+    ).toBe("completed");
+  });
+
+  test("updating and terminal platform statuses pass through", () => {
+    expect(
+      runOutcomeStatus({ createdAt: FIRE_CREATED_AT, status: "updating" }, NOW),
+    ).toBe("updating");
+    expect(
+      runOutcomeStatus({ createdAt: FIRE_CREATED_AT, status: "error" }, NOW),
+    ).toBe("error");
+    expect(
+      runOutcomeStatus({ createdAt: FIRE_CREATED_AT, status: "stopped" }, NOW),
+    ).toBe("stopped");
   });
 });
 

@@ -3,6 +3,7 @@
 // existing endpoints.
 
 import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
+import { runOutcomeStatus } from "@corbits/routines/client";
 
 import type { InsightsRun, RunTraceSpan } from "./insights-api";
 import type { Routine } from "./routines-api";
@@ -158,6 +159,7 @@ export function computeInsightsStats(
   runs: readonly InsightsRun[],
   routines: readonly Routine[],
   recentLimit: number = INSIGHTS_RECENT_LIMIT,
+  now: number = Date.now(),
 ): InsightsStats {
   const purposeful = purposeRunsForInsights(runs);
   let running = 0;
@@ -165,7 +167,8 @@ export function computeInsightsStats(
   let stopped = 0;
   let deployed = 0;
   for (const run of purposeful) {
-    switch (run.status) {
+    const outcome = runOutcomeStatus(run, now) ?? run.status;
+    switch (outcome) {
       case "running":
       case "updating":
         running += 1;
@@ -174,6 +177,7 @@ export function computeInsightsStats(
         errored += 1;
         break;
       case "stopped":
+      case "completed":
         stopped += 1;
         break;
       case "deployed":

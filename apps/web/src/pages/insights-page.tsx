@@ -13,7 +13,6 @@ import {
   PageShell,
   RichEmptyState,
   RUN_STATUS_DOT_TONE,
-  RUN_STATUS_LABEL,
   RUN_STATUS_TONE,
   Skeleton,
   StatGrid,
@@ -33,6 +32,7 @@ import {
   type TraceSpan,
 } from "@corbits/react-ui";
 import { ChartBar } from "@corbits/icons";
+import { runOutcomeStatus, runStatusLabel } from "@corbits/routines/client";
 import type * as React from "react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -54,7 +54,7 @@ import {
   type OverallUsage,
 } from "@corbits/insights/client";
 
-import type { WorkflowRunStatus } from "@intx/types";
+import { workflowRunStatuses, type WorkflowRunStatus } from "@intx/types";
 import { SignedOutNotice, type APIQuery } from "@corbits/api-query";
 import {
   workbenchesQueryKey,
@@ -143,6 +143,18 @@ const WORKFLOW_RUN_STATUS_ALIAS: Readonly<
 
 export function statusTone(status: WorkflowRunStatus): BadgeTone {
   return RUN_STATUS_TONE[WORKFLOW_RUN_STATUS_ALIAS[status]];
+}
+
+function isWorkflowRunStatus(status: string): status is WorkflowRunStatus {
+  return workflowRunStatuses.some((value) => value === status);
+}
+
+function insightsStatusTone(status: string): BadgeTone {
+  if (status === "completed") return RUN_STATUS_TONE.completed;
+  if (status === "failed") return RUN_STATUS_TONE.failed;
+  if (status === "cancelled") return RUN_STATUS_TONE.stopped;
+  if (isWorkflowRunStatus(status)) return statusTone(status);
+  return "neutral";
 }
 
 function tileValue(value: string | number | null, loading: boolean): string {
@@ -455,9 +467,20 @@ function useTickingNow(enabled: boolean): number {
 
 /** A run actually in flight right now (`status: running | updating`) —
  * liveness is not a windowed property, so this filters the full run set,
- * never the range-filtered one. */
-function isRunningNow(run: InsightsRun): boolean {
-  return run.status === "running" || run.status === "updating";
+ * never the range-filtered one. Warm-keep (CL-6681) leaves a finished
+ * fire's delivery agent deployed, so a lingering `running` past the fire
+ * window is not in flight — `runOutcomeStatus` is the one reading.
+ */
+export function isRunningNow(
+  run: InsightsRun,
+  now: number = Date.now(),
+): boolean {
+  const outcome = runOutcomeStatus(run, now);
+  return outcome === "running" || outcome === "updating";
+}
+
+function insightsRunStatus(run: InsightsRun, now: number = Date.now()): string {
+  return runOutcomeStatus(run, now) ?? run.status;
 }
 
 /**
@@ -475,8 +498,11 @@ function RunningNowStrip({
   readonly runs: readonly InsightsRun[];
   readonly onOpenRun: (id: string) => void;
 }) {
-  const running = runs.filter(isRunningNow);
-  const now = useTickingNow(running.length > 0);
+  const maybeLive = runs.some(
+    (run) => run.status === "running" || run.status === "updating",
+  );
+  const now = useTickingNow(maybeLive);
+  const running = runs.filter((run) => isRunningNow(run, now));
   if (running.length === 0) return null;
 
   return (
@@ -496,7 +522,7 @@ function RunningNowStrip({
               onClick={() => onOpenRun(run.id)}
             >
               <StatusDot
-                label={RUN_STATUS_LABEL.running}
+                label={runStatusLabel("running")}
                 tone={RUN_STATUS_DOT_TONE.running}
                 live
               />
@@ -507,7 +533,7 @@ function RunningNowStrip({
                 {elapsedLabel(run.createdAt, now)}
               </span>
               <Badge tone={RUN_STATUS_TONE.running}>
-                {RUN_STATUS_LABEL.running}
+                {runStatusLabel("running")}
               </Badge>
             </button>
           </li>
@@ -612,7 +638,9 @@ function RecentRunRows({
               </div>
             </TableCell>
             <TableCell className="text-right">
-              <Badge tone={statusTone(row.status)}>{row.status}</Badge>
+              <Badge tone={insightsStatusTone(insightsRunStatus(row))}>
+                {runStatusLabel(insightsRunStatus(row))}
+              </Badge>
             </TableCell>
           </TableRow>
         ))}
@@ -680,7 +708,9 @@ function InsightsLanding({
   // `range.from` and is still going is running right now regardless of when
   // it started, so "Running now" reads off every fetched run, never the
   // range-filtered subset above.
-  const runningNow = purposeRunsForInsights(runs).filter(isRunningNow);
+  const runningNow = purposeRunsForInsights(runs).filter((run) =>
+    isRunningNow(run),
+  );
 
   // Absent usage → zeros at the client boundary (never demo peaks / em-dash
   // for "no spend"). Real fetched summary is preserved when present.
@@ -999,7 +1029,9 @@ function DefinitionRunTable({
               {...onRowActivate(() => onOpenRun(row.id))}
             >
               <TableCell>
-                <Badge tone={statusTone(row.status)}>{row.status}</Badge>
+                <Badge tone={insightsStatusTone(insightsRunStatus(row))}>
+                  {runStatusLabel(insightsRunStatus(row))}
+                </Badge>
               </TableCell>
               <TableCell>{formatWhen(row.createdAt)}</TableCell>
               <TableCell>{runDurationLabel(row)}</TableCell>
