@@ -193,7 +193,7 @@ export const SETTINGS_STRINGS = {
 
   connectionsSectionTitle: "AI providers",
   connectionsSectionDescription:
-    "Choose the model route Myra and new workbenches use, then connect the providers behind it.",
+    "Choose the model route Myra and new agents use, then connect the providers behind it. Changing the default does not rewrite existing agents.",
   connectionsLoadError: "connections",
   connectionsStatusNotConnected: "Not connected",
   connectionsStatusConnected: "Connected",
