@@ -52,6 +52,7 @@ import type { ReactNode } from "react";
 import type * as Y from "yjs";
 
 import { useBench } from "../bench-context";
+import type { PresenceConnection } from "../presence/use-presence-room";
 import { workbenchPath } from "../workbench-path";
 import { ensureProfileDm, loadSharedWorkbenches } from "../profile-relations";
 import type {
@@ -90,6 +91,7 @@ export function CanvasColumn({
   artifactDoc,
   artifactSaveState,
   onArtifactTyping,
+  presenceConnection = "ok",
 }: {
   readonly open: boolean;
   readonly profile: ProfileSubject | null;
@@ -117,6 +119,8 @@ export function CanvasColumn({
   readonly artifactSaveState?: ArtifactSaveState;
   /** Fired on local typing start/stop in the text editor, for the host to publish through presence's `typing` awareness field. */
   readonly onArtifactTyping?: (typing: boolean) => void;
+  /** Quiet reconnecting caption when presence has failed more than once. */
+  readonly presenceConnection?: PresenceConnection;
 }) {
   // `inert` rather than `aria-hidden`: a collapsed column has to be out of
   // both the accessibility tree and the tab order, and `aria-hidden` alone
@@ -150,6 +154,7 @@ export function CanvasColumn({
             {...(artifactDoc !== undefined ? { artifactDoc } : {})}
             {...(artifactSaveState !== undefined ? { artifactSaveState } : {})}
             {...(onArtifactTyping !== undefined ? { onArtifactTyping } : {})}
+            presenceConnection={presenceConnection}
           />
         ) : routine !== null ? (
           <RoutinePanel />
@@ -511,6 +516,7 @@ function ArtifactCanvasPane({
   artifactDoc,
   artifactSaveState = { kind: "read-only" },
   onArtifactTyping,
+  presenceConnection = "ok",
 }: {
   readonly artifact: CanvasArtifactContent;
   readonly focus: boolean;
@@ -521,6 +527,7 @@ function ArtifactCanvasPane({
   readonly artifactDoc?: Y.Doc;
   readonly artifactSaveState?: ArtifactSaveState;
   readonly onArtifactTyping?: (typing: boolean) => void;
+  readonly presenceConnection?: PresenceConnection;
 }) {
   const showEditor = showsTextEditor(artifact, artifactDoc);
   return (
@@ -532,6 +539,18 @@ function ArtifactCanvasPane({
         onToggleFocus={onToggleFocus}
         {...(artifact.previewSrc !== undefined
           ? { previewSrc: artifact.previewSrc }
+          : {})}
+        {...(presenceConnection === "degraded"
+          ? {
+              trailing: (
+                <span
+                  className="shell-artifact-presence-status"
+                  aria-live="polite"
+                >
+                  Reconnecting…
+                </span>
+              ),
+            }
           : {})}
       />
       <div
