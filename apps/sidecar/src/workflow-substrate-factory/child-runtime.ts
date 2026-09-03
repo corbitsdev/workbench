@@ -43,11 +43,33 @@ import {
   type SourcesSnapshotRef,
 } from "@intx/workflow-host";
 import type { MailPartReader } from "@intx/types/runtime";
+import { reportError } from "@corbits/error-sink";
 
 import {
   parseStepInferenceSources,
   type StepInferenceSourceTable,
 } from "./config";
+
+function reportChildRuntimeRejection(
+  error: unknown,
+  operation: string,
+  childRunId: string,
+): void {
+  reportError(error, {
+    operation,
+    extra: { childRunId },
+  });
+}
+
+function fireAndForget(
+  work: Promise<unknown>,
+  operation: string,
+  childRunId: string,
+): void {
+  void work.catch((error: unknown) => {
+    reportChildRuntimeRejection(error, operation, childRunId);
+  });
+}
 
 /**
  * Real per-step invoker for an onTrigger BODY child, distinct from the
@@ -245,7 +267,11 @@ export function createSidecarRunChild(
       // workflow-process-signed cancel would be refused and a parent abort
       // would surface as a failed rather than cancelled child.
       const cancelOnAbort = (): void => {
-        void handle.cancel("supervisor-operator", "parent cancelled");
+        fireAndForget(
+          handle.cancel("supervisor-operator", "parent cancelled"),
+          "sidecar.child-runtime.cancel",
+          childRunId,
+        );
       };
       if (signal.aborted) {
         cancelOnAbort();
@@ -470,7 +496,11 @@ export function createSidecarSpawnSuspendableChild(
     // cancel would be refused and a parent abort would surface as a failed
     // rather than cancelled child.
     const cancelOnAbort = (): void => {
-      void handle.cancel("supervisor-operator", "parent cancelled");
+      fireAndForget(
+        handle.cancel("supervisor-operator", "parent cancelled"),
+        "sidecar.child-runtime.cancel",
+        childRunId,
+      );
     };
     if (signal.aborted) {
       cancelOnAbort();
@@ -491,7 +521,11 @@ export function createSidecarSpawnSuspendableChild(
       })
       .finally(() => {
         signal.removeEventListener("abort", cancelOnAbort);
-        void signalChannel.stop();
+        fireAndForget(
+          signalChannel.stop(),
+          "sidecar.child-runtime.signal-channel-stop",
+          childRunId,
+        );
         notify();
       });
 
@@ -505,9 +539,13 @@ export function createSidecarSpawnSuspendableChild(
               // Cancel the child so its terminal (and the channel teardown
               // tied to it) fires, then surface the error: the throw lands
               // the section run's terminal via `runOnTrigger`.
-              void handle.cancel(
-                "supervisor-operator",
-                "onTrigger body re-armed an unsupported input park",
+              fireAndForget(
+                handle.cancel(
+                  "supervisor-operator",
+                  "onTrigger body re-armed an unsupported input park",
+                ),
+                "sidecar.child-runtime.cancel",
+                childRunId,
               );
               throw event.error;
             }
