@@ -183,6 +183,13 @@ export interface SidecarRunChildDeps {
    * module swap.
    */
   reportError?: typeof reportError;
+  /**
+   * Test seam only — no production caller ever sets this. Defaults to
+   * `@intx/workflow-host`'s `createWorkflowHostSignalChannel`. Paired with
+   * `reportError` so a stop-rejection test can observe reports without a
+   * process-wide module swap.
+   */
+  createSignalChannel?: typeof createWorkflowHostSignalChannel;
 }
 
 /**
@@ -635,7 +642,9 @@ function buildChildRunEnv(args: {
     runId: childRunId,
     ref: deps.workflowRunRef,
   });
-  const signalChannel = createWorkflowHostSignalChannel({
+  const startChannel =
+    deps.createSignalChannel ?? createWorkflowHostSignalChannel;
+  const signalChannel = startChannel({
     repoStore: deps.substrate,
     principal: deps.principal,
     repoId: deps.workflowRunRepoId,
