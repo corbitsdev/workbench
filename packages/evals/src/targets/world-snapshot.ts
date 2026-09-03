@@ -35,6 +35,7 @@ import {
   connectorDescriptors,
   listMcpServerConnections,
 } from "@corbits/connections";
+import { CONNECTOR_REGISTRY } from "@workbench/templates/connectors";
 
 import type { FakeReceipt, WorldSnapshot } from "../types.ts";
 
@@ -126,7 +127,7 @@ async function readConnections(
   // which is not an MCP server and was invisible to this snapshot
   // before.
   const fromConnectors: typeof fromMcp = [];
-  for (const descriptor of connectorDescriptors()) {
+  for (const descriptor of connectorDescriptors(CONNECTOR_REGISTRY)) {
     const row = await resolveByName(db, tenantId, descriptor.displayName);
     if (row === null) continue;
     fromConnectors.push({

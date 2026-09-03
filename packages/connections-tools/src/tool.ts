@@ -30,8 +30,11 @@
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
-import { CONNECTOR_REGISTRY } from "@corbits/connections";
-import { MCP_PRESETS, mcpPresetByName } from "@corbits/connections/mcp-presets";
+import { mcpPresetByName } from "@corbits/connections/mcp-presets";
+import {
+  CONNECTOR_REGISTRY,
+  MCP_PRESETS,
+} from "@workbench/templates/connectors";
 import { type } from "arktype";
 
 import {
@@ -232,7 +235,7 @@ async function runRequestConnection(
   // to "connect Exa" should land on that MCP card, not the old api-key
   // one, which `settings-ui`/`plugins-ui` no longer render as a separate
   // card at all.
-  const preset = mcpPresetByName(parsed.connector);
+  const preset = mcpPresetByName(MCP_PRESETS, parsed.connector);
   if (preset !== undefined) {
     try {
       const mcpServers = await listMcpServerConnections(clientConfig(env));

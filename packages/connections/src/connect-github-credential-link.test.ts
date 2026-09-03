@@ -15,12 +15,25 @@ import type { MiddlewareHandler } from "hono";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import type { EnsureCredentialArgs } from "@corbits/seeding";
 import type { ApiCall } from "@corbits/hub-api-client";
-import {
-  CONNECTOR_REGISTRY,
-  persistConnectorCredential,
-} from "@corbits/connections";
+import { persistConnectorCredential } from "@corbits/connections";
+import type { ConnectorDescriptor } from "@corbits/connections/registry";
 
 import { createConnectGithubRoutes } from "./connect-github-routes";
+
+/** A fixture standing in for the real `github` connector descriptor a
+ * build's own connector set (`templates/connectors.ts`) carries — this
+ * package holds no concrete connector set of its own (CL-7384), so its
+ * own tests build the minimal shape `persistConnectorCredential` and
+ * `createConnectGithubRoutes` actually read. */
+const GITHUB_DESCRIPTOR: ConnectorDescriptor = {
+  id: "github",
+  displayName: "GitHub",
+  authKind: "api-key",
+  credentialPlugin: "http",
+  docsUrl: "https://github.com/settings/tokens",
+  feedsTools: ["@corbits/github-tools"],
+  probe: async () => ({ ok: true }),
+};
 
 const TENANT = {
   id: "tnt_1",
@@ -100,15 +113,8 @@ function buildResolveGithubConfig(
   };
 }
 
-/** `CONNECTOR_REGISTRY["github"]` is a fixed registry entry that always
- * exists; a missing one is a broken test fixture, not a case to assert
- * away with a non-null assertion. */
 function requireGithubDescriptor() {
-  const descriptor = CONNECTOR_REGISTRY["github"];
-  if (descriptor === undefined) {
-    throw new Error('CONNECTOR_REGISTRY has no "github" entry');
-  }
-  return descriptor;
+  return GITHUB_DESCRIPTOR;
 }
 
 describe("the room GitHub connect card reads what its own submit writes", () => {

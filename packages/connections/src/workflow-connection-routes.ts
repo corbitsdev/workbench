@@ -39,7 +39,7 @@
 // endpoint below.
 import { Hono } from "hono";
 
-import { CONNECTOR_REGISTRY } from "./registry";
+import type { ConnectorDescriptor } from "./descriptor";
 import type { McpServerConnection } from "./mcp-server-store";
 
 /**
@@ -80,6 +80,9 @@ export type ConnectionSummary = {
 
 export type CreateWorkflowConnectionRoutesDeps = {
   readonly authenticator: WorkflowRunAuthenticator;
+  /** The connector set this build ships — this package carries none of
+   * its own (CL-7384), so a caller always supplies one. */
+  readonly registry: Readonly<Record<string, ConnectorDescriptor>>;
   /** A port, not a raw `db` handle — keeps this package decoupled from
    * the credentials schema, mirroring `@corbits/routines`' routes.ts
    * taking ports rather than reaching for database access directly.
@@ -134,7 +137,7 @@ export function createWorkflowConnectionRoutes(
 
   app.get("/connections", async (c) => {
     const scope = c.get("workflowConnectionScope");
-    const descriptors = Object.values(CONNECTOR_REGISTRY);
+    const descriptors = Object.values(deps.registry);
     const connections: ConnectionSummary[] = await Promise.all(
       descriptors.map(async (descriptor) => ({
         id: descriptor.id,

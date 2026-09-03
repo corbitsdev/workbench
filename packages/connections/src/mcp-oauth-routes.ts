@@ -32,7 +32,7 @@ import type { OAuthClientInformationMixed } from "@modelcontextprotocol/sdk/shar
 import { createMcpOAuthProvider, type McpOAuthSession } from "./mcp-oauth";
 import { createConnectStateStore, randomToken } from "./pkce";
 import { fireConnectedHook, type ServiceConnectedHook } from "./connected-hook";
-import { mcpPresetBySlug } from "./mcp-presets";
+import { mcpPresetBySlug, type McpPreset } from "./mcp-presets";
 import { probeMcpServer, type McpProbeResult } from "./mcp-probe";
 import { reportError } from "@corbits/error-sink";
 import {
@@ -172,6 +172,10 @@ export type CreateMcpOAuthRoutesDeps = {
   requireGrant: RequireGrant;
   log: (line: string) => void;
   credentialCipher: CredentialCipher;
+  /** The curated MCP preset list this build ships — this package
+   * carries none of its own (CL-7384), so a caller always supplies
+   * one. */
+  presets: readonly McpPreset[];
   apiCall?: ApiCall;
   probe?: typeof probeMcpServer;
   defaultReturnPath?: string;
@@ -184,6 +188,7 @@ export type CreateMcpOAuthRoutesDeps = {
 };
 
 function resolveTarget(
+  presets: readonly McpPreset[],
   slugParam: string,
   queryUrl: string | undefined,
   queryName: string | undefined,
@@ -193,7 +198,7 @@ function resolveTarget(
       queryName !== undefined && queryName.length > 0 ? queryName : slugParam;
     return { slug: slugParam, name, url: queryUrl };
   }
-  const preset = mcpPresetBySlug(slugParam);
+  const preset = mcpPresetBySlug(presets, slugParam);
   if (preset === undefined) return undefined;
   return { slug: preset.slug, name: preset.displayName, url: preset.url };
 }
@@ -229,6 +234,7 @@ export function createMcpOAuthRoutes(
     async (c) => {
       const slugParam = c.req.param("slug");
       const target = resolveTarget(
+        deps.presets,
         slugParam,
         c.req.query("url"),
         c.req.query("name"),
@@ -251,7 +257,7 @@ export function createMcpOAuthRoutes(
       const queryUrl = c.req.query("url");
       const preset =
         queryUrl === undefined || queryUrl.length === 0
-          ? mcpPresetBySlug(slugParam)
+          ? mcpPresetBySlug(deps.presets, slugParam)
           : undefined;
       if (preset !== undefined && preset.connectionMode !== "oauth") {
         // A keyless or token preset has no OAuth dance to start — refuse
@@ -446,7 +452,7 @@ export function createMcpOAuthRoutes(
             }
           : {}),
       };
-      const callbackPreset = mcpPresetBySlug(payload.slug);
+      const callbackPreset = mcpPresetBySlug(deps.presets, payload.slug);
       const provider = createMcpOAuthProvider({
         callbackUrl,
         clientName: "Corbits Workbench",

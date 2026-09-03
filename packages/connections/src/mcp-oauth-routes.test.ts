@@ -15,8 +15,58 @@ import { createNoopCredentialCipher } from "@intx/crypto";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import type { ApiCall } from "@corbits/hub-api-client";
 import { createMcpOAuthRoutes } from "./mcp-oauth-routes";
-import { mcpPresetBySlug } from "./mcp-presets";
+import { mcpPresetBySlug, type McpPreset } from "./mcp-presets";
 import type { McpProbeResult } from "./mcp-probe";
+
+/** Fixtures standing in for the real curated preset list a build's own
+ * `templates/connectors.ts` carries — this package holds no concrete
+ * preset list of its own (CL-7384). */
+const TEST_PRESETS: readonly McpPreset[] = [
+  {
+    slug: "exa",
+    displayName: "Exa",
+    description: "Search and research the live web.",
+    url: "https://mcp.exa.ai/mcp",
+    connectionMode: "keyless",
+    docsUrl: "https://docs.exa.ai/reference/exa-mcp",
+    nativeConnectorId: "exa",
+  },
+  {
+    slug: "github-mcp",
+    displayName: "GitHub MCP",
+    description: "Search code, work with issues and pull requests.",
+    url: "https://api.githubcopilot.com/mcp/",
+    connectionMode: "token",
+    docsUrl: "https://github.com/settings/tokens",
+    tokenSteps: ["Open github.com/settings/tokens and generate a new token."],
+  },
+  {
+    slug: "canva",
+    displayName: "Canva",
+    description: "Design decks, docs, and graphics.",
+    url: "https://mcp.canva.com/mcp",
+    connectionMode: "oauth",
+    docsUrl: "https://www.canva.dev/docs/mcp/",
+    oauthScopes: [
+      "profile:read",
+      "design:meta:read",
+      "design:content:write",
+      "design:content:read",
+      "folder:read",
+      "folder:write",
+      "brandtemplate:content:read",
+      "brandtemplate:meta:read",
+      "brandtemplate:content:write",
+      "comment:write",
+      "comment:read",
+      "asset:read",
+      "asset:write",
+      "brandkit:read",
+      "help:answers:read",
+      "help:answers:write",
+    ],
+  },
+];
 
 const TENANT = {
   id: "tnt_1",
@@ -322,6 +372,7 @@ describe("MCP OAuth connect flow", () => {
         requireGrant: allowAll,
         log: () => {},
         credentialCipher: createNoopCredentialCipher(),
+        presets: TEST_PRESETS,
         apiCall: hub.apiCall,
       });
       const app = mountAs(routes);
@@ -398,6 +449,7 @@ describe("MCP OAuth connect flow", () => {
         requireGrant: allowAll,
         log: () => {},
         credentialCipher: createNoopCredentialCipher(),
+        presets: TEST_PRESETS,
         apiCall: hub.apiCall,
       });
       const app = mountAs(routes);
@@ -410,7 +462,7 @@ describe("MCP OAuth connect flow", () => {
       const location = response.headers.get("location") ?? "";
       expect(location.startsWith(`${canvaOrigin}/authorize`)).toBe(true);
       expect(as.registrationBodies).toHaveLength(1);
-      const canvaScopes = mcpPresetBySlug("canva")?.oauthScopes;
+      const canvaScopes = mcpPresetBySlug(TEST_PRESETS, "canva")?.oauthScopes;
       expect(canvaScopes).toHaveLength(16);
       const dcrBody = as.registrationBodies[0];
       expect(dcrBody).toEqual(
@@ -471,6 +523,7 @@ describe("MCP OAuth connect flow", () => {
         requireGrant: allowAll,
         log: () => {},
         credentialCipher: createNoopCredentialCipher(),
+        presets: TEST_PRESETS,
         apiCall: hub.apiCall,
       });
       const app = mountAs(routes);
@@ -537,6 +590,7 @@ describe("MCP OAuth connect flow", () => {
         requireGrant: allowAll,
         log: () => {},
         credentialCipher: createNoopCredentialCipher(),
+        presets: TEST_PRESETS,
         apiCall: hub.apiCall,
       });
       const app = mountAs(routes);
@@ -602,6 +656,7 @@ describe("MCP OAuth connect flow", () => {
         requireGrant: allowAll,
         log: () => {},
         credentialCipher: createNoopCredentialCipher(),
+        presets: TEST_PRESETS,
         apiCall: hub.apiCall,
       });
       const app = mountAs(routes);
@@ -629,6 +684,7 @@ describe("MCP OAuth connect flow", () => {
       requireGrant: allowAll,
       log: () => {},
       credentialCipher: createNoopCredentialCipher(),
+      presets: TEST_PRESETS,
       apiCall: hub.apiCall,
     });
     const app = mountAs(routes);
@@ -659,6 +715,7 @@ describe("MCP OAuth connect flow", () => {
         requireGrant: allowAll,
         log: () => {},
         credentialCipher: createNoopCredentialCipher(),
+        presets: TEST_PRESETS,
         apiCall: hub.apiCall,
         probe: async (_url, token): Promise<McpProbeResult> => {
           probedToken = token;
@@ -696,6 +753,7 @@ describe("MCP OAuth connect flow", () => {
         requireGrant: allowAll,
         log: () => {},
         credentialCipher: createNoopCredentialCipher(),
+        presets: TEST_PRESETS,
         apiCall: hub.apiCall,
       });
       const app = mountAs(routes);
@@ -757,6 +815,7 @@ describe("MCP OAuth connect flow", () => {
         requireGrant: allowAll,
         log: () => {},
         credentialCipher: createNoopCredentialCipher(),
+        presets: TEST_PRESETS,
         apiCall: failingApiCall,
         probe: async (): Promise<McpProbeResult> => ({
           ok: true,
@@ -798,6 +857,7 @@ describe("MCP OAuth connect flow", () => {
         requireGrant: allowAll,
         log: () => {},
         credentialCipher: createNoopCredentialCipher(),
+        presets: TEST_PRESETS,
         apiCall: hub.apiCall,
         probe: async (): Promise<McpProbeResult> => ({
           ok: true,
@@ -835,6 +895,7 @@ describe("MCP OAuth connect flow", () => {
         requireGrant: allowAll,
         log: () => {},
         credentialCipher: createNoopCredentialCipher(),
+        presets: TEST_PRESETS,
         apiCall: hub.apiCall,
         probe: async (): Promise<McpProbeResult> => ({
           ok: true,
@@ -865,6 +926,7 @@ describe("MCP OAuth connect flow", () => {
       requireGrant: allowAll,
       log: () => {},
       credentialCipher: createNoopCredentialCipher(),
+      presets: TEST_PRESETS,
       apiCall: hub.apiCall,
     });
     const app = mountAs(routes);
@@ -884,6 +946,7 @@ describe("MCP OAuth connect flow", () => {
       requireGrant: allowAll,
       log: () => {},
       credentialCipher: createNoopCredentialCipher(),
+      presets: TEST_PRESETS,
       apiCall: hub.apiCall,
     });
     const app = mountAs(routes);
@@ -909,6 +972,7 @@ describe("MCP OAuth connect flow", () => {
         requireGrant: allowAll,
         log: () => {},
         credentialCipher: createNoopCredentialCipher(),
+        presets: TEST_PRESETS,
         apiCall: hub.apiCall,
         probe: async (): Promise<McpProbeResult> => ({
           ok: true,
@@ -937,6 +1001,7 @@ describe("MCP OAuth connect flow", () => {
         requireGrant: allowAll,
         log: () => {},
         credentialCipher: createNoopCredentialCipher(),
+        presets: TEST_PRESETS,
         apiCall: hub.apiCall,
         probe: async (): Promise<McpProbeResult> => ({
           ok: true,
@@ -970,6 +1035,7 @@ describe("MCP OAuth connect flow", () => {
         requireGrant: allowAll,
         log: () => {},
         credentialCipher: createNoopCredentialCipher(),
+        presets: TEST_PRESETS,
         apiCall: hub.apiCall,
         probe: async (): Promise<McpProbeResult> => ({
           ok: true,
@@ -1026,6 +1092,7 @@ describe("MCP OAuth connect flow", () => {
       requireGrant: allowAll,
       log: () => {},
       credentialCipher: createNoopCredentialCipher(),
+      presets: TEST_PRESETS,
       apiCall: hub.apiCall,
     });
     const app = mountAs(routes);
@@ -1050,6 +1117,7 @@ describe("onConnected hook", () => {
         requireGrant: allowAll,
         log: () => {},
         credentialCipher: createNoopCredentialCipher(),
+        presets: TEST_PRESETS,
         apiCall: hub.apiCall,
         probe: async (): Promise<McpProbeResult> => ({
           ok: true,

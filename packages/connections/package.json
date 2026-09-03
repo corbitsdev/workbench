@@ -16,7 +16,13 @@
     "./connect-github-setup": "./src/connect-github-setup.ts",
     "./reconcile-duplicate-repo-grants": "./src/reconcile-duplicate-repo-grants.ts",
     "./credential-test": "./src/credential-test.ts",
-    "./model-capability": "./src/model-capability.ts"
+    "./model-capability": "./src/model-capability.ts",
+    "./template-settings": "./src/template-settings.ts",
+    "./probes": "./src/probes.ts",
+    "./huggingface-connect": "./src/huggingface-connect.ts",
+    "./gmail-connect": "./src/gmail-connect.ts",
+    "./openrouter-connect": "./src/openrouter-connect.ts",
+    "./github-connect": "./src/github-connect.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -36,7 +42,6 @@
     "@modelcontextprotocol/sdk": "catalog:",
     "@corbits/hub-api-client": "workspace:*",
     "@corbits/seeding": "workspace:*",
-    "@workbench/templates": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "hono": "^4.11.9",

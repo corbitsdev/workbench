@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { CONNECTOR_REGISTRY, connectorDescriptors } from "./registry";
+import { connectorDescriptors } from "@corbits/connections/registry";
+import {
+  mcpPresetByName,
+  mcpPresetBySlug,
+} from "@corbits/connections/mcp-presets";
+import {
+  CONNECTOR_REGISTRY,
+  MCP_PRESET_CONNECTOR_IDS,
+  MCP_PRESETS,
+} from "./connectors";
 
 describe("CONNECTOR_REGISTRY", () => {
   test("every entry has an id, displayName, and docsUrl", () => {
@@ -156,7 +165,7 @@ describe("granola-webhook", () => {
 
 describe("connectorDescriptors", () => {
   test("returns every registry entry", () => {
-    expect(connectorDescriptors().length).toBe(
+    expect(connectorDescriptors(CONNECTOR_REGISTRY).length).toBe(
       Object.keys(CONNECTOR_REGISTRY).length,
     );
   });
@@ -215,5 +224,143 @@ describe("gmail connector", () => {
     expect(url.searchParams.get("access_type")).toBe("offline");
     expect(url.searchParams.get("code_challenge")).toBe("challenge-1");
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+  });
+});
+
+describe("MCP_PRESETS", () => {
+  test("lists only verified zero-configuration remote MCP servers", () => {
+    const slugs = MCP_PRESETS.map((preset) => preset.slug).sort();
+    expect(slugs).toEqual(
+      [
+        "attio",
+        "canva",
+        "exa",
+        "github-mcp",
+        "granola",
+        "linear",
+        "notion",
+        "posthog",
+        "railway",
+        "sentry",
+        "sumble",
+      ].sort(),
+    );
+    for (const preset of MCP_PRESETS) {
+      expect(() => new URL(preset.url)).not.toThrow();
+      expect(preset.url.startsWith("https://")).toBe(true);
+    }
+  });
+
+  test("Exa is keyless, GitHub MCP is token, every other preset uses OAuth", () => {
+    expect(mcpPresetBySlug(MCP_PRESETS, "exa")?.connectionMode).toBe("keyless");
+    expect(mcpPresetBySlug(MCP_PRESETS, "github-mcp")?.connectionMode).toBe(
+      "token",
+    );
+    for (const preset of MCP_PRESETS) {
+      if (preset.slug === "exa" || preset.slug === "github-mcp") continue;
+      expect(preset.connectionMode).toBe("oauth");
+    }
+  });
+
+  test("GitHub MCP is a token preset that never shadows the github connector", () => {
+    const preset = mcpPresetBySlug(MCP_PRESETS, "github-mcp");
+    expect(preset?.displayName).toBe("GitHub MCP");
+    expect(preset?.url).toBe("https://api.githubcopilot.com/mcp/");
+    // GitHub's MCP server accepts a personal access token as a bearer but
+    // offers no dynamic client registration, so OAuth can't complete here.
+    expect(preset?.connectionMode).toBe("token");
+    expect(preset?.docsUrl).toBe("https://github.com/settings/tokens");
+    expect(preset?.tokenSteps?.length).toBeGreaterThanOrEqual(2);
+    // The native `github` REST connector (PAT/OAuth-App) stays its own
+    // card: no nativeConnectorId hides it, and neither "github" the slug
+    // nor "GitHub" the display name resolves to this preset.
+    expect(preset?.nativeConnectorId).toBeUndefined();
+    expect(CONNECTOR_REGISTRY["github"]).toBeDefined();
+    expect(mcpPresetByName(MCP_PRESETS, "github")).toBeUndefined();
+    expect(mcpPresetByName(MCP_PRESETS, "GitHub")).toBeUndefined();
+    expect(mcpPresetByName(MCP_PRESETS, "github mcp")?.slug).toBe("github-mcp");
+  });
+
+  test("uses Sumble's OAuth MCP host, not its product-page URL", () => {
+    expect(mcpPresetBySlug(MCP_PRESETS, "sumble")?.url).toBe(
+      "https://mcp.sumble.com/",
+    );
+    expect(mcpPresetBySlug(MCP_PRESETS, "sumble")?.connectionMode).toBe(
+      "oauth",
+    );
+  });
+
+  test("keeps every verified endpoint exact", () => {
+    expect(
+      Object.fromEntries(
+        MCP_PRESETS.map((preset) => [preset.slug, preset.url]),
+      ),
+    ).toEqual({
+      granola: "https://mcp.granola.ai/mcp",
+      exa: "https://mcp.exa.ai/mcp",
+      "github-mcp": "https://api.githubcopilot.com/mcp/",
+      linear: "https://mcp.linear.app/mcp",
+      notion: "https://mcp.notion.com/mcp",
+      sentry: "https://mcp.sentry.dev/mcp",
+      attio: "https://mcp.attio.com/mcp",
+      railway: "https://mcp.railway.com",
+      posthog: "https://mcp.posthog.com/mcp",
+      sumble: "https://mcp.sumble.com/",
+      canva: "https://mcp.canva.com/mcp",
+    });
+  });
+
+  test("every preset's nativeConnectorId names a real registry entry", () => {
+    for (const preset of MCP_PRESETS) {
+      if (preset.nativeConnectorId === undefined) continue;
+      expect(CONNECTOR_REGISTRY[preset.nativeConnectorId]).toBeDefined();
+    }
+  });
+
+  test("MCP_PRESET_CONNECTOR_IDS matches the presets' native ids", () => {
+    expect(new Set(MCP_PRESET_CONNECTOR_IDS)).toEqual(
+      new Set(["granola", "exa", "linear"]),
+    );
+  });
+
+  test("mcpPresetByName resolves by slug or display name, case-insensitively", () => {
+    expect(mcpPresetByName(MCP_PRESETS, "Exa")?.slug).toBe("exa");
+    expect(mcpPresetByName(MCP_PRESETS, "EXA")?.slug).toBe("exa");
+    expect(mcpPresetByName(MCP_PRESETS, "granola")?.slug).toBe("granola");
+    expect(mcpPresetByName(MCP_PRESETS, "nope")).toBeUndefined();
+  });
+
+  test("mcpPresetBySlug returns undefined for an unknown slug", () => {
+    expect(mcpPresetBySlug(MCP_PRESETS, "not-a-preset")).toBeUndefined();
+  });
+
+  test("Canva is a DCR-verified OAuth preset with no simple-icons mark yet", () => {
+    expect(mcpPresetBySlug(MCP_PRESETS, "canva")?.connectionMode).toBe("oauth");
+    expect(mcpPresetBySlug(MCP_PRESETS, "canva")?.icon).toBeUndefined();
+  });
+
+  test("Canva lists the 16 live PRM OAuth scopes; other presets omit oauthScopes", () => {
+    expect(mcpPresetBySlug(MCP_PRESETS, "canva")?.oauthScopes).toEqual([
+      "profile:read",
+      "design:meta:read",
+      "design:content:write",
+      "design:content:read",
+      "folder:read",
+      "folder:write",
+      "brandtemplate:content:read",
+      "brandtemplate:meta:read",
+      "brandtemplate:content:write",
+      "comment:write",
+      "comment:read",
+      "asset:read",
+      "asset:write",
+      "brandkit:read",
+      "help:answers:read",
+      "help:answers:write",
+    ]);
+    for (const preset of MCP_PRESETS) {
+      if (preset.slug === "canva") continue;
+      expect("oauthScopes" in preset).toBe(false);
+    }
   });
 });

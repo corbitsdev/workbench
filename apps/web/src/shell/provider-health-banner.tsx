@@ -16,6 +16,7 @@
 import { Button } from "@corbits/react-ui";
 import { connectorDescriptors } from "@corbits/connections/registry";
 import type { ClassifiedInferenceFailureCategory } from "@corbits/connections/provider-health";
+import { CONNECTOR_REGISTRY } from "@workbench/templates/connectors";
 import { Warning, X } from "@corbits/icons";
 import { useEffect, useState } from "react";
 
@@ -57,7 +58,9 @@ const POLL_ERROR_COPY = "Couldn't check provider health. Try again shortly.";
 // expected in practice, but a caller should still see something rather
 // than nothing).
 function providerDisplayName(provider: string): string {
-  const descriptor = connectorDescriptors().find((d) => d.id === provider);
+  const descriptor = connectorDescriptors(CONNECTOR_REGISTRY).find(
+    (d) => d.id === provider,
+  );
   return descriptor?.displayName ?? provider;
 }
 

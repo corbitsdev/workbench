@@ -4,6 +4,37 @@ import {
   createWorkflowConnectionRoutes,
   type WorkflowConnectionRunScope,
 } from "./workflow-connection-routes";
+import type { ConnectorRegistry } from "./registry";
+
+/** A fixture standing in for the real connector set a build's own
+ * `templates/connectors.ts` carries — this package holds no concrete
+ * connector set of its own (CL-7384). */
+const TEST_REGISTRY: ConnectorRegistry = {
+  github: {
+    id: "github",
+    displayName: "GitHub",
+    authKind: "api-key",
+    credentialPlugin: "http",
+    docsUrl: "https://github.com/settings/tokens",
+    feedsTools: ["@corbits/github-tools"],
+  },
+  linear: {
+    id: "linear",
+    displayName: "Linear",
+    authKind: "api-key",
+    credentialPlugin: "http-raw-authorization",
+    docsUrl: "https://linear.app/settings/api",
+    feedsTools: ["@corbits/linear-tools"],
+  },
+  anthropic: {
+    id: "anthropic",
+    displayName: "Anthropic",
+    authKind: "api-key",
+    credentialPlugin: "http",
+    docsUrl: "https://console.anthropic.com/settings/keys",
+    feedsTools: [],
+  },
+};
 
 const VALID_TOKEN = "sc-token";
 const VALID_ADDRESS = "run_1@workflow";
@@ -24,6 +55,7 @@ describe("createWorkflowConnectionRoutes", () => {
   test("rejects a call with a missing or unrecognized sidecar bearer token / run address", async () => {
     const app = createWorkflowConnectionRoutes({
       authenticator: fakeAuthenticator(),
+      registry: TEST_REGISTRY,
       isConnectorConnected: async () => false,
     });
 
@@ -48,6 +80,7 @@ describe("createWorkflowConnectionRoutes", () => {
     let seenConnectorId: string | undefined;
     const app = createWorkflowConnectionRoutes({
       authenticator: fakeAuthenticator(),
+      registry: TEST_REGISTRY,
       isConnectorConnected: async (tenantId, connectorId) => {
         if (connectorId === "github") {
           seenTenantId = tenantId;
@@ -78,6 +111,7 @@ describe("createWorkflowConnectionRoutes", () => {
   test("still reports an unconnected connector as not connected", async () => {
     const app = createWorkflowConnectionRoutes({
       authenticator: fakeAuthenticator(),
+      registry: TEST_REGISTRY,
       isConnectorConnected: async () => false,
     });
 
@@ -103,6 +137,7 @@ describe("createWorkflowConnectionRoutes", () => {
   test("keeps reporting an inference provider (Anthropic) connected", async () => {
     const app = createWorkflowConnectionRoutes({
       authenticator: fakeAuthenticator(),
+      registry: TEST_REGISTRY,
       isConnectorConnected: async (_tenantId, connectorId) =>
         connectorId === "anthropic",
     });
@@ -126,6 +161,7 @@ describe("createWorkflowConnectionRoutes", () => {
     let called = false;
     const app = createWorkflowConnectionRoutes({
       authenticator: fakeAuthenticator(),
+      registry: TEST_REGISTRY,
       isConnectorConnected: async () => {
         called = true;
         return false;

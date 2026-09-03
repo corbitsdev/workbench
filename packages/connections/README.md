@@ -1,9 +1,15 @@
 # @corbits/connections
 
 The Connections settings surface: shared PKCE/state primitives for OAuth
-connect flows, the connector registry (inference providers plus
-tool-credential connectors), and the route factories that test, store, and
-resolve a connector's credential across a tenant chain.
+connect flows, the `ConnectorDescriptor`/`ConnectorRegistry` shape (and
+the curated `McpPreset` shape), and the route factories that test, store,
+and resolve a connector's credential across a tenant chain. This package
+carries no concrete connector set of its own (CL-7384) — a caller builds
+one with `createConnectorRegistry` and passes it into every factory that
+needs one. Workbench's own connector set (the inference providers plus
+Granola, Exa, ScrapeCreators, Linear, GitHub, Gmail, and the curated MCP
+presets) lives in `templates/connectors.ts`, the product-data package,
+never here.
 
 ## How it composes with Interchange
 
@@ -21,10 +27,11 @@ resolve a connector's credential across a tenant chain.
 
 ## Key modules
 
-- `registry.ts` — the browser-safe `ConnectorDescriptor` map for every
-  api-key and OAuth connector (inference providers plus Granola, Exa,
-  ScrapeCreators, Linear, GitHub); imported directly by `settings-ui`
-  without pulling in `hono` or `@intx/inference`.
+- `registry.ts` — the browser-safe `ConnectorDescriptor`/`ConnectorRegistry`
+  shape and `createConnectorRegistry`/`connectorDescriptors` helpers; no
+  concrete connector set lives here (see `templates/connectors.ts`).
+  Imported directly by `settings-ui` without pulling in `hono` or
+  `@intx/inference`.
 - `descriptor.ts` — the `ConnectorDescriptor`/`ConnectorOAuthConfig` shape
   every registry entry implements.
 - `routes.ts` — tenant-scoped `POST /:connectorId/complete`: proves an

@@ -11,7 +11,7 @@ import type { ResolvedPlugin } from "@corbits/connections/plugins";
 import {
   MCP_PRESETS,
   MCP_PRESET_CONNECTOR_IDS,
-} from "@corbits/connections/mcp-presets";
+} from "@workbench/templates/connectors";
 import { Lightning } from "@corbits/icons";
 import { useMemo } from "react";
 

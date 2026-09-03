@@ -16,6 +16,7 @@
     "@intx/agent": "workspace:*",
     "@intx/types": "workspace:*",
     "@corbits/connections": "workspace:*",
+    "@workbench/templates": "workspace:*",
     "arktype": "catalog:"
   },
   "devDependencies": {

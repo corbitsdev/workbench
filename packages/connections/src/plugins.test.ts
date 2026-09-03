@@ -7,6 +7,29 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { listPluginsForTenant } from "./plugins";
+import type { ConnectorRegistry } from "./registry";
+
+/** A fixture standing in for the real connector set a build's own
+ * `templates/connectors.ts` carries — this package holds no concrete
+ * connector set of its own (CL-7384). */
+const TEST_REGISTRY: ConnectorRegistry = {
+  github: {
+    id: "github",
+    displayName: "GitHub",
+    authKind: "api-key",
+    credentialPlugin: "http",
+    docsUrl: "https://github.com/settings/tokens",
+    feedsTools: ["@corbits/github-tools"],
+  },
+  "granola-webhook": {
+    id: "granola-webhook",
+    displayName: "Granola inbound webhook",
+    authKind: "webhook-secret",
+    credentialPlugin: "http",
+    docsUrl: "https://www.granola.ai",
+    feedsTools: [],
+  },
+};
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
@@ -43,7 +66,7 @@ describe("listPluginsForTenant", () => {
       }),
     });
 
-    const resolved = await listPluginsForTenant("bench_1");
+    const resolved = await listPluginsForTenant("bench_1", TEST_REGISTRY);
     const github = resolved.find((entry) => entry.descriptor.id === "github");
 
     expect(github?.status).toBe("connected");
@@ -62,7 +85,7 @@ describe("listPluginsForTenant", () => {
       }),
     });
 
-    const resolved = await listPluginsForTenant("bench_1");
+    const resolved = await listPluginsForTenant("bench_1", TEST_REGISTRY);
     const github = resolved.find((entry) => entry.descriptor.id === "github");
 
     expect(github?.status).toBe("connected");
@@ -72,7 +95,7 @@ describe("listPluginsForTenant", () => {
   test("no credential anywhere in the chain (404) resolves as not connected", async () => {
     stubFetch({});
 
-    const resolved = await listPluginsForTenant("bench_1");
+    const resolved = await listPluginsForTenant("bench_1", TEST_REGISTRY);
     const github = resolved.find((entry) => entry.descriptor.id === "github");
 
     expect(github?.status).toBe("not_connected");
@@ -90,7 +113,7 @@ describe("listPluginsForTenant", () => {
       }),
     });
 
-    const resolved = await listPluginsForTenant("bench_1");
+    const resolved = await listPluginsForTenant("bench_1", TEST_REGISTRY);
     const github = resolved.find((entry) => entry.descriptor.id === "github");
 
     expect(github?.status).toBe("not_connected");
@@ -107,7 +130,7 @@ describe("listPluginsForTenant", () => {
       }),
     });
 
-    const resolved = await listPluginsForTenant("bench_1");
+    const resolved = await listPluginsForTenant("bench_1", TEST_REGISTRY);
     const github = resolved.find((entry) => entry.descriptor.id === "github");
 
     expect(github?.status).toBe("needs_attention");
@@ -117,7 +140,7 @@ describe("listPluginsForTenant", () => {
   test("never resolves granola-webhook — it has no Credential row to resolve", async () => {
     stubFetch({});
 
-    const resolved = await listPluginsForTenant("bench_1");
+    const resolved = await listPluginsForTenant("bench_1", TEST_REGISTRY);
 
     expect(
       resolved.some((entry) => entry.descriptor.id === "granola-webhook"),
