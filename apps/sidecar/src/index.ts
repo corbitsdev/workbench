@@ -300,8 +300,9 @@ const orchestrator = createSidecarOrchestrator({
         deploymentAddressRegistry.record(deploymentId, agentAddress);
         bootRestorePushHold.onDeploymentRegistered(agentAddress);
       },
-      unregisterDeployment: ({ deploymentId }) => {
+      unregisterDeployment: ({ deploymentId, agentAddress }) => {
         deploymentAddressRegistry.unregister(deploymentId);
+        wrappedRepoStore.reclaimPushState({ deploymentId, agentAddress });
       },
       // Lazy-bound the same way as `workflowRunPackClient.hubLink` above:
       // `createDeployRouter` runs synchronously during `createSidecarOrchestrator`
