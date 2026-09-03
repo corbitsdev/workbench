@@ -1,6 +1,6 @@
 // Closes a check-then-act race in the GitHub connect card's
 // start-reviewing step (CL-7242): `startReviewingRepos`
-// (`@workbench/connections`) loops over selected repos doing
+// (`@corbits/connections`) loops over selected repos doing
 // hasRepoGrant/mintRepoGrant then hasWebhookTrigger/createWebhookTrigger
 // per repo, each a plain read followed by a conditional write with no
 // atomic backstop. Two concurrent calls for the same repo (a

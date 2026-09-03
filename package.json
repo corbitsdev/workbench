@@ -55,7 +55,7 @@
     "@corbits/evals": "workspace:*",
     "@corbits/ollama-adapter": "workspace:*",
     "@intx/db": "workspace:*",
-    "@workbench/connections": "workspace:*",
+    "@corbits/connections": "workspace:*",
     "@workbench/templates": "workspace:*",
     "@eslint/js": "^10.0.0",
     "@intx/mime": "0.3.0",

@@ -3,7 +3,7 @@
 // and not persist-only. `createHub` is not booted here; this is the
 // hook body `apps/hub/src/index.ts` fires from `settleServiceConnection`.
 import { describe, expect, test } from "bun:test";
-import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
+import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
 import { reconcilePinnedToolPackagesAfterConnect } from "./connection-live-reconcile";
 
 describe("reconcilePinnedToolPackagesAfterConnect", () => {

@@ -116,7 +116,7 @@ export function toolDoneResult(
   // `detail` rides alongside `content` on the underlying `ToolResult`
   // (`@intx/types/runtime`) as the side channel for structured metadata
   // that isn't meant for the model's own eyes — a missing-credential
-  // signal (`@workbench/connections`' `parseMissingCredentialDetail`)
+  // signal (`@corbits/connections`' `parseMissingCredentialDetail`)
   // being the one caller today.
   const detail = (result as { detail?: unknown }).detail;
   return { callId, content, isError, detail };

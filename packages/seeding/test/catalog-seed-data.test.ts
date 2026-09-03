@@ -14,7 +14,7 @@ import {
 import {
   supportedCredentialProviders,
   type SupportedCredentialProvider,
-} from "@workbench/connections/credential-test";
+} from "@corbits/connections/credential-test";
 
 describe("CATALOG_SEEDS", () => {
   test("has one seed for every supported credential provider", () => {

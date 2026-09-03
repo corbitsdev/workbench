@@ -1,8 +1,8 @@
 import { type } from "arktype";
 import { describe, expect, test } from "bun:test";
 
-import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
-import { MCP_PRESETS } from "@workbench/connections/mcp-presets";
+import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
+import { MCP_PRESETS } from "@corbits/connections/mcp-presets";
 
 import {
   deliveryWorkbenchRequiredForWorkflowName,

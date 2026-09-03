@@ -1,5 +1,5 @@
 // Wires the mock into the REAL call sites it exists to plug into —
-// `@workbench/connections`'s `FetchLike`-shaped functions — rather than
+// `@corbits/connections`'s `FetchLike`-shaped functions — rather than
 // calling `mock.fetch` directly the way `mock.test.ts` does. That
 // distinction matters: `mock.fetch(new Request(...))` typechecking says
 // nothing about whether the mock satisfies the two-argument
@@ -15,8 +15,8 @@ import {
   fetchOllamaModelCatalog,
   testProviderCredential,
   OLLAMA_PLACEHOLDER_SECRET,
-} from "@workbench/connections/credential-test";
-import { preferCompletionCapable } from "@workbench/connections/model-capability";
+} from "@corbits/connections/credential-test";
+import { preferCompletionCapable } from "@corbits/connections/model-capability";
 import { createOllamaMock } from "./index";
 
 const BASE_URL = "http://mock-ollama";

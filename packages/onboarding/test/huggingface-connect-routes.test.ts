@@ -19,7 +19,7 @@ import {
 import { createOnboardingRoutes } from "../src/routes";
 import type { CreateOnboardingRoutesDeps } from "../src/routes";
 import { testAndPersistCredential } from "../src/complete-credential";
-import { s256Challenge } from "@workbench/connections";
+import { s256Challenge } from "@corbits/connections";
 import {
   createInMemoryPendingSeedStore,
   type PendingSeedStore,

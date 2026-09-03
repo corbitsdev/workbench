@@ -11,7 +11,7 @@ import { Hono } from "hono";
 import { createNoopCredentialCipher } from "@intx/crypto";
 import { createOnboardingRoutes } from "../src/routes";
 import { createInMemoryPendingSeedStore } from "../src/pending-seed";
-import { createProviderHealthStore } from "@workbench/connections/provider-health";
+import { createProviderHealthStore } from "@corbits/connections/provider-health";
 import { HubApiError } from "@corbits/hub-api-client";
 
 // These tests never exercise the pending-seed store — it is required

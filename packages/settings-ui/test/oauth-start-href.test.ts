@@ -1,7 +1,7 @@
 // Pins the exact start URL every connect surface renders (CL-6394): the
 // tenant-scoped `connections/oauth` mount, never onboarding's own
 // first-login mount — targeting the latter is what crashed the hosted
-// GitHub one-click connect. `@workbench/connections`' own
+// GitHub one-click connect. `@corbits/connections`' own
 // github-oauth-connect suite drives this same literal end to end, so a
 // change here that isn't mirrored there fails one side or the other.
 import { describe, expect, test } from "bun:test";

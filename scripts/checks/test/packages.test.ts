@@ -7,7 +7,7 @@ import {
 } from "../packages";
 
 test("tarballNameFor flattens a scoped name the way bun pm pack does", () => {
-  expect(tarballNameFor("@workbench/connections", "0.0.1")).toBe(
+  expect(tarballNameFor("@corbits/connections", "0.0.1")).toBe(
     "workbench-connections-0.0.1.tgz",
   );
   expect(tarballNameFor("plain", "1.2.3")).toBe("plain-1.2.3.tgz");

@@ -3,7 +3,7 @@
 // below it. Icon chip + a status dot, never a second copy of the card.
 
 import { Button } from "@corbits/react-ui";
-import type { ResolvedPlugin } from "@workbench/connections/plugins";
+import type { ResolvedPlugin } from "@corbits/connections/plugins";
 
 import { pluginIcon } from "./plugin-meta";
 

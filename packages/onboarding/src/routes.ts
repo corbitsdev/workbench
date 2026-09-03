@@ -12,7 +12,7 @@ import type { CredentialCipher } from "@intx/types";
 import {
   supportedCredentialProviders,
   type SupportedCredentialProvider,
-} from "@workbench/connections/credential-test";
+} from "@corbits/connections/credential-test";
 import {
   inferenceCredentialName,
   SETUP_AGENT_ASSET_NAME,
@@ -55,11 +55,11 @@ import {
   DEFAULT_RETURN_PATH_ALLOWLIST,
   type ConnectorDescriptor,
   type OAuthExchangeResult,
-} from "@workbench/connections";
+} from "@corbits/connections";
 import type { PendingSeedStore } from "./pending-seed";
 import { exchangeCodeForKey } from "./openrouter-connect";
 import { exchangeCodeForToken as exchangeHuggingFaceCodeForToken } from "./huggingface-connect";
-import type { ProviderHealthStore } from "@workbench/connections/provider-health";
+import type { ProviderHealthStore } from "@corbits/connections/provider-health";
 
 function assertNonEmpty<T>(arr: T[]): asserts arr is [T, ...T[]] {
   if (arr.length === 0) {
@@ -173,7 +173,7 @@ export type CreateOnboardingRoutesDeps = {
    * catalog seed, the only work that call still does inline. */
   testAndPersistCredentialFn?: typeof testAndPersistCredential;
   /**
-   * The same provider-health signal `@workbench/connections`' own routes
+   * The same provider-health signal `@corbits/connections`' own routes
    * write to (CL-6092): a successful `POST /complete` clears any stale
    * needs-attention record for the connected provider, so the shell
    * banner's onboarding-routed "Fix it" (the zero-working-providers case)
@@ -201,7 +201,7 @@ export type CreateOnboardingRoutesDeps = {
   };
   /** Seals the OAuth connect state (PKCE verifier included) parked
    * between `/start` and `/callback`, so a hub restart in between
-   * doesn't strand it — see `@workbench/connections`' `pkce.ts`. The same `CredentialCipher`
+   * doesn't strand it — see `@corbits/connections`' `pkce.ts`. The same `CredentialCipher`
    * every other secret-at-rest seam in the hub shares
    * (`CREDENTIAL_ENCRYPTION_KEY`, `apps/hub`'s `credentialCipherFrom`).
    * Defaults to the identity no-op cipher: fine for dev/test, never for
@@ -489,7 +489,7 @@ export function createOnboardingRoutes(
   });
 
   // OAuth connect (OpenRouter, Hugging Face): CL-6028 generalized both
-  // providers' start/callback mechanics into `@workbench/connections`'
+  // providers' start/callback mechanics into `@corbits/connections`'
   // `createOAuthConnectRoutes` — state sealing, PKCE, cookies, rate
   // limiting, and the duplicate-callback recovery shape all live there
   // now, driven by `CONNECTOR_REGISTRY`'s `openrouter`/`huggingface`
@@ -560,12 +560,12 @@ export function createOnboardingRoutes(
   const huggingfaceDescriptor = CONNECTOR_REGISTRY["huggingface"];
   if (openrouterDescriptor?.oauth === undefined) {
     throw new Error(
-      "@workbench/connections' registry is missing the openrouter oauth-pkce entry",
+      "@corbits/connections' registry is missing the openrouter oauth-pkce entry",
     );
   }
   if (huggingfaceDescriptor?.oauth === undefined) {
     throw new Error(
-      "@workbench/connections' registry is missing the huggingface oauth-pkce entry",
+      "@corbits/connections' registry is missing the huggingface oauth-pkce entry",
     );
   }
   // ONLY the two providers onboarding's own first-login flow offers.
@@ -801,7 +801,7 @@ export function createOnboardingRoutes(
       }
       // The credential is durably stored — clear any stale
       // needs-attention record for this provider (CL-6092), the same
-      // clear-on-success rule `@workbench/connections`' own routes
+      // clear-on-success rule `@corbits/connections`' own routes
       // follow. The credential is proven-durable here whether or not the
       // agents have finished deploying.
       deps.providerHealth?.clear(result.tenantId, parsed.provider);

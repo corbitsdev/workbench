@@ -111,9 +111,9 @@ export type WorkflowCatalogEntry = {
   readonly whatItDoes: string;
   /**
    * Connector ids this workflow's tool packages call — either a native
-   * connector (`@workbench/connections/registry`'s `CONNECTOR_REGISTRY`)
+   * connector (`@corbits/connections/registry`'s `CONNECTOR_REGISTRY`)
    * or an MCP preset slug a person connects under Plugins
-   * (`@workbench/connections/mcp-presets`' `MCP_PRESETS`), which is the
+   * (`@corbits/connections/mcp-presets`' `MCP_PRESETS`), which is the
    * only way some integrations (Attio) are reachable here at all. Empty
    * for workflows with no external connector dependency.
    */

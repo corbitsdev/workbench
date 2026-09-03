@@ -3,12 +3,12 @@
 // connections (Attio, Exa, Granola, ...) this workbench already has
 // live, and to hand the human a link to connect one that isn't yet.
 // Both tools reuse the existing connections plane end to end
-// (`@workbench/connections`'s `CONNECTOR_REGISTRY` and the workflow-run
+// (`@corbits/connections`'s `CONNECTOR_REGISTRY` and the workflow-run
 // route it exposes) — neither invents new state, and neither completes
 // OAuth itself; only a human, acting in the browser through the
 // existing Connections settings surface, can finish a connect flow.
 //
-// Both tools also read `@workbench/connections`' MCP-server listing
+// Both tools also read `@corbits/connections`' MCP-server listing
 // (CL-6142's `/api/workflow-connections/mcp-servers`, backed by
 // `@corbits/mcp-tools`' own `mcp_list_servers` route) — a tenant-minted
 // `mcp:<slug>` connector has no fixed registry id, so `list_connections`
@@ -30,11 +30,11 @@
 import { defineTool } from "@intx/agent";
 import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
-import { CONNECTOR_REGISTRY } from "@workbench/connections";
+import { CONNECTOR_REGISTRY } from "@corbits/connections";
 import {
   MCP_PRESETS,
   mcpPresetByName,
-} from "@workbench/connections/mcp-presets";
+} from "@corbits/connections/mcp-presets";
 import { type } from "arktype";
 
 import {

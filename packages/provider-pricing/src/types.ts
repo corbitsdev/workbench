@@ -1,4 +1,4 @@
-import type { SupportedCredentialProvider } from "@workbench/connections/credential-test";
+import type { SupportedCredentialProvider } from "@corbits/connections/credential-test";
 
 import type { CatalogModelName } from "./catalog-models";
 
@@ -32,7 +32,7 @@ export type RateTier = {
  * A priced (provider, model) pair. `provider` is typed against
  * `SupportedCredentialProvider` — the same provider identity workbench
  * already uses for credentials and the catalog's adapter plugin mapping
- * (see `@workbench/connections/credential-test`) — so a misspelled or
+ * (see `@corbits/connections/credential-test`) — so a misspelled or
  * unsupported provider is a compile error.
  *
  * `model` is the actual wire id billed on a usage turn, which is not

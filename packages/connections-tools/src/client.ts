@@ -1,7 +1,7 @@
 // A minimal client for the workflow-run-authenticated connections
 // surface a running agent calls to see which third-party connectors
 // this workbench already has live — the execution half of
-// `@workbench/connections`'s `createWorkflowConnectionRoutes`
+// `@corbits/connections`'s `createWorkflowConnectionRoutes`
 // (`packages/connections/src/workflow-connection-routes.ts`), mounted
 // in `apps/hub` at `/api/workflow-connections` beside
 // `/api/workflow-capabilities` and `/api/workflow-skills` —

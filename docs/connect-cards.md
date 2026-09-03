@@ -30,7 +30,7 @@ the agent — no settings page round-trip, no "report back when done".
   (`packages/chat/src/connect-pending.ts`, applied by
   `workflow-participant-routes.ts`), so a later connect can find every
   room that is waiting.
-- **Settling** — every connect surface in `@workbench/connections`
+- **Settling** — every connect surface in `@corbits/connections`
   (OAuth callback, pasted key, MCP OAuth, keyless MCP preset) fires the
   optional `onConnected` hook (`src/connected-hook.ts`) once the
   credential is durably stored. The hub wires it to

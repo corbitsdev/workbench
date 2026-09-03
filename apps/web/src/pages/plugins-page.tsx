@@ -21,10 +21,10 @@ import {
   PluginConnectPanel,
   type PluginsGalleryTab,
 } from "@corbits/plugins-ui";
-import type { ResolvedPlugin } from "@workbench/connections/plugins";
-import { listPluginsForTenant } from "@workbench/connections/plugins";
-import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
-import { MCP_PRESETS } from "@workbench/connections/mcp-presets";
+import type { ResolvedPlugin } from "@corbits/connections/plugins";
+import { listPluginsForTenant } from "@corbits/connections/plugins";
+import { CONNECTOR_REGISTRY } from "@corbits/connections/registry";
+import { MCP_PRESETS } from "@corbits/connections/mcp-presets";
 import { Plus, SquaresFour, Warning } from "@corbits/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 
