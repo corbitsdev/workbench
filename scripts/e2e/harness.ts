@@ -9,8 +9,8 @@ import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createGitWorkflowPusher } from "../../packages/hub-client/src/index.ts";
-import { WORKFLOW_SOURCE_ENTRY } from "../../packages/workflow-source/src/index.ts";
+import { createGitWorkflowPusher } from "../../packages/seeding/src/index.ts";
+import { WORKFLOW_SOURCE_ENTRY } from "../../packages/workflows/src/source.ts";
 import { assertDatabaseConfigured } from "./db-gate.ts";
 
 export const REPO_ROOT = path.resolve(import.meta.dir, "..", "..");
@@ -630,7 +630,7 @@ export function expectStepCompleted(events: RunEvent[], stepId: string): void {
 /**
  * Publishes a workflow definition into its asset repo in the one shape
  * a `workflow`-kind asset accepts: the source codebase
- * `@corbits/workflow-source` renders. Delegates to the platform's own
+ * `@corbits/workflows`'s `./source` renders. Delegates to the platform's own
  * pusher so the suite exercises the same publication path the seed and
  * the product use, and returns the commit a code-sourced deploy pins.
  */

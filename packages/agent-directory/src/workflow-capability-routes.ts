@@ -44,11 +44,9 @@ import { Hono } from "hono";
 
 import type { DB } from "@intx/db";
 import { workflowDefinition, workflowRun } from "@intx/db/schema";
-import { DEFAULT_ASSET_REF } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
 
 import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-naming";
-import type { DefinitionFreezer } from "@corbits/workflow-freeze";
 
 import {
   reindexPinnedSkills,
@@ -63,13 +61,16 @@ import {
   type CapabilityInventoryProvider,
 } from "./capability-inventory";
 import {
-  agentDefinitionSourceTree,
   readAgentDefinitionWorkflowJson,
   RetiredWorkflowEnvelopeError,
+  statusForAgentDefinitionDeployError,
+  writeAndDeployAgentDefinition,
+  WorkflowAuthorError,
+  type AgentDefinitionDeployer,
 } from "./definition-asset";
 import type { PinnedSkillIndexResolver } from "./routes";
 import type { DefinitionSkillsStore } from "./skills-store";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 /**
  * The tenant + principal + run a presented sidecar token and run
@@ -123,10 +124,11 @@ export type CreateWorkflowCapabilityRoutesDeps = {
   skillsStore: DefinitionSkillsStore;
   capabilityInventory: CapabilityInventoryProvider;
   authenticator: WorkflowRunAuthenticator;
-  /** Re-freezes the definition's wire projection after the rewrite; the
-   * composition root binds `@corbits/workflow-freeze`'s
-   * `createDefinitionFreezer` to its own `db`. */
-  definitionFreezer: Pick<DefinitionFreezer, "refreeze">;
+  /** Deploys the definition's commit through the native source pipeline
+   * after the rewrite; the composition root injects the SAME
+   * `WorkflowDeployer` `@corbits/workflows`'s `./authoring`'s registry
+   * calls. */
+  deployer: AgentDefinitionDeployer;
 };
 
 export function createWorkflowCapabilityRoutes(
@@ -145,6 +147,12 @@ export function createWorkflowCapabilityRoutes(
       return c.json(
         makeErrorEnvelope({ code: "conflict", userMessage: err.message }),
         409,
+      );
+    }
+    if (err instanceof WorkflowAuthorError) {
+      return c.json(
+        makeErrorEnvelope({ code: err.reason, userMessage: err.message }),
+        statusForAgentDefinitionDeployError(err.reason),
       );
     }
     throw err;
@@ -276,21 +284,15 @@ export function createWorkflowCapabilityRoutes(
       }
     }
 
-    await deps.assetService.populateAsset({
+    await writeAndDeployAgentDefinition({
+      assetService: deps.assetService,
+      deployer: deps.deployer,
+      tenantId: scope.tenantId,
+      principalId: scope.principalId,
       assetId: row.assetId,
-      ref: DEFAULT_ASSET_REF,
-      principal: { kind: "hub" },
-      tree: {
-        files: agentDefinitionSourceTree({
-          handle: row.name,
-          workflowJson: nextWorkflowJson,
-        }),
-        message,
-      },
-    });
-    await deps.definitionFreezer.refreeze({
-      definitionId: row.id,
+      handle: row.name,
       workflowJson: nextWorkflowJson,
+      message,
     });
     if (nextSkills !== null) {
       await deps.skillsStore.setSkills(row.assetId, nextSkills);

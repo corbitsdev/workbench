@@ -21,19 +21,16 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import {
-  createGitWorkflowPusher,
-  createHubAPI,
-  type ApiCall,
-} from "@workbench/hub-client";
+import { OLLAMA_PLACEHOLDER_SECRET } from "@corbits/connections/credential-test";
+import { createGitWorkflowPusher } from "@corbits/seeding";
+import { createHubAPI, type ApiCall } from "@corbits/hub-api-client";
 import { getLogger } from "@intx/log";
 import { completeCredentialSetup } from "@workbench/onboarding";
-import { OLLAMA_PLACEHOLDER_SECRET } from "@workbench/hub-client";
 import {
   instantiateWorkbenchTemplate,
   parseWorkbenchDefinition,
   templateSettingsPatch,
-} from "@corbits/workflow-catalog";
+} from "@workbench/templates";
 import {
   signPayload,
   WEBHOOK_SIGNATURE_HEADER,

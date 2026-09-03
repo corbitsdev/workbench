@@ -87,7 +87,7 @@ round-trip. `bun run typecheck` passes clean.
 
 ## Registration
 
-Registered in `packages/workflow-catalog`'s `WORKFLOW_CATALOG` (asset
+Registered in `@corbits/workflows`'s `WORKFLOW_CATALOG` (asset
 name `diligence-brief`) alongside this package's own `corbits.workflow`
 block, so it shows up wherever that catalog is read: the seed step and
 the web Routines picker. See [`workflows/README.md`](../README.md#status-note)

@@ -43,7 +43,7 @@ import {
   mcpSlugOf,
   refreshMcpOAuthTokens,
   type McpOAuthRefreshResult,
-} from "@workbench/connections";
+} from "@corbits/connections";
 import type {
   OAuthClientInformationMixed,
   OAuthTokens,
@@ -356,7 +356,7 @@ export type CredentialExpirySweepDeps = {
    * same redirect URI the original connect used. */
   hubUrl: string;
   /** Re-invokes the MCP SDK's `auth()` orchestrator non-interactively.
-   * Defaults to the real `@workbench/connections` implementation;
+   * Defaults to the real `@corbits/connections` implementation;
    * overridable so a test can stub the authorization server round trip. */
   refreshMcpTokens?: typeof refreshMcpOAuthTokens;
   /** Injectable for deterministic tests; defaults to `Date.now`-backed wall time. */

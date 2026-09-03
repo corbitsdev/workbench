@@ -22,19 +22,21 @@
 // reasoning. `requireGrant` will replace that interim rule once CL-6085
 // closes.
 import { type } from "arktype";
+import {
+  runBearerHeaders,
+  runBearerErrorMessage,
+  runBearerFetch,
+  type RunBearerClientConfig,
+} from "@corbits/workflows/client";
 
-export interface CapabilityToolClientConfig {
+export interface CapabilityToolClientConfig extends RunBearerClientConfig {
   /** The hub's plain HTTP origin — same value memory-tools' `hubMemoryUrl`
    * and skills' workflow-routes reach the hub through. */
   readonly hubCapabilitiesUrl: string;
-  readonly sidecarToken: string;
-  readonly address: string;
   /** The calling agent's own definition id. See the [Intx gap] note in
    * `./tool.ts` — no sanctioned way exists yet for a tool execution to
    * learn this on its own; it must be threaded in as part of `env`. */
   readonly definitionId: string;
-  /** Override for tests; defaults to the global `fetch`. */
-  readonly fetchImpl?: typeof fetch;
 }
 
 export type AddCapabilityRequest =
@@ -78,33 +80,6 @@ const CapabilityInventoryResponse = type({
   models: type({ canonicalName: "string" }).array(),
 });
 
-function authHeaders(
-  config: CapabilityToolClientConfig,
-): Record<string, string> {
-  return {
-    authorization: `Bearer ${config.sidecarToken}`,
-    "x-workflow-run-address": config.address,
-  };
-}
-
-/** Pulls `error.userMessage` out of the canonical hub envelope
- * (`{error: {code, userMessage, refId}}`), if `body` matches that shape. */
-function errorMessageFrom(body: unknown): string | undefined {
-  if (body === null || typeof body !== "object" || !("error" in body)) {
-    return undefined;
-  }
-  const error = (body as { error: unknown }).error;
-  if (
-    error === null ||
-    typeof error !== "object" ||
-    !("userMessage" in error)
-  ) {
-    return undefined;
-  }
-  const userMessage = (error as { userMessage: unknown }).userMessage;
-  return typeof userMessage === "string" ? userMessage : undefined;
-}
-
 function endpoint(config: CapabilityToolClientConfig, path: string): string {
   return `${config.hubCapabilitiesUrl}/api/workflow-capabilities/${config.definitionId}${path}`;
 }
@@ -117,16 +92,19 @@ export async function addCapability(
   config: CapabilityToolClientConfig,
   input: AddCapabilityRequest,
 ): Promise<AddedCapabilities> {
-  const doFetch = config.fetchImpl ?? fetch;
+  const doFetch = runBearerFetch(config);
   const response = await doFetch(endpoint(config, "/capabilities"), {
     method: "POST",
-    headers: { ...authHeaders(config), "content-type": "application/json" },
+    headers: {
+      ...runBearerHeaders(config),
+      "content-type": "application/json",
+    },
     body: JSON.stringify(input),
   });
   if (response.status === 400) {
     const body: unknown = await response.json().catch(() => undefined);
     const message =
-      errorMessageFrom(body) ??
+      runBearerErrorMessage(body) ??
       `"${input.kind === "model" ? input.canonicalName : input.name}" was rejected as out of inventory`;
     throw new CapabilityOutOfInventoryError(message);
   }
@@ -151,10 +129,10 @@ export async function addCapability(
 export async function fetchCapabilityInventory(
   config: CapabilityToolClientConfig,
 ): Promise<CapabilityInventorySnapshot> {
-  const doFetch = config.fetchImpl ?? fetch;
+  const doFetch = runBearerFetch(config);
   const response = await doFetch(
     `${config.hubCapabilitiesUrl}/api/workflow-capabilities/inventory`,
-    { headers: authHeaders(config) },
+    { headers: runBearerHeaders(config) },
   );
   if (!response.ok) {
     throw new Error(

@@ -44,7 +44,7 @@ import { AGENT_RUNTIME_SECTION_ID } from "@corbits/agent-runtime";
 import {
   parseWorkflowSourceEntry,
   WORKFLOW_SOURCE_ENTRY_PATH,
-} from "@corbits/workflow-source";
+} from "@corbits/workflows";
 import { SessionLaunchError } from "@intx/hub-sessions";
 import type { EventCollectorRegistry, SidecarRouter } from "@intx/hub-sessions";
 import type { DefinitionSourceResolution } from "@intx/hub-api";

@@ -41,13 +41,13 @@ import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { hexEncode } from "@intx/types";
 import { and, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 export const WORKBENCH_TEMPLATE_ARTIFACT_KIND = "workbench-template";
 
 /** One shelf entry to seed: the template's stable id and its serialized
  * manifest. Kept as plain strings so this package never depends on
- * `@corbits/workflow-catalog` — the manifest vocabulary stays there. */
+ * `@workbench/templates` — the manifest vocabulary stays there. */
 export type TemplateLibraryEntry = {
   readonly id: string;
   readonly content: string;
@@ -427,7 +427,7 @@ export type CreateTemplateLibraryRoutesDeps = {
 /** `GET /` lists every seeded template entry; `GET /:templateId` fetches
  * one. Both converge the tenant's shelf before reading it. Content
  * travels as the seeded string — the client parses it with
- * `@corbits/workflow-catalog`'s manifest schema at its own boundary. */
+ * `@workbench/templates`'s manifest schema at its own boundary. */
 export function createTemplateLibraryRoutes(
   deps: CreateTemplateLibraryRoutesDeps,
 ): Hono<TenantEnv> {

@@ -6,7 +6,14 @@
 // written with plumbing (`commit-tree`) under a test-owned git config
 // so a developer `core.hooksPath` cannot fail the suite.
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { CORBITS_TOOL_PACKAGE_DIRS } from "./registry";
@@ -20,6 +27,7 @@ import {
 
 const scratchDirs: string[] = [];
 let fixtureGitConfig: string | undefined;
+let repositoryRoot: string | undefined;
 
 afterAll(async () => {
   await Promise.all(
@@ -27,8 +35,44 @@ afterAll(async () => {
   );
 });
 
+async function findRepositoryRoot(): Promise<string> {
+  if (repositoryRoot === undefined) {
+    const proc = Bun.spawn(["git", "rev-parse", "--show-toplevel"], {
+      cwd: process.cwd(),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    if (code !== 0) {
+      throw new Error(`git rev-parse --show-toplevel failed: ${stderr}`);
+    }
+    repositoryRoot = await realpath(stdout.trim());
+  }
+  return repositoryRoot;
+}
+
+// Every fixture repo this suite writes must live outside the repository's
+// own work tree (CL-7372) — a git-fixture test must never be able to
+// touch real history, however indirectly.
+async function assertOutsideRepository(dir: string): Promise<void> {
+  const resolved = await realpath(dir);
+  const root = await findRepositoryRoot();
+  if (resolved === root || resolved.startsWith(`${root}${path.sep}`)) {
+    throw new Error(
+      `git fixture directory ${resolved} is inside the repository root ` +
+        `${root} — fixtures must live in an mkdtemp scratch dir outside ` +
+        `any work tree.`,
+    );
+  }
+}
+
 async function scratchDir(prefix: string): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), prefix));
+  await assertOutsideRepository(dir);
   scratchDirs.push(dir);
   return dir;
 }
@@ -53,8 +97,12 @@ async function fixtureGitEnv(): Promise<Record<string, string | undefined>> {
       ].join("\n"),
     );
   }
+  const env = { ...process.env };
+  delete env["GIT_DIR"];
+  delete env["GIT_WORK_TREE"];
+  delete env["GIT_INDEX_FILE"];
   return {
-    ...process.env,
+    ...env,
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_CONFIG_GLOBAL: fixtureGitConfig,
   };
@@ -343,8 +391,12 @@ describe("checkToolPackageFreshness", () => {
 
   test("fixture history is written even when a global author hook would reject git commit", async () => {
     const globalConfig = await plantRejectingAuthorHook();
+    const baseEnv = { ...process.env };
+    delete baseEnv["GIT_DIR"];
+    delete baseEnv["GIT_WORK_TREE"];
+    delete baseEnv["GIT_INDEX_FILE"];
     const hostileEnv = {
-      ...process.env,
+      ...baseEnv,
       GIT_CONFIG_NOSYSTEM: "1",
       GIT_CONFIG_GLOBAL: globalConfig,
     };

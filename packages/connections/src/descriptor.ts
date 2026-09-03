@@ -3,7 +3,7 @@
 // a card and, for an api-key connector, drive the test-then-store flow
 // `./routes.ts` exposes, or for an oauth-pkce/oauth-code connector,
 // drive the connect flow `./oauth-routes.ts` exposes.
-import type { CredentialTestResult } from "@workbench/hub-client/credential-test";
+import type { CredentialTestResult } from "./credential-test";
 
 export type ConnectorAuthKind =
   "oauth-pkce" | "oauth-code" | "api-key" | "webhook-secret";

@@ -3,10 +3,10 @@
 // `@corbits/chat-ui` owns no session, no credential, and no query cache,
 // so it never resolves a GitHub connection or lists repos itself. The
 // host supplies this port, and is expected to bind it against
-// `@workbench/connections`' generic `/:connectorId/complete` route
+// `@corbits/connections`' generic `/:connectorId/complete` route
 // (`github`'s PAT test-and-store — already fully generic, no bespoke
 // GitHub route needed), `@corbits/github-tools`' `listRepos`, and
-// `@corbits/workflow-catalog`'s `startReviewingRepos`.
+// `@corbits/connections`'s `startReviewingRepos`.
 import type { ConnectGithubRepo } from "./connect-github-block";
 export type { ConnectGithubRepo };
 
@@ -34,7 +34,7 @@ export type ConnectGithubActions = {
    * `startReviewing`, `skip`) change something, re-reading
    * `getConnectState`. A credential completed elsewhere (the Plugins
    * page, another tab) settles this connector's entry on
-   * `@corbits/workflow-catalog`'s `template/pendingConnections`
+   * `@workbench/templates`'s `template/pendingConnections`
    * (CL-6463's `settleConnectedService`) so the *next* fresh
    * `getConnectState` — e.g. on this card's next mount — already reads
    * connected, since that read resolves against the real credential,
@@ -58,7 +58,7 @@ export type ConnectGithubActions = {
   /**
    * Submits a pasted personal access token — the actual PAT-first
    * connect path (CL-6345/CL-6344's follow-up slice): the host tests
-   * and stores it through `@workbench/connections`' generic
+   * and stores it through `@corbits/connections`' generic
    * `github/complete` route, then clears this room's own
    * `template/pendingConnections` entry for `"github"` so the same
    * `subscribeConnectState` channel `requestConnect`'s own doc
@@ -72,7 +72,7 @@ export type ConnectGithubActions = {
     { readonly ok: true } | { readonly ok: false; readonly message: string }
   >;
   /** Mints a grant and a live webhook trigger per repo id, then
-   * records the selection — `@corbits/workflow-catalog`'s
+   * records the selection — `@workbench/templates`'s
    * `startReviewingRepos`, called through the host's own binding. */
   readonly startReviewing: (
     repoIds: readonly string[],

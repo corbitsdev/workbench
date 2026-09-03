@@ -39,9 +39,19 @@ import {
   createMailTriggeredRunGrantsMaterializer,
   createRequireGrant,
   readDurableWorkflowRunLifecycles,
+  resolveDefinitionSources,
   type AppEnv,
   type TenantEnv,
 } from "@intx/hub-api";
+import {
+  deriveRunAddress,
+  deriveRunAgentId,
+  WorkflowDefinitionInvalidError,
+} from "@intx/workflow-deploy";
+import type { HarnessConfig } from "@intx/types/runtime";
+// CL-7362: computes the preview's wire hash from the probed-but-unapproved
+// projection `installAndApproveWorkflowSource` returns on `grants_not_approved`
+// — the gate itself only stamps this hash on the `ok:true` arm.
 
 import {
   createAgentDefinitionRoutes,
@@ -155,6 +165,7 @@ import {
 import { generateId } from "@intx/hub-common";
 
 import { ensureDefaultTenant } from "./default-tenant";
+import { runSystemSeed } from "./system-seed";
 import {
   createInMemoryMailboxEventBus,
   createMailboxDb,
@@ -175,30 +186,29 @@ import {
 } from "@corbits/webhook-triggers";
 import {
   deliveryWorkbenchRequiredForWorkflowName,
-  isAutomatableWorkflowName,
   isConversationalWorkflowName,
   validateTriggerFieldsAtCreate,
-  webhookTriggerName,
   workflowCatalogEntry,
   workflowDisplayName,
   workbenchTemplateLibraryEntries,
-} from "@corbits/workflow-catalog";
-import { createConnectGithubRoutes } from "@corbits/workflow-catalog/connect-github-routes";
-import { createTemplateBlockRoutes } from "@corbits/workflow-catalog/template-block-routes";
-import { renderWorkflowSourceTree } from "@corbits/workflow-source";
+} from "@workbench/templates";
+import { createConnectGithubRoutes } from "@corbits/connections/connect-github-routes";
+import { webhookTriggerName } from "@corbits/connections/connect-github-setup";
+import { createTemplateBlockRoutes } from "./templates/template-block-routes";
 import {
-  createDefinitionFreezer,
-  freezeInertWorkflowDefinition,
-} from "@corbits/workflow-freeze";
+  createWorkflowDetailRoute,
+  renderWorkflowSourceTree,
+  WORKFLOW_SOURCE_ENTRY,
+} from "@corbits/workflows";
 import {
-  createDrizzleDraftStore,
   createDrizzleRoutineStore,
-  createMyraRoutineDrafting,
   createRoutineRoutes,
+  createRoutineTargetRoutes,
   createWorkflowRoutineRoutes,
+  listRoutineTargets,
+  resolveLaunchableDefinition,
   routine as routineTable,
   routineRun as routineRunTable,
-  type RoutineDraftInventoryWorkflow,
 } from "@corbits/routines";
 import {
   createSidecarProvisioner as createE2BSidecarProvisioner,
@@ -213,7 +223,7 @@ import {
 import {
   createDrizzleWorkflowDeploySourceStore,
   withDeploySourceRecording,
-} from "@corbits/workflow-deploy-source";
+} from "@corbits/workflows";
 import {
   FoldedRunFailedError,
   FoldedRunTimedOutError,
@@ -271,18 +281,15 @@ import {
   createWorkflowArtifactRoutes,
   createWorkflowRunAuthenticator,
 } from "@corbits/artifacts-hub";
-import { createEchoRoutes } from "@workbench/echo";
 import {
   createArtifactDocPersistence,
   createPresenceRoomRegistry,
   createPresenceRoutes,
   type PresenceRoomKey,
 } from "@corbits/presence";
-import {
-  createGitWorkflowPusher,
-  createHubAPI,
-  supportedCredentialProviders,
-} from "@workbench/hub-client";
+import { supportedCredentialProviders } from "@corbits/connections/credential-test";
+import { createGitWorkflowPusher } from "@corbits/seeding";
+import { createHubAPI } from "@corbits/hub-api-client";
 import {
   createDrizzlePendingSeedStore,
   createBenchProvisioner,
@@ -298,13 +305,16 @@ import {
   createWorkflowConnectionRoutes,
   DEFAULT_RETURN_PATH_ALLOWLIST,
   listMcpServerConnections,
-} from "@workbench/connections";
-import type { ServiceConnectedHook } from "@workbench/connections";
-import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
+} from "@corbits/connections";
+import type { ServiceConnectedHook } from "@corbits/connections";
+import {
+  CONNECTOR_REGISTRY,
+  MCP_PRESETS,
+} from "@workbench/templates/connectors";
 import {
   createProviderHealthPort,
   createProviderHealthStore,
-} from "@workbench/connections/provider-health";
+} from "@corbits/connections/provider-health";
 import {
   applyAccessPolicyMigrations,
   createAccessPolicyRoutes,
@@ -326,7 +336,9 @@ import { createSkillRoutes, createWorkflowSkillRoutes } from "@corbits/skills";
 import {
   createWorkflowAuthorRegistry,
   createWorkflowAuthorRoutes,
-} from "@corbits/agent-workflow-authoring";
+  WorkflowAuthorError,
+  type WorkflowDeployer,
+} from "@corbits/workflows";
 import { mountArtifacts } from "./artifacts-mount";
 import { mountWorkbenchSlackTag } from "./slack-tag-mount";
 import {
@@ -753,7 +765,7 @@ export async function createHub(config: HubConfig) {
   // See `./mcp-credential-bindings.ts`'s own doc.
   const mcpCredentialBindingsFor = createMcpCredentialBindingsFor(db);
   // Same owning check GET /connections uses — see
-  // `@workbench/connections`' `workflow-connection-routes.ts` and the
+  // `@corbits/connections`' `workflow-connection-routes.ts` and the
   // `createWorkflowConnectionRoutes` wiring below. Not
   // `listConnectedProviders` (catalog-only).
   const isConnectorConnected = async (tenantId: string, connectorId: string) =>
@@ -1156,10 +1168,6 @@ export async function createHub(config: HubConfig) {
   // nothing reported. See `hubErrorHandler`'s own doc comment.
   app.onError(hubErrorHandler());
 
-  // Extension routes mount under the tenant prefix, inside the
-  // platform's native tenant middleware, so every extension handler
-  // runs with c.get("tenant") / c.get("principal") resolved.
-  app.route(`${TENANT_PREFIX}/echo`, createEchoRoutes());
   // One in-process presence room registry for this process, constructed
   // here in the composition root — the same pattern `workbenchSubscribers`
   // above uses. Presence rooms are ephemeral and process-local by design
@@ -1295,7 +1303,7 @@ export async function createHub(config: HubConfig) {
   // Mounted outside the tenant prefix — the sidecar reaches it as a
   // plain inference endpoint, never through tenant-scoped auth, the
   // same way it reaches a real provider's API. Pinned by the heartbeat
-  // and workbench-digest workflows' seeds (`@corbits/hub-client`), whose
+  // and workbench-digest workflows' seeds (`@corbits/seeding`), whose
   // agents never produce text. `config.baseUrl` (not `localhost`) is
   // what makes the URL usable from a sidecar on another machine.
   app.route("/api/chat/noop-inference", createNoopInferenceRoutes());
@@ -1410,6 +1418,7 @@ export async function createHub(config: HubConfig) {
     approvals: createApprovalStore(db),
     recordActivity: chatPlatform.recordActivity,
     claims: writeClaims,
+    connectorRegistry: CONNECTOR_REGISTRY,
   };
   if (memoryHandle !== undefined) {
     chatOrchestratorDeps.memory = memoryHandle.memory;
@@ -1708,6 +1717,24 @@ export async function createHub(config: HubConfig) {
       db,
     }),
   );
+  // A workflow definition's own detail page (CL-7371): what it is,
+  // whether it can run right now, its steps, and its access surface.
+  // Mounted alongside — not inside — the vendored
+  // `createWorkflowDefinitionRoutes` (`vendor/intx/hub-api/src/app.ts`
+  // already mounts that one at this same `/workflows/definitions`
+  // prefix): this GET is a Workbench-owned read composed over native
+  // rows plus `@corbits/workflows`'s `./deploy-source`, so it lives in
+  // `@corbits/workflows`'s `./detail`, not the vendored tree.
+  app.route(
+    `${TENANT_PREFIX}/workflows/definitions`,
+    createWorkflowDetailRoute({
+      db,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+    }),
+  );
   // Run key identity diagnostics: read side of the append-only
   // `run_key_history` table above — per-run key lifecycle, divergence
   // against `workflow_run.public_key`, and tenant-wide counts by
@@ -1854,16 +1881,131 @@ export async function createHub(config: HubConfig) {
       registry: skills.registry,
     }),
   );
-  // Agent-authored workflows (CL-agent-authored-workflows): an agent
-  // publishes a workflow codebase as a native `kind:"workflow"` asset
-  // through this workflow-run-authenticated surface, then deploys the
-  // resulting asset through the tenant-session `/workflows/deployments`
-  // route this hub already mounts (unchanged, below) — this package never
-  // reimplements that deploy gating. Unlike `/api/workflow-skills` above,
-  // every write here also runs a real `chatGrantStore` authorization
-  // check (`asset:*`/create, `asset:<id>`/write) before reaching
-  // `RepoStore`, because authoring is publishing executable code, not a
-  // markdown skill.
+  // CL-7361: the `deploy` half of the run-authenticated deployer this
+  // route's registry calls — the SAME `sessionService.
+  // deployWorkflowFromSource` call (already `withDeploySourceRecording`-
+  // wrapped above) the native `POST /workflows/deployments` route's own
+  // non-exclusive branch makes, not a reimplementation of install/probe/
+  // gate/freeze. Inference sources are resolved server-side from the
+  // tenant's catalog (`resolveDefinitionSources`) exactly as
+  // `agent-definitions`' `tenantDefaultModel` does above — an agent never
+  // supplies or sees a provider secret. Exclusive sidecar placement is out
+  // of scope: an agent-authored deploy always lands on shared capacity.
+  // Thin adapter over Interchange's native deploy: `registry.deploy()`
+  // (packages/agent-workflow-authoring) already resolves and authorizes the
+  // asset (own-tenant row check, `workflow:*`/create) before calling this,
+  // so this seam receives the already-resolved `assetId`/`assetName`
+  // rather than re-querying `assetTable` — the only work this adapter adds
+  // on top of native `sessionService.deployWorkflowFromSource` is
+  // server-side inference-source resolution (`resolveDefinitionSources`),
+  // because the native `/workflows/deployments` route requires the caller
+  // to supply `sources` directly and an agent caller must never see a
+  // provider secret to do that itself. `modelRequirements: null` is
+  // deliberate: a workflow's own declared model needs (if any) are not
+  // considered at this step, matching `agent-definitions`' identical
+  // tenant-default resolution above; deploy always resolves against the
+  // tenant's default/first-preference model.
+  //
+  // `wf_deploy_preview` (CL-7362) is NOT wired through this
+  // deployer, and is not a probe-without-freeze call into native
+  // `sessionService` — a reviewed vendored delta that would have enabled
+  // that was reverted (see VENDORED.md). Instead `registry.previewDeploy`
+  // (packages/agent-workflow-authoring) does a static, read-only render of
+  // the already-committed source at `commitSha` straight off `RepoStore`,
+  // parsing `package.json` and the entry module text; it never touches
+  // install/probe/gate/freeze, so it truly cannot deploy anything.
+  const workflowDeployer: WorkflowDeployer = {
+    async deploy({ tenantId, principalId, assetId, commitSha, entry }) {
+      const tenantRow = await db.query.tenant.findFirst({
+        where: eq(tenantTable.id, tenantId),
+      });
+      if (tenantRow === undefined) {
+        throw new WorkflowAuthorError(
+          "not_found",
+          `tenant ${tenantId} not found`,
+        );
+      }
+
+      const fallbackModel =
+        (await workbenchHostInferencePreferencesResolver(tenantId))[0]?.model ??
+        null;
+      const resolution = await resolveDefinitionSources({
+        db,
+        tenantId,
+        modelRequirements: null,
+        fallbackModel,
+        invokerPreferences: {},
+        credentialCipher,
+      });
+      if (!resolution.ok) {
+        throw new WorkflowAuthorError("invalid", resolution.message);
+      }
+
+      const anchorRunId = generateId("workflowRun");
+      const agentAddress = deriveRunAddress({
+        runId: anchorRunId,
+        domain: tenantRow.domain,
+      });
+      const config: HarnessConfig = {
+        sessionId: generateId("session"),
+        agentId: deriveRunAgentId({ runId: anchorRunId }),
+        tenantId,
+        principalId,
+        agentAddress,
+        systemPrompt: "",
+        tools: [],
+        grants: [],
+        sources: resolution.sources,
+        defaultSource: resolution.defaultSource,
+      };
+
+      try {
+        const result = await sessionService.deployWorkflowFromSource({
+          tenantId,
+          anchorRunId,
+          deploymentDomain: tenantRow.domain,
+          agentAddress,
+          source: {
+            kind: "asset",
+            assetId,
+            package: { format: "source", commitSha },
+          },
+          entry,
+          definitionAssetId: assetId,
+          config,
+        });
+        return {
+          deploymentId: result.anchorRunId,
+          definitionAssetId: assetId,
+          status: "deployed",
+        };
+      } catch (err) {
+        // Mirrors `@intx/hub-api`'s own `/workflows/deployments` route: an
+        // install/gate rejection or an unapproved source chain is a
+        // client/definition error; anything else (a missing commit, an
+        // unreachable sidecar) is reported as `unavailable` rather than
+        // guessed apart, exactly as the native route's own catch-all does.
+        if (err instanceof WorkflowDefinitionInvalidError) {
+          throw new WorkflowAuthorError("invalid", err.message);
+        }
+        throw new WorkflowAuthorError(
+          "unavailable",
+          err instanceof Error ? err.message : "Failed to deploy workflow",
+        );
+      }
+    },
+  };
+  // Agent-authored workflows (CL-7360, CL-7361): an agent publishes a
+  // workflow codebase as a native `kind:"workflow"` asset AND deploys it,
+  // both through this workflow-run-authenticated surface — `deploy`
+  // reaches the exact same `sessionService.deployWorkflowFromSource` the
+  // tenant-session `/workflows/deployments` route drives (`workflowDeployer`
+  // above), never a second gating path. Unlike `/api/workflow-skills`
+  // above, every write here also runs a real `chatGrantStore`
+  // authorization check (`asset:*`/create, `asset:<id>`/write,
+  // `workflow:*`/create) before reaching `RepoStore` or the deploy call,
+  // because authoring and deploying are side effects, not a markdown
+  // skill edit.
   app.route(
     "/api/workflow-workflow-authoring",
     createWorkflowAuthorRoutes({
@@ -1871,8 +2013,10 @@ export async function createHub(config: HubConfig) {
       registry: createWorkflowAuthorRegistry({
         db,
         assetService,
+        repoStore: agentRepoStore.repoStore,
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
+        deployer: workflowDeployer,
       }),
     }),
   );
@@ -1901,13 +2045,12 @@ export async function createHub(config: HubConfig) {
     },
   };
 
-  const definitionFreezer = createDefinitionFreezer(db);
   app.route(
     `${TENANT_PREFIX}/agent-definitions`,
     createAgentDefinitionRoutes({
       db,
       assetService,
-      definitionFreezer,
+      deployer: workflowDeployer,
       skillIndex: skills.skillIndex,
       skillsStore: definitionSkillsStore,
       history: createDefinitionAssetHistory({
@@ -1937,7 +2080,7 @@ export async function createHub(config: HubConfig) {
     createWorkflowAgentCreateRoutes({
       db,
       assetService,
-      definitionFreezer,
+      deployer: workflowDeployer,
       skillIndex: skills.skillIndex,
       skillsStore: definitionSkillsStore,
       capabilityInventory,
@@ -1959,7 +2102,7 @@ export async function createHub(config: HubConfig) {
     createWorkflowCapabilityRoutes({
       db,
       assetService,
-      definitionFreezer,
+      deployer: workflowDeployer,
       skillIndex: skills.skillIndex,
       skillsStore: definitionSkillsStore,
       capabilityInventory,
@@ -1976,7 +2119,7 @@ export async function createHub(config: HubConfig) {
     createWorkflowSkillPinRoutes({
       db,
       assetService,
-      definitionFreezer,
+      deployer: workflowDeployer,
       skillIndex: skills.skillIndex,
       skillsStore: definitionSkillsStore,
       authenticator: createWorkflowRunAuthenticator({ db }),
@@ -2136,6 +2279,7 @@ export async function createHub(config: HubConfig) {
     `${TENANT_PREFIX}/connections`,
     createConnectionRoutes({
       hubUrl: config.baseUrl,
+      registry: CONNECTOR_REGISTRY,
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
@@ -2196,7 +2340,7 @@ export async function createHub(config: HubConfig) {
     }),
   );
   // Connections' own OAuth connect flow (CL-6389): `createOAuthConnectRoutes`
-  // (`@workbench/connections`) was exported but never mounted here — every
+  // (`@corbits/connections`) was exported but never mounted here — every
   // provider whose descriptor sets `oauth` (OpenRouter, Hugging Face, and
   // the GitHub App path) needs this to complete a one-click connect from
   // the settings surface above. Follows #115's `mcp-servers/oauth` mount
@@ -2210,6 +2354,7 @@ export async function createHub(config: HubConfig) {
       hubUrl: config.baseUrl,
       log: (line) => log.info`${line}`,
       credentialCipher,
+      registry: CONNECTOR_REGISTRY,
       // Same env bag `GET .../connections/oauth-configured` reads above.
       oauthEnv: {
         huggingfaceClientId: config.huggingfaceOAuthClientId,
@@ -2221,6 +2366,7 @@ export async function createHub(config: HubConfig) {
       connectCredential: createTenantConnectCredential({
         hubUrl: config.baseUrl,
         log: (line) => log.info`${line}`,
+        registry: CONNECTOR_REGISTRY,
         providerHealth: providerHealthStore,
       }),
       onConnected: settleServiceConnection,
@@ -2402,11 +2548,13 @@ export async function createHub(config: HubConfig) {
       },
     }),
   );
-  // Template block workflows (CL-6405): the instantiate path's
-  // `deployBlockWorkflow` port lands here — the same source-form
-  // materialization pattern (asset + `@corbits/workflow-source` tree +
-  // `freezeInertWorkflowDefinition`) applied to a template's referenced
-  // block definition (`code-review` today).
+  // Template block workflows (CL-6405, cut over to native deploy in
+  // CL-7364): the instantiate path's `deployBlockWorkflow` port lands
+  // here — the same source-form materialization pattern (asset +
+  // `@corbits/workflows`'s `./source` tree) applied to a template's referenced
+  // block definition (`code-review` today), now deployed through the
+  // same `workflowDeployer` the agent-authored deploy path above uses
+  // rather than a hub-local inert freeze.
   app.route(
     `${TENANT_PREFIX}/template-blocks`,
     createTemplateBlockRoutes({
@@ -2462,7 +2610,7 @@ export async function createHub(config: HubConfig) {
           assetId = shell.id;
         }
 
-        await assetService.populateAsset({
+        const { commitSha } = await assetService.populateAsset({
           assetId,
           ref: DEFAULT_ASSET_REF,
           principal: { kind: "hub" },
@@ -2475,14 +2623,20 @@ export async function createHub(config: HubConfig) {
           },
         });
 
-        // Freeze, not a bare ensure: without the frozen wire projection
-        // the block's definition can never launch (CL-6439, the same
-        // disease CL-6447 fixed for the Agents page create path).
-        const { definitionId } = await freezeInertWorkflowDefinition(db, {
+        // Native deploy, not a hub-local inert freeze (CL-7364): the same
+        // `workflowDeployer` the agent-authored deploy path above drives,
+        // so a template block's definition goes through the real
+        // bundle → sidecar probe → capability walk → gate → freeze
+        // pipeline instead of a hub-side shortcut.
+        const result = await workflowDeployer.deploy({
+          tenantId,
+          principalId,
           assetId,
-          workflowJson,
+          assetName,
+          commitSha,
+          entry: WORKFLOW_SOURCE_ENTRY,
         });
-        return { id: definitionId, created: true };
+        return { id: result.definitionAssetId, created: true };
       },
     }),
   );
@@ -2499,6 +2653,7 @@ export async function createHub(config: HubConfig) {
         conditionRegistry: chatConditionRegistry,
       }),
       log: (line) => log.info`${line}`,
+      presets: MCP_PRESETS,
       onConnected: settleServiceConnection,
     }),
   );
@@ -2516,6 +2671,7 @@ export async function createHub(config: HubConfig) {
       }),
       log: (line) => log.info`${line}`,
       credentialCipher,
+      presets: MCP_PRESETS,
       onConnected: settleServiceConnection,
       // `/w/` for the same reason as the connections/oauth mount above.
       returnPathAllowlist: [
@@ -2533,6 +2689,7 @@ export async function createHub(config: HubConfig) {
     "/api/workflow-connections",
     createWorkflowConnectionRoutes({
       authenticator: createWorkflowRunAuthenticator({ db }),
+      registry: CONNECTOR_REGISTRY,
       // Same `isConnectorConnected` the pinned-package factory is wired
       // with above (CL-6492).
       isConnectorConnected,
@@ -2596,8 +2753,8 @@ export async function createHub(config: HubConfig) {
     bus: mailboxBus,
   });
 
-  // Shared `FoldedRunsDeps` for every one-shot Myra prompt below (routine
-  // drafting, agent-definition drafting): a real one-shot inference call
+  // Shared `FoldedRunsDeps` for every one-shot Myra prompt below
+  // (agent-definition drafting): a real one-shot inference call
   // that launches a folded run, awaits its single reply, and tears the run
   // down immediately — never a resident that outlives the request, so no
   // idle-sleep lifecycle is needed for it.
@@ -2668,10 +2825,9 @@ export async function createHub(config: HubConfig) {
   // real status instead of a bare run id.
   const routineGrantStore = createGrantStore(db);
   const routineStore = createDrizzleRoutineStore(db);
-  const routineDraftStore = createDrizzleDraftStore(db);
   // The honest end-to-end delivery-destination rule: a workflow that
   // never posts to a workbench (e.g. recurring-task, always delivering
-  // to its creator's Inbox — see @corbits/workflow-catalog's
+  // to its creator's Inbox — see @workbench/templates's
   // `deliveryMode`) must never be forced to collect, or block on
   // missing, a `deliveryWorkbenchId` it would just discard. An unknown
   // definitionId (row missing, or its asset name isn't catalog-known)
@@ -2747,52 +2903,6 @@ export async function createHub(config: HubConfig) {
     return { ok: true };
   }
 
-  /**
-   * The routine-drafting inventory's workflow half: every deployed
-   * definition in the tenant whose catalog entry is `automatable`,
-   * carrying the exact `triggerFields`/`deliveryMode` Myra's drafted
-   * trigger input is checked against (`@corbits/routines`'
-   * `validateRoutineDraftReplyAgainstInventory`). Mirrors
-   * `listMyraConversationalAgents` below in shape, scoped to
-   * automatable rather than conversational definitions.
-   */
-  async function listAutomatableWorkflowsForDraftInventory(
-    tenantId: string,
-  ): Promise<readonly RoutineDraftInventoryWorkflow[]> {
-    const rows = await db.query.workflowDefinition.findMany({
-      where: and(
-        eq(workflowDefinition.tenantId, tenantId),
-        eq(workflowDefinition.status, "deployed"),
-      ),
-    });
-    const out: RoutineDraftInventoryWorkflow[] = [];
-    for (const row of rows) {
-      if (!isAutomatableWorkflowName(row.name)) continue;
-      const entry = workflowCatalogEntry(row.name);
-      if (entry === undefined) continue;
-      const workflow = {
-        definitionId: row.id,
-        assetName: row.name,
-        displayName: workflowDisplayName(row.name, row.description),
-        deliveryMode: entry.deliveryMode,
-        triggerFields: entry.triggerFields ?? [],
-      };
-      out.push(
-        row.description !== null
-          ? { ...workflow, description: row.description }
-          : workflow,
-      );
-    }
-    return out;
-  }
-
-  // A separate `CryptoProviderCache` from `foldedRunCryptoProviders`
-  // above and `agentDefinitionDraftingCryptoProviders` below: a
-  // routine-drafting one-shot run's instance id has nothing to do with
-  // either, so a separate cache keeps them from ever contending over the
-  // same key space.
-  const routineDraftingCryptoProviders = createCryptoProviderCache();
-
   const routineLauncher = createHubRoutineLauncher({
     db,
     sessionService,
@@ -2807,6 +2917,28 @@ export async function createHub(config: HubConfig) {
     joinDeliveryWorkbench: (input) =>
       joinRunParticipant({ store: chatStore }, input),
   });
+  // A `{kind: "webhook"}` routine trigger and the `@corbits/webhook-
+  // triggers` row it names are two views of one binding: the row still
+  // points at a `workflow_definition` row id (`workflowDefinitionId`),
+  // while a routine now names its stable `definitionAssetId` — so
+  // agreement means the definition row's own `assetId` equals the
+  // routine's `definitionAssetId`, not a direct id comparison.
+  const webhookTriggerInTenant = async (
+    tenantId: string,
+    webhookTriggerId: string,
+    definitionAssetId: string,
+  ): Promise<boolean> => {
+    const trigger = await webhookTriggerStore.get(tenantId, webhookTriggerId);
+    if (trigger === undefined) return false;
+    const definitionRow = await db.query.workflowDefinition.findFirst({
+      where: and(
+        eq(workflowDefinition.id, trigger.workflowDefinitionId),
+        eq(workflowDefinition.tenantId, tenantId),
+      ),
+      columns: { assetId: true },
+    });
+    return definitionRow?.assetId === definitionAssetId;
+  };
   const routineWorkbenchNotice = {
     postWorkbenchNotice: (input: {
       tenantId: string;
@@ -2836,76 +2968,51 @@ export async function createHub(config: HubConfig) {
         )
         .then(() => undefined),
   };
-  // Routines routes own their `/routines` and `/routine-drafts` prefixes, so
-  // mount at the tenant root (same pattern as a package that ships absolute
+  // Routines routes own their `/routines` prefix, so mount at the
+  // tenant root (same pattern as a package that ships absolute
   // resource paths) rather than under a second `/routines` segment.
   app.route(
     TENANT_PREFIX,
     createRoutineRoutes({
       store: routineStore,
-      drafts: routineDraftStore,
       workbenchNotice: routineWorkbenchNotice,
-      // Myra-backed drafting (CL-5917): a real one-shot inference call,
-      // mirroring the agent-definition drafting wiring below — resolve
-      // Myra's definition, offer her the automatable-workflow and
-      // conversational-agent inventory, and never trust her reply beyond
-      // what `@corbits/routines`' own fail-closed validation proves.
-      drafting: createMyraRoutineDrafting({
-        resolveMyraDefinitionId: (tenantId) =>
-          resolveMyraDefinitionIdFromDb(db, tenantId),
-        runner: {
-          run: (runnerInput) =>
-            runOneShotFoldedPrompt(
-              {
-                foldedRuns: oneShotFoldedRunsDeps,
-                events: sidecarRouter.events,
-                cryptoProviders: routineDraftingCryptoProviders,
-                undeploy: (address, reason) =>
-                  sidecarRouter.sendAgentUndeploy(address, reason),
-              },
-              runnerInput,
-            ),
-        },
-        inventorySources: {
-          listAutomatableWorkflows: listAutomatableWorkflowsForDraftInventory,
-          listTaskableAgents: listMyraConversationalAgents,
-        },
-      }),
       launcher: routineLauncher,
       requireGrant: createRequireGrant({
         grantStore: routineGrantStore,
         conditionRegistry: chatConditionRegistry,
       }),
+      // CL-7354: a create or retarget's resolved target must also
+      // authorize for the acting principal — same `grantStore` the grant
+      // check above already uses.
+      grantStore: routineGrantStore,
+      conditionRegistry: chatConditionRegistry,
       // A run-now or a scheduled fire's result is a message into the
       // routine's delivery workbench root timeline — never a pre-opened
       // thread; see `@corbits/routines`' `RoutineLauncher` doc comment
       // for the multi-message contract.
       runSummaryResolver: createHubRunSummaryResolver(db),
-      definitionInTenant: async (tenantId, definitionId) => {
-        const row = await db.query.workflowDefinition.findFirst({
-          where: and(
-            eq(workflowDefinition.id, definitionId),
-            eq(workflowDefinition.tenantId, tenantId),
-          ),
-          columns: { id: true },
-        });
-        return row !== undefined;
-      },
+      resolveTarget: (tenantId, definitionAssetId) =>
+        resolveLaunchableDefinition({ db, tenantId, definitionAssetId }),
       // A `{kind: "webhook"}` trigger's `webhookTriggerId` must resolve
       // to a real `webhook_trigger` row in this tenant, pointed at the
       // exact same workflow definition the routine itself runs — see
       // `webhookTriggerValid`'s doc comment in
       // `@corbits/routines`' routes.ts for why the two ids must agree.
-      webhookTriggerInTenant: async (
-        tenantId,
-        webhookTriggerId,
-        definitionId,
-      ) => {
-        const row = await webhookTriggerStore.get(tenantId, webhookTriggerId);
-        return row !== undefined && row.workflowDefinitionId === definitionId;
-      },
+      webhookTriggerInTenant,
       deliveryWorkbenchRequired: routineDeliveryWorkbenchRequired,
       validateRoutineInput: routineInputValid,
+    }),
+  );
+  // Routine target discovery (CL-7351): the one list of deployed, frozen
+  // definitions a routine may reference, beside the platform's own
+  // `/workflows/definitions` listing but authorized per row for the
+  // acting principal — see `@corbits/routines`' targets.ts.
+  app.route(
+    `${TENANT_PREFIX}/workflows/targets`,
+    createRoutineTargetRoutes({
+      db,
+      grantStore: routineGrantStore,
+      conditionRegistry: chatConditionRegistry,
     }),
   );
   // Myra's own routine-management surface (`@corbits/routines-tools`'
@@ -2922,50 +3029,22 @@ export async function createHub(config: HubConfig) {
       launcher: routineLauncher,
       workbenchNotice: routineWorkbenchNotice,
       authenticator: createWorkflowRunAuthenticator({ db }),
-      definitionInTenant: async (tenantId, definitionId) => {
-        const row = await db.query.workflowDefinition.findFirst({
-          where: and(
-            eq(workflowDefinition.id, definitionId),
-            eq(workflowDefinition.tenantId, tenantId),
-          ),
-          columns: { id: true },
-        });
-        return row !== undefined;
-      },
-      // Myra's `routine_create` tool receives a definition's NAME from
-      // `list_agents`, not its `wfd_` id — resolve an exact, deployed-only
-      // name match within the tenant before the `definitionInTenant`
-      // check above runs a second time against the resolved id.
-      resolveDefinitionId: async (tenantId, idOrName) => {
-        const rows = await db.query.workflowDefinition.findMany({
-          where: and(
-            eq(workflowDefinition.name, idOrName),
-            eq(workflowDefinition.tenantId, tenantId),
-            eq(workflowDefinition.status, "deployed"),
-          ),
-          columns: { id: true },
-        });
-        return rows.length === 1 ? rows[0]?.id : undefined;
-      },
-      listDefinitionCandidates: async (tenantId) => {
-        const rows = await db.query.workflowDefinition.findMany({
-          where: and(
-            eq(workflowDefinition.tenantId, tenantId),
-            eq(workflowDefinition.status, "deployed"),
-          ),
-          columns: { id: true, name: true },
-          limit: 8,
-        });
-        return rows;
-      },
-      webhookTriggerInTenant: async (
-        tenantId,
-        webhookTriggerId,
-        definitionId,
-      ) => {
-        const row = await webhookTriggerStore.get(tenantId, webhookTriggerId);
-        return row !== undefined && row.workflowDefinitionId === definitionId;
-      },
+      resolveTarget: (tenantId, definitionAssetId) =>
+        resolveLaunchableDefinition({ db, tenantId, definitionAssetId }),
+      listTargets: (query) =>
+        listRoutineTargets(
+          {
+            db,
+            grantStore: routineGrantStore,
+            conditionRegistry: chatConditionRegistry,
+          },
+          query,
+        ),
+      // CL-7354: same authorization the tenant-session surface enforces
+      // above, for Myra's own create/retarget path.
+      grantStore: routineGrantStore,
+      conditionRegistry: chatConditionRegistry,
+      webhookTriggerInTenant,
       deliveryWorkbenchRequired: routineDeliveryWorkbenchRequired,
       // A routine created from inside a workbench delivers into that
       // workbench: the creating run is a workbench participant, so its
@@ -3105,6 +3184,14 @@ export async function createHub(config: HubConfig) {
       connectorId: "interaction",
       credentialBinding: null,
     });
+    // Workflow-source authoring needs no credential either: every write is
+    // authorized against the run's own asset grants by
+    // `/api/workflow-workflow-authoring` (mounted above).
+    entries.push({
+      name: "@corbits/workflow-authoring-tools",
+      connectorId: "workflow-authoring",
+      credentialBinding: null,
+    });
     return entries;
   }
 
@@ -3131,9 +3218,10 @@ export async function createHub(config: HubConfig) {
     listModels: listMyraModels,
   };
 
-  // An agent-definition drafting one-shot run's instance id has nothing
-  // to do with a routine draft's, same rationale as
-  // `routineDraftingCryptoProviders`' own comment above.
+  // A separate `CryptoProviderCache` from `foldedRunCryptoProviders`
+  // above: an agent-definition drafting one-shot run's instance id has
+  // nothing to do with a folded run's, so a separate cache keeps them
+  // from ever contending over the same key space.
   const agentDefinitionDraftingCryptoProviders = createCryptoProviderCache();
 
   // The create-agent panel's "Describe" step (CL-6074): a real one-shot
@@ -3318,7 +3406,7 @@ export async function createHub(config: HubConfig) {
       envAllowedDomains: config.allowedEmailDomains,
       allowUnverifiedEmails: config.allowUnverifiedEmails,
     },
-    // Same provider-health store `@workbench/connections`' own routes
+    // Same provider-health store `@corbits/connections`' own routes
     // report to and clear (CL-6092) — a successful `/complete` here must
     // clear the same record the shell banner's zero-provider "Fix it"
     // routed someone to onboarding to fix.
@@ -3579,6 +3667,18 @@ if (import.meta.main) {
   });
   const log = getLogger(["hub"]);
   log.info`Hub serving on port ${port}`;
+  // CL-7382: replaces `workbench seed`. Runs against the hub's own real
+  // origin now that it is actually listening — `runSystemSeed`'s
+  // workflow push needs a reachable origin for `git push`, not just an
+  // in-process fetch entry point. Never awaited: a slow or still-
+  // sidecar-less seed must not delay "Hub serving" or hold up shutdown
+  // wiring below it.
+  void runSystemSeed({
+    baseUrl: config.baseUrl,
+    orgSlug: config.defaultTenantSlug,
+    admin: config.envCredentialPlantAdmin,
+    ...(config.seedModel !== undefined ? { seedModel: config.seedModel } : {}),
+  });
   const SHUTDOWN_DRAIN_MS = 10_000;
   // In-flight Hono handlers (a request mid-Postgres-transaction, a git
   // write, anything that has not returned a Response yet) must finish

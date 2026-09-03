@@ -148,22 +148,35 @@ const authenticateAsRun: WorkflowRunAuthenticator = {
     ),
 };
 
-/** Records freeze/re-freeze calls instead of running the real
- * `@corbits/workflow-freeze` machinery (whose own suites cover the DB
- * half); routes here are asserted to invoke it on every content write. */
-function recordingDefinitionFreezer() {
-  const freezes: { assetId: string; workflowJson: string }[] = [];
-  const refreezes: { definitionId: string; workflowJson: string }[] = [];
+/** Records deploy calls instead of running a real
+ * `sessionService.deployWorkflowFromSource`; routes here are asserted to
+ * invoke it, with the commit the write produced, on every content
+ * write. */
+function recordingAgentDefinitionDeployer() {
+  const deploys: {
+    tenantId: string;
+    principalId: string;
+    assetId: string;
+    assetName: string;
+    commitSha: string;
+    entry: string;
+  }[] = [];
   return {
-    freezes,
-    refreezes,
-    freeze: (input: { assetId: string; workflowJson: string }) => {
-      freezes.push(input);
-      return Promise.resolve({ definitionId: "def_new", wireHash: "hash_1" });
-    },
-    refreeze: (input: { definitionId: string; workflowJson: string }) => {
-      refreezes.push(input);
-      return Promise.resolve({ wireHash: "hash_2" });
+    deploys,
+    deploy: (input: {
+      tenantId: string;
+      principalId: string;
+      assetId: string;
+      assetName: string;
+      commitSha: string;
+      entry: string;
+    }) => {
+      deploys.push(input);
+      return Promise.resolve({
+        deploymentId: "dep_1",
+        definitionAssetId: input.assetId,
+        status: "deployed" as const,
+      });
     },
   };
 }
@@ -177,7 +190,7 @@ function buildApp(
     skillsStore: opts.skillsStore ?? createInMemoryDefinitionSkillsStore(),
     capabilityInventory: opts.capabilityInventory ?? fakeCapabilityInventory,
     authenticator: opts.authenticator ?? authenticateAsRun,
-    definitionFreezer: opts.definitionFreezer ?? recordingDefinitionFreezer(),
+    deployer: opts.deployer ?? recordingAgentDefinitionDeployer(),
     ...(opts.tenantDefaultModel !== undefined
       ? { tenantDefaultModel: opts.tenantDefaultModel }
       : {}),

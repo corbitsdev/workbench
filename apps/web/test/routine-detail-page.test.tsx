@@ -32,6 +32,7 @@ const NOW = Date.parse("2026-01-02T00:00:00.000Z");
 const routine: Routine = {
   id: "rtn_1",
   name: "Morning brief",
+  definitionAssetId: "ast_1",
   definitionId: "wfd_1",
   trigger: { kind: "daily", hour: 9, minute: 0 },
   scope: "bench",
@@ -482,6 +483,7 @@ describe("RoutineDetailRoute", () => {
     overrides: Record<string, unknown>,
   ): Record<string, unknown> {
     return {
+      definitionAssetId: "ast_1",
       definitionId: "wfd_1",
       trigger: null,
       scope: "bench",

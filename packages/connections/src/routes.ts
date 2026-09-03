@@ -22,21 +22,22 @@ import {
 } from "@intx/types";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { hasUsableModel } from "@corbits/inference-settings";
-import { reportError } from "@corbits/error-sink";
+import { makeErrorEnvelope, reportError } from "@corbits/error-sink";
+import { OLLAMA_PLACEHOLDER_SECRET } from "./credential-test";
 import {
-  cookiesFromHeader,
-  createHubAPI,
   ensureCredential,
   ensureProvider,
-  makeErrorEnvelope,
-  parseAs,
-  OLLAMA_PLACEHOLDER_SECRET,
   seedCatalog,
-  type ApiCall,
   type EnsureCredentialArgs,
   type EnsureProviderArgs,
   type SeedCatalogArgs,
-} from "@workbench/hub-client";
+} from "@corbits/seeding";
+import {
+  cookiesFromHeader,
+  createHubAPI,
+  parseAs,
+  type ApiCall,
+} from "@corbits/hub-api-client";
 import type { ConnectorDescriptor } from "./descriptor";
 import {
   fireConnectedHook,
@@ -49,7 +50,6 @@ import {
   persistConnectorCredential,
 } from "./persist-credential";
 import type { ProviderHealthStore } from "./provider-health";
-import { CONNECTOR_REGISTRY } from "./registry";
 
 export type DisconnectConnectorArgs = {
   readonly tenantId: string;
@@ -193,10 +193,11 @@ export type CreateConnectionRoutesDeps = {
   hubUrl: string;
   requireGrant: RequireGrant;
   log: (line: string) => void;
-  /** Test-only override, defaulting to `CONNECTOR_REGISTRY` — lets
-   * `routes.test.ts` stub a connector's probe without hitting the real
-   * network or reaching for module mocking. */
-  registry?: Readonly<Record<string, ConnectorDescriptor>>;
+  /** The connector set this build ships — this package carries none of
+   * its own (CL-7384), so a caller always supplies one (the hub passes
+   * `@workbench/templates/connectors`' `CONNECTOR_REGISTRY`; a test
+   * passes its own stub). */
+  registry: Readonly<Record<string, ConnectorDescriptor>>;
   /** Test-only override, matching `complete-credential.ts`'s `seedCatalogFn`
    * override pattern — lets `routes.test.ts` stub credential storage
    * without reaching for module mocking. */
@@ -302,7 +303,7 @@ export function createConnectionRoutes(
 ): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
   const api = createHubAPI(deps.hubUrl);
-  const registry = deps.registry ?? CONNECTOR_REGISTRY;
+  const registry = deps.registry;
   const runDisconnectConnector =
     deps.disconnectConnectorFn ?? disconnectConnector;
   const runGetResolvedCatalog =

@@ -12,7 +12,7 @@ import type { MiddlewareHandler } from "hono";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import type { ModelInfo } from "@intx/types";
 import type { ConnectorDescriptor } from "./descriptor";
-import type { ApiCall } from "@workbench/hub-client";
+import type { ApiCall } from "@corbits/hub-api-client";
 import { createProviderHealthStore } from "./provider-health";
 import { createConnectionRoutes, disconnectConnector } from "./routes";
 
@@ -820,7 +820,7 @@ describe("GET /provider-health", () => {
 // A fake `ApiCall` for `disconnectConnector` itself: unlike the route
 // tests above (which stub the whole function), these exercise the real
 // cleanup ordering against a scripted native-hub double, the same
-// `fakeAPI`-style pattern `packages/hub-client/test/helpers.ts` uses for
+// `fakeAPI`-style pattern `packages/seeding/test/helpers.ts` uses for
 // `ensureProvider`/`ensureCredential`/`seedCatalog`.
 type FakeCall = {
   readonly method: string;

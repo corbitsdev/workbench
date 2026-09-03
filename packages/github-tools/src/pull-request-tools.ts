@@ -57,7 +57,7 @@ function errorResult(
 }
 
 // The wire shape `@corbits/chat`'s orchestrator parses
-// (`@workbench/connections`' `parseMissingCredentialDetail`) to render the
+// (`@corbits/connections`' `parseMissingCredentialDetail`) to render the
 // live connect-service card. Written literally rather than imported: a
 // sandboxed tool package stays free of a dependency on the hub-side
 // connections package for one constant shape both sides already agree on

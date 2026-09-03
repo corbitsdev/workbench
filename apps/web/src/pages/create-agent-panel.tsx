@@ -169,7 +169,7 @@ type Suggestion = {
 };
 
 /** Every card here names something this workbench can actually deploy
- * today (`@corbits/workflow-catalog`'s "Morning brief", "Granola call
+ * today (`@corbits/workflows`'s "Morning brief", "Granola call
  * notes", and general conversational research) — plain copy, no
  * capability this platform can't back up yet. */
 const SUGGESTIONS: readonly Suggestion[] = [

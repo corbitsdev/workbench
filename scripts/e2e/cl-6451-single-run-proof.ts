@@ -35,11 +35,13 @@ import { join as pathJoin } from "node:path";
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
   createGitWorkflowPusher,
-  createHubAPI,
   DEFAULT_WORKFLOWS,
   seedTenant,
+} from "../../packages/seeding/src/index.ts";
+import {
+  createHubAPI,
   type ApiCall,
-} from "../../packages/hub-client/src/index.ts";
+} from "../../packages/hub-api-client/src/index.ts";
 import {
   findPersonalTenant,
   testAndPersistCredential,
@@ -48,7 +50,7 @@ import {
 import {
   OLLAMA_PLACEHOLDER_SECRET,
   ollamaOpenAICompatBaseURL,
-} from "../../packages/hub-client/src/credential-test.ts";
+} from "../../packages/connections/src/credential-test.ts";
 import {
   api,
   e2eDatabaseUrl,

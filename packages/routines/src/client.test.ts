@@ -3,12 +3,7 @@ import { type } from "arktype";
 
 import {
   Routine,
-  RoutineDraft,
   routineCreatedToast,
-  routineDraftApprovePath,
-  routineDraftDiscardPath,
-  routineDraftPath,
-  routineDraftsPath,
   routinePath,
   routineRunNowPath,
   routineRunStartedToast,
@@ -79,19 +74,6 @@ describe("routine path builders", () => {
       "/api/tenants/t1/routines/r1/runs",
     );
   });
-
-  test("build tenant-scoped routine-draft paths", () => {
-    expect(routineDraftsPath("t1")).toBe("/api/tenants/t1/routine-drafts");
-    expect(routineDraftPath("t1", "d1")).toBe(
-      "/api/tenants/t1/routine-drafts/d1",
-    );
-    expect(routineDraftApprovePath("t1", "d1")).toBe(
-      "/api/tenants/t1/routine-drafts/d1/approve",
-    );
-    expect(routineDraftDiscardPath("t1", "d1")).toBe(
-      "/api/tenants/t1/routine-drafts/d1/discard",
-    );
-  });
 });
 
 describe("wire schemas", () => {
@@ -99,7 +81,8 @@ describe("wire schemas", () => {
     const out = Routine({
       id: "r1",
       name: "Morning brief",
-      definitionId: "wfd_1",
+      definitionAssetId: "wfd_1",
+      definitionId: null,
       trigger: null,
       scope: "personal",
       input: {},
@@ -122,7 +105,8 @@ describe("wire schemas", () => {
     const out = Routine({
       id: "r1",
       name: "Morning brief",
-      definitionId: "wfd_1",
+      definitionAssetId: "wfd_1",
+      definitionId: null,
       trigger: null,
       scope: "personal",
       input: {},
@@ -143,7 +127,8 @@ describe("wire schemas", () => {
     const out = Routine({
       id: "r1",
       name: "Morning brief",
-      definitionId: "wfd_1",
+      definitionAssetId: "wfd_1",
+      definitionId: null,
       trigger: {
         kind: "daily",
         hour: 9,
@@ -157,25 +142,6 @@ describe("wire schemas", () => {
       consecutiveFailures: 0,
       deadLetteredAt: null,
       nextFireAt: null,
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
-    });
-    expect(out instanceof type.errors).toBe(false);
-  });
-
-  test("RoutineDraft parses a drafted proposal", () => {
-    const out = RoutineDraft({
-      id: "d1",
-      prompt: "Summarize every morning",
-      status: "draft",
-      proposedSteps: [{ title: "Summarize inbox" }],
-      proposedTrigger: { kind: "daily", hour: 9, minute: 0 },
-      proposedName: "Morning brief",
-      definitionId: null,
-      deliveryWorkbenchId: "ch_1",
-      scope: "personal",
-      autonomy: null,
-      approvedRoutineId: null,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     });

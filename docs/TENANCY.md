@@ -27,8 +27,8 @@ walks the chain on every read.
 ### Root tenant slug (one deployment fact)
 
 The hub ensures a root tenant at boot by slug. That same slug is the
-operator bench `workbench setup` / `workbench seed` and the env-key
-auto-plant resolve:
+operator bench boot-time seeding (`apps/hub/src/system-seed.ts`) and the
+env-key auto-plant resolve:
 
 1. `WORKBENCH_DEFAULT_TENANT` if set
 2. else `ORG_SLUG` (alias)

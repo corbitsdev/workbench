@@ -61,24 +61,28 @@ import {
   paginatedSchema,
 } from "@intx/types";
 import {
+  ollamaOpenAICompatBaseURL,
+  type SupportedCredentialProvider,
+} from "@corbits/connections/credential-test";
+import { preferCompletionCapable } from "@corbits/connections/model-capability";
+import {
   CATALOG_SEEDS,
   DEFAULT_WORKFLOWS,
-  isSidecarUnavailableError,
-  ollamaOpenAICompatBaseURL,
-  parseAs,
   seedTenant,
-  type ApiCall,
   type ModelSource,
   type SeedTenantArgs,
-  type SupportedCredentialProvider,
   type WorkflowPusher,
-} from "@workbench/hub-client";
-import { preferCompletionCapable } from "@workbench/hub-client/model-capability";
+} from "@corbits/seeding";
+import {
+  isSidecarUnavailableError,
+  parseAs,
+  type ApiCall,
+} from "@corbits/hub-api-client";
 import {
   persistConnectorCredential,
   type PersistConnectorCredentialFns,
-} from "@workbench/connections/persist-credential";
-import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
+} from "@corbits/connections/persist-credential";
+import { CONNECTOR_REGISTRY } from "@workbench/templates/connectors";
 import { personalTenantSlug, seededWorkflowStatus } from "./provision";
 
 /** The onboarding UI's copy for a partial seed: every durable step
@@ -100,7 +104,7 @@ export type PersonalTenant = {
 export type TestAndPersistCredentialResult =
   /**
    * Kept for API compatibility with dependents that accept it as a
-   * possible outcome (`@workbench/connections`' `OAuthStoreOutcome`,
+   * possible outcome (`@corbits/connections`' `OAuthStoreOutcome`,
    * matched "exactly" per that module's own doc comment) — the default
    * implementation below never produces it, since CL-6123 dropped the
    * probe that used to be the only thing that could.
@@ -443,7 +447,7 @@ export async function testAndPersistCredential(
   // UI — a pasted key or a completed OAuth exchange — always rotates a
   // name-conflicting credential (a regenerated key, or a retry after a
   // bad paste): see `ensureCredential`'s own `verified` doc comment in
-  // `@workbench/hub-client`'s `seed.ts` for the full rotation rule.
+  // `@corbits/seeding`'s `seed.ts` for the full rotation rule.
   await persistConnectorCredential({
     api: args.api,
     cookies: args.cookies,

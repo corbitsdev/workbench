@@ -20,7 +20,7 @@ async function dueRoutine(
   return store.createRoutine({
     tenantId: "t1",
     name,
-    definitionId: "def_1",
+    definitionAssetId: "def_1",
     trigger: CRON,
     scope: "bench",
     input: {},
@@ -277,7 +277,7 @@ describe("createRoutineIfAbsent", () => {
   const presetInput = {
     tenantId: "t1",
     name: "Daily digest",
-    definitionId: "def_1",
+    definitionAssetId: "def_1",
     trigger: CRON,
     scope: "bench" as const,
     input: {},

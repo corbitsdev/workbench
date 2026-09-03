@@ -10,7 +10,7 @@
 import type { Context } from "hono";
 import type { TenantEnv } from "@intx/hub-api";
 import { reportError } from "@corbits/error-sink";
-import { makeErrorEnvelope } from "@workbench/hub-client";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 /**
  * Duck-typed rather than an `instanceof` allowlist: any error carrying a

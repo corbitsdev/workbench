@@ -113,6 +113,68 @@ export const routineMigrations: readonly RoutineMigration[] = [
         WHERE "preset_key" IS NOT NULL AND "deleted_at" IS NULL;
     `,
   },
+  // CL-7350: a routine targets a workflow ASSET, not a definition row.
+  // The platform keys `workflow_definition` on `(asset_id, wire_hash)`,
+  // so a redeploy mints a new definition; the asset is the only identity
+  // stable across redeploys (docs/workflow-model.md). Hard cutover: the
+  // asset id is backfilled from the platform's `workflow_definition`
+  // row the old `definition_id` named, a routine whose definition no
+  // longer resolves to an asset is deleted (and counted in a WARNING
+  // the migration raises — its `routine_run` history stays), and the
+  // old column is dropped. A draft's pinned definition follows the same
+  // rename; an unresolvable draft pin becomes null (a draft with no
+  // target is already a valid, reviewable state).
+  {
+    name: "0006_routine_definition_asset_id",
+    sql: `
+      ALTER TABLE "routines"."routine"
+        ADD COLUMN IF NOT EXISTS "definition_asset_id" text;
+      UPDATE "routines"."routine" r
+        SET "definition_asset_id" = d."asset_id"
+        FROM "public"."workflow_definition" d
+        WHERE d."id" = r."definition_id" AND d."asset_id" IS NOT NULL;
+      DO $$
+      DECLARE dropped integer;
+      BEGIN
+        WITH gone AS (
+          DELETE FROM "routines"."routine"
+            WHERE "definition_asset_id" IS NULL
+            RETURNING "id"
+        )
+        SELECT count(*) INTO dropped FROM gone;
+        UPDATE "routines"."routine_draft"
+          SET "approved_routine_id" = NULL
+          WHERE "approved_routine_id" IS NOT NULL
+            AND "approved_routine_id" NOT IN (SELECT "id" FROM "routines"."routine");
+        IF dropped > 0 THEN
+          RAISE WARNING '@corbits/routines 0006: deleted % routine row(s) whose definition_id no longer resolves to a workflow asset', dropped;
+        END IF;
+      END $$;
+      ALTER TABLE "routines"."routine"
+        ALTER COLUMN "definition_asset_id" SET NOT NULL;
+      ALTER TABLE "routines"."routine" DROP COLUMN "definition_id";
+
+      ALTER TABLE "routines"."routine_draft"
+        ADD COLUMN IF NOT EXISTS "definition_asset_id" text;
+      UPDATE "routines"."routine_draft" r
+        SET "definition_asset_id" = d."asset_id"
+        FROM "public"."workflow_definition" d
+        WHERE d."id" = r."definition_id" AND d."asset_id" IS NOT NULL;
+      ALTER TABLE "routines"."routine_draft" DROP COLUMN "definition_id";
+    `,
+  },
+  // CL-7375: the draft/review state machine is deleted (Myra creates
+  // routines only through `routine_targets` → `routine_create`/
+  // `routine_update`, see docs/workflow-model.md). No code path reads or
+  // writes `routine_draft` any more; drop it. Every earlier migration
+  // above that mentions it is left untouched — it is the historical
+  // record of a table that used to exist.
+  {
+    name: "0007_drop_routine_draft",
+    sql: `
+      DROP TABLE IF EXISTS "routines"."routine_draft";
+    `,
+  },
 ];
 
 // Named distinctly from the platform's setup ledger and from any

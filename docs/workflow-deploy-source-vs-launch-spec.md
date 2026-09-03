@@ -4,7 +4,7 @@ Analysis for CL-7271. Read against the vendored pin `a8bc06ae`.
 
 ## The claim under test
 
-CL-7271 was filed on the claim that `@corbits/workflow-deploy-source` duplicates
+CL-7271 was filed on the claim that `@corbits/workflows`'s `./deploy-source` duplicates
 Interchange's native `workflow_run_launch_spec`, and should be deleted in favour
 of it.
 
@@ -79,7 +79,7 @@ The defensible options, in order of preference:
 3. **Cut over to freeze.** Rejected — reverses CL-6687.
 
 Option 1 does not delete any code. That is the honest outcome: the ~350 loc in
-`@corbits/workflow-deploy-source` is not redundant, and CL-7271's premise that it
+`@corbits/workflows`'s `./deploy-source` is not redundant, and CL-7271's premise that it
 could simply be deleted does not survive reading the native writer.
 
 ## What still stands from CL-7271

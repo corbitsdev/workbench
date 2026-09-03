@@ -636,9 +636,38 @@ select:disabled,
 }
 
 .chat-sidebar-row-menu-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
   flex-shrink: 0;
+  border: 0;
+  border-radius: var(--ui-radius-sm, 0.25rem);
+  background: transparent;
+  color: var(--muted-foreground);
   opacity: 0;
-  transition: opacity 120ms;
+  transition:
+    opacity var(--duration-micro, 150ms) var(--ease-out, ease),
+    background var(--duration-micro, 150ms) var(--ease-out, ease),
+    color var(--duration-micro, 150ms) var(--ease-out, ease);
+}
+
+.chat-sidebar-row-menu-trigger::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
+.chat-sidebar-row-menu-trigger:hover {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+}
+
+.chat-sidebar-row-menu-trigger:focus-visible {
+  outline: 2px solid var(--ring, var(--primary));
+  outline-offset: 2px;
 }
 
 .chat-sidebar-row:hover .chat-sidebar-row-menu-trigger,
@@ -2289,9 +2318,11 @@ select:disabled,
 }
 
 /* Tasteful motion only: a soft entrance on phase change, no looping or
-   attention-seeking animation, fully off under reduced motion. */
+   attention-seeking animation, fully off under reduced motion.
+   DESIGN.md's motion ceiling is 300ms — stays at 280ms. */
 .onboarding-phase {
-  animation: onboarding-phase-in 0.32s ease both;
+  animation: onboarding-phase-in var(--duration-large, 300ms)
+    var(--ease-out, ease) both;
 }
 
 @keyframes onboarding-phase-in {

@@ -9,21 +9,21 @@ workflow deploys.
 
 - `provision.ts`'s `provisionPersonalTenantIfNeeded` mints the personal
   bench through the hub's native tenant-creation route and
-  `@workbench/hub-client`'s `seedTenant`/`DEFAULT_WORKFLOWS` — never a
+  `@corbits/seeding`'s `seedTenant`/`DEFAULT_WORKFLOWS` — never a
   product-owned tenant table of its own.
 - `complete-credential.ts` proves a pasted key with
-  `@workbench/hub-client`'s `testProviderCredential` before storing it
+  `@corbits/connections`'s `testProviderCredential` before storing it
   through the hub's native `POST /api/tenants/:id/credentials`
   (`ensureCredential`/`ensureProvider`), then runs the same
   `seedCatalog`/`seedTenant` path an operator-configured key runs.
 - `huggingface-connect.ts` and `openrouter-connect.ts` are thin
   re-exports: the actual OAuth/PKCE connect mechanics live in
-  `@workbench/connections` (CL-6028 generalized both flows into that
+  `@corbits/connections` (CL-6028 generalized both flows into that
   package's OAuth route factory) and are kept here only so existing
   imports don't break.
 - `@intx/crypto`'s `CredentialCipher` seals the plaintext key carried from
   an OAuth callback to onboarding's own follow-up request (see
-  `pending-seed.ts`); `@workbench/access-policy` and `@workbench/hub-client`
+  `pending-seed.ts`); `@workbench/access-policy` and `@corbits/hub-api-client`
   supply the grant and tenant primitives provisioning reuses.
 
 ## Key modules

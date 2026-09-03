@@ -1,0 +1,31 @@
+{
+  "name": "@workbench/templates",
+  "private": true,
+  "description": "Workbench templates: the shipped WorkbenchDefinition data (one directory per template, peer of workflows/) plus the pure logic that instantiates one against a bench over injected ports",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./connectors": "./connectors.ts",
+    "./instantiate": "./instantiate.ts",
+    "./settings": "./settings.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/code-review": "workspace:*",
+    "@corbits/connections": "workspace:*",
+    "@corbits/jimmy-agent": "workspace:*",
+    "@corbits/scout-agent": "workspace:*",
+    "@corbits/workflows": "workspace:*",
+    "arktype": "catalog:",
+    "simple-icons": "^16.28.0"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

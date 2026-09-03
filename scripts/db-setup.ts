@@ -37,7 +37,7 @@ import {
   listWorkbenchLaunchFoldedRunIds,
 } from "../packages/chat/src/migrations";
 import { applyWebhookTriggersMigrations } from "../packages/webhook-triggers/src/migrations";
-import { reconcileDuplicateRepoGrants } from "../packages/workflow-catalog/src/reconcile-duplicate-repo-grants";
+import { reconcileDuplicateRepoGrants } from "../packages/connections/src/reconcile-duplicate-repo-grants";
 import { applyNotifyMigrations } from "../packages/notify/src/migrations";
 import { applyRoutineMigrations } from "../packages/routines/src/migrations";
 import {
@@ -52,7 +52,7 @@ import { applyAgentDirectoryMigrations } from "../packages/agent-directory/src/m
 import { applyOnboardingMigrations } from "../packages/onboarding/src/migrations";
 import { applyAccessPolicyMigrations } from "../packages/access-policy/src/migrations";
 import { applyRunKeyHistoryMigrations } from "../packages/run-key-history/src/migrations";
-import { applyWorkflowDeploySourceMigrations } from "../packages/workflow-deploy-source/src/migrations";
+import { applyWorkflowDeploySourceMigrations } from "../packages/workflows/src/deploy-source/migrations";
 import { applyInferenceCatalogMigrations } from "../packages/inference-catalog/src/migrations";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
@@ -91,7 +91,7 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   { name: "@workbench/access-policy", apply: applyAccessPolicyMigrations },
   { name: "@corbits/run-key-history", apply: applyRunKeyHistoryMigrations },
   {
-    name: "@corbits/workflow-deploy-source",
+    name: "@corbits/workflows (deploy-source)",
     apply: applyWorkflowDeploySourceMigrations,
   },
   {

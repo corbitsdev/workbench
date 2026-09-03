@@ -64,6 +64,7 @@ function mountTenantScoped(
   overrides: Parameters<typeof createTenantConnectCredential>[0] = {
     hubUrl: "https://bench.example.com",
     log: () => undefined,
+    registry: {},
   },
 ): {
   app: Hono<TenantEnv>;
@@ -252,6 +253,7 @@ describe("createTenantConnectCredential, mounted through createOAuthConnectRoute
     const { app } = mountTenantScoped({
       hubUrl: "https://bench.example.com",
       log: () => undefined,
+      registry: {},
       providerHealth,
     });
 

@@ -30,7 +30,7 @@ the agent — no settings page round-trip, no "report back when done".
   (`packages/chat/src/connect-pending.ts`, applied by
   `workflow-participant-routes.ts`), so a later connect can find every
   room that is waiting.
-- **Settling** — every connect surface in `@workbench/connections`
+- **Settling** — every connect surface in `@corbits/connections`
   (OAuth callback, pasted key, MCP OAuth, keyless MCP preset) fires the
   optional `onConnected` hook (`src/connected-hook.ts`) once the
   credential is durably stored. The hub wires it to
@@ -74,7 +74,8 @@ own template card does not ride that path.
 ## Gmail
 
 `gmail` is a pure hosted-OAuth connector
-(`packages/connections/src/gmail-connect.ts` + the registry entry):
+(`packages/connections/src/gmail-connect.ts` + its descriptor in
+`templates/connectors.ts`):
 Google's code flow with PKCE, the `gmail.modify` scope, and
 `access_type=offline` so the exchange captures a refresh token — stored
 as the credential row's `refreshSecret` next to the one-hour access

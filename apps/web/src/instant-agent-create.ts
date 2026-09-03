@@ -25,7 +25,7 @@ import {
   templateSettingsPatch,
   type WorkbenchDefinition,
   type WorkbenchOnboardingStep,
-} from "@corbits/workflow-catalog";
+} from "@workbench/templates";
 
 import {
   deployWorkbenchTemplateBlock,

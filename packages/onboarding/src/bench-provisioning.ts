@@ -32,7 +32,8 @@
 // module stays out of the auth mechanism entirely.
 
 import { reportError } from "@corbits/error-sink";
-import { type ApiCall, type WorkflowPusher } from "@workbench/hub-client";
+import { type WorkflowPusher } from "@corbits/seeding";
+import { type ApiCall } from "@corbits/hub-api-client";
 import { ensureSeeded } from "./complete-credential";
 import { isFullySeeded } from "./provision";
 import {

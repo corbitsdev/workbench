@@ -15,7 +15,7 @@
 // this package's README). A deployer therefore pins this definition's
 // `inferencePreferences` to the hub's `noop-inference` endpoint (see
 // `packages/chat/src/noop-inference.ts` and
-// `packages/hub-client/src/seed.ts`'s `NOOP_MODEL_SOURCE`): the turn
+// `packages/seeding/src/seed.ts`'s `NOOP_MODEL_SOURCE`): the turn
 // completes instantly against a constant, never reaching a real model
 // provider, so running this workflow every few seconds costs nothing.
 //

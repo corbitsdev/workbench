@@ -1,6 +1,6 @@
 // Reads a workbench template's manifest from the bench library (CL-6344)
 // — `instant-agent-create.ts` instantiates from this seeded row, never
-// from a hardcoded `@corbits/workflow-catalog` import. The read itself
+// from a hardcoded `@workbench/templates` import. The read itself
 // is what converges the shelf (CL-6458), so these routes answer for a
 // bench of any age. The wire shape is the library's `{id, content}`
 // entry; the content string re-enters through the catalog's own
@@ -11,7 +11,7 @@ import { type } from "arktype";
 import {
   parseWorkbenchDefinition,
   type WorkbenchDefinition,
-} from "@corbits/workflow-catalog";
+} from "@workbench/templates";
 import { ApiQueryError } from "@corbits/api-query";
 
 const TemplateLibraryEntry = type({ id: "string > 0", content: "string > 0" });

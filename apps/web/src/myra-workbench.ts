@@ -10,13 +10,13 @@ import {
   isWorkbenchTitleMatch,
   type Workbench,
 } from "@corbits/chat-ui";
-import { WORKFLOW_CATALOG } from "@corbits/workflow-catalog";
+import { WORKFLOW_CATALOG } from "@workbench/templates";
 
 import { listAgentDefinitions, type AgentDefinition } from "./agents-api";
 
 export const MYRA_WORKBENCH_TITLE = "Myra";
 
-/** The seeded workflow asset backing Myra (`packages/hub-client/src/seed.ts`
+/** The seeded workflow asset backing Myra (`packages/seeding/src/seed.ts`
  * deploys it as `assistant`, stamped with catalog displayName "Myra"). A
  * chat's `definitionId` names this deployed definition's row id, never the
  * asset name itself. */

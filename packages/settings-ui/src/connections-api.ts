@@ -1,5 +1,5 @@
 // Connections section seam to the connector-registry routes
-// (`/api/tenants/:tenantId/connections/:connectorId/*`, `@workbench/connections`'s
+// (`/api/tenants/:tenantId/connections/:connectorId/*`, `@corbits/connections`'s
 // route factory). `credentials-api.ts`-shaped: same fetch wrapper, same
 // error class convention, arktype at the trust boundary.
 
@@ -85,7 +85,7 @@ export function completeConnectorCredential(
  * credential (`model_provider.credential_id` is `ON DELETE RESTRICT`);
  * this route deletes the catalog provider first (cascading its
  * offerings), then the credential provider row (cascading its
- * credentials) — see `@workbench/connections`' `disconnectConnector` for
+ * credentials) — see `@corbits/connections`' `disconnectConnector` for
  * the full ordering and why (CL-6258).
  */
 export function disconnectConnector(

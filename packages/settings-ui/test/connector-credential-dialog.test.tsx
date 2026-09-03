@@ -11,7 +11,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
-import type { ConnectorDescriptor } from "@workbench/connections/registry";
+import type { ConnectorDescriptor } from "@corbits/connections/registry";
 
 import { ConnectorCredentialDialog } from "../src/connections-section";
 import { SETTINGS_STRINGS } from "../src/strings";

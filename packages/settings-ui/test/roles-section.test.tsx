@@ -1,12 +1,11 @@
-// CL-6077: the "Assign a role" person picker previously listed every
-// principal — people, agents, and workflows — as flat, indistinguishable
-// options. Grouping by kind (optgroup) means a workflow's machine
-// principal can never be mistaken for a person's account in the picker.
+// CL-6664: the "Assign a role" person picker must show only user-kind
+// principals — the same roster as the People section. Agent/workflow
+// machine identities are excluded to prevent placeholder-named garbage
+// accounts from polluting the picker.
 
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { PRINCIPAL_KIND_LABEL, PRINCIPAL_KIND_ORDER } from "../src/identity";
 import { RoleAssignments } from "../src/roles-section";
 
 const timestamps = {
@@ -32,7 +31,7 @@ function principal(
 }
 
 describe("RoleAssignments picker", () => {
-  test("groups the person select by principal kind, in user/agent/workflow order", () => {
+  test("shows only user-kind principals, not agents or workflows", () => {
     const markup = renderToStaticMarkup(
       <RoleAssignments
         roles={[
@@ -45,7 +44,43 @@ describe("RoleAssignments picker", () => {
           },
         ]}
         principals={[
+          principal("user", "prn_user", "Alice Anderson"),
+          principal("agent", "prn_agent", "Research Assistant"),
           principal("workflow", "prn_wf", "Nightly digest"),
+        ]}
+        onAssign={() => undefined}
+        onUnassign={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain("Alice Anderson");
+    expect(markup).not.toContain("Research Assistant");
+    expect(markup).not.toContain("Nightly digest");
+    expect(markup).not.toContain("<optgroup");
+  });
+
+  test("shows no optgroups (flat list)", () => {
+    const markup = renderToStaticMarkup(
+      <RoleAssignments
+        roles={[]}
+        principals={[
+          principal("user", "prn_1", "Alice Anderson"),
+          principal("user", "prn_2", "Bob Baker"),
+        ]}
+        onAssign={() => undefined}
+        onUnassign={() => undefined}
+      />,
+    );
+    expect(markup).not.toContain("<optgroup");
+    expect(markup).toContain("Alice Anderson");
+    expect(markup).toContain("Bob Baker");
+  });
+
+  test("excludes agents from the assignments table too", () => {
+    const markup = renderToStaticMarkup(
+      <RoleAssignments
+        roles={[]}
+        principals={[
           principal("user", "prn_user", "Alice Anderson"),
           principal("agent", "prn_agent", "Research Assistant"),
         ]}
@@ -53,29 +88,21 @@ describe("RoleAssignments picker", () => {
         onUnassign={() => undefined}
       />,
     );
-
-    const groupOrder = [...markup.matchAll(/<optgroup label="([^"]+)"/g)].map(
-      (match) => match[1],
-    );
-    expect(groupOrder).toEqual(
-      PRINCIPAL_KIND_ORDER.map((kind) => PRINCIPAL_KIND_LABEL[kind]),
-    );
-    expect(groupOrder).not.toEqual([...PRINCIPAL_KIND_ORDER]);
+    // The assignments table header should exist but have no rows
+    expect(markup).toContain("No one has been assigned a role yet.");
+    expect(markup).not.toContain("Research Assistant");
   });
 
-  test("omits an empty kind group entirely rather than an empty optgroup", () => {
+  test("does not show user kind label for single-kind list", () => {
     const markup = renderToStaticMarkup(
       <RoleAssignments
         roles={[]}
-        principals={[principal("user", "prn_user", "Alice Anderson")]}
+        principals={[principal("user", "prn_1", "Alice Anderson")]}
         onAssign={() => undefined}
         onUnassign={() => undefined}
       />,
     );
-    const groupOrder = [...markup.matchAll(/<optgroup label="([^"]+)"/g)].map(
-      (match) => match[1],
-    );
-    expect(groupOrder).toEqual([PRINCIPAL_KIND_LABEL.user]);
-    expect(groupOrder).not.toEqual(["user"]);
+    expect(markup).toContain("Alice Anderson");
+    expect(markup).not.toContain("<optgroup");
   });
 });

@@ -16,6 +16,7 @@ import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
 import { applyRoutineMigrations } from "../src/migrations";
 import { backoffMsForFailure, createDrizzleRoutineStore } from "../src/store";
 import { dbGate } from "../../../scripts/e2e/db-gate";
+import { createPlatformWorkflowDefinitionStub } from "./platform-stub";
 
 function scratchUrlFor(e2eUrl: string): string {
   const url = new URL(e2eUrl);
@@ -58,6 +59,7 @@ describeIfDb(
       } finally {
         await maintenance.end();
       }
+      await createPlatformWorkflowDefinitionStub(scratchUrl);
       await applyRoutineMigrations(scratchUrl);
     });
 
@@ -77,6 +79,33 @@ describeIfDb(
       }
     });
 
+    test("a routine persists and reads back its target asset id, never a definition id", async () => {
+      const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
+      try {
+        const store = createDrizzleRoutineStore(drizzle(sql));
+        const created = await store.createRoutine({
+          tenantId: TENANT_ID,
+          name: "Targeted",
+          definitionAssetId: "ast_digest",
+          trigger: null,
+          scope: "bench",
+          input: {},
+          createdBy: "user_1",
+        });
+        expect(created.definitionAssetId).toBe("ast_digest");
+        expect("definitionId" in created).toBe(false);
+
+        const read = await store.getRoutine(TENANT_ID, created.id);
+        expect(read?.definitionAssetId).toBe("ast_digest");
+        const listed = await store.listRoutines(TENANT_ID);
+        expect(
+          listed.find((row) => row.id === created.id)?.definitionAssetId,
+        ).toBe("ast_digest");
+      } finally {
+        await sql.end();
+      }
+    });
+
     test("markFailedFire backs off nextFireAt when nothing has changed since the claim", async () => {
       const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
       try {
@@ -84,7 +113,7 @@ describeIfDb(
         const routine = await store.createRoutine({
           tenantId: TENANT_ID,
           name: "Hourly",
-          definitionId: "def_1",
+          definitionAssetId: "def_1",
           trigger: { kind: "interval", unit: "hours", every: 1 },
           scope: "bench",
           input: {},
@@ -123,7 +152,7 @@ describeIfDb(
         const routine = await store.createRoutine({
           tenantId: TENANT_ID,
           name: "Hourly again",
-          definitionId: "def_1",
+          definitionAssetId: "def_1",
           trigger: { kind: "interval", unit: "hours", every: 1 },
           scope: "bench",
           input: {},

@@ -7,11 +7,11 @@
 // "owns the domain" and "stays generic."
 
 import { EmptyState, Tabs } from "@corbits/react-ui";
-import type { ResolvedPlugin } from "@workbench/connections/plugins";
+import type { ResolvedPlugin } from "@corbits/connections/plugins";
 import {
   MCP_PRESETS,
   MCP_PRESET_CONNECTOR_IDS,
-} from "@workbench/connections/mcp-presets";
+} from "@workbench/templates/connectors";
 import { Lightning } from "@corbits/icons";
 import { useMemo } from "react";
 

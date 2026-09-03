@@ -11,7 +11,7 @@
 //
 // Never reimplements credential planting: the live probe is
 // `testProviderCredential` and the actual plant is `seedCatalog` (same
-// `@workbench/hub-client` functions `completeCredentialSetup` calls),
+// `@corbits/connections` functions `completeCredentialSetup` calls),
 // reused here exactly as onboarding's own guided step uses them. This
 // module's only job is the env-map-to-provider translation, the
 // idempotency check that skips overwriting a provider already carrying
@@ -28,16 +28,17 @@ import {
 } from "@intx/types";
 import { reportError } from "@corbits/error-sink";
 import {
-  inferenceCredentialName,
   OLLAMA_PLACEHOLDER_SECRET,
-  parseAs,
-  seedCatalog,
   testProviderCredential,
-  type ApiCall,
-  type SeedCatalogArgs,
   type SupportedCredentialProvider,
   type TestProviderCredentialArgs,
-} from "@workbench/hub-client";
+} from "@corbits/connections/credential-test";
+import {
+  inferenceCredentialName,
+  seedCatalog,
+  type SeedCatalogArgs,
+} from "@corbits/seeding";
+import { parseAs, type ApiCall } from "@corbits/hub-api-client";
 
 /**
  * The conventional environment variable name(s) each curated provider's

@@ -263,22 +263,35 @@ const allowAllRequireGrant: RequireGrant = () => async (_c, next) => {
   await next();
 };
 
-/** Records freeze/re-freeze calls instead of running the real
- * `@corbits/workflow-freeze` machinery (whose own suites cover the DB
- * half); routes here are asserted to invoke it on every content write. */
-function recordingDefinitionFreezer() {
-  const freezes: { assetId: string; workflowJson: string }[] = [];
-  const refreezes: { definitionId: string; workflowJson: string }[] = [];
+/** Records deploy calls instead of running the real
+ * `sessionService.deployWorkflowFromSource` machinery (whose own suites
+ * cover the install/probe/gate/freeze half); routes here are asserted to
+ * invoke it on every content write, with the commit the write produced. */
+function recordingAgentDefinitionDeployer() {
+  const deploys: {
+    tenantId: string;
+    principalId: string;
+    assetId: string;
+    assetName: string;
+    commitSha: string;
+    entry: string;
+  }[] = [];
   return {
-    freezes,
-    refreezes,
-    freeze: (input: { assetId: string; workflowJson: string }) => {
-      freezes.push(input);
-      return Promise.resolve({ definitionId: "def_new", wireHash: "hash_1" });
-    },
-    refreeze: (input: { definitionId: string; workflowJson: string }) => {
-      refreezes.push(input);
-      return Promise.resolve({ wireHash: "hash_2" });
+    deploys,
+    deploy: (input: {
+      tenantId: string;
+      principalId: string;
+      assetId: string;
+      assetName: string;
+      commitSha: string;
+      entry: string;
+    }) => {
+      deploys.push(input);
+      return Promise.resolve({
+        deploymentId: "dep_1",
+        definitionAssetId: input.assetId,
+        status: "deployed" as const,
+      });
     },
   };
 }
@@ -289,9 +302,9 @@ function buildApp(
   history: DefinitionAssetHistory = fakeHistory(),
   capabilityInventory: CapabilityInventoryProvider = fakeCapabilityInventory,
   skillsStore: DefinitionSkillsStore = createInMemoryDefinitionSkillsStore(),
-  definitionFreezer: ReturnType<
-    typeof recordingDefinitionFreezer
-  > = recordingDefinitionFreezer(),
+  deployer: ReturnType<
+    typeof recordingAgentDefinitionDeployer
+  > = recordingAgentDefinitionDeployer(),
 ): Hono<TenantEnv> {
   const routes = createAgentDefinitionRoutes({
     db,
@@ -301,7 +314,7 @@ function buildApp(
     history,
     capabilityInventory,
     requireGrant,
-    definitionFreezer,
+    deployer,
   });
   const asPrincipal: MiddlewareHandler<TenantEnv> = async (c, next) => {
     c.set("tenant", TENANT);
@@ -470,7 +483,7 @@ function fakeCreateDb(): DB["db"] {
 test("a create request with skills writes the definition source tree to the asset and records skills in the skills store", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
   const skillsStore = createInMemoryDefinitionSkillsStore();
-  const freezer = recordingDefinitionFreezer();
+  const deployer = recordingAgentDefinitionDeployer();
   const app = buildApp(
     fakeAssetService({
       createAsset: () =>
@@ -494,7 +507,7 @@ test("a create request with skills writes the definition source tree to the asse
     fakeHistory(),
     fakeCapabilityInventory,
     skillsStore,
-    freezer,
+    deployer,
   );
   const response = await post(app, {
     name: "Research Buddy",
@@ -505,11 +518,13 @@ test("a create request with skills writes the definition source tree to the asse
   expect(response.status).toBe(201);
   expect(writtenFiles).toBeDefined();
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
-  // The projection freeze receives the exact source the asset carries —
-  // this is what makes the created definition launchable (CL-6447).
-  expect(freezer.freezes).toHaveLength(1);
-  expect(freezer.freezes[0]?.assetId).toBe("ast_1");
-  expect(freezer.freezes[0]?.workflowJson).toBe(definitionFrom(writtenFiles));
+  // The definition is deployed through the native source pipeline with
+  // the exact commit the asset write produced — this is what makes the
+  // created definition launchable (CL-6447, cut over to native deploy
+  // by CL-7363).
+  expect(deployer.deploys).toHaveLength(1);
+  expect(deployer.deploys[0]?.assetId).toBe("ast_1");
+  expect(deployer.deploys[0]?.commitSha).toBe("deadbeef");
   expect(await skillsStore.getSkills("ast_1")).toEqual([
     "web-research",
     "long-form-write",
@@ -928,7 +943,7 @@ test("PUT /:definitionId writes the new system prompt in a single source-tree co
     assetId: "ast_1",
     name: "research-buddy",
   });
-  const freezer = recordingDefinitionFreezer();
+  const deployer = recordingAgentDefinitionDeployer();
   const app = buildApp(
     fakeAssetService({
       readAssetBlob: () =>
@@ -945,7 +960,7 @@ test("PUT /:definitionId writes the new system prompt in a single source-tree co
     fakeHistory(),
     fakeCapabilityInventory,
     createInMemoryDefinitionSkillsStore(),
-    freezer,
+    deployer,
   );
   const response = await put(app, "/def_1", {
     name: "Research Buddy",
@@ -956,14 +971,13 @@ test("PUT /:definitionId writes the new system prompt in a single source-tree co
   expect(promptFrom(definitionFrom(writtenFiles))).toBe(
     "You are now a blunt, no-nonsense researcher.",
   );
-  // Saving instructions re-freezes the definition's projection in
-  // place, so the next launch answers with the edit — and a legacy
-  // definition frozen without a projection is healed by the same save.
-  expect(freezer.refreezes).toHaveLength(1);
-  expect(freezer.refreezes[0]?.definitionId).toBe("def_1");
-  expect(promptFrom(freezer.refreezes[0]?.workflowJson ?? "")).toBe(
-    "You are now a blunt, no-nonsense researcher.",
-  );
+  // Saving instructions redeploys the definition through the native
+  // source pipeline with the commit the edit produced, so the next
+  // launch answers with the edit — the native install/probe/gate/freeze
+  // replaces the old bare-freeze call (CL-7363).
+  expect(deployer.deploys).toHaveLength(1);
+  expect(deployer.deploys[0]?.assetId).toBe("ast_1");
+  expect(deployer.deploys[0]?.commitSha).toBe("deadbeef");
   expect(db.updateCalls).toEqual([
     { description: "Research Buddy", updatedAt: expect.any(Date) },
     { displayName: "Research Buddy", updatedAt: expect.any(Date) },
@@ -1384,7 +1398,7 @@ test("pinning a skill the registry cannot resolve is a 400, not a 500", async ()
     requireGrant: () => async (_c, next) => {
       await next();
     },
-    definitionFreezer: recordingDefinitionFreezer(),
+    deployer: recordingAgentDefinitionDeployer(),
   });
   const app = new Hono<TenantEnv>();
   app.use("*", async (c, next) => {

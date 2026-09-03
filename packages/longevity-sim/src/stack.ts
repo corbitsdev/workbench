@@ -9,7 +9,7 @@
 // + heartbeat-deploy shape) without reinventing any of it — only the
 // inference source differs: every catalog provider here rides the
 // `openai-compatible` adapter against an Ollama origin, matching how
-// `packages/hub-client/src/credential-test.ts` documents Ollama's own
+// `packages/connections/src/credential-test.ts` documents Ollama's own
 // `/v1` wire shape.
 
 import { mkdtemp, rm, appendFile } from "node:fs/promises";

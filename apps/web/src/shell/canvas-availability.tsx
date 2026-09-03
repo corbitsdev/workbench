@@ -64,6 +64,14 @@ export type RoutinePanelSubject = {
    * in which case the panel falls back to this workbench's own default
    * (Myra) workbench — never mints a new one. */
   readonly workbenchId?: string;
+  /** Seeds the target picker's initial selection (CL-7356) — the
+   * conversation's own single agent participant's definition asset id,
+   * when the opener could resolve exactly one. Shown visibly in
+   * `DefinitionTargetPicker` and freely replaceable/clearable by the
+   * person; only their final explicit pick is ever sent to the backend.
+   * Omitted whenever the opener found zero or several candidates, or has
+   * no conversation to derive one from at all. */
+  readonly preselectedAssetId?: string;
 };
 
 /** Workbench's concrete instantiation of `@corbits/shell-layout`'s generic

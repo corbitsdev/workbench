@@ -57,7 +57,16 @@ describe("createReplyPartsAccumulator", () => {
   });
 
   test("a missing-credential detail renders the connect-service block naming the connector", () => {
-    const acc = createReplyPartsAccumulator();
+    const acc = createReplyPartsAccumulator({
+      github: {
+        id: "github",
+        displayName: "GitHub",
+        authKind: "api-key",
+        credentialPlugin: "http",
+        docsUrl: "https://github.com/settings/tokens",
+        feedsTools: ["@corbits/github-tools"],
+      },
+    });
     acc.onInferenceDone(AGENT_ADDRESS, [toolCallBlock("call_1")]);
     acc.onToolDone(AGENT_ADDRESS, {
       callId: "call_1",

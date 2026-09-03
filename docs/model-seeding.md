@@ -13,14 +13,15 @@ Everything about "which providers and models a bench knows about" is
 curated, hand-authored data, planted through the hub's native catalog HTTP
 API — never discovered at runtime:
 
-- **`packages/hub-client/src/catalog-seed-data.ts` (`CATALOG_SEEDS`)** — one
+- **`packages/seeding/src/catalog-seed-data.ts` (`CATALOG_SEEDS`)** — one
   curated seed per supported credential provider: a provider row (its
   adapter plugin and base URL) and a small hand-picked model set. This is
-  what `workbench seed` plants for the operator's anthropic key and what
+  what boot-time seeding (`apps/hub/src/system-seed.ts`) plants for the
+  operator's anthropic key and what
   onboarding plants for whichever provider a person connects — including
   the OpenRouter PKCE connect
   (see [onboarding-openrouter-connect.md](onboarding-openrouter-connect.md)).
-- **`packages/hub-client/src/seed.ts` (`seedCatalog`)** — walks one
+- **`packages/seeding/src/seed.ts` (`seedCatalog`)** — walks one
   provider's seed
   through `POST /api/tenants/:id/catalog/{model,providers,credentials,offerings}`,
   idempotently. The offering's `capabilities` field (see
@@ -34,7 +35,7 @@ API — never discovered at runtime:
   open-weight relay — is seeded with an empty list, said out loud in the
   seed log, because a guessed capability routes real work to a model that
   cannot do it.
-- **`packages/hub-client/src/credential-test.ts` (`PROVIDER_TEST_CONFIG`)** —
+- **`packages/connections/src/credential-test.ts` (`PROVIDER_TEST_CONFIG`)** —
   a second, independent hardcoded table: each provider's free auth-gated
   probe endpoint, used to prove a freshly-entered key works before it is
   ever stored. Its own `probeModel`/`baseURL` fields exist only to build
@@ -102,8 +103,8 @@ Not as a cutover, for three independent reasons:
    which providers/models a bench's catalog knows about. Discovery answers
    a narrower, different question (capability tags for a model workbench
    already named), and does so via paid, non-CI, human-triggered capture
-   runs against real provider accounts, not a runtime service the hub or
-   `workbench seed` could call.
+   runs against real provider accounts, not a runtime service boot-time
+   seeding could call.
 2. **Not consumable without vendoring.** `@intx/inference-discovery` and
    `@intx/inference-testing` are published on npm, but only at `0.2.2` —
    the same pre-folded-model version that is the stated reason every other

@@ -188,7 +188,7 @@ turn assembler is a follow-up — this package proves the shape, it does not
 Routes covered: `GET /api/tags` (native catalogue), `POST /api/show`
 (per-model capability probe), `POST /v1/chat/completions`
 (openai-compatible chat, tool calls, streaming and non-streaming) — the
-exact three endpoints `@workbench/hub-client`'s `credential-test.ts` and
+exact three endpoints `@corbits/connections`'s `credential-test.ts` and
 the openai adapter's request-building actually call. No `/api/generate`,
 `/api/embeddings`, or anything else Ollama exposes that we don't.
 

@@ -13,7 +13,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@corbits/workflow-source": "workspace:*",
+    "@corbits/workflows": "workspace:*",
     "@intx/agent": "workspace:*",
     "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",

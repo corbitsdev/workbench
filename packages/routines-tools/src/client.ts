@@ -12,66 +12,40 @@
 // boundary; a transport, HTTP, or shape failure throws a plain `Error`,
 // never a fabricated result.
 import { type } from "arktype";
+import {
+  Routine,
+  RoutineTargetsResponse,
+  type RoutineTriggerT,
+} from "@corbits/routines/client";
+import {
+  runBearerHeaders,
+  runBearerErrorMessage,
+  runBearerFetch,
+  type RunBearerClientConfig,
+} from "@corbits/workflows/client";
 
-export interface RoutineToolClientConfig {
+export interface RoutineToolClientConfig extends RunBearerClientConfig {
   /** The hub's plain HTTP origin — same value memory-tools' `hubMemoryUrl`
    * and capability-tools' `hubCapabilitiesUrl` reach the hub through. */
   readonly hubRoutinesUrl: string;
-  readonly sidecarToken: string;
-  readonly address: string;
-  /** Override for tests; defaults to the global `fetch`. */
-  readonly fetchImpl?: typeof fetch;
 }
 
-/**
- * The trigger a routine create/update call sends. Mirrors
- * `@corbits/routines`' own `RoutineTrigger` union
- * (`packages/routines/src/trigger.ts`) structurally rather than
- * importing it, so this bundle stays a thin HTTP client with no
- * dependency on the routines package's own validation internals — the
- * route on the other end (`RoutineTrigger` there) is still the single
- * source of truth on what's actually valid; a bad shape here comes back
- * as an honest 400, never silently accepted.
- */
-export type RoutineTriggerInput =
-  | {
-      readonly kind: "daily";
-      readonly hour: number;
-      readonly minute: number;
-      readonly timezone?: string;
-    }
-  | {
-      readonly kind: "weekly";
-      readonly dayOfWeek: number;
-      readonly hour: number;
-      readonly minute: number;
-      readonly timezone?: string;
-    }
-  | {
-      readonly kind: "cron";
-      readonly expression: string;
-      readonly timezone?: string;
-    }
-  | { readonly kind: "webhook"; readonly webhookTriggerId: string };
+/** The trigger a routine create/update call sends — `@corbits/routines`'
+ * own strict `RoutineTrigger` shape (`packages/routines/src/trigger.ts`),
+ * re-exported rather than duplicated: the route on the other end is
+ * still the single source of truth on what's actually valid; a bad shape
+ * here comes back as an honest 400, never silently accepted. */
+export type RoutineTriggerInput = RoutineTriggerT;
 
-export interface RoutineView {
-  readonly id: string;
-  readonly name: string;
-  readonly definitionId: string;
-  readonly trigger: unknown;
-  readonly scope: string;
-  readonly input: Record<string, unknown>;
-  readonly enabled: boolean;
-  readonly deliveryWorkbenchId: string | null;
-  readonly consecutiveFailures: number;
-  readonly deadLetteredAt: string | null;
-  readonly createdAt: string;
-  readonly updatedAt: string;
-}
+/** A routine as this bundle reads it back — `@corbits/routines/client`'s
+ * own wire shape, re-exported rather than duplicated. */
+export type RoutineView = typeof Routine.infer;
 
 export interface CreateRoutineRequest {
   readonly name: string;
-  readonly definitionId: string;
+  /** The workflow asset this routine runs — see `CreateRoutineInput`'s
+   * own doc comment in `@corbits/routines/client`. */
+  readonly definitionAssetId: string;
   readonly trigger: RoutineTriggerInput;
   readonly input?: Record<string, unknown>;
   readonly deliveryWorkbenchId?: string;
@@ -81,6 +55,9 @@ export interface CreateRoutineRequest {
 export interface UpdateRoutineRequest {
   readonly enabled?: boolean;
   readonly name?: string;
+  /** Retargets the routine at a different workflow asset — see
+   * `CreateRoutineRequest.definitionAssetId`'s own doc comment. */
+  readonly definitionAssetId?: string;
   readonly trigger?: RoutineTriggerInput;
   readonly input?: Record<string, unknown>;
 }
@@ -89,20 +66,11 @@ export interface RunRoutineNowResult {
   readonly runId: string;
 }
 
-const RoutineViewResponse = type({
-  id: "string",
-  name: "string",
-  definitionId: "string",
-  trigger: "unknown",
-  scope: "string",
-  input: "Record<string, unknown>",
-  enabled: "boolean",
-  deliveryWorkbenchId: "string | null",
-  consecutiveFailures: "number",
-  deadLetteredAt: "string | null",
-  createdAt: "string",
-  updatedAt: "string",
-});
+/** A target this bundle reads back — `@corbits/routines/client`'s own
+ * wire shape, re-exported rather than duplicated. */
+export type RoutineTargetView = RoutineTargetsResponse["items"][number];
+
+const RoutineViewResponse = Routine;
 
 const ListRoutinesResponse = type({
   items: RoutineViewResponse.array(),
@@ -111,31 +79,6 @@ const ListRoutinesResponse = type({
 const RunRoutineNowResponse = type({
   runId: "string",
 });
-
-/** Pulls `error.userMessage` out of the canonical hub envelope
- * (`{error: {code, userMessage, refId}}`), if `body` matches that shape. */
-function errorMessageFrom(body: unknown): string | undefined {
-  if (body === null || typeof body !== "object" || !("error" in body)) {
-    return undefined;
-  }
-  const error = (body as { error: unknown }).error;
-  if (
-    error === null ||
-    typeof error !== "object" ||
-    !("userMessage" in error)
-  ) {
-    return undefined;
-  }
-  const userMessage = (error as { userMessage: unknown }).userMessage;
-  return typeof userMessage === "string" ? userMessage : undefined;
-}
-
-function authHeaders(config: RoutineToolClientConfig): Record<string, string> {
-  return {
-    authorization: `Bearer ${config.sidecarToken}`,
-    "x-workflow-run-address": config.address,
-  };
-}
 
 function endpoint(config: RoutineToolClientConfig, path: string): string {
   return `${config.hubRoutinesUrl}/api/workflow-routines${path}`;
@@ -146,7 +89,7 @@ async function readErrorMessage(
   fallback: string,
 ): Promise<string> {
   const body: unknown = await response.json().catch(() => undefined);
-  return errorMessageFrom(body) ?? fallback;
+  return runBearerErrorMessage(body) ?? fallback;
 }
 
 /** Lists every routine in the calling run's own tenant. Throws a plain
@@ -155,9 +98,9 @@ async function readErrorMessage(
 export async function listRoutines(
   config: RoutineToolClientConfig,
 ): Promise<readonly RoutineView[]> {
-  const doFetch = config.fetchImpl ?? fetch;
+  const doFetch = runBearerFetch(config);
   const response = await doFetch(endpoint(config, "/routines"), {
-    headers: authHeaders(config),
+    headers: runBearerHeaders(config),
   });
   if (!response.ok) {
     throw new Error(
@@ -185,10 +128,13 @@ export async function createRoutine(
   config: RoutineToolClientConfig,
   input: CreateRoutineRequest,
 ): Promise<RoutineView> {
-  const doFetch = config.fetchImpl ?? fetch;
+  const doFetch = runBearerFetch(config);
   const response = await doFetch(endpoint(config, "/routines"), {
     method: "POST",
-    headers: { ...authHeaders(config), "content-type": "application/json" },
+    headers: {
+      ...runBearerHeaders(config),
+      "content-type": "application/json",
+    },
     body: JSON.stringify(input),
   });
   if (!response.ok) {
@@ -216,10 +162,13 @@ export async function updateRoutine(
   routineId: string,
   patch: UpdateRoutineRequest,
 ): Promise<RoutineView> {
-  const doFetch = config.fetchImpl ?? fetch;
+  const doFetch = runBearerFetch(config);
   const response = await doFetch(endpoint(config, `/routines/${routineId}`), {
     method: "PATCH",
-    headers: { ...authHeaders(config), "content-type": "application/json" },
+    headers: {
+      ...runBearerHeaders(config),
+      "content-type": "application/json",
+    },
     body: JSON.stringify(patch),
   });
   if (!response.ok) {
@@ -248,15 +197,15 @@ export async function runRoutineNow(
   routineId: string,
   input?: Record<string, unknown>,
 ): Promise<RunRoutineNowResult> {
-  const doFetch = config.fetchImpl ?? fetch;
+  const doFetch = runBearerFetch(config);
   const response = await doFetch(
     endpoint(config, `/routines/${routineId}/run`),
     {
       method: "POST",
       headers:
         input === undefined
-          ? authHeaders(config)
-          : { ...authHeaders(config), "content-type": "application/json" },
+          ? runBearerHeaders(config)
+          : { ...runBearerHeaders(config), "content-type": "application/json" },
       body: input === undefined ? undefined : JSON.stringify({ input }),
     },
   );
@@ -276,4 +225,35 @@ export async function runRoutineNow(
     );
   }
   return parsed;
+}
+
+/** Lists the launchable workflow definitions/agents the calling run's
+ * tenant offers as a routine target — the same `listRoutineTargets`
+ * (`@corbits/routines/src/targets.ts`) the human picker calls, run for
+ * this run's own tenant/principal via `GET /targets`. Throws a plain
+ * `Error` on any transport, HTTP, or shape failure; never fabricates a
+ * list. */
+export async function listTargets(
+  config: RoutineToolClientConfig,
+): Promise<readonly RoutineTargetView[]> {
+  const doFetch = runBearerFetch(config);
+  const response = await doFetch(endpoint(config, "/targets"), {
+    headers: runBearerHeaders(config),
+  });
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(
+        response,
+        `Listing routine targets failed: ${response.status} ${response.statusText}`,
+      ),
+    );
+  }
+  const body: unknown = await response.json();
+  const parsed = RoutineTargetsResponse(body);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Routine targets response did not match the expected shape: ${parsed.summary}`,
+    );
+  }
+  return parsed.items;
 }

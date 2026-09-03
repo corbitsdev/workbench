@@ -84,7 +84,7 @@ function buildDeps(
 
 const VALID_BODY = {
   name: "Research routine",
-  definitionId: "def_research",
+  definitionAssetId: "def_research",
   trigger: { kind: "daily", hour: 9, minute: 0 },
   scope: "bench",
   deliveryWorkbenchId: "ch_delivery",

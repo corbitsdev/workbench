@@ -5,7 +5,7 @@
 // `@corbits/plugins-ui`'s own tests — this proves the page composes real
 // data into that component correctly.
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { act, useState } from "react";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
@@ -755,5 +755,143 @@ describe("PluginsRoute", () => {
       "Couldn't find that connection — pick it below.",
     );
     expect(window.location.search).toBe("");
+  });
+});
+
+// CL-6487: `plugins-page.tsx`'s visibility/focus refresh effect re-reads
+// plugin status on `visibilitychange`/`focus` and every 30s while visible,
+// gated on a selected tenant, with a microtask guard collapsing a same-tick
+// visibilitychange+focus pair into a single reload.
+describe("PluginsRoute refresh-on-visibility effect", () => {
+  test("becoming visible/focused in the same tick triggers exactly one reload, does nothing while tenantId is null, and cleans up its listeners/interval on unmount", async () => {
+    let resolveGithubCalls = 0;
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : String(input);
+      if (path.includes("/mcp-servers/presets"))
+        return Promise.resolve(json({ data: [] }));
+      if (path.includes("/api/me/principals"))
+        return Promise.resolve(json(membership));
+      if (path.includes("/api/workbench-tenancies/kinds"))
+        return Promise.resolve(json({ workbenchTenantIds: [] }));
+      if (path.includes("/credentials/resolve/GitHub")) {
+        resolveGithubCalls += 1;
+        return Promise.resolve(json(null, 404));
+      }
+      if (path.includes("/credentials/resolve/"))
+        return Promise.resolve(json(null, 404));
+      if (path.includes("/connections/provider-health"))
+        return Promise.resolve(
+          json({ providers: {}, connectedProviderCount: 0 }),
+        );
+      if (path.includes("/api/tenants/tnt_1/skills"))
+        return Promise.resolve(json({ skills: [] }));
+      return Promise.resolve(json({ data: [], nextCursor: null }));
+    }) as typeof fetch;
+
+    const documentAddSpy = spyOn(document, "addEventListener");
+    const documentRemoveSpy = spyOn(document, "removeEventListener");
+    const windowAddSpy = spyOn(window, "addEventListener");
+    const windowRemoveSpy = spyOn(window, "removeEventListener");
+
+    // BenchProvider resolves `selectedTenantId` from the principals fetch
+    // asynchronously — while that's pending (and before mount() drains the
+    // microtask queue below) `selectedTenantId` is `null` and the effect's
+    // early return means no listener ever sees a bump go out for it.
+    await mount();
+
+    expect(resolveGithubCalls).toBeGreaterThan(0);
+    const callsAfterMount = resolveGithubCalls;
+
+    const visibilityHandler = documentAddSpy.mock.calls.find(
+      (call) => call[0] === "visibilitychange",
+    )?.[1] as EventListener;
+    const focusHandler = windowAddSpy.mock.calls.find(
+      (call) => call[0] === "focus",
+    )?.[1] as EventListener;
+    expect(visibilityHandler).not.toBeUndefined();
+    expect(focusHandler).not.toBeUndefined();
+
+    Object.defineProperty(document, "visibilityState", {
+      value: "visible",
+      configurable: true,
+    });
+    await act(async () => {
+      visibilityHandler(new Event("visibilitychange"));
+      focusHandler(new Event("focus"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    for (let i = 0; i < 5; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    expect(resolveGithubCalls).toBe(callsAfterMount + 1);
+
+    act(() => root?.unmount());
+    root = null;
+
+    expect(documentRemoveSpy).toHaveBeenCalledWith(
+      "visibilitychange",
+      visibilityHandler,
+    );
+    expect(windowRemoveSpy).toHaveBeenCalledWith("focus", focusHandler);
+
+    documentAddSpy.mockRestore();
+    documentRemoveSpy.mockRestore();
+    windowAddSpy.mockRestore();
+    windowRemoveSpy.mockRestore();
+  });
+
+  test("registers no visibility/focus listener while tenantId is null", async () => {
+    stubFetch();
+
+    const documentAddSpy = spyOn(document, "addEventListener");
+    const windowAddSpy = spyOn(window, "addEventListener");
+
+    function BenchHarness({ children }: { readonly children: ReactNode }) {
+      const value: BenchState = {
+        memberships: { kind: "loading" },
+        selectedTenantId: null,
+        selectedPrincipalId: null,
+        selectTenant: () => undefined,
+        onBenchCreated: () => undefined,
+      };
+      return (
+        <BenchContext.Provider value={value}>{children}</BenchContext.Provider>
+      );
+    }
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root?.render(
+        <TestQueryProvider>
+          <NavigationProvider navigate={() => undefined}>
+            <BenchHarness>
+              <ProviderHealthProvider>
+                <PluginsRoute path="/plugins" navigate={() => undefined} />
+              </ProviderHealthProvider>
+            </BenchHarness>
+          </NavigationProvider>
+        </TestQueryProvider>,
+      );
+    });
+    for (let i = 0; i < 10; i++) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    expect(
+      documentAddSpy.mock.calls.some((call) => call[0] === "visibilitychange"),
+    ).toBe(false);
+    expect(windowAddSpy.mock.calls.some((call) => call[0] === "focus")).toBe(
+      false,
+    );
+
+    documentAddSpy.mockRestore();
+    windowAddSpy.mockRestore();
   });
 });

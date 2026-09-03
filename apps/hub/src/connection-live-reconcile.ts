@@ -6,7 +6,7 @@
 // until this pass relaunches it. Persist-only (stamp the pin onto the
 // launch row and leave the run) is the bug: the sidecar keeps the old
 // snapshot.
-import { CONNECTOR_REGISTRY } from "@workbench/connections/registry";
+import { CONNECTOR_REGISTRY } from "@workbench/templates/connectors";
 
 export type PinnedToolPackageReconcile = {
   reconcilePinnedToolPackages(

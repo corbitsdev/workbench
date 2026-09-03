@@ -43,11 +43,11 @@ import {
   isClassifiedInferenceFailure,
   type ClassifiedInferenceFailureCategory,
   type ProviderHealthPort,
-} from "@workbench/connections/provider-health";
+} from "@corbits/connections/provider-health";
 import {
-  CONNECTOR_REGISTRY,
   parseMissingCredentialDetail,
-} from "@workbench/connections/registry";
+  type ConnectorRegistry,
+} from "@corbits/connections/registry";
 import { artifactPartsForFinalizedTurn } from "./artifact-delivery";
 import type { ApproveBlockData } from "./blocks";
 import { encodeParts } from "./codec";
@@ -69,6 +69,12 @@ const log = getLogger(["chat", "orchestrator"]);
 
 export type ChatOrchestratorDeps = {
   db: DB["db"];
+  /** The connector set this build ships (`@corbits/connections` carries
+   * none of its own, CL-7384) — used only to resolve a missing
+   * credential's `displayName` for the in-turn connect card. Absent
+   * falls back to the raw connector id, same as
+   * `MissingCredentialError`'s own default. */
+  connectorRegistry?: ConnectorRegistry;
   store: Pick<ChatStore, "listWorkbenchSettings">;
   /**
    * The room timeline every poster below writes to (CL-6327): an agent's
@@ -143,7 +149,7 @@ export type ChatOrchestratorDeps = {
    * own optional shape; every call site below is a no-op when this is
    * undefined. This orchestrator never marks a provider healthy — only a
    * passing credential re-test does that, and that write happens in
-   * `@workbench/connections`'s own routes, not here.
+   * `@corbits/connections`'s own routes, not here.
    */
   providerHealth?: ProviderHealthPort;
   /**
@@ -227,7 +233,9 @@ function turnKeyFor(agentAddress: string, sessionId: string): string {
  * turn (see `turnKeyFor` below): reset the moment a turn's
  * `connector.reply` or turn-drop notice consumes it.
  */
-export function createReplyPartsAccumulator(): {
+export function createReplyPartsAccumulator(
+  connectorRegistry?: ConnectorRegistry,
+): {
   onInferenceDone(turnKey: string, blocks: ReplyContentBlock[]): void;
   onToolDone(
     turnKey: string,
@@ -290,7 +298,7 @@ export function createReplyPartsAccumulator(): {
         : undefined;
       if (missingCredential !== undefined) {
         const displayName =
-          CONNECTOR_REGISTRY[missingCredential.connectorId]?.displayName ??
+          connectorRegistry?.[missingCredential.connectorId]?.displayName ??
           missingCredential.connectorId;
         parts.push({
           kind: "block",
@@ -1130,7 +1138,7 @@ export function createChatOrchestrator(
   >({ ttlMs: AGENT_TURN_STALE_MS, now });
 
   // See `createReplyPartsAccumulator`'s own doc comment above.
-  const replyParts = createReplyPartsAccumulator();
+  const replyParts = createReplyPartsAccumulator(deps.connectorRegistry);
 
   const unsubscribe = deps.events.on(
     "agent.event",

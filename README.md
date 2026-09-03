@@ -73,37 +73,32 @@ shape, and the administrator account (`HUB_ADMIN_EMAIL` / `HUB_ADMIN_PASSWORD`,
 defaulting to alice@example.com / password123 when unset)
 is seeded so you can sign in immediately.
 
-`bun run dev` only seeds that account — it provisions no bench, catalog, or
-workflows. Once the stack is up, run these against it (in another terminal):
-
-```sh
-bun run setup
-bun run seed
-```
-
-`bun run setup` provisions the bench for the administrator account; `bun run
-seed` deploys the default workflow set and plants the tenant catalog's model
-data, so interactive instances have a model to resolve against. Both read
-their configuration from `.env` (see `.env.example`) and are safe to re-run.
-`ANTHROPIC_API_KEY` is the one optional line worth setting before you run
-`bun run seed` — with it, seeding plants a real credential and the catalog
-is actually launchable; without it, everything above still runs, but
-inference errors until you set it and re-run `bun run seed`.
+`bun run dev` seeds that account and, once the hub is serving, also
+provisions and seeds the root tenant itself: publishing the
+`corbits-tools` registry, deploying the default workflow set, and
+planting the tenant catalog's model data, so interactive instances have
+a model to resolve against. This runs automatically on every hub boot
+(`apps/hub/src/system-seed.ts`), reads its configuration from `.env`
+(see `.env.example`), and is safe to re-run — restarting the hub
+re-seeds idempotently. `ANTHROPIC_API_KEY` is the one optional line
+worth setting before boot — with it, seeding plants a real credential
+and the catalog is actually launchable; without it, everything above
+still runs, but inference errors until you set it and restart the hub.
 
 Leaving `ANTHROPIC_API_KEY` unset doesn't just apply to the administrator
 account: anyone who signs up gets a personal bench with no default routines
 deployed, and first-run tells them exactly that. Onboarding walks them
 through picking a provider — Anthropic, OpenAI, Google, OpenRouter, Hugging
 Face, Groq, or another of the curated providers in
-[`packages/hub-client/src/catalog-seed-data.ts`](packages/hub-client/src/catalog-seed-data.ts)
+[`packages/seeding/src/catalog-seed-data.ts`](packages/seeding/src/catalog-seed-data.ts)
 — and pasting their own key (or, for OpenRouter, completing a PKCE OAuth
-connect), which is stored right away — no separate `bun run seed` step, no
+connect), which is stored right away — no separate seeding step, no
 docs to read. A wrong key isn't caught up front; it surfaces the first time
 it's actually dialed for real inference, through the same in-chat "Fix this
 connection" flow any credential failure uses. The bench's default agents
 deploy in the background — "Your workbench is ready — agents will come
 online shortly," no "Connecting…" wait in the browser. Whichever provider they connect gets its own curated
-catalog entry planted the same way `bun run seed` plants Anthropic's; see
+catalog entry planted the same way boot-time seeding plants Anthropic's; see
 [docs/model-seeding.md](docs/model-seeding.md) for how that catalog data is
 curated and kept up to date.
 
@@ -117,12 +112,11 @@ bun run reset
 ```
 
 `bun run reset` drops the platform database schema and removes the hub's
-and the dev sidecar's on-disk asset directories — everything `bun run setup`
-and `bun run seed` created, plus anything provisioned through onboarding.
-Nothing is re-seeded: the next `bun run dev` recreates the schema from
-scratch and starts you at a fresh sign-up screen. Run `bun run setup && bun
-run seed` afterward instead if you want a reprovisioned bench rather than a
-blank slate.
+and the dev sidecar's on-disk asset directories — everything boot-time
+seeding and onboarding created. Nothing is re-seeded until the next `bun
+run dev` — that recreates the schema and, once the hub is serving again,
+reprovisions and re-seeds the root tenant from scratch, landing you at a
+fresh sign-up screen with the administrator's bench ready.
 
 It refuses to run against anything but a local `DATABASE_URL` (localhost,
 127.0.0.1, or `::1`) — there is no override, since the schema drop is

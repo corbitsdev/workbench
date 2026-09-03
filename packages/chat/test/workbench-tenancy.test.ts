@@ -8,7 +8,7 @@
 // exercised here as an outcome of `moveWorkbenchTenancy` itself, never
 // as a separate pre-check call.
 import { expect, test } from "bun:test";
-import type { ApiCall } from "@workbench/hub-client";
+import type { ApiCall } from "@corbits/hub-api-client";
 import {
   createInMemoryNativeTenantApi,
   createInMemoryWorkbenchTenancyStore,

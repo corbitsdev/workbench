@@ -3,7 +3,7 @@ import { QueryClient } from "@tanstack/react-query";
 import {
   CODE_REVIEW_TEMPLATE,
   serializeWorkbenchDefinition,
-} from "@corbits/workflow-catalog";
+} from "@workbench/templates";
 
 import {
   createWorkbenchFromTemplate,

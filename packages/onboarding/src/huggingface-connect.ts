@@ -1,5 +1,5 @@
 // The Hugging Face PKCE connect mechanics moved to
-// `@workbench/connections` (CL-6028's OAuth route factory generalized
+// `@corbits/connections` (CL-6028's OAuth route factory generalized
 // both this and OpenRouter's flow) — re-exported from here so nothing
 // outside this package that still imports `./huggingface-connect` needs
 // to change.
@@ -16,4 +16,4 @@ export {
   type ExchangeCodeForTokenArgs,
   type HuggingFaceExchangeFetch as ExchangeFetch,
   type HuggingFaceExchangeResult as ExchangeResult,
-} from "@workbench/connections";
+} from "@corbits/connections";

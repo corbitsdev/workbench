@@ -126,6 +126,7 @@ test("the agent pins memory, capability, and the manager-tools bundles at the ve
     "@corbits/mcp-tools",
     "@corbits/interaction-tools",
     "@corbits/manus-tools",
+    "@corbits/workflow-authoring-tools",
   ]);
   // A pin the registry cannot resolve fails every assistant deploy, so
   // each one must name a version the workspace actually publishes.

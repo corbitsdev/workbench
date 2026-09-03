@@ -1,4 +1,4 @@
-// The OpenRouter PKCE connect mechanics moved to `@workbench/connections`
+// The OpenRouter PKCE connect mechanics moved to `@corbits/connections`
 // (CL-6028's OAuth route factory generalized both this and Hugging
 // Face's flow) — re-exported from here so nothing outside this package
 // that still imports `./openrouter-connect` needs to change.
@@ -15,4 +15,4 @@ export {
   type ExchangeCodeForKeyArgs,
   type OpenRouterExchangeFetch as ExchangeFetch,
   type OpenRouterExchangeResult as ExchangeResult,
-} from "@workbench/connections";
+} from "@corbits/connections";

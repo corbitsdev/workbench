@@ -56,7 +56,7 @@ subpaths (`@corbits/code-review/reviewers`,
 `@corbits/code-review/agent-requests`), separate from the package root.
 Both files have zero imports of their own; the root also re-exports the
 review run and GitHub client, which pull in `@corbits/github-tools` and
-`@intx/agent`'s full provider surface. `@corbits/workflow-catalog`'s
+`@intx/agent`'s full provider surface. `@workbench/templates`'s
 `CODE_REVIEW_TEMPLATE` (CL-6344) imports the roster through these
 subpaths for exactly that reason — see its own module doc.
 

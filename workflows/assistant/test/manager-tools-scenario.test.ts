@@ -76,7 +76,7 @@ function createFakeHub() {
   const mintedDefinitionIds: string[] = [];
   const invitedDefinitionIds: string[] = [];
   const createdRoutines: {
-    definitionId: string;
+    definitionAssetId: string;
     trigger: unknown;
     name: string;
   }[] = [];
@@ -219,7 +219,7 @@ function createFakeHub() {
       body
     ) {
       createdRoutines.push({
-        definitionId: body["definitionId"] as string,
+        definitionAssetId: body["definitionAssetId"] as string,
         trigger: body["trigger"],
         name: body["name"] as string,
       });
@@ -227,7 +227,8 @@ function createFakeHub() {
         {
           id: `rtn_${String(createdRoutines.length)}`,
           name: body["name"],
-          definitionId: body["definitionId"],
+          definitionAssetId: body["definitionAssetId"],
+          definitionId: body["definitionAssetId"],
           trigger: body["trigger"],
           scope: "bench",
           input: body["input"] ?? {},
@@ -402,13 +403,13 @@ async function runScenario(
 
   // Step 4: Myra creates the two routines, each targeting the agent she
   // just made for it — the created agent's id, returned from step 3,
-  // becomes the routine's definitionId here.
+  // becomes the routine's definitionAssetId here.
   const routinesBundle = routinesTools(routinesEnv);
   const dailyRoutine = await routinesBundle.run(
     call("r1", ROUTINE_CREATE_TOOL, {
       name: "Daily call notes",
       instruction: "Extract info from today's calls and share updates.",
-      definitionId: callNotesDefinitionId,
+      definitionAssetId: callNotesDefinitionId,
       trigger: { kind: "daily", hour: 8, minute: 0 },
     }),
     new AbortController().signal,
@@ -419,7 +420,7 @@ async function runScenario(
     call("r2", ROUTINE_CREATE_TOOL, {
       name: "Weekly analytics update",
       instruction: "Provide an analytical update for the week.",
-      definitionId: analyticsDefinitionId,
+      definitionAssetId: analyticsDefinitionId,
       trigger: { kind: "weekly", dayOfWeek: 5, hour: 9, minute: 0 },
     }),
     new AbortController().signal,
@@ -428,12 +429,12 @@ async function runScenario(
 
   expect(hub.createdRoutines).toEqual([
     {
-      definitionId: callNotesDefinitionId,
+      definitionAssetId: callNotesDefinitionId,
       trigger: { kind: "daily", hour: 8, minute: 0 },
       name: "Daily call notes",
     },
     {
-      definitionId: analyticsDefinitionId,
+      definitionAssetId: analyticsDefinitionId,
       trigger: { kind: "weekly", dayOfWeek: 5, hour: 9, minute: 0 },
       name: "Weekly analytics update",
     },

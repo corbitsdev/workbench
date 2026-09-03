@@ -14,8 +14,9 @@
 // nothing unhealthy), and `unhealthy` (guided Fix-it banner).
 
 import { Button } from "@corbits/react-ui";
-import { connectorDescriptors } from "@workbench/connections/registry";
-import type { ClassifiedInferenceFailureCategory } from "@workbench/connections/provider-health";
+import { connectorDescriptors } from "@corbits/connections/registry";
+import type { ClassifiedInferenceFailureCategory } from "@corbits/connections/provider-health";
+import { CONNECTOR_REGISTRY } from "@workbench/templates/connectors";
 import { Warning, X } from "@corbits/icons";
 import { useEffect, useState } from "react";
 
@@ -49,7 +50,7 @@ const COLLAPSE_TRANSITION_MS = 220;
 
 const POLL_ERROR_COPY = "Couldn't check provider health. Try again shortly.";
 
-// The connector registry's own `displayName` (`@workbench/connections/registry`,
+// The connector registry's own `displayName` (`@corbits/connections/registry`,
 // the same browser-safe subpath `plugins.ts` already reads) — never a
 // reinvented title-case of the provider id, which mangles ids like
 // `"google-genai"` or `"opencode-zen"` into nonsense. Falls back to the
@@ -57,7 +58,9 @@ const POLL_ERROR_COPY = "Couldn't check provider health. Try again shortly.";
 // expected in practice, but a caller should still see something rather
 // than nothing).
 function providerDisplayName(provider: string): string {
-  const descriptor = connectorDescriptors().find((d) => d.id === provider);
+  const descriptor = connectorDescriptors(CONNECTOR_REGISTRY).find(
+    (d) => d.id === provider,
+  );
   return descriptor?.displayName ?? provider;
 }
 

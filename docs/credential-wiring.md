@@ -66,11 +66,12 @@ All five plugins the sidecar registers mirror the same origin-pinning and
 `redirect: "manual"` protections; only the injected header (or its
 absence, for keyless MCP) differs.
 
-`packages/connections` (the Connections-surface registry) is the other
-place this plugin id needs to be correct: whatever seeds or registers a
-Linear provider row there must set `plugin: "http-raw-authorization"`,
-and a Manus row must set `plugin: "http-x-manus-api-key"`, matching this
-doc, not the `"http"` default other connectors use.
+`templates/connectors.ts` (the concrete connector set a build passes into
+`@corbits/connections`) is the other place this plugin id needs to be
+correct: a Linear connector descriptor there must set
+`plugin: "http-raw-authorization"`, and a Manus one must set
+`plugin: "http-x-manus-api-key"`, matching this doc, not the `"http"`
+default other connectors use.
 
 ## Trust boundary
 

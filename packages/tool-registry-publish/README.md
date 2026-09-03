@@ -49,14 +49,14 @@ for how a pin resolves through it).
 
 **Never imports:**
 
-- `@workbench/hub-client` — the dependency direction runs the other
-  way (`workbench setup` calls `publishCorbitsToolsRegistry` via
-  hub-client's re-export), so this package declares its own
-  structurally-compatible `ApiCall` type rather than importing
-  `hub-client`'s.
-- `CliError` or any operator-facing error-wrapping convention — every
+- `@corbits/hub-api-client` — the dependency direction runs the other
+  way (boot-time seeding and `@corbits/seeding` call
+  `publishCorbitsToolsRegistry` via `@corbits/seeding`'s re-export), so
+  this package declares its own structurally-compatible `ApiCall` type
+  rather than importing `@corbits/hub-api-client`'s.
+- `HubApiError` or any operator-facing error-wrapping convention — every
   failure here is a plain `Error`; wrapping it as an actionable
-  `CliError` (problem + fix) is the calling setup step's job, not this
+  `HubApiError` (problem + fix) is the calling setup step's job, not this
   package's.
 - Any workflow definition or `DEFAULT_WORKFLOWS` — this package knows
   which tool packages to publish, never which workflows pin them.

@@ -9,8 +9,8 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import type { ConnectorDescriptor } from "@workbench/connections/registry";
-import type { ResolvedPlugin } from "@workbench/connections/plugins";
+import type { ConnectorDescriptor } from "@corbits/connections/registry";
+import type { ResolvedPlugin } from "@corbits/connections/plugins";
 
 import { PluginConnectPanel } from "../src/plugin-connect-panel";
 import { PLUGINS_STRINGS } from "../src/strings";

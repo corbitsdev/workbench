@@ -16,12 +16,12 @@
     "@corbits/artifact-ui": "workspace:*",
     "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#81049ed24a64e927498c7238bda6ffa66b63d2ab",
     "@corbits/collections": "workspace:*",
+    "@corbits/error-sink": "workspace:*",
     "@corbits/folded-runs": "workspace:*",
     "@intx/crypto": "0.3.0",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/types": "workspace:*",
-    "@workbench/hub-client": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
     "hono": "^4.11.9"

@@ -1,8 +1,8 @@
-// The three tables `@corbits/routines` owns: the routine itself (the
-// named, product-facing entity), the link table correlating each
-// launched run back to the routine that launched it, and the drafting
-// table. These tables live in their own `routines` Postgres schema,
-// fully siloed from the platform's `public` schema — see
+// The two tables `@corbits/routines` owns: the routine itself (the
+// named, product-facing entity) and the link table correlating each
+// launched run back to the routine that launched it. These tables
+// live in their own `routines` Postgres schema, fully siloed from the
+// platform's `public` schema — see
 // docs/package-migrations.md. `tenantId` is a plain text identifier,
 // not a foreign key, so referencing platform tenant ids works
 // identically from a named schema.
@@ -31,7 +31,12 @@ export const routine = routinesSchema.table("routine", {
   id: text("id").primaryKey(),
   tenantId: text("tenant_id").notNull(),
   name: text("name").notNull(),
-  definitionId: text("definition_id").notNull(),
+  // The routine's target is a workflow ASSET, not a definition row: the
+  // platform keys `workflow_definition` on `(asset_id, wire_hash)`, so
+  // every redeploy mints a new definition and only the asset is stable
+  // across them. Which definition actually runs is resolved at launch
+  // (`./target.ts`), never stored — see docs/workflow-model.md.
+  definitionAssetId: text("definition_asset_id").notNull(),
   trigger: jsonb("trigger"),
   scope: text("scope").notNull(),
   input: jsonb("input").notNull(),
@@ -102,30 +107,3 @@ export const routineRun = routinesSchema.table(
   },
   (table) => [primaryKey({ columns: [table.tenantId, table.runId] })],
 );
-
-/**
- * Free-text drafting path for routines. Only an approved draft creates
- * a `routine` row; until then nothing is schedulable.
- */
-export const routineDraft = routinesSchema.table("routine_draft", {
-  id: text("id").primaryKey(),
-  tenantId: text("tenant_id").notNull(),
-  prompt: text("prompt").notNull(),
-  /** draft | reviewed | approved | discarded */
-  status: text("status").notNull(),
-  proposedSteps: jsonb("proposed_steps").notNull().default([]),
-  proposedTrigger: jsonb("proposed_trigger"),
-  proposedName: text("proposed_name"),
-  definitionId: text("definition_id"),
-  deliveryWorkbenchId: text("delivery_workbench_id").notNull(),
-  scope: text("scope").notNull(),
-  autonomy: jsonb("autonomy"),
-  createdBy: text("created_by").notNull(),
-  approvedRoutineId: text("approved_routine_id"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
