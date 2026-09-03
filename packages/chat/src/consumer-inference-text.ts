@@ -32,11 +32,19 @@ function needsSanitization(raw: string): boolean {
   return HTTP_STATUS_MARK.test(raw) || isProviderJsonDump(raw);
 }
 
-/** Drop HTTP status and raw provider text; keep a classified preamble when present. */
+/** Drop HTTP status, raw provider text, and classified failure preambles. */
 export function consumerFacingInferenceText(raw: string): string {
-  if (!needsSanitization(raw)) return raw;
+  if (!needsSanitization(raw) && !isClassifiedInferenceFailureText(raw)) {
+    return raw;
+  }
   const stripped = raw.replace(TRAILING_HTTP_DUMP, "").trim();
-  if (stripped.length > 0 && !needsSanitization(stripped)) return stripped;
+  if (
+    stripped.length > 0 &&
+    !needsSanitization(stripped) &&
+    !isClassifiedInferenceFailureText(stripped)
+  ) {
+    return stripped;
+  }
   return CONSUMER_INFERENCE_FAILURE_NOTICE;
 }
 

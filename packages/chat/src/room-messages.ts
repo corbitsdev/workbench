@@ -174,7 +174,11 @@ function isFailurePreviewParts(parts: readonly Part[]): boolean {
     .replace(/\s+/g, " ")
     .trim();
   if (joined.length === 0) return false;
-  return isClassifiedInferenceFailureText(consumerFacingInferenceText(joined));
+  const facing = consumerFacingInferenceText(joined);
+  return (
+    isClassifiedInferenceFailureText(facing) ||
+    facing === CONSUMER_INFERENCE_FAILURE_NOTICE
+  );
 }
 
 /**
