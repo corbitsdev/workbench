@@ -334,6 +334,13 @@ produced them the same way. A reply whose waking mail was never recorded
 and whose running turn names no source (a pre-rollout mail) posts
 unthreaded rather than vanishing.
 
+Every outbound agent frame is also dual-written into each addressed human
+participant's `@corbits/mailbox` inbox (CL-7449) — the hub's `persistMail`
+lookup is wrapped with `createMailboxPersist`
+(`apps/hub/src/mailbox-persist.ts`), so a durable `principal_mail` row lands
+for a reply's human recipients alongside the thread's own `session_mail`
+record, independent of whether the recipient's session is live.
+
 Every non-root thread carries a `parentThreadId` — the thread it hangs
 directly off (the root thread's id for a depth-1 thread, a depth-1 thread's
 id for a depth-2 sub-thread) — alongside its existing `parentMessageId`,
