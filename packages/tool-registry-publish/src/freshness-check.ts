@@ -240,8 +240,23 @@ async function git(
         "src/ cannot be compared to the published version",
     );
   }
+  // Hooks export repository selectors; cwd must select the package's repo,
+  // not the index or object database of the repository running the hook.
+  const repositoryEnvKeys = new Set([
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_COMMON_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_PREFIX",
+  ]);
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !repositoryEnvKeys.has(key)),
+  );
   const proc = Bun.spawn(["git", ...args], {
     cwd,
+    env,
     stdout: "pipe",
     stderr: "pipe",
   });
