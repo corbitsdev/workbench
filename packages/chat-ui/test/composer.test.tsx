@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { act, createElement, createRef } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
+import * as errorSink from "@corbits/error-sink";
 
 import { Composer } from "../src/composer";
 import type { ComposerHandle, ComposerSendPayload } from "../src/composer";
@@ -861,6 +862,8 @@ describe("Composer dictate", () => {
     onerror: ((event: unknown) => void) | null = null;
     onend: (() => void) | null = null;
     started = false;
+    resultOnStop: readonly { isFinal: boolean; transcript: string }[] | null =
+      null;
 
     constructor() {
       recognitions.push(this);
@@ -872,6 +875,10 @@ describe("Composer dictate", () => {
 
     stop() {
       this.started = false;
+      if (this.resultOnStop !== null) {
+        this.emit(this.resultOnStop);
+        this.resultOnStop = null;
+      }
       this.onend?.();
     }
 
@@ -958,5 +965,196 @@ describe("Composer dictate", () => {
     );
     expect(idle?.getAttribute("aria-pressed")).toBe("false");
     expect(idle?.getAttribute("data-listening")).toBe("false");
+  });
+
+  test("user Stop flushes a late final result into the draft", async () => {
+    installSpeechRecognition();
+    mount(() => Promise.resolve(true));
+    typeInto(textarea(), "hello");
+    textarea().setSelectionRange(5, 5);
+    await settle();
+
+    const dictate = container?.querySelector<HTMLButtonElement>(
+      '[aria-label="Dictate"]',
+    );
+    if (dictate === null || dictate === undefined) {
+      throw new Error("dictate button not found");
+    }
+
+    act(() => {
+      dictate.click();
+    });
+    await settle();
+
+    const rec = recognitions.at(-1);
+    if (rec === undefined) {
+      throw new Error("speech recognition was not constructed");
+    }
+    rec.resultOnStop = [{ isFinal: true, transcript: "world" }];
+
+    act(() => {
+      dictate.click();
+    });
+    await settle();
+
+    expect(textarea().value).toBe("hello world");
+    expect(rec.started).toBe(false);
+  });
+
+  test("send while listening does not restore the draft from a late final result", async () => {
+    installSpeechRecognition();
+    const sent: ComposerSendPayload[] = [];
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => {
+      root?.render(
+        createElement(Composer, {
+          agents: [],
+          onSend: (payload) => {
+            sent.push(payload);
+            return Promise.resolve(true);
+          },
+          onInviteAgent: () => undefined,
+          onOpenAgentsSettings: () => undefined,
+          onCreateRoutineInSpace: () => undefined,
+        }),
+      );
+    });
+    typeInto(textarea(), "hello");
+    textarea().setSelectionRange(5, 5);
+    await settle();
+
+    const dictate = container?.querySelector<HTMLButtonElement>(
+      '[aria-label="Dictate"]',
+    );
+    if (dictate === null || dictate === undefined) {
+      throw new Error("dictate button not found");
+    }
+
+    act(() => {
+      dictate.click();
+    });
+    await settle();
+
+    const rec = recognitions.at(-1);
+    if (rec === undefined) {
+      throw new Error("speech recognition was not constructed");
+    }
+    rec.resultOnStop = [{ isFinal: true, transcript: "late words" }];
+
+    act(() => {
+      sendButton().click();
+    });
+    await settle();
+
+    act(() => {
+      rec.emit([{ isFinal: true, transcript: "late words" }]);
+    });
+    await settle();
+
+    expect(textarea().value).toBe("");
+    expect(sent).toEqual([{ text: "hello", attachments: [] }]);
+  });
+
+  test("Enter while listening does not restore the draft from a late final result", async () => {
+    installSpeechRecognition();
+    const sent: ComposerSendPayload[] = [];
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => {
+      root?.render(
+        createElement(Composer, {
+          agents: [],
+          onSend: (payload) => {
+            sent.push(payload);
+            return Promise.resolve(true);
+          },
+          onInviteAgent: () => undefined,
+          onOpenAgentsSettings: () => undefined,
+          onCreateRoutineInSpace: () => undefined,
+        }),
+      );
+    });
+    typeInto(textarea(), "hello");
+    textarea().setSelectionRange(5, 5);
+    await settle();
+
+    const dictate = container?.querySelector<HTMLButtonElement>(
+      '[aria-label="Dictate"]',
+    );
+    if (dictate === null || dictate === undefined) {
+      throw new Error("dictate button not found");
+    }
+
+    act(() => {
+      dictate.click();
+    });
+    await settle();
+
+    const rec = recognitions.at(-1);
+    if (rec === undefined) {
+      throw new Error("speech recognition was not constructed");
+    }
+    rec.resultOnStop = [{ isFinal: true, transcript: "late words" }];
+
+    act(() => {
+      textarea().dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+    await settle();
+
+    act(() => {
+      rec.emit([{ isFinal: true, transcript: "late words" }]);
+    });
+    await settle();
+
+    expect(textarea().value).toBe("");
+    expect(sent).toEqual([{ text: "hello", attachments: [] }]);
+  });
+
+  test("does not report aborted or no-speech recognition errors", async () => {
+    installSpeechRecognition();
+    const report = spyOn(errorSink, "reportError");
+    mount(() => Promise.resolve(true));
+
+    const dictate = container?.querySelector<HTMLButtonElement>(
+      '[aria-label="Dictate"]',
+    );
+    if (dictate === null || dictate === undefined) {
+      throw new Error("dictate button not found");
+    }
+
+    act(() => {
+      dictate.click();
+    });
+    await settle();
+
+    const rec = recognitions.at(-1);
+    if (rec === undefined) {
+      throw new Error("speech recognition was not constructed");
+    }
+
+    act(() => {
+      rec.onerror?.({ error: "no-speech" });
+      rec.onerror?.({ error: "aborted" });
+    });
+    await settle();
+
+    expect(report).not.toHaveBeenCalled();
+
+    act(() => {
+      rec.onerror?.({ error: "network" });
+    });
+    await settle();
+
+    expect(report).toHaveBeenCalled();
+    report.mockRestore();
   });
 });
