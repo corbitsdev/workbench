@@ -1259,19 +1259,25 @@ export function createHubChatPlatform(
         domain,
         content: input.content.content,
         cryptoProvider,
-        ...(input.correlationId !== undefined
-          ? { correlationId: input.correlationId }
+        // RFC 5322 threading, straight from the timeline row this mail
+        // carries (CL-7104): its own `Message-ID`, and the parentage a
+        // reply correlates back through. Nothing else links the reply to
+        // the message — no reply-to address, no correlation id.
+        ...(input.content.messageId !== undefined
+          ? { messageId: input.content.messageId }
+          : {}),
+        ...(input.content.inReplyTo !== undefined
+          ? { inReplyTo: input.content.inReplyTo }
+          : {}),
+        ...(input.content.references !== undefined
+          ? { references: input.content.references }
           : {}),
       };
       const withAttachments =
         attachments !== undefined
           ? { ...sendMailBase, attachments }
           : sendMailBase;
-      const sent = await sendFoldedMailWithReclaimRetry(
-        input.content.replyTo !== undefined
-          ? { ...withAttachments, replyTo: input.content.replyTo }
-          : withAttachments,
-      );
+      const sent = await sendFoldedMailWithReclaimRetry(withAttachments);
 
       lifecycle?.recordActivity(deliveryAddress);
 

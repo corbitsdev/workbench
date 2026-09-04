@@ -21,12 +21,17 @@ export type MailContent = {
     name?: string;
   }[];
   /**
-   * Set when this mail is a mention fan-out copy: the id of the
-   * workbench the message originated in, carried as a reply-to
-   * reference rather than a relay hop. Absent on ordinary mail,
-   * including everything sent directly to a workbench's own anchor.
+   * The RFC 5322 threading headers this mail carries (CL-7104). A
+   * dispatched timeline row goes out under its own `Message-ID` and
+   * names its thread parentage in `In-Reply-To` / `References`, which is
+   * the only thing an agent's reply is correlated back through — there
+   * is no reply-to-address and no correlation id. Absent on mail that
+   * is not a timeline row being dispatched, which travels under the
+   * transport's own Message-ID.
    */
-  replyTo?: string;
+  messageId?: string;
+  inReplyTo?: string;
+  references?: readonly string[];
 };
 
 function encodeBase64(text: string): string {
@@ -49,13 +54,26 @@ function decodeBase64(data: string): string {
  */
 export function encodeParts(
   parts: Part[],
-  opts?: { replyTo?: string },
+  headers?: {
+    messageId?: string;
+    inReplyTo?: string;
+    references?: readonly string[];
+  },
 ): MailContent {
-  const replyTo = opts?.replyTo;
+  const threading = {
+    ...(headers?.messageId !== undefined
+      ? { messageId: headers.messageId }
+      : {}),
+    ...(headers?.inReplyTo !== undefined
+      ? { inReplyTo: headers.inReplyTo }
+      : {}),
+    ...(headers?.references !== undefined && headers.references.length > 0
+      ? { references: headers.references }
+      : {}),
+  };
 
   if (parts.length === 1 && parts[0]?.kind === "text") {
-    const base = { content: parts[0].text };
-    return replyTo !== undefined ? { ...base, replyTo } : base;
+    return { content: parts[0].text, ...threading };
   }
 
   const attachments = parts.map((part, index) => {
@@ -73,8 +91,7 @@ export function encodeParts(
     };
   });
 
-  const base = { content: "", attachments };
-  return replyTo !== undefined ? { ...base, replyTo } : base;
+  return { content: "", attachments, ...threading };
 }
 
 /**

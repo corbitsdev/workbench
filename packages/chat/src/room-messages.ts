@@ -39,6 +39,12 @@ export interface RoomMessage {
   /** The agent run this message came out of; null for a human's. */
   readonly runId: string | null;
   readonly threadId: string | null;
+  /**
+   * The RFC 5322 `Message-ID` this row was dispatched to an agent as
+   * (CL-7104); null for a row nobody was ever asked to answer. See
+   * `./mail-headers.ts` for how it is derived.
+   */
+  readonly mailMessageId: string | null;
   readonly parts: readonly Part[];
 }
 
@@ -94,6 +100,26 @@ export interface RoomMessageStore {
     readonly tenantId: string;
     readonly workbenchId: string;
     readonly messageId: string;
+  }): Promise<RoomMessage | undefined>;
+  /**
+   * Records the `Message-ID` a row went out as (CL-7104). The header is
+   * derived from the row's own id, so writing it twice writes the same
+   * value — this is a stamp, not a mint, and needs no claim.
+   */
+  stampMailMessageId(input: {
+    readonly tenantId: string;
+    readonly workbenchId: string;
+    readonly messageId: string;
+    readonly mailMessageId: string;
+  }): Promise<void>;
+  /**
+   * The row a `Message-ID` names — the inbound half of correlation. An
+   * `In-Reply-To` no row answers to resolves to undefined, which the
+   * caller reports rather than attributing to a guess.
+   */
+  findByMailMessageId(input: {
+    readonly tenantId: string;
+    readonly mailMessageId: string;
   }): Promise<RoomMessage | undefined>;
   listActivity(
     input: ListRoomActivityInput,
@@ -292,6 +318,7 @@ interface MessageRow {
   senderPrincipalId: string | null;
   runId: string | null;
   threadId: string | null;
+  mailMessageId: string | null;
   parts: unknown;
   createdAt: Date;
 }
@@ -305,6 +332,7 @@ function toRoomMessage(row: MessageRow): RoomMessage {
     senderPrincipalId: row.senderPrincipalId,
     runId: row.runId,
     threadId: row.threadId,
+    mailMessageId: row.mailMessageId,
     parts: row.parts as Part[],
   };
 }
@@ -376,6 +404,33 @@ export function createDrizzleRoomMessageStore(
             eq(workbenchMessages.id, input.messageId),
             eq(workbenchMessages.tenantId, input.tenantId),
             eq(workbenchMessages.workbenchId, input.workbenchId),
+          ),
+        )
+        .limit(1);
+      return row === undefined ? undefined : toRoomMessage(row as MessageRow);
+    },
+
+    async stampMailMessageId(input) {
+      await db
+        .update(workbenchMessages)
+        .set({ mailMessageId: input.mailMessageId })
+        .where(
+          and(
+            eq(workbenchMessages.id, input.messageId),
+            eq(workbenchMessages.tenantId, input.tenantId),
+            eq(workbenchMessages.workbenchId, input.workbenchId),
+          ),
+        );
+    },
+
+    async findByMailMessageId(input) {
+      const [row] = await db
+        .select()
+        .from(workbenchMessages)
+        .where(
+          and(
+            eq(workbenchMessages.tenantId, input.tenantId),
+            eq(workbenchMessages.mailMessageId, input.mailMessageId),
           ),
         )
         .limit(1);
@@ -485,11 +540,37 @@ export function createInMemoryRoomMessageStore(): RoomMessageStore {
         senderPrincipalId: input.senderPrincipalId ?? null,
         runId: input.runId ?? null,
         threadId: input.threadId ?? null,
+        mailMessageId: null,
         parts: input.parts,
       };
       const key = keyOf(input.tenantId, input.workbenchId);
       byWorkbench.set(key, [...(byWorkbench.get(key) ?? []), message]);
       return message;
+    },
+
+    async stampMailMessageId(input) {
+      const key = keyOf(input.tenantId, input.workbenchId);
+      const messages = byWorkbench.get(key);
+      if (messages === undefined) return;
+      byWorkbench.set(
+        key,
+        messages.map((message) =>
+          message.id === input.messageId
+            ? { ...message, mailMessageId: input.mailMessageId }
+            : message,
+        ),
+      );
+    },
+
+    async findByMailMessageId(input) {
+      for (const [key, messages] of byWorkbench) {
+        if (!key.startsWith(`${input.tenantId}:`)) continue;
+        const match = messages.find(
+          (message) => message.mailMessageId === input.mailMessageId,
+        );
+        if (match !== undefined) return match;
+      }
+      return undefined;
     },
 
     async listMessages(input) {

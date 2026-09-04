@@ -23,11 +23,19 @@ export type SendFoldedMailParams = {
   domain: string;
   content: string;
   attachments?: MessageAttachment[];
-  replyTo?: string;
   cryptoProvider: CryptoProvider;
-  /** The MIME `Interchange-Correlation-ID` header — set when this message
-   * answers a specific parked `message_response` gate, absent otherwise. */
-  correlationId?: string;
+  /**
+   * The RFC 5322 `Message-ID` to stamp on this message. A caller that
+   * owns an identity for what it is sending (a chat timeline row, whose
+   * Message-ID is what a reply threads back through — CL-7104) supplies
+   * it; a caller sending something with no identity of its own outside
+   * this mailbox leaves it off, and the mailbox row's own id names it.
+   */
+  messageId?: string;
+  /** The message this one answers, and the full ancestry chain — RFC
+   * 5322 threading, the only thing a reply is correlated back through. */
+  inReplyTo?: string;
+  references?: readonly string[];
 };
 
 /**
@@ -47,25 +55,22 @@ async function deliverFoldedMailMIME(
   const userMessageParams = {
     agentAddress: params.agentAddress,
     from: params.from,
-    messageId: `<${mailId}@${params.domain}>`,
+    messageId: params.messageId ?? `<${mailId}@${params.domain}>`,
     date: now,
     content: params.content,
     sessionId: params.sessionId,
     tenantId: params.tenantId,
     cryptoProvider: params.cryptoProvider,
-    ...(params.correlationId !== undefined
-      ? { correlationId: params.correlationId }
+    ...(params.inReplyTo !== undefined ? { inReplyTo: params.inReplyTo } : {}),
+    ...(params.references !== undefined && params.references.length > 0
+      ? { references: [...params.references] }
       : {}),
   };
   const withAttachments =
     params.attachments !== undefined
       ? { ...userMessageParams, attachments: params.attachments }
       : userMessageParams;
-  const withReplyTo =
-    params.replyTo !== undefined
-      ? { ...withAttachments, inReplyTo: params.replyTo }
-      : withAttachments;
-  return deps.sessionService.sendUserMessage(withReplyTo);
+  return deps.sessionService.sendUserMessage(withAttachments);
 }
 
 /**

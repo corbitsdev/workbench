@@ -79,9 +79,9 @@ async function beforeAskUser(
     };
   }
 
-  let questionId: string;
+  let mailMessageId: string;
   try {
-    ({ questionId } = await postQuestion(clientConfig(env), {
+    ({ mailMessageId } = await postQuestion(clientConfig(env), {
       ...parsed,
       questionId: questionIdForCall(call.id),
     }));
@@ -95,21 +95,19 @@ async function beforeAskUser(
     };
   }
 
-  // `postQuestion` stamps this `questionId` (derived from the tool-call
-  // id, not minted per attempt) on the outbound question card; reusing it
-  // as the gate's own `correlationId` (rather than minting a second,
-  // unrelated id) is what lets the answer route resolve this exact gate
-  // later (CL-7191) — the block a person answers is keyed on `blockId`,
-  // which for a question block IS `questionId` (`packages/chat/src/schema.ts`'s
-  // "agent-authored pollId/formId" comment applies identically here). The
-  // same derivation is what makes a crash between post and
-  // `suspendOnGate` retry-safe: the next attempt re-posts this id and the
-  // write path returns the existing card (CL-7248).
-  const correlationId = questionId;
+  // The card's own RFC 5322 `Message-ID` is what arms this gate
+  // (CL-7104): the answer is a reply whose `In-Reply-To` names that id,
+  // so the key the gate waits on and the header the answer carries are
+  // one value, not two that could drift. Derived from the card's row id,
+  // which `questionIdForCall` already makes stable across a crash-retry
+  // of the same tool call — the next attempt re-posts the same question
+  // id, the write path returns the existing card (CL-7248), and the same
+  // `Message-ID` comes back with it.
+  const gateKey = mailMessageId;
   const timeoutAt = Date.now() + ASK_USER_TIMEOUT_MS;
-  const gateId = `pending-${correlationId}`;
+  const gateId = `pending-${gateKey}`;
   const pendingOp: PendingOperation = {
-    correlationId,
+    correlationId: gateKey,
     kind: "message_response",
     registeredAt: Date.now(),
     gateId,
@@ -119,7 +117,12 @@ async function beforeAskUser(
 
   return {
     type: "suspend",
-    gate: { type: "message_response", gateId, correlationId, timeoutAt },
+    gate: {
+      type: "message_response",
+      gateId,
+      correlationId: gateKey,
+      timeoutAt,
+    },
     pendingOp,
   };
 }

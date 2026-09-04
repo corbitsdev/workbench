@@ -164,8 +164,17 @@ export {
   createInMemoryThreadStore,
   createDrizzleThreadStore,
   createDeliveryThread,
+  mailAncestryOf,
   resolveTargetThread,
 } from "./threads";
+
+export {
+  mailMessageIdFor,
+  mailThreadHeaders,
+  parentMailMessageId,
+  parseReferences,
+  rowIdFromMailMessageId,
+} from "./mail-headers";
 export type {
   ThreadStore,
   WorkbenchThread,

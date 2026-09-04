@@ -10,13 +10,14 @@ import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import { reportError } from "@corbits/error-sink";
 import { encodeParts } from "./codec";
+import { mailThreadHeaders, rowIdFromMailMessageId } from "./mail-headers";
 import type { Part as PartType } from "./parts";
 import {
   consumerTurnError,
   isModelUnavailableCause,
   MODEL_UNAVAILABLE_CONSUMER_MESSAGE,
 } from "./model-unavailable";
-import { localPartOf } from "./agent-address";
+import { domainOf, localPartOf } from "./agent-address";
 import { deriveDisplayName } from "./display-name";
 import { assertNoLeakedInternalId } from "./id-leak-guard";
 import { isAgentAddress, mentionedParticipants } from "./mentions";
@@ -26,7 +27,7 @@ import {
   type TurnContextThreadScope,
 } from "./turn-context";
 import type { AgentTurnStore } from "./agent-turns";
-import type { ThreadStore } from "./threads";
+import { mailAncestryOf, type ThreadStore } from "./threads";
 import {
   TurnCancelledError,
   type TurnCancelRegistry,
@@ -1275,10 +1276,15 @@ export type SendWorkbenchMessageDeps = {
    */
   readonly agentTurns?: AgentTurnStore;
   /**
-   * Narrows a turn's context to its own thread. Absent, a turn is asked
-   * with the whole room. See `./turn-context.ts`.
+   * Narrows a turn's context to its own thread (see `./turn-context.ts`),
+   * and supplies the thread parentage a dispatched message's
+   * `References` chain is derived from (CL-7104). Absent, a turn is
+   * asked with the whole room and its mail threads under nothing.
    */
-  readonly threads?: Pick<ThreadStore, "listThreadAssignments">;
+  readonly threads?: Pick<
+    ThreadStore,
+    "listThreadAssignments" | "getThread" | "threadIdForMessage"
+  >;
   /**
    * The turn-level deadline (CL-6644): `dispatchTurnBatch` wraps every
    * recipient's `dispatchTurn` call in this single wall-clock budget,
@@ -1398,16 +1404,6 @@ export type SendWorkbenchMessageInput = {
    * into the run the room already has.
    */
   readonly forcedRecipientAddress?: string;
-  /**
-   * The id an answer must carry to resolve the gate it answers — a
-   * `message_response` gate's own correlationId (`@corbits/interaction-tools`'s
-   * `beforeAskUser`), threaded down to `headers.interchangeCorrelationId`
-   * on the InboundMessage the reactor's `tryCorrelate` reads. Sourced from
-   * the answered block's own id for a question response
-   * (`packages/chat/src/routes.ts`'s blocks/responses route); absent for
-   * every ordinary message, which carries no correlation at all.
-   */
-  readonly correlationId?: string;
 };
 
 export type SendWorkbenchMessageResult = {
@@ -1647,9 +1643,6 @@ async function routeToRecipients(
       principalId: input.principalId,
       recipients,
       parts: turnParts,
-      ...(input.correlationId !== undefined
-        ? { correlationId: input.correlationId }
-        : {}),
     },
     (batch) =>
       dispatchTurnBatch(deps, input.tenantId, input.workbenchId, batch),
@@ -1696,18 +1689,6 @@ async function dispatchTurnBatch(
   const last = batch[batch.length - 1];
   if (last === undefined) return;
   const messageIds = batch.map((turn) => turn.messageId);
-  // An answer's correlationId must survive batching regardless of where in
-  // the batch it landed — unlike `principalId`, which is legitimately
-  // "whoever sent last," a gate answer is a specific message a specific
-  // queued turn carries, not necessarily the batch's final one (a further
-  // unrelated message queued behind the answer, before this batch drains,
-  // would otherwise make `last.correlationId` undefined and silently strand
-  // the gate on its timeout instead of resolving it). At most one queued
-  // turn in a batch carries a correlationId in practice — a batch answering
-  // more than one live question is not a shape this dispatch produces.
-  const batchCorrelationId = batch.find(
-    (turn) => turn.correlationId !== undefined,
-  )?.correlationId;
 
   // CL-6644: unconditional entry marker — see the matching note on the
   // caller's own recipient-resolution log. This is the one line that
@@ -1794,15 +1775,6 @@ async function dispatchTurnBatch(
                 agentAddress,
                 parts,
                 requestMessageIds: messageIds,
-                // A batch concatenating more than one queued message's parts
-                // still stamps the whole combined body as the answer when any
-                // one of them carries a correlationId — acceptable (the user
-                // did answer), but a batch mixing the actual answer with an
-                // unrelated follow-up hands the gate the whole blob, not just
-                // the answer.
-                ...(batchCorrelationId !== undefined
-                  ? { correlationId: batchCorrelationId }
-                  : {}),
               },
               signal,
             ),
@@ -1867,9 +1839,6 @@ export type DispatchTurnInput = {
   readonly parts: PartType[];
   /** The room messages this turn answers, in arrival order. */
   readonly requestMessageIds: readonly string[];
-  /** See `SendWorkbenchMessageInput.correlationId`; threaded straight
-   * through to `WorkbenchMail.sendMail`. */
-  readonly correlationId?: string;
 };
 
 /**
@@ -1914,6 +1883,77 @@ export type DispatchTurnInput = {
  * CL-7230's ceiling (a send already in flight, which cannot be
  * stopped), just a send that hasn't started yet and has no reason to.
  */
+/**
+ * The RFC 5322 threading headers a dispatched turn's mail carries
+ * (CL-7104): the source row's own `Message-ID`, plus the
+ * `In-Reply-To` / `References` its thread parentage produces. Stamped on
+ * the row as it goes out, so the header a reply names resolves back to
+ * exactly one message.
+ *
+ * A dispatch with no source message (a canned greeting, a launch
+ * notice) answers nothing and threads under nothing — it carries no
+ * headers here and travels under the transport's own `Message-ID`. A
+ * stamp that fails is reported, never thrown: the header is derived, so
+ * the reply still resolves, only the row's record of it is missing.
+ */
+async function dispatchMailHeaders(
+  deps: Pick<SendWorkbenchMessageDeps, "roomMessages" | "threads">,
+  input: DispatchTurnInput,
+  sourceMessageId: string | undefined,
+): Promise<{
+  readonly messageId?: string;
+  readonly inReplyTo?: string;
+  readonly references?: readonly string[];
+}> {
+  if (sourceMessageId === undefined) return {};
+  const domain = domainOf(input.agentAddress);
+  if (domain === undefined) {
+    throw new Error(
+      `cannot mint a Message-ID for workbench "${input.workbenchId}": ` +
+        `recipient address "${input.agentAddress}" carries no mail domain`,
+    );
+  }
+
+  const source = await deps.roomMessages.getMessage({
+    tenantId: input.tenantId,
+    workbenchId: input.workbenchId,
+    messageId: sourceMessageId,
+  });
+  const ancestors =
+    deps.threads === undefined
+      ? []
+      : await mailAncestryOf(
+          deps.threads,
+          input.tenantId,
+          input.workbenchId,
+          source?.threadId ?? null,
+        );
+  const headers = mailThreadHeaders({
+    rowId: sourceMessageId,
+    domain,
+    ancestors,
+  });
+
+  try {
+    await deps.roomMessages.stampMailMessageId({
+      tenantId: input.tenantId,
+      workbenchId: input.workbenchId,
+      messageId: sourceMessageId,
+      mailMessageId: headers.messageId,
+    });
+  } catch (err) {
+    reportError(err, {
+      operation: "chat.dispatchTurn.stampMailMessageId",
+      tenantId: input.tenantId,
+      roomId: input.workbenchId,
+      agentId: input.agentAddress,
+      extra: { messageId: sourceMessageId, mailMessageId: headers.messageId },
+    });
+  }
+
+  return headers;
+}
+
 export async function dispatchTurn(
   deps: Pick<
     SendWorkbenchMessageDeps,
@@ -1922,6 +1962,7 @@ export async function dispatchTurn(
     | "roomMessages"
     | "publish"
     | "turnMailCorrelation"
+    | "threads"
   >,
   input: DispatchTurnInput,
   signal?: AbortSignal,
@@ -1976,34 +2017,37 @@ export async function dispatchTurn(
   }
   signal?.addEventListener("abort", closeAsTimedOut, { once: true });
 
+  // The message this turn answers — the latest, matching how a batch
+  // already attributes its principal: the conversation is where its
+  // newest message is. It is what the mail's own RFC 5322 `Message-ID`
+  // names, and what a reply's `In-Reply-To` resolves back to (CL-7104).
+  const sourceMessageId =
+    input.requestMessageIds[input.requestMessageIds.length - 1];
+  const headers = await dispatchMailHeaders(deps, input, sourceMessageId);
+
   try {
-    const sent = await deps.platform.sendMail({
+    await deps.platform.sendMail({
       tenantId: input.tenantId,
       workbenchId: localPartOf(input.agentAddress),
       principalId: input.principalId,
-      content: encodeParts(input.parts, { replyTo: input.workbenchId }),
+      content: encodeParts(input.parts, headers),
       fromWorkbenchId: input.workbenchId,
-      ...(input.correlationId !== undefined
-        ? { correlationId: input.correlationId }
-        : {}),
     });
     // The reply path threads under the turn that produced it (CL-6314),
-    // and this mail is what opens that turn's bracket — so record which
-    // message it answers while both halves are in hand. The latest
-    // message, matching how a batch already attributes its principal:
-    // the conversation is where its newest message is. A record that
-    // fails is reported, never thrown: the turn was dispatched, and
-    // threading degrades to unthreaded rather than failing it.
-    const sourceMessageId =
-      input.requestMessageIds[input.requestMessageIds.length - 1];
+    // and this mail's `Message-ID` is what opens that turn's bracket — so
+    // record which message that header answers while both halves are in
+    // hand. A record that fails is reported, never thrown: the turn was
+    // dispatched, and threading degrades rather than failing it.
     if (
       sourceMessageId !== undefined &&
+      headers.messageId !== undefined &&
       deps.turnMailCorrelation !== undefined
     ) {
+      const mailId = rowIdFromMailMessageId(headers.messageId);
       try {
         await deps.turnMailCorrelation.recordTurnMail({
           tenantId: input.tenantId,
-          mailId: sent.id,
+          mailId,
           workbenchId: input.workbenchId,
           sourceMessageId,
         });
@@ -2013,7 +2057,7 @@ export async function dispatchTurn(
           tenantId: input.tenantId,
           roomId: input.workbenchId,
           agentId: input.agentAddress,
-          extra: { mailId: sent.id, sourceMessageId },
+          extra: { mailId, sourceMessageId },
         });
       }
     }

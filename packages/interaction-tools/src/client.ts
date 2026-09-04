@@ -67,7 +67,13 @@ async function readErrorMessage(
  * the workflow-participant route's "not a participant of any channel" 404. */
 export class NoOwnChannelError extends Error {}
 
-const PostedMessageResponse = type({ id: "string", createdAt: "string" });
+const PostedMessageResponse = type({
+  id: "string",
+  createdAt: "string",
+  /** The card's RFC 5322 `Message-ID` (CL-7104) — what an answer names in
+   * `In-Reply-To`, and therefore the key the parked gate is armed on. */
+  mailMessageId: "string",
+});
 
 /**
  * Derives the question card's `questionId` from a tool-call id. The call
@@ -84,16 +90,19 @@ export function questionIdForCall(callId: string): string {
  * Posts a `question` block into the caller's own channel. Uses a caller-
  * supplied `questionId` when present (never trusts the model to supply a
  * stable, collision-free id — `ask_user` derives it from the tool-call id)
- * and otherwise mints one here. Returns the id: `beforeAskUser`
- * (`./tool.ts`) reuses it verbatim as the `message_response` gate's own
- * `correlationId`, and the block-response route persists (and later
- * relays) an answer keyed on this same id as `blockId` — a question
+ * and otherwise mints one here. The block-response route persists (and
+ * later relays) an answer keyed on this same id as `blockId` — a question
  * block's `blockId` IS its `questionId`, the same way a poll's is its
  * `pollId` (`packages/chat/src/schema.ts`'s `block_responses` table
  * comment). `@intx/hub-common`'s `generateId` is a closed enum of
  * platform id kinds (vendored, read-only source) with no "question"
  * entry, so a minted id is `q_`-prefixed the same way
  * `packages/chat/src/threads.ts`'s `thr_` ids are.
+ *
+ * Also returns the card's own RFC 5322 `Message-ID` (CL-7104), which is
+ * what `beforeAskUser` (`./tool.ts`) arms the `message_response` gate on:
+ * the answer is a reply whose `In-Reply-To` names that id, and nothing
+ * else links the two.
  *
  * Re-posting the same `questionId` into the same workbench is a no-op:
  * the participants/messages route returns the existing card rather than
@@ -103,7 +112,11 @@ export function questionIdForCall(callId: string): string {
 export async function postQuestion(
   config: AskUserClientConfig,
   question: AskUserQuestion,
-): Promise<{ readonly messageId: string; readonly questionId: string }> {
+): Promise<{
+  readonly messageId: string;
+  readonly questionId: string;
+  readonly mailMessageId: string;
+}> {
   const doFetch = config.fetchImpl ?? fetch;
   const questionId =
     question.questionId ?? `q_${crypto.randomUUID().replace(/-/g, "")}`;
@@ -158,5 +171,9 @@ export async function postQuestion(
       `Post-message response did not match the expected shape: ${parsed.summary}`,
     );
   }
-  return { messageId: parsed.id, questionId };
+  return {
+    messageId: parsed.id,
+    questionId,
+    mailMessageId: parsed.mailMessageId,
+  };
 }
