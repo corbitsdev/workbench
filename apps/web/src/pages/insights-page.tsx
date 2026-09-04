@@ -46,6 +46,7 @@ import {
   formatUsd,
   INSIGHTS_WINDOW_DAYS,
   modelsWithMissingRates,
+  modelsWithUnreportedTokens,
   tokensLabel,
   topModelsByCost,
   type DayActivity,
@@ -388,13 +389,17 @@ function runOutcomeData(stats: {
   ];
 }
 
-/** Tokens-by-model series for the tokens-over-time chart — token volume
- * (unlike cost) is always a known number for a recorded turn, so this
- * stays honest for every model without a null-rate caveat. Capped to the
- * top models by cost (the models that matter most to the spend story),
- * same as `TimeSeriesChart`'s own "≤5 series" rule. */
+/** Tokens-by-model series for the tokens-over-time chart. Token volume is
+ * a known number only when the adapter reported it; unreported turns are
+ * excluded from this series rather than plotted as a silent zero. Capped
+ * to the top models by cost (the models that matter most to the spend
+ * story), same as `TimeSeriesChart`'s own "≤5 series" rule. */
 function tokensOverTimeSeries(days: readonly DayActivity[]) {
-  const models = topModelsByCost(days);
+  const models = topModelsByCost(days).filter((model) =>
+    days.some(
+      (d) => (d.byModel.find((m) => m.model === model)?.tokens ?? 0) > 0,
+    ),
+  );
   return models.map((model) => ({
     label: model,
     values: days.map(
@@ -541,13 +546,25 @@ function ModelCostTable({
           <TableRow key={m.model}>
             <TableCell title={m.model}>{m.model}</TableCell>
             <TableCell>
-              {m.costUsd === null && m.tokens.total > 0
+              {m.costUsd === null || (m.tokens.total === 0 && m.turns > 0)
                 ? "—"
                 : formatUsd(m.costUsd)}
             </TableCell>
-            <TableCell>{formatCount(m.tokens.input)}</TableCell>
-            <TableCell>{formatCount(m.tokens.cacheRead)}</TableCell>
-            <TableCell>{formatCount(m.tokens.output)}</TableCell>
+            <TableCell>
+              {m.tokens.total === 0 && m.turns > 0
+                ? "—"
+                : formatCount(m.tokens.input)}
+            </TableCell>
+            <TableCell>
+              {m.tokens.total === 0 && m.turns > 0
+                ? "—"
+                : formatCount(m.tokens.cacheRead)}
+            </TableCell>
+            <TableCell>
+              {m.tokens.total === 0 && m.turns > 0
+                ? "—"
+                : formatCount(m.tokens.output)}
+            </TableCell>
           </TableRow>
         ))}
       </TableBody>
@@ -688,6 +705,8 @@ function InsightsLanding({
   const mosaicParts = tokenParts(usage);
   const hitRate = cacheHitRate(usage);
   const missingRates = modelsWithMissingRates(usage);
+  const unreportedTokens = modelsWithUnreportedTokens(usage);
+  const tokensUnreported = usage.turns > 0 && usage.tokens.total === 0;
   const activityDays = activitySeriesForWindow(activity ?? [], range);
   const activityWindowEmpty = recentActivityDays(activityDays).every(
     (d) => d.turns === 0,
@@ -704,7 +723,9 @@ function InsightsLanding({
   const tokensSparkline = activityDays.map((d) => d.tokens);
   const runsSparkline = runsPerDay(purposeRuns, activityDays);
   const costSparkline =
-    missingRates.length === 0 ? costPerDay(activityDays) : undefined;
+    missingRates.length === 0 && unreportedTokens.length === 0
+      ? costPerDay(activityDays)
+      : undefined;
 
   return (
     <div className="insights-layout">
@@ -712,8 +733,15 @@ function InsightsLanding({
         {noUsageInWindow ? null : (
           <InsightsStat
             label="Cost"
-            value={tileValue(formatUsd(usage.costUsd), loading)}
-            detail={`${formatCount(usage.tokens.total)} tokens`}
+            value={tileValue(
+              tokensUnreported ? "—" : formatUsd(usage.costUsd),
+              loading,
+            )}
+            detail={
+              tokensUnreported
+                ? "Token counts were not reported"
+                : `${formatCount(usage.tokens.total)} tokens`
+            }
             loading={loading}
             sparklineLabel="Cost per day this week"
             {...(costSparkline === undefined
@@ -735,12 +763,14 @@ function InsightsLanding({
           <InsightsStat
             label="Tokens in / out"
             value={tileValue(
-              `${formatCount(usage.tokens.input)} / ${formatCount(usage.tokens.output)}`,
+              tokensUnreported
+                ? "—"
+                : `${formatCount(usage.tokens.input)} / ${formatCount(usage.tokens.output)}`,
               loading,
             )}
-            detail="input / output"
+            detail={tokensUnreported ? "not reported" : "input / output"}
             loading={loading}
-            sparklineValues={tokensSparkline}
+            {...(tokensUnreported ? {} : { sparklineValues: tokensSparkline })}
             sparklineLabel="Tokens per day this week"
           />
         )}
@@ -809,6 +839,13 @@ function InsightsLanding({
 
       {noUsageInWindow && !activityWindowEmpty ? (
         <p className="insights-note">No usage recorded yet in this window.</p>
+      ) : null}
+
+      {unreportedTokens.length > 0 ? (
+        <p className="insights-note">
+          Token counts were not reported for: {unreportedTokens.join(", ")}.
+          Those turns do not contribute a fabricated cost or token total.
+        </p>
       ) : null}
 
       {missingRates.length > 0 ? (
