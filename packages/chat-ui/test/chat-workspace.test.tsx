@@ -2073,6 +2073,63 @@ describe("Workbench header polish (CL-6106)", () => {
     harness.unmount();
   });
 
+  test("headerSlot thread view has one aria-current=page and a clickable close-thread", async () => {
+    stubThreadedFetch();
+    const harness = await mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "ch_1",
+      headerSlot: (chrome) =>
+        createElement(
+          "div",
+          { "data-testid": "host-stage-bar" },
+          createElement(
+            "span",
+            { "aria-current": "page" },
+            chrome.crumbs.at(-1)?.label,
+          ),
+          chrome.subtitle !== undefined
+            ? createElement(
+                "div",
+                { className: "stage-top-bar-sub" },
+                chrome.subtitle,
+              )
+            : null,
+          chrome.actions,
+        ),
+    });
+    await harness.settle();
+
+    const openButton = harness.container.querySelector(
+      ".chat-thread-open",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      openButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await sleep(30);
+    });
+
+    expect(
+      harness.container.querySelectorAll('[aria-current="page"]'),
+    ).toHaveLength(1);
+    expect(
+      harness.container
+        .querySelector(".chat-thread-breadcrumb-current")
+        ?.getAttribute("aria-current"),
+    ).toBeNull();
+
+    const closeThread = harness.container.querySelector(
+      ".chat-thread-breadcrumb-link",
+    ) as HTMLButtonElement;
+    expect(closeThread).not.toBeNull();
+    await act(async () => {
+      closeThread.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await sleep(30);
+    });
+    expect(
+      harness.container.querySelector(".chat-thread-breadcrumb"),
+    ).toBeNull();
+    harness.unmount();
+  });
+
   test("headerSlot still titles the stage while the tenant is loading", async () => {
     const harness = await mount({
       tenant: { kind: "loading" },
