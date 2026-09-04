@@ -9,7 +9,7 @@
 // so this landing scope never takes a workbench override anymore.
 import { describe, expect, test } from "bun:test";
 import type { DayActivity } from "@corbits/insights/client";
-import { FIRE_RUNNING_WINDOW_MS } from "@corbits/routines/client";
+import { FIRE_RUNNING_WINDOW_MS } from "@corbits/workflows/client";
 
 import {
   costPerDay,

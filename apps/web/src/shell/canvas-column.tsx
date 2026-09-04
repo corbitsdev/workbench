@@ -60,7 +60,6 @@ import type {
   RoutinePanelSubject,
 } from "./canvas-availability";
 import { useInsertIntoComposer } from "./composer-insertion";
-import { RoutinePanel } from "./routine-panel";
 
 /**
  * One co-viewer's cursor, in the artifact pane's own fractional coordinate
@@ -81,7 +80,6 @@ export function CanvasColumn({
   open,
   profile,
   artifact,
-  routine,
   focus,
   onClose,
   onToggleFocus,
@@ -156,8 +154,6 @@ export function CanvasColumn({
             {...(onArtifactTyping !== undefined ? { onArtifactTyping } : {})}
             presenceConnection={presenceConnection}
           />
-        ) : routine !== null ? (
-          <RoutinePanel />
         ) : (
           <EmptyState
             icon={<UserCircle />}

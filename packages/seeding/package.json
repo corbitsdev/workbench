@@ -1,7 +1,7 @@
 {
   "name": "@corbits/seeding",
   "private": true,
-  "description": "Tenant seeding: deploy the default workflow set, plant preset routines and skills, and confirm every deployment answers",
+  "description": "Tenant seeding: deploy the default workflow set, plant skills, prune leftover preset routine wrappers, and confirm every deployment answers",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",

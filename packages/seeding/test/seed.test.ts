@@ -25,6 +25,7 @@ import {
   deploymentRow,
   emptyPage,
   fakeAPI,
+  pristineScheduledDefinitionHandshake,
   TENANT_DOMAIN,
   TENANT_ID,
   PRINCIPAL_ID,
@@ -86,16 +87,6 @@ function baseRoutes(method: string, path: string) {
     return { status: 404, data: {} };
   if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`)
     return { status: 201, data: {} };
-  // CL-6201: `ensureDefaultRoutines` runs at the end of every seed and
-  // lists the deployed workflow assets, their live deployments, and the
-  // tenant's existing routines before deciding what (if anything) to
-  // plant. Every test in this file that doesn't care about routine
-  // seeding gets an empty answer from all three, so the preset loop
-  // finds no deployed asset to target and skips quietly rather than the
-  // fake handler throwing "unexpected hub call". A test that defines
-  // its own handler for the assets/deployments paths (to drive the
-  // earlier asset-conflict or already-deployed flow) checks that
-  // handler before falling back to this one, so its own answer wins.
   if (
     method === "GET" &&
     path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
@@ -106,8 +97,8 @@ function baseRoutes(method: string, path: string) {
     path === `/api/tenants/${TENANT_ID}/workflows/deployments`
   )
     return { status: 200, data: [] };
-  if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`)
-    return { status: 200, data: { items: [] } };
+  const handshake = pristineScheduledDefinitionHandshake(method, path);
+  if (handshake) return handshake;
   return undefined;
 }
 
@@ -886,10 +877,9 @@ describe("seedTenant", () => {
   test("the default set consumed by real tenant provisioning is assistant, echo, workbench-digest, and last-30-days-research", () => {
     // provisionPersonalTenantIfNeeded (@workbench/onboarding) deploys
     // DEFAULT_WORKFLOWS for every real signup. workbench-digest is the
-    // seed automation the Routines picker can honestly offer.
-    // last-30-days-research (CL-6201) is deployed so
-    // `ensureDefaultRoutines` has a real definition to un-strand into a
-    // routine. The remaining catalog-test workflows exist only to
+    // seed automation the native ScheduleTrigger ticks. last-30-days-
+    // research is a deployed automation, not a routine wrapper.
+    // The remaining catalog-test workflows exist only to
     // exercise the platform continuously and must never reach a real
     // user through this array — they are seeded only via the explicit
     // CATALOG_TEST_WORKFLOWS opt-in.
@@ -1029,6 +1019,7 @@ describe("seedTenant", () => {
     expect(workbenchDigest.displayName).toBe("Workbench digest");
     expect(workbenchDigest.automatable).toBe(true);
     expect(workbenchDigest.modelSource).toBeUndefined();
+    expect(workbenchDigest.startStopped).toBe(true);
   });
 
   test("echo and assistant are not automatable", () => {
@@ -1113,13 +1104,13 @@ describe("seedTenant", () => {
     if (!push0) throw new Error("expected one workflow push");
     const definition = JSON.parse(push0.workflowJson) as {
       id: string;
-      triggers: { type: string; to: string }[];
+      triggers: { type: string; cron?: string }[];
       stepOrder: string[];
     };
     expect(definition.id).toBe("wf_workbench_digest");
-    expect(definition.triggers[0]?.to).toBe(
-      `workbench-digest@${TENANT_DOMAIN}`,
-    );
+    expect(definition.triggers).toEqual([
+      { type: "schedule", cron: "0 9 * * *" },
+    ]);
     expect(definition.stepOrder).toEqual(["workbench-digest"]);
 
     // Defaults deploy against the tenant's real model (not noop).
@@ -1130,6 +1121,190 @@ describe("seedTenant", () => {
     expect(output).toContain("deployed workflow workbench-digest as dep_4");
     expect(output).toContain(
       "confirmed workflow workbench-digest: run run_1 started",
+    );
+    expect(output).toContain(
+      "stopped definition workbench-digest so its native schedule does not fire until restored",
+    );
+  });
+
+  test("startStopped skips a member-restored digest instead of re-archiving it", async () => {
+    const { lines, log } = collector();
+    let puts = 0;
+    let runsCalls = 0;
+    const handler: FakeHandler = (method, path) => {
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/workflows/definitions`)
+      ) {
+        return {
+          status: 200,
+          data: {
+            data: [
+              {
+                id: "wfd_digest",
+                tenantId: TENANT_ID,
+                name: "workbench-digest",
+                currentVersion: "1",
+                status: "deployed",
+                createdAt: "2026-01-01T00:00:00.000Z",
+                updatedAt: "2026-01-02T00:00:00.000Z",
+              },
+            ],
+            nextCursor: null,
+          },
+        };
+      }
+      if (method === "PUT" && path.includes("/agent-definitions/")) {
+        puts += 1;
+        throw new Error("must not re-stop a touched definition");
+      }
+      const base = baseRoutes(method, path);
+      if (base) return base;
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
+        return { status: 201, data: assetRow("ast_4", "workbench-digest") };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      )
+        return { status: 200, data: [] };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      )
+        return {
+          status: 201,
+          data: deploymentRow("dep_4", "ast_4", "deployed"),
+        };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/dep_4/runs`
+      ) {
+        runsCalls += 1;
+        return {
+          status: 200,
+          data: { runIds: runsCalls === 1 ? [] : ["run_1"] },
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/dep_4/mail`
+      )
+        return {
+          status: 202,
+          data: {
+            runId: "dep_4",
+            address: `ins_dep_4@${TENANT_DOMAIN}`,
+            messageId: "<m6@workbench.localhost>",
+          },
+        };
+      return undefined;
+    };
+
+    await seedTenant(
+      args({
+        api: fakeAPI(handler),
+        log,
+        workflows: DEFAULT_WORKFLOWS.filter(
+          (w) => w.assetName === "workbench-digest",
+        ),
+      }),
+    );
+
+    expect(puts).toBe(0);
+    expect(lines.join("\n")).toContain(
+      "definition workbench-digest was touched; leaving status deployed",
+    );
+  });
+
+  test("startStopped pages past the first definitions page to find digest", async () => {
+    const { lines, log } = collector();
+    let puts = 0;
+    let definitionPages = 0;
+    const handler: FakeHandler = (method, path) => {
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/workflows/definitions`)
+      ) {
+        definitionPages += 1;
+        if (!path.includes("cursor=")) {
+          return {
+            status: 200,
+            data: {
+              data: [
+                {
+                  id: "wfd_other",
+                  tenantId: TENANT_ID,
+                  name: "echo",
+                  currentVersion: "1",
+                  status: "deployed",
+                  createdAt: "2026-01-01T00:00:00.000Z",
+                  updatedAt: "2026-01-01T00:00:00.000Z",
+                },
+              ],
+              nextCursor: "page2",
+            },
+          };
+        }
+        return {
+          status: 200,
+          data: {
+            data: [
+              {
+                id: "wfd_digest",
+                tenantId: TENANT_ID,
+                name: "workbench-digest",
+                currentVersion: "1",
+                status: "deployed",
+                createdAt: "2026-01-01T00:00:00.000Z",
+                updatedAt: "2026-01-01T00:00:00.000Z",
+              },
+            ],
+            nextCursor: null,
+          },
+        };
+      }
+      if (
+        method === "PUT" &&
+        path === `/api/tenants/${TENANT_ID}/agent-definitions/wfd_digest/status`
+      ) {
+        puts += 1;
+        return { status: 200, data: { id: "wfd_digest", status: "stopped" } };
+      }
+      const base = baseRoutes(method, path);
+      if (base) return base;
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/assets`)
+        return { status: 201, data: assetRow("ast_4", "workbench-digest") };
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      )
+        return { status: 200, data: [] };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      )
+        return {
+          status: 201,
+          data: deploymentRow("dep_4", "ast_4", "deployed"),
+        };
+      return undefined;
+    };
+
+    await seedTenant(
+      args({
+        api: fakeAPI(handler),
+        log,
+        workflows: DEFAULT_WORKFLOWS.filter(
+          (w) => w.assetName === "workbench-digest",
+        ),
+        confirmDeployments: false,
+      }),
+    );
+
+    expect(definitionPages).toBe(2);
+    expect(puts).toBe(1);
+    expect(lines.join("\n")).toContain(
+      "stopped definition workbench-digest so its native schedule does not fire until restored",
     );
   });
 
@@ -1207,6 +1382,9 @@ describe("seedTenant", () => {
       `seed complete: ${DEFAULT_WORKFLOWS.length} workflow(s) deployed`,
     );
     expect(output).not.toContain("deployed and confirmed");
+    expect(output).toContain(
+      "stopped definition workbench-digest so its native schedule does not fire until restored",
+    );
   });
 });
 

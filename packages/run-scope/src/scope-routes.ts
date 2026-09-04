@@ -44,15 +44,10 @@ export type RoutineFireInfo = {
 
 /**
  * Host-supplied port: given a batch of run ids, returns the subset that
- * are routine fires (this hub's `@corbits/routines`' `routine_run` link
- * table, see that package's `routes.ts`/`store.ts`), each with its
- * parent routine's id and human name. This package never imports
- * `@corbits/routines` itself — that package already depends on
- * `@corbits/folded-runs` (every routine fire launches through
- * `launchFoldedRun`), so the reverse import would cycle. Optional: a
- * host that mounts this route without wiring it simply gets the
- * `fires` feed with no folded run ever recognized as a fire (every
- * folded run then drops, same as the `deployments` feed).
+ * are scheduled fires, each with its parent schedule's id and human
+ * name. Optional: a host that mounts this route without wiring it
+ * simply gets the `fires` feed with no folded run ever recognized as a
+ * fire (every folded run then drops, same as the `deployments` feed).
  */
 export type ResolveRoutineFires = (
   runIds: readonly string[],
@@ -196,13 +191,13 @@ export async function listTopLevelRuns(
  * That alone would still hide every routine fire: a fire is a folded
  * run, marked in this package's own `folded_run` table, and this
  * feed — unlike `listTopLevelRuns` — must show it. So a folded run here
- * is kept only when `resolveRoutineFires` (the host's
- * `@corbits/routines` bridge) confirms it is one, carrying that
- * routine's id/name; every other folded run (workbench host, invited
- * agent, an ad-hoc task with no routine parent) still drops, same as
- * `listTopLevelRuns`. A non-folded row (a plain deployment that got
- * triggered directly) always keeps its place and reports no routine
- * parent — the caller's honest "definition name" fallback.
+ * is kept only when `resolveRoutineFires` (the host's scheduled-fire
+ * bridge) confirms it is one, carrying that schedule's id/name; every
+ * other folded run (workbench host, invited agent, an ad-hoc task with
+ * no schedule parent) still drops, same as `listTopLevelRuns`. A
+ * non-folded row (a plain deployment that got triggered directly)
+ * always keeps its place and reports no schedule parent — the caller's
+ * honest "definition name" fallback.
  *
  * Same known-limit caveat as `listTopLevelRuns`: `limit` bounds the SQL
  * fetch before the folded-run filter runs, so a page can come back

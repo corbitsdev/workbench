@@ -14,7 +14,6 @@ import {
   createSidecarAllocationStore,
   createSignalCorrelationStore,
   createWorkflowRunDispatchStore,
-  createWorkflowRunStore,
   listVisibleOfferings,
   resolveCredentialByName,
   resolveCredentialRequirement,
@@ -108,7 +107,6 @@ import {
   postRoomMessage,
   recordSourcesDigest,
   startWorkflowCommand,
-  sendWorkbenchMessage,
   settleConnectedService,
   workbenchLaunchPersistExtra,
 } from "@corbits/chat";
@@ -118,7 +116,6 @@ import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
 import { decodedOrNull } from "@corbits/url-path";
 import {
   createCryptoProviderCache,
-  findFoldedRunByAddress,
   lookupFoldedRunReconnectKey,
   tagCredentialCipher,
 } from "@corbits/folded-runs";
@@ -189,8 +186,6 @@ import {
 import {
   deliveryWorkbenchRequiredForWorkflowName,
   isConversationalWorkflowName,
-  validateTriggerFieldsAtCreate,
-  workflowCatalogEntry,
   workflowDisplayName,
   workbenchTemplateLibraryEntries,
 } from "@workbench/templates";
@@ -199,20 +194,10 @@ import { webhookTriggerName } from "@corbits/connections/connect-github-setup";
 import { createTemplateBlockRoutes } from "./templates/template-block-routes";
 import {
   createWorkflowDetailRoute,
+  createScheduledWorkflowRoutes,
   renderWorkflowSourceTree,
   WORKFLOW_SOURCE_ENTRY,
 } from "@corbits/workflows";
-import {
-  createDrizzleRoutineStore,
-  createRoutineRoutes,
-  createRoutineTargetRoutes,
-  createWorkflowRoutineRoutes,
-  listRoutineTargets,
-  resolveLaunchableDefinition,
-  routine as routineTable,
-  routineRun as routineRunTable,
-  settleRoutineFireFromTurn,
-} from "@corbits/routines";
 import {
   createSidecarProvisioner as createE2BSidecarProvisioner,
   readProvisionerConfig as readE2BProvisionerConfig,
@@ -372,11 +357,16 @@ import {
 } from "./config";
 import type { SidecarProvisioner } from "@intx/hub-sessions";
 import { scheduleEnvProviderCredentialPlant } from "./env-credential-plant";
-import { createHubRoutineLauncher } from "./routine-launcher";
 import { withTurnPartWriteDefaults } from "./turn-part-content-default";
-import { createHubRunSummaryResolver } from "./routine-run-summary";
 import { createBootAssetWiring, REGISTRIES } from "./asset-service-factory";
-import { createRoutineScheduler } from "./routine-scheduler";
+import {
+  claimScheduleMinuteFromDb,
+  createWorkflowScheduler,
+  launchScheduledDefinitionFromDb,
+  listScheduledDefinitionsFromDb,
+  runNowScheduledDefinition,
+  type ScheduledDeliveryJoinDeps,
+} from "./workflow-scheduler";
 import { createToolGrantsForPins } from "./tool-grants";
 import { createMcpCredentialBindingsFor } from "./mcp-credential-bindings";
 import { reconcilePinnedToolPackagesAfterConnect } from "./connection-live-reconcile";
@@ -828,31 +818,6 @@ export async function createHub(config: HubConfig) {
     store: insightsUsage.store,
     generateId: () => generateId("inferenceTurn"),
   });
-  // CL-6778: a routine fire's folded delivery agent stays deployed after
-  // it replies, so `workflow_run.status` would linger on `running` unless
-  // something stamps it terminal. `onTurnFinalized` is that stamp —
-  // `markTerminal` + `endedAt`, gated on a `routine_run` row so a
-  // workbench host or invited agent is never settled by accident.
-  const workflowRunStore = createWorkflowRunStore(db);
-  const routineFireSettlePort = {
-    async lookupRunByAddress(address: string) {
-      const row = await findFoldedRunByAddress(db, address);
-      return row === undefined ? undefined : { id: row.id };
-    },
-    async isRoutineFire(runId: string) {
-      const rows = await db
-        .select({ runId: routineRunTable.runId })
-        .from(routineRunTable)
-        .where(eq(routineRunTable.runId, runId))
-        .limit(1);
-      return rows.length > 0;
-    },
-    markTerminal: (
-      runId: string,
-      status: "completed" | "failed" | "cancelled",
-      endedAt: Date,
-    ) => workflowRunStore.markTerminal(runId, status, endedAt),
-  };
   // CL-6257: per-message-run stage latency (message-received →
   // reactor.start → inference.start → first-token → reply-posted). The
   // vendored event collector never persists the events this reads (see
@@ -873,16 +838,6 @@ export async function createHub(config: HubConfig) {
     db: withTurnPartPersistGuard(withTurnPartWriteDefaults(db)),
     onTurnFinalized: (agentAddress, turn) => {
       artifactDeliveryHandlerRef.current?.(agentAddress, turn);
-      void settleRoutineFireFromTurn(routineFireSettlePort, agentAddress, {
-        status: turn.status,
-        hadReply: turn.hadReply,
-      }).catch((err: unknown) => {
-        log.warn`Failed to settle routine fire for ${agentAddress}: ${err instanceof Error ? err.message : String(err)}`;
-        reportError(err, {
-          operation: "routine_fire_settle_from_turn",
-          agentId: agentAddress,
-        });
-      });
     },
     // Per-turn usage, emitted once when the collector finalizes a turn.
     onUsage: (_agentAddress, usage) => {
@@ -1637,23 +1592,6 @@ export async function createHub(config: HubConfig) {
     isConversationalAgentDefinition(definition) &&
     !isPlannerCreatedDefinitionName(definition.name);
 
-  /** The address a principal's own message is posted under: their id at
-   * their tenant's domain, the same shape every participant address
-   * carries. */
-  const senderAddressFor = async (
-    tenantId: string,
-    principalId: string,
-  ): Promise<string> => {
-    const row = await db.query.tenant.findFirst({
-      where: eq(tenantTable.id, tenantId),
-      columns: { domain: true },
-    });
-    if (row === undefined) {
-      throw new Error(`No tenant "${tenantId}" to derive a sender address in`);
-    }
-    return `${principalId}@${row.domain}`;
-  };
-
   const chatDeps: Parameters<typeof createChatRoutes>[0] = {
     store: chatStore,
     roomMessages,
@@ -1804,6 +1742,41 @@ export async function createHub(config: HubConfig) {
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
       }),
+    }),
+  );
+  const scheduledDeliveryJoinDeps: ScheduledDeliveryJoinDeps = {
+    deliveryWorkbenchRequired: deliveryWorkbenchRequiredForWorkflowName,
+    resolveDeliveryWorkbench: async (tenantId) => {
+      const rows = await chatStore.listWorkbenchSettings(tenantId);
+      const first = [...rows].sort((a, b) =>
+        a.workbenchId.localeCompare(b.workbenchId),
+      )[0];
+      return first?.workbenchId;
+    },
+    joinDeliveryWorkbench: (input) =>
+      joinRunParticipant({ store: chatStore }, input),
+  };
+  app.route(
+    `${TENANT_PREFIX}/workflows`,
+    createScheduledWorkflowRoutes({
+      db,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+      runNow: async (args) =>
+        runNowScheduledDefinition(
+          { db, sidecarRouter, ...scheduledDeliveryJoinDeps },
+          {
+            tenantId: args.tenantId,
+            definitionId: args.definitionId,
+            principalId: args.principalId,
+            fromDomain: args.fromDomain,
+            content: args.content,
+            name: args.name,
+            definitionAssetId: args.assetId,
+          },
+        ),
     }),
   );
   // Run key identity diagnostics: read side of the append-only
@@ -2843,34 +2816,7 @@ export async function createHub(config: HubConfig) {
   // so the Agent Directory and the shell's "Running" bands stop
   // deriving that exclusion client-side from a tenant's workbenches alone
   // (see `@corbits/folded-runs`'s `scope-routes.ts`, which a folded run
-  // with no workbench involved silently slipped past). The route's
-  // `feed=fires` mode (Insights, CL-6249) needs the one bridge
-  // `@corbits/folded-runs` cannot own itself — resolving a folded run id
-  // back to the routine that fired it — wired here, the one place in
-  // the hub that already depends on both packages. Plain `db` queries
-  // against `@corbits/routines`' own tables, not its `RoutineStore`:
-  // that store does not exist yet at this point in composition (built
-  // just below, for the routine grant/launcher wiring), and this lookup
-  // needs nothing from it beyond the two tables.
-  async function resolveRoutineFires(runIds: readonly string[]) {
-    const rows = await db
-      .select({
-        runId: routineRunTable.runId,
-        routineId: routineRunTable.routineId,
-        routineName: routineTable.name,
-      })
-      .from(routineRunTable)
-      .innerJoin(routineTable, eq(routineTable.id, routineRunTable.routineId))
-      .where(inArray(routineRunTable.runId, runIds));
-    const fires = new Map<string, { routineId: string; routineName: string }>();
-    for (const row of rows) {
-      fires.set(row.runId, {
-        routineId: row.routineId,
-        routineName: row.routineName,
-      });
-    }
-    return fires;
-  }
+  // with no workbench involved silently slipped past).
   app.route(
     `${TENANT_PREFIX}/top-level-runs`,
     createTopLevelRunRoutes({
@@ -2879,272 +2825,23 @@ export async function createHub(config: HubConfig) {
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
       }),
-      resolveRoutineFires,
     }),
   );
 
-  // Routines: its own grant store (routines authorize against the
-  // `workflow-run:*` resource family, the same one native run routes
-  // use — see `@corbits/routines`' routes.ts), the launcher adapter
-  // that turns a routine's `launchRoutineRun` call into a real folded
-  // run via `@corbits/folded-runs` (routine-launcher.ts), and a run
-  // summary resolver so `GET /routines/:id/runs` reports each fire's
-  // real status instead of a bare run id.
-  const routineGrantStore = createGrantStore(db);
-  const routineStore = createDrizzleRoutineStore(db);
-  // The honest end-to-end delivery-destination rule: a workflow that
-  // never posts to a workbench (e.g. recurring-task, always delivering
-  // to its creator's Inbox — see @workbench/templates's
-  // `deliveryMode`) must never be forced to collect, or block on
-  // missing, a `deliveryWorkbenchId` it would just discard. An unknown
-  // definitionId (row missing, or its asset name isn't catalog-known)
-  // defaults to workbench-required — the safe, prior behavior.
-  async function routineDeliveryWorkbenchRequired(
-    tenantId: string,
-    definitionId: string,
-  ): Promise<boolean> {
-    const row = await db.query.workflowDefinition.findFirst({
-      where: and(
-        eq(workflowDefinition.id, definitionId),
-        eq(workflowDefinition.tenantId, tenantId),
-      ),
-      columns: { name: true },
-    });
-    if (row === undefined) return true;
-    return deliveryWorkbenchRequiredForWorkflowName(row.name);
-  }
-  // Create-time boundary check for a routine's stored `input` against
-  // its own definition's declared trigger fields. CL-6358: inputs bind
-  // at USE, never at creation — a required field with no value at all
-  // is never rejected here (`validateTriggerFieldsAtCreate` only
-  // checks a value the caller actually provided), only resolved
-  // further for an `"agent"`-kind field — that a provided value names
-  // a real conversational definition. An unknown definitionId or asset
-  // name passes here (its 404 comes from `definitionInTenant` instead);
-  // a definition with no declared trigger fields accepts any input, same
-  // as today.
-  async function routineInputValid(
-    tenantId: string,
-    definitionId: string,
-    input: Record<string, unknown>,
-  ): Promise<{ ok: true } | { ok: false; message: string }> {
-    const row = await db.query.workflowDefinition.findFirst({
-      where: and(
-        eq(workflowDefinition.id, definitionId),
-        eq(workflowDefinition.tenantId, tenantId),
-      ),
-      columns: { name: true },
-    });
-    if (row === undefined) return { ok: true };
-    const entry = workflowCatalogEntry(row.name);
-    if (entry?.triggerFields === undefined) return { ok: true };
-
-    const shapeResult = validateTriggerFieldsAtCreate(
-      entry.triggerFields,
-      input,
-    );
-    if (!shapeResult.ok) return shapeResult;
-
-    for (const field of entry.triggerFields) {
-      if (field.kind !== "agent") continue;
-      const value = input[field.key];
-      if (typeof value !== "string" || value === "") continue;
-      const agentRow = await db.query.workflowDefinition.findFirst({
-        where: and(
-          eq(workflowDefinition.id, value),
-          eq(workflowDefinition.tenantId, tenantId),
-        ),
-        columns: { name: true, status: true },
-      });
-      if (
-        agentRow === undefined ||
-        agentRow.status !== "deployed" ||
-        !isConversationalAgentDefinition(agentRow)
-      ) {
-        return {
-          ok: false,
-          message: `"${field.label}" must be a conversational agent`,
-        };
-      }
-    }
-    return { ok: true };
-  }
-
-  const routineLauncher = createHubRoutineLauncher({
-    db,
-    sessionService,
-    assetService,
-    sidecarRouter,
-    eventCollectors,
-    credentialCipher,
-    toolGrantsForPins,
-    mcpCredentialBindingsFor,
-    pinnedPackageCredentialBindingsFor,
-    cryptoProviderCache: cryptoProviders,
-    joinDeliveryWorkbench: (input) =>
-      joinRunParticipant({ store: chatStore }, input),
-  });
-  // A `{kind: "webhook"}` routine trigger and the `@corbits/webhook-
-  // triggers` row it names are two views of one binding: the row still
-  // points at a `workflow_definition` row id (`workflowDefinitionId`),
-  // while a routine now names its stable `definitionAssetId` — so
-  // agreement means the definition row's own `assetId` equals the
-  // routine's `definitionAssetId`, not a direct id comparison.
-  const webhookTriggerInTenant = async (
-    tenantId: string,
-    webhookTriggerId: string,
-    definitionAssetId: string,
-  ): Promise<boolean> => {
-    const trigger = await webhookTriggerStore.get(tenantId, webhookTriggerId);
-    if (trigger === undefined) return false;
-    const definitionRow = await db.query.workflowDefinition.findFirst({
-      where: and(
-        eq(workflowDefinition.id, trigger.workflowDefinitionId),
-        eq(workflowDefinition.tenantId, tenantId),
-      ),
-      columns: { assetId: true },
-    });
-    return definitionRow?.assetId === definitionAssetId;
-  };
-  const routineWorkbenchNotice = {
-    postWorkbenchNotice: (input: {
-      tenantId: string;
-      workbenchId: string;
-      principalId: string;
-      text: string;
-    }) =>
-      senderAddressFor(input.tenantId, input.principalId)
-        .then((senderAddress) =>
-          sendWorkbenchMessage(
-            {
-              store: chatStore,
-              platform: chatPlatform,
-              roomMessages,
-              publish: workbenchSubscribers.publish,
-              turnQueue,
-              turnCancellation,
-              turnMailCorrelation,
-            },
-            {
-              tenantId: input.tenantId,
-              principalId: input.principalId,
-              senderAddress,
-              workbenchId: input.workbenchId,
-              messageParts: [{ kind: "text", text: input.text }],
-            },
-          ),
-        )
-        .then(() => undefined),
-  };
-  // Routines routes own their `/routines` prefix, so mount at the
-  // tenant root (same pattern as a package that ships absolute
-  // resource paths) rather than under a second `/routines` segment.
-  app.route(
-    TENANT_PREFIX,
-    createRoutineRoutes({
-      store: routineStore,
-      workbenchNotice: routineWorkbenchNotice,
-      launcher: routineLauncher,
-      requireGrant: createRequireGrant({
-        grantStore: routineGrantStore,
-        conditionRegistry: chatConditionRegistry,
-      }),
-      // CL-7354: a create or retarget's resolved target must also
-      // authorize for the acting principal — same `grantStore` the grant
-      // check above already uses.
-      grantStore: routineGrantStore,
-      conditionRegistry: chatConditionRegistry,
-      // A run-now or a scheduled fire's result is a message into the
-      // routine's delivery workbench root timeline — never a pre-opened
-      // thread; see `@corbits/routines`' `RoutineLauncher` doc comment
-      // for the multi-message contract.
-      runSummaryResolver: createHubRunSummaryResolver(db),
-      resolveTarget: (tenantId, definitionAssetId) =>
-        resolveLaunchableDefinition({ db, tenantId, definitionAssetId }),
-      // A `{kind: "webhook"}` trigger's `webhookTriggerId` must resolve
-      // to a real `webhook_trigger` row in this tenant, pointed at the
-      // exact same workflow definition the routine itself runs — see
-      // `webhookTriggerValid`'s doc comment in
-      // `@corbits/routines`' routes.ts for why the two ids must agree.
-      webhookTriggerInTenant,
-      deliveryWorkbenchRequired: routineDeliveryWorkbenchRequired,
-      validateRoutineInput: routineInputValid,
-    }),
-  );
-  // Routine target discovery (CL-7351): the one list of deployed, frozen
-  // definitions a routine may reference, beside the platform's own
-  // `/workflows/definitions` listing but authorized per row for the
-  // acting principal — see `@corbits/routines`' targets.ts.
-  app.route(
-    `${TENANT_PREFIX}/workflows/targets`,
-    createRoutineTargetRoutes({
+  // Recurring auto-fire: `workflow-scheduler.ts` ticks authored, deployed
+  // definitions whose frozen projection carries a native ScheduleTrigger.
+  // This hub has no general job-runner today, so the loop is scoped to
+  // exactly that job rather than standing up a bespoke cron daemon as a
+  // hidden dependency. Every hub replica can safely run it: each native
+  // fire is claimed on `workflow_definition.schedule_claimed_minute`.
+  const workflowScheduler = createWorkflowScheduler({
+    listScheduledDefinitions: listScheduledDefinitionsFromDb(db),
+    claimScheduleMinute: claimScheduleMinuteFromDb(db),
+    launch: launchScheduledDefinitionFromDb({
       db,
-      grantStore: routineGrantStore,
-      conditionRegistry: chatConditionRegistry,
+      sidecarRouter,
+      ...scheduledDeliveryJoinDeps,
     }),
-  );
-  // Myra's own routine-management surface (`@corbits/routines-tools`'
-  // `routine_list`/`routine_create`/`routine_update`/`routine_run_now`):
-  // the workflow-run-authenticated counterpart to the tenant-session
-  // mount just above, reusing the exact same store/launcher/delivery
-  // ports — see `@corbits/routines`' `workflow-routine-routes.ts` for
-  // the deliberate self-tenant-scoped authorization decision this route
-  // enforces in place of `requireGrant`.
-  app.route(
-    "/api/workflow-routines",
-    createWorkflowRoutineRoutes({
-      store: routineStore,
-      launcher: routineLauncher,
-      workbenchNotice: routineWorkbenchNotice,
-      authenticator: createWorkflowRunAuthenticator({ db }),
-      resolveTarget: (tenantId, definitionAssetId) =>
-        resolveLaunchableDefinition({ db, tenantId, definitionAssetId }),
-      listTargets: (query) =>
-        listRoutineTargets(
-          {
-            db,
-            grantStore: routineGrantStore,
-            conditionRegistry: chatConditionRegistry,
-          },
-          query,
-        ),
-      // CL-7354: same authorization the tenant-session surface enforces
-      // above, for Myra's own create/retarget path.
-      grantStore: routineGrantStore,
-      conditionRegistry: chatConditionRegistry,
-      webhookTriggerInTenant,
-      deliveryWorkbenchRequired: routineDeliveryWorkbenchRequired,
-      // A routine created from inside a workbench delivers into that
-      // workbench: the creating run is a workbench participant, so its
-      // address (runId@domain) resolves straight to the workbench.
-      resolveRunWorkbench: async (tenantId, runId) => {
-        const row = await db.query.tenant.findFirst({
-          where: eq(tenantTable.id, tenantId),
-          columns: { domain: true },
-        });
-        if (row === undefined) return undefined;
-        const hit = await chatStore.findWorkbenchByParticipantAddress(
-          tenantId,
-          `${runId}@${row.domain}`,
-        );
-        return hit?.workbenchId;
-      },
-      validateRoutineInput: routineInputValid,
-    }),
-  );
-  // Recurring auto-fire: a minimal in-process poller (routine-scheduler.ts)
-  // over `@corbits/routines`' own `fireScheduledRoutine` — this hub has no
-  // general job-runner today, so this loop is scoped to exactly one job
-  // (fire due routines) rather than standing up a bespoke cron daemon as a
-  // hidden dependency. Every hub replica can safely run this poller: each
-  // fire is claimed with a conditional update on the routine's persisted
-  // `nextFireAt` before anything launches, so two replicas racing the same
-  // fire never both win, and a fire that falls due while every replica is
-  // down is caught up (not lost) the next time any of them polls.
-  const routineScheduler = createRoutineScheduler({
-    store: routineStore,
-    launcher: routineLauncher,
-    deliveryWorkbenchRequired: routineDeliveryWorkbenchRequired,
     ...(config.routineSchedulerPollIntervalMs !== undefined
       ? { pollIntervalMs: config.routineSchedulerPollIntervalMs }
       : {}),
@@ -3621,7 +3318,7 @@ export async function createHub(config: HubConfig) {
       }
       envCredentialPlant.stop();
       chatOrchestrator.dispose();
-      routineScheduler.stop();
+      workflowScheduler.stop();
       credentialExpirySweep.stop();
       inboxUnsnoozeSweep.stop();
       benchProvisioner.stop();

@@ -177,12 +177,12 @@ for how a workbench's settings relate to its tenant, and
 
 ## Routines, through conversation
 
-A **Routine** is the named, recurring (or manual) parent over runs of one
-agent definition — a trigger (or none), a delivery destination, and a run
-history. Routines are set up and managed from inside conversation, not
-from a separate scheduling console: a person names what should happen
-again, on what schedule, and where the result should land. See
-`packages/routines` for the underlying shape.
+A **Routine** is a scheduled workflow — an authored definition whose
+frozen projection carries a native `ScheduleTrigger`. Cadence is set
+from inside conversation, not from a separate scheduling console: a
+person names what should happen again, on what schedule, and where the
+result should land. See `@corbits/workflows` for the schedule/cron
+helpers and the hub's `workflow-scheduler.ts` for the poller.
 
 ## Inbox and approvals
 

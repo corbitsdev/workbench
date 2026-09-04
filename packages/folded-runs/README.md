@@ -57,7 +57,7 @@ or a host-specific package such as `@corbits/chat`.
   `"failed"`) or `FoldedRunTimedOutError` (its timeout elapsed first). It
   exists for a caller with no Inbox to hang an async delivery on — a
   Myra one-shot drafting/planning call (`@corbits/agent-directory`'s
-  `agent-definition-drafting.ts`, `@corbits/routines`' `myra-drafting.ts`)
+  `agent-definition-drafting.ts`)
   turns that same stream into an awaitable promise instead of tracking a
   long-lived run. Every settle path (success, run failure, timeout, or a
   send-path throw) tears the launched run down through the required

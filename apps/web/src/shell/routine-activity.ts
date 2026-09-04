@@ -13,8 +13,8 @@
 import {
   runOutcomeStatus,
   withListingAbandoned,
-} from "@corbits/routines/client";
-import type { ListingTurn } from "@corbits/routines/client";
+} from "@corbits/workflows/client";
+import type { ListingTurn } from "@corbits/workflows/client";
 
 import { listRoutineRunFires } from "../agents-api";
 import type { RunFire } from "../agents-api";

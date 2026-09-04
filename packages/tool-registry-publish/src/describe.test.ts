@@ -28,29 +28,6 @@ describe("describeCorbitsToolPackages", () => {
     }
   });
 
-  test("routines-tools gates only immediate routine execution", async () => {
-    const descriptions = await describeCorbitsToolPackages();
-    const routines = descriptions.find(
-      (description) => description.name === "@corbits/routines-tools",
-    );
-    expect(routines).toBeDefined();
-    const byQualifiedId = new Map(
-      routines?.tools.map((tool) => [tool.qualifiedId, tool]) ?? [],
-    );
-    expect(
-      byQualifiedId.get("@corbits/routines-tools/routines:routine_create")
-        ?.approval,
-    ).toBeUndefined();
-    expect(
-      byQualifiedId.get("@corbits/routines-tools/routines:routine_update")
-        ?.approval,
-    ).toBeUndefined();
-    expect(
-      byQualifiedId.get("@corbits/routines-tools/routines:routine_run_now")
-        ?.approval,
-    ).toBe("ask");
-  });
-
   test("caches across calls (same source for the process lifetime)", async () => {
     const first = await describeCorbitsToolPackages();
     const second = await describeCorbitsToolPackages();

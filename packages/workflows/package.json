@@ -23,6 +23,7 @@
     "@intx/hub-sessions": "workspace:*",
     "@intx/types": "workspace:*",
     "arktype": "catalog:",
+    "cronstrue": "^3.24.0",
     "drizzle-orm": "catalog:",
     "hono": "^4.11.9",
     "postgres": "catalog:"

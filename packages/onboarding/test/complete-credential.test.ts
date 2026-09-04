@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { WorkflowPusher } from "@corbits/seeding";
 import { CATALOG_SEEDS, SETUP_AGENT_ASSET_NAME } from "@corbits/seeding";
 import { type ApiCall, SidecarUnavailableError } from "@corbits/hub-api-client";
+import { pristineScheduledDefinitionHandshake } from "../../seeding/test/helpers";
 import {
   completeCredentialSetup,
   ensureSeeded,
@@ -50,6 +51,16 @@ const stubPersistFns = {
 function collector() {
   const lines: string[] = [];
   return { lines, log: (line: string) => lines.push(line) };
+}
+
+function seedHandshake(method: string, path: string) {
+  const handshake = pristineScheduledDefinitionHandshake(
+    method,
+    path,
+    TENANT_ID,
+  );
+  if (handshake === undefined) return undefined;
+  return { ...handshake, cookies: [] };
 }
 
 function principalsResponse() {
@@ -884,40 +895,8 @@ describe("completeCredentialSetup", () => {
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
         return { status: 201, data: {}, cookies: [] };
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
-      ) {
-        return {
-          status: 200,
-          data: { data: [], nextCursor: null },
-          cookies: [],
-        };
-      }
-      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
-        return { status: 200, data: { items: [] }, cookies: [] };
-      }
-      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/routines`) {
-        const routineBody = body as {
-          name: string;
-          presetKey: string;
-          deliveryWorkbenchId?: string;
-        };
-        return {
-          status: 201,
-          data: {
-            id: `rtn_${routineBody.presetKey}`,
-            tenantId: TENANT_ID,
-            name: routineBody.name,
-            enabled: false,
-            deliveryWorkbenchId: routineBody.deliveryWorkbenchId ?? null,
-            presetKey: routineBody.presetKey,
-            createdAt: TIMESTAMP,
-            updatedAt: TIMESTAMP,
-          },
-          cookies: [],
-        };
-      }
+      const handshake = seedHandshake(method, path);
+      if (handshake) return handshake;
       if (
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
@@ -1128,40 +1107,8 @@ describe("completeCredentialSetup", () => {
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
         return { status: 201, data: {}, cookies: [] };
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
-      ) {
-        return {
-          status: 200,
-          data: { data: [], nextCursor: null },
-          cookies: [],
-        };
-      }
-      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
-        return { status: 200, data: { items: [] }, cookies: [] };
-      }
-      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/routines`) {
-        const routineBody = body as {
-          name: string;
-          presetKey: string;
-          deliveryWorkbenchId?: string;
-        };
-        return {
-          status: 201,
-          data: {
-            id: `rtn_${routineBody.presetKey}`,
-            tenantId: TENANT_ID,
-            name: routineBody.name,
-            enabled: false,
-            deliveryWorkbenchId: routineBody.deliveryWorkbenchId ?? null,
-            presetKey: routineBody.presetKey,
-            createdAt: TIMESTAMP,
-            updatedAt: TIMESTAMP,
-          },
-          cookies: [],
-        };
-      }
+      const handshake = seedHandshake(method, path);
+      if (handshake) return handshake;
       if (
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`
@@ -1868,12 +1815,6 @@ describe("ensureSeeded (the slow half)", () => {
     const grants: { resource: string; action: string }[] = [];
     const assets: Row[] = [];
     const deployments: { definitionAssetId: string; id: string }[] = [];
-    const routines: {
-      id: string;
-      name: string;
-      presetKey: string;
-      deliveryWorkbenchId: string | null;
-    }[] = [];
     let assetCreatePosts = 0;
     let deploymentCreatePosts = 0;
 
@@ -1968,61 +1909,8 @@ describe("ensureSeeded (the slow half)", () => {
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
         return { status: 201, data: {}, cookies: [] };
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/definitions`
-      ) {
-        return {
-          status: 200,
-          data: { data: [], nextCursor: null },
-          cookies: [],
-        };
-      }
-      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
-        return {
-          status: 200,
-          data: {
-            items: routines.map((r) => ({
-              id: r.id,
-              name: r.name,
-              enabled: false,
-              deliveryWorkbenchId: r.deliveryWorkbenchId,
-              presetKey: r.presetKey,
-              createdAt: TIMESTAMP,
-              updatedAt: TIMESTAMP,
-            })),
-          },
-          cookies: [],
-        };
-      }
-      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/routines`) {
-        const routineBody = body as {
-          name: string;
-          presetKey: string;
-          deliveryWorkbenchId?: string;
-        };
-        const id = `rtn_${routineBody.presetKey}`;
-        routines.push({
-          id,
-          name: routineBody.name,
-          presetKey: routineBody.presetKey,
-          deliveryWorkbenchId: routineBody.deliveryWorkbenchId ?? null,
-        });
-        return {
-          status: 201,
-          data: {
-            id,
-            tenantId: TENANT_ID,
-            name: routineBody.name,
-            enabled: false,
-            deliveryWorkbenchId: routineBody.deliveryWorkbenchId ?? null,
-            presetKey: routineBody.presetKey,
-            createdAt: TIMESTAMP,
-            updatedAt: TIMESTAMP,
-          },
-          cookies: [],
-        };
-      }
+      const handshake = seedHandshake(method, path);
+      if (handshake) return handshake;
       if (
         method === "GET" &&
         path === `/api/tenants/${TENANT_ID}/workflows/deployments`

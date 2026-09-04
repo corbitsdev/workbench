@@ -50,7 +50,6 @@ import {
 import {
   useOpenArtifactInCanvas,
   useOpenProfileInCanvas,
-  useOpenRoutineInCanvas,
 } from "../shell/canvas-availability";
 import { useRegisterComposerInsert } from "../shell/composer-insertion";
 import { tenantResolutionFromBench } from "../shell/tenant-resolution";
@@ -75,7 +74,6 @@ export function ChatPage({
   const openProfile = useOpenProfileInCanvas();
   const registerComposerInsert = useRegisterComposerInsert();
   const openArtifactInCanvas = useOpenArtifactInCanvas();
-  const openRoutine = useOpenRoutineInCanvas();
   const tenant = tenantResolutionFromBench(bench);
   const principalId = bench.selectedPrincipalId ?? undefined;
   const queryClient = useQueryClient();
@@ -301,18 +299,6 @@ export function ChatPage({
         ? { connectServiceActions }
         : {})}
       listMembers={listMembers}
-      // `/routine`: opens the editor directly on a brand-new routine
-      // bound to this workbench. Routines and Insights (CL-6362, CL-6099)
-      // are global-only pages now, reached from the shell rail — no
-      // per-workbench header button or `/run` command opens a scoped view
-      // of either here.
-      onCreateRoutineInSpace={(inSpaceWorkbenchId, preselectedAssetId) =>
-        openRoutine({
-          routineId: null,
-          workbenchId: inSpaceWorkbenchId,
-          ...(preselectedAssetId !== undefined ? { preselectedAssetId } : {}),
-        })
-      }
       onWorkbenchNotFound={reportWorkbenchNotFound}
       onGoToMissionControl={() => navigate(MISSION_CONTROL_PATH)}
       onNewWorkbench={() => navigate(NEW_WORKBENCH_PATH)}

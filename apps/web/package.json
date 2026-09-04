@@ -35,7 +35,6 @@
     "@corbits/preferences": "workspace:*",
     "@corbits/presence": "workspace:*",
     "@corbits/react-ui": "github:corbitsdev/react-ui#3b122812a307ccb35be31386f7696020c5a84635",
-    "@corbits/routines": "workspace:*",
     "@corbits/settings-ui": "workspace:*",
     "@corbits/shell-layout": "workspace:*",
     "@corbits/slug": "workspace:*",

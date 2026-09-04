@@ -2,6 +2,13 @@
 // that same reference to every mail sender. A second constructor would
 // still typecheck; this scan is the pin. crypto-cache.test.ts covers the
 // Map; platform-adapter.test.ts covers chat injection only.
+//
+// CL-4455 removed the custom routine scheduler's `createHubRoutineLauncher`
+// call site: a native ScheduleTrigger now fires through
+// `triggerNativeWorkflowRoutineRun` (native-workflow-routine-launch.ts),
+// which signs its trigger mail with a freshly generated per-call keypair
+// rather than the shared cache — there is no longer a fourth mail-sender
+// call site to pin here.
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -65,9 +72,6 @@ describe("hub crypto-provider cache wiring", () => {
 
     expect(firstCall(source, "createHubChatPlatform")).toContain(assigned);
     expect(firstCall(source, "launchWebhookTrigger")).toContain(
-      `cryptoProviderCache: ${assigned}`,
-    );
-    expect(firstCall(source, "createHubRoutineLauncher")).toContain(
       `cryptoProviderCache: ${assigned}`,
     );
     expect(firstCall(source, "runOneShotFoldedPrompt")).toContain(assigned);
