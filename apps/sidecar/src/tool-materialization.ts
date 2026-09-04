@@ -30,7 +30,18 @@ import {
   createToolLoader,
 } from "@intx/tool-packaging";
 import { hasCode } from "@intx/types";
+import type { ToolCredentialDeclaration } from "@intx/types/package-json";
 import { ToolPackageManifest } from "@intx/types/tool-packages";
+
+/**
+ * A loaded tool factory paired with the identity of the package it came
+ * from. `buildCredentialCapabilities` keys Gate 2 on `packageName`.
+ */
+export interface StepToolFactory {
+  readonly packageName: string;
+  readonly declaredCredentials: readonly ToolCredentialDeclaration[];
+  readonly factory: LoadedToolFactory;
+}
 
 // Boundary validator for the tool-registries JSON the sidecar's config
 // (`SIDECAR_TOOL_REGISTRIES`) resolves at boot and threads into every

@@ -24,6 +24,7 @@ import {
   rewriteInlineChildWorkflowBodies,
   runtimeRun,
   type Scheduler,
+  type SpawnChildWorkflow,
   type StepInvokeRequest,
   type StepInvokeResult,
   type StepInvoker,
@@ -251,12 +252,10 @@ export function createSidecarRunChild(
   // `childRunId` flows verbatim into the per-rung
   // `blobs`/`signalChannel`/`runtimeRun` calls, keeping every rung's
   // events under `runs/<runId>/...` of the parent's workflow-run repo.
-  const runChild: RunChildWorkflow = async ({
-    definition,
-    childRunId,
-    input,
-    signal,
-  }) => {
+  const runChild: RunChildWorkflow = async (
+    { definition, childRunId, input, signal, depth, maxChildSpawnDepth },
+    onEvent,
+  ) => {
     const {
       env,
       signalChannel,
@@ -270,11 +269,14 @@ export function createSidecarRunChild(
       runChild,
       definition,
       childRunId,
+      onEvent,
     });
     try {
       const handle = startRun(rewrittenDefinition, env, {
         runId: childRunId,
         triggerPayload: input,
+        depth,
+        maxChildSpawnDepth,
       });
       // The resulting `CancelRequested` is written under the supervisor
       // principal wired into this run's repo store (see
@@ -378,7 +380,9 @@ export function createSidecarSpawnSuspendableChild(
       input,
       resumeFromEvents,
       signal,
-      authorize: threadedAuthorize,
+      depth,
+      maxChildSpawnDepth,
+      authorize: inputAuthorize,
       credentialWiring,
       mailPartReader,
     },
@@ -397,6 +401,7 @@ export function createSidecarSpawnSuspendableChild(
       runChild,
       definition,
       childRunId,
+      onEvent,
     });
 
     // The BODY env runs real agent steps when the factory wired a body
@@ -422,11 +427,7 @@ export function createSidecarSpawnSuspendableChild(
         ),
       };
       const bodyInvokeStep = deps.bodyInvokeStep;
-      // CL-6448: prefer the parent child's credentials-backed authorize
-      // the spawn seam threaded in; a spawn that carried none keeps the
-      // fail-loud stub, so an unthreaded tool gate still surfaces
-      // precisely rather than silently authorizing.
-      const authorize = threadedAuthorize ?? baseEnv.authorize;
+      const authorize = inputAuthorize ?? baseEnv.authorize;
       invokeStep = (req) =>
         bodyInvokeStep(
           req,
@@ -504,8 +505,13 @@ export function createSidecarSpawnSuspendableChild(
       rewrittenDefinition,
       env,
       resumeFromEvents !== undefined
-        ? { runId: childRunId, resumeFromEvents }
-        : { runId: childRunId, triggerPayload: input },
+        ? { runId: childRunId, resumeFromEvents, depth, maxChildSpawnDepth }
+        : {
+            runId: childRunId,
+            triggerPayload: input,
+            depth,
+            maxChildSpawnDepth,
+          },
     );
 
     // The resulting `CancelRequested` is written under the supervisor
@@ -617,6 +623,7 @@ function buildChildRunEnv(args: {
   runChild: RunChildWorkflow;
   definition: WorkflowDefinition;
   childRunId: string;
+  onEvent: (event: InferenceEvent) => void;
 }): {
   env: WorkflowRuntimeEnv;
   signalChannel: ReturnType<typeof createWorkflowHostSignalChannel>;
@@ -677,10 +684,12 @@ function buildChildRunEnv(args: {
   // same `runChild` callback. The runtime body's `runChildWorkflow` contract
   // is depth-agnostic; the in-memory resolver makes the sidecar's adapter
   // depth-agnostic too, with no on-disk read at any rung.
-  const spawnChild = createInMemorySpawnChild({
+  const hostSpawnChild = createInMemorySpawnChild({
     bodies: grandchildMap,
     runChild,
   });
+  const spawnChild: SpawnChildWorkflow = (spawnInput) =>
+    hostSpawnChild(spawnInput, args.onEvent);
   const env: WorkflowRuntimeEnv = {
     repoStore,
     scheduler: deps.scheduler,

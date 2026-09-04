@@ -151,6 +151,8 @@ function childInput(
     parentRunId: "run-parent",
     parentStepId: "section",
     signal,
+    depth: 1,
+    maxChildSpawnDepth: 32,
   };
 }
 
@@ -162,6 +164,7 @@ describe("createSidecarRunChild", () => {
     );
     const result = await runChild(
       childInput("complete", new AbortController().signal),
+      () => undefined,
     );
     expect(result.terminalStatus).toBe("completed");
   });
@@ -178,7 +181,10 @@ describe("createSidecarRunChild", () => {
 
     const runChild = await makeRunChild("run-child-abort-", parkAndAnnounce);
     const abort = new AbortController();
-    const pending = runChild(childInput("abort", abort.signal));
+    const pending = runChild(
+      childInput("abort", abort.signal),
+      () => undefined,
+    );
 
     // Wait on the step actually being entered, not on a fixed delay: the
     // cancel has to interrupt a run in flight, and a machine slow enough
@@ -197,7 +203,10 @@ describe("createSidecarRunChild", () => {
     const runChild = await makeRunChild("run-child-preabort-", parkForever);
     const abort = new AbortController();
     abort.abort();
-    const result = await runChild(childInput("preabort", abort.signal));
+    const result = await runChild(
+      childInput("preabort", abort.signal),
+      () => undefined,
+    );
     expect(result.terminalStatus).toBe("cancelled");
   });
 });

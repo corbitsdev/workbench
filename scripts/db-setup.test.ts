@@ -23,8 +23,10 @@ test("digest handoff SQL bumps updated_at so copied enablement is not pristine",
 
 const OLD_NUMBERING_TAIL = [
   "0084_delete_orphaned_credential_grants.sql",
-  "0085_workflow_definition_version_wire_projection.sql",
-  "0086_workflow_definition_origin.sql",
+  "0085_add_approval_run_idx.sql",
+  "0086_workflow_definition_version_wire_projection.sql",
+  "0087_workflow_definition_origin.sql",
+  "0088_workflow_definition_version_tolerate_body_failure.sql",
 ];
 
 describeIfDb(
