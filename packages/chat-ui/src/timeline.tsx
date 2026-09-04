@@ -59,6 +59,7 @@ import type { ConnectGithubActions } from "./blocks/connect-github-actions";
 import type { ConnectServiceActions } from "./blocks/connect-service-actions";
 import { BlockPartView } from "./blocks/registry";
 import {
+  CONSUMER_INFERENCE_FAILURE_NOTICE,
   consumerFacingInferenceText,
   isClassifiedInferenceFailureText,
 } from "./inference-failure";
@@ -551,7 +552,8 @@ function TextBubble({
           <Markdown text={consumerText} />
         </div>
         {onFixConnection !== undefined &&
-          isClassifiedInferenceFailureText(consumerText) && (
+          (isClassifiedInferenceFailureText(text) ||
+            consumerText === CONSUMER_INFERENCE_FAILURE_NOTICE) && (
             <Button
               type="button"
               variant="outline"
@@ -1066,7 +1068,11 @@ export function offersMessageSocialChrome(item: MessageItem): boolean {
     if (part.kind === "event") return true;
     if (part.kind === "text" && part.turnFailed === true) return true;
     if (part.kind === "text" && part.turnCancelled === true) return true;
-    if (part.kind === "text" && isClassifiedInferenceFailureText(part.text)) {
+    if (
+      part.kind === "text" &&
+      (isClassifiedInferenceFailureText(part.text) ||
+        part.text === CONSUMER_INFERENCE_FAILURE_NOTICE)
+    ) {
       return true;
     }
     if (part.kind === "block") {

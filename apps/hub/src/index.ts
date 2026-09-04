@@ -2210,9 +2210,10 @@ export async function createHub(config: HubConfig) {
   // A connection completing through ANY door below — OAuth callback,
   // pasted key, MCP OAuth, keyless MCP preset — settles every room
   // waiting on that connector: the room's `connections/pending` entry
-  // clears (flipping the in-room connect card via `chat.settings`), and
-  // the host agent is woken via `dispatchTurn` without a forged
-  // signed-in-user timeline row.
+  // clears (flipping the in-room connect card via `chat.settings`).
+  // Rooms with `connections/pending` still wake the host agent via
+  // `dispatchTurn` without a forged signed-in-user timeline row;
+  // code-review template rooms are not woken on PAT settle.
   //
   // An inference provider's credential landing also re-checks every
   // live participant's deployed inference chain (CL-6687): a rotated
