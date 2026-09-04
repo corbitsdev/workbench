@@ -262,6 +262,20 @@ describe("GlobalRoutinesList", () => {
     expect(markup).toContain("—");
   });
 
+  test("the On switch is named On, not Pause, while the routine is enabled", () => {
+    const markup = renderList([row()]);
+    expect(markup).toContain('aria-label="On Morning brief"');
+    expect(markup).not.toContain('aria-label="Pause Morning brief"');
+  });
+
+  test("the On switch is named Off when the routine is disabled", () => {
+    const markup = renderList([
+      row({ routine: { ...routine, enabled: false } }),
+    ]);
+    expect(markup).toContain('aria-label="Off Morning brief"');
+    expect(markup).not.toContain('aria-label="Resume Morning brief"');
+  });
+
   test("Run now calls onRunNow with the row", async () => {
     const calls: GlobalRoutineRow[] = [];
     const container = document.createElement("div");
@@ -369,6 +383,16 @@ describe("GlobalRoutinesList", () => {
       act(() => root.unmount());
       container.remove();
     }
+  });
+
+  test("a dead-lettered routine's action reads Resume, not Run now", () => {
+    const markup = renderList([
+      row({
+        routine: { ...routine, deadLetteredAt: "2026-01-02T00:00:00.000Z" },
+      }),
+    ]);
+    expect(markup).toContain("Resume");
+    expect(markup).not.toContain("Run now");
   });
 
   test("Edit calls onEditRoutine with the row", () => {

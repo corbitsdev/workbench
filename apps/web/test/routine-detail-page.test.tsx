@@ -173,6 +173,32 @@ describe("RoutineDetailPage", () => {
     expect(actions).toContain("Run now");
     expect(actions).toContain("Pause");
   });
+
+  function topBarActions(markup: string): string {
+    const start = markup.indexOf('data-testid="stage-top-bar-actions"');
+    const end = markup.indexOf("</header>", start);
+    return markup.slice(start, end === -1 ? undefined : end);
+  }
+
+  test("hides Run now when the routine is off, and offers Resume only", () => {
+    const actions = topBarActions(
+      renderPage({ routine: { ...routine, enabled: false } }),
+    );
+    expect(actions).toContain("Resume");
+    expect(actions).not.toContain("Run now");
+    expect(actions).not.toContain("Pause");
+  });
+
+  test("hides Run now when the routine is dead-lettered, and offers Resume only", () => {
+    const actions = topBarActions(
+      renderPage({
+        routine: { ...routine, deadLetteredAt: "2026-01-02T00:00:00.000Z" },
+      }),
+    );
+    expect(actions).toContain("Resume");
+    expect(actions).not.toContain("Run now");
+    expect(actions).not.toContain("Pause");
+  });
 });
 
 describe("RoutineDetailPage lifecycle actions", () => {
@@ -237,6 +263,21 @@ describe("RoutineDetailPage lifecycle actions", () => {
     }
   });
 
+  test("Resume on a dead-lettered routine asks for it to be enabled again", () => {
+    const calls: boolean[] = [];
+    const { container, root } = mount(
+      { onToggleEnabled: (enabled: boolean) => calls.push(enabled) },
+      { routine: { ...routine, deadLetteredAt: "2026-01-02T00:00:00.000Z" } },
+    );
+    try {
+      clickButton(container, "Resume");
+      expect(calls).toEqual([true]);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
   test("Run now triggers the run-now mutation", () => {
     let runs = 0;
     const { container, root } = mount({
@@ -248,6 +289,37 @@ describe("RoutineDetailPage lifecycle actions", () => {
     try {
       clickButton(container, "Run now");
       expect(runs).toBe(1);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
+
+  test("Run now reads as starting while the request is in flight", async () => {
+    let resolveRun: () => void = () => undefined;
+    const pending = new Promise<void>((resolve) => {
+      resolveRun = resolve;
+    });
+    const { container, root } = mount({
+      onRunNow: () => pending,
+    });
+    try {
+      clickButton(container, "Run now");
+      const button = [...container.querySelectorAll("button")].find(
+        (candidate) => candidate.textContent?.includes("Starting") === true,
+      );
+      expect(button).not.toBeUndefined();
+      expect(button?.disabled).toBe(true);
+
+      await act(async () => {
+        resolveRun();
+        await pending;
+      });
+      expect(
+        [...container.querySelectorAll("button")].some(
+          (candidate) => candidate.textContent?.includes("Starting") === true,
+        ),
+      ).toBe(false);
     } finally {
       act(() => root.unmount());
       container.remove();
