@@ -107,7 +107,13 @@ test("ask_user rejects fewer than 2 options before ever posting", async () => {
 test("ask_user surfaces a no-own-channel failure as a blocked call, not a throw", async () => {
   const fetchImpl = (async () =>
     new Response(
-      JSON.stringify({ error: { code: "not_found", message: "no channel" } }),
+      JSON.stringify({
+        error: {
+          code: "not_found",
+          userMessage: "no channel found",
+          refId: "ref_test",
+        },
+      }),
       { status: 404 },
     )) as unknown as typeof fetch;
 
@@ -123,7 +129,7 @@ test("ask_user surfaces a no-own-channel failure as a blocked call, not a throw"
   if (decision.type !== "block") {
     throw new Error(`expected a block decision, got ${decision.type}`);
   }
-  expect(decision.reason).toContain("no channel");
+  expect(decision.reason).toBe("no channel found");
 });
 
 test("a call for another tool name is allowed through unsuspended", async () => {
