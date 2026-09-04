@@ -61,6 +61,8 @@ import {
 import type { ChatStore } from "./store";
 import { Part, type Part as PartType } from "./parts";
 import { QuestionBlockData } from "./blocks";
+import { domainOf } from "./agent-address";
+import { mailMessageIdFor } from "./mail-headers";
 import type { RoomMessage, RoomMessageStore } from "./room-messages";
 import {
   CONNECTIONS_PENDING_KEY,
@@ -484,7 +486,16 @@ export function createWorkflowParticipantRoutes(
         questionId,
       );
       if (existing !== undefined) {
-        return c.json({ id: existing.id, createdAt: existing.createdAt }, 200);
+        return c.json(
+          {
+            id: existing.id,
+            createdAt: existing.createdAt,
+            ...(existing.mailMessageId !== null
+              ? { mailMessageId: existing.mailMessageId }
+              : {}),
+          },
+          200,
+        );
       }
     }
 
@@ -539,7 +550,34 @@ export function createWorkflowParticipantRoutes(
       },
     );
 
-    return c.json({ id: sent.id, createdAt: sent.createdAt }, 201);
+    // A card an agent parks a turn on is answered by mail, so it needs a
+    // `Message-ID` of its own before the gate is armed (CL-7104): the
+    // answer's `In-Reply-To` is what resolves that gate, and there is no
+    // correlation id to fall back on. Minted from the row's own id
+    // against the caller's mail domain, the same derivation
+    // `dispatchTurn` stamps.
+    const domain = domainOf(scope.address);
+    if (domain === undefined) {
+      return c.json(
+        makeErrorEnvelope({
+          code: "bad_request",
+          userMessage: `The calling run "${scope.address}" carries no mail domain to thread a reply under`,
+        }),
+        400,
+      );
+    }
+    const mailMessageId = mailMessageIdFor(sent.id, domain);
+    await deps.roomMessages.stampMailMessageId({
+      tenantId: scope.tenantId,
+      workbenchId: workbench.workbenchId,
+      messageId: sent.id,
+      mailMessageId,
+    });
+
+    return c.json(
+      { id: sent.id, createdAt: sent.createdAt, mailMessageId },
+      201,
+    );
   });
 
   return app;

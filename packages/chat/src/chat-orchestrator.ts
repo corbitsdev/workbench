@@ -52,10 +52,11 @@ import {
 import { artifactPartsForFinalizedTurn } from "./artifact-delivery";
 import type { ApproveBlockData } from "./blocks";
 import { encodeParts } from "./codec";
+import { mailMessageIdFor } from "./mail-headers";
 import { consumerFacingInferenceText } from "./consumer-inference-text";
 import type { ConnectedProviderLister } from "./inference-preferences";
 import { mentionedParticipants } from "./mentions";
-import { localPartOf } from "./agent-address";
+import { domainOf, localPartOf } from "./agent-address";
 import { readBindingByAddress, resolveLiveAgent } from "./agent-binding";
 import { parseParticipants, type ParticipantRecord } from "./participants";
 import type { Part, TextPart } from "./parts";
@@ -550,19 +551,25 @@ async function threadForBracketMail(
 }
 
 /**
- * The thread a mid-turn post belongs in (CL-6314): the dispatch mail's
- * recorded source when this process still names that mail (the open
- * bracket, or the close event's own mail), otherwise the latest
- * message the running turn was asked to answer — the same source
- * `dispatchTurn` recorded, still on the turn projection after a hub
- * restart dropped the process-local bracket. Undefined when neither
- * names a source in this workbench, or threads are unwired: the post
- * lands unthreaded, never lost.
+ * The thread a mid-turn post belongs in: the message named by the
+ * `Message-ID` the turn's own bracket reports (CL-7104 — the dispatch
+ * mail's `Message-ID` IS the source row's, so the bracket names the
+ * message the reply answers), otherwise the latest message the running
+ * turn was asked to answer, still on the turn projection after a hub
+ * restart dropped the process-local bracket.
+ *
+ * A reply neither names a parent for is reported with room and agent
+ * context and lands on the workbench's root thread (CL-7104): a reply
+ * whose parentage cannot be resolved is a real defect worth a `refId`,
+ * and appending it to the root feed keeps it visible without ever
+ * attaching it to a guessed parent. Undefined only when threads are
+ * unwired, where there is no root thread to land on.
  */
 async function threadForTurnPost(
   deps: Pick<ChatOrchestratorDeps, "threads" | "turnMailCorrelation">,
   tenantId: string,
   workbenchId: string,
+  agentAddress: string,
   mailId: string | undefined,
   turn: Pick<AgentTurn, "requestMessageIds"> | undefined,
 ): Promise<string | undefined> {
@@ -577,13 +584,28 @@ async function threadForTurnPost(
   }
   const sourceMessageId =
     turn?.requestMessageIds[turn.requestMessageIds.length - 1];
-  if (sourceMessageId === undefined) return undefined;
-  return threadForSourceMessage(
-    deps.threads,
-    tenantId,
-    workbenchId,
-    sourceMessageId,
+  if (sourceMessageId !== undefined) {
+    return threadForSourceMessage(
+      deps.threads,
+      tenantId,
+      workbenchId,
+      sourceMessageId,
+    );
+  }
+  if (deps.threads === undefined) return undefined;
+  reportError(
+    new Error(
+      `${agentAddress}'s reply names no parent message — appending it to the root thread`,
+    ),
+    {
+      operation: "chat.threadForTurnPost",
+      tenantId,
+      roomId: workbenchId,
+      agentId: agentAddress,
+      ...(mailId !== undefined ? { extra: { mailId } } : {}),
+    },
   );
+  return (await deps.threads.ensureRootThread(tenantId, workbenchId)).id;
 }
 
 /**
@@ -607,10 +629,13 @@ function stringField(value: unknown): string | undefined {
 
 /**
  * Hints already on the inbound event for the originating room: the
- * dispatch mail's `fromWorkbenchId` / From local-part / `replyTo`, or a
- * turn id. The sidecar `agent.event` stream often carries none of these
- * (address + payload only); callers must still refuse to spray when
- * correlation is missing and more than one running turn exists.
+ * dispatch mail's `fromWorkbenchId` / From local-part, or a turn id.
+ * `replyTo` is deliberately not among them (CL-7104): a reply is
+ * correlated by the `Message-ID` its `In-Reply-To` names, resolved
+ * through `threadForBracketMail`, never by an address the mail
+ * carried. The sidecar `agent.event` stream often carries none of these
+ * hints (address + payload only); callers must still refuse to spray
+ * when correlation is missing and more than one running turn exists.
  */
 function originatingHintsFromEvent(event: unknown): readonly string[] {
   if (typeof event !== "object" || event === null) return [];
@@ -626,12 +651,10 @@ function originatingHintsFromEvent(event: unknown): readonly string[] {
   };
   take(data?.["workbenchId"]);
   take(data?.["fromWorkbenchId"]);
-  take(data?.["replyTo"]);
   take(data?.["from"]);
   take(data?.["turnId"]);
   take(record["workbenchId"]);
   take(record["fromWorkbenchId"]);
-  take(record["replyTo"]);
   take(record["from"]);
   take(record["turnId"]);
   return hints;
@@ -765,6 +788,7 @@ async function postReply(
       deps,
       resolved.tenantId,
       workbenchId,
+      resolved.roomAddress,
       mailId,
       turn,
     );
@@ -804,26 +828,49 @@ async function postReply(
       (address) => localPartOf(address) !== localPartOf(resolved.roomAddress),
     );
     for (const recipient of mentioned) {
-      const sent = await deps.platform.sendMail({
+      // The hop carries the delegating reply's own row, so it goes out
+      // under that row's `Message-ID` (CL-7104) — the specialist's
+      // bracket names it, and its own reply threads under the message
+      // that delegated to it by the general rule above. No separate
+      // delegation mechanism, and no reply-to address.
+      const domain = domainOf(recipient);
+      if (domain === undefined) {
+        reportError(
+          new Error(
+            `cannot delegate to "${recipient}": address carries no mail domain`,
+          ),
+          {
+            operation: "chat.postReply.delegate",
+            tenantId: resolved.tenantId,
+            roomId: workbenchId,
+            agentId: recipient,
+            extra: { delegatingMessageId: posted.id },
+          },
+        );
+        continue;
+      }
+      const delegationMessageId = mailMessageIdFor(posted.id, domain);
+      await deps.roomMessages.stampMailMessageId({
+        tenantId: resolved.tenantId,
+        workbenchId,
+        messageId: posted.id,
+        mailMessageId: delegationMessageId,
+      });
+      await deps.platform.sendMail({
         tenantId: resolved.tenantId,
         workbenchId: localPartOf(recipient),
         content: encodeParts([...parts], {
-          replyTo: workbenchId,
+          messageId: delegationMessageId,
         }),
         fromWorkbenchId: workbenchId,
       });
-      // The hop wakes the specialist with its own mail, so it records
-      // the same correlation a human mention's dispatch records: when
-      // the specialist's bracket names this mail, its reply inherits
-      // this message's thread by the general rule above — no separate
-      // delegation mechanism. A record that fails is reported, never
-      // thrown: the reply already posted, and threading degrades to
-      // unthreaded rather than failing the turn.
+      // A record that fails is reported, never thrown: the reply already
+      // posted, and threading degrades rather than failing the turn.
       if (deps.turnMailCorrelation !== undefined) {
         try {
           await deps.turnMailCorrelation.recordTurnMail({
             tenantId: resolved.tenantId,
-            mailId: sent.id,
+            mailId: posted.id,
             workbenchId,
             sourceMessageId: posted.id,
           });
@@ -915,6 +962,7 @@ async function postApproveBlock(
       deps,
       resolved.tenantId,
       workbenchId,
+      resolved.roomAddress,
       mailId,
       turn,
     );
