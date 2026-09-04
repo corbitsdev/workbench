@@ -16,6 +16,7 @@ import type { AssetService } from "@intx/hub-sessions";
 import type { DB } from "@intx/db";
 
 import { SkillRegistryError } from "@corbits/skills";
+import { CORBITS_TOOLS_REGISTRY } from "@corbits/tool-registry-publish";
 
 import {
   buildAgentDefinitionWorkflow,
@@ -100,6 +101,38 @@ const PRINCIPAL = {
   updatedAt: new Date(),
 };
 
+/** `resolvePinnedVersion`'s `resolveAssetByName` lookup, stubbed for tests
+ * that create/pin a tool package: a tenant-owned `corbits-tools`
+ * package-registry asset, so `db.query.tenant.findFirst`/`db.query.asset.findFirst`
+ * resolve exactly like the real ancestor-chain walk would for a
+ * single-tenant (no-parent) fixture. */
+const CORBITS_TOOLS_REGISTRY_ASSET = {
+  id: "ast_corbits_tools",
+  tenantId: TENANT.id,
+  kind: "package-registry" as const,
+  name: CORBITS_TOOLS_REGISTRY,
+  displayName: CORBITS_TOOLS_REGISTRY,
+  creatorPrincipalId: null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
+/** Merges the `db.query.tenant`/`db.query.asset` lookups
+ * `resolvePinnedVersion` needs into a fake db's `query` object, leaving
+ * every other query untouched. */
+function withToolPackageRegistryQueries<T extends { query: object }>(
+  db: T,
+): T {
+  return {
+    ...db,
+    query: {
+      ...db.query,
+      tenant: { findFirst: async () => ({ parentId: null }) },
+      asset: { findFirst: async () => CORBITS_TOOLS_REGISTRY_ASSET },
+    },
+  };
+}
+
 function fakeAssetService(overrides: Partial<AssetService> = {}): AssetService {
   return {
     createAsset: () => {
@@ -136,6 +169,14 @@ function liveDefinitionAsset(initial: Uint8Array): AssetService {
       current = new TextEncoder().encode(entry);
       return { commitSha: "deadbeef" };
     },
+    // Every tool package a `liveDefinitionAsset` test pins by name, at a
+    // fixed version — enough for `resolvePinnedVersion` to resolve
+    // without each concurrent-write test needing its own tarball list.
+    listAssetBlobs: () =>
+      Promise.resolve([
+        "corbits-github-tools-3.1.0.tgz",
+        "corbits-memory-tools-1.4.0.tgz",
+      ]),
   });
 }
 
@@ -598,7 +639,7 @@ test("a create request without skills records an empty skills list", async () =>
   expect(await skillsStore.getSkills("ast_1")).toEqual([]);
 });
 
-test("a create request with toolPackagePins pins each named package at version *", async () => {
+test("a create request with toolPackagePins pins each named package at its highest published version", async () => {
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
   const app = buildApp(
     fakeAssetService({
@@ -617,8 +658,13 @@ test("a create request with toolPackagePins pins each named package at version *
         writtenFiles = params.tree.files;
         return Promise.resolve({ commitSha: "deadbeef" });
       },
+      listAssetBlobs: () =>
+        Promise.resolve([
+          "corbits-memory-tools-1.4.0.tgz",
+          "corbits-web-search-tools-2.1.0.tgz",
+        ]),
     }),
-    fakeCreateDb(),
+    withToolPackageRegistryQueries(fakeCreateDb()),
   );
   const response = await post(app, {
     name: "Scout",
@@ -629,8 +675,8 @@ test("a create request with toolPackagePins pins each named package at version *
   expect(response.status).toBe(201);
   const workflowJson = definitionFrom(writtenFiles);
   expect(pinsFrom(workflowJson)).toEqual([
-    { name: "@corbits/memory-tools", version: "*" },
-    { name: "@corbits/web-search-tools", version: "*" },
+    { name: "@corbits/memory-tools", version: "1.4.0" },
+    { name: "@corbits/web-search-tools", version: "2.1.0" },
   ]);
 });
 
@@ -1644,12 +1690,16 @@ test("adding a tool package pin merges it into the definition in one commit, nam
         writtenMessage = params.tree.message;
         return Promise.resolve({ commitSha: "deadbeef" });
       },
+      listAssetBlobs: () =>
+        Promise.resolve(["corbits-github-tools-3.1.0.tgz"]),
     }),
-    fakeInstructionsDb({
-      id: "def_1",
-      assetId: "ast_1",
-      name: "research-buddy",
-    }),
+    withToolPackageRegistryQueries(
+      fakeInstructionsDb({
+        id: "def_1",
+        assetId: "ast_1",
+        name: "research-buddy",
+      }),
+    ),
   );
   const response = await postTo(app, "/def_1/capabilities", {
     kind: "toolPackage",
@@ -1658,14 +1708,14 @@ test("adding a tool package pin merges it into the definition in one commit, nam
   expect(response.status).toBe(200);
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
   expect(pinsFrom(definitionFrom(writtenFiles))).toEqual([
-    { name: "@corbits/github-tools", version: "*" },
+    { name: "@corbits/github-tools", version: "3.1.0" },
   ]);
   expect(writtenMessage).toBe("Add @corbits/github-tools to research-buddy");
   const body = (await response.json()) as {
     toolPackagePins: { name: string; version: string }[];
   };
   expect(body.toolPackagePins).toEqual([
-    { name: "@corbits/github-tools", version: "*" },
+    { name: "@corbits/github-tools", version: "3.1.0" },
   ]);
 });
 
@@ -1850,11 +1900,13 @@ test("two concurrent capability-adds on the same definition both land", async ()
   const assetService = liveDefinitionAsset(storedDefinitionBytes());
   const app = buildApp(
     assetService,
-    fakeInstructionsDb({
-      id: "def_1",
-      assetId: "ast_1",
-      name: "research-buddy",
-    }),
+    withToolPackageRegistryQueries(
+      fakeInstructionsDb({
+        id: "def_1",
+        assetId: "ast_1",
+        name: "research-buddy",
+      }),
+    ),
     allowAllRequireGrant,
     fakeHistory(),
     inventory,
@@ -1956,11 +2008,13 @@ test("concurrent DELETE model and a capability-add both land", async () => {
   );
   const app = buildApp(
     assetService,
-    fakeInstructionsDb({
-      id: "def_1",
-      assetId: "ast_1",
-      name: "research-buddy",
-    }),
+    withToolPackageRegistryQueries(
+      fakeInstructionsDb({
+        id: "def_1",
+        assetId: "ast_1",
+        name: "research-buddy",
+      }),
+    ),
   );
 
   const [delRes, capRes] = await Promise.all([
