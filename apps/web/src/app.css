@@ -730,6 +730,15 @@ select:disabled,
   color: var(--muted-foreground);
 }
 
+/* A subtitle that owns a control (thread close) must stay fully
+   hit-testable — overflow:hidden on the 3rem bar would clip it. The
+   title trail still gives. */
+.stage-top-bar-sub:has(button) {
+  overflow: visible;
+  flex-shrink: 0;
+  min-width: min-content;
+}
+
 .stage-top-bar-actions {
   display: flex;
   flex-shrink: 0;

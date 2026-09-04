@@ -182,7 +182,8 @@ export interface TeamAvatarEntry {
 }
 
 /** How many avatars the header shows before collapsing the rest into a
- * "+N" chip. */
+ * "+N" chip. Shared by the static member stack and the live presence
+ * stack so neither overflows the 3rem bar. */
 export const TEAM_AVATAR_STACK_LIMIT = 6;
 
 /** A crumb the host's `StageTopBar` can render — label plus an optional
@@ -1364,6 +1365,12 @@ function ChatWorkspaceInner({
   );
   const visibleMemberStack = memberStack.slice(0, TEAM_AVATAR_STACK_LIMIT);
   const memberStackOverflow = memberStack.length - visibleMemberStack.length;
+  const visiblePresenceStack = presenceMembers.slice(
+    0,
+    TEAM_AVATAR_STACK_LIMIT,
+  );
+  const presenceStackOverflow =
+    presenceMembers.length - visiblePresenceStack.length;
 
   const showRoomChrome =
     workbenchesState.kind === "ready" &&
@@ -1455,7 +1462,7 @@ function ChatWorkspaceInner({
           className="chat-presence-stack"
           aria-label={CHAT_STRINGS.workbenchPresenceLabel}
         >
-          {presenceMembers.map((member) => (
+          {visiblePresenceStack.map((member) => (
             <span
               key={member.principalId}
               className="chat-presence-avatar"
@@ -1468,6 +1475,14 @@ function ChatWorkspaceInner({
               {member.displayName.slice(0, 1).toUpperCase()}
             </span>
           ))}
+          {presenceStackOverflow > 0 ? (
+            <span
+              className="chat-presence-stack-overflow"
+              title={CHAT_STRINGS.teamStackOverflow(presenceStackOverflow)}
+            >
+              +{presenceStackOverflow}
+            </span>
+          ) : null}
         </div>
       ) : null}
       {offerInviteControl ? (
@@ -1522,7 +1537,12 @@ function ChatWorkspaceInner({
           </span>
         </>
       ) : null}
-      <span className="chat-thread-breadcrumb-current" aria-current="page">
+      <span
+        className="chat-thread-breadcrumb-current"
+        {...(headerSlot === undefined
+          ? { "aria-current": "page" as const }
+          : {})}
+      >
         {threadTitle}
       </span>
     </nav>

@@ -2931,6 +2931,7 @@
 }
 
 .chat-thread-breadcrumb-link {
+  flex-shrink: 0;
   border: 0;
   background: transparent;
   padding: 0;
@@ -3108,7 +3109,8 @@
   margin-left: 0.35rem;
 }
 
-.chat-presence-avatar {
+.chat-presence-avatar,
+.chat-presence-stack-overflow {
   display: grid;
   place-items: center;
   width: 1.5rem;
@@ -3125,6 +3127,11 @@
 
 .chat-presence-avatar:first-child {
   margin-left: 0;
+}
+
+.chat-presence-stack-overflow {
+  background: var(--muted);
+  color: var(--muted-foreground);
 }
 
 /* Message body column: bubble/parts + reaction/pin row share one flex
