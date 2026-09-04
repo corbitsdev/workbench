@@ -28,6 +28,7 @@ import { Part, type Part as PartType } from "./parts";
 import {
   aggregatePollResponses,
   type BlockResponsePayload,
+  type BlockResponseRow,
   type BlockResponseStore,
 } from "./block-responses";
 import {
@@ -75,6 +76,7 @@ import {
   launchAndJoinAgent,
   findExistingAgentChat,
   removeWorkbenchParticipant,
+  resolveInvitedDisplayName,
   sendWorkbenchMessage,
   cancelWorkbenchTurn,
 } from "./workbench-service";
@@ -97,6 +99,7 @@ import {
   createTurnCancelRegistry,
   type TurnCancelRegistry,
 } from "./turn-cancellation";
+import type { TurnMailCorrelationStore } from "./turn-mail-correlation";
 import type { ChatPlatform } from "./platform-port";
 import type { ChatStore } from "./store";
 import {
@@ -210,6 +213,14 @@ export type CreateChatRoutesDeps = {
    * CRUD stay free of thread tables.
    */
   threads?: ThreadStore;
+  /**
+   * Durable dispatch-mail -> source-message correlation (CL-6314) —
+   * threaded through to every `sendWorkbenchMessage` call this router
+   * makes, so the reply path can land an agent's answer in its source
+   * message's thread. Omitted, dispatches still send; their replies
+   * just post unthreaded.
+   */
+  turnMailCorrelation?: TurnMailCorrelationStore;
   /**
    * The turn projection (CL-6329) — one row per agent turn, which is
    * what makes a reply traceable back to the child run that produced
@@ -498,6 +509,34 @@ const SubmitQuestionResponseBody = type({
 const SubmitBlockResponseBody = SubmitPollResponseBody.or(
   SubmitFormResponseBody,
 ).or(SubmitQuestionResponseBody);
+
+/**
+ * The caller's own row on the GET wire. A question also carries
+ * `notifiedAt` (ISO timestamp, or null when notify never landed) so
+ * the card can keep a retry after remount instead of collapsing as
+ * if the agent had already been reached. Poll/form payloads are
+ * unchanged — `notifiedAt` is a question-only claim flag.
+ */
+function ownBlockResponseForClient(row: BlockResponseRow | undefined):
+  | BlockResponsePayload
+  | {
+      readonly kind: "question";
+      readonly answer: string;
+      readonly optionIndex?: number;
+      readonly notifiedAt: string | null;
+    }
+  | null {
+  if (row === undefined) return null;
+  if (row.payload.kind !== "question") return row.payload;
+  return {
+    kind: "question",
+    answer: row.payload.answer,
+    ...(row.payload.optionIndex !== undefined
+      ? { optionIndex: row.payload.optionIndex }
+      : {}),
+    notifiedAt: row.notifiedAt === null ? null : row.notifiedAt.toISOString(),
+  };
+}
 
 /**
  * Every `/workbenches/:id/*` handler must resolve the workbench inside the
@@ -2263,6 +2302,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             ? { agentTurns: deps.agentTurns }
             : {}),
           ...(deps.threads !== undefined ? { threads: deps.threads } : {}),
+          ...(deps.turnMailCorrelation !== undefined
+            ? { turnMailCorrelation: deps.turnMailCorrelation }
+            : {}),
           ...(deps.turnDispatchTimeoutMs !== undefined
             ? { turnDispatchTimeoutMs: deps.turnDispatchTimeoutMs }
             : {}),
@@ -2469,6 +2511,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                 ...(deps.threads !== undefined
                   ? { threads: deps.threads }
                   : {}),
+                ...(deps.turnMailCorrelation !== undefined
+                  ? { turnMailCorrelation: deps.turnMailCorrelation }
+                  : {}),
                 ...(deps.turnDispatchTimeoutMs !== undefined
                   ? { turnDispatchTimeoutMs: deps.turnDispatchTimeoutMs }
                   : {}),
@@ -2552,7 +2597,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // before any of it reaches the wire: a poll's tally is a count over
       // every row regardless of whose it is, but `own` is this caller's row
       // and this caller's alone — no other principal's raw poll choice or
-      // form values is ever assembled into the response body.
+      // form values is ever assembled into the response body. A question's
+      // `own` also carries `notifiedAt` so the card can tell a completed
+      // notify from an answer that never reached the agent.
       const rows = await deps.blockResponses.listBlockResponses(
         access.ownerTenantId,
         workbenchId,
@@ -2560,8 +2607,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         blockId,
       );
       const { tally, total } = aggregatePollResponses(rows);
-      const own =
-        rows.find((row) => row.principalId === principal.id)?.payload ?? null;
+      const own = ownBlockResponseForClient(
+        rows.find((row) => row.principalId === principal.id),
+      );
 
       return c.json({ tally, total, own });
     },
@@ -2927,12 +2975,15 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
   );
 
   // Every one of the workbench's own agent participants, each resolved
-  // back to its definition id — the settings surface's Assistant
-  // section reads this before it can look up each definition's
+  // back to its definition id and person-facing display name — the
+  // timeline, mention picker, and presence stack render this name, never
+  // the raw handle slug (CL-6424). The settings surface's Assistant
+  // section reads the definition id before it looks up each definition's
   // name/instructions through `@corbits/agent-directory`. A workbench
   // with several invited agents lists every one of them, not just the
-  // first; a participant whose address no longer resolves to a live
-  // definition is simply omitted rather than failing the whole list.
+  // first; a participant whose address no longer resolves to a live,
+  // nameable definition is simply omitted rather than failing the whole
+  // list.
   app.get(
     "/workbenches/:id/agents",
     deps.requireGrant(idResource("workflow-run", "id"), "read"),
@@ -2956,6 +3007,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       const agentParticipants = participantsOf(existing.settings).filter(
         (participant) => isAgentAddress(participant.address),
       );
+      const invitable = await deps.platform.listInvitableDefinitions(tenant.id);
       const items = (
         await Promise.all(
           agentParticipants.map(async (participant) => {
@@ -2966,14 +3018,29 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             if (definitionId === undefined) return null;
             const definitionAssetId =
               await deps.platform.resolveDefinitionAssetId(definitionId);
-            return definitionAssetId === undefined
-              ? null
-              : {
-                  address: participant.address,
-                  handle: participant.handle,
-                  definitionId,
-                  definitionAssetId,
-                };
+            if (definitionAssetId === undefined) return null;
+            let displayName: string;
+            try {
+              displayName = await resolveInvitedDisplayName(
+                deps.platform,
+                invitable,
+                definitionId,
+              );
+            } catch (err) {
+              reportError(err, {
+                operation: "chat.workbenchAgents.displayName",
+                tenantId: tenant.id,
+                roomId: workbenchId,
+              });
+              return null;
+            }
+            return {
+              address: participant.address,
+              handle: participant.handle,
+              definitionId,
+              definitionAssetId,
+              displayName,
+            };
           }),
         )
       ).filter((item) => item !== null);

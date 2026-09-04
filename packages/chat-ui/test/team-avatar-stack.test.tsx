@@ -1,8 +1,7 @@
-// The workbench header's combined who's-active stack: every agent
-// participant on the workbench plus every human currently reflected in live
-// presence (CL-6328: the workbench's own `chat.presence.snapshot` stream
-// event, not a host-supplied prop), overlapping with a title tooltip,
-// collapsing anything past TEAM_AVATAR_STACK_LIMIT into a "+N" chip.
+// The workbench header's static member stack: every agent participant on
+// the workbench plus every human on the roster, square avatars, collapsing
+// anything past TEAM_AVATAR_STACK_LIMIT into a "+N" chip. Live presence is
+// a separate round stack (see presence-stack.test.tsx).
 // Mirrors presence-stack.test.tsx's stub-fetch/mount harness.
 
 import { afterEach, describe, expect, test } from "bun:test";
@@ -51,6 +50,7 @@ afterEach(() => {
 
 function stubFetch(workbenchWire: {
   participants: { address: string; handle: string }[];
+  agents?: { address: string; handle: string; displayName: string }[];
 }) {
   globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
@@ -60,6 +60,17 @@ function stubFetch(workbenchWire: {
         status: 200,
         headers: { "content-type": "application/json" },
       });
+    if (/\/chat\/workbenches\/[^/]+\/agents$/.test(path)) {
+      return json({
+        items: (workbenchWire.agents ?? []).map((agent, index) => ({
+          address: agent.address,
+          handle: agent.handle,
+          definitionId: `wfd_${String(index)}`,
+          definitionAssetId: `ast_wfd_${String(index)}`,
+          displayName: agent.displayName,
+        })),
+      });
+    }
     if (/\/chat\/workbenches\?kind=workbench$/.test(path)) {
       return json({
         items: [
@@ -128,8 +139,8 @@ function humanParticipant(principalId: string, handle: string) {
   return { address: principalId, handle };
 }
 
-describe("workbench header team avatar stack", () => {
-  test("renders every agent participant and every live human", async () => {
+describe("workbench header member avatar stack", () => {
+  test("renders every agent participant and every roster human in the square member stack", async () => {
     stubFetch({
       participants: [
         { address: "myra@agents.example", handle: "Myra" },
@@ -150,22 +161,30 @@ describe("workbench header team avatar stack", () => {
     });
     await harness.settle();
 
-    const stack = harness.container.querySelector(".chat-team-stack");
-    expect(stack).not.toBeNull();
+    const memberStack = harness.container.querySelector(".chat-member-stack");
+    expect(memberStack).not.toBeNull();
+    expect(harness.container.querySelector(".chat-team-stack")).toBeNull();
     const agentAvatars = harness.container.querySelectorAll(
-      '.chat-presence-avatar[data-agent="true"]',
+      '.chat-member-avatar[data-agent="true"]',
     );
     expect(agentAvatars).toHaveLength(1);
     const agentAvatar = agentAvatars[0] as HTMLElement;
     expect(agentAvatar.title).toBe("Myra");
     expect(agentAvatar.textContent).toBe("M");
-    const presenceAvatars = harness.container.querySelectorAll(
-      ".chat-presence-avatar:not([data-agent])",
+    const memberHumans = harness.container.querySelectorAll(
+      ".chat-member-avatar:not([data-agent])",
     );
-    expect(presenceAvatars).toHaveLength(1);
-    expect((presenceAvatars[0] as HTMLElement).title).toBe("Alice");
+    expect(memberHumans).toHaveLength(1);
+    expect((memberHumans[0] as HTMLElement).title).toBe("Alice");
+    const liveStack = harness.container.querySelector(".chat-presence-stack");
+    expect(liveStack).not.toBeNull();
+    const liveAvatars = harness.container.querySelectorAll(
+      ".chat-presence-avatar",
+    );
+    expect(liveAvatars).toHaveLength(1);
+    expect((liveAvatars[0] as HTMLElement).title).toBe("Alice");
     expect(
-      harness.container.querySelector(".chat-team-stack-overflow"),
+      harness.container.querySelector(".chat-member-stack-overflow"),
     ).toBeNull();
     harness.unmount();
   });
@@ -185,7 +204,7 @@ describe("workbench header team avatar stack", () => {
 
     const agentAvatars = Array.from(
       harness.container.querySelectorAll(
-        '.chat-presence-avatar[data-agent="true"]',
+        '.chat-member-avatar[data-agent="true"]',
       ),
     ) as HTMLElement[];
     expect(agentAvatars).toHaveLength(2);
@@ -197,7 +216,7 @@ describe("workbench header team avatar stack", () => {
     // inline text color (the CSS custom-property indirection this
     // package uses elsewhere doesn't apply to this chip), proving two
     // agents never render with the exact same computed fill — the
-    // per-address color itself is `buildTeamAvatarStack`'s own unit
+    // per-address color itself is `buildMemberAvatarStack`'s own unit
     // test (`../src/chat-workspace.test.ts`), since happy-dom drops the
     // space-syntax `hsl()` `colorForPrincipal` emits before it reaches
     // any DOM assertion here.
@@ -206,6 +225,31 @@ describe("workbench header team avatar stack", () => {
     );
     expect(myraText).not.toBe("");
     expect(scoutText).not.toBe("");
+    harness.unmount();
+  });
+
+  test("shows the resolved agent display name, never the raw handle slug (CL-6424)", async () => {
+    stubFetch({
+      participants: [{ address: "myra@agents.example", handle: "myra" }],
+      agents: [
+        {
+          address: "myra@agents.example",
+          handle: "myra",
+          displayName: "Myra the Helper",
+        },
+      ],
+    });
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "ch_1",
+    });
+    await harness.settle();
+
+    const agentAvatars = harness.container.querySelectorAll(
+      '.chat-member-avatar[data-agent="true"]',
+    );
+    expect(agentAvatars).toHaveLength(1);
+    expect((agentAvatars[0] as HTMLElement).title).toBe("Myra the Helper");
     harness.unmount();
   });
 
@@ -237,7 +281,7 @@ describe("workbench header team avatar stack", () => {
 
     // 1 agent + 6 humans = 7 total, limit is 6, so one overflows.
     const overflow = harness.container.querySelector(
-      ".chat-team-stack-overflow",
+      ".chat-member-stack-overflow",
     );
     expect(overflow).not.toBeNull();
     expect(overflow?.textContent).toBe("+1");
@@ -267,12 +311,36 @@ describe("workbench header team avatar stack", () => {
     await harness.settle();
 
     const presenceAvatars = harness.container.querySelectorAll(
-      ".chat-presence-avatar:not([data-agent])",
+      ".chat-presence-avatar",
     );
     expect(presenceAvatars).toHaveLength(1);
     expect((presenceAvatars[0] as HTMLElement).title).toBe("sawyer");
     expect((presenceAvatars[0] as HTMLElement).title).not.toBe("Member");
     expect(presenceAvatars[0]?.textContent).toBe("S");
+    harness.unmount();
+  });
+
+  test("own member avatar uses currentUser.name, never the raw handle", async () => {
+    stubFetch({
+      participants: [
+        { address: "myra@agents.example", handle: "Myra" },
+        humanParticipant("prn_self", "ada-handle"),
+      ],
+    });
+    const harness = mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "ch_1",
+      currentUser: { principalId: "prn_self", name: "sawyer" },
+    });
+    await harness.settle();
+
+    const memberHumans = harness.container.querySelectorAll(
+      ".chat-member-avatar:not([data-agent])",
+    );
+    expect(memberHumans).toHaveLength(1);
+    expect((memberHumans[0] as HTMLElement).title).toBe("sawyer");
+    expect((memberHumans[0] as HTMLElement).title).not.toBe("ada-handle");
+    expect(memberHumans[0]?.textContent).toBe("S");
     harness.unmount();
   });
 });

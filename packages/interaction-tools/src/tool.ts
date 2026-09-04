@@ -17,7 +17,7 @@ import type {
 } from "@intx/types/runtime";
 import { type } from "arktype";
 
-import { postQuestion, NoOwnChannelError } from "./client";
+import { postQuestion, NoOwnChannelError, questionIdForCall } from "./client";
 import type { AskUserClientConfig } from "./client";
 
 export const ASK_USER_TOOL = "ask_user";
@@ -81,7 +81,10 @@ async function beforeAskUser(
 
   let questionId: string;
   try {
-    ({ questionId } = await postQuestion(clientConfig(env), parsed));
+    ({ questionId } = await postQuestion(clientConfig(env), {
+      ...parsed,
+      questionId: questionIdForCall(call.id),
+    }));
   } catch (err) {
     if (err instanceof NoOwnChannelError) {
       return { type: "block", reason: err.message };
@@ -92,13 +95,16 @@ async function beforeAskUser(
     };
   }
 
-  // `postQuestion` already mints `questionId` and stamps it on the outbound
-  // question card's `data.questionId`; reusing it as the gate's own
-  // `correlationId` (rather than minting a second, unrelated id) is what
-  // lets the answer route resolve this exact gate later (CL-7191) — the
-  // block a person answers is keyed on `blockId`, which for a question
-  // block IS `questionId` (`packages/chat/src/schema.ts`'s "agent-authored
-  // pollId/formId" comment applies identically here).
+  // `postQuestion` stamps this `questionId` (derived from the tool-call
+  // id, not minted per attempt) on the outbound question card; reusing it
+  // as the gate's own `correlationId` (rather than minting a second,
+  // unrelated id) is what lets the answer route resolve this exact gate
+  // later (CL-7191) — the block a person answers is keyed on `blockId`,
+  // which for a question block IS `questionId` (`packages/chat/src/schema.ts`'s
+  // "agent-authored pollId/formId" comment applies identically here). The
+  // same derivation is what makes a crash between post and
+  // `suspendOnGate` retry-safe: the next attempt re-posts this id and the
+  // write path returns the existing card (CL-7248).
   const correlationId = questionId;
   const timeoutAt = Date.now() + ASK_USER_TIMEOUT_MS;
   const gateId = `pending-${correlationId}`;

@@ -17,7 +17,6 @@
     "@corbits/assistant-workflow": "workspace:*",
     "@corbits/error-sink": "workspace:*",
     "@corbits/migration-runner": "workspace:*",
-    "@corbits/routines": "workspace:*",
     "@corbits/webhook-triggers": "workspace:*",
     "@workbench/templates": "workspace:*",
     "@intx/agent": "workspace:*",
@@ -43,7 +42,6 @@
     "@corbits/github-tools": "workspace:*",
     "@corbits/mcp-tools": "workspace:*",
     "@corbits/memory-tools": "workspace:*",
-    "@corbits/routines-tools": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   }

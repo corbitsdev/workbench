@@ -8,7 +8,7 @@
 // Workflow package metadata (automatable, displayName) lives in each
 // workflows/*/package.json under `corbits.workflow` and is mirrored in
 // `@workbench/templates`. Seed stamps displayName onto the asset so
-// the routines picker can show a friendly label without reading package.json.
+// the scheduled-workflow picker can show a friendly label without reading package.json.
 
 import {
   AssetResponse,
@@ -20,6 +20,7 @@ import {
   ModelResponse,
   ProviderResponse,
   WorkflowRunHealth,
+  WorkflowDefinitionResponse,
   paginatedSchema,
   Capability,
 } from "@intx/types";
@@ -56,7 +57,6 @@ import {
   type ApiCall,
 } from "@corbits/hub-api-client";
 import { DEFAULT_SKILLS } from "./default-skills";
-import { ensureDefaultRoutines } from "./default-routines";
 import { CATALOG_SEEDS, type CatalogModelSpec } from "./catalog-seed-data";
 import {
   fetchOllamaModelCatalog,
@@ -188,6 +188,12 @@ export type DefaultWorkflow = {
    * model.
    */
   modelSource?: (hubUrl: string) => ModelSource;
+  /**
+   * When true, PUT the authored definition to `stopped` after deploy so
+   * a native ScheduleTrigger does not fire every tenant at the next
+   * matching minute. Absent means leave the schema default (`deployed`).
+   */
+  startStopped?: true;
 };
 
 function catalogDisplayName(assetName: string): string {
@@ -269,25 +275,24 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     assetName: "workbench-digest",
     displayName: catalogDisplayName("workbench-digest"),
     automatable: catalogAutomatable("workbench-digest"),
-    buildJson: (tenantDomain, model) =>
+    buildJson: (_tenantDomain, model) =>
       serializeWorkbenchDigestWorkflow(
         buildWorkbenchDigestWorkflow({
-          triggerAddress: `workbench-digest@${tenantDomain}`,
           inferencePreferences: [
             { provider: model.provider, model: model.model },
           ],
           turnTimeoutMs: WORKBENCH_DIGEST_TURN_TIMEOUT_MS,
         }),
       ),
+    startStopped: true,
   },
   {
     assetName: "last-30-days-research",
     displayName: catalogDisplayName("last-30-days-research"),
     automatable: catalogAutomatable("last-30-days-research"),
-    // CL-6201: deployed so `ensureDefaultRoutines` (default-routines.ts)
-    // has a real definition to un-strand into a routine row. It was
-    // never in this array before that ticket, which is exactly why the
-    // routine could never appear: nothing deployed its definition.
+    // Deployed automation in the default set. Seed no longer POSTs a
+    // wrapper row; last-30-days-research stays a deployed workflow
+    // without a native ScheduleTrigger.
     buildJson: (tenantDomain, model) =>
       serializeLast30DaysResearchWorkflow(
         buildLast30DaysResearchWorkflow({
@@ -343,11 +348,11 @@ export const SEED_GRANTS: readonly { resource: string; action: string }[] = [
   { resource: "workflow:*", action: "read" },
   { resource: "workflow-run:*", action: "manage" },
   { resource: "workflow-run:*", action: "read" },
-  // CL-6201: `ensureDefaultRoutines` lists deployed definitions (GET
-  // .../workflows/definitions) and creates/disables preset routines
-  // (POST/PATCH .../routines) — none of the grants above cover those
-  // routes, which gate on their own resource/action pairs.
+  // Workflow-definition read/update (stop a startStopped deploy, list
+  // definitions) and extra workflow-run verbs none of the grants above
+  // cover. Those routes gate on their own resource/action pairs.
   { resource: "workflow-definition:*", action: "read" },
+  { resource: "workflow-definition:*", action: "update" },
   { resource: "workflow-run:*", action: "create" },
   { resource: "workflow-run:*", action: "write" },
   // CL-6346 moved the room routes (post a message, read-state, typing,
@@ -734,6 +739,96 @@ async function ensureDeployment(
   return deployment.id;
 }
 
+/**
+ * After deploy, PUT a pristine authored definition to `stopped` so a native
+ * ScheduleTrigger does not fire every tenant. A member-restored row
+ * (`updatedAt !== createdAt`) or an already-stopped row is left alone —
+ * re-seed must never re-archive an enablement the member already chose.
+ * Uses the existing agent-directory status route (grant:
+ * `workflow-definition:<id>` `update`).
+ */
+async function stopPristineScheduledDefinition(
+  api: ApiCall,
+  cookies: string[],
+  args: { tenantId: string; assetName: string },
+  log: (line: string) => void,
+): Promise<void> {
+  const definitions = await listAllWorkflowDefinitions(
+    api,
+    cookies,
+    args.tenantId,
+  );
+  const row = definitions.find(
+    (definition) => definition.name === args.assetName,
+  );
+  if (row === undefined) {
+    throw new HubApiError(
+      `seeded workflow ${args.assetName} has no authored definition to stop`,
+      "re-run: workbench seed after the deploy has projected a definition row",
+    );
+  }
+  if (row.status === "stopped") {
+    log(`definition ${args.assetName} already stopped (skipped)`);
+    return;
+  }
+  if (row.createdAt !== row.updatedAt) {
+    log(
+      `definition ${args.assetName} was touched; leaving status ${row.status}`,
+    );
+    return;
+  }
+  const updated = await api(
+    "PUT",
+    `/api/tenants/${args.tenantId}/agent-definitions/${row.id}/status`,
+    { status: "stopped" },
+    cookies,
+  );
+  if (updated.status !== 200) {
+    throw new HubApiError(
+      `the hub rejected stopping definition ${args.assetName} with status ${updated.status}: ${JSON.stringify(updated.data)}`,
+      "check the hub logs for the underlying failure, then re-run: workbench seed",
+    );
+  }
+  log(
+    `stopped definition ${args.assetName} so its native schedule does not fire until restored`,
+  );
+}
+
+async function listAllWorkflowDefinitions(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+): Promise<(typeof WorkflowDefinitionResponse.infer)[]> {
+  const items: (typeof WorkflowDefinitionResponse.infer)[] = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const query =
+      cursor === undefined
+        ? "limit=200"
+        : `limit=200&cursor=${encodeURIComponent(cursor)}`;
+    const listed = await api(
+      "GET",
+      `/api/tenants/${tenantId}/workflows/definitions?${query}`,
+      undefined,
+      cookies,
+    );
+    const page = parseAs(
+      paginatedSchema(WorkflowDefinitionResponse),
+      listed.data,
+      "definitions response",
+    );
+    items.push(...page.data);
+    if (page.nextCursor === null) return items;
+    if (items.length > 10_000) {
+      throw new HubApiError(
+        `definitions list for tenant ${tenantId} did not terminate while paging`,
+        "check the hub logs for the underlying failure, then re-run: workbench seed",
+      );
+    }
+    cursor = page.nextCursor;
+  }
+}
+
 async function confirmDeploymentAnswers(
   api: ApiCall,
   cookies: string[],
@@ -850,9 +945,10 @@ export type SeedTenantArgs = {
  * seeds it without re-authenticating or re-resolving the tenant by
  * slug.
  *
- * Grants + workflows/routines only. Assumes the tenant hierarchy
- * already exposes `corbits-tools` (published at `workbench setup` onto
- * the root); seed does not pack tarballs or run freshness.
+ * Grants + workflows, then prune of leftover preset routine wrappers.
+ * Assumes the tenant hierarchy already exposes `corbits-tools`
+ * (published at `workbench setup` onto the root); seed does not pack
+ * tarballs or run freshness.
  */
 export async function seedTenant(args: SeedTenantArgs): Promise<void> {
   const {
@@ -927,6 +1023,14 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
       log,
     );
 
+    if (workflow.startStopped === true) {
+      await stopPristineScheduledDefinition(
+        api,
+        cookies,
+        { tenantId: tenant.tenantId, assetName: workflow.assetName },
+        log,
+      );
+    }
     if (confirmDeployments) {
       await confirmDeploymentAnswers(
         api,
@@ -951,14 +1055,6 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
       "check the failures reported above, fix them, then re-run: workbench seed",
     );
   }
-
-  // CL-6201: every default workflow above is now deployed, so any
-  // preset routine whose definition just landed can be planted. Runs
-  // after the deploy loop (never before) — a preset targeting a
-  // workflow this call didn't deploy is skipped with a log line rather
-  // than failing seeding outright, which keeps a narrowed `workflows`
-  // list (as several tests here pass) a partial-but-valid seed.
-  await ensureDefaultRoutines(api, cookies, tenant.tenantId, log);
 
   log(
     confirmDeployments
@@ -1343,7 +1439,52 @@ async function ensureCatalogOffering(
     return;
   }
   if (created.status === 409) {
-    log("catalog offering already exists (skipped)");
+    let cursor: string | null = null;
+    let existing: typeof ModelOfferingResponse.infer | undefined;
+    do {
+      const listed = await api(
+        "GET",
+        `/api/tenants/${args.tenantId}/catalog/offerings${cursor === null ? "" : `?cursor=${encodeURIComponent(cursor)}`}`,
+        undefined,
+        cookies,
+      );
+      const page = parseAs(
+        paginatedSchema(ModelOfferingResponse),
+        listed.data,
+        "catalog offerings response",
+      );
+      existing = page.data.find(
+        (offering) =>
+          offering.modelId === args.modelId &&
+          offering.providerId === args.providerId,
+      );
+      cursor = page.nextCursor;
+    } while (existing === undefined && cursor !== null);
+    if (!existing) {
+      throw new HubApiError(
+        "catalog offering reported a conflict but is not listable on the bench",
+        "check the hub logs for the underlying failure, then re-run: workbench seed",
+      );
+    }
+    if (existing.priority === args.priority) {
+      log("catalog offering already exists (skipped)");
+      return;
+    }
+
+    const updated = await api(
+      "PATCH",
+      `/api/tenants/${args.tenantId}/catalog/offerings/${existing.id}`,
+      { priority: args.priority },
+      cookies,
+    );
+    if (updated.status !== 200) {
+      throw new HubApiError(
+        `the hub rejected updating the catalog offering priority with status ${updated.status}: ${JSON.stringify(updated.data)}`,
+        "check the hub logs for the underlying failure, then re-run: workbench seed",
+      );
+    }
+    parseAs(ModelOfferingResponse, updated.data, "catalog offering response");
+    log("updated catalog offering priority");
     return;
   }
   throw new HubApiError(
@@ -1570,14 +1711,14 @@ export async function seedCatalog(
     },
     log,
   );
-  // Priority = the provider's CATALOG_SEEDS declaration index (anthropic
-  // first), so when several connected providers serve the same model the
-  // fallback order is deterministic instead of an all-zeroes tie broken
-  // by insertion accident.
-  const offeringPriority = Math.max(
-    0,
-    Object.keys(CATALOG_SEEDS).indexOf(provider),
-  );
+  // Flatten the curated provider/model declaration order into one priority
+  // sequence. Provider order still controls cross-provider fallback, while
+  // model order makes each provider's declared default the first choice.
+  let offeringPriorityOffset = 0;
+  for (const [seedProvider, providerSeed] of Object.entries(CATALOG_SEEDS)) {
+    if (seedProvider === provider) break;
+    offeringPriorityOffset += providerSeed.models.length;
+  }
   // What each deployment can do, resolved from the pinned catalog's probe
   // results. Until this, every seeded offering stored an empty capability
   // list, so no capability filter — this repo's concept resolution or the
@@ -1589,7 +1730,7 @@ export async function seedCatalog(
     canonicalName: string;
     capabilities: readonly string[];
   }[] = [];
-  for (const model of seededModels) {
+  for (const [modelIndex, model] of seededModels.entries()) {
     // Ollama's dynamic entries already carry their own live-probed
     // capabilities (`fetchOllamaModelCatalog`, CL-6366) — narrowed against
     // the real `Capability` enum here, the trust boundary, rather than
@@ -1631,7 +1772,7 @@ export async function seedCatalog(
         tenantId,
         modelId: model.id,
         providerId: catalogProviderId,
-        priority: offeringPriority,
+        priority: offeringPriorityOffset + modelIndex,
         capabilities,
         ...(quirks !== undefined ? { quirks } : {}),
       },

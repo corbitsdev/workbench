@@ -140,7 +140,7 @@ scripts/checks/report-error.ts --write-baseline` after fixing (or
   tracked on its own ticket opts out instead with a `report-error-ignore:
 <reason>` comment on the catch or in its body — that's for a violation
   actively being fixed, never a way to clear a baseline entry quietly.
-- A package's `browser-safe` subpath (e.g. `@corbits/routines/client`) may
+- A package's `browser-safe` subpath (e.g. `@corbits/inbox/client`) may
   never import a server-only dependency (`postgres`, `drizzle-orm`,
   `hono`, any `@intx/*`) — `check:browser-safe-subpaths` walks the real
   import graph from each declared entry point.

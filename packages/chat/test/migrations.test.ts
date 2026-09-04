@@ -49,6 +49,7 @@ const migrationNames = [
   "0025_workbench_threads_unique_key",
   "0026_workbench_threads_delivery_key",
   "0027_block_responses_notified_at",
+  "0028_turn_mail_correlation",
 ];
 
 describeIfDb("applyChatMigrations", () => {

@@ -729,6 +729,15 @@ select:disabled,
   color: var(--muted-foreground);
 }
 
+/* A subtitle that owns a control (thread close) must stay fully
+   hit-testable — overflow:hidden on the 3rem bar would clip it. The
+   title trail still gives. */
+.stage-top-bar-sub:has(button) {
+  overflow: visible;
+  flex-shrink: 0;
+  min-width: min-content;
+}
+
 .stage-top-bar-actions {
   display: flex;
   flex-shrink: 0;
@@ -1120,7 +1129,15 @@ select:disabled,
 .shell-canvas-pane-actions {
   display: flex;
   flex-shrink: 0;
+  align-items: center;
   gap: 0.25rem;
+}
+
+.shell-artifact-presence-status {
+  padding: 0 0.35rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  white-space: nowrap;
 }
 
 .shell-profile-pane-hint {
@@ -1440,6 +1457,13 @@ select:disabled,
 
 .settings-nav-advanced-hint {
   margin: 0.2rem 0 0.3rem;
+  padding: 0 0.42rem;
+  font-size: 0.6875rem;
+  color: var(--shell-panel-faint);
+}
+
+.settings-nav-access-error {
+  margin: 0 0 0.3rem;
   padding: 0 0.42rem;
   font-size: 0.6875rem;
   color: var(--shell-panel-faint);

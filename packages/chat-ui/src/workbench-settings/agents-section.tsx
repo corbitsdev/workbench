@@ -238,20 +238,29 @@ function AgentDetailEditor({
   const [catalogState, setCatalogState] = useState<CatalogState>({
     kind: "loading",
   });
+  const [catalogReloadKey, setCatalogReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setCatalogState({ kind: "loading" });
     getResolvedCatalog(tenantId)
       .then((models) => {
         if (!cancelled) setCatalogState({ kind: "ready", models });
       })
-      .catch(() => {
-        if (!cancelled) setCatalogState({ kind: "error" });
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        setCatalogState({
+          kind: "error",
+          message: describeChatError(
+            cause,
+            CHAT_STRINGS.workbenchSettingsAgentDetailCatalogError,
+          ),
+        });
       });
     return () => {
       cancelled = true;
     };
-  }, [tenantId]);
+  }, [tenantId, catalogReloadKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -345,6 +354,7 @@ function AgentDetailEditor({
         agent={agent}
         detail={state.detail}
         catalogState={catalogState}
+        onRetryCatalog={() => setCatalogReloadKey((value) => value + 1)}
         onChanged={(detail) => setState({ kind: "ready", detail })}
       />
 
@@ -430,7 +440,7 @@ type ModelOption = { readonly canonicalName: string; readonly label: string };
 
 type CatalogState =
   | { readonly kind: "loading" }
-  | { readonly kind: "error" }
+  | { readonly kind: "error"; readonly message: string }
   | { readonly kind: "ready"; readonly models: readonly ModelInfo[] };
 
 /** Only a model with at least one offering is actually launchable for this
@@ -479,6 +489,7 @@ function ModelSelect({
   agent,
   detail,
   catalogState,
+  onRetryCatalog,
   onChanged,
 }: {
   readonly tenantId: string;
@@ -486,6 +497,7 @@ function ModelSelect({
   readonly agent: WorkbenchAgent;
   readonly detail: AgentDetail;
   readonly catalogState: CatalogState;
+  readonly onRetryCatalog: () => void;
   readonly onChanged: (detail: AgentDetail) => void;
 }) {
   const [saving, setSaving] = useState(false);
@@ -534,7 +546,11 @@ function ModelSelect({
       <select
         value={detail.model ?? ""}
         onChange={(event) => handleChange(event.target.value)}
-        disabled={saving || catalogState.kind === "loading"}
+        disabled={
+          saving ||
+          catalogState.kind === "loading" ||
+          catalogState.kind === "error"
+        }
       >
         {detail.model === undefined ? (
           <option value="">
@@ -556,6 +572,26 @@ function ModelSelect({
         <p className="chat-settings-field-hint">
           {CHAT_STRINGS.workbenchSettingsAgentDetailNoConnectedModels}
         </p>
+      ) : null}
+      {catalogState.kind === "error" ? (
+        <>
+          <p className="chat-dialog-error" role="alert">
+            {catalogState.message}
+          </p>
+          <div className="chat-settings-field-actions">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onRetryCatalog}
+            >
+              {CHAT_STRINGS.workbenchSettingsAgentDetailCatalogRetryAction}
+            </Button>
+            <a href="/settings/connections">
+              {CHAT_STRINGS.workbenchSettingsAgentDetailCatalogSettingsAction}
+            </a>
+          </div>
+        </>
       ) : null}
       {error !== null ? (
         <p className="chat-dialog-error" role="alert">

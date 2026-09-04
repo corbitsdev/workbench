@@ -51,6 +51,7 @@ import type {
   InvitableDefinition,
 } from "./platform-port";
 import { postRoomMessage, type RoomMessageStore } from "./room-messages";
+import type { TurnMailCorrelationStore } from "./turn-mail-correlation";
 import type { WorkbenchSubscriberRegistry } from "./workbench-events";
 import type { QueuedTurn, WorkbenchTurnQueue } from "./turn-queue";
 import { CHAT_TURN_TIMEOUT_MS } from "./turn-claims";
@@ -1255,6 +1256,16 @@ export type SendWorkbenchMessageDeps = {
    */
   readonly turnCancellation: TurnCancelRegistry;
   /**
+   * Durable dispatch-mail -> source-message correlation (CL-6314), what
+   * `dispatchTurn` records after its send resolves so the reply path can
+   * land the agent's answer in its source message's thread. Optional so
+   * unit suites that only exercise routing stay free of the table; a
+   * composition that wants threaded replies (the hub) injects a real
+   * store. Absent, dispatches still send — their replies just post
+   * unthreaded.
+   */
+  readonly turnMailCorrelation?: TurnMailCorrelationStore;
+  /**
    * The turn projection (CL-6329). `dispatchTurn` opens a row before it
    * touches the execution plane, so an in-flight turn is visible from
    * its first moment and the child run id its reply will carry is
@@ -1666,6 +1677,7 @@ async function dispatchTurnBatch(
     | "waitUntilFreeTimeoutMs"
     | "agentTurns"
     | "turnCancellation"
+    | "turnMailCorrelation"
   >,
   tenantId: string,
   workbenchId: string,
@@ -1905,7 +1917,11 @@ export type DispatchTurnInput = {
 export async function dispatchTurn(
   deps: Pick<
     SendWorkbenchMessageDeps,
-    "platform" | "agentTurns" | "roomMessages" | "publish"
+    | "platform"
+    | "agentTurns"
+    | "roomMessages"
+    | "publish"
+    | "turnMailCorrelation"
   >,
   input: DispatchTurnInput,
   signal?: AbortSignal,
@@ -1961,7 +1977,7 @@ export async function dispatchTurn(
   signal?.addEventListener("abort", closeAsTimedOut, { once: true });
 
   try {
-    await deps.platform.sendMail({
+    const sent = await deps.platform.sendMail({
       tenantId: input.tenantId,
       workbenchId: localPartOf(input.agentAddress),
       principalId: input.principalId,
@@ -1971,6 +1987,36 @@ export async function dispatchTurn(
         ? { correlationId: input.correlationId }
         : {}),
     });
+    // The reply path threads under the turn that produced it (CL-6314),
+    // and this mail is what opens that turn's bracket — so record which
+    // message it answers while both halves are in hand. The latest
+    // message, matching how a batch already attributes its principal:
+    // the conversation is where its newest message is. A record that
+    // fails is reported, never thrown: the turn was dispatched, and
+    // threading degrades to unthreaded rather than failing it.
+    const sourceMessageId =
+      input.requestMessageIds[input.requestMessageIds.length - 1];
+    if (
+      sourceMessageId !== undefined &&
+      deps.turnMailCorrelation !== undefined
+    ) {
+      try {
+        await deps.turnMailCorrelation.recordTurnMail({
+          tenantId: input.tenantId,
+          mailId: sent.id,
+          workbenchId: input.workbenchId,
+          sourceMessageId,
+        });
+      } catch (err) {
+        reportError(err, {
+          operation: "chat.dispatchTurn.recordTurnMail",
+          tenantId: input.tenantId,
+          roomId: input.workbenchId,
+          agentId: input.agentAddress,
+          extra: { mailId: sent.id, sourceMessageId },
+        });
+      }
+    }
   } catch (err) {
     if (turn !== undefined) {
       await deps.agentTurns?.finishTurn({
