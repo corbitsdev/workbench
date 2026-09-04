@@ -2,9 +2,42 @@ import { describe, expect, test } from "bun:test";
 
 import {
   generatedAvatarStyle,
+  pastelColorForPrincipal,
   readableTextOn,
   resolveAvatarFill,
+  PASTEL_PALETTE,
 } from "./avatar-identity";
+
+describe("pastelColorForPrincipal", () => {
+  test("is deterministic for the same principal", () => {
+    expect(pastelColorForPrincipal("prn_alice")).toBe(
+      pastelColorForPrincipal("prn_alice"),
+    );
+  });
+
+  test("always returns a color from the approved pastel palette", () => {
+    const principals = [
+      "prn_alice",
+      "prn_bob",
+      "prn_carla",
+      "prn_dana",
+      "prn_eve",
+      "prn_frank",
+    ];
+    for (const p of principals) {
+      expect(PASTEL_PALETTE).toContain(pastelColorForPrincipal(p));
+    }
+  });
+
+  test("distributes distinct principals across palette colors", () => {
+    const colors = new Set(
+      ["prn_alice", "prn_bob", "prn_carla", "prn_dana"].map(
+        pastelColorForPrincipal,
+      ),
+    );
+    expect(colors.size).toBeGreaterThan(1);
+  });
+});
 
 describe("generatedAvatarStyle", () => {
   test("is deterministic for the same principal", () => {
@@ -13,10 +46,12 @@ describe("generatedAvatarStyle", () => {
     );
   });
 
-  test("differs across distinct principals", () => {
-    const alice = generatedAvatarStyle("prn_alice");
-    const bob = generatedAvatarStyle("prn_bob");
-    expect(alice["--avatar-identity-bg"]).not.toBe(bob["--avatar-identity-bg"]);
+  test("uses pastel palette background and legible foreground", () => {
+    const style = generatedAvatarStyle("prn_alice");
+    expect(PASTEL_PALETTE).toContain(
+      style["--avatar-identity-bg"] as (typeof PASTEL_PALETTE)[number],
+    );
+    expect(["#000000", "#ffffff"]).toContain(style["--avatar-identity-fg"]);
   });
 
   test("never displays the seed itself", () => {
@@ -27,36 +62,26 @@ describe("generatedAvatarStyle", () => {
 });
 
 describe("readableTextOn", () => {
-  test("picks a legible label color across the full hue range", () => {
-    // A spread of hand-picked HSL backgrounds spanning light and dark
-    // lightness at the generator's fixed saturation/lightness — every
-    // one of them must resolve to pure black or pure white, never a
-    // mid-tone that would read as washed out on either.
-    const seeds = [
-      "prn_a",
-      "prn_b",
-      "prn_c",
-      "prn_d",
-      "prn_e",
-      "prn_f",
-      "prn_g",
-      "prn_h",
-    ];
-    for (const seed of seeds) {
-      const { "--avatar-identity-bg": bg, "--avatar-identity-fg": fg } =
-        generatedAvatarStyle(seed);
-      expect(["#000000", "#ffffff"]).toContain(fg);
-      expect(bg.startsWith("hsl(")).toBe(true);
+  test("picks a legible label color across the pastel palette", () => {
+    for (const color of PASTEL_PALETTE) {
+      expect(readableTextOn(color)).toBe("#000000");
     }
   });
 
+  test("supports both hex and hsl colors", () => {
+    expect(readableTextOn("#FFFFFF")).toBe("#000000");
+    expect(readableTextOn("#000000")).toBe("#ffffff");
+    expect(readableTextOn("hsl(0 0% 100%)")).toBe("#000000");
+    expect(readableTextOn("hsl(0 0% 0%)")).toBe("#ffffff");
+  });
+
   test("is deterministic for the same background", () => {
-    const bg = "hsl(210 65% 45%)";
+    const bg = "#C5D2DE";
     expect(readableTextOn(bg)).toBe(readableTextOn(bg));
   });
 
   test("falls back to a safe default for an unrecognized format", () => {
-    expect(readableTextOn("not-a-color")).toBe("#ffffff");
+    expect(readableTextOn("not-a-color")).toBe("#000000");
   });
 });
 
@@ -64,6 +89,11 @@ describe("resolveAvatarFill", () => {
   test("a principal with no explicit image gets the generated fill", () => {
     const fill = resolveAvatarFill("prn_alice");
     expect(fill.kind).toBe("generated");
+    if (fill.kind === "generated") {
+      expect(PASTEL_PALETTE).toContain(
+        fill.style["--avatar-identity-bg"] as (typeof PASTEL_PALETTE)[number],
+      );
+    }
   });
 
   test("a principal with an explicit image still uses it", () => {

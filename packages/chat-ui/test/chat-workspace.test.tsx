@@ -2020,7 +2020,7 @@ describe("Workbench header polish (CL-6106)", () => {
     );
     expect(chip).not.toBeNull();
     expect((chip as HTMLElement).title).toBe("Researcher");
-    expect((chip as HTMLElement).textContent).toBe("R");
+    expect(chip?.querySelector('[data-corbit="true"]')).not.toBeNull();
     harness.unmount();
   });
 
