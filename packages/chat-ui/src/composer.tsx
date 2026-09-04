@@ -7,7 +7,15 @@
 // does not compose with an inline mention popover.
 
 import { Avatar, Button } from "@corbits/react-ui";
-import { ArrowUp, CircleNotch, Paperclip, Stop, X } from "@corbits/icons";
+import {
+  ArrowUp,
+  CircleNotch,
+  Microphone,
+  Paperclip,
+  Stop,
+  X,
+} from "@corbits/icons";
+import { reportError } from "@corbits/error-sink";
 import {
   forwardRef,
   useEffect,
@@ -80,6 +88,89 @@ export function insertTextAtCaret(
   const after = value.slice(caret);
   const text = `${before}${insertion}${after}`;
   return { text, caret: before.length + insertion.length };
+}
+
+export type SpeechRecognitionAlternativeLike = {
+  readonly transcript: string;
+};
+
+export type SpeechRecognitionResultLike = {
+  readonly isFinal: boolean;
+  readonly length: number;
+  readonly 0: SpeechRecognitionAlternativeLike;
+};
+
+export type SpeechRecognitionEventLike = {
+  readonly results: ArrayLike<SpeechRecognitionResultLike>;
+};
+
+export type SpeechRecognitionLike = {
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: unknown) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+};
+
+type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
+
+function isSpeechRecognitionCtor(
+  value: unknown,
+): value is SpeechRecognitionCtor {
+  return typeof value === "function";
+}
+
+/** Browser `SpeechRecognition` / `webkitSpeechRecognition`, or null. */
+export function speechRecognitionConstructor(
+  global: object = globalThis,
+): SpeechRecognitionCtor | null {
+  if ("SpeechRecognition" in global) {
+    const ctor = Reflect.get(global, "SpeechRecognition");
+    if (isSpeechRecognitionCtor(ctor)) return ctor;
+  }
+  if ("webkitSpeechRecognition" in global) {
+    const ctor = Reflect.get(global, "webkitSpeechRecognition");
+    if (isSpeechRecognitionCtor(ctor)) return ctor;
+  }
+  return null;
+}
+
+export function transcriptFromSpeechResults(
+  results: ArrayLike<SpeechRecognitionResultLike>,
+): string {
+  let text = "";
+  for (const result of Array.from(results)) {
+    if (result.length === 0) continue;
+    text += result[0].transcript;
+  }
+  return text;
+}
+
+/**
+ * Drop a recognition transcript between `prefix` and `suffix`, inserting a
+ * space when the join would otherwise glue two words together.
+ */
+export function spliceDictationTranscript(
+  prefix: string,
+  suffix: string,
+  transcript: string,
+): { readonly text: string; readonly caret: number } {
+  const trimmed = transcript.trim();
+  if (trimmed.length === 0) {
+    return { text: `${prefix}${suffix}`, caret: prefix.length };
+  }
+  const head =
+    prefix.length === 0 || /\s$/u.test(prefix)
+      ? `${prefix}${trimmed}`
+      : `${prefix} ${trimmed}`;
+  const text =
+    suffix.length === 0 || /^\s/u.test(suffix)
+      ? `${head}${suffix}`
+      : `${head} ${suffix}`;
+  return { text, caret: head.length };
 }
 
 /**
@@ -418,10 +509,88 @@ export const Composer = forwardRef<
   // instant a send starts, synchronously ahead of any render, so a second
   // call in the same tick is turned away (CL-7198).
   const sendInFlightRef = useRef(false);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const dictatePrefixRef = useRef("");
+  const dictateSuffixRef = useRef("");
+  const [listening, setListening] = useState(false);
+  const [dictateAvailable] = useState(
+    () => speechRecognitionConstructor() !== null,
+  );
+
+  function stopDictation() {
+    const rec = recognitionRef.current;
+    if (rec === null) return;
+    recognitionRef.current = null;
+    setListening(false);
+    rec.stop();
+  }
+
+  function applyDictationTranscript(transcript: string) {
+    const next = spliceDictationTranscript(
+      dictatePrefixRef.current,
+      dictateSuffixRef.current,
+      transcript,
+    );
+    setValue(next.text);
+    syncComposerSuggestState(next.text, next.caret);
+    requestAnimationFrame(() => {
+      textareaRef.current?.setSelectionRange(next.caret, next.caret);
+    });
+  }
+
+  function startDictation() {
+    const Ctor = speechRecognitionConstructor();
+    if (Ctor === null) return;
+    const textarea = textareaRef.current;
+    const caret = textarea?.selectionStart ?? value.length;
+    dictatePrefixRef.current = value.slice(0, caret);
+    dictateSuffixRef.current = value.slice(caret);
+    const rec = new Ctor();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.onresult = (event) => {
+      applyDictationTranscript(transcriptFromSpeechResults(event.results));
+    };
+    rec.onerror = (event) => {
+      reportError(event, { operation: "composer.dictate" });
+      if (recognitionRef.current === rec) {
+        recognitionRef.current = null;
+        setListening(false);
+      }
+    };
+    rec.onend = () => {
+      if (recognitionRef.current !== rec) return;
+      recognitionRef.current = null;
+      setListening(false);
+    };
+    recognitionRef.current = rec;
+    try {
+      rec.start();
+      setListening(true);
+    } catch (cause) {
+      reportError(cause, { operation: "composer.dictate.start" });
+      recognitionRef.current = null;
+    }
+  }
+
+  function toggleDictation() {
+    if (listening) {
+      stopDictation();
+      return;
+    }
+    startDictation();
+  }
 
   useEffect(() => {
     if (!running) setStopping(false);
   }, [running]);
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.abort();
+      recognitionRef.current = null;
+    };
+  }, []);
 
   /** Auto-grow: the textarea reports its own content height, so the
    * measurement resets to the CSS-declared min-height before reading
@@ -454,6 +623,7 @@ export const Composer = forwardRef<
     ref,
     () => ({
       insertText: (text: string) => {
+        stopDictation();
         const textarea = textareaRef.current;
         const caret = textarea?.selectionStart ?? value.length;
         const result = insertTextAtCaret(value, caret, text);
@@ -464,6 +634,7 @@ export const Composer = forwardRef<
         });
       },
       setText: (text: string) => {
+        stopDictation();
         attachGenerationRef.current += 1;
         setValue(text);
         setMention(null);
@@ -675,6 +846,7 @@ export const Composer = forwardRef<
     if (!canSendComposerAction(value, attachments, { sending, preparing })) {
       return;
     }
+    stopDictation();
     const payload: ComposerSendPayload =
       pendingInvites.length > 0
         ? { text: value, attachments, invite: pendingInvites }
@@ -949,6 +1121,7 @@ export const Composer = forwardRef<
           onKeyDown={handleKeyDown}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
+          readOnly={listening}
           rows={1}
         />
         <div className="chat-composer-actions">
@@ -971,6 +1144,30 @@ export const Composer = forwardRef<
             {CHAT_STRINGS.composerKeyboardHint}
           </span>
           <div className="chat-composer-submit-actions">
+            {dictateAvailable ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="chat-composer-icon-button chat-composer-mic"
+                data-listening={listening ? "true" : "false"}
+                aria-pressed={listening}
+                disabled={sending || preparing}
+                onClick={toggleDictation}
+                aria-label={
+                  listening
+                    ? CHAT_STRINGS.composerDictateStop
+                    : CHAT_STRINGS.composerDictate
+                }
+                title={
+                  listening
+                    ? CHAT_STRINGS.composerDictateStop
+                    : CHAT_STRINGS.composerDictate
+                }
+              >
+                <Microphone aria-hidden="true" />
+              </Button>
+            ) : null}
             {canStopComposer({ running }) ? (
               <Button
                 type="button"
