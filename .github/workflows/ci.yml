@@ -62,6 +62,7 @@ jobs:
             vendor/intx/*/tsconfig.tsbuildinfo
             tsconfig.tsbuildinfo
             test/tsconfig.tsbuildinfo
+            test/isolation/tsconfig.tsbuildinfo
           key: typecheck-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version', 'tsconfig.base.json', 'scripts/generate-tsconfig-references.ts') }}-${{ github.sha }}
           restore-keys: |
             typecheck-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version', 'tsconfig.base.json', 'scripts/generate-tsconfig-references.ts') }}-
