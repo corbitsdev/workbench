@@ -545,6 +545,23 @@ export const chatMigrations: readonly ChatMigration[] = [
       );
     `,
   },
+  {
+    // CL-7104: the RFC 5322 `Message-ID` a timeline row was dispatched
+    // as. Derived from the row's own id, so there is nothing to
+    // backfill: a row dispatched before this landed answers to the same
+    // `<id@domain>` it always did, and a row that was never dispatched
+    // stays null. Indexed for the inbound direction — a reply's
+    // `In-Reply-To` names a Message-ID, and the row it belongs to is
+    // found by that header, never by the sender's address.
+    name: "0029_workbench_messages_mail_message_id",
+    sql: `
+      ALTER TABLE "chat"."workbench_messages"
+        ADD COLUMN IF NOT EXISTS "mail_message_id" text;
+
+      CREATE INDEX IF NOT EXISTS "workbench_messages_mail_message_id_idx"
+        ON "chat"."workbench_messages" ("tenant_id", "mail_message_id");
+    `,
+  },
 ];
 
 /**
