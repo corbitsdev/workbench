@@ -2,19 +2,19 @@ import { describe, expect, test } from "bun:test";
 
 import {
   bringInLoadErrorMessage,
-  buildTeamAvatarStack,
+  buildMemberAvatarStack,
 } from "./chat-workspace";
 import type { ParticipantRecord } from "./api";
 import { CHAT_STRINGS } from "./strings";
 
-describe("buildTeamAvatarStack (CL-6594)", () => {
+describe("buildMemberAvatarStack (CL-6594)", () => {
   test("gives every agent participant its own initial and its own generated color, never a shared fallback", () => {
     const participants: readonly ParticipantRecord[] = [
       { address: "run_myra@dana.localhost", handle: "myra" },
       { address: "run_scout@dana.localhost", handle: "scout" },
     ];
 
-    const stack = buildTeamAvatarStack(participants, []);
+    const stack = buildMemberAvatarStack(participants);
 
     expect(stack).toHaveLength(2);
     expect(stack.map((entry) => entry.initials)).toEqual(["M", "S"]);
@@ -31,26 +31,16 @@ describe("buildTeamAvatarStack (CL-6594)", () => {
     expect(myra?.color).not.toBe(scout?.color);
   });
 
-  test("keeps every agent visible alongside live humans, agents first", () => {
+  test("is the static roster only — live presence is a separate stack", () => {
     const participants: readonly ParticipantRecord[] = [
       { address: "run_myra@dana.localhost", handle: "myra" },
       { address: "run_scout@dana.localhost", handle: "scout" },
     ];
 
-    const stack = buildTeamAvatarStack(participants, [
-      {
-        principalId: "prn_dana",
-        displayName: "Dana",
-        color: "hsl(10 70% 60%)",
-        textColor: "#000000",
-      },
-    ]);
+    const stack = buildMemberAvatarStack(participants);
 
-    expect(stack.map((entry) => entry.label)).toEqual([
-      "Myra",
-      "Scout",
-      "Dana",
-    ]);
+    expect(stack.map((entry) => entry.label)).toEqual(["Myra", "Scout"]);
+    expect(stack.every((entry) => entry.tone === "agent")).toBe(true);
   });
 
   test("includes the signed-in human from the roster even with empty presence (CL-6779)", () => {
@@ -61,7 +51,7 @@ describe("buildTeamAvatarStack (CL-6594)", () => {
       { address: "prn_dana", handle: "Dana" },
     ];
 
-    const stack = buildTeamAvatarStack(participants, []);
+    const stack = buildMemberAvatarStack(participants);
 
     expect(stack.map((entry) => entry.label)).toEqual(["Myra", "Dana"]);
     expect(stack.map((entry) => entry.tone)).toEqual(["agent", "neutral"]);
@@ -71,23 +61,18 @@ describe("buildTeamAvatarStack (CL-6594)", () => {
     expect(human?.color).toBeDefined();
   });
 
-  test("dedupes a roster human who is also live in presence", () => {
+  test("prefers the signed-in display name over a raw participant handle", () => {
     const participants: readonly ParticipantRecord[] = [
-      { address: "run_myra@dana.localhost", handle: "myra" },
-      { address: "prn_dana", handle: "Dana" },
+      { address: "prn_self", handle: "ada-handle" },
     ];
 
-    const stack = buildTeamAvatarStack(participants, [
-      {
-        principalId: "prn_dana",
-        displayName: "Dana Live",
-        color: "hsl(10 70% 60%)",
-        textColor: "#000000",
-      },
-    ]);
+    const stack = buildMemberAvatarStack(participants, undefined, {
+      principalId: "prn_self",
+      name: "Ada Lovelace",
+    });
 
-    expect(stack.map((entry) => entry.label)).toEqual(["Myra", "Dana Live"]);
-    expect(stack[1]?.color).toBe("hsl(10 70% 60%)");
+    expect(stack.map((entry) => entry.label)).toEqual(["Ada Lovelace"]);
+    expect(stack.map((entry) => entry.initials)).toEqual(["A"]);
   });
 
   test("prefers resolved agent display names over handle slugs (CL-6424)", () => {
@@ -95,9 +80,8 @@ describe("buildTeamAvatarStack (CL-6594)", () => {
       { address: "run_myra@dana.localhost", handle: "myra" },
     ];
 
-    const stack = buildTeamAvatarStack(
+    const stack = buildMemberAvatarStack(
       participants,
-      [],
       new Map([["run_myra@dana.localhost", "Myra the Helper"]]),
     );
 

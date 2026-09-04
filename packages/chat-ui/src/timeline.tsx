@@ -2364,9 +2364,7 @@ export function WorkbenchTimeline({
             currentUser={currentUser}
             showDayDivider={showDayDivider}
             showHeader={showHeader}
-            {...(agentDisplayNames !== undefined
-              ? { agentDisplayNames }
-              : {})}
+            {...(agentDisplayNames !== undefined ? { agentDisplayNames } : {})}
             {...(collapsedJoinText !== undefined ? { collapsedJoinText } : {})}
             threadMeta={threadMetaByMessageId?.get(item.id)}
             threadAffordanceMode={threadAffordanceMode}

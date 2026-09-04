@@ -148,6 +148,10 @@ describe("workbench header presence stack", () => {
 
     const avatars = harness.container.querySelectorAll(".chat-presence-avatar");
     expect(avatars).toHaveLength(2);
+    expect(
+      harness.container.querySelector(".chat-presence-stack"),
+    ).not.toBeNull();
+    expect(harness.container.querySelector(".chat-member-stack")).toBeNull();
     harness.unmount();
   });
 

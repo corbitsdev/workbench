@@ -52,6 +52,7 @@ import {
   useOpenProfileInCanvas,
 } from "../shell/canvas-availability";
 import { useRegisterComposerInsert } from "../shell/composer-insertion";
+import { StageTopBar } from "../shell/stage-top-bar";
 import { tenantResolutionFromBench } from "../shell/tenant-resolution";
 
 export function ChatPage({
@@ -304,13 +305,17 @@ export function ChatPage({
       onNewWorkbench={() => navigate(NEW_WORKBENCH_PATH)}
       onBackToWorkbenchList={() => navigate(workbenchPath(null))}
       {...(onSignIn !== undefined ? { onSignIn } : {})}
+      headerSlot={(chrome) => (
+        <StageTopBar
+          crumbs={chrome.crumbs}
+          {...(chrome.subtitle !== undefined
+            ? { subtitle: chrome.subtitle }
+            : {})}
+          {...(chrome.actions !== undefined ? { actions: chrome.actions } : {})}
+        />
+      )}
     />
   );
 
-  // The conversation itself carries the open workbench's own name inline
-  // (see ChatWorkspace's `chat-workbench-header`) — that header IS the
-  // stage's page identity here, so no generic `StageTopBar` renders above
-  // it (CL-6089: a second "Workbenches" bar over the conversation's own
-  // header was a double identity, not two different things).
-  return workspace;
+  return <div className="flex h-full min-h-0 flex-col">{workspace}</div>;
 }

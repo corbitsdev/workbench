@@ -2007,7 +2007,7 @@ describe("Workbench header polish (CL-6106)", () => {
     harness.unmount();
   });
 
-  test("agent participant chips share the roster's circular avatar, naming the agent by display name (CL-6424 supersedes the raw-handle tooltip)", async () => {
+  test("agent participant chips live in the square member stack, naming the agent by display name (CL-6424 supersedes the raw-handle tooltip)", async () => {
     stubFetch(undefined, WORKBENCH_WITH_AGENT_WIRE);
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
@@ -2016,7 +2016,7 @@ describe("Workbench header polish (CL-6106)", () => {
     await harness.settle();
 
     const chip = harness.container.querySelector(
-      '.chat-presence-avatar[data-agent="true"]',
+      '.chat-member-avatar[data-agent="true"]',
     );
     expect(chip).not.toBeNull();
     expect((chip as HTMLElement).title).toBe("Researcher");
@@ -2041,6 +2041,54 @@ describe("Workbench header polish (CL-6106)", () => {
 
     const actions = harness.container.querySelector(".chat-workbench-actions");
     expect(actions?.lastElementChild?.contains(button)).toBe(true);
+    harness.unmount();
+  });
+
+  test("headerSlot lifts identity and actions out of the in-stage header", async () => {
+    stubFetch();
+    const harness = await mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "ch_1",
+      headerSlot: (chrome) =>
+        createElement(
+          "div",
+          { "data-testid": "host-stage-bar" },
+          chrome.crumbs.map((crumb) => crumb.label).join(" / "),
+          chrome.actions,
+        ),
+    });
+    await harness.settle();
+
+    expect(
+      harness.container.querySelector(".chat-workbench-header"),
+    ).toBeNull();
+    const hostBar = harness.container.querySelector(
+      '[data-testid="host-stage-bar"]',
+    );
+    expect(hostBar).not.toBeNull();
+    expect(hostBar?.textContent).toContain("Launch Planning");
+    expect(
+      harness.container.querySelector('button[aria-label="Settings"]'),
+    ).not.toBeNull();
+    harness.unmount();
+  });
+
+  test("headerSlot still titles the stage while the tenant is loading", async () => {
+    const harness = await mount({
+      tenant: { kind: "loading" },
+      headerSlot: (chrome) =>
+        createElement(
+          "div",
+          { "data-testid": "host-stage-bar" },
+          chrome.crumbs[0]?.label,
+        ),
+    });
+    await harness.settle();
+
+    expect(
+      harness.container.querySelector('[data-testid="host-stage-bar"]')
+        ?.textContent,
+    ).toBe("Workbenches");
     harness.unmount();
   });
 });

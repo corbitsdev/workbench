@@ -32,7 +32,9 @@ describe("displayNameForAddress", () => {
     const names = agentDisplayNamesFromAgents([
       { address: "ins_echo@acme.example", displayName: "Myra" },
     ]);
-    expect(displayNameForAddress("ins_other@acme.example", names)).toBeUndefined();
+    expect(
+      displayNameForAddress("ins_other@acme.example", names),
+    ).toBeUndefined();
   });
 
   test("is undefined without a snapshot so the caller falls back", () => {

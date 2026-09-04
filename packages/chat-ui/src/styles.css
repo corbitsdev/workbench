@@ -3058,40 +3058,33 @@
   text-underline-offset: 2px;
 }
 
-.chat-team-stack {
-  display: flex;
-  align-items: center;
-}
-
-.chat-team-stack-overflow {
-  display: grid;
-  place-items: center;
-  width: 1.5rem;
-  height: 1.5rem;
-  flex-shrink: 0;
-  border-radius: 50%;
-  border: 1.5px solid var(--background);
-  margin-left: -0.35rem;
-  background: var(--muted);
-  color: var(--muted-foreground);
-  font-size: 0.625rem;
-  font-weight: 700;
-  line-height: 1;
-}
-
 .chat-member-stack {
   display: flex;
   align-items: center;
 }
 
-.chat-member-avatar {
-  display: inline-flex;
-  margin-left: -0.35rem;
+.chat-member-avatar,
+.chat-member-stack-overflow {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+  border-radius: 0;
   border: 1.5px solid var(--background);
+  margin-left: -0.35rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .chat-member-avatar:first-child {
   margin-left: 0;
+}
+
+.chat-member-stack-overflow {
+  background: var(--muted);
+  color: var(--muted-foreground);
 }
 
 /* Settings sits apart from the quiet New routine / Insights pair — a hairline
