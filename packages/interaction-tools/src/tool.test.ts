@@ -53,7 +53,11 @@ test("ask_user posts a question block and suspends on a message_response gate", 
   const fetchImpl = (async () => {
     posted = true;
     return new Response(
-      JSON.stringify({ id: "msg_1", createdAt: "2026-08-17T00:00:00.000Z" }),
+      JSON.stringify({
+        id: "msg_1",
+        createdAt: "2026-08-17T00:00:00.000Z",
+        mailMessageId: "<msg_1@ten1.workbench.test>",
+      }),
       { status: 201 },
     );
   }) as unknown as typeof fetch;
@@ -79,10 +83,10 @@ test("ask_user posts a question block and suspends on a message_response gate", 
   expect(decision.pendingOp.kind).toBe("message_response");
   expect(decision.pendingOp.suspendedCall).toEqual(call);
   expect(decision.pendingOp.correlationId).toBe(decision.gate.correlationId);
-  // Derived from the tool-call id (`q_<hex32>`), not minted per attempt —
-  // the gate and the question card share one id, and a retry of the same
-  // call reuses it.
-  expect(decision.gate.correlationId).toMatch(/^q_[0-9a-f]{32}$/);
+  // The gate waits on the question card's own RFC 5322 Message-ID
+  // (CL-7104): the answer is a reply whose `In-Reply-To` names exactly
+  // that, so the key and the header on the wire are one value.
+  expect(decision.gate.correlationId).toBe("<msg_1@ten1.workbench.test>");
 });
 
 test("retrying ask_user for the same call reuses the questionId so a crash between post and suspend cannot orphan a second card", async () => {
@@ -97,8 +101,9 @@ test("retrying ask_user for the same call reuses the questionId so a crash betwe
     if (typeof questionId === "string") postedQuestionIds.push(questionId);
     return new Response(
       JSON.stringify({
-        id: `msg_${postedQuestionIds.length}`,
+        id: "msg_1",
         createdAt: "2026-08-17T00:00:00.000Z",
+        mailMessageId: "<msg_1@ten1.workbench.test>",
       }),
       { status: 201 },
     );
@@ -127,8 +132,10 @@ test("retrying ask_user for the same call reuses the questionId so a crash betwe
   if (first.type !== "suspend" || second.type !== "suspend") {
     throw new Error("expected both retries to suspend");
   }
-  expect(first.gate.correlationId).toBe(reusedId);
-  expect(second.gate.correlationId).toBe(reusedId);
+  // A retry re-posts the same question id, the write path returns the
+  // existing card, and with it the same Message-ID the gate is armed on.
+  expect(first.gate.correlationId).toBe("<msg_1@ten1.workbench.test>");
+  expect(second.gate.correlationId).toBe("<msg_1@ten1.workbench.test>");
 });
 
 test("ask_user rejects fewer than 2 options before ever posting", async () => {

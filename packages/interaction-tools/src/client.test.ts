@@ -21,7 +21,11 @@ test("postQuestion posts a question block to the workflow-chat participants/mess
     seenHeaders = init?.headers as Record<string, string>;
     seenBody = JSON.parse(String(init?.body));
     return new Response(
-      JSON.stringify({ id: "msg_1", createdAt: "2026-08-17T00:00:00.000Z" }),
+      JSON.stringify({
+        id: "msg_1",
+        createdAt: "2026-08-17T00:00:00.000Z",
+        mailMessageId: "<msg_1@ten1.workbench.test>",
+      }),
       { status: 201 },
     );
   }) as unknown as typeof fetch;
@@ -66,7 +70,11 @@ test("postQuestion stamps a caller-supplied questionId on the card instead of mi
   const fetchImpl = (async (_url: string | URL, init?: RequestInit) => {
     seenBody = JSON.parse(String(init?.body));
     return new Response(
-      JSON.stringify({ id: "msg_1", createdAt: "2026-08-17T00:00:00.000Z" }),
+      JSON.stringify({
+        id: "msg_1",
+        createdAt: "2026-08-17T00:00:00.000Z",
+        mailMessageId: "<msg_1@ten1.workbench.test>",
+      }),
       { status: 201 },
     );
   }) as unknown as typeof fetch;

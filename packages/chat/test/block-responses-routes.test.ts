@@ -8,6 +8,7 @@ import { describe, expect, test } from "bun:test";
 import { createChatRoutes } from "../src/routes";
 import { createInMemoryBlockResponseStore } from "../src/block-responses";
 import { createInMemoryChatStore } from "../src/store";
+import { createInMemoryThreadStore } from "../src/threads";
 import type { ChatStore } from "../src/store";
 import { createInMemoryRoomMessageStore } from "../src/room-messages";
 import type { RoomMessageStore } from "../src/room-messages";
@@ -16,6 +17,7 @@ import {
   createWorkbench,
   fakePlatform,
   mountAs,
+  settleFanout,
   TENANT,
   timelineEvents,
   timelineOf,
@@ -329,6 +331,62 @@ describe("block response routes — question answers", () => {
     });
     expect((body.own as { notifiedAt: unknown }).notifiedAt).toEqual(
       expect.any(String),
+    );
+  });
+
+  test("a question answer is dispatched as a reply to the card's own Message-ID, and never to another question's (CL-7104)", async () => {
+    const platform = fakePlatform();
+    const deps = buildDeps({
+      platform,
+      blockResponses: createInMemoryBlockResponseStore(),
+      threads: createInMemoryThreadStore(),
+    });
+    const app = mountAs(createChatRoutes(deps), "prn_alice");
+    const { body: workbench } = await createWorkbench(app, {
+      kind: "workbench",
+      name: "interview",
+      participants: ["ins_echo1@acme.example"],
+    });
+
+    // Two live question cards from the same agent, in the same room.
+    const cardOne = await deps.roomMessages.insertMessage({
+      id: "msg_card_one",
+      tenantId: TENANT.id,
+      workbenchId: workbench.id,
+      sender: { name: null, address: "ins_echo1@acme.example" },
+      parts: [{ kind: "text", text: "Which environment?" }],
+    });
+    const cardTwo = await deps.roomMessages.insertMessage({
+      id: "msg_card_two",
+      tenantId: TENANT.id,
+      workbenchId: workbench.id,
+      sender: { name: null, address: "ins_echo1@acme.example" },
+      parts: [{ kind: "text", text: "Which region?" }],
+    });
+
+    const answerTwo = await app.request(
+      responsesUrl(workbench.id, cardTwo.id, "q_two"),
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "question", answer: "eu-west-1" }),
+      },
+    );
+    expect(answerTwo.status).toBe(200);
+    await settleFanout();
+
+    // The gate the answer resolves is the one armed on THIS card's
+    // Message-ID: the dispatch names it in `In-Reply-To`, and there is
+    // no correlation field anywhere on the wire.
+    const dispatched = platform.sentMail[platform.sentMail.length - 1];
+    expect(dispatched?.content.inReplyTo).toBe(`<${cardTwo.id}@acme.example>`);
+    expect(dispatched?.content.references).toEqual([
+      `<${cardTwo.id}@acme.example>`,
+    ]);
+    // An answer to the second question never names the first, so a gate
+    // parked on the first card is left parked.
+    expect(dispatched?.content.inReplyTo).not.toBe(
+      `<${cardOne.id}@acme.example>`,
     );
   });
 
