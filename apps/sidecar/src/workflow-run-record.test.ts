@@ -39,7 +39,7 @@ const SINGLE_STEP: WorkflowRunRecord = {
         id: "anthropic:mock",
         provider: "anthropic",
         baseURL: "https://api.example/anthropic",
-        apiKey: "sk-x",
+        credentialId: "sk-x",
         model: "claude-mock",
       },
     ],
@@ -72,7 +72,7 @@ const MULTI_STEP: WorkflowRunRecord = {
         id: "anthropic:mock",
         provider: "anthropic",
         baseURL: "https://api.example/anthropic",
-        apiKey: "sk-y",
+        credentialId: "sk-y",
         model: "claude-mock",
       },
     ],
@@ -81,7 +81,7 @@ const MULTI_STEP: WorkflowRunRecord = {
         id: "openai:mock",
         provider: "openai",
         baseURL: "https://api.example/openai",
-        apiKey: "sk-z",
+        credentialId: "sk-z",
         model: "gpt-mock",
       },
     ],
@@ -111,7 +111,7 @@ const SOURCE_REF: WorkflowRunRecord = {
         id: "anthropic:mock",
         provider: "anthropic",
         baseURL: "https://api.example/anthropic",
-        apiKey: "sk-s",
+        credentialId: "sk-s",
         model: "claude-mock",
       },
     ],
@@ -192,7 +192,7 @@ describe("workflow run record store", () => {
     const anchorRunId = "abc123-tenant-example";
     await writeWorkflowRunRecord(dataDir, anchorRunId, SINGLE_STEP);
 
-    // The record embeds source apiKeys, so it must not be group/world
+    // The record names source credentialIds, so it must not be group/world
     // readable on a shared host.
     const stat = await fs.stat(recordPath(dataDir, anchorRunId));
     expect(stat.mode & 0o077).toBe(0);

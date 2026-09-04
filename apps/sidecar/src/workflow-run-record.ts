@@ -22,6 +22,8 @@ import { dirname, join as pathJoin } from "node:path";
 
 import { type } from "arktype";
 
+import { reportError } from "@corbits/error-sink";
+
 import { getLogger } from "@intx/log";
 import { InferenceSource } from "@intx/types/runtime";
 import { SourceRefPin } from "@intx/types/sidecar";
@@ -104,9 +106,9 @@ export async function writeWorkflowRunRecord(
   // run's `sources`/`hubPublicKey`, and a rotation overwrites the
   // existing record in place, so an interrupted write must never expose a
   // torn record the boot scan would then skip. Owner-only (0o600): the
-  // record embeds each source's `apiKey`, so it must not be world-readable
-  // on a shared host, matching the private-key writes elsewhere on the
-  // sidecar.
+  // record names each source's `credentialId` and the run's routing
+  // identity, so it must not be world-readable on a shared host, matching
+  // the private-key writes elsewhere on the sidecar.
   await writeFileAtomicDurable(path, JSON.stringify(record, null, 2), {
     mode: 0o600,
   });
@@ -179,8 +181,14 @@ export async function scanWorkflowRunRecords(
     try {
       parsed = JSON.parse(raw);
     } catch (cause) {
-      const reason = cause instanceof Error ? cause.message : String(cause);
-      logger.warn`skipping workflow-runs/${runId}: ${RECORD_FILENAME} is not valid JSON: ${reason}`;
+      // A corrupt record is skipped rather than thrown, so one unreadable
+      // run cannot block recovery of every other run in the scan. It is
+      // still a real defect -- a torn write or a hand-edited file -- so it
+      // is reported, not just logged.
+      reportError(cause, {
+        operation: "workflow-run-record.scan",
+        extra: { runId },
+      });
       continue;
     }
 

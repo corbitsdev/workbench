@@ -33,7 +33,7 @@ describe("workflow deployment lifecycle through the deploy router", () => {
           id: "body-step",
           provider: "anthropic",
           baseURL: "https://api.anthropic.com",
-          apiKey: "sk-body",
+          credentialId: "sk-body",
           model: "claude-3-5",
         },
       ],

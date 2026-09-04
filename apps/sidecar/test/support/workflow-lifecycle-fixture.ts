@@ -425,7 +425,7 @@ export function makeWorkflowFrame(agentAddress: string): AgentDeployFrame {
             id: "step-1",
             provider: "anthropic",
             baseURL: "https://api.anthropic.com",
-            apiKey: "sk-step-1",
+            credentialId: "sk-step-1",
             model: "claude-3-5",
           },
         ],
