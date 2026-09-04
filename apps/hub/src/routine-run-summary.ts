@@ -8,6 +8,7 @@ import { and, eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { workflowRun } from "@intx/db/schema";
 import type { RunSummaryResolver } from "@corbits/routines";
+import { listingTurnsByRunId } from "@corbits/run-scope";
 
 export function createHubRunSummaryResolver(db: DB["db"]): RunSummaryResolver {
   return {
@@ -19,10 +20,13 @@ export function createHubRunSummaryResolver(db: DB["db"]): RunSummaryResolver {
         ),
       });
       if (row === undefined) return undefined;
+      const turns = (await listingTurnsByRunId(db, [runId])).get(runId) ?? [];
       return {
         status: row.status,
         createdAt: row.createdAt.toISOString(),
         endedAt: row.endedAt?.toISOString() ?? null,
+        hasInFlightTurn: turns.length > 0,
+        turns,
       };
     },
   };

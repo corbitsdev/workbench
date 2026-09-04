@@ -9,6 +9,12 @@
 // routine's condition have to agree, and they can only agree if there is
 // one function that decides.
 
+/** One turn on a listing-shaped payload — enough to tell in-flight from settled. */
+export type ListingTurn = {
+  readonly status: string;
+  readonly endedAt?: string | null;
+};
+
 /** The per-fire history row this module reads — structurally the subset of
  * `./client`'s `RoutineRun` that says whether a fire worked and how long
  * it took. Declared here rather than imported so `./client` can re-export
@@ -25,6 +31,25 @@ export type RoutineFire = {
    * fire still doing work stays `running` however old it is.
    */
   readonly abandoned?: boolean;
+  /**
+   * True when the listing already resolved an in-flight turn for this
+   * fire. Equivalent to `turns` containing a running turn; either form
+   * keeps a live tool-loop `running` past `FIRE_RUNNING_WINDOW_MS`.
+   */
+  readonly hasInFlightTurn?: boolean;
+  /** Listing-shaped turns for this fire, when the producer attached them. */
+  readonly turns?: readonly ListingTurn[];
+};
+
+/** A listing row (Insights fire, shell activity, reconstructed Mission
+ * Control row, or a routine fire) from which abandonment can be derived
+ * without a dedicated Interchange field. */
+export type ListingRun = {
+  readonly createdAt: string;
+  readonly abandoned?: boolean;
+  readonly hasInFlightTurn?: boolean;
+  readonly turns?: readonly ListingTurn[];
+  readonly run?: Record<string, unknown>;
 };
 
 /** The routine fields health depends on — every one of them already
@@ -78,6 +103,21 @@ function statusOf(fire: {
   return typeof status === "string" ? status : null;
 }
 
+function isInFlightTurn(turn: unknown): boolean {
+  if (typeof turn !== "object" || turn === null) return false;
+  const status = "status" in turn ? turn.status : undefined;
+  if (status !== "running") return false;
+  const endedAt = "endedAt" in turn ? turn.endedAt : undefined;
+  return endedAt === undefined || endedAt === null || endedAt === "";
+}
+
+function nestedTurns(
+  run: Record<string, unknown> | undefined,
+): readonly unknown[] | undefined {
+  const turns = run?.turns;
+  return Array.isArray(turns) ? turns : undefined;
+}
+
 /**
  * How long an *abandoned* fire may linger as `running` with no `endedAt`
  * before it is read as completed (warm-keep CL-6681 / CL-6778). A finished
@@ -89,13 +129,79 @@ function statusOf(fire: {
  */
 export const FIRE_RUNNING_WINDOW_MS = 10 * 60 * 1000;
 
+type InFlightSignal = "yes" | "no" | "unknown";
+
+function runHasInFlightTurn(run: Record<string, unknown> | undefined): boolean {
+  return run?.hasInFlightTurn === true;
+}
+
+function runHasNoInFlightTurn(
+  run: Record<string, unknown> | undefined,
+): boolean {
+  return run?.hasInFlightTurn === false;
+}
+
+/**
+ * Absent `turns` / `hasInFlightTurn` is unknown, not "no in-flight turn".
+ * Treating omit as empty reverts the live-tool-loop 10-minute false-complete.
+ */
+function listingInFlightSignal(listing: ListingRun): InFlightSignal {
+  if (listing.hasInFlightTurn === true || runHasInFlightTurn(listing.run)) {
+    return "yes";
+  }
+  if (listing.turns?.some(isInFlightTurn) === true) return "yes";
+  const nested = nestedTurns(listing.run);
+  if (nested?.some(isInFlightTurn) === true) return "yes";
+  if (listing.turns !== undefined) return "no";
+  if (nested !== undefined) return "no";
+  if (listing.hasInFlightTurn === false || runHasNoInFlightTurn(listing.run)) {
+    return "no";
+  }
+  return "unknown";
+}
+
+/**
+ * A listing row has an in-flight turn when the producer said so
+ * (`hasInFlightTurn`) or attached a running turn (top-level `turns` or
+ * nested on `run`). A finished turn (`endedAt` set, or status other than
+ * `running`) does not count. Omitted fields are unknown, not false.
+ */
+export function listingHasInFlightTurn(listing: ListingRun): boolean {
+  return listingInFlightSignal(listing) === "yes";
+}
+
+/**
+ * Abandoned only when the producer explicitly said there is no in-flight
+ * turn — an empty `turns` array after a real query, or `hasInFlightTurn:
+ * false` — and the fire is older than `FIRE_RUNNING_WINDOW_MS`. Omitting
+ * those fields is not a no; a live tool-loop listing that has not attached
+ * them must stay running.
+ */
+export function listingAbandoned(listing: ListingRun, now: number): boolean {
+  if (listingInFlightSignal(listing) !== "no") return false;
+  const startedAt = Date.parse(listing.createdAt);
+  if (Number.isNaN(startedAt)) return false;
+  return now - startedAt > FIRE_RUNNING_WINDOW_MS;
+}
+
+/** Pass `abandoned: true` into outcome helpers when the listing is abandoned. */
+export function withListingAbandoned<T extends ListingRun>(
+  listing: T,
+  now: number,
+): T {
+  if (!listingAbandoned(listing, now)) return listing;
+  return { ...listing, abandoned: true };
+}
+
 /**
  * A fire's status the way this build should show it: the raw
  * `run.status` for every non-running value; a `running` row that
  * already carries `endedAt` is finished immediately (the persist
- * path); a `running` row with no `endedAt` stays `running` until
- * persist settles, unless the fire is already known abandoned —
- * only then does `FIRE_RUNNING_WINDOW_MS` remap it to `completed`.
+ * path); a `running` row with an in-flight turn stays `running`
+ * however old it is; a `running` row whose listing explicitly says
+ * there is no in-flight turn is abandoned past `FIRE_RUNNING_WINDOW_MS`
+ * and remapped to `completed`. Omitting `turns`/`hasInFlightTurn` is
+ * not that signal — the fire stays `running`.
  * Every caller that needs a fire's displayed status goes through here,
  * never `fire.run?.status` directly.
  */
@@ -103,6 +209,8 @@ export function fireOutcomeStatus(
   fire: Pick<RoutineFire, "createdAt"> & {
     readonly run?: Record<string, unknown>;
     readonly abandoned?: boolean;
+    readonly hasInFlightTurn?: boolean;
+    readonly turns?: readonly ListingTurn[];
   },
   now: number,
 ): string | null {
@@ -110,7 +218,9 @@ export function fireOutcomeStatus(
   if (status !== "running") return status;
   const endedAt = fire.run?.endedAt;
   if (typeof endedAt === "string" && endedAt !== "") return "completed";
-  if (fire.abandoned !== true) return status;
+  if (listingHasInFlightTurn(fire)) return status;
+  const abandoned = fire.abandoned === true || listingAbandoned(fire, now);
+  if (!abandoned) return status;
   const startedAt = Date.parse(fire.createdAt);
   if (Number.isNaN(startedAt)) return status;
   return now - startedAt > FIRE_RUNNING_WINDOW_MS ? "completed" : "running";
@@ -121,9 +231,10 @@ export function fireOutcomeStatus(
  * level (`workflow_run.status`), not nested on a routine fire's `run`.
  * Insights, Mission Control, and the shell activity feed all see that
  * shape. `endedAt` is the persist-path signal that the fire already
- * finished. The running-window is only for fires already known
- * abandoned (`abandoned: true`) that never got that stamp — a live
- * in-flight run stays `running` however old it is.
+ * finished. A listing-shaped payload with an in-flight turn stays
+ * `running` however old it is; one that explicitly says there is no
+ * in-flight turn is abandoned past `FIRE_RUNNING_WINDOW_MS` and
+ * remapped to `completed`. Omitting those fields is not a no.
  */
 export function runOutcomeStatus(
   run: {
@@ -131,14 +242,21 @@ export function runOutcomeStatus(
     readonly status: string;
     readonly endedAt?: string | null;
     readonly abandoned?: boolean;
+    readonly hasInFlightTurn?: boolean;
+    readonly turns?: readonly ListingTurn[];
   },
   now: number,
 ): string | null {
+  const listing = withListingAbandoned(run, now);
   return fireOutcomeStatus(
     {
-      createdAt: run.createdAt,
-      ...(run.abandoned === true ? { abandoned: true } : {}),
-      run: { status: run.status, endedAt: run.endedAt },
+      createdAt: listing.createdAt,
+      ...(listing.abandoned === true ? { abandoned: true } : {}),
+      ...(listing.hasInFlightTurn !== undefined
+        ? { hasInFlightTurn: listing.hasInFlightTurn }
+        : {}),
+      ...(listing.turns !== undefined ? { turns: listing.turns } : {}),
+      run: { status: listing.status, endedAt: listing.endedAt },
     },
     now,
   );

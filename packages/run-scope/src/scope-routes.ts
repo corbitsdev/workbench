@@ -34,6 +34,7 @@ import { workflowDefinition, workflowRun } from "@intx/db/schema";
 import type { WorkflowRunStatus } from "@intx/types";
 import { foldedRun } from "@corbits/folded-runs";
 import { makeErrorEnvelope } from "@corbits/error-sink";
+import { listingTurnsByRunId } from "./in-flight-turns";
 
 /** A routine fire's parent, resolved by `resolveRoutineFires` below. */
 export type RoutineFireInfo = {
@@ -255,28 +256,37 @@ export async function listTopLevelRunFires(
       ? await resolveRoutineFires(foldedIds)
       : new Map<string, RoutineFireInfo>();
 
-  return rows
-    .filter((row) => row.foldedMarkerId === null || routineFires.has(row.id))
-    .map((row) => {
-      const fire = routineFires.get(row.id);
-      return {
-        id: row.id,
-        definitionId: row.definitionId,
-        definitionName: row.definitionName,
-        tenantId: row.tenantId,
-        // Guarded by `isNotNull(workflowRun.address)` above.
-        address: row.address as string,
-        status: toViewStatus(row.status),
-        publicKey: row.publicKey,
-        kernelId: row.kernelId,
-        sidecarId: row.sidecarId,
-        createdAt: toTimestamp(row.createdAt),
-        updatedAt: toTimestamp(row.endedAt ?? row.createdAt),
-        endedAt: row.endedAt ? toTimestamp(row.endedAt) : null,
-        routineId: fire?.routineId ?? null,
-        routineName: fire?.routineName ?? null,
-      };
-    });
+  const kept = rows.filter(
+    (row) => row.foldedMarkerId === null || routineFires.has(row.id),
+  );
+  const turnsByRun = await listingTurnsByRunId(
+    db,
+    kept.map((row) => row.id),
+  );
+
+  return kept.map((row) => {
+    const fire = routineFires.get(row.id);
+    const turns = turnsByRun.get(row.id) ?? [];
+    return {
+      id: row.id,
+      definitionId: row.definitionId,
+      definitionName: row.definitionName,
+      tenantId: row.tenantId,
+      // Guarded by `isNotNull(workflowRun.address)` above.
+      address: row.address as string,
+      status: toViewStatus(row.status),
+      publicKey: row.publicKey,
+      kernelId: row.kernelId,
+      sidecarId: row.sidecarId,
+      createdAt: toTimestamp(row.createdAt),
+      updatedAt: toTimestamp(row.endedAt ?? row.createdAt),
+      endedAt: row.endedAt ? toTimestamp(row.endedAt) : null,
+      routineId: fire?.routineId ?? null,
+      routineName: fire?.routineName ?? null,
+      hasInFlightTurn: turns.length > 0,
+      turns,
+    };
+  });
 }
 
 /**

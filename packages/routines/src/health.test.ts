@@ -5,6 +5,8 @@ import {
   FIRE_RUNNING_WINDOW_MS,
   fireOutcomeStatus,
   lastFailedFire,
+  listingAbandoned,
+  listingHasInFlightTurn,
   medianFireDurationMs,
   routineHealth,
   runOutcomeStatus,
@@ -115,6 +117,26 @@ describe("fireOutcomeStatus", () => {
       ),
     ).toBe("failed");
   });
+
+  test("listing-shaped empty turns past the window settles to completed", () => {
+    const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+    expect(
+      fireOutcomeStatus(
+        fire("r1", { turns: [] }, { status: "running" }),
+        staleNow,
+      ),
+    ).toBe("completed");
+  });
+
+  test("listing-shaped hasInFlightTurn true past the window stays running", () => {
+    const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+    expect(
+      fireOutcomeStatus(
+        fire("r1", { hasInFlightTurn: true }, { status: "running" }),
+        staleNow,
+      ),
+    ).toBe("running");
+  });
 });
 
 describe("runOutcomeStatus", () => {
@@ -167,6 +189,127 @@ describe("runOutcomeStatus", () => {
     expect(
       runOutcomeStatus({ createdAt: FIRE_CREATED_AT, status: "stopped" }, NOW),
     ).toBe("stopped");
+  });
+});
+
+describe("listingAbandoned", () => {
+  const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+  const listing = { createdAt: FIRE_CREATED_AT };
+
+  test("omitted turns and hasInFlightTurn is not abandoned past the window", () => {
+    expect(listingAbandoned(listing, staleNow)).toBe(false);
+    expect(listingHasInFlightTurn(listing)).toBe(false);
+  });
+
+  test("empty turns after a real query past the window is abandoned", () => {
+    expect(listingAbandoned({ ...listing, turns: [] }, staleNow)).toBe(true);
+  });
+
+  test("hasInFlightTurn false past the window is abandoned", () => {
+    expect(
+      listingAbandoned({ ...listing, hasInFlightTurn: false }, staleNow),
+    ).toBe(true);
+  });
+
+  test("hasInFlightTurn true past the window is not abandoned", () => {
+    expect(
+      listingAbandoned({ ...listing, hasInFlightTurn: true }, staleNow),
+    ).toBe(false);
+    expect(listingHasInFlightTurn({ ...listing, hasInFlightTurn: true })).toBe(
+      true,
+    );
+  });
+
+  test("a running turn past the window is not abandoned", () => {
+    expect(
+      listingAbandoned(
+        { ...listing, turns: [{ status: "running", endedAt: null }] },
+        staleNow,
+      ),
+    ).toBe(false);
+  });
+
+  test("finished turns only past the window is abandoned", () => {
+    expect(
+      listingAbandoned(
+        {
+          ...listing,
+          turns: [{ status: "completed", endedAt: "2026-01-01T00:01:00.000Z" }],
+        },
+        staleNow,
+      ),
+    ).toBe(true);
+  });
+
+  test("empty nested run.turns past the window is abandoned", () => {
+    expect(listingAbandoned({ ...listing, run: { turns: [] } }, staleNow)).toBe(
+      true,
+    );
+  });
+
+  test("empty turns inside the window is not abandoned", () => {
+    expect(listingAbandoned({ ...listing, turns: [] }, NOW)).toBe(false);
+  });
+});
+
+describe("runOutcomeStatus listing-shaped", () => {
+  const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+
+  test("missing turns past the window stays running", () => {
+    expect(
+      runOutcomeStatus(
+        { createdAt: FIRE_CREATED_AT, status: "running" },
+        staleNow,
+      ),
+    ).toBe("running");
+  });
+
+  test("empty turns past the window settles to completed", () => {
+    expect(
+      runOutcomeStatus(
+        { createdAt: FIRE_CREATED_AT, status: "running", turns: [] },
+        staleNow,
+      ),
+    ).toBe("completed");
+  });
+
+  test("hasInFlightTurn false past the window settles to completed", () => {
+    expect(
+      runOutcomeStatus(
+        {
+          createdAt: FIRE_CREATED_AT,
+          status: "running",
+          hasInFlightTurn: false,
+        },
+        staleNow,
+      ),
+    ).toBe("completed");
+  });
+
+  test("hasInFlightTurn true past the window stays running", () => {
+    expect(
+      runOutcomeStatus(
+        {
+          createdAt: FIRE_CREATED_AT,
+          status: "running",
+          hasInFlightTurn: true,
+        },
+        staleNow,
+      ),
+    ).toBe("running");
+  });
+
+  test("a running listing turn past the window stays running", () => {
+    expect(
+      runOutcomeStatus(
+        {
+          createdAt: FIRE_CREATED_AT,
+          status: "running",
+          turns: [{ status: "running", endedAt: null }],
+        },
+        staleNow,
+      ),
+    ).toBe("running");
   });
 });
 

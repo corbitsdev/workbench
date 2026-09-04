@@ -32,7 +32,11 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { formatUsd } from "@corbits/insights/client";
 import { CHAT_STRINGS, type Workbench } from "@corbits/chat-ui";
-import { runOutcomeStatus, runStatusLabel } from "@corbits/routines/client";
+import {
+  runOutcomeStatus,
+  runStatusLabel,
+  withListingAbandoned,
+} from "@corbits/routines/client";
 
 import { approveApproval, rejectApproval, useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
@@ -64,19 +68,27 @@ type InFlightRow = {
   readonly steps: string;
 };
 
+function listingFromRoutine(routine: RoutineActivityItem, now: number) {
+  return withListingAbandoned(
+    {
+      createdAt: routine.startedAt,
+      status: routine.status,
+      ...(routine.endedAt !== undefined ? { endedAt: routine.endedAt } : {}),
+      ...(routine.hasInFlightTurn !== undefined
+        ? { hasInFlightTurn: routine.hasInFlightTurn }
+        : {}),
+      ...(routine.turns !== undefined ? { turns: routine.turns } : {}),
+    },
+    now,
+  );
+}
+
 function routineInFlightRow(
   routine: RoutineActivityItem,
   now: number,
 ): InFlightRow {
   const status =
-    runOutcomeStatus(
-      {
-        createdAt: routine.startedAt,
-        status: routine.status,
-        ...(routine.endedAt !== undefined ? { endedAt: routine.endedAt } : {}),
-      },
-      now,
-    ) ?? routine.status;
+    runOutcomeStatus(listingFromRoutine(routine, now), now) ?? routine.status;
   return {
     key: `routine:${routine.id}`,
     label: routine.name,
@@ -97,16 +109,7 @@ export function computeInFlightRows(
   const rows = routines
     .filter(
       (routine) =>
-        runOutcomeStatus(
-          {
-            createdAt: routine.startedAt,
-            status: routine.status,
-            ...(routine.endedAt !== undefined
-              ? { endedAt: routine.endedAt }
-              : {}),
-          },
-          now,
-        ) === "running",
+        runOutcomeStatus(listingFromRoutine(routine, now), now) === "running",
     )
     .map((routine) => routineInFlightRow(routine, now));
   return rows.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));

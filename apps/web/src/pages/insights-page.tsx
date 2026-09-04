@@ -32,7 +32,11 @@ import {
   type TraceSpan,
 } from "@corbits/react-ui";
 import { ChartBar } from "@corbits/icons";
-import { runOutcomeStatus, runStatusLabel } from "@corbits/routines/client";
+import {
+  runOutcomeStatus,
+  runStatusLabel,
+  withListingAbandoned,
+} from "@corbits/routines/client";
 import type * as React from "react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -469,19 +473,19 @@ function useTickingNow(enabled: boolean): number {
  * liveness is not a windowed property, so this filters the full run set,
  * never the range-filtered one. A persisted `endedAt` means the fire
  * already finished, even if `status` still reads `running`. A live fire
- * with no `endedAt` stays in flight however old it is — the running
- * window is only for fires already known abandoned.
+ * with an in-flight turn stays in flight however old it is; without an
+ * explicit no-in-flight signal, missing `turns` is not abandonment.
  */
 export function isRunningNow(
   run: InsightsRun,
   now: number = Date.now(),
 ): boolean {
-  const outcome = runOutcomeStatus(run, now);
+  const outcome = runOutcomeStatus(withListingAbandoned(run, now), now);
   return outcome === "running" || outcome === "updating";
 }
 
 function insightsRunStatus(run: InsightsRun, now: number = Date.now()): string {
-  return runOutcomeStatus(run, now) ?? run.status;
+  return runOutcomeStatus(withListingAbandoned(run, now), now) ?? run.status;
 }
 
 /**
