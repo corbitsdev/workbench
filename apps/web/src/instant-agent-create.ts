@@ -73,6 +73,16 @@ export class WorkbenchPreconditionError extends Error {
   }
 }
 
+export class WorkbenchPostCreateError extends Error {
+  constructor(
+    readonly workbenchId: string,
+    readonly stage: "opening-message" | "rename",
+    cause: unknown,
+  ) {
+    super("The workbench was created, but setup did not finish.", { cause });
+  }
+}
+
 /**
  * Consumer-language stand-in for the system precondition this bench
  * hit: "no deployed setup agent" describes an internal implementation
@@ -233,20 +243,43 @@ export async function createWorkbenchFromTemplate(
     const selectedAgentInvites = [...new Set(selectedAgentDefinitionIds)].map(
       (definitionId) => ({ kind: "agent" as const, definitionId }),
     );
-    await sendMessage(tenantId, workbench.id, partsForSend(firstMessage, []), {
-      ...(selectedAgentInvites.length > 0
-        ? { invite: selectedAgentInvites }
-        : {}),
-    });
+    try {
+      await sendMessage(
+        tenantId,
+        workbench.id,
+        partsForSend(firstMessage, []),
+        {
+          ...(selectedAgentInvites.length > 0
+            ? { invite: selectedAgentInvites }
+            : {}),
+        },
+      );
+    } catch (cause) {
+      if (templateId === "blank") {
+        throw new WorkbenchPostCreateError(
+          workbench.id,
+          "opening-message",
+          cause,
+        );
+      }
+      throw cause;
+    }
     // Blank / ad-hoc mints stay "New Workbench" until named. When the
     // prompt box already supplied the opening message, rename via the same
     // `chat/name` settings PATCH the sidebar rename uses — prefab titles
     // (`definition?.title`) are left alone by `autoNameFromFirstMessage`.
     const autoTitle = autoNameFromFirstMessage(workbench.title, firstMessage);
     if (autoTitle !== undefined) {
-      await patchWorkbenchSettings(tenantId, workbench.id, {
-        "chat/name": autoTitle,
-      });
+      try {
+        await patchWorkbenchSettings(tenantId, workbench.id, {
+          "chat/name": autoTitle,
+        });
+      } catch (cause) {
+        if (templateId === "blank") {
+          throw new WorkbenchPostCreateError(workbench.id, "rename", cause);
+        }
+        throw cause;
+      }
       await queryClient.invalidateQueries({
         queryKey: workbenchesQueryKeyPrefix(tenantId),
       });

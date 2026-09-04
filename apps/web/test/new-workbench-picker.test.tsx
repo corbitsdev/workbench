@@ -183,6 +183,7 @@ function stubBlankCreate(
       readonly definitionId: string;
     }[];
   }) => void,
+  messageResponse?: Response,
 ): RecordedCall[] {
   return stubFetch((path, init) => {
     if (path.includes("/workflows/definitions")) {
@@ -222,7 +223,10 @@ function stubBlankCreate(
         }[];
       };
       onSendMessage?.(body);
-      return json({ id: "msg_1", createdAt: "2026-01-01T00:00:00.000Z" });
+      return (
+        messageResponse ??
+        json({ id: "msg_1", createdAt: "2026-01-01T00:00:00.000Z" })
+      );
     }
     if (
       path.endsWith("/chat/workbenches/chan_new/settings") &&
@@ -388,6 +392,27 @@ describe("NewWorkbenchPickerRoute", () => {
     expect(sentParts).toEqual([
       { kind: "text", text: "Get our onboarding docs into shape" },
     ]);
+  });
+
+  test("a failed opening message still opens the blank workbench", async () => {
+    stubBlankCreate(undefined, json({ error: "agent launch failed" }, 409));
+    const navigated: string[] = [];
+    await renderPicker((to) => navigated.push(to));
+
+    await act(async () => {
+      typeIntoPrompt("Research our next partner");
+    });
+    await act(async () => {
+      promptInput()?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+    });
+    for (let i = 0; i < 20; i++) {
+      await settle();
+      if (navigated.length > 0) break;
+    }
+
+    expect(navigated).toEqual(["/w/chan_new"]);
   });
 
   test("a selected agent is pre-invited with the opening message", async () => {

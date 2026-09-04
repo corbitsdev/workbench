@@ -8,6 +8,7 @@ import {
 import {
   createWorkbenchFromTemplate,
   NEW_WORKBENCH_TITLE,
+  WorkbenchPostCreateError,
 } from "./instant-agent-create";
 
 function newQueryClient(): QueryClient {
@@ -202,6 +203,50 @@ describe("createWorkbenchFromTemplate", () => {
       ],
     });
     expect(calls.some((call) => call.path.endsWith("/invite"))).toBe(false);
+  });
+
+  test("an opening-message failure leaves a minted blank workbench recoverable", async () => {
+    const navigated: string[] = [];
+    stubFetch((path) => {
+      if (path.includes("/workflows/definitions")) {
+        return json({ data: [assistantDefinitionWire], nextCursor: null });
+      }
+      if (path.endsWith("/chat/workbenches")) {
+        return json({
+          id: "chan-recoverable",
+          title: NEW_WORKBENCH_TITLE,
+          kind: "workbench",
+          pinned: false,
+          participants: [],
+        });
+      }
+      if (path.endsWith("/chat/workbenches/chan-recoverable/messages")) {
+        return json({ error: "agent launch failed" }, 409);
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    });
+
+    let cause: unknown;
+    try {
+      await createWorkbenchFromTemplate(
+        "tnt_1",
+        "blank",
+        (to) => navigated.push(to),
+        newQueryClient(),
+        "Research our next partner",
+        ["def-scout"],
+      );
+    } catch (error) {
+      cause = error;
+    }
+
+    expect(cause).toBeInstanceOf(WorkbenchPostCreateError);
+    if (!(cause instanceof WorkbenchPostCreateError)) {
+      throw new Error("expected a recoverable post-create error");
+    }
+    expect(cause.workbenchId).toBe("chan-recoverable");
+    expect(cause.stage).toBe("opening-message");
+    expect(navigated).toEqual([]);
   });
 
   test("picking the code-review definition names the bench after it and invites exactly its three reviewers", async () => {

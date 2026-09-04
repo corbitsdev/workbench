@@ -15,11 +15,29 @@ import { ApiQueryError } from "@corbits/api-query";
 import { ChatApiError } from "@corbits/chat-ui";
 
 import { describeWorkbenchCreateFailure } from "./new-workbench-picker";
-import { WorkbenchPreconditionError } from "../instant-agent-create";
+import {
+  WorkbenchPostCreateError,
+  WorkbenchPreconditionError,
+} from "../instant-agent-create";
 
 const GENERIC = "Something went wrong creating this workbench. Try again.";
 
 describe("describeWorkbenchCreateFailure", () => {
+  test("a recoverable post-create failure gives the person its support reference", () => {
+    expect(
+      describeWorkbenchCreateFailure(
+        new WorkbenchPostCreateError(
+          "chan_1",
+          "opening-message",
+          new Error("agent launch failed"),
+        ),
+        "ref_1",
+      ),
+    ).toBe(
+      "Workbench created, but we couldn't send the opening message or add the selected agent. Try again from the room. Reference: ref_1",
+    );
+  });
+
   test("a WorkbenchPreconditionError (no setup agent, unavailable template) is shown verbatim", () => {
     expect(
       describeWorkbenchCreateFailure(

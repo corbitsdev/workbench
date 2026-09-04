@@ -85,7 +85,6 @@ apps/web/src/pages/create-agent-panel.tsx	1	setSubmitError(
 apps/web/src/pages/create-skill-dialog.tsx	1	setServerError(cause instanceof Error ? cause.message : String(cause));
 apps/web/src/pages/library-page.tsx	1	setUploadError(
 apps/web/src/pages/mission-control-page.tsx	1	toast(
-apps/web/src/pages/new-workbench-picker.tsx	1	// The missing-setup-agent precondition reads identically whether
 apps/web/src/pages/skill-detail-page.tsx	1	if (options.keepDraft) {
 apps/web/src/pages/skill-detail-page.tsx	1	if (statusOf(cause) === 409) {
 apps/web/src/pages/skill-detail-page.tsx	1	setActionError(describeApiError(cause, "reading that version"));

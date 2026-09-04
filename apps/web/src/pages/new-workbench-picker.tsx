@@ -22,23 +22,27 @@ import {
   describeChatError,
   listTenantInvitableDefinitions,
   WorkbenchLoadingState,
+  workbenchesQueryKeyPrefix,
 } from "@corbits/chat-ui";
 import { humanizeSlug } from "@corbits/chat/display-name";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getLogger } from "@corbits/client-log";
 import { ApiQueryError, describeApiError } from "@corbits/api-query";
+import { reportError } from "@corbits/error-sink";
 
 import { useAPIQuery } from "../api";
 import { TemplateLibraryPage } from "../workbench-templates-api";
 import { useBench } from "../bench-context";
 import {
   createWorkbenchFromTemplate,
+  WorkbenchPostCreateError,
   WorkbenchPreconditionError,
 } from "../instant-agent-create";
 import { fetchAgentReadiness } from "../onboarding";
 import { useNavigate } from "../navigation";
 import { StageTopBar } from "../shell/stage-top-bar";
+import { workbenchPath } from "../workbench-path";
 import {
   WORKBENCH_TEMPLATES,
   type WorkbenchTemplateId,
@@ -60,7 +64,17 @@ const GENERIC_CREATE_FAILURE =
  * request paths and schema summaries in `.message` and must go through
  * their own describer, never shown directly.
  */
-export function describeWorkbenchCreateFailure(cause: unknown): string {
+export function describeWorkbenchCreateFailure(
+  cause: unknown,
+  refId?: string,
+): string {
+  if (cause instanceof WorkbenchPostCreateError) {
+    const message =
+      cause.stage === "opening-message"
+        ? "Workbench created, but we couldn't send the opening message or add the selected agent. Try again from the room."
+        : "Workbench created, but we couldn't rename it.";
+    return refId === undefined ? message : `${message} Reference: ${refId}`;
+  }
   if (cause instanceof WorkbenchPreconditionError) return cause.message;
   if (cause instanceof ApiQueryError) {
     return describeApiError(cause, "creating this workbench");
@@ -223,6 +237,20 @@ export function NewWorkbenchPickerRoute() {
         selectedIds,
       );
     } catch (cause) {
+      if (cause instanceof WorkbenchPostCreateError) {
+        const refId = reportError(cause, {
+          operation: "workbench_post_create",
+          tenantId: selectedTenantId,
+          roomId: cause.workbenchId,
+          extra: { stage: cause.stage },
+        });
+        await queryClient.invalidateQueries({
+          queryKey: workbenchesQueryKeyPrefix(selectedTenantId),
+        });
+        navigate(workbenchPath(cause.workbenchId));
+        toast(describeWorkbenchCreateFailure(cause, refId));
+        return;
+      }
       // The missing-setup-agent precondition reads identically whether
       // this bench's default agents never finished deploying (CL-6457's
       // background drain is still running, or never started without a
