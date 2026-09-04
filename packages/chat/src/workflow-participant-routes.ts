@@ -165,6 +165,10 @@ export type CreateWorkflowParticipantRoutesDeps = {
    * (CL-7201) — shared, never a second instance, so a cancel request
    * reaches a controller registered from either entry point. */
   readonly turnCancellation: SendWorkbenchMessageDeps["turnCancellation"];
+  /** The same dispatch-mail correlation `createChatRoutes` is given
+   * (CL-6314) — shared, never a second instance, so a workflow-child
+   * message's dispatch records the same way a person's own send does. */
+  readonly turnMailCorrelation?: SendWorkbenchMessageDeps["turnMailCorrelation"];
   readonly authenticator: WorkflowRunAuthenticator;
   readonly tenancy: Pick<
     WorkbenchTenancyStore,
@@ -522,6 +526,9 @@ export function createWorkflowParticipantRoutes(
         publish: deps.publish,
         turnQueue: deps.turnQueue,
         turnCancellation: deps.turnCancellation,
+        ...(deps.turnMailCorrelation !== undefined
+          ? { turnMailCorrelation: deps.turnMailCorrelation }
+          : {}),
       },
       {
         tenantId: scope.tenantId,

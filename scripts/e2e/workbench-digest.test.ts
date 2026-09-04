@@ -70,6 +70,16 @@ function runIds(data: unknown): string[] {
   throw new Error(`expected a runIds array: ${JSON.stringify(data)}`);
 }
 
+/**
+ * `waitForRunCompletion` must outlive the step timeout. When both were
+ * 30s, a turn that ran to its own timeout was reported as "no terminal
+ * event" (RunStarted + StepStarted only) instead of RunFailed. The step
+ * timeout stays 30s to match seed and heartbeat; the waiter is longer so
+ * a 30s step kill is observed as RunFailed.
+ */
+const DIGEST_TURN_TIMEOUT_MS = 30_000;
+const DIGEST_RUN_COMPLETION_TIMEOUT_MS = 60_000;
+
 const { tempDir, track } = createCleanupHarness();
 
 describe.skipIf(databaseUrl === undefined)("workbench-digest workflow", () => {
@@ -179,7 +189,7 @@ describe.skipIf(databaseUrl === undefined)("workbench-digest workflow", () => {
         const definition = buildWorkbenchDigestWorkflow({
           triggerAddress: `workbench-digest@${slug}.localhost`,
           inferencePreferences: [{ provider: "anthropic", model: "noop" }],
-          turnTimeoutMs: 30_000,
+          turnTimeoutMs: DIGEST_TURN_TIMEOUT_MS,
         });
         const pushed = await pushWorkflowSource({
           baseUrl: hub.baseUrl,
@@ -299,7 +309,7 @@ describe.skipIf(databaseUrl === undefined)("workbench-digest workflow", () => {
         deploymentId,
         startedRunId,
         user.cookies,
-        30_000,
+        DIGEST_RUN_COMPLETION_TIMEOUT_MS,
       ),
     );
     expectStepCompleted(events, WORKBENCH_DIGEST_STEP_ID);

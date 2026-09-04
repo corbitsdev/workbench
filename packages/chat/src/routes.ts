@@ -98,6 +98,7 @@ import {
   createTurnCancelRegistry,
   type TurnCancelRegistry,
 } from "./turn-cancellation";
+import type { TurnMailCorrelationStore } from "./turn-mail-correlation";
 import type { ChatPlatform } from "./platform-port";
 import type { ChatStore } from "./store";
 import {
@@ -211,6 +212,14 @@ export type CreateChatRoutesDeps = {
    * CRUD stay free of thread tables.
    */
   threads?: ThreadStore;
+  /**
+   * Durable dispatch-mail -> source-message correlation (CL-6314) —
+   * threaded through to every `sendWorkbenchMessage` call this router
+   * makes, so the reply path can land an agent's answer in its source
+   * message's thread. Omitted, dispatches still send; their replies
+   * just post unthreaded.
+   */
+  turnMailCorrelation?: TurnMailCorrelationStore;
   /**
    * The turn projection (CL-6329) — one row per agent turn, which is
    * what makes a reply traceable back to the child run that produced
@@ -2292,6 +2301,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             ? { agentTurns: deps.agentTurns }
             : {}),
           ...(deps.threads !== undefined ? { threads: deps.threads } : {}),
+          ...(deps.turnMailCorrelation !== undefined
+            ? { turnMailCorrelation: deps.turnMailCorrelation }
+            : {}),
           ...(deps.turnDispatchTimeoutMs !== undefined
             ? { turnDispatchTimeoutMs: deps.turnDispatchTimeoutMs }
             : {}),
@@ -2497,6 +2509,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                   : {}),
                 ...(deps.threads !== undefined
                   ? { threads: deps.threads }
+                  : {}),
+                ...(deps.turnMailCorrelation !== undefined
+                  ? { turnMailCorrelation: deps.turnMailCorrelation }
                   : {}),
                 ...(deps.turnDispatchTimeoutMs !== undefined
                   ? { turnDispatchTimeoutMs: deps.turnDispatchTimeoutMs }

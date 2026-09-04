@@ -509,6 +509,32 @@ export const finalizedTurnWriteClaim = chatSchema.table(
 );
 
 /**
+ * Which workbench message a dispatch mail answers (CL-6314): written by
+ * the dispatch seam right after its send resolves, read by the reply
+ * path when the agent's `message.run.started` bracket names that mail.
+ * Insert-only — a second record for the same mail is a no-op (see
+ * `turn-mail-correlation.ts`), so the primary key is the whole dedup
+ * story and this table needs no other index.
+ */
+export const turnMailCorrelation = chatSchema.table(
+  "turn_mail_correlation",
+  {
+    tenantId: text("tenant_id").notNull(),
+    mailId: text("mail_id").notNull(),
+    workbenchId: text("workbench_id").notNull(),
+    sourceMessageId: text("source_message_id").notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.tenantId, table.mailId],
+    }),
+  ],
+);
+
+/**
  * The turn projection (CL-6329): one row per agent turn, opened by the
  * dispatch seam and closed when the turn settles. Traceability is a
  * product concern, so a room answers "which run produced this reply, and
