@@ -32,6 +32,7 @@ import {
   type AgentDefinitionDeployer,
 } from "./definition-asset";
 import type { DefinitionSkillsStore } from "./skills-store";
+import { resolvePinnedVersion } from "./tool-package-version";
 
 export const AGENT_DEFINITION_STEP_ID = "agent";
 
@@ -199,15 +200,47 @@ export function readAgentCapabilities(
     : { toolPackagePins: step.agent.toolPackagePins ?? [] };
 }
 
+/**
+ * A tool-package pin resolved to a concrete, published version — never
+ * the npm "any version" range `*`. `ToolPackagePin` itself (the wire
+ * type `@intx/types/tool-packages` declares) still accepts `*`, because
+ * an operator hand-authoring a workflow source file is free to write
+ * one; but every RUNTIME site this package writes a pin from
+ * (`create_agent`'s tool-package pins, guided capability-add) must name
+ * a version the resolver actually offers today (CL-7389) — a `*` pin
+ * means a later tarball landing in the registry silently changes what
+ * an already-deployed specialist runs, with no record of the change.
+ * `./tool-package-version.ts`'s `resolvePinnedVersion` is how a caller
+ * that only has a package name gets one of these.
+ */
+export const NonWildcardToolPackagePin = type({
+  name: "string",
+  version: "string",
+}).narrow((pin, ctx) =>
+  pin.version !== "*"
+    ? true
+    : ctx.mustBe(
+        'a concrete published version, never "*" — a wildcard pin would let a later tarball silently change what this pin resolves to (CL-7389)',
+      ),
+);
+export type NonWildcardToolPackagePin = typeof NonWildcardToolPackagePin.infer;
+
 /** Adds or replaces one tool-package pin by name, leaving every other
  * pin — including the skills bundle `reindexPinnedSkills` manages —
  * untouched. Mirrors `withSkillsToolPin`'s replace-by-name shape,
  * generalized to a caller-supplied pin rather than the fixed skills
- * bundle. */
+ * bundle. Rejects a `"*"` version outright (see `NonWildcardToolPackagePin`) —
+ * every runtime caller must supply a concrete, resolved version. */
 export function withAgentToolPackagePin(
   workflowJson: string,
-  pin: ToolPackagePin,
+  pin: NonWildcardToolPackagePin,
 ): string {
+  const parsedPin = NonWildcardToolPackagePin(pin);
+  if (parsedPin instanceof type.errors) {
+    throw new Error(
+      `withAgentToolPackagePin: pin must be ${parsedPin.summary}`,
+    );
+  }
   const raw: unknown = JSON.parse(workflowJson);
   const definition = DefinitionWithAgentSteps(raw);
   if (definition instanceof type.errors) {
@@ -217,9 +250,9 @@ export function withAgentToolPackagePin(
   }
   for (const step of Object.values(definition.steps)) {
     const others = (step.agent.toolPackagePins ?? []).filter(
-      (existing) => existing.name !== pin.name,
+      (existing) => existing.name !== parsedPin.name,
     );
-    step.agent.toolPackagePins = [...others, { ...pin }];
+    step.agent.toolPackagePins = [...others, { ...parsedPin }];
   }
   return JSON.stringify(definition);
 }
@@ -504,10 +537,12 @@ export async function createAgentDefinitionCore(
     ),
   );
   for (const name of input.toolPackagePins ?? []) {
-    workflowJson = withAgentToolPackagePin(workflowJson, {
+    const resolvedPin = await resolvePinnedVersion(
+      { db: deps.db, assetService: deps.assetService },
+      input.tenantId,
       name,
-      version: "*",
-    });
+    );
+    workflowJson = withAgentToolPackagePin(workflowJson, resolvedPin);
   }
 
   let assetId: string;

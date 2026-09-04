@@ -7,6 +7,7 @@
 // in `./asset-write.ts` so sibling RMW routes share it.
 
 import type { PinnedSkillIndexEntry } from "@corbits/skills";
+import type { DB } from "@intx/db";
 import type { AssetService } from "@intx/hub-sessions";
 
 import {
@@ -22,8 +23,10 @@ import {
   type AgentDefinitionDeployer,
 } from "./definition-asset";
 import type { DefinitionSkillsStore } from "./skills-store";
+import { resolvePinnedVersion } from "./tool-package-version";
 
 export type CommitAgentCapabilityAddArgs = {
+  db: DB["db"];
   assetService: AssetService;
   deployer: AgentDefinitionDeployer;
   skillsStore: DefinitionSkillsStore;
@@ -109,10 +112,12 @@ async function prepareCapabilityAdd(
 
   switch (args.body.kind) {
     case "toolPackage": {
-      nextWorkflowJson = withAgentToolPackagePin(workflowJson, {
-        name: args.body.name,
-        version: "*",
-      });
+      const resolvedPin = await resolvePinnedVersion(
+        { db: args.db, assetService: args.assetService },
+        args.tenantId,
+        args.body.name,
+      );
+      nextWorkflowJson = withAgentToolPackagePin(workflowJson, resolvedPin);
       message = `Add ${args.body.name} to ${args.handle}`;
       break;
     }
