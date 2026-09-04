@@ -148,8 +148,38 @@ function firstLoginSeedHub(args: { expectedParentId?: string }) {
     ) {
       return { status: 200, data: [], cookies: [] };
     }
-    if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
-      return { status: 200, data: { items: [] }, cookies: [] };
+    if (
+      method === "GET" &&
+      path.startsWith(`/api/tenants/${TENANT_ID}/workflows/definitions`)
+    ) {
+      return {
+        status: 200,
+        data: {
+          data: [
+            {
+              id: "wfd_digest",
+              tenantId: TENANT_ID,
+              name: "workbench-digest",
+              currentVersion: "1",
+              status: "deployed",
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+          nextCursor: null,
+        },
+        cookies: [],
+      };
+    }
+    if (
+      method === "PUT" &&
+      path === `/api/tenants/${TENANT_ID}/agent-definitions/wfd_digest/status`
+    ) {
+      return {
+        status: 200,
+        data: { id: "wfd_digest", status: "stopped" },
+        cookies: [],
+      };
     }
     if (
       method === "GET" &&
@@ -663,8 +693,38 @@ describe("provisionPersonalTenantIfNeeded", () => {
       ) {
         return { status: 200, data: [], cookies: [] };
       }
-      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
-        return { status: 200, data: { items: [] }, cookies: [] };
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/workflows/definitions`)
+      ) {
+        return {
+          status: 200,
+          data: {
+            data: [
+              {
+                id: "wfd_digest",
+                tenantId: TENANT_ID,
+                name: "workbench-digest",
+                currentVersion: "1",
+                status: "deployed",
+                createdAt: "2026-01-01T00:00:00.000Z",
+                updatedAt: "2026-01-01T00:00:00.000Z",
+              },
+            ],
+            nextCursor: null,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "PUT" &&
+        path === `/api/tenants/${TENANT_ID}/agent-definitions/wfd_digest/status`
+      ) {
+        return {
+          status: 200,
+          data: { id: "wfd_digest", status: "stopped" },
+          cookies: [],
+        };
       }
       if (
         method === "GET" &&
@@ -1234,8 +1294,38 @@ describe("provisionPersonalTenantIfNeeded", () => {
       ) {
         return { status: 200, data: [], cookies: [] };
       }
-      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
-        return { status: 200, data: { items: [] }, cookies: [] };
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/workflows/definitions`)
+      ) {
+        return {
+          status: 200,
+          data: {
+            data: [
+              {
+                id: "wfd_digest",
+                tenantId: TENANT_ID,
+                name: "workbench-digest",
+                currentVersion: "1",
+                status: "deployed",
+                createdAt: "2026-01-01T00:00:00.000Z",
+                updatedAt: "2026-01-01T00:00:00.000Z",
+              },
+            ],
+            nextCursor: null,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "PUT" &&
+        path === `/api/tenants/${TENANT_ID}/agent-definitions/wfd_digest/status`
+      ) {
+        return {
+          status: 200,
+          data: { id: "wfd_digest", status: "stopped" },
+          cookies: [],
+        };
       }
       if (
         method === "GET" &&
@@ -1438,27 +1528,36 @@ describe("provisionPersonalTenantIfNeeded", () => {
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`) {
         return { status: 201, data: {}, cookies: [] };
       }
-      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`) {
-        return { status: 200, data: { items: [] }, cookies: [] };
-      }
-      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/routines`) {
-        const routineBody = body as {
-          name: string;
-          presetKey: string;
-          deliveryWorkbenchId?: string;
-        };
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/workflows/definitions`)
+      ) {
         return {
-          status: 201,
+          status: 200,
           data: {
-            id: `rtn_${routineBody.presetKey}`,
-            tenantId: TENANT_ID,
-            name: routineBody.name,
-            enabled: false,
-            deliveryWorkbenchId: routineBody.deliveryWorkbenchId ?? null,
-            presetKey: routineBody.presetKey,
-            createdAt: "2026-01-01T00:00:00.000Z",
-            updatedAt: "2026-01-01T00:00:00.000Z",
+            data: [
+              {
+                id: "wfd_digest",
+                tenantId: TENANT_ID,
+                name: "workbench-digest",
+                currentVersion: "1",
+                status: "deployed",
+                createdAt: "2026-01-01T00:00:00.000Z",
+                updatedAt: "2026-01-01T00:00:00.000Z",
+              },
+            ],
+            nextCursor: null,
           },
+          cookies: [],
+        };
+      }
+      if (
+        method === "PUT" &&
+        path === `/api/tenants/${TENANT_ID}/agent-definitions/wfd_digest/status`
+      ) {
+        return {
+          status: 200,
+          data: { id: "wfd_digest", status: "stopped" },
           cookies: [],
         };
       }

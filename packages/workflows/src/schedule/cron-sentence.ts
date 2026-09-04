@@ -45,6 +45,8 @@ export function cronSentence(
       throwExceptionOnParseError: true,
     });
   } catch {
+    // report-error-ignore: cronstrue parse failure is the invalid-input
+    // signal; the caller shows the raw expression instead.
     return null;
   }
   if (described === "") return null;

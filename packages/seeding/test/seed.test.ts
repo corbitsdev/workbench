@@ -25,6 +25,7 @@ import {
   deploymentRow,
   emptyPage,
   fakeAPI,
+  pristineScheduledDefinitionHandshake,
   TENANT_DOMAIN,
   TENANT_ID,
   PRINCIPAL_ID,
@@ -96,37 +97,8 @@ function baseRoutes(method: string, path: string) {
     path === `/api/tenants/${TENANT_ID}/workflows/deployments`
   )
     return { status: 200, data: [] };
-  // CL-4455: a startStopped workflow (workbench-digest) lists definitions
-  // after deploy and PUTs a pristine row to `stopped`. Tests that do not
-  // care about that handshake get a pristine digest row and a 200 stop.
-  if (
-    method === "GET" &&
-    path.startsWith(`/api/tenants/${TENANT_ID}/workflows/definitions`)
-  ) {
-    return {
-      status: 200,
-      data: {
-        data: [
-          {
-            id: "wfd_digest",
-            tenantId: TENANT_ID,
-            name: "workbench-digest",
-            currentVersion: "1",
-            status: "deployed",
-            createdAt: "2026-01-01T00:00:00.000Z",
-            updatedAt: "2026-01-01T00:00:00.000Z",
-          },
-        ],
-        nextCursor: null,
-      },
-    };
-  }
-  if (
-    method === "PUT" &&
-    path === `/api/tenants/${TENANT_ID}/agent-definitions/wfd_digest/status`
-  ) {
-    return { status: 200, data: { id: "wfd_digest", status: "stopped" } };
-  }
+  const handshake = pristineScheduledDefinitionHandshake(method, path);
+  if (handshake) return handshake;
   return undefined;
 }
 

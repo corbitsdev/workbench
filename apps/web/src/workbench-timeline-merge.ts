@@ -37,9 +37,7 @@ export type TimelineApprovalEvent = {
 };
 
 export type TimelineEvent =
-  | TimelineMessageEvent
-  | TimelineThreadForkEvent
-  | TimelineApprovalEvent;
+  TimelineMessageEvent | TimelineThreadForkEvent | TimelineApprovalEvent;
 
 const EXCERPT_LIMIT = 120;
 

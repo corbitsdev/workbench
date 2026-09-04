@@ -758,7 +758,9 @@ async function stopPristineScheduledDefinition(
     cookies,
     args.tenantId,
   );
-  const row = definitions.find((definition) => definition.name === args.assetName);
+  const row = definitions.find(
+    (definition) => definition.name === args.assetName,
+  );
   if (row === undefined) {
     throw new HubApiError(
       `seeded workflow ${args.assetName} has no authored definition to stop`,

@@ -98,19 +98,24 @@ export function scheduledWorkflowRunPath(
 export function listScheduledWorkflows(
   tenantId: string,
 ): Promise<readonly ScheduledWorkflowDefinition[]> {
-  return request(scheduledWorkflowsPath(tenantId), ScheduledWorkflowsResponse).then(
-    (page) => page.items,
-  );
+  return request(
+    scheduledWorkflowsPath(tenantId),
+    ScheduledWorkflowsResponse,
+  ).then((page) => page.items);
 }
 
 export function runScheduledWorkflowNow(
   tenantId: string,
   definitionId: string,
 ): Promise<{ runId: string }> {
-  return request(scheduledWorkflowRunPath(tenantId, definitionId), RunNowResponse, {
-    method: "POST",
-    body: JSON.stringify({}),
-  });
+  return request(
+    scheduledWorkflowRunPath(tenantId, definitionId),
+    RunNowResponse,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
+  );
 }
 
 export function setScheduledWorkflowStatus(

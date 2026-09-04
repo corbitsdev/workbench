@@ -70,7 +70,12 @@ export function createScheduledWorkflowRoutes({
       const found = items.find((item) => item.definitionId === definitionId);
       if (found === undefined) {
         return c.json(
-          { error: { code: "not_found", message: "Scheduled workflow not found" } },
+          {
+            error: {
+              code: "not_found",
+              message: "Scheduled workflow not found",
+            },
+          },
           404,
         );
       }

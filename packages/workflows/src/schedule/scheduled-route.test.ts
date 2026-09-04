@@ -84,11 +84,16 @@ describe("createScheduledWorkflowRoutes", () => {
 
   test("POST /scheduled/:id/run fires with Run now. content", async () => {
     const calls: unknown[] = [];
-    const app = mount(async (args) => {
-      calls.push(args);
-      return { runId: "run_now_1" };
-    }, [digest]);
-    const res = await app.request("/scheduled/wfd_digest/run", { method: "POST" });
+    const app = mount(
+      async (args) => {
+        calls.push(args);
+        return { runId: "run_now_1" };
+      },
+      [digest],
+    );
+    const res = await app.request("/scheduled/wfd_digest/run", {
+      method: "POST",
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ runId: "run_now_1" });
     expect(calls).toEqual([

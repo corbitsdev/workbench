@@ -51,16 +51,18 @@ import { recentsStoreForBench } from "./command-palette-recents";
 import { NAV_ROUTES } from "./routes";
 import { ArtifactListPageSchema, useAPIQuery } from "./api";
 import { useBench } from "./bench-context";
-import {
-  useCloseCanvas,
-} from "./shell/canvas-availability";
+import { useCloseCanvas } from "./shell/canvas-availability";
 import { listMcpServers } from "@corbits/plugins-ui";
 import {
   AGENTS_PATH_PREFIX,
   PLUGINS_PATH_PREFIX,
   SKILLS_PATH_PREFIX,
 } from "./path-ids";
-import { listScheduledWorkflows, runScheduledWorkflowNow, useTenantQuery } from "./routines-api";
+import {
+  listScheduledWorkflows,
+  runScheduledWorkflowNow,
+  useTenantQuery,
+} from "./routines-api";
 import { listSkills } from "./skills-api";
 import { meKeys, tenantKeys } from "./query-client";
 import type { Navigate } from "./navigation";

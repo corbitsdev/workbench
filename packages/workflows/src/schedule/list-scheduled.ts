@@ -5,10 +5,7 @@
 // appears.
 import { and, eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
-import {
-  workflowDefinition,
-  workflowDefinitionVersion,
-} from "@intx/db/schema";
+import { workflowDefinition, workflowDefinitionVersion } from "@intx/db/schema";
 
 import { scheduleCronFromProjection } from "./from-projection";
 

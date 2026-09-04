@@ -118,7 +118,10 @@ export function ShellChromeProvider({
     setCanvasState((state) => openArtifactInCanvas(state, artifact));
   }, []);
 
-  const openRoutine = useCallback((_subject: RoutinePanelSubject) => undefined, []);
+  const openRoutine = useCallback(
+    (_subject: RoutinePanelSubject) => undefined,
+    [],
+  );
 
   const closeCanvas = useCallback(() => {
     setCanvasState((state) => closeCanvasContent(state));

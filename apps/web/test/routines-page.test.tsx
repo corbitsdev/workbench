@@ -297,9 +297,7 @@ describe("RoutinesRoute — membership-based aggregation", () => {
       root.render(
         <TestQueryProvider>
           <NavigationProvider navigate={noop}>
-            <BenchProvider>
-              {createElement(RoutinesRoute)}
-            </BenchProvider>
+            <BenchProvider>{createElement(RoutinesRoute)}</BenchProvider>
           </NavigationProvider>
         </TestQueryProvider>,
       );

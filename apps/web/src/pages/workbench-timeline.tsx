@@ -5,11 +5,7 @@
 // reads elsewhere (chat-ui, api.ts); the new work is
 // `../workbench-timeline-merge.ts`'s pure merge, plus this render.
 
-import {
-  Badge,
-  RichEmptyState,
-  Skeleton,
-} from "@corbits/react-ui";
+import { Badge, RichEmptyState, Skeleton } from "@corbits/react-ui";
 import { listMessages, listThreads } from "@corbits/chat-ui";
 import { Clock } from "@corbits/icons";
 import { useMemo, useState } from "react";
@@ -60,11 +56,7 @@ function markerClass(event: TimelineEvent): string {
   }
 }
 
-function TimelineRowBody({
-  event,
-}: {
-  readonly event: TimelineEvent;
-}) {
+function TimelineRowBody({ event }: { readonly event: TimelineEvent }) {
   switch (event.kind) {
     case "message":
       return (
@@ -96,11 +88,7 @@ function TimelineRowBody({
   }
 }
 
-function TimelineRow({
-  event,
-}: {
-  readonly event: TimelineEvent;
-}) {
+function TimelineRow({ event }: { readonly event: TimelineEvent }) {
   const indented = event.kind === "thread-fork";
   return (
     <li

@@ -112,7 +112,11 @@ import { useNavigate } from "../navigation";
 import { tenantKeys } from "../query-client";
 import { INSIGHTS_PATH_PREFIX, INSIGHTS_RUNS_PATH } from "../path-ids";
 import { StageTopBar } from "../shell/stage-top-bar";
-import { listScheduledWorkflows, useTenantQuery, type ScheduledWorkflowDefinition } from "../routines-api";
+import {
+  listScheduledWorkflows,
+  useTenantQuery,
+  type ScheduledWorkflowDefinition,
+} from "../routines-api";
 import { WorkbenchTimelineRoute } from "./workbench-timeline";
 
 function dash(value: string | number | null | undefined): string {

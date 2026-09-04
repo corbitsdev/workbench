@@ -6,6 +6,7 @@ import {
   listWorkbenchTenantIds,
 } from "@corbits/bench-ui";
 import { toast } from "@corbits/react-ui";
+import { reportError } from "@corbits/error-sink";
 import { useMemo } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { describeApiError } from "@corbits/api-query";
@@ -129,10 +130,17 @@ export function useRoutineActions(): RoutineActions {
   return {
     runNow: async (row) => {
       try {
-        await runScheduledWorkflowNow(row.tenantId, row.definition.definitionId);
+        await runScheduledWorkflowNow(
+          row.tenantId,
+          row.definition.definitionId,
+        );
         invalidate(row.tenantId);
         toast(`${row.definition.name} started`);
       } catch (cause) {
+        reportError(cause, {
+          operation: "scheduled_workflow_run_now",
+          tenantId: row.tenantId,
+        });
         toast(
           `Couldn't start ${row.definition.name}: ${describeApiError(cause, "starting this routine")}`,
         );
@@ -147,6 +155,10 @@ export function useRoutineActions(): RoutineActions {
         );
         invalidate(row.tenantId);
       } catch (cause) {
+        reportError(cause, {
+          operation: "scheduled_workflow_set_status",
+          tenantId: row.tenantId,
+        });
         toast(
           `Couldn't ${enabled ? "resume" : "pause"} ${row.definition.name}: ${describeApiError(
             cause,

@@ -255,6 +255,8 @@ export function isValidTimeZone(timeZone: string): boolean {
     new Intl.DateTimeFormat("en-US", { timeZone }).format(new Date());
     return true;
   } catch {
+    // report-error-ignore: Intl rejects unknown IANA names; that is the
+    // false signal, not an operational failure.
     return false;
   }
 }
@@ -357,6 +359,8 @@ export function cronExpressionCanFire(
     nextCronFireAfter(expression, from, timeZone);
     return true;
   } catch {
+    // report-error-ignore: next-fire throws on impossible expressions;
+    // that is the false signal, not an operational failure.
     return false;
   }
 }

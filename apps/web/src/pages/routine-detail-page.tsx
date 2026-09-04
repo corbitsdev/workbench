@@ -3,10 +3,7 @@
 import { Button, PageShell, RunNowButton } from "@corbits/react-ui";
 import type { ReactNode } from "react";
 
-import {
-  useGlobalRoutines,
-  useRoutineActions,
-} from "../global-routines";
+import { useGlobalRoutines, useRoutineActions } from "../global-routines";
 import type { GlobalRoutineRow } from "../global-routines";
 import { Link } from "../navigation";
 import { ROUTINES_PATH_PREFIX } from "../path-ids";
@@ -71,17 +68,15 @@ export function RoutineDetailPage({
             >
               {enabled ? "Pause" : "Resume"}
             </Button>
-            <RunNowButton
-              variant="outline"
-              size="sm"
-              onRun={onRunNow}
-            />
+            <RunNowButton variant="outline" size="sm" onRun={onRunNow} />
           </div>
         }
       />
       <PageShell>
         <h1 className="m-0 text-xl font-semibold">{row.definition.name}</h1>
-        <p className="mt-2 text-sm text-[var(--ui-fg-muted)]">{row.tenantName}</p>
+        <p className="mt-2 text-sm text-[var(--ui-fg-muted)]">
+          {row.tenantName}
+        </p>
         <p className="mt-4 text-lg">{sentence}</p>
       </PageShell>
     </div>
@@ -95,11 +90,7 @@ export function resolveRoutineSegment(
   return rows.find((row) => row.definition.definitionId === segment);
 }
 
-export function RoutineDetailRoute({
-  segment,
-}: {
-  readonly segment: string;
-}) {
+export function RoutineDetailRoute({ segment }: { readonly segment: string }) {
   const routinesQuery = useGlobalRoutines();
   const actions = useRoutineActions();
   const rows = routinesQuery.kind === "ready" ? routinesQuery.data : [];
@@ -109,9 +100,7 @@ export function RoutineDetailRoute({
       : undefined;
 
   if (routinesQuery.kind === "loading") {
-    return (
-      <RoutineNotice title="Routine" description="Loading…" />
-    );
+    return <RoutineNotice title="Routine" description="Loading…" />;
   }
   if (routinesQuery.kind === "error") {
     return (

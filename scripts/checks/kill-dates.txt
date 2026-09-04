@@ -15,7 +15,7 @@
 # package's VENDORED-FROM delta line in the same change.
 apps/sidecar | sawyer | 2026-10-26
 vendor/intx/agent | sawyer | 2026-10-26 | f29297427016f6cb0c10ba49a846e2e445bdd38b6aabfc47854a1cc85ce8e002
-vendor/intx/db | sawyer | 2026-10-26 | e1a41e59050ca32d6b590b33f559221584b3e78c71d4b61b3b3d10df82a50096
+vendor/intx/db | sawyer | 2026-10-26 | 4c45e2e97b4e5af7d84b308244f47b58c7faae829f8190858192300146e170b4
 vendor/intx/harness | sawyer | 2026-10-26 | 5daababe006d9cf8e678c0eed22c2daa99cc519f35ed7a32ec2b977da9f2fb71
 vendor/intx/hub-agent | sawyer | 2026-10-26 | f0f01b50973355d435f2f4543760190a0f87b419d5a2fc47aab64c8845ee05be
 vendor/intx/hub-api | sawyer | 2026-10-26 | 10fd46c7bf0b058618a8124f6f43d7e779fd5861ff0146fe8d7c2886b836c40e

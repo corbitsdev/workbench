@@ -60,9 +60,7 @@ function fakeDb(tables: FakeTables): DB["db"] {
     select: () => ({
       from: (table: unknown) => ({
         where: async () =>
-          table === webhookTriggerTable
-            ? tables.webhookTriggers
-            : [],
+          table === webhookTriggerTable ? tables.webhookTriggers : [],
       }),
     }),
   } as unknown as DB["db"];

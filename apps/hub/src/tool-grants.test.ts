@@ -24,7 +24,11 @@ const DESCRIPTIONS = [
   {
     name: "@corbits/connections-tools",
     version: "0.0.1",
-    tools: [{ qualifiedId: "@corbits/connections-tools/connections:list_connections" }],
+    tools: [
+      {
+        qualifiedId: "@corbits/connections-tools/connections:list_connections",
+      },
+    ],
   },
 ];
 
@@ -53,12 +57,12 @@ describe("createToolGrantsForPins", () => {
     const grants = toolGrantsForPins([
       { name: "@corbits/memory-tools", version: "^1" },
     ]);
-    expect(
-      grants.find((g) => g.resource.endsWith("memory_add"))?.effect,
-    ).toBe("ask");
-    expect(
-      grants.find((g) => g.resource.endsWith("memory_list"))?.effect,
-    ).toBe("allow");
+    expect(grants.find((g) => g.resource.endsWith("memory_add"))?.effect).toBe(
+      "ask",
+    );
+    expect(grants.find((g) => g.resource.endsWith("memory_list"))?.effect).toBe(
+      "allow",
+    );
   });
 
   test("unions grants across every pinned package", () => {

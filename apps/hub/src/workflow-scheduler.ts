@@ -17,10 +17,7 @@ import {
   workflowDefinition,
   workflowDefinitionVersion,
 } from "@intx/db/schema";
-import {
-  handleFromName,
-  type JoinRunParticipantInput,
-} from "@corbits/chat";
+import { handleFromName, type JoinRunParticipantInput } from "@corbits/chat";
 import { reportError } from "@corbits/error-sink";
 import {
   cronMatchesMinute,
