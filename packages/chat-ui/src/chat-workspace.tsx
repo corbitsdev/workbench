@@ -112,6 +112,7 @@ import {
   ChatMessageEventData,
   ChatPinEventData,
   ChatReactionEventData,
+  ChatSettingsEventData,
 } from "@corbits/chat/stream-events";
 import { useThreadNavigation } from "./use-thread-navigation";
 import { mergePendingSends, useOptimisticSends } from "./use-optimistic-sends";
@@ -989,6 +990,26 @@ function ChatWorkspaceInner({
           const parsed = ChatPinEventData(data);
           if (!(parsed instanceof type.errors)) {
             applyStreamPin(queryClient, tenantId, activeWorkbenchId, parsed);
+          }
+          break;
+        }
+        case "chat.settings": {
+          const parsed = ChatSettingsEventData(data);
+          if (!(parsed instanceof type.errors)) {
+            connectGithubActions?.notifySettingsChanged().catch((cause) => {
+              reportError(cause, {
+                operation: "chat.notifyGithubSettingsChanged",
+                tenantId,
+                roomId: activeWorkbenchId,
+              });
+            });
+            connectServiceActions?.notifySettingsChanged().catch((cause) => {
+              reportError(cause, {
+                operation: "chat.notifyServiceSettingsChanged",
+                tenantId,
+                roomId: activeWorkbenchId,
+              });
+            });
           }
           break;
         }
