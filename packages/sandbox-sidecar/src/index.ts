@@ -3,6 +3,12 @@ export {
   type CreateSidecarProvisionerOpts,
 } from "./provisioner";
 export {
+  sidecarCapabilityDeclarations,
+  SIDECAR_ISOLATION_LEVELS,
+  SIDECAR_RUNTIME_CAPABILITY,
+  type SidecarIsolationLevel,
+} from "./capabilities";
+export {
   BackendOperationError,
   type SidecarBackend,
   type StartUnitArgs,
