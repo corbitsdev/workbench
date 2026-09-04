@@ -68,6 +68,7 @@ export const CHAT_STRINGS = {
   emptyTimelineDescription: "Say something to get the conversation going.",
   emptyAgentTimelineDescription:
     "They're ready — send the first message to get started.",
+  jumpToLatestAction: "Jump to latest",
   mentionEmpty: "No matches",
   mentionAgentsGroupLabel: "Agents",
   mentionPeopleGroupLabel: "People",
