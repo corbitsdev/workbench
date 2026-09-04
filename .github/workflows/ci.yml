@@ -46,10 +46,20 @@ jobs:
           # and combined --noEmit check now write separate files, so caching
           # both means the next run's `tsc` calls only recheck what actually
           # changed since the cached commit, instead of every file every PR.
+          # Paths are the workspace roots spelled out rather than `**/dist`:
+          # a recursive glob walks node_modules and follows every workspace
+          # symlink in it, and the save step ran for over 40 minutes.
           path: |
-            **/dist/**
-            !**/node_modules/**
-            **/tsconfig.tsbuildinfo
+            apps/*/dist
+            packages/*/dist
+            tools/*/dist
+            workflows/*/dist
+            vendor/intx/*/dist
+            apps/*/tsconfig.tsbuildinfo
+            packages/*/tsconfig.tsbuildinfo
+            tools/*/tsconfig.tsbuildinfo
+            workflows/*/tsconfig.tsbuildinfo
+            vendor/intx/*/tsconfig.tsbuildinfo
             tsconfig.tsbuildinfo
             test/tsconfig.tsbuildinfo
           key: typecheck-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version', 'tsconfig.base.json', 'scripts/generate-tsconfig-references.ts') }}-${{ github.sha }}
