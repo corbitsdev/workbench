@@ -29,8 +29,6 @@ const noopPush: WorkflowPusher = async () => ({
   outcome: "pushed" as const,
   commitSha: "a".repeat(40),
 });
-const noopPublishToolRegistry = async () => undefined;
-
 const TOOLS_ASSET_ID = "ast_corbits_tools";
 const SEEDED_MEMORY_TARBALL = {
   filename: "corbits-memory-tools-0.0.4.tgz",
@@ -344,7 +342,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userId: "user_1",
       userEmail: "alice@example.com",
       userEmailVerified: true,
-      publishToolRegistry: noopPublishToolRegistry,
       pushWorkflow: noopPush,
       log: collector().log,
     });
@@ -404,7 +401,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       displayName: "Alice's Lab",
-      publishToolRegistry: noopPublishToolRegistry,
       pushWorkflow: noopPush,
       log: collector().log,
     });
@@ -440,7 +436,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
         userEmail: "alice@example.com",
         userEmailVerified: true,
         displayName: "Alice's Lab",
-        publishToolRegistry: noopPublishToolRegistry,
         pushWorkflow: noopPush,
         log: collector().log,
       }),
@@ -450,7 +445,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
   test("zero principals with no seed model: provisions the bench and reports the seed skip loudly", async () => {
     let principalsCalls = 0;
     const { lines, log } = collector();
-    const publishedTenants: string[] = [];
     const api: ApiCall = async (method, path, body) => {
       if (method === "GET" && path === "/api/me/principals") {
         principalsCalls += 1;
@@ -512,9 +506,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       displayName: "Alice's Lab",
-      publishToolRegistry: async ({ tenantId }) => {
-        publishedTenants.push(tenantId);
-      },
       pushWorkflow: noopPush,
       log,
     });
@@ -522,7 +513,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
     expect(result.kind).toBe("provisioned");
     if (result.kind !== "provisioned") throw new Error("unreachable");
     expect(result.seeded).toBe(false);
-    expect(publishedTenants).toEqual([TENANT_ID]);
     expect(result.seedSkipReason).toContain("ANTHROPIC_API_KEY");
     expect(lines.some((line) => line.includes("ANTHROPIC_API_KEY"))).toBe(true);
   });
@@ -553,7 +543,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userId: "user_1",
       userEmail: "alice@example.com",
       userEmailVerified: true,
-      publishToolRegistry: noopPublishToolRegistry,
       pushWorkflow: noopPush,
       log,
     });
@@ -577,7 +566,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
       displayName: "Alice's Lab",
       operatorTenantId: "ten_operator",
       seedModel: MODEL,
-      publishToolRegistry: noopPublishToolRegistry,
       pushWorkflow: noopPush,
       log,
     });
@@ -591,10 +579,9 @@ describe("provisionPersonalTenantIfNeeded", () => {
     expect(tarballPuts).toEqual([]);
   });
 
-  test("an unparented personal root bench publishes corbits-tools before seeding", async () => {
+  test("an unparented personal root bench does not publish corbits-tools; provision only deploys workflows", async () => {
     const { api, tarballPuts } = firstLoginSeedHub({});
     const { log } = collector();
-    const publishedTenants: string[] = [];
     const result = await provisionPersonalTenantIfNeeded({
       api,
       cookies: ["session=abc"],
@@ -604,9 +591,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmailVerified: true,
       displayName: "Alice's Lab",
       seedModel: MODEL,
-      publishToolRegistry: async ({ tenantId }) => {
-        publishedTenants.push(tenantId);
-      },
       pushWorkflow: noopPush,
       log,
     });
@@ -617,7 +601,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
       tenantSlug: TENANT_SLUG,
       seeded: true,
     });
-    expect(publishedTenants).toEqual([TENANT_ID]);
     expect(tarballPuts).toEqual([]);
   });
 
@@ -853,7 +836,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmailVerified: true,
       displayName: "Alice's Lab",
       seedModel: MODEL,
-      publishToolRegistry: noopPublishToolRegistry,
       pushWorkflow: noopPush,
       log: collector().log,
     });
@@ -869,7 +851,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       seedModel: MODEL,
-      publishToolRegistry: noopPublishToolRegistry,
       pushWorkflow: noopPush,
       log,
     });
@@ -905,7 +886,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
         ),
     );
     const grantsPosted: { resource: string; action: string }[] = [];
-    const publishedTenants: string[] = [];
     const api: ApiCall = async (method, path, body) => {
       const registry = corbitsToolsRegistryResponse(method, path, TENANT_ID, [
         SEEDED_MEMORY_TARBALL,
@@ -1021,9 +1001,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       // No seedModel needed: nothing left to seed on the workflow side.
-      publishToolRegistry: async ({ tenantId }) => {
-        publishedTenants.push(tenantId);
-      },
       pushWorkflow: noopPush,
       log: collector().log,
     });
@@ -1033,7 +1010,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
       seeded: true,
       tenantId: "ten_new",
     });
-    expect(publishedTenants).toEqual([TENANT_ID]);
     // Exactly the one grant this tenant was missing — no more, no less.
     expect(grantsPosted).toEqual([missingGrant]);
   });
@@ -1133,7 +1109,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userId: "user_1",
       userEmail: "alice@example.com",
       userEmailVerified: true,
-      publishToolRegistry: noopPublishToolRegistry,
       pushWorkflow: noopPush,
       log: collector().log,
     });
@@ -1151,7 +1126,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
     // not depend on a seed credential that may never exist. Seeding itself is
     // skipped (nothing to seed with); the user is not stranded in a loop.
     let assetListCalls = 0;
-    const publishedTenants: string[] = [];
     const api: ApiCall = async (method, path) => {
       const registry = corbitsToolsRegistryResponse(
         method,
@@ -1235,9 +1209,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       // No seedModel — hub without ANTHROPIC_API_KEY.
-      publishToolRegistry: async ({ tenantId }) => {
-        publishedTenants.push(tenantId);
-      },
       pushWorkflow: noopPush,
       log: collector().log,
     });
@@ -1250,7 +1221,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
       seeded: false,
       tenantId: "ten_new",
     });
-    expect(publishedTenants).toEqual([TENANT_ID]);
     // Completeness was checked (tenant-local assets listed) even without a
     // seed model — membership recovery does not short-circuit before that.
     expect(assetListCalls).toBe(1);
@@ -1479,7 +1449,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       seedModel: MODEL,
-      publishToolRegistry: noopPublishToolRegistry,
       pushWorkflow: noopPush,
       log: collector().log,
     });
@@ -1742,7 +1711,6 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userEmail: "alice@example.com",
       userEmailVerified: true,
       seedModel: MODEL,
-      publishToolRegistry: noopPublishToolRegistry,
       pushWorkflow: noopPush,
       log: collector().log,
     });
@@ -1856,8 +1824,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
     expect(await isFullySeeded(api, ["session=abc"], TENANT_ID)).toBe(true);
   });
 
-  test("sign-in republishes an empty inherited corbits-tools registry", async () => {
-    const publishedTenants: string[] = [];
+  test("sign-in does not republish an empty inherited corbits-tools registry", async () => {
     const api: ApiCall = async (method, path) => {
       const registry = corbitsToolsRegistryResponse(
         method,
@@ -1958,14 +1925,10 @@ describe("provisionPersonalTenantIfNeeded", () => {
       userId: "user_1",
       userEmail: "alice@example.com",
       userEmailVerified: true,
-      publishToolRegistry: async ({ tenantId }) => {
-        publishedTenants.push(tenantId);
-      },
       pushWorkflow: noopPush,
       log: collector().log,
     });
 
-    expect(publishedTenants).toEqual([TENANT_ID]);
     expect(result).toEqual({
       kind: "existing-member",
       seeded: false,

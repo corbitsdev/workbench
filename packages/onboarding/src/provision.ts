@@ -18,10 +18,8 @@ import {
   DEFAULT_WORKFLOWS,
   reconcileSeedGrants,
   seedTenant,
-  publishCorbitsToolsRegistry,
   isCorbitsToolsRegistrySeeded,
   type ModelSource,
-  type ToolRegistryPublisher,
   type WorkflowPusher,
   isLiveDeploymentStatus,
 } from "@corbits/seeding";
@@ -107,7 +105,6 @@ export type ProvisionArgs = {
   displayName?: string;
   operatorTenantId?: string;
   seedModel?: ModelSource;
-  publishToolRegistry?: ToolRegistryPublisher;
   pushWorkflow: WorkflowPusher;
   log: (line: string) => void;
   /** The closed-by-default access-policy gate. Absent means this hub
@@ -230,33 +227,6 @@ export async function isFullySeeded(
   return isCorbitsToolsRegistrySeeded(api, cookies, tenantId);
 }
 
-async function publishRootToolRegistry(args: {
-  api: ApiCall;
-  cookies: string[];
-  hubUrl: string;
-  tenantId: string;
-  publishToolRegistry?: ToolRegistryPublisher;
-  log: (line: string) => void;
-}): Promise<void> {
-  const publishToolRegistry =
-    args.publishToolRegistry ?? publishCorbitsToolsRegistry;
-  try {
-    await publishToolRegistry({
-      api: args.api,
-      cookies: args.cookies,
-      hubUrl: args.hubUrl,
-      tenantId: args.tenantId,
-      log: args.log,
-    });
-  } catch (cause) {
-    throw new ProvisionError(
-      "tool_registry_publish_failed",
-      `personal root bench ${args.tenantId} could not publish corbits-tools before seeding: ${cause instanceof Error ? cause.message : String(cause)}`,
-      "transient",
-    );
-  }
-}
-
 /**
  * The honest partial-seed report `ensureSeeded` reads after catching a
  * sidecar-unavailable deploy failure (CL-6264): which default workflows
@@ -333,39 +303,6 @@ export async function provisionPersonalTenantIfNeeded(
       tenantResponse.data,
       "tenant response",
     );
-    if (ownTenant.parentId === undefined || ownTenant.parentId === null) {
-      await publishRootToolRegistry({
-        api: args.api,
-        cookies: args.cookies,
-        hubUrl: args.hubUrl,
-        tenantId: own.tenantId,
-        ...(args.publishToolRegistry !== undefined
-          ? { publishToolRegistry: args.publishToolRegistry }
-          : {}),
-        log: args.log,
-      });
-    } else if (
-      !(await isCorbitsToolsRegistrySeeded(
-        args.api,
-        args.cookies,
-        own.tenantId,
-      ))
-    ) {
-      // A parented bench inherits `corbits-tools`. When that inherited
-      // registry is missing or dangling-empty, republish locally the
-      // same way grant reconcile fills missing grants on every sign-in.
-      await publishRootToolRegistry({
-        api: args.api,
-        cookies: args.cookies,
-        hubUrl: args.hubUrl,
-        tenantId: own.tenantId,
-        ...(args.publishToolRegistry !== undefined
-          ? { publishToolRegistry: args.publishToolRegistry }
-          : {}),
-        log: args.log,
-      });
-    }
-
     const fullySeeded = await isFullySeeded(
       args.api,
       args.cookies,
@@ -501,32 +438,6 @@ export async function provisionPersonalTenantIfNeeded(
       `personal bench ${tenant.id} was created but the caller has no principal in it`,
       "transient",
     );
-  }
-
-  if (tenant.parentId === undefined || tenant.parentId === null) {
-    await publishRootToolRegistry({
-      api: args.api,
-      cookies: args.cookies,
-      hubUrl: args.hubUrl,
-      tenantId: tenant.id,
-      ...(args.publishToolRegistry !== undefined
-        ? { publishToolRegistry: args.publishToolRegistry }
-        : {}),
-      log: args.log,
-    });
-  } else if (
-    !(await isCorbitsToolsRegistrySeeded(args.api, args.cookies, tenant.id))
-  ) {
-    await publishRootToolRegistry({
-      api: args.api,
-      cookies: args.cookies,
-      hubUrl: args.hubUrl,
-      tenantId: tenant.id,
-      ...(args.publishToolRegistry !== undefined
-        ? { publishToolRegistry: args.publishToolRegistry }
-        : {}),
-      log: args.log,
-    });
   }
 
   if (!args.seedModel) {
