@@ -39,7 +39,7 @@ export function PluginCard({
 
   return (
     <div
-      className="plugins-catalog-card flex min-h-16 min-w-0 items-center gap-3 px-2 py-3"
+      className="flex min-h-16 min-w-0 items-center gap-3 px-2 py-3"
       data-plugin-card
       data-plugin-name={plugin.descriptor.displayName}
     >
@@ -56,7 +56,7 @@ export function PluginCard({
           {pluginOutcome(plugin.descriptor.id, plugin.descriptor.displayName)}
         </span>
       </div>
-      <div className="plugins-catalog-card-actions">
+      <div className="flex flex-none items-center gap-2">
         <span className="text-xs text-muted-foreground">{caption}</span>
         {plugin.status === "not_connected" ? (
           <Button

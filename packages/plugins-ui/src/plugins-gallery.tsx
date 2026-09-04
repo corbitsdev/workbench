@@ -177,7 +177,10 @@ function PluginCatalogPanel({
         />
       ) : null}
       {visibleEntries.length > 0 ? (
-        <div className="plugins-catalog-grid" aria-label="Plugin catalog">
+        <div
+          className="grid grid-cols-1 border border-border lg:grid-cols-2 [&>*]:border-b [&>*]:border-border [&>*:last-child]:border-b-0 lg:[&>*:nth-child(odd)]:border-r lg:[&>*:nth-last-child(2):nth-child(odd)]:border-b-0"
+          aria-label="Plugin catalog"
+        >
           {visibleEntries.map((entry) =>
             entry.kind === "preset" ? (
               <McpPresetCard

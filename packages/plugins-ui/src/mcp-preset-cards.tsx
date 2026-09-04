@@ -141,7 +141,7 @@ export function McpPresetCard({
 
   return (
     <div
-      className="plugins-catalog-card min-w-0 px-2 py-2.5"
+      className="min-w-0 px-2 py-2.5"
       data-plugin-card
       data-plugin-name={preset.displayName}
       data-plugin-slug={preset.slug}
@@ -164,7 +164,7 @@ export function McpPresetCard({
             </span>
           ) : null}
         </div>
-        <div className="plugins-catalog-card-actions">
+        <div className="flex flex-none items-center gap-2">
           <span className="text-xs text-muted-foreground">{status}</span>
           {preset.connected ? (
             <ConfirmButton

@@ -1161,7 +1161,7 @@ async function run(): Promise<void> {
           );
           if (grid === null || filterGroup === null) return null;
           const cards = Array.from(
-            grid.querySelectorAll<HTMLElement>(".plugins-catalog-card"),
+            grid.querySelectorAll<HTMLElement>("[data-plugin-card]"),
           );
           const lastCard = cards.at(-1);
           return {
@@ -1206,11 +1206,11 @@ async function run(): Promise<void> {
         await page.waitForFunction(
           () =>
             document.querySelectorAll(
-              '[aria-label="Plugin catalog"] .plugins-catalog-card',
+              '[aria-label="Plugin catalog"] [data-plugin-card]',
             ).length === 6,
         );
         const evenFinalRowBorders = await page.$$eval(
-          '[aria-label="Plugin catalog"] .plugins-catalog-card',
+          '[aria-label="Plugin catalog"] [data-plugin-card]',
           (cards) =>
             cards
               .slice(-2)
@@ -1249,7 +1249,7 @@ async function run(): Promise<void> {
           );
         });
         const oddFinalRowBorders = await page.$$eval(
-          '[aria-label="Plugin catalog"] .plugins-catalog-card',
+          '[aria-label="Plugin catalog"] [data-plugin-card]',
           (cards) =>
             cards
               .slice(-2)
