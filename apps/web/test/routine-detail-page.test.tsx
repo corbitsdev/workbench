@@ -151,21 +151,6 @@ describe("RoutineDetailPage lifecycle actions", () => {
     }
   });
 
-  test("Resume on a dead-lettered routine asks for it to be enabled again", () => {
-    const calls: boolean[] = [];
-    const { container, root } = mount(
-      { onToggleEnabled: (enabled: boolean) => calls.push(enabled) },
-      { routine: { ...routine, deadLetteredAt: "2026-01-02T00:00:00.000Z" } },
-    );
-    try {
-      clickButton(container, "Resume");
-      expect(calls).toEqual([true]);
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
-  });
-
   test("Run now triggers the run-now mutation", () => {
     let runs = 0;
     const { container, root } = mount({

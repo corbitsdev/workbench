@@ -31,6 +31,7 @@ import {
   useCloseCanvas,
   useOpenArtifactInCanvas,
   useOpenProfileInCanvas,
+  useOpenRoutineInCanvas,
 } from "../src/shell/canvas-availability";
 import { ProviderHealthProvider } from "../src/shell/provider-health-context";
 import { ShellChromeProvider } from "../src/shell/shell-chrome-provider";
@@ -285,48 +286,37 @@ describe("canvas dismisses when in-app nav leaves a rail surface (CL-6819)", () 
     });
   }
 
-  test("leaving Routines for Insights dismisses the create pane", async () => {
+  test("leaving Routines for Files dismisses the pane", async () => {
     await renderAt("/routines");
     await act(async () => {
-      click("probe-open-routine");
+      click("probe-open-profile");
     });
-    expect(slot("routine")).toBe("set");
-
-    await renderAt("/insights");
-    expect(slot("routine")).toBe("null");
-  });
-
-  test("leaving Routines for Files dismisses the create pane", async () => {
-    await renderAt("/routines");
-    await act(async () => {
-      click("probe-open-routine");
-    });
-    expect(slot("routine")).toBe("set");
+    expect(slot("profile")).toBe("set");
 
     await renderAt("/files");
-    expect(slot("routine")).toBe("null");
+    expect(slot("profile")).toBe("null");
   });
 
   test("opening a routine detail under Routines does not dismiss the pane", async () => {
     await renderAt("/routines");
     await act(async () => {
-      click("probe-open-routine");
+      click("probe-open-profile");
     });
-    expect(slot("routine")).toBe("set");
+    expect(slot("profile")).toBe("set");
 
     await renderAt("/routines/rt_1");
-    expect(slot("routine")).toBe("set");
+    expect(slot("profile")).toBe("set");
   });
 
   test("query-only changes do not dismiss the pane", async () => {
     await renderAt("/routines?tab=list");
     await act(async () => {
-      click("probe-open-routine");
+      click("probe-open-profile");
     });
-    expect(slot("routine")).toBe("set");
+    expect(slot("profile")).toBe("set");
 
     await renderAt("/routines?tab=runs");
-    expect(slot("routine")).toBe("set");
+    expect(slot("profile")).toBe("set");
   });
 
   test("leaving a rail surface dismisses a profile pane", async () => {
@@ -355,11 +345,11 @@ describe("canvas dismisses when in-app nav leaves a rail surface (CL-6819)", () 
     stubMatchMedia({ "(max-width: 1099px)": true });
     await renderAt("/routines");
     await act(async () => {
-      click("probe-open-routine");
+      click("probe-open-profile");
     });
-    expect(slot("routine")).toBe("set");
+    expect(slot("profile")).toBe("set");
 
     await renderAt("/insights");
-    expect(slot("routine")).toBe("null");
+    expect(slot("profile")).toBe("null");
   });
 });

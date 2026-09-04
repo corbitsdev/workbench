@@ -72,13 +72,13 @@ describe("GlobalRoutinesList", () => {
     expect(renderList([])).toContain("No scheduled workflows yet");
   });
 
-  test("a row carries the name, tenant, schedule sentence, pause switch, and run now", () => {
+  test("a row carries the name, tenant, schedule sentence, on/off switch, and run now", () => {
     const markup = renderList([row()]);
     expect(markup).toContain("Morning brief");
     expect(markup).toContain("Acme Team");
     expect(markup).not.toContain("0 9 * * *");
     expect(markup).toContain('role="switch"');
-    expect(markup).toContain("Pause Morning brief");
+    expect(markup).toContain("On Morning brief");
     expect(markup).toContain("Run now");
   });
 
@@ -88,14 +88,14 @@ describe("GlobalRoutinesList", () => {
     expect(markup).not.toContain('href="/routines/morning-brief"');
   });
 
-  test("a stopped definition still appears, with Resume on the switch", () => {
+  test("a stopped definition still appears, with Off on the switch", () => {
     const markup = renderList([
       row({
         definition: { ...definition, status: "stopped", name: "Paused digest" },
       }),
     ]);
     expect(markup).toContain("Paused digest");
-    expect(markup).toContain("Resume Paused digest");
+    expect(markup).toContain("Off Paused digest");
     expect(markup).toContain("Run now");
   });
 
@@ -114,7 +114,7 @@ describe("GlobalRoutinesList", () => {
 
   test("the On switch is named Off when the routine is disabled", () => {
     const markup = renderList([
-      row({ routine: { ...routine, enabled: false } }),
+      row({ definition: { ...definition, status: "stopped" } }),
     ]);
     expect(markup).toContain('aria-label="Off Morning brief"');
     expect(markup).not.toContain('aria-label="Resume Morning brief"');

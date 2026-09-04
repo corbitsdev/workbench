@@ -36,7 +36,7 @@ import {
   runOutcomeStatus,
   runStatusLabel,
   withListingAbandoned,
-} from "@corbits/routines/client";
+} from "@corbits/workflows/client";
 import type * as React from "react";
 import { useEffect, useMemo, useState } from "react";
 

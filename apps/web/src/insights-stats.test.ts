@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { FIRE_RUNNING_WINDOW_MS } from "@corbits/routines/client";
+import { FIRE_RUNNING_WINDOW_MS } from "@corbits/workflows/client";
 
 import {
   computeInsightsStats,

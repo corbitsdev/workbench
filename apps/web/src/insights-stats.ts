@@ -6,7 +6,7 @@ import { isWorkbenchHostDefinitionName } from "@corbits/chat/workbench-host-nami
 import {
   runOutcomeStatus,
   withListingAbandoned,
-} from "@corbits/routines/client";
+} from "@corbits/workflows/client";
 
 import type { InsightsRun, RunTraceSpan } from "./insights-api";
 import type { ScheduledWorkflowDefinition } from "./routines-api";

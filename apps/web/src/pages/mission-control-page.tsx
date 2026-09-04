@@ -36,7 +36,7 @@ import {
   runOutcomeStatus,
   runStatusLabel,
   withListingAbandoned,
-} from "@corbits/routines/client";
+} from "@corbits/workflows/client";
 
 import { approveApproval, rejectApproval, useAPIQuery } from "../api";
 import { useBench } from "../bench-context";
