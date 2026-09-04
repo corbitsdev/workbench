@@ -73,13 +73,12 @@ function runIds(data: unknown): string[] {
 /**
  * `waitForRunCompletion` must outlive the step timeout. When both were
  * 30s, a turn that ran to its own timeout was reported as "no terminal
- * event" (RunStarted + StepStarted only) instead of RunFailed. The hop
- * also needs headroom past a slow noop-inference turn on a busy CI
- * runner — the success path is a few seconds, but a 30s ceiling has
- * expired while the step was still running.
+ * event" (RunStarted + StepStarted only) instead of RunFailed. The step
+ * timeout stays 30s to match seed and heartbeat; the waiter is longer so
+ * a 30s step kill is observed as RunFailed.
  */
-const DIGEST_TURN_TIMEOUT_MS = 60_000;
-const DIGEST_RUN_COMPLETION_TIMEOUT_MS = 90_000;
+const DIGEST_TURN_TIMEOUT_MS = 30_000;
+const DIGEST_RUN_COMPLETION_TIMEOUT_MS = 60_000;
 
 const { tempDir, track } = createCleanupHarness();
 
