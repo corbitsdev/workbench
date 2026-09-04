@@ -71,6 +71,17 @@ import { AgentSkillsPicker } from "./agent-skills-picker";
 // that true: one implementation, so a handle suggested or accepted here can
 // never be a shape the router refuses to resolve.
 
+function submitErrorFromCause(
+  cause: unknown,
+  fallback: string,
+): { readonly message: string; readonly refId?: string } {
+  if (!(cause instanceof ApiQueryError)) return { message: fallback };
+  return {
+    message: cause.message,
+    ...(cause.refId !== undefined ? { refId: cause.refId } : {}),
+  };
+}
+
 function initialsFromName(name: string): string {
   const [first, second] = name.trim().split(/\s+/).filter(Boolean);
   if (first === undefined) return "?";
@@ -238,7 +249,10 @@ export function CreateAgentPanel({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [draftFailed, setDraftFailed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<{
+    readonly message: string;
+    readonly refId?: string;
+  } | null>(null);
   const [modelsState, setModelsState] = useState<ModelsState>({
     kind: "idle",
   });
@@ -354,9 +368,10 @@ export function CreateAgentPanel({
         setDraftFailed(true);
         setAdvancedOpen(true);
         setSubmitError(
-          cause instanceof ApiQueryError
-            ? cause.message
-            : "Myra couldn't draft a starting prompt for this agent.",
+          submitErrorFromCause(
+            cause,
+            "Myra couldn't draft a starting prompt for this agent.",
+          ),
         );
         setSubmitting(false);
         return;
@@ -377,9 +392,7 @@ export function CreateAgentPanel({
       onCreated(created);
     } catch (cause) {
       setSubmitError(
-        cause instanceof ApiQueryError
-          ? cause.message
-          : "Could not create the agent.",
+        submitErrorFromCause(cause, "Could not create the agent."),
       );
     } finally {
       setSubmitting(false);
@@ -403,7 +416,15 @@ export function CreateAgentPanel({
         <DialogBody>
           {submitError !== null && (
             <p className="mb-3 text-sm text-destructive" role="alert">
-              {submitError}
+              {submitError.message}
+              {submitError.refId !== undefined ? (
+                <>
+                  <br />
+                  <span className="text-xs">
+                    Reference: {submitError.refId}
+                  </span>
+                </>
+              ) : null}
             </p>
           )}
           {modelsState.kind === "error" && (
