@@ -1633,7 +1633,7 @@ describe("createChatOrchestrator", () => {
     orchestrator.dispose();
   });
 
-  test("message.run.ended posts the extracted error text for a failed turn", async () => {
+  test("message.run.ended posts a failed-turn notice for a failed turn, not a raw dump bubble", async () => {
     const room = fakeRoom();
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
@@ -1663,8 +1663,154 @@ describe("createChatOrchestrator", () => {
 
     expect(room.posted).toHaveLength(1);
     expect(room.posted[0]?.parts).toEqual([
-      { kind: "text", text: "provider timed out" },
+      { kind: "text", text: "provider timed out", turnFailed: true },
     ]);
+
+    orchestrator.dispose();
+  });
+
+  test("message.run.ended classifies a tools-unsupported failure as a failed-turn notice", async () => {
+    const room = fakeRoom();
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+      store: {
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
+        ],
+      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
+      events,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    events.emit("agent.event", {
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      sessionId: "ses_1",
+      event: {
+        type: "message.run.ended",
+        data: {
+          status: "failed",
+          error: {
+            message:
+              "This agent could not complete your request due to an unrecoverable inference error [HTTP 400]: 'tools' is not supported with this model.",
+          },
+        },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(room.posted).toHaveLength(1);
+    expect(room.posted[0]?.parts).toEqual([
+      {
+        kind: "text",
+        text: "This agent's model can't use tools.",
+        turnFailed: true,
+        turnFailedReason: "tools_unsupported",
+      },
+    ]);
+    const postedText = (room.posted[0]?.parts[0] as { text: string }).text;
+    expect(postedText).not.toMatch(/HTTP/i);
+    expect(postedText).not.toContain("unrecoverable inference error");
+    expect(postedText).not.toContain("not supported with this model");
+
+    orchestrator.dispose();
+  });
+
+  test("a connector.reply that is a tools-unsupported dump becomes a failed-turn notice, not a bubble", async () => {
+    const room = fakeRoom();
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+      store: {
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
+        ],
+      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
+      events,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    events.emit("agent.event", {
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      sessionId: "ses_1",
+      event: {
+        type: "connector.reply",
+        data: {
+          content:
+            "This agent could not complete your request due to an unrecoverable inference error [HTTP 400]: 'tools' is not supported with this model.",
+        },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(room.posted).toHaveLength(1);
+    expect(room.posted[0]?.parts).toEqual([
+      {
+        kind: "text",
+        text: "This agent's model can't use tools.",
+        turnFailed: true,
+        turnFailedReason: "tools_unsupported",
+      },
+    ]);
+
+    orchestrator.dispose();
+  });
+
+  test("a connector.reply of ordinary tool-not-supported prose stays completed with original text", async () => {
+    const room = fakeRoom();
+    const agentTurns = createInMemoryAgentTurnStore();
+    await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_workbench1",
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      requestMessageIds: ["msg_1"],
+    });
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+      store: {
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", ["ins_echo1@ten1.workbench.test"]),
+        ],
+      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
+      events,
+      agentTurns,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    const original = "The grep tool is not supported in this sandbox.";
+    events.emit("agent.event", {
+      agentAddress: "ins_echo1@ten1.workbench.test",
+      sessionId: "ses_1",
+      event: {
+        type: "connector.reply",
+        data: { content: original },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(room.posted).toHaveLength(1);
+    expect(room.posted[0]?.parts).toEqual([{ kind: "text", text: original }]);
+    const [settled] = await agentTurns.listTurns({
+      tenantId: "ten_1",
+      workbenchId: "ins_workbench1",
+    });
+    expect(settled).toMatchObject({
+      status: "completed",
+      replyMessageId: room.posted[0]?.id,
+    });
 
     orchestrator.dispose();
   });
