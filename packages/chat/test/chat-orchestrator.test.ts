@@ -732,6 +732,348 @@ describe("createChatOrchestrator", () => {
     orchestrator.dispose();
   });
 
+  // CL-6396: two overlapping running rows for the same (workbench, agent)
+  // used to make `findRunningTurn`'s newest-occurrence pick a coin flip.
+  // A reply that names turn__0 must close that row, never the later one.
+  test("a reply named for turn__0 does not close an overlapping turn__1", async () => {
+    const room = fakeRoom();
+    const agentTurns = createInMemoryAgentTurnStore();
+    const agentAddress = "ins_echo1@ten1.workbench.test";
+    const first = await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_workbench1",
+      agentAddress,
+      requestMessageIds: ["msg_0"],
+    });
+    const second = await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_workbench1",
+      agentAddress,
+      requestMessageIds: ["msg_1"],
+    });
+    expect(first.childRunId).toBe("turn__0");
+    expect(second.childRunId).toBe("turn__1");
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+      store: {
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", [agentAddress]),
+        ],
+      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
+      events,
+      agentTurns,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_1",
+      childRunId: "turn__0",
+      event: { type: "connector.reply", data: { content: "first reply" } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(room.posted).toHaveLength(1);
+    expect(room.posted[0]).toMatchObject({
+      runId: "turn__0",
+      parts: [{ kind: "text", text: "first reply" }],
+    });
+    expect(
+      (await agentTurns.getTurn({ tenantId: "ten_1", turnId: first.id }))
+        ?.status,
+    ).toBe("completed");
+    expect(
+      (await agentTurns.getTurn({ tenantId: "ten_1", turnId: second.id }))
+        ?.status,
+    ).toBe("running");
+
+    orchestrator.dispose();
+  });
+
+  // CL-6396: a failed-turn notice is the same `postReply` path as a
+  // successful `connector.reply`. Naming turn__0 must close that row
+  // failed, leave the overlapping turn__1 running, and stamp the notice
+  // with turn__0 — never the newest-occurrence pick.
+  test("a failed-turn notice named for turn__0 does not close an overlapping turn__1", async () => {
+    const room = fakeRoom();
+    const agentTurns = createInMemoryAgentTurnStore();
+    const agentAddress = "ins_echo1@ten1.workbench.test";
+    const first = await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_workbench1",
+      agentAddress,
+      requestMessageIds: ["msg_0"],
+    });
+    const second = await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_workbench1",
+      agentAddress,
+      requestMessageIds: ["msg_1"],
+    });
+    expect(first.childRunId).toBe("turn__0");
+    expect(second.childRunId).toBe("turn__1");
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+      store: {
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", [agentAddress]),
+        ],
+      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
+      events,
+      agentTurns,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_1",
+      childRunId: "turn__0",
+      event: {
+        type: "message.run.ended",
+        data: { status: "failed", error: { message: "provider timed out" } },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(room.posted).toHaveLength(1);
+    expect(room.posted[0]).toMatchObject({
+      runId: "turn__0",
+      parts: [{ kind: "text", text: "provider timed out" }],
+    });
+    expect(
+      (await agentTurns.getTurn({ tenantId: "ten_1", turnId: first.id }))
+        ?.status,
+    ).toBe("failed");
+    expect(
+      (await agentTurns.getTurn({ tenantId: "ten_1", turnId: second.id }))
+        ?.status,
+    ).toBe("running");
+
+    orchestrator.dispose();
+  });
+
+  // CL-6396: an old sidecar's agent.event frames omit childRunId. The one
+  // documented fallback is newest-occurrence — the later overlapping row
+  // receives the reply, not a spray and not a late-reply invent.
+  test("a reply with no childRunId still finishes the newest overlapping turn", async () => {
+    const room = fakeRoom();
+    const agentTurns = createInMemoryAgentTurnStore();
+    const agentAddress = "ins_echo1@ten1.workbench.test";
+    const first = await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_workbench1",
+      agentAddress,
+      requestMessageIds: ["msg_0"],
+    });
+    const second = await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_workbench1",
+      agentAddress,
+      requestMessageIds: ["msg_1"],
+    });
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+      store: {
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", [agentAddress]),
+        ],
+      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
+      events,
+      agentTurns,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_1",
+      event: { type: "connector.reply", data: { content: "legacy reply" } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(room.posted).toHaveLength(1);
+    expect(room.posted[0]?.runId).toBe("turn__1");
+    expect(
+      (await agentTurns.getTurn({ tenantId: "ten_1", turnId: first.id }))
+        ?.status,
+    ).toBe("running");
+    expect(
+      (await agentTurns.getTurn({ tenantId: "ten_1", turnId: second.id }))
+        ?.status,
+    ).toBe("completed");
+
+    orchestrator.dispose();
+  });
+
+  // CL-6396: two turns on one sidecar session must not share the
+  // reply-parts accumulator. Turn 0's late `message.run.ended` used to
+  // `take()` the session-keyed bucket after turn 1 had already started
+  // accumulating, swallowing turn 1's structured parts.
+  test("sequential turns on one sessionId with distinct childRunIds do not steal reply-parts", async () => {
+    const room = fakeRoom();
+    const agentTurns = createInMemoryAgentTurnStore();
+    const agentAddress = "ins_echo1@ten1.workbench.test";
+    const first = await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_workbench1",
+      agentAddress,
+      requestMessageIds: ["msg_0"],
+    });
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+      store: {
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_workbench1", [agentAddress]),
+        ],
+      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
+      events,
+      agentTurns,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_shared",
+      childRunId: "turn__0",
+      event: {
+        type: "inference.done",
+        data: { turn: { content: [{ type: "text", text: "first thought" }] } },
+      },
+    });
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_shared",
+      childRunId: "turn__0",
+      event: {
+        type: "connector.reply",
+        data: { content: "first thought" },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(
+      (await agentTurns.getTurn({ tenantId: "ten_1", turnId: first.id }))
+        ?.status,
+    ).toBe("completed");
+
+    const second = await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_workbench1",
+      agentAddress,
+      requestMessageIds: ["msg_1"],
+    });
+    expect(second.childRunId).toBe("turn__1");
+
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_shared",
+      childRunId: "turn__1",
+      event: {
+        type: "inference.done",
+        seq: 1,
+        data: {
+          turn: {
+            content: [
+              { type: "text", text: "Let me check that." },
+              {
+                type: "tool_call",
+                id: "call_1",
+                name: "web_search",
+                arguments: { query: "second thought" },
+              },
+            ],
+          },
+        },
+      },
+    });
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_shared",
+      childRunId: "turn__1",
+      event: {
+        type: "tool.done",
+        seq: 2,
+        data: {
+          result: { callId: "call_1", content: "3 results found" },
+        },
+      },
+    });
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_shared",
+      childRunId: "turn__1",
+      event: {
+        type: "inference.done",
+        seq: 3,
+        data: {
+          turn: { content: [{ type: "text", text: "second thought" }] },
+        },
+      },
+    });
+    // Late bracket-close for the first turn, still on the shared session.
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_shared",
+      childRunId: "turn__0",
+      event: {
+        type: "message.run.ended",
+        data: { status: "completed", messageRunId: "mr_0", messageId: "msg_0" },
+      },
+    });
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_shared",
+      childRunId: "turn__1",
+      event: {
+        type: "connector.reply",
+        data: { content: "second thought" },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(room.posted).toHaveLength(2);
+    expect(room.posted[0]?.parts).toEqual([
+      { kind: "text", text: "first thought" },
+    ]);
+    expect(room.posted[1]?.parts).toEqual([
+      { kind: "text", text: "Let me check that." },
+      {
+        kind: "tool-trace",
+        name: "web_search",
+        input: { query: "second thought" },
+        status: "success",
+        output: "3 results found",
+      },
+      { kind: "text", text: "second thought" },
+    ]);
+    expect(room.posted[1]?.runId).toBe("turn__1");
+    expect(
+      (await agentTurns.getTurn({ tenantId: "ten_1", turnId: second.id }))
+        ?.status,
+    ).toBe("completed");
+
+    orchestrator.dispose();
+  });
+
   // CL-6378: a turn's `inference.done` events already split the model's
   // output into prose and tool calls (see `event-collector.ts`'s
   // `handleInferenceDone`), and `tool.done` resolves each call's

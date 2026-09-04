@@ -79,26 +79,34 @@ export interface AgentTurnStore {
    */
   finishTurn(input: FinishAgentTurnInput): Promise<AgentTurn | undefined>;
   /**
-   * The newest turn still `running` for (workbench, agent) — what the
-   * reply path stamps onto the message it posts. The sidecar's
-   * `agent.event` frames carry the agent's address and nothing finer,
-   * so this is how a reply finds the occurrence that produced it.
-   * Unambiguous only because `waitUntilFree` (below) is what
-   * `dispatchTurn` (`./workbench-service.ts`) now calls before ever
-   * opening a second occurrence for the same (workbench, agent) — the
-   * one-in-flight-turn-per-workbench claim (`./turn-queue.ts`) is a
-   * different, coarser guarantee (it only spans the fast dispatch
-   * handoff, not the agent's actual reply) and on its own was NOT
-   * enough: two messages sent to the same agent a few seconds apart
-   * could each win that claim in turn and open a second `running` row
-   * while the first agent turn was still generating (CL-6670), making
-   * this method's "newest" pick a coin flip between the two turns'
-   * real replies.
+   * The newest turn still `running` for (workbench, agent), or — when
+   * `childRunId` is present — that exact occurrence. The reply path stamps
+   * the row it finds onto the message it posts. An old sidecar's
+   * `agent.event` frames omit `childRunId`; those callers keep the
+   * newest-occurrence pick, which is the one documented fallback.
+   *
+   * `waitUntilFree` (below) is what `dispatchTurn` (`./workbench-service.ts`)
+   * calls before opening a second occurrence for the same (workbench,
+   * agent) — the one-in-flight-turn-per-workbench claim (`./turn-queue.ts`)
+   * is a different, coarser guarantee (it only spans the fast dispatch
+   * handoff, not the agent's actual reply) and on its own was NOT enough:
+   * two messages sent to the same agent a few seconds apart could each win
+   * that claim in turn and open a second `running` row while the first
+   * agent turn was still generating (CL-6670), making the newest pick a
+   * coin flip between the two turns' real replies.
    */
   findRunningTurn(input: {
     readonly tenantId: string;
     readonly workbenchId: string;
     readonly agentAddress: string;
+    /**
+     * When present, this is an exact occurrence lookup — the row whose
+     * `childRunId` matches, still `running`. An old sidecar's `agent.event`
+     * frames omit this (CL-6396); those callers keep the newest-occurrence
+     * pick below, which is the one documented fallback, not a second path
+     * that posts a late reply.
+     */
+    readonly childRunId?: string;
   }): Promise<AgentTurn | undefined>;
   /**
    * Every `running` turn for a workbench, across every agent — the
@@ -301,6 +309,7 @@ export function createInMemoryAgentTurnStore(
     readonly tenantId: string;
     readonly workbenchId: string;
     readonly agentAddress: string;
+    readonly childRunId?: string;
   }): AgentTurn | undefined {
     expireStaleTurns();
     return [...rows.values()]
@@ -309,7 +318,9 @@ export function createInMemoryAgentTurnStore(
           turn.tenantId === input.tenantId &&
           turn.workbenchId === input.workbenchId &&
           turn.agentAddress === input.agentAddress &&
-          turn.status === "running",
+          turn.status === "running" &&
+          (input.childRunId === undefined ||
+            turn.childRunId === input.childRunId),
       )
       .sort(compareTurnsNewestFirst)[0];
   }
@@ -505,6 +516,7 @@ export function createDrizzleAgentTurnStore<
     readonly tenantId: string;
     readonly workbenchId: string;
     readonly agentAddress: string;
+    readonly childRunId?: string;
   }): Promise<AgentTurn | undefined> {
     await expireStaleTurns(input);
     const [row] = await db
@@ -516,6 +528,9 @@ export function createDrizzleAgentTurnStore<
           eq(agentTurns.workbenchId, input.workbenchId),
           eq(agentTurns.agentAddress, input.agentAddress),
           eq(agentTurns.status, "running"),
+          ...(input.childRunId !== undefined
+            ? [eq(agentTurns.childRunId, input.childRunId)]
+            : []),
         ),
       )
       .orderBy(desc(agentTurns.startedAt), desc(agentTurns.occurrence))

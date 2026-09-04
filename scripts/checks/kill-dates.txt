@@ -17,17 +17,17 @@ apps/sidecar | sawyer | 2026-10-26
 vendor/intx/agent | sawyer | 2026-10-26 | f29297427016f6cb0c10ba49a846e2e445bdd38b6aabfc47854a1cc85ce8e002
 vendor/intx/db | sawyer | 2026-10-26 | e1a41e59050ca32d6b590b33f559221584b3e78c71d4b61b3b3d10df82a50096
 vendor/intx/harness | sawyer | 2026-10-26 | 5daababe006d9cf8e678c0eed22c2daa99cc519f35ed7a32ec2b977da9f2fb71
-vendor/intx/hub-agent | sawyer | 2026-10-26 | 617f93b05da6a02415ea3b319526137b56a1d5cc3689ca4d33ab324d8f5807d3
+vendor/intx/hub-agent | sawyer | 2026-10-26 | f0f01b50973355d435f2f4543760190a0f87b419d5a2fc47aab64c8845ee05be
 vendor/intx/hub-api | sawyer | 2026-10-26 | 10fd46c7bf0b058618a8124f6f43d7e779fd5861ff0146fe8d7c2886b836c40e
-vendor/intx/hub-sessions | sawyer | 2026-10-26 | c884af15f80f228acb95b95d415a035bc8d6bae579d199c00fb98a511ba42219
+vendor/intx/hub-sessions | sawyer | 2026-10-26 | dbe424a39424d9848742903e6dd8aef5129b6355a4ece31af71bcabf07b24225
 vendor/intx/inference | sawyer | 2026-10-26 | 3754de556eac6387a427454d57a22f46ad42dc22096c9c76f993cea74f97f50a
 vendor/intx/mail-memory | sawyer | 2026-10-26 | 99e15f6b256f36562dcf4b0cbd84e412b1a8985f00019e3e1748ecd18332b74d
 vendor/intx/mailbox | sawyer | 2026-10-26 | 9647f7c0cda5a9fce7d687b2901a92769f18a442dcd4d1ffe8334eeb71b7dbb0
 vendor/intx/mime | sawyer | 2026-10-26 | ef4ad0c981b976bdfd88afd3c170d09fc534f04a263648eb9e1b440e9e6b5a07
-vendor/intx/types | sawyer | 2026-10-26 | 38b6e88e7b1710e865b783f9d8b842fe3603eb54b4d9f8f945ba64f5e654d708
+vendor/intx/types | sawyer | 2026-10-26 | f6d90f1dbbc604d1ead7727d46b8405f91929538fc0f08c730ab2d0da901f54b
 vendor/intx/workflow | sawyer | 2026-10-26 | 0d8b76651b9890ee39d271bf5d14e25a2a6496821d2a99d0712db0d75c736193
 vendor/intx/workflow-deploy | sawyer | 2026-10-26 | dd144cb4ca55373597a681d08b84fffc5084ec1fc7150ad25963d8e8273c49d9
-vendor/intx/workflow-host | sawyer | 2026-10-26 | 85eb308faadb576db975050545f9d7306c3c1a05bbbc16648782691c62ac8798
+vendor/intx/workflow-host | sawyer | 2026-10-26 | d94bacae4d56a0dc55a686e5d2ed0533489e7bac603104aaa345b1a368d4614c
 
 packages/folded-runs | sawyer | 2026-11-01
 
