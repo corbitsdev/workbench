@@ -486,6 +486,46 @@ describe("bridgeWorkbenchStream", () => {
     expect(closeCount).toBe(1);
   });
 
+  test("authorize going false closes a real Hono-shaped stream instead of aborting the writer", async () => {
+    const registry = createWorkbenchSubscriberRegistry();
+    let abortCount = 0;
+    let closeCount = 0;
+    const stream = Object.assign(
+      fakeStream(
+        () => Promise.resolve(),
+        () => {
+          closeCount += 1;
+          return Promise.resolve();
+        },
+      ),
+      {
+        abort: () => {
+          abortCount += 1;
+        },
+        writer: {
+          desiredSize: 1,
+          abort: () => {
+            abortCount += 1;
+          },
+        },
+      },
+    );
+
+    bridgeWorkbenchStream({
+      registry,
+      platform: noopPlatformEvents(),
+      workbenchId: "chan_1",
+      stream,
+      authorize: () => Promise.resolve(false),
+    });
+
+    registry.publish("chan_1", { type: "chat.typing", data: {} });
+    await flush();
+
+    expect(closeCount).toBe(1);
+    expect(abortCount).toBe(0);
+  });
+
   test("an authorize call that rejects is caught, reported, and closes the stream", async () => {
     const registry = createWorkbenchSubscriberRegistry();
     let closeCount = 0;

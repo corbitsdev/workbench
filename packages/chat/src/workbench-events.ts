@@ -23,7 +23,9 @@
 //    does throw is still handled the same way. Stall teardown aborts
 //    the underlying writer rather than awaiting Hono `close()`, which
 //    queues behind the same in-flight write and never drops the
-//    socket. `stream.onAbort` (wired by the route) remains the
+//    socket. A clean end (revoked access) still `close()`s — aborting a
+//    healthy Hono stream errors the body with `undefined` instead of a
+//    normal SSE disconnect. `stream.onAbort` (wired by the route) remains the
 //    disconnect path for a client that goes away between writes; a
 //    clean abort already torn down that way is not a new incident.
 // 2. Access must be re-checked on every delivered event, not only at
@@ -97,14 +99,13 @@ function abortUnderlyingWriter(stream: SSEStreamingApi): boolean {
   }
 }
 
-function dropStream(stream: SSEStreamingApi): void {
-  const abortedWriter = abortUnderlyingWriter(stream);
-  if (typeof stream.abort === "function") {
-    stream.abort();
-    return;
-  }
-  if (abortedWriter) return;
+function closeStream(stream: SSEStreamingApi): void {
   void stream.close().catch(() => undefined);
+}
+
+function dropHungStream(stream: SSEStreamingApi): void {
+  if (abortUnderlyingWriter(stream)) return;
+  closeStream(stream);
 }
 
 async function writeSSEObservingFailure(
@@ -337,7 +338,7 @@ export function bridgeWorkbenchStream(input: {
         roomId: input.workbenchId,
       });
       teardown();
-      dropStream(input.stream);
+      dropHungStream(input.stream);
       return;
     }
     queuedCount += 1;
@@ -363,12 +364,12 @@ export function bridgeWorkbenchStream(input: {
         roomId: input.workbenchId,
       });
       teardown();
-      dropStream(input.stream);
+      closeStream(input.stream);
       return;
     }
     if (!authorized) {
       teardown();
-      dropStream(input.stream);
+      closeStream(input.stream);
       return;
     }
     try {
@@ -388,7 +389,7 @@ export function bridgeWorkbenchStream(input: {
         });
       }
       teardown();
-      dropStream(input.stream);
+      dropHungStream(input.stream);
     }
   };
 
@@ -419,7 +420,7 @@ export function bridgeWorkbenchStream(input: {
           });
         }
         teardown();
-        dropStream(input.stream);
+        dropHungStream(input.stream);
       }
     });
   }
@@ -481,7 +482,7 @@ export function bridgeWorkbenchStream(input: {
           });
         }
         teardown();
-        dropStream(input.stream);
+        dropHungStream(input.stream);
       }
     });
   }, input.keepaliveIntervalMs ?? DEFAULT_KEEPALIVE_INTERVAL_MS);
