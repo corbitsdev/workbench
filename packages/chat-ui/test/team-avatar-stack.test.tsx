@@ -165,13 +165,13 @@ describe("workbench header member avatar stack", () => {
     expect(memberStack).not.toBeNull();
     expect(harness.container.querySelector(".chat-team-stack")).toBeNull();
     const agentAvatars = harness.container.querySelectorAll(
-      '.chat-member-avatar[data-agent="true"]',
+      '.member-avatar[data-agent="true"]',
     );
     expect(agentAvatars).toHaveLength(1);
     const agentAvatar = agentAvatars[0] as HTMLElement;
     expect(agentAvatar.title).toBe("Myra");
     const memberHumans = harness.container.querySelectorAll(
-      ".chat-member-avatar:not([data-agent])",
+      ".member-avatar:not([data-agent])",
     );
     expect(agentAvatar.querySelector('[data-corbit="true"]')).not.toBeNull();
     expect(memberHumans).toHaveLength(1);
@@ -204,7 +204,7 @@ describe("workbench header member avatar stack", () => {
 
     const agentAvatars = Array.from(
       harness.container.querySelectorAll(
-        '.chat-member-avatar[data-agent="true"]',
+        '.member-avatar[data-agent="true"]',
       ),
     ) as HTMLElement[];
     expect(agentAvatars).toHaveLength(2);
@@ -238,7 +238,7 @@ describe("workbench header member avatar stack", () => {
     await harness.settle();
 
     const agentAvatars = harness.container.querySelectorAll(
-      '.chat-member-avatar[data-agent="true"]',
+      '.member-avatar[data-agent="true"]',
     );
     expect(agentAvatars).toHaveLength(1);
     expect((agentAvatars[0] as HTMLElement).title).toBe("Myra the Helper");
@@ -327,7 +327,7 @@ describe("workbench header member avatar stack", () => {
     await harness.settle();
 
     const memberHumans = harness.container.querySelectorAll(
-      ".chat-member-avatar:not([data-agent])",
+      ".member-avatar:not([data-agent])",
     );
     expect(memberHumans).toHaveLength(1);
     expect((memberHumans[0] as HTMLElement).title).toBe("sawyer");

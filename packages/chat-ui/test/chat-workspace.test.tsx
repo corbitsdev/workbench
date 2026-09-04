@@ -2016,7 +2016,7 @@ describe("Workbench header polish (CL-6106)", () => {
     await harness.settle();
 
     const chip = harness.container.querySelector(
-      '.chat-member-avatar[data-agent="true"]',
+      '.member-avatar[data-agent="true"]',
     );
     expect(chip).not.toBeNull();
     expect((chip as HTMLElement).title).toBe("Researcher");
