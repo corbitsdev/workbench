@@ -14,6 +14,7 @@
 import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { type } from "arktype";
+import { createNoopCredentialCipher } from "@intx/crypto";
 import type { DBExecutor } from "@intx/db";
 import { buildCredentialDelivery, listVisibleOfferings } from "@intx/db";
 import type { CredentialBinding } from "@intx/types";
@@ -296,9 +297,7 @@ export async function resolveLaunchSources(
       modelRequirements: null,
       fallbackModel: model,
       invokerPreferences: {},
-      ...(deps.credentialCipher !== undefined
-        ? { credentialCipher: deps.credentialCipher }
-        : {}),
+      credentialCipher: deps.credentialCipher ?? createNoopCredentialCipher(),
     });
 
   const definitionModel = params.foldedBody.model;

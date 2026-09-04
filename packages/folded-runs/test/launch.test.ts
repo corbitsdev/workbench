@@ -832,6 +832,38 @@ describe("launchFoldedRun", () => {
     });
   });
 
+  test("omitted credentialCipher still supplies a cipher to resolveDefinitionSources", async () => {
+    resolveDefinitionSourcesCalls.length = 0;
+    const db = createFakeDb();
+    const sessionService = createFakeSessionService();
+    const eventCollectors = createFakeEventCollectors();
+
+    await launchFoldedRun(
+      {
+        db: db as never,
+        sessionService,
+        assetService: createFakeAssetService(),
+        sidecarRouter: createFakeSidecarRouter(),
+        toolGrantsForPins: () => [],
+        eventCollectors,
+      },
+      {
+        tenantId: "ten_1",
+        instanceId: "ins_noop_cipher",
+        triggerAddress: "ins_noop_cipher@ten1.workbench.test",
+        definitionId: "wfd_noop_cipher",
+        foldedBody: FOLDED_BODY,
+        launchLabel: "the agent",
+      },
+    );
+
+    expect(resolveDefinitionSourcesCalls).toHaveLength(1);
+    expect(
+      (resolveDefinitionSourcesCalls[0] as { credentialCipher?: unknown })
+        .credentialCipher,
+    ).toBeDefined();
+  });
+
   test("rolls back the committed rows and abandons the collector when the deploy fails", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,

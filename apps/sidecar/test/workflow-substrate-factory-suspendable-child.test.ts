@@ -18,7 +18,12 @@ import os from "node:os";
 import path from "node:path";
 
 import { generateKeyPair } from "@intx/crypto";
-import type { ApprovalSnapshot, KeyPair } from "@intx/types/runtime";
+import type { AuthzCallResult } from "@intx/inference";
+import type {
+  ApprovalSnapshot,
+  KeyPair,
+  MailPartReader,
+} from "@intx/types/runtime";
 import { defineAgent } from "@intx/agent";
 import {
   createRepoStore,
@@ -36,8 +41,10 @@ import {
   defineWorkflow,
   step,
   type StepInvoker,
+  type WorkflowAuthorizeFn,
   type WorkflowDefinition,
 } from "@intx/workflow";
+import type { CredentialWiring } from "@intx/workflow-host";
 
 import {
   createSidecarSpawnSuspendableChild,
@@ -51,6 +58,11 @@ const WORKFLOW_RUN_REPO_ID: RepoId = {
   id: DEPLOYMENT_ID,
 };
 const allowAll: AuthorizeFn = () => ({ allowed: true });
+const ALLOW_AUTHZ: AuthzCallResult = {
+  effect: "allow",
+  matchingGrants: [],
+  resolvedBy: null,
+};
 const PRINCIPAL: WorkflowRunWorkflowProcessPrincipal = {
   kind: "workflow-process",
   anchorRunId: DEPLOYMENT_ID,
@@ -174,6 +186,8 @@ describe("createSidecarSpawnSuspendableChild", () => {
         parentRunId: "run-parent",
         parentStepId: "section",
         signal: new AbortController().signal,
+        depth: 0,
+        maxChildSpawnDepth: 32,
       },
       () => undefined,
     );
@@ -262,6 +276,8 @@ describe("createSidecarSpawnSuspendableChild", () => {
         parentRunId: "run-parent",
         parentStepId: "section",
         signal: new AbortController().signal,
+        depth: 0,
+        maxChildSpawnDepth: 32,
       },
       () => undefined,
     );
@@ -277,13 +293,10 @@ describe("createSidecarSpawnSuspendableChild", () => {
     expect(seen.sources).toEqual(bodySources);
   });
 
-  // CL-6448: the body-turn tool seam. The spawn input threads the parent
-  // child's credentials-backed authorize, live credential wiring and mail
-  // part reader; the body invoker must receive exactly those, so a body
-  // agent's tool calls gate through the parent's per-step grant snapshot
-  // instead of the throwing stub, and an attachments-only inbound mail
-  // resolves its parts instead of throwing for want of a reader.
-  test("the spawn input's authorize, credentialWiring and mailPartReader reach the body invoker", async () => {
+  // The host threads optional authorize / credentialWiring / mailPartReader
+  // on the spawn input; the body invoker must receive those, not the env
+  // throwing stub and unset extras.
+  test("the body invoker receives spawn-input authorize, credentialWiring, and mailPartReader", async () => {
     const substrate = await makeSubstrate("suspendable-body-authorize-");
     const dataDir = await makeTempDir("suspendable-body-authz-datadir-");
     const sourcesDir = path.join(
@@ -308,13 +321,15 @@ describe("createSidecarSpawnSuspendableChild", () => {
       }),
     );
 
-    const threadedAuthorize = () =>
-      Promise.resolve({ effect: "allow" as const });
-    const threadedWiring = {
+    const parentAuthorize: WorkflowAuthorizeFn = async () => ALLOW_AUTHZ;
+    const parentCredentialWiring: CredentialWiring = {
       materialRef: { current: null },
       resolveStepGrants: () => [],
     };
-    const threadedReader = { read: () => Promise.resolve(new Uint8Array()) };
+    const parentMailPartReader: MailPartReader = {
+      read: async () => new Uint8Array(),
+    };
+
     const seen: {
       authorize?: unknown;
       credentialWiring?: unknown;
@@ -358,18 +373,20 @@ describe("createSidecarSpawnSuspendableChild", () => {
         parentRunId: "run-parent",
         parentStepId: "section",
         signal: new AbortController().signal,
-        authorize: threadedAuthorize as never,
-        credentialWiring: threadedWiring as never,
-        mailPartReader: threadedReader,
+        depth: 0,
+        maxChildSpawnDepth: 32,
+        authorize: parentAuthorize,
+        credentialWiring: parentCredentialWiring,
+        mailPartReader: parentMailPartReader,
       },
       () => undefined,
     );
 
     const terminal = await handle.next();
     expect(terminal.kind).toBe("terminal");
-    expect(seen.authorize).toBe(threadedAuthorize);
-    expect(seen.credentialWiring).toBe(threadedWiring);
-    expect(seen.mailPartReader).toBe(threadedReader);
+    expect(seen.authorize).toBe(parentAuthorize);
+    expect(seen.credentialWiring).toBe(parentCredentialWiring);
+    expect(seen.mailPartReader).toBe(parentMailPartReader);
   });
 
   test("a parent abort while parked cancels the child and surfaces a terminal", async () => {
@@ -386,6 +403,8 @@ describe("createSidecarSpawnSuspendableChild", () => {
         parentRunId: "run-parent",
         parentStepId: "section",
         signal: abort.signal,
+        depth: 0,
+        maxChildSpawnDepth: 32,
       },
       () => undefined,
     );
