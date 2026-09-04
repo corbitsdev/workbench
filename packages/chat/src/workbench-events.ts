@@ -255,8 +255,7 @@ export interface WorkbenchStreamBridge {
  * already ran `teardown` via `stream.onAbort` is not reported as a
  * new incident, but still aborts the in-flight writer so Hono
  * `close()` does not wait on it. A periodic keepalive keeps idle
- * connections alive
- * behind proxies that time out on silence.
+ * connections alive behind proxies that time out on silence.
  */
 export function bridgeWorkbenchStream(input: {
   registry: WorkbenchSubscriberRegistry;
