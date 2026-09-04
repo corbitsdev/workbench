@@ -69,10 +69,10 @@
     "@workbench/onboarding": "workspace:*",
     "@workbench/templates": "workspace:*",
     "arktype": "catalog:",
-    "better-auth": "^1.4.18",
-    "drizzle-orm": "0.45.2",
-    "hono": "^4.11.9",
-    "postgres": "^3.4.8"
+    "better-auth": "catalog:",
+    "drizzle-orm": "catalog:",
+    "hono": "catalog:",
+    "postgres": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
