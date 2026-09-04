@@ -33,6 +33,10 @@ export function createDockerSidecarProvisioner(
     id: "docker",
     apiVersion: PROVISIONER_API_VERSION,
     bindingFingerprint: `docker:v1:${config.image}`,
+    // Declares nothing, so this provisioner serves any deployment that
+    // states no capability requirement — the behaviour it had before
+    // Interchange replaced sidecar placement with capability selection.
+    capabilities: [],
     backend: createDockerBackend(commands, config),
     store,
   });
