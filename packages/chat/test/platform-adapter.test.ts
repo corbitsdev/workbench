@@ -1073,7 +1073,7 @@ describe("createHubChatPlatform", () => {
       },
     };
 
-    const platform = createHubChatPlatform({
+    const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService,
