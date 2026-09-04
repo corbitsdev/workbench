@@ -31,13 +31,14 @@ export const PLUGIN_CATEGORY_ORDER: readonly PluginCategory[] = [
   "Research & data",
 ];
 
-const CATEGORY_BY_ID: Readonly<Record<string, PluginCategory>> = {
+const CATEGORY_BY_ID: Readonly<Partial<Record<string, PluginCategory>>> = {
   granola: "Productivity",
   manus: "Productivity",
   notion: "Productivity",
   zoom: "Communication",
   slack: "Communication",
   google: "Productivity",
+  canva: "Productivity",
   attio: "Sales & customer",
   hubspot: "Sales & customer",
   exa: "Research & data",
@@ -45,6 +46,7 @@ const CATEGORY_BY_ID: Readonly<Record<string, PluginCategory>> = {
   sumble: "Research & data",
   linear: "Engineering",
   github: "Engineering",
+  "github-mcp": "Engineering",
   sentry: "Engineering",
   vercel: "Engineering",
   render: "Engineering",
@@ -90,19 +92,8 @@ const ICON_BY_ID: Readonly<Record<string, Icon>> = {
   github: GitPullRequest,
 };
 
-/** The handful surfaced under "Featured", ahead of the category grid — a
- * short, owner-editable literal list, not a derived ranking. */
-export const FEATURED_CONNECTOR_IDS: readonly string[] = [
-  "granola",
-  "github",
-  "linear",
-  "openrouter",
-  "huggingface",
-  "exa",
-];
-
-export function pluginCategory(connectorId: string): PluginCategory {
-  return CATEGORY_BY_ID[connectorId] ?? "Productivity";
+export function pluginCategory(catalogId: string): PluginCategory | undefined {
+  return CATEGORY_BY_ID[catalogId];
 }
 
 export function pluginOutcome(

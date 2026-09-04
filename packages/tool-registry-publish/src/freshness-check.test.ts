@@ -379,6 +379,41 @@ describe("checkToolPackageFreshness", () => {
     await checkToolPackageFreshness({ packageDirs: [pkg] });
   });
 
+  test.each([
+    ["GIT_INDEX_FILE", ".git/index"],
+    ["GIT_DIR", ".git"],
+    ["GIT_WORK_TREE", "."],
+    ["GIT_COMMON_DIR", ".git"],
+    ["GIT_OBJECT_DIRECTORY", ".git/objects"],
+  ])(
+    "ignores a foreign %s while detecting real source changes",
+    async (key, suffix) => {
+      const foreign = await committedPackage("export const n = 99;\n");
+      const { pkg } = await committedPackage("export const n = 1;\n");
+      const inherited = process.env;
+      process.env = { ...inherited, [key]: path.join(foreign.root, suffix) };
+      try {
+        const snapshots = await snapshotToolPackages([pkg]);
+        expect(snapshots).toEqual([
+          {
+            name: "@corbits/fake-tools",
+            dir: pkg,
+            currentVersion: "0.0.1",
+            publishedVersion: "0.0.1",
+            srcChangedSincePublished: false,
+          },
+        ]);
+        await checkToolPackageFreshness({ packageDirs: [pkg] });
+        await writePkg(pkg, "0.0.1", "export const n = 2;\n");
+        await expect(
+          checkToolPackageFreshness({ packageDirs: [pkg] }),
+        ).rejects.toBeInstanceOf(StaleToolPackageError);
+      } finally {
+        process.env = inherited;
+      }
+    },
+  );
+
   test("committed src change after the version-introducing commit is loud", async () => {
     const { root, pkg } = await committedPackage("export const n = 1;\n");
     await writePkg(pkg, "0.0.1", "export const n = 2;\n");

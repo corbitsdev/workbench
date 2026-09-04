@@ -2,6 +2,7 @@
 // get the catalog's one-click installation path. Presets and previously
 // connected custom servers share the same server-side store.
 
+import { reportError } from "@corbits/error-sink";
 import { Button, ConfirmButton, Input, toast } from "@corbits/react-ui";
 import {
   CONNECTOR_REGISTRY,
@@ -65,7 +66,7 @@ function mcpOauthConnectedReturn():
   return { slug, toolCount };
 }
 
-function McpPresetCard({
+export function McpPresetCard({
   tenantId,
   preset,
   toolCount,
@@ -140,7 +141,9 @@ function McpPresetCard({
 
   return (
     <div
-      className="border-b border-border px-2 py-2.5"
+      className="min-w-0 px-2 py-2.5"
+      data-plugin-card
+      data-plugin-name={preset.displayName}
       data-plugin-slug={preset.slug}
     >
       <div className="flex min-h-11 min-w-0 items-center gap-3">
@@ -161,32 +164,37 @@ function McpPresetCard({
             </span>
           ) : null}
         </div>
-        <span className="hidden shrink-0 text-xs text-muted-foreground xl:block">
-          {status}
-        </span>
-        {preset.connected ? (
-          <ConfirmButton
-            variant="destructive"
-            size="sm"
-            confirmLabel="Disconnect"
-            disabled={busy}
-            aria-label={`Disconnect ${preset.displayName}`}
-            onConfirm={handleDisconnect}
-          >
-            {busy ? "Disconnecting…" : "Disconnect"}
-          </ConfirmButton>
-        ) : tokenFieldOpen ? null : (
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={busy}
-            aria-label={`Connect ${preset.displayName}`}
-            onClick={handleConnect}
-          >
-            {busy ? "Connecting…" : "Connect"}
-          </Button>
-        )}
+        <div className="flex flex-none items-center gap-2">
+          <span className="text-xs text-muted-foreground">{status}</span>
+          {preset.connected ? (
+            <ConfirmButton
+              variant="ghost"
+              size="sm"
+              confirmLabel={
+                <>
+                  Disconnect
+                  <span className="sr-only"> {preset.displayName}</span>
+                </>
+              }
+              disabled={busy}
+              onConfirm={handleDisconnect}
+            >
+              {busy ? "Disconnecting…" : "Manage"}
+              <span className="sr-only"> {preset.displayName}</span>
+            </ConfirmButton>
+          ) : tokenFieldOpen ? null : (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              aria-label={`Connect ${preset.displayName}`}
+              onClick={handleConnect}
+            >
+              {busy ? "Connecting…" : "Connect"}
+            </Button>
+          )}
+        </div>
       </div>
       {tokenFieldOpen && !preset.connected ? (
         <div className="mt-2 flex flex-col gap-2 pl-11">
@@ -248,22 +256,7 @@ function McpPresetCard({
   );
 }
 
-export function McpPresetCardsSection({
-  tenantId,
-  query = "",
-  autoConnectSlug = null,
-  onAutoConnectHandled,
-}: {
-  readonly tenantId: string;
-  readonly query?: string;
-  /** A preset slug named by a `/plugins?connect=mcp:<slug>` deep link
-   * (CL-7141) — once the catalog has loaded, that preset's row gets
-   * focused so a person lands on the right card without hunting for it.
-   * Never auto-fires the connect action itself: connecting still takes
-   * a person's own click, the same as every other card here. */
-  readonly autoConnectSlug?: string | null;
-  readonly onAutoConnectHandled?: () => void;
-}) {
+export function useMcpPresetCatalog(tenantId: string) {
   const [presets, setPresets] = useState<readonly McpPreset[]>([]);
   const [toolCounts, setToolCounts] = useState<ReadonlyMap<string, number>>(
     () => {
@@ -274,86 +267,43 @@ export function McpPresetCardsSection({
     },
   );
   const [loadError, setLoadError] = useState<string | null>(null);
-  // Whether the presets fetch has resolved at least once — distinct from
-  // "zero presets": this catalog is the same ~10 curated apps for every
-  // tenant, so an empty `presets` array before this flips true is a
-  // loading gap, never a real "nothing to connect" state (CL-6472). The
-  // section used to `return null` whenever presets were empty regardless
-  // of why, which let a load-in-progress render as if the whole catalog
-  // had vanished — this component must never go quiet like that again.
   const [loaded, setLoaded] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
-  function reload() {
+  useEffect(() => {
+    let cancelled = false;
+    setLoaded(false);
     listMcpPresets(tenantId)
       .then((data) => {
-        setPresets(data);
-        setLoadError(null);
+        if (!cancelled) {
+          setPresets(data);
+          setLoadError(null);
+        }
       })
-      .catch((cause: unknown) => setLoadError(messageOf(cause)))
-      .finally(() => setLoaded(true));
+      .catch((cause: unknown) => {
+        reportError(cause, {
+          operation: "plugins.catalog.load-presets",
+          tenantId,
+        });
+        if (!cancelled) {
+          setPresets([]);
+          setLoadError(messageOf(cause));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantId, reloadKey]);
+
+  function handleChanged(slug: string, toolCount: number | undefined) {
+    if (toolCount !== undefined) {
+      setToolCounts((current) => new Map(current).set(slug, toolCount));
+    }
+    setReloadKey((key) => key + 1);
   }
 
-  useEffect(() => {
-    reload();
-  }, [tenantId]);
-
-  useEffect(() => {
-    if (!loaded || autoConnectSlug === null) return;
-    if (presets.some((preset) => preset.slug === autoConnectSlug)) {
-      const row = document.querySelector(
-        `[data-plugin-slug="${autoConnectSlug}"] button`,
-      );
-      (row as HTMLButtonElement | null)?.focus();
-    }
-    onAutoConnectHandled?.();
-  }, [loaded, autoConnectSlug, presets, onAutoConnectHandled]);
-
-  const needle = query.trim().toLowerCase();
-  const visiblePresets = presets.filter(
-    (preset) =>
-      needle === "" ||
-      `${preset.displayName} ${preset.description}`
-        .toLowerCase()
-        .includes(needle),
-  );
-
-  return (
-    <section className="flex flex-col gap-2">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Connect apps
-      </h3>
-      {loadError !== null ? (
-        <p className="text-sm text-destructive" role="alert">
-          {loadError}
-        </p>
-      ) : !loaded ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : visiblePresets.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          {presets.length === 0
-            ? "No apps to connect right now."
-            : `No app matches "${query.trim()}".`}
-        </p>
-      ) : (
-        <div className="border border-border [&>*:last-child]:border-b-0">
-          {visiblePresets.map((preset) => (
-            <McpPresetCard
-              key={preset.slug}
-              tenantId={tenantId}
-              preset={preset}
-              toolCount={toolCounts.get(preset.slug)}
-              onChanged={(toolCount) => {
-                if (toolCount !== undefined) {
-                  setToolCounts((prev) =>
-                    new Map(prev).set(preset.slug, toolCount),
-                  );
-                }
-                reload();
-              }}
-            />
-          ))}
-        </div>
-      )}
-    </section>
-  );
+  return { presets, toolCounts, loaded, loadError, handleChanged };
 }
