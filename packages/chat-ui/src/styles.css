@@ -964,7 +964,8 @@
 
 .chat-bubble-text {
   margin: 0;
-  font-size: 0.9375rem;
+  font-size: max(var(--text-base), 16px);
+  font-weight: var(--font-weight-medium);
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
@@ -2549,8 +2550,9 @@
   background: transparent;
   padding: 0.1rem 0.2rem;
   font: inherit;
-  font-size: 0.875rem;
-  line-height: 1.45;
+  font-size: max(var(--text-base), 16px);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.5;
   color: var(--foreground);
 }
 
