@@ -1,7 +1,8 @@
 import { describe, test, expect } from "bun:test";
 
 import type { InferenceSource } from "@intx/types/runtime";
-import type { CredentialDelivery } from "@intx/types/sidecar";
+import { CredentialsUpdateFrame } from "@intx/types/sidecar";
+import { type } from "arktype";
 import type { Principal, RepoId, RepoStore } from "@intx/hub-sessions";
 
 import {
@@ -716,28 +717,19 @@ describe("createMultistepCredentialsRouter", () => {
     expect(await router.tryRoute(frame)).toBe(false);
   });
 
-  test("rejects a malformed delivery for a registered address without dispatching", async () => {
-    const router = createMultistepCredentialsRouter();
-    let called = false;
-    router.register("dep@integration.interchange", async () => {
-      called = true;
-    });
-    // A malformed delivery would crash the child's control-channel receiver on
-    // its `CredentialsUpdateFrame` narrow, so the router rejects before
-    // dispatch and the hub-link turns the throw into a truthful session.error.
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- deliberately malformed delivery to exercise the pre-dispatch validation
+  test("a malformed delivery is rejected at the wire boundary, so it never reaches the router", () => {
+    // Validation belongs to the frame schema, not to this adapter: hub-link's
+    // `handleMessage` narrows every inbound frame through `HubFrame` (which
+    // unions `CredentialsUpdateFrame`) and answers a malformed one with an
+    // error frame before any router is consulted. So the contract to assert is
+    // the boundary's, and the router carries no defensive re-validation of a
+    // shape it can no longer be handed.
     const malformed = {
-      bindings: [{ handle: "x" }],
-      materials: [],
-    } as unknown as CredentialDelivery;
-    await expect(
-      router.tryRoute({
-        type: "credentials.update",
-        agentAddress: "dep@integration.interchange",
-        delivery: malformed,
-      }),
-    ).rejects.toThrow();
-    expect(called).toBe(false);
+      type: "credentials.update",
+      agentAddress: "dep@integration.interchange",
+      delivery: { bindings: [{ handle: "x" }], materials: [] },
+    };
+    expect(CredentialsUpdateFrame(malformed)).toBeInstanceOf(type.errors);
   });
 
   test("propagates the handler's rejection (deliverCredentials throwing) verbatim", async () => {
@@ -756,7 +748,7 @@ describe("createMultistepSourcesRouter", () => {
     id: "primary",
     provider: "anthropic",
     baseURL: "https://api.anthropic.com",
-    apiKey: "sk-x",
+    credentialId: "sk-x",
     model: "claude-test",
   };
   const frame = {
