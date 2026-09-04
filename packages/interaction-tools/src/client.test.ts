@@ -61,6 +61,35 @@ test("postQuestion posts a question block to the workflow-chat participants/mess
   );
 });
 
+test("postQuestion stamps a caller-supplied questionId on the card instead of minting", async () => {
+  let seenBody: unknown;
+  const fetchImpl = (async (_url: string | URL, init?: RequestInit) => {
+    seenBody = JSON.parse(String(init?.body));
+    return new Response(
+      JSON.stringify({ id: "msg_1", createdAt: "2026-08-17T00:00:00.000Z" }),
+      { status: 201 },
+    );
+  }) as unknown as typeof fetch;
+
+  const result = await postQuestion(testConfig(fetchImpl), {
+    question: "Which environment?",
+    options: ["Staging", "Production"],
+    questionId: "q_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  });
+
+  const body = seenBody as {
+    parts: readonly {
+      kind: string;
+      block: { type: string; data: Record<string, unknown> };
+    }[];
+  };
+  expect(body.parts[0]?.block.data["questionId"]).toBe(
+    "q_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  );
+  expect(result.questionId).toBe("q_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  expect(result.messageId).toBe("msg_1");
+});
+
 test("a 404 from the route surfaces as NoOwnChannelError", async () => {
   const fetchImpl = (async () =>
     new Response(
