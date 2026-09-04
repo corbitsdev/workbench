@@ -9,6 +9,7 @@ import {
   shouldPublishTarball,
   sha512Integrity,
   type ApiCall,
+  type FetchTarballPut,
 } from "./publish";
 import { tarballsCoverRequiredSeedPackages } from "./registry";
 
@@ -143,7 +144,7 @@ describe("publishCorbitsToolsRegistry", () => {
               status: 200,
               headers: { "Content-Type": "application/json" },
             },
-          )) as typeof fetch,
+          )) satisfies FetchTarballPut,
       });
       throw new Error("expected EmptyRegistryPublishError");
     } catch (cause) {

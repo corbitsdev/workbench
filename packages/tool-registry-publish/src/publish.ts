@@ -275,13 +275,18 @@ export async function isCorbitsToolsRegistrySeeded(
   );
 }
 
+export type FetchTarballPut = (
+  input: string,
+  init: RequestInit,
+) => Promise<Response>;
+
 async function putTarball(
   hubUrl: string,
   cookies: string[],
   tenantId: string,
   assetId: string,
   tarball: PackedTarball,
-  fetchImpl: typeof fetch,
+  fetchImpl: FetchTarballPut,
 ): Promise<PublishSummary> {
   const headers: Record<string, string> = {
     "Content-Type": "application/octet-stream",
@@ -315,7 +320,7 @@ export type PublishCorbitsToolsRegistryArgs = {
   cookies: string[];
   hubUrl: string;
   tenantId: string;
-  fetchImpl?: typeof fetch;
+  fetchImpl?: FetchTarballPut;
   log?: (line: string) => void;
   /** Test seam. Production omits this and runs `checkToolPackageFreshness`. */
   checkFreshness?: () => Promise<void>;
