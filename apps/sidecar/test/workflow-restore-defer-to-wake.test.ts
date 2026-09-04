@@ -169,7 +169,7 @@ function makeDeadSource(provider: string): InferenceSource {
     id: `source-${provider}`,
     provider,
     baseURL: "https://api.example.com",
-    apiKey: "sk-dead-key-from-before-a-provider-reconfigure",
+    credentialId: "sk-dead-key-from-before-a-provider-reconfigure",
     model: "model-1",
   };
 }

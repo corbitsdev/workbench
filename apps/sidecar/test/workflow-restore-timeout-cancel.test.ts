@@ -73,7 +73,7 @@ function makeSource(): InferenceSource {
     id: "source-1",
     provider: "buildable",
     baseURL: "https://inference.example.com",
-    apiKey: "key",
+    credentialId: "key",
     model: "model-1",
   };
 }

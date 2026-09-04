@@ -159,7 +159,7 @@ function makeSource(provider: string): InferenceSource {
     id: `source-${provider}`,
     provider,
     baseURL: "https://inference.example.com",
-    apiKey: "key",
+    credentialId: "key",
     model: "model-1",
   };
 }
