@@ -52,16 +52,15 @@ afterAll(async () => {
   for (const close of closers) await close();
 });
 
-const DOMAIN = "mailbox-persist-wrap.test";
-
 function uid(label: string): string {
   return `${label}_${crypto.randomUUID().slice(0, 8)}`;
 }
 
 /**
  * A fresh (tenant, definition, sender run + session, two human principals)
- * fixture per call -- every test gets its own scope so the suite's tests can
- * run independently without colliding on shared ids.
+ * fixture per call -- every test gets its own scope, including its own mail
+ * domain (the tenant table's `domain` column is globally unique), so the
+ * suite's tests can run independently without colliding on shared ids.
  */
 async function setup() {
   const { db, close: closeDb } = createDB(dbConfigFromUrl(databaseUrl));
@@ -71,11 +70,12 @@ async function setup() {
   ) as { db: MailboxDb; close: () => Promise<void> };
   closers.push(closeMailbox);
 
+  const domain = `${uid("mailbox-persist-wrap")}.test`;
   const tenantId = uid("tnt_mbxpw");
   const definitionId = uid("wfd_mbxpw");
   const senderRunId = uid("run_mbxpw_sender");
-  const senderAddress = `${senderRunId}@${DOMAIN}`;
-  const agentRecipientAddress = `${uid("run_mbxpw_recipient")}@${DOMAIN}`;
+  const senderAddress = `${senderRunId}@${domain}`;
+  const agentRecipientAddress = `${uid("run_mbxpw_recipient")}@${domain}`;
   const senderPrincipalId = uid("prn_mbxpw_sender");
   const human1Id = uid("mbxpw_h1");
   const human2Id = uid("mbxpw_h2");
@@ -85,7 +85,7 @@ async function setup() {
     id: tenantId,
     name: "Mailbox Persist Wrap Tenant",
     slug: uid("mbxpw"),
-    domain: DOMAIN,
+    domain,
   });
   await db.insert(workflowDefinition).values({
     id: definitionId,
@@ -136,6 +136,7 @@ async function setup() {
   return {
     db,
     mailboxDb,
+    domain,
     tenantId,
     senderAddress,
     agentRecipientAddress,
@@ -149,6 +150,7 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
     const {
       db,
       mailboxDb,
+      domain,
       tenantId,
       senderAddress,
       agentRecipientAddress,
@@ -183,7 +185,7 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
     const raw = new TextEncoder().encode(
       [
         `From: ${senderAddress}`,
-        `To: usr_${human1Id}@${DOMAIN}, usr_${human2Id}@${DOMAIN}, ${agentRecipientAddress}`,
+        `To: usr_${human1Id}@${domain}, usr_${human2Id}@${domain}, ${agentRecipientAddress}`,
         "Subject: Turn finished",
         "",
         "Body",
@@ -193,8 +195,8 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
     const upstreamResult = await persistMail({
       senderAddress,
       recipients: [
-        `usr_${human1Id}@${DOMAIN}`,
-        `usr_${human2Id}@${DOMAIN}`,
+        `usr_${human1Id}@${domain}`,
+        `usr_${human2Id}@${domain}`,
         agentRecipientAddress,
       ],
       raw,
@@ -219,8 +221,19 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
       [human1Id, human2Id].sort(),
     );
 
-    // The onRow hook stamped the workbench ref onto both rows.
-    for (const row of rows) {
+    // The onRow hook stamps the workbench ref onto each row asynchronously
+    // (see `createHubMailboxRowRefsStamper`'s own header on why it cannot be
+    // synchronous), so give it a moment to land before asserting on it.
+    let stamped: (typeof rows)[number][] = [];
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      stamped = await mailboxDb
+        .select()
+        .from(principalMail)
+        .where(eq(principalMail.tenantId, tenantId));
+      if (stamped.every((row) => row.refs !== null)) break;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    for (const row of stamped) {
       expect(row.refs).toEqual([{ kind: "workbench", id: tenantId }]);
     }
 
@@ -229,19 +242,19 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
   });
 
   test("authorizeSender resolves a live sender run to its tenant and mail domain", async () => {
-    const { db, tenantId, senderAddress } = await setup();
+    const { db, domain, tenantId, senderAddress } = await setup();
     const authorizeSender = createHubMailboxAuthorizeSender(db);
 
     expect(await authorizeSender(senderAddress)).toEqual({
       tenantId,
-      domain: DOMAIN,
+      domain,
     });
   });
 
   test("authorizeSender refuses a sender with no live endpoint", async () => {
-    const { db } = await setup();
+    const { db, domain } = await setup();
     const authorizeSender = createHubMailboxAuthorizeSender(db);
 
-    expect(await authorizeSender(`run_no_such_run@${DOMAIN}`)).toBeNull();
+    expect(await authorizeSender(`run_no_such_run@${domain}`)).toBeNull();
   });
 });
