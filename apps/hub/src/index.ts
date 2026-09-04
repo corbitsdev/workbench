@@ -110,6 +110,10 @@ import {
   settleConnectedService,
   workbenchLaunchPersistExtra,
 } from "@corbits/chat";
+import {
+  createDrizzleMailboxWriter,
+  type MailboxFanoutDeps,
+} from "@corbits/chat/mailbox-fanout";
 import type { RelaunchNoticePort } from "@corbits/chat";
 import { reportError } from "@corbits/error-sink";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
@@ -1683,6 +1687,25 @@ export async function createHub(config: HubConfig) {
     // messages to it.
     releaseAgentInstance: (address, reason) =>
       sidecarRouter.sendAgentUndeploy(address, reason),
+    // CL-7450: fans a sent human message into every human participant's
+    // `@corbits/mailbox` inbox, on the same `mailboxDb`/`mailboxBus` every
+    // other mailbox consumer in this file shares. `resolveKnownPrincipalIds`
+    // reads the control plane's own `principal` table directly (the
+    // authoritative "is this a real principal in this tenant" check),
+    // rather than `@corbits/mailbox`'s FK, so an unknown participant is a
+    // reported skip, not a database error deep in a transaction.
+    mailbox: {
+      writer: createDrizzleMailboxWriter(mailboxDb, mailboxBus),
+      resolveKnownPrincipalIds: async (tenantId, candidateIds) => {
+        if (candidateIds.length === 0) return new Set();
+        const rows = await db.query.principal.findMany({
+          where: (p, { eq: equals, and: andAll }) =>
+            andAll(equals(p.tenantId, tenantId), inArray(p.id, candidateIds)),
+          columns: { id: true },
+        });
+        return new Set(rows.map((row) => row.id));
+      },
+    } satisfies MailboxFanoutDeps,
   };
   app.route(`${TENANT_PREFIX}/chat`, createChatRoutes(chatDeps));
   // Myra's workflow-run chat surfaces (`@corbits/agent-directory-tools`'

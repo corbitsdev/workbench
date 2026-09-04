@@ -117,6 +117,7 @@ import { cookiesFromHeader } from "@corbits/hub-api-client";
 import type { AgentTurnStore } from "./agent-turns";
 import type { ThreadStore } from "./threads";
 import { ThreadDepthCapError } from "./threads";
+import type { MailboxFanoutDeps } from "./mailbox-fanout";
 import type { WorkbenchShareStore } from "./workbench-share";
 import { monogramFromName } from "./workbench-share";
 import type { FederationTrustStore } from "./federation-trust";
@@ -213,6 +214,14 @@ export type CreateChatRoutesDeps = {
    * CRUD stay free of thread tables.
    */
   threads?: ThreadStore;
+  /**
+   * CL-7450's mailbox fan-out: writes a sent human message into every
+   * human participant's `@corbits/mailbox` inbox — see
+   * `SendWorkbenchMessageDeps`'s field of the same name in
+   * `./workbench-service.ts`. Omitted, a sent message reaches only the
+   * room's own timeline, the pre-CL-7450 behavior.
+   */
+  mailbox?: MailboxFanoutDeps;
   /**
    * Durable dispatch-mail -> source-message correlation (CL-6314) —
    * threaded through to every `sendWorkbenchMessage` call this router
@@ -2311,6 +2320,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           ...(deps.waitUntilFreeTimeoutMs !== undefined
             ? { waitUntilFreeTimeoutMs: deps.waitUntilFreeTimeoutMs }
             : {}),
+          ...(deps.mailbox !== undefined ? { mailbox: deps.mailbox } : {}),
         },
         {
           tenantId: ownerTenantId,
@@ -2519,6 +2529,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                   : {}),
                 ...(deps.waitUntilFreeTimeoutMs !== undefined
                   ? { waitUntilFreeTimeoutMs: deps.waitUntilFreeTimeoutMs }
+                  : {}),
+                ...(deps.mailbox !== undefined
+                  ? { mailbox: deps.mailbox }
                   : {}),
               },
               {

@@ -16,7 +16,7 @@ import {
   isModelUnavailableCause,
   MODEL_UNAVAILABLE_CONSUMER_MESSAGE,
 } from "./model-unavailable";
-import { localPartOf } from "./agent-address";
+import { domainOf, localPartOf } from "./agent-address";
 import { deriveDisplayName } from "./display-name";
 import { assertNoLeakedInternalId } from "./id-leak-guard";
 import { isAgentAddress, mentionedParticipants } from "./mentions";
@@ -51,6 +51,14 @@ import type {
   InvitableDefinition,
 } from "./platform-port";
 import { postRoomMessage, type RoomMessageStore } from "./room-messages";
+import { mailMessageIdFor } from "./mail-headers";
+import { mailAncestryOf } from "./threads";
+import {
+  writeChatMailboxFanout,
+  mailboxBodyOf,
+  mailboxSubjectOf,
+  type MailboxFanoutDeps,
+} from "./mailbox-fanout";
 import type { TurnMailCorrelationStore } from "./turn-mail-correlation";
 import type { WorkbenchSubscriberRegistry } from "./workbench-events";
 import type { QueuedTurn, WorkbenchTurnQueue } from "./turn-queue";
@@ -1278,7 +1286,19 @@ export type SendWorkbenchMessageDeps = {
    * Narrows a turn's context to its own thread. Absent, a turn is asked
    * with the whole room. See `./turn-context.ts`.
    */
-  readonly threads?: Pick<ThreadStore, "listThreadAssignments">;
+  readonly threads?: Pick<
+    ThreadStore,
+    "listThreadAssignments" | "getThread" | "threadIdForMessage"
+  >;
+  /**
+   * The mail domain and fan-out target for CL-7450's mailbox copy:
+   * writing a sent human message into every human participant's
+   * `@corbits/mailbox` inbox, addressed by this row's own RFC 5322
+   * Message-ID (`./mail-headers.ts`). Optional so unit suites that only
+   * exercise routing stay free of the mailbox tables; the hub always
+   * injects a real one (`platform-adapter.ts`'s composition).
+   */
+  readonly mailbox?: MailboxFanoutDeps;
   /**
    * The turn-level deadline (CL-6644): `dispatchTurnBatch` wraps every
    * recipient's `dispatchTurn` call in this single wall-clock budget,
@@ -1479,11 +1499,80 @@ export async function sendWorkbenchMessage(
     ...(input.threadId !== undefined ? { threadId: input.threadId } : {}),
   });
 
+  const mailboxDeps = deps.mailbox;
+  if (mailboxDeps !== undefined) {
+    await mailboxFanOutForSend(deps, mailboxDeps, input, posted.id);
+  }
+
   return {
     id: posted.id,
     createdAt: posted.createdAt,
     fanoutDelivered: routeMessage(deps, input, posted.id),
   };
+}
+
+/**
+ * CL-7450: the human write path's own copy — every human participant's
+ * `@corbits/mailbox` inbox gets this row, addressed by its own RFC 5322
+ * Message-ID, before this call returns. Unlike agent dispatch
+ * (`routeMessage`, fire-and-forget so a slept agent's wake never blocks
+ * the sender's own bubble), a mailbox write failure must reach the
+ * caller: `writeChatMailboxFanout` throws on anything but a genuinely
+ * unknown participant, and this function does not catch it.
+ */
+async function mailboxFanOutForSend(
+  deps: SendWorkbenchMessageDeps,
+  mailboxDeps: MailboxFanoutDeps,
+  input: SendWorkbenchMessageInput,
+  messageId: string,
+): Promise<void> {
+  const domain = domainOf(input.senderAddress);
+  if (domain === undefined) {
+    throw new Error(
+      `sender address "${input.senderAddress}" has no domain to stamp a mail Message-ID from`,
+    );
+  }
+  const mailMessageId = mailMessageIdFor(messageId, domain);
+  await deps.roomMessages.stampMailMessageId({
+    tenantId: input.tenantId,
+    workbenchId: input.workbenchId,
+    messageId,
+    mailMessageId,
+  });
+
+  const settingsRow = await deps.store.getWorkbenchSettings(
+    input.tenantId,
+    input.workbenchId,
+  );
+  const participants =
+    settingsRow !== undefined ? participantsOf(settingsRow.settings) : [];
+
+  const ancestors =
+    deps.threads !== undefined
+      ? await mailAncestryOf(
+          deps.threads,
+          input.tenantId,
+          input.workbenchId,
+          input.threadId ?? null,
+        )
+      : [];
+  const inReplyTo =
+    ancestors.length > 0
+      ? mailMessageIdFor(ancestors[ancestors.length - 1] as string, domain)
+      : undefined;
+
+  const body = mailboxBodyOf(input.messageParts);
+  await writeChatMailboxFanout(mailboxDeps, {
+    tenantId: input.tenantId,
+    workbenchId: input.workbenchId,
+    senderAddress: input.senderAddress,
+    senderPrincipalId: input.principalId,
+    participants,
+    messageId: mailMessageId,
+    subject: mailboxSubjectOf(body),
+    body,
+    ...(inReplyTo !== undefined ? { inReplyTo } : {}),
+  });
 }
 
 /**
