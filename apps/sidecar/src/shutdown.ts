@@ -85,7 +85,7 @@ export async function runSidecarShutdown({
     }
     exit(0);
   } catch (error) {
-    reportError(error, { operation: "sidecar.shutdown" });
+    report(error, { operation: "sidecar.shutdown" });
     log.error`Shutdown threw; exiting non-zero: ${errorMessage(error)}`;
     exit(1);
   }
