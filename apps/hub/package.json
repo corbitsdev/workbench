@@ -38,6 +38,7 @@
     "@corbits/notify": "workspace:*",
     "@corbits/preferences": "workspace:*",
     "@corbits/presence": "workspace:*",
+    "@corbits/process-provisioner": "workspace:*",
     "@corbits/run-key-history": "workspace:*",
     "@corbits/run-scope": "workspace:*",
     "@corbits/sidecar-placement": "workspace:*",
