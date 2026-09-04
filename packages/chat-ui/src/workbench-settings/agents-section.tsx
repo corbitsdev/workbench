@@ -36,6 +36,7 @@ import {
 } from "@corbits/inference-settings";
 import type { ModelInfo } from "@corbits/inference-settings";
 import { ArrowLeft, CaretRight, UserPlus, WarningCircle } from "@corbits/icons";
+import { CorbitAvatar } from "../corbit-avatar";
 
 import {
   addAgentCapability,
@@ -346,7 +347,10 @@ function AgentDetailEditor({
 
   return (
     <div className="chat-settings-agent-block">
-      <h3 className="chat-settings-agent-block-title">{label}</h3>
+      <div className="chat-settings-agent-header">
+        <CorbitAvatar size="lg" label={label} />
+        <h3 className="chat-settings-agent-block-title">{label}</h3>
+      </div>
 
       <ModelSelect
         tenantId={tenantId}

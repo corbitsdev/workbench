@@ -1,4 +1,18 @@
-import { colorForPrincipal } from "@corbits/presence/color";
+/**
+ * Approved Corbits pastel palette for avatars:
+ * 1. Summit Blue: #C5D2DE
+ * 2. Ridge Green: #C1D1BE
+ * 3. Canvas Cream: #F7EAD5
+ * 4. Breakthrough Orange: #F2B277
+ */
+export const PASTEL_PALETTE = [
+  "#C5D2DE", // Summit Blue
+  "#C1D1BE", // Ridge Green
+  "#F7EAD5", // Canvas Cream
+  "#F2B277", // Breakthrough Orange
+] as const;
+
+export type PastelColor = (typeof PASTEL_PALETTE)[number];
 
 /**
  * A person's generated fallback fill for react-ui's `Avatar`, which has no
@@ -20,6 +34,7 @@ export type GeneratedAvatarStyle = {
  * on an ancestor. */
 export const AVATAR_IDENTITY_CLASS = "avatar-identity-generated";
 
+const HEX_PATTERN = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i;
 const HSL_PATTERN =
   /^hsl\((\d+(?:\.\d+)?) (\d+(?:\.\d+)?)% (\d+(?:\.\d+)?)%\)$/;
 
@@ -41,6 +56,30 @@ function hslToRgb(
   ];
 }
 
+function parseColorToRgb(
+  color: string,
+): readonly [number, number, number] | null {
+  const hexMatch = HEX_PATTERN.exec(color);
+  if (hexMatch !== null) {
+    const r = hexMatch[1];
+    const g = hexMatch[2];
+    const b = hexMatch[3];
+    if (r !== undefined && g !== undefined && b !== undefined) {
+      return [
+        Number.parseInt(r, 16),
+        Number.parseInt(g, 16),
+        Number.parseInt(b, 16),
+      ];
+    }
+  }
+  const hslMatch = HSL_PATTERN.exec(color);
+  if (hslMatch !== null) {
+    const [, h, s, l] = hslMatch;
+    return hslToRgb(Number(h), Number(s), Number(l));
+  }
+  return null;
+}
+
 function relativeLuminance(r: number, g: number, b: number): number {
   const channel = (value: number) => {
     const normalized = value / 255;
@@ -53,33 +92,48 @@ function relativeLuminance(r: number, g: number, b: number): number {
 
 /**
  * The legible initials color (pure black or pure white — never a
- * mid-tone) for a `colorForPrincipal` background, chosen by WCAG
- * relative luminance so a generated avatar stays readable regardless of
- * which hue the hash lands on. `colorForPrincipal` fixes saturation and
- * lightness but the hue swings the whole 0-360 range, so no single fixed
- * text color clears contrast for every hash.
+ * mid-tone) for a background, chosen by WCAG relative luminance so a
+ * generated avatar stays readable.
  */
 export function readableTextOn(background: string): string {
-  const match = HSL_PATTERN.exec(background);
-  if (match === null) return "#ffffff";
-  const [, h, s, l] = match;
-  const [r, g, b] = hslToRgb(Number(h), Number(s), Number(l));
+  const rgb = parseColorToRgb(background);
+  if (rgb === null) return "#000000";
+  const [r, g, b] = rgb;
   return relativeLuminance(r, g, b) > 0.4 ? "#000000" : "#ffffff";
 }
 
 /**
- * A stable, per-principal fill for a human's fallback avatar. Reuses
- * `@corbits/presence`'s `colorForPrincipal` — the app's one existing
- * deterministic-identity-color function, already shipped for live
- * cursors/presence dots (CL-6328) — rather than a second hashing scheme,
- * paired with a computed readable text color. Never derived from render
- * order or `Math.random()`: the same `principalId` always resolves to
- * the same pair, in every surface, for every viewer.
+ * Deterministic hash of a principal ID string.
+ */
+export function hashPrincipal(principalId: string): number {
+  let hash = 0;
+  for (let index = 0; index < principalId.length; index += 1) {
+    hash = (hash * 31 + principalId.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
+/**
+ * Stable, per-person light pastel background fill from the approved
+ * Corbits palette. Never swings arbitrary saturated hues.
+ */
+export function pastelColorForPrincipal(principalId: string): PastelColor {
+  const hash = hashPrincipal(principalId);
+  const index = hash % PASTEL_PALETTE.length;
+  return PASTEL_PALETTE[index] ?? PASTEL_PALETTE[0];
+}
+
+/**
+ * A stable, per-principal fill for a human's fallback avatar.
+ * Uses a deterministic selection from the Workbench light-pastel palette
+ * paired with a computed readable text color.
+ * The same `principalId` always resolves to the same pair, in every
+ * surface, for every viewer.
  */
 export function generatedAvatarStyle(
   principalId: string,
 ): GeneratedAvatarStyle {
-  const background = colorForPrincipal(principalId);
+  const background = pastelColorForPrincipal(principalId);
   return {
     "--avatar-identity-bg": background,
     "--avatar-identity-fg": readableTextOn(background),

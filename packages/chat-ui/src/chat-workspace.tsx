@@ -117,6 +117,7 @@ import {
   useWorkbenchFeed,
 } from "./use-workbench-feed";
 import { generatedAvatarStyle } from "./avatar-identity";
+import { CorbitAvatar } from "./corbit-avatar";
 import { useWorkbenchPresenceRoster } from "./workbench-presence";
 import { type } from "arktype";
 import {
@@ -225,17 +226,14 @@ export function buildMemberAvatarStack(
   const agents = participants
     .filter((participant) => isAgentAddress(participant.address))
     .map((participant) => {
-      const style = generatedAvatarStyle(participant.address);
       const label =
         displayNameForAddress(participant.address, displayNames) ??
         displayNameFromHandle(participant.handle);
       return {
         key: participant.address,
-        initials: label.slice(0, 1).toUpperCase(),
+        initials: "",
         label,
         tone: "agent" as const,
-        color: style["--avatar-identity-bg"],
-        textColor: style["--avatar-identity-fg"],
       };
     });
 
@@ -1433,20 +1431,30 @@ function ChatWorkspaceInner({
           className="chat-member-stack"
           aria-label={CHAT_STRINGS.workbenchMembersLabel}
         >
-          {visibleMemberStack.map((entry) => (
-            <span
-              key={entry.key}
-              className="chat-member-avatar"
-              data-agent={entry.tone === "agent" ? "true" : undefined}
-              style={{
-                backgroundColor: entry.color,
-                color: entry.textColor,
-              }}
-              title={entry.label}
-            >
-              {entry.initials}
-            </span>
-          ))}
+          {visibleMemberStack.map((entry) =>
+            entry.tone === "agent" ? (
+              <span
+                key={entry.key}
+                className="chat-member-avatar !overflow-hidden !bg-transparent !p-0"
+                data-agent="true"
+                title={entry.label}
+              >
+                <CorbitAvatar size="sm" label={entry.label} className="!size-full" />
+              </span>
+            ) : (
+              <span
+                key={entry.key}
+                className="chat-member-avatar"
+                style={{
+                  backgroundColor: entry.color,
+                  color: entry.textColor,
+                }}
+                title={entry.label}
+              >
+                {entry.initials}
+              </span>
+            ),
+          )}
           {memberStackOverflow > 0 ? (
             <span
               className="chat-member-stack-overflow"

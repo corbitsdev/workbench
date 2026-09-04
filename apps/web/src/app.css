@@ -1566,6 +1566,20 @@ select:disabled,
   color: var(--primary-foreground);
 }
 
+.shell-ch-stack span[data-agent="true"].shell-ch-corbit-wrap {
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+  border: 1.5px solid var(--background);
+}
+
+.shell-ch-stack
+  span[data-agent="true"].shell-ch-corbit-wrap
+  [data-corbit="true"] {
+  width: 100%;
+  height: 100%;
+}
+
 /* Agent-DM identity avatar: zero radius per brand rule, distinct from the
    round workbench-participant stack above — a small, deterministic,
    brand-compatible palette hashed off the agent's own name (see
@@ -3010,6 +3024,7 @@ tr.insights-row-clickable:hover {
 .create-agent-tone-swatch {
   width: 1.5rem;
   height: 1.5rem;
+  border-radius: 50%;
   border: 2px solid transparent;
   cursor: pointer;
   padding: 0;

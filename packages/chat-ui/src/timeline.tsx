@@ -30,6 +30,7 @@ import {
   type AgentDisplayNames,
 } from "./agent-display-names";
 import { AVATAR_IDENTITY_CLASS, generatedAvatarStyle } from "./avatar-identity";
+import { CorbitAvatar } from "./corbit-avatar";
 import { groupTimelineParts } from "./tool-activity";
 import { ToolActivityGroup } from "./tool-activity-view";
 import {
@@ -392,17 +393,17 @@ function SenderAvatar({
       title={label}
       style={identityStyle}
     >
-      <Avatar
-        initials={initials}
-        label={label}
-        tone={isAgent ? "agent" : "neutral"}
-        size="md"
-        className={
-          isAgent
-            ? "chat-sender-avatar"
-            : `chat-sender-avatar ${AVATAR_IDENTITY_CLASS}`
-        }
-      />
+      {isAgent ? (
+        <CorbitAvatar label={label} size="md" className="chat-sender-avatar" />
+      ) : (
+        <Avatar
+          initials={initials}
+          label={label}
+          tone="neutral"
+          size="md"
+          className={`chat-sender-avatar ${AVATAR_IDENTITY_CLASS}`}
+        />
+      )}
       {tenantMonogram !== undefined ? (
         <span
           className="chat-sender-tenant-badge"
@@ -2028,12 +2029,18 @@ function ThreadAffordance({
 }) {
   const replyCount = meta?.replyCount ?? 0;
   const addresses = meta?.participantAddresses ?? [];
-  const initials = addresses.slice(0, 3).map((address) => {
+  const chips = addresses.slice(0, 3).map((address) => {
+    const isAgent = isAgentAddress(address);
     const handle =
       displayNameForAddress(address, agentDisplayNames) ??
       participants.find((p) => p.address === address)?.handle ??
       address.slice(0, 1);
-    return initialsOf(handle);
+    return {
+      address,
+      isAgent,
+      label: handle,
+      initials: initialsOf(handle),
+    };
   });
   const activity = formatRelativeActivity(meta?.lastActivityAt ?? null);
   const label =
@@ -2051,13 +2058,26 @@ function ThreadAffordance({
       data-message-id={messageId}
       data-thread-affordance-mode={mode}
     >
-      {initials.length > 0 ? (
+      {chips.length > 0 ? (
         <span className="chat-thread-avatar-stack" aria-hidden="true">
-          {initials.map((value, index) => (
-            <span key={`${value}-${index}`} className="chat-thread-avatar-chip">
-              {value}
-            </span>
-          ))}
+          {chips.map((chip, index) =>
+            chip.isAgent ? (
+              <CorbitAvatar
+                key={`${chip.address}-${index}`}
+                label={chip.label}
+                size={20}
+                className="chat-thread-avatar-chip chat-thread-avatar-corbit"
+              />
+            ) : (
+              <span
+                key={`${chip.address}-${index}`}
+                className={`chat-thread-avatar-chip ${AVATAR_IDENTITY_CLASS}`}
+                style={generatedAvatarStyle(chip.address) as CSSProperties}
+              >
+                {chip.initials}
+              </span>
+            ),
+          )}
         </span>
       ) : null}
       <span className="chat-thread-affordance-meta">
