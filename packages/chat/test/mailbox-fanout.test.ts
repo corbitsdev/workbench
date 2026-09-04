@@ -270,10 +270,7 @@ describe("sendWorkbenchMessage's mailbox fan-out wiring (CL-7450)", () => {
         turnCancellation,
         mailbox: {
           writer,
-          resolveKnownPrincipalIds: knownPrincipals([
-            SENDER,
-            ...OTHER_HUMANS,
-          ]),
+          resolveKnownPrincipalIds: knownPrincipals([SENDER, ...OTHER_HUMANS]),
         },
       },
       {
