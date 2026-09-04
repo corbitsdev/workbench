@@ -68,6 +68,29 @@ platform's mail-send shape — a single text part rides as bare mail content;
 anything else becomes a list of `text/plain`/`application/json` MIME
 attachments — and that encoding is confined to the dispatch seam.
 
+## Every human's mailbox gets a copy (CL-7450)
+
+A person's message lands on the room's own timeline first — that write is
+what CL-6327 already made unconditional, with no mail, no wake, no sidecar
+hop. `sendWorkbenchMessage` then writes a second, independent copy into
+`@corbits/mailbox`: an "outbound" row in the sender's own mailbox and an
+"inbound" row in every other human participant's, all three sharing the
+timeline row's own RFC 5322 `Message-ID` (`<rowId@domain>`, stamped onto
+`workbench_messages.mail_message_id` — see `./mail-headers.ts`) as both the
+frame's threading identity and the mailbox write's idempotency key, so a
+retried send never double-delivers. An agent participant never gets a
+mailbox row this way — its inbox is its run's own live mail queue, reached
+through `WorkbenchMail.sendMail` instead. Each row carries a
+`{ kind: "workbench", id }` ref back to the room it came from, and threads
+under its parent via `In-Reply-To`/`References` when the message answers
+one (`mailAncestryOf` in `./threads.ts`). A participant address with no
+matching principal in the tenant — a stale or removed member — is reported
+and skipped rather than attempted; any other write failure is reported and
+re-thrown, never swallowed into a send that looks fully delivered when it
+wasn't. See `./mailbox-fanout.ts` for the fan-out logic and its
+`MailboxWriter` seam, and `./platform-port.ts`/`routes.ts`'s `mailbox` dep
+for how a host wires a live `@corbits/mailbox` instance in.
+
 ## One turn in flight per workbench (CL-6331)
 
 A workbench claims itself before it asks any agent for a turn: `dispatchTurn`
