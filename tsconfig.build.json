@@ -140,9 +140,6 @@
       "path": "./packages/shell-layout/tsconfig.src.json"
     },
     {
-      "path": "./packages/sidecar-placement/tsconfig.src.json"
-    },
-    {
       "path": "./packages/skills/tsconfig.src.json"
     },
     {
