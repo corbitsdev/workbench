@@ -55,40 +55,6 @@ vendored name at `workspace:*` (so the published `@intx/harness`,
 own `@intx/*` dependencies onto the vendored copies instead of a second npm
 copy) and every unchanged name at `0.3.0`.
 
-### Deltas this pin strands (owner ruling required)
-
-Upstream `692c3106` retired the seams two ledger deltas hung off. Both are
-recorded here rather than re-authored, because re-basing a delta onto a
-redesigned upstream contract is a NEW delta, and dropping one is an
-architecture change:
-
-- **`hub-sessions` CL-6324 adopted deploy front.** `deployWorkflowFromSource`
-  — the front `deployAdoptedCodeSourcedWorkflow` /
-  `deployAdoptedWorkflowFromSource` / `AdoptingWorkflowDeployer` and the
-  per-run `sourceRef` threading widened, and the front CL-7191's
-  `UserMessageParams.correlationId` rode — no longer exists upstream. This pin
-  replaces it with the catalog-offering + provisioner-selection path
-  (`installAndApproveWorkflowSource` + `deployPreparedCodeSourcedWorkflow`).
-  `session-service.ts` is therefore vendored PRISTINE at this pin, and the
-  workbench callers of the retired front (`apps/hub/src/index.ts`,
-  `@corbits/workflows`' deploy-source recording, `@corbits/folded-runs`,
-  `@corbits/chat`'s platform adapter) do not compile until the ruling lands.
-  The choice is either to re-author the adoption seam onto the native
-  prepare/deploy path (a new, approved delta) or to migrate workbench's
-  folded-run deploy onto the native path and retire the delta outright.
-- **`packages/sidecar-placement`.** This root-bucket module is built on
-  `SidecarPlacementRequirement` (`@intx/types/src/sidecar-placement.ts`),
-  which this pin deletes along with `hub-sessions`'
-  `sidecar-allocation/placement-policy.ts`. Upstream replaces the placement
-  model with sidecar capabilities (`types/src/sidecar-capabilities.ts`,
-  `workflow/src/sidecar-capabilities.ts`,
-  `hub-sessions/src/sidecar-allocation/capability-policy.ts`) and
-  registration-order provisioner selection. Interchange now handles this for
-  us, so the module and its capacity settings UI
-  (`@corbits/chat-ui`'s `workbench-settings/capacity-api.ts`) should be
-  deleted onto the native capability model — a product-visible change that
-  needs the owner's sign-off before it lands.
-
 Local modifications (all surviving `vendor/intx/*` rows): each package's
 exports map is repointed from the upstream `intx-src` resolve condition to
 direct TypeScript source resolution (`types`/`default` → `./src/...`), with
@@ -159,16 +125,7 @@ analog. `vendor/intx/workflow` carries no local delta: upstream `b977ade6` ships
 `onTrigger` body-failure policy workbench had vendored as
 `onBodyFailure: "continue"` (CL-6326, CL-6324) under the literal `"tolerate"`,
 so the authoring site (`@corbits/agent-runtime`) says `"tolerate"` and `@intx/db`
-migration `0089` rewrites the retired literal inside stored wire projections. `vendor/intx/hub-sessions` (CL-6324) adds a third
-code-sourced deploy front, `deployAdoptedCodeSourcedWorkflow`, which deploys
-onto shared capacity while adopting an anchor `workflow_run` row the caller
-already owns. Neither upstream front can: `deployWorkflowFromSource` inserts
-its anchor row, which collides with a folded run's existing one, and threads
-no credential cipher; `deployPreparedCodeSourcedWorkflow` updates a
-pre-existing row and threads the cipher but only under the
-allocation-ownership lock, so it cannot run on shared capacity. The new front
-composes the same private halves and follows the prepared front's semantics
-minus that lock. `vendor/intx/db` and `vendor/intx/hub-sessions` (CL-6324) together
+migration `0089` rewrites the retired literal inside stored wire projections. `vendor/intx/db` and `vendor/intx/hub-sessions` (CL-6324) together
 persist a definition's evaluated inert projection at approval time:
 `workflow_definition_version` gains a `wire_projection` jsonb column
 (migration `0087_workflow_definition_version_wire_projection.sql`, renumbered
