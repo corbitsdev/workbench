@@ -996,8 +996,20 @@ function ChatWorkspaceInner({
         case "chat.settings": {
           const parsed = ChatSettingsEventData(data);
           if (!(parsed instanceof type.errors)) {
-            void connectGithubActions?.notifySettingsChanged();
-            void connectServiceActions?.notifySettingsChanged();
+            connectGithubActions?.notifySettingsChanged().catch((cause) => {
+              reportError(cause, {
+                operation: "chat.notifyGithubSettingsChanged",
+                tenantId,
+                roomId: activeWorkbenchId,
+              });
+            });
+            connectServiceActions?.notifySettingsChanged().catch((cause) => {
+              reportError(cause, {
+                operation: "chat.notifyServiceSettingsChanged",
+                tenantId,
+                roomId: activeWorkbenchId,
+              });
+            });
           }
           break;
         }
