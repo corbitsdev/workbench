@@ -870,6 +870,10 @@ export async function createHub(config: HubConfig) {
         hadReply: turn.hadReply,
       }).catch((err: unknown) => {
         log.warn`Failed to settle routine fire for ${agentAddress}: ${err instanceof Error ? err.message : String(err)}`;
+        reportError(err, {
+          operation: "routine_fire_settle_from_turn",
+          agentId: agentAddress,
+        });
       });
     },
     // Per-turn usage, emitted once when the collector finalizes a turn.
