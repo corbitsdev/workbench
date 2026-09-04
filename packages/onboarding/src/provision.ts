@@ -19,6 +19,7 @@ import {
   reconcileSeedGrants,
   seedTenant,
   publishCorbitsToolsRegistry,
+  isCorbitsToolsRegistrySeeded,
   type ModelSource,
   type ToolRegistryPublisher,
   type WorkflowPusher,
@@ -213,10 +214,11 @@ async function seededWorkflowNames(
 
 /**
  * Whether every default workflow already has an active deployment on
- * this tenant. Read-only: it never creates or deploys anything, it
- * only tells the caller whether `seedTenant` still has work to do —
- * the same asset-then-deployment lookup `seedTenant` itself performs
- * before deciding to skip a step.
+ * this tenant AND the `corbits-tools` registry exists with the seeded
+ * tool-package tarballs (at least `@corbits/memory-tools`). Read-only:
+ * it never creates or deploys anything. A dangling empty registry row
+ * is not fully seeded — assistant-deployed-but-unpublishable is the
+ * first-launch failure this check exists to catch.
  */
 export async function isFullySeeded(
   api: ApiCall,
@@ -224,7 +226,8 @@ export async function isFullySeeded(
   tenantId: string,
 ): Promise<boolean> {
   const { pending } = await seededWorkflowNames(api, cookies, tenantId);
-  return pending.length === 0;
+  if (pending.length > 0) return false;
+  return isCorbitsToolsRegistrySeeded(api, cookies, tenantId);
 }
 
 async function publishRootToolRegistry(args: {
@@ -331,6 +334,26 @@ export async function provisionPersonalTenantIfNeeded(
       "tenant response",
     );
     if (ownTenant.parentId === undefined || ownTenant.parentId === null) {
+      await publishRootToolRegistry({
+        api: args.api,
+        cookies: args.cookies,
+        hubUrl: args.hubUrl,
+        tenantId: own.tenantId,
+        ...(args.publishToolRegistry !== undefined
+          ? { publishToolRegistry: args.publishToolRegistry }
+          : {}),
+        log: args.log,
+      });
+    } else if (
+      !(await isCorbitsToolsRegistrySeeded(
+        args.api,
+        args.cookies,
+        own.tenantId,
+      ))
+    ) {
+      // A parented bench inherits `corbits-tools`. When that inherited
+      // registry is missing or dangling-empty, republish locally the
+      // same way grant reconcile fills missing grants on every sign-in.
       await publishRootToolRegistry({
         api: args.api,
         cookies: args.cookies,
@@ -481,6 +504,19 @@ export async function provisionPersonalTenantIfNeeded(
   }
 
   if (tenant.parentId === undefined || tenant.parentId === null) {
+    await publishRootToolRegistry({
+      api: args.api,
+      cookies: args.cookies,
+      hubUrl: args.hubUrl,
+      tenantId: tenant.id,
+      ...(args.publishToolRegistry !== undefined
+        ? { publishToolRegistry: args.publishToolRegistry }
+        : {}),
+      log: args.log,
+    });
+  } else if (
+    !(await isCorbitsToolsRegistrySeeded(args.api, args.cookies, tenant.id))
+  ) {
     await publishRootToolRegistry({
       api: args.api,
       cookies: args.cookies,

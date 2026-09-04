@@ -46,7 +46,12 @@ function harness(
 ) {
   const store = overrides.store ?? createInMemoryPendingSeedStore(testCipher());
   const deployedByTenant = new Map<string, string[]>();
-  const calls = { isFullySeeded: 0, ensureSeeded: 0, sessionFor: 0 };
+  const calls = {
+    isFullySeeded: 0,
+    ensureSeeded: 0,
+    sessionFor: 0,
+    publishToolRegistry: 0,
+  };
   const logged: string[] = [];
 
   const deps: BenchProvisionerDeps = {
@@ -69,6 +74,9 @@ function harness(
       return (
         (deployedByTenant.get(tenantId) ?? []).length === ALL_WORKFLOWS.length
       );
+    },
+    publishToolRegistryFn: async () => {
+      calls.publishToolRegistry += 1;
     },
     ensureSeededFn: async (args) => {
       calls.ensureSeeded += 1;

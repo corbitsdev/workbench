@@ -33,7 +33,10 @@ export {
 } from "./seed";
 export {
   publishCorbitsToolsRegistry,
+  isCorbitsToolsRegistrySeeded,
+  tarballsCoverRequiredSeedPackages,
   type PublishCorbitsToolsRegistryArgs,
+  type PublishCorbitsToolsRegistryResult,
   type PublishSummary,
 } from "@corbits/tool-registry-publish";
 export {
