@@ -1446,6 +1446,13 @@ select:disabled,
   color: var(--shell-panel-faint);
 }
 
+.settings-nav-access-error {
+  margin: 0 0 0.3rem;
+  padding: 0 0.42rem;
+  font-size: 0.6875rem;
+  color: var(--shell-panel-faint);
+}
+
 /* Mock .ch rows in the sidebar: pad 0.32/0.42, square. */
 .shell-ch-row {
   display: grid;

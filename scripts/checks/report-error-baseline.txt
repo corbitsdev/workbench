@@ -103,7 +103,6 @@ apps/web/src/session.ts	1	return {
 apps/web/src/session.ts	2	return {
 apps/web/src/session.ts	3	return {
 apps/web/src/session.ts	4	return {
-apps/web/src/settings-access.ts	1	return "denied";
 apps/web/src/shell/context-menu/items.tsx	1	toast("Couldn't copy the link");
 apps/web/src/shell/routine-panel.tsx	1	setSaveState("error");
 apps/web/src/shell/workbench-list.tsx	1	// Revert the optimistic title on failure; the list will refetch on

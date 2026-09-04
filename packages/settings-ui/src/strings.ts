@@ -11,6 +11,8 @@ export const SETTINGS_STRINGS = {
   groupEveryoneLabel: "Shared Settings",
   advancedSectionsSummary: "Advanced",
   advancedSectionsHint: "Roles, granular permissions, and activity history.",
+  accessProbeFailedHint:
+    "Couldn't check access for some sections. They'll show up here once that succeeds.",
 
   notificationsSectionTitle: "Notifications",
   notificationsSectionDescription: "How activity reaches you.",
