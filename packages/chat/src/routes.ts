@@ -28,6 +28,7 @@ import { Part, type Part as PartType } from "./parts";
 import {
   aggregatePollResponses,
   type BlockResponsePayload,
+  type BlockResponseRow,
   type BlockResponseStore,
 } from "./block-responses";
 import {
@@ -498,6 +499,34 @@ const SubmitQuestionResponseBody = type({
 const SubmitBlockResponseBody = SubmitPollResponseBody.or(
   SubmitFormResponseBody,
 ).or(SubmitQuestionResponseBody);
+
+/**
+ * The caller's own row on the GET wire. A question also carries
+ * `notifiedAt` (ISO timestamp, or null when notify never landed) so
+ * the card can keep a retry after remount instead of collapsing as
+ * if the agent had already been reached. Poll/form payloads are
+ * unchanged — `notifiedAt` is a question-only claim flag.
+ */
+function ownBlockResponseForClient(row: BlockResponseRow | undefined):
+  | BlockResponsePayload
+  | {
+      readonly kind: "question";
+      readonly answer: string;
+      readonly optionIndex?: number;
+      readonly notifiedAt: string | null;
+    }
+  | null {
+  if (row === undefined) return null;
+  if (row.payload.kind !== "question") return row.payload;
+  return {
+    kind: "question",
+    answer: row.payload.answer,
+    ...(row.payload.optionIndex !== undefined
+      ? { optionIndex: row.payload.optionIndex }
+      : {}),
+    notifiedAt: row.notifiedAt === null ? null : row.notifiedAt.toISOString(),
+  };
+}
 
 /**
  * Every `/workbenches/:id/*` handler must resolve the workbench inside the
@@ -2552,7 +2581,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // before any of it reaches the wire: a poll's tally is a count over
       // every row regardless of whose it is, but `own` is this caller's row
       // and this caller's alone — no other principal's raw poll choice or
-      // form values is ever assembled into the response body.
+      // form values is ever assembled into the response body. A question's
+      // `own` also carries `notifiedAt` so the card can tell a completed
+      // notify from an answer that never reached the agent.
       const rows = await deps.blockResponses.listBlockResponses(
         access.ownerTenantId,
         workbenchId,
@@ -2560,8 +2591,9 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         blockId,
       );
       const { tally, total } = aggregatePollResponses(rows);
-      const own =
-        rows.find((row) => row.principalId === principal.id)?.payload ?? null;
+      const own = ownBlockResponseForClient(
+        rows.find((row) => row.principalId === principal.id),
+      );
 
       return c.json({ tally, total, own });
     },
