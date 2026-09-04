@@ -2578,6 +2578,15 @@
   gap: 0.25rem;
 }
 
+.chat-composer-mic[data-listening="true"] {
+  color: var(--shell-accent, var(--primary));
+  background: color-mix(
+    in srgb,
+    var(--shell-accent, var(--primary)) 12%,
+    transparent
+  );
+}
+
 .chat-composer-keyboard-hint {
   color: var(--muted-foreground);
   font-size: 0.7rem;
