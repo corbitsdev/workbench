@@ -41,6 +41,7 @@ import {
   routineScheduleSentence,
   runStatusLabel,
   triggeredByLabel,
+  withListingAbandoned,
 } from "@corbits/routines/client";
 import type { RoutineHealth } from "@corbits/routines/client";
 
@@ -189,7 +190,7 @@ export function RunStatusCell({
   readonly run: RoutineRun;
   readonly now: number;
 }) {
-  const status = fireOutcomeStatus(run, now);
+  const status = fireOutcomeStatus(withListingAbandoned(run, now), now);
   if (status === null) {
     return <span className="text-[var(--ui-fg-muted)]">—</span>;
   }
@@ -203,7 +204,11 @@ export function routineRowHealth(
   row: GlobalRoutineRow,
   now: number,
 ): RoutineHealth {
-  return routineHealth(row.routine, row.runs, now);
+  return routineHealth(
+    row.routine,
+    row.runs.map((run) => withListingAbandoned(run, now)),
+    now,
+  );
 }
 
 /** "At 09:00, Monday through Friday (UTC)" — the schedule as a sentence,

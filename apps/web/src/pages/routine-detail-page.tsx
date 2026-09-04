@@ -46,6 +46,7 @@ import {
   routineHealth,
   routineScheduleSentence,
   timezoneForTrigger,
+  withListingAbandoned,
 } from "@corbits/routines/client";
 import type { RoutineHealth } from "@corbits/routines/client";
 
@@ -352,7 +353,11 @@ export function RoutineDetailPage({
   readonly onSaveSchedule: (expression: string) => Promise<void>;
   readonly onEdit: () => void;
 }) {
-  const health = routineHealth(row.routine, row.runs, now);
+  const health = routineHealth(
+    row.routine,
+    row.runs.map((run) => withListingAbandoned(run, now)),
+    now,
+  );
   const latestRunId =
     row.runs.find((run) => !fireNeverStarted(run.triggeredBy))?.runId ?? null;
   return (

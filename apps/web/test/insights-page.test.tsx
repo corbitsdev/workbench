@@ -563,7 +563,7 @@ describe("InsightsRunsHistory definition grouping", () => {
     expect(groups[0]?.getAttribute("data-definition-group")).toBe("wfd_a");
     const firstGroupRows = groups[0]?.querySelectorAll("tbody tr") ?? [];
     expect(firstGroupRows.length).toBe(2);
-    expect(firstGroupRows[0]?.textContent).toContain("error");
+    expect(firstGroupRows[0]?.textContent).toContain("Failed");
     expect(el.textContent).not.toContain("Showing the 100 most recent runs.");
   });
 

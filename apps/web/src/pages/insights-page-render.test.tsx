@@ -141,7 +141,8 @@ describe("InsightsPage 'Running now' strip", () => {
   // Liveness is not a windowed property: a run that started long before the
   // 7-day window and is still running must not disappear from the strip or
   // read 0 in the "Running now" KPI just because its start time falls
-  // outside `range`.
+  // outside `range`. Persist has not settled (`endedAt` absent), so the
+  // fire is live — not remapped to completed by the abandoned-fire window.
   test("a run started 8 days ago that is still running stays in the strip and the KPI", () => {
     const eightDaysAgo = new Date(
       Date.now() - 8 * 24 * 60 * 60 * 1000,

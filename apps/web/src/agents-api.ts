@@ -32,7 +32,15 @@ export type AgentInstance = typeof WorkflowRunResponse.infer;
 export type CatalogModel = typeof ModelResponse.infer;
 
 const RunFireResponse = WorkflowRunResponse.and(
-  type({ routineId: "string | null", routineName: "string | null" }),
+  type({
+    routineId: "string | null",
+    routineName: "string | null",
+    "hasInFlightTurn?": "boolean",
+    "turns?": type({
+      status: "string",
+      "endedAt?": "string | null",
+    }).array(),
+  }),
 );
 /** A `feed=fires` row: every `AgentInstance` field plus the routine that
  * fired it (both `null` for a directly-triggered deployment with no

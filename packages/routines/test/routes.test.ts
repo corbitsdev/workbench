@@ -710,6 +710,27 @@ describe("createRoutineRoutes", () => {
     expect(listBody.items).toHaveLength(0);
   });
 
+  test("GET /routines/:id/runs reports completed and endedAt after a finished fire", async () => {
+    const endedAt = "2026-01-01T00:01:00.000Z";
+    const deps = buildDeps({
+      runSummaryResolver: {
+        async resolveRunSummary(_tenantId, _runId) {
+          return { status: "completed", endedAt };
+        },
+      },
+    });
+    const app = mountAs(createRoutineRoutes(deps), "user_1");
+    const { body: created } = await createRoutine(app, VALID_BODY);
+    await app.request(`/routines/${created["id"]}/run`, { method: "POST" });
+
+    const response = await app.request(`/routines/${created["id"]}/runs`);
+    const body = (await response.json()) as {
+      items: { run?: { status: string; endedAt: string } }[];
+    };
+    expect(body.items[0]?.run?.status).toBe("completed");
+    expect(body.items[0]?.run?.endedAt).toBe(endedAt);
+  });
+
   test("run summaries enrich when a resolver is wired, and are omitted without one", async () => {
     const deps = buildDeps({
       runSummaryResolver: {

@@ -223,7 +223,7 @@ describe("GlobalRoutinesList", () => {
     expect(markup).not.toContain(">running<");
   });
 
-  test("warm-keep (CL-6681): a fire whose 'running' status is stale reads as finished, not stuck Running now forever", () => {
+  test("a live fire whose 'running' status is older than the window still reads as Running now", () => {
     const markup = renderList([
       row({
         runs: [
@@ -236,8 +236,8 @@ describe("GlobalRoutinesList", () => {
         ],
       }),
     ]);
-    expect(markup).not.toContain("Running now");
-    expect(markup).toContain("Finished");
+    expect(markup).toContain("Running now");
+    expect(markup).not.toContain("Finished");
   });
 
   test("a failing routine states its failure count in words, not only in colour", () => {

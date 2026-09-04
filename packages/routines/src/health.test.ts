@@ -5,8 +5,11 @@ import {
   FIRE_RUNNING_WINDOW_MS,
   fireOutcomeStatus,
   lastFailedFire,
+  listingAbandoned,
+  listingHasInFlightTurn,
   medianFireDurationMs,
   routineHealth,
+  runOutcomeStatus,
 } from "./health";
 import type { RoutineFire, RoutineHealthSubject } from "./health";
 
@@ -40,11 +43,38 @@ describe("fireOutcomeStatus", () => {
     );
   });
 
-  test("warm-keep (CL-6681): a running fire past its window reads as completed", () => {
+  test("a live fire past the window still reads as running until persist settles", () => {
     const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
     expect(
       fireOutcomeStatus(fire("r1", {}, { status: "running" }), staleNow),
+    ).toBe("running");
+  });
+
+  test("an 8-day still-running live fire stays running", () => {
+    const eightDays = Date.parse(FIRE_CREATED_AT) + 8 * 24 * 60 * 60 * 1000;
+    expect(
+      fireOutcomeStatus(fire("r1", {}, { status: "running" }), eightDays),
+    ).toBe("running");
+  });
+
+  test("abandoned: a running fire past its window reads as completed", () => {
+    const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+    expect(
+      fireOutcomeStatus(
+        fire("r1", { abandoned: true }, { status: "running" }),
+        staleNow,
+      ),
     ).toBe("completed");
+  });
+
+  test("abandoned: a running fire one millisecond inside its window still reads as running", () => {
+    const stillInside = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS;
+    expect(
+      fireOutcomeStatus(
+        fire("r1", { abandoned: true }, { status: "running" }),
+        stillInside,
+      ),
+    ).toBe("running");
   });
 
   test("every terminal status passes through unchanged, however old", () => {
@@ -59,6 +89,227 @@ describe("fireOutcomeStatus", () => {
 
   test("null when the platform has no run to report", () => {
     expect(fireOutcomeStatus(fire("r1", {}, {}), NOW)).toBeNull();
+  });
+
+  test("endedAt on a still-running column is finished immediately, not at T+window", () => {
+    expect(
+      fireOutcomeStatus(
+        fire(
+          "r1",
+          {},
+          { status: "running", endedAt: "2026-01-01T00:00:30.000Z" },
+        ),
+        NOW,
+      ),
+    ).toBe("completed");
+  });
+
+  test("a persisted failed fire stays failed past the window — never remapped to completed", () => {
+    const longAfter = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS * 10;
+    expect(
+      fireOutcomeStatus(
+        fire(
+          "r1",
+          {},
+          { status: "failed", endedAt: "2026-01-01T00:00:30.000Z" },
+        ),
+        longAfter,
+      ),
+    ).toBe("failed");
+  });
+
+  test("listing-shaped empty turns past the window settles to completed", () => {
+    const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+    expect(
+      fireOutcomeStatus(
+        fire("r1", { turns: [] }, { status: "running" }),
+        staleNow,
+      ),
+    ).toBe("completed");
+  });
+
+  test("listing-shaped hasInFlightTurn true past the window stays running", () => {
+    const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+    expect(
+      fireOutcomeStatus(
+        fire("r1", { hasInFlightTurn: true }, { status: "running" }),
+        staleNow,
+      ),
+    ).toBe("running");
+  });
+});
+
+describe("runOutcomeStatus", () => {
+  test("a top-level running status still inside its window reads as running", () => {
+    expect(
+      runOutcomeStatus({ createdAt: FIRE_CREATED_AT, status: "running" }, NOW),
+    ).toBe("running");
+  });
+
+  test("a live top-level running status past the window still reads as running", () => {
+    const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+    expect(
+      runOutcomeStatus(
+        { createdAt: FIRE_CREATED_AT, status: "running" },
+        staleNow,
+      ),
+    ).toBe("running");
+  });
+
+  test("abandoned: a top-level running status past its window reads as completed", () => {
+    const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+    expect(
+      runOutcomeStatus(
+        { createdAt: FIRE_CREATED_AT, status: "running", abandoned: true },
+        staleNow,
+      ),
+    ).toBe("completed");
+  });
+
+  test("endedAt drops a top-level running status immediately", () => {
+    expect(
+      runOutcomeStatus(
+        {
+          createdAt: FIRE_CREATED_AT,
+          status: "running",
+          endedAt: "2026-01-01T00:00:30.000Z",
+        },
+        NOW,
+      ),
+    ).toBe("completed");
+  });
+
+  test("updating and terminal platform statuses pass through", () => {
+    expect(
+      runOutcomeStatus({ createdAt: FIRE_CREATED_AT, status: "updating" }, NOW),
+    ).toBe("updating");
+    expect(
+      runOutcomeStatus({ createdAt: FIRE_CREATED_AT, status: "error" }, NOW),
+    ).toBe("error");
+    expect(
+      runOutcomeStatus({ createdAt: FIRE_CREATED_AT, status: "stopped" }, NOW),
+    ).toBe("stopped");
+  });
+});
+
+describe("listingAbandoned", () => {
+  const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+  const listing = { createdAt: FIRE_CREATED_AT };
+
+  test("omitted turns and hasInFlightTurn is not abandoned past the window", () => {
+    expect(listingAbandoned(listing, staleNow)).toBe(false);
+    expect(listingHasInFlightTurn(listing)).toBe(false);
+  });
+
+  test("empty turns after a real query past the window is abandoned", () => {
+    expect(listingAbandoned({ ...listing, turns: [] }, staleNow)).toBe(true);
+  });
+
+  test("hasInFlightTurn false past the window is abandoned", () => {
+    expect(
+      listingAbandoned({ ...listing, hasInFlightTurn: false }, staleNow),
+    ).toBe(true);
+  });
+
+  test("hasInFlightTurn true past the window is not abandoned", () => {
+    expect(
+      listingAbandoned({ ...listing, hasInFlightTurn: true }, staleNow),
+    ).toBe(false);
+    expect(listingHasInFlightTurn({ ...listing, hasInFlightTurn: true })).toBe(
+      true,
+    );
+  });
+
+  test("a running turn past the window is not abandoned", () => {
+    expect(
+      listingAbandoned(
+        { ...listing, turns: [{ status: "running", endedAt: null }] },
+        staleNow,
+      ),
+    ).toBe(false);
+  });
+
+  test("finished turns only past the window is abandoned", () => {
+    expect(
+      listingAbandoned(
+        {
+          ...listing,
+          turns: [{ status: "completed", endedAt: "2026-01-01T00:01:00.000Z" }],
+        },
+        staleNow,
+      ),
+    ).toBe(true);
+  });
+
+  test("empty nested run.turns past the window is abandoned", () => {
+    expect(listingAbandoned({ ...listing, run: { turns: [] } }, staleNow)).toBe(
+      true,
+    );
+  });
+
+  test("empty turns inside the window is not abandoned", () => {
+    expect(listingAbandoned({ ...listing, turns: [] }, NOW)).toBe(false);
+  });
+});
+
+describe("runOutcomeStatus listing-shaped", () => {
+  const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+
+  test("missing turns past the window stays running", () => {
+    expect(
+      runOutcomeStatus(
+        { createdAt: FIRE_CREATED_AT, status: "running" },
+        staleNow,
+      ),
+    ).toBe("running");
+  });
+
+  test("empty turns past the window settles to completed", () => {
+    expect(
+      runOutcomeStatus(
+        { createdAt: FIRE_CREATED_AT, status: "running", turns: [] },
+        staleNow,
+      ),
+    ).toBe("completed");
+  });
+
+  test("hasInFlightTurn false past the window settles to completed", () => {
+    expect(
+      runOutcomeStatus(
+        {
+          createdAt: FIRE_CREATED_AT,
+          status: "running",
+          hasInFlightTurn: false,
+        },
+        staleNow,
+      ),
+    ).toBe("completed");
+  });
+
+  test("hasInFlightTurn true past the window stays running", () => {
+    expect(
+      runOutcomeStatus(
+        {
+          createdAt: FIRE_CREATED_AT,
+          status: "running",
+          hasInFlightTurn: true,
+        },
+        staleNow,
+      ),
+    ).toBe("running");
+  });
+
+  test("a running listing turn past the window stays running", () => {
+    expect(
+      runOutcomeStatus(
+        {
+          createdAt: FIRE_CREATED_AT,
+          status: "running",
+          turns: [{ status: "running", endedAt: null }],
+        },
+        staleNow,
+      ),
+    ).toBe("running");
   });
 });
 
@@ -83,11 +334,21 @@ describe("cleanFireStreak", () => {
     ).toBe(1);
   });
 
-  test("a stale running fire (warm-keep) counts as a success, not in-flight forever", () => {
+  test("a live running fire past the window stays in-flight and does not extend the streak", () => {
     const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
     expect(
       cleanFireStreak(
         [fire("r2", {}, { status: "running" }), fire("r1")],
+        staleNow,
+      ),
+    ).toBe(1);
+  });
+
+  test("an abandoned stale running fire counts as a success, not in-flight forever", () => {
+    const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+    expect(
+      cleanFireStreak(
+        [fire("r2", { abandoned: true }, { status: "running" }), fire("r1")],
         staleNow,
       ),
     ).toBe(2);
@@ -187,15 +448,59 @@ describe("routineHealth", () => {
     ).toBe("running");
   });
 
-  test("warm-keep (CL-6681): a latest run stuck 'running' past its window reads as healthy, not stuck Running now forever", () => {
+  test("endedAt on the latest fire is not Running now, even inside the window", () => {
+    expect(
+      routineHealth(
+        healthy,
+        [
+          fire(
+            "r1",
+            {},
+            { status: "running", endedAt: "2026-01-01T00:00:30.000Z" },
+          ),
+        ],
+        NOW,
+      ).state,
+    ).not.toBe("running");
+  });
+
+  test("a live latest run past the window still reports Running now", () => {
     const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
     const health = routineHealth(
       healthy,
       [fire("r1", {}, { status: "running" })],
       staleNow,
     );
+    expect(health.state).toBe("running");
+    expect(health.label).toBe("Running now");
+  });
+
+  test("abandoned: a latest run stuck 'running' past its window reads as healthy, not stuck Running now forever", () => {
+    const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+    const health = routineHealth(
+      healthy,
+      [fire("r1", { abandoned: true }, { status: "running" })],
+      staleNow,
+    );
     expect(health.state).toBe("ok");
     expect(health.label).not.toBe("Running now");
+  });
+
+  test("a persisted failed latest fire is Last run failed, even past the window", () => {
+    const staleNow = Date.parse(FIRE_CREATED_AT) + FIRE_RUNNING_WINDOW_MS + 1;
+    const health = routineHealth(
+      healthy,
+      [
+        fire(
+          "r1",
+          {},
+          { status: "failed", endedAt: "2026-01-01T00:00:30.000Z" },
+        ),
+      ],
+      staleNow,
+    );
+    expect(health.state).toBe("failing");
+    expect(health.label).toBe("Last run failed");
   });
 
   test("consecutive failures are stated in the caption, not just the pill", () => {

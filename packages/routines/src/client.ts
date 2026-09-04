@@ -29,10 +29,16 @@ export {
   fireFailed,
   fireOutcomeStatus,
   lastFailedFire,
+  listingAbandoned,
+  listingHasInFlightTurn,
   medianFireDurationMs,
   routineHealth,
+  runOutcomeStatus,
+  withListingAbandoned,
 } from "./health";
 export type {
+  ListingRun,
+  ListingTurn,
   RoutineFire,
   RoutineHealth,
   RoutineHealthState,
