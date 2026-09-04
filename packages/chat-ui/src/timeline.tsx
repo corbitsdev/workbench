@@ -34,6 +34,7 @@ import { groupTimelineParts } from "./tool-activity";
 import { ToolActivityGroup } from "./tool-activity-view";
 import {
   ArrowBendUpLeft,
+  ArrowDown,
   ChatCircle,
   Clock,
   Copy,
@@ -2200,7 +2201,10 @@ export function WorkbenchTimeline({
   // Starts pinned (true) unless a restored snapshot says otherwise — a
   // workbench's first-ever render always lands at the bottom, but remounting
   // after Settings closes restores exactly how the reader left it.
-  const pinnedRef = useRef(scrollRestore?.pinned ?? true);
+  const [pinnedToLatest, setPinnedToLatest] = useState(
+    scrollRestore?.pinned ?? true,
+  );
+  const pinnedRef = useRef(pinnedToLatest);
 
   // Kept current every render (never a dependency) so the unmount cleanup
   // below always calls the host's latest callback, not a stale one closed
@@ -2215,7 +2219,19 @@ export function WorkbenchTimeline({
     if (container === null) return;
     const distanceFromBottom =
       container.scrollHeight - container.scrollTop - container.clientHeight;
-    pinnedRef.current = distanceFromBottom <= BOTTOM_PIN_THRESHOLD_PX;
+    const nextPinned = distanceFromBottom <= BOTTOM_PIN_THRESHOLD_PX;
+    pinnedRef.current = nextPinned;
+    setPinnedToLatest((current) =>
+      current === nextPinned ? current : nextPinned,
+    );
+  };
+
+  const jumpToLatest = () => {
+    const container = containerRef.current;
+    if (container === null) return;
+    pinnedRef.current = true;
+    setPinnedToLatest(true);
+    container.scrollTop = container.scrollHeight;
   };
 
   useEffect(() => {
@@ -2317,87 +2333,105 @@ export function WorkbenchTimeline({
   }
 
   return (
-    <div className="chat-timeline" ref={containerRef} onScroll={handleScroll}>
-      {items.map((item, index) => {
-        if (joinRuns.absorbedIds.has(item.id)) return null;
-        const previous = index > 0 ? items[index - 1] : undefined;
-        const showDayDivider =
-          previous === undefined ||
-          !isSameCalendarDay(
-            new Date(previous.createdAt),
-            new Date(item.createdAt),
+    <div className="chat-timeline-shell">
+      <div className="chat-timeline" ref={containerRef} onScroll={handleScroll}>
+        {items.map((item, index) => {
+          if (joinRuns.absorbedIds.has(item.id)) return null;
+          const previous = index > 0 ? items[index - 1] : undefined;
+          const showDayDivider =
+            previous === undefined ||
+            !isSameCalendarDay(
+              new Date(previous.createdAt),
+              new Date(item.createdAt),
+            );
+          // Keyed by `clientId` (falling back to `id`) when present: a
+          // pending send and the confirmed message that later reconciles
+          // it (CL-6251's wire `clientId`) share this key, so React
+          // updates the same DOM node in place — avatar, header and all —
+          // rather than unmounting a "sending" bubble and mounting an
+          // unrelated "confirmed" one, which is what used to read as an
+          // unsent→sent swap (CL-6251, reopened).
+          const key = item.clientId ?? item.id;
+          if (item.streaming === true) {
+            return (
+              <StreamingMessageGroup
+                key={key}
+                item={item}
+                participants={participants}
+                currentUser={currentUser}
+                showDayDivider={showDayDivider}
+                {...(agentDisplayNames !== undefined
+                  ? { agentDisplayNames }
+                  : {})}
+              />
+            );
+          }
+          const showHeader = !isGroupedWithPrevious(
+            item,
+            previous,
+            showDayDivider,
           );
-        // Keyed by `clientId` (falling back to `id`) when present: a
-        // pending send and the confirmed message that later reconciles
-        // it (CL-6251's wire `clientId`) share this key, so React
-        // updates the same DOM node in place — avatar, header and all —
-        // rather than unmounting a "sending" bubble and mounting an
-        // unrelated "confirmed" one, which is what used to read as an
-        // unsent→sent swap (CL-6251, reopened).
-        const key = item.clientId ?? item.id;
-        if (item.streaming === true) {
+          const collapsedJoinText = joinRuns.textByLeadId.get(item.id);
           return (
-            <StreamingMessageGroup
+            <MessageParts
               key={key}
               item={item}
+              items={items}
               participants={participants}
               currentUser={currentUser}
               showDayDivider={showDayDivider}
+              showHeader={showHeader}
               {...(agentDisplayNames !== undefined
                 ? { agentDisplayNames }
                 : {})}
+              {...(collapsedJoinText !== undefined
+                ? { collapsedJoinText }
+                : {})}
+              threadMeta={threadMetaByMessageId?.get(item.id)}
+              threadAffordanceMode={threadAffordanceMode}
+              {...(onOpenThread !== undefined ? { onOpenThread } : {})}
+              {...(onEditMessage !== undefined ? { onEditMessage } : {})}
+              {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
+              {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
+              {...(onFixConnection !== undefined ? { onFixConnection } : {})}
+              {...(onOpenArtifactInLibrary !== undefined
+                ? { onOpenArtifactInLibrary }
+                : {})}
+              {...(approvalActions !== undefined ? { approvalActions } : {})}
+              {...(blockResponses !== undefined ? { blockResponses } : {})}
+              {...(connectGithubActions !== undefined
+                ? { connectGithubActions }
+                : {})}
+              {...(connectServiceActions !== undefined
+                ? { connectServiceActions }
+                : {})}
+              {...(reactionActions !== undefined ? { reactionActions } : {})}
+              {...(pinActions !== undefined ? { pinActions } : {})}
+              {...(pendingActions !== undefined ? { pendingActions } : {})}
+              {...(onRetryFailedTurn !== undefined
+                ? { onRetryFailedTurn }
+                : {})}
+              {...(onWhatHappenedFailedTurn !== undefined
+                ? { onWhatHappenedFailedTurn }
+                : {})}
+              {...(failedTurnRecovery !== undefined
+                ? { failedTurnRecovery }
+                : {})}
             />
           );
-        }
-        const showHeader = !isGroupedWithPrevious(
-          item,
-          previous,
-          showDayDivider,
-        );
-        const collapsedJoinText = joinRuns.textByLeadId.get(item.id);
-        return (
-          <MessageParts
-            key={key}
-            item={item}
-            items={items}
-            participants={participants}
-            currentUser={currentUser}
-            showDayDivider={showDayDivider}
-            showHeader={showHeader}
-            {...(agentDisplayNames !== undefined ? { agentDisplayNames } : {})}
-            {...(collapsedJoinText !== undefined ? { collapsedJoinText } : {})}
-            threadMeta={threadMetaByMessageId?.get(item.id)}
-            threadAffordanceMode={threadAffordanceMode}
-            {...(onOpenThread !== undefined ? { onOpenThread } : {})}
-            {...(onEditMessage !== undefined ? { onEditMessage } : {})}
-            {...(onOpenProfile !== undefined ? { onOpenProfile } : {})}
-            {...(onOpenArtifact !== undefined ? { onOpenArtifact } : {})}
-            {...(onFixConnection !== undefined ? { onFixConnection } : {})}
-            {...(onOpenArtifactInLibrary !== undefined
-              ? { onOpenArtifactInLibrary }
-              : {})}
-            {...(approvalActions !== undefined ? { approvalActions } : {})}
-            {...(blockResponses !== undefined ? { blockResponses } : {})}
-            {...(connectGithubActions !== undefined
-              ? { connectGithubActions }
-              : {})}
-            {...(connectServiceActions !== undefined
-              ? { connectServiceActions }
-              : {})}
-            {...(reactionActions !== undefined ? { reactionActions } : {})}
-            {...(pinActions !== undefined ? { pinActions } : {})}
-            {...(pendingActions !== undefined ? { pendingActions } : {})}
-            {...(onRetryFailedTurn !== undefined ? { onRetryFailedTurn } : {})}
-            {...(onWhatHappenedFailedTurn !== undefined
-              ? { onWhatHappenedFailedTurn }
-              : {})}
-            {...(failedTurnRecovery !== undefined
-              ? { failedTurnRecovery }
-              : {})}
-          />
-        );
-      })}
-      {footer}
+        })}
+        {footer}
+      </div>
+      {pinnedToLatest ? null : (
+        <button
+          type="button"
+          className="chat-jump-to-latest"
+          onClick={jumpToLatest}
+        >
+          <ArrowDown aria-hidden="true" />
+          {CHAT_STRINGS.jumpToLatestAction}
+        </button>
+      )}
     </div>
   );
 }
