@@ -1368,6 +1368,17 @@ export async function createHub(config: HubConfig) {
   // notices has to be constructed first, since the sweep that triggers
   // most of them hangs off it.
   const relaunchNoticeRef: RelaunchNoticePort = {};
+  // One CryptoProviderCache for the whole hub process (CL-7284). Chat
+  // sendMail keys by workbench id; webhook, routine, and agent-definition
+  // drafting first-turn mail key by the launched run's instance id. New
+  // workbenches and run ids are `run_` (`generateId("workflowRun")`);
+  // older workbenches are `ins_` (`generateId("instance")`). They share a
+  // string shape — a second cache for the same id would mint a different
+  // signing key. generateId uniqueness keeps distinct entities from
+  // colliding; sharing the cache keeps the same entity from rotating keys
+  // across consumers. TTL-bounded by `createCryptoProviderCache` itself
+  // (CL-7223).
+  const cryptoProviders = createCryptoProviderCache();
   const chatPlatform = createHubChatPlatform({
     db,
     sessionService,
@@ -1378,6 +1389,7 @@ export async function createHub(config: HubConfig) {
     toolGrantsForPins,
     mcpCredentialBindingsFor,
     pinnedPackageCredentialBindingsFor,
+    cryptoProviders,
     // Chat residents are undeployed on idle again (see the comment above
     // this function): `chatIdleReapMs` (env-overridable via
     // `WORKBENCH_CHAT_IDLE_REAP_MS`, default 30 minutes) is
@@ -2194,12 +2206,6 @@ export async function createHub(config: HubConfig) {
   // lives in our own schema rather than as any change to Interchange's
   // `grant` table.
   const repoReviewLeaseStore = createDrizzleRepoReviewLeaseStore(db);
-  // Shared by every folded-run first-turn mail send below (webhook
-  // triggers and routines alike) — a `CryptoProviderCache` is keyed by
-  // instance id, which is globally unique across this hub regardless of
-  // which caller minted the run, so one cache serves both without
-  // collision risk.
-  const foldedRunCryptoProviders = createCryptoProviderCache();
   app.route(
     `${TENANT_PREFIX}/webhook-triggers`,
     createWebhookTriggerRoutes({
@@ -2235,7 +2241,7 @@ export async function createHub(config: HubConfig) {
             toolGrantsForPins,
             mcpCredentialBindingsFor,
             pinnedPackageCredentialBindingsFor,
-            cryptoProviderCache: foldedRunCryptoProviders,
+            cryptoProviderCache: cryptoProviders,
             launchMode: AGENT_SECTION_MODE,
             persistLaunch: workbenchLaunchPersistExtra,
             recordLaunchSources: ({ instanceId, sourcesDigest }) =>
@@ -2947,7 +2953,7 @@ export async function createHub(config: HubConfig) {
     toolGrantsForPins,
     mcpCredentialBindingsFor,
     pinnedPackageCredentialBindingsFor,
-    cryptoProviderCache: foldedRunCryptoProviders,
+    cryptoProviderCache: cryptoProviders,
     joinDeliveryWorkbench: (input) =>
       joinRunParticipant({ store: chatStore }, input),
   });
@@ -3252,12 +3258,6 @@ export async function createHub(config: HubConfig) {
     listModels: listMyraModels,
   };
 
-  // A separate `CryptoProviderCache` from `foldedRunCryptoProviders`
-  // above: an agent-definition drafting one-shot run's instance id has
-  // nothing to do with a folded run's, so a separate cache keeps them
-  // from ever contending over the same key space.
-  const agentDefinitionDraftingCryptoProviders = createCryptoProviderCache();
-
   // The create-agent panel's "Describe" step (CL-6074): a real one-shot
   // Myra call that proposes a starting system prompt/tool pins/skills
   // from a name + plain-language purpose, offering her the same
@@ -3281,7 +3281,7 @@ export async function createHub(config: HubConfig) {
               {
                 foldedRuns: oneShotFoldedRunsDeps,
                 events: sidecarRouter.events,
-                cryptoProviders: agentDefinitionDraftingCryptoProviders,
+                cryptoProviders,
                 undeploy: (address, reason) =>
                   sidecarRouter.sendAgentUndeploy(address, reason),
               },

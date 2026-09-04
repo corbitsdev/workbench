@@ -267,6 +267,9 @@ export function createHubRoutineLauncher(
       const renderedContent = renderRoutineInput(input.input);
       const content =
         renderedContent === "" ? "Run this routine now." : renderedContent;
+      // Keyed by the launched run's instance id (`generateId("workflowRun")`),
+      // the same string shape chat uses for workbench ids — this adapter
+      // takes the host's process-wide cache rather than minting its own.
       const cryptoProvider = await deps.cryptoProviderCache.get(instanceId);
       const result = await sendFoldedMailWithRetry(deps, {
         tenantId: input.tenantId,

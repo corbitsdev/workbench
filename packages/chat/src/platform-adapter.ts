@@ -14,7 +14,7 @@ import {
 } from "@corbits/agent-lifecycle";
 import {
   authoredDefinitionCandidates,
-  createCryptoProviderCache,
+  type CryptoProviderCache,
   DefinitionProjectionMissingError,
   domainOf,
   inferenceSourcesDigest,
@@ -102,6 +102,15 @@ export type CreateHubChatPlatformDeps = {
    * the lifecycle construction below) has no signal at all.
    */
   eventCollectors: EventCollectorRegistry;
+  /**
+   * Signing-key cache for outbound folded mail. The host constructs one
+   * process-wide instance (CL-7284) and passes it here so a workbench id
+   * looked up from chat cannot mint a different key than the same id
+   * looked up from webhook, routine, or one-shot drafting mail. This
+   * adapter keys `get` by `workbenchId` (`generateId("workflowRun")`, or
+   * older `generateId("instance")`).
+   */
+  cryptoProviders: CryptoProviderCache;
   /**
    * Opt-in idle-sleep for every launched instance: absent here, the adapter keeps today's
    * behavior exactly (nothing ever sleeps, no interval runs). When
@@ -223,8 +232,10 @@ export type HubChatPlatform = ChatPlatform & {
 
 /**
  * Composes the `ChatPlatform` port over the hub's real session
- * services and `@corbits/folded-runs`. One crypto provider is minted
- * per workbench and cached for the adapter's lifetime.
+ * services and `@corbits/folded-runs`. Outbound mail is signed with
+ * a `CryptoProvider` from `deps.cryptoProviders`, keyed by workbench
+ * id — the host owns the cache so every mail sender in the process
+ * shares it.
  */
 export function createHubChatPlatform(
   deps: CreateHubChatPlatformDeps,
@@ -250,7 +261,7 @@ export function createHubChatPlatform(
       : {}),
   };
 
-  const cryptoProviders = createCryptoProviderCache();
+  const cryptoProviders = deps.cryptoProviders;
   const wakeLogger = getLogger(["chat", "wake"]);
 
   // Built from `@corbits/agent-lifecycle` — the idle-sleep sweep and
@@ -1228,6 +1239,10 @@ export function createHubChatPlatform(
           "sendMail requires either principalId or fromWorkbenchId",
         );
       }
+      // Keyed by workbench id (`generateId("workflowRun")` / older
+      // `generateId("instance")`), not the invited agent's instance id.
+      // Those two id families share a prefix, so a second cache in this
+      // process would mint a different signing key for the same string.
       const cryptoProvider = await cryptoProviders.get(input.workbenchId);
 
       const attachments = input.content.attachments?.map(

@@ -25,6 +25,10 @@ or a host-specific package such as `@corbits/chat`.
   7-day idle ttl refreshed on every access (CL-7223): a key going
   momentarily unreachable (idle sleep, a sweep) does not evict it, so
   only a key nobody has asked for in a week is treated as gone for good.
+  Independent cache instances mint independent keys for the same string,
+  so a host constructs one process-wide cache and passes it to every
+  mail sender (chat, webhook, routine, one-shot) rather than constructing
+  one per consumer (CL-7284).
 - **Run lookups** (`./src/runs.ts`) — resolving a run by id or address, and
   bridging a run's principal to its live session via the shared-principal
   bridge.
