@@ -349,6 +349,7 @@ import { upgradeWebSocket, websocket } from "hono/bun";
 import {
   CORBITS_TOOLS_REGISTRY,
   describeCorbitsToolPackages,
+  publishCorbitsToolsRegistry,
 } from "@corbits/tool-registry-publish";
 import {
   readHubConfig,
@@ -3076,6 +3077,7 @@ export async function createHub(config: HubConfig) {
     sessionFor,
     log: (line) => log.info`${line}`,
     logError: (line) => log.error`${line}`,
+    publishToolRegistryFn: publishCorbitsToolsRegistry,
   });
   benchProvisioner.start();
 

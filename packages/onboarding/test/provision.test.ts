@@ -31,6 +31,59 @@ const noopPush: WorkflowPusher = async () => ({
 });
 const noopPublishToolRegistry = async () => undefined;
 
+const TOOLS_ASSET_ID = "ast_corbits_tools";
+const SEEDED_MEMORY_TARBALL = {
+  filename: "corbits-memory-tools-0.0.4.tgz",
+  size: 12,
+  integrity: "sha512-seeded",
+};
+
+function corbitsToolsAssetRow(tenantId: string) {
+  return {
+    id: TOOLS_ASSET_ID,
+    tenantId,
+    kind: "package-registry",
+    name: "corbits-tools",
+    displayName: null,
+    creatorPrincipalId: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    origin: { tenantId, direct: true },
+  };
+}
+
+function corbitsToolsRegistryResponse(
+  method: string,
+  path: string,
+  tenantId: string,
+  tarballs:
+    | readonly { filename: string; size: number; integrity: string }[]
+    | "missing",
+): { status: number; data: unknown; cookies: string[] } | undefined {
+  const inheritedList = `/api/tenants/${tenantId}/assets?kind=package-registry&inherited=true`;
+  const localList = `/api/tenants/${tenantId}/assets?kind=package-registry&inherited=false`;
+  if (method === "GET" && (path === inheritedList || path === localList)) {
+    if (tarballs === "missing") {
+      return { status: 200, data: [], cookies: [] };
+    }
+    return {
+      status: 200,
+      data: [corbitsToolsAssetRow(tenantId)],
+      cookies: [],
+    };
+  }
+  if (
+    method === "GET" &&
+    path === `/api/tenants/${tenantId}/assets/${TOOLS_ASSET_ID}/tarballs`
+  ) {
+    if (tarballs === "missing") {
+      return { status: 200, data: [], cookies: [] };
+    }
+    return { status: 200, data: [...tarballs], cookies: [] };
+  }
+  return undefined;
+}
+
 function collector() {
   const lines: string[] = [];
   return { lines, log: (line: string) => lines.push(line) };
@@ -41,6 +94,13 @@ function firstLoginSeedHub(args: { expectedParentId?: string }) {
   const startedRuns: string[] = [];
   const tarballPuts: string[] = [];
   const api: ApiCall = async (method, path, body) => {
+    const registry = corbitsToolsRegistryResponse(
+      method,
+      path,
+      TENANT_ID,
+      "missing",
+    );
+    if (registry !== undefined) return registry;
     if (path.includes("/tarballs/")) {
       tarballPuts.push(`${method} ${path}`);
       throw new Error(`signup must not pack: ${method} ${path}`);
@@ -588,6 +648,13 @@ describe("provisionPersonalTenantIfNeeded", () => {
     });
 
     const api: ApiCall = async (method, path, body) => {
+      const registry = corbitsToolsRegistryResponse(
+        method,
+        path,
+        TENANT_ID,
+        "missing",
+      );
+      if (registry !== undefined) return registry;
       if (method === "GET" && path === "/api/me/principals") {
         return membership();
       }
@@ -840,6 +907,10 @@ describe("provisionPersonalTenantIfNeeded", () => {
     const grantsPosted: { resource: string; action: string }[] = [];
     const publishedTenants: string[] = [];
     const api: ApiCall = async (method, path, body) => {
+      const registry = corbitsToolsRegistryResponse(method, path, TENANT_ID, [
+        SEEDED_MEMORY_TARBALL,
+      ]);
+      if (registry !== undefined) return registry;
       if (method === "GET" && path === "/api/me/principals") {
         return {
           status: 200,
@@ -969,6 +1040,10 @@ describe("provisionPersonalTenantIfNeeded", () => {
 
   test("a grant-reconcile failure is reported, not thrown -- sign-in still succeeds for a fully seeded bench", async () => {
     const api: ApiCall = async (method, path) => {
+      const registry = corbitsToolsRegistryResponse(method, path, TENANT_ID, [
+        SEEDED_MEMORY_TARBALL,
+      ]);
+      if (registry !== undefined) return registry;
       if (method === "GET" && path === "/api/me/principals") {
         return {
           status: 200,
@@ -1078,6 +1153,13 @@ describe("provisionPersonalTenantIfNeeded", () => {
     let assetListCalls = 0;
     const publishedTenants: string[] = [];
     const api: ApiCall = async (method, path) => {
+      const registry = corbitsToolsRegistryResponse(
+        method,
+        path,
+        TENANT_ID,
+        "missing",
+      );
+      if (registry !== undefined) return registry;
       if (method === "GET" && path === "/api/me/principals") {
         return {
           status: 200,
@@ -1185,6 +1267,13 @@ describe("provisionPersonalTenantIfNeeded", () => {
     const startedRuns: string[] = [];
 
     const api: ApiCall = async (method, path, body) => {
+      const registry = corbitsToolsRegistryResponse(
+        method,
+        path,
+        TENANT_ID,
+        "missing",
+      );
+      if (registry !== undefined) return registry;
       if (method === "GET" && path === "/api/me/principals") {
         return {
           status: 200,
@@ -1240,7 +1329,11 @@ describe("provisionPersonalTenantIfNeeded", () => {
         listedLocal = true;
         return { status: 200, data: [], cookies: [] };
       }
-      if (method === "GET" && path.includes("inherited=true")) {
+      if (
+        method === "GET" &&
+        path.includes("kind=workflow") &&
+        path.includes("inherited=true")
+      ) {
         listedInherited = true;
         throw new Error("must not list inherited assets for seed completeness");
       }
@@ -1417,6 +1510,13 @@ describe("provisionPersonalTenantIfNeeded", () => {
     const startedRuns: Record<string, string[]> = {};
 
     const api: ApiCall = async (method, path, body) => {
+      const registry = corbitsToolsRegistryResponse(
+        method,
+        path,
+        TENANT_ID,
+        "missing",
+      );
+      if (registry !== undefined) return registry;
       if (method === "GET" && path === "/api/me/principals") {
         return {
           status: 200,
@@ -1659,5 +1759,217 @@ describe("provisionPersonalTenantIfNeeded", () => {
     const status = await seededWorkflowStatus(api, ["session=abc"], TENANT_ID);
     expect(status.deployed).toContain(SETUP_AGENT_ASSET_NAME);
     expect(status.pending).not.toContain(SETUP_AGENT_ASSET_NAME);
+  });
+
+  test("isFullySeeded is false when corbits-tools exists but has no tarballs", async () => {
+    const api: ApiCall = async (method, path) => {
+      const registry = corbitsToolsRegistryResponse(
+        method,
+        path,
+        TENANT_ID,
+        [],
+      );
+      if (registry !== undefined) return registry;
+      if (
+        method === "GET" &&
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+      ) {
+        return {
+          status: 200,
+          data: DEFAULT_WORKFLOWS.map((workflow, index) => ({
+            id: `ast_${index}`,
+            tenantId: TENANT_ID,
+            kind: "workflow",
+            name: workflow.assetName,
+            displayName: workflow.displayName,
+            creatorPrincipalId: PRINCIPAL_ID,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+            origin: { tenantId: TENANT_ID, direct: true },
+          })),
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        return {
+          status: 200,
+          data: DEFAULT_WORKFLOWS.map((_workflow, index) => ({
+            definitionAssetId: `ast_${index}`,
+            status: "deployed",
+          })),
+          cookies: [],
+        };
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    expect(await isFullySeeded(api, ["session=abc"], TENANT_ID)).toBe(false);
+  });
+
+  test("isFullySeeded is true when workflows are live and corbits-tools carries memory-tools", async () => {
+    const api: ApiCall = async (method, path) => {
+      const registry = corbitsToolsRegistryResponse(method, path, TENANT_ID, [
+        SEEDED_MEMORY_TARBALL,
+      ]);
+      if (registry !== undefined) return registry;
+      if (
+        method === "GET" &&
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+      ) {
+        return {
+          status: 200,
+          data: DEFAULT_WORKFLOWS.map((workflow, index) => ({
+            id: `ast_${index}`,
+            tenantId: TENANT_ID,
+            kind: "workflow",
+            name: workflow.assetName,
+            displayName: workflow.displayName,
+            creatorPrincipalId: PRINCIPAL_ID,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+            origin: { tenantId: TENANT_ID, direct: true },
+          })),
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        return {
+          status: 200,
+          data: DEFAULT_WORKFLOWS.map((_workflow, index) => ({
+            definitionAssetId: `ast_${index}`,
+            status: "deployed",
+          })),
+          cookies: [],
+        };
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    expect(await isFullySeeded(api, ["session=abc"], TENANT_ID)).toBe(true);
+  });
+
+  test("sign-in republishes an empty inherited corbits-tools registry", async () => {
+    const publishedTenants: string[] = [];
+    const api: ApiCall = async (method, path) => {
+      const registry = corbitsToolsRegistryResponse(
+        method,
+        path,
+        TENANT_ID,
+        [],
+      );
+      if (registry !== undefined) return registry;
+      if (method === "GET" && path === "/api/me/principals") {
+        return {
+          status: 200,
+          data: {
+            data: [
+              {
+                principalId: PRINCIPAL_ID,
+                tenantId: TENANT_ID,
+                tenantName: "alice's workbench",
+                tenantSlug: TENANT_SLUG,
+                kind: "user",
+                status: "active",
+                roles: [{ id: "rol_owner", name: "owner" }],
+              },
+            ],
+            nextCursor: null,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)
+      ) {
+        return {
+          status: 200,
+          data: { data: [], nextCursor: null },
+          cookies: [],
+        };
+      }
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/grants`) {
+        return { status: 201, data: {}, cookies: [] };
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return {
+          status: 200,
+          data: {
+            id: TENANT_ID,
+            name: "alice's workbench",
+            slug: TENANT_SLUG,
+            domain: `${TENANT_SLUG}.localhost`,
+            parentId: "ten_operator",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path ===
+          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
+      ) {
+        return {
+          status: 200,
+          data: DEFAULT_WORKFLOWS.map((workflow, index) => ({
+            id: `ast_${index}`,
+            tenantId: TENANT_ID,
+            kind: "workflow",
+            name: workflow.assetName,
+            displayName: workflow.displayName,
+            creatorPrincipalId: PRINCIPAL_ID,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+            origin: { tenantId: TENANT_ID, direct: true },
+          })),
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
+      ) {
+        return {
+          status: 200,
+          data: DEFAULT_WORKFLOWS.map((_workflow, index) => ({
+            definitionAssetId: `ast_${index}`,
+            status: "deployed",
+          })),
+          cookies: [],
+        };
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await provisionPersonalTenantIfNeeded({
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      userEmailVerified: true,
+      publishToolRegistry: async ({ tenantId }) => {
+        publishedTenants.push(tenantId);
+      },
+      pushWorkflow: noopPush,
+      log: collector().log,
+    });
+
+    expect(publishedTenants).toEqual([TENANT_ID]);
+    expect(result).toEqual({
+      kind: "existing-member",
+      seeded: false,
+      tenantId: TENANT_ID,
+    });
   });
 });
