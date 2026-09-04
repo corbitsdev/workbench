@@ -19,6 +19,7 @@ import {
   listInvitableDefinitions,
   listTenantInvitableDefinitions,
   listVisibleAgentDefinitions,
+  listWorkbenchAgents,
   openAgentDm,
   listMessages,
   listPinnedMessages,
@@ -407,6 +408,55 @@ describe("listInvitableDefinitions", () => {
     stubFetch(() => json({ items: [{ id: "wfd_echo" }] }));
     await expect(
       listInvitableDefinitions("tenant_1", "chan_1"),
+    ).rejects.toBeInstanceOf(ChatApiError);
+  });
+});
+
+describe("listWorkbenchAgents", () => {
+  test("parses each agent with its person-facing display name (CL-6424)", async () => {
+    const calls = stubFetch(() =>
+      json({
+        items: [
+          {
+            address: "ins_echo@acme.example",
+            handle: "myra",
+            definitionId: "wfd_echo",
+            definitionAssetId: "ast_wfd_echo",
+            displayName: "Myra",
+          },
+        ],
+      }),
+    );
+    const items = await listWorkbenchAgents("tenant_1", "chan_1");
+    expect(calls[0]?.path).toBe(
+      "/api/tenants/tenant_1/chat/workbenches/chan_1/agents",
+    );
+    expect(items).toEqual([
+      {
+        address: "ins_echo@acme.example",
+        handle: "myra",
+        definitionId: "wfd_echo",
+        definitionAssetId: "ast_wfd_echo",
+        displayName: "Myra",
+      },
+    ]);
+  });
+
+  test("throws a ChatApiError when an agent carries no display name", async () => {
+    stubFetch(() =>
+      json({
+        items: [
+          {
+            address: "ins_echo@acme.example",
+            handle: "myra",
+            definitionId: "wfd_echo",
+            definitionAssetId: "ast_wfd_echo",
+          },
+        ],
+      }),
+    );
+    await expect(
+      listWorkbenchAgents("tenant_1", "chan_1"),
     ).rejects.toBeInstanceOf(ChatApiError);
   });
 });

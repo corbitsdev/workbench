@@ -1,5 +1,10 @@
 export { ChatWorkspace } from "./chat-workspace";
-export type { TenantResolution, PresenceMember } from "./chat-workspace";
+export type {
+  TenantResolution,
+  PresenceMember,
+  ChatHeaderChrome,
+  ChatHeaderCrumb,
+} from "./chat-workspace";
 
 export { WorkbenchTimeline, messageDomId, findRetryText } from "./timeline";
 export { NoUsableModelBanner } from "./no-usable-model-banner";
@@ -65,6 +70,11 @@ export {
   mentionOptionsFromWorkbench,
   resolveBringInLists,
 } from "./mentions";
+export {
+  agentDisplayNamesFromAgents,
+  displayNameForAddress,
+} from "./agent-display-names";
+export type { AgentDisplayNames } from "./agent-display-names";
 export type {
   BringInAgentDefinition,
   BringInListFailure,
