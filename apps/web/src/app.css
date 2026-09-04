@@ -1121,7 +1121,15 @@ select:disabled,
 .shell-canvas-pane-actions {
   display: flex;
   flex-shrink: 0;
+  align-items: center;
   gap: 0.25rem;
+}
+
+.shell-artifact-presence-status {
+  padding: 0 0.35rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  white-space: nowrap;
 }
 
 .shell-profile-pane-hint {
