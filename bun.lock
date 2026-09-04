@@ -1211,6 +1211,7 @@
         "@intx/crypto": "0.3.0",
         "@intx/hub-sessions": "workspace:*",
         "@intx/log": "0.3.0",
+        "@intx/types": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {

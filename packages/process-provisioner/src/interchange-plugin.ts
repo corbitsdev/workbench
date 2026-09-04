@@ -1,6 +1,7 @@
 import {
   createAllocationStateStore,
   createSidecarProvisioner,
+  sidecarCapabilityDeclarations,
   type AllocationStateStore,
 } from "@corbits/sandbox-sidecar";
 import type { SidecarProvisioner } from "@intx/hub-sessions";
@@ -45,6 +46,7 @@ export function createProcessSidecarProvisioner(
     id: PROCESS_PROVISIONER_ID,
     apiVersion: PROVISIONER_API_VERSION,
     bindingFingerprint: `process:v1:${config.sidecarEntryPath}:${config.hubWebSocketUrl}`,
+    capabilities: sidecarCapabilityDeclarations("process"),
     backend: createProcessBackend(runner, config),
     store,
   });
