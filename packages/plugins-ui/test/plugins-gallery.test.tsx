@@ -192,9 +192,9 @@ describe("PluginsGallery", () => {
     ).toHaveLength(0);
     expect(container.querySelector('[aria-label="Filter plugins"]')).toBeNull();
     expect(chip(container, "All").getAttribute("aria-pressed")).toBe("true");
-    expect(chip(container, "Research").getAttribute("aria-pressed")).toBe(
-      "false",
-    );
+    expect(
+      chip(container, "Research & data").getAttribute("aria-pressed"),
+    ).toBe("false");
   });
 
   test("chip counts describe the query-matched catalog", async () => {
@@ -202,16 +202,18 @@ describe("PluginsGallery", () => {
 
     expect(chip(container, "All").textContent).toContain("15");
     expect(chip(container, "Connected").textContent).toContain("3");
-    expect(chip(container, "Work").textContent).toContain("5");
-    expect(chip(container, "Developer").textContent).toContain("6");
-    expect(chip(container, "Research").textContent).toContain("3");
+    expect(chip(container, "Communication").textContent).toContain("0");
+    expect(chip(container, "Productivity").textContent).toContain("4");
+    expect(chip(container, "Sales & customer").textContent).toContain("1");
+    expect(chip(container, "Engineering").textContent).toContain("6");
+    expect(chip(container, "Research & data").textContent).toContain("3");
   });
 
   test("category filtering keeps one unified catalog", async () => {
     const { container } = await renderGallery();
 
     act(() => {
-      chip(container, "Research").click();
+      chip(container, "Research & data").click();
     });
 
     expect(catalogNames(container)).toEqual([
@@ -228,11 +230,46 @@ describe("PluginsGallery", () => {
     const { container } = await renderGallery(PLUGINS, "live web");
 
     expect(chip(container, "All").textContent).toContain("1");
-    expect(chip(container, "Research").textContent).toContain("1");
+    expect(chip(container, "Research & data").textContent).toContain("1");
     act(() => {
-      chip(container, "Research").click();
+      chip(container, "Research & data").click();
     });
     expect(catalogNames(container)).toEqual(["Exa"]);
+  });
+
+  test("original categories separate productivity and sales and handle empty groups", async () => {
+    const { container } = await renderGallery();
+
+    act(() => chip(container, "Productivity").click());
+    expect(catalogNames(container)).toEqual([
+      "Granola",
+      "Notion",
+      "Canva",
+      "Manus",
+    ]);
+
+    act(() => chip(container, "Sales & customer").click());
+    expect(catalogNames(container)).toEqual(["Attio"]);
+
+    act(() => chip(container, "Communication").click());
+    expect(catalogNames(container)).toEqual([]);
+    expect(container.textContent).toContain(
+      "No plugins are available in this filter.",
+    );
+  });
+
+  test("search matches the original category labels", async () => {
+    const { container } = await renderGallery(PLUGINS, "engineering");
+
+    expect(catalogNames(container)).toEqual([
+      "Linear",
+      "GitHub MCP",
+      "Sentry",
+      "Railway",
+      "PostHog",
+      "GitHub",
+    ]);
+    expect(chip(container, "Engineering").textContent).toContain("6");
   });
 
   test("preset-backed registry entries and inference providers stay out of the catalog", async () => {

@@ -1190,19 +1190,20 @@ async function run(): Promise<void> {
           );
         }
 
-        const developerClicked = await page.evaluate(() => {
+        const engineeringClicked = await page.evaluate(() => {
           const buttons = Array.from(
             document.querySelectorAll<HTMLButtonElement>(
               '[aria-label="Plugin catalog filters"] button',
             ),
           );
-          const developer = buttons.find((button) =>
-            (button.textContent ?? "").startsWith("Developer"),
+          const engineering = buttons.find((button) =>
+            (button.textContent ?? "").startsWith("Engineering"),
           );
-          developer?.click();
-          return developer !== undefined;
+          engineering?.click();
+          return engineering !== undefined;
         });
-        if (!developerClicked) throw new Error("Developer chip was not found");
+        if (!engineeringClicked)
+          throw new Error("Engineering chip was not found");
         await page.waitForFunction(
           () =>
             document.querySelectorAll(
@@ -1229,7 +1230,7 @@ async function run(): Promise<void> {
             ),
           );
           const research = buttons.find((button) =>
-            (button.textContent ?? "").startsWith("Research"),
+            (button.textContent ?? "").startsWith("Research & data"),
           );
           research?.click();
           return research !== undefined;

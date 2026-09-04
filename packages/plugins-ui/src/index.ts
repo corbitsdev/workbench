@@ -26,8 +26,9 @@ export type {
 } from "./mcp-servers-api";
 
 export {
-  pluginCatalogCategory,
+  PLUGIN_CATEGORY_ORDER,
+  pluginCategory,
   pluginIcon,
   pluginOutcome,
 } from "./plugin-meta";
-export type { PluginCatalogCategory } from "./plugin-meta";
+export type { PluginCategory } from "./plugin-meta";

@@ -16,25 +16,44 @@ import {
   Stack,
 } from "@corbits/icons";
 
-export type PluginCatalogCategory = "work" | "developer" | "research";
+export type PluginCategory =
+  | "Communication"
+  | "Productivity"
+  | "Sales & customer"
+  | "Engineering"
+  | "Research & data";
 
-const CATEGORY_BY_ID: Readonly<Partial<Record<string, PluginCatalogCategory>>> =
-  {
-    granola: "work",
-    notion: "work",
-    attio: "work",
-    canva: "work",
-    manus: "work",
-    linear: "developer",
-    "github-mcp": "developer",
-    sentry: "developer",
-    railway: "developer",
-    posthog: "developer",
-    github: "developer",
-    exa: "research",
-    sumble: "research",
-    scrapecreators: "research",
-  };
+export const PLUGIN_CATEGORY_ORDER: readonly PluginCategory[] = [
+  "Communication",
+  "Productivity",
+  "Sales & customer",
+  "Engineering",
+  "Research & data",
+];
+
+const CATEGORY_BY_ID: Readonly<Partial<Record<string, PluginCategory>>> = {
+  granola: "Productivity",
+  manus: "Productivity",
+  notion: "Productivity",
+  zoom: "Communication",
+  slack: "Communication",
+  google: "Productivity",
+  canva: "Productivity",
+  attio: "Sales & customer",
+  hubspot: "Sales & customer",
+  exa: "Research & data",
+  scrapecreators: "Research & data",
+  sumble: "Research & data",
+  linear: "Engineering",
+  github: "Engineering",
+  "github-mcp": "Engineering",
+  sentry: "Engineering",
+  vercel: "Engineering",
+  render: "Engineering",
+  railway: "Engineering",
+  posthog: "Engineering",
+  browserbase: "Engineering",
+};
 
 /** One honest sentence: what connecting this plugin actually lets an agent
  * do. No metrics, no hype — the same rule `WorkflowCatalogEntry.whatItDoes`
@@ -73,9 +92,7 @@ const ICON_BY_ID: Readonly<Record<string, Icon>> = {
   github: GitPullRequest,
 };
 
-export function pluginCatalogCategory(
-  catalogId: string,
-): PluginCatalogCategory | undefined {
+export function pluginCategory(catalogId: string): PluginCategory | undefined {
   return CATEGORY_BY_ID[catalogId];
 }
 

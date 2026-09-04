@@ -13,15 +13,16 @@ import { McpServersSection } from "./mcp-servers-section";
 import { McpPresetCard, useMcpPresetCatalog } from "./mcp-preset-cards";
 import type { McpPreset } from "./mcp-servers-api";
 import {
-  pluginCatalogCategory,
-  type PluginCatalogCategory,
+  PLUGIN_CATEGORY_ORDER,
+  pluginCategory,
+  type PluginCategory,
   pluginOutcome,
 } from "./plugin-meta";
 import { PluginCard } from "./plugin-card";
 import { SkillCard, type SkillCardData } from "./skill-card";
 
 export type PluginsGalleryTab = "plugins" | "skills";
-type PluginCatalogFilter = "all" | "connected" | PluginCatalogCategory;
+type PluginCatalogFilter = "All" | "Connected" | PluginCategory;
 
 type PluginCatalogEntry =
   | {
@@ -29,7 +30,7 @@ type PluginCatalogEntry =
       readonly id: string;
       readonly name: string;
       readonly outcome: string;
-      readonly category: PluginCatalogCategory | undefined;
+      readonly category: PluginCategory | undefined;
       readonly connected: boolean;
       readonly preset: McpPreset;
     }
@@ -38,27 +39,16 @@ type PluginCatalogEntry =
       readonly id: string;
       readonly name: string;
       readonly outcome: string;
-      readonly category: PluginCatalogCategory | undefined;
+      readonly category: PluginCategory | undefined;
       readonly connected: boolean;
       readonly plugin: ResolvedPlugin;
     };
 
-const PLUGIN_FILTERS = [
-  { id: "all", label: "All" },
-  { id: "connected", label: "Connected" },
-  { id: "work", label: "Work" },
-  { id: "developer", label: "Developer" },
-  { id: "research", label: "Research" },
-] satisfies readonly {
-  readonly id: PluginCatalogFilter;
-  readonly label: string;
-}[];
-
-const CATEGORY_LABELS: Record<PluginCatalogCategory, string> = {
-  work: "Work",
-  developer: "Developer",
-  research: "Research",
-};
+const PLUGIN_FILTERS: readonly PluginCatalogFilter[] = [
+  "All",
+  "Connected",
+  ...PLUGIN_CATEGORY_ORDER,
+];
 
 const MCP_PRESET_CATALOG_IDS = new Set([
   ...MCP_PRESETS.map((preset) => preset.slug),
@@ -84,8 +74,8 @@ function matchesFilter(
   entry: PluginCatalogEntry,
   filter: PluginCatalogFilter,
 ): boolean {
-  if (filter === "all") return true;
-  if (filter === "connected") return entry.connected;
+  if (filter === "All") return true;
+  if (filter === "Connected") return entry.connected;
   return entry.category === filter;
 }
 
@@ -106,14 +96,12 @@ function PluginFilterBar({
     >
       {PLUGIN_FILTERS.map((filter) => (
         <FilterChip
-          key={filter.id}
-          selected={active === filter.id}
-          count={
-            entries.filter((entry) => matchesFilter(entry, filter.id)).length
-          }
-          onClick={() => onChange(filter.id)}
+          key={filter}
+          selected={active === filter}
+          count={entries.filter((entry) => matchesFilter(entry, filter)).length}
+          onClick={() => onChange(filter)}
         >
-          {filter.label}
+          {filter}
         </FilterChip>
       ))}
     </div>
@@ -147,9 +135,7 @@ function PluginCatalogPanel({
       [
         entry.name,
         entry.outcome,
-        ...(entry.category === undefined
-          ? []
-          : [CATEGORY_LABELS[entry.category]]),
+        ...(entry.category === undefined ? [] : [entry.category]),
       ],
       query,
     ),
@@ -296,7 +282,7 @@ export function PluginsGallery({
   readonly autoConnectPresetSlug?: string | null;
   readonly onAutoConnectPresetHandled?: () => void;
 }) {
-  const [activeFilter, setActiveFilter] = useState<PluginCatalogFilter>("all");
+  const [activeFilter, setActiveFilter] = useState<PluginCatalogFilter>("All");
   const presetCatalog = useMcpPresetCatalog(tenantId);
 
   const nativeEntries = useMemo<readonly PluginCatalogEntry[]>(
@@ -311,7 +297,7 @@ export function PluginsGallery({
             plugin.descriptor.id,
             plugin.descriptor.displayName,
           ),
-          category: pluginCatalogCategory(plugin.descriptor.id),
+          category: pluginCategory(plugin.descriptor.id),
           connected: plugin.status !== "not_connected",
           plugin,
         })),
@@ -324,7 +310,7 @@ export function PluginsGallery({
         id: preset.slug,
         name: preset.displayName,
         outcome: preset.description,
-        category: pluginCatalogCategory(preset.slug),
+        category: pluginCategory(preset.slug),
         connected: preset.connected,
         preset,
       })),
