@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  capacitySectionVisible,
   isWorkbenchSettingsSectionId,
   workbenchSettingsSections,
   WORKBENCH_SETTINGS_SECTION_IDS,
@@ -17,20 +16,6 @@ describe("isWorkbenchSettingsSectionId", () => {
   test("is false for a value that isn't a section id", () => {
     expect(isWorkbenchSettingsSectionId("not-a-real-section")).toBe(false);
     expect(isWorkbenchSettingsSectionId("")).toBe(false);
-  });
-});
-
-describe("capacitySectionVisible", () => {
-  test("hides Capacity only when the probe confirmed unavailable", () => {
-    expect(capacitySectionVisible("unavailable")).toBe(false);
-  });
-
-  test("shows Capacity when the provisioner is available", () => {
-    expect(capacitySectionVisible("available")).toBe(true);
-  });
-
-  test("shows Capacity when the probe failed — unknown is not unavailable", () => {
-    expect(capacitySectionVisible("unknown")).toBe(true);
   });
 });
 
@@ -90,42 +75,16 @@ describe("workbenchSettingsSections", () => {
     ).not.toContain("plugins");
   });
 
-  test("Capacity is absent by default — this server has no isolated capacity to offer", () => {
+  test("Capacity is gone — sidecar placement is Interchange's own concern now", () => {
     expect(workbenchSettingsSections("chat").map((s) => s.id)).not.toContain(
       "capacity",
     );
     expect(
       workbenchSettingsSections("workbench").map((s) => s.id),
     ).not.toContain("capacity");
-  });
-
-  test("Capacity appears, after Notifications, when this server offers it", () => {
-    expect(
-      workbenchSettingsSections("workbench", false, "available").map(
-        (s) => s.id,
-      ),
-    ).toEqual([
-      "general",
-      "members",
-      "agents",
-      "notifications",
-      "capacity",
-      "danger",
-    ]);
-  });
-
-  test("Capacity appears when the probe is unknown — a failed probe is not unavailable", () => {
-    expect(
-      workbenchSettingsSections("workbench", false, "unknown").map((s) => s.id),
-    ).toContain("capacity");
-  });
-
-  test("Capacity stays hidden when the probe confirmed unavailable", () => {
-    expect(
-      workbenchSettingsSections("workbench", false, "unavailable").map(
-        (s) => s.id,
-      ),
-    ).not.toContain("capacity");
+    expect(WORKBENCH_SETTINGS_SECTION_IDS).not.toContain(
+      "capacity" as (typeof WORKBENCH_SETTINGS_SECTION_IDS)[number],
+    );
   });
 
   test("groups sections Shared / Personal / Danger for the nav", () => {
@@ -137,15 +96,5 @@ describe("workbenchSettingsSections", () => {
       "personal",
       "danger",
     ]);
-  });
-
-  test("Capacity is grouped Shared even though it sits after Notifications in the list", () => {
-    const withCapacity = workbenchSettingsSections(
-      "workbench",
-      false,
-      "available",
-    );
-    const capacity = withCapacity.find((s) => s.id === "capacity");
-    expect(capacity?.group).toBe("shared");
   });
 });
