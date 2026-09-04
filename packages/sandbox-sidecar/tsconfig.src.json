@@ -12,6 +12,9 @@
   "references": [
     {
       "path": "../../vendor/intx/hub-sessions/tsconfig.src.json"
+    },
+    {
+      "path": "../../vendor/intx/types/tsconfig.src.json"
     }
   ]
 }

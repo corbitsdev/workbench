@@ -73,12 +73,12 @@ actually give the code they run, as a ladder (`isolation:process` →
 below its own and blocks every rung above it, plus `runtime:sidecar`, which
 all three provide.
 
-| Declaration          | `process`   | `docker`    | `e2b`       |
-| -------------------- | ----------- | ----------- | ----------- |
-| `runtime:sidecar`    | available   | available   | available   |
-| `isolation:process`  | available   | available   | available   |
-| `isolation:container`| **blocked** | available   | available   |
-| `isolation:vm`       | **blocked** | **blocked** | available   |
+| Declaration           | `process`   | `docker`    | `e2b`     |
+| --------------------- | ----------- | ----------- | --------- |
+| `runtime:sidecar`     | available   | available   | available |
+| `isolation:process`   | available   | available   | available |
+| `isolation:container` | **blocked** | available   | available |
+| `isolation:vm`        | **blocked** | **blocked** | available |
 
 So a deployment that requires `isolation:vm` will not land on the default
 `process` backend; it selects `e2b` if registered, and otherwise fails
