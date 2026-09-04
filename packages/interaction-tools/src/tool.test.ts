@@ -46,7 +46,11 @@ test("ask_user posts a question block and ends the turn with the answer arriving
   const fetchImpl = (async () => {
     posted = true;
     return new Response(
-      JSON.stringify({ id: "msg_1", createdAt: "2026-08-17T00:00:00.000Z" }),
+      JSON.stringify({
+        id: "msg_1",
+        createdAt: "2026-08-17T00:00:00.000Z",
+        mailMessageId: "<msg_1@ten1.workbench.test>",
+      }),
       { status: 201 },
     );
   }) as unknown as typeof fetch;
@@ -109,8 +113,9 @@ test("retrying ask_user for the same call reuses the questionId so a crash betwe
     if (typeof questionId === "string") postedQuestionIds.push(questionId);
     return new Response(
       JSON.stringify({
-        id: `msg_${postedQuestionIds.length}`,
+        id: "msg_1",
         createdAt: "2026-08-17T00:00:00.000Z",
+        mailMessageId: "<msg_1@ten1.workbench.test>",
       }),
       { status: 201 },
     );
