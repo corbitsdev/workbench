@@ -172,8 +172,13 @@ import { runSystemSeed } from "./system-seed";
 import {
   createInMemoryMailboxEventBus,
   createMailboxDb,
+  createMailboxPersist,
   mountMailbox,
 } from "@corbits/mailbox";
+import {
+  createHubMailboxAuthorizeSender,
+  createHubMailboxRowRefsStamper,
+} from "./mailbox-persist";
 import {
   createCommandRegistry,
   createCommandRoutes,
@@ -755,6 +760,19 @@ export async function createHub(config: HubConfig) {
   const lookups = {
     ...baseLookups,
     materializeMailTriggeredRunGrants: mailTriggeredRunGrants,
+    // CL-7449: every outbound agent frame also lands a durable
+    // `principal_mail` row in each addressed human participant's mailbox,
+    // dual-written alongside `baseLookups.persistMail`'s `session_mail`
+    // write. Dual-write independence is `createMailboxPersist`'s own
+    // contract (upstream failing still attempts the mailbox write, and a
+    // mailbox failure never fails upstream) -- no second try/catch belongs
+    // here.
+    persistMail: createMailboxPersist(mailboxDb, {
+      upstream: baseLookups.persistMail,
+      authorizeSender: createHubMailboxAuthorizeSender(db),
+      bus: mailboxBus,
+      onRow: createHubMailboxRowRefsStamper(mailboxDb),
+    }),
     async registerSignalCorrelation(
       args: Parameters<typeof baseLookups.registerSignalCorrelation>[0],
     ): Promise<void> {
