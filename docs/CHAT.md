@@ -204,8 +204,8 @@ asks to stop it:
   turn row `cancelled` rather than `failed`.
 - **Already off our call stack.** `sendMail` has no cancellable
   primitive of its own (CL-7230) — once it resolves, the agent is
-  generating (or parked on a `message_response` gate somewhere in the
-  execution plane this package cannot see into) with nothing left
+  generating (or parked on an approval gate somewhere in the execution
+  plane this package cannot see into) with nothing left
   registered to abort. `cancelWorkbenchTurn` snapshots every turn
   `AgentTurnStore.findRunningTurns` reports for the workbench _before_
   triggering the registry above (so a row the abort path already
@@ -633,6 +633,21 @@ pinned strip the shell mock shows above the message list
 (`@corbits/chat-ui`'s `PinnedStrip`) renders every currently-pinned message
 as a jump-to chip; clicking one scrolls the timeline to that message's own
 row (`messageDomId`).
+
+### `ask_user` posts and ends the turn, not a park (CL-7443)
+
+`@corbits/interaction-tools`' `ask_user` tool has no gate: it posts a
+`question` block card and returns immediately with a tool result that
+tells the model to end its turn — a Workbench agent is an unbounded
+interactive step where every inbound mail is already its next turn, so
+"ask a person" is native as "post and stop," not a structural suspend. No
+correlation id, no timeout, no parked call. The person's answer arrives
+later as an ordinary reply through the block-response route below, which
+becomes the agent's next inbound message and therefore its next turn —
+never this call's own result. (Before CL-7443, `ask_user` parked the call
+on a vendored `message_response` signal/gate until a correlated reply
+resolved it; that machinery, and the correlation-id plumbing it needed
+through `sendMail`/`sendUserMessage`, is retired.)
 
 ### Question answers notify at most once (CL-7192)
 
