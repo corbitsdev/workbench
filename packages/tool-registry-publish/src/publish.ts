@@ -152,11 +152,11 @@ export class TarballVersionCollisionError extends Error {
 }
 
 /**
- * Thrown when a publish run created or found the `corbits-tools` asset
- * but ended with none of the expected tool-package tarballs on it —
- * the dangling empty-registry row that leaves GET tarballs as `[]` and
- * agent launch unable to resolve `@corbits/memory-tools`. Callers must
- * not treat this as success.
+ * Thrown when a publish run leaves `corbits-tools` without the required
+ * seed tarballs (`@corbits/memory-tools`). Covers both zero uploads onto
+ * an empty/dangling registry (`GET tarballs` → `[]`) and a partial run
+ * that uploaded other packages but still cannot resolve first-launch
+ * pins. Callers must not treat this as success.
  */
 export class EmptyRegistryPublishError extends Error {
   readonly success = false as const;
