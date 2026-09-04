@@ -6,7 +6,7 @@ const anthropic = {
   id: "off_anthropic",
   provider: "anthropic",
   baseURL: "https://api.anthropic.com",
-  apiKey: "sk-ant-old",
+  credentialId: "cred_anthropic",
   model: "claude-sonnet-5",
 };
 
@@ -22,7 +22,7 @@ describe("inferenceSourcesDigest", () => {
       sources: [
         {
           model: anthropic.model,
-          apiKey: anthropic.apiKey,
+          credentialId: anthropic.credentialId,
           baseURL: anthropic.baseURL,
           provider: anthropic.provider,
           id: anthropic.id,
@@ -34,14 +34,19 @@ describe("inferenceSourcesDigest", () => {
     );
   });
 
-  test("changes when the secret rotates, without carrying the secret", () => {
-    const rotated: ResolvedLaunchSources = {
+  // At the 692c3106 pin an `InferenceSource` names its credential by id
+  // instead of carrying the decrypted secret, so the digest tracks WHICH
+  // credential a chain resolved to, not the bytes behind it. Re-pointing a
+  // source at a different credential still changes the digest; rotating the
+  // secret in place no longer does, because the secret now travels in the
+  // deploy's credential-material cell rather than in the source.
+  test("changes when a source is re-pointed at a different credential", () => {
+    const repointed: ResolvedLaunchSources = {
       ...resolved,
-      sources: [{ ...anthropic, apiKey: "sk-ant-new" }],
+      sources: [{ ...anthropic, credentialId: "cred_anthropic_rotated" }],
     };
-    const digest = inferenceSourcesDigest(rotated);
+    const digest = inferenceSourcesDigest(repointed);
     expect(digest).not.toBe(inferenceSourcesDigest(resolved));
-    expect(digest).not.toContain("sk-ant");
     expect(digest).toMatch(/^[0-9a-f]{64}$/);
   });
 
