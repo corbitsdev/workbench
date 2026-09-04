@@ -46,3 +46,4 @@ export {
   type WorkflowCatalogEntry,
   type TriggerFieldsValidation,
 } from "./catalog";
+export { cronHasWallClock, cronSentence } from "./schedule/cron-sentence";

@@ -13,7 +13,7 @@ changes.
 | **Workflow source**     | A versioned code package: `package.json` declaring `interchange.workflow` plus the entry module it names, default-exporting a `WorkflowDefinition`                          | A tenant-scoped `kind: "workflow"` asset in the hub's git-backed asset store (`AssetService`)                                         |
 | **Deployed definition** | The frozen, approved projection of one source commit: `workflow_definition` row with non-null `approved_wire_hash`, `grant_snapshot`, `wire_projection`, `status: deployed` | Produced only by Interchange's source pipeline (`deployWorkflowFromSource`: bundle → sidecar probe → capability walk → gate → freeze) |
 | **Agent**               | A single-step conversational workflow. A product category, not an execution primitive                                                                                       | Same asset + same deployed definition as any workflow                                                                                 |
-| **Routine**             | Trigger, launch input, delivery configuration, enabled state, and an explicit reference to a definition                                                                     | `@corbits/routines` (`routine` table)                                                                                                 |
+| **Routine**             | Product name for a scheduled workflow: an authored definition whose frozen projection carries a native `ScheduleTrigger`                                                     | `@corbits/workflows` schedule helpers; hub `workflow-scheduler.ts` poller                                                             |
 | **Run**                 | One execution of an approved deployed definition                                                                                                                            | `workflow_run`, launched by `launchAndCorrelate`                                                                                      |
 
 `workflow.json` is retired. It is not an authoring format, not a
@@ -30,22 +30,19 @@ redeploy of a source asset whose probed wire hash differs mints a **new**
 definition row. There is no native "definition id → newest approved
 deployment" indirection; every native launch names an exact definition.
 
-Product ruling (2026-09-01): a routine follows its target's latest approved
-deployment and does not pin the version selected at creation. Under the
-identity above that means:
+Product ruling (2026-09-01): a scheduled fire follows its target's latest
+approved deployment and does not pin the version selected at creation.
+Under the identity above that means:
 
-- A routine stores the **definition asset id** (`routine.definition_asset_id`,
-  `NOT NULL`). The asset is the stable identity of a workflow across
-  redeploys.
-- At launch, the routine's target resolves to the newest `workflow_definition`
-  row for that asset with `status = 'deployed'` and non-null
+- A scheduled definition is identified by its **definition asset id**. The
+  asset is the stable identity of a workflow across redeploys.
+- At launch, the target resolves to the newest `workflow_definition` row
+  for that asset with `status = 'deployed'` and non-null
   `approved_wire_hash`, `grant_snapshot`, and `wire_projection`. Resolution
   is atomic with the launch and fails closed when no such row exists.
-- Routine reads return both the asset id (identity) and the currently
-  resolved definition id (what would run now) so UI and Myra can show them.
 
-Nothing in Workbench pins a wire hash or copies a projection into routine
-storage.
+Nothing in Workbench pins a wire hash or copies a projection into a
+separate routine table.
 
 ## Authority boundaries
 
@@ -53,12 +50,12 @@ storage.
 | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | Store source (create / republish) | `@corbits/workflows`'s `./authoring` registry → `AssetService.createAsset` / `populateAsset` (hub-signed commit)                                      | Initiating tenant + principal; `@intx/authz` `authorize` on `asset:*`/`create` or `asset:<id>`/`write`                                                                                                                  | None (writing source is not a side effect)                                                                       |
 | Deploy source                     | `POST /api/tenants/:tenantId/workflows/deployments` → vendored `SessionService.deployWorkflowFromSource`                                              | Tenant session or run bearer; `workflow:*`/`create`                                                                                                                                                                     | Agent-initiated deploys go through an `approval: "ask"` tool call carrying the probed capability surface (below) |
-| Create / update a routine         | `createRoutineRoutes` `POST /routines`, `PATCH /routines/:id`; the run-authenticated mirror `createWorkflowRoutineRoutes` delegates to the same store | Tenant + principal; target validated against the resolution rule above before persisting                                                                                                                                | None; a routine only references a definition asset — nothing executes at create/update time                      |
-| Launch                            | `launchAndCorrelate` (`packages/routines/src/routes.ts`) → hub `RoutineLauncher`                                                                      | The workflow run's own principal, granted natively (per-pin tool grants, mail-triggered run grants); no creator re-authorization — the fire's gates are fail-closed target resolution plus native grant materialization | Runtime tool calls with `approval: "ask"` park on the native `approval` resource                                 |
+| Create / update a schedule        | Native `ScheduleTrigger` on the frozen definition; pause/resume and run-now on `@corbits/workflows` schedule routes                                                           | Tenant + principal; target validated against the resolution rule above before persisting                                                                                                                                | None; writing a cadence is not a side effect                                                                     |
+| Launch                            | Hub poller (`workflow-scheduler.ts`) ticks matching minutes → `triggerNativeWorkflowRoutineRun`; mail and webhook ingress launch the same way                                 | The workflow run's own principal, granted natively (per-pin tool grants, mail-triggered run grants); no creator re-authorization — the fire's gates are fail-closed target resolution plus native grant materialization | Runtime tool calls with `approval: "ask"` park on the native `approval` resource                                 |
 | Approve                           | Native `POST /api/tenants/:tenantId/approvals/:id/approve`                                                                                            | A principal holding `approval:*`/`resolve` — a human; no agent holds it                                                                                                                                                 | This is the approval                                                                                             |
 
-Credentials and resolved provider secrets never enter source trees, deploy
-requests recorded by `@corbits/workflows`'s `./deploy-source`, or routine rows.
+Credentials and resolved provider secrets never enter source trees or deploy
+requests recorded by `@corbits/workflows`'s `./deploy-source`.
 Inference sources are re-resolved from the tenant catalog at deploy and
 redeploy (`resolveDefinitionSources`).
 
@@ -117,9 +114,7 @@ routine-panel.tsx` picks a target only through `DefinitionTargetPicker`
 (create, restore, skill-pin, and capability routes in `apps/hub/src/
 index.ts`) now deploys agent definitions through the same injected
 `WorkflowDeployer` the template-block path uses, instead of
-`DefinitionFreezer.freeze`/`.refreeze` (CL-7364). `packages/routines-tools/
-src/client.ts` never carried duplicate wire shapes to delete; it already
-re-exports `@corbits/routines/client`.
+`DefinitionFreezer.freeze`/`.refreeze` (CL-7364).
 
 No compatibility shim, feature flag, or dual-write period accompanies any
 of the deletions above.
@@ -129,18 +124,11 @@ of the deletions above.
 The routine draft/review state machine — `POST /routine-drafts` (create),
 `GET /routine-drafts`/`GET /routine-drafts/:id` (review), `POST
 /routine-drafts/:id/approve`, and `POST /routine-drafts/:id/discard`, the
-`routine_draft` table, `@corbits/routines`' `drafts.ts` and
-`myra-drafting.ts`, and `suggestRoutineNameFromPrompt`. Myra creates a
-routine only through `GET .../workflows/targets` → `routine_create` /
-`routine_update` (`@corbits/routines-tools`'s `tool.ts`) — the same
-tool-call surface a person's own create/retarget request goes through.
-Neither carries an `approval: "ask"` key (they grant no credentials and
-touch nothing external — only `routine_run_now` does), so the confirm
-seam here is `definitionAssetId` being a required input Myra must name
-explicitly, never auto-resolved from a name inside the tool. There was
-never a second, review-first path for her to fall back to; `routine_draft`
-is dropped by a migration (`0007_drop_routine_draft`), not left as inert
-dead weight.
+`routine_draft` table, `drafts.ts` and `myra-drafting.ts`, and
+`suggestRoutineNameFromPrompt`. Cadence now lives as a native
+`ScheduleTrigger` on the frozen definition; there is no second,
+review-first path. `routine_draft` was dropped by a migration
+(`0007_drop_routine_draft`), not left as inert dead weight.
 
 ## What is not native, and stays in Workbench
 

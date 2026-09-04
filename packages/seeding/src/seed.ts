@@ -8,7 +8,7 @@
 // Workflow package metadata (automatable, displayName) lives in each
 // workflows/*/package.json under `corbits.workflow` and is mirrored in
 // `@workbench/templates`. Seed stamps displayName onto the asset so
-// the routines picker can show a friendly label without reading package.json.
+// the scheduled-workflow picker can show a friendly label without reading package.json.
 
 import {
   AssetResponse,
@@ -57,7 +57,6 @@ import {
   type ApiCall,
 } from "@corbits/hub-api-client";
 import { DEFAULT_SKILLS } from "./default-skills";
-import { pruneDroppedPresetRoutines } from "./default-routines";
 import { CATALOG_SEEDS, type CatalogModelSpec } from "./catalog-seed-data";
 import {
   fetchOllamaModelCatalog,
@@ -291,9 +290,9 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     assetName: "last-30-days-research",
     displayName: catalogDisplayName("last-30-days-research"),
     automatable: catalogAutomatable("last-30-days-research"),
-    // Deployed automation in the default set — not because a routine
-    // wrapper row needs a definition. Native schedule and member-created
-    // routines target this asset; seed no longer POSTs a wrapper.
+    // Deployed automation in the default set. Seed no longer POSTs a
+    // wrapper row; last-30-days-research stays a deployed workflow
+    // without a native ScheduleTrigger.
     buildJson: (tenantDomain, model) =>
       serializeLast30DaysResearchWorkflow(
         buildLast30DaysResearchWorkflow({
@@ -1054,11 +1053,6 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
       "check the failures reported above, fix them, then re-run: workbench seed",
     );
   }
-
-  // Native ScheduleTrigger + deployed automations already tick; seed
-  // no longer POSTs `/routines` wrappers. Re-seed still retires
-  // pristine leftover preset rows (Daily digest, last-30-days-research).
-  await pruneDroppedPresetRoutines(api, cookies, tenant.tenantId, log);
 
   log(
     confirmDeployments

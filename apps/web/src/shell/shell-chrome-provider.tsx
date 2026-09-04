@@ -24,7 +24,6 @@ import {
   initialCanvasColumnState,
   openArtifactInCanvas,
   openProfileInCanvas,
-  openRoutineInCanvas,
   resolveCanvasFocus,
   resolveCanvasVisibility,
   toggleCanvasFocus,
@@ -119,9 +118,7 @@ export function ShellChromeProvider({
     setCanvasState((state) => openArtifactInCanvas(state, artifact));
   }, []);
 
-  const openRoutine = useCallback((subject: RoutinePanelSubject) => {
-    setCanvasState((state) => openRoutineInCanvas(state, subject));
-  }, []);
+  const openRoutine = useCallback((_subject: RoutinePanelSubject) => undefined, []);
 
   const closeCanvas = useCallback(() => {
     setCanvasState((state) => closeCanvasContent(state));

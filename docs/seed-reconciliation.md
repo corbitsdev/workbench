@@ -47,19 +47,13 @@ answers 503 — never a 404, which would read as "no such template".
 - A member-created artifact sharing a template's title is never touched
   and never duplicated.
 
-## Default routine presets (onboarding / boot-time seeding)
+## Default scheduled workflows (onboarding / boot-time seeding)
 
-`pruneDroppedPresetRoutines` (`packages/seeding/src/default-routines.ts`)
-runs at the end of `seedTenant`. Seed never POSTs `/routines`. Native
-`ScheduleTrigger` ticks digest; last-30-days-research stays a deployed
-workflow in `DEFAULT_WORKFLOWS`, not a wrapper row.
-
-- A leftover row whose `presetKey` is a retired preset
-  (`workbench-digest`, `last-30-days-research`) is deleted only while
-  pristine (`updatedAt` still equals `createdAt`); a member-touched row
-  is kept.
-- Pre-`presetKey` legacy rows are never deleted — there is no honest
-  way to tell them apart from a person-authored routine.
+Seed never POSTs `/routines`. Native `ScheduleTrigger` ticks digest;
+last-30-days-research stays a deployed workflow in `DEFAULT_WORKFLOWS`,
+not a wrapper row. `scripts/db-setup.ts` drops a leftover `routines`
+schema after the digest enablement handoff. There is no preset-wrapper
+prune: seed does not plant wrapper rows.
 
 ## Default skills (boot-time seeding)
 

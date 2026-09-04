@@ -27,7 +27,7 @@ import {
   InsightsRunDetail,
   InsightsRunsHistory,
 } from "../src/pages/insights-page";
-import type { Routine } from "../src/routines-api";
+import type { ScheduledWorkflowDefinition } from "../src/routines-api";
 import { TestQueryProvider } from "./test-query-provider";
 
 const range = createInsightsWindow(7, new Date("2026-01-15T18:00:00.000Z"));
@@ -36,7 +36,7 @@ const emptyRuns: APIQuery<{ data: readonly never[]; nextCursor: null }> = {
   kind: "ready",
   data: { data: [], nextCursor: null },
 };
-const emptyRoutines: APIQuery<readonly Routine[]> = {
+const emptyRoutines: APIQuery<readonly ScheduledWorkflowDefinition[]> = {
   kind: "ready",
   data: [],
 };

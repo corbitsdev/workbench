@@ -1,8 +1,8 @@
 // The library entry for `@corbits/seeding`: deploys the default workflow
-// set for an already-known tenant, plants skills, prunes leftover preset
-// routine wrappers, and confirms every deployment answers. Both the
-// boot-time root-tenant seed and the first-login provisioning hook
-// consume this so the tenant-seeding logic is implemented once.
+// set for an already-known tenant, plants skills, and confirms every
+// deployment answers. Both the boot-time root-tenant seed and the
+// first-login provisioning hook consume this so the tenant-seeding
+// logic is implemented once.
 
 export type {
   DefaultWorkflow,

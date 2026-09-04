@@ -86,11 +86,6 @@ function baseRoutes(method: string, path: string) {
     return { status: 404, data: {} };
   if (method === "POST" && path === `/api/tenants/${TENANT_ID}/skills`)
     return { status: 201, data: {} };
-  // `pruneDroppedPresetRoutines` runs at the end of every seed and
-  // lists the tenant's existing routines before deciding what (if
-  // anything) to DELETE. Every test in this file that doesn't care
-  // about leftover wrappers gets an empty list, so prune is a no-op
-  // rather than the fake handler throwing "unexpected hub call".
   if (
     method === "GET" &&
     path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
@@ -101,8 +96,6 @@ function baseRoutes(method: string, path: string) {
     path === `/api/tenants/${TENANT_ID}/workflows/deployments`
   )
     return { status: 200, data: [] };
-  if (method === "GET" && path === `/api/tenants/${TENANT_ID}/routines`)
-    return { status: 200, data: { items: [] } };
   // CL-4455: a startStopped workflow (workbench-digest) lists definitions
   // after deploy and PUTs a pristine row to `stopped`. Tests that do not
   // care about that handshake get a pristine digest row and a 200 stop.

@@ -35,7 +35,7 @@ import {
 import { workbenchPath } from "../../workbench-path";
 import { requestWorkbenchRename } from "../../workbench-rename-events";
 import { openCommandPalette } from "../../command-palette-open-store";
-import { runRoutineNow } from "../../routines-api";
+import { runScheduledWorkflowNow } from "../../routines-api";
 import { SETTINGS_PATH } from "../../routes";
 import type { ShellContextMenuTarget } from "./targets";
 
@@ -155,7 +155,7 @@ function routineMenu(
         label: "Run now",
         icon: <PlayCircle />,
         onSelect: () => {
-          void runRoutineNow(tenantId, target.id).then(
+          void runScheduledWorkflowNow(tenantId, target.id).then(
             () => {
               toast(`${target.name} started`);
               actions.onRoutineRan(tenantId);

@@ -9,7 +9,7 @@ import {
 } from "@corbits/routines/client";
 
 import type { InsightsRun, RunTraceSpan } from "./insights-api";
-import type { Routine } from "./routines-api";
+import type { ScheduledWorkflowDefinition } from "./routines-api";
 
 export type TraceStats = {
   readonly steps: number;
@@ -160,7 +160,7 @@ export function filterRunsByCreatedAt(
 
 export function computeInsightsStats(
   runs: readonly InsightsRun[],
-  routines: readonly Routine[],
+  routines: readonly ScheduledWorkflowDefinition[],
   recentLimit: number = INSIGHTS_RECENT_LIMIT,
   now: number = Date.now(),
 ): InsightsStats {
@@ -201,7 +201,7 @@ export function computeInsightsStats(
     stopped,
     deployed,
     routineCount: routines.length,
-    enabledRoutines: routines.filter((r) => r.enabled).length,
+    enabledRoutines: routines.filter((r) => r.status === "deployed").length,
     recentRuns,
   };
 }

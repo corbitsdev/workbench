@@ -112,7 +112,7 @@ import { useNavigate } from "../navigation";
 import { tenantKeys } from "../query-client";
 import { INSIGHTS_PATH_PREFIX, INSIGHTS_RUNS_PATH } from "../path-ids";
 import { StageTopBar } from "../shell/stage-top-bar";
-import { listRoutines, useTenantQuery, type Routine } from "../routines-api";
+import { listScheduledWorkflows, useTenantQuery, type ScheduledWorkflowDefinition } from "../routines-api";
 import { WorkbenchTimelineRoute } from "./workbench-timeline";
 
 function dash(value: string | number | null | undefined): string {
@@ -706,7 +706,7 @@ function InsightsLanding({
    * disclose the cap instead of silently presenting a truncated series as
    * complete. */
   readonly runsNextCursor: string | null;
-  readonly routines: readonly Routine[];
+  readonly routines: readonly ScheduledWorkflowDefinition[];
   /** Null while `/workbenches` hasn't resolved (or this landing is already
    * scoped to one workbench, where a breakdown of one has nothing to
    * show) — the activity-by-workbench chart and active-workbenches KPI
@@ -1373,7 +1373,7 @@ export function InsightsPage({
     data: readonly InsightsRun[];
     nextCursor: string | null;
   }>;
-  readonly routines: APIQuery<readonly Routine[]>;
+  readonly routines: APIQuery<readonly ScheduledWorkflowDefinition[]>;
   /** `/workbenches` — this scope's own row plus one per descendant
    * workbench, used for the "activity by workbench" chart and the
    * "active workbenches" KPI. */
@@ -1752,10 +1752,10 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
       ? ["tenant", "none", "routines"]
       : tenantKeys.routines(selectedTenantId),
     selectedTenantId !== null,
-    () => listRoutines(selectedTenantId as string),
+    () => listScheduledWorkflows(selectedTenantId as string),
   );
 
-  const routinesForPage: APIQuery<readonly Routine[]> =
+  const routinesForPage: APIQuery<readonly ScheduledWorkflowDefinition[]> =
     selectedTenantId === null ? { kind: "ready", data: [] } : routines;
 
   // Unwrap package envelopes ({ days }, { tools }) for the page surface.

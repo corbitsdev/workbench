@@ -314,10 +314,9 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: ROUTINE_DETAIL_PATH,
     label: "Routine",
     icon: <FlowArrow />,
-    render: (path: string, navigate: (to: string) => void) => (
+    render: (path: string) => (
       <RoutineDetailRoute
         segment={routineDetailSegment(path)}
-        navigate={navigate}
       />
     ),
   },
@@ -325,8 +324,8 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: "/routines",
     label: "Routines",
     icon: <FlowArrow />,
-    render: (_path: string, navigate: (to: string) => void) => (
-      <RoutinesRoute navigate={navigate} />
+    render: () => (
+      <RoutinesRoute />
     ),
   },
   {

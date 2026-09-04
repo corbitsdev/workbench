@@ -77,11 +77,6 @@ const ALLOWLIST: readonly {
     ],
   },
   {
-    relPath: "packages/routines/src/schema.ts",
-    maxOccurrences: 2,
-    tables: ["routine", "routine_run"],
-  },
-  {
     relPath: "packages/webhook-triggers/src/schema.ts",
     maxOccurrences: 2,
     tables: [

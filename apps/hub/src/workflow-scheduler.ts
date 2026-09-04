@@ -1,7 +1,7 @@
 // A minimal periodic loop that ticks native ScheduleTrigger cadences on
-// authored, deployed workflow definitions. `@corbits/routines` is not in
-// this path: the hashed cron lives on the frozen inert projection, and
-// launch goes through `triggerNativeWorkflowRoutineRun`.
+// authored, deployed workflow definitions. The hashed cron lives on the
+// frozen inert projection, and launch goes through
+// `triggerNativeWorkflowRoutineRun`.
 //
 // Exactly-once against a concurrent claim: `claimScheduleMinute` is a
 // conditional update on `workflow_definition.schedule_claimed_minute`

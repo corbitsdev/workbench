@@ -31,7 +31,6 @@ import {
   useCloseCanvas,
   useOpenArtifactInCanvas,
   useOpenProfileInCanvas,
-  useOpenRoutineInCanvas,
 } from "../src/shell/canvas-availability";
 import { ProviderHealthProvider } from "../src/shell/provider-health-context";
 import { ShellChromeProvider } from "../src/shell/shell-chrome-provider";
@@ -80,7 +79,6 @@ const sampleProfile = {
 function PaletteActionsProbe() {
   const closeCanvas = useCloseCanvas();
   const openProfile = useOpenProfileInCanvas();
-  const openRoutine = useOpenRoutineInCanvas();
 
   const ctx = {
     path: "/inbox",
@@ -88,7 +86,6 @@ function PaletteActionsProbe() {
     tenantId: null,
     cycleTheme: noop,
     closeCanvas,
-    openRoutine,
   };
 
   return (
