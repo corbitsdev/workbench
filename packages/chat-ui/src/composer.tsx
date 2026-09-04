@@ -150,6 +150,12 @@ function isBenignSpeechRecognitionError(code: string): boolean {
   return code === "aborted" || code === "no-speech";
 }
 
+function detachDictation(rec: SpeechRecognitionLike) {
+  rec.onresult = null;
+  rec.onerror = null;
+  rec.onend = null;
+}
+
 export function transcriptFromSpeechResults(
   results: ArrayLike<SpeechRecognitionResultLike>,
 ): string {
@@ -532,7 +538,6 @@ export const Composer = forwardRef<
   function stopDictation() {
     const rec = recognitionRef.current;
     if (rec === null) return;
-    recognitionRef.current = null;
     setListening(false);
     rec.stop();
   }
@@ -542,10 +547,13 @@ export const Composer = forwardRef<
     if (rec === null) return;
     recognitionRef.current = null;
     setListening(false);
-    rec.onresult = null;
-    rec.onerror = null;
-    rec.onend = null;
-    rec.abort();
+    detachDictation(rec);
+    try {
+      rec.abort();
+    } catch {
+      // report-error-ignore: abort() after user Stop is InvalidStateError
+      // once recognition has already ended.
+    }
   }
 
   function applyDictationTranscript(transcript: string) {
@@ -562,6 +570,7 @@ export const Composer = forwardRef<
   }
 
   function startDictation() {
+    abortDictation();
     const Ctor = speechRecognitionConstructor();
     if (Ctor === null) return;
     const textarea = textareaRef.current;
@@ -586,7 +595,6 @@ export const Composer = forwardRef<
     };
     rec.onend = () => {
       if (recognitionRef.current !== rec) return;
-      recognitionRef.current = null;
       setListening(false);
     };
     recognitionRef.current = rec;
@@ -615,9 +623,7 @@ export const Composer = forwardRef<
     return () => {
       const rec = recognitionRef.current;
       if (rec === null) return;
-      rec.onresult = null;
-      rec.onerror = null;
-      rec.onend = null;
+      detachDictation(rec);
       recognitionRef.current = null;
       rec.abort();
     };
