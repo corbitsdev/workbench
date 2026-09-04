@@ -436,7 +436,7 @@ describe("provisionPersonalTenantIfNeeded", () => {
         userEmail: "alice@example.com",
         userEmailVerified: true,
         displayName: "Alice's Lab",
-          pushWorkflow: noopPush,
+        pushWorkflow: noopPush,
         log: collector().log,
       }),
     ).rejects.toThrow(/slug conflict/);
