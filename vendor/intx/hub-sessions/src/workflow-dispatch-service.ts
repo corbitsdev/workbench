@@ -8,7 +8,7 @@ import type {
   WorkflowRunDispatchStore,
 } from "@intx/db";
 import { getLogger } from "@intx/log";
-import { base64Encode, hexEncode } from "@intx/types";
+import { base64Encode, deriveWorkflowRunId, hexEncode } from "@intx/types";
 import { SignalDeliverFrame } from "@intx/types/sidecar";
 
 import type {
@@ -105,7 +105,7 @@ function targetForReadyAllocation(
 }
 
 /**
- * Drives Hub-owned workflow triggers onto exclusive sidecars. The database
+ * Drives Hub-owned workflow triggers onto provisioned sidecars. The database
  * row is the delivery authority: websocket acceptance never deletes the raw
  * payload, and a generation replacement requeues every row that has not been
  * settled by the workflow-run Git claim-check.
@@ -203,9 +203,7 @@ export function createWorkflowDispatchService({
         await router.sendWorkflowRunDispatchToAllocation(
           target,
           agentAddress,
-          // Every trigger of a deployment uses its stable mail address as the
-          // supervisor run id.
-          agentAddress,
+          deriveWorkflowRunId(agentAddress),
           dispatch.stepGrants,
           base64Encode(dispatch.rawMessage),
           dispatch.messageId,

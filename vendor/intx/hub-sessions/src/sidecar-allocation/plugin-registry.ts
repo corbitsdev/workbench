@@ -1,19 +1,56 @@
+import { type } from "arktype";
+
+import { SidecarCapabilityDeclaration } from "@intx/types";
+
 import type { SidecarProvisioner } from "./contracts";
+import {
+  matchSidecarCapabilityPolicy,
+  type EffectiveSidecarCapabilityPolicy,
+  type SidecarCapabilityMismatch,
+} from "./capability-policy";
+
+export type SidecarProvisionerSelection =
+  | { readonly ok: true; readonly provisioner: SidecarProvisioner }
+  | {
+      readonly ok: false;
+      readonly reason: "no_match";
+      readonly mismatches: Readonly<
+        Record<string, readonly SidecarCapabilityMismatch[]>
+      >;
+    };
+
+/** Selects one provisioner from the capability-matched candidates. */
+export type SidecarProvisionerChooser = (
+  candidates: readonly SidecarProvisioner[],
+) => SidecarProvisioner | Promise<SidecarProvisioner>;
 
 export type SidecarPluginRegistry = {
-  getDefaultProvisioner(): SidecarProvisioner | null;
   /** Missing plugins return null so reconciliation can stop fail-closed. */
   getProvisioner(id: string): SidecarProvisioner | null;
+  selectProvisioner(
+    policy: EffectiveSidecarCapabilityPolicy,
+  ): Promise<SidecarProvisionerSelection>;
 };
 
 export type CreateSidecarPluginRegistryOpts = {
+  /** Ordered candidates; the default chooser selects the first match. */
   readonly provisioners: readonly SidecarProvisioner[];
-  readonly defaultProvisionerId?: string;
+  readonly chooser?: SidecarProvisionerChooser;
 };
+
+export function chooseFirstSidecarProvisioner(
+  candidates: readonly SidecarProvisioner[],
+): SidecarProvisioner {
+  const first = candidates[0];
+  if (first === undefined) {
+    throw new Error("No matching sidecar provisioners are available");
+  }
+  return first;
+}
 
 export function createSidecarPluginRegistry({
   provisioners,
-  defaultProvisionerId,
+  chooser = chooseFirstSidecarProvisioner,
 }: CreateSidecarPluginRegistryOpts): SidecarPluginRegistry {
   const provisionersById = new Map<string, SidecarProvisioner>();
   for (const provisioner of provisioners) {
@@ -28,29 +65,49 @@ export function createSidecarPluginRegistry({
         `Sidecar provisioner ${provisioner.id} requires a binding fingerprint`,
       );
     }
+    const capabilities = SidecarCapabilityDeclaration.array()(
+      provisioner.capabilities,
+    );
+    if (capabilities instanceof type.errors) {
+      throw new Error(
+        `Invalid capability declarations on sidecar provisioner ${provisioner.id}: ${capabilities.summary}`,
+      );
+    }
     if (provisionersById.has(provisioner.id)) {
       throw new Error(`Duplicate sidecar provisioner id: ${provisioner.id}`);
     }
     provisionersById.set(provisioner.id, provisioner);
   }
 
-  if (defaultProvisionerId !== undefined) {
-    validateId(defaultProvisionerId);
-    if (!provisionersById.has(defaultProvisionerId)) {
-      throw new Error(
-        `Default sidecar provisioner ${defaultProvisionerId} is not registered`,
-      );
-    }
-  }
-
   return {
-    getDefaultProvisioner() {
-      return defaultProvisionerId === undefined
-        ? null
-        : (provisionersById.get(defaultProvisionerId) ?? null);
-    },
     getProvisioner(id) {
       return provisionersById.get(id) ?? null;
+    },
+    async selectProvisioner(policy) {
+      const mismatches: Record<string, readonly SidecarCapabilityMismatch[]> =
+        {};
+      const candidates: SidecarProvisioner[] = [];
+      for (const provisioner of provisionersById.values()) {
+        const match = matchSidecarCapabilityPolicy(
+          policy,
+          provisioner.capabilities,
+        );
+        if (match.ok) {
+          candidates.push(provisioner);
+        } else {
+          mismatches[provisioner.id] = match.mismatches;
+        }
+      }
+      if (candidates.length === 0) {
+        return { ok: false, reason: "no_match", mismatches };
+      }
+      const provisioner = await chooser(candidates);
+      if (!candidates.includes(provisioner)) {
+        throw new Error(
+          "Sidecar provisioner chooser returned a provisioner outside the matching candidates",
+        );
+      }
+      return { ok: true, provisioner };
     },
   };
 }

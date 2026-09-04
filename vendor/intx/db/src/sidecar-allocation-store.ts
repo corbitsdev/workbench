@@ -2,7 +2,6 @@ import { type } from "arktype";
 import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 
 import {
-  SidecarPlacementRequirement,
   sidecarAllocationStatuses,
   type SidecarAllocationStatus,
 } from "@intx/types";
@@ -43,7 +42,6 @@ export type SidecarAllocation = {
   readonly provisionerApiVersion: 1;
   readonly provisionerBindingFingerprint: string;
   readonly sidecarId?: string;
-  readonly placement: SidecarPlacementRequirement;
   readonly status: SidecarAllocationStatus;
   readonly generation: number;
   readonly ensureAcceptedGeneration?: number;
@@ -67,9 +65,16 @@ export type CreatePendingSidecarAllocationArgs = {
   readonly provisionerId: string;
   readonly provisionerApiVersion: 1;
   readonly provisionerBindingFingerprint: string;
-  readonly placement?: SidecarPlacementRequirement;
   readonly now?: Date;
 };
+
+export type CreateAdoptedSidecarAllocationArgs =
+  CreatePendingSidecarAllocationArgs & {
+    readonly sidecarId: string;
+    readonly generation: number;
+    readonly externalRef?: string;
+    readonly connectDeadline: Date;
+  };
 
 export type ClaimSidecarAllocationArgs = {
   readonly leaseId: string;
@@ -202,10 +207,6 @@ export type FailSidecarAllocationArgs = {
 function parseSidecarAllocationRow(
   row: SidecarAllocationRow,
 ): SidecarAllocation {
-  const placement = SidecarPlacementRequirement.assert({
-    sharing: row.placementSharing,
-    reuse: row.sidecarReuse,
-  });
   return {
     id: row.id,
     anchorRunId: row.anchorRunId,
@@ -216,7 +217,6 @@ function parseSidecarAllocationRow(
     ),
     provisionerBindingFingerprint: row.provisionerBindingFingerprint,
     ...(row.sidecarId !== null ? { sidecarId: row.sidecarId } : {}),
-    placement,
     status: SidecarAllocationStatusValidator.assert(row.status),
     generation: row.generation,
     ...(row.ensureAcceptedGeneration !== null
@@ -269,7 +269,6 @@ export function createSidecarAllocationStore(db: DBHandle) {
       id: args.sidecarId,
       url: null,
       tokenHashSha256: args.tokenHashSha256,
-      credentialScope: "allocated",
       status: "offline",
       createdAt: args.now,
       updatedAt: args.now,
@@ -385,9 +384,6 @@ export function createSidecarAllocationStore(db: DBHandle) {
           "sidecarAllocationStore.createPending: unsupported API version",
         );
       }
-      const placement = SidecarPlacementRequirement.assert(
-        args.placement ?? { sharing: "exclusive", reuse: "never" },
-      );
       const now = databaseTimestamp(args.now);
       const [inserted] = await executor
         .insert(sidecarAllocation)
@@ -398,8 +394,6 @@ export function createSidecarAllocationStore(db: DBHandle) {
           provisionerId: args.provisionerId,
           provisionerApiVersion: args.provisionerApiVersion,
           provisionerBindingFingerprint: args.provisionerBindingFingerprint,
-          placementSharing: placement.sharing,
-          sidecarReuse: placement.reuse ?? "never",
           status: "pending",
           generation: 0,
           nextAttemptAt: now,
@@ -410,6 +404,41 @@ export function createSidecarAllocationStore(db: DBHandle) {
       if (inserted === undefined) {
         throw new Error(
           `sidecarAllocationStore.createPending: insert returned no row for ${args.id}`,
+        );
+      }
+      return parseSidecarAllocationRow(inserted);
+    },
+
+    async createAdopted(
+      args: CreateAdoptedSidecarAllocationArgs,
+      tx?: DBExecutor,
+    ): Promise<SidecarAllocation> {
+      const createdAt = databaseTimestamp(args.now);
+      const [inserted] = await (tx ?? db)
+        .insert(sidecarAllocation)
+        .values({
+          id: args.id,
+          anchorRunId: args.anchorRunId,
+          tenantId: args.tenantId,
+          provisionerId: args.provisionerId,
+          provisionerApiVersion: args.provisionerApiVersion,
+          provisionerBindingFingerprint: args.provisionerBindingFingerprint,
+          sidecarId: args.sidecarId,
+          status: "allocated",
+          generation: args.generation,
+          ensureAcceptedGeneration: args.generation,
+          ...(args.externalRef !== undefined
+            ? { externalRef: args.externalRef }
+            : {}),
+          connectDeadline: args.connectDeadline,
+          nextAttemptAt: createdAt,
+          createdAt,
+          updatedAt: createdAt,
+        })
+        .returning();
+      if (inserted === undefined) {
+        throw new Error(
+          `sidecarAllocationStore.createAdopted: insert returned no row for ${args.id}`,
         );
       }
       return parseSidecarAllocationRow(inserted);

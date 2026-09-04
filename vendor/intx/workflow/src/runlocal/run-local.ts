@@ -18,10 +18,14 @@ import type {
   WorkflowAuthorizeFn,
 } from "../authorize-context";
 import type { WorkflowDefinition } from "../definition/index";
-import { rewriteInlineChildWorkflowBodies } from "../ontrigger-bodies";
+import {
+  enumerateInlineLoopBodies,
+  rewriteInlineChildWorkflowBodies,
+} from "../ontrigger-bodies";
 import { runtimeRun, type RuntimeRunOptions } from "../runtime/run";
 import { createNoopDrainController } from "../runtime/drain";
 import { createEffectContext } from "../runtime/effect-context";
+import { createLoopIterationHandle } from "../runtime/loop-iteration-handle";
 import type {
   ActionInvoker,
   EffectContext,
@@ -29,11 +33,11 @@ import type {
   LoopFnRegistry,
   StepInvoker,
   SpawnChildWorkflow,
+  SpawnSuspendableChild,
   WorkflowRun,
   WorkflowRuntimeEnv,
 } from "../runtime/env";
 import { createInMemoryBlobSubstrate } from "./blob-substrate";
-import { createLoopIteration } from "./loop-iteration";
 import { createInMemoryRepoStore } from "./repo-store";
 import { createInMemoryScheduler } from "./scheduler";
 import { createInMemorySignalChannel } from "./signal-channel";
@@ -110,6 +114,22 @@ export function runLocal(
   const { workflow: rewritten, bodies } =
     rewriteInlineChildWorkflowBodies(definition);
   const childBodies = new Map(bodies.map((b) => [b.ref, b.definition]));
+  // A loop keeps its body inline on the primitive; register a ref-keyed copy so
+  // the suspendable-loop executor resolves it, exactly as the deployed host
+  // does. A loop body may itself contain a `childWorkflow` grandchild, so
+  // rewrite each body's inline children to the `{ ref }` form the runtime
+  // dispatches and fold the extracted grandchildren into `childBodies` -- the
+  // map the iteration's inherited `spawnChild` resolves from -- before that
+  // spawn callback is built below. (Nested loops in child-workflow children are
+  // enumerated when their own recursive `runLocal` call reaches this point.)
+  const loopBodies = new Map<string, WorkflowDefinition>();
+  for (const loopBody of enumerateInlineLoopBodies(rewritten)) {
+    const bodyRewrite = rewriteInlineChildWorkflowBodies(loopBody.definition);
+    loopBodies.set(loopBody.ref, bodyRewrite.workflow);
+    for (const grandchild of bodyRewrite.bodies) {
+      childBodies.set(grandchild.ref, grandchild.definition);
+    }
+  }
 
   const repoStore = createInMemoryRepoStore();
   const env: WorkflowRuntimeEnv = {
@@ -127,10 +147,11 @@ export function runLocal(
     newId,
     drain: createNoopDrainController(rewritten),
   };
-  // Wired after construction because the loop-iteration runner closes
-  // over the env it belongs to, so that each iteration's child run
-  // shares the parent's repoStore, blobs, and effect ledger.
-  env.runLoopIteration = createLoopIteration(env);
+  // Wired after construction because the loop-iteration executor closes over
+  // the env it belongs to, so each iteration's body runs under the parent's
+  // inherited env (its repoStore, blobs, effect ledger, invoker, and grants)
+  // with only its own signal channel and park sinks.
+  env.spawnLoopIteration = createSpawnLoopIteration(env, loopBodies);
   if (options.loopFns !== undefined) {
     env.loopFns = options.loopFns;
   }
@@ -149,6 +170,10 @@ function extractRuntimeOptions(options: RunLocalOptions): RuntimeRunOptions {
   if (options.runId !== undefined) out.runId = options.runId;
   if (options.resumeFromEvents !== undefined) {
     out.resumeFromEvents = options.resumeFromEvents;
+  }
+  if (options.depth !== undefined) out.depth = options.depth;
+  if (options.maxChildSpawnDepth !== undefined) {
+    out.maxChildSpawnDepth = options.maxChildSpawnDepth;
   }
   return out;
 }
@@ -225,10 +250,58 @@ export function createInMemoryEffectLedger(): EffectLedger {
   };
 }
 
+/**
+ * The local suspendable-loop executor: resolve the loop body from the lifted
+ * map, give it its own in-memory signal channel, and drive it through the
+ * shared park handle over the parent's inherited env. The deployed host wires
+ * the same shape with a substrate-backed channel.
+ */
+export function createSpawnLoopIteration(
+  baseEnv: WorkflowRuntimeEnv,
+  bodies: ReadonlyMap<string, WorkflowDefinition>,
+): SpawnSuspendableChild {
+  return async ({
+    definitionRef,
+    childRunId,
+    input,
+    depth,
+    maxChildSpawnDepth,
+    signal,
+    resumeFromEvents,
+  }) => {
+    const definition = bodies.get(definitionRef);
+    if (definition === undefined) {
+      throw new Error(
+        `loop iteration ${definitionRef} has no lifted body definition; the ` +
+          `loop body should have been enumerated before the run started`,
+      );
+    }
+    return createLoopIterationHandle(baseEnv, {
+      definition,
+      childRunId,
+      input,
+      depth,
+      maxChildSpawnDepth,
+      ...(resumeFromEvents !== undefined ? { resumeFromEvents } : {}),
+      signal,
+      signalChannel: createInMemorySignalChannel({
+        newId: () => baseEnv.newId("sig"),
+      }),
+    });
+  };
+}
+
 function createInMemorySpawnChild(
   bodies: ReadonlyMap<string, WorkflowDefinition>,
 ): SpawnChildWorkflow {
-  return async ({ definitionRef, childRunId, input, signal }) => {
+  return async ({
+    definitionRef,
+    childRunId,
+    input,
+    signal,
+    depth,
+    maxChildSpawnDepth,
+  }) => {
     const resolved = bodies.get(definitionRef);
     if (resolved === undefined) {
       // The runtime dispatched a childWorkflow ref with no lifted definition.
@@ -241,10 +314,14 @@ function createInMemorySpawnChild(
     }
     // Recursively invoke runLocal for the resolved child against the
     // parent-allocated childRunId so the parent's audit log and the
-    // child's own log agree on identity.
+    // child's own log agree on identity. Carry the depth (already checked
+    // one rung up) and the tree-wide ceiling so the child's own spawns keep
+    // counting against the same bound.
     const child = runLocal(resolved, {
       triggerPayload: input,
       runId: childRunId,
+      depth,
+      maxChildSpawnDepth,
     });
     const onParentAbort = (): void => {
       void child.cancel("supervisor-operator", "parent cancelled");
