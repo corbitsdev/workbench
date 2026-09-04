@@ -138,6 +138,18 @@ export function speechRecognitionConstructor(
   return null;
 }
 
+function speechRecognitionErrorCode(event: unknown): string | null {
+  if (typeof event !== "object" || event === null) return null;
+  if (!("error" in event)) return null;
+  const { error } = event;
+  if (typeof error !== "string") return null;
+  return error;
+}
+
+function isBenignSpeechRecognitionError(code: string): boolean {
+  return code === "aborted" || code === "no-speech";
+}
+
 export function transcriptFromSpeechResults(
   results: ArrayLike<SpeechRecognitionResultLike>,
 ): string {
@@ -525,6 +537,17 @@ export const Composer = forwardRef<
     rec.stop();
   }
 
+  function abortDictation() {
+    const rec = recognitionRef.current;
+    if (rec === null) return;
+    recognitionRef.current = null;
+    setListening(false);
+    rec.onresult = null;
+    rec.onerror = null;
+    rec.onend = null;
+    rec.abort();
+  }
+
   function applyDictationTranscript(transcript: string) {
     const next = spliceDictationTranscript(
       dictatePrefixRef.current,
@@ -552,7 +575,10 @@ export const Composer = forwardRef<
       applyDictationTranscript(transcriptFromSpeechResults(event.results));
     };
     rec.onerror = (event) => {
-      reportError(event, { operation: "composer.dictate" });
+      const code = speechRecognitionErrorCode(event);
+      if (code === null || !isBenignSpeechRecognitionError(code)) {
+        reportError(event, { operation: "composer.dictate" });
+      }
       if (recognitionRef.current === rec) {
         recognitionRef.current = null;
         setListening(false);
@@ -587,8 +613,13 @@ export const Composer = forwardRef<
 
   useEffect(() => {
     return () => {
-      recognitionRef.current?.abort();
+      const rec = recognitionRef.current;
+      if (rec === null) return;
+      rec.onresult = null;
+      rec.onerror = null;
+      rec.onend = null;
       recognitionRef.current = null;
+      rec.abort();
     };
   }, []);
 
@@ -623,7 +654,7 @@ export const Composer = forwardRef<
     ref,
     () => ({
       insertText: (text: string) => {
-        stopDictation();
+        abortDictation();
         const textarea = textareaRef.current;
         const caret = textarea?.selectionStart ?? value.length;
         const result = insertTextAtCaret(value, caret, text);
@@ -634,7 +665,7 @@ export const Composer = forwardRef<
         });
       },
       setText: (text: string) => {
-        stopDictation();
+        abortDictation();
         attachGenerationRef.current += 1;
         setValue(text);
         setMention(null);
@@ -846,7 +877,7 @@ export const Composer = forwardRef<
     if (!canSendComposerAction(value, attachments, { sending, preparing })) {
       return;
     }
-    stopDictation();
+    abortDictation();
     const payload: ComposerSendPayload =
       pendingInvites.length > 0
         ? { text: value, attachments, invite: pendingInvites }
