@@ -221,8 +221,8 @@ import {
   createSessionService,
   createSidecarAllocationReconciler,
   createSidecarPluginRegistry,
+  createSidecarCredentialResolver,
   createSidecarRouter,
-  createSidecarTokenAuthenticator,
   createWorkflowAllocationService,
   createWorkflowDispatchService,
   DEFAULT_ASSET_REF,
@@ -251,6 +251,10 @@ import {
   createTenantGrantLister,
 } from "./grant-allowance";
 import { createDockerSidecarProvisioner } from "@corbits/docker-provisioner";
+import {
+  createProcessSidecarProvisioner,
+  readProcessProvisionerConfig,
+} from "@corbits/process-provisioner";
 import { getArtifact, writeArtifactVersion } from "@corbits/artifacts";
 import {
   createArtifactDbStore,
@@ -527,8 +531,30 @@ export function hubCredentialCipher(
 function buildSidecarProvisioner(
   config: SidecarProvisionerConfig,
   hubDataDir: string,
+  hubWebSocketUrl: string,
 ): SidecarProvisioner {
   switch (config.id) {
+    case "process":
+      // Same derivation as the other two backends: the hub-side
+      // allocation state lives under the hub's own data dir, and so do
+      // the per-allocation directories each spawned sidecar uses as its
+      // own SIDECAR_DATA_DIR.
+      return createProcessSidecarProvisioner({
+        config: readProcessProvisionerConfig({
+          env: {
+            ...(config.sidecarEntryPath === undefined
+              ? {}
+              : {
+                  PROCESS_PROVISIONER_SIDECAR_ENTRY: config.sidecarEntryPath,
+                }),
+            ...(config.runtimePath === undefined
+              ? {}
+              : { PROCESS_PROVISIONER_RUNTIME: config.runtimePath }),
+          },
+          dataDir: path.resolve(hubDataDir, "process-provisioner"),
+          hubWebSocketUrl,
+        }),
+      });
     case "docker":
       return createDockerSidecarProvisioner({
         config: {
@@ -780,9 +806,20 @@ export async function createHub(config: HubConfig) {
     )) !== null;
   const pinnedPackageCredentialBindingsFor =
     createPinnedPackageCredentialBindingsFor(isConnectorConnected);
+  // One resolver serves both seams, exactly as @intx/hub-sessions's own
+  // reference host wires them: `resolve` turns a presented bearer token
+  // into a verified identity at the handshake, and `isCurrent`
+  // revalidates that identity at the registration, readiness, and
+  // routing boundaries. Without the second one the router falls back to
+  // its always-true default, and a provisioner-issued token stays
+  // accepted after its allocation was superseded or destroyed — which a
+  // process-provisioned sidecar reaches easily, since a child that
+  // outlives its allocation keeps reconnecting to the same hub.
+  const sidecarCredentials = createSidecarCredentialResolver({ db });
   const sidecarRouter = createSidecarRouter({
     hubPublicKey,
-    authenticateSidecar: createSidecarTokenAuthenticator({ db }),
+    authenticateSidecar: async ({ token }) => sidecarCredentials.resolve(token),
+    validateSidecarIdentity: sidecarCredentials.isCurrent,
     lookups,
   });
   // A finalized turn's persisted-artifact tool-call results become
@@ -946,20 +983,26 @@ export async function createHub(config: HubConfig) {
     }),
     workflowDeploySourceStore,
   );
+  const hubWebSocketUrl =
+    config.sidecarWebSocketUrl ??
+    `${config.baseUrl.replace(/^http/, "ws")}/api/sidecars/ws`;
   // Provisioner plugins are injected at the application composition
-  // boundary, mirroring @intx/hub-sessions's own reference wiring: the
-  // registry always exists, but ships with no provisioners (and no
-  // default) until SIDECAR_PROVISIONERS names one or more builds. A
-  // workbench's "run this workbench on its own sidecar" setting can then
-  // always write a tenant's exclusive `sidecarPlacement`; without any
-  // configured provisioner that placement simply fails closed at
-  // deployment time rather than silently falling back to the shared
-  // sidecar. Adding a new backend here is: implement `SidecarProvisioner`
-  // in its own package, add a case to `buildSidecarProvisioner`, and add
-  // its id to `apps/hub/src/config.ts`'s `SIDECAR_PROVISIONER_IDS`.
+  // boundary, mirroring @intx/hub-sessions's own reference wiring. An
+  // install that configures nothing registers the `process` backend
+  // (`@corbits/process-provisioner`) as the sole default, so a
+  // workbench's "run this workbench on its own sidecar" setting works on
+  // one server with no operator setup; `SIDECAR_PROVISIONERS` is the one
+  // variable that changes where sidecars run. Adding a new backend here
+  // is: implement `SidecarProvisioner` in its own package, add a case to
+  // `buildSidecarProvisioner`, and add its id to
+  // `apps/hub/src/config.ts`'s `SIDECAR_PROVISIONER_IDS`.
   const sidecarPlugins = createSidecarPluginRegistry({
     provisioners: config.sidecarProvisioners.map((provisionerConfig) =>
-      buildSidecarProvisioner(provisionerConfig, config.hubDataDir),
+      buildSidecarProvisioner(
+        provisionerConfig,
+        config.hubDataDir,
+        hubWebSocketUrl,
+      ),
     ),
     ...(config.defaultSidecarProvisionerId !== undefined
       ? { defaultProvisionerId: config.defaultSidecarProvisionerId }
@@ -985,9 +1028,6 @@ export async function createHub(config: HubConfig) {
       return row?.address ?? null;
     },
   });
-  const hubWebSocketUrl =
-    config.sidecarWebSocketUrl ??
-    `${config.baseUrl.replace(/^http/, "ws")}/api/sidecars/ws`;
   const sidecarAllocationReconciler = createSidecarAllocationReconciler({
     allocationStore: sidecarAllocationStore,
     plugins: sidecarPlugins,
