@@ -157,10 +157,6 @@ import {
   createPostgresBenchModelPolicyStore,
   createWorkflowCatalogRoutes,
 } from "@corbits/inference-catalog";
-import {
-  createDrizzleSidecarPlacementStore,
-  createSidecarPlacementRoutes,
-} from "@corbits/sidecar-placement";
 import { generateId } from "@intx/hub-common";
 
 import { ensureDefaultTenant } from "./default-tenant";
@@ -992,8 +988,11 @@ export async function createHub(config: HubConfig) {
   // (`@corbits/process-provisioner`) as the sole default, so a
   // workbench's "run this workbench on its own sidecar" setting works on
   // one server with no operator setup; `SIDECAR_PROVISIONERS` is the one
-  // variable that changes where sidecars run. Adding a new backend here
-  // is: implement `SidecarProvisioner` in its own package, add a case to
+  // variable that changes where sidecars run. A deployment whose
+  // definition declares sidecar capabilities no registered provisioner
+  // declares fails closed at provisioner selection rather than silently
+  // landing on an unsuitable sidecar. Adding a new backend here is:
+  // implement `SidecarProvisioner` in its own package, add a case to
   // `buildSidecarProvisioner`, and add its id to
   // `apps/hub/src/config.ts`'s `SIDECAR_PROVISIONER_IDS`.
   const sidecarPlugins = createSidecarPluginRegistry({
@@ -1893,17 +1892,6 @@ export async function createHub(config: HubConfig) {
     `${TENANT_PREFIX}/eval-runs`,
     createEvalRunRoutes({
       store: evalRuns.store,
-      requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
-      }),
-    }),
-  );
-  app.route(
-    `${TENANT_PREFIX}/sidecar-placement`,
-    createSidecarPlacementRoutes({
-      store: createDrizzleSidecarPlacementStore(db),
-      hasProvisioner: config.sidecarProvisioners.length > 0,
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,

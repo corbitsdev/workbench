@@ -100,7 +100,7 @@ export function createFakeInferenceSource(): InferenceSource {
     id: "fake-source",
     provider: "fake",
     baseURL: "https://fake.invalid",
-    apiKey: "fake-key",
+    credentialId: "fake-credential",
     model: "fake-model",
   };
 }

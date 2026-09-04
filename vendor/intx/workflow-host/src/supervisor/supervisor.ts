@@ -106,6 +106,7 @@ import { compactRunEvents } from "./run-event-compaction";
 import { recoverInterruptedCompactions } from "./run-event-recovery";
 import { decodeMail } from "@intx/mime";
 import { commitMail, InvalidMailError } from "../adapters/mail-part-store";
+import { mergeCredentialDelivery } from "../child/credential-cell";
 import {
   createSubstrateMailboxStore,
   MAILBOX_INBOX_DIR,
@@ -422,11 +423,17 @@ export type DeliverSourcesOpts = {
 
 export type DeliverCredentialsOpts = {
   /**
-   * The refreshed credential material and per-handle descriptors. A revoked
-   * credential is delivered by omitting its material entry, so the child's
-   * wholesale swap evicts it.
+   * The refreshed credential material and per-handle descriptors. The child
+   * MERGES this into its cell (materials upsert by credentialId, bindings by
+   * consumer-and-handle); it does not evict by omission.
    */
   delivery: CredentialDelivery;
+  /**
+   * CredentialIds to drop from the child's cell (a deletion or a deliberate
+   * revocation). The child removes each id's material and any binding that
+   * references it. A pure revocation pairs an empty `delivery` with these ids.
+   */
+  revoke?: string[];
 };
 
 export type RecycleOpts = {
@@ -449,6 +456,20 @@ export function createWorkflowSupervisor(
   bindings: WorkflowSupervisorBindings,
 ): WorkflowSupervisor {
   let state: SupervisorState = { phase: "idle" };
+  // The live credential delivery to seed the child on every spawn and every
+  // pre-trigger barrier. Initialized from the deploy-time delivery and MUTATED
+  // by `deliverCredentials` on every runtime update, so a mid-life revocation or
+  // rotation is durable: the re-assertion sites read THIS mirror, not the frozen
+  // `bindings.credentialDelivery`. Reading the frozen delivery would re-add an
+  // evicted credential on the next spawn/barrier, and the warm-recycle path
+  // (seeded only by the barrier) would lose every runtime update. Normalized on
+  // init via the same merge the child applies, so the mirror matches the child's
+  // deduped cell from step zero. Lives outside `state` because `state` is a
+  // phase union replaced on every transition; this must survive them.
+  let currentCredentialDelivery: CredentialDelivery | null =
+    bindings.credentialDelivery !== undefined
+      ? mergeCredentialDelivery(null, bindings.credentialDelivery, undefined)
+      : null;
   /**
    * ALL runIds the current child cohort is driving, regardless of
    * who spawned them: supervisor-dispatched + self-discovered.
@@ -2467,6 +2488,27 @@ export function createWorkflowSupervisor(
         });
       }
 
+      // Deliver the run's credential material to the child on EVERY spawn, not
+      // only through the per-trigger `onRunStart` barrier. A restored run resumes
+      // from its parked state without a fresh `trigger.fire` (a signal wakes it),
+      // so the barrier would never re-deliver the cell and the resumed run's
+      // inference would fail closed. Seeding the live cell here at spawn lets an
+      // offline restart resolve each source's credential from the persisted
+      // (unsealed) delivery without waiting on a hub reconnect. Unlike the grants
+      // push above this is NOT suppressed when `onRunStart` is wired: the barrier
+      // fires per trigger, but a resume has no trigger, so the spawn push is the
+      // only credential source on the resume path. Idempotent with the barrier's
+      // own push on a fresh run: the child merges both, and both carry the same
+      // mirror. Absent when the deployment binds no credentials. Reads the live
+      // mirror, not the frozen deploy delivery, so a credential revoked earlier
+      // this process stays evicted.
+      if (currentCredentialDelivery !== null) {
+        await wired.wiring.controlSender.send({
+          type: "credentials-updated",
+          data: { delivery: currentCredentialDelivery },
+        });
+      }
+
       // Transition to running. The dispatch loop (started below)
       // picks up any pre-ready buffered mail through the FIFO inbox
       // queue rather than through an in-memory buffer; arrival order
@@ -2829,13 +2871,15 @@ export function createWorkflowSupervisor(
       });
       // Deliver the deployment's credential material on the same pre-trigger
       // barrier, so a tool that resolves a credential on the first step already
-      // has it in the child's cell. The material is the decrypted delivery the
-      // hub put on the deploy frame; a later rotation flows through
-      // `deliverCredentials` instead. Absent when the deployment binds none.
-      if (bindings.credentialDelivery !== undefined) {
+      // has it in the child's cell. Reads the live mirror, not the frozen deploy
+      // delivery: a rotation or revocation delivered earlier via
+      // `deliverCredentials` is reflected here, and a recycled child (seeded only
+      // by this barrier) inherits the current set instead of the deploy-time one.
+      // Absent when the deployment binds none.
+      if (currentCredentialDelivery !== null) {
         await sender.send({
           type: "credentials-updated",
-          data: { delivery: bindings.credentialDelivery },
+          data: { delivery: currentCredentialDelivery },
         });
       }
       return false;
@@ -4148,20 +4192,36 @@ export function createWorkflowSupervisor(
   async function deliverCredentials(
     opts: DeliverCredentialsOpts,
   ): Promise<void> {
-    // The supervisor is the single producer of `credentials-updated` control
-    // frames. Phase-guarded exactly like `deliverSources`: outside
-    // starting/running the control sender points at a dying child, so a frame
-    // would buffer behind the SIGTERM or write into a closed pipe. Rejecting
-    // surfaces the race so the caller can retry once the recycle completes.
-    if (state.phase !== "running" && state.phase !== "starting") {
-      throw new Error(
-        `supervisor: deliverCredentials called in phase ${state.phase}; expected starting/running`,
-      );
+    // Compute the next mirror first. It must advance regardless of phase so the
+    // NEXT spawn/barrier re-asserts this update: a credential revoked while the
+    // supervisor holds no live child (a crash-loop retry, a recycle transient)
+    // must still be gone when the child (re)starts, not resurrected from the
+    // frozen deploy delivery. This is what makes an offline-revoke reconcile
+    // durable even when it arrives at a supervisor without a running child.
+    const next = mergeCredentialDelivery(
+      currentCredentialDelivery,
+      opts.delivery,
+      opts.revoke,
+    );
+    // Send to the live child ONLY in starting/running. Outside those the control
+    // sender points at a dying/absent child, so a frame would buffer behind a
+    // SIGTERM or write into a closed pipe; the mirror advance below is the sole
+    // effect, and the child that eventually spawns is seeded from it. The
+    // supervisor is the single producer of `credentials-updated` frames.
+    if (state.phase === "running" || state.phase === "starting") {
+      await state.controlSender.send({
+        type: "credentials-updated",
+        data: {
+          delivery: opts.delivery,
+          ...(opts.revoke !== undefined ? { revoke: opts.revoke } : {}),
+        },
+      });
     }
-    await state.controlSender.send({
-      type: "credentials-updated",
-      data: { delivery: opts.delivery },
-    });
+    // Advance the mirror. A throw from `send` above skips this, leaving the
+    // mirror matching the child that never received the frame. A whole-object
+    // swap via the same merge the child applies, so a concurrent reader sees a
+    // coherent object.
+    currentCredentialDelivery = next;
   }
 
   /**

@@ -192,16 +192,15 @@ describe("message fan-out", () => {
     ]);
   });
 
-  test("a turn dispatch records which message its mail answers (CL-6314)", async () => {
+  test("a turn dispatch stamps the row's Message-ID and records what it answers (CL-7104)", async () => {
     const turnMail = createInMemoryTurnMailCorrelationStore();
     const deps = buildDeps({ turnMailCorrelation: turnMail });
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
-    const dispatchMailIds: string[] = [];
+    const dispatchHeaders: (string | undefined)[] = [];
     const deliverMail = platform.sendMail.bind(platform);
     platform.sendMail = async (input) => {
-      const sent = await deliverMail(input);
-      dispatchMailIds.push(sent.id);
-      return sent;
+      dispatchHeaders.push(input.content.messageId);
+      return deliverMail(input);
     };
     const app = mountAs(createChatRoutes(deps), "prn_alice");
     const { body: workbench } = await createWorkbench(app, {
@@ -225,24 +224,32 @@ describe("message fan-out", () => {
     const sentBody = (await response.json()) as { id: string };
     await settleFanout();
 
-    // The one mail the send made is the turn dispatch; its id is
-    // recorded against the posted message — the correlation the reply
-    // path reads back when the agent answers.
+    // The one mail the send made is the turn dispatch, and it goes out
+    // under the posted row's own RFC 5322 Message-ID (CL-7104) — the
+    // header the agent's bracket reports and its reply threads back
+    // through. Nothing else correlates the two.
     expect(platform.sentMail).toHaveLength(1);
-    const dispatchMailId = dispatchMailIds[0];
-    if (dispatchMailId === undefined) {
-      throw new Error("expected the dispatch to send one mail");
-    }
+    expect(dispatchHeaders).toEqual([`<${sentBody.id}@acme.example>`]);
     expect(
       await turnMail.findTurnMailSource({
         tenantId: TENANT.id,
-        mailId: dispatchMailId,
+        mailId: sentBody.id,
       }),
     ).toEqual({
       tenantId: TENANT.id,
       workbenchId: workbench.id,
       sourceMessageId: sentBody.id,
     });
+    // And the row itself carries what it went out as.
+    expect(
+      (
+        await deps.roomMessages.getMessage({
+          tenantId: TENANT.id,
+          workbenchId: workbench.id,
+          messageId: sentBody.id,
+        })
+      )?.mailMessageId,
+    ).toBe(`<${sentBody.id}@acme.example>`);
   });
 
   test("a posted message returns before the agents it names are asked for a turn", async () => {
@@ -633,6 +640,8 @@ describe("message fan-out", () => {
     );
     expect(response.status).toBe(201);
 
+    await settleFanout();
+
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     const copy = platform.sentMail[platform.sentMail.length - 1];
     const decoded = decodeParts(copy?.content ?? { content: "" });
@@ -675,12 +684,15 @@ describe("message fan-out", () => {
     );
     expect(response.status).toBe(201);
 
+    await settleFanout();
+
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     const copy = platform.sentMail[platform.sentMail.length - 1];
-    expect(copy?.content).toEqual({
-      content: "hi @ins_echo1",
-      replyTo: workbench.id,
-    });
+    expect(copy?.content.content).toBe("hi @ins_echo1");
+    // The fan-out copy carries the timeline row's own RFC 5322
+    // Message-ID (CL-7104), never a reply-to workbench id.
+    expect(copy?.content.messageId).toMatch(/^<msg_[0-9a-f]+@acme\.example>$/);
+    expect(copy?.content.inReplyTo).toBeUndefined();
   });
 
   test("a default-route turn in room B does not include room A's rows", async () => {
@@ -808,6 +820,8 @@ describe("message fan-out", () => {
     expect(response.status).toBe(201);
     await settleFanout();
 
+    await settleFanout();
+
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     const copy = platform.sentMail[platform.sentMail.length - 1];
     const [contextPart] = decodeParts(copy?.content ?? { content: "" });
@@ -859,6 +873,8 @@ describe("message fan-out", () => {
       },
     );
     expect(response.status).toBe(201);
+    await settleFanout();
+
     await settleFanout();
 
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
@@ -973,11 +989,13 @@ describe("message fan-out", () => {
     );
 
     expect(response.status).toBe(201);
+    await settleFanout();
     const copy = platform.sentMail[platform.sentMail.length - 1];
-    expect(copy?.content).toEqual({
-      content: "hi @ins_echo1",
-      replyTo: workbench.id,
-    });
+    expect(copy?.content.content).toBe("hi @ins_echo1");
+    // The fan-out copy carries the timeline row's own RFC 5322
+    // Message-ID (CL-7104), never a reply-to workbench id.
+    expect(copy?.content.messageId).toMatch(/^<msg_[0-9a-f]+@acme\.example>$/);
+    expect(copy?.content.inReplyTo).toBeUndefined();
   });
 
   test("inviting an agent joins it into the workbench and posts the join event", async () => {

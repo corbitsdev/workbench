@@ -191,9 +191,9 @@ export async function writeWorkflowDeploymentRecord(
   // deployment's `sources`/`hubPublicKey`, and a rotation overwrites the
   // existing record in place, so an interrupted write must never expose a
   // torn record the boot scan would then skip. Owner-only (0o600): the
-  // record embeds each source's `apiKey`, so it must not be world-readable
-  // on a shared host, matching the private-key writes elsewhere on the
-  // sidecar.
+  // record names each source's `credentialId` and the run's routing
+  // identity, so it must not be world-readable on a shared host, matching
+  // the private-key writes elsewhere on the sidecar.
   await writeFileAtomicDurable(path, JSON.stringify(record, null, 2), {
     mode: 0o600,
   });

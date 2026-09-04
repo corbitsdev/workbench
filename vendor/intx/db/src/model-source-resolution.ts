@@ -1,6 +1,5 @@
 import { and, eq } from "drizzle-orm";
 
-import { createNoopCredentialCipher } from "@intx/crypto";
 import {
   InvokerModelPreferences,
   ModelRequirements,
@@ -10,6 +9,7 @@ import {
   type ProviderPreference,
 } from "@intx/types";
 import type { InferenceSource } from "@intx/types/runtime";
+import type { CredentialMaterialEntry } from "@intx/types/sidecar";
 
 import {
   listVisibleOfferings,
@@ -44,7 +44,15 @@ export type SourceSkip =
  * distinguish from a populated `skips` when explaining the failure.
  */
 export type CatalogSourceResolution =
-  | { ok: true; sources: InferenceSource[] }
+  | {
+      ok: true;
+      sources: InferenceSource[];
+      // The credential material backing the resolved sources, deduped by
+      // `credentialId`. A source references its credential by id only; the
+      // secret rides here so the caller can seal it into the run's unified
+      // credential-material cell.
+      materials: CredentialMaterialEntry[];
+    }
   | { ok: false; reason: "no_requirements" }
   | {
       ok: false;
@@ -54,7 +62,10 @@ export type CatalogSourceResolution =
     };
 
 export type OfferingSourceResolution =
-  | { ok: true; sources: InferenceSource[] }
+  | {
+      ok: true;
+      sources: InferenceSource[];
+    }
   | {
       ok: false;
       reason: "offering_unavailable";
@@ -112,7 +123,8 @@ async function buildSource(
   resolved: ResolvedOffering,
   credentialCipher: CredentialCipher,
 ): Promise<
-  { ok: true; source: InferenceSource } | { ok: false; skip: SourceSkip }
+  | { ok: true; source: InferenceSource; material: CredentialMaterialEntry }
+  | { ok: false; skip: SourceSkip }
 > {
   const { provider, model, offering } = resolved;
 
@@ -171,6 +183,16 @@ async function buildSource(
   // filter in resolveModelSources still reads the raw row's `capabilities`
   // for its `.includes` check; that read-only comparison cannot be corrupted
   // into a wrong routing decision, so it is left as-is.
+  // Decrypt the stored secret at the one point it is used. Strict: a
+  // non-ciphertext value (a row not yet re-keyed, or a write that failed to
+  // encrypt) throws rather than delivering a bad key -- fail closed. The secret
+  // rides the credential-material cell (keyed by `credentialId`), NOT the source
+  // config -- the source only references the credential by id, so no secret is
+  // inline in the pinned/persisted source.
+  const secret = await credentialCipher.decrypt(
+    credential.secret,
+    credentialAad(credential.id, "secret"),
+  );
   const parsed = parseModelOfferingRow(offering);
   return {
     ok: true,
@@ -178,16 +200,16 @@ async function buildSource(
       id: offering.id,
       provider: provider.plugin,
       baseURL: provider.baseURL,
-      // Decrypt the stored secret at the one point it is used. Strict: a
-      // non-ciphertext value (a row not yet re-keyed, or a write that failed to
-      // encrypt) throws rather than delivering a bad key -- fail closed.
-      apiKey: await credentialCipher.decrypt(
-        credential.secret,
-        credentialAad(credential.id, "secret"),
-      ),
+      credentialId: provider.credentialId,
       model: model.canonicalName,
       capabilities: parsed.capabilities,
       ...(parsed.quirks !== null ? { quirks: parsed.quirks } : {}),
+    },
+    material: {
+      credentialId: provider.credentialId,
+      providerKey: provider.plugin,
+      origin: provider.baseURL,
+      secret,
     },
   };
 }
@@ -202,7 +224,7 @@ export async function resolveSourcesByOfferingIds(
   db: DB["db"],
   tenantId: string,
   offeringIds: readonly string[],
-  credentialCipher: CredentialCipher = createNoopCredentialCipher(),
+  credentialCipher: CredentialCipher,
 ): Promise<OfferingSourceResolution> {
   const visible = await listVisibleOfferings(db, tenantId);
   const byId = new Map(visible.map((entry) => [entry.offering.id, entry]));
@@ -247,23 +269,25 @@ export async function resolveModelSources(
   db: DB["db"],
   tenantId: string,
   requirements: ModelRequirement[],
+  // Decrypts each resolved credential secret at its point of use in
+  // `buildSource`. Required: the edge (the launch route / rotation push /
+  // allocation service) owns the cipher and always supplies a real one; the
+  // noop fallback for a keyless composition is resolved once at that edge
+  // (`resolveCredentialCipher` in the hub app), never defaulted here.
+  credentialCipher: CredentialCipher,
   opts?: {
     invokerPreferences?: Record<string, ProviderPreference>;
-    // Decrypts credential secrets at the point of use. Defaults to the noop
-    // cipher (passthrough) so callers reading plaintext-stored secrets -- tests
-    // and any not-yet-encrypted path -- resolve unchanged; production passes a
-    // real cipher.
-    credentialCipher?: CredentialCipher;
   },
 ): Promise<CatalogSourceResolution> {
   if (requirements.length === 0) {
     return { ok: false, reason: "no_requirements" };
   }
-  const credentialCipher =
-    opts?.credentialCipher ?? createNoopCredentialCipher();
 
   const visible = await listVisibleOfferings(db, tenantId);
   const sources: InferenceSource[] = [];
+  // Dedupe material by credentialId across every requirement's chain: one
+  // credential backing several offerings is delivered once.
+  const materials = new Map<string, CredentialMaterialEntry>();
 
   for (const requirement of requirements) {
     let candidates = visible
@@ -285,6 +309,7 @@ export async function resolveModelSources(
 
     const skips: SourceSkip[] = [];
     const modelSources: InferenceSource[] = [];
+    const modelMaterials: CredentialMaterialEntry[] = [];
     for (const candidate of candidates) {
       const built = await buildSource(
         db,
@@ -294,6 +319,7 @@ export async function resolveModelSources(
       );
       if (built.ok) {
         modelSources.push(built.source);
+        modelMaterials.push(built.material);
       } else {
         skips.push(built.skip);
       }
@@ -308,9 +334,14 @@ export async function resolveModelSources(
       };
     }
     sources.push(...modelSources);
+    for (const material of modelMaterials) {
+      if (!materials.has(material.credentialId)) {
+        materials.set(material.credentialId, material);
+      }
+    }
   }
 
-  return { ok: true, sources };
+  return { ok: true, sources, materials: [...materials.values()] };
 }
 
 /**
@@ -334,8 +365,19 @@ export async function resolveInferencePreferences(
   db: DB["db"],
   tenantId: string,
   requirements: ModelRequirement[],
+  // Required even though the result discards the credential: this reuses the
+  // full `resolveModelSources` path, which decrypts each secret at its point of
+  // use in `buildSource` before the `{provider, model}` projection drops it. So
+  // the caller must still supply the edge's real cipher; a noop here would throw
+  // the moment a tenant's secret is stored encrypted.
+  credentialCipher: CredentialCipher,
 ): Promise<{ provider: string; model: string }[]> {
-  const resolution = await resolveModelSources(db, tenantId, requirements);
+  const resolution = await resolveModelSources(
+    db,
+    tenantId,
+    requirements,
+    credentialCipher,
+  );
   if (!resolution.ok) {
     throw new Error(
       `cannot resolve inference preferences for the folded definition: ${resolution.reason}`,
@@ -388,7 +430,7 @@ export async function resolveInstanceModelSources(
   db: DB["db"],
   tenantId: string,
   instance: { definitionId: string; modelPreferences: unknown },
-  credentialCipher?: CredentialCipher,
+  credentialCipher: CredentialCipher,
 ): Promise<CatalogSourceResolution> {
   // Resolve from the run's own definition by primary key. This is the SAME row
   // the launch resolves its requirements from, so a rotation or catalog edit
@@ -425,8 +467,7 @@ export async function resolveInstanceModelSources(
     invokerPreferences[preference.model] = preference.providers;
   }
 
-  return resolveModelSources(db, tenantId, requirements, {
+  return resolveModelSources(db, tenantId, requirements, credentialCipher, {
     invokerPreferences,
-    ...(credentialCipher !== undefined ? { credentialCipher } : {}),
   });
 }

@@ -17,8 +17,7 @@ sandboxing to build. Every write-capable tool it exposes (shell, write)
 would declare `approval: "ask"`, so each call surfaces through the
 existing human-approval path before it runs — no tool in this package
 would ever get a standing auto-approve. The sandbox policy would be a
-named, auditable, per-workbench setting (alongside `sidecarPlacement`),
-defaulting closed until an operator opts a workbench in — never a single
-all-or-nothing flag. This mirrors the pattern already used for exclusive
-sidecar placement itself: capability is inert until named, scoped, and
-explicitly turned on.
+named, auditable, per-workbench setting, defaulting closed until an
+operator opts a workbench in — never a single all-or-nothing flag. This
+mirrors the pattern Interchange's own sidecar capability rules use:
+capability is inert until named, scoped, and explicitly turned on.

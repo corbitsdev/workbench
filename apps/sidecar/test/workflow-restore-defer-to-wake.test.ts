@@ -22,7 +22,6 @@ import { afterEach, expect, test } from "bun:test";
 import {
   createEd25519Crypto,
   generateKeyPair,
-  signEd25519,
   verifySSHSignature,
 } from "@intx/crypto";
 import {
@@ -77,7 +76,6 @@ async function makeRouter(
   const keyStore = createAgentKeyStore({
     dataDir,
     generateKeyPair,
-    signEd25519,
     verifySSHSig: verifySSHSignature,
   });
   const recordingSpawner: SubprocessSpawner = () => {
@@ -169,7 +167,7 @@ function makeDeadSource(provider: string): InferenceSource {
     id: `source-${provider}`,
     provider,
     baseURL: "https://api.example.com",
-    apiKey: "sk-dead-key-from-before-a-provider-reconfigure",
+    credentialId: "sk-dead-key-from-before-a-provider-reconfigure",
     model: "model-1",
   };
 }

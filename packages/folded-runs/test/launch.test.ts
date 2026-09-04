@@ -31,12 +31,13 @@ const actualHubApi = await import("@intx/hub-api");
 
 let resolveDefinitionSourcesResult: DefinitionSourceResolution = {
   ok: true,
+  materials: [],
   sources: [
     {
       id: "off_1",
       provider: "anthropic",
       baseURL: "https://inference.invalid",
-      apiKey: "placeholder",
+      credentialId: "placeholder",
       model: "claude-sonnet-5",
     },
   ],
@@ -441,12 +442,13 @@ describe("launchFoldedRun", () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -567,12 +569,13 @@ describe("launchFoldedRun", () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_ollama",
           provider: "openai-compatible",
           baseURL: "https://home-mac-studio.tail87f5aa.ts.net/v1",
-          apiKey: "placeholder",
+          credentialId: "placeholder",
           model: "gpt-oss:20b",
           quirks: { default: { numCtx: 131_072, maxOutputTokens: 32_768 } },
         },
@@ -614,7 +617,7 @@ describe("launchFoldedRun", () => {
         id: "off_ollama",
         provider: "ollama",
         baseURL: "https://home-mac-studio.tail87f5aa.ts.net/v1",
-        apiKey: "placeholder",
+        credentialId: "placeholder",
         model: "gpt-oss:20b",
         quirks: { default: { numCtx: 131_072, maxOutputTokens: 32_768 } },
       },
@@ -637,12 +640,13 @@ describe("launchFoldedRun", () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -691,12 +695,13 @@ describe("launchFoldedRun", () => {
   test("mints config.grants from toolGrantsForPins, scoped to this run's principal", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -785,12 +790,13 @@ describe("launchFoldedRun", () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "openai-compatible",
           baseURL: "https://openrouter.ai/api/v1",
-          apiKey: "sk-or-v1-real-key",
+          credentialId: "sk-or-v1-real-key",
           model: "anthropic/claude-sonnet-5",
         },
       ],
@@ -832,15 +838,48 @@ describe("launchFoldedRun", () => {
     });
   });
 
+  test("omitted credentialCipher still supplies a cipher to resolveDefinitionSources", async () => {
+    resolveDefinitionSourcesCalls.length = 0;
+    const db = createFakeDb();
+    const sessionService = createFakeSessionService();
+    const eventCollectors = createFakeEventCollectors();
+
+    await launchFoldedRun(
+      {
+        db: db as never,
+        sessionService,
+        assetService: createFakeAssetService(),
+        sidecarRouter: createFakeSidecarRouter(),
+        toolGrantsForPins: () => [],
+        eventCollectors,
+      },
+      {
+        tenantId: "ten_1",
+        instanceId: "ins_noop_cipher",
+        triggerAddress: "ins_noop_cipher@ten1.workbench.test",
+        definitionId: "wfd_noop_cipher",
+        foldedBody: FOLDED_BODY,
+        launchLabel: "the agent",
+      },
+    );
+
+    expect(resolveDefinitionSourcesCalls).toHaveLength(1);
+    expect(
+      (resolveDefinitionSourcesCalls[0] as { credentialCipher?: unknown })
+        .credentialCipher,
+    ).toBeDefined();
+  });
+
   test("rolls back the committed rows and abandons the collector when the deploy fails", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -895,12 +934,13 @@ describe("launchFoldedRun", () => {
   test("marks the run failed (not deleted) when the deploy leaks a running child", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -953,12 +993,13 @@ describe("launchFoldedRun", () => {
   test("marks the run failed (not deleted) when sendRunGrants fails after a successful deploy", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -1002,12 +1043,13 @@ describe("launchFoldedRun", () => {
   test("marks the run failed (not deleted) when markRunDeployClone fails after a successful deploy", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -1114,12 +1156,13 @@ describe("launchFoldedRun", () => {
       },
       {
         ok: true,
+        materials: [],
         sources: [
           {
             id: "off_ollama",
             provider: "ollama",
             baseURL: "https://home-mac-studio.tail87f5aa.ts.net/v1",
-            apiKey: "placeholder",
+            credentialId: "placeholder",
             model: "gpt-oss:20b",
           },
         ],
@@ -1227,7 +1270,7 @@ describe("launchFoldedRun", () => {
           id: "noop",
           provider: "anthropic",
           baseURL: "https://hub.invalid/api/chat/noop-inference",
-          apiKey: "noop",
+          credentialId: "noop",
           model: "noop",
         },
       ],
@@ -1348,7 +1391,7 @@ describe("wakeFoldedRun", () => {
               id: "off_1",
               provider: "anthropic",
               baseURL: "https://inference.invalid",
-              apiKey: "placeholder",
+              credentialId: "placeholder",
               model: "claude-sonnet-5",
             },
           ],
@@ -1373,12 +1416,13 @@ describe("deployAtHead — mcp credential bindings", () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -1472,12 +1516,13 @@ describe("deployAtHead — mcp credential bindings", () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -1534,12 +1579,13 @@ describe("deployAtHead — pinned-package credential bindings", () => {
   function catalogSources(): DefinitionSourceResolution {
     return {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -1801,12 +1847,13 @@ describe("deployAtHead — pinned-package credential bindings", () => {
 describe("deployAtHead — per-run definition records", () => {
   const SOURCES = {
     ok: true as const,
+    materials: [],
     sources: [
       {
         id: "off_1",
         provider: "anthropic",
         baseURL: "https://inference.invalid",
-        apiKey: "placeholder",
+        credentialId: "placeholder",
         model: "claude-sonnet-5",
       },
     ],
@@ -1865,12 +1912,13 @@ describe("deployAtHead — per-run definition records", () => {
 describe("deployAtHead — run.grants production", () => {
   const SOURCES = {
     ok: true as const,
+    materials: [],
     sources: [
       {
         id: "off_1",
         provider: "anthropic",
         baseURL: "https://inference.invalid",
-        apiKey: "placeholder",
+        credentialId: "placeholder",
         model: "claude-sonnet-5",
       },
     ],
@@ -1963,12 +2011,13 @@ describe("deployAtHead — run.grants production", () => {
 describe("deployAtHead — the code-sourced round trip", () => {
   const SOURCES: DefinitionSourceResolution = {
     ok: true,
+    materials: [],
     sources: [
       {
         id: "off_1",
         provider: "anthropic",
         baseURL: "https://inference.invalid",
-        apiKey: "placeholder",
+        credentialId: "placeholder",
         model: "claude-sonnet-5",
       },
     ],
@@ -2116,12 +2165,13 @@ describe("wakeFoldedRun — the same code-sourced path", () => {
   test("re-renders and re-commits the run's source tree, then adopts its anchor", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "placeholder",
           model: "claude-sonnet-5",
         },
       ],

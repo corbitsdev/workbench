@@ -15,6 +15,7 @@ import type {
   EnsureSidecarResult,
   SidecarProvisioner,
 } from "@intx/hub-sessions";
+import type { SidecarCapabilityDeclaration } from "@intx/types";
 
 import { BackendOperationError, type SidecarBackend } from "./backend";
 import type { AllocationStateStore } from "./state-store";
@@ -25,6 +26,13 @@ export type CreateSidecarProvisionerOpts = {
   readonly id: string;
   readonly apiVersion: 1;
   readonly bindingFingerprint: string;
+  /**
+   * Capabilities this backend declares to the hub's capability policy.
+   * Empty declares nothing, which matches any deployment that states no
+   * capability requirement -- the behaviour every allocation had before
+   * Interchange replaced the placement model with capability selection.
+   */
+  readonly capabilities: readonly SidecarCapabilityDeclaration[];
   readonly backend: SidecarBackend;
   readonly store: AllocationStateStore;
 };
@@ -111,6 +119,7 @@ export function createSidecarProvisioner(
     id: opts.id,
     apiVersion: opts.apiVersion,
     bindingFingerprint: opts.bindingFingerprint,
+    capabilities: opts.capabilities,
 
     ensure(request: EnsureSidecarRequest): Promise<EnsureSidecarResult> {
       const key = request.allocationId;

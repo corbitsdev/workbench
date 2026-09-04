@@ -14,8 +14,8 @@ import type {
   AuthorizeContext,
   WorkflowAuthorizeFn,
 } from "../authorize-context";
-import type { Primitive, WorkflowDefinition } from "../definition/index";
-import type { WorkflowEvent } from "../state-machine/index";
+import type { Primitive } from "../definition/index";
+import type { TerminalRunPhase, WorkflowEvent } from "../state-machine/index";
 import type { DrainController } from "./drain";
 
 /**
@@ -315,6 +315,15 @@ export type SpawnChildWorkflow = (input: {
   parentRunId: string;
   parentStepId: string;
   signal: AbortSignal;
+  /**
+   * The child run's depth in the spawn chain (one deeper than the parent).
+   * The runtime checks it against `maxChildSpawnDepth` before this callback
+   * is invoked; the spawner threads it into the child run so the child's own
+   * spawns keep counting. See `child-depth.ts`.
+   */
+  depth: number;
+  /** The tree-wide spawn-depth ceiling, threaded to the child run. */
+  maxChildSpawnDepth: number;
 }) => Promise<{
   terminalStatus: "completed" | "failed" | "cancelled";
 }>;
@@ -387,33 +396,20 @@ export type SpawnSuspendableChild = (input: {
   parentRunId: string;
   parentStepId: string;
   signal: AbortSignal;
+  /**
+   * The depth this body run executes AT -- the container step's OWN depth,
+   * passed through UNCHANGED. A suspendable body (an onTrigger section or a
+   * loop iteration) is inlined rework, not a `childWorkflow` spawn, so it does
+   * not consume a depth rung; only a `childWorkflow` inside the body increments
+   * (to this depth + 1) via `runChildWorkflow`. Threading it keeps the
+   * tree-wide ceiling counting a grandchild from the top-level run rather than
+   * resetting at the body boundary. See `child-depth.ts`.
+   */
+  depth: number;
+  /** The tree-wide spawn-depth ceiling, threaded into the body run. */
+  maxChildSpawnDepth: number;
   resumeFromEvents?: readonly WorkflowEvent[];
 }) => Promise<SuspendableChildHandle>;
-
-/**
- * Run one loop iteration as a child run. Distinct from `spawnChild`:
- * loop iterations run the inline `bodyDefinition` against a SHARED store
- * (the parent's repoStore + blobs + effects) under a caller-supplied
- * DETERMINISTIC `childRunId`, and return the child's RESOLVED step
- * outputs (not just a terminal status) so the loop's while/carry
- * functions can read them without touching blob refs. The host owns
- * idempotency: a `childRunId` whose durable log is already terminal
- * returns its recorded outputs without re-running. Because a loop body
- * may not suspend (no awaitSignal/sleep/childWorkflow), a persisted
- * child log is always terminal -- a mid-iteration crash drops the whole
- * buffered segment, leaving an empty log the host re-runs fresh.
- */
-export type RunLoopIteration = (input: {
-  bodyDefinition: WorkflowDefinition;
-  childRunId: string;
-  input: unknown;
-  parentRunId: string;
-  parentStepId: string;
-  signal: AbortSignal;
-}) => Promise<{
-  terminalStatus: "completed" | "failed" | "cancelled";
-  output: Record<string, unknown>;
-}>;
 
 /**
  * A loop's `while` predicate or `carry` transform. Deliberately receives
@@ -555,14 +551,19 @@ export interface WorkflowRuntimeEnv {
    */
   spawnSuspendableChild?: SpawnSuspendableChild;
   /**
-   * Run one loop iteration as a child run against the shared store.
-   * Optional: a host that does not wire it does not support `loop`, and
-   * `runLoop` fails loudly. runLocal wires it.
+   * Spawn one loop iteration as a suspendable child. Same
+   * {@link SpawnSuspendableChild} contract as `spawnSuspendableChild`, but
+   * wired to an executor that runs the body under the parent run's INHERITED
+   * env (real tools, action invoker, grants, and the durable shared store) --
+   * a loop is the parent's own bounded rework, not a fresh capped section
+   * body. `runLoop` drives it across the body's parks exactly as `runOnTrigger`
+   * drives a section body. Optional: a host that does not wire it does not
+   * support `loop`, and `runLoop` fails loudly. runLocal wires it.
    */
-  runLoopIteration?: RunLoopIteration;
+  spawnLoopIteration?: SpawnSuspendableChild;
   /**
    * Resolve a loop's `while`/`carry` refs to pure functions. Optional
-   * for the same reason as `runLoopIteration`.
+   * for the same reason as `spawnLoopIteration`.
    */
   loopFns?: LoopFnRegistry;
   /**
@@ -602,15 +603,18 @@ export interface WorkflowRuntimeEnv {
   onPark?: (park: WorkflowPark) => void;
   /**
    * Optional author-signal park sink, the non-reserved-channel sibling of
-   * `onPark`. Fired once each time a step parks on an author `awaitSignal`
-   * gate (a plain, author-chosen `name`, not a reserved
-   * `signalName(correlationId)` channel), on the fresh park only -- a re-park
-   * resume that finds the step already `awaiting-signal` does not re-fire, the
-   * same discipline as `onPark`. The suspendable-child seam wires it so a
-   * section body's author gate surfaces up to `runOnTrigger`; every other host
-   * -- the container run, runLocal -- leaves it unset, so an author gate there
-   * parks silently on the signal channel exactly as before (no behavior change
-   * off the section-body path).
+   * `onPark`. Fired once each time a park on an author `awaitSignal` gate (a
+   * plain, author-chosen `name`, not a reserved `signalName(correlationId)`
+   * channel) must surface up for a container to relay, on the fresh park only
+   * -- a re-park resume that finds the step already `awaiting-signal` does not
+   * re-fire, the same discipline as `onPark`. Two sites fire it: a body's leaf
+   * `awaitSignal` gate, and a container's own signal-relay await when that
+   * container is itself a suspendable child (a loop iteration or onTrigger
+   * section nested inside another), so the park composes up one layer at a time.
+   * The suspendable-child seam wires it on every body env (loop iteration or
+   * section body); a TOP-LEVEL container run and runLocal leave it unset, so the
+   * outermost relay awaits the run's real channel directly and an author gate
+   * off any suspendable-child path parks silently as before.
    */
   onSignalPark?: (park: WorkflowSignalPark) => void;
   /**
@@ -643,7 +647,7 @@ export interface WorkflowRun {
 
 export interface RunResult {
   runId: string;
-  terminalStatus: "completed" | "failed" | "cancelled";
+  terminalStatus: TerminalRunPhase;
   /** Captured outputs of every step that reached `completed`. */
   outputs: Record<string, unknown>;
   /** The full event log as committed. */

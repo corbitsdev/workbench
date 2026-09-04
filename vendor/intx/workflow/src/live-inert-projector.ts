@@ -37,7 +37,7 @@ import type {
   ToolDeclaration,
 } from "@intx/agent";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
-import type { CredentialBinding } from "@intx/types";
+import type { CredentialBinding, SidecarCapabilityPolicy } from "@intx/types";
 import type {
   ActionPrimitive,
   AwaitSignalPrimitive,
@@ -58,6 +58,7 @@ import type {
   Trigger,
   WorkflowDefinition,
 } from "./definition/index";
+import { collectSidecarCapabilityRules } from "./sidecar-capabilities";
 
 // ---------------------------------------------------------------------------
 // Inert projection shapes
@@ -121,6 +122,7 @@ export interface InertStepStep {
   readonly timeout?: number;
   readonly drainBehavior?: DrainBehavior;
   readonly triggers?: number | "unbounded";
+  readonly onFailure?: string;
 }
 
 export interface InertMap {
@@ -174,6 +176,7 @@ export interface InertChildWorkflow {
   readonly input?: Selector;
   readonly drainBehavior?: DrainBehavior;
   readonly after?: readonly string[];
+  readonly onFailure?: string;
 }
 
 // The gate/awaitSignal/sleep/escalation/action primitives carry no functions
@@ -211,6 +214,7 @@ export interface InertWorkflowDefinition {
   // resolves -- a moved or tampered registry that served code with
   // different bindings would change this projection and fail re-verify.
   readonly credentialBindings?: readonly CredentialBinding[];
+  readonly sidecarPlacement?: SidecarCapabilityPolicy;
 }
 
 // ---------------------------------------------------------------------------
@@ -265,6 +269,7 @@ function projectDefinition(
       );
     }
   }
+  const sidecarCapabilities = collectSidecarCapabilityRules(definition);
   return {
     id: definition.id,
     triggers: definition.triggers.map(projectTrigger),
@@ -278,6 +283,9 @@ function projectDefinition(
     // request surface inside the content hash (see `InertWorkflowDefinition`).
     ...(definition.credentialBindings !== undefined
       ? { credentialBindings: [...definition.credentialBindings] }
+      : {}),
+    ...(sidecarCapabilities.length > 0
+      ? { sidecarPlacement: { capabilities: [...sidecarCapabilities] } }
       : {}),
   };
 }
@@ -338,6 +346,7 @@ function projectStepPrimitive(step: StepPrimitive): InertStepStep {
       ? { drainBehavior: step.drainBehavior }
       : {}),
     ...(step.triggers !== undefined ? { triggers: step.triggers } : {}),
+    ...(step.onFailure !== undefined ? { onFailure: step.onFailure } : {}),
   };
 }
 
@@ -403,6 +412,9 @@ function projectAction(primitive: ActionPrimitive): ActionPrimitive {
       ? { drainBehavior: primitive.drainBehavior }
       : {}),
     ...(primitive.after !== undefined ? { after: [...primitive.after] } : {}),
+    ...(primitive.onFailure !== undefined
+      ? { onFailure: primitive.onFailure }
+      : {}),
   };
 }
 
@@ -469,6 +481,9 @@ function projectChildWorkflow(
       ? { drainBehavior: primitive.drainBehavior }
       : {}),
     ...(primitive.after !== undefined ? { after: [...primitive.after] } : {}),
+    ...(primitive.onFailure !== undefined
+      ? { onFailure: primitive.onFailure }
+      : {}),
   };
 }
 

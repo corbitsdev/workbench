@@ -15,6 +15,7 @@ import {
   fakePlatform,
   mountAs,
   sendText,
+  settleFanout,
   TENANT,
   timelineEvents,
   timelineOf,
@@ -38,6 +39,8 @@ describe("chat/contextWindow", () => {
     await sendText(app, workbench.id, "two");
     await sendText(app, workbench.id, "three");
     await sendText(app, workbench.id, "hi @ins_echo1");
+
+    await settleFanout();
 
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     const copy = platform.sentMail[platform.sentMail.length - 1];
@@ -65,12 +68,15 @@ describe("chat/contextWindow", () => {
     await sendText(app, workbench.id, "one");
     await sendText(app, workbench.id, "hi @ins_echo1");
 
+    await settleFanout();
+
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     const copy = platform.sentMail[platform.sentMail.length - 1];
-    expect(copy?.content).toEqual({
-      content: "hi @ins_echo1",
-      replyTo: workbench.id,
-    });
+    expect(copy?.content.content).toBe("hi @ins_echo1");
+    // The fan-out copy carries the timeline row's own RFC 5322
+    // Message-ID (CL-7104), never a reply-to workbench id.
+    expect(copy?.content.messageId).toMatch(/^<msg_[0-9a-f]+@acme\.example>$/);
+    expect(copy?.content.inReplyTo).toBeUndefined();
   });
 
   test("an absent setting falls back to the default of 20", async () => {
@@ -85,6 +91,8 @@ describe("chat/contextWindow", () => {
       await sendText(app, workbench.id, `msg-${i}`);
     }
     await sendText(app, workbench.id, "hi @ins_echo1");
+
+    await settleFanout();
 
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     const copy = platform.sentMail[platform.sentMail.length - 1];
@@ -111,6 +119,8 @@ describe("chat/contextWindow", () => {
       await sendText(app, workbench.id, `msg-${i}`);
     }
     await sendText(app, workbench.id, "hi @ins_echo1");
+
+    await settleFanout();
 
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     const copy = platform.sentMail[platform.sentMail.length - 1];
@@ -140,6 +150,8 @@ describe("chat/contextWindow", () => {
       await sendText(app, workbench.id, `msg-${i}`);
     }
     await sendText(app, workbench.id, "hi @ins_echo1");
+
+    await settleFanout();
 
     const platform = deps.platform as ReturnType<typeof fakePlatform>;
     const copy = platform.sentMail[platform.sentMail.length - 1];

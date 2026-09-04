@@ -57,12 +57,13 @@ const actualHubApi = await import("@intx/hub-api");
 
 let resolveDefinitionSourcesResult: DefinitionSourceResolution = {
   ok: true,
+  materials: [],
   sources: [
     {
       id: "off_1",
       provider: "anthropic",
       baseURL: "https://inference.invalid",
-      apiKey: "placeholder",
+      credentialId: "cred_placeholder",
       model: "claude-sonnet-5",
     },
   ],
@@ -792,12 +793,13 @@ describe("createHubChatPlatform", () => {
   test("a failed wake keeps the minted run retryable and abandons its collector", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "cred_placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -871,12 +873,13 @@ describe("createHubChatPlatform", () => {
   test("a failed wake keeps the run retryable even when a child leaked", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "cred_placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -950,12 +953,13 @@ describe("createHubChatPlatform", () => {
   test("sendMail resolves the workbench's run's session via the shared principal and delivers via sessionService", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "cred_placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -1030,12 +1034,13 @@ describe("createHubChatPlatform", () => {
   test("sendMail signs with the injected crypto cache keyed by workbenchId", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "cred_placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -1100,12 +1105,13 @@ describe("createHubChatPlatform", () => {
   test("sendMail rejects within the mail-delivery deadline instead of hanging forever when delivery never settles (CL-6644)", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "cred_placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -1165,12 +1171,13 @@ describe("createHubChatPlatform", () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "cred_placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -1328,12 +1335,13 @@ describe("createHubChatPlatform", () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "openai-compatible",
           baseURL: "https://openrouter.ai/api/v1",
-          apiKey: "sk-or-v1-real-key",
+          credentialId: "cred_openrouter",
           model: "anthropic/claude-sonnet-5",
         },
       ],
@@ -1778,12 +1786,13 @@ describe("createHubChatPlatform", () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "cred_placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -1996,12 +2005,13 @@ describe("createHubChatPlatform", () => {
     test("sendMail wakes a non-routable workbench by redeploying before sending, then sends", async () => {
       resolveDefinitionSourcesResult = {
         ok: true,
+        materials: [],
         sources: [
           {
             id: "off_1",
             provider: "anthropic",
             baseURL: "https://inference.invalid",
-            apiKey: "placeholder",
+            credentialId: "cred_placeholder",
             model: "claude-sonnet-5",
           },
         ],
@@ -2091,12 +2101,13 @@ describe("createHubChatPlatform", () => {
     test("sendMail never deploys or undeploys a routable workbench, even a completed folded run — the sidecar's park handler owns respawn", async () => {
       resolveDefinitionSourcesResult = {
         ok: true,
+        materials: [],
         sources: [
           {
             id: "off_1",
             provider: "anthropic",
             baseURL: "https://inference.invalid",
-            apiKey: "placeholder",
+            credentialId: "cred_placeholder",
             model: "claude-sonnet-5",
           },
         ],
@@ -2493,12 +2504,13 @@ describe("createHubChatPlatform", () => {
     test("redeploys a non-routable address when lifecycle is configured", async () => {
       resolveDefinitionSourcesResult = {
         ok: true,
+        materials: [],
         sources: [
           {
             id: "off_1",
             provider: "anthropic",
             baseURL: "https://inference.invalid",
-            apiKey: "placeholder",
+            credentialId: "cred_placeholder",
             model: "claude-sonnet-5",
           },
         ],
@@ -2554,12 +2566,13 @@ describe("createHubChatPlatform", () => {
     test("redeploys a non-routable address when lifecycle is not configured", async () => {
       resolveDefinitionSourcesResult = {
         ok: true,
+        materials: [],
         sources: [
           {
             id: "off_1",
             provider: "anthropic",
             baseURL: "https://inference.invalid",
-            apiKey: "placeholder",
+            credentialId: "cred_placeholder",
             model: "claude-sonnet-5",
           },
         ],
@@ -2647,12 +2660,13 @@ describe("createHubChatPlatform", () => {
     test("a reclaim-retry wake and a concurrent ensureAwake call for the same address never redeploy it twice", async () => {
       resolveDefinitionSourcesResult = {
         ok: true,
+        materials: [],
         sources: [
           {
             id: "off_1",
             provider: "anthropic",
             baseURL: "https://inference.invalid",
-            apiKey: "placeholder",
+            credentialId: "cred_placeholder",
             model: "claude-sonnet-5",
           },
         ],
@@ -2853,12 +2867,13 @@ describe("createHubChatPlatform", () => {
     test("a refreshed instance's next wake uses the new system prompt, not the one frozen at launch", async () => {
       resolveDefinitionSourcesResult = {
         ok: true,
+        materials: [],
         sources: [
           {
             id: "off_1",
             provider: "anthropic",
             baseURL: "https://inference.invalid",
-            apiKey: "placeholder",
+            credentialId: "cred_placeholder",
             model: "claude-sonnet-5",
           },
         ],
@@ -3154,12 +3169,13 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
   test("sendMail redeploys an already-routable-but-drifted target before delivering — lifecycle.ensureAwake's routability check alone would have missed it", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "cred_placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -3467,14 +3483,14 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
     model: null,
   };
 
-  function sourcesFor(apiKey: string) {
+  function sourcesFor(credentialId: string) {
     return {
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey,
+          credentialId,
           model: "claude-sonnet-5",
         },
       ],
@@ -3483,12 +3499,13 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
   }
 
   function createRotationFixture(opts: {
-    deployedWithKey: string | null;
-    catalogKey: string;
+    deployedWithCredentialId: string | null;
+    catalogCredentialId: string;
   }) {
     resolveDefinitionSourcesResult = {
       ok: true,
-      ...sourcesFor(opts.catalogKey),
+      materials: [],
+      ...sourcesFor(opts.catalogCredentialId),
     };
     const db = createFakeDb({
       assetRow: {
@@ -3537,9 +3554,9 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
         currentRunId: "run_live",
         foldedBody: FOLDED_BODY,
         sourcesDigest:
-          opts.deployedWithKey === null
+          opts.deployedWithCredentialId === null
             ? null
-            : inferenceSourcesDigest(sourcesFor(opts.deployedWithKey)),
+            : inferenceSourcesDigest(sourcesFor(opts.deployedWithCredentialId)),
       },
       wireProjectionsByDefinitionId: {
         wfd_run_clone: inertProjection({
@@ -3574,8 +3591,8 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
 
   test("a routable run deployed with a key the catalog has since rotated is relaunched on the new key", async () => {
     const { db, platform } = createRotationFixture({
-      deployedWithKey: "sk-ant-expired",
-      catalogKey: "sk-ant-fresh",
+      deployedWithCredentialId: "cred_anthropic_expired",
+      catalogCredentialId: "cred_anthropic_fresh",
     });
 
     await platform.ensureAwake("run_live@ten1.workbench.test");
@@ -3584,14 +3601,14 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
     expect(repointed?.currentRunId).toBeDefined();
     expect(repointed?.currentRunId).not.toBe("run_live");
     expect(repointed?.sourcesDigest).toBe(
-      inferenceSourcesDigest(sourcesFor("sk-ant-fresh")),
+      inferenceSourcesDigest(sourcesFor("cred_anthropic_fresh")),
     );
   });
 
   test("re-saving the same key is not a rotation: the run is left alone", async () => {
     const { db, platform } = createRotationFixture({
-      deployedWithKey: "sk-ant-same",
-      catalogKey: "sk-ant-same",
+      deployedWithCredentialId: "cred_anthropic",
+      catalogCredentialId: "cred_anthropic",
     });
 
     await platform.ensureAwake("run_live@ten1.workbench.test");
@@ -3601,8 +3618,8 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
 
   test("a run that predates digest recording gets today's chain as its baseline and is left alone", async () => {
     const { db, platform } = createRotationFixture({
-      deployedWithKey: null,
-      catalogKey: "sk-ant-fresh",
+      deployedWithCredentialId: null,
+      catalogCredentialId: "cred_anthropic_fresh",
     });
 
     await platform.ensureAwake("run_live@ten1.workbench.test");
@@ -3612,14 +3629,14 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
     );
     expect(launchWrites).toHaveLength(1);
     expect(launchWrites[0]?.values).toEqual({
-      sourcesDigest: inferenceSourcesDigest(sourcesFor("sk-ant-fresh")),
+      sourcesDigest: inferenceSourcesDigest(sourcesFor("cred_anthropic_fresh")),
     });
   });
 
   test("the per-send chain check is throttled: a second send inside the interval resolves nothing", async () => {
     const { platform } = createRotationFixture({
-      deployedWithKey: "sk-ant-same",
-      catalogKey: "sk-ant-same",
+      deployedWithCredentialId: "cred_anthropic",
+      catalogCredentialId: "cred_anthropic",
     });
     resolveDefinitionSourcesCalls.length = 0;
 
@@ -3633,8 +3650,8 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
 
   test("reconcileInferenceSources sweeps a tenant's live participants the moment a credential lands", async () => {
     const { db, platform } = createRotationFixture({
-      deployedWithKey: "sk-ant-expired",
-      catalogKey: "sk-ant-fresh",
+      deployedWithCredentialId: "cred_anthropic_expired",
+      catalogCredentialId: "cred_anthropic_fresh",
     });
 
     const swept = await platform.reconcileInferenceSources("ten_1");
@@ -3645,8 +3662,8 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
 
   test("connecting a provider then sending within the check interval relaunches onto the new key", async () => {
     const { db, platform } = createRotationFixture({
-      deployedWithKey: "sk-ant-expired",
-      catalogKey: "sk-ant-expired",
+      deployedWithCredentialId: "cred_anthropic_expired",
+      catalogCredentialId: "cred_anthropic_expired",
     });
 
     await platform.ensureAwake("run_live@ten1.workbench.test");
@@ -3654,7 +3671,8 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
 
     resolveDefinitionSourcesResult = {
       ok: true,
-      ...sourcesFor("sk-ant-fresh"),
+      materials: [],
+      ...sourcesFor("cred_anthropic_fresh"),
     };
 
     await platform.reconcileInferenceSources("ten_1");
@@ -3664,7 +3682,7 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
     expect(repointed?.currentRunId).toBeDefined();
     expect(repointed?.currentRunId).not.toBe("run_live");
     expect(repointed?.sourcesDigest).toBe(
-      inferenceSourcesDigest(sourcesFor("sk-ant-fresh")),
+      inferenceSourcesDigest(sourcesFor("cred_anthropic_fresh")),
     );
   });
 });
@@ -3690,7 +3708,7 @@ describe("createHubChatPlatform pinned-tool-package connect reconciliation", () 
         id: "off_1",
         provider: "anthropic",
         baseURL: "https://inference.invalid",
-        apiKey: "sk-ant-same",
+        credentialId: "cred_anthropic",
         model: "claude-sonnet-5",
       },
     ],
@@ -3702,6 +3720,7 @@ describe("createHubChatPlatform pinned-tool-package connect reconciliation", () 
   }) {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       ...CATALOG_SOURCES,
     };
     buildCredentialDeliveryCalls.length = 0;

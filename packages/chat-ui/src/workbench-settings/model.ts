@@ -19,14 +19,14 @@
 import { CHAT_STRINGS } from "../strings";
 
 export type WorkbenchSettingsSectionId =
-  "general" | "members" | "agents" | "capacity" | "notifications" | "danger";
+  "general" | "members" | "agents" | "notifications" | "danger";
 
 /** Every `WorkbenchSettingsSectionId`, for validating a section id read
  * off a URL — a route parser needs this list to narrow untrusted input
  * without an unchecked cast; `sectionsForWorkbenchKind` below is a
  * per-kind subset that doesn't fit that job. */
 export const WORKBENCH_SETTINGS_SECTION_IDS: readonly WorkbenchSettingsSectionId[] =
-  ["general", "members", "agents", "capacity", "notifications", "danger"];
+  ["general", "members", "agents", "notifications", "danger"];
 
 export function isWorkbenchSettingsSectionId(
   value: string,
@@ -43,22 +43,6 @@ export type WorkbenchSettingsSection = {
 };
 
 /**
- * Outcome of asking this server whether it can offer dedicated capacity.
- *
- * - `"available"` — provisioner confirmed present; show Capacity.
- * - `"unavailable"` — provisioner confirmed absent; hide Capacity.
- * - `"unknown"` — probe failed or has not resolved; must not be treated
- *   as `"unavailable"` (CL-6828). A transient miss would permanently
- *   omit the section if folded to false.
- */
-export type CapacityProbeState = "unknown" | "available" | "unavailable";
-
-/** Capacity stays in the nav unless the probe confirmed no provisioner. */
-export function capacitySectionVisible(probe: CapacityProbeState): boolean {
-  return probe !== "unavailable";
-}
-
-/**
  * Sections available for a workbench kind, in nav order. 1:1 chats drop
  * Members and Danger zone so the surface stays short (owner decision /
  * mock) — the same trim `workbenchSettingsTabs` applied before this file's
@@ -71,16 +55,10 @@ export function capacitySectionVisible(probe: CapacityProbeState): boolean {
  * — and the invite-agent affordance it renders — has nothing to show.
  * Defaults to `false` so every existing call site (agent chats,
  * workbenches) keeps exactly the section list it already had.
- *
- * `capacityProbe` gates Capacity: hide only when the probe confirmed
- * this server has no provisioner. Defaults to `"unavailable"` (hidden)
- * until the caller supplies a real probe outcome — never fold a failed
- * probe into that default.
  */
 export function workbenchSettingsSections(
   workbenchKind: string,
   isDm = false,
-  capacityProbe: CapacityProbeState = "unavailable",
 ): readonly WorkbenchSettingsSection[] {
   const sections: WorkbenchSettingsSection[] = [
     {
@@ -108,13 +86,6 @@ export function workbenchSettingsSections(
     label: CHAT_STRINGS.workbenchSettingsSectionNotifications,
     group: "personal",
   });
-  if (capacitySectionVisible(capacityProbe)) {
-    sections.push({
-      id: "capacity",
-      label: CHAT_STRINGS.workbenchSettingsSectionCapacity,
-      group: "shared",
-    });
-  }
   if (workbenchKind !== "chat") {
     sections.push({
       id: "danger",

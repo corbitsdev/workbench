@@ -137,11 +137,14 @@ test("an openai-compatible turn's wire request carries the restored history and 
           id: "src-openai-stub",
           provider: "openai",
           baseURL: "http://inference.stub.invalid/v1",
-          apiKey: "stub-key",
+          credentialId: "stub-key",
           model: "stub-model",
         },
       ],
       defaultSource: "src-openai-stub",
+      // An `InferenceSource` names a `credentialId`; the reactor fills the
+      // request's secret through this resolver at send time.
+      readCurrentMaterial: () => ({ secret: "stub-secret" }),
       storage,
       audit: storage,
       workdir,

@@ -346,7 +346,6 @@ export function mountHubRoutes(
       "/api/tenants/:tenantId/workflows",
       createWorkflowRoutes({
         db,
-        sessionService,
         ...(workflowAllocationService !== undefined
           ? { workflowAllocationService }
           : {}),

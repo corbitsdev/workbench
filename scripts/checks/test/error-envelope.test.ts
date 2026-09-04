@@ -64,7 +64,7 @@ test("a comment that mentions the old envelope is not a violation", () => {
 test("makeErrorEnvelope usage is not a violation", () => {
   const report = auditLocalErrorEnvelopeFactories([
     {
-      relPath: "packages/sidecar-placement/src/routes.ts",
+      relPath: "packages/bench/src/routes.ts",
       contents: `import { makeErrorEnvelope } from "@corbits/error-sink";
 return c.json(makeErrorEnvelope({ code: "bad_request", userMessage: "no" }), 400);`,
     },

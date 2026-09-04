@@ -11,7 +11,6 @@ import { afterEach, expect, test } from "bun:test";
 import {
   createEd25519Crypto,
   generateKeyPair,
-  signEd25519,
   verifySSHSignature,
 } from "@intx/crypto";
 import {
@@ -70,7 +69,6 @@ async function makeRouter(dataDir: string): Promise<RouterFixture> {
   const keyStore = createAgentKeyStore({
     dataDir,
     generateKeyPair,
-    signEd25519,
     verifySSHSig: verifySSHSignature,
   });
   const spawnedBinaries: string[] = [];
@@ -177,7 +175,7 @@ function makeSource(provider: string): InferenceSource {
     id: `source-${provider}`,
     provider,
     baseURL: "https://inference.example.com",
-    apiKey: "key",
+    credentialId: "key",
     model: "model-1",
   };
 }

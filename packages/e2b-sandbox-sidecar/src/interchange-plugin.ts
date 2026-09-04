@@ -1,6 +1,7 @@
 import {
   createAllocationStateStore,
   createSidecarProvisioner as createCoreSidecarProvisioner,
+  sidecarCapabilityDeclarations,
   type AllocationStateStore,
 } from "@corbits/sandbox-sidecar";
 import type { SidecarProvisioner } from "@intx/hub-sessions";
@@ -41,6 +42,10 @@ export function createSidecarProvisioner(
     id: "e2b",
     apiVersion: PROVISIONER_API_VERSION,
     bindingFingerprint: `e2b:v1:${config.template}`,
+    // Declares nothing, so this provisioner serves any deployment that
+    // states no capability requirement — the behaviour it had before
+    // Interchange replaced sidecar placement with capability selection.
+    capabilities: sidecarCapabilityDeclarations("vm"),
     backend: createE2BBackend(config),
     store:
       opts.store ?? createAllocationStateStore(`${config.dataDir}/state.json`),

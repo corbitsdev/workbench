@@ -1,21 +1,26 @@
 export {
-  resolveEffectiveSidecarPlacement,
-  type ResolveEffectiveSidecarPlacementOpts,
-} from "./placement-policy";
-export {
+  chooseFirstSidecarProvisioner,
   createSidecarPluginRegistry,
   type CreateSidecarPluginRegistryOpts,
   type SidecarPluginRegistry,
+  type SidecarProvisionerChooser,
+  type SidecarProvisionerSelection,
 } from "./plugin-registry";
-export type {
-  DestroySidecarRequest,
+export {
+  matchSidecarCapabilityPolicy,
+  type EffectiveSidecarCapabilityPolicy,
+  type SidecarCapabilityMatch,
+  type SidecarCapabilityMismatch,
+} from "./capability-policy";
+export {
   DestroySidecarResult,
-  EnsureSidecarRequest,
   EnsureSidecarResult,
-  SidecarCredentialIdentity,
-  SidecarCredentialResolver,
   SidecarOperationFailure,
-  SidecarProvisioner,
+  type DestroySidecarRequest,
+  type EnsureSidecarRequest,
+  type SidecarCredentialIdentity,
+  type SidecarCredentialResolver,
+  type SidecarProvisioner,
 } from "./contracts";
 export {
   createSidecarAllocationReconciler,

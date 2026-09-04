@@ -351,7 +351,6 @@ export const CHAT_STRINGS = {
   workbenchSettingsSectionGeneral: "General",
   workbenchSettingsSectionMembers: "Members",
   workbenchSettingsSectionAgents: "Agents",
-  workbenchSettingsSectionCapacity: "Capacity",
   workbenchSettingsSectionNotifications: "Notifications",
   workbenchSettingsSectionDanger: "Danger zone",
   workbenchSettingsNameLabel: "Name",
@@ -462,17 +461,6 @@ export const CHAT_STRINGS = {
     "This choice is yours alone — it doesn't change notifications for anyone else.",
   workbenchSettingsNotificationsSaveError:
     "Couldn't save your notification setting — try again.",
-  workbenchSettingsCapacityDescription:
-    "Run this workbench's agents on their own machine.",
-  workbenchSettingsCapacityLabel: "Run on a dedicated machine",
-  workbenchSettingsCapacityHint:
-    "This workbench's agents won't share a machine with any other workbench, so heavy work here never slows the others down.",
-  workbenchSettingsCapacityUnavailableHint:
-    "Not available on this server yet — ask your operator to enable isolated capacity.",
-  workbenchSettingsCapacitySaveError: (enabling: boolean) =>
-    enabling
-      ? "Couldn't turn on dedicated capacity — try again."
-      : "Couldn't turn off dedicated capacity — try again.",
   workbenchSettingsArchiveTitle: "Archive workbench",
   workbenchSettingsArchiveBody:
     "Archiving is not available yet. Closing this workbench would hide it from the sidebar without deleting history once the action lands.",
