@@ -850,3 +850,113 @@ describe("Composer stop affordance (CL-7201)", () => {
     expect(stopButton().hasAttribute("disabled")).toBe(false);
   });
 });
+
+describe("Composer dictate", () => {
+  const recognitions: FakeSpeechRecognition[] = [];
+
+  class FakeSpeechRecognition {
+    continuous = false;
+    interimResults = false;
+    onresult: ((event: { results: FakeSpeechResult[] }) => void) | null = null;
+    onerror: ((event: unknown) => void) | null = null;
+    onend: (() => void) | null = null;
+    started = false;
+
+    constructor() {
+      recognitions.push(this);
+    }
+
+    start() {
+      this.started = true;
+    }
+
+    stop() {
+      this.started = false;
+      this.onend?.();
+    }
+
+    abort() {
+      this.started = false;
+      this.onend?.();
+    }
+
+    emit(segments: readonly { isFinal: boolean; transcript: string }[]) {
+      const results = segments.map((segment) => ({
+        isFinal: segment.isFinal,
+        length: 1,
+        0: { transcript: segment.transcript },
+      }));
+      this.onresult?.({ results });
+    }
+  }
+
+  type FakeSpeechResult = {
+    readonly isFinal: boolean;
+    readonly length: number;
+    readonly 0: { readonly transcript: string };
+  };
+
+  function installSpeechRecognition() {
+    Object.defineProperty(window, "SpeechRecognition", {
+      configurable: true,
+      writable: true,
+      value: FakeSpeechRecognition,
+    });
+  }
+
+  afterEach(() => {
+    recognitions.length = 0;
+    Reflect.deleteProperty(window, "SpeechRecognition");
+  });
+
+  test("hides the dictate control when speech recognition is unavailable", () => {
+    mount(() => Promise.resolve(true));
+    expect(container?.querySelector('[aria-label="Dictate"]')).toBeNull();
+  });
+
+  test("starts recognition, inserts a transcript on a word boundary, and stops", async () => {
+    installSpeechRecognition();
+    mount(() => Promise.resolve(true));
+    typeInto(textarea(), "hello");
+    textarea().setSelectionRange(5, 5);
+    await settle();
+
+    const dictate = container?.querySelector<HTMLButtonElement>(
+      '[aria-label="Dictate"]',
+    );
+    if (dictate === null || dictate === undefined) {
+      throw new Error("dictate button not found");
+    }
+
+    act(() => {
+      dictate.click();
+    });
+    await settle();
+
+    expect(recognitions.at(-1)?.started).toBe(true);
+    expect(recognitions.at(-1)?.continuous).toBe(true);
+    expect(recognitions.at(-1)?.interimResults).toBe(true);
+    expect(dictate.getAttribute("aria-label")).toBe("Stop dictating");
+    expect(dictate.getAttribute("aria-pressed")).toBe("true");
+    expect(dictate.getAttribute("data-listening")).toBe("true");
+
+    act(() => {
+      recognitions.at(-1)?.emit([{ isFinal: true, transcript: "world" }]);
+    });
+    await settle();
+
+    expect(textarea().value).toBe("hello world");
+
+    act(() => {
+      dictate.click();
+    });
+    await settle();
+
+    expect(recognitions.at(-1)?.started).toBe(false);
+    const idle = container?.querySelector<HTMLButtonElement>(
+      '[aria-label="Dictate"]',
+    );
+    expect(idle?.getAttribute("aria-pressed")).toBe("false");
+    expect(idle?.getAttribute("data-listening")).toBe("false");
+  });
+});
