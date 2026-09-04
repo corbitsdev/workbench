@@ -960,17 +960,18 @@ function ChatWorkspaceInner({
       switch (eventType) {
         case "chat.message": {
           const parsed = ChatMessageEventData(data);
-          if (!(parsed instanceof type.errors)) {
-            applyStreamMessage(queryClient, tenantId, activeWorkbenchId, {
-              id: parsed.id,
-              createdAt: parsed.createdAt,
-              parts: parsed.parts,
-              sender: parsed.sender,
-              ...(parsed.threadId !== null
-                ? { threadId: parsed.threadId }
-                : {}),
-            });
+          if (parsed instanceof type.errors) {
+            toast(CHAT_STRINGS.streamMessageDropped);
+            refreshFeed();
+            break;
           }
+          applyStreamMessage(queryClient, tenantId, activeWorkbenchId, {
+            id: parsed.id,
+            createdAt: parsed.createdAt,
+            parts: parsed.parts,
+            sender: parsed.sender,
+            ...(parsed.threadId !== null ? { threadId: parsed.threadId } : {}),
+          });
           break;
         }
         case "chat.reaction": {
@@ -1020,6 +1021,12 @@ function ChatWorkspaceInner({
       }
     },
     refreshFeed,
+    {},
+    (eventType) => {
+      if (eventType !== "chat.message") return;
+      toast(CHAT_STRINGS.streamMessageDropped);
+      refreshFeed();
+    },
   );
 
   /** The one door into the workbench settings surface — the gear button and

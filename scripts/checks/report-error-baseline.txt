@@ -132,7 +132,6 @@ packages/chat-ui/src/timeline.tsx	1	toast(CHAT_STRINGS.copyTextError);
 packages/chat-ui/src/tool-activity.ts	1	return output;
 packages/chat-ui/src/use-optimistic-sends.ts	1	if (cause instanceof ChatApiError && cause.status === 403) {
 packages/chat-ui/src/use-thread-navigation.ts	1	toast(CHAT_STRINGS.forkThreadError);
-packages/chat-ui/src/use-workbench-stream.ts	1	onEventRef.current(eventType, message.data);
 packages/chat/src/platform-adapter.ts	1	continue;
 packages/chat/src/platform-adapter.ts	1	wakeLogger.error`drift check for ${binding.roomAddress} (run ${live.run.id}) failed, leaving it as-is: ${
 packages/chat/src/platform-adapter.ts	1	wakeLogger.error`inference-source reconcile for ${binding.roomAddress} (run ${run.id}) failed, leaving it as-is: ${
