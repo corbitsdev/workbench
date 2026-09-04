@@ -19,12 +19,12 @@ vendor/intx/db | sawyer | 2026-10-26 | 1e81c60aa52652c08c57c12e0b78a56cbc17bcdba
 vendor/intx/harness | sawyer | 2026-10-26 | ca4c48e126951568967dfc296b7c4effe61d150d9809a2cd9fb00bc88c6e27b9
 vendor/intx/hub-agent | sawyer | 2026-10-26 | fb5cb1f45199fd2ec41e1db0eeb16b1096addf137b33cce83e0cf5cd2ce2273e
 vendor/intx/hub-api | sawyer | 2026-10-26 | ce91e64049accf7f925d9845a909539bb432887416fdee590f967b58c99eea23
-vendor/intx/hub-sessions | sawyer | 2026-10-26 | 6f0845e5ddb7b62367bb7553c57e0ba5e0ba14e54b3a02150a5fe0aa01938f38
-vendor/intx/inference | sawyer | 2026-10-26 | 0bd31bc7a3553aa8d7741ca00354e94d798ec7505b6f4a2ed8c446e87657f5b9
+vendor/intx/hub-sessions | sawyer | 2026-10-26 | 39cd4d3f0188e8b086f6667949f1ba7f1330510cc56f57cb7e890ffbae1a592a
+vendor/intx/inference | sawyer | 2026-10-26 | e97ec7be40ed0c120d93021b90b8c834fad85c1fcfa7a99f447e5bf7c9f21c52
 vendor/intx/mail-memory | sawyer | 2026-10-26 | fdae7df7c68b447e8800ad8f5b00403f5f95dbbb62a7f9b7157474870508ca47
 vendor/intx/mailbox | sawyer | 2026-10-26 | 6b9ba2978a7c31e408392803f4014dacf53f191e2101aae781bc2c37e9430cb2
 vendor/intx/mime | sawyer | 2026-10-26 | 763898b7960e2ebd76ee3399f01f7973dd001834bb8bacc602d0c6f501e978b8
-vendor/intx/types | sawyer | 2026-10-26 | a159b80f8c6343a10b6d0562fe73137082a0665af70629f7044de187b120decc
+vendor/intx/types | sawyer | 2026-10-26 | 4725b47a3b0dd754294dfe8966703d3ef05d609dba0cad886dc6e8b373adc016
 vendor/intx/workflow | sawyer | 2026-10-26 | 641d9d20d928fe94dfa576aeda5014459d060f6ff218b7cf7bc8b97bbe081145
 vendor/intx/workflow-deploy | sawyer | 2026-10-26 | d8074ac983cf00c7680e00aadce5abf087eddeb17a37e1ac2782cc90729d304c
 vendor/intx/workflow-host | sawyer | 2026-10-26 | 222b3586a6ad4d83d60aab14fdc79c55db4831db9719c316edbe687b693045e3

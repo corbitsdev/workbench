@@ -25,9 +25,6 @@ export type SendFoldedMailParams = {
   attachments?: MessageAttachment[];
   replyTo?: string;
   cryptoProvider: CryptoProvider;
-  /** The MIME `Interchange-Correlation-ID` header — set when this message
-   * answers a specific parked `message_response` gate, absent otherwise. */
-  correlationId?: string;
 };
 
 /**
@@ -53,9 +50,6 @@ async function deliverFoldedMailMIME(
     sessionId: params.sessionId,
     tenantId: params.tenantId,
     cryptoProvider: params.cryptoProvider,
-    ...(params.correlationId !== undefined
-      ? { correlationId: params.correlationId }
-      : {}),
   };
   const withAttachments =
     params.attachments !== undefined

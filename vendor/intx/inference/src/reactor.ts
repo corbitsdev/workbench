@@ -80,8 +80,6 @@ function timeoutMessageFor(kind: SignalKind): string {
   switch (kind) {
     case "approval":
       return "approval timed out";
-    case "message_response":
-      return "question timed out with no answer";
     default:
       return assertNever(kind);
   }
@@ -461,8 +459,7 @@ export function createReactor(config: ReactorConfig): Reactor {
   type ResumeDispatch =
     | { mode: "redispatch"; calls: ToolCall[] }
     | { mode: "gate-cleared" }
-    | { mode: "error_result"; result: ToolResult }
-    | { mode: "answer_result"; result: ToolResult };
+    | { mode: "error_result"; result: ToolResult };
 
   // Decide how a correlated ask-flow pending operation resumes. An operation
   // that carries a `suspendedCall` is an ask-flow suspension: the correlated
@@ -473,9 +470,7 @@ export function createReactor(config: ReactorConfig): Reactor {
   // The outer switch is total: `assertNever(op.kind)` rejects a future
   // SignalKind at compile time. `approval` additionally parses its reply as a
   // structured `ApprovalDecision`, failing loud at that parse boundary rather
-  // than reaching its own nested `assertNever`; `message_response` takes the
-  // reply's body verbatim, since a question's answer is prose, not a decision
-  // to parse.
+  // than reaching its own nested `assertNever`.
   function resumePendingOperation(
     op: PendingOperation,
     message: InboundMessage,
@@ -535,18 +530,6 @@ export function createReactor(config: ReactorConfig): Reactor {
             return assertNever(decision.outcome);
         }
       }
-      case "message_response":
-        // The correlated reply IS the answer: hand its body straight back as
-        // the parked call's result rather than re-running the call, since
-        // there is nothing left to execute once the user has answered.
-        return {
-          mode: "answer_result",
-          result: {
-            callId: suspendedCall.id,
-            content: message.content ?? "",
-            isError: false,
-          },
-        };
       default:
         return assertNever(op.kind);
     }
@@ -615,13 +598,11 @@ export function createReactor(config: ReactorConfig): Reactor {
         enqueue({ type: "resume.execute_tools", calls: dispatch.calls });
         break;
       }
-      case "error_result":
-      case "answer_result": {
-        // Either the approver denied the call or a parked question got its
-        // answer. Clear the gate SILENTLY (like the approved redispatch) so
-        // it cannot also trip onGateCleared and enqueue a second
-        // continuation. The result answers the parked call directly; the
-        // director appends it and re-infers once.
+      case "error_result": {
+        // The approver denied the call. Clear the gate SILENTLY (like the
+        // approved redispatch) so it cannot also trip onGateCleared and
+        // enqueue a second continuation. The result answers the parked call
+        // directly; the director appends it and re-infers once.
         if (gate !== undefined) {
           gates.clearSilently(gate.gateId);
           if (stateManager !== null) {
