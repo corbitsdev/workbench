@@ -15,6 +15,8 @@ import { packToolPackageTarball, type PackedTarball } from "./pack";
 import {
   CORBITS_TOOL_PACKAGE_DIRS,
   CORBITS_TOOLS_REGISTRY,
+  REQUIRED_SEED_TOOL_PACKAGES,
+  tarballCoversPackage,
   tarballsCoverRequiredSeedPackages,
 } from "./registry";
 
@@ -158,9 +160,16 @@ export class TarballVersionCollisionError extends Error {
  */
 export class EmptyRegistryPublishError extends Error {
   readonly success = false as const;
-  constructor() {
+  constructor(detail: {
+    uploaded: readonly string[];
+    missing: readonly string[];
+  }) {
+    const uploadedBit =
+      detail.uploaded.length === 0
+        ? "uploaded none"
+        : `uploaded ${detail.uploaded.join(", ")}`;
     super(
-      `publishCorbitsToolsRegistry: the ${CORBITS_TOOLS_REGISTRY} registry is missing the expected tool-package tarballs (uploaded none)`,
+      `publishCorbitsToolsRegistry: the ${CORBITS_TOOLS_REGISTRY} registry is missing the expected tool-package tarballs (${uploadedBit}; still missing ${detail.missing.join(", ")})`,
     );
     this.name = "EmptyRegistryPublishError";
   }
@@ -316,6 +325,13 @@ export type PublishCorbitsToolsRegistryArgs = {
   pack?: (packageDir: string) => Promise<PackedTarball>;
 };
 
+function missingRequiredSeedPackages(filenames: readonly string[]): string[] {
+  return REQUIRED_SEED_TOOL_PACKAGES.filter(
+    (name) =>
+      !filenames.some((filename) => tarballCoversPackage(filename, name)),
+  );
+}
+
 export type PublishCorbitsToolsRegistryResult = {
   success: boolean;
   summaries: PublishSummary[];
@@ -388,7 +404,10 @@ export async function publishCorbitsToolsRegistry(
   const existingFilenames = [...existingIntegrityByFilename.keys()];
   if (toUpload.length === 0) {
     if (!tarballsCoverRequiredSeedPackages(existingFilenames)) {
-      throw new EmptyRegistryPublishError();
+      throw new EmptyRegistryPublishError({
+        uploaded: [],
+        missing: missingRequiredSeedPackages(existingFilenames),
+      });
     }
     return { success: true, summaries: [] };
   }
@@ -418,7 +437,10 @@ export async function publishCorbitsToolsRegistry(
     ...summaries.map((summary) => summary.filename),
   ];
   if (!tarballsCoverRequiredSeedPackages(publishedFilenames)) {
-    throw new EmptyRegistryPublishError();
+    throw new EmptyRegistryPublishError({
+      uploaded: summaries.map((summary) => summary.filename),
+      missing: missingRequiredSeedPackages(publishedFilenames),
+    });
   }
   return { success: true, summaries };
 }

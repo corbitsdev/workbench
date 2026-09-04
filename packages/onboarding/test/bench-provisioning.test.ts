@@ -245,6 +245,47 @@ describe("createBenchProvisioner", () => {
     expect(deploys).toBe(1);
   });
 
+  test("pending-seed drain publishes corbits-tools before the fully-seeded check", async () => {
+    const order: string[] = [];
+    const { provisioner, store, calls } = harness({
+      publishToolRegistryFn: async () => {
+        order.push("publish");
+      },
+      isFullySeededFn: async () => {
+        order.push("seeded-check");
+        return true;
+      },
+    });
+    await store.put(SEED);
+
+    const report = await provisioner.drainOnce();
+
+    expect(order).toEqual(["publish", "seeded-check"]);
+    expect(calls.ensureSeeded).toBe(0);
+    expect(report).toMatchObject({ converged: 1 });
+    expect(
+      await store.read({ userId: "user_1", tenantId: "ten_1" }),
+    ).toBeUndefined();
+  });
+
+  test("a publish throw holds the pending row and does not call ensureSeeded", async () => {
+    const { provisioner, store, calls } = harness({
+      publishToolRegistryFn: async () => {
+        throw new Error("pack exploded");
+      },
+    });
+    await store.put(SEED);
+
+    const report = await provisioner.drainOnce();
+
+    expect(calls.ensureSeeded).toBe(0);
+    expect(calls.isFullySeeded).toBe(0);
+    expect(report).toMatchObject({ failed: 1 });
+    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toEqual(
+      SEED,
+    );
+  });
+
   test("a bench whose user has no mintable session is left alone, not dropped", async () => {
     const { provisioner, store, calls } = harness({
       sessionFor: async () => undefined,
