@@ -18,7 +18,6 @@ import {
 } from "@corbits/react-ui";
 import { Select } from "@corbits/react-ui/ui/select";
 import { Copy, SignOut } from "@corbits/icons";
-import type { CSSProperties } from "react";
 import { useCallback, useEffect, useState } from "react";
 
 import type { APIQuery } from "@corbits/api-query";
@@ -140,14 +139,12 @@ export function AccountSectionView({
               height={40}
             />
           ) : (
-            <span style={fill.style as CSSProperties}>
-              <Avatar
-                initials={initialsOf(name)}
-                label={name}
-                size="lg"
-                className="!bg-[var(--avatar-identity-bg)] !text-[var(--avatar-identity-fg)]"
-              />
-            </span>
+            <Avatar
+              initials={initialsOf(name)}
+              label={name}
+              size="lg"
+              className={fill.className}
+            />
           )}
           <div className="settings-account-identity-text">
             <span className="settings-account-name">{name}</span>

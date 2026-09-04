@@ -29,7 +29,7 @@ import {
   displayNameForAddress,
   type AgentDisplayNames,
 } from "./agent-display-names";
-import { CorbitAvatar, generatedAvatarStyle } from "./avatar";
+import { CorbitAvatar, avatarClassForPrincipal } from "./avatar";
 import { groupTimelineParts } from "./tool-activity";
 import { ToolActivityGroup } from "./tool-activity-view";
 import {
@@ -45,7 +45,6 @@ import {
   Smiley,
 } from "@corbits/icons";
 import { memo } from "react";
-import type { CSSProperties } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
@@ -284,9 +283,8 @@ type SenderDisplay = {
   readonly handle?: string;
   readonly isAgent: boolean;
   readonly initials: string;
-  /** The wire address behind this sender — never shown, only hashed
-   * (`generatedAvatarStyle`) into a stable per-person fallback color for
-   * a human's avatar. */
+  /** The wire address behind this sender — never shown, only used to pick
+   * a stable per-person fallback color for a human's avatar. */
   readonly id: string;
 };
 
@@ -374,11 +372,8 @@ function SenderAvatar({
   tenantMonogram?: string;
   tenantName?: string;
 }) {
-  const identityStyle = isAgent
-    ? undefined
-    : (generatedAvatarStyle(id) as CSSProperties);
   return (
-    <span className="sender-avatar-wrap" title={label} style={identityStyle}>
+    <span className="sender-avatar-wrap" title={label}>
       {isAgent ? (
         <CorbitAvatar ariaLabel={label} size="md" className="sender-avatar" />
       ) : (
@@ -387,7 +382,7 @@ function SenderAvatar({
           label={label}
           tone="neutral"
           size="md"
-          className="sender-avatar !bg-[var(--avatar-identity-bg)] !text-[var(--avatar-identity-fg)]"
+          className={`sender-avatar ${avatarClassForPrincipal(id)}`}
         />
       )}
       {tenantMonogram !== undefined ? (
@@ -2057,8 +2052,7 @@ function ThreadAffordance({
             ) : (
               <span
                 key={`${chip.address}-${index}`}
-                className="thread-avatar-chip !bg-[var(--avatar-identity-bg)] !text-[var(--avatar-identity-fg)]"
-                style={generatedAvatarStyle(chip.address) as CSSProperties}
+                className={`thread-avatar-chip ${avatarClassForPrincipal(chip.address)}`}
               >
                 {chip.initials}
               </span>

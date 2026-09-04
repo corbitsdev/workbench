@@ -11,84 +11,11 @@ export const AVATAR_COLORS = [
 export type AvatarColor = (typeof AVATAR_COLORS)[number];
 
 export const avatarColorClass: Record<AvatarColor, string> = {
-  "#C5D2DE": "bg-[#C5D2DE]",
-  "#C1D1BE": "bg-[#C1D1BE]",
-  "#F7EAD5": "bg-[#F7EAD5]",
-  "#F2B277": "bg-[#F2B277]",
+  "#C5D2DE": "bg-[#C5D2DE] text-black",
+  "#C1D1BE": "bg-[#C1D1BE] text-black",
+  "#F7EAD5": "bg-[#F7EAD5] text-black",
+  "#F2B277": "bg-[#F2B277] text-black",
 };
-
-/**
- * A person's generated fallback fill. The custom properties can be applied
- * on an ancestor and consumed with Tailwind's arbitrary-value utilities.
- */
-export type GeneratedAvatarStyle = {
-  readonly "--avatar-identity-bg": string;
-  readonly "--avatar-identity-fg": string;
-};
-
-const HEX_PATTERN = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i;
-const HSL_PATTERN =
-  /^hsl\((\d+(?:\.\d+)?) (\d+(?:\.\d+)?)% (\d+(?:\.\d+)?)%\)$/;
-
-function hslToRgb(
-  h: number,
-  s: number,
-  l: number,
-): readonly [number, number, number] {
-  const sat = s / 100;
-  const light = l / 100;
-  const k = (n: number) => (n + h / 30) % 12;
-  const a = sat * Math.min(light, 1 - light);
-  const f = (n: number) =>
-    light - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
-  return [
-    Math.round(f(0) * 255),
-    Math.round(f(8) * 255),
-    Math.round(f(4) * 255),
-  ];
-}
-
-function parseColorToRgb(
-  color: string,
-): readonly [number, number, number] | null {
-  const hexMatch = HEX_PATTERN.exec(color);
-  if (hexMatch !== null) {
-    const r = hexMatch[1];
-    const g = hexMatch[2];
-    const b = hexMatch[3];
-    if (r !== undefined && g !== undefined && b !== undefined) {
-      return [
-        Number.parseInt(r, 16),
-        Number.parseInt(g, 16),
-        Number.parseInt(b, 16),
-      ];
-    }
-  }
-  const hslMatch = HSL_PATTERN.exec(color);
-  if (hslMatch !== null) {
-    const [, h, s, l] = hslMatch;
-    return hslToRgb(Number(h), Number(s), Number(l));
-  }
-  return null;
-}
-
-function relativeLuminance(r: number, g: number, b: number): number {
-  const channel = (value: number) => {
-    const normalized = value / 255;
-    return normalized <= 0.03928
-      ? normalized / 12.92
-      : ((normalized + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-}
-
-/** Returns black or white text for a parsed avatar color. */
-export function readableTextOn(background: string): string {
-  const rgb = parseColorToRgb(background);
-  if (rgb === null) return "#000000";
-  const [r, g, b] = rgb;
-  return relativeLuminance(r, g, b) > 0.4 ? "#000000" : "#ffffff";
-}
 
 export function hashPrincipal(principalId: string): number {
   let hash = 0;
@@ -108,27 +35,14 @@ export function avatarColorForPrincipal(principalId: string): AvatarColor {
   return color;
 }
 
-/** Builds deterministic human avatar colors from a principal ID. */
-export function generatedAvatarStyle(
-  principalId: string,
-): GeneratedAvatarStyle {
-  const background = avatarColorForPrincipal(principalId);
-  return {
-    "--avatar-identity-bg": background,
-    "--avatar-identity-fg": readableTextOn(background),
-  };
+export function avatarClassForPrincipal(principalId: string): string {
+  return avatarColorClass[avatarColorForPrincipal(principalId)];
 }
 
 export type AvatarFill =
   | { readonly kind: "image"; readonly url: string }
-  | { readonly kind: "generated"; readonly style: GeneratedAvatarStyle };
+  | { readonly kind: "generated"; readonly className: string };
 
-/**
- * Which fallback an avatar should render: an explicit image always wins
- * over the generated fill, when one is on hand (e.g. `UserProfile.image`
- * from better-auth) — the generated look is a fallback, not a
- * replacement for a real picture.
- */
 export function resolveAvatarFill(
   principalId: string,
   explicitImageUrl?: string | null,
@@ -140,7 +54,7 @@ export function resolveAvatarFill(
   ) {
     return { kind: "image", url: explicitImageUrl };
   }
-  return { kind: "generated", style: generatedAvatarStyle(principalId) };
+  return { kind: "generated", className: avatarClassForPrincipal(principalId) };
 }
 
 export const CORBIT_VISOR_COLOR = "#22252A";

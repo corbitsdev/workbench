@@ -5,6 +5,7 @@ import {
   buildMemberAvatarStack,
 } from "./chat-workspace";
 import type { ParticipantRecord } from "./api";
+import { avatarClassForPrincipal } from "./avatar";
 import { CHAT_STRINGS } from "./strings";
 
 describe("buildMemberAvatarStack", () => {
@@ -48,7 +49,7 @@ describe("buildMemberAvatarStack", () => {
     const human = stack[1];
     expect(human?.key).toBe("prn_dana");
     expect(human?.initials).toBe("D");
-    expect(human?.color).toBeDefined();
+    expect(human?.avatarClassName).toBe(avatarClassForPrincipal("prn_dana"));
   });
 
   test("prefers the signed-in display name over a raw participant handle", () => {

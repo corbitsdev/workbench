@@ -5,7 +5,7 @@ import {
   CorbitAvatar,
   AVATAR_COLORS,
   CORBIT_DEFAULT_COLOR,
-  generatedAvatarStyle,
+  avatarClassForPrincipal,
   avatarColorForPrincipal,
   resolveAvatarFill,
 } from "../src";
@@ -29,9 +29,7 @@ describe("avatar composition and identity resolution", () => {
     expect(AVATAR_COLORS).toContain(aliceColor);
     expect(AVATAR_COLORS).toContain(bobColor);
 
-    const aliceStyle = generatedAvatarStyle("usr_alice");
-    expect(aliceStyle["--avatar-identity-bg"]).toBe(aliceColor);
-    expect(aliceStyle["--avatar-identity-fg"]).toBe("#000000");
+    expect(avatarClassForPrincipal("usr_alice")).toContain(aliceColor);
 
     expect(avatarColorForPrincipal("usr_alice")).toBe(aliceColor);
   });
@@ -49,11 +47,7 @@ describe("avatar composition and identity resolution", () => {
     const withoutImage = resolveAvatarFill("usr_alice", null);
     expect(withoutImage.kind).toBe("generated");
     if (withoutImage.kind === "generated") {
-      expect(AVATAR_COLORS).toContain(
-        withoutImage.style[
-          "--avatar-identity-bg"
-        ] as (typeof AVATAR_COLORS)[number],
-      );
+      expect(withoutImage.className).toBe(avatarClassForPrincipal("usr_alice"));
     }
   });
 
@@ -71,9 +65,11 @@ describe("avatar composition and identity resolution", () => {
           <CorbitAvatar ariaLabel={p.name} size="sm" />,
         );
       }
-      const style = generatedAvatarStyle(p.id);
       return renderToStaticMarkup(
-        <span style={style as React.CSSProperties} data-testid="human-avatar">
+        <span
+          className={avatarClassForPrincipal(p.id)}
+          data-testid="human-avatar"
+        >
           {p.name.slice(0, 1)}
         </span>,
       );

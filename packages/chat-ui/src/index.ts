@@ -27,13 +27,11 @@ export {
   AVATAR_COLORS,
   avatarColorClass,
   avatarColorForPrincipal,
-  generatedAvatarStyle,
-  readableTextOn,
+  avatarClassForPrincipal,
   resolveAvatarFill,
 } from "./avatar";
 export type {
   AvatarFill,
-  GeneratedAvatarStyle,
   AvatarColor,
   CorbitAvatarProps,
   CorbitAvatarSize,

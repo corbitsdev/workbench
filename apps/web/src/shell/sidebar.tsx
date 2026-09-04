@@ -46,10 +46,9 @@ import {
   SlidersHorizontal,
   SquaresFour,
 } from "@corbits/icons";
-import type { CSSProperties } from "react";
 import { useMemo } from "react";
 
-import { CHAT_STRINGS, generatedAvatarStyle } from "@corbits/chat-ui";
+import { CHAT_STRINGS, avatarClassForPrincipal } from "@corbits/chat-ui";
 import {
   createInsightsWindow,
   usageChromeLabel,
@@ -274,14 +273,13 @@ export function Sidebar({
                 aria-label={`${user.name} · Account menu`}
                 title={user.name}
                 data-ctx-account=""
-                style={generatedAvatarStyle(user.id) as CSSProperties}
               >
                 <Avatar
                   initials={initialsOf(user.name)}
                   label={user.name}
                   size="sm"
                   tone="neutral"
-                  className="!bg-[var(--avatar-identity-bg)] !text-[var(--avatar-identity-fg)]"
+                  className={avatarClassForPrincipal(user.id)}
                 />
                 <span className="shell-sidebar-account-name">{user.name}</span>
               </button>

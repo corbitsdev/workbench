@@ -116,7 +116,7 @@ import {
   applyStreamReaction,
   useWorkbenchFeed,
 } from "./use-workbench-feed";
-import { CorbitAvatar, generatedAvatarStyle } from "./avatar";
+import { CorbitAvatar, avatarClassForPrincipal } from "./avatar";
 import { useWorkbenchPresenceRoster } from "./workbench-presence";
 import { type } from "arktype";
 import {
@@ -157,16 +157,13 @@ export type TenantResolution =
  * One live presence entry for the workbench's who's-here stack (CL-6328) —
  * derived from this workbench's own `/stream` connection
  * (`useWorkbenchPresenceRoster`), never a second connection or an HTTP
- * heartbeat poll. `displayName`/`color`/`textColor` are resolved
- * client-side against the workbench's own participants and
- * `generatedAvatarStyle`'s deterministic per-principal fill, since the
- * roster itself carries only ids.
+ * heartbeat poll. The roster carries only ids, so display names and avatar
+ * classes resolve client-side against the workbench's participants.
  */
 export interface PresenceMember {
   readonly principalId: string;
   readonly displayName: string;
-  readonly color: string;
-  readonly textColor: string;
+  readonly avatarClassName: string;
 }
 
 /** One entry in the header's static member stack — an agent or a roster
@@ -177,8 +174,7 @@ export interface TeamAvatarEntry {
   readonly initials: string;
   readonly label: string;
   readonly tone: "agent" | "neutral";
-  readonly color?: string;
-  readonly textColor?: string;
+  readonly avatarClassName?: string;
 }
 
 /** How many avatars the header shows before collapsing the rest into a
@@ -213,8 +209,8 @@ const WORKBENCHES_LIST_CHROME: ChatHeaderChrome = {
  * signed-in human as a participant before any `chat.presence.snapshot`
  * arrives. Live who's-here is a separate round stack, not mixed in here.
  *
- * Each agent gets its own `generatedAvatarStyle` fill keyed by address
- * (CL-6594). Human labels prefer `currentUser.name` when the roster entry
+ * Each person gets a stable generated color keyed by address. Human labels
+ * prefer `currentUser.name` when the roster entry
  * is the signed-in reader — never a raw handle when a display name exists.
  */
 export function buildMemberAvatarStack(
@@ -239,7 +235,6 @@ export function buildMemberAvatarStack(
   const humans = participants
     .filter((participant) => !isAgentAddress(participant.address))
     .map((participant) => {
-      const style = generatedAvatarStyle(participant.address);
       const label = typingLabel(
         localPartOf(participant.address),
         participants,
@@ -250,8 +245,7 @@ export function buildMemberAvatarStack(
         initials: label.slice(0, 1).toUpperCase(),
         label,
         tone: "neutral" as const,
-        color: style["--avatar-identity-bg"],
-        textColor: style["--avatar-identity-fg"],
+        avatarClassName: avatarClassForPrincipal(participant.address),
       };
     });
 
@@ -1338,7 +1332,6 @@ function ChatWorkspaceInner({
   const presenceMembers: readonly PresenceMember[] = useMemo(
     () =>
       presenceRoster.map((member) => {
-        const style = generatedAvatarStyle(member.principalId);
         return {
           principalId: member.principalId,
           displayName: typingLabel(
@@ -1346,8 +1339,7 @@ function ChatWorkspaceInner({
             activeWorkbench?.participants ?? [],
             currentUser,
           ),
-          color: style["--avatar-identity-bg"],
-          textColor: style["--avatar-identity-fg"],
+          avatarClassName: avatarClassForPrincipal(member.principalId),
         };
       }),
     [presenceRoster, activeWorkbench?.participants, currentUser],
@@ -1447,11 +1439,7 @@ function ChatWorkspaceInner({
             ) : (
               <span
                 key={entry.key}
-                className="member-avatar"
-                style={{
-                  backgroundColor: entry.color,
-                  color: entry.textColor,
-                }}
+                className={`member-avatar ${entry.avatarClassName ?? ""}`}
                 title={entry.label}
               >
                 {entry.initials}
@@ -1476,11 +1464,7 @@ function ChatWorkspaceInner({
           {visiblePresenceStack.map((member) => (
             <span
               key={member.principalId}
-              className="chat-presence-avatar"
-              style={{
-                backgroundColor: member.color,
-                color: member.textColor,
-              }}
+              className={`chat-presence-avatar ${member.avatarClassName}`}
               title={member.displayName}
             >
               {member.displayName.slice(0, 1).toUpperCase()}

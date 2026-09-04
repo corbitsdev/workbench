@@ -25,9 +25,8 @@
 import { Avatar, Badge, Button } from "@corbits/react-ui";
 import type { BadgeTone } from "@corbits/react-ui";
 import { Fragment } from "react";
-import type { CSSProperties } from "react";
 
-import { CorbitAvatar, generatedAvatarStyle } from "./avatar";
+import { CorbitAvatar, avatarClassForPrincipal } from "./avatar";
 import { Markdown } from "./markdown";
 import { CHAT_STRINGS } from "./strings";
 
@@ -229,19 +228,14 @@ function ReplyRow({ reply }: { readonly reply: PrThreadReply }) {
   // shows, so it doubles as the hash seed for a deterministic per-person
   // fill (same reviewer, same color, on every reply and every reload).
   return (
-    <div
-      className="chat-pr-reply"
-      {...(isHuman
-        ? { style: generatedAvatarStyle(reply.sender) as CSSProperties }
-        : {})}
-    >
+    <div className="chat-pr-reply">
       {isHuman ? (
         <Avatar
           initials={initialsFromName(reply.sender)}
           label={reply.sender}
           tone="neutral"
           size="lg"
-          className="!bg-[var(--avatar-identity-bg)] !text-[var(--avatar-identity-fg)]"
+          className={avatarClassForPrincipal(reply.sender)}
         />
       ) : (
         <CorbitAvatar

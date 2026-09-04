@@ -24,9 +24,9 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ChangeEvent, CSSProperties, KeyboardEvent } from "react";
+import type { ChangeEvent, KeyboardEvent } from "react";
 
-import { CorbitAvatar, generatedAvatarStyle } from "./avatar";
+import { CorbitAvatar, avatarClassForPrincipal } from "./avatar";
 import type { Part, ParticipantRecord } from "./api";
 import type { AgentDisplayNames } from "./agent-display-names";
 import {
@@ -1045,13 +1045,6 @@ export const Composer = forwardRef<
                         event.preventDefault();
                         pickMention(option);
                       }}
-                      style={
-                        isAgent
-                          ? undefined
-                          : (generatedAvatarStyle(
-                              option.candidate.id,
-                            ) as CSSProperties)
-                      }
                     >
                       {isAgent ? (
                         <CorbitAvatar
@@ -1065,7 +1058,7 @@ export const Composer = forwardRef<
                           label={option.candidate.label}
                           tone="neutral"
                           size="sm"
-                          className="mention-avatar !bg-[var(--avatar-identity-bg)] !text-[var(--avatar-identity-fg)]"
+                          className={`mention-avatar ${avatarClassForPrincipal(option.candidate.id)}`}
                         />
                       )}
                       <span className="chat-mention-meta">

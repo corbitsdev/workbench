@@ -7,9 +7,8 @@ import {
   CORBIT_GLINT_COLOR,
   CORBIT_VISOR_COLOR,
   CorbitAvatar,
+  avatarClassForPrincipal,
   avatarColorForPrincipal,
-  generatedAvatarStyle,
-  readableTextOn,
   resolveAvatarFill,
 } from "./avatar";
 
@@ -44,49 +43,27 @@ describe("avatarColorForPrincipal", () => {
   });
 });
 
-describe("generatedAvatarStyle", () => {
+describe("avatarClassForPrincipal", () => {
   test("is deterministic for the same principal", () => {
-    expect(generatedAvatarStyle("prn_alice")).toEqual(
-      generatedAvatarStyle("prn_alice"),
+    expect(avatarClassForPrincipal("prn_alice")).toBe(
+      avatarClassForPrincipal("prn_alice"),
     );
-  });
-
-  test("uses pastel palette background and legible foreground", () => {
-    const style = generatedAvatarStyle("prn_alice");
-    expect(AVATAR_COLORS).toContain(
-      style["--avatar-identity-bg"] as (typeof AVATAR_COLORS)[number],
-    );
-    expect(["#000000", "#ffffff"]).toContain(style["--avatar-identity-fg"]);
   });
 
   test("never displays the seed itself", () => {
-    const style = generatedAvatarStyle("prn_super_secret_internal_id");
-    const values = Object.values(style).join(" ");
-    expect(values).not.toContain("prn_super_secret_internal_id");
+    expect(
+      avatarClassForPrincipal("prn_super_secret_internal_id"),
+    ).not.toContain("prn_super_secret_internal_id");
   });
-});
 
-describe("readableTextOn", () => {
-  test("picks a legible label color across the pastel palette", () => {
-    for (const color of AVATAR_COLORS) {
-      expect(readableTextOn(color)).toBe("#000000");
+  test("uses only a background and legible text utility", () => {
+    for (const principalId of ["prn_alice", "prn_bob", "prn_carla"]) {
+      const className = avatarClassForPrincipal(principalId);
+      expect(className).toStartWith("bg-[#");
+      expect(className).toEndWith("] text-black");
+      expect(className).not.toContain("!");
+      expect(className).not.toContain("var(");
     }
-  });
-
-  test("supports both hex and hsl colors", () => {
-    expect(readableTextOn("#FFFFFF")).toBe("#000000");
-    expect(readableTextOn("#000000")).toBe("#ffffff");
-    expect(readableTextOn("hsl(0 0% 100%)")).toBe("#000000");
-    expect(readableTextOn("hsl(0 0% 0%)")).toBe("#ffffff");
-  });
-
-  test("is deterministic for the same background", () => {
-    const bg = "#C5D2DE";
-    expect(readableTextOn(bg)).toBe(readableTextOn(bg));
-  });
-
-  test("falls back to a safe default for an unrecognized format", () => {
-    expect(readableTextOn("not-a-color")).toBe("#000000");
   });
 });
 
@@ -95,9 +72,7 @@ describe("resolveAvatarFill", () => {
     const fill = resolveAvatarFill("prn_alice");
     expect(fill.kind).toBe("generated");
     if (fill.kind === "generated") {
-      expect(AVATAR_COLORS).toContain(
-        fill.style["--avatar-identity-bg"] as (typeof AVATAR_COLORS)[number],
-      );
+      expect(fill.className).toBe(avatarClassForPrincipal("prn_alice"));
     }
   });
 
