@@ -17,7 +17,6 @@ describe("buildMemberAvatarStack", () => {
     const stack = buildMemberAvatarStack(participants);
 
     expect(stack).toHaveLength(2);
-    expect(stack.map((entry) => entry.initials)).toEqual(["M", "S"]);
     expect(stack.map((entry) => entry.label)).toEqual(["Myra", "Scout"]);
     expect(stack.every((entry) => entry.tone === "agent")).toBe(true);
   });
@@ -77,7 +76,6 @@ describe("buildMemberAvatarStack", () => {
     );
 
     expect(stack.map((entry) => entry.label)).toEqual(["Myra the Helper"]);
-    expect(stack.map((entry) => entry.initials)).toEqual(["M"]);
   });
 });
 

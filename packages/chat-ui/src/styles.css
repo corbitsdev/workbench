@@ -936,19 +936,6 @@
   border-radius: 50%;
 }
 
-/* A human's generated fallback fill (`avatar-identity.ts`). react-ui's
-   `Avatar` takes no `style` prop — only `className` — so the two custom
-   properties this class reads are set on an ancestor by the caller and
-   inherit down through the DOM to whichever element carries this class.
-   Plain, unlayered CSS at equal specificity to react-ui's own
-   `bg-muted`/`text-muted-foreground` tone classes, positioned after them
-   in the cascade (this stylesheet imports after react-ui's), so it wins
-   without needing `!important`. */
-.avatar-identity-generated {
-  background-color: var(--avatar-identity-bg);
-  color: var(--avatar-identity-fg);
-}
-
 /* A SenderAvatar rendered without the profile-button wrapper (the
    streaming bubble) still occupies the same avatar column, so text
    never shifts when the streamed reply finalizes into a persisted

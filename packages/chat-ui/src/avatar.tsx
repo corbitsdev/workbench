@@ -1,38 +1,30 @@
-/**
- * Approved Corbits pastel palette for avatars:
- * 1. Summit Blue: #C5D2DE
- * 2. Ridge Green: #C1D1BE
- * 3. Canvas Cream: #F7EAD5
- * 4. Breakthrough Orange: #F2B277
- */
-export const PASTEL_PALETTE = [
-  "#C5D2DE", // Summit Blue
-  "#C1D1BE", // Ridge Green
-  "#F7EAD5", // Canvas Cream
-  "#F2B277", // Breakthrough Orange
+import type { CSSProperties } from "react";
+
+export const CORBIT_DEFAULT_COLOR = "#C5D2DE";
+export const AVATAR_COLORS = [
+  CORBIT_DEFAULT_COLOR,
+  "#C1D1BE",
+  "#F7EAD5",
+  "#F2B277",
 ] as const;
 
-export type PastelColor = (typeof PASTEL_PALETTE)[number];
+export type AvatarColor = (typeof AVATAR_COLORS)[number];
+
+export const avatarColorClass: Record<AvatarColor, string> = {
+  "#C5D2DE": "bg-[#C5D2DE]",
+  "#C1D1BE": "bg-[#C1D1BE]",
+  "#F7EAD5": "bg-[#F7EAD5]",
+  "#F2B277": "bg-[#F2B277]",
+};
 
 /**
- * A person's generated fallback fill for react-ui's `Avatar`, which has no
- * `style` prop — only `className` — because its own tone system is a
- * closed enum reserved for agent identity (`AvatarTone`). These two CSS
- * custom properties are meant to be set on an ancestor element (they
- * inherit down the DOM to the `Avatar`'s own root span, which reads them
- * back through the `avatar-identity-generated` class in `app.css`) rather
- * than passed as a prop react-ui doesn't accept.
+ * A person's generated fallback fill. The custom properties can be applied
+ * on an ancestor and consumed with Tailwind's arbitrary-value utilities.
  */
 export type GeneratedAvatarStyle = {
   readonly "--avatar-identity-bg": string;
   readonly "--avatar-identity-fg": string;
 };
-
-/** The className that reads `GeneratedAvatarStyle`'s custom properties
- * back into an actual background/text pair. Apply to the `Avatar` itself
- * (or the bespoke `.chat-presence-avatar` chip); the style values belong
- * on an ancestor. */
-export const AVATAR_IDENTITY_CLASS = "avatar-identity-generated";
 
 const HEX_PATTERN = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i;
 const HSL_PATTERN =
@@ -90,11 +82,7 @@ function relativeLuminance(r: number, g: number, b: number): number {
   return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
 }
 
-/**
- * The legible initials color (pure black or pure white — never a
- * mid-tone) for a background, chosen by WCAG relative luminance so a
- * generated avatar stays readable.
- */
+/** Returns black or white text for a parsed avatar color. */
 export function readableTextOn(background: string): string {
   const rgb = parseColorToRgb(background);
   if (rgb === null) return "#000000";
@@ -102,9 +90,6 @@ export function readableTextOn(background: string): string {
   return relativeLuminance(r, g, b) > 0.4 ? "#000000" : "#ffffff";
 }
 
-/**
- * Deterministic hash of a principal ID string.
- */
 export function hashPrincipal(principalId: string): number {
   let hash = 0;
   for (let index = 0; index < principalId.length; index += 1) {
@@ -113,27 +98,21 @@ export function hashPrincipal(principalId: string): number {
   return hash;
 }
 
-/**
- * Stable, per-person light pastel background fill from the approved
- * Corbits palette. Never swings arbitrary saturated hues.
- */
-export function pastelColorForPrincipal(principalId: string): PastelColor {
+export function avatarColorForPrincipal(principalId: string): AvatarColor {
   const hash = hashPrincipal(principalId);
-  const index = hash % PASTEL_PALETTE.length;
-  return PASTEL_PALETTE[index] ?? PASTEL_PALETTE[0];
+  const index = hash % AVATAR_COLORS.length;
+  const color = AVATAR_COLORS[index];
+  if (color === undefined) {
+    throw new Error("Avatar color palette is empty");
+  }
+  return color;
 }
 
-/**
- * A stable, per-principal fill for a human's fallback avatar.
- * Uses a deterministic selection from the Workbench light-pastel palette
- * paired with a computed readable text color.
- * The same `principalId` always resolves to the same pair, in every
- * surface, for every viewer.
- */
+/** Builds deterministic human avatar colors from a principal ID. */
 export function generatedAvatarStyle(
   principalId: string,
 ): GeneratedAvatarStyle {
-  const background = pastelColorForPrincipal(principalId);
+  const background = avatarColorForPrincipal(principalId);
   return {
     "--avatar-identity-bg": background,
     "--avatar-identity-fg": readableTextOn(background),
@@ -162,4 +141,69 @@ export function resolveAvatarFill(
     return { kind: "image", url: explicitImageUrl };
   }
   return { kind: "generated", style: generatedAvatarStyle(principalId) };
+}
+
+export const CORBIT_VISOR_COLOR = "#22252A";
+export const CORBIT_GLINT_COLOR = "#F7EAD5";
+
+export type CorbitAvatarSize = "xs" | "sm" | "md" | "lg" | "xl" | number;
+
+export interface CorbitAvatarProps {
+  readonly ariaLabel?: string;
+  readonly size?: CorbitAvatarSize;
+  readonly color?: AvatarColor;
+  readonly className?: string;
+  readonly style?: CSSProperties;
+}
+
+const CORBIT_SIZE_CLASS = {
+  xs: "size-4",
+  sm: "size-6",
+  md: "size-8",
+  lg: "size-10",
+  xl: "size-20",
+} as const;
+
+export function CorbitAvatar({
+  ariaLabel = "Agent",
+  size = "md",
+  color = CORBIT_DEFAULT_COLOR,
+  className,
+  style,
+}: CorbitAvatarProps) {
+  const sizeClass =
+    typeof size === "number" ? undefined : CORBIT_SIZE_CLASS[size];
+  const sizeStyle: CSSProperties =
+    typeof size === "number" ? { width: `${size}px`, height: `${size}px` } : {};
+
+  return (
+    <span
+      role="img"
+      aria-label={ariaLabel}
+      data-corbit="true"
+      className={[
+        "relative inline-flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full",
+        sizeClass,
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      style={{ ...sizeStyle, ...style }}
+    >
+      <svg
+        viewBox="0 0 100 100"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className="block size-full"
+        aria-hidden="true"
+      >
+        <circle cx="50" cy="50" r="50" fill={color} />
+        <path
+          d="M 11.47 59.04 C 16.17 47.15, 33.73 66.85, 45.03 65.78 C 57.11 71.28, 75.14 64.43, 83.53 71.00 C 78.24 85.08, 58.92 92.65, 44.56 89.83 C 28.55 87.40, 15.10 75.30, 11.47 59.49 Z"
+          fill={CORBIT_VISOR_COLOR}
+        />
+        <circle cx="70.63" cy="76.00" r="4.43" fill={CORBIT_GLINT_COLOR} />
+      </svg>
+    </span>
+  );
 }

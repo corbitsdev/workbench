@@ -27,8 +27,7 @@ import type { BadgeTone } from "@corbits/react-ui";
 import { Fragment } from "react";
 import type { CSSProperties } from "react";
 
-import { AVATAR_IDENTITY_CLASS, generatedAvatarStyle } from "./avatar-identity";
-import { CorbitAvatar } from "./corbit-avatar";
+import { CorbitAvatar, generatedAvatarStyle } from "./avatar";
 import { Markdown } from "./markdown";
 import { CHAT_STRINGS } from "./strings";
 
@@ -242,11 +241,11 @@ function ReplyRow({ reply }: { readonly reply: PrThreadReply }) {
           label={reply.sender}
           tone="neutral"
           size="lg"
-          className={AVATAR_IDENTITY_CLASS}
+          className="!bg-[var(--avatar-identity-bg)] !text-[var(--avatar-identity-fg)]"
         />
       ) : (
         <CorbitAvatar
-          label={reply.sender}
+          ariaLabel={reply.sender}
           size="lg"
           className="chat-sender-avatar"
         />
@@ -328,7 +327,11 @@ function ThreadFooter({ footer }: { readonly footer: PrThreadFooter }) {
     <footer className="chat-pr-foot">
       <span className="chat-pr-wait-avatars" aria-hidden="true">
         {footer.nextReviewers.map((reviewer) => (
-          <CorbitAvatar key={reviewer.label} label={reviewer.label} size="sm" />
+          <CorbitAvatar
+            key={reviewer.label}
+            ariaLabel={reviewer.label}
+            size="sm"
+          />
         ))}
       </span>
       <span className="chat-pr-foot-text">

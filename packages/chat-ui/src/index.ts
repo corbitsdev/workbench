@@ -21,25 +21,23 @@ export { WorkbenchLoadingState } from "./loading-state";
 
 export {
   CorbitAvatar,
-  CORBIT_DEFAULT_BACKGROUND,
+  CORBIT_DEFAULT_COLOR,
   CORBIT_VISOR_COLOR,
   CORBIT_GLINT_COLOR,
-} from "./corbit-avatar";
-export type { CorbitAvatarProps, CorbitAvatarSize } from "./corbit-avatar";
-
-export {
-  AVATAR_IDENTITY_CLASS,
-  PASTEL_PALETTE,
+  AVATAR_COLORS,
+  avatarColorClass,
+  avatarColorForPrincipal,
   generatedAvatarStyle,
-  pastelColorForPrincipal,
   readableTextOn,
   resolveAvatarFill,
-} from "./avatar-identity";
+} from "./avatar";
 export type {
   AvatarFill,
   GeneratedAvatarStyle,
-  PastelColor,
-} from "./avatar-identity";
+  AvatarColor,
+  CorbitAvatarProps,
+  CorbitAvatarSize,
+} from "./avatar";
 
 export { PinnedStrip } from "./pinned-strip";
 export type { PinsStatus } from "./use-workbench-feed";

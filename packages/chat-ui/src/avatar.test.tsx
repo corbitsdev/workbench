@@ -1,17 +1,22 @@
 import { describe, expect, test } from "bun:test";
+import { renderToStaticMarkup } from "react-dom/server";
 
 import {
+  AVATAR_COLORS,
+  CORBIT_DEFAULT_COLOR,
+  CORBIT_GLINT_COLOR,
+  CORBIT_VISOR_COLOR,
+  CorbitAvatar,
+  avatarColorForPrincipal,
   generatedAvatarStyle,
-  pastelColorForPrincipal,
   readableTextOn,
   resolveAvatarFill,
-  PASTEL_PALETTE,
-} from "./avatar-identity";
+} from "./avatar";
 
-describe("pastelColorForPrincipal", () => {
+describe("avatarColorForPrincipal", () => {
   test("is deterministic for the same principal", () => {
-    expect(pastelColorForPrincipal("prn_alice")).toBe(
-      pastelColorForPrincipal("prn_alice"),
+    expect(avatarColorForPrincipal("prn_alice")).toBe(
+      avatarColorForPrincipal("prn_alice"),
     );
   });
 
@@ -25,14 +30,14 @@ describe("pastelColorForPrincipal", () => {
       "prn_frank",
     ];
     for (const p of principals) {
-      expect(PASTEL_PALETTE).toContain(pastelColorForPrincipal(p));
+      expect(AVATAR_COLORS).toContain(avatarColorForPrincipal(p));
     }
   });
 
   test("distributes distinct principals across palette colors", () => {
     const colors = new Set(
       ["prn_alice", "prn_bob", "prn_carla", "prn_dana"].map(
-        pastelColorForPrincipal,
+        avatarColorForPrincipal,
       ),
     );
     expect(colors.size).toBeGreaterThan(1);
@@ -48,8 +53,8 @@ describe("generatedAvatarStyle", () => {
 
   test("uses pastel palette background and legible foreground", () => {
     const style = generatedAvatarStyle("prn_alice");
-    expect(PASTEL_PALETTE).toContain(
-      style["--avatar-identity-bg"] as (typeof PASTEL_PALETTE)[number],
+    expect(AVATAR_COLORS).toContain(
+      style["--avatar-identity-bg"] as (typeof AVATAR_COLORS)[number],
     );
     expect(["#000000", "#ffffff"]).toContain(style["--avatar-identity-fg"]);
   });
@@ -63,7 +68,7 @@ describe("generatedAvatarStyle", () => {
 
 describe("readableTextOn", () => {
   test("picks a legible label color across the pastel palette", () => {
-    for (const color of PASTEL_PALETTE) {
+    for (const color of AVATAR_COLORS) {
       expect(readableTextOn(color)).toBe("#000000");
     }
   });
@@ -90,8 +95,8 @@ describe("resolveAvatarFill", () => {
     const fill = resolveAvatarFill("prn_alice");
     expect(fill.kind).toBe("generated");
     if (fill.kind === "generated") {
-      expect(PASTEL_PALETTE).toContain(
-        fill.style["--avatar-identity-bg"] as (typeof PASTEL_PALETTE)[number],
+      expect(AVATAR_COLORS).toContain(
+        fill.style["--avatar-identity-bg"] as (typeof AVATAR_COLORS)[number],
       );
     }
   });
@@ -107,5 +112,42 @@ describe("resolveAvatarFill", () => {
   test("an empty image string is treated as no image", () => {
     const fill = resolveAvatarFill("prn_alice", "");
     expect(fill.kind).toBe("generated");
+  });
+});
+
+describe("CorbitAvatar", () => {
+  test("renders an SVG with an accessible name and no visible label", () => {
+    const html = renderToStaticMarkup(
+      <CorbitAvatar ariaLabel="Myra" size="md" />,
+    );
+    expect(html).toContain('role="img"');
+    expect(html).toContain('aria-label="Myra"');
+    expect(html).toContain('data-corbit="true"');
+    expect(html).toContain("<svg");
+    expect(html).not.toContain("title=");
+    expect(html).not.toContain(">Myra<");
+  });
+
+  test("uses the selected palette color", () => {
+    const defaultHtml = renderToStaticMarkup(<CorbitAvatar />);
+    expect(defaultHtml).toContain(`fill="${CORBIT_DEFAULT_COLOR}"`);
+
+    const colorHtml = renderToStaticMarkup(<CorbitAvatar color="#C1D1BE" />);
+    expect(colorHtml).toContain('fill="#C1D1BE"');
+  });
+
+  test("contains the visor and glint geometry", () => {
+    const html = renderToStaticMarkup(<CorbitAvatar />);
+    expect(html).toContain(`fill="${CORBIT_VISOR_COLOR}"`);
+    expect(html).toContain(`fill="${CORBIT_GLINT_COLOR}"`);
+  });
+
+  test("supports named and numeric sizes", () => {
+    const namedHtml = renderToStaticMarkup(<CorbitAvatar size="sm" />);
+    expect(namedHtml).toContain("size-6");
+
+    const numericHtml = renderToStaticMarkup(<CorbitAvatar size={28} />);
+    expect(numericHtml).toContain("width:28px");
+    expect(numericHtml).toContain("height:28px");
   });
 });

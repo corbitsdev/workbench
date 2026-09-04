@@ -318,8 +318,15 @@ function WorkbenchRow({
             the Corbit avatar for agent DM conversations. */}
         <span className="shell-ch-stack" aria-hidden="true">
           {workbench.kind === "chat" ? (
-            <span data-agent="true" className="shell-ch-corbit-wrap">
-              <CorbitAvatar size={18} label={displayTitle} />
+            <span
+              data-agent="true"
+              className="!overflow-hidden !border-[1.5px] !border-background !bg-transparent !p-0"
+            >
+              <CorbitAvatar
+                size="sm"
+                ariaLabel={displayTitle}
+                className="!static !size-full"
+              />
             </span>
           ) : (
             <span>{displayTitle.slice(0, 1).toUpperCase()}</span>

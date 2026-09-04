@@ -52,7 +52,13 @@ import {
 } from "@corbits/react-ui";
 import type { IntakeField } from "@corbits/react-ui";
 import { useEffect, useState } from "react";
-import { CorbitAvatar } from "@corbits/chat-ui";
+import {
+  AVATAR_COLORS,
+  avatarColorClass,
+  CORBIT_DEFAULT_COLOR,
+  CorbitAvatar,
+} from "@corbits/chat-ui";
+import type { AvatarColor } from "@corbits/chat-ui";
 
 import { ApiQueryError } from "@corbits/api-query";
 
@@ -82,18 +88,6 @@ function submitErrorFromCause(
     ...(cause.refId !== undefined ? { refId: cause.refId } : {}),
   };
 }
-
-const DEFAULT_CORBIT_COLOR = "#C5D2DE";
-
-const CORBIT_PALETTE_SWATCHES: readonly {
-  readonly color: string;
-  readonly label: string;
-}[] = [
-  { color: "#C5D2DE", label: "Summit Blue" },
-  { color: "#C1D1BE", label: "Ridge Green" },
-  { color: "#F7EAD5", label: "Canvas Cream" },
-  { color: "#F2B277", label: "Breakthrough Orange" },
-];
 
 type FormValues = {
   readonly name: string;
@@ -243,7 +237,8 @@ export function CreateAgentPanel({
   readonly onCreated: (definition: AgentDefinition) => void;
 }) {
   const [values, setValues] = useState<FormValues>(EMPTY_VALUES);
-  const [avatarBg, setAvatarBg] = useState<string>(DEFAULT_CORBIT_COLOR);
+  const [avatarColor, setAvatarColor] =
+    useState<AvatarColor>(CORBIT_DEFAULT_COLOR);
   const [handleTouched, setHandleTouched] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [draftFailed, setDraftFailed] = useState(false);
@@ -279,7 +274,7 @@ export function CreateAgentPanel({
 
   function reset() {
     setValues(EMPTY_VALUES);
-    setAvatarBg(DEFAULT_CORBIT_COLOR);
+    setAvatarColor(CORBIT_DEFAULT_COLOR);
     setHandleTouched(false);
     setAdvancedOpen(false);
     setDraftFailed(false);
@@ -432,27 +427,22 @@ export function CreateAgentPanel({
             </p>
           )}
 
-          <div className="create-agent-identity">
+          <div className="flex items-center gap-3">
             <CorbitAvatar
-              label={values.name.trim() === "" ? "New agent" : values.name}
-              background={avatarBg}
+              ariaLabel={values.name.trim() === "" ? "New agent" : values.name}
+              color={avatarColor}
               size="lg"
             />
-            <div
-              role="group"
-              aria-label="Agent color"
-              className="create-agent-tone-row"
-            >
-              {CORBIT_PALETTE_SWATCHES.map((entry) => (
+            <div role="group" aria-label="Agent color" className="flex gap-1.5">
+              {AVATAR_COLORS.map((color) => (
                 <button
-                  key={entry.color}
+                  key={color}
                   type="button"
-                  aria-label={entry.label}
-                  aria-pressed={avatarBg === entry.color}
-                  className="create-agent-tone-swatch"
-                  style={{ backgroundColor: entry.color }}
+                  aria-label={`Choose ${color} avatar color`}
+                  aria-pressed={avatarColor === color}
+                  className={`size-6 cursor-pointer rounded-full border-2 border-transparent p-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground aria-pressed:border-foreground ${avatarColorClass[color]}`}
                   disabled={submitting}
-                  onClick={() => setAvatarBg(entry.color)}
+                  onClick={() => setAvatarColor(color)}
                 />
               ))}
             </div>

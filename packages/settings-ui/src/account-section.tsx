@@ -27,7 +27,7 @@ import {
   UnauthenticatedError,
   describeQueryError,
 } from "@corbits/api-query";
-import { AVATAR_IDENTITY_CLASS, resolveAvatarFill } from "@corbits/chat-ui";
+import { resolveAvatarFill } from "@corbits/chat-ui";
 import { getAccount, type Account } from "./api";
 import { SETTINGS_STRINGS } from "./strings";
 
@@ -145,7 +145,7 @@ export function AccountSectionView({
                 initials={initialsOf(name)}
                 label={name}
                 size="lg"
-                className={AVATAR_IDENTITY_CLASS}
+                className="!bg-[var(--avatar-identity-bg)] !text-[var(--avatar-identity-fg)]"
               />
             </span>
           )}

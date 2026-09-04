@@ -49,11 +49,7 @@ import {
 import type { CSSProperties } from "react";
 import { useMemo } from "react";
 
-import {
-  AVATAR_IDENTITY_CLASS,
-  CHAT_STRINGS,
-  generatedAvatarStyle,
-} from "@corbits/chat-ui";
+import { CHAT_STRINGS, generatedAvatarStyle } from "@corbits/chat-ui";
 import {
   createInsightsWindow,
   usageChromeLabel,
@@ -285,7 +281,7 @@ export function Sidebar({
                   label={user.name}
                   size="sm"
                   tone="neutral"
-                  className={AVATAR_IDENTITY_CLASS}
+                  className="!bg-[var(--avatar-identity-bg)] !text-[var(--avatar-identity-fg)]"
                 />
                 <span className="shell-sidebar-account-name">{user.name}</span>
               </button>

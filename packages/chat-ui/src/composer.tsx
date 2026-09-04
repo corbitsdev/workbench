@@ -26,8 +26,7 @@ import {
 } from "react";
 import type { ChangeEvent, CSSProperties, KeyboardEvent } from "react";
 
-import { AVATAR_IDENTITY_CLASS, generatedAvatarStyle } from "./avatar-identity";
-import { CorbitAvatar } from "./corbit-avatar";
+import { CorbitAvatar, generatedAvatarStyle } from "./avatar";
 import type { Part, ParticipantRecord } from "./api";
 import type { AgentDisplayNames } from "./agent-display-names";
 import {
@@ -1056,7 +1055,7 @@ export const Composer = forwardRef<
                     >
                       {isAgent ? (
                         <CorbitAvatar
-                          label={option.candidate.label}
+                          ariaLabel={option.candidate.label}
                           size="sm"
                           className="chat-mention-avatar"
                         />
@@ -1066,7 +1065,7 @@ export const Composer = forwardRef<
                           label={option.candidate.label}
                           tone="neutral"
                           size="sm"
-                          className={`chat-mention-avatar ${AVATAR_IDENTITY_CLASS}`}
+                          className="chat-mention-avatar !bg-[var(--avatar-identity-bg)] !text-[var(--avatar-identity-fg)]"
                         />
                       )}
                       <span className="chat-mention-meta">

@@ -29,8 +29,7 @@ import {
   displayNameForAddress,
   type AgentDisplayNames,
 } from "./agent-display-names";
-import { AVATAR_IDENTITY_CLASS, generatedAvatarStyle } from "./avatar-identity";
-import { CorbitAvatar } from "./corbit-avatar";
+import { CorbitAvatar, generatedAvatarStyle } from "./avatar";
 import { groupTimelineParts } from "./tool-activity";
 import { ToolActivityGroup } from "./tool-activity-view";
 import {
@@ -360,15 +359,6 @@ function senderDisplay(
   };
 }
 
-/** The message header's avatar chip — the same react-ui `Avatar` (tone by
- * agent-vs-neutral, a tooltip carrying the full name) `chat-workspace.tsx`'s
- * member stack already uses, rather than a bespoke initials box. A human
- * sender additionally gets `generatedAvatarStyle`'s deterministic
- * per-person fill — set on this wrap (Avatar takes no `style` prop) and
- * inherited into `Avatar`'s own root span through the
- * `AVATAR_IDENTITY_CLASS` className — so every human reads as their own
- * color instead of the same flat neutral gray agents already stand apart
- * from. */
 function SenderAvatar({
   id,
   initials,
@@ -394,14 +384,18 @@ function SenderAvatar({
       style={identityStyle}
     >
       {isAgent ? (
-        <CorbitAvatar label={label} size="md" className="chat-sender-avatar" />
+        <CorbitAvatar
+          ariaLabel={label}
+          size="md"
+          className="chat-sender-avatar"
+        />
       ) : (
         <Avatar
           initials={initials}
           label={label}
           tone="neutral"
           size="md"
-          className={`chat-sender-avatar ${AVATAR_IDENTITY_CLASS}`}
+          className="chat-sender-avatar !bg-[var(--avatar-identity-bg)] !text-[var(--avatar-identity-fg)]"
         />
       )}
       {tenantMonogram !== undefined ? (
@@ -2064,14 +2058,14 @@ function ThreadAffordance({
             chip.isAgent ? (
               <CorbitAvatar
                 key={`${chip.address}-${index}`}
-                label={chip.label}
+                ariaLabel={chip.label}
                 size={20}
-                className="chat-thread-avatar-chip chat-thread-avatar-corbit"
+                className="chat-thread-avatar-chip !overflow-hidden !rounded-full !bg-transparent !p-0"
               />
             ) : (
               <span
                 key={`${chip.address}-${index}`}
-                className={`chat-thread-avatar-chip ${AVATAR_IDENTITY_CLASS}`}
+                className="chat-thread-avatar-chip !bg-[var(--avatar-identity-bg)] !text-[var(--avatar-identity-fg)]"
                 style={generatedAvatarStyle(chip.address) as CSSProperties}
               >
                 {chip.initials}

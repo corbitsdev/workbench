@@ -116,8 +116,7 @@ import {
   applyStreamReaction,
   useWorkbenchFeed,
 } from "./use-workbench-feed";
-import { generatedAvatarStyle } from "./avatar-identity";
-import { CorbitAvatar } from "./corbit-avatar";
+import { CorbitAvatar, generatedAvatarStyle } from "./avatar";
 import { useWorkbenchPresenceRoster } from "./workbench-presence";
 import { type } from "arktype";
 import {
@@ -1439,7 +1438,11 @@ function ChatWorkspaceInner({
                 data-agent="true"
                 title={entry.label}
               >
-                <CorbitAvatar size="sm" label={entry.label} className="!size-full" />
+                <CorbitAvatar
+                  size="sm"
+                  ariaLabel={entry.label}
+                  className="!size-full"
+                />
               </span>
             ) : (
               <span
