@@ -960,44 +960,50 @@ export const Composer = forwardRef<
           >
             {CHAT_STRINGS.composerKeyboardHint}
           </span>
-          {canStopComposer({ running }) ? (
+          <div className="chat-composer-submit-actions">
+            {canStopComposer({ running }) ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="chat-composer-icon-button"
+                disabled={stopping}
+                onClick={handleStop}
+                aria-label={CHAT_STRINGS.composerStop}
+                title={CHAT_STRINGS.composerStop}
+              >
+                <Stop aria-hidden="true" />
+              </Button>
+            ) : null}
             <Button
               type="button"
-              variant="ghost"
+              variant={sendVisualState === "empty" ? "ghost" : "primary"}
               size="sm"
               className="chat-composer-icon-button"
-              disabled={stopping}
-              onClick={handleStop}
-              aria-label={CHAT_STRINGS.composerStop}
-              title={CHAT_STRINGS.composerStop}
+              disabled={!canSend}
+              data-send-state={sendVisualState}
+              onClick={() => void send()}
+              aria-label={
+                sending
+                  ? CHAT_STRINGS.composerSending
+                  : CHAT_STRINGS.composerSend
+              }
+              title={
+                sending
+                  ? CHAT_STRINGS.composerSending
+                  : CHAT_STRINGS.composerSend
+              }
             >
-              <Stop aria-hidden="true" />
+              {sendVisualState === "sending" ? (
+                <CircleNotch
+                  className="chat-composer-send-spinner"
+                  aria-hidden="true"
+                />
+              ) : (
+                <ArrowUp aria-hidden="true" />
+              )}
             </Button>
-          ) : null}
-          <Button
-            type="button"
-            variant={sendVisualState === "empty" ? "ghost" : "primary"}
-            size="sm"
-            className="chat-composer-icon-button"
-            disabled={!canSend}
-            data-send-state={sendVisualState}
-            onClick={() => void send()}
-            aria-label={
-              sending ? CHAT_STRINGS.composerSending : CHAT_STRINGS.composerSend
-            }
-            title={
-              sending ? CHAT_STRINGS.composerSending : CHAT_STRINGS.composerSend
-            }
-          >
-            {sendVisualState === "sending" ? (
-              <CircleNotch
-                className="chat-composer-send-spinner"
-                aria-hidden="true"
-              />
-            ) : (
-              <ArrowUp aria-hidden="true" />
-            )}
-          </Button>
+          </div>
         </div>
       </div>
       <div

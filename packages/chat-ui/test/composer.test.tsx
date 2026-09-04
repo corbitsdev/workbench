@@ -277,7 +277,7 @@ describe("Composer keyboard hint", () => {
     expect(keyboardHint()?.getAttribute("aria-hidden")).toBe("false");
     expect(keyboardHint()?.textContent).toBe("Enter to send");
     expect(
-      container?.querySelectorAll(".chat-composer-actions > button").length,
+      container?.querySelectorAll(".chat-composer-actions button").length,
     ).toBe(2);
     expect(container?.querySelector(".chat-composer-row > textarea")).toBe(
       textarea(),
@@ -700,6 +700,8 @@ function stopButton(): HTMLButtonElement {
 function mountStoppable(
   running: boolean,
   onStop: () => void | Promise<unknown>,
+  onSend: (payload: ComposerSendPayload) => Promise<boolean> = () =>
+    Promise.resolve(true),
 ) {
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -708,7 +710,7 @@ function mountStoppable(
     root?.render(
       createElement(Composer, {
         agents: [],
-        onSend: () => Promise.resolve(true),
+        onSend,
         onInviteAgent: () => undefined,
         onOpenAgentsSettings: () => undefined,
         onCreateRoutineInSpace: () => undefined,
@@ -724,7 +726,7 @@ function mountStoppable(
         root?.render(
           createElement(Composer, {
             agents: [],
-            onSend: () => Promise.resolve(true),
+            onSend,
             onInviteAgent: () => undefined,
             onOpenAgentsSettings: () => undefined,
             onCreateRoutineInSpace: () => undefined,
@@ -738,6 +740,50 @@ function mountStoppable(
 }
 
 describe("Composer stop affordance (CL-7201)", () => {
+  test("keeps Stop and Send together in the right-aligned action group", () => {
+    mountStoppable(true, () => undefined);
+
+    const actions = container?.querySelector(".chat-composer-actions");
+    const submitActions = stopButton().parentElement;
+    expect(actions?.children).toHaveLength(3);
+    expect(
+      submitActions?.classList.contains("chat-composer-submit-actions"),
+    ).toBe(true);
+    expect(submitActions?.children).toHaveLength(2);
+    expect(submitActions?.lastElementChild).toBe(sendButton());
+    expect(actions?.lastElementChild).toBe(submitActions);
+  });
+
+  test("gives Stop and Send distinct accessible names while both are visible", () => {
+    mountStoppable(true, () => undefined);
+
+    expect(stopButton().getAttribute("aria-label")).toBe("Stop");
+    expect(sendButton().getAttribute("aria-label")).toBe("Send");
+  });
+
+  test("keeps queued sends available while Stop is visible", async () => {
+    const sent: ComposerSendPayload[] = [];
+    mountStoppable(
+      true,
+      () => undefined,
+      (payload) => {
+        sent.push(payload);
+        return Promise.resolve(true);
+      },
+    );
+
+    typeInto(textarea(), "follow-up");
+    await settle();
+
+    expect(sendButton().hasAttribute("disabled")).toBe(false);
+    act(() => {
+      sendButton().click();
+    });
+    await settle();
+
+    expect(sent).toEqual([{ text: "follow-up", attachments: [] }]);
+  });
+
   test("renders no Stop button when no turn is running", () => {
     mountStoppable(false, () => undefined);
     expect(container?.querySelector('[aria-label="Stop"]')).toBeNull();

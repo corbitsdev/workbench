@@ -2572,6 +2572,12 @@
   justify-self: end;
 }
 
+.chat-composer-submit-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
 .chat-composer-keyboard-hint {
   color: var(--muted-foreground);
   font-size: 0.7rem;
