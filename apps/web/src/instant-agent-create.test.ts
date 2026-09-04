@@ -146,6 +146,64 @@ describe("createWorkbenchFromTemplate", () => {
     expect(calls.some((call) => call.path.includes("/invite"))).toBe(false);
   });
 
+  test("a blank intent carries selected agents in its pre-invite message", async () => {
+    const calls = stubFetch((path) => {
+      if (path.includes("/workflows/definitions")) {
+        return json({ data: [assistantDefinitionWire], nextCursor: null });
+      }
+      if (path.endsWith("/chat/workbenches")) {
+        return json({
+          id: "chan-1",
+          title: NEW_WORKBENCH_TITLE,
+          kind: "workbench",
+          pinned: false,
+          participants: [],
+        });
+      }
+      if (path.endsWith("/chat/workbenches/chan-1/messages")) {
+        return json({ id: "msg-1", createdAt: "2026-01-01T00:00:00.000Z" });
+      }
+      if (path.endsWith("/chat/workbenches/chan-1/settings")) {
+        return json({
+          id: "chan-1",
+          title: "Research our next partner",
+          kind: "workbench",
+          pinned: false,
+          participants: [],
+          settings: {},
+          contextWindow: { value: 0, source: "inherit" },
+        });
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    });
+
+    await createWorkbenchFromTemplate(
+      "tnt_1",
+      "blank",
+      () => undefined,
+      newQueryClient(),
+      "Research our next partner",
+      ["def-scout", "def-scout", "def-quill"],
+    );
+
+    const createCallIndex = calls.findIndex((call) =>
+      call.path.endsWith("/chat/workbenches"),
+    );
+    const messageCallIndex = calls.findIndex((call) =>
+      call.path.endsWith("/chat/workbenches/chan-1/messages"),
+    );
+    const messageCall = calls[messageCallIndex];
+    expect(createCallIndex).toBeLessThan(messageCallIndex);
+    expect(JSON.parse(String(messageCall?.init?.body))).toEqual({
+      parts: [{ kind: "text", text: "Research our next partner" }],
+      invite: [
+        { kind: "agent", definitionId: "def-scout" },
+        { kind: "agent", definitionId: "def-quill" },
+      ],
+    });
+    expect(calls.some((call) => call.path.endsWith("/invite"))).toBe(false);
+  });
+
   test("picking the code-review definition names the bench after it and invites exactly its three reviewers", async () => {
     const navigated: string[] = [];
     let nextReviewerId = 0;

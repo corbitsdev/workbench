@@ -84,6 +84,16 @@ function stubFetch(
         }),
       );
     }
+    if (path.endsWith("/chat/invitable-definitions")) {
+      return Promise.resolve(
+        json({
+          items: [
+            { id: "wfd_scout", name: "scout", description: "Scout" },
+            { id: "wfd_quill", name: "quill", description: "Quill" },
+          ],
+        }),
+      );
+    }
     const response = extra(path, init);
     if (response !== undefined) return Promise.resolve(response);
     throw new Error(`unexpected fetch: ${path}`);
@@ -166,7 +176,13 @@ function prefabCards(): HTMLButtonElement[] {
  * manifest, no participants, no settings patch) — shared by every test
  * exercising the prompt box's blank-plus-first-message path. */
 function stubBlankCreate(
-  onSendMessage?: (body: { parts: readonly { kind: string }[] }) => void,
+  onSendMessage?: (body: {
+    readonly parts: readonly { kind: string }[];
+    readonly invite?: readonly {
+      readonly kind: string;
+      readonly definitionId: string;
+    }[];
+  }) => void,
 ): RecordedCall[] {
   return stubFetch((path, init) => {
     if (path.includes("/workflows/definitions")) {
@@ -200,6 +216,10 @@ function stubBlankCreate(
     ) {
       const body = JSON.parse(String(init.body)) as {
         parts: readonly { kind: string }[];
+        invite?: readonly {
+          readonly kind: string;
+          readonly definitionId: string;
+        }[];
       };
       onSendMessage?.(body);
       return json({ id: "msg_1", createdAt: "2026-01-01T00:00:00.000Z" });
@@ -233,7 +253,7 @@ describe("NewWorkbenchPickerRoute", () => {
     expect(document.activeElement).toBe(input);
   });
 
-  test("the prefab cards render below the prompt box, one click each — no radio group", async () => {
+  test("the template rows render below the prompt box, with an explicit empty channel", async () => {
     stubFetch(() => undefined);
     await renderPicker();
 
@@ -241,12 +261,9 @@ describe("NewWorkbenchPickerRoute", () => {
     expect(container?.querySelector('[role="radio"]')).toBeNull();
 
     const cards = prefabCards();
-    expect(cards.length).toBe(2);
+    expect(cards.length).toBe(1);
     expect(container?.textContent).toContain("Code review");
-    expect(container?.textContent).toContain("Just start talking");
-    expect(container?.textContent).toContain(
-      "An empty channel. Nobody is hosted.",
-    );
+    expect(container?.textContent).toContain("just open an empty channel");
   });
 
   // The library seeds every shipped template (`createTemplateLibrarySeeder`),
@@ -279,7 +296,7 @@ describe("NewWorkbenchPickerRoute", () => {
     await renderPicker();
 
     const cards = prefabCards();
-    expect(cards.length).toBe(3);
+    expect(cards.length).toBe(2);
     const dueDiligence = cards.find((card) =>
       card.textContent?.includes("Due Diligence"),
     );
@@ -306,8 +323,7 @@ describe("NewWorkbenchPickerRoute", () => {
     await renderPicker();
 
     const cards = prefabCards();
-    expect(cards.length).toBe(1);
-    expect(cards[0]?.textContent).toContain("Just start talking");
+    expect(cards.length).toBe(0);
     expect(container?.textContent).toContain("Code review");
     expect(container?.textContent).toContain("Not set up on this bench yet");
   });
@@ -328,8 +344,7 @@ describe("NewWorkbenchPickerRoute", () => {
     expect(container?.textContent).toContain(
       "Couldn't load what this bench can set up",
     );
-    expect(prefabCards().length).toBe(1);
-    expect(prefabCards()[0]?.textContent).toContain("Just start talking");
+    expect(prefabCards().length).toBe(0);
   });
 
   test("typing a goal and hitting Enter creates a blank workbench and delivers the goal as the first message", async () => {
@@ -373,6 +388,76 @@ describe("NewWorkbenchPickerRoute", () => {
     expect(sentParts).toEqual([
       { kind: "text", text: "Get our onboarding docs into shape" },
     ]);
+  });
+
+  test("a selected agent is pre-invited with the opening message", async () => {
+    let sentInvite:
+      | readonly { readonly kind: string; readonly definitionId: string }[]
+      | undefined;
+    const calls = stubBlankCreate((body) => {
+      sentInvite = body.invite;
+    });
+    const navigated: string[] = [];
+    await renderPicker((to) => navigated.push(to));
+
+    for (let i = 0; i < 20; i++) {
+      await settle();
+      if (container?.textContent?.includes("+ Add agent")) break;
+    }
+    const addAgent = Array.from(
+      container?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+    ).find((button) => button.textContent === "+ Add agent");
+    await act(async () => {
+      addAgent?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const scout = document.querySelector<HTMLButtonElement>(
+      '[role="option"]#new-workbench-agent-wfd_scout',
+    );
+    await act(async () => {
+      scout?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      typeIntoPrompt("Research our next partner");
+    });
+    await act(async () => {
+      promptInput()?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+    });
+    for (let i = 0; i < 20; i++) {
+      await settle();
+      if (navigated.length > 0) break;
+    }
+
+    expect(sentInvite).toEqual([{ kind: "agent", definitionId: "wfd_scout" }]);
+    expect(calls.some((call) => call.path.endsWith("/invite"))).toBe(false);
+    expect(navigated).toEqual(["/w/chan_new"]);
+  });
+
+  test("Escape closes the agent picker and returns focus to its trigger", async () => {
+    stubFetch(() => undefined);
+    await renderPicker();
+
+    for (let i = 0; i < 20; i++) {
+      await settle();
+      if (container?.textContent?.includes("+ Add agent")) break;
+    }
+    const addAgent = Array.from(
+      container?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+    ).find((button) => button.textContent === "+ Add agent");
+    await act(async () => {
+      addAgent?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const search = document.querySelector<HTMLInputElement>(
+      'input[role="combobox"]',
+    );
+    await act(async () => {
+      search?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+    await settle();
+
+    expect(document.querySelector(".new-workbench-agent-popover")).toBeNull();
+    expect(document.activeElement).toBe(addAgent ?? null);
   });
 
   test("Shift+Enter does not submit — the prompt box stays open for a new line", async () => {
@@ -436,8 +521,8 @@ describe("NewWorkbenchPickerRoute", () => {
     });
     await renderPicker();
 
-    const justTalk = prefabCards().find((card) =>
-      card.textContent?.includes("Just start talking"),
+    const justTalk = container?.querySelector<HTMLButtonElement>(
+      ".new-workbench-empty-channel",
     );
     await act(async () => {
       justTalk?.dispatchEvent(new MouseEvent("click", { bubbles: true }));

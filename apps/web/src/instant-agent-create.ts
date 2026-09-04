@@ -156,7 +156,11 @@ export async function createWorkbenchFromTemplate(
   navigate: (to: string) => void,
   queryClient: QueryClient,
   firstMessage?: string,
+  selectedAgentDefinitionIds: readonly string[] = [],
 ): Promise<void> {
+  if (templateId !== "blank" && selectedAgentDefinitionIds.length > 0) {
+    throw new Error("Only a new blank workbench can select agents directly.");
+  }
   const definitions = await listAgentDefinitions(tenantId);
   const setupTemplate = findMyraDefinition(definitions);
   if (setupTemplate === undefined) {
@@ -223,13 +227,17 @@ export async function createWorkbenchFromTemplate(
         );
       },
     });
-    await queryClient.invalidateQueries({
-      queryKey: workbenchesQueryKeyPrefix(tenantId),
-    });
   }
 
   if (firstMessage !== undefined && firstMessage.trim() !== "") {
-    await sendMessage(tenantId, workbench.id, partsForSend(firstMessage, []));
+    const selectedAgentInvites = [...new Set(selectedAgentDefinitionIds)].map(
+      (definitionId) => ({ kind: "agent" as const, definitionId }),
+    );
+    await sendMessage(tenantId, workbench.id, partsForSend(firstMessage, []), {
+      ...(selectedAgentInvites.length > 0
+        ? { invite: selectedAgentInvites }
+        : {}),
+    });
     // Blank / ad-hoc mints stay "New Workbench" until named. When the
     // prompt box already supplied the opening message, rename via the same
     // `chat/name` settings PATCH the sidebar rename uses — prefab titles
@@ -244,6 +252,10 @@ export async function createWorkbenchFromTemplate(
       });
     }
   }
+
+  await queryClient.invalidateQueries({
+    queryKey: workbenchesQueryKeyPrefix(tenantId),
+  });
 
   navigate(workbenchPath(workbench.id));
 }
