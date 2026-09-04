@@ -31,6 +31,7 @@ const actualHubApi = await import("@intx/hub-api");
 
 let resolveDefinitionSourcesResult: DefinitionSourceResolution = {
   ok: true,
+  materials: [],
   sources: [
     {
       id: "off_1",
@@ -441,6 +442,7 @@ describe("launchFoldedRun", () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
@@ -567,6 +569,7 @@ describe("launchFoldedRun", () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_ollama",
@@ -637,6 +640,7 @@ describe("launchFoldedRun", () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
@@ -691,6 +695,7 @@ describe("launchFoldedRun", () => {
   test("mints config.grants from toolGrantsForPins, scoped to this run's principal", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
@@ -785,6 +790,7 @@ describe("launchFoldedRun", () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
@@ -867,6 +873,7 @@ describe("launchFoldedRun", () => {
   test("rolls back the committed rows and abandons the collector when the deploy fails", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
@@ -927,6 +934,7 @@ describe("launchFoldedRun", () => {
   test("marks the run failed (not deleted) when the deploy leaks a running child", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
@@ -985,6 +993,7 @@ describe("launchFoldedRun", () => {
   test("marks the run failed (not deleted) when sendRunGrants fails after a successful deploy", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
@@ -1034,6 +1043,7 @@ describe("launchFoldedRun", () => {
   test("marks the run failed (not deleted) when markRunDeployClone fails after a successful deploy", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
@@ -1146,6 +1156,7 @@ describe("launchFoldedRun", () => {
       },
       {
         ok: true,
+        materials: [],
         sources: [
           {
             id: "off_ollama",
@@ -1405,6 +1416,7 @@ describe("deployAtHead — mcp credential bindings", () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
@@ -1504,6 +1516,7 @@ describe("deployAtHead — mcp credential bindings", () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
@@ -1566,6 +1579,7 @@ describe("deployAtHead — pinned-package credential bindings", () => {
   function catalogSources(): DefinitionSourceResolution {
     return {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
@@ -1833,6 +1847,7 @@ describe("deployAtHead — pinned-package credential bindings", () => {
 describe("deployAtHead — per-run definition records", () => {
   const SOURCES = {
     ok: true as const,
+    materials: [],
     sources: [
       {
         id: "off_1",
@@ -1897,6 +1912,7 @@ describe("deployAtHead — per-run definition records", () => {
 describe("deployAtHead — run.grants production", () => {
   const SOURCES = {
     ok: true as const,
+    materials: [],
     sources: [
       {
         id: "off_1",
@@ -1995,6 +2011,7 @@ describe("deployAtHead — run.grants production", () => {
 describe("deployAtHead — the code-sourced round trip", () => {
   const SOURCES: DefinitionSourceResolution = {
     ok: true,
+    materials: [],
     sources: [
       {
         id: "off_1",
@@ -2148,6 +2165,7 @@ describe("wakeFoldedRun — the same code-sourced path", () => {
   test("re-renders and re-commits the run's source tree, then adopts its anchor", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
