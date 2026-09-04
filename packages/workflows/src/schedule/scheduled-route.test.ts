@@ -47,6 +47,8 @@ function mount(
     principalId: string;
     fromDomain: string;
     content: string;
+    name: string;
+    assetId: string;
   }) => Promise<{ runId: string }>,
   listed: readonly ScheduledWorkflowDefinition[],
 ): Hono<TenantEnv> {
@@ -103,6 +105,8 @@ describe("createScheduledWorkflowRoutes", () => {
         principalId: PRINCIPAL.id,
         fromDomain: TENANT.domain,
         content: RUN_NOW_CONTENT,
+        name: digest.name,
+        assetId: digest.assetId,
       },
     ]);
   });

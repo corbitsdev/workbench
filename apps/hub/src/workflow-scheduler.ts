@@ -263,3 +263,55 @@ export function launchScheduledDefinitionFromDb(
     }
   };
 }
+
+export type RunNowScheduledDefinitionArgs = {
+  tenantId: string;
+  definitionId: string;
+  principalId: string;
+  fromDomain: string;
+  content: string;
+  name: string;
+  definitionAssetId: string;
+};
+
+/**
+ * Fire a scheduled definition now, then join the run to a workbench the
+ * same way the poller does. Join failures are reported and do not fail
+ * the launch — the caller still gets `{ runId }`.
+ */
+export async function runNowScheduledDefinition(
+  deps: NativeWorkflowRoutineTriggerDeps & ScheduledDeliveryJoinDeps,
+  args: RunNowScheduledDefinitionArgs,
+): Promise<{ runId: string }> {
+  const triggered = await triggerNativeWorkflowRoutineRun(deps, {
+    tenantId: args.tenantId,
+    definitionId: args.definitionId,
+    principalId: args.principalId,
+    fromDomain: args.fromDomain,
+    content: args.content,
+  });
+  try {
+    await joinScheduledDefinitionToWorkbench(
+      deps,
+      {
+        definitionId: args.definitionId,
+        tenantId: args.tenantId,
+        creatorPrincipalId: args.principalId,
+        definitionAssetId: args.definitionAssetId,
+        name: args.name,
+        cron: "",
+      },
+      triggered.address,
+    );
+  } catch (error) {
+    reportError(error, {
+      operation: "scheduled-workflow.run-now.join-workbench",
+      tenantId: args.tenantId,
+      extra: {
+        definitionId: args.definitionId,
+        address: triggered.address,
+      },
+    });
+  }
+  return { runId: triggered.runId };
+}

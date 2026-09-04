@@ -366,8 +366,9 @@ import {
   createWorkflowScheduler,
   launchScheduledDefinitionFromDb,
   listScheduledDefinitionsFromDb,
+  runNowScheduledDefinition,
+  type ScheduledDeliveryJoinDeps,
 } from "./workflow-scheduler";
-import { triggerNativeWorkflowRoutineRun } from "./native-workflow-routine-launch";
 import { createToolGrantsForPins } from "./tool-grants";
 import { createMcpCredentialBindingsFor } from "./mcp-credential-bindings";
 import { reconcilePinnedToolPackagesAfterConnect } from "./connection-live-reconcile";
@@ -1780,6 +1781,18 @@ export async function createHub(config: HubConfig) {
       }),
     }),
   );
+  const scheduledDeliveryJoinDeps: ScheduledDeliveryJoinDeps = {
+    deliveryWorkbenchRequired: deliveryWorkbenchRequiredForWorkflowName,
+    resolveDeliveryWorkbench: async (tenantId) => {
+      const rows = await chatStore.listWorkbenchSettings(tenantId);
+      const first = [...rows].sort((a, b) =>
+        a.workbenchId.localeCompare(b.workbenchId),
+      )[0];
+      return first?.workbenchId;
+    },
+    joinDeliveryWorkbench: (input) =>
+      joinRunParticipant({ store: chatStore }, input),
+  };
   app.route(
     `${TENANT_PREFIX}/workflows`,
     createScheduledWorkflowRoutes({
@@ -1788,13 +1801,19 @@ export async function createHub(config: HubConfig) {
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
       }),
-      runNow: async (args) => {
-        const { runId } = await triggerNativeWorkflowRoutineRun(
-          { db, sidecarRouter },
-          args,
-        );
-        return { runId };
-      },
+      runNow: async (args) =>
+        runNowScheduledDefinition(
+          { db, sidecarRouter, ...scheduledDeliveryJoinDeps },
+          {
+            tenantId: args.tenantId,
+            definitionId: args.definitionId,
+            principalId: args.principalId,
+            fromDomain: args.fromDomain,
+            content: args.content,
+            name: args.name,
+            definitionAssetId: args.assetId,
+          },
+        ),
     }),
   );
   // Run key identity diagnostics: read side of the append-only
@@ -2858,16 +2877,7 @@ export async function createHub(config: HubConfig) {
     launch: launchScheduledDefinitionFromDb({
       db,
       sidecarRouter,
-      deliveryWorkbenchRequired: deliveryWorkbenchRequiredForWorkflowName,
-      resolveDeliveryWorkbench: async (tenantId) => {
-        const rows = await chatStore.listWorkbenchSettings(tenantId);
-        const first = [...rows].sort((a, b) =>
-          a.workbenchId.localeCompare(b.workbenchId),
-        )[0];
-        return first?.workbenchId;
-      },
-      joinDeliveryWorkbench: (input) =>
-        joinRunParticipant({ store: chatStore }, input),
+      ...scheduledDeliveryJoinDeps,
     }),
     ...(config.routineSchedulerPollIntervalMs !== undefined
       ? { pollIntervalMs: config.routineSchedulerPollIntervalMs }

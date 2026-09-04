@@ -1,9 +1,11 @@
 // Scheduler poller: cron match → CAS → launch. Skip-missed, no backoff.
-import { afterEach, describe, expect, jest, test } from "bun:test";
+import { afterEach, describe, expect, jest, spyOn, test } from "bun:test";
+import * as errorSink from "@corbits/error-sink";
 import {
   createWorkflowScheduler,
   DEFAULT_WORKFLOW_SCHEDULER_POLL_INTERVAL_MS,
   joinScheduledDefinitionToWorkbench,
+  runNowScheduledDefinition,
   tickWorkflowScheduler,
   type ScheduledDefinition,
   type WorkflowSchedulerDeps,
@@ -292,5 +294,114 @@ describe("joinScheduledDefinitionToWorkbench", () => {
       "run@example.test",
     );
     expect(joined).toBe(0);
+  });
+});
+
+type FakeRunRow = {
+  id: string;
+  definitionId: string;
+  tenantId: string;
+  anchorRunId: string;
+  address: string | null;
+  status: string;
+  createdAt: Date;
+};
+
+function createFakeTriggerDb(rows: FakeRunRow[]) {
+  return {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          orderBy: () => ({
+            limit: async () =>
+              rows
+                .filter((row) => row.anchorRunId === row.id)
+                .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()),
+          }),
+        }),
+      }),
+    }),
+  };
+}
+
+const LIVE_ANCHOR: FakeRunRow = {
+  id: "wfr_anchor1",
+  definitionId: "wfd_digest",
+  tenantId: "t1",
+  anchorRunId: "wfr_anchor1",
+  address: "wfr_anchor1@acme.workbench.test",
+  status: "deployed",
+  createdAt: new Date("2026-01-01T00:00:00Z"),
+};
+
+function runNowArgs() {
+  return {
+    tenantId: "t1",
+    definitionId: "wfd_digest",
+    principalId: "clicker_1",
+    fromDomain: "acme.workbench.test",
+    content: "Run now.",
+    name: "workbench-digest",
+    definitionAssetId: "ast_1",
+  };
+}
+
+describe("runNowScheduledDefinition", () => {
+  test("joins the first workbench after a successful trigger", async () => {
+    const joined: unknown[] = [];
+    const result = await runNowScheduledDefinition(
+      {
+        db: createFakeTriggerDb([LIVE_ANCHOR]) as never,
+        sidecarRouter: { routeMail: () => true } as never,
+        deliveryWorkbenchRequired: async () => true,
+        resolveDeliveryWorkbench: async () => "chn_1",
+        joinDeliveryWorkbench: async (input) => {
+          joined.push(input);
+        },
+      },
+      runNowArgs(),
+    );
+    expect(result).toEqual({ runId: "wfr_anchor1" });
+    expect(joined).toEqual([
+      {
+        tenantId: "t1",
+        workbenchId: "chn_1",
+        principalId: "clicker_1",
+        address: "wfr_anchor1@acme.workbench.test",
+        handle: "workbench-digest",
+      },
+    ]);
+  });
+
+  test("join throw reports and still returns runId", async () => {
+    const boom = new Error("join failed");
+    const report = spyOn(errorSink, "reportError").mockReturnValue("ref_test");
+    try {
+      const result = await runNowScheduledDefinition(
+        {
+          db: createFakeTriggerDb([LIVE_ANCHOR]) as never,
+          sidecarRouter: { routeMail: () => true } as never,
+          deliveryWorkbenchRequired: async () => true,
+          resolveDeliveryWorkbench: async () => "chn_1",
+          joinDeliveryWorkbench: async () => {
+            throw boom;
+          },
+        },
+        runNowArgs(),
+      );
+      expect(result).toEqual({ runId: "wfr_anchor1" });
+      expect(report).toHaveBeenCalledTimes(1);
+      expect(report.mock.calls[0]?.[0]).toBe(boom);
+      expect(report.mock.calls[0]?.[1]).toEqual({
+        operation: "scheduled-workflow.run-now.join-workbench",
+        tenantId: "t1",
+        extra: {
+          definitionId: "wfd_digest",
+          address: "wfr_anchor1@acme.workbench.test",
+        },
+      });
+    } finally {
+      report.mockRestore();
+    }
   });
 });

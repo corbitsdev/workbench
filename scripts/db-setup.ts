@@ -444,7 +444,13 @@ async function tableExists(
  * One-shot: if a leftover `routines` schema is still present, enable the
  * authored workbench-digest definition for tenants whose digest routine
  * was on, then drop the schema. Absent schema is a no-op. Safe to re-run.
+ *
+ * `updated_at = now()` is load-bearing: seed treats `createdAt === updatedAt`
+ * as pristine and PUTs `stopped`. Copying enablement without bumping
+ * `updated_at` would look untouched and get re-archived on the next seed.
  */
+export const DIGEST_HANDOFF_SQL = `UPDATE workflow_definition wd SET status = CASE WHEN r.enabled THEN 'deployed' ELSE 'stopped' END, updated_at = now() FROM routines.routine r WHERE r.preset_key = 'workbench-digest' AND wd.name = 'workbench-digest' AND wd.tenant_id = r.tenant_id AND wd.origin = 'authored'`;
+
 async function dropRoutinesSchemaAfterDigestHandoff(
   databaseUrl: string,
 ): Promise<void> {
@@ -457,9 +463,7 @@ async function dropRoutinesSchemaAfterDigestHandoff(
       ["routines"],
     );
     if (existing.length === 0) return;
-    await sql.unsafe(
-      `UPDATE workflow_definition wd SET status = CASE WHEN r.enabled THEN 'deployed' ELSE 'stopped' END FROM routines.routine r WHERE r.preset_key = 'workbench-digest' AND wd.name = 'workbench-digest' AND wd.tenant_id = r.tenant_id AND wd.origin = 'authored'`,
-    );
+    await sql.unsafe(DIGEST_HANDOFF_SQL);
     await sql.unsafe("DROP SCHEMA IF EXISTS routines CASCADE");
     console.log(
       "db-setup: dropped routines schema after digest enablement handoff",

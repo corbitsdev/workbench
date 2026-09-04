@@ -11,6 +11,7 @@ import {
   filterBenchMemberships,
   listWorkbenchTenantIds,
 } from "@corbits/bench-ui";
+import { reportError } from "@corbits/error-sink";
 import { useQuery } from "@tanstack/react-query";
 import {
   buildCommandPaletteGroups,
@@ -520,7 +521,16 @@ export function CommandPaletteProvider({
       } else if (id.startsWith("action:run-routine:")) {
         const routineId = id.slice("action:run-routine:".length);
         if (selectedTenantId !== null) {
-          void runScheduledWorkflowNow(selectedTenantId, routineId);
+          void (async () => {
+            try {
+              await runScheduledWorkflowNow(selectedTenantId, routineId);
+            } catch (cause) {
+              reportError(cause, {
+                operation: "scheduled_workflow_run_now",
+                tenantId: selectedTenantId,
+              });
+            }
+          })();
         }
         navigate(`/routines/${encodeURIComponent(routineId)}`);
       } else if (id.startsWith("action:")) {

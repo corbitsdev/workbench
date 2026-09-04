@@ -18,6 +18,8 @@ export type RunScheduledDefinition = (args: {
   principalId: string;
   fromDomain: string;
   content: string;
+  name: string;
+  assetId: string;
 }) => Promise<{ runId: string }>;
 
 export type CreateScheduledWorkflowRoutesDeps = {
@@ -85,6 +87,8 @@ export function createScheduledWorkflowRoutes({
         principalId: principal.id,
         fromDomain: tenant.domain,
         content: RUN_NOW_CONTENT,
+        name: found.name,
+        assetId: found.assetId,
       });
       return c.json({ runId });
     },
