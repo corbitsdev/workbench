@@ -432,6 +432,9 @@ export const CHAT_STRINGS = {
   ) => `${canonicalName} · ${providerName}`,
   workbenchSettingsAgentDetailNoConnectedModels:
     "No connected providers yet — connect one in Shared Settings.",
+  workbenchSettingsAgentDetailCatalogError: "Couldn't load the models.",
+  workbenchSettingsAgentDetailCatalogRetryAction: "Retry",
+  workbenchSettingsAgentDetailCatalogSettingsAction: "Shared Settings",
   workbenchSettingsAgentDetailHistoryTitle: "History",
   workbenchSettingsAgentDetailHistoryHint:
     "Every change to this agent's instructions and capabilities, oldest actions first.",
