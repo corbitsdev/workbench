@@ -16,7 +16,6 @@ import { afterEach, expect, test } from "bun:test";
 import {
   createEd25519Crypto,
   generateKeyPair,
-  signEd25519,
   verifySSHSignature,
 } from "@intx/crypto";
 import {
@@ -73,7 +72,6 @@ async function makeRouter(
   const keyStore = createAgentKeyStore({
     dataDir,
     generateKeyPair,
-    signEd25519,
     verifySSHSig: verifySSHSignature,
   });
   const recordingSpawner: SubprocessSpawner = () => {
