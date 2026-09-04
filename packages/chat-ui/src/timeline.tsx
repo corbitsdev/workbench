@@ -378,17 +378,9 @@ function SenderAvatar({
     ? undefined
     : (generatedAvatarStyle(id) as CSSProperties);
   return (
-    <span
-      className="sender-avatar-wrap"
-      title={label}
-      style={identityStyle}
-    >
+    <span className="sender-avatar-wrap" title={label} style={identityStyle}>
       {isAgent ? (
-        <CorbitAvatar
-          ariaLabel={label}
-          size="md"
-          className="sender-avatar"
-        />
+        <CorbitAvatar ariaLabel={label} size="md" className="sender-avatar" />
       ) : (
         <Avatar
           initials={initials}
