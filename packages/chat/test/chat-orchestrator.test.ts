@@ -72,6 +72,8 @@ function fakeRoom(options?: { failPostOnCall: number }) {
     listMessages: store.listMessages,
     getMessage: store.getMessage,
     listActivity: store.listActivity,
+    stampMailMessageId: store.stampMailMessageId,
+    findByMailMessageId: store.findByMailMessageId,
   };
   const publish: WorkbenchSubscriberRegistry["publish"] = (
     workbenchId,
