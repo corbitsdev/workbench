@@ -7,6 +7,27 @@ and the hub routes that create a definition and manage its attached skills
 (`routes.ts`) — server-side, backed by `@intx/agent`, `@intx/workflow`,
 `@intx/hub-sessions`, and Postgres via `@intx/db`.
 
+## Runtime tool-package pins are always versioned
+
+Every pin this package writes onto a definition (`create_agent`'s
+`toolPackagePins`, guided capability-add's `POST /:definitionId/capabilities`)
+resolves to a concrete, published version — never the npm "any version"
+range `*`. `resolvePinnedVersion` (`src/tool-package-version.ts`) resolves a
+bare package name to `{ name, version }` by reading the tenant's (possibly
+inherited) `corbits-tools` `package-registry` asset and picking the highest
+version among its tarballs; it throws the same `CapabilityOutOfInventoryError`
+guided capability-add's inventory check throws when the registry or the
+package is absent, so every caller's existing 4xx mapping covers it with no
+new wiring. `withAgentToolPackagePin` (`src/agent-workflow.ts`) rejects a
+`"*"` version outright as a second line of defense.
+
+This matters because a `*` pin would let a later tarball landing in the
+registry silently change what an already-deployed specialist runs, with no
+record of the change (CL-7389). Resolving a version only happens when a
+pin is newly added or a definition is newly created with named pins — a
+plain redeploy of an existing definition never re-resolves; it keeps
+whatever version its existing pins already carry.
+
 ## `/client` subpath contract
 
 `@corbits/agent-directory/client` (`src/client.ts`) is the browser-safe
