@@ -46,18 +46,13 @@ export type SidecarMailPersistedPayload = SidecarMailPersistedRow & {
 };
 
 /** Authenticated connection scope attached to a workflow-run pack. */
-export type WorkflowRunPackSource =
-  | {
-      readonly kind: "shared";
-      readonly agentAddress: string;
-    }
-  | {
-      readonly kind: "allocated";
-      readonly agentAddress: string;
-      readonly allocationId: string;
-      readonly anchorRunId: string;
-      readonly generation: number;
-    };
+export type WorkflowRunPackSource = {
+  readonly kind: "allocated";
+  readonly agentAddress: string;
+  readonly allocationId: string;
+  readonly anchorRunId: string;
+  readonly generation: number;
+};
 
 /**
  * Outcome of reserving a mail-triggered run's grants. `skip` means the
@@ -87,9 +82,9 @@ export type SidecarEventMap = {
   };
 
   /** Notification. Emitted once when a sidecar's connection closes,
-   * carrying every address the connection owned -- challenged session
-   * addresses and hub-minted workflow-substrate deployment addresses
-   * alike -- so lifecycle teardown covers both. */
+   * carrying every address the connection owned -- session addresses
+   * and hub-minted workflow-substrate deployment addresses alike --
+   * so lifecycle teardown covers both. */
   "sidecar.disconnect": {
     ownedAddresses: string[];
     /** Present only when the closing socket was the current allocated owner. */
@@ -121,7 +116,7 @@ export type SidecarEventMap = {
   "mail.persisted": SidecarMailPersistedPayload;
 
   /** Notification after a sidecar confirms a mail trigger is in its durable
-   * local inbox. For an exclusive worker, `allocated` identifies the exact
+   * local inbox. For a provisioned worker, `allocated` identifies the exact
    * generation that acknowledged the message. This is not workflow
    * settlement; the Hub retains the payload until the Git claim-check records
    * consumption. */
@@ -157,26 +152,6 @@ export type SidecarEventMap = {
     agentAddress: string;
     connectorState: ConnectorThreadState | null;
   };
-
-  /** Awaited. Emitted per address after challenge verification
-   * succeeds and before the disconnect queue is flushed. Rejection
-   * rolls that address back from the routing table; earlier listeners
-   * in registration order have already executed and their side effects
-   * are not undone. A subsequent reconnect arriving mid-flight may
-   * supersede this one, so listeners must be idempotent. */
-  "agent.reconnected": {
-    agentAddress: string;
-  };
-
-  /** Awaited. Emitted per address after the wire layer has confirmed
-   * the sidecar's deploy ref is stale relative to the hub's current
-   * ref. The listener's job is to push a fresh deploy pack. The wire
-   * layer fires this only when staleness is confirmed; subscribing
-   * without a `lookupDeployRef` configured on the router will never
-   * deliver. */
-  "deploy.ref.stale": {
-    agentAddress: string;
-  };
 };
 
 export type SidecarEventType = keyof SidecarEventMap;
@@ -210,8 +185,6 @@ export function createSidecarEmitter(): SidecarEventEmitter {
     "mail.persisted": new Set(),
     "mail.inbound.acknowledged": new Set(),
     "agent.deploy.ack": new Set(),
-    "agent.reconnected": new Set(),
-    "deploy.ref.stale": new Set(),
     "connector.state.changed": new Set(),
   };
 
@@ -268,16 +241,20 @@ export function createSidecarEmitter(): SidecarEventEmitter {
 }
 
 export type SidecarLookups = {
-  /** Returns the hex-encoded Ed25519 public key stored for the address,
-   * or `null` if the address is unknown. Used during the reconnect
-   * challenge to verify the sidecar's signature. */
-  lookupPublicKey?: (agentAddress: string) => Promise<string | null>;
-
   /** Returns the hub's current deploy ref for the address, or `null` if
    * no deploy state is tracked. The wire layer compares this against
    * the sidecar's reported ref during reconnect and emits
    * `deploy.ref.stale` only on mismatch. */
   lookupDeployRef?: (agentAddress: string) => Promise<string | null>;
+
+  /** Re-resolves a reconnecting deployment's current credential delivery and
+   * reconciles the child, so a credential revoked, deleted, or rotated while
+   * the sidecar was disconnected is applied on reconnect (closing the offline
+   * window). Keyed by the run address. Fire-and-forget: the wire layer does not
+   * await it and it never throws -- a failure is logged and dropped, like the
+   * best-effort source-update pushes. No-ops for a run that persisted no
+   * credential refs. */
+  resyncCredentials?: (agentAddress: string) => void;
 
   /** Persists a delivered outbound mail frame. Returns one row per
    * persisted record; the wire layer attaches `raw` to each row and

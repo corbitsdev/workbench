@@ -1,4 +1,4 @@
 Source: https://github.com/faremeter/interchange (packages/workflow-deploy)
-Commit: a8bc06ae38661c5e0ed91ded8559bf09f502213d (origin/main, 2026-08-27)
+Commit: 692c31068cbb636ebb19c6d179ec6fe126a2d4e6 (origin/main, 2026-09-03)
 License: LGPL-2.1-only (see vendor/intx/LICENSE)
-Local modifications: exports map repointed from the upstream intx-src condition to direct TypeScript source resolution (types/default -> ./src/...); dist references removed. No source delta.
+Local modifications: exports map repointed from the upstream intx-src condition to direct TypeScript source resolution (types/default -> ./src/...); dist references removed. Upstream test files are not vendored (they import the unvendored @intx/inference-testing and @intx/test-harness test packages); only the tests covering a workbench delta are kept. No source delta.

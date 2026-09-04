@@ -6,14 +6,18 @@ export type {
 export * from "./state-machine/index";
 export * from "./definition/index";
 export { collectDeclaredPluginNames } from "./declared-plugins";
+export { collectSidecarCapabilityRules } from "./sidecar-capabilities";
 export {
-  onTriggerBodyRef,
+  inlineBodyRef,
   rewriteInlineOnTriggerBodies,
   rewriteInlineChildWorkflowBodies,
+  enumerateInlineLoopBodies,
+  eagerlyResolveLoopFns,
   type ExtractedOnTriggerBody,
   type OnTriggerBodyRewrite,
   type ExtractedChildWorkflowBody,
   type ChildWorkflowBodyRewrite,
+  type ExtractedLoopBody,
 } from "./ontrigger-bodies";
 export {
   projectLiveToInert,
@@ -34,12 +38,19 @@ export {
 } from "./live-inert-projector";
 export {
   runtimeRun,
+  createSuspendableChildHandle,
+  createLoopIterationHandle,
+  MAX_CHILD_SPAWN_DEPTH,
+  ChildSpawnDepthExceededError,
+  resolveMaxChildSpawnDepth,
+  assertSpawnDepthWithinLimit,
   RuntimeResumeUnsupportedError,
   createNoopDrainController,
   createEffectContext,
   resolveDrainBehavior,
   scopedStepId,
   baseStepId,
+  loopBodyRunId,
   type ActionInvokeRequest,
   type ActionInvokeResult,
   type ActionInvoker,
@@ -53,7 +64,6 @@ export {
   type ParkedApprovalOp,
   type ReadParkedApprovalOps,
   type RepoStore,
-  type RunLoopIteration,
   type RunResult,
   type RuntimeRunOptions,
   type Scheduler,
@@ -71,9 +81,9 @@ export {
 } from "./runtime/index";
 export {
   runLocal,
-  createLoopIteration,
   createDefaultActionInvoker,
   createInMemoryEffectLedger,
+  createSpawnLoopIteration,
   createInMemoryRepoStore,
   createInMemoryScheduler,
   createInMemorySignalChannel,

@@ -77,17 +77,53 @@ loop: a top-level action or agent step that crashes mid-invocation also settles
 fails the run exactly as a crash in any other step does; loops are not special
 here.
 
-Second, suspension -- and this IS the loop-specific limitation. The body-ban
-forbids a loop body from containing an `awaitSignal`, `sleep`, `childWorkflow`,
-or a nested `loop`; the first three are the suspending primitives that matter
-here. A top-level step and an onTrigger section body CAN park on such a
-primitive and resume across a restart; a loop body cannot. Loops run each
-iteration in-process with no durable per-iteration park/resume, so an iteration
-is a short, self-contained unit that runs start-to-finish or fails.
+Second, suspension. The body-ban forbids a loop body from containing a `sleep`
+or an `onTrigger`. It does NOT forbid an `awaitSignal`, a `childWorkflow`, or a
+nested `loop`. A loop iteration runs through the suspendable-child seam, so its
+body can park on an `awaitSignal` and resume: the park relays up through the
+container's signal path and delivery resumes the iteration, the same way an
+onTrigger section body parks. A parked iteration also survives a crash -- a
+restart re-drives the loop, re-establishes the container's signal relay, and
+resumes the iteration on the next delivery -- so an `awaitSignal` loop body is a
+durable human-in-the-loop pause, not just an in-process one.
 
-Practical guidance: use a loop to repeat a cheap, self-contained unit until a
-pure `while`/`carry` says stop. Do not model a long-lived, human-in-the-loop, or
-otherwise suspending interaction as a loop body -- put that in an onTrigger
-section (which may `awaitSignal`) or a top-level step. Keep a loop body's action
-idempotent where practical, since a crash fails the run and recovery is a fresh
-trigger, not a mid-loop resume.
+A loop body may also spawn a `childWorkflow` grandchild: the child is lifted to
+a ref and runs as its own child run, depth-counted against the tree-wide spawn
+ceiling exactly like any other child.
+
+A loop body may contain a nested `loop`. An inner loop resolves its body ref
+from the same top-level bodies map (a loop iteration inherits its parent's env),
+its body-child run ids carry the container run id so iterations stay unique
+across nesting, and its own signal park relays up through the outer container
+exactly as a leaf gate relays up through its container -- one layer at a time
+until it reaches the run whose channel has a real upstream. On crash the resume
+composes per level: whichever levels durably parked re-establish their relay,
+and a level whose container relay had not yet flushed re-drives it fresh from the
+body's own parked gate when its `runLoop` re-runs during re-adoption. Nesting
+depth is bounded at definition time (a small static limit), since deep nesting
+is authored, not dynamic. One topology is unsupported and fails loud on resume:
+two sibling loops in the same body both parked on author signals at once (the
+container relays one name at a time).
+
+`sleep` stays banned: a parked sleep leaves the step `awaiting-timer`, and every
+container park -- including a nested loop's -- relays a signal park, not a timer
+park, so a loop body still has no timer-park resume path (separate work,
+INTR-485). `onTrigger` stays banned too -- a run carries a single subscription
+layer.
+
+Practical guidance: use a loop to repeat a self-contained unit -- which may park
+on an `awaitSignal`, spawn a `childWorkflow`, or run a nested `loop` -- until a
+pure `while`/`carry` says stop. Model a `sleep` delay at a top-level step or an
+onTrigger section, not in a loop body. Keep a loop body's action idempotent
+where practical, since a mid-invocation crash fails the run and the effect is
+never re-run.
+
+These primitives are composed end to end by the interchange-demo dispatch
+orchestrator -- an outer per-level `loop` wrapping a Phase-5 verification `loop`
+whose per-task fix `loop` nests a retry `loop` and parks on an `awaitSignal`
+operator escalation, with crash-resume exactly-once effects and the demo's
+resume cases handled through engine resume. It is authored on the engine, and
+its behavior asserted, in `tests/workflow/dispatch-orchestrator.test.ts` (a
+stubbed-invoker routing/resume test) and
+`tests/workflow-deploy/dispatch-orchestrator-real-agents.test.ts` (the same
+composition driven by real agents through the production step-invoker).

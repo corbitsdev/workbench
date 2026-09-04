@@ -9,7 +9,11 @@
 
 import { canonicalizeForHash } from "@intx/agent";
 import type { AgentDefinition, BaseEnv } from "@intx/agent";
-import type { CredentialBinding, GrantRequirement } from "@intx/types";
+import type {
+  CredentialBinding,
+  GrantRequirement,
+  SidecarCapabilityPolicy,
+} from "@intx/types";
 
 import { normalizeSingularShorthand } from "./shorthand";
 import {
@@ -19,6 +23,13 @@ import {
   type StateSchema,
   type StepPrimitive,
 } from "./primitives";
+import {
+  isFromSelector,
+  isMergeSelector,
+  isProjectSelector,
+  splitPath,
+  type Selector,
+} from "./selectors";
 import type { Trigger } from "./triggers";
 
 export interface WorkflowDefinition {
@@ -48,6 +59,7 @@ export interface WorkflowDefinition {
    * binding.
    */
   credentialBindings?: readonly CredentialBinding[];
+  sidecarPlacement?: SidecarCapabilityPolicy;
 }
 
 export interface WorkflowConfig {
@@ -58,6 +70,7 @@ export interface WorkflowConfig {
   state?: { schema?: StateSchema };
   grantRequirements?: readonly GrantRequirement[];
   credentialBindings?: readonly CredentialBinding[];
+  sidecarPlacement?: SidecarCapabilityPolicy;
 }
 
 export interface SingularWorkflowConfig<EnvReq extends BaseEnv> {
@@ -68,6 +81,7 @@ export interface SingularWorkflowConfig<EnvReq extends BaseEnv> {
   state?: { schema?: StateSchema };
   grantRequirements?: readonly GrantRequirement[];
   credentialBindings?: readonly CredentialBinding[];
+  sidecarPlacement?: SidecarCapabilityPolicy;
 }
 
 /**
@@ -98,6 +112,18 @@ export function defineWorkflow<EnvReq extends BaseEnv>(
  * same shape.
  */
 export const STEP_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
+
+/**
+ * A run id must be a non-empty sequence of ASCII letters, digits, underscores,
+ * and hyphens -- the same shape as a step id. A run id is used verbatim as a
+ * durable-store path segment (`runs/<runId>/...`) and as the local part of a
+ * derived per-step mail address (`<runId>-<stepId>@<domain>`), so an
+ * unconstrained caller-supplied id is a path-escape and an unroutable-address
+ * hazard. `newId("run")` and the internally-derived child run ids (loop body,
+ * onTrigger section) already satisfy this shape; the pattern is enforced at
+ * the `runtimeRun` boundary where a run id enters the system.
+ */
+export const RUN_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
 function normalize(config: WorkflowConfig): WorkflowDefinition {
   if (!config.id) {
@@ -131,6 +157,22 @@ function normalize(config: WorkflowConfig): WorkflowDefinition {
         `step id ${JSON.stringify(stepId)} must match ${STEP_ID_PATTERN.source}`,
       );
     }
+    // `__` is the delimiter that joins a step id into the ids the runtime
+    // derives from it: an inline-body ref (`<workflowId>__<stepId>`, and under
+    // nesting `<parentRef>__<stepId>`), a loop iteration body run id
+    // (`<runId>__<loopId>__<index>`), and an onTrigger section body run id
+    // (`<sectionId>__<index>`, which is parsed back). A `__` inside a step id
+    // would make one of those ids ambiguous with a different chain -- and they
+    // key the durable store, so the collision is silent shared-state
+    // corruption. Reject it in EVERY step id here, at the boundary that owns
+    // the id grammar, so every ref/run-id segment stays atomic. A nested body
+    // is its own normalized definition, so this covers every nesting level.
+    if (stepId.includes("__")) {
+      throw new Error(
+        `step id ${JSON.stringify(stepId)} must not contain "__"; ` +
+          `it becomes a segment of a runtime id joined by "__"`,
+      );
+    }
     if (primitive.id !== "" && primitive.id !== stepId) {
       throw new Error(
         `step ${stepId} carries a conflicting embedded id ${primitive.id}; ` +
@@ -161,6 +203,9 @@ function normalize(config: WorkflowConfig): WorkflowDefinition {
       : {}),
     ...(config.credentialBindings !== undefined
       ? { credentialBindings: config.credentialBindings }
+      : {}),
+    ...(config.sidecarPlacement !== undefined
+      ? { sidecarPlacement: config.sidecarPlacement }
       : {}),
   };
   return definition;
@@ -287,9 +332,169 @@ function validateSteps(steps: Record<string, Primitive>): void {
   // Runs after validateAfterRefs so every after/then/else endpoint is
   // already known to name a real step; this pass only rejects cycles.
   validateAcyclic(steps);
+  // Runs after validateAcyclic so the dependency graph is known acyclic and
+  // the reachability walk terminates.
+  validateConcurrentAwaitSignalNames(steps);
+  // Runs after validateAcyclic so its closure computations reason over an
+  // acyclic graph, and after validateAfterRefs so every onFailure handler is
+  // known to exist and to `after`-depend on its unit.
+  validateOnFailureStraddlers(steps);
   validateLoopBody(steps);
   validateOnTriggerBody(steps);
   validateChildWorkflowBody(steps);
+}
+
+/**
+ * The `FromSelector` references into `steps.<unitId>.output`, each tagged with
+ * whether it is a whole-object read and whether it sits under a narrowing
+ * `ProjectSelector`. Tokenized with the shared `splitPath`, so a bracket index
+ * (`steps.U.output[0]`) is correctly seen as a deeper read, not a whole one.
+ */
+function unitOutputRefs(
+  selector: Selector,
+  unitId: string,
+): { whole: boolean; underProject: boolean }[] {
+  const refs: { whole: boolean; underProject: boolean }[] = [];
+  const walk = (s: Selector, underProject: boolean): void => {
+    if (isFromSelector(s)) {
+      const [a, b, c] = splitPath(s.from);
+      if (
+        a?.kind === "key" &&
+        a.key === "steps" &&
+        b?.kind === "key" &&
+        b.key === unitId &&
+        c?.kind === "key" &&
+        c.key === "output"
+      ) {
+        refs.push({ whole: splitPath(s.from).length === 3, underProject });
+      }
+    } else if (isProjectSelector(s)) {
+      walk(s.project, true);
+    } else if (isMergeSelector(s)) {
+      for (const inner of s.merge) walk(inner, underProject);
+    }
+    // A LiteralSelector carries no path.
+  };
+  walk(selector, false);
+  return refs;
+}
+
+/**
+ * The selector a straddler evaluates against step outputs: an invocation
+ * unit's `input`, a gate's `when`, or an escalation's `data`. loop/map
+ * straddlers read outputs through other selector fields (`over`, `while`,
+ * `carry`); those are not inspected here -- a residual noted in the
+ * sentinel-guard contract, where the runtime still fails loud on a bad read.
+ */
+function straddlerOutputSelector(p: Primitive): Selector | undefined {
+  if (p.kind === "step" || p.kind === "action" || p.kind === "childWorkflow") {
+    return p.input;
+  }
+  if (p.kind === "gate") return p.when;
+  if (p.kind === "escalation") return p.data;
+  return undefined;
+}
+
+/**
+ * Enforce the onFailure sentinel-guard contract. When a unit U with handler H
+ * fails, U's normal after-dependents are pruned EXCEPT nodes reachable from H,
+ * so a "straddler" -- live on both the failure path (reachable from H) and the
+ * normal path (reachable from a normal dependent) -- reads U's own output,
+ * which on failure is the sentinel `{ failed, stepId, error: { message } }`,
+ * not U's success shape. A selector throws at the first missing segment, so a
+ * straddler reading a deep, indexed, or project-narrowed path into U's success
+ * shape breaks at runtime on the failure path. Only an agent `step` selecting
+ * the WHOLE `steps.<U>.output` (to branch on `.failed` in its body) is safe; an
+ * action/childWorkflow straddler, or any narrowed read, is rejected. The
+ * handler itself must depend only on U and on U-independent nodes -- never on a
+ * normal-side dependent the route prunes, whose skip sentinel it would read.
+ */
+function validateOnFailureStraddlers(steps: Record<string, Primitive>): void {
+  for (const [unitId, primitive] of Object.entries(steps)) {
+    const onFailure =
+      primitive.kind === "step" ||
+      primitive.kind === "action" ||
+      primitive.kind === "childWorkflow"
+        ? primitive.onFailure
+        : undefined;
+    if (onFailure === undefined) continue;
+    const handlerId = onFailure;
+
+    const unitDownstream = downstreamClosure(steps, [unitId]);
+    for (const dep of steps[handlerId]?.after ?? []) {
+      if (dep !== unitId && unitDownstream.has(dep)) {
+        throw new Error(
+          `${primitive.kind} ${unitId} onFailure handler ${handlerId} also ` +
+            `depends on ${dep}, which the failure route prunes; the handler ` +
+            `must depend only on ${unitId}`,
+        );
+      }
+    }
+
+    const failureLive = downstreamClosure(steps, [handlerId]);
+    const normalDependents = Object.entries(steps)
+      .filter(
+        ([id, p]) => id !== handlerId && (p.after?.includes(unitId) ?? false),
+      )
+      .map(([id]) => id);
+    const normalLive = downstreamClosure(steps, normalDependents);
+    for (const straddlerId of failureLive) {
+      if (!normalLive.has(straddlerId)) continue;
+      const straddler = steps[straddlerId];
+      if (straddler === undefined) continue;
+      const selector = straddlerOutputSelector(straddler);
+      if (selector === undefined) continue;
+      const refs = unitOutputRefs(selector, unitId);
+      if (refs.length === 0) continue;
+      if (straddler.kind !== "step") {
+        throw new Error(
+          `${straddler.kind} ${straddlerId} straddles onFailure unit ` +
+            `${unitId} and its handler ${handlerId} and reads ` +
+            `steps.${unitId}.output; only an agent step can read the failure ` +
+            `sentinel and branch on it`,
+        );
+      }
+      for (const ref of refs) {
+        if (!ref.whole || ref.underProject) {
+          throw new Error(
+            `step ${straddlerId} straddles onFailure unit ${unitId} and its ` +
+              `handler ${handlerId} but reads a narrowed steps.${unitId}` +
+              `.output; a straddler must select the whole output and branch ` +
+              `on .failed`,
+          );
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Reject an `onFailure` that sits where it cannot route. onFailure is honored
+ * only on a member kind (`step`/`action`/`childWorkflow`) that is a direct
+ * entry of a workflow root's `steps` record -- the top level, a childWorkflow
+ * inline body, or an onTrigger section body, each validated as its own root.
+ * Everywhere else a
+ * set onFailure hashes into the approved surface yet never routes, so it is a
+ * hash-bound no-op the author cannot see. The first arm rejects the field on
+ * any node it does not belong on: the type blocks a constructor author from
+ * setting it on a non-member, but a hand-assembled definition rides the open
+ * wire schema -- the trust boundary every pass here guards. The second arm
+ * rejects the `map` inner-step template, a member kind reached through the map
+ * rather than as a root entry.
+ */
+function assertNoRoutableFailure(stepId: string, primitive: Primitive): void {
+  if ("onFailure" in primitive && primitive.onFailure !== undefined) {
+    throw new Error(
+      `${primitive.kind} ${stepId} may not carry onFailure; onFailure is ` +
+        `honored only on a step, action, or childWorkflow at a workflow root`,
+    );
+  }
+  if (primitive.kind === "map" && primitive.step.onFailure !== undefined) {
+    throw new Error(
+      `map ${stepId} sets onFailure on its inner step; a map inner step is ` +
+        `not a routing unit (a failed item is not routed in v1)`,
+    );
+  }
 }
 
 function validateAfterRefs(steps: Record<string, Primitive>): void {
@@ -376,54 +581,117 @@ function validateAfterRefs(steps: Record<string, Primitive>): void {
         );
       }
     }
+    if (
+      primitive.kind === "step" ||
+      primitive.kind === "action" ||
+      primitive.kind === "childWorkflow"
+    ) {
+      if (primitive.onFailure !== undefined) {
+        if (!ids.has(primitive.onFailure)) {
+          throw new Error(
+            `${primitive.kind} ${stepId} names onFailure ${primitive.onFailure} which is not a known step`,
+          );
+        }
+        if (primitive.onFailure === stepId) {
+          throw new Error(
+            `${primitive.kind} ${stepId} cannot name itself as onFailure`,
+          );
+        }
+        // onFailure routes only on a permanent failure, so the handler must
+        // depend on the unit. Without `after: [unit]` it would be schedulable
+        // from RunStarted and the handler would fire on every run.
+        const target = steps[primitive.onFailure];
+        if (
+          target !== undefined &&
+          !(target.after?.includes(stepId) ?? false)
+        ) {
+          throw new Error(
+            `${primitive.kind} ${stepId} onFailure ${primitive.onFailure} must name ${stepId} in its after`,
+          );
+        }
+      }
+    } else {
+      assertNoRoutableFailure(stepId, primitive);
+    }
   }
 }
 
-// A loop body runs as an isolated child per iteration, so it may not
-// contain a suspending primitive (awaitSignal/sleep) or another
-// child-spawning primitive (loop/childWorkflow) -- those would nest the
-// resume-cancel interaction the first-cut loop deliberately does not
-// support. The outer per-level iteration in a real consumer stays in
-// host code instead of a nested loop.
-const LOOP_BODY_FORBIDDEN = new Set<Primitive["kind"]>([
-  "loop",
-  "awaitSignal",
-  "sleep",
-  "childWorkflow",
-  "onTrigger",
-]);
+// A loop iteration runs through the suspendable-child seam, so its body MAY
+// park on an `awaitSignal` and resume (the container relays the signal park up
+// its signal path), MAY spawn a `childWorkflow` grandchild -- lifted to a ref
+// and depth-counted against the tree-wide ceiling like any other child -- and
+// MAY contain a nested `loop`: an inner loop resolves its body ref from the same
+// bodies map (env inheritance) and its own signal park relays up through the
+// outer container the same way a leaf gate does. It still may not contain:
+//   - `sleep` -- a parked sleep leaves the step `awaiting-timer`, and every
+//     container park (including a nested loop's) relays a SIGNAL park, not a
+//     timer park, so a loop body still has no timer-park resume path (INTR-485);
+//   - `onTrigger` -- one subscription layer per run.
+const LOOP_BODY_FORBIDDEN = new Set<Primitive["kind"]>(["sleep", "onTrigger"]);
+
+// A static backstop on loop-body NESTING depth. Nesting is fixed by the
+// definition tree, so it is bounded here, at construction, rather than by the
+// runtime `MAX_CHILD_SPAWN_DEPTH` ceiling (which bounds the dynamic, possibly
+// self-referential childWorkflow recursion -- a different constraint that must
+// not be spent on static loop structure). Because a body is built bottom-up and
+// each `defineWorkflow` validates as it constructs, a definition deeper than
+// this cannot be built THROUGH `defineWorkflow`, so no downstream recursive
+// reader (`projectForHash`, `runLoop`'s frames) ever sees one from an authored
+// definition -- this one guard is the single chokepoint. (A `WorkflowDefinition`
+// hand-assembled around `defineWorkflow` bypasses this, the same trust boundary
+// every definition-time check relies on.) Small on purpose: nobody hand-authors
+// deep loop nesting.
+const MAX_LOOP_NESTING_DEPTH = 8;
 
 /**
- * Reject a loop whose body contains a forbidden primitive. This is a
- * separate pass from `validateAcyclic` because that check does not
- * recurse into a loop's nested body definition (the body is its own
- * `WorkflowDefinition`, already normalized by its own `defineWorkflow`
- * call, but its top-level kinds must still be constrained here).
+ * Reject a loop whose body contains a forbidden primitive, at every nesting
+ * level, and reject nesting deeper than `MAX_LOOP_NESTING_DEPTH`. Recurses into
+ * each loop body -- like `validateChildWorkflowBody` -- so the ban does not
+ * depend on the (type-unenforced) invariant that every loop body came from its
+ * own `defineWorkflow`; a hand-built body is checked here too. The walk
+ * short-circuits at the depth limit, so a pathological input cannot overflow it.
  */
-function validateLoopBody(steps: Record<string, Primitive>): void {
+function validateLoopBody(steps: Record<string, Primitive>, depth = 0): void {
   for (const [stepId, primitive] of Object.entries(steps)) {
     if (primitive.kind !== "loop") continue;
+    const bodyDepth = depth + 1;
+    if (bodyDepth > MAX_LOOP_NESTING_DEPTH) {
+      throw new Error(
+        `loop ${stepId} nests loop bodies deeper than the maximum ` +
+          `${MAX_LOOP_NESTING_DEPTH}; deep static nesting is rejected at ` +
+          `definition time so no recursive reader overflows on it`,
+      );
+    }
     for (const [bodyStepId, bodyPrimitive] of Object.entries(
       primitive.body.steps,
     )) {
       if (LOOP_BODY_FORBIDDEN.has(bodyPrimitive.kind)) {
         throw new Error(
           `loop ${stepId} body step ${bodyStepId} is a ${bodyPrimitive.kind}; ` +
-            `a loop body may not contain a loop, awaitSignal, sleep, ` +
-            `childWorkflow, or onTrigger`,
+            `a loop body may not contain a sleep or onTrigger`,
         );
       }
+      // A loop iteration is dependent (carry threads output into the next
+      // input), so per-iteration "route and proceed" is incoherent -- a routed
+      // body step yields no output to carry. Reject onFailure on any body
+      // step, including a map's inner step reached through this walk.
+      assertNoRoutableFailure(bodyStepId, bodyPrimitive);
     }
+    validateLoopBody(primitive.body.steps, bodyDepth);
   }
 }
 
 /**
- * Reject an onTrigger section whose body nests another onTrigger. An
- * onTrigger body is otherwise unrestricted at DEFINITION time -- unlike a
- * loop body it may await signals, sleep, spawn child workflows, and so on --
- * because an onTrigger section IS the sanctioned long-lived input loop. The
- * single restriction is one subscription layer per run: a section may not
- * contain a section.
+ * Validate an onTrigger section body as a full workflow root, and reject a
+ * body that nests another onTrigger. The body runs as its own child run per
+ * occurrence, so -- like a childWorkflow body -- it must be as valid as a
+ * top-level definition; this pass re-enters `validateSteps` on the inline
+ * body, so a malformed section body (dangling after, cycle, forbidden loop
+ * body, misplaced onFailure) is rejected at the parent's authoring time. The
+ * one restriction ADDED over a top-level root is the subscription-layer ban:
+ * a section may not contain a section. Unlike a loop body, a section body may
+ * sleep and spawn child workflows -- an onTrigger section IS the sanctioned
+ * long-lived input loop.
  *
  * PENDING INTR-310: a body agent `step` is accepted here but is not yet
  * EXECUTABLE -- per-step agent invocation inside a body is stubbed, so a body
@@ -450,6 +718,12 @@ function validateOnTriggerBody(steps: Record<string, Primitive>): void {
         );
       }
     }
+    // The section body runs as its own child run, so validate it as a full
+    // root (mirroring validateChildWorkflowBody). This reaches every
+    // placement check -- including assertNoRoutableFailure -- so a misplaced
+    // onFailure in a hand-assembled section body is rejected here too. The
+    // nested-section ban above runs first so its specific message wins.
+    validateSteps(primitive.body.inline.steps);
   }
 }
 
@@ -558,8 +832,165 @@ function buildDependencyAdjacency(
       // rejected as a cycle rather than corrupting branch pruning at runtime.
       addEdge(stepId, primitive.onTimeout);
     }
+    if ("onFailure" in primitive && primitive.onFailure !== undefined) {
+      // onFailure is a routing target like a loop's onExhausted: on a permanent
+      // failure the unit routes to it instead of failing the run. Include the
+      // edge so an onFailure naming an ancestor is rejected as a cycle. This
+      // runs after validateAfterRefs has already rejected onFailure on any
+      // non-member kind, so it fires only for step/action/childWorkflow.
+      addEdge(stepId, primitive.onFailure);
+    }
   }
   return adjacency;
+}
+
+/**
+ * Reject a definition that lets two schedulable-concurrent `awaitSignal` steps
+ * await the same signal name. `handleSignalReceived` is a FIFO single-consumer
+ * scan keyed on the name, so two gates awaiting one name simultaneously make a
+ * delivery's binding order-dependent, and on resume the consumed signal cannot
+ * be durably re-bound to a specific gate. INTR-277 added a runtime fail-loud
+ * guard for this topology; rejecting it here makes it unauthorable.
+ *
+ * A loop or inline onTrigger body's awaitSignal park relays up into the parent
+ * run over the body's own author signal name, so a container step contributes
+ * its body's await names into the parent's concurrency set (recursively through
+ * nested loop / inline onTrigger bodies). A childWorkflow runs as a separate
+ * run with its own signal namespace, so its awaiters never collide with the
+ * parent's and are excluded.
+ *
+ * Two static-analysis limitations remain, both backstopped by the runtime
+ * guard:
+ *   - Conservative over-reject: two same-name awaiters on a gate's mutually
+ *     exclusive then/else branches are rejected, because deciding they can
+ *     never both be live is a dominator analysis whose permissive-direction
+ *     error would re-admit the hazard.
+ *   - Under-reject: a `{ ref }` onTrigger body is a separately-deployed asset
+ *     not visible here, so an await name it relays is not collected; a
+ *     collision with such a body is caught by the runtime guard, not here.
+ */
+function validateConcurrentAwaitSignalNames(
+  steps: Record<string, Primitive>,
+): void {
+  const reaches = makeReachability(buildDependencyAdjacency(steps));
+  const awaiters: { name: string; node: string; label: string }[] = [];
+  for (const [stepId, primitive] of Object.entries(steps)) {
+    if (primitive.kind === "awaitSignal") {
+      awaiters.push({ name: primitive.name, node: stepId, label: stepId });
+      continue;
+    }
+    for (const relayed of collectRelayedAwaitSignalNames(primitive)) {
+      awaiters.push({
+        name: relayed.name,
+        node: stepId,
+        label: `${stepId} (body awaitSignal ${relayed.bodyStepId})`,
+      });
+    }
+  }
+  for (let i = 0; i < awaiters.length; i++) {
+    const a = awaiters[i];
+    if (a === undefined) continue;
+    for (let j = i + 1; j < awaiters.length; j++) {
+      const b = awaiters[j];
+      if (b === undefined) continue;
+      if (a.name !== b.name || a.node === b.node) continue;
+      if (!reaches(a.node, b.node) && !reaches(b.node, a.node)) {
+        throw new Error(
+          `awaitSignal steps ${a.label} and ${b.label} can concurrently ` +
+            `await signal name ${a.name}; a signal name may have at most ` +
+            `one concurrent awaiter`,
+        );
+      }
+    }
+  }
+}
+
+/**
+ * Collect the author signal names a loop or inline onTrigger body relays up to
+ * the parent run, recursing through nested loop and inline onTrigger bodies. A
+ * flat `steps` record keys gate branches and onTimeout targets as siblings, so
+ * enumerating the record covers them without a graph walk. A childWorkflow body
+ * runs in a separate signal namespace and is not relayed, so it is skipped.
+ */
+function collectRelayedAwaitSignalNames(
+  primitive: Primitive,
+): { name: string; bodyStepId: string }[] {
+  let body: Record<string, Primitive> | undefined;
+  if (primitive.kind === "loop") {
+    body = primitive.body.steps;
+  } else if (primitive.kind === "onTrigger" && "inline" in primitive.body) {
+    body = primitive.body.inline.steps;
+  }
+  if (body === undefined) return [];
+  const names: { name: string; bodyStepId: string }[] = [];
+  for (const [bodyStepId, bodyPrimitive] of Object.entries(body)) {
+    if (bodyPrimitive.kind === "awaitSignal") {
+      names.push({ name: bodyPrimitive.name, bodyStepId });
+    }
+    for (const nested of collectRelayedAwaitSignalNames(bodyPrimitive)) {
+      names.push({
+        name: nested.name,
+        bodyStepId: `${bodyStepId}/${nested.bodyStepId}`,
+      });
+    }
+  }
+  return names;
+}
+
+/**
+ * A memoized descendant-reachability predicate over the dependency adjacency.
+ * The graph is acyclic (validateAcyclic runs first), so the walk terminates.
+ */
+function makeReachability(
+  adjacency: Map<string, string[]>,
+): (from: string, to: string) => boolean {
+  const descendants = new Map<string, Set<string>>();
+  const descendantsOf = (start: string): Set<string> => {
+    const cached = descendants.get(start);
+    if (cached !== undefined) return cached;
+    const seen = new Set<string>();
+    const stack = [...(adjacency.get(start) ?? [])];
+    while (stack.length > 0) {
+      const node = stack.pop();
+      if (node === undefined || seen.has(node)) continue;
+      seen.add(node);
+      for (const next of adjacency.get(node) ?? []) {
+        stack.push(next);
+      }
+    }
+    descendants.set(start, seen);
+    return seen;
+  };
+  return (from, to) => descendantsOf(from).has(to);
+}
+
+/**
+ * The transitive closure of `starts` following `after`-edges forward: every
+ * step that (transitively) depends on a start. This is the liveness set the
+ * runtime's branch prune spares -- the same graph the onFailure straddler
+ * guard reasons over, so both share this function rather than drift. Follows
+ * `after` edges ONLY, not gate/loop/onFailure routing edges.
+ */
+export function downstreamClosure(
+  steps: Record<string, Primitive>,
+  starts: readonly string[],
+): Set<string> {
+  const visited = new Set<string>();
+  const queue: string[] = starts.filter((id) => id in steps);
+  while (queue.length > 0) {
+    const id = queue.shift();
+    if (id === undefined) break;
+    if (visited.has(id)) continue;
+    visited.add(id);
+    for (const [otherId, primitive] of Object.entries(steps)) {
+      const after = primitive.after;
+      if (after === undefined) continue;
+      if (after.includes(id) && !visited.has(otherId)) {
+        queue.push(otherId);
+      }
+    }
+  }
+  return visited;
 }
 
 /**
@@ -593,6 +1024,9 @@ function projectForHash(definition: WorkflowDefinition): unknown {
     ...(definition.credentialBindings !== undefined
       ? { credentialBindings: definition.credentialBindings }
       : {}),
+    ...(definition.sidecarPlacement !== undefined
+      ? { sidecarPlacement: definition.sidecarPlacement }
+      : {}),
     steps: Object.fromEntries(
       Object.entries(definition.steps).map(([id, primitive]) => [
         id,
@@ -616,8 +1050,9 @@ function projectPrimitive(primitive: Primitive): unknown {
     // A loop carries an inline body definition whose steps may hold
     // agents (function-valued tool factories). Project the body the same
     // way as the top level so the whole thing is function-free before
-    // canonicalization. The body-ban forbids a nested loop, so this
-    // recursion is bounded.
+    // canonicalization. A body may itself hold a nested loop, so this
+    // recursion traverses it -- bounded by the finite definition tree and
+    // the `MAX_LOOP_NESTING_DEPTH` limit enforced at definition time.
     return { ...primitive, body: projectForHash(primitive.body) };
   }
   return primitive;

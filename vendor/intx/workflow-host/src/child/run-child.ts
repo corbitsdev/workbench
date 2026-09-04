@@ -62,6 +62,8 @@ import type { DirectorRegistry } from "@intx/agent";
 import {
   rewriteInlineOnTriggerBodies,
   rewriteInlineChildWorkflowBodies,
+  enumerateInlineLoopBodies,
+  eagerlyResolveLoopFns,
 } from "@intx/workflow";
 import type { AuthzCallResult } from "@intx/inference";
 
@@ -86,7 +88,7 @@ import {
   baseStepId,
   createDefaultActionInvoker,
   createInMemoryEffectLedger,
-  createLoopIteration,
+  createLoopIterationHandle,
   emptyState,
   runtimeRun,
 } from "@intx/workflow";
@@ -104,6 +106,7 @@ import { createWorkflowRunBlobSubstrate } from "../adapters/blob-substrate";
 import { createMailPartReader } from "../adapters/mail-part-store";
 import type {
   HostSpawnSuspendableChild,
+  HostSpawnChild,
   RunSuspendableChild,
   RunChildWorkflow,
 } from "../adapters/spawn-child";
@@ -143,6 +146,7 @@ import type { ChildOutboundMailBridge } from "./outbound-mail-bridge";
 import type { ChildMailboxMutationBridge } from "./mailbox-mutation-bridge";
 import type { MailboxWatchRegistry } from "./mailbox-watch-registry";
 import { createWarmAgentCache, type WarmAgentCache } from "./warm-agent-cache";
+import { mergeCredentialDelivery } from "./credential-cell";
 
 const logger = getLogger(["workflow-host", "child"]);
 
@@ -166,10 +170,12 @@ export type CredentialsSnapshotRef = {
 
 /**
  * The deployment's decrypted credential material and per-handle descriptors,
- * held through a mutable reference and swapped wholesale on a rotation push (a
- * revoked credential arrives by omission, so the swap evicts it). The secret
- * lives ONLY here -- read at tool-invoke time through the gated capability --
- * and is never copied into a snapshot, event, or state.
+ * held through a mutable reference. A `credentials-updated` frame MERGES into
+ * this cell (materials by credentialId, bindings by (consumer, handle); an
+ * explicit `revoke` list drops entries) rather than replacing it wholesale,
+ * because the cell has several independently-scoped producers. The secret lives
+ * ONLY here -- read at tool-invoke time through the gated capability -- and is
+ * never copied into a snapshot, event, or state.
  */
 export type CredentialMaterialRef = {
   current: CredentialDelivery | null;
@@ -391,6 +397,24 @@ export interface RunWorkflowChildBindings {
    * that runs no onTrigger section omits it.
    */
   runSuspendableChild?: RunSuspendableChild;
+  /**
+   * Materialize a loop iteration run's own `runs/<childRunId>/grants.json`,
+   * inheriting the parent (container) run's grants capped to the loop body's
+   * declared resources. A loop iteration runs through the workflow-host-local
+   * loop executor (the inherited env), NOT the sidecar's `buildChildRunEnv`, so
+   * it is the one body birth path that does not otherwise write its own grants
+   * file -- and without it the body's `childWorkflow` grandchild spawn is
+   * refused as under-authorized. Wired by the sidecar (the grant-cap helpers
+   * live there); optional so a test or an in-process host that never spawns a
+   * grandchild from a loop body can omit it. `definition` MUST be the PRE-rewrite
+   * loop body (grandchild still inline) so the cap keeps the grandchild's
+   * declared resources.
+   */
+  materializeLoopIterationGrants?: (args: {
+    parentRunId: string;
+    childRunId: string;
+    definition: WorkflowDefinition;
+  }) => Promise<void>;
   /** Host-process scheduler singleton. The child consumes the same instance. */
   scheduler: Scheduler;
   /** Grant evaluator wired against the host's grant-rule grammar. */
@@ -718,6 +742,37 @@ export async function runWorkflowChild(
     childRewrite.bodies.map((b) => [b.ref, b.definition]),
   );
 
+  // A loop iteration runs its body as a suspendable child through the same seam
+  // an onTrigger body uses, so register each top-level loop body in `bodiesMap`
+  // under its `<workflowId>__<stepId>` ref. Unlike an onTrigger or childWorkflow
+  // body, a loop keeps its body INLINE on the primitive -- both hash layers
+  // project the body inline, so rewriting the primitive would change every
+  // existing loop's hash. `enumerateInlineLoopBodies` mints a ref-keyed COPY and
+  // leaves the primitive untouched, and a given step is exactly one primitive
+  // kind, so a loop ref never collides with an onTrigger or childWorkflow ref.
+  //
+  // A loop body may itself contain a `childWorkflow` grandchild: rewrite the
+  // COPY's inline children to `{ ref }` (the primitive, and thus the hash, is
+  // untouched) and fold the extracted grandchildren into `childBodiesMap` HERE
+  // -- before the eager loop-fn/handler resolution and the terminal-childWorkflow
+  // host selection below, both of which read `childBodiesMap`. Merging later
+  // would resolve a grandchild's refs mid-run instead of at establish, and would
+  // leave `childBodiesMap` empty for a deployment whose only child is a
+  // loop-body grandchild, so its spawn would find no wired terminal host.
+  // Keep each loop body's PRE-rewrite form (its childWorkflow grandchild still
+  // inline) keyed by ref: the grants cap for a loop iteration re-walks it, and
+  // capping the rewritten `{ ref }` form would skip -- and so under-authorize --
+  // the grandchild's declared resources.
+  const loopBodyPreRewrite = new Map<string, WorkflowDefinition>();
+  for (const loopBody of enumerateInlineLoopBodies(definition)) {
+    loopBodyPreRewrite.set(loopBody.ref, loopBody.definition);
+    const bodyRewrite = rewriteInlineChildWorkflowBodies(loopBody.definition);
+    bodiesMap.set(loopBody.ref, bodyRewrite.workflow);
+    for (const grandchild of bodyRewrite.bodies) {
+      childBodiesMap.set(grandchild.ref, grandchild.definition);
+    }
+  }
+
   // Directors resolve from the pinned closure so a custom director authored in
   // the workflow's own package runs. Loading directors OUTSIDE the
   // definition-hash re-verify is safe: the approved hash pins each director's
@@ -759,14 +814,15 @@ export async function runWorkflowChild(
     actionResolver,
   );
 
-  // Suspendable-child (onTrigger body) resolver, selected ONCE per deployment:
-  // the bodies map is immutable and the per-run `onEvent` is injected later in
-  // `buildRuntimeEnv`. Resolve each body from the parent's in-memory closure
-  // (already re-verified above) via the raw executor binding. A deployment that
-  // carries bodies but whose host wired no executor is a misconfiguration --
-  // fail loud at startup rather than silently falling back to a disk read (the
-  // exact behaviour this arm exists to avoid). A deployment with no onTrigger
-  // body leaves the host undefined; its suspendable-child slot is never invoked.
+  // Suspendable-child resolver (onTrigger section bodies and loop bodies),
+  // selected ONCE per deployment: the bodies map is immutable and the per-run
+  // `onEvent` is injected later in `buildRuntimeEnv`. Resolve each body from the
+  // parent's in-memory closure (already re-verified above) via the raw executor
+  // binding. A deployment that carries bodies but whose host wired no executor is
+  // a misconfiguration -- fail loud at startup rather than silently falling back
+  // to a disk read (the exact behaviour this arm exists to avoid). A deployment
+  // with no suspendable body leaves the host undefined; its slot is never
+  // invoked.
   const authorize = createCredentialsBackedAuthorize(
     credentialsRef,
     opts.bindings.evaluateGrants,
@@ -777,15 +833,18 @@ export async function runWorkflowChild(
     const executor = opts.bindings.runSuspendableChild;
     if (executor === undefined) {
       throw new Error(
-        "workflow-child: source-ref deployment carries onTrigger bodies but " +
-          "the host wired no runSuspendableChild executor; cannot resolve " +
-          "bodies in-memory",
+        "workflow-child: source-ref deployment carries suspendable bodies " +
+          "(onTrigger sections or loop bodies) but the host wired no " +
+          "runSuspendableChild executor; cannot resolve bodies in-memory",
       );
     }
-    // CL-6448: thread the parent's credentials-backed authorize and live
-    // credential wiring into every body spawn, so a body agent's tool
-    // calls gate through the same per-step grant snapshot (and its tool
-    // bundles resolve credentials) exactly as a top-level step's do.
+    // CL-6448: thread the parent's credentials-backed authorize, live
+    // credential wiring and mail part reader into every body spawn, so a body
+    // agent's tool calls gate through the same per-step grant snapshot,
+    // resolve credentials, and read an attachments-only inbound mail's parts
+    // exactly as a top-level step's do. Upstream's native `credentialMaterial`
+    // covers only the material cell, not the per-step `resolveStepGrants` a
+    // body's tool bundles need.
     suspendableChildHost = createInMemorySpawnSuspendableChild({
       bodies: bodiesMap,
       runSuspendableChild: executor,
@@ -808,7 +867,10 @@ export async function runWorkflowChild(
   // a misconfiguration and fails loud at startup rather than falling back to a
   // disk read. A definition with no inline child keeps the injected binding (a
   // test seam); its childWorkflow slot is never invoked.
-  let spawnChild: SpawnChildWorkflow;
+  // `HostSpawnChild` (a call-arg `onEvent`) like the suspendable host: the
+  // resolver is deployment-scoped but each run injects its own event sink in
+  // `buildRuntimeEnv`. The two fallback arms ignore the sink.
+  let spawnChild: HostSpawnChild;
   if (childBodiesMap.size > 0) {
     const executor = opts.bindings.runChild;
     if (executor === undefined) {
@@ -822,12 +884,13 @@ export async function runWorkflowChild(
       runChild: executor,
     });
   } else if (opts.bindings.spawnChild !== undefined) {
-    spawnChild = opts.bindings.spawnChild;
+    const injected = opts.bindings.spawnChild;
+    spawnChild = (input, _onEvent) => injected(input);
   } else {
     // No inline child and no injected binding: a workflow that nonetheless
     // reaches a childWorkflow spawn fails loud here rather than silently
     // completing against a child that never ran.
-    spawnChild = async ({ definitionRef }) => {
+    spawnChild = async ({ definitionRef }, _onEvent) => {
       throw new Error(
         `workflow-child: childWorkflow ${definitionRef} reached the runtime ` +
           `but no child executor is wired`,
@@ -892,6 +955,8 @@ export async function runWorkflowChild(
       authorize,
       directors,
       suspendableChildHost,
+      bodiesMap,
+      loopBodyPreRewrite,
       spawnChild,
       loopFns,
       actionResolver,
@@ -997,6 +1062,8 @@ export async function runWorkflowChild(
           authorize,
           directors,
           suspendableChildHost,
+          bodiesMap,
+          loopBodyPreRewrite,
           spawnChild,
           loopFns,
           actionResolver,
@@ -1105,7 +1172,9 @@ async function handleControlPayload(
     authorize: WorkflowAuthorizeFn;
     directors: DirectorRegistry;
     suspendableChildHost: HostSpawnSuspendableChild | undefined;
-    spawnChild: SpawnChildWorkflow;
+    bodiesMap: ReadonlyMap<string, WorkflowDefinition>;
+    loopBodyPreRewrite: ReadonlyMap<string, WorkflowDefinition>;
+    spawnChild: HostSpawnChild;
     loopFns: LoopFnRegistry;
     actionResolver: (ref: string) => ActionHandler;
     clock: () => Date;
@@ -1162,6 +1231,8 @@ async function handleControlPayload(
         authorize: ctx.authorize,
         directors: ctx.directors,
         suspendableChildHost: ctx.suspendableChildHost,
+        bodiesMap: ctx.bodiesMap,
+        loopBodyPreRewrite: ctx.loopBodyPreRewrite,
         spawnChild: ctx.spawnChild,
         loopFns: ctx.loopFns,
         actionResolver: ctx.actionResolver,
@@ -1241,12 +1312,20 @@ async function handleControlPayload(
       return false;
     }
     case "credentials-updated": {
-      // Replace the in-memory credential material wholesale. A revoked
-      // credential arrives by omission -- its material entry is absent from
-      // the delivery -- so the swap evicts it. Atomic whole-object assignment,
-      // so a concurrent reader never observes a torn cell. The secret stays on
-      // this ref only; nothing here copies it into a snapshot, event, or state.
-      ctx.credentialMaterialRef.current = payload.data.delivery;
+      // Merge the delivery into the live cell (see `mergeCredentialDelivery`):
+      // materials upsert by credentialId, bindings by (consumer, handle), and
+      // `revoke` drops named credentialIds plus any binding referencing them.
+      // Merge rather than wholesale-replace because the cell has several
+      // independently-scoped producers, so a swap would evict another
+      // producer's credentials. The result is assigned in one atomic
+      // whole-object swap, so a concurrent reader never observes a torn cell.
+      // The secret stays on this ref only; nothing here copies it into a
+      // snapshot, event, or state.
+      ctx.credentialMaterialRef.current = mergeCredentialDelivery(
+        ctx.credentialMaterialRef.current,
+        payload.data.delivery,
+        payload.data.revoke,
+      );
       return false;
     }
     case "signal.deliver": {
@@ -1556,31 +1635,6 @@ async function handleControlPayload(
  * shape; the substrate handle and per-deployment `RepoStore` adapter
  * are shared across runs.
  */
-/**
- * Force-resolve every loop `while`/`carry` ref reachable from these definitions
- * against the registry, so a missing loop fn surfaces at establish rather than
- * when the loop is first driven mid-run. Recurses into a loop's inline body (a
- * nested loop resolves against the same shared registry). The caller passes the
- * lifted onTrigger/childWorkflow bodies separately, since those are `{ ref }` in
- * the top-level definition and this walk does not descend into them.
- */
-function eagerlyResolveLoopFns(
-  definitions: readonly WorkflowDefinition[],
-  loopFns: LoopFnRegistry,
-): void {
-  const visit = (def: WorkflowDefinition): void => {
-    for (const step of Object.values(def.steps)) {
-      if (step.kind === "loop") {
-        // Each call throws (fail closed) if the ref names no export, or an
-        // export that is not a function.
-        loopFns(step.while);
-        loopFns(step.carry);
-        visit(step.body);
-      }
-    }
-  };
-  for (const def of definitions) visit(def);
-}
 
 /**
  * Force-resolve every `action` handler ref reachable from these definitions
@@ -1613,7 +1667,9 @@ function buildRuntimeEnv(args: {
   authorize: WorkflowAuthorizeFn;
   directors: DirectorRegistry;
   suspendableChildHost: HostSpawnSuspendableChild | undefined;
-  spawnChild: SpawnChildWorkflow;
+  bodiesMap: ReadonlyMap<string, WorkflowDefinition>;
+  loopBodyPreRewrite: ReadonlyMap<string, WorkflowDefinition>;
+  spawnChild: HostSpawnChild;
   loopFns: LoopFnRegistry;
   actionResolver: (ref: string) => ActionHandler;
   clock: () => Date;
@@ -1676,15 +1732,32 @@ function buildRuntimeEnv(args: {
   // funnel -- the same closure `invokeStep` forwards -- so a body's live
   // inference events ride the parent run's event channel to the hub stream
   // (and inherit its loud-on-failure logging), while the runtime env keeps the
-  // narrow contract with no event slot.
+  // narrow contract with no event slot. The run's live credential-material cell
+  // rides the same seam so the body's inference resolves its source secret
+  // against the parent's current delivery, reached live on a rotation.
   const hostSuspendable = args.suspendableChildHost;
   const spawnSuspendableChild: SpawnSuspendableChild | undefined =
     hostSuspendable === undefined
       ? undefined
       : (spawnInput) =>
-          hostSuspendable(spawnInput, (event) => {
-            args.onEvent(event, spawnInput.childRunId);
-          });
+          hostSuspendable(
+            spawnInput,
+            (event) => {
+              args.onEvent(event, spawnInput.childRunId);
+            },
+            args.credentialWiring.materialRef,
+          );
+  // Same adaptation for the terminal childWorkflow seam: inject THIS run's event
+  // funnel so a child's live inference events ride the parent run's channel, and
+  // the live credential-material cell so the child's inference resolves its
+  // source secret against the parent's current delivery, while the runtime env
+  // keeps the narrow `SpawnChildWorkflow` (no event slot).
+  const spawnChild: SpawnChildWorkflow = (spawnInput) =>
+    args.spawnChild(
+      spawnInput,
+      args.onEvent,
+      args.credentialWiring.materialRef,
+    );
   const env: WorkflowRuntimeEnv = {
     repoStore: args.runtimeRepoStore,
     scheduler: args.bindings.scheduler,
@@ -1693,7 +1766,7 @@ function buildRuntimeEnv(args: {
     directors: args.directors,
     authorize: args.authorize,
     invokeStep,
-    spawnChild: args.spawnChild,
+    spawnChild,
     // Resolve a loop's `while`/`carry` refs against the closure's loop module.
     // Every ref was force-resolved at establish, so a lookup here cannot fail
     // for a definition that passed startup.
@@ -1720,10 +1793,75 @@ function buildRuntimeEnv(args: {
       ? { readParkedApprovalOps: args.bindings.readParkedApprovalOps }
       : {}),
   };
-  // Run one loop iteration as a child run against the shared store. Assigned
-  // AFTER env construction because it closes over `env`, so each iteration's
-  // child run shares this run's repoStore + blobs (mirrors runLocal).
-  env.runLoopIteration = createLoopIteration(env);
+  // The suspendable-loop executor runs each iteration's body under THIS run's
+  // inherited env (its real tool-bearing invokeStep, invokeAction, credentials
+  // authorize, effect ledger, and durable shared repoStore/blobs), giving the
+  // body only its own substrate-backed signal channel -- the inherited-env
+  // iteration model plus park capability, distinct from an onTrigger body's
+  // fresh capped/toolless env. Resolved from the bodies map by ref (loop
+  // bodies were registered there at establish) and wrapped with this run's
+  // event funnel. Assigned AFTER env construction because it closes over `env`.
+  const loopIterationHost = createInMemorySpawnSuspendableChild({
+    bodies: args.bodiesMap,
+    runSuspendableChild: async (loopInput, _onEvent) => {
+      // Materialize this iteration's own grants file BEFORE the body runs (i.e.
+      // before `createLoopIterationHandle` drives the iteration's first event
+      // append), so a `childWorkflow` grandchild spawned from the body reads it
+      // as authority (the sidecar's runChild fails closed on a missing parent
+      // grants file). This ordering is LOAD-BEARING: the grants write is
+      // write-once and its shallow-prefix rebuild is safe only while the
+      // iteration run's subtree is still empty -- see `capAndPersistChildGrants`.
+      // The cap must walk the PRE-rewrite loop body (grandchild still inline);
+      // the rewritten body in `bodiesMap` would skip the grandchild's resources.
+      // Every loop body is registered in `loopBodyPreRewrite` at establish under
+      // the same ref the runtime dispatches, so a miss is a defect -- fail loud
+      // rather than silently skip, which would re-open the fail-closed
+      // grandchild spawn. The BINDING is a separate sidecar-only seam: `runLocal`
+      // keeps no per-run grants file (its grandchild spawn never fails closed),
+      // so it omits the binding, and an absent binding leaves the iteration's
+      // grants unmaterialized -- matching the in-process model with no disk
+      // authority.
+      const preRewriteBody = args.loopBodyPreRewrite.get(
+        loopInput.definitionRef,
+      );
+      if (preRewriteBody === undefined) {
+        throw new Error(
+          `workflow-child: loop iteration ${loopInput.childRunId} has no ` +
+            `pre-rewrite body registered for ref ${loopInput.definitionRef}`,
+        );
+      }
+      await args.bindings.materializeLoopIterationGrants?.({
+        parentRunId: loopInput.parentRunId,
+        childRunId: loopInput.childRunId,
+        definition: preRewriteBody,
+      });
+      const childSignalChannel = createWorkflowHostSignalChannel({
+        repoStore: args.bindings.substrate,
+        principal: args.bindings.principal,
+        repoId: args.bindings.workflowRunRepoId,
+        ref: args.bindings.workflowRunRef,
+        runId: loopInput.childRunId,
+        readState: () => emptyState(loopInput.childRunId),
+        newId: () => args.newId("sig"),
+        clock: args.clock,
+      });
+      return createLoopIterationHandle(env, {
+        definition: loopInput.definition,
+        childRunId: loopInput.childRunId,
+        input: loopInput.input,
+        depth: loopInput.depth,
+        maxChildSpawnDepth: loopInput.maxChildSpawnDepth,
+        ...(loopInput.resumeFromEvents !== undefined
+          ? { resumeFromEvents: loopInput.resumeFromEvents }
+          : {}),
+        signal: loopInput.signal,
+        signalChannel: childSignalChannel,
+        cleanup: () => childSignalChannel.stop(),
+      });
+    },
+  });
+  env.spawnLoopIteration = (spawnInput) =>
+    loopIterationHost(spawnInput, args.onEvent);
 
   // Action handlers run against a per-run effect ledger. The ledger is
   // IN-MEMORY, and that is correct -- not a shortcut -- on the deployed store:

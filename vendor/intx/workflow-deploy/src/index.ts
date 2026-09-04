@@ -10,7 +10,7 @@
 //   - deploy derivation + source pinning: pure address derivation
 //     (`deriveRunAddress`, `deriveStepAddress`, `resolveStepAddress`, ...)
 //     and per-step inference-source resolution against the operator-
-//     approved grant set (`pickStepInferenceSource`,
+//     approved grant set (`pickStepInferenceSource`, `pinInertStepSources`,
 //     `buildInertProjectionStepSources`).
 
 export {
@@ -29,13 +29,14 @@ export {
 } from "./capability-approval";
 export { extractFoldedBody, type FoldedBody } from "./fold-synthesis";
 export {
-  enumerateInertOnTriggerBodies,
+  enumerateInertBodies,
   inertLoopBody,
-  type EnumeratedInertOnTriggerBody,
+  type EnumeratedInertBody,
   type InertBodyStepPreference,
 } from "./inert-ontrigger-bodies";
 export {
   pickStepInferenceSource,
+  pinInertStepSources,
   buildInertProjectionStepSources,
   buildSingleStepAgentDefinition,
   deriveRunAddress,

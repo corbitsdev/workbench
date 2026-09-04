@@ -45,6 +45,7 @@ export {
   type BeginSidecarReplacementArgs,
   type BindInitialSidecarArgs,
   type BindReplacementSidecarArgs,
+  type CreateAdoptedSidecarAllocationArgs,
   type ClaimSidecarAllocationArgs,
   type CreatePendingSidecarAllocationArgs,
   type FailSidecarAllocationArgs,
@@ -58,6 +59,13 @@ export {
   type SidecarAllocationStore,
 } from "./sidecar-allocation-store";
 export {
+  createWorkflowProbeStore,
+  type BindWorkflowProbeSidecarArgs,
+  type CreateWorkflowProbeArgs,
+  type WorkflowProbe,
+  type WorkflowProbeStore,
+} from "./workflow-probe-store";
+export {
   createWorkflowDefinitionStore,
   loadFrozenGrantSnapshot,
   loadFrozenWireProjection,
@@ -65,7 +73,11 @@ export {
   type WorkflowDefinitionRollbackResult,
   type WorkflowDefinitionSelector,
 } from "./workflow-definition-store";
-export { getAncestorChain, getDescendantTenants } from "./tenant-hierarchy";
+export {
+  getAncestorChain,
+  getDescendantTenants,
+  resolveTenantSidecarCapabilityPolicies,
+} from "./tenant-hierarchy";
 export { resolveActivePrice, type ModelPricingRow } from "./pricing";
 export {
   resolveProviderByName,
@@ -74,7 +86,10 @@ export {
   resolveCredentialById,
   resolveCredentialRequirement,
   resolveTenantOwnedCredentialById,
+  resolveInferenceMaterials,
+  reresolveCurrentMaterials,
   AmbiguousCredentialError,
+  CredentialUnauthorizedError,
   buildCredentialDelivery,
 } from "./credential-resolution";
 export type {

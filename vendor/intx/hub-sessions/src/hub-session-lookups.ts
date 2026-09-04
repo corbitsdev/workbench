@@ -6,7 +6,7 @@
 // single struct that the hub app passes to `createSidecarRouter` as
 // `lookups`.
 
-import { eq, and, asc, inArray, isNull } from "drizzle-orm";
+import { eq, and, asc, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import {
   createApprovalStore,
@@ -147,7 +147,12 @@ export type HubSessionLookupsDeps = {
 
 export function createHubSessionLookups(
   deps: HubSessionLookupsDeps,
-): Required<Omit<SidecarLookups, "materializeMailTriggeredRunGrants">> {
+): Required<
+  Omit<
+    SidecarLookups,
+    "materializeMailTriggeredRunGrants" | "resyncCredentials"
+  >
+> {
   const { db, agentRepoStore } = deps;
 
   const signalCorrelationStore = createSignalCorrelationStore(db);
@@ -156,31 +161,6 @@ export function createHubSessionLookups(
   const workflowRunDispatchStore = createWorkflowRunDispatchStore(db);
 
   return {
-    async lookupPublicKey(agentAddress) {
-      // Every routable address names one workflow run, whose key lives on its
-      // single self-anchored workflow_run row, keyed by address. Read the key
-      // off that row, gated on a live run (born "deployed", "running" after its
-      // first trigger) so a decommissioned deployment's key can no longer
-      // satisfy a challenge. The "deployed" arm is load-bearing: the reconnect
-      // ownership challenge fires in the deploy->first-trigger window, so a
-      // "running"-only gate would fail every such challenge closed. A missing
-      // row or a null publicKey (live but not yet acked) returns null so the
-      // reconnect challenge fails closed and the address stays unrouted rather
-      // than routing without ownership proof.
-      const row = await db
-        .select({ publicKey: workflowRun.publicKey })
-        .from(workflowRun)
-        .where(
-          and(
-            eq(workflowRun.address, agentAddress),
-            inArray(workflowRun.status, [...liveWorkflowRunStatuses]),
-          ),
-        )
-        .limit(1)
-        .then((rows) => rows[0]);
-      return row?.publicKey ?? null;
-    },
-
     async lookupDeployRef() {
       // A workflow run is a supervised workflow-process pinned forever like a
       // native deployment: it keeps its deploy-time definition and never
@@ -477,7 +457,12 @@ export function createHubSessionLookups(
           anchorRunId: workflowRun.anchorRunId,
         })
         .from(workflowRun)
-        .where(eq(workflowRun.address, anchorLookupAddress))
+        .where(
+          and(
+            eq(workflowRun.address, anchorLookupAddress),
+            isNotNull(workflowRun.definitionId),
+          ),
+        )
         .limit(1);
       if (!ownsWorkflowRunRepo(anchor)) {
         logger.warn`Workflow-run pack rejected for ${workflowRunRepoId}: source address has no deployment anchor it owns`;
@@ -486,55 +471,38 @@ export function createHubSessionLookups(
       const anchorAddress = anchor.address;
       let newlyTerminalRuns;
       try {
-        if (source.kind === "allocated") {
-          newlyTerminalRuns = await db.transaction(async (tx) => {
-            const [allocation] = await tx
-              .select()
-              .from(sidecarAllocation)
-              .where(eq(sidecarAllocation.anchorRunId, anchor.id))
-              .limit(1)
-              .for("update");
-            if (
-              allocation === undefined ||
-              allocation.id !== source.allocationId ||
-              allocation.anchorRunId !== source.anchorRunId ||
-              source.anchorRunId !== anchor.id ||
-              allocation.status !== "allocated" ||
-              allocation.generation !== source.generation ||
-              allocation.ensureAcceptedGeneration !== source.generation
-            ) {
-              return null;
-            }
+        newlyTerminalRuns = await db.transaction(async (tx) => {
+          const [allocation] = await tx
+            .select()
+            .from(sidecarAllocation)
+            .where(eq(sidecarAllocation.anchorRunId, anchor.id))
+            .limit(1)
+            .for("update");
+          if (
+            allocation === undefined ||
+            allocation.id !== source.allocationId ||
+            allocation.anchorRunId !== source.anchorRunId ||
+            source.anchorRunId !== anchor.id ||
+            allocation.status !== "allocated" ||
+            allocation.generation !== source.generation ||
+            allocation.ensureAcceptedGeneration !== source.generation
+          ) {
+            return null;
+          }
 
-            // Replacement advances this same row. Keep its lock until the
-            // repository ref has advanced so ownership cannot change after
-            // validation but before the old worker's pack becomes
-            // authoritative.
-            return agentRepoStore.receiveWorkflowRunPack(
-              { kind: "workflow-run", id: workflowRunRepoId },
-              pack,
-              ref,
-              commitSha,
-            );
-          });
-          if (newlyTerminalRuns === null) {
-            logger.warn`Workflow-run pack rejected for ${workflowRunRepoId}: source connection does not own the deployment's current allocation`;
-            return { accepted: false, reason: "path_violation" as const };
-          }
-        } else {
-          const allocation = await db.query.sidecarAllocation.findFirst({
-            where: eq(sidecarAllocation.anchorRunId, anchor.id),
-          });
-          if (allocation !== undefined) {
-            logger.warn`Workflow-run pack rejected for ${workflowRunRepoId}: source connection does not own the deployment's current allocation`;
-            return { accepted: false, reason: "path_violation" as const };
-          }
-          newlyTerminalRuns = await agentRepoStore.receiveWorkflowRunPack(
+          // Replacement advances this same row. Keep its lock until the
+          // repository ref has advanced so ownership cannot change after
+          // validation but before the old worker's pack becomes authoritative.
+          return agentRepoStore.receiveWorkflowRunPack(
             { kind: "workflow-run", id: workflowRunRepoId },
             pack,
             ref,
             commitSha,
           );
+        });
+        if (newlyTerminalRuns === null) {
+          logger.warn`Workflow-run pack rejected for ${workflowRunRepoId}: source connection does not own the deployment's current allocation`;
+          return { accepted: false, reason: "path_violation" as const };
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -1052,9 +1020,13 @@ export async function findRoutableById(
   if (
     runRow === undefined ||
     !isTopLevelRun(runRow) ||
-    runRow.address === null
+    runRow.address === null ||
+    runRow.definitionId === null
   ) {
     return undefined;
   }
-  return runRowToRoutableRecord(runRow, runRow.address);
+  return runRowToRoutableRecord(
+    { ...runRow, definitionId: runRow.definitionId },
+    runRow.address,
+  );
 }

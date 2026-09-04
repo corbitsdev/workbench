@@ -39,35 +39,22 @@ export const RegisterFrame = type({
 export type RegisterFrame = typeof RegisterFrame.infer;
 
 /**
- * Sent on connect when the sidecar has agent repositories or deployments
- * from a previous run. Lists the addresses it can serve, triggering the
- * challenge/response ownership-verification flow for every one of them --
- * launched agents and workflow deployments alike, so both are proven, not
- * routed on trust.
+ * Sent on connect after a provisioned sidecar restores its deployment.
+ * The bearer token binds the connection to one allocation generation, so the
+ * Hub accepts only that allocation's workflow address.
  */
 export const ReconnectFrame = type({
   type: "'reconnect'",
   sidecarId: "string",
   token: "string",
   agentAddresses: "string[]",
-  "deployRefs?": "Record<string, string>",
 });
 export type ReconnectFrame = typeof ReconnectFrame.infer;
 
 /**
- * Response to a challenge frame. Contains a signature per run address
- * proving the sidecar holds the private key. Each signature is computed
- * over `nonce || utf8(agentAddress)`.
- */
-export const ChallengeResponseFrame = type({
-  type: "'challenge.response'",
-  responses: type({ address: "string", signature: "string" }).array(),
-});
-export type ChallengeResponseFrame = typeof ChallengeResponseFrame.infer;
-
-/**
  * Acknowledges a successful agent deployment. Includes the agent's Ed25519
- * public key (hex-encoded) so the hub can verify ownership on reconnect.
+ * public key (hex-encoded) for published identity and content provenance.
+ * Reconnect authority comes from the allocation credential.
  */
 export const AgentDeployAckFrame = type({
   type: "'agent.deploy.ack'",
@@ -99,7 +86,7 @@ export const MailOutboundFrame = type({
   type: "'mail.outbound'",
   rawMessage: "string",
   recipients: "string[]",
-  "senderAddress?": "string",
+  senderAddress: "string",
   "sessionId?": "string",
   "messageId?": "string",
   "to?": "string[]",
@@ -412,9 +399,9 @@ export type SourceRefPin = typeof SourceRefPin.infer;
 /**
  * The frozen, fully-serializable record of a code-sourced workflow approval,
  * persisted at prepare time and rehydrated to deploy the exact same definition
- * later. It is the recovery input for an exclusively-placed workflow: the probe
- * runs once on shared capacity at request time, its result is frozen here, and a
- * ready allocation deploys THIS bundle verbatim with no re-probe.
+ * later. It is the recovery input for a provisioned workflow: the probe runs
+ * once on probe-scoped capacity, its result is frozen here, and a ready
+ * allocation deploys THIS bundle verbatim with no re-probe.
  *
  * Every field is inert, secret-free data. `source`/`entry` name where the
  * definition's bytes come from and the entry module the probe evaluated;
@@ -480,12 +467,15 @@ export const AgentDeployWorkflow = type({
   // instead -- the production hub builder always stamps it and the sidecar fails
   // closed if it is absent.
   "approvedWireHash?": "string > 0",
-  // Extracted onTrigger section bodies. Each entry carries the body's inert
-  // definition, its own per-step inference-source pins, and its approved wire
-  // hash. The sidecar stages each body's `sources.json` so a body child --
-  // in-process, its env lost across a restart -- resolves inference durably; the
-  // body definition itself is resolved in-memory from the parent's re-verified
-  // closure. Optional: only an onTrigger deploy carries it.
+  // Extracted trigger bodies -- onTrigger sections and childWorkflow children,
+  // lifted transitively. Each entry carries the body's inert definition, its own
+  // per-step inference-source pins, and its approved wire hash. The sidecar seals
+  // each body's sources into the per-run record and delivers the plaintext to the
+  // run child through the spawn env, so a body child -- in-process, its env lost
+  // across a restart -- resolves inference durably without holding the cipher
+  // key; the body definition itself is resolved in-memory from the parent's
+  // re-verified closure. Optional: only a deploy that carries an inline onTrigger
+  // section or childWorkflow child populates it.
   "referencedDefinitions?": WorkflowProjectionWithSources.array(),
   // Initial credential material for the deployment's tools, decrypted hub-side
   // and delivered on the deploy frame so it is resident before any step runs
@@ -546,27 +536,6 @@ export const AgentUndeployFrame = type({
 export type AgentUndeployFrame = typeof AgentUndeployFrame.infer;
 
 /**
- * Per-address cryptographic challenge. The sidecar must sign
- * `nonce || utf8(address)` with each agent's private key and respond
- * with a challenge.response frame.
- */
-export const ChallengeFrame = type({
-  type: "'challenge'",
-  challenges: type({ address: "string", nonce: "string" }).array(),
-});
-export type ChallengeFrame = typeof ChallengeFrame.infer;
-
-/**
- * Sent when challenge verification fails for a specific address.
- */
-export const ChallengeFailedFrame = type({
-  type: "'challenge.failed'",
-  address: "string",
-  reason: "string",
-});
-export type ChallengeFailedFrame = typeof ChallengeFailedFrame.infer;
-
-/**
  * Keepalive pong sent by the hub in response to a ping frame.
  * If the sidecar stops receiving pongs, it considers the hub dead.
  */
@@ -592,16 +561,22 @@ export const SourcesUpdateFrame = type({
 export type SourcesUpdateFrame = typeof SourcesUpdateFrame.infer;
 
 /**
- * Push refreshed credential material to a running deployment (a rotation, or a
- * revocation delivered by omitting the revoked credential's material so the
- * child evicts it). Mirrors `SourcesUpdateFrame`: the sidecar routes it to the
- * deployment's supervisor, which forwards it to the child's in-memory cell.
+ * Push refreshed credential material to a running deployment. Mirrors
+ * `SourcesUpdateFrame`: the sidecar routes it to the deployment's supervisor,
+ * which forwards it to the child's in-memory cell. The child MERGES `delivery`
+ * (materials upsert by credentialId, bindings by consumer-and-handle) and drops
+ * each credentialId in `revoke` plus any binding referencing it. Removal is
+ * explicit through `revoke` -- omitting a material does not evict it, because
+ * the cell has several independently-scoped producers and a wholesale swap
+ * would let one evict another's credentials. A pure revocation carries an empty
+ * `delivery` and the revoked ids in `revoke`.
  */
 export const CredentialsUpdateFrame = type({
   type: "'credentials.update'",
   requestId: "string",
   agentAddress: "string",
   delivery: CredentialDelivery,
+  "revoke?": "string[]",
 });
 export type CredentialsUpdateFrame = typeof CredentialsUpdateFrame.infer;
 
@@ -972,7 +947,6 @@ export type WorkflowProbeErrorFrame = typeof WorkflowProbeErrorFrame.infer;
 
 /** All frame types the sidecar sends to the hub. */
 export const SidecarFrame = RegisterFrame.or(ReconnectFrame)
-  .or(ChallengeResponseFrame)
   .or(AgentDeployAckFrame)
   .or(AgentErrorFrame)
   .or(MailOutboundFrame)
@@ -995,8 +969,6 @@ export type SidecarFrame = typeof SidecarFrame.infer;
 /** All frame types the hub sends to the sidecar. */
 export const HubFrame = MailInboundFrame.or(AgentDeployFrame)
   .or(AgentUndeployFrame)
-  .or(ChallengeFrame)
-  .or(ChallengeFailedFrame)
   .or(PongFrame)
   .or(SourcesUpdateFrame)
   .or(CredentialsUpdateFrame)
