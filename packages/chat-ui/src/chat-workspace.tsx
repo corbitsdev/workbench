@@ -1434,7 +1434,7 @@ function ChatWorkspaceInner({
             entry.tone === "agent" ? (
               <span
                 key={entry.key}
-                className="chat-member-avatar !overflow-hidden !bg-transparent !p-0"
+                className="member-avatar !overflow-hidden !bg-transparent !p-0"
                 data-agent="true"
                 title={entry.label}
               >
@@ -1447,7 +1447,7 @@ function ChatWorkspaceInner({
             ) : (
               <span
                 key={entry.key}
-                className="chat-member-avatar"
+                className="member-avatar"
                 style={{
                   backgroundColor: entry.color,
                   color: entry.textColor,

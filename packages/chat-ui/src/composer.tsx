@@ -1057,7 +1057,7 @@ export const Composer = forwardRef<
                         <CorbitAvatar
                           ariaLabel={option.candidate.label}
                           size="sm"
-                          className="chat-mention-avatar"
+                          className="mention-avatar"
                         />
                       ) : (
                         <Avatar
@@ -1065,7 +1065,7 @@ export const Composer = forwardRef<
                           label={option.candidate.label}
                           tone="neutral"
                           size="sm"
-                          className="chat-mention-avatar !bg-[var(--avatar-identity-bg)] !text-[var(--avatar-identity-fg)]"
+                          className="mention-avatar !bg-[var(--avatar-identity-bg)] !text-[var(--avatar-identity-fg)]"
                         />
                       )}
                       <span className="chat-mention-meta">

@@ -379,7 +379,7 @@ function SenderAvatar({
     : (generatedAvatarStyle(id) as CSSProperties);
   return (
     <span
-      className="chat-sender-avatar-wrap"
+      className="sender-avatar-wrap"
       title={label}
       style={identityStyle}
     >
@@ -387,7 +387,7 @@ function SenderAvatar({
         <CorbitAvatar
           ariaLabel={label}
           size="md"
-          className="chat-sender-avatar"
+          className="sender-avatar"
         />
       ) : (
         <Avatar
@@ -395,7 +395,7 @@ function SenderAvatar({
           label={label}
           tone="neutral"
           size="md"
-          className="chat-sender-avatar !bg-[var(--avatar-identity-bg)] !text-[var(--avatar-identity-fg)]"
+          className="sender-avatar !bg-[var(--avatar-identity-bg)] !text-[var(--avatar-identity-fg)]"
         />
       )}
       {tenantMonogram !== undefined ? (
@@ -508,7 +508,7 @@ function TextBubble({
       {showHeader && display !== undefined && (
         <button
           type="button"
-          className="chat-sender-avatar-button"
+          className="sender-avatar-button"
           aria-label={`${CHAT_STRINGS.profileOpenAction}: ${display.label}`}
           disabled={profileSubject === null || onOpenProfile === undefined}
           onClick={handleOpenProfile}
@@ -2060,12 +2060,12 @@ function ThreadAffordance({
                 key={`${chip.address}-${index}`}
                 ariaLabel={chip.label}
                 size={20}
-                className="chat-thread-avatar-chip !overflow-hidden !rounded-full !bg-transparent !p-0"
+                className="thread-avatar-chip !overflow-hidden !rounded-full !bg-transparent !p-0"
               />
             ) : (
               <span
                 key={`${chip.address}-${index}`}
-                className="chat-thread-avatar-chip !bg-[var(--avatar-identity-bg)] !text-[var(--avatar-identity-fg)]"
+                className="thread-avatar-chip !bg-[var(--avatar-identity-bg)] !text-[var(--avatar-identity-fg)]"
                 style={generatedAvatarStyle(chip.address) as CSSProperties}
               >
                 {chip.initials}

@@ -247,7 +247,7 @@ function ReplyRow({ reply }: { readonly reply: PrThreadReply }) {
         <CorbitAvatar
           ariaLabel={reply.sender}
           size="lg"
-          className="chat-sender-avatar"
+          className="sender-avatar"
         />
       )}
       <div className="chat-pr-reply-body">

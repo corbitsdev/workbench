@@ -693,7 +693,7 @@
   padding: 0.5rem 0.625rem;
 }
 
-.chat-sender-avatar-button,
+.sender-avatar-button,
 .chat-bubble-sender-button {
   appearance: none;
   border: 0;
@@ -706,7 +706,7 @@
   font: inherit;
 }
 
-.chat-sender-avatar-button:disabled,
+.sender-avatar-button:disabled,
 .chat-bubble-sender-button:disabled {
   cursor: default;
 }
@@ -931,7 +931,7 @@
 
 /* The message header's avatar chip — sizing, tone color, and initials
    come from react-ui's `Avatar`; this only positions it within the row. */
-.chat-sender-avatar {
+.sender-avatar {
   margin-top: 0.1rem;
   border-radius: 50%;
 }
@@ -940,7 +940,7 @@
    streaming bubble) still occupies the same avatar column, so text
    never shifts when the streamed reply finalizes into a persisted
    message. */
-.chat-bubble-row > .chat-sender-avatar-wrap {
+.chat-bubble-row > .sender-avatar-wrap {
   width: 2.15rem;
   display: inline-grid;
   place-items: start center;
@@ -952,7 +952,7 @@
    rendered when the server annotates the sender with a
    `tenantMonogram` (see `resolveMessageSenderTenant` in
    `packages/chat/src/routes.ts`). */
-.chat-sender-avatar-wrap {
+.sender-avatar-wrap {
   position: relative;
   display: inline-flex;
 }
@@ -975,14 +975,14 @@
   line-height: 1;
 }
 
-.chat-sender-avatar-button {
+.sender-avatar-button {
   position: relative;
   display: grid;
   place-items: start center;
   width: 2.15rem;
 }
 
-.chat-sender-avatar-button::after {
+.sender-avatar-button::after {
   content: "";
   position: absolute;
   inset: -8px;
@@ -2898,7 +2898,7 @@
   outline-offset: -2px;
 }
 
-.chat-mention-avatar {
+.mention-avatar {
   flex-shrink: 0;
 }
 
@@ -3131,7 +3131,7 @@
   align-items: center;
 }
 
-.chat-member-avatar,
+.member-avatar,
 .chat-member-stack-overflow {
   display: grid;
   place-items: center;
@@ -3146,7 +3146,7 @@
   line-height: 1;
 }
 
-.chat-member-avatar:first-child {
+.member-avatar:first-child {
   margin-left: 0;
 }
 
@@ -3570,7 +3570,7 @@
 /* The reply-thread affordance's small overlapping initials stack — kept
    as its own bespoke chip (not the header's react-ui `Avatar`) since it
    only ever shows a stack of bare initials, no tone or tooltip. */
-.chat-thread-avatar-chip {
+.thread-avatar-chip {
   display: grid;
   place-items: center;
   flex-shrink: 0;
@@ -3586,7 +3586,7 @@
   font-size: 0.5625rem;
 }
 
-.chat-thread-avatar-chip:first-child {
+.thread-avatar-chip:first-child {
   margin-left: 0;
 }
 
