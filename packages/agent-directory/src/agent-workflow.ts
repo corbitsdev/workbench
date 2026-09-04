@@ -39,11 +39,11 @@ export const AGENT_DEFINITION_STEP_ID = "agent";
  * The tool package that turns a name in the `<available_skills>` index
  * into an actual skill body at run time. A definition that pins skills
  * must pin this too, or its prompt would tell the model to call a
- * `load_skill` tool that does not exist.
+ * `skills_load` tool that does not exist.
  */
 export const SKILLS_TOOL_PACKAGE_PIN = {
   name: "@corbits/tools-skills",
-  version: "0.0.1",
+  version: "0.0.2",
 } as const;
 
 /**

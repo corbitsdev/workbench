@@ -1402,11 +1402,11 @@ test("a create request indexes its pinned skills into the stored system prompt",
   const prompt = promptFrom(workflowJson);
   expect(prompt.startsWith("You are a careful research assistant.")).toBe(true);
   expect(prompt).toContain("- web-research: What web-research does.");
-  expect(prompt).toContain("load_skill");
-  // The prompt tells the model to call `load_skill`, so the bundle that
+  expect(prompt).toContain("skills_load");
+  // The prompt tells the model to call `skills_load`, so the bundle that
   // provides it must be pinned on the same push.
   expect(pinsFrom(workflowJson)).toEqual([
-    { name: "@corbits/tools-skills", version: "0.0.1" },
+    { name: "@corbits/tools-skills", version: "0.0.2" },
   ]);
 });
 
