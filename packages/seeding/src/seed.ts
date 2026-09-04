@@ -1343,7 +1343,52 @@ async function ensureCatalogOffering(
     return;
   }
   if (created.status === 409) {
-    log("catalog offering already exists (skipped)");
+    let cursor: string | null = null;
+    let existing: typeof ModelOfferingResponse.infer | undefined;
+    do {
+      const listed = await api(
+        "GET",
+        `/api/tenants/${args.tenantId}/catalog/offerings${cursor === null ? "" : `?cursor=${encodeURIComponent(cursor)}`}`,
+        undefined,
+        cookies,
+      );
+      const page = parseAs(
+        paginatedSchema(ModelOfferingResponse),
+        listed.data,
+        "catalog offerings response",
+      );
+      existing = page.data.find(
+        (offering) =>
+          offering.modelId === args.modelId &&
+          offering.providerId === args.providerId,
+      );
+      cursor = page.nextCursor;
+    } while (existing === undefined && cursor !== null);
+    if (!existing) {
+      throw new HubApiError(
+        "catalog offering reported a conflict but is not listable on the bench",
+        "check the hub logs for the underlying failure, then re-run: workbench seed",
+      );
+    }
+    if (existing.priority === args.priority) {
+      log("catalog offering already exists (skipped)");
+      return;
+    }
+
+    const updated = await api(
+      "PATCH",
+      `/api/tenants/${args.tenantId}/catalog/offerings/${existing.id}`,
+      { priority: args.priority },
+      cookies,
+    );
+    if (updated.status !== 200) {
+      throw new HubApiError(
+        `the hub rejected updating the catalog offering priority with status ${updated.status}: ${JSON.stringify(updated.data)}`,
+        "check the hub logs for the underlying failure, then re-run: workbench seed",
+      );
+    }
+    parseAs(ModelOfferingResponse, updated.data, "catalog offering response");
+    log("updated catalog offering priority");
     return;
   }
   throw new HubApiError(
@@ -1570,14 +1615,14 @@ export async function seedCatalog(
     },
     log,
   );
-  // Priority = the provider's CATALOG_SEEDS declaration index (anthropic
-  // first), so when several connected providers serve the same model the
-  // fallback order is deterministic instead of an all-zeroes tie broken
-  // by insertion accident.
-  const offeringPriority = Math.max(
-    0,
-    Object.keys(CATALOG_SEEDS).indexOf(provider),
-  );
+  // Flatten the curated provider/model declaration order into one priority
+  // sequence. Provider order still controls cross-provider fallback, while
+  // model order makes each provider's declared default the first choice.
+  let offeringPriorityOffset = 0;
+  for (const [seedProvider, providerSeed] of Object.entries(CATALOG_SEEDS)) {
+    if (seedProvider === provider) break;
+    offeringPriorityOffset += providerSeed.models.length;
+  }
   // What each deployment can do, resolved from the pinned catalog's probe
   // results. Until this, every seeded offering stored an empty capability
   // list, so no capability filter — this repo's concept resolution or the
@@ -1589,7 +1634,7 @@ export async function seedCatalog(
     canonicalName: string;
     capabilities: readonly string[];
   }[] = [];
-  for (const model of seededModels) {
+  for (const [modelIndex, model] of seededModels.entries()) {
     // Ollama's dynamic entries already carry their own live-probed
     // capabilities (`fetchOllamaModelCatalog`, CL-6366) — narrowed against
     // the real `Capability` enum here, the trust boundary, rather than
@@ -1631,7 +1676,7 @@ export async function seedCatalog(
         tenantId,
         modelId: model.id,
         providerId: catalogProviderId,
-        priority: offeringPriority,
+        priority: offeringPriorityOffset + modelIndex,
         capabilities,
         ...(quirks !== undefined ? { quirks } : {}),
       },

@@ -1505,7 +1505,7 @@ describe("seedCatalog", () => {
           capabilities: string[];
         };
         expect(offeringBody.providerId).toBe("cpv_1");
-        expect(offeringBody.priority).toBe(0);
+        expect(offeringBody.priority).toBe(offeringPosts.length);
         expect(offeringBody.capabilities.length).toBeGreaterThan(0);
         expect(offeringBody.capabilities).toContain("plain-text");
         expect(offeringBody.capabilities).toContain(
@@ -1558,6 +1558,173 @@ describe("seedCatalog", () => {
     expect(output).toContain(
       "catalog ready: anthropic/claude-sonnet-5, claude-opus-5, claude-opus-4-8, claude-haiku-4-5-20251001, claude-fable-5, claude-sonnet-4-6",
     );
+  });
+
+  test("fresh run gives the declared Anthropic default the lowest distinct priority", async () => {
+    const { log } = collector();
+    const modelNamesById = new Map<string, string>();
+    const offeringPosts: { modelId: string; priority: number }[] = [];
+    const handler: FakeHandler = (method, path, body) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
+        return { status: 201, data: providerRow("prv_1", "anthropic") };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/credentials`)
+        return {
+          status: 201,
+          data: credentialRow("cre_1", "prv_1", "anthropic-default"),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      ) {
+        const canonicalName = (body as { canonicalName: string }).canonicalName;
+        const modelId = `mdl_${modelNamesById.size + 1}`;
+        modelNamesById.set(modelId, canonicalName);
+        return {
+          status: 201,
+          data: catalogModelRow(modelId, canonicalName),
+        };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      )
+        return {
+          status: 201,
+          data: catalogProviderRow("cpv_1", "anthropic", "cre_1"),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      ) {
+        const offering = body as { modelId: string; priority: number };
+        offeringPosts.push(offering);
+        return {
+          status: 201,
+          data: catalogOfferingRow(
+            `off_${offeringPosts.length}`,
+            offering.modelId,
+            "cpv_1",
+          ),
+        };
+      }
+      return undefined;
+    };
+
+    await seedCatalog({
+      api: fakeAPI(handler),
+      cookies: [],
+      tenantId: TENANT_ID,
+      apiKey: "sk-test",
+      log,
+    });
+
+    const priorities = offeringPosts.map((offering) => offering.priority);
+    const sonnet = offeringPosts.find(
+      (offering) => modelNamesById.get(offering.modelId) === "claude-sonnet-5",
+    );
+    expect(new Set(priorities).size).toBe(offeringPosts.length);
+    expect(sonnet?.priority).toBe(Math.min(...priorities));
+  });
+
+  test("re-run updates a legacy offering to its computed priority", async () => {
+    const { log } = collector();
+    const patchedOfferings: { id: string; priority: number }[] = [];
+    const handler: FakeHandler = (method, path, body) => {
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
+        return { status: 201, data: providerRow("prv_1", "anthropic") };
+      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/credentials`)
+        return {
+          status: 201,
+          data: credentialRow("cre_1", "prv_1", "anthropic-default"),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/models`
+      ) {
+        const canonicalName = (body as { canonicalName: string }).canonicalName;
+        const modelId =
+          canonicalName === "claude-opus-5" ? "mdl_legacy" : "mdl_new";
+        return { status: 201, data: catalogModelRow(modelId, canonicalName) };
+      }
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/providers`
+      )
+        return {
+          status: 201,
+          data: catalogProviderRow("cpv_1", "anthropic", "cre_1"),
+        };
+      if (
+        method === "POST" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      ) {
+        const offering = body as { modelId: string };
+        if (offering.modelId === "mdl_legacy")
+          return { status: 409, data: { error: "already exists" } };
+        return {
+          status: 201,
+          data: catalogOfferingRow(
+            `off_${offering.modelId}`,
+            offering.modelId,
+            "cpv_1",
+          ),
+        };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      )
+        return {
+          status: 200,
+          data: {
+            data: [
+              catalogOfferingRow(
+                "off_other_provider",
+                "mdl_legacy",
+                "cpv_other",
+              ),
+            ],
+            nextCursor: "second-page",
+          },
+        };
+      if (
+        method === "GET" &&
+        path ===
+          `/api/tenants/${TENANT_ID}/catalog/offerings?cursor=second-page`
+      )
+        return {
+          status: 200,
+          data: {
+            data: [catalogOfferingRow("off_legacy", "mdl_legacy", "cpv_1")],
+            nextCursor: null,
+          },
+        };
+      if (
+        method === "PATCH" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings/off_legacy`
+      ) {
+        const patch = body as { priority: number };
+        patchedOfferings.push({ id: "off_legacy", priority: patch.priority });
+        return {
+          status: 200,
+          data: {
+            ...catalogOfferingRow("off_legacy", "mdl_legacy", "cpv_1"),
+            priority: patch.priority,
+          },
+        };
+      }
+      return undefined;
+    };
+
+    await seedCatalog({
+      api: fakeAPI(handler),
+      cookies: [],
+      tenantId: TENANT_ID,
+      apiKey: "sk-test",
+      log,
+    });
+
+    expect(patchedOfferings).toEqual([{ id: "off_legacy", priority: 1 }]);
   });
 
   test("an Ollama offering's quirks carry that model's real context-window ceiling, not the built-in 4096 default", async () => {
@@ -1721,6 +1888,7 @@ describe("seedCatalog", () => {
     const { lines, log } = collector();
     let patchCalls = 0;
     let postCredentialCalls = 0;
+    let offeringPosts = 0;
     let patchBody: unknown;
 
     const staleCredentialRow = () => ({
@@ -1793,11 +1961,17 @@ describe("seedCatalog", () => {
         method === "POST" &&
         path === `/api/tenants/${TENANT_ID}/catalog/offerings`
       ) {
-        // Priority = the provider's CATALOG_SEEDS declaration index, so
-        // multi-provider fallback order is deterministic, never a tie.
-        expect((body as { priority: number }).priority).toBe(
+        const providersBeforeHuggingFace = Object.entries(CATALOG_SEEDS).slice(
+          0,
           Object.keys(CATALOG_SEEDS).indexOf("huggingface"),
         );
+        expect((body as { priority: number }).priority).toBe(
+          providersBeforeHuggingFace.reduce(
+            (offset, [, providerSeed]) => offset + providerSeed.models.length,
+            0,
+          ) + offeringPosts,
+        );
+        offeringPosts += 1;
         return {
           status: 201,
           data: catalogOfferingRow("off_1", "mdl_1", "cpv_1"),
@@ -2198,6 +2372,24 @@ describe("seedCatalog", () => {
         offeringPosts += 1;
         return { status: 409, data: { error: "already exists" } };
       }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      )
+        return {
+          status: 200,
+          data: {
+            data: anthropicModels.map((_, index) => ({
+              ...catalogOfferingRow(
+                `off_${index + 1}`,
+                `mdl_${index + 1}`,
+                "cpv_1",
+              ),
+              priority: index,
+            })),
+            nextCursor: null,
+          },
+        };
       return undefined;
     };
 
