@@ -78,6 +78,10 @@ export async function runSidecarShutdown({
     // way and a bound cutting a slow drain short is not a crash. A drain
     // that threw is a genuine fault and exits non-zero.
     if (outcome.kind === "failed") {
+      // report-error-ignore: CL-7221 — `report` defaults to reportError
+      // from @corbits/error-sink (see RunSidecarShutdownArgs above); it's
+      // a parameter, not an import binding, so check:report-error's
+      // static import-binding match can't see through the default.
       report(outcome.error, { operation: "sidecar.shutdown" });
       log.error`Drain threw during shutdown; exiting non-zero: ${errorMessage(outcome.error)}`;
       exit(1);
@@ -85,6 +89,8 @@ export async function runSidecarShutdown({
     }
     exit(0);
   } catch (error) {
+    // report-error-ignore: CL-7221 — same injected-reporter default as
+    // the catch above.
     report(error, { operation: "sidecar.shutdown" });
     log.error`Shutdown threw; exiting non-zero: ${errorMessage(error)}`;
     exit(1);
