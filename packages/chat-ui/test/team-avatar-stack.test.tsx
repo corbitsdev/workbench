@@ -203,9 +203,7 @@ describe("workbench header member avatar stack", () => {
     await harness.settle();
 
     const agentAvatars = Array.from(
-      harness.container.querySelectorAll(
-        '.member-avatar[data-agent="true"]',
-      ),
+      harness.container.querySelectorAll('.member-avatar[data-agent="true"]'),
     ) as HTMLElement[];
     expect(agentAvatars).toHaveLength(2);
     expect(agentAvatars.map((avatar) => avatar.title)).toEqual([
