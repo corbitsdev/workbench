@@ -39,16 +39,10 @@ import {
   createMailTriggeredRunGrantsMaterializer,
   createRequireGrant,
   readDurableWorkflowRunLifecycles,
-  resolveDefinitionSources,
   type AppEnv,
   type TenantEnv,
 } from "@intx/hub-api";
-import {
-  deriveRunAddress,
-  deriveRunAgentId,
-  WorkflowDefinitionInvalidError,
-} from "@intx/workflow-deploy";
-import type { HarnessConfig } from "@intx/types/runtime";
+import { WorkflowDefinitionInvalidError } from "@intx/workflow-deploy";
 // CL-7362: computes the preview's wire hash from the probed-but-unapproved
 // projection `installAndApproveWorkflowSource` returns on `grants_not_approved`
 // — the gate itself only stamps this hash on the `ok:true` arm.
@@ -227,6 +221,7 @@ import {
   createWorkflowAllocationService,
   createWorkflowDispatchService,
   DEFAULT_ASSET_REF,
+  WorkflowProvisioningError,
   type AgentRepoStore,
   type EventCollectorRegistry,
   type WsHandle,
@@ -2018,38 +2013,15 @@ export async function createHub(config: HubConfig) {
     }),
   );
   // CL-7361: the `deploy` half of the run-authenticated deployer this
-  // route's registry calls — the SAME `sessionService.
-  // deployWorkflowFromSource` call (already `withDeploySourceRecording`-
-  // wrapped above) the native `POST /workflows/deployments` route's own
-  // non-exclusive branch makes, not a reimplementation of install/probe/
-  // gate/freeze. Inference sources are resolved server-side from the
-  // tenant's catalog (`resolveDefinitionSources`) exactly as
-  // `agent-definitions`' `tenantDefaultModel` does above — an agent never
-  // supplies or sees a provider secret. Exclusive sidecar placement is out
-  // of scope: an agent-authored deploy always lands on shared capacity.
-  // Thin adapter over Interchange's native deploy: `registry.deploy()`
-  // (packages/agent-workflow-authoring) already resolves and authorizes the
-  // asset (own-tenant row check, `workflow:*`/create) before calling this,
-  // so this seam receives the already-resolved `assetId`/`assetName`
-  // rather than re-querying `assetTable` — the only work this adapter adds
-  // on top of native `sessionService.deployWorkflowFromSource` is
-  // server-side inference-source resolution (`resolveDefinitionSources`),
-  // because the native `/workflows/deployments` route requires the caller
-  // to supply `sources` directly and an agent caller must never see a
-  // provider secret to do that itself. `modelRequirements: null` is
-  // deliberate: a workflow's own declared model needs (if any) are not
-  // considered at this step, matching `agent-definitions`' identical
-  // tenant-default resolution above; deploy always resolves against the
-  // tenant's default/first-preference model.
+  // route's registry calls — the SAME `prepareProvisionedDeployment` the
+  // native `POST /workflows/deployments` route drives. Inference sources
+  // ride as catalog offering ids (`listVisibleOfferings`); an agent never
+  // supplies or sees a provider secret. The tree is already on the asset
+  // at `commitSha`, so this does not re-populate.
   //
   // `wf_deploy_preview` (CL-7362) is NOT wired through this
-  // deployer, and is not a probe-without-freeze call into native
-  // `sessionService` — a reviewed vendored delta that would have enabled
-  // that was reverted (see VENDORED.md). Instead `registry.previewDeploy`
-  // (packages/agent-workflow-authoring) does a static, read-only render of
-  // the already-committed source at `commitSha` straight off `RepoStore`,
-  // parsing `package.json` and the entry module text; it never touches
-  // install/probe/gate/freeze, so it truly cannot deploy anything.
+  // deployer. `registry.previewDeploy` does a static, read-only render of
+  // the already-committed source at `commitSha` straight off `RepoStore`.
   const workflowDeployer: WorkflowDeployer = {
     async deploy({ tenantId, principalId, assetId, commitSha, entry }) {
       const tenantRow = await db.query.tenant.findFirst({
@@ -2062,68 +2034,57 @@ export async function createHub(config: HubConfig) {
         );
       }
 
-      const fallbackModel =
-        (await workbenchHostInferencePreferencesResolver(tenantId))[0]?.model ??
-        null;
-      const resolution = await resolveDefinitionSources({
-        db,
-        tenantId,
-        modelRequirements: null,
-        fallbackModel,
-        invokerPreferences: {},
-        credentialCipher,
-      });
-      if (!resolution.ok) {
-        throw new WorkflowAuthorError("invalid", resolution.message);
+      const offerings = [...(await listVisibleOfferings(db, tenantId))].sort(
+        (a, b) => a.offering.priority - b.offering.priority,
+      );
+      const sourceOfferingIds = offerings.map((o) => o.offering.id);
+      const defaultSourceOfferingId = sourceOfferingIds[0];
+      if (defaultSourceOfferingId === undefined) {
+        throw new WorkflowAuthorError(
+          "invalid",
+          "no catalog offerings visible to this tenant",
+        );
       }
 
-      const anchorRunId = generateId("workflowRun");
-      const agentAddress = deriveRunAddress({
-        runId: anchorRunId,
-        domain: tenantRow.domain,
-      });
-      const config: HarnessConfig = {
-        sessionId: generateId("session"),
-        agentId: deriveRunAgentId({ runId: anchorRunId }),
-        tenantId,
-        principalId,
-        agentAddress,
-        systemPrompt: "",
-        tools: [],
-        grants: [],
-        sources: resolution.sources,
-        defaultSource: resolution.defaultSource,
-      };
-
       try {
-        const result = await sessionService.deployWorkflowFromSource({
-          tenantId,
-          anchorRunId,
-          deploymentDomain: tenantRow.domain,
-          agentAddress,
-          source: {
-            kind: "asset",
-            assetId,
-            package: { format: "source", commitSha },
-          },
-          entry,
-          definitionAssetId: assetId,
-          config,
-        });
+        const prepared =
+          await workflowAllocationService.prepareProvisionedDeployment({
+            tenantId,
+            anchorRunId: generateId("workflowRun"),
+            deploymentDomain: tenantRow.domain,
+            source: {
+              kind: "asset",
+              assetId,
+              package: { format: "source", commitSha },
+            },
+            entry,
+            definitionAssetId: assetId,
+            sessionId: generateId("session"),
+            sourceAuthorityPrincipalId: principalId,
+            sourceOfferingIds,
+            defaultSourceOfferingId,
+            deployContent: { systemPrompt: "" },
+          });
         return {
-          deploymentId: result.anchorRunId,
+          deploymentId: prepared.anchorRunId,
           definitionAssetId: assetId,
-          status: "deployed",
+          status: prepared.status,
         };
       } catch (err) {
         // Mirrors `@intx/hub-api`'s own `/workflows/deployments` route: an
         // install/gate rejection or an unapproved source chain is a
-        // client/definition error; anything else (a missing commit, an
-        // unreachable sidecar) is reported as `unavailable` rather than
-        // guessed apart, exactly as the native route's own catch-all does.
+        // client/definition error; a provisioning failure or anything else
+        // (a missing commit, an unreachable sidecar) is `unavailable`.
         if (err instanceof WorkflowDefinitionInvalidError) {
           throw new WorkflowAuthorError("invalid", err.message);
         }
+        if (err instanceof WorkflowProvisioningError) {
+          throw new WorkflowAuthorError("unavailable", err.message);
+        }
+        reportError(err, {
+          operation: "workflow-author-deploy",
+          tenantId,
+        });
         throw new WorkflowAuthorError(
           "unavailable",
           err instanceof Error ? err.message : "Failed to deploy workflow",
@@ -2134,7 +2095,7 @@ export async function createHub(config: HubConfig) {
   // Agent-authored workflows (CL-7360, CL-7361): an agent publishes a
   // workflow codebase as a native `kind:"workflow"` asset AND deploys it,
   // both through this workflow-run-authenticated surface — `deploy`
-  // reaches the exact same `sessionService.deployWorkflowFromSource` the
+  // reaches the exact same `prepareProvisionedDeployment` the
   // tenant-session `/workflows/deployments` route drives (`workflowDeployer`
   // above), never a second gating path. Unlike `/api/workflow-skills`
   // above, every write here also runs a real `chatGrantStore`

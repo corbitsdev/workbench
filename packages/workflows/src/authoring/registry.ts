@@ -10,9 +10,8 @@
 // `@intx/hub-api`'s existing source-based `POST .../workflows/deployments`
 // route: it checks `workflow:*`/`create` itself, then calls a
 // `WorkflowDeployer` apps/hub injects that wraps the SAME
-// `sessionService.deployWorkflowFromSource` call the native route makes
-// (`withDeploySourceRecording` included) with inference sources resolved
-// server-side from the tenant's catalog, never supplied by the caller.
+// `prepareProvisionedDeployment` call the native route makes, with
+// catalog offering ids resolved server-side, never supplied by the caller.
 // No install/probe/gate/freeze logic is reimplemented here.
 //
 // `populateAsset` is called with `principal: { kind: "hub" }`, the same
@@ -125,12 +124,12 @@ export type WorkflowDeployPreviewResult = {
 
 /**
  * The apps/hub-supplied seam onto the same operation the native
- * `POST /workflows/deployments` route drives (`sessionService.
- * deployWorkflowFromSource`, wrapped by `withDeploySourceRecording`), with
- * inference sources resolved server-side from the tenant's catalog. Thrown
- * failures are `WorkflowAuthorError`s with a reason this registry passes
- * straight through: `not_found` (asset/commit missing), `invalid`
- * (rejected package/definition), `unavailable` (sidecar unreachable).
+ * `POST /workflows/deployments` route drives
+ * (`prepareProvisionedDeployment`), with catalog offering ids resolved
+ * server-side. Thrown failures are `WorkflowAuthorError`s with a reason
+ * this registry passes straight through: `not_found` (asset/commit
+ * missing), `invalid` (rejected package/definition or empty catalog),
+ * `unavailable` (sidecar unreachable).
  *
  * CL-7362: this seam carries no `previewDeploy` — the preview
  * (`registry.previewDeploy` below) never touches `sessionService` at all,
