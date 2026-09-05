@@ -1,17 +1,32 @@
-// Proves `launchWebhookTrigger`'s post-launch mail send is hardened the
-// same way `apps/hub/src/routine-launcher.test.ts` proves its own copy
-// of this shape: a delivery already accepted has already committed a
-// real run, so an exhausted `sendFoldedMailWithRetry` must not throw
-// past this function (or `createWebhookIngressRoutes` would reject an
-// already-launched delivery, and a retried webhook client would then
-// mint a duplicate run for the same event).
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+// Proves `launchWebhookTrigger` provisions through Interchange and
+// hardens the opening-mail send: a delivery already accepted has
+// already committed a real run, so a failed `sendUserMessage` must not
+// throw past this function (or `createWebhookIngressRoutes` would
+// reject an already-launched delivery, and a retried webhook client
+// would then mint a duplicate run for the same event).
+import { describe, expect, mock, test } from "bun:test";
+import { AGENT_RUNTIME_ENTRY_PATH } from "@corbits/agent-runtime";
+import { DEFAULT_ASSET_REF } from "@intx/hub-sessions";
 
-let reportErrorCalls: unknown[] = [];
+const actualDb = await import("@intx/db");
 
-const actualFoldedRuns = await import("@corbits/folded-runs");
+const INERT_PROJECTION = {
+  id: "wfd_1",
+  stepOrder: ["host"],
+  steps: {
+    host: {
+      kind: "step",
+      agent: {
+        systemPrompt: "you are a webhook-triggered agent",
+        toolPackagePins: [],
+        modelSources: [{ provider: "anthropic", model: "claude-sonnet-5" }],
+      },
+    },
+  },
+  credentialBindings: [],
+};
 
-const FOLDED_BODY = {
+const EXPECTED_FOLDED_BODY = {
   systemPrompt: "you are a webhook-triggered agent",
   toolPackagePins: [],
   grantRequirements: [],
@@ -19,49 +34,48 @@ const FOLDED_BODY = {
   model: "claude-sonnet-5",
 };
 
-let launchFoldedRunCalls: unknown[] = [];
-let sendFoldedMailWithRetryCalls: unknown[] = [];
-let sendFoldedMailWithRetryResult: unknown = { ok: true, mail: { id: "m_1" } };
+const DEFAULT_VISIBLE_OFFERINGS = [
+  {
+    offering: { id: "off_1", priority: 0 },
+    model: { canonicalName: "claude-sonnet-5" },
+    provider: { name: "anthropic" },
+  },
+  {
+    offering: { id: "off_2", priority: 10 },
+    model: { canonicalName: "ignored-lower" },
+    provider: { name: "other" },
+  },
+];
 
-mock.module("@corbits/folded-runs", () => ({
-  ...actualFoldedRuns,
-  readDefinitionProjection: async () => ({ __fake: true }),
-  readFoldedBody: () => FOLDED_BODY,
-  launchFoldedRun: async (...args: unknown[]) => {
-    launchFoldedRunCalls.push(args);
-    return {
-      instancePrincipalId: "prn_run1",
-      sessionId: "ses_run1",
-      sourcesDigest: "digest_run1",
-    };
-  },
-  sendFoldedMailWithRetry: async (...args: unknown[]) => {
-    sendFoldedMailWithRetryCalls.push(args);
-    return sendFoldedMailWithRetryResult;
-  },
+let visibleOfferings: typeof DEFAULT_VISIBLE_OFFERINGS = [
+  ...DEFAULT_VISIBLE_OFFERINGS,
+];
+let frozenProjection: unknown = INERT_PROJECTION;
+
+mock.module("@intx/db", () => ({
+  ...actualDb,
+  listVisibleOfferings: async () => visibleOfferings,
+  loadFrozenWireProjection: async () => frozenProjection,
 }));
 
-beforeEach(async () => {
-  reportErrorCalls = [];
-  await mock.module("@corbits/error-sink", () => ({
-    reportError: (...args: unknown[]) => {
-      reportErrorCalls.push(args);
-      return "ref_test";
-    },
-  }));
-});
+let reportErrorCalls: unknown[] = [];
 
-afterEach(() => {
-  mock.restore();
-});
+mock.module("@corbits/error-sink", () => ({
+  reportError: (...args: unknown[]) => {
+    reportErrorCalls.push(args);
+    return "ref_test";
+  },
+}));
 
 const { launchWebhookTrigger } = await import("../src/launch");
 
 const DEFINITION_ROW = {
   id: "wfd_1",
+  name: "webhook agent",
   tenantId: "ten_1",
   status: "deployed" as const,
   assetId: "ast_1",
+  grantRequirements: [],
 };
 
 const TENANT_ROW = {
@@ -96,62 +110,116 @@ const taggedCipher = {
   decrypt: async (blob: string) => blob,
 };
 
+const INTERCHANGE_RUN_ID = "wfr_interchange";
+const INTERCHANGE_ADDRESS = `${INTERCHANGE_RUN_ID}@${TENANT_ROW.domain}`;
+const COMMIT_SHA = "sha_rendered";
+
+type PrepareArgs = {
+  readonly tenantId: string;
+  readonly anchorRunId: string;
+  readonly sessionId: string;
+  readonly deploymentDomain: string;
+  readonly source: unknown;
+  readonly entry: string;
+  readonly definitionAssetId: string;
+  readonly sourceAuthorityPrincipalId: string;
+  readonly sourceOfferingIds: readonly string[];
+  readonly defaultSourceOfferingId: string;
+  readonly deployContent: unknown;
+  readonly toolPackagePins?: readonly unknown[];
+};
+
 let persistLaunchCalls: unknown[] = [];
 let recordLaunchSourcesCalls: unknown[] = [];
-const persistedLaunchExtra = async () => {};
+let populateAssetCalls: unknown[] = [];
+let prepareCalls: PrepareArgs[] = [];
+let sendUserMessageCalls: unknown[] = [];
+let sendUserMessageImpl: () => Promise<Uint8Array> = async () =>
+  new Uint8Array([1]);
+let cryptoGetKeys: string[] = [];
 
 function baseDeps() {
   return {
     db: createFakeDb() as never,
-    sessionService: {} as never,
-    assetService: {} as never,
-    sidecarRouter: {} as never,
-    toolGrantsForPins: () => [],
-    eventCollectors: {} as never,
     credentialCipher: taggedCipher,
-    cryptoProviderCache: { get: async () => ({}) as never },
+    cryptoProviderCache: {
+      get: async (key: string) => {
+        cryptoGetKeys.push(key);
+        return {} as never;
+      },
+    },
     launchMode: { kind: "section" as const, turnTimeoutMs: 60_000 },
-    persistLaunch: (input: unknown) => {
+    persistLaunch: async (input: unknown) => {
       persistLaunchCalls.push(input);
-      return persistedLaunchExtra;
     },
     recordLaunchSources: async (input: unknown) => {
       recordLaunchSourcesCalls.push(input);
     },
+    assetService: {
+      populateAsset: async (args: unknown) => {
+        populateAssetCalls.push(args);
+        return { commitSha: COMMIT_SHA };
+      },
+    },
+    workflowAllocationService: {
+      prepareProvisionedDeployment: async (args: PrepareArgs) => {
+        prepareCalls.push(args);
+        return {
+          anchorRunId: INTERCHANGE_RUN_ID,
+          deploymentAddress: INTERCHANGE_ADDRESS,
+          allocationId: "sal_1",
+          status: "pending" as const,
+        };
+      },
+    },
+    sessionService: {
+      sendUserMessage: async (args: unknown) => {
+        sendUserMessageCalls.push(args);
+        return sendUserMessageImpl();
+      },
+    },
   };
 }
 
+function resetLaunchSpies() {
+  persistLaunchCalls = [];
+  recordLaunchSourcesCalls = [];
+  populateAssetCalls = [];
+  prepareCalls = [];
+  sendUserMessageCalls = [];
+  cryptoGetKeys = [];
+  reportErrorCalls = [];
+  visibleOfferings = [...DEFAULT_VISIBLE_OFFERINGS];
+  frozenProjection = INERT_PROJECTION;
+  sendUserMessageImpl = async () => new Uint8Array([1]);
+}
+
 describe("launchWebhookTrigger", () => {
-  test("still returns the launched run when input delivery fails after every retry", async () => {
-    launchFoldedRunCalls = [];
-    sendFoldedMailWithRetryCalls = [];
-    reportErrorCalls = [];
+  test("still returns the Interchange run when input delivery fails after prepare", async () => {
+    resetLaunchSpies();
     const deliveryError = new Error("sidecar unreachable");
-    sendFoldedMailWithRetryResult = {
-      ok: false,
-      error: deliveryError,
-      attempts: 3,
+    sendUserMessageImpl = async () => {
+      throw deliveryError;
     };
 
     const result = await launchWebhookTrigger(baseDeps(), TRIGGER, {
       status: "ok",
     });
 
-    expect(result.instanceId).toBeTruthy();
-    expect(result.triggerAddress).toContain(result.instanceId);
-    expect(launchFoldedRunCalls).toHaveLength(1);
-    expect(sendFoldedMailWithRetryCalls).toHaveLength(1);
+    expect(result).toEqual({
+      instanceId: INTERCHANGE_RUN_ID,
+      triggerAddress: INTERCHANGE_ADDRESS,
+    });
+    expect(prepareCalls).toHaveLength(1);
+    expect(populateAssetCalls).toHaveLength(1);
+    expect(sendUserMessageCalls).toHaveLength(1);
   });
 
-  test("reports the exhausted delivery failure with the run's context", async () => {
-    launchFoldedRunCalls = [];
-    sendFoldedMailWithRetryCalls = [];
-    reportErrorCalls = [];
+  test("reports the delivery failure with the run's context", async () => {
+    resetLaunchSpies();
     const deliveryError = new Error("sidecar unreachable");
-    sendFoldedMailWithRetryResult = {
-      ok: false,
-      error: deliveryError,
-      attempts: 3,
+    sendUserMessageImpl = async () => {
+      throw deliveryError;
     };
 
     const result = await launchWebhookTrigger(baseDeps(), TRIGGER, {
@@ -175,114 +243,97 @@ describe("launchWebhookTrigger", () => {
     expect(context.extra).toEqual({
       instanceId: result.instanceId,
       triggerId: TRIGGER.id,
-      attempts: 3,
     });
   });
 
   test("does not report anything when delivery succeeds", async () => {
-    launchFoldedRunCalls = [];
-    sendFoldedMailWithRetryCalls = [];
-    reportErrorCalls = [];
-    sendFoldedMailWithRetryResult = { ok: true, mail: { id: "m_1" } };
+    resetLaunchSpies();
 
     await launchWebhookTrigger(baseDeps(), TRIGGER, { status: "ok" });
 
     expect(reportErrorCalls).toHaveLength(0);
   });
 
-  test("returns the launched run normally when delivery succeeds", async () => {
-    launchFoldedRunCalls = [];
-    sendFoldedMailWithRetryCalls = [];
-    sendFoldedMailWithRetryResult = { ok: true, mail: { id: "m_1" } };
+  test("returns the Interchange run normally when delivery succeeds", async () => {
+    resetLaunchSpies();
 
     const result = await launchWebhookTrigger(baseDeps(), TRIGGER, {
       status: "ok",
     });
 
-    expect(result.instanceId).toBeTruthy();
-    expect(sendFoldedMailWithRetryCalls).toHaveLength(1);
-    const [, params] = sendFoldedMailWithRetryCalls[0] as [
-      unknown,
-      { content: string; sessionId: string },
-    ];
+    expect(result).toEqual({
+      instanceId: INTERCHANGE_RUN_ID,
+      triggerAddress: INTERCHANGE_ADDRESS,
+    });
+    expect(sendUserMessageCalls).toHaveLength(1);
+    const params = sendUserMessageCalls[0] as {
+      content: string;
+      sessionId: string;
+      from: string;
+      agentAddress: string;
+    };
+    const preparedArgs = prepareCalls[0];
+    if (preparedArgs === undefined) {
+      throw new Error("expected prepareProvisionedDeployment to be called");
+    }
     expect(params.content).toBe("deployed: ok");
-    expect(params.sessionId).toBe("ses_run1");
+    expect(params.sessionId).toBe(preparedArgs.sessionId);
+    expect(params.from).toBe(`webhook-trigger:${TRIGGER.id}`);
+    expect(params.agentAddress).toBe(INTERCHANGE_ADDRESS);
   });
 
-  // CL-6367: a webhook-driven run with no stable-id -> current-run
-  // mapping could never be relaunched after its sidecar died — the
-  // terminal sweep and the wake path both resolve through that mapping.
-  test("launches as a section and persists the relaunch mapping with the run", async () => {
-    launchFoldedRunCalls = [];
-    sendFoldedMailWithRetryCalls = [];
-    persistLaunchCalls = [];
-    recordLaunchSourcesCalls = [];
-    sendFoldedMailWithRetryResult = { ok: true, mail: { id: "m_1" } };
-
-    const result = await launchWebhookTrigger(baseDeps(), TRIGGER, {
-      status: "ok",
-    });
-
-    const [, params] = launchFoldedRunCalls[0] as [
-      unknown,
-      { mode: unknown; persistExtra: unknown },
-    ];
-    expect(params.mode).toEqual({ kind: "section", turnTimeoutMs: 60_000 });
-    expect(params.persistExtra).toBe(persistedLaunchExtra);
-    expect(persistLaunchCalls).toEqual([
-      {
-        tenantId: "ten_1",
-        instanceId: result.instanceId,
-        foldedBody: FOLDED_BODY,
-      },
-    ]);
-    // CL-6687: the mapping row is written before the deploy resolves the
-    // inference chain, so the digest a rotation check compares against
-    // has to land in a second write once the launch returns.
-    expect(recordLaunchSourcesCalls).toEqual([
-      { instanceId: result.instanceId, sourcesDigest: "digest_run1" },
-    ]);
-  });
-
-  // Catalog secrets are encrypted at rest. Without the boot-tagged cipher
-  // on this path, launchFoldedRun would hand ciphertext to the provider as
-  // an API key. Tag construction is the fail-closed gate.
-  test("threads the tagged credentialCipher into launchFoldedRun", async () => {
-    launchFoldedRunCalls = [];
-    sendFoldedMailWithRetryCalls = [];
-    sendFoldedMailWithRetryResult = { ok: true, mail: { id: "m_1" } };
+  test("populates the definition asset and prepares through Interchange", async () => {
+    resetLaunchSpies();
 
     await launchWebhookTrigger(baseDeps(), TRIGGER, { status: "ok" });
 
-    expect(launchFoldedRunCalls).toHaveLength(1);
-    const [foldedDeps] = launchFoldedRunCalls[0] as [
-      { credentialCipher: unknown },
-      unknown,
-    ];
-    expect(foldedDeps.credentialCipher).toBe(taggedCipher);
+    expect(populateAssetCalls).toHaveLength(1);
+    const populate = populateAssetCalls[0] as {
+      assetId: string;
+      ref: string;
+      principal: { kind: string };
+    };
+    expect(populate.assetId).toBe(DEFINITION_ROW.assetId);
+    expect(populate.ref).toBe(DEFAULT_ASSET_REF);
+    expect(populate.principal).toEqual({ kind: "hub" });
+
+    expect(prepareCalls).toHaveLength(1);
+    expect(prepareCalls[0]).toMatchObject({
+      tenantId: TRIGGER.tenantId,
+      deploymentDomain: TENANT_ROW.domain,
+      entry: AGENT_RUNTIME_ENTRY_PATH,
+      definitionAssetId: DEFINITION_ROW.assetId,
+      sourceAuthorityPrincipalId: TRIGGER.createdBy,
+      sourceOfferingIds: ["off_1", "off_2"],
+      defaultSourceOfferingId: "off_1",
+      deployContent: { systemPrompt: "" },
+      source: {
+        kind: "asset",
+        assetId: DEFINITION_ROW.assetId,
+        package: { format: "source", commitSha: COMMIT_SHA },
+      },
+    });
+    expect(prepareCalls[0]?.toolPackagePins).toBeUndefined();
   });
 
-  test("refuses to launch when credentialCipher is missing", async () => {
-    launchFoldedRunCalls = [];
-    await expect(
-      launchWebhookTrigger(
-        { ...baseDeps(), credentialCipher: undefined as never },
-        TRIGGER,
-        { status: "ok" },
-      ),
-    ).rejects.toThrow(/missing or has the wrong shape/);
-    expect(launchFoldedRunCalls).toHaveLength(0);
-  });
+  test("persists the relaunch mapping against Interchange's returned run id", async () => {
+    resetLaunchSpies();
 
-  test("refuses to launch when credentialCipher has the wrong shape", async () => {
-    launchFoldedRunCalls = [];
-    await expect(
-      launchWebhookTrigger(
-        { ...baseDeps(), credentialCipher: {} as never },
-        TRIGGER,
-        { status: "ok" },
-      ),
-    ).rejects.toThrow(/missing or has the wrong shape/);
-    expect(launchFoldedRunCalls).toHaveLength(0);
+    const result = await launchWebhookTrigger(baseDeps(), TRIGGER, {
+      status: "ok",
+    });
+
+    expect(persistLaunchCalls).toEqual([
+      {
+        tenantId: "ten_1",
+        instanceId: INTERCHANGE_RUN_ID,
+        foldedBody: EXPECTED_FOLDED_BODY,
+      },
+    ]);
+    expect(recordLaunchSourcesCalls).toEqual([
+      { instanceId: INTERCHANGE_RUN_ID, sourcesDigest: "off_1\0off_2" },
+    ]);
+    expect(result.instanceId).toBe(INTERCHANGE_RUN_ID);
+    expect(cryptoGetKeys).toEqual([INTERCHANGE_RUN_ID]);
   });
 });
