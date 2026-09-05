@@ -68,6 +68,16 @@ platform's mail-send shape — a single text part rides as bare mail content;
 anything else becomes a list of `text/plain`/`application/json` MIME
 attachments — and that encoding is confined to the dispatch seam.
 
+The dispatched frame itself carries RFC 5322 threading (CL-7450): its
+`Message-ID` is `mailMessageIdFor(sourceMessageId, domain)` — the same
+derivation `mailboxFanOutForSend` already stamped for that row, so the two
+always agree — and `In-Reply-To`/`References` name that row's own parent
+chain (`mailAncestryOf` in `./threads.ts`). This is what lets a reply's own
+`In-Reply-To` correlate back to the exact row that triggered the turn,
+independent of the process-local `turnMailCorrelation` bookkeeping
+`dispatchTurn` also does. Degrades to unthreaded, exactly as before, on a
+composition with no mailbox domain to derive it from.
+
 ## Every human's mailbox gets a copy (CL-7450)
 
 `sendWorkbenchMessage` runs a strict order: store the row -> stamp its
@@ -76,12 +86,23 @@ RFC 5322 `Message-ID` -> fan the message into every human participant's
 live stream -> dispatch to whichever agents the message names. The mailbox
 fan-out runs BEFORE the row is published and BEFORE any agent is asked for
 a turn: a fan-out failure fails the send outright — the just-inserted row is
-deleted (nothing has been published yet, so no client has seen it, and a
-retry of the same send does not then duplicate it) and the failure is
-rethrown to the caller, never swallowed into a send that looks fully
-delivered when it wasn't. Only once the fan-out batch has committed does the
-row publish, giving a client-visible bubble and a durable mailbox copy the
-same all-or-nothing guarantee.
+deleted and the failure is rethrown to the caller, never swallowed into a
+send that looks fully delivered when it wasn't. Only once the fan-out batch
+has committed does the row publish, giving a client-visible bubble and a
+durable mailbox copy the same all-or-nothing guarantee.
+
+This is not transactional across the row insert and the delete: the row
+write and the mailbox batch are two separate commits (chat and
+`@corbits/mailbox` are separate Postgres handles in the hub's own
+composition), so a concurrent `GET` of the timeline in the window between
+the insert and a fan-out failure's delete CAN read the row before it is
+removed — no `chat.message` publish has happened yet (so no live client
+sees it), but a poller hitting the REST list endpoint in that same window
+can. The window is real and bounded to that one gap, not claimed away. A
+fan-out failure is reported once, under one `refId`, as
+`MailboxFanoutFailedError` (`./mailbox-fanout.ts`) — the send route
+answers with that same ref rather than letting the hub's generic
+unhandled-route-error handler report it again under a second one.
 
 The fan-out itself writes an "outbound" row in the sender's own mailbox and
 an "inbound" row in every other human participant's, all sharing the
