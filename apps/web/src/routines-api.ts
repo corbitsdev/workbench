@@ -32,6 +32,21 @@ const ScheduledWorkflowsResponse = type({
   items: ScheduledWorkflowDefinition.array(),
 });
 
+export const AvailableCatalogWorkflow = type({
+  assetName: "string",
+  displayName: "string",
+  description: "string",
+  requiredConnections: "string[]",
+  missingConnections: "string[]",
+  connectionsSatisfied: "boolean",
+});
+
+export type AvailableCatalogWorkflow = typeof AvailableCatalogWorkflow.infer;
+
+const AvailableCatalogWorkflowsResponse = type({
+  items: AvailableCatalogWorkflow.array(),
+});
+
 const RunNowResponse = type({ runId: "string" });
 
 type Validator<T> = (data: unknown) => T | ArkErrors;
@@ -86,6 +101,19 @@ async function request<T>(
 
 export function scheduledWorkflowsPath(tenantId: string): string {
   return `/api/tenants/${tenantId}/workflows/scheduled`;
+}
+
+export function availableCatalogWorkflowsPath(tenantId: string): string {
+  return `/api/tenants/${tenantId}/workflows/available`;
+}
+
+export function listAvailableCatalogWorkflows(
+  tenantId: string,
+): Promise<readonly AvailableCatalogWorkflow[]> {
+  return request(
+    availableCatalogWorkflowsPath(tenantId),
+    AvailableCatalogWorkflowsResponse,
+  ).then((page) => page.items);
 }
 
 export function scheduledWorkflowRunPath(

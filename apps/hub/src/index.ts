@@ -276,7 +276,7 @@ import {
   type PresenceRoomKey,
 } from "@corbits/presence";
 import { supportedCredentialProviders } from "@corbits/connections/credential-test";
-import { createGitWorkflowPusher } from "@corbits/seeding";
+import { CATALOG_WORKFLOWS, createGitWorkflowPusher } from "@corbits/seeding";
 import { createHubAPI } from "@corbits/hub-api-client";
 import {
   createDrizzlePendingSeedStore,
@@ -1805,6 +1805,9 @@ export async function createHub(config: HubConfig) {
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
       }),
+      catalogAssetNames: CATALOG_WORKFLOWS.map(
+        (workflow) => workflow.assetName,
+      ),
       runNow: async (args) =>
         runNowScheduledDefinition(
           { db, sidecarRouter, ...scheduledDeliveryJoinDeps },

@@ -1,6 +1,10 @@
 // GET /api/tenants/:tenantId/workflows/scheduled — authored definitions
 // whose frozen projection has a ScheduleTrigger, including `stopped`.
 // POST /scheduled/:definitionId/run — fire that definition now.
+// GET /api/tenants/:tenantId/workflows/available — this bench's sibling
+// list (CL-7073): every catalog workflow with no deployed definition of
+// that asset name yet, so the Routines page can offer it with an Add
+// action.
 import { Hono } from "hono";
 import type { DB } from "@intx/db";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
@@ -9,6 +13,10 @@ import {
   listScheduledWorkflowDefinitions,
   type ScheduledWorkflowDefinition,
 } from "./list-scheduled";
+import {
+  listAvailableCatalogWorkflows,
+  type AvailableCatalogWorkflow,
+} from "./available-catalog";
 
 export const RUN_NOW_CONTENT = "Run now.";
 
@@ -30,6 +38,16 @@ export type CreateScheduledWorkflowRoutesDeps = {
     db: DB["db"],
     tenantId: string,
   ) => Promise<readonly ScheduledWorkflowDefinition[]>;
+  /** Every asset name deployable through the catalog instantiate route —
+   * `@corbits/seeding`'s `CATALOG_WORKFLOWS`, by asset name. Passed in by
+   * the caller (`apps/hub`) rather than imported here: `@corbits/seeding`
+   * already depends on this package, so importing it back would cycle. */
+  catalogAssetNames?: readonly string[];
+  listAvailable?: (
+    db: DB["db"],
+    tenantId: string,
+    catalogAssetNames: readonly string[],
+  ) => Promise<readonly AvailableCatalogWorkflow[]>;
 };
 
 export function createScheduledWorkflowRoutes({
@@ -37,8 +55,21 @@ export function createScheduledWorkflowRoutes({
   requireGrant,
   runNow,
   listScheduled = listScheduledWorkflowDefinitions,
+  catalogAssetNames = [],
+  listAvailable = (dbHandle, tenantId, names) =>
+    listAvailableCatalogWorkflows({
+      db: dbHandle,
+      tenantId,
+      catalogAssetNames: names,
+    }),
 }: CreateScheduledWorkflowRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
+
+  app.get("/available", requireGrant("workflow:*", "read"), async (c) => {
+    const tenant = c.get("tenant");
+    const items = await listAvailable(db, tenant.id, catalogAssetNames);
+    return c.json({ items });
+  });
 
   app.get(
     "/scheduled",
