@@ -3366,6 +3366,22 @@ export async function createHub(config: HubConfig) {
       if (sidecarAllocationReconciliationTimer !== undefined) {
         clearTimeout(sidecarAllocationReconciliationTimer);
       }
+      // Retire the relaunch sweep's series so any in-flight pass's
+      // `.finally` reschedule is a no-op, and cancel whatever pass is
+      // currently pending. Without this the sweep outlives `close()`
+      // entirely (it's only ever re-armed, never torn down) and keeps
+      // querying `chat.workbench_launch` on a timer this function is
+      // about to end — including, once `close()` below tears down the
+      // db pool, querying a pool that's already shut down. In a test
+      // suite that boots many hubs back to back (e.g.
+      // slack-tag-mount.test.ts, CL-7453) those leaked timers pile up
+      // across the whole `bun test` process and contend with later
+      // tests' own boots for Postgres connections, which is what
+      // surfaced as `chat·relaunch-sweep: relaunch sweep pass failed:
+      // Failed query: select ... from chat.workbench_launch` and an
+      // intermittent test timeout.
+      relaunchSweepSeries += 1;
+      clearTimeout(relaunchSweepTimer);
       envCredentialPlant.stop();
       chatOrchestrator.dispose();
       workflowScheduler.stop();
