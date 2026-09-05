@@ -55,7 +55,7 @@
         "@corbits/inbox": "workspace:*",
         "@corbits/inference-catalog": "workspace:*",
         "@corbits/insights": "workspace:*",
-        "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#55cca1e77ae3823cbbf250bec9bd206e4ca0ee69",
+        "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#625e4874722f1a60c9dea86061e465e58e1babc6",
         "@corbits/mcp-tools": "workspace:*",
         "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3",
         "@corbits/memory-hub": "workspace:*",
@@ -813,7 +813,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/error-sink": "workspace:*",
-        "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#55cca1e77ae3823cbbf250bec9bd206e4ca0ee69",
+        "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#625e4874722f1a60c9dea86061e465e58e1babc6",
         "@corbits/notify": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/log": "0.3.0",
@@ -2212,7 +2212,7 @@
 
     "@corbits/longevity-sim": ["@corbits/longevity-sim@workspace:packages/longevity-sim"],
 
-    "@corbits/mailbox": ["@corbits/mailbox@github:corbitsdev/corbits-mailbox#55cca1e", { "dependencies": { "@hono/standard-validator": "0.2.3", "@standard-community/standard-json": "0.3.5", "@standard-community/standard-openapi": "0.2.9", "arktype": "2.1.29", "hono-openapi": "1.3.1" }, "peerDependencies": { "@intx/log": "^0.2.2", "@intx/mime": "^0.2.2", "@intx/types": "^0.2.2", "drizzle-orm": "^0.45.2", "hono": "^4.12.0", "postgres": "^3.4.0" } }, "corbitsdev-corbits-mailbox-55cca1e", "sha512-HyiTEwd6CoTR+mN75KCsDHCL47QDPNUAtjmdEUS2wNyaGjaiRgbGtDmq5SIGKAYz5O4RfqV2+TlfhAi89dk1Ew=="],
+    "@corbits/mailbox": ["@corbits/mailbox@github:corbitsdev/corbits-mailbox#625e487", { "dependencies": { "@hono/standard-validator": "0.2.3", "@standard-community/standard-json": "0.3.5", "@standard-community/standard-openapi": "0.2.9", "arktype": "2.1.29", "hono-openapi": "1.3.1" }, "peerDependencies": { "@intx/log": "^0.2.2", "@intx/mime": "^0.2.2", "@intx/types": "^0.2.2", "drizzle-orm": "^0.45.2", "hono": "^4.12.0", "postgres": "^3.4.0" } }, "corbitsdev-corbits-mailbox-625e487", "sha512-f9Vl6D/ka7cSraHGxBf3lTGPU78jJzNKtilcIu35CaoYDqBcRKvEGgclTqs8Vw/zulCZd/D7DscKS+AveFcQTw=="],
 
     "@corbits/manus-tools": ["@corbits/manus-tools@workspace:packages/manus-tools"],
 
