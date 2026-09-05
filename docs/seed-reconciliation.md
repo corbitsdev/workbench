@@ -187,3 +187,23 @@ runs against that existing credential (`existingCredentialId`, no
 missing rows are planted, existing ones 409-skip, nothing is deleted.
 Removing an env var never deletes the planted credential: credentials
 are operator data once planted, not seeds to garbage-collect.
+
+## Credential-bound catalog workflows (CL-7073)
+
+Six `CATALOG_WORKFLOWS` entries — granola-call, morning-brief,
+process-granola-call, pain-point-collateral, collateral-generation,
+diligence-brief — declare `credentialBindings` in their definition.
+`deployCodeSourcedWorkflow` (`vendor/intx/hub-sessions`) refuses to
+resolve those bindings without a `credentialCipher`, and the current
+Interchange pin's `POST /template-blocks/:assetName/deploy` front (the
+route the Routines "Available" catalog's Add action drives) has no
+seam to supply one. `catalogWorkflowDeployableOnThisPin`
+(`packages/seeding/src/seed.ts`) is the one place that knows this: the
+deploy route refuses these six with a 409 `not_deployable_yet` before
+the deployer ever throws, and the available-catalog route marks them
+`deployable: false` so the UI offers them with disabled, honest copy
+instead of a working-looking Add button. These six become addable at
+the Interchange re-pin (CL-7107 / PR #632, pin 692c3106), which adds
+the `credentialCipher` parameter this front is missing — no code in
+this ledger's callers needs to change, only the entry's derived
+`requiresCredentialCipher` result once the seam exists.
