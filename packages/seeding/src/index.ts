@@ -22,6 +22,7 @@ export {
   CATALOG_WORKFLOWS,
   DEFAULT_WORKFLOWS,
   SEED_GRANTS,
+  deployableCatalogWorkflow,
   inferenceCredentialName,
   PLACEHOLDER_CATALOG_API_KEY,
   ensureCredential,

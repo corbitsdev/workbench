@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@corbits/assistant-workflow": "workspace:*",
+    "@corbits/code-review-workflow": "workspace:*",
     "@corbits/echo-workflow": "workspace:*",
     "@corbits/heartbeat-workflow": "workspace:*",
     "@corbits/hub-api-client": "workspace:*",
@@ -22,6 +23,7 @@
     "@corbits/tool-registry-publish": "workspace:*",
     "@corbits/workbench-digest-workflow": "workspace:*",
     "@corbits/workflows": "workspace:*",
+    "@intx/agent": "workspace:*",
     "@intx/inference": "workspace:*",
     "@intx/types": "workspace:*",
     "@corbits/connections": "workspace:*",

@@ -25,10 +25,15 @@ import {
   Capability,
 } from "@intx/types";
 import { type } from "arktype";
+import type { InferencePreference } from "@intx/agent";
 import {
   buildAssistantWorkflow,
   serializeAssistantWorkflow,
 } from "@corbits/assistant-workflow";
+import {
+  buildCodeReviewWorkflow,
+  serializeCodeReviewWorkflow,
+} from "@corbits/code-review-workflow";
 import {
   buildWorkbenchDigestWorkflow,
   serializeWorkbenchDigestWorkflow,
@@ -79,6 +84,10 @@ const WORKBENCH_DIGEST_TURN_TIMEOUT_MS = 30 * 1000;
 // other conversational workflows above, not the short catalog-test
 // budget.
 const LAST_30_DAYS_RESEARCH_TURN_TIMEOUT_MS = 2 * 60 * 1000;
+// Matches the conversational default every folded builder in this
+// codebase uses: a review turn reads a diff and posts one review, the
+// same order of work as a research or assistant turn.
+const CODE_REVIEW_TURN_TIMEOUT_MS = 2 * 60 * 1000;
 const RUN_START_TIMEOUT_MS = 30_000;
 const RUN_POLL_INTERVAL_MS = 1000;
 
@@ -177,7 +186,20 @@ export type DefaultWorkflow = {
    * (schedulable automation). Conversational agents stay false.
    */
   automatable: boolean;
-  buildJson: (tenantDomain: string, model: ModelSource) => string;
+  /**
+   * Renders the definition's JSON given the tenant's mail domain and the
+   * ordered provider/model preferences to deploy against. Takes the bare
+   * preference list — never a full `ModelSource` — so this same
+   * function serves both `seedTenant`'s HTTP-deploy path (which also
+   * needs a `ModelSource`'s `baseURL`/`apiKey` for the deployment's
+   * `sources`, resolved separately) and a native in-process deploy path
+   * (`apps/hub/src/templates/block-workflows.ts`) that only ever has the
+   * tenant's real, possibly multi-entry inference preferences on hand.
+   */
+  buildJson: (
+    tenantDomain: string,
+    inferencePreferences: readonly InferencePreference[],
+  ) => string;
   /**
    * Overrides the deploy's inference source for this workflow only,
    * given the hub's own base URL. Present on the catalog-test workflow
@@ -247,13 +269,11 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     assetName: SETUP_AGENT_ASSET_NAME,
     displayName: catalogDisplayName(SETUP_AGENT_ASSET_NAME),
     automatable: catalogAutomatable(SETUP_AGENT_ASSET_NAME),
-    buildJson: (tenantDomain, model) =>
+    buildJson: (tenantDomain, inferencePreferences) =>
       serializeAssistantWorkflow(
         buildAssistantWorkflow({
           triggerAddress: `${SETUP_AGENT_ASSET_NAME}@${tenantDomain}`,
-          inferencePreferences: [
-            { provider: model.provider, model: model.model },
-          ],
+          inferencePreferences,
           turnTimeoutMs: ASSISTANT_TURN_TIMEOUT_MS,
         }),
       ),
@@ -276,13 +296,11 @@ export const CATALOG_WORKFLOWS: readonly DefaultWorkflow[] = [
     assetName: "echo",
     displayName: catalogDisplayName("echo"),
     automatable: catalogAutomatable("echo"),
-    buildJson: (tenantDomain, model) =>
+    buildJson: (tenantDomain, inferencePreferences) =>
       serializeEchoWorkflow(
         buildEchoWorkflow({
           triggerAddress: `echo@${tenantDomain}`,
-          inferencePreferences: [
-            { provider: model.provider, model: model.model },
-          ],
+          inferencePreferences,
           turnTimeoutMs: ECHO_TURN_TIMEOUT_MS,
         }),
       ),
@@ -291,12 +309,10 @@ export const CATALOG_WORKFLOWS: readonly DefaultWorkflow[] = [
     assetName: "workbench-digest",
     displayName: catalogDisplayName("workbench-digest"),
     automatable: catalogAutomatable("workbench-digest"),
-    buildJson: (_tenantDomain, model) =>
+    buildJson: (_tenantDomain, inferencePreferences) =>
       serializeWorkbenchDigestWorkflow(
         buildWorkbenchDigestWorkflow({
-          inferencePreferences: [
-            { provider: model.provider, model: model.model },
-          ],
+          inferencePreferences,
           turnTimeoutMs: WORKBENCH_DIGEST_TURN_TIMEOUT_MS,
         }),
       ),
@@ -309,14 +325,31 @@ export const CATALOG_WORKFLOWS: readonly DefaultWorkflow[] = [
     // Deployed automation, on demand. Seed never POSTs a wrapper row;
     // last-30-days-research stays a deployed workflow without a native
     // ScheduleTrigger.
-    buildJson: (tenantDomain, model) =>
+    buildJson: (tenantDomain, inferencePreferences) =>
       serializeLast30DaysResearchWorkflow(
         buildLast30DaysResearchWorkflow({
           triggerAddress: `last-30-days-research@${tenantDomain}`,
-          inferencePreferences: [
-            { provider: model.provider, model: model.model },
-          ],
+          inferencePreferences,
           turnTimeoutMs: LAST_30_DAYS_RESEARCH_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "code-review",
+    displayName: catalogDisplayName("code-review"),
+    automatable: catalogAutomatable("code-review"),
+    // Deployed automation, on demand, same as every other entry here
+    // (CL-7073): the instantiate route used to build this one definition
+    // through its own hardcoded copy in
+    // `apps/hub/src/templates/block-workflows.ts`; that copy is gone and
+    // this entry is now the one source of truth for it, same as every
+    // other catalog workflow.
+    buildJson: (tenantDomain, inferencePreferences) =>
+      serializeCodeReviewWorkflow(
+        buildCodeReviewWorkflow({
+          triggerAddress: `code-review@${tenantDomain}`,
+          inferencePreferences,
+          turnTimeoutMs: CODE_REVIEW_TURN_TIMEOUT_MS,
         }),
       ),
   },
@@ -342,19 +375,32 @@ export const CATALOG_TEST_WORKFLOWS: readonly DefaultWorkflow[] = [
     assetName: "heartbeat",
     displayName: catalogDisplayName("heartbeat"),
     automatable: catalogAutomatable("heartbeat"),
-    buildJson: (tenantDomain, model) =>
+    buildJson: (tenantDomain, inferencePreferences) =>
       serializeHeartbeatWorkflow(
         buildHeartbeatWorkflow({
           triggerAddress: `heartbeat@${tenantDomain}`,
-          inferencePreferences: [
-            { provider: model.provider, model: model.model },
-          ],
+          inferencePreferences,
           turnTimeoutMs: HEARTBEAT_TURN_TIMEOUT_MS,
         }),
       ),
     modelSource: NOOP_MODEL_SOURCE,
   },
 ];
+
+/**
+ * The deployable-through-the-catalog-instantiate-route entry for one
+ * asset name (CL-7073), or `undefined` if none exists. `CATALOG_WORKFLOWS`
+ * is the one source of truth for "has a source package under
+ * `workflows/<name>` and can be deployed on demand" — `DEFAULT_WORKFLOWS`
+ * (seeded already, never re-deployed through this path) and
+ * `CATALOG_TEST_WORKFLOWS` (test-only, never deployed onto a real bench)
+ * both answer `undefined` here on purpose.
+ */
+export function deployableCatalogWorkflow(
+  assetName: string,
+): DefaultWorkflow | undefined {
+  return CATALOG_WORKFLOWS.find((workflow) => workflow.assetName === assetName);
+}
 
 // The grants the deploy, trigger, and run-listing routes gate on,
 // planted at the wildcard scope the authz glob matcher resolves
@@ -1018,7 +1064,9 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
     const pushed = await args.pushWorkflow({
       remoteUrl: `${hubUrl}/api/tenants/${tenant.tenantId}/assets/workflow/${workflow.assetName}.git`,
       tokenSecret,
-      workflowJson: workflow.buildJson(tenant.domain, workflowModel),
+      workflowJson: workflow.buildJson(tenant.domain, [
+        { provider: workflowModel.provider, model: workflowModel.model },
+      ]),
       packageName: `@workbench-seed/${workflow.assetName}`,
     });
     log(
