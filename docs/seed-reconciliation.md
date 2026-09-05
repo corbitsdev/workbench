@@ -61,12 +61,10 @@ not plant wrapper rows.
 real signup gets automatically: `assistant` (Myra), and nothing else. A
 fresh bench used to also pay a git push and a sidecar probe for `echo`,
 `workbench-digest`, and `last-30-days-research` — three workflows
-nobody had asked for yet. Those three now live in `CATALOG_WORKFLOWS`,
-same shape (`DefinitionWithAgentSteps`-backed `DefaultWorkflow`
-entries), deployed the same way (`ensureWorkflowAsset` → `pushWorkflow`
-→ `ensureDeployment`), but only when something asks for one by name —
-the catalog/instantiate surface, or a test standing up its own fixture
-bench — never automatically at signup.
+nobody had asked for yet. Those three, plus `code-review`, now live in
+`CATALOG_WORKFLOWS`, same shape (`DefinitionWithAgentSteps`-backed
+`DefaultWorkflow` entries) and deployable through the catalog
+instantiate route (CL-7073), but never automatically at signup.
 
 There is no orphan-retire for an entry that moved from
 `DEFAULT_WORKFLOWS` to `CATALOG_WORKFLOWS`: an asset already deployed
@@ -74,6 +72,30 @@ on an existing bench from before the move is left exactly as it is.
 `CATALOG_TEST_WORKFLOWS` remains the separate, never-reaches-a-real-
 signup set for workflows that exist only to exercise the platform
 continuously.
+
+### Deployable through the catalog (CL-7073)
+
+`CATALOG_WORKFLOWS` is the one source of truth for which catalog asset
+names have a source package under `workflows/<name>` and can be
+deployed on demand. Two callers reuse it, sharing the same `buildJson`
+per entry rather than each hand-rolling a definition:
+
+- `seedTenant` (`workbench seed`, the first-login provisioning hook)
+  can deploy any of `CATALOG_WORKFLOWS` the same way it deploys
+  `DEFAULT_WORKFLOWS`, over its HTTP self-call path
+  (`ensureWorkflowAsset` → `pushWorkflow` → `ensureDeployment`).
+- The hub's `POST /:assetName/deploy` template-block route
+  (`apps/hub/src/templates/template-block-routes.ts`,
+  `apps/hub/src/templates/block-workflows.ts`) deploys any
+  `CATALOG_WORKFLOWS` entry natively, in-process, against the tenant's
+  real inference preferences — the same route that already deployed
+  `code-review` for template instantiation, generalized (CL-7073) so
+  `code-review` is just another `CATALOG_WORKFLOWS` entry rather than a
+  hardcoded special case. Idempotent: a tenant that already carries a
+  deployed definition under that asset name answers with the existing
+  definition (`created: false`) rather than deploying a second time.
+  `assistant` (seeded already) and `heartbeat` (test-only,
+  `CATALOG_TEST_WORKFLOWS`) are never reachable through this route.
 
 ## Default skills (boot-time seeding)
 
