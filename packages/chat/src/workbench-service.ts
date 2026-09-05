@@ -16,7 +16,7 @@ import {
   isModelUnavailableCause,
   MODEL_UNAVAILABLE_CONSUMER_MESSAGE,
 } from "./model-unavailable";
-import { domainOf, localPartOf } from "./agent-address";
+import { localPartOf } from "./agent-address";
 import { deriveDisplayName } from "./display-name";
 import { assertNoLeakedInternalId } from "./id-leak-guard";
 import { isAgentAddress, mentionedParticipants } from "./mentions";
@@ -50,7 +50,12 @@ import type {
   ChatWorkbenchEvent,
   InvitableDefinition,
 } from "./platform-port";
-import { postRoomMessage, type RoomMessageStore } from "./room-messages";
+import {
+  postRoomMessage,
+  insertRoomMessageRow,
+  publishRoomMessageEvent,
+  type RoomMessageStore,
+} from "./room-messages";
 import { mailMessageIdFor } from "./mail-headers";
 import { mailAncestryOf } from "./threads";
 import {
@@ -1486,11 +1491,24 @@ async function replyTargetAgent(
  * and a multi-agent one routes through its host instead of going
  * silent.
  */
+/**
+ * Posts a message, then — CL-7450 — writes it into every human
+ * participant's mailbox BEFORE the row is published or any agent is
+ * dispatched: store row -> stamp Message-ID -> fan-out (one batch) ->
+ * publish -> dispatch. A fan-out failure must fail the send before
+ * anything is visible: no phantom bubble on the sender's own timeline,
+ * and no duplicate row on a client retry. The just-inserted row is
+ * therefore deleted on a fan-out failure (nothing has been published yet,
+ * so nothing has seen it) and the failure is rethrown to the caller —
+ * unlike agent dispatch (`routeMessage`, fire-and-forget so a slept
+ * agent's wake never blocks the sender's own bubble), a mailbox write
+ * failure is never swallowed into an apparently-successful send.
+ */
 export async function sendWorkbenchMessage(
   deps: SendWorkbenchMessageDeps,
   input: SendWorkbenchMessageInput,
 ): Promise<SendWorkbenchMessageResult> {
-  const posted = await postRoomMessage(deps, {
+  const posted = await insertRoomMessageRow(deps, {
     tenantId: input.tenantId,
     workbenchId: input.workbenchId,
     sender: { name: null, address: input.senderAddress },
@@ -1501,8 +1519,19 @@ export async function sendWorkbenchMessage(
 
   const mailboxDeps = deps.mailbox;
   if (mailboxDeps !== undefined) {
-    await mailboxFanOutForSend(deps, mailboxDeps, input, posted.id);
+    try {
+      await mailboxFanOutForSend(deps, mailboxDeps, input, posted.id);
+    } catch (err) {
+      await deps.roomMessages.deleteMessage({
+        tenantId: input.tenantId,
+        workbenchId: input.workbenchId,
+        messageId: posted.id,
+      });
+      throw err;
+    }
   }
+
+  publishRoomMessageEvent(deps, posted);
 
   return {
     id: posted.id,
@@ -1518,7 +1547,16 @@ export async function sendWorkbenchMessage(
  * (`routeMessage`, fire-and-forget so a slept agent's wake never blocks
  * the sender's own bubble), a mailbox write failure must reach the
  * caller: `writeChatMailboxFanout` throws on anything but a genuinely
- * unknown participant, and this function does not catch it.
+ * unknown participant, and this function does not catch it (its own
+ * caller, `sendWorkbenchMessage`, does — to delete the just-inserted row).
+ *
+ * The Message-ID (and any `In-Reply-To` it carries) is minted with the
+ * row's OWNING tenant's domain (`input.tenantId`, always `ownerTenantId`
+ * at the route layer — see `routes.ts`'s `resolveWorkbenchAccess`), never
+ * the acting caller's own tenant: a shared-workbench (projected-tenant)
+ * sender's `input.senderAddress` carries their OWN tenant's domain, which
+ * would otherwise stamp a row living in the owner tenant with a
+ * Message-ID nobody else's mail agrees is addressed under.
  */
 async function mailboxFanOutForSend(
   deps: SendWorkbenchMessageDeps,
@@ -1526,12 +1564,7 @@ async function mailboxFanOutForSend(
   input: SendWorkbenchMessageInput,
   messageId: string,
 ): Promise<void> {
-  const domain = domainOf(input.senderAddress);
-  if (domain === undefined) {
-    throw new Error(
-      `sender address "${input.senderAddress}" has no domain to stamp a mail Message-ID from`,
-    );
-  }
+  const domain = await mailboxDeps.resolveTenantDomain(input.tenantId);
   const mailMessageId = mailMessageIdFor(messageId, domain);
   await deps.roomMessages.stampMailMessageId({
     tenantId: input.tenantId,

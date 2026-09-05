@@ -35,7 +35,7 @@
     "@corbits/error-sink": "workspace:*",
     "@corbits/hub-api-client": "workspace:*",
     "@corbits/folded-runs": "workspace:*",
-    "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#caa5214a2811a66a6f3dd3b7631b5f53591c8c14",
+    "@corbits/mailbox": "github:corbitsdev/corbits-mailbox#118a2cd3b0b2d83abcd57b4bed1698e95ee41b6d",
     "@corbits/memory": "github:corbitsdev/corbits-memory#9e6f213fa2c002b531d3f6af1aa0abd737b8afe3",
     "@corbits/turn-artifacts": "workspace:*",
     "@corbits/workflows": "workspace:*",

@@ -124,6 +124,19 @@ export interface RoomMessageStore {
   listActivity(
     input: ListRoomActivityInput,
   ): Promise<Record<string, RoomActivitySummary>>;
+  /**
+   * Removes a just-inserted row that never reached a client (CL-7450):
+   * the mailbox fan-out step runs AFTER the row is stored but BEFORE it
+   * is published, and a fan-out failure must not leave a durable row
+   * nobody's mailbox agrees exists — nothing has seen it yet, so deleting
+   * it is safe, and a client retry of the same send does not then
+   * duplicate. Never called on a row that has been published.
+   */
+  deleteMessage(input: {
+    readonly tenantId: string;
+    readonly workbenchId: string;
+    readonly messageId: string;
+  }): Promise<void>;
 }
 
 /** One page of timeline, newest first — the same page size the timeline
@@ -263,19 +276,32 @@ function consumerFacingParts(parts: readonly Part[]): Part[] {
   });
 }
 
-export async function postRoomMessage(
-  deps: {
-    readonly roomMessages: RoomMessageStore;
-    readonly publish: WorkbenchSubscriberRegistry["publish"];
-  },
+/**
+ * Just the durable insert half of `postRoomMessage` — no publish. CL-7450's
+ * mailbox fan-out needs to run AFTER the row is stored (so its own
+ * Message-ID can be stamped and used) but BEFORE anything is published (so
+ * a fan-out failure can delete the row with no client ever having seen
+ * it). `postRoomMessage` itself is unchanged for every other caller, which
+ * has no such between-insert-and-publish step to run.
+ */
+export async function insertRoomMessageRow(
+  deps: { readonly roomMessages: RoomMessageStore },
   input: PostRoomMessageInput,
 ): Promise<RoomMessage> {
   const parts = consumerFacingParts(input.parts);
-  const message = await deps.roomMessages.insertMessage({
+  return deps.roomMessages.insertMessage({
     ...input,
     parts,
     id: newMessageId(),
   });
+}
+
+/** The publish half of `postRoomMessage`, for a row `insertRoomMessageRow`
+ * already stored. */
+export function publishRoomMessageEvent(
+  deps: { readonly publish: WorkbenchSubscriberRegistry["publish"] },
+  message: RoomMessage,
+): void {
   const data = ChatMessageEventData.assert({
     id: message.id,
     workbenchId: message.workbenchId,
@@ -285,6 +311,17 @@ export async function postRoomMessage(
     parts: message.parts,
   });
   deps.publish(message.workbenchId, { type: "chat.message", data });
+}
+
+export async function postRoomMessage(
+  deps: {
+    readonly roomMessages: RoomMessageStore;
+    readonly publish: WorkbenchSubscriberRegistry["publish"];
+  },
+  input: PostRoomMessageInput,
+): Promise<RoomMessage> {
+  const message = await insertRoomMessageRow(deps, input);
+  publishRoomMessageEvent(deps, message);
   return message;
 }
 
@@ -414,6 +451,18 @@ export function createDrizzleRoomMessageStore(
       await db
         .update(workbenchMessages)
         .set({ mailMessageId: input.mailMessageId })
+        .where(
+          and(
+            eq(workbenchMessages.id, input.messageId),
+            eq(workbenchMessages.tenantId, input.tenantId),
+            eq(workbenchMessages.workbenchId, input.workbenchId),
+          ),
+        );
+    },
+
+    async deleteMessage(input) {
+      await db
+        .delete(workbenchMessages)
         .where(
           and(
             eq(workbenchMessages.id, input.messageId),
@@ -571,6 +620,16 @@ export function createInMemoryRoomMessageStore(): RoomMessageStore {
         if (match !== undefined) return match;
       }
       return undefined;
+    },
+
+    async deleteMessage(input) {
+      const key = keyOf(input.tenantId, input.workbenchId);
+      const messages = byWorkbench.get(key);
+      if (messages === undefined) return;
+      byWorkbench.set(
+        key,
+        messages.filter((message) => message.id !== input.messageId),
+      );
     },
 
     async listMessages(input) {

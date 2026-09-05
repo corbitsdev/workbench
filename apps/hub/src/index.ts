@@ -1705,6 +1705,21 @@ export async function createHub(config: HubConfig) {
         });
         return new Set(rows.map((row) => row.id));
       },
+      // A row's Message-ID always addresses under the row's OWN tenant's
+      // domain, never the acting caller's — see `mailbox-fanout.ts`'s
+      // `MailboxFanoutDeps.resolveTenantDomain` doc comment. Same
+      // `tenant` lookup `workflowDeployer.deploy` above uses for the
+      // identical reason (an instance's trigger address, minted against
+      // its own tenant's domain).
+      resolveTenantDomain: async (tenantId) => {
+        const tenantRow = await db.query.tenant.findFirst({
+          where: eq(tenantTable.id, tenantId),
+        });
+        if (tenantRow === undefined) {
+          throw new Error(`no tenant "${tenantId}" to address a mailbox from`);
+        }
+        return tenantRow.domain;
+      },
     } satisfies MailboxFanoutDeps,
   };
   app.route(`${TENANT_PREFIX}/chat`, createChatRoutes(chatDeps));
