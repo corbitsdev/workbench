@@ -879,21 +879,34 @@ describe("seedTenant", () => {
     }
   });
 
-  test("the default set consumed by real tenant provisioning is assistant only; echo, workbench-digest, and last-30-days-research are on-demand catalog entries", () => {
+  test("the default set consumed by real tenant provisioning is assistant only; every other workflows/ source package is an on-demand catalog entry", () => {
     // provisionPersonalTenantIfNeeded (@workbench/onboarding) deploys
-    // DEFAULT_WORKFLOWS for every real signup (CL-7074: Myra only). The
-    // remaining catalog workflows — echo, workbench-digest,
-    // last-30-days-research — deploy on demand (CL-7073) from
-    // CATALOG_WORKFLOWS, never automatically onto a real signup. The
-    // catalog-test workflows exist only to exercise the platform
-    // continuously and must never reach a real user through either
-    // array — they are seeded only via the explicit
-    // CATALOG_TEST_WORKFLOWS opt-in.
+    // DEFAULT_WORKFLOWS for every real signup (CL-7074: Myra only). Every
+    // other workflows/<name> source package with a builder — echo,
+    // workbench-digest, last-30-days-research, code-review, granola-call,
+    // morning-brief, exa-topic-watch, process-granola-call,
+    // attio-task-agent, pain-point-collateral,
+    // reddit-opportunity-scanner, collateral-generation, diligence-brief
+    // — deploys on demand (CL-7073) from CATALOG_WORKFLOWS, never
+    // automatically onto a real signup. The catalog-test workflows exist
+    // only to exercise the platform continuously and must never reach a
+    // real user through either array — they are seeded only via the
+    // explicit CATALOG_TEST_WORKFLOWS opt-in.
     expect(DEFAULT_WORKFLOWS.map((w) => w.assetName)).toEqual(["assistant"]);
     expect(CATALOG_WORKFLOWS.map((w) => w.assetName)).toEqual([
       "echo",
       "workbench-digest",
       "last-30-days-research",
+      "code-review",
+      "granola-call",
+      "morning-brief",
+      "exa-topic-watch",
+      "process-granola-call",
+      "attio-task-agent",
+      "pain-point-collateral",
+      "reddit-opportunity-scanner",
+      "collateral-generation",
+      "diligence-brief",
     ]);
   });
 

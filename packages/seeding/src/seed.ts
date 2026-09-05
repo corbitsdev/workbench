@@ -25,10 +25,15 @@ import {
   Capability,
 } from "@intx/types";
 import { type } from "arktype";
+import type { InferencePreference } from "@intx/agent";
 import {
   buildAssistantWorkflow,
   serializeAssistantWorkflow,
 } from "@corbits/assistant-workflow";
+import {
+  buildCodeReviewWorkflow,
+  serializeCodeReviewWorkflow,
+} from "@corbits/code-review-workflow";
 import {
   buildWorkbenchDigestWorkflow,
   serializeWorkbenchDigestWorkflow,
@@ -45,6 +50,42 @@ import {
   buildLast30DaysResearchWorkflow,
   serializeLast30DaysResearchWorkflow,
 } from "@corbits/last-30-days-research-workflow";
+import {
+  buildGranolaCallWorkflow,
+  serializeGranolaCallWorkflow,
+} from "@corbits/granola-call-workflow";
+import {
+  buildMorningBriefWorkflow,
+  serializeMorningBriefWorkflow,
+} from "@corbits/morning-brief-workflow";
+import {
+  buildExaTopicWatchWorkflow,
+  serializeExaTopicWatchWorkflow,
+} from "@corbits/exa-topic-watch-workflow";
+import {
+  buildProcessGranolaCallWorkflow,
+  serializeProcessGranolaCallWorkflow,
+} from "@corbits/process-granola-call-workflow";
+import {
+  buildAttioTaskAgentWorkflow,
+  serializeAttioTaskAgentWorkflow,
+} from "@corbits/attio-task-agent-workflow";
+import {
+  buildPainPointCollateralWorkflow,
+  serializePainPointCollateralWorkflow,
+} from "@corbits/pain-point-collateral-workflow";
+import {
+  buildRedditOpportunityScannerWorkflow,
+  serializeRedditOpportunityScannerWorkflow,
+} from "@corbits/reddit-opportunity-scanner-workflow";
+import {
+  buildCollateralGenerationWorkflow,
+  serializeCollateralGenerationWorkflow,
+} from "@corbits/collateral-generation-workflow";
+import {
+  buildDiligenceBriefWorkflow,
+  serializeDiligenceBriefWorkflow,
+} from "@corbits/diligence-brief-workflow";
 import { WORKFLOW_CATALOG } from "@workbench/templates";
 import { capabilitiesForDeployment } from "@corbits/inference-catalog/offering-capabilities";
 import { quirksForDeployment } from "@corbits/inference-catalog/ollama-context-defaults";
@@ -79,6 +120,24 @@ const WORKBENCH_DIGEST_TURN_TIMEOUT_MS = 30 * 1000;
 // other conversational workflows above, not the short catalog-test
 // budget.
 const LAST_30_DAYS_RESEARCH_TURN_TIMEOUT_MS = 2 * 60 * 1000;
+// Matches the conversational default every folded builder in this
+// codebase uses: a review turn reads a diff and posts one review, the
+// same order of work as a research or assistant turn.
+const CODE_REVIEW_TURN_TIMEOUT_MS = 2 * 60 * 1000;
+// Same conversational default as the entries above: one mail-triggered
+// reasoning turn per run, no multi-step DAG.
+const GRANOLA_CALL_TURN_TIMEOUT_MS = 2 * 60 * 1000;
+const MORNING_BRIEF_TURN_TIMEOUT_MS = 2 * 60 * 1000;
+const EXA_TOPIC_WATCH_TURN_TIMEOUT_MS = 2 * 60 * 1000;
+// A transcript-plus-extraction-plus-verification pass over a long call
+// can run well past the shortest steps in the catalog (see the
+// workflow's own README), so this gets extra headroom.
+const PROCESS_GRANOLA_CALL_TURN_TIMEOUT_MS = 5 * 60 * 1000;
+const ATTIO_TASK_AGENT_TURN_TIMEOUT_MS = 2 * 60 * 1000;
+const PAIN_POINT_COLLATERAL_TURN_TIMEOUT_MS = 2 * 60 * 1000;
+const REDDIT_OPPORTUNITY_SCANNER_TURN_TIMEOUT_MS = 2 * 60 * 1000;
+const COLLATERAL_GENERATION_TURN_TIMEOUT_MS = 2 * 60 * 1000;
+const DILIGENCE_BRIEF_TURN_TIMEOUT_MS = 2 * 60 * 1000;
 const RUN_START_TIMEOUT_MS = 30_000;
 const RUN_POLL_INTERVAL_MS = 1000;
 
@@ -177,7 +236,20 @@ export type DefaultWorkflow = {
    * (schedulable automation). Conversational agents stay false.
    */
   automatable: boolean;
-  buildJson: (tenantDomain: string, model: ModelSource) => string;
+  /**
+   * Renders the definition's JSON given the tenant's mail domain and the
+   * ordered provider/model preferences to deploy against. Takes the bare
+   * preference list — never a full `ModelSource` — so this same
+   * function serves both `seedTenant`'s HTTP-deploy path (which also
+   * needs a `ModelSource`'s `baseURL`/`apiKey` for the deployment's
+   * `sources`, resolved separately) and a native in-process deploy path
+   * (`apps/hub/src/templates/block-workflows.ts`) that only ever has the
+   * tenant's real, possibly multi-entry inference preferences on hand.
+   */
+  buildJson: (
+    tenantDomain: string,
+    inferencePreferences: readonly InferencePreference[],
+  ) => string;
   /**
    * Overrides the deploy's inference source for this workflow only,
    * given the hub's own base URL. Present on the catalog-test workflow
@@ -247,13 +319,11 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     assetName: SETUP_AGENT_ASSET_NAME,
     displayName: catalogDisplayName(SETUP_AGENT_ASSET_NAME),
     automatable: catalogAutomatable(SETUP_AGENT_ASSET_NAME),
-    buildJson: (tenantDomain, model) =>
+    buildJson: (tenantDomain, inferencePreferences) =>
       serializeAssistantWorkflow(
         buildAssistantWorkflow({
           triggerAddress: `${SETUP_AGENT_ASSET_NAME}@${tenantDomain}`,
-          inferencePreferences: [
-            { provider: model.provider, model: model.model },
-          ],
+          inferencePreferences,
           turnTimeoutMs: ASSISTANT_TURN_TIMEOUT_MS,
         }),
       ),
@@ -276,13 +346,11 @@ export const CATALOG_WORKFLOWS: readonly DefaultWorkflow[] = [
     assetName: "echo",
     displayName: catalogDisplayName("echo"),
     automatable: catalogAutomatable("echo"),
-    buildJson: (tenantDomain, model) =>
+    buildJson: (tenantDomain, inferencePreferences) =>
       serializeEchoWorkflow(
         buildEchoWorkflow({
           triggerAddress: `echo@${tenantDomain}`,
-          inferencePreferences: [
-            { provider: model.provider, model: model.model },
-          ],
+          inferencePreferences,
           turnTimeoutMs: ECHO_TURN_TIMEOUT_MS,
         }),
       ),
@@ -291,12 +359,10 @@ export const CATALOG_WORKFLOWS: readonly DefaultWorkflow[] = [
     assetName: "workbench-digest",
     displayName: catalogDisplayName("workbench-digest"),
     automatable: catalogAutomatable("workbench-digest"),
-    buildJson: (_tenantDomain, model) =>
+    buildJson: (_tenantDomain, inferencePreferences) =>
       serializeWorkbenchDigestWorkflow(
         buildWorkbenchDigestWorkflow({
-          inferencePreferences: [
-            { provider: model.provider, model: model.model },
-          ],
+          inferencePreferences,
           turnTimeoutMs: WORKBENCH_DIGEST_TURN_TIMEOUT_MS,
         }),
       ),
@@ -309,14 +375,148 @@ export const CATALOG_WORKFLOWS: readonly DefaultWorkflow[] = [
     // Deployed automation, on demand. Seed never POSTs a wrapper row;
     // last-30-days-research stays a deployed workflow without a native
     // ScheduleTrigger.
-    buildJson: (tenantDomain, model) =>
+    buildJson: (tenantDomain, inferencePreferences) =>
       serializeLast30DaysResearchWorkflow(
         buildLast30DaysResearchWorkflow({
           triggerAddress: `last-30-days-research@${tenantDomain}`,
-          inferencePreferences: [
-            { provider: model.provider, model: model.model },
-          ],
+          inferencePreferences,
           turnTimeoutMs: LAST_30_DAYS_RESEARCH_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "code-review",
+    displayName: catalogDisplayName("code-review"),
+    automatable: catalogAutomatable("code-review"),
+    // Deployed automation, on demand, same as every other entry here
+    // (CL-7073): the instantiate route used to build this one definition
+    // through its own hardcoded copy in
+    // `apps/hub/src/templates/block-workflows.ts`; that copy is gone and
+    // this entry is now the one source of truth for it, same as every
+    // other catalog workflow.
+    buildJson: (tenantDomain, inferencePreferences) =>
+      serializeCodeReviewWorkflow(
+        buildCodeReviewWorkflow({
+          triggerAddress: `code-review@${tenantDomain}`,
+          inferencePreferences,
+          turnTimeoutMs: CODE_REVIEW_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "granola-call",
+    displayName: catalogDisplayName("granola-call"),
+    automatable: catalogAutomatable("granola-call"),
+    buildJson: (tenantDomain, inferencePreferences) =>
+      serializeGranolaCallWorkflow(
+        buildGranolaCallWorkflow({
+          triggerAddress: `granola-call@${tenantDomain}`,
+          inferencePreferences,
+          turnTimeoutMs: GRANOLA_CALL_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "morning-brief",
+    displayName: catalogDisplayName("morning-brief"),
+    automatable: catalogAutomatable("morning-brief"),
+    buildJson: (tenantDomain, inferencePreferences) =>
+      serializeMorningBriefWorkflow(
+        buildMorningBriefWorkflow({
+          triggerAddress: `morning-brief@${tenantDomain}`,
+          inferencePreferences,
+          turnTimeoutMs: MORNING_BRIEF_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "exa-topic-watch",
+    displayName: catalogDisplayName("exa-topic-watch"),
+    automatable: catalogAutomatable("exa-topic-watch"),
+    buildJson: (tenantDomain, inferencePreferences) =>
+      serializeExaTopicWatchWorkflow(
+        buildExaTopicWatchWorkflow({
+          triggerAddress: `exa-topic-watch@${tenantDomain}`,
+          inferencePreferences,
+          turnTimeoutMs: EXA_TOPIC_WATCH_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "process-granola-call",
+    displayName: catalogDisplayName("process-granola-call"),
+    automatable: catalogAutomatable("process-granola-call"),
+    buildJson: (tenantDomain, inferencePreferences) =>
+      serializeProcessGranolaCallWorkflow(
+        buildProcessGranolaCallWorkflow({
+          triggerAddress: `process-granola-call@${tenantDomain}`,
+          inferencePreferences,
+          turnTimeoutMs: PROCESS_GRANOLA_CALL_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "attio-task-agent",
+    displayName: catalogDisplayName("attio-task-agent"),
+    automatable: catalogAutomatable("attio-task-agent"),
+    buildJson: (tenantDomain, inferencePreferences) =>
+      serializeAttioTaskAgentWorkflow(
+        buildAttioTaskAgentWorkflow({
+          triggerAddress: `attio-task-agent@${tenantDomain}`,
+          inferencePreferences,
+          turnTimeoutMs: ATTIO_TASK_AGENT_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "pain-point-collateral",
+    displayName: catalogDisplayName("pain-point-collateral"),
+    automatable: catalogAutomatable("pain-point-collateral"),
+    buildJson: (tenantDomain, inferencePreferences) =>
+      serializePainPointCollateralWorkflow(
+        buildPainPointCollateralWorkflow({
+          triggerAddress: `pain-point-collateral@${tenantDomain}`,
+          inferencePreferences,
+          turnTimeoutMs: PAIN_POINT_COLLATERAL_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "reddit-opportunity-scanner",
+    displayName: catalogDisplayName("reddit-opportunity-scanner"),
+    automatable: catalogAutomatable("reddit-opportunity-scanner"),
+    buildJson: (tenantDomain, inferencePreferences) =>
+      serializeRedditOpportunityScannerWorkflow(
+        buildRedditOpportunityScannerWorkflow({
+          triggerAddress: `reddit-opportunity-scanner@${tenantDomain}`,
+          inferencePreferences,
+          turnTimeoutMs: REDDIT_OPPORTUNITY_SCANNER_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "collateral-generation",
+    displayName: catalogDisplayName("collateral-generation"),
+    automatable: catalogAutomatable("collateral-generation"),
+    buildJson: (tenantDomain, inferencePreferences) =>
+      serializeCollateralGenerationWorkflow(
+        buildCollateralGenerationWorkflow({
+          triggerAddress: `collateral-generation@${tenantDomain}`,
+          inferencePreferences,
+          turnTimeoutMs: COLLATERAL_GENERATION_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "diligence-brief",
+    displayName: catalogDisplayName("diligence-brief"),
+    automatable: catalogAutomatable("diligence-brief"),
+    buildJson: (tenantDomain, inferencePreferences) =>
+      serializeDiligenceBriefWorkflow(
+        buildDiligenceBriefWorkflow({
+          triggerAddress: `diligence-brief@${tenantDomain}`,
+          inferencePreferences,
+          turnTimeoutMs: DILIGENCE_BRIEF_TURN_TIMEOUT_MS,
         }),
       ),
   },
@@ -342,19 +542,82 @@ export const CATALOG_TEST_WORKFLOWS: readonly DefaultWorkflow[] = [
     assetName: "heartbeat",
     displayName: catalogDisplayName("heartbeat"),
     automatable: catalogAutomatable("heartbeat"),
-    buildJson: (tenantDomain, model) =>
+    buildJson: (tenantDomain, inferencePreferences) =>
       serializeHeartbeatWorkflow(
         buildHeartbeatWorkflow({
           triggerAddress: `heartbeat@${tenantDomain}`,
-          inferencePreferences: [
-            { provider: model.provider, model: model.model },
-          ],
+          inferencePreferences,
           turnTimeoutMs: HEARTBEAT_TURN_TIMEOUT_MS,
         }),
       ),
     modelSource: NOOP_MODEL_SOURCE,
   },
 ];
+
+/**
+ * Every `workflows/<name>` source directory that deliberately carries no
+ * `DefaultWorkflow` entry anywhere (`DEFAULT_WORKFLOWS`,
+ * `CATALOG_WORKFLOWS`, `CATALOG_TEST_WORKFLOWS`), with a one-line reason
+ * each. Kept empty on purpose right now — every current source directory
+ * is registered somewhere — so a future package that's genuinely not a
+ * deployable workflow (a shared library living under `workflows/` by
+ * convention, say) has a place to say so instead of failing
+ * `seed.test.ts`'s registration-invariant test silently by omission.
+ */
+export const EXCLUDED_WORKFLOW_SOURCES: readonly {
+  readonly name: string;
+  readonly reason: string;
+}[] = [];
+
+/**
+ * The deployable-through-the-catalog-instantiate-route entry for one
+ * asset name (CL-7073), or `undefined` if none exists. `CATALOG_WORKFLOWS`
+ * is the one source of truth for "has a source package under
+ * `workflows/<name>` and can be deployed on demand" — `DEFAULT_WORKFLOWS`
+ * (seeded already, never re-deployed through this path) and
+ * `CATALOG_TEST_WORKFLOWS` (test-only, never deployed onto a real bench)
+ * both answer `undefined` here on purpose.
+ */
+export function deployableCatalogWorkflow(
+  assetName: string,
+): DefaultWorkflow | undefined {
+  return CATALOG_WORKFLOWS.find((workflow) => workflow.assetName === assetName);
+}
+
+/**
+ * Whether a catalog entry's own definition carries `credentialBindings` —
+ * the same field `deployCodeSourcedWorkflow` (`vendor/intx/hub-sessions`)
+ * refuses to resolve without a `credentialCipher`, a seam the current
+ * Interchange pin's `POST /template-blocks/:assetName/deploy` front does
+ * not supply (see `docs/seed-reconciliation.md`; closes at the re-pin,
+ * CL-7107 / PR #632, pin 692c3106). Derived by rendering the entry's own
+ * `buildJson` with placeholder deploy args and reading the serialized
+ * definition's `credentialBindings` back — never a hand-kept list, so this
+ * can never drift from the workflows that actually declare bindings.
+ */
+export function catalogWorkflowRequiresCredentialCipher(
+  entry: DefaultWorkflow,
+): boolean {
+  const rendered = entry.buildJson("example.workbench.invalid", []);
+  const parsed = JSON.parse(rendered) as {
+    credentialBindings?: readonly unknown[];
+  };
+  return (parsed.credentialBindings?.length ?? 0) > 0;
+}
+
+/**
+ * Whether a catalog asset name can deploy through the current
+ * `POST /template-blocks/:assetName/deploy` front on this Interchange pin.
+ * `false` for a name with no `CATALOG_WORKFLOWS` entry at all (nothing
+ * deployable) or one whose entry requires a `credentialCipher` this pin
+ * cannot supply — the route and the available-catalog listing both call
+ * this instead of keeping their own copy of which six entries qualify.
+ */
+export function catalogWorkflowDeployableOnThisPin(assetName: string): boolean {
+  const entry = deployableCatalogWorkflow(assetName);
+  if (entry === undefined) return false;
+  return !catalogWorkflowRequiresCredentialCipher(entry);
+}
 
 // The grants the deploy, trigger, and run-listing routes gate on,
 // planted at the wildcard scope the authz glob matcher resolves
@@ -1018,7 +1281,9 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
     const pushed = await args.pushWorkflow({
       remoteUrl: `${hubUrl}/api/tenants/${tenant.tenantId}/assets/workflow/${workflow.assetName}.git`,
       tokenSecret,
-      workflowJson: workflow.buildJson(tenant.domain, workflowModel),
+      workflowJson: workflow.buildJson(tenant.domain, [
+        { provider: workflowModel.provider, model: workflowModel.model },
+      ]),
       packageName: `@workbench-seed/${workflow.assetName}`,
     });
     log(

@@ -61,12 +61,27 @@ not plant wrapper rows.
 real signup gets automatically: `assistant` (Myra), and nothing else. A
 fresh bench used to also pay a git push and a sidecar probe for `echo`,
 `workbench-digest`, and `last-30-days-research` — three workflows
-nobody had asked for yet. Those three now live in `CATALOG_WORKFLOWS`,
-same shape (`DefinitionWithAgentSteps`-backed `DefaultWorkflow`
-entries), deployed the same way (`ensureWorkflowAsset` → `pushWorkflow`
-→ `ensureDeployment`), but only when something asks for one by name —
-the catalog/instantiate surface, or a test standing up its own fixture
-bench — never automatically at signup.
+nobody had asked for yet. Those three, plus every other
+`workflows/<name>` source package that exports a builder
+(`code-review`, `granola-call`, `morning-brief`, `exa-topic-watch`,
+`process-granola-call`, `attio-task-agent`, `pain-point-collateral`,
+`reddit-opportunity-scanner`, `collateral-generation`,
+`diligence-brief`), now live in `CATALOG_WORKFLOWS`, same shape
+(`DefinitionWithAgentSteps`-backed `DefaultWorkflow` entries) and
+deployable through the catalog instantiate route (CL-7073), but never
+automatically at signup.
+
+Registration is total, not partial: `packages/seeding/test/workflow-source-registration.test.ts`
+asserts every directory under `workflows/` appears in exactly one of
+`DEFAULT_WORKFLOWS`, `CATALOG_WORKFLOWS`, `CATALOG_TEST_WORKFLOWS`, or
+the explicit `EXCLUDED_WORKFLOW_SOURCES` list (a one-line reason per
+entry, currently empty — every source directory is registered
+somewhere today). A new `workflows/<name>` package that nobody wires up
+fails that test instead of 404ing silently through the catalog
+instantiate route, which is exactly the drift CL-7073's critique
+caught: `CATALOG_WORKFLOWS` had four entries while a template's blocks
+(the GTM template's, in particular) named source packages that were
+never registered at all.
 
 There is no orphan-retire for an entry that moved from
 `DEFAULT_WORKFLOWS` to `CATALOG_WORKFLOWS`: an asset already deployed
@@ -74,6 +89,30 @@ on an existing bench from before the move is left exactly as it is.
 `CATALOG_TEST_WORKFLOWS` remains the separate, never-reaches-a-real-
 signup set for workflows that exist only to exercise the platform
 continuously.
+
+### Deployable through the catalog (CL-7073)
+
+`CATALOG_WORKFLOWS` is the one source of truth for which catalog asset
+names have a source package under `workflows/<name>` and can be
+deployed on demand. Two callers reuse it, sharing the same `buildJson`
+per entry rather than each hand-rolling a definition:
+
+- `seedTenant` (`workbench seed`, the first-login provisioning hook)
+  can deploy any of `CATALOG_WORKFLOWS` the same way it deploys
+  `DEFAULT_WORKFLOWS`, over its HTTP self-call path
+  (`ensureWorkflowAsset` → `pushWorkflow` → `ensureDeployment`).
+- The hub's `POST /:assetName/deploy` template-block route
+  (`apps/hub/src/templates/template-block-routes.ts`,
+  `apps/hub/src/templates/block-workflows.ts`) deploys any
+  `CATALOG_WORKFLOWS` entry natively, in-process, against the tenant's
+  real inference preferences — the same route that already deployed
+  `code-review` for template instantiation, generalized (CL-7073) so
+  `code-review` is just another `CATALOG_WORKFLOWS` entry rather than a
+  hardcoded special case. Idempotent: a tenant that already carries a
+  deployed definition under that asset name answers with the existing
+  definition (`created: false`) rather than deploying a second time.
+  `assistant` (seeded already) and `heartbeat` (test-only,
+  `CATALOG_TEST_WORKFLOWS`) are never reachable through this route.
 
 ## Default skills (boot-time seeding)
 
@@ -148,3 +187,23 @@ runs against that existing credential (`existingCredentialId`, no
 missing rows are planted, existing ones 409-skip, nothing is deleted.
 Removing an env var never deletes the planted credential: credentials
 are operator data once planted, not seeds to garbage-collect.
+
+## Credential-bound catalog workflows (CL-7073)
+
+Six `CATALOG_WORKFLOWS` entries — granola-call, morning-brief,
+process-granola-call, pain-point-collateral, collateral-generation,
+diligence-brief — declare `credentialBindings` in their definition.
+`deployCodeSourcedWorkflow` (`vendor/intx/hub-sessions`) refuses to
+resolve those bindings without a `credentialCipher`, and the current
+Interchange pin's `POST /template-blocks/:assetName/deploy` front (the
+route the Routines "Available" catalog's Add action drives) has no
+seam to supply one. `catalogWorkflowDeployableOnThisPin`
+(`packages/seeding/src/seed.ts`) is the one place that knows this: the
+deploy route refuses these six with a 409 `not_deployable_yet` before
+the deployer ever throws, and the available-catalog route marks them
+`deployable: false` so the UI offers them with disabled, honest copy
+instead of a working-looking Add button. These six become addable at
+the Interchange re-pin (CL-7107 / PR #632, pin 692c3106), which adds
+the `credentialCipher` parameter this front is missing — no code in
+this ledger's callers needs to change, only the entry's derived
+`requiresCredentialCipher` result once the seam exists.
