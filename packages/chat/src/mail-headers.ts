@@ -10,7 +10,10 @@
 // participants are addressed in. Deriving it means the same row always
 // produces the same header, so stamping it twice is a no-op and reading a
 // header back names exactly one row.
+import { reportError } from "@corbits/error-sink";
 import { localPartOf } from "./agent-address";
+import type { ChatStore } from "./store";
+import type { RoomMessageStore } from "./room-messages";
 
 /** The RFC 5322 `Message-ID` for a timeline row: `<rowId@domain>`. */
 export function mailMessageIdFor(rowId: string, domain: string): string {
@@ -83,4 +86,70 @@ export function parentMailMessageId(headers: {
  */
 export function parseReferences(value: string): readonly string[] {
   return value.split(/\s+/).filter((entry) => entry.length > 0);
+}
+
+/**
+ * Resolves the workbench an outbound agent frame belongs to, for stamping
+ * onto its mailbox rows (CL-7449).
+ *
+ * Header-first: `In-Reply-To` (or, failing that, the newest `References`
+ * entry -- see `parentMailMessageId`) names the timeline row the frame
+ * answers, and that row's own `workbenchId` is authoritative -- an agent
+ * can be a participant of several workbenches at once, so which one THIS
+ * reply belongs to is a fact of the row it threads under, never a guess
+ * from the sender address alone.
+ *
+ * Only when no header resolves (a root-feed frame, or one answering a row
+ * mail never dispatched) does this fall back to
+ * `findWorkbenchIdsByParticipantAddress` -- and only takes that scan's
+ * answer when it names EXACTLY one workbench. Zero matches (a plain
+ * workflow mail, no chat participation at all) and several matches (the
+ * ambiguous case the header-first path exists to avoid) both stamp
+ * nothing and report once, so the gap is visible rather than silently
+ * guessed at.
+ */
+export async function resolveWorkbenchIdForAgentFrame(
+  store: {
+    readonly chatStore: ChatStore;
+    readonly roomMessages: Pick<RoomMessageStore, "findByMailMessageId">;
+  },
+  tenantId: string,
+  args: {
+    readonly senderAddress: string;
+    readonly inReplyTo?: string;
+    readonly references?: readonly string[];
+  },
+): Promise<string | undefined> {
+  const parentId = parentMailMessageId(args);
+  if (parentId !== undefined) {
+    const row = await store.roomMessages.findByMailMessageId({
+      tenantId,
+      mailMessageId: parentId,
+    });
+    if (row !== undefined) return row.workbenchId;
+  }
+
+  const workbenchIds =
+    await store.chatStore.findWorkbenchIdsByParticipantAddress(
+      tenantId,
+      args.senderAddress,
+    );
+  if (workbenchIds.length === 1) return workbenchIds[0];
+
+  reportError(
+    new Error(
+      workbenchIds.length === 0
+        ? "agent frame sender participates in no workbench"
+        : "agent frame sender participates in more than one workbench",
+    ),
+    {
+      operation: "mailbox_ref_unresolved",
+      tenantId,
+      extra: {
+        senderAddress: args.senderAddress,
+        workbenchCount: workbenchIds.length,
+      },
+    },
+  );
+  return undefined;
 }

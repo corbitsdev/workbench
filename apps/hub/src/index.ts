@@ -172,8 +172,13 @@ import { runSystemSeed } from "./system-seed";
 import {
   createInMemoryMailboxEventBus,
   createMailboxDb,
+  createMailboxPersist,
   mountMailbox,
 } from "@corbits/mailbox";
+import {
+  createHubMailboxAuthorizeSender,
+  createHubMailboxResolveRefs,
+} from "./mailbox-persist";
 import {
   createCommandRegistry,
   createCommandRoutes,
@@ -752,9 +757,30 @@ export async function createHub(config: HubConfig) {
     db,
     grantStore: createGrantStore(db),
   });
+  // Hoisted ahead of their other uses below (`mountMemory`'s neighbors,
+  // the room timeline store at CL-6327) so `createHubMailboxResolveRefs`
+  // can share these two instances rather than constructing its own just
+  // for the mailbox wiring.
+  const chatStore = createDrizzleChatStore(db);
+  const roomMessages = createDrizzleRoomMessageStore(db);
   const lookups = {
     ...baseLookups,
     materializeMailTriggeredRunGrants: mailTriggeredRunGrants,
+    // CL-7449: every outbound agent frame also lands a durable
+    // `principal_mail` row in each addressed human participant's mailbox,
+    // dual-written alongside `baseLookups.persistMail`'s `session_mail`
+    // write. Dual-write independence is `createMailboxPersist`'s own
+    // contract (upstream failing still attempts the mailbox write, and a
+    // mailbox failure never fails upstream) -- no second try/catch belongs
+    // here. `resolveRefs` runs inside the package's own transaction, so the
+    // workbench ref is present before the post-commit bus event fires --
+    // no out-of-band UPDATE, no polling read.
+    persistMail: createMailboxPersist(mailboxDb, {
+      upstream: baseLookups.persistMail,
+      authorizeSender: createHubMailboxAuthorizeSender(db),
+      bus: mailboxBus,
+      resolveRefs: createHubMailboxResolveRefs(chatStore, roomMessages),
+    }),
     async registerSignalCorrelation(
       args: Parameters<typeof baseLookups.registerSignalCorrelation>[0],
     ): Promise<void> {
@@ -1341,7 +1367,6 @@ export async function createHub(config: HubConfig) {
     grantStore: chatGrantStore,
     conditionRegistry: chatConditionRegistry,
   });
-  const chatStore = createDrizzleChatStore(db);
   const threadStore = createDrizzleThreadStore(db);
   const blockResponseStore = createDrizzleBlockResponseStore(db);
   const reactionStore = createDrizzleReactionStore(db);
@@ -1453,9 +1478,6 @@ export async function createHub(config: HubConfig) {
   // shared the same way `turnQueue` above is, so a cancel request lands
   // wherever a workbench's turn was actually dispatched from.
   const turnCancellation = createTurnCancelRegistry();
-  // The room timeline store (CL-6327): a workbench's own messages, held
-  // as workbench data rather than platform mail.
-  const roomMessages = createDrizzleRoomMessageStore(db);
   relaunchNoticeRef.current = createRelaunchNoticePoster({
     store: chatStore,
     roomMessages,
