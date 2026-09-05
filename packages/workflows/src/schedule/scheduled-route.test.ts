@@ -8,6 +8,7 @@ import {
   RUN_NOW_CONTENT,
 } from "./scheduled-route";
 import type { ScheduledWorkflowDefinition } from "./list-scheduled";
+import type { AvailableCatalogWorkflow } from "./available-catalog";
 
 const TENANT = {
   id: "tnt_1",
@@ -51,6 +52,11 @@ function mount(
     assetId: string;
   }) => Promise<{ runId: string }>,
   listed: readonly ScheduledWorkflowDefinition[],
+  overrides: {
+    requireGrant?: RequireGrant;
+    catalogAssetNames?: readonly string[];
+    listAvailable?: () => Promise<readonly AvailableCatalogWorkflow[]>;
+  } = {},
 ): Hono<TenantEnv> {
   const asTenant: MiddlewareHandler<TenantEnv> = async (c, next) => {
     c.set("tenant", TENANT as never);
@@ -63,9 +69,15 @@ function mount(
     "/",
     createScheduledWorkflowRoutes({
       db: {} as never,
-      requireGrant: allowAll,
+      requireGrant: overrides.requireGrant ?? allowAll,
       runNow,
       listScheduled: async () => listed,
+      ...(overrides.catalogAssetNames !== undefined
+        ? { catalogAssetNames: overrides.catalogAssetNames }
+        : {}),
+      ...(overrides.listAvailable !== undefined
+        ? { listAvailable: overrides.listAvailable }
+        : {}),
     }),
   );
   return app;
@@ -117,5 +129,36 @@ describe("createScheduledWorkflowRoutes", () => {
       method: "POST",
     });
     expect(res.status).toBe(404);
+  });
+
+  test("GET /available answers the injected available list", async () => {
+    const entry: AvailableCatalogWorkflow = {
+      assetName: "code-review",
+      displayName: "Code review",
+      description: "Reviews a pull request and posts one review back on it.",
+      requiredConnections: ["github"],
+      missingConnections: ["github"],
+      connectionsSatisfied: false,
+      deployable: true,
+    };
+    const app = mount(async () => ({ runId: "run_x" }), [], {
+      catalogAssetNames: ["code-review"],
+      listAvailable: async () => [entry],
+    });
+    const res = await app.request("/available");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ items: [entry] });
+  });
+
+  test("GET /available denies without the workflow:* read grant", async () => {
+    const deny: RequireGrant = () => async (c) => {
+      return c.json({ error: { code: "forbidden" } }, 403);
+    };
+    const app = mount(async () => ({ runId: "run_x" }), [], {
+      requireGrant: deny,
+      listAvailable: async () => [],
+    });
+    const res = await app.request("/available");
+    expect(res.status).toBe(403);
   });
 });

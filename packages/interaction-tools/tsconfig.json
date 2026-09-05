@@ -18,6 +18,9 @@
     },
     {
       "path": "../../vendor/intx/types/tsconfig.src.json"
+    },
+    {
+      "path": "../error-sink/tsconfig.src.json"
     }
   ]
 }

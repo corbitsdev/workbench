@@ -543,6 +543,7 @@ export function createAgentDefinitionRoutes({
       assertCapabilityInInventory(body, inventory);
 
       const added = await commitAgentCapabilityAdd({
+        db,
         assetService,
         deployer,
         skillsStore,

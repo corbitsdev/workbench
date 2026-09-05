@@ -19,8 +19,12 @@ export type {
 } from "./seed";
 export {
   CATALOG_TEST_WORKFLOWS,
+  CATALOG_WORKFLOWS,
   DEFAULT_WORKFLOWS,
   SEED_GRANTS,
+  catalogWorkflowDeployableOnThisPin,
+  catalogWorkflowRequiresCredentialCipher,
+  deployableCatalogWorkflow,
   inferenceCredentialName,
   PLACEHOLDER_CATALOG_API_KEY,
   ensureCredential,

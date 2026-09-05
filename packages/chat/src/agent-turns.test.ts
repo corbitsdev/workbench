@@ -339,8 +339,8 @@ describe("createInMemoryAgentTurnStore", () => {
     // guarantee CL-7193 already gives a timed-out turn against a late
     // reply, now exercised for the cancel outcome specifically, since
     // cancellation is a NEW way to close a turn out from under work
-    // that is still in flight (a `message_response` gate answer, an
-    // ordinary reply) and has no code of its own to fall back on if
+    // that is still in flight (an approval gate answer, an ordinary
+    // reply) and has no code of its own to fall back on if
     // this compare-and-set ever regressed.
     test("a turn cancelled while a real reply is in flight cannot be reopened by that reply landing late", async () => {
       const store = createInMemoryAgentTurnStore();
@@ -354,8 +354,8 @@ describe("createInMemoryAgentTurnStore", () => {
       });
       expect(cancelled?.status).toBe("cancelled");
 
-      // The agent (or a message_response gate answer correlating to
-      // this turn) finishes its work anyway -- CL-7230's known ceiling
+      // The agent (or an approval gate answer correlating to this
+      // turn) finishes its work anyway -- CL-7230's known ceiling
       // is that nothing here can stop it -- and tries to close the same
       // turn as a normal completed reply.
       const lateReply = await store.finishTurn({
