@@ -23,6 +23,7 @@
 // successful to its caller. A participant address this tenant has no
 // principal for is a different, expected case (a stale or removed
 // member) and is reported and skipped rather than failing the whole send.
+import { sql } from "drizzle-orm";
 import {
   writeMailboxMessage,
   buildMailFrame,
@@ -137,6 +138,11 @@ export function createDrizzleMailboxWriter(
               principalMail.principalId,
               principalMail.messageKey,
             ],
+            // The live unique index is PARTIAL (`WHERE message_key IS NOT
+            // NULL`, matching `writeMailboxMessage`'s own insert) — Postgres
+            // refuses to match an ON CONFLICT target against a partial index
+            // unless the same predicate is restated here.
+            where: sql`${principalMail.messageKey} IS NOT NULL`,
           })
           .returning({ id: principalMail.id });
         const row = rows[0];
