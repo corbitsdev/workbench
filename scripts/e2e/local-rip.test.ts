@@ -56,6 +56,7 @@ import { describe, expect, test } from "bun:test";
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
   CATALOG_WORKFLOWS,
+  catalogWorkflowDeployableOnThisPin,
   createGitWorkflowPusher,
   DEFAULT_WORKFLOWS,
   isLiveDeploymentStatus,
@@ -427,33 +428,24 @@ describe.skipIf(databaseUrl === undefined)(
         "the default workflow (assistant) plus the credential-free on-demand catalog (echo, workbench-digest, last-30-days-research, code-review) deploy and go live (CL-7074: only assistant is seeded automatically; the rest deploy here via the same seeding-library path a real on-demand deploy would use)",
         async () => {
           // CATALOG_WORKFLOWS grew (CL-7073) to cover every workflows/
-          // source package, including several whose definition wires a
-          // real `credentialBindings` entry (granola-call,
-          // morning-brief, process-granola-call, pain-point-collateral,
-          // collateral-generation, diligence-brief) — each REQUIRES its
-          // plugin actually connected on the deploying tenant to
-          // resolve, and this walking-skeleton tenant connects none of
-          // them. Deploying one here would not exercise a real gap in
-          // this repo's own code; it would hit
-          // `deployWorkflowFromSource`'s existing, documented
-          // `credentialCipher`-required guard
-          // (`vendor/intx/hub-sessions/src/session-service.ts`) the
-          // exact way a real, unconnected tenant would. This hop keeps
-          // asserting deploy-and-go-live for the workflows that need no
-          // connection to run; `template-block-routes.test.ts` covers
-          // every catalog entry's route wiring (including the
-          // credential-bound ones) against fakes.
-          const workflows = [...DEFAULT_WORKFLOWS, ...CATALOG_WORKFLOWS].filter(
-            (workflow) =>
-              ![
-                "granola-call",
-                "morning-brief",
-                "process-granola-call",
-                "pain-point-collateral",
-                "collateral-generation",
-                "diligence-brief",
-              ].includes(workflow.assetName),
-          );
+          // source package, including six whose definition wires a real
+          // `credentialBindings` entry. On the current Interchange pin,
+          // this front's `deployWorkflowSource` port has no
+          // `credentialCipher` seam to resolve those bindings (see
+          // `catalogWorkflowDeployableOnThisPin`,
+          // `docs/seed-reconciliation.md`) — these six cannot deploy
+          // through this front at all right now, and are excluded here
+          // until the Interchange re-pin (CL-7107 / PR #632, pin
+          // 692c3106) adds that seam. This hop keeps asserting
+          // deploy-and-go-live for every workflow this pin CAN deploy;
+          // `template-block-routes.test.ts` covers the excluded ones'
+          // 409 route refusal against fakes.
+          const workflows = [
+            ...DEFAULT_WORKFLOWS,
+            ...CATALOG_WORKFLOWS.filter((workflow) =>
+              catalogWorkflowDeployableOnThisPin(workflow.assetName),
+            ),
+          ];
           await deploySeededWorkflows(workflows);
           for (const workflow of workflows) {
             const assetsRes = await api(
