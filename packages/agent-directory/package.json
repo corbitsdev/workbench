@@ -29,7 +29,7 @@
     "@intx/workflow": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",
-    "hono": "^4.11.9",
+    "hono": "catalog:",
     "isomorphic-git": "catalog:",
     "postgres": "catalog:"
   },
