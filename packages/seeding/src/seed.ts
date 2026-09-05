@@ -50,6 +50,42 @@ import {
   buildLast30DaysResearchWorkflow,
   serializeLast30DaysResearchWorkflow,
 } from "@corbits/last-30-days-research-workflow";
+import {
+  buildGranolaCallWorkflow,
+  serializeGranolaCallWorkflow,
+} from "@corbits/granola-call-workflow";
+import {
+  buildMorningBriefWorkflow,
+  serializeMorningBriefWorkflow,
+} from "@corbits/morning-brief-workflow";
+import {
+  buildExaTopicWatchWorkflow,
+  serializeExaTopicWatchWorkflow,
+} from "@corbits/exa-topic-watch-workflow";
+import {
+  buildProcessGranolaCallWorkflow,
+  serializeProcessGranolaCallWorkflow,
+} from "@corbits/process-granola-call-workflow";
+import {
+  buildAttioTaskAgentWorkflow,
+  serializeAttioTaskAgentWorkflow,
+} from "@corbits/attio-task-agent-workflow";
+import {
+  buildPainPointCollateralWorkflow,
+  serializePainPointCollateralWorkflow,
+} from "@corbits/pain-point-collateral-workflow";
+import {
+  buildRedditOpportunityScannerWorkflow,
+  serializeRedditOpportunityScannerWorkflow,
+} from "@corbits/reddit-opportunity-scanner-workflow";
+import {
+  buildCollateralGenerationWorkflow,
+  serializeCollateralGenerationWorkflow,
+} from "@corbits/collateral-generation-workflow";
+import {
+  buildDiligenceBriefWorkflow,
+  serializeDiligenceBriefWorkflow,
+} from "@corbits/diligence-brief-workflow";
 import { WORKFLOW_CATALOG } from "@workbench/templates";
 import { capabilitiesForDeployment } from "@corbits/inference-catalog/offering-capabilities";
 import { quirksForDeployment } from "@corbits/inference-catalog/ollama-context-defaults";
@@ -88,6 +124,20 @@ const LAST_30_DAYS_RESEARCH_TURN_TIMEOUT_MS = 2 * 60 * 1000;
 // codebase uses: a review turn reads a diff and posts one review, the
 // same order of work as a research or assistant turn.
 const CODE_REVIEW_TURN_TIMEOUT_MS = 2 * 60 * 1000;
+// Same conversational default as the entries above: one mail-triggered
+// reasoning turn per run, no multi-step DAG.
+const GRANOLA_CALL_TURN_TIMEOUT_MS = 2 * 60 * 1000;
+const MORNING_BRIEF_TURN_TIMEOUT_MS = 2 * 60 * 1000;
+const EXA_TOPIC_WATCH_TURN_TIMEOUT_MS = 2 * 60 * 1000;
+// A transcript-plus-extraction-plus-verification pass over a long call
+// can run well past the shortest steps in the catalog (see the
+// workflow's own README), so this gets extra headroom.
+const PROCESS_GRANOLA_CALL_TURN_TIMEOUT_MS = 5 * 60 * 1000;
+const ATTIO_TASK_AGENT_TURN_TIMEOUT_MS = 2 * 60 * 1000;
+const PAIN_POINT_COLLATERAL_TURN_TIMEOUT_MS = 2 * 60 * 1000;
+const REDDIT_OPPORTUNITY_SCANNER_TURN_TIMEOUT_MS = 2 * 60 * 1000;
+const COLLATERAL_GENERATION_TURN_TIMEOUT_MS = 2 * 60 * 1000;
+const DILIGENCE_BRIEF_TURN_TIMEOUT_MS = 2 * 60 * 1000;
 const RUN_START_TIMEOUT_MS = 30_000;
 const RUN_POLL_INTERVAL_MS = 1000;
 
@@ -353,6 +403,123 @@ export const CATALOG_WORKFLOWS: readonly DefaultWorkflow[] = [
         }),
       ),
   },
+  {
+    assetName: "granola-call",
+    displayName: catalogDisplayName("granola-call"),
+    automatable: catalogAutomatable("granola-call"),
+    buildJson: (tenantDomain, inferencePreferences) =>
+      serializeGranolaCallWorkflow(
+        buildGranolaCallWorkflow({
+          triggerAddress: `granola-call@${tenantDomain}`,
+          inferencePreferences,
+          turnTimeoutMs: GRANOLA_CALL_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "morning-brief",
+    displayName: catalogDisplayName("morning-brief"),
+    automatable: catalogAutomatable("morning-brief"),
+    buildJson: (tenantDomain, inferencePreferences) =>
+      serializeMorningBriefWorkflow(
+        buildMorningBriefWorkflow({
+          triggerAddress: `morning-brief@${tenantDomain}`,
+          inferencePreferences,
+          turnTimeoutMs: MORNING_BRIEF_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "exa-topic-watch",
+    displayName: catalogDisplayName("exa-topic-watch"),
+    automatable: catalogAutomatable("exa-topic-watch"),
+    buildJson: (tenantDomain, inferencePreferences) =>
+      serializeExaTopicWatchWorkflow(
+        buildExaTopicWatchWorkflow({
+          triggerAddress: `exa-topic-watch@${tenantDomain}`,
+          inferencePreferences,
+          turnTimeoutMs: EXA_TOPIC_WATCH_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "process-granola-call",
+    displayName: catalogDisplayName("process-granola-call"),
+    automatable: catalogAutomatable("process-granola-call"),
+    buildJson: (tenantDomain, inferencePreferences) =>
+      serializeProcessGranolaCallWorkflow(
+        buildProcessGranolaCallWorkflow({
+          triggerAddress: `process-granola-call@${tenantDomain}`,
+          inferencePreferences,
+          turnTimeoutMs: PROCESS_GRANOLA_CALL_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "attio-task-agent",
+    displayName: catalogDisplayName("attio-task-agent"),
+    automatable: catalogAutomatable("attio-task-agent"),
+    buildJson: (tenantDomain, inferencePreferences) =>
+      serializeAttioTaskAgentWorkflow(
+        buildAttioTaskAgentWorkflow({
+          triggerAddress: `attio-task-agent@${tenantDomain}`,
+          inferencePreferences,
+          turnTimeoutMs: ATTIO_TASK_AGENT_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "pain-point-collateral",
+    displayName: catalogDisplayName("pain-point-collateral"),
+    automatable: catalogAutomatable("pain-point-collateral"),
+    buildJson: (tenantDomain, inferencePreferences) =>
+      serializePainPointCollateralWorkflow(
+        buildPainPointCollateralWorkflow({
+          triggerAddress: `pain-point-collateral@${tenantDomain}`,
+          inferencePreferences,
+          turnTimeoutMs: PAIN_POINT_COLLATERAL_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "reddit-opportunity-scanner",
+    displayName: catalogDisplayName("reddit-opportunity-scanner"),
+    automatable: catalogAutomatable("reddit-opportunity-scanner"),
+    buildJson: (tenantDomain, inferencePreferences) =>
+      serializeRedditOpportunityScannerWorkflow(
+        buildRedditOpportunityScannerWorkflow({
+          triggerAddress: `reddit-opportunity-scanner@${tenantDomain}`,
+          inferencePreferences,
+          turnTimeoutMs: REDDIT_OPPORTUNITY_SCANNER_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "collateral-generation",
+    displayName: catalogDisplayName("collateral-generation"),
+    automatable: catalogAutomatable("collateral-generation"),
+    buildJson: (tenantDomain, inferencePreferences) =>
+      serializeCollateralGenerationWorkflow(
+        buildCollateralGenerationWorkflow({
+          triggerAddress: `collateral-generation@${tenantDomain}`,
+          inferencePreferences,
+          turnTimeoutMs: COLLATERAL_GENERATION_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
+  {
+    assetName: "diligence-brief",
+    displayName: catalogDisplayName("diligence-brief"),
+    automatable: catalogAutomatable("diligence-brief"),
+    buildJson: (tenantDomain, inferencePreferences) =>
+      serializeDiligenceBriefWorkflow(
+        buildDiligenceBriefWorkflow({
+          triggerAddress: `diligence-brief@${tenantDomain}`,
+          inferencePreferences,
+          turnTimeoutMs: DILIGENCE_BRIEF_TURN_TIMEOUT_MS,
+        }),
+      ),
+  },
 ];
 
 /**
@@ -386,6 +553,21 @@ export const CATALOG_TEST_WORKFLOWS: readonly DefaultWorkflow[] = [
     modelSource: NOOP_MODEL_SOURCE,
   },
 ];
+
+/**
+ * Every `workflows/<name>` source directory that deliberately carries no
+ * `DefaultWorkflow` entry anywhere (`DEFAULT_WORKFLOWS`,
+ * `CATALOG_WORKFLOWS`, `CATALOG_TEST_WORKFLOWS`), with a one-line reason
+ * each. Kept empty on purpose right now — every current source directory
+ * is registered somewhere — so a future package that's genuinely not a
+ * deployable workflow (a shared library living under `workflows/` by
+ * convention, say) has a place to say so instead of failing
+ * `seed.test.ts`'s registration-invariant test silently by omission.
+ */
+export const EXCLUDED_WORKFLOW_SOURCES: readonly {
+  readonly name: string;
+  readonly reason: string;
+}[] = [];
 
 /**
  * The deployable-through-the-catalog-instantiate-route entry for one

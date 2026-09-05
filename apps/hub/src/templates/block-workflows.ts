@@ -13,7 +13,7 @@
 // binding).
 //
 // Server-only, on purpose: building a catalog workflow's definition
-// pulls in its workflow package (e.g. `@corbits/code-review-workflow`)
+// pulls in its workflow package (e.g. `@corbits/granola-call-workflow`)
 // and with it `@intx/agent`/`@intx/workflow` — the heavy graph
 // `./templates.ts` keeps every manifest consumer off. Only
 // `./template-block-routes.ts` (mounted in `apps/hub`) imports this; it

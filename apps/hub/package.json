@@ -47,7 +47,6 @@
     "@corbits/tool-registry-publish": "workspace:*",
     "@corbits/turn-artifacts": "workspace:*",
     "@corbits/url-path": "workspace:*",
-    "@corbits/code-review-workflow": "workspace:*",
     "@corbits/webhook-triggers": "workspace:*",
     "@corbits/workflows": "workspace:*",
     "@intx/authz": "0.3.0",
