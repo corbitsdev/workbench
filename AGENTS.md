@@ -58,7 +58,10 @@ behind human approval.
   local and CI can never enumerate a different set of checks. Run one
   check on its own with `bun run check:structural <name>` (e.g. `bun run
 check:structural report-error`), forwarding flags after it (e.g.
-  `bun run check:structural report-error -- --write-baseline`).
+  `bun run check:structural report-error -- --write-baseline`). There is
+  no standalone `check:<name>` script anymore — `check:<name>` in prose
+  anywhere in this repo (this file included) means `bun run
+check:structural <name>`.
 - Commit sequence per change: tests first ("Add tests for X"), then
   implementation ("X: what changed"), then docs ("Update docs: X"). One
   logical change per commit; commit messages are written for a public
