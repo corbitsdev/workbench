@@ -28,8 +28,7 @@ const DEPLOY_FAILED_MESSAGE =
 // Refusing here, before `deployWorkflowSource` is ever called, keeps that
 // gap an honest 409 instead of the deployer throwing into the 500 branch
 // below.
-const NOT_DEPLOYABLE_YET_MESSAGE =
-  "Coming with the next platform update.";
+const NOT_DEPLOYABLE_YET_MESSAGE = "Coming with the next platform update.";
 
 export type TemplateBlockRoutesDeps = {
   requireGrant: RequireGrant;

@@ -613,9 +613,7 @@ export function catalogWorkflowRequiresCredentialCipher(
  * cannot supply — the route and the available-catalog listing both call
  * this instead of keeping their own copy of which six entries qualify.
  */
-export function catalogWorkflowDeployableOnThisPin(
-  assetName: string,
-): boolean {
+export function catalogWorkflowDeployableOnThisPin(assetName: string): boolean {
   const entry = deployableCatalogWorkflow(assetName);
   if (entry === undefined) return false;
   return !catalogWorkflowRequiresCredentialCipher(entry);
