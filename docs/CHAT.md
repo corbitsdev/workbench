@@ -339,7 +339,15 @@ participant's `@corbits/mailbox` inbox (CL-7449) — the hub's `persistMail`
 lookup is wrapped with `createMailboxPersist`
 (`apps/hub/src/mailbox-persist.ts`), so a durable `principal_mail` row lands
 for a reply's human recipients alongside the thread's own `session_mail`
-record, independent of whether the recipient's session is live.
+record, independent of whether the recipient's session is live. The
+`workbench` ref stamped on those rows is resolved header-first:
+`@corbits/chat`'s `resolveWorkbenchIdForAgentFrame` maps the frame's own
+`In-Reply-To`/`References` back to the timeline row it answers and takes
+that row's `workbenchId`, since an agent participating in several
+workbenches has no single honest answer from its address alone; only a
+header-less frame falls back to a participant scan, and only when that
+scan names exactly one workbench — zero or several matches stamp no ref
+and report `mailbox_ref_unresolved` instead of guessing.
 
 Every non-root thread carries a `parentThreadId` — the thread it hangs
 directly off (the root thread's id for a depth-1 thread, a depth-1 thread's
