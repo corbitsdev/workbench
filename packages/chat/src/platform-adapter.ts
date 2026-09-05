@@ -7,31 +7,24 @@
 // chat's own: `workbench_launch` persistence, invitable listing, and
 // participant/fromWorkbenchId send semantics.
 // A workbench itself is data — only invited agents have runs here.
-import { reportError } from "@corbits/error-sink";
-import { and, desc, eq } from "drizzle-orm";
 import {
   createAgentLifecycle,
   DEFAULT_WAKE_TIMEOUT_MS,
 } from "@corbits/agent-lifecycle";
-import {
-  AGENT_RUNTIME_ENTRY_PATH,
-  renderAgentRuntimeSourceTree,
-} from "@corbits/agent-runtime";
+import { reportError } from "@corbits/error-sink";
+import { and, desc, eq } from "drizzle-orm";
 import {
   authoredDefinitionCandidates,
   DefinitionProjectionMissingError,
   readFoldedBody,
   resolveNewestProjectedDefinition,
+  WORKFLOW_SOURCE_ENTRY,
 } from "@corbits/workflows";
 import { domainOf as addressDomainOf } from "./agent-address";
 import { tagCredentialCipher } from "./credential-cipher-tag";
 import type { CryptoProviderCache } from "./crypto-cache";
 import { InferenceResolutionError } from "./model-unavailable";
-import type {
-  McpCredentialBindingsFor,
-  PinnedPackageCredentialBindingsFor,
-  ToolGrantsForPins,
-} from "./pin-ports";
+import type { ToolGrantsForPins } from "./pin-ports";
 import { resolveRunSessionIdOrThrow } from "./run-session";
 import { sendRunMail, type SendRunMailParams } from "./send-run-mail";
 import {
@@ -49,7 +42,6 @@ import {
   type LiveAgent,
 } from "./agent-binding";
 import type { RelaunchNoticePort } from "./relaunch-notice";
-import { AGENT_SECTION_MODE } from "./standalone-launch";
 import type { DB } from "@intx/db";
 import { listVisibleOfferings } from "@intx/db";
 import {
@@ -67,18 +59,14 @@ import { withTimeout } from "./with-timeout";
 import { wrapWakeInferenceError } from "./model-unavailable";
 import {
   DEFAULT_ASSET_REF,
-  type AssetService,
   type EventCollectorRegistry,
+  type RepoStore,
   type SessionService,
   type SidecarRouter,
   type WorkflowAllocationService,
 } from "@intx/hub-sessions";
 import type { InferencePreference } from "@intx/agent";
-import {
-  formatRunAddress,
-  type CredentialBinding,
-  type CredentialCipher,
-} from "@intx/types";
+import { formatRunAddress, type CredentialCipher } from "@intx/types";
 import type { FoldedBody } from "@intx/workflow-deploy";
 import {
   AgentUnreachableError,
@@ -100,7 +88,7 @@ function domainOf(address: string): string {
 export type CreateHubChatPlatformDeps = {
   db: DB["db"];
   sessionService: Pick<SessionService, "sendUserMessage">;
-  assetService: Pick<AssetService, "populateAsset">;
+  repoStore: Pick<RepoStore, "resolveRef">;
   /**
    * Interchange's provisioned-deployment front. Invite, wake, and
    * relaunch call `prepareProvisionedDeployment` on this; chat never
@@ -112,8 +100,6 @@ export type CreateHubChatPlatformDeps = {
   >;
   sidecarRouter: SidecarRouter;
   toolGrantsForPins: ToolGrantsForPins;
-  mcpCredentialBindingsFor?: McpCredentialBindingsFor;
-  pinnedPackageCredentialBindingsFor?: PinnedPackageCredentialBindingsFor;
   /**
    * Tagged at construction: missing or wrong-shape input fails closed
    * and the platform is not minted.
@@ -242,11 +228,10 @@ export type HubChatPlatform = ChatPlatform & {
   /**
    * Relaunches live participants in `tenantId` whose launch pins include
    * any of `packageNames` — a tool-package connector's `feedsTools` the
-   * moment its credential is stored. Bindings for those packages are
-   * folded only at deploy time (`pinnedPackageCredentialBindingsFor`),
-   * so a Myra launched at signup before Manus was pasted stays on a
-   * snapshot that cannot `resolve("manus")` until this pass mints a
-   * fresh run. Best-effort per participant, same posture as
+   * moment its credential is stored. A Myra launched at signup before
+   * Manus was pasted stays on a snapshot that cannot `resolve("manus")`
+   * until this pass mints a fresh run against the definition asset HEAD.
+   * Best-effort per participant, same posture as
    * `reconcileInferenceSources`.
    */
   reconcilePinnedToolPackages(
@@ -279,10 +264,6 @@ export function createHubChatPlatform(
   async function catalogOfferings(tenantId: string): Promise<{
     readonly sourceOfferingIds: readonly string[];
     readonly defaultSourceOfferingId: string;
-    readonly inferencePreferences: readonly {
-      readonly provider: string;
-      readonly model: string;
-    }[];
   }> {
     const offerings = [...(await listVisibleOfferings(deps.db, tenantId))].sort(
       (a, b) => a.offering.priority - b.offering.priority,
@@ -297,46 +278,13 @@ export function createHubChatPlatform(
     return {
       sourceOfferingIds: offerings.map((o) => o.offering.id),
       defaultSourceOfferingId: first.offering.id,
-      inferencePreferences: offerings.map((o) => ({
-        provider: o.provider.name,
-        model: o.model.canonicalName,
-      })),
     };
   }
 
-  async function extraCredentialBindings(
-    tenantId: string,
-    foldedBody: FoldedBody,
-  ): Promise<readonly CredentialBinding[]> {
-    const isMcpToolsPin = foldedBody.toolPackagePins.some(
-      (pin) => pin.name === "@corbits/mcp-tools",
-    );
-    const mcpBindings: readonly CredentialBinding[] =
-      isMcpToolsPin && deps.mcpCredentialBindingsFor !== undefined
-        ? await deps.mcpCredentialBindingsFor(tenantId)
-        : [];
-    const pinnedPackageBindings: readonly CredentialBinding[] =
-      deps.pinnedPackageCredentialBindingsFor !== undefined
-        ? await deps.pinnedPackageCredentialBindingsFor(
-            tenantId,
-            foldedBody.toolPackagePins,
-          )
-        : [];
-    const definedHandles = new Set(
-      foldedBody.credentialBindings.map((binding) => binding.handle),
-    );
-    return [
-      ...mcpBindings,
-      ...pinnedPackageBindings.filter(
-        (binding) => !definedHandles.has(binding.handle),
-      ),
-    ];
-  }
-
   /**
-   * Put this agent's rendered source on its definition asset at the
-   * default ref, then ask Interchange to provision. Chat records the
-   * returned ids; it does not mint the run.
+   * Resolve the definition asset HEAD and ask Interchange to provision
+   * that existing source. Chat records the returned ids; it does not
+   * mint the run or rewrite the asset.
    */
   async function provisionOnAsset(input: {
     readonly tenantId: string;
@@ -351,40 +299,18 @@ export function createHubChatPlatform(
     readonly sourcesDigest: string;
   }> {
     const offerings = await catalogOfferings(input.tenantId);
-    const extraBindings = await extraCredentialBindings(
-      input.tenantId,
-      input.foldedBody,
+    const commitSha = await deps.repoStore.resolveRef(
+      { kind: "hub" },
+      { kind: "workflow", id: input.definitionAssetId },
+      DEFAULT_ASSET_REF,
     );
+    if (commitSha === null) {
+      throw new Error(
+        `definition asset "${input.definitionAssetId}" has no HEAD`,
+      );
+    }
     const anchorRunId = generateId("workflowRun");
     const sessionId = generateId("session");
-    const triggerAddress = formatRunAddress(
-      anchorRunId,
-      input.deploymentDomain,
-    );
-    const { commitSha } = await deps.assetService.populateAsset({
-      assetId: input.definitionAssetId,
-      ref: DEFAULT_ASSET_REF,
-      principal: { kind: "hub" },
-      tree: {
-        files: renderAgentRuntimeSourceTree({
-          packageName: `agent-${anchorRunId}`,
-          config: {
-            workflowId: `wf_${anchorRunId}`,
-            agentId: anchorRunId,
-            triggerAddress,
-            systemPrompt: input.foldedBody.systemPrompt,
-            inferencePreferences: [...offerings.inferencePreferences],
-            toolPackagePins: [...input.foldedBody.toolPackagePins],
-            credentialBindings: [
-              ...input.foldedBody.credentialBindings,
-              ...extraBindings,
-            ],
-            mode: AGENT_SECTION_MODE,
-          },
-        }),
-        message: `Provision agent ${anchorRunId}`,
-      },
-    });
     const prepared =
       await deps.workflowAllocationService.prepareProvisionedDeployment({
         tenantId: input.tenantId,
@@ -395,7 +321,7 @@ export function createHubChatPlatform(
           assetId: input.definitionAssetId,
           package: { format: "source", commitSha },
         },
-        entry: AGENT_RUNTIME_ENTRY_PATH,
+        entry: WORKFLOW_SOURCE_ENTRY,
         definitionAssetId: input.definitionAssetId,
         sessionId,
         sourceAuthorityPrincipalId: input.sourceAuthorityPrincipalId,

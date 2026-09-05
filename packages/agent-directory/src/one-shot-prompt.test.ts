@@ -163,10 +163,9 @@ function createFakeLifecycle() {
 function createBaseDeps() {
   return {
     db: fakeDb(),
-    assetService: {},
+    repoStore: { resolveRef: async () => "sha_test" },
     workflowAllocationService: {},
     sessionService: {},
-    launchMode: { kind: "section" as const, turnTimeoutMs: 1 },
     cryptoProviders: {
       async get() {
         return {};

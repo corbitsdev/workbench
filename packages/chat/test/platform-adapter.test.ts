@@ -15,18 +15,16 @@
 // `@intx/hub-api`'s own contract, not this package's, and is not
 // re-proven here.
 //
-// `sessionService`/`assetService`/`sidecarRouter` are fakes recording
+// `sessionService`/`repoStore`/`sidecarRouter` are fakes recording
 // their calls, and `db` is a minimal chainable stand-in for the
 // drizzle query builder (no database involved) so the mapping is
 // exercised without a real Postgres.
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { IDLE_HIBERNATE_UNDEPLOY_REASON } from "@corbits/agent-lifecycle";
-import { AGENT_RUNTIME_SECTION_ID } from "@corbits/agent-runtime";
 import {
-  parseWorkflowSourceEntry,
-  WORKFLOW_SOURCE_ENTRY_PATH,
   DefinitionProjectionMissingError,
+  WORKFLOW_SOURCE_ENTRY,
 } from "@corbits/workflows";
 import type { DefinitionSourceResolution } from "@intx/hub-api";
 import {
@@ -163,17 +161,30 @@ type FakeWorkflowAllocationService = ReturnType<
 let lastAllocationService: FakeWorkflowAllocationService =
   createFakeWorkflowAllocationService();
 
+function createFakeRepoStore(sha: string | null = "sha_test") {
+  const resolveRefCalls: unknown[] = [];
+  return {
+    resolveRefCalls,
+    async resolveRef(...args: unknown[]) {
+      resolveRefCalls.push(args);
+      return sha;
+    },
+  };
+}
+
 function createHubChatPlatform(
   deps: Omit<
     CreateHubChatPlatformDeps,
-    "cryptoProviders" | "workflowAllocationService"
+    "cryptoProviders" | "workflowAllocationService" | "repoStore"
   > & {
     cryptoProviders?: CryptoProviderCache;
     workflowAllocationService?: FakeWorkflowAllocationService;
+    repoStore?: CreateHubChatPlatformDeps["repoStore"];
   },
 ) {
   return buildHubChatPlatform({
     ...deps,
+    repoStore: deps.repoStore ?? createFakeRepoStore(),
     cryptoProviders: deps.cryptoProviders ?? createCryptoProviderCache(),
     workflowAllocationService:
       deps.workflowAllocationService ?? createFakeWorkflowAllocationService(),
@@ -651,120 +662,6 @@ function createFakeSessionService(): FakeSessionService {
   };
 }
 
-/**
- * The workflow definition a rendered source tree carries — the deployed
- * bytes themselves, read back so a test can assert which shape was
- * pinned rather than trusting the caller's arguments.
- */
-function deployedDefinition(
-  trees: readonly Record<string, string | Uint8Array>[],
-): {
-  steps: Record<string, unknown>;
-} {
-  const tree = trees[trees.length - 1];
-  if (tree === undefined) throw new Error("no source tree was ever rendered");
-  const entry = tree[WORKFLOW_SOURCE_ENTRY_PATH];
-  if (typeof entry !== "string") {
-    throw new Error("no workflow entry module in the rendered tree");
-  }
-  return JSON.parse(parseWorkflowSourceEntry(entry, "asst_rendered")) as {
-    steps: Record<string, unknown>;
-  };
-}
-
-/**
- * The credential bindings the rendered entry module default-exports —
- * the snapshot `env.credentials.resolve` reads, not the launch body's
- * own (optional) bindings.
- */
-function deployedCredentialBindings(
-  trees: readonly Record<string, string | Uint8Array>[],
-): unknown {
-  const tree = trees[trees.length - 1];
-  if (tree === undefined) throw new Error("no source tree was ever rendered");
-  const entry = tree[WORKFLOW_SOURCE_ENTRY_PATH];
-  if (typeof entry !== "string") {
-    throw new Error("no workflow entry module in the rendered tree");
-  }
-  const open = entry.indexOf("export default ");
-  const close = entry.lastIndexOf(";");
-  if (open === -1 || close === -1) {
-    throw new Error(
-      `rendered entry module has no definition literal: ${entry}`,
-    );
-  }
-  const definition = JSON.parse(
-    entry.slice(open + "export default ".length, close),
-  ) as { credentialBindings?: unknown };
-  return definition.credentialBindings ?? [];
-}
-
-function createFakeAssetService(
-  opts: {
-    assetBlob?: Uint8Array;
-    /**
-     * Per-asset overrides for `readAssetBlob`: an unresolvable ref
-     * (CL-6357) is a fake `Error`, a resolvable one a real blob. Falls
-     * back to `assetBlob` (or an empty blob) for any assetId not
-     * listed here, matching every pre-existing test's single-asset
-     * shape.
-     */
-    blobsByAssetId?: Record<string, Uint8Array | "unresolvable">;
-  } = {},
-) {
-  const createAssetCalls: unknown[] = [];
-  const readAssetBlobCalls: unknown[] = [];
-  // The bytes each deploy actually renders — the only place a test can
-  // read which shape (folded step vs. `onTrigger` section) was pinned.
-  const populatedTrees: Record<string, string | Uint8Array>[] = [];
-  const populatedCalls: {
-    assetId: string;
-    ref?: string;
-    tree: { files: Record<string, string | Uint8Array> };
-  }[] = [];
-  return {
-    createAssetCalls,
-    readAssetBlobCalls,
-    populatedTrees,
-    populatedCalls,
-    async createAsset(params: unknown) {
-      createAssetCalls.push(params);
-      return {
-        id: "asst_workbench1",
-        tenantId: "ten_1",
-        kind: "workflow" as const,
-        name: "workbench",
-        displayName: null,
-        creatorPrincipalId: "prin_creator",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-    },
-    async populateAsset(params: {
-      assetId: string;
-      ref?: string;
-      tree: { files: Record<string, string | Uint8Array> };
-    }) {
-      populatedCalls.push(params);
-      populatedTrees.push(params.tree.files);
-      return { commitSha: "sha_test" };
-    },
-    async readAssetBlob(params: { assetId: string; path: string }) {
-      readAssetBlobCalls.push(params);
-      const override = opts.blobsByAssetId?.[params.assetId];
-      if (override === "unresolvable") {
-        throw new Error(
-          `readAssetBlob: asset ${params.assetId} refs/heads/main not resolvable`,
-        );
-      }
-      return override ?? opts.assetBlob ?? new Uint8Array();
-    },
-    async listAssetBlobs() {
-      return [];
-    },
-  };
-}
-
 function createFakeSidecarRouter(
   opts: { routableAddresses?: string[] } = {},
 ): SidecarRouter & {
@@ -844,21 +741,12 @@ function createFakeSidecarRouter(
   };
 }
 
-// An inert stand-in blob for the asset service: wakes rebuild their
-// deploy config from the persisted launch body, never this blob.
-const WORKBENCH_WORKFLOW_JSON = JSON.stringify({
-  id: "wf_test",
-  trigger: { type: "mail", to: "ins_workbench1@ten1.workbench.test" },
-  steps: {},
-});
-
 /**
  * The frozen inert wire projection shape `loadFrozenWireProjection`
  * hands back — `agent.modelSources`, not the live `agent.inference.sources`
  * a serialized in-process definition carries. This is `launchInvite`'s
  * and `refreshAgentInstanceFromDefinition`'s launch-body source under
- * the `workflow.json` retirement; `WORKBENCH_WORKFLOW_JSON` above stays
- * reserved for `launchWorkbench`'s unchanged in-process live path.
+ * the `workflow.json` retirement.
  */
 function inertProjection(
   overrides: {
@@ -947,7 +835,6 @@ describe("createHubChatPlatform", () => {
     allocationService.prepareProvisionedDeployment = async () => {
       throw deployError;
     };
-    const assetService = createFakeAssetService();
     const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
     const eventCollectors = createFakeEventCollectors();
 
@@ -955,7 +842,6 @@ describe("createHubChatPlatform", () => {
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService,
-      assetService,
       sidecarRouter,
       eventCollectors,
       workflowAllocationService: allocationService,
@@ -1025,7 +911,6 @@ describe("createHubChatPlatform", () => {
     allocationService.prepareProvisionedDeployment = async () => {
       throw new SessionLaunchError("start", new Error("ack timeout"), true);
     };
-    const assetService = createFakeAssetService();
     const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
     const eventCollectors = createFakeEventCollectors();
 
@@ -1033,7 +918,6 @@ describe("createHubChatPlatform", () => {
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService,
-      assetService,
       sidecarRouter,
       eventCollectors,
       workflowAllocationService: allocationService,
@@ -1100,7 +984,6 @@ describe("createHubChatPlatform", () => {
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService,
-      assetService: createFakeAssetService(),
       sidecarRouter,
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1188,7 +1071,6 @@ describe("createHubChatPlatform", () => {
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService,
-      assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter(),
       eventCollectors: createFakeEventCollectors(),
       cryptoProviders,
@@ -1257,7 +1139,6 @@ describe("createHubChatPlatform", () => {
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService,
-      assetService: createFakeAssetService(),
       sidecarRouter,
       eventCollectors: createFakeEventCollectors(),
       mailDeliveryTimeoutMs: 20,
@@ -1311,7 +1192,6 @@ describe("createHubChatPlatform", () => {
       },
     });
     const sessionService = createFakeSessionService();
-    const assetService = createFakeAssetService();
     const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
     const eventCollectors = createFakeEventCollectors();
 
@@ -1319,7 +1199,6 @@ describe("createHubChatPlatform", () => {
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService,
-      assetService,
       sidecarRouter,
       eventCollectors,
     });
@@ -1343,6 +1222,14 @@ describe("createHubChatPlatform", () => {
     expect(`${prepared.anchorRunId}@${prepared.deploymentDomain}`).toBe(
       launched.address,
     );
+    expect(lastAllocationService.prepareCalls[0]).toMatchObject({
+      entry: WORKFLOW_SOURCE_ENTRY,
+      source: {
+        kind: "asset",
+        assetId: "asst_echo",
+        package: { format: "source", commitSha: "sha_test" },
+      },
+    });
 
     expect(
       db.inserted.find((row) => row.table === workflowRun),
@@ -1354,12 +1241,6 @@ describe("createHubChatPlatform", () => {
       instanceId: launched.instanceId,
       currentRunId: launched.instanceId,
       tenantId: "ten_1",
-    });
-
-    const rendered = deployedDefinition(assetService.populatedTrees);
-    expect(Object.keys(rendered.steps)).toEqual([AGENT_RUNTIME_SECTION_ID]);
-    expect(rendered.steps[AGENT_RUNTIME_SECTION_ID]).toMatchObject({
-      onBodyFailure: "tolerate",
     });
   });
 
@@ -1388,7 +1269,6 @@ describe("createHubChatPlatform", () => {
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1457,7 +1337,6 @@ describe("createHubChatPlatform", () => {
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1482,7 +1361,6 @@ describe("createHubChatPlatform", () => {
         toolGrantsForPins: () => [],
         db: {} as never,
         sessionService: {} as never,
-        assetService: {} as never,
         sidecarRouter: {} as never,
         eventCollectors: createFakeEventCollectors(),
         credentialCipher: undefined as never,
@@ -1496,7 +1374,6 @@ describe("createHubChatPlatform", () => {
         toolGrantsForPins: () => [],
         db: {} as never,
         sessionService: {} as never,
-        assetService: {} as never,
         sidecarRouter: {} as never,
         eventCollectors: createFakeEventCollectors(),
         credentialCipher: {} as never,
@@ -1515,7 +1392,6 @@ describe("createHubChatPlatform", () => {
           toolGrantsForPins: () => [],
           db: {} as never,
           sessionService: {} as never,
-          assetService: {} as never,
           sidecarRouter: {} as never,
           eventCollectors: createFakeEventCollectors(),
           credentialCipher: {
@@ -1554,7 +1430,6 @@ describe("createHubChatPlatform", () => {
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter(),
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1607,7 +1482,6 @@ describe("createHubChatPlatform", () => {
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1680,7 +1554,6 @@ describe("createHubChatPlatform", () => {
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1749,7 +1622,6 @@ describe("createHubChatPlatform", () => {
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1779,7 +1651,6 @@ describe("createHubChatPlatform", () => {
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter(),
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1824,7 +1695,6 @@ describe("createHubChatPlatform", () => {
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1874,7 +1744,6 @@ describe("createHubChatPlatform", () => {
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1917,7 +1786,6 @@ describe("createHubChatPlatform", () => {
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1969,7 +1837,6 @@ describe("createHubChatPlatform", () => {
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter(),
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1996,14 +1863,12 @@ describe("createHubChatPlatform", () => {
       },
     });
     const sessionService = createFakeSessionService();
-    const assetService = createFakeAssetService();
     const sidecarRouter = createFakeSidecarRouter();
 
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService,
-      assetService,
       sidecarRouter,
       eventCollectors: createFakeEventCollectors(),
     });
@@ -2095,15 +1960,11 @@ describe("createHubChatPlatform", () => {
       // never came back after a restart) when the send arrives.
       const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
       const eventCollectors = createFakeEventCollectors();
-      const assetService = createFakeAssetService({
-        assetBlob: new TextEncoder().encode(WORKBENCH_WORKFLOW_JSON),
-      });
 
       const platform = createPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
         sessionService,
-        assetService,
         sidecarRouter,
         eventCollectors,
         lifecycle: { idleSleepMs: 60_000 },
@@ -2186,15 +2047,11 @@ describe("createHubChatPlatform", () => {
         routableAddresses: ["ins_workbench1@ten1.workbench.test"],
       });
       const eventCollectors = createFakeEventCollectors();
-      const assetService = createFakeAssetService({
-        assetBlob: new TextEncoder().encode(WORKBENCH_WORKFLOW_JSON),
-      });
 
       const platform = createPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
         sessionService,
-        assetService,
         sidecarRouter,
         eventCollectors,
         lifecycle: { idleSleepMs: 60_000 },
@@ -2260,7 +2117,6 @@ describe("createHubChatPlatform", () => {
         toolGrantsForPins: () => [],
         db: db as never,
         sessionService: createFakeSessionService(),
-        assetService: createFakeAssetService(),
         sidecarRouter,
         eventCollectors,
         lifecycle: { idleSleepMs: 5, sweepIntervalMs: 5 },
@@ -2325,7 +2181,6 @@ describe("createHubChatPlatform", () => {
         toolGrantsForPins: () => [],
         db: db as never,
         sessionService: createFakeSessionService(),
-        assetService: createFakeAssetService(),
         sidecarRouter,
         eventCollectors,
         lifecycle: { idleSleepMs: 5, sweepIntervalMs: 5 },
@@ -2392,7 +2247,6 @@ describe("createHubChatPlatform", () => {
         toolGrantsForPins: () => [],
         db: db as never,
         sessionService: createFakeSessionService(),
-        assetService: createFakeAssetService(),
         sidecarRouter,
         eventCollectors,
         lifecycle: { idleSleepMs: 5, sweepIntervalMs: 5 },
@@ -2436,7 +2290,6 @@ describe("createHubChatPlatform", () => {
           toolGrantsForPins: () => [],
           db: db as never,
           sessionService: createFakeSessionService(),
-          assetService: createFakeAssetService(),
           sidecarRouter: createFakeSidecarRouter(),
           eventCollectors: createFakeEventCollectors(),
         });
@@ -2470,7 +2323,6 @@ describe("createHubChatPlatform", () => {
           toolGrantsForPins: () => [],
           db: db as never,
           sessionService: createFakeSessionService(),
-          assetService: createFakeAssetService(),
           sidecarRouter: createFakeSidecarRouter(),
           eventCollectors: createFakeEventCollectors(),
           lifecycle: { idleSleepMs: 60_000 },
@@ -2517,7 +2369,6 @@ describe("createHubChatPlatform", () => {
         toolGrantsForPins: () => [],
         db: db as never,
         sessionService,
-        assetService: createFakeAssetService(),
         sidecarRouter: createFakeSidecarRouter({
           routableAddresses: [address],
         }),
@@ -2580,7 +2431,6 @@ describe("createHubChatPlatform", () => {
         toolGrantsForPins: () => [],
         db: db as never,
         sessionService,
-        assetService: createFakeAssetService(),
         sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
         eventCollectors: createFakeEventCollectors(),
         lifecycle: { idleSleepMs: 60_000 },
@@ -2642,7 +2492,6 @@ describe("createHubChatPlatform", () => {
         toolGrantsForPins: () => [],
         db: db as never,
         sessionService,
-        assetService: createFakeAssetService(),
         sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
         eventCollectors: createFakeEventCollectors(),
       });
@@ -2666,7 +2515,6 @@ describe("createHubChatPlatform", () => {
         toolGrantsForPins: () => [],
         db: db as never,
         sessionService: createFakeSessionService(),
-        assetService: createFakeAssetService(),
         sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
         eventCollectors: createFakeEventCollectors(),
       });
@@ -2771,7 +2619,6 @@ describe("createHubChatPlatform", () => {
         toolGrantsForPins: () => [],
         db: db as never,
         sessionService,
-        assetService: createFakeAssetService(),
         sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
         eventCollectors: createFakeEventCollectors(),
         lifecycle: { idleSleepMs: 60_000 },
@@ -2864,7 +2711,6 @@ describe("createHubChatPlatform", () => {
         toolGrantsForPins: () => [],
         db: db as never,
         sessionService: createFakeSessionService(),
-        assetService: createFakeAssetService(),
         sidecarRouter: createFakeSidecarRouter(),
         eventCollectors: createFakeEventCollectors(),
       });
@@ -2906,12 +2752,10 @@ describe("createHubChatPlatform", () => {
         values: { id: "ses_agent1", principalId: "prin_agent1" },
       });
       const sessionService = createFakeSessionService();
-      const assetService = createFakeAssetService();
       const platform = createPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
         sessionService,
-        assetService,
         sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
         eventCollectors: createFakeEventCollectors(),
         lifecycle: { idleSleepMs: 60_000 },
@@ -2931,9 +2775,13 @@ describe("createHubChatPlatform", () => {
       });
 
       expect(lastAllocationService.prepareCalls).toHaveLength(1);
-      expect(
-        JSON.stringify(deployedDefinition(assetService.populatedTrees)),
-      ).toContain("You are now a blunt, no-nonsense assistant.");
+      expect(lastAllocationService.prepareCalls[0]).toMatchObject({
+        entry: WORKFLOW_SOURCE_ENTRY,
+        source: {
+          kind: "asset",
+          package: { format: "source", commitSha: "sha_test" },
+        },
+      });
     });
 
     // CL-6452: the deploy repoints `workflow_run.definitionId` at the
@@ -3005,7 +2853,6 @@ describe("createHubChatPlatform", () => {
         toolGrantsForPins: () => [],
         db: db as never,
         sessionService: createFakeSessionService(),
-        assetService: createFakeAssetService(),
         sidecarRouter: createFakeSidecarRouter(),
         eventCollectors: createFakeEventCollectors(),
       });
@@ -3131,7 +2978,6 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
       sidecarRouter,
       eventCollectors: createFakeEventCollectors(),
     });
@@ -3206,12 +3052,10 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
       values: { id: "ses_stale", principalId: "prin_room1" },
     });
     const sessionService = createFakeSessionService();
-    const assetService = createFakeAssetService();
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService,
-      assetService,
       sidecarRouter: createFakeSidecarRouter({
         routableAddresses: ["run_stale@ten1.workbench.test"],
       }),
@@ -3227,9 +3071,13 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
     });
 
     expect(lastAllocationService.prepareCalls).toHaveLength(1);
-    expect(
-      JSON.stringify(deployedDefinition(assetService.populatedTrees)),
-    ).toContain(FIXED_SYSTEM_PROMPT);
+    expect(lastAllocationService.prepareCalls[0]).toMatchObject({
+      entry: WORKFLOW_SOURCE_ENTRY,
+      source: {
+        kind: "asset",
+        package: { format: "source", commitSha: "sha_test" },
+      },
+    });
   });
 
   // The coordinator's explicit ask: "unknown" (no authored sibling this
@@ -3295,7 +3143,6 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter({
         routableAddresses: ["run_standalone@ten1.workbench.test"],
       }),
@@ -3356,13 +3203,11 @@ describe("createHubChatPlatform relaunch sweep", () => {
       },
     });
     const sessionService = createFakeSessionService();
-    const assetService = createFakeAssetService();
     const notices: unknown[] = [];
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService,
-      assetService,
       // Routable, and dead anyway: that combination is exactly what the
       // wake path cannot fix — boot restore re-announced the address, so
       // nothing looks broken until the next message is dropped.
@@ -3372,7 +3217,7 @@ describe("createHubChatPlatform relaunch sweep", () => {
       eventCollectors: createFakeEventCollectors(),
       relaunchNotice: { current: (notice) => notices.push(notice) },
     });
-    return { db, platform, sessionService, assetService, notices };
+    return { db, platform, sessionService, notices };
   }
 
   test("relaunches a routable-but-dead participant and tells the room", async () => {
@@ -3413,7 +3258,7 @@ describe("createHubChatPlatform relaunch sweep", () => {
   // the redeployed bytes, and the room told — never the host's folded
   // step.
   test("relaunches a dead section participant as a fresh onTrigger section", async () => {
-    const { db, platform, assetService, notices } = createSweepFixture({
+    const { db, platform, notices } = createSweepFixture({
       runStatus: "failed",
       noopInference: false,
     });
@@ -3422,11 +3267,13 @@ describe("createHubChatPlatform relaunch sweep", () => {
 
     expect(swept).toEqual({ scanned: 1, relaunched: 1 });
     expect(lastAllocationService.prepareCalls).toHaveLength(1);
-
-    // The redeployed bytes carry the section shape — the agent-bearing
-    // step lives inside the `onTrigger` section, not at the head.
-    const rendered = deployedDefinition(assetService.populatedTrees);
-    expect(Object.keys(rendered.steps)).toEqual([AGENT_RUNTIME_SECTION_ID]);
+    expect(lastAllocationService.prepareCalls[0]).toMatchObject({
+      entry: WORKFLOW_SOURCE_ENTRY,
+      source: {
+        kind: "asset",
+        package: { format: "source", commitSha: "sha_test" },
+      },
+    });
 
     const repointed = db.updated.at(-1)?.values as {
       currentRunId: string;
@@ -3573,7 +3420,6 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
       sidecarRouter: createFakeSidecarRouter({
         routableAddresses: ["run_live@ten1.workbench.test"],
       }),
@@ -3683,15 +3529,10 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
 // resolved `manus` as not connected. Inference reconcile cannot see
 // this: Manus is not an inference provider. The connect hook has to
 // relaunch live runs whose pins include the connector's `feedsTools`
-// packages so `deployAtHead` folds `pinnedPackageCredentialBindingsFor`.
+// packages so Interchange prepare picks up the pin on a fresh
+// deployment of the same definition asset.
 describe("createHubChatPlatform pinned-tool-package connect reconciliation", () => {
   const MANUS_PIN = { name: "@corbits/manus-tools", version: "*" };
-  const MANUS_BINDING = {
-    package: "@corbits/manus-tools",
-    handle: "manus",
-    provider: "manus",
-    locator: "tenant" as const,
-  };
   const CATALOG_SOURCES = {
     sources: [
       {
@@ -3804,19 +3645,16 @@ describe("createHubChatPlatform pinned-tool-package connect reconciliation", () 
         }),
       },
     });
-    const assetService = createFakeAssetService();
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
       sessionService: createFakeSessionService(),
-      assetService,
       sidecarRouter: createFakeSidecarRouter({
         routableAddresses: ["run_live@ten1.workbench.test"],
       }),
       eventCollectors: createFakeEventCollectors(),
-      pinnedPackageCredentialBindingsFor: async () => [MANUS_BINDING],
     });
-    return { db, platform, assetService };
+    return { db, platform };
   }
 
   function repointedLaunch(db: ReturnType<typeof createFakeDb>) {
@@ -3824,32 +3662,39 @@ describe("createHubChatPlatform pinned-tool-package connect reconciliation", () 
       { currentRunId: string } | undefined;
   }
 
-  test("connecting manus after a live launch relaunches and folds the manus CredentialBinding", async () => {
-    const { db, platform, assetService } = createManusPinFixture({
+  test("connecting manus after a live launch relaunches with the pin", async () => {
+    const { db, platform } = createManusPinFixture({
       toolPackagePins: [MANUS_PIN],
     });
 
     await platform.ensureAwake("run_live@ten1.workbench.test");
     expect(repointedLaunch(db)).toBeUndefined();
-    expect(assetService.populatedTrees).toHaveLength(0);
+    expect(lastAllocationService.prepareCalls).toHaveLength(0);
 
     const swept = await platform.reconcilePinnedToolPackages("ten_1", [
       "@corbits/manus-tools",
     ]);
 
-    // Persist-only (stamp a pin/binding onto the launch row and leave
+    // Persist-only (stamp a pin onto the launch row and leave
     // `currentRunId` as `run_live`) is the bug: the sidecar keeps the
     // snapshot that cannot `resolve("manus")`. A passing result must
-    // mint a fresh run and fold the binding into the deployed entry.
+    // provision a fresh run of the same definition asset with the pin.
     expect(swept).toEqual({ scanned: 1, relaunched: 1 });
     expect(repointedLaunch(db)?.currentRunId).not.toBe("run_live");
-    expect(deployedCredentialBindings(assetService.populatedTrees)).toEqual([
-      MANUS_BINDING,
-    ]);
+    expect(lastAllocationService.prepareCalls).toHaveLength(1);
+    expect(lastAllocationService.prepareCalls[0]).toMatchObject({
+      definitionAssetId: "asst_myra",
+      source: {
+        kind: "asset",
+        assetId: "asst_myra",
+        package: { format: "source", commitSha: "sha_test" },
+      },
+      toolPackagePins: [MANUS_PIN],
+    });
   });
 
   test("a live run that does not pin the connected package is left alone", async () => {
-    const { db, platform, assetService } = createManusPinFixture({
+    const { db, platform } = createManusPinFixture({
       toolPackagePins: [],
     });
 
@@ -3859,6 +3704,6 @@ describe("createHubChatPlatform pinned-tool-package connect reconciliation", () 
 
     expect(swept).toEqual({ scanned: 1, relaunched: 0 });
     expect(repointedLaunch(db)).toBeUndefined();
-    expect(assetService.populatedTrees).toHaveLength(0);
+    expect(lastAllocationService.prepareCalls).toHaveLength(0);
   });
 });

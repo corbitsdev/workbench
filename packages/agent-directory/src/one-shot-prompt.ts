@@ -4,26 +4,24 @@
 // soon as the run starts; this module turns the event stream into an
 // awaitable promise for a caller that has no later-delivery surface.
 import { and, eq } from "drizzle-orm";
-import {
-  AGENT_RUNTIME_ENTRY_PATH,
-  renderAgentRuntimeSourceTree,
-  type AgentRuntimeConfig,
-} from "@corbits/agent-runtime";
 import type { AgentLifecycle } from "@corbits/agent-lifecycle";
 import { connectorReplyContent, messageRunEnded } from "@corbits/agent-events";
 import { reportError } from "@corbits/error-sink";
-import { readDefinitionProjection, readFoldedBody } from "@corbits/workflows";
+import {
+  readDefinitionProjection,
+  readFoldedBody,
+  WORKFLOW_SOURCE_ENTRY,
+} from "@corbits/workflows";
 import { listVisibleOfferings, type DB } from "@intx/db";
 import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
 import { generateId } from "@intx/hub-common";
 import {
   DEFAULT_ASSET_REF,
-  type AssetService,
+  type RepoStore,
   type SessionService,
   type SidecarEventEmitter,
   type WorkflowAllocationService,
 } from "@intx/hub-sessions";
-import { formatRunAddress } from "@intx/types";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { FoldedBody } from "@intx/workflow-deploy";
 
@@ -51,13 +49,12 @@ export type OneShotRunnerDeps = {
     AgentLifecycle,
     "track" | "recordActivity" | "untrack"
   >;
-  readonly assetService: Pick<AssetService, "populateAsset">;
+  readonly repoStore: Pick<RepoStore, "resolveRef">;
   readonly workflowAllocationService: Pick<
     WorkflowAllocationService,
     "prepareProvisionedDeployment"
   >;
   readonly sessionService: Pick<SessionService, "sendUserMessage">;
-  readonly launchMode: AgentRuntimeConfig["mode"];
   /**
    * Test seam only. Production never sets these; they default to
    * Interchange `prepareProvisionedDeployment` and `sendUserMessage`.
@@ -132,33 +129,18 @@ async function provisionOnAsset(
       `no catalog offerings visible to tenant "${input.tenantId}"`,
     );
   }
+  const commitSha = await deps.repoStore.resolveRef(
+    { kind: "hub" },
+    { kind: "workflow", id: input.definitionAssetId },
+    DEFAULT_ASSET_REF,
+  );
+  if (commitSha === null) {
+    throw new Error(
+      `definition asset "${input.definitionAssetId}" has no HEAD`,
+    );
+  }
   const anchorRunId = generateId("workflowRun");
   const sessionId = generateId("session");
-  const triggerAddress = formatRunAddress(anchorRunId, input.domain);
-  const { commitSha } = await deps.assetService.populateAsset({
-    assetId: input.definitionAssetId,
-    ref: DEFAULT_ASSET_REF,
-    principal: { kind: "hub" },
-    tree: {
-      files: renderAgentRuntimeSourceTree({
-        packageName: `agent-${anchorRunId}`,
-        config: {
-          workflowId: `wf_${anchorRunId}`,
-          agentId: anchorRunId,
-          triggerAddress,
-          systemPrompt: input.foldedBody.systemPrompt,
-          inferencePreferences: offerings.map((o) => ({
-            provider: o.provider.name,
-            model: o.model.canonicalName,
-          })),
-          toolPackagePins: [...input.foldedBody.toolPackagePins],
-          credentialBindings: [...input.foldedBody.credentialBindings],
-          mode: deps.launchMode,
-        },
-      }),
-      message: `Provision agent ${anchorRunId}`,
-    },
-  });
   const prepared =
     await deps.workflowAllocationService.prepareProvisionedDeployment({
       tenantId: input.tenantId,
@@ -170,7 +152,7 @@ async function provisionOnAsset(
         assetId: input.definitionAssetId,
         package: { format: "source", commitSha },
       },
-      entry: AGENT_RUNTIME_ENTRY_PATH,
+      entry: WORKFLOW_SOURCE_ENTRY,
       definitionAssetId: input.definitionAssetId,
       sourceAuthorityPrincipalId: input.principalId,
       sourceOfferingIds,

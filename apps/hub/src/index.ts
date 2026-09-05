@@ -67,7 +67,6 @@ import {
 } from "@corbits/agent-directory";
 
 import {
-  AGENT_SECTION_MODE,
   DEFAULT_TURN_CLAIM_TTL_MS,
   createArtifactDeliveryHandler,
   createDrizzleAgentTurnStore,
@@ -365,9 +364,7 @@ import {
   type ScheduledDeliveryJoinDeps,
 } from "./workflow-scheduler";
 import { createToolGrantsForPins } from "./tool-grants";
-import { createMcpCredentialBindingsFor } from "./mcp-credential-bindings";
 import { reconcilePinnedToolPackagesAfterConnect } from "./connection-live-reconcile";
-import { createPinnedPackageCredentialBindingsFor } from "./pinned-package-credential-bindings";
 import { drainHubServer, shutdownHub } from "./shutdown";
 import {
   createInFlightRequestTracker,
@@ -774,8 +771,6 @@ export async function createHub(config: HubConfig) {
   const toolGrantsForPins = createToolGrantsForPins(
     await describeCorbitsToolPackages(),
   );
-  // See `./mcp-credential-bindings.ts`'s own doc.
-  const mcpCredentialBindingsFor = createMcpCredentialBindingsFor(db);
   // Same owning check GET /connections uses — see
   // `@corbits/connections`' `workflow-connection-routes.ts` and the
   // `createWorkflowConnectionRoutes` wiring below. Not
@@ -788,8 +783,6 @@ export async function createHub(config: HubConfig) {
       null,
       null,
     )) !== null;
-  const pinnedPackageCredentialBindingsFor =
-    createPinnedPackageCredentialBindingsFor(isConnectorConnected);
   // One resolver serves both seams, exactly as @intx/hub-sessions's own
   // reference host wires them: `resolve` turns a presented bearer token
   // into a verified identity at the handshake, and `isCurrent`
@@ -1379,13 +1372,11 @@ export async function createHub(config: HubConfig) {
   const chatPlatform = createHubChatPlatform({
     db,
     sessionService,
-    assetService,
+    repoStore: agentRepoStore.repoStore,
     sidecarRouter,
     eventCollectors,
     credentialCipher,
     toolGrantsForPins,
-    mcpCredentialBindingsFor,
-    pinnedPackageCredentialBindingsFor,
     cryptoProviders,
     workflowAllocationService,
     // Chat residents are undeployed on idle again (see the comment above
@@ -2248,11 +2239,10 @@ export async function createHub(config: HubConfig) {
           {
             db,
             sessionService,
-            assetService,
+            repoStore: agentRepoStore.repoStore,
             workflowAllocationService,
             credentialCipher,
             cryptoProviderCache: cryptoProviders,
-            launchMode: AGENT_SECTION_MODE,
             persistLaunch: async (input) => {
               await workbenchLaunchPersistExtra(input)(db);
             },
@@ -3008,10 +2998,9 @@ export async function createHub(config: HubConfig) {
                 cryptoProviders,
                 undeploy: (address, reason) =>
                   sidecarRouter.sendAgentUndeploy(address, reason),
-                assetService,
+                repoStore: agentRepoStore.repoStore,
                 workflowAllocationService,
                 sessionService,
-                launchMode: AGENT_SECTION_MODE,
               },
               runnerInput,
             ),

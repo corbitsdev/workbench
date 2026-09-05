@@ -113,7 +113,7 @@ function createPlatform(db: never) {
     db,
     toolGrantsForPins: () => [],
     sessionService: {} as never,
-    assetService: {} as never,
+    repoStore: { resolveRef: async () => "sha_test" },
     sidecarRouter: { getRoutableAddresses: () => [] } as never,
     eventCollectors: {} as never,
     cryptoProviders: createCryptoProviderCache(),

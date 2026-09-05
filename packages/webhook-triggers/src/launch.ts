@@ -1,8 +1,8 @@
 // Launches a workflow run from a verified webhook delivery through
 // Interchange's `prepareProvisionedDeployment` — the same provisioned
-// front chat's in-progress `provisionOnAsset` already drives. This
-// package renders agent-runtime source onto the definition asset, then
-// asks Interchange to provision; it does not mint the run row itself.
+// front chat's `provisionOnAsset` already drives. This package resolves
+// the definition asset HEAD and asks Interchange to provision that
+// existing source; it does not mint the run row itself.
 //
 // Opening mail is one `sessionService.sendUserMessage`. Launch is
 // async: mail sent before ready is queued. A delivery already accepted
@@ -12,23 +12,22 @@
 // sender's webhook client retries the same delivery on a 5xx, mint a
 // second, duplicate run for one event. On send failure this only
 // reports through `@corbits/error-sink`, naming the run.
-import {
-  AGENT_RUNTIME_ENTRY_PATH,
-  renderAgentRuntimeSourceTree,
-  type AgentRuntimeConfig,
-} from "@corbits/agent-runtime";
 import { reportError } from "@corbits/error-sink";
-import { readDefinitionProjection, readFoldedBody } from "@corbits/workflows";
+import {
+  readDefinitionProjection,
+  readFoldedBody,
+  WORKFLOW_SOURCE_ENTRY,
+} from "@corbits/workflows";
 import { listVisibleOfferings, type DB } from "@intx/db";
 import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
 import { generateId } from "@intx/hub-common";
 import {
   DEFAULT_ASSET_REF,
-  type AssetService,
+  type RepoStore,
   type SessionService,
   type WorkflowAllocationService,
 } from "@intx/hub-sessions";
-import { formatRunAddress, type CredentialCipher } from "@intx/types";
+import type { CredentialCipher } from "@intx/types";
 import type { CryptoProvider } from "@intx/types/runtime";
 import { and, eq } from "drizzle-orm";
 
@@ -41,7 +40,7 @@ export type CryptoProviderCache = {
 
 export type LaunchWebhookTriggerDeps = {
   db: DB["db"];
-  assetService: Pick<AssetService, "populateAsset">;
+  repoStore: Pick<RepoStore, "resolveRef">;
   workflowAllocationService: Pick<
     WorkflowAllocationService,
     "prepareProvisionedDeployment"
@@ -54,13 +53,6 @@ export type LaunchWebhookTriggerDeps = {
    * the composition root can keep passing the cipher it tagged at boot.
    */
   credentialCipher: CredentialCipher;
-  /**
-   * The shape the launched run deploys as — the host wires this to
-   * `@corbits/chat`'s `AGENT_SECTION_MODE`, the same `onTrigger`
-   * section every room-invited agent deploys as (CL-6329). Injected
-   * rather than imported because this package never depends on chat.
-   */
-  launchMode: AgentRuntimeConfig["mode"];
   /**
    * Records the relaunch mapping after Interchange has prepared the
    * run. Invoked with Interchange's returned `anchorRunId`, not a
@@ -94,11 +86,11 @@ function offeringDigest(sourceOfferingIds: readonly string[]): string {
 
 /**
  * Resolves the trigger's referenced workflow definition (must be
- * deployed and materialized), renders agent-runtime source onto its
- * asset, provisions through Interchange, then delivers the rendered
- * input mapping as the run's first inbound message. The webhook sender
- * itself is never a principal on the platform, so the mail's `from`
- * names the trigger, not a person.
+ * deployed and materialized), provisions its existing asset HEAD
+ * through Interchange, then delivers the rendered input mapping as
+ * the run's first inbound message. The webhook sender itself is never
+ * a principal on the platform, so the mail's `from` names the trigger,
+ * not a person.
  */
 export async function launchWebhookTrigger(
   deps: LaunchWebhookTriggerDeps,
@@ -161,34 +153,16 @@ export async function launchWebhookTrigger(
   }
 
   const assetId = definitionRow.assetId;
+  const commitSha = await deps.repoStore.resolveRef(
+    { kind: "hub" },
+    { kind: "workflow", id: assetId },
+    DEFAULT_ASSET_REF,
+  );
+  if (commitSha === null) {
+    throw new Error(`definition asset "${assetId}" has no HEAD`);
+  }
   const anchorRunId = generateId("workflowRun");
   const sessionId = generateId("session");
-  const triggerAddress = formatRunAddress(anchorRunId, tenantRow.domain);
-
-  const { commitSha } = await deps.assetService.populateAsset({
-    assetId,
-    ref: DEFAULT_ASSET_REF,
-    principal: { kind: "hub" },
-    tree: {
-      files: renderAgentRuntimeSourceTree({
-        packageName: `agent-${anchorRunId}`,
-        config: {
-          workflowId: `wf_${anchorRunId}`,
-          agentId: anchorRunId,
-          triggerAddress,
-          systemPrompt: foldedBody.systemPrompt,
-          inferencePreferences: offerings.map((o) => ({
-            provider: o.provider.name,
-            model: o.model.canonicalName,
-          })),
-          toolPackagePins: [...foldedBody.toolPackagePins],
-          credentialBindings: [...foldedBody.credentialBindings],
-          mode: deps.launchMode,
-        },
-      }),
-      message: `Provision agent ${anchorRunId}`,
-    },
-  });
 
   const prepared =
     await deps.workflowAllocationService.prepareProvisionedDeployment({
@@ -201,7 +175,7 @@ export async function launchWebhookTrigger(
         assetId,
         package: { format: "source", commitSha },
       },
-      entry: AGENT_RUNTIME_ENTRY_PATH,
+      entry: WORKFLOW_SOURCE_ENTRY,
       definitionAssetId: assetId,
       sourceAuthorityPrincipalId: trigger.createdBy,
       sourceOfferingIds,

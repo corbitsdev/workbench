@@ -5,7 +5,7 @@
 // reject an already-launched delivery, and a retried webhook client
 // would then mint a duplicate run for the same event).
 import { describe, expect, mock, test } from "bun:test";
-import { AGENT_RUNTIME_ENTRY_PATH } from "@corbits/agent-runtime";
+import { WORKFLOW_SOURCE_ENTRY } from "@corbits/workflows";
 import { DEFAULT_ASSET_REF } from "@intx/hub-sessions";
 
 const actualDb = await import("@intx/db");
@@ -131,7 +131,7 @@ type PrepareArgs = {
 
 let persistLaunchCalls: unknown[] = [];
 let recordLaunchSourcesCalls: unknown[] = [];
-let populateAssetCalls: unknown[] = [];
+let resolveRefCalls: unknown[] = [];
 let prepareCalls: PrepareArgs[] = [];
 let sendUserMessageCalls: unknown[] = [];
 let sendUserMessageImpl: () => Promise<Uint8Array> = async () =>
@@ -148,17 +148,16 @@ function baseDeps() {
         return {} as never;
       },
     },
-    launchMode: { kind: "section" as const, turnTimeoutMs: 60_000 },
     persistLaunch: async (input: unknown) => {
       persistLaunchCalls.push(input);
     },
     recordLaunchSources: async (input: unknown) => {
       recordLaunchSourcesCalls.push(input);
     },
-    assetService: {
-      populateAsset: async (args: unknown) => {
-        populateAssetCalls.push(args);
-        return { commitSha: COMMIT_SHA };
+    repoStore: {
+      resolveRef: async (...args: unknown[]) => {
+        resolveRefCalls.push(args);
+        return COMMIT_SHA;
       },
     },
     workflowAllocationService: {
@@ -184,7 +183,7 @@ function baseDeps() {
 function resetLaunchSpies() {
   persistLaunchCalls = [];
   recordLaunchSourcesCalls = [];
-  populateAssetCalls = [];
+  resolveRefCalls = [];
   prepareCalls = [];
   sendUserMessageCalls = [];
   cryptoGetKeys = [];
@@ -211,7 +210,7 @@ describe("launchWebhookTrigger", () => {
       triggerAddress: INTERCHANGE_ADDRESS,
     });
     expect(prepareCalls).toHaveLength(1);
-    expect(populateAssetCalls).toHaveLength(1);
+    expect(resolveRefCalls).toHaveLength(1);
     expect(sendUserMessageCalls).toHaveLength(1);
   });
 
@@ -282,26 +281,24 @@ describe("launchWebhookTrigger", () => {
     expect(params.agentAddress).toBe(INTERCHANGE_ADDRESS);
   });
 
-  test("populates the definition asset and prepares through Interchange", async () => {
+  test("resolves the definition asset HEAD and prepares through Interchange", async () => {
     resetLaunchSpies();
 
     await launchWebhookTrigger(baseDeps(), TRIGGER, { status: "ok" });
 
-    expect(populateAssetCalls).toHaveLength(1);
-    const populate = populateAssetCalls[0] as {
-      assetId: string;
-      ref: string;
-      principal: { kind: string };
-    };
-    expect(populate.assetId).toBe(DEFINITION_ROW.assetId);
-    expect(populate.ref).toBe(DEFAULT_ASSET_REF);
-    expect(populate.principal).toEqual({ kind: "hub" });
+    expect(resolveRefCalls).toEqual([
+      [
+        { kind: "hub" },
+        { kind: "workflow", id: DEFINITION_ROW.assetId },
+        DEFAULT_ASSET_REF,
+      ],
+    ]);
 
     expect(prepareCalls).toHaveLength(1);
     expect(prepareCalls[0]).toMatchObject({
       tenantId: TRIGGER.tenantId,
       deploymentDomain: TENANT_ROW.domain,
-      entry: AGENT_RUNTIME_ENTRY_PATH,
+      entry: WORKFLOW_SOURCE_ENTRY,
       definitionAssetId: DEFINITION_ROW.assetId,
       sourceAuthorityPrincipalId: TRIGGER.createdBy,
       sourceOfferingIds: ["off_1", "off_2"],
