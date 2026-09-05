@@ -19,7 +19,11 @@ import type {
   MailboxRef,
 } from "@corbits/mailbox";
 import { resolveRoutableAddress } from "@intx/hub-sessions";
-import type { ChatStore } from "@corbits/chat";
+import {
+  resolveWorkbenchIdForAgentFrame,
+  type ChatStore,
+  type RoomMessageStore,
+} from "@corbits/chat";
 
 /**
  * `@corbits/mailbox` does not export `ResolveMailboxRefs` itself (only the
@@ -84,25 +88,36 @@ export function createHubMailboxAuthorizeSender(
  * hosts many workbenches. Stamping the bench's tenant id here instead would
  * point every row at an id no workbench thread read can ever resolve.
  *
- * `ChatStore.findWorkbenchByParticipantAddress(tenantId, address)` already
- * owns exactly this mapping -- a real lookup over each workbench's own
- * `chat/participants` list, the same list `launchAndJoinAgent` writes -- so
- * this seam is a thin adapter over it, not a new index. A sender run that
- * belongs to no workbench in this tenant (a plain workflow mail, never a
- * chat participant) resolves to no match, and this returns `undefined`: no
- * ref is stamped, per `ResolveMailboxRefs`'s own contract for "nothing to
- * stamp".
+ * Header-first (CL-7449): an agent that participates in several
+ * workbenches at once has no single "the" workbench a bare participant
+ * scan can name honestly, so `@corbits/chat`'s
+ * `resolveWorkbenchIdForAgentFrame` reads the frame's own `In-Reply-To` /
+ * `References` and maps that Message-ID back to the timeline row it
+ * answers -- that row's `workbenchId` is authoritative. Only when the
+ * frame carries no such header does it fall back to the participant scan,
+ * and only takes that scan's answer when it is unambiguous (exactly one
+ * workbench); this seam is a thin adapter handing that helper the two
+ * stores it needs (`chatStore`, `roomMessages`) plus the frame's own
+ * decoded headers.
  */
 export function createHubMailboxResolveRefs(
   chatStore: ChatStore,
+  roomMessages: Pick<RoomMessageStore, "findByMailMessageId">,
 ): ResolveMailboxRefs {
-  return async ({ senderAddress, senderAuthorization }) => {
-    const found = await chatStore.findWorkbenchByParticipantAddress(
+  return async ({ senderAddress, senderAuthorization, decoded }) => {
+    const inReplyTo = decoded?.headers.get("in-reply-to") ?? undefined;
+    const references = decoded?.references;
+    const workbenchId = await resolveWorkbenchIdForAgentFrame(
+      { chatStore, roomMessages },
       senderAuthorization.tenantId,
-      senderAddress,
+      {
+        senderAddress,
+        ...(inReplyTo !== undefined ? { inReplyTo } : {}),
+        ...(references !== undefined ? { references } : {}),
+      },
     );
-    if (found === undefined) return undefined;
-    const ref: MailboxRef = { kind: "workbench", id: found.workbenchId };
+    if (workbenchId === undefined) return undefined;
+    const ref: MailboxRef = { kind: "workbench", id: workbenchId };
     return [ref];
   };
 }

@@ -757,10 +757,12 @@ export async function createHub(config: HubConfig) {
     db,
     grantStore: createGrantStore(db),
   });
-  // Hoisted ahead of its other use below (`mountMemory`'s neighbors) so
-  // `createHubMailboxResolveRefs` can share this one instance rather than
-  // constructing a second one just for the mailbox wiring.
+  // Hoisted ahead of their other uses below (`mountMemory`'s neighbors,
+  // the room timeline store at CL-6327) so `createHubMailboxResolveRefs`
+  // can share these two instances rather than constructing its own just
+  // for the mailbox wiring.
   const chatStore = createDrizzleChatStore(db);
+  const roomMessages = createDrizzleRoomMessageStore(db);
   const lookups = {
     ...baseLookups,
     materializeMailTriggeredRunGrants: mailTriggeredRunGrants,
@@ -777,7 +779,7 @@ export async function createHub(config: HubConfig) {
       upstream: baseLookups.persistMail,
       authorizeSender: createHubMailboxAuthorizeSender(db),
       bus: mailboxBus,
-      resolveRefs: createHubMailboxResolveRefs(chatStore),
+      resolveRefs: createHubMailboxResolveRefs(chatStore, roomMessages),
     }),
     async registerSignalCorrelation(
       args: Parameters<typeof baseLookups.registerSignalCorrelation>[0],
@@ -1476,9 +1478,6 @@ export async function createHub(config: HubConfig) {
   // shared the same way `turnQueue` above is, so a cancel request lands
   // wherever a workbench's turn was actually dispatched from.
   const turnCancellation = createTurnCancelRegistry();
-  // The room timeline store (CL-6327): a workbench's own messages, held
-  // as workbench data rather than platform mail.
-  const roomMessages = createDrizzleRoomMessageStore(db);
   relaunchNoticeRef.current = createRelaunchNoticePoster({
     store: chatStore,
     roomMessages,
