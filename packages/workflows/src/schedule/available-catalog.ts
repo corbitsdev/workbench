@@ -3,9 +3,8 @@
 // asset name so this package never depends back on `@corbits/seeding`,
 // which already depends on `@corbits/workflows`) that has no deployed
 // definition of that asset name on the caller's bench yet, alongside
-// this package's own `WORKFLOW_CATALOG` display metadata, whether the
-// tenant already satisfies its required connections, and whether the
-// entry can deploy at all on this Interchange pin.
+// this package's own `WORKFLOW_CATALOG` display metadata and whether the
+// tenant already satisfies its required connections.
 //
 // Connection satisfaction mirrors `@corbits/settings-ui`'s
 // `connectorStatus` (same active-credential rule) but, like Plugins'
@@ -26,8 +25,6 @@ import { credential, provider, workflowDefinition } from "@intx/db/schema";
 
 import { workflowCatalogEntry } from "../catalog";
 
-export type NotDeployableReason = "credential_bindings_unsupported";
-
 export type AvailableCatalogWorkflow = {
   readonly assetName: string;
   readonly displayName: string;
@@ -35,24 +32,12 @@ export type AvailableCatalogWorkflow = {
   readonly requiredConnections: readonly string[];
   readonly missingConnections: readonly string[];
   readonly connectionsSatisfied: boolean;
-  /**
-   * Whether this entry can deploy through
-   * `POST /template-blocks/:assetName/deploy` on the current Interchange
-   * pin. `false` for a catalog workflow whose definition carries
-   * `credentialBindings` this pin's deploy front has no
-   * `credentialCipher` seam to resolve (see
-   * `catalogWorkflowDeployableOnThisPin`,
-   * `docs/seed-reconciliation.md`) — closes at the Interchange re-pin
-   * (CL-7107 / PR #632, pin 692c3106).
-   */
-  readonly deployable: boolean;
-  readonly notDeployableReason?: NotDeployableReason;
 };
 
 /**
  * The read-only-of-a-database-round-trip core: given which asset names
- * are already deployed and synchronous "is this connector satisfied" /
- * "can this deploy on this pin" lookups, computes the available list.
+ * are already deployed and a synchronous "is this connector satisfied"
+ * lookup, computes the available list.
  * Split out from `listAvailableCatalogWorkflows` so this — the actual
  * per-entry filtering and shaping logic — has a test that needs no
  * Postgres.
@@ -61,14 +46,8 @@ export function availableCatalogWorkflowsFrom(args: {
   readonly catalogAssetNames: readonly string[];
   readonly deployedNames: ReadonlySet<string>;
   readonly isConnectorSatisfied: (connectorId: string) => boolean;
-  readonly isDeployableOnThisPin?: (assetName: string) => boolean;
 }): readonly AvailableCatalogWorkflow[] {
-  const {
-    catalogAssetNames,
-    deployedNames,
-    isConnectorSatisfied,
-    isDeployableOnThisPin = () => true,
-  } = args;
+  const { catalogAssetNames, deployedNames, isConnectorSatisfied } = args;
   const available: AvailableCatalogWorkflow[] = [];
   for (const assetName of catalogAssetNames) {
     if (deployedNames.has(assetName)) continue;
@@ -78,8 +57,6 @@ export function availableCatalogWorkflowsFrom(args: {
     const missingConnections = entry.requiredConnections.filter(
       (connectorId) => !isConnectorSatisfied(connectorId),
     );
-    const deployable = isDeployableOnThisPin(assetName);
-
     available.push({
       assetName,
       displayName: entry.displayName,
@@ -87,10 +64,6 @@ export function availableCatalogWorkflowsFrom(args: {
       requiredConnections: entry.requiredConnections,
       missingConnections,
       connectionsSatisfied: missingConnections.length === 0,
-      deployable,
-      ...(deployable
-        ? {}
-        : { notDeployableReason: "credential_bindings_unsupported" as const }),
     });
   }
   return available;
@@ -159,13 +132,12 @@ async function connectionSatisfactionByConnector(
 
 /**
  * Every catalog asset name with no deployed `workflow_definition` on this
- * tenant yet, enriched with `WORKFLOW_CATALOG` metadata, connection
- * satisfaction, and pin deployability. `catalogAssetNames` names the full
+ * tenant yet, enriched with `WORKFLOW_CATALOG` metadata and connection
+ * satisfaction. `catalogAssetNames` names the full
  * deployable-through-the-catalog-instantiate-route set (`@corbits/seeding`'s
- * `CATALOG_WORKFLOWS`, by asset name) and `isDeployableOnThisPin` names
- * `@corbits/seeding`'s `catalogWorkflowDeployableOnThisPin` — both the
- * caller's job, not this package's, since importing that package here
- * would cycle back through its own dependency on `@corbits/workflows`. A
+ * `CATALOG_WORKFLOWS`, by asset name) — the caller's job, not this
+ * package's, since importing that package here would cycle back through
+ * its own dependency on `@corbits/workflows`. A
  * catalog name with no `WORKFLOW_CATALOG` entry is skipped rather than
  * thrown on: the two lists are asserted equal elsewhere
  * (`packages/seeding/test`), so this is defense against the caller
@@ -175,9 +147,8 @@ export async function listAvailableCatalogWorkflows(args: {
   readonly db: DB["db"];
   readonly tenantId: string;
   readonly catalogAssetNames: readonly string[];
-  readonly isDeployableOnThisPin?: (assetName: string) => boolean;
 }): Promise<readonly AvailableCatalogWorkflow[]> {
-  const { db, tenantId, catalogAssetNames, isDeployableOnThisPin } = args;
+  const { db, tenantId, catalogAssetNames } = args;
 
   const deployed = await db.query.workflowDefinition.findMany({
     where: and(
@@ -205,6 +176,5 @@ export async function listAvailableCatalogWorkflows(args: {
     deployedNames,
     isConnectorSatisfied: (connectorId) =>
       connectorSatisfaction.get(connectorId) ?? false,
-    ...(isDeployableOnThisPin !== undefined ? { isDeployableOnThisPin } : {}),
   });
 }

@@ -27,7 +27,7 @@ import { formatRunAddress } from "@intx/types";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { FoldedBody } from "@intx/workflow-deploy";
 
-const log = getLogger(["folded-run-one-shot"]);
+const log = getLogger(["agent-directory", "one-shot-prompt"]);
 
 export type CryptoProviderCache = {
   get(key: string): Promise<CryptoProvider>;
@@ -96,21 +96,21 @@ export class OneShotDefinitionNotFoundError extends Error {
   }
 }
 
-export class FoldedRunTimedOutError extends Error {
+export class OneShotRunTimedOutError extends Error {
   constructor(timeoutMs: number) {
-    super(`the folded run did not reply within ${String(timeoutMs)}ms`);
-    this.name = "FoldedRunTimedOutError";
+    super(`the one-shot run did not reply within ${String(timeoutMs)}ms`);
+    this.name = "OneShotRunTimedOutError";
   }
 }
 
-export class FoldedRunFailedError extends Error {
+export class OneShotRunFailedError extends Error {
   constructor(errorMessage: string | undefined) {
     super(
       errorMessage !== undefined
-        ? `the folded run failed: ${errorMessage}`
-        : "the folded run failed",
+        ? `the one-shot run failed: ${errorMessage}`
+        : "the one-shot run failed",
     );
-    this.name = "FoldedRunFailedError";
+    this.name = "OneShotRunFailedError";
   }
 }
 
@@ -199,7 +199,7 @@ async function provisionOnAsset(
  * subscription unsubscribes exactly once, and `deps.undeploy` tears the
  * run down exactly once, on every exit path.
  */
-export async function runOneShotFoldedPrompt(
+export async function runOneShotPrompt(
   deps: OneShotRunnerDeps,
   input: OneShotPromptInput,
 ): Promise<OneShotReply> {
@@ -265,7 +265,7 @@ export async function runOneShotFoldedPrompt(
 
         if (ended.status === "failed") {
           void settle("planning-run-failed", () => {
-            reject(new FoldedRunFailedError(ended.errorMessage));
+            reject(new OneShotRunFailedError(ended.errorMessage));
           });
           return;
         }
@@ -293,7 +293,7 @@ export async function runOneShotFoldedPrompt(
 
     const timer = setTimeout(() => {
       void settle("planning-run-timed-out", () => {
-        reject(new FoldedRunTimedOutError(input.timeoutMs));
+        reject(new OneShotRunTimedOutError(input.timeoutMs));
       });
     }, input.timeoutMs);
 

@@ -196,20 +196,12 @@ describe("POST /:assetName/deploy", () => {
     expect(deployed).toHaveLength(0);
   });
 
-  test("a credential-bound catalog workflow answers 409 not_deployable_yet, deploying nothing (CL-7073)", async () => {
+  test("a credential-bound catalog workflow deploys the same way a credential-free one does", async () => {
     const { app, deployed } = buildApp();
     const res = await app.request("/granola-call/deploy", { method: "POST" });
-    expect(res.status).toBe(409);
-    const body = (await res.json()) as {
-      error: { code: string; userMessage: string; refId: string };
-    };
-    expect(body.error.code).toBe("not_deployable_yet");
-    expect(body.error.userMessage).not.toMatch(
-      /cipher|pin|vendor|Interchange/i,
-    );
-    expect(typeof body.error.refId).toBe("string");
-    expect(body.error.refId.length).toBeGreaterThan(0);
-    expect(deployed).toHaveLength(0);
+    expect(res.status).toBe(201);
+    expect(deployed).toHaveLength(1);
+    expect(deployed[0]?.assetName).toBe("granola-call");
   });
 
   test("a failing deploy port answers a 500 envelope, never a raw error", async () => {

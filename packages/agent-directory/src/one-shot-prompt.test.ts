@@ -3,11 +3,11 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  runOneShotFoldedPrompt,
+  runOneShotPrompt,
   OneShotDefinitionNotFoundError,
-  FoldedRunFailedError,
-  FoldedRunTimedOutError,
-} from "./one-shot-reply";
+  OneShotRunFailedError,
+  OneShotRunTimedOutError,
+} from "./one-shot-prompt";
 
 /** Asserts a fake's call list recorded at least one call and returns the
  * first — avoids a non-null assertion at every `calls[0]` read below. */
@@ -183,7 +183,7 @@ const INPUT = {
   timeoutMs: 200,
 };
 
-describe("runOneShotFoldedPrompt", () => {
+describe("runOneShotPrompt", () => {
   test("happy path resolves with accumulated reply content, tears the run down, and untracks it", async () => {
     const fake = createFakeEmitter();
     const { provision, calls: launchCalls } = createFakeProvision();
@@ -200,7 +200,7 @@ describe("runOneShotFoldedPrompt", () => {
       lifecycle,
     } as never;
 
-    const promise = runOneShotFoldedPrompt(deps, INPUT);
+    const promise = runOneShotPrompt(deps, INPUT);
 
     // Let the async launch+send chain settle before emitting events.
     await new Promise((r) => setTimeout(r, 10));
@@ -238,7 +238,7 @@ describe("runOneShotFoldedPrompt", () => {
     expect(untracked).toEqual([triggerAddress]);
   });
 
-  test("a failed run rejects with FoldedRunFailedError, unsubscribes, and tears the run down", async () => {
+  test("a failed run rejects with OneShotRunFailedError, unsubscribes, and tears the run down", async () => {
     const fake = createFakeEmitter();
     const { provision, calls: launchCalls } = createFakeProvision();
     const { sendMail } = createFakeSend("ok");
@@ -251,7 +251,7 @@ describe("runOneShotFoldedPrompt", () => {
       undeploy,
     } as never;
 
-    const promise = runOneShotFoldedPrompt(deps, INPUT);
+    const promise = runOneShotPrompt(deps, INPUT);
     await new Promise((r) => setTimeout(r, 10));
     const triggerAddress = firstCall(launchCalls).address;
 
@@ -263,7 +263,7 @@ describe("runOneShotFoldedPrompt", () => {
       },
     });
 
-    await expect(promise).rejects.toBeInstanceOf(FoldedRunFailedError);
+    await expect(promise).rejects.toBeInstanceOf(OneShotRunFailedError);
     expect(fake.listenerCount("agent.event")).toBe(0);
     expect(undeployCalls).toEqual([
       { address: triggerAddress, reason: "planning-run-failed" },
@@ -289,7 +289,7 @@ describe("runOneShotFoldedPrompt", () => {
       },
     } as never;
 
-    await expect(runOneShotFoldedPrompt(deps, INPUT)).rejects.toBeInstanceOf(
+    await expect(runOneShotPrompt(deps, INPUT)).rejects.toBeInstanceOf(
       OneShotDefinitionNotFoundError,
     );
   });
@@ -317,7 +317,7 @@ describe("send-path throw (not an !ok result)", () => {
     const started = Date.now();
     let caught: unknown;
     try {
-      await runOneShotFoldedPrompt(deps, { ...INPUT, timeoutMs: 300 });
+      await runOneShotPrompt(deps, { ...INPUT, timeoutMs: 300 });
     } catch (err) {
       caught = err;
     }
@@ -350,15 +350,12 @@ describe("timeout tears the launched run down", () => {
     } as never;
 
     await expect(
-      runOneShotFoldedPrompt(deps, { ...INPUT, timeoutMs: 100 }),
-    ).rejects.toBeInstanceOf(FoldedRunTimedOutError);
+      runOneShotPrompt(deps, { ...INPUT, timeoutMs: 100 }),
+    ).rejects.toBeInstanceOf(OneShotRunTimedOutError);
     const triggerAddress = firstCall(launchCalls).address;
 
-    // A run WAS launched (workflow_run row + deployed sidecar instance)...
     expect(launchCalls).toHaveLength(1);
-    // ...the listener is gone...
     expect(fake.listenerCount("agent.event")).toBe(0);
-    // ...and the launched run was torn down, not left running.
     expect(undeployCalls).toEqual([
       { address: triggerAddress, reason: "planning-run-timed-out" },
     ]);

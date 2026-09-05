@@ -15,9 +15,9 @@ import { Hono } from "hono";
 
 import type { TenantEnv, RequireGrant } from "@intx/hub-api";
 import {
-  FoldedRunFailedError,
-  FoldedRunTimedOutError,
-} from "@corbits/folded-run-one-shot";
+  OneShotRunFailedError,
+  OneShotRunTimedOutError,
+} from "./one-shot-prompt";
 import { makeErrorEnvelope, reportError } from "@corbits/error-sink";
 import {
   AgentDefinitionDraftReferenceOutOfInventoryError,
@@ -42,7 +42,7 @@ export type CreateAgentDefinitionDraftRoutesDeps = {
    * route 404s rather than pretending to draft and always failing.
    * The route never touches `./agent-definition-drafting.ts`'s
    * runner/inventory machinery directly, so it stays testable with a
-   * plain stub — no database, no folded-run machinery.
+   * plain stub — no database, no one-shot runner.
    */
   draftAgentDefinition?(input: {
     readonly tenantId: string;
@@ -62,8 +62,8 @@ export type CreateAgentDefinitionDraftRoutesDeps = {
 function isDraftingFailure(err: unknown): boolean {
   return (
     err instanceof MyraAgentDefinitionDraftingUnavailableError ||
-    err instanceof FoldedRunTimedOutError ||
-    err instanceof FoldedRunFailedError ||
+    err instanceof OneShotRunTimedOutError ||
+    err instanceof OneShotRunFailedError ||
     err instanceof AgentDefinitionDraftReplyUnparseableError ||
     err instanceof AgentDefinitionDraftReferenceOutOfInventoryError
   );

@@ -119,6 +119,15 @@ export {
   type CreateAgentDefinitionDraftRoutesDeps,
 } from "./agent-definition-draft-routes";
 export {
+  runOneShotPrompt,
+  OneShotDefinitionNotFoundError,
+  OneShotRunTimedOutError,
+  OneShotRunFailedError,
+  type OneShotReply,
+  type OneShotRunnerDeps,
+  type OneShotPromptInput,
+} from "./one-shot-prompt";
+export {
   resolveMyraDefinitionIdFromDb,
   MyraDefinitionUnresolvableError,
 } from "./resolve-myra-definition-id";

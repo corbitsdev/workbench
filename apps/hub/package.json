@@ -26,7 +26,6 @@
     "@corbits/docker-provisioner": "workspace:*",
     "@corbits/e2b-sandbox-sidecar": "workspace:*",
     "@corbits/evals": "workspace:*",
-    "@corbits/folded-run-one-shot": "workspace:*",
     "@corbits/inbox": "workspace:*",
     "@corbits/inference-catalog": "workspace:*",
     "@corbits/insights": "workspace:*",

@@ -63,6 +63,7 @@ import {
   type InventoryModel,
   type InventorySources,
   type InventoryToolPackage,
+  runOneShotPrompt,
 } from "@corbits/agent-directory";
 
 import {
@@ -204,7 +205,6 @@ import {
   createRunKeyHistoryRoutes,
   lookupRunKeyHistoryReconnectKey,
 } from "@corbits/run-key-history";
-import { runOneShotFoldedPrompt } from "@corbits/folded-run-one-shot";
 
 import {
   createEventCollectorRegistry,
@@ -271,7 +271,6 @@ import {
 import { supportedCredentialProviders } from "@corbits/connections/credential-test";
 import {
   CATALOG_WORKFLOWS,
-  catalogWorkflowDeployableOnThisPin,
   createGitWorkflowPusher,
 } from "@corbits/seeding";
 import { createHubAPI } from "@corbits/hub-api-client";
@@ -1849,7 +1848,6 @@ export async function createHub(config: HubConfig) {
       catalogAssetNames: CATALOG_WORKFLOWS.map(
         (workflow) => workflow.assetName,
       ),
-      catalogWorkflowDeployable: catalogWorkflowDeployableOnThisPin,
       runNow: async (args) =>
         runNowScheduledDefinition(
           { db, sidecarRouter, ...scheduledDeliveryJoinDeps },
@@ -3028,7 +3026,7 @@ export async function createHub(config: HubConfig) {
           resolveMyraDefinitionIdFromDb(db, tenantId),
         runner: {
           run: (runnerInput) =>
-            runOneShotFoldedPrompt(
+            runOneShotPrompt(
               {
                 db,
                 events: sidecarRouter.events,

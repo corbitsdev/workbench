@@ -22,7 +22,7 @@
 
 import { type } from "arktype";
 
-import type { OneShotReply } from "@corbits/folded-run-one-shot";
+import type { OneShotReply } from "./one-shot-prompt";
 
 import { BoundedDedupedToolPackageNameArray } from "./create-bounds";
 import {
@@ -241,7 +241,7 @@ export function validateAgentDefinitionDraftReplyAgainstInventory(
 export type AgentDefinitionDraftingRunnerDeps = {
   /** `resolveMyraDefinitionIdFromDb` (`./planner-run.ts`) in production. */
   readonly resolveMyraDefinitionId: (tenantId: string) => Promise<string>;
-  /** `runOneShotFoldedPrompt` in production — the one boundary tests
+  /** `runOneShotPrompt` in production — the one boundary tests
    * stub, never live inference. */
   readonly runner: {
     run(input: {
