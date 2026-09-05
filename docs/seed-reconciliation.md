@@ -61,10 +61,27 @@ not plant wrapper rows.
 real signup gets automatically: `assistant` (Myra), and nothing else. A
 fresh bench used to also pay a git push and a sidecar probe for `echo`,
 `workbench-digest`, and `last-30-days-research` — three workflows
-nobody had asked for yet. Those three, plus `code-review`, now live in
-`CATALOG_WORKFLOWS`, same shape (`DefinitionWithAgentSteps`-backed
-`DefaultWorkflow` entries) and deployable through the catalog
-instantiate route (CL-7073), but never automatically at signup.
+nobody had asked for yet. Those three, plus every other
+`workflows/<name>` source package that exports a builder
+(`code-review`, `granola-call`, `morning-brief`, `exa-topic-watch`,
+`process-granola-call`, `attio-task-agent`, `pain-point-collateral`,
+`reddit-opportunity-scanner`, `collateral-generation`,
+`diligence-brief`), now live in `CATALOG_WORKFLOWS`, same shape
+(`DefinitionWithAgentSteps`-backed `DefaultWorkflow` entries) and
+deployable through the catalog instantiate route (CL-7073), but never
+automatically at signup.
+
+Registration is total, not partial: `packages/seeding/test/workflow-source-registration.test.ts`
+asserts every directory under `workflows/` appears in exactly one of
+`DEFAULT_WORKFLOWS`, `CATALOG_WORKFLOWS`, `CATALOG_TEST_WORKFLOWS`, or
+the explicit `EXCLUDED_WORKFLOW_SOURCES` list (a one-line reason per
+entry, currently empty — every source directory is registered
+somewhere today). A new `workflows/<name>` package that nobody wires up
+fails that test instead of 404ing silently through the catalog
+instantiate route, which is exactly the drift CL-7073's critique
+caught: `CATALOG_WORKFLOWS` had four entries while a template's blocks
+(the GTM template's, in particular) named source packages that were
+never registered at all.
 
 There is no orphan-retire for an entry that moved from
 `DEFAULT_WORKFLOWS` to `CATALOG_WORKFLOWS`: an asset already deployed
