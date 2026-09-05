@@ -1,7 +1,7 @@
 {
   "name": "@corbits/run-scope",
   "private": true,
-  "description": "Which of a tenant's workflow runs are genuine top-level deployments, with every folded run excluded: the Agent Directory's and Insights' shared workflow-run listing route",
+  "description": "Which of a tenant's workflow runs are genuine top-level deployments: the Agent Directory's and Insights' shared workflow-run listing route",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@corbits/error-sink": "workspace:*",
-    "@corbits/folded-runs": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/types": "workspace:*",

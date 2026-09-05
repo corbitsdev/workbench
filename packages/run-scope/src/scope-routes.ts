@@ -1,38 +1,30 @@
 // The workbench-owned answer to "which of this tenant's workflow runs
-// are genuine top-level deployments, not folded-run plumbing?" — the
-// question `packages/chat-ui/src/folded-run-ids.ts` used to answer by
-// deriving an exclusion set from a tenant's *workbenches*, which silently
-// missed every task-style folded run (a task creates no workbench at
-// all). This route answers it server-side instead, straight off
-// `workflow_run` plus `@corbits/folded-runs`' own `folded_run` marker
-// table, so every folded run — workbench host, invited agent, or
-// task — is excluded uniformly with no per-consumer opt-in.
+// are genuine top-level deployments?" — the question
+// `packages/chat-ui/src/folded-run-ids.ts` used to answer by deriving
+// an exclusion set from a tenant's *workbenches*. This route answers
+// it server-side instead, straight off `workflow_run`.
 //
 // The listing predicate mirrors vendor's own "top-level run" predicate
 // (`isNotNull(workflowRun.address)`, `anchorRunId === id`) — see
 // `vendor/intx/hub-api/src/routes/runs.ts`'s `GET /workflows/runs` and
 // `vendor/intx/hub-sessions/src/hub-session-lookups.ts`'s
-// `isTopLevelRun`, this route's reference implementation — with one
-// addition vendor cannot express: a `NOT EXISTS` against `folded_run`,
-// dropping every self-anchored run `@corbits/folded-runs`' own
-// `launchFoldedRun` ever minted.
+// `isTopLevelRun`, this route's reference implementation.
 //
 // A second feed lives here too (`feed=fires`, `listTopLevelRunFires`,
 // CL-6249): Insights' different question, "which runs actually executed"
 // rather than "which deployments exist." A deployment's anchor row that
 // never got triggered is not a run at all (it stays `status: "deployed"`
 // forever — see `listTopLevelRunFires`'s own comment), so that feed drops
-// it; but a routine's fire — workbench-digest or any other — genuinely
-// ran, so that feed puts it back even though it is a folded run, via
-// the host-supplied `resolveRoutineFires` port.
-import { and, desc, eq, inArray, isNotNull, ne, notExists } from "drizzle-orm";
+// it. `resolveRoutineFires` annotates a fire with its parent schedule
+// when the host wires the port; it is not an exception to the listing
+// predicate.
+import { and, desc, eq, inArray, isNotNull, ne } from "drizzle-orm";
 import { Hono } from "hono";
 import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { getDescendantTenants, type DB } from "@intx/db";
 import { workflowDefinition, workflowRun } from "@intx/db/schema";
 import type { WorkflowRunStatus } from "@intx/types";
-import { foldedRun } from "@corbits/folded-runs";
 import { makeErrorEnvelope } from "@corbits/error-sink";
 import { listingTurnsByRunId } from "./in-flight-turns";
 
@@ -46,8 +38,7 @@ export type RoutineFireInfo = {
  * Host-supplied port: given a batch of run ids, returns the subset that
  * are scheduled fires, each with its parent schedule's id and human
  * name. Optional: a host that mounts this route without wiring it
- * simply gets the `fires` feed with no folded run ever recognized as a
- * fire (every folded run then drops, same as the `deployments` feed).
+ * still lists fires; those rows simply report no schedule parent.
  */
 export type ResolveRoutineFires = (
   runIds: readonly string[],
@@ -108,10 +99,10 @@ function toTimestamp(date: Date): string {
 
 /**
  * The tenant's (or tenant subtree's) genuine top-level deployment runs,
- * most recent first, with every folded run excluded — the query
- * `createTopLevelRunRoutes` serves. Exported separately from the route
- * so a non-HTTP caller (a future scoped listing elsewhere in the hub)
- * can reuse the same predicate without going through Hono.
+ * most recent first — the query `createTopLevelRunRoutes` serves.
+ * Exported separately from the route so a non-HTTP caller (a future
+ * scoped listing elsewhere in the hub) can reuse the same predicate
+ * without going through Hono.
  *
  * `tenantId` also accepts an array — the same shape
  * `@corbits/insights`' `resolveScope` (packages/insights/src/routes.ts)
@@ -151,9 +142,6 @@ export async function listTopLevelRuns(
         inArray(workflowRun.tenantId, scope),
         isNotNull(workflowRun.address),
         eq(workflowRun.anchorRunId, workflowRun.id),
-        notExists(
-          db.select().from(foldedRun).where(eq(foldedRun.id, workflowRun.id)),
-        ),
       ),
     )
     .orderBy(desc(workflowRun.createdAt), desc(workflowRun.id))
@@ -183,25 +171,15 @@ export async function listTopLevelRuns(
  * says which one it is: `workflow_run.status` is born "deployed" only
  * for a deployment's anchor row and never changes back to it once a
  * first trigger flips it to "running" (see `vendor/intx/db`'s
- * `workflow-run.ts`); a folded run (every routine fire, see
- * `../launch.ts`) is born "running" and never "deployed" at all. So
- * `status <> 'deployed'` is exactly "this row is not the resident,
- * never-fired deployment placeholder" — no slug/name heuristic needed.
+ * `workflow-run.ts`). So `status <> 'deployed'` is exactly "this row
+ * is not the resident, never-fired deployment placeholder" — no
+ * slug/name heuristic needed.
  *
- * That alone would still hide every routine fire: a fire is a folded
- * run, marked in this package's own `folded_run` table, and this
- * feed — unlike `listTopLevelRuns` — must show it. So a folded run here
- * is kept only when `resolveRoutineFires` (the host's scheduled-fire
- * bridge) confirms it is one, carrying that schedule's id/name; every
- * other folded run (workbench host, invited agent, an ad-hoc task with
- * no schedule parent) still drops, same as `listTopLevelRuns`. A
- * non-folded row (a plain deployment that got triggered directly)
- * always keeps its place and reports no schedule parent — the caller's
- * honest "definition name" fallback.
- *
- * Same known-limit caveat as `listTopLevelRuns`: `limit` bounds the SQL
- * fetch before the folded-run filter runs, so a page can come back
- * shorter than `limit` when it lands on a run of unrelated folded rows.
+ * `resolveRoutineFires` (the host's scheduled-fire bridge) annotates
+ * a listed row with its parent schedule's id/name when the host
+ * recognizes it as a fire. A row the port does not claim, or a host
+ * that never wires the port, still lists and reports no schedule
+ * parent — the caller's honest "definition name" fallback.
  */
 export async function listTopLevelRunFires(
   db: DB["db"],
@@ -224,14 +202,12 @@ export async function listTopLevelRunFires(
       sidecarId: workflowRun.sidecarId,
       createdAt: workflowRun.createdAt,
       endedAt: workflowRun.endedAt,
-      foldedMarkerId: foldedRun.id,
     })
     .from(workflowRun)
     .innerJoin(
       workflowDefinition,
       eq(workflowRun.definitionId, workflowDefinition.id),
     )
-    .leftJoin(foldedRun, eq(foldedRun.id, workflowRun.id))
     .where(
       and(
         inArray(workflowRun.tenantId, scope),
@@ -243,23 +219,15 @@ export async function listTopLevelRunFires(
     .orderBy(desc(workflowRun.createdAt), desc(workflowRun.id))
     .limit(limit);
 
-  const foldedIds = rows
-    .filter((row) => row.foldedMarkerId !== null)
-    .map((row) => row.id);
+  const runIds = rows.map((row) => row.id);
   const routineFires =
-    foldedIds.length > 0 && resolveRoutineFires !== undefined
-      ? await resolveRoutineFires(foldedIds)
+    runIds.length > 0 && resolveRoutineFires !== undefined
+      ? await resolveRoutineFires(runIds)
       : new Map<string, RoutineFireInfo>();
 
-  const kept = rows.filter(
-    (row) => row.foldedMarkerId === null || routineFires.has(row.id),
-  );
-  const turnsByRun = await listingTurnsByRunId(
-    db,
-    kept.map((row) => row.id),
-  );
+  const turnsByRun = await listingTurnsByRunId(db, runIds);
 
-  return kept.map((row) => {
+  return rows.map((row) => {
     const fire = routineFires.get(row.id);
     const turns = turnsByRun.get(row.id) ?? [];
     return {
