@@ -1,18 +1,7 @@
-// Proves the routine-deploy path this workflow is materialized through
-// (`apps/hub`'s `createHubRoutineLauncher` -> `@corbits/folded-runs`'
-// `readFoldedBody` -> `launchFoldedRun`/`deployAtHead`) actually receives
-// this definition's `toolPackagePins` off the same INERT PROJECTION a
-// real deploy freezes onto the definition's version row. `readFoldedBody`
-// is exercised directly over `projectLiveToInert` output (rather than
-// standing up a database, a sidecar probe, and an asset service) because
-// it is the one place in that path that reads `toolPackagePins` back out
-// of the persisted projection — everywhere past it (`deployAtHead`,
-// `sessionService`) only forwards the value it already carries, and is
-// covered by `@corbits/folded-runs`' own tests.
-
+// Proves this definition's tool-package pins are on the live
+// `AgentDefinition` a native provisioned deploy renders from — not a
+// folded-run launch body.
 import { expect, test } from "bun:test";
-import { readFoldedBody } from "@corbits/folded-runs";
-import { projectLiveToInert } from "@intx/workflow";
 
 import {
   MORNING_BRIEF_STEP_ID,
@@ -26,18 +15,16 @@ const INPUT = {
   turnTimeoutMs: 120000,
 } as const;
 
-test("a workflow asset built from this definition surfaces its tool-package pins to the launch path", () => {
+test("a workflow built from this definition carries its tool-package pins on the agent step", () => {
   const definition = buildMorningBriefWorkflow(INPUT);
-  const projection: unknown = JSON.parse(
-    JSON.stringify(projectLiveToInert(definition)),
+  const step = definition.steps[MORNING_BRIEF_STEP_ID];
+  expect(step?.kind).toBe("step");
+  expect(step?.kind === "step" ? step.agent.toolPackagePins : undefined).toEqual(
+    [...MORNING_BRIEF_TOOL_PACKAGE_PINS],
   );
-  const foldedBody = readFoldedBody(projection, definition.grantRequirements);
-  expect(foldedBody.toolPackagePins).toEqual([
-    ...MORNING_BRIEF_TOOL_PACKAGE_PINS,
-  ]);
 });
 
-test("the folded body carries the step id this workflow declares as its single step", () => {
+test("the workflow declares exactly one step", () => {
   const definition = buildMorningBriefWorkflow(INPUT);
   expect(Object.keys(definition.steps)).toEqual([MORNING_BRIEF_STEP_ID]);
 });

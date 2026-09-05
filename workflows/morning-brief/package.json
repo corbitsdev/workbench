@@ -26,7 +26,6 @@
     "arktype": "catalog:"
   },
   "devDependencies": {
-    "@corbits/folded-runs": "workspace:*",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   }
