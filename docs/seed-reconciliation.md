@@ -50,10 +50,30 @@ answers 503 — never a 404, which would read as "no such template".
 ## Default scheduled workflows (onboarding / boot-time seeding)
 
 Seed never POSTs `/routines`. Native `ScheduleTrigger` ticks digest;
-last-30-days-research stays a deployed workflow in `DEFAULT_WORKFLOWS`,
-not a wrapper row. `scripts/db-setup.ts` drops a leftover `routines`
-schema after the digest enablement handoff. There is no preset-wrapper
-prune: seed does not plant wrapper rows.
+last-30-days-research stays a deployed workflow, not a wrapper row.
+`scripts/db-setup.ts` drops a leftover `routines` schema after the
+digest enablement handoff. There is no preset-wrapper prune: seed does
+not plant wrapper rows.
+
+## Default vs. on-demand catalog workflows (CL-7074)
+
+`DEFAULT_WORKFLOWS` (`packages/seeding/src/seed.ts`) is the set every
+real signup gets automatically: `assistant` (Myra), and nothing else. A
+fresh bench used to also pay a git push and a sidecar probe for `echo`,
+`workbench-digest`, and `last-30-days-research` — three workflows
+nobody had asked for yet. Those three now live in `CATALOG_WORKFLOWS`,
+same shape (`DefinitionWithAgentSteps`-backed `DefaultWorkflow`
+entries), deployed the same way (`ensureWorkflowAsset` → `pushWorkflow`
+→ `ensureDeployment`), but only when something asks for one by name —
+the catalog/instantiate surface, or a test standing up its own fixture
+bench — never automatically at signup.
+
+There is no orphan-retire for an entry that moved from
+`DEFAULT_WORKFLOWS` to `CATALOG_WORKFLOWS`: an asset already deployed
+on an existing bench from before the move is left exactly as it is.
+`CATALOG_TEST_WORKFLOWS` remains the separate, never-reaches-a-real-
+signup set for workflows that exist only to exercise the platform
+continuously.
 
 ## Default skills (boot-time seeding)
 
