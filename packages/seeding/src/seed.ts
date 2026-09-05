@@ -221,13 +221,18 @@ export const SETUP_AGENT_ASSET_NAME = "assistant";
 
 /**
  * The workflow set every real tenant starts with: the general-purpose
- * assistant, the echo walking-skeleton, and the workbench-digest
- * automation the Routines picker can honestly offer. This is what
+ * assistant, and nothing else (CL-7074). This is what
  * `provisionPersonalTenantIfNeeded` (`@workbench/onboarding`) deploys
  * on first login for every real user — growing it is adding an entry
  * here, nothing more, but an entry here reaches every signup, so it is
- * never the place for a workflow that exists only to exercise the
- * platform itself. See `CATALOG_TEST_WORKFLOWS` for those.
+ * never the place for a workflow that is not something every person
+ * needs the moment they land. `echo`, `workbench-digest`, and
+ * `last-30-days-research` used to live here; a signup paid a git push
+ * and a sidecar probe for each of them even though nobody asked for
+ * them. They now live in `CATALOG_WORKFLOWS`, deployed on demand
+ * (CL-7073) rather than onto every bench. See `CATALOG_TEST_WORKFLOWS`
+ * for the platform-exercise set, which never reaches a real signup at
+ * all.
  *
  * Order is a product decision, not a formality (CL-6462): `seedTenant`
  * deploys this array in sequence at roughly 20s each, and the setup
@@ -235,10 +240,6 @@ export const SETUP_AGENT_ASSET_NAME = "assistant";
  * It goes first so a fresh signup lands in a working conversation in
  * seconds while the rest converge behind them; a signup that waited on
  * the whole set stared at a progress screen for minutes.
- *
- * workbench-digest is the seed automation: schedulable, not a chat host,
- * friendly display name. It uses the tenant's real model so a scheduled
- * run can produce a real digest line.
  */
 export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
   {
@@ -256,6 +257,20 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
         }),
       ),
   },
+];
+
+/**
+ * Workflows every real tenant CAN have, but none is deployed by default
+ * (CL-7074) — a caller deploys one on demand the same way `seedTenant`
+ * deploys any `DefaultWorkflow`: `ensureWorkflowAsset` →
+ * `pushWorkflow` → `ensureDeployment`. `CL-7073` is the caller that
+ * offers these from a catalog/instantiate surface; nothing here reaches
+ * a bench until something asks for it by name. An asset already
+ * deployed on an existing bench (a prior seed run, before these moved
+ * out of `DEFAULT_WORKFLOWS`) is untouched — there is no orphan-retire
+ * for these entries, on purpose (see `docs/seed-reconciliation.md`).
+ */
+export const CATALOG_WORKFLOWS: readonly DefaultWorkflow[] = [
   {
     assetName: "echo",
     displayName: catalogDisplayName("echo"),
@@ -290,9 +305,9 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
     assetName: "last-30-days-research",
     displayName: catalogDisplayName("last-30-days-research"),
     automatable: catalogAutomatable("last-30-days-research"),
-    // Deployed automation in the default set. Seed no longer POSTs a
-    // wrapper row; last-30-days-research stays a deployed workflow
-    // without a native ScheduleTrigger.
+    // Deployed automation, on demand. Seed never POSTs a wrapper row;
+    // last-30-days-research stays a deployed workflow without a native
+    // ScheduleTrigger.
     buildJson: (tenantDomain, model) =>
       serializeLast30DaysResearchWorkflow(
         buildLast30DaysResearchWorkflow({
@@ -316,9 +331,9 @@ export const DEFAULT_WORKFLOWS: readonly DefaultWorkflow[] = [
  * explicit, dev/CI-specific caller (`workbench seed` with
  * `WORKBENCH_SEED_CATALOG_TEST_WORKFLOWS` set) opts in.
  *
- * workbench-digest used to live here as a platform exercise; it is now the
- * seed automation in `DEFAULT_WORKFLOWS` so every personal bench has an
- * honest Routines-picker option.
+ * workbench-digest used to live here as a platform exercise, then moved
+ * to `DEFAULT_WORKFLOWS`; it now lives in `CATALOG_WORKFLOWS` (CL-7074),
+ * deployed on demand rather than onto every bench.
  */
 export const CATALOG_TEST_WORKFLOWS: readonly DefaultWorkflow[] = [
   {

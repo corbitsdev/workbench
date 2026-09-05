@@ -19,6 +19,7 @@ export type {
 } from "./seed";
 export {
   CATALOG_TEST_WORKFLOWS,
+  CATALOG_WORKFLOWS,
   DEFAULT_WORKFLOWS,
   SEED_GRANTS,
   inferenceCredentialName,
