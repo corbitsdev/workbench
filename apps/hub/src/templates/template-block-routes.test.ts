@@ -6,6 +6,7 @@ import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
+import { makeErrorEnvelope } from "@corbits/error-sink";
 
 import {
   createTemplateBlockRoutes,
@@ -115,8 +116,49 @@ describe("POST /:assetName/deploy", () => {
 
   test("an asset name no block builder covers answers 404, deploying nothing", async () => {
     const { app, deployed } = buildApp();
-    const res = await app.request("/granola-call/deploy", { method: "POST" });
+    const res = await app.request("/does-not-exist/deploy", {
+      method: "POST",
+    });
     expect(res.status).toBe(404);
+    expect(deployed).toHaveLength(0);
+  });
+
+  test("the GTM template's first block (granola-call) deploys through the route now that it is registered (CL-7073)", async () => {
+    const { app, deployed } = buildApp();
+    const res = await app.request("/granola-call/deploy", { method: "POST" });
+    expect(res.status).toBe(201);
+    expect(deployed).toHaveLength(1);
+    const source = deployed[0];
+    if (source === undefined) throw new Error("nothing deployed");
+    expect(source.assetName).toBe("granola-call");
+    const definition = JSON.parse(source.workflowJson) as {
+      triggers: { type: string; to: string }[];
+    };
+    expect(definition.triggers).toEqual([
+      { type: "mail", to: "granola-call@acme.example" },
+    ]);
+  });
+
+  test("a denied grant answers a 403 envelope with a refId, deploying nothing", async () => {
+    const { app, deployed } = buildApp({
+      requireGrant: () => async (c) => {
+        return c.json(
+          makeErrorEnvelope({
+            code: "forbidden",
+            userMessage: "You do not have permission to perform this action",
+          }),
+          403,
+        );
+      },
+    });
+    const res = await app.request("/code-review/deploy", { method: "POST" });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as {
+      error: { code: string; userMessage: string; refId: string };
+    };
+    expect(body.error.code).toBe("forbidden");
+    expect(typeof body.error.refId).toBe("string");
+    expect(body.error.refId.length).toBeGreaterThan(0);
     expect(deployed).toHaveLength(0);
   });
 
