@@ -26,13 +26,14 @@ import {
   type PinnedSkillIndexEntry,
 } from "@corbits/skills";
 import { type } from "arktype";
+import semver from "semver";
 
 import {
   writeAndDeployAgentDefinition,
   type AgentDefinitionDeployer,
 } from "./definition-asset";
 import type { DefinitionSkillsStore } from "./skills-store";
-import { resolvePinnedVersion } from "./tool-package-version";
+import { createPinnedVersionResolver } from "./tool-package-version";
 
 export const AGENT_DEFINITION_STEP_ID = "agent";
 
@@ -217,10 +218,10 @@ export const NonWildcardToolPackagePin = type({
   name: "string",
   version: "string",
 }).narrow((pin, ctx) =>
-  pin.version !== "*"
+  semver.valid(pin.version) !== null
     ? true
     : ctx.mustBe(
-        'a concrete published version, never "*" — a wildcard pin would let a later tarball silently change what this pin resolves to (CL-7389)',
+        'a concrete published version, never "*", "latest", or a range/tag like "^1", "~1.2", ">=1.0.0", "1.x" — anything but an exact version would let a later tarball silently change what this pin resolves to (CL-7389)',
       ),
 );
 export type NonWildcardToolPackagePin = typeof NonWildcardToolPackagePin.infer;
@@ -536,12 +537,16 @@ export async function createAgentDefinitionCore(
       input.skills,
     ),
   );
+  // One resolver shared across every named pin: it loads the tenant's
+  // registry asset and tarball listing at most once, so a five-pin
+  // create still costs one ancestor walk and one listing, not five
+  // (CL-7389).
+  const resolvePin = createPinnedVersionResolver(
+    { db: deps.db, assetService: deps.assetService },
+    input.tenantId,
+  );
   for (const name of input.toolPackagePins ?? []) {
-    const resolvedPin = await resolvePinnedVersion(
-      { db: deps.db, assetService: deps.assetService },
-      input.tenantId,
-      name,
-    );
+    const resolvedPin = await resolvePin(name);
     workflowJson = withAgentToolPackagePin(workflowJson, resolvedPin);
   }
 

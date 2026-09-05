@@ -59,11 +59,92 @@ function versionFromTarballFilename(
   return semver.valid(version) !== null ? version : null;
 }
 
+/** The highest version in `versions`, preferring a stable (non-prerelease)
+ * version whenever one exists — a prerelease only wins when the registry
+ * carries no stable version for the package at all. Without this, a
+ * `2.0.0-rc.1` tarball would outrank an already-published `1.9.0` purely
+ * because prerelease identifiers still sort after a lower release under
+ * plain semver comparison for a higher major/minor/patch, silently
+ * pinning a pre-release build a person never asked for. */
+function highestPreferringStable(
+  versions: readonly string[],
+): string | undefined {
+  const stable = versions.filter(
+    (version) => semver.prerelease(version) === null,
+  );
+  const candidates = stable.length > 0 ? stable : versions;
+  return candidates.slice().sort(semver.compare).at(-1);
+}
+
+/**
+ * Resolves `packageName` against the tenant's (possibly inherited)
+ * `corbits-tools` registry against the given, already-loaded tarball
+ * `filenames` listing (see `createPinnedVersionResolver` for the case
+ * where the caller wants that listing loaded once and reused across
+ * several package names).
+ */
+function resolveFromFilenames(
+  filenames: readonly string[],
+  packageName: string,
+): ResolvedToolPackagePin {
+  const versions = filenames
+    .map((filename) => versionFromTarballFilename(filename, packageName))
+    .filter((version): version is string => version !== null);
+  const highest = highestPreferringStable(versions);
+  if (highest === undefined) {
+    throw new CapabilityOutOfInventoryError("toolPackage", packageName);
+  }
+  return { name: packageName, version: highest };
+}
+
+/**
+ * Builds a resolver against the tenant's (possibly inherited)
+ * `corbits-tools` registry that loads the registry asset and its tarball
+ * listing at most once — the first `resolve` call pays for the ancestor
+ * walk and the listing round trip, every subsequent call against the
+ * same resolver reuses that listing. `resolvePinnedVersion` below is the
+ * one-name convenience wrapper; a caller resolving several names in one
+ * request (e.g. `create_agent`'s own `toolPackagePins`) should build one
+ * resolver and call it once per name instead, so a five-pin create still
+ * costs one ancestor walk and one listing, not five (CL-7389).
+ */
+export function createPinnedVersionResolver(
+  deps: ResolvePinnedVersionDeps,
+  tenantId: string,
+): (packageName: string) => Promise<ResolvedToolPackagePin> {
+  let filenamesPromise: Promise<readonly string[] | null> | undefined;
+  const loadFilenames = (): Promise<readonly string[] | null> => {
+    filenamesPromise ??= (async () => {
+      const registryAsset = await resolveAssetByName(
+        deps.db,
+        tenantId,
+        "package-registry",
+        CORBITS_TOOLS_REGISTRY,
+      );
+      if (registryAsset === null) return null;
+      return deps.assetService.listAssetBlobs({
+        assetId: registryAsset.id,
+        dir: TARBALLS_DIR,
+      });
+    })();
+    return filenamesPromise;
+  };
+
+  return async (packageName: string) => {
+    const filenames = await loadFilenames();
+    if (filenames === null) {
+      throw new CapabilityOutOfInventoryError("toolPackage", packageName);
+    }
+    return resolveFromFilenames(filenames, packageName);
+  };
+}
+
 /**
  * Resolves `packageName` against the tenant's (possibly inherited)
  * `corbits-tools` registry to `{ name, version }`, `version` always the
- * highest published semver among the registry's tarballs for that
- * package — never `*`, so a runtime pin is reproducible: a later
+ * highest published STABLE semver among the registry's tarballs for that
+ * package (a prerelease wins only when the registry carries no stable
+ * version at all) — never `*`, so a runtime pin is reproducible: a later
  * tarball landing in the registry changes what a *new* pin resolves to,
  * never what an already-deployed definition's stored pin resolves to.
  *
@@ -74,33 +155,15 @@ function versionFromTarballFilename(
  * covers this case with no new wiring — when the tenant has no visible
  * `corbits-tools` registry, or that registry carries no tarball for
  * `packageName`.
+ *
+ * Resolving several names for one tenant in the same request? Build a
+ * `createPinnedVersionResolver` once instead — this wrapper always pays
+ * for its own ancestor walk and listing round trip.
  */
 export async function resolvePinnedVersion(
   deps: ResolvePinnedVersionDeps,
   tenantId: string,
   packageName: string,
 ): Promise<ResolvedToolPackagePin> {
-  const registryAsset = await resolveAssetByName(
-    deps.db,
-    tenantId,
-    "package-registry",
-    CORBITS_TOOLS_REGISTRY,
-  );
-  if (registryAsset === null) {
-    throw new CapabilityOutOfInventoryError("toolPackage", packageName);
-  }
-
-  const filenames = await deps.assetService.listAssetBlobs({
-    assetId: registryAsset.id,
-    dir: TARBALLS_DIR,
-  });
-  const versions = filenames
-    .map((filename) => versionFromTarballFilename(filename, packageName))
-    .filter((version): version is string => version !== null);
-  const highest = versions.sort(semver.compare).at(-1);
-  if (highest === undefined) {
-    throw new CapabilityOutOfInventoryError("toolPackage", packageName);
-  }
-
-  return { name: packageName, version: highest };
+  return createPinnedVersionResolver(deps, tenantId)(packageName);
 }

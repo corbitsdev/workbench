@@ -112,13 +112,28 @@ async function prepareCapabilityAdd(
 
   switch (args.body.kind) {
     case "toolPackage": {
-      const resolvedPin = await resolvePinnedVersion(
-        { db: args.db, assetService: args.assetService },
-        args.tenantId,
-        args.body.name,
-      );
-      nextWorkflowJson = withAgentToolPackagePin(workflowJson, resolvedPin);
-      message = `Add ${args.body.name} to ${args.handle}`;
+      // A package already pinned keeps its stored version: re-adding it
+      // (e.g. a person re-clicking "add" on something already listed) is
+      // a no-op on the version, never a silent bump to whatever the
+      // registry's newest tarball happens to be today. Only a name with
+      // no existing pin resolves fresh against the registry. An explicit
+      // bump is a distinct, explicit input this does not add (CL-7389).
+      const packageName = args.body.name;
+      const existingPin = readAgentCapabilities(
+        workflowJson,
+      ).toolPackagePins.find((pin) => pin.name === packageName);
+      const pin =
+        existingPin ??
+        (await resolvePinnedVersion(
+          { db: args.db, assetService: args.assetService },
+          args.tenantId,
+          packageName,
+        ));
+      nextWorkflowJson = withAgentToolPackagePin(workflowJson, pin);
+      message =
+        existingPin !== undefined
+          ? `${args.handle} already pins ${packageName} at ${existingPin.version}`
+          : `Add ${args.body.name} to ${args.handle}`;
       break;
     }
     case "skill": {
