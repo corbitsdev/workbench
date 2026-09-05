@@ -117,6 +117,11 @@ function createPlatform(db: never) {
     sidecarRouter: { getRoutableAddresses: () => [] } as never,
     eventCollectors: {} as never,
     cryptoProviders: createCryptoProviderCache(),
+    workflowAllocationService: {
+      prepareProvisionedDeployment: async () => {
+        throw new Error("unused");
+      },
+    },
     credentialCipher: {
       encrypt: async (plaintext: string) => plaintext,
       decrypt: async (blob: string) => blob,

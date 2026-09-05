@@ -2,10 +2,11 @@
 // rather than by `apps/hub` — "apps stay generic; packages own the
 // domain" applies to the platform port exactly as it does to the rest
 // of chat's behavior. `createHubChatPlatform` composes the port from
-// `@corbits/folded-runs` (launch/wake/mail machinery for folded
-// interactive runs, shared with any other host that launches them)
-// plus the concerns that are chat's own: `workbench_launch` persistence,
-// invitable listing, and participant/fromWorkbenchId send semantics.
+// Interchange's `prepareProvisionedDeployment` (invite / wake / relaunch)
+// and `@corbits/folded-runs` (mail only, until that path is native
+// `sendUserMessage` in a later slice), plus the concerns that are chat's
+// own: `workbench_launch` persistence, invitable listing, and
+// participant/fromWorkbenchId send semantics.
 // A workbench itself is data — only invited agents have runs here.
 import { and, desc, eq } from "drizzle-orm";
 import {
@@ -13,22 +14,20 @@ import {
   DEFAULT_WAKE_TIMEOUT_MS,
 } from "@corbits/agent-lifecycle";
 import {
+  AGENT_RUNTIME_ENTRY_PATH,
+  renderAgentRuntimeSourceTree,
+} from "@corbits/agent-runtime";
+import {
   authoredDefinitionCandidates,
   type CryptoProviderCache,
   DefinitionProjectionMissingError,
   domainOf,
-  inferenceSourcesDigest,
   InferenceResolutionError,
-  launchFoldedRun,
-  mintFoldedRun,
   readFoldedBody,
   resolveFoldedRunSessionId,
-  resolveLaunchSources,
   resolveNewestProjectedDefinition,
   sendFoldedMail,
-  wakeFoldedRun,
   tagCredentialCipher,
-  type FoldedRunMode,
   type FoldedRunsDeps,
   type SendFoldedMailParams,
 } from "@corbits/folded-runs";
@@ -49,7 +48,9 @@ import {
 import type { RelaunchNoticePort } from "./relaunch-notice";
 import { AGENT_SECTION_MODE } from "./standalone-launch";
 import type { DB } from "@intx/db";
+import { listVisibleOfferings } from "@intx/db";
 import {
+  asset as assetTable,
   sessionMail,
   tenant as tenantTable,
   workflowDefinition,
@@ -61,9 +62,14 @@ import { workbenchLaunch } from "./schema";
 import { isWorkbenchHostDefinitionName } from "./workbench-host-naming";
 import { withTimeout } from "./with-timeout";
 import { wrapWakeInferenceError } from "./model-unavailable";
-import type { EventCollectorRegistry, SidecarRouter } from "@intx/hub-sessions";
+import {
+  DEFAULT_ASSET_REF,
+  type EventCollectorRegistry,
+  type SidecarRouter,
+  type WorkflowAllocationService,
+} from "@intx/hub-sessions";
 import type { InferencePreference } from "@intx/agent";
-import { formatRunAddress, type CredentialCipher } from "@intx/types";
+import { formatRunAddress, type CredentialBinding, type CredentialCipher } from "@intx/types";
 import type { FoldedBody } from "@intx/workflow-deploy";
 import {
   AgentUnreachableError,
@@ -78,6 +84,15 @@ export type CreateHubChatPlatformDeps = {
   db: DB["db"];
   sessionService: FoldedRunsDeps["sessionService"];
   assetService: FoldedRunsDeps["assetService"];
+  /**
+   * Interchange's provisioned-deployment front. Invite, wake, and
+   * relaunch call `prepareProvisionedDeployment` on this; chat never
+   * mints the run row itself.
+   */
+  workflowAllocationService: Pick<
+    WorkflowAllocationService,
+    "prepareProvisionedDeployment"
+  >;
   sidecarRouter: SidecarRouter;
   /** See `FoldedRunsDeps.toolGrantsForPins`. */
   toolGrantsForPins: FoldedRunsDeps["toolGrantsForPins"];
@@ -115,7 +130,7 @@ export type CreateHubChatPlatformDeps = {
    * behavior exactly (nothing ever sleeps, no interval runs). When
    * present, this adapter builds a `@corbits/agent-lifecycle` instance
    * from it, wiring its `isRoutable`/`undeploy`/`wake` ports onto
-   * `sidecarRouter` and `@corbits/folded-runs`' `wakeFoldedRun` —
+   * `sidecarRouter` and this adapter's `provisionOnAsset` wake —
    * `@corbits/agent-lifecycle` itself never imports the hub or this
    * package. Its sweep tears down instances idle for `idleSleepMs` via
    * `sidecarRouter.sendAgentUndeploy`, and `sendMail` calls
@@ -259,6 +274,158 @@ export function createHubChatPlatform(
       : {}),
   };
 
+  function offeringDigest(sourceOfferingIds: readonly string[]): string {
+    return sourceOfferingIds.join("\0");
+  }
+
+  async function catalogOfferings(tenantId: string): Promise<{
+    readonly sourceOfferingIds: readonly string[];
+    readonly defaultSourceOfferingId: string;
+    readonly inferencePreferences: readonly {
+      readonly provider: string;
+      readonly model: string;
+    }[];
+  }> {
+    const offerings = [...(await listVisibleOfferings(deps.db, tenantId))].sort(
+      (a, b) => a.offering.priority - b.offering.priority,
+    );
+    const first = offerings[0];
+    if (first === undefined) {
+      throw new InferenceResolutionError(
+        "this agent",
+        "no catalog offerings visible to this tenant",
+      );
+    }
+    return {
+      sourceOfferingIds: offerings.map((o) => o.offering.id),
+      defaultSourceOfferingId: first.offering.id,
+      inferencePreferences: offerings.map((o) => ({
+        provider: o.provider.name,
+        model: o.model.canonicalName,
+      })),
+    };
+  }
+
+  async function extraCredentialBindings(
+    tenantId: string,
+    foldedBody: FoldedBody,
+  ): Promise<readonly CredentialBinding[]> {
+    const isMcpToolsPin = foldedBody.toolPackagePins.some(
+      (pin) => pin.name === "@corbits/mcp-tools",
+    );
+    const mcpBindings: readonly CredentialBinding[] =
+      isMcpToolsPin && deps.mcpCredentialBindingsFor !== undefined
+        ? await deps.mcpCredentialBindingsFor(tenantId)
+        : [];
+    const pinnedPackageBindings: readonly CredentialBinding[] =
+      deps.pinnedPackageCredentialBindingsFor !== undefined
+        ? await deps.pinnedPackageCredentialBindingsFor(
+            tenantId,
+            foldedBody.toolPackagePins,
+          )
+        : [];
+    const definedHandles = new Set(
+      foldedBody.credentialBindings.map((binding) => binding.handle),
+    );
+    return [
+      ...mcpBindings,
+      ...pinnedPackageBindings.filter(
+        (binding) => !definedHandles.has(binding.handle),
+      ),
+    ];
+  }
+
+  /**
+   * Put this agent's rendered source on its definition asset at the
+   * default ref, then ask Interchange to provision. Chat records the
+   * returned ids; it does not mint the run.
+   */
+  async function provisionOnAsset(input: {
+    readonly tenantId: string;
+    readonly deploymentDomain: string;
+    readonly sourceAuthorityPrincipalId: string;
+    readonly definitionAssetId: string;
+    readonly foldedBody: FoldedBody;
+  }): Promise<{
+    readonly runId: string;
+    readonly address: string;
+    readonly allocationId: string;
+    readonly sourcesDigest: string;
+  }> {
+    const offerings = await catalogOfferings(input.tenantId);
+    const extraBindings = await extraCredentialBindings(
+      input.tenantId,
+      input.foldedBody,
+    );
+    const anchorRunId = generateId("workflowRun");
+    const sessionId = generateId("session");
+    const triggerAddress = formatRunAddress(anchorRunId, input.deploymentDomain);
+    const { commitSha } = await deps.assetService.populateAsset({
+      assetId: input.definitionAssetId,
+      ref: DEFAULT_ASSET_REF,
+      principal: { kind: "hub" },
+      tree: {
+        files: renderAgentRuntimeSourceTree({
+          packageName: `agent-${anchorRunId}`,
+          config: {
+            workflowId: `wf_${anchorRunId}`,
+            agentId: anchorRunId,
+            triggerAddress,
+            systemPrompt: input.foldedBody.systemPrompt,
+            inferencePreferences: [...offerings.inferencePreferences],
+            toolPackagePins: [...input.foldedBody.toolPackagePins],
+            credentialBindings: [
+              ...input.foldedBody.credentialBindings,
+              ...extraBindings,
+            ],
+            mode: AGENT_SECTION_MODE,
+          },
+        }),
+        message: `Provision agent ${anchorRunId}`,
+      },
+    });
+    const prepared =
+      await deps.workflowAllocationService.prepareProvisionedDeployment({
+        tenantId: input.tenantId,
+        anchorRunId,
+        deploymentDomain: input.deploymentDomain,
+        source: {
+          kind: "asset",
+          assetId: input.definitionAssetId,
+          package: { format: "source", commitSha },
+        },
+        entry: AGENT_RUNTIME_ENTRY_PATH,
+        definitionAssetId: input.definitionAssetId,
+        sessionId,
+        sourceAuthorityPrincipalId: input.sourceAuthorityPrincipalId,
+        sourceOfferingIds: offerings.sourceOfferingIds,
+        defaultSourceOfferingId: offerings.defaultSourceOfferingId,
+        deployContent: { systemPrompt: "" },
+        ...(input.foldedBody.toolPackagePins.length > 0
+          ? { toolPackagePins: input.foldedBody.toolPackagePins }
+          : {}),
+      });
+    return {
+      runId: prepared.anchorRunId,
+      address: prepared.deploymentAddress,
+      allocationId: prepared.allocationId,
+      sourcesDigest: offeringDigest(offerings.sourceOfferingIds),
+    };
+  }
+
+  async function sourceAuthorityForAsset(assetId: string): Promise<string> {
+    const rows = await deps.db
+      .select({ creatorPrincipalId: assetTable.creatorPrincipalId })
+      .from(assetTable)
+      .where(eq(assetTable.id, assetId))
+      .limit(1);
+    const creator = rows[0]?.creatorPrincipalId;
+    if (creator === undefined || creator === null) {
+      throw new Error(`workflow asset "${assetId}" has no creator principal`);
+    }
+    return creator;
+  }
+
   const cryptoProviders = deps.cryptoProviders;
   const wakeLogger = getLogger(["chat", "wake"]);
 
@@ -329,42 +496,6 @@ export function createHubChatPlatform(
   }
 
   /**
-   * The tenant's current live default model — always resolved, whether
-   * or not `binding.foldedBody.model` names one of its own. A
-   * definition that declares no model resolves this same catalog
-   * default at every deploy, exactly as `launchInvite` used to resolve
-   * it at launch time (every deploy of such a run now goes through a
-   * wake or a relaunch — launches mint only — and a slept one always
-   * did). A definition that DOES name a model still needs this: it is
-   * `deployAtHead`'s retry target when that pinned model no longer
-   * resolves against the tenant's current catalog (a provider it was
-   * pinned against got disconnected, or none was connected yet when it
-   * was pinned) — so reconnecting a different provider heals an
-   * already-invited agent, not only a freshly invited one.
-   */
-  async function resolveFallbackModel(
-    binding: AgentBinding,
-  ): Promise<string | undefined> {
-    const preferences =
-      (await deps.workbenchHostInferencePreferences?.(binding.tenantId)) ?? [];
-    return preferences[0]?.model;
-  }
-
-  /**
-   * The per-deploy pins a binding carries, identical for a wake and a
-   * relaunch: an agent resolves the tenant catalog, with a fallback
-   * model when its definition declares none.
-   */
-  async function deployShapeFor(
-    binding: AgentBinding,
-  ): Promise<{ mode: FoldedRunMode; fallbackModel?: string }> {
-    const fallbackModel = await resolveFallbackModel(binding);
-    return fallbackModel !== undefined
-      ? { mode: AGENT_SECTION_MODE, fallbackModel }
-      : { mode: AGENT_SECTION_MODE };
-  }
-
-  /**
    * Replaces a run that died terminally with a genuinely fresh one.
    *
    * The dead run's durable event log is never reclaimed or erased — it
@@ -385,43 +516,40 @@ export function createHubChatPlatform(
         `Cannot relaunch "${binding.stableId}": its run ${run.id} names no definition`,
       );
     }
-    const newRunId = generateId("workflowRun");
-    const newAddress = formatRunAddress(
-      newRunId,
-      domainOf(binding.roomAddress),
-    );
-    wakeLogger.info`relaunching ${binding.roomAddress}: run ${run.id} is terminal (${run.status}); minting fresh run ${newRunId}`;
+    const definitionAssetId = await resolveDefinitionAssetId(run.definitionId);
+    if (definitionAssetId === undefined) {
+      throw new Error(
+        `Cannot relaunch "${binding.stableId}": definition ${run.definitionId} has no workflow asset`,
+      );
+    }
+    wakeLogger.info`relaunching ${binding.roomAddress}: run ${run.id} is terminal (${run.status})`;
 
-    const deployed = await launchFoldedRun(foldedRunsDeps, {
+    const prepared = await provisionOnAsset({
       tenantId: binding.tenantId,
-      instanceId: newRunId,
-      triggerAddress: newAddress,
-      definitionId: run.definitionId,
+      deploymentDomain: domainOf(binding.roomAddress),
+      sourceAuthorityPrincipalId:
+        await sourceAuthorityForAsset(definitionAssetId),
+      definitionAssetId,
       foldedBody: binding.foldedBody,
-      launchLabel: "the relaunched instance",
-      ...(await deployShapeFor(binding)),
     });
 
-    // After the deploy, never inside its transaction: a repoint that
-    // outlived a failed launch would leave the room addressing a run
-    // `launchFoldedRun` had already rolled back, and the next message
-    // would resolve nothing at all.
-    await repointBinding(deps.db, binding, newRunId, deployed.sourcesDigest);
+    await repointBinding(
+      deps.db,
+      binding,
+      prepared.runId,
+      prepared.sourcesDigest,
+    );
     lifecycle?.untrack(binding.liveAddress);
-    lifecycle?.track(newAddress);
+    lifecycle?.track(prepared.address);
 
-    // The turn that died with the old run never sent
-    // `message.run.ended`, so the orchestrator's turn-drop notice can
-    // never fire for it. This is the only thing that tells the reader
-    // their message was not silently swallowed.
     deps.relaunchNotice?.current?.({
       tenantId: binding.tenantId,
       roomAddress: binding.roomAddress,
       deadRunId: run.id,
       deadRunStatus: run.status,
-      newRunId,
+      newRunId: prepared.runId,
     });
-    return newAddress;
+    return prepared.address;
   }
 
   /**
@@ -586,21 +714,14 @@ export function createHubChatPlatform(
     ) {
       return false;
     }
-    const { fallbackModel } = await deployShapeFor(binding);
-    let resolved: Awaited<ReturnType<typeof resolveLaunchSources>>;
+    let offerings: Awaited<ReturnType<typeof catalogOfferings>>;
     try {
-      resolved = await resolveLaunchSources(foldedRunsDeps, {
-        tenantId: binding.tenantId,
-        foldedBody: binding.foldedBody,
-        launchLabel: "the inference-source drift check",
-        ...(fallbackModel !== undefined ? { fallbackModel } : {}),
-      });
-    } catch (cause: unknown) {
-      if (cause instanceof InferenceResolutionError) return false;
-      throw cause;
+      offerings = await catalogOfferings(binding.tenantId);
+    } catch {
+      return false;
     }
     sourcesCheckedAt.set(binding.stableId, now);
-    const digest = inferenceSourcesDigest(resolved);
+    const digest = offeringDigest(offerings.sourceOfferingIds);
     if (binding.sourcesDigest === null) {
       await recordSourcesDigest(deps.db, binding.stableId, digest);
       return false;
@@ -624,7 +745,7 @@ export function createHubChatPlatform(
    * below is reached only by an address that is actually live. A
    * parked-and-now-unroutable address still never gets deployed or
    * undeployed FOR ROUTABILITY ALONE here — it falls through to the
-   * explicit `wakeFoldedRun` redeploy a few lines down, the one wake
+   * explicit `provisionOnAsset` redeploy a few lines down, the one wake
    * path a parked deployment has left.
    *
    * CL-6365: a run that is unroutable because it DIED — the hub's own
@@ -665,22 +786,35 @@ export function createHubChatPlatform(
         return;
       }
 
-      const wakeParams = {
-        tenantId: binding.tenantId,
-        instanceId: live.run.id,
-        triggerAddress: live.run.address,
-        principalId: live.run.principalId,
-        foldedBody: binding.foldedBody,
-      };
-      const deployed = await wakeFoldedRun(foldedRunsDeps, {
-        ...wakeParams,
-        ...(await deployShapeFor(binding)),
-      });
-      await recordSourcesDigest(
-        deps.db,
-        binding.stableId,
-        deployed.sourcesDigest,
+      if (live.run.definitionId === null) {
+        throw new Error(
+          `Cannot wake "${binding.stableId}": its run ${live.run.id} names no definition`,
+        );
+      }
+      const definitionAssetId = await resolveDefinitionAssetId(
+        live.run.definitionId,
       );
+      if (definitionAssetId === undefined) {
+        throw new Error(
+          `Cannot wake "${binding.stableId}": definition ${live.run.definitionId} has no workflow asset`,
+        );
+      }
+      const prepared = await provisionOnAsset({
+        tenantId: binding.tenantId,
+        deploymentDomain: domainOf(binding.roomAddress),
+        sourceAuthorityPrincipalId:
+          await sourceAuthorityForAsset(definitionAssetId),
+        definitionAssetId,
+        foldedBody: binding.foldedBody,
+      });
+      await repointBinding(
+        deps.db,
+        binding,
+        prepared.runId,
+        prepared.sourcesDigest,
+      );
+      lifecycle?.untrack(binding.liveAddress);
+      lifecycle?.track(prepared.address);
     } catch (error) {
       throw wrapWakeInferenceError(error);
     }
@@ -698,8 +832,8 @@ export function createHubChatPlatform(
    * `sendFoldedMailWithReclaimRetry`'s reclaim retry used to call
    * `wakeByAddress` directly, bypassing `lifecycle.ensureAwake`'s
    * per-address coalescing entirely. Two wakes for the same instance
-   * racing in through this bypass could both pass `wakeFoldedRun`'s
-   * `session_asset` delete and both redeploy, colliding on the same
+   * racing in through this bypass could both pass `provisionOnAsset`'s
+   * populate and both prepare, colliding on the same
    * primary key and git ref (CL-7214). Every wake path now funnels
    * through the one coalescing map `@corbits/agent-lifecycle` owns,
    * rather than this package growing a second one beside it.
@@ -1035,39 +1169,29 @@ export function createHubChatPlatform(
         );
       }
 
-      const instanceId = generateId("workflowRun");
-      const triggerAddress = formatRunAddress(instanceId, tenantRow.domain);
-
-      // Mint only — DB rows, no sidecar, no deploy. The agent deploys
-      // through `wakeByAddress` on its first inbound mail (or an
-      // explicit `ensureAwake` pre-warm), so an invite returns in
-      // database time. Its inference sources — including the catalog
-      // fallback a definition with no model of its own needs — resolve
-      // fresh inside the wake against the tenant catalog on every
-      // deploy. The launch body is persisted with the mint itself, in
-      // the same transaction, so a wake can rebuild the deploy config
-      // without reaching for the definition's asset. Chat owns this
-      // table; folded-runs never imports it.
-      await mintFoldedRun(foldedRunsDeps, {
-        tenantId: input.tenantId,
-        instanceId,
-        triggerAddress,
-        // The resolved row, not necessarily `input.definitionId`: a
-        // later wake reads the asset back through this id, so it must
-        // always name a row whose asset actually resolves.
-        definitionId: resolvedDefinitionRow.id,
-        persistExtra: async (tx) => {
-          await tx.insert(workbenchLaunch).values({
+      const prepared = await (async () => {
+        try {
+          return await provisionOnAsset({
             tenantId: input.tenantId,
-            instanceId,
-            currentRunId: instanceId,
+            deploymentDomain: tenantRow.domain,
+            sourceAuthorityPrincipalId: input.creatorPrincipalId,
+            definitionAssetId: definitionRow.assetId,
             foldedBody,
-            createdAt: new Date(),
           });
-        },
+        } catch (error) {
+          throw wrapWakeInferenceError(error);
+        }
+      })();
+      await deps.db.insert(workbenchLaunch).values({
+        tenantId: input.tenantId,
+        instanceId: prepared.runId,
+        currentRunId: prepared.runId,
+        foldedBody,
+        sourcesDigest: prepared.sourcesDigest,
+        createdAt: new Date(),
       });
 
-      return { instanceId, address: triggerAddress };
+      return { instanceId: prepared.runId, address: prepared.address };
     },
 
     async listInvitableDefinitions(

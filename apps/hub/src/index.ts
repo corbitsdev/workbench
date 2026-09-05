@@ -1426,6 +1426,7 @@ export async function createHub(config: HubConfig) {
     mcpCredentialBindingsFor,
     pinnedPackageCredentialBindingsFor,
     cryptoProviders,
+    workflowAllocationService,
     // Chat residents are undeployed on idle again (see the comment above
     // this function): `chatIdleReapMs` (env-overridable via
     // `WORKBENCH_CHAT_IDLE_REAP_MS`, default 30 minutes) is
