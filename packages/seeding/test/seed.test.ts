@@ -879,12 +879,12 @@ describe("seedTenant", () => {
     }
   });
 
-  test("the default set consumed by real tenant provisioning is assistant only; echo, workbench-digest, and last-30-days-research are on-demand catalog entries", () => {
+  test("the default set consumed by real tenant provisioning is assistant only; echo, workbench-digest, last-30-days-research, and code-review are on-demand catalog entries", () => {
     // provisionPersonalTenantIfNeeded (@workbench/onboarding) deploys
     // DEFAULT_WORKFLOWS for every real signup (CL-7074: Myra only). The
     // remaining catalog workflows — echo, workbench-digest,
-    // last-30-days-research — deploy on demand (CL-7073) from
-    // CATALOG_WORKFLOWS, never automatically onto a real signup. The
+    // last-30-days-research, code-review — deploy on demand (CL-7073)
+    // from CATALOG_WORKFLOWS, never automatically onto a real signup. The
     // catalog-test workflows exist only to exercise the platform
     // continuously and must never reach a real user through either
     // array — they are seeded only via the explicit
@@ -894,6 +894,7 @@ describe("seedTenant", () => {
       "echo",
       "workbench-digest",
       "last-30-days-research",
+      "code-review",
     ]);
   });
 

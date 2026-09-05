@@ -120,6 +120,38 @@ describe("POST /:assetName/deploy", () => {
     expect(deployed).toHaveLength(0);
   });
 
+  test("deploys any on-demand catalog workflow, not just code-review (CL-7073)", async () => {
+    const { app, deployed } = buildApp();
+    const res = await app.request("/last-30-days-research/deploy", {
+      method: "POST",
+    });
+    expect(res.status).toBe(201);
+    expect(deployed).toHaveLength(1);
+    const source = deployed[0];
+    if (source === undefined) throw new Error("nothing deployed");
+    expect(source.assetName).toBe("last-30-days-research");
+    const definition = JSON.parse(source.workflowJson) as {
+      triggers: { type: string; to: string }[];
+    };
+    expect(definition.triggers).toEqual([
+      { type: "mail", to: "last-30-days-research@acme.example" },
+    ]);
+  });
+
+  test("assistant is seeded, never deployed through this route", async () => {
+    const { app, deployed } = buildApp();
+    const res = await app.request("/assistant/deploy", { method: "POST" });
+    expect(res.status).toBe(404);
+    expect(deployed).toHaveLength(0);
+  });
+
+  test("heartbeat is test-only, never deployed through this route", async () => {
+    const { app, deployed } = buildApp();
+    const res = await app.request("/heartbeat/deploy", { method: "POST" });
+    expect(res.status).toBe(404);
+    expect(deployed).toHaveLength(0);
+  });
+
   test("a failing deploy port answers a 500 envelope, never a raw error", async () => {
     const { app } = buildApp({
       deployWorkflowSource: async () => {

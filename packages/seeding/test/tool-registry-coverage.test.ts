@@ -75,7 +75,9 @@ function pinsFor(workflows: readonly DefaultWorkflow[]): {
 }[] {
   const found: { workflow: string; pin: ToolPackagePinLike }[] = [];
   for (const workflow of workflows) {
-    const json = workflow.buildJson("example.com", MODEL);
+    const json = workflow.buildJson("example.com", [
+      { provider: MODEL.provider, model: MODEL.model },
+    ]);
     for (const pin of corbitsPinsIn(json)) {
       found.push({ workflow: workflow.assetName, pin });
     }

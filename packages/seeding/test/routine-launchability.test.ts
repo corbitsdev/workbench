@@ -38,7 +38,9 @@ type SerializedStepDefinition = {
 
 test("every default and on-demand catalog workflow's deployed definition is a well-formed, launchable step graph", () => {
   for (const workflow of [...DEFAULT_WORKFLOWS, ...CATALOG_WORKFLOWS]) {
-    const json = workflow.buildJson("example.test", FAKE_MODEL);
+    const json = workflow.buildJson("example.test", [
+      { provider: FAKE_MODEL.provider, model: FAKE_MODEL.model },
+    ]);
     const definition = JSON.parse(json) as SerializedStepDefinition;
 
     expect(
