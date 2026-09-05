@@ -7,7 +7,10 @@
 // `if (import.meta.main)` entry point — that is the same signal each check
 // already carries to run standalone during development — and runs it. A
 // file with no such entry point (a shared lib, an allowlist data module, a
-// `*.test.ts`) is not a check and is skipped.
+// `*.test.ts`) is not a check and is skipped. The runner itself
+// (`run.ts`, or anything whose resolved real path points at it — a
+// rename or a symlink included) is excluded even though it carries the
+// same entry point, so it never discovers and recurses into itself.
 //
 // `scripts/generate-tsconfig-references.ts --check` lives outside this
 // directory (it doubles as the reference generator), so it is added
@@ -24,7 +27,7 @@
 // without `.ts`, or `tsconfig-references`), forwarding any further
 // arguments to it — e.g. `bun run check:structural report-error --
 // --write-baseline`.
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import path from "node:path";
 
 const CHECKS_DIR = path.resolve(import.meta.dir);
@@ -41,21 +44,23 @@ const MAIN_ENTRY_POINT = /if\s*\(\s*import\.meta\.main\s*\)/;
 const EXCLUDED_FROM_FULL_RUN = new Set(["packages"]);
 
 // The runner itself lives in this directory and also has an
-// `import.meta.main` entry point — without this exclusion it would
+// `import.meta.main` entry point — without excluding it, it would
 // discover itself as a check and spawn an unbounded recursion of itself.
-const RUNNER_FILE = "run.ts";
-
+// Excluded by resolved real path (not by filename) so a rename or a
+// symlink pointing at this file is still recognized as "the runner"
+// rather than slipping in as a discovered check.
 export function discoverCheckFiles(
   checksDir: string,
   readdir: (dir: string) => string[] = (dir) => readdirSync(dir),
   readFile: (file: string) => string = (file) => readFileSync(file, "utf8"),
+  runnerRealPath: string = realpathSync(import.meta.path),
+  resolveRealPath: (file: string) => string = (file) => realpathSync(file),
 ): string[] {
   return readdir(checksDir)
+    .filter((entry) => entry.endsWith(".ts") && !entry.endsWith(".test.ts"))
     .filter(
       (entry) =>
-        entry.endsWith(".ts") &&
-        !entry.endsWith(".test.ts") &&
-        entry !== RUNNER_FILE,
+        resolveRealPath(path.join(checksDir, entry)) !== runnerRealPath,
     )
     .filter((entry) =>
       MAIN_ENTRY_POINT.test(readFile(path.join(checksDir, entry))),
