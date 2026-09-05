@@ -51,5 +51,5 @@ const json = serializeWorkbenchDigestWorkflow(definition);
 
 See [`workflows/README.md`](../README.md#status-note) for what
 registration/automatable/seeded mean — this one is `automatable`, and
-deployed on demand from `CATALOG_WORKFLOWS` (CL-7074), not seeded by
-default onto every tenant.
+deployable through the catalog instantiate route (CL-7073) from
+`CATALOG_WORKFLOWS` (CL-7074), not seeded by default onto every tenant.

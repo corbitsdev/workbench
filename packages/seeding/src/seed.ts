@@ -229,8 +229,9 @@ export const SETUP_AGENT_ASSET_NAME = "assistant";
  * needs the moment they land. `echo`, `workbench-digest`, and
  * `last-30-days-research` used to live here; a signup paid a git push
  * and a sidecar probe for each of them even though nobody asked for
- * them. They now live in `CATALOG_WORKFLOWS`, deployed on demand
- * (CL-7073) rather than onto every bench. See `CATALOG_TEST_WORKFLOWS`
+ * them. They now live in `CATALOG_WORKFLOWS`, deployable through the
+ * catalog instantiate route (CL-7073) rather than seeded onto every
+ * bench. See `CATALOG_TEST_WORKFLOWS`
  * for the platform-exercise set, which never reaches a real signup at
  * all.
  *
@@ -333,7 +334,8 @@ export const CATALOG_WORKFLOWS: readonly DefaultWorkflow[] = [
  *
  * workbench-digest used to live here as a platform exercise, then moved
  * to `DEFAULT_WORKFLOWS`; it now lives in `CATALOG_WORKFLOWS` (CL-7074),
- * deployed on demand rather than onto every bench.
+ * deployable through the catalog instantiate route (CL-7073) rather than
+ * seeded onto every bench.
  */
 export const CATALOG_TEST_WORKFLOWS: readonly DefaultWorkflow[] = [
   {

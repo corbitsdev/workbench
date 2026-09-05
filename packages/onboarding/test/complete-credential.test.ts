@@ -1779,7 +1779,6 @@ describe("ensureSeeded (the slow half)", () => {
     });
 
     expect(workflowOrder[0]).toBe(SETUP_AGENT_ASSET_NAME);
-    expect(workflowOrder.length).toBeGreaterThanOrEqual(1);
   });
 
   test("two overlapping calls for the same tenant never double-deploy — the same 409-then-list tolerance seedTenant already has", async () => {
