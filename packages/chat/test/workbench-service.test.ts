@@ -3,7 +3,7 @@
 // own — exercised through the HTTP layer. Split out of
 // `routes.test.ts` alongside the module itself.
 import { describe, expect, test } from "bun:test";
-import { InferenceResolutionError } from "@corbits/folded-runs";
+import { InferenceResolutionError } from "../src/model-unavailable";
 import { createChatRoutes } from "../src/routes";
 import { decodeParts } from "../src/codec";
 import type { Part, TextPart } from "../src/parts";

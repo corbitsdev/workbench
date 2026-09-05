@@ -15,6 +15,7 @@ import { mailIdFromBracketMessageId } from "../src/turn-mail-correlation";
 const TENANT = "ten_1";
 const WORKBENCH = "ins_workbench1";
 const AGENT = "ins_echo1@acme.example";
+const DOMAIN = "acme.example";
 
 function harness() {
   const roomMessages = createInMemoryRoomMessageStore();
@@ -35,6 +36,21 @@ function harness() {
     threads,
     turnMailCorrelation,
     publish: () => undefined,
+    mailbox: {
+      writer: {
+        async writeBatch(items: readonly { messageId: string }[]) {
+          return items.map((item) => ({
+            messageKey: item.messageId,
+            id: item.messageId,
+          }));
+        },
+      },
+      resolveKnownPrincipalIds: async (
+        _tenantId: string,
+        candidateIds: readonly string[],
+      ) => new Set(candidateIds),
+      resolveTenantDomain: async () => DOMAIN,
+    },
   };
   return { deps, roomMessages, threads, turnMailCorrelation, sent };
 }
@@ -44,7 +60,7 @@ async function postRow(
   text: string,
   threadId?: string,
 ) {
-  return roomMessages.insertMessage({
+  const row = await roomMessages.insertMessage({
     id: `msg_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`,
     tenantId: TENANT,
     workbenchId: WORKBENCH,
@@ -52,6 +68,13 @@ async function postRow(
     parts: [{ kind: "text", text }],
     ...(threadId !== undefined ? { threadId } : {}),
   });
+  await roomMessages.stampMailMessageId({
+    tenantId: TENANT,
+    workbenchId: WORKBENCH,
+    messageId: row.id,
+    mailMessageId: `<${row.id}@${DOMAIN}>`,
+  });
+  return row;
 }
 
 async function dispatch(

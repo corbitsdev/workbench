@@ -103,6 +103,8 @@ import {
   startWorkflowCommand,
   settleConnectedService,
   workbenchLaunchPersistExtra,
+  createCryptoProviderCache,
+  tagCredentialCipher,
 } from "@corbits/chat";
 import {
   createDrizzleMailboxWriter,
@@ -112,11 +114,6 @@ import type { RelaunchNoticePort } from "@corbits/chat";
 import { reportError } from "@corbits/error-sink";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
 import { decodedOrNull } from "@corbits/url-path";
-import {
-  createCryptoProviderCache,
-  lookupFoldedRunReconnectKey,
-  tagCredentialCipher,
-} from "@corbits/folded-runs";
 import { createTopLevelRunRoutes } from "@corbits/run-scope";
 import {
   createInboxRoutes,
@@ -704,19 +701,10 @@ export async function createHub(config: HubConfig) {
   // for the process, read here ahead of `workflow_run` and written to
   // there off every `agent.deploy.ack`.
   const runKeyHistoryStore = createDrizzleRunKeyHistoryStore(db);
-  // A folded run (a workbench host, an invited agent) settles
-  // "completed" between message occurrences as part of its own normal
-  // wake/redeploy cycle — not "done forever" the way a one-shot
-  // workflow deployment's "completed" is. The platform's own
-  // `lookupPublicKey` gates the reconnect-ownership challenge on
-  // `isLiveWorkflowRunStatus` ("deployed"/"running" only), so a folded
-  // run reconnecting mid-cycle (its sidecar dials back in, e.g. after a
-  // hub restart, while the run happens to be between occurrences) fails
-  // that challenge and gets torn down even though nothing about it
-  // actually ended. Falling back to `lookupFoldedRunReconnectKey` for a
-  // "completed" folded run keeps its reconnect honest without loosening
-  // the gate for a real workflow deployment or for a folded run that is
-  // genuinely gone ("failed"/"cancelled" still fail closed).
+  // A workbench agent is a native provisioned deployment. Reconnect
+  // ownership is Interchange's live run + `@corbits/run-key-history`.
+  // Completed means dead; wake is a fresh provision, not a folded-run
+  // idle settle.
   // CL-6345: the grant-allowance gate wraps `registerSignalCorrelation`
   // so a parked read-only call whose resource a standing grant covers is
   // auto-approved right after its approval row lands — no card for a
@@ -792,8 +780,7 @@ export async function createHub(config: HubConfig) {
       );
       if (reconciled !== null) return reconciled;
       const key = await baseLookups.lookupPublicKey(agentAddress);
-      if (key !== null) return key;
-      return lookupFoldedRunReconnectKey(db, agentAddress);
+      return key;
     },
   };
   const hubPublicKey = hexEncode(signingKey.publicKey);

@@ -1,7 +1,6 @@
-// The address→run mapping's own behavior: that a room address and a
-// live deployment address both resolve to the same participant once
-// they have come apart, and that "this run is dead" is told apart from
-// "this folded run is parked between messages".
+// The address→run mapping's own behavior: a room address and a live
+// deployment address both resolve to the same participant once they
+// have come apart, and a terminal `workflow_run` cannot be woken.
 import { describe, expect, test } from "bun:test";
 import {
   isBeyondWake,
@@ -34,7 +33,7 @@ type LaunchRow = {
  * enough here because no scenario has one id appearing in two columns
  * of different rows.
  */
-function fakeDb(rows: LaunchRow[], foldedRunMarkerIds: string[] = []) {
+function fakeDb(rows: LaunchRow[]) {
   function matchingValue(where: unknown): string | undefined {
     const chunks = (where as { queryChunks?: unknown[] }).queryChunks ?? [];
     for (const chunk of chunks) {
@@ -44,17 +43,11 @@ function fakeDb(rows: LaunchRow[], foldedRunMarkerIds: string[] = []) {
     return undefined;
   }
   return {
-    select: (columns?: Record<string, unknown>) => ({
+    select: () => ({
       from: () => ({
         where: (predicate: unknown) => ({
           limit: async () => {
             const value = matchingValue(predicate);
-            if (columns !== undefined) {
-              // `isFoldedRunSettled`'s marker probe.
-              return foldedRunMarkerIds.includes(value ?? "")
-                ? [{ id: value }]
-                : [];
-            }
             return rows.filter(
               (row) => row.instanceId === value || row.currentRunId === value,
             );
@@ -114,7 +107,7 @@ describe("resolveRoomAddress", () => {
 describe("isBeyondWake", () => {
   test("a failed run is beyond waking — its durable log is already terminal", async () => {
     expect(
-      await isBeyondWake(fakeDb([], ["run_fresh"]), {
+      await isBeyondWake(fakeDb([]), {
         id: "run_fresh",
         status: "failed",
       }),
@@ -123,28 +116,17 @@ describe("isBeyondWake", () => {
 
   test("a running run is not", async () => {
     expect(
-      await isBeyondWake(fakeDb([], ["run_fresh"]), {
+      await isBeyondWake(fakeDb([]), {
         id: "run_fresh",
         status: "running",
       }),
     ).toBe(false);
   });
 
-  test("a folded run parked between messages is not — that one wakes", async () => {
+  test("a completed run is beyond waking — wake is a fresh provision", async () => {
     expect(
-      await isBeyondWake(fakeDb([], ["run_fresh"]), {
-        id: "run_fresh",
-        status: "completed",
-      }),
-    ).toBe(false);
-  });
-
-  test("a plain deployment's genuine completion IS beyond waking", async () => {
-    // "completed" with no `folded_run` marker is a one-shot deployment
-    // that is done forever, not an idle conversational run.
-    expect(
-      await isBeyondWake(fakeDb([], []), {
-        id: "run_oneshot",
+      await isBeyondWake(fakeDb([]), {
+        id: "run_done",
         status: "completed",
       }),
     ).toBe(true);

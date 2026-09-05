@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { InferenceResolutionError } from "@corbits/folded-runs";
+import { InferenceResolutionError } from "./model-unavailable";
 
 import {
   consumerTurnError,

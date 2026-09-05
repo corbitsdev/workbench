@@ -7,7 +7,7 @@
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { TenantEnv } from "@intx/hub-api";
-import { InferenceResolutionError } from "@corbits/folded-runs";
+import { InferenceResolutionError } from "../src/model-unavailable";
 import { DefinitionProjectionMissingError } from "@corbits/workflows";
 import { postRoomMessage } from "../src/room-messages";
 import type { Part } from "../src/parts";

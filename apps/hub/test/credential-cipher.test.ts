@@ -6,7 +6,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { getLogger } from "@intx/log";
-import { tagCredentialCipher } from "@corbits/folded-runs";
+import { tagCredentialCipher } from "@corbits/chat";
 import type { HubConfig } from "../src/config.ts";
 import { credentialCipherFrom, hubCredentialCipher } from "../src/index.ts";
 

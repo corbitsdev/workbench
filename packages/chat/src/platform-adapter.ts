@@ -3,9 +3,8 @@
 // domain" applies to the platform port exactly as it does to the rest
 // of chat's behavior. `createHubChatPlatform` composes the port from
 // Interchange's `prepareProvisionedDeployment` (invite / wake / relaunch)
-// and `@corbits/folded-runs` (mail only, until that path is native
-// `sendUserMessage` in a later slice), plus the concerns that are chat's
-// own: `workbench_launch` persistence, invitable listing, and
+// and `sendUserMessage` (via `sendRunMail`), plus the concerns that are
+// chat's own: `workbench_launch` persistence, invitable listing, and
 // participant/fromWorkbenchId send semantics.
 // A workbench itself is data — only invited agents have runs here.
 import { and, desc, eq } from "drizzle-orm";
@@ -18,21 +17,22 @@ import {
   renderAgentRuntimeSourceTree,
 } from "@corbits/agent-runtime";
 import {
-  type CryptoProviderCache,
-  domainOf,
-  InferenceResolutionError,
-  resolveFoldedRunSessionId,
-  sendFoldedMail,
-  tagCredentialCipher,
-  type FoldedRunsDeps,
-  type SendFoldedMailParams,
-} from "@corbits/folded-runs";
-import {
   authoredDefinitionCandidates,
   DefinitionProjectionMissingError,
   readFoldedBody,
   resolveNewestProjectedDefinition,
 } from "@corbits/workflows";
+import { domainOf as addressDomainOf } from "./agent-address";
+import { tagCredentialCipher } from "./credential-cipher-tag";
+import type { CryptoProviderCache } from "./crypto-cache";
+import { InferenceResolutionError } from "./model-unavailable";
+import type {
+  McpCredentialBindingsFor,
+  PinnedPackageCredentialBindingsFor,
+  ToolGrantsForPins,
+} from "./pin-ports";
+import { resolveRunSessionIdOrThrow } from "./run-session";
+import { sendRunMail, type SendRunMailParams } from "./send-run-mail";
 import {
   findStandingLaunchByDefinition,
   isBeyondWake,
@@ -66,7 +66,9 @@ import { withTimeout } from "./with-timeout";
 import { wrapWakeInferenceError } from "./model-unavailable";
 import {
   DEFAULT_ASSET_REF,
+  type AssetService,
   type EventCollectorRegistry,
+  type SessionService,
   type SidecarRouter,
   type WorkflowAllocationService,
 } from "@intx/hub-sessions";
@@ -82,10 +84,18 @@ import {
   type SentMail,
 } from "./platform-port";
 
+function domainOf(address: string): string {
+  const domain = addressDomainOf(address);
+  if (domain === undefined) {
+    throw new Error(`malformed agent address, missing "@": ${address}`);
+  }
+  return domain;
+}
+
 export type CreateHubChatPlatformDeps = {
   db: DB["db"];
-  sessionService: FoldedRunsDeps["sessionService"];
-  assetService: FoldedRunsDeps["assetService"];
+  sessionService: Pick<SessionService, "sendUserMessage">;
+  assetService: Pick<AssetService, "populateAsset">;
   /**
    * Interchange's provisioned-deployment front. Invite, wake, and
    * relaunch call `prepareProvisionedDeployment` on this; chat never
@@ -96,18 +106,12 @@ export type CreateHubChatPlatformDeps = {
     "prepareProvisionedDeployment"
   >;
   sidecarRouter: SidecarRouter;
-  /** See `FoldedRunsDeps.toolGrantsForPins`. */
-  toolGrantsForPins: FoldedRunsDeps["toolGrantsForPins"];
-  /** See `FoldedRunsDeps.mcpCredentialBindingsFor`. */
-  mcpCredentialBindingsFor?: FoldedRunsDeps["mcpCredentialBindingsFor"];
-  /** See `FoldedRunsDeps.pinnedPackageCredentialBindingsFor`. */
-  pinnedPackageCredentialBindingsFor?: FoldedRunsDeps["pinnedPackageCredentialBindingsFor"];
+  toolGrantsForPins: ToolGrantsForPins;
+  mcpCredentialBindingsFor?: McpCredentialBindingsFor;
+  pinnedPackageCredentialBindingsFor?: PinnedPackageCredentialBindingsFor;
   /**
-   * Decrypts credential secrets when an invited agent's launch resolves
-   * inference sources against the tenant catalog — see
-   * `@corbits/folded-runs`' `FoldedRunsDeps.credentialCipher`. Tagged at
-   * construction: missing or wrong-shape input fails closed and the
-   * platform is not minted.
+   * Tagged at construction: missing or wrong-shape input fails closed
+   * and the platform is not minted.
    */
   credentialCipher: CredentialCipher;
   /**
@@ -119,7 +123,7 @@ export type CreateHubChatPlatformDeps = {
    */
   eventCollectors: EventCollectorRegistry;
   /**
-   * Signing-key cache for outbound folded mail. The host constructs one
+   * Signing-key cache for outbound run mail. The host constructs one
    * process-wide instance (CL-7284) and passes it here so a workbench id
    * looked up from chat cannot mint a different key than the same id
    * looked up from webhook, routine, or one-shot drafting mail. This
@@ -140,15 +144,15 @@ export type CreateHubChatPlatformDeps = {
    */
   lifecycle?: { idleSleepMs: number; sweepIntervalMs?: number };
   /**
-   * `sendFoldedMailWithReclaimRetry`'s backoff between retries of a
+   * `sendRunMailWithReclaimRetry`'s backoff between retries of a
    * mail send that failed with "agent is unreachable" (see
    * RECLAIM_RETRY_DELAYS_MS below). Injectable so tests exercise the
    * backoff in milliseconds instead of the production ~8s budget.
    */
   reclaimRetryDelaysMs?: readonly number[];
   /**
-   * Per-attempt wall-clock bound on `sendFoldedMail` inside
-   * `sendFoldedMailWithReclaimRetry` (CL-6644). Defaults to
+   * Per-attempt wall-clock bound on `sendRunMail` inside
+   * `sendRunMailWithReclaimRetry` (CL-6644). Defaults to
    * `DEFAULT_WAKE_TIMEOUT_MS`. Injectable so tests exercise the bound
    * in milliseconds instead of the production ~30s budget.
    */
@@ -247,8 +251,8 @@ export type HubChatPlatform = ChatPlatform & {
 };
 
 /**
- * Composes the `ChatPlatform` port over the hub's real session
- * services and `@corbits/folded-runs`. Outbound mail is signed with
+ * Composes the `ChatPlatform` port over Interchange's provisioned
+ * deployment and `sendUserMessage`. Outbound mail is signed with
  * a `CryptoProvider` from `deps.cryptoProviders`, keyed by workbench
  * id — the host owns the cache so every mail sender in the process
  * shares it.
@@ -257,23 +261,10 @@ export function createHubChatPlatform(
   deps: CreateHubChatPlatformDeps,
 ): HubChatPlatform {
   const credentialCipher = tagCredentialCipher(deps.credentialCipher);
-  const foldedRunsDeps: FoldedRunsDeps = {
+  const runMailDeps = {
     db: deps.db,
     sessionService: deps.sessionService,
-    assetService: deps.assetService,
     sidecarRouter: deps.sidecarRouter,
-    eventCollectors: deps.eventCollectors,
-    toolGrantsForPins: deps.toolGrantsForPins,
-    credentialCipher,
-    ...(deps.mcpCredentialBindingsFor !== undefined
-      ? { mcpCredentialBindingsFor: deps.mcpCredentialBindingsFor }
-      : {}),
-    ...(deps.pinnedPackageCredentialBindingsFor !== undefined
-      ? {
-          pinnedPackageCredentialBindingsFor:
-            deps.pinnedPackageCredentialBindingsFor,
-        }
-      : {}),
   };
 
   function offeringDigest(sourceOfferingIds: readonly string[]): string {
@@ -477,7 +468,7 @@ export function createHubChatPlatform(
   // attempts that already failed LOUD with "agent is unreachable" --
   // they bound nothing about an attempt that instead stalls forever
   // (a sidecar ack that never comes, a wedged promise anywhere in
-  // `sendFoldedMail`'s call chain) without ever throwing. Each
+  // `sendRunMail`'s call chain) without ever throwing. Each
   // attempt gets the same kind of wall-clock bound `wakeByAddressBounded`
   // already puts on the wake itself, so that hang becomes a rejection
   // `dispatchTurnBatch`'s catch can report and notify on, instead of a
@@ -831,7 +822,7 @@ export function createHubChatPlatform(
    *
    * When `lifecycle` is configured, this routes through
    * `lifecycle.ensureAwake` rather than calling `wakeByAddress` itself —
-   * `sendFoldedMailWithReclaimRetry`'s reclaim retry used to call
+   * `sendRunMailWithReclaimRetry`'s reclaim retry used to call
    * `wakeByAddress` directly, bypassing `lifecycle.ensureAwake`'s
    * per-address coalescing entirely. Two wakes for the same instance
    * racing in through this bypass could both pass `provisionOnAsset`'s
@@ -1002,7 +993,7 @@ export function createHubChatPlatform(
     const sessionIds: string[] = [];
     for (const run of await readPriorRuns(deps.db, binding)) {
       try {
-        sessionIds.push(await resolveFoldedRunSessionId(deps.db, run));
+        sessionIds.push(await resolveRunSessionIdOrThrow(deps.db, run));
       } catch {
         continue;
       }
@@ -1011,7 +1002,7 @@ export function createHubChatPlatform(
   }
 
   /**
-   * `sendFoldedMail` delivers synchronously against the sidecar's
+   * `sendRunMail` delivers synchronously against the sidecar's
    * current routable set — the same in-memory index `isRoutable` reads
    * — so a send that lands in the same post-restart reclaim window
    * `wakeByAddress` above tolerates can still fail with "agent is
@@ -1024,18 +1015,18 @@ export function createHubChatPlatform(
    * is not transient and the caller gets a clean `AgentUnreachableError`
    * rather than an unhandled 500.
    */
-  async function sendFoldedMailWithReclaimRetry(
-    params: SendFoldedMailParams,
-  ): Promise<Awaited<ReturnType<typeof sendFoldedMail>>> {
+  async function sendRunMailWithReclaimRetry(
+    params: SendRunMailParams,
+  ): Promise<Awaited<ReturnType<typeof sendRunMail>>> {
     let loggedRetryStart = false;
     for (let attempt = 0; ; attempt++) {
       try {
-        // CL-7193: `sendFoldedMail` does a DB write plus a sidecar
+        // CL-7193: `sendRunMail` does a DB write plus a sidecar
         // delivery that shouldn't be half-cancelled, and has no signal
         // to accept regardless — the signal parameter is unused here,
         // same abandon-on-timeout behavior as before.
         return await withTimeout(
-          () => sendFoldedMail(foldedRunsDeps, params),
+          () => sendRunMail(runMailDeps, params),
           MAIL_DELIVERY_TIMEOUT_MS,
           `mail to ${params.agentAddress} did not settle within ${String(MAIL_DELIVERY_TIMEOUT_MS)}ms`,
         );
@@ -1347,7 +1338,7 @@ export function createHubChatPlatform(
       // idle sweep the moment they see traffic.
       lifecycle?.track(deliveryAddress);
 
-      const sessionId = await resolveFoldedRunSessionId(deps.db, delivery.run);
+      const sessionId = await resolveRunSessionIdOrThrow(deps.db, delivery.run);
       const domain = domainOf(deliveryAddress);
       // `fromWorkbenchId` names the room a dispatch speaks for. A room
       // is data — it has no run — so its address is derived, never
@@ -1411,7 +1402,7 @@ export function createHubChatPlatform(
           ? { references: input.content.references }
           : {}),
       };
-      const sent = await sendFoldedMailWithReclaimRetry(withThreading);
+      const sent = await sendRunMailWithReclaimRetry(withThreading);
 
       lifecycle?.recordActivity(deliveryAddress);
 
@@ -1440,7 +1431,7 @@ export function createHubChatPlatform(
       // newest-first is what keeps yesterday's attachment downloadable
       // after today's relaunch.
       const { binding, run } = await requireLive(workbenchId);
-      const liveSessionId = await resolveFoldedRunSessionId(deps.db, run);
+      const liveSessionId = await resolveRunSessionIdOrThrow(deps.db, run);
       const priorSessionIds = await retiredSessionIds(binding);
       for (const sessionId of [liveSessionId, ...priorSessionIds]) {
         const mailRow = await deps.db.query.sessionMail.findFirst({

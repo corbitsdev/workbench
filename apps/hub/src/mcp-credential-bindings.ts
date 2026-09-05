@@ -12,7 +12,7 @@
 // namespace.
 import type { DB } from "@intx/db";
 import type { CredentialBinding } from "@intx/types";
-import type { McpCredentialBindingsFor } from "@corbits/folded-runs";
+import type { McpCredentialBindingsFor } from "@corbits/chat";
 import { listMcpServerConnections } from "@corbits/connections";
 
 const MCP_TOOLS_PACKAGE = "@corbits/mcp-tools";

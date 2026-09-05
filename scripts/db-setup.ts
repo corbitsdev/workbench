@@ -29,12 +29,7 @@ import path from "node:path";
 import { readdir } from "node:fs/promises";
 
 import {
-  applyFoldedRunsMigrations,
-  backfillFoldedRunMarkers,
-} from "../packages/folded-runs/src/migrations";
-import {
   applyChatMigrations,
-  listWorkbenchLaunchFoldedRunIds,
 } from "../packages/chat/src/migrations";
 import { applyWebhookTriggersMigrations } from "../packages/webhook-triggers/src/migrations";
 import { reconcileDuplicateRepoGrants } from "../packages/connections/src/reconcile-duplicate-repo-grants";
@@ -70,10 +65,6 @@ const INSTALLED_PACKAGE_MIGRATIONS: readonly {
   name: string;
   apply: (databaseUrl: string) => Promise<{ applied: string[] }>;
 }[] = [
-  // Ahead of @corbits/chat: it launches runs through
-  // @corbits/folded-runs' `launchFoldedRun`, which writes into its
-  // `folded_run` marker table unconditionally on every launch.
-  { name: "@corbits/folded-runs", apply: applyFoldedRunsMigrations },
   { name: "@corbits/chat", apply: applyChatMigrations },
   { name: "@corbits/webhook-triggers", apply: applyWebhookTriggersMigrations },
   { name: "@corbits/notify", apply: applyNotifyMigrations },
@@ -124,7 +115,6 @@ async function applyInstalledPackageMigrations(
       );
     }
   }
-  await backfillFoldedRunsFromInstalledPackages(databaseUrl);
 
   // CL-7242: not a package migration (no schema, no ledger, no DDL at
   // all) -- a plain, always-safe-to-re-run DELETE against the
@@ -143,45 +133,6 @@ async function applyInstalledPackageMigrations(
   }
 
   await dropRoutinesSchemaAfterDigestHandoff(databaseUrl);
-}
-
-/**
- * One-time cross-package backfill for every folded run launched
- * before @corbits/folded-runs' own `folded_run` marker table existed
- * (CL-6061). Neither @corbits/folded-runs nor this script reads
- * another package's tables directly to do this — @corbits/chat
- * already depends on @corbits/folded-runs, so having it read back its
- * schema would close that into a cycle. Instead the launching package
- * exposes its own read-only lister over its own schema
- * (listWorkbenchLaunchFoldedRunIds), this script — the one place that
- * already knows and sequences every installed package — passes its
- * output through, and @corbits/folded-runs' own
- * backfillFoldedRunMarkers is the only thing that ever writes to its
- * table. Ledgered by that function under its own migration name, so
- * every run after the first is a fast no-op.
- *
- * @corbits/tasks used to contribute a second seed list here
- * (listTaskFoldedRunIds); that package was deleted (tasks primitive
- * removed in favor of workflows/routines). Its `tasks.task` and
- * `tasks.task_leg` tables and their migration ledger are left in
- * place in Postgres untouched — only this backfill's read of them
- * stops, per the removal ruling.
- */
-async function backfillFoldedRunsFromInstalledPackages(
-  databaseUrl: string,
-): Promise<void> {
-  const workbenchLaunchSeeds =
-    await listWorkbenchLaunchFoldedRunIds(databaseUrl);
-  const { applied, inserted } = await backfillFoldedRunMarkers(
-    databaseUrl,
-    workbenchLaunchSeeds,
-  );
-  if (applied) {
-    console.log(
-      `db-setup: backfilled ${inserted} folded_run marker(s) from ` +
-        "@corbits/chat",
-    );
-  }
 }
 
 // --- hub-resolved platform dependencies ------------------------------

@@ -1,11 +1,9 @@
 // Proves `createHubChatPlatform` maps each `ChatPlatform` port method
 // onto the right in-process service call. `launchWorkbench` in
-// particular proves the folded interactive-instance shape: it extracts
+// particular proves the invited-agent instance shape: it extracts
 // the folded body, resolves inference sources against the tenant
-// catalog, writes the same principal/session/run rows a folded launch
-// writes (never a deployment-shaped run), and deploys via
-// `sessionService.deployInstanceAtHead` — never
-// `deployWorkflowDefinition`.
+// catalog, and provisions via Interchange
+// `prepareProvisionedDeployment` — never `deployWorkflowDefinition`.
 //
 // `resolveDefinitionSources` is real catalog resolution (joins across
 // several tables via `@intx/db`), which a plain chainable fake `db`
@@ -26,12 +24,6 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { IDLE_HIBERNATE_UNDEPLOY_REASON } from "@corbits/agent-lifecycle";
 import { AGENT_RUNTIME_SECTION_ID } from "@corbits/agent-runtime";
 import {
-  createCryptoProviderCache,
-  foldedRun,
-  type CryptoProviderCache,
-  type FoldedRunsDeps,
-} from "@corbits/folded-runs";
-import {
   parseWorkflowSourceEntry,
   WORKFLOW_SOURCE_ENTRY_PATH,
   DefinitionProjectionMissingError,
@@ -49,8 +41,13 @@ import { SessionLaunchError } from "@intx/hub-sessions";
 import type { EventCollectorRegistry, SidecarRouter } from "@intx/hub-sessions";
 import { DEFAULT_ASSET_REF } from "@intx/hub-sessions";
 import { workbenchLaunch } from "../src/schema";
+import { createCryptoProviderCache } from "../src/crypto-cache";
 import type { CreateHubChatPlatformDeps } from "../src/platform-adapter";
 import { MODEL_UNAVAILABLE_CONSUMER_MESSAGE } from "../src/model-unavailable";
+import {
+  createCryptoProviderCache,
+  type CryptoProviderCache,
+} from "../src/crypto-cache";
 
 const actualHubApi = await import("@intx/hub-api");
 
@@ -268,14 +265,6 @@ function createFakeDb(opts: {
         status?: string;
       }
     | undefined;
-  /**
-   * `select().from(foldedRun).where(eq(foldedRun.id, ...))` backing
-   * `isFoldedRunSettled`'s marker check -- `true` (the default) means
-   * the configured `workflowRunRow` is a folded run, matching every
-   * run `createHubChatPlatform` itself ever launches; `false` proves
-   * the predicate does not fire for a plain "completed" status alone.
-   */
-  foldedRunMarker?: boolean;
   sessionMailRow?: { id: string; raw: Uint8Array } | undefined;
   workflowDefinitionRow?:
     | {
@@ -527,18 +516,6 @@ function createFakeDb(opts: {
               .map((row) => ({ id: (row.values as { id: string }).id }));
             return selectChain(sessions);
           }
-          if (table === foldedRun) {
-            const marker = opts.foldedRunMarker ?? true;
-            const runId =
-              opts.workflowRunRow?.id ??
-              (
-                inserted.findLast((row) => row.table === foldedRun)?.values as
-                  { id: string } | undefined
-              )?.id;
-            return selectChain(
-              marker && runId !== undefined ? [{ id: runId }] : [],
-            );
-          }
           return selectChain([]);
         },
       };
@@ -611,7 +588,7 @@ type AdoptedDeployCall = {
   agentAddress: string;
 };
 
-type FakeSessionService = FoldedRunsDeps["sessionService"] & {
+type FakeSessionService = {
   adoptedDeployCalls: unknown[];
   sendUserMessageCalls: unknown[];
 };
@@ -625,8 +602,7 @@ function createFakeSessionService(): FakeSessionService {
     async stageWorkflowStep() {},
     async deployInstanceAtHead() {
       throw new Error(
-        "deployInstanceAtHead must not be called: a folded run deploys " +
-          "its own rendered workflow source package",
+        "deployInstanceAtHead must not be called: invite, wake, and relaunch provision via Interchange prepareProvisionedDeployment",
       );
     },
     async deployAdoptedWorkflowFromSource(params: AdoptedDeployCall) {
@@ -640,7 +616,7 @@ function createFakeSessionService(): FakeSessionService {
     async deployWorkflowDefinition() {
       throw new Error(
         "deployWorkflowDefinition must not be called: launchWorkbench " +
-          "launches a folded run through the adopting code-sourced front",
+          "provisions via Interchange prepareProvisionedDeployment",
       );
     },
     async sendUserMessage(params: unknown) {
@@ -973,7 +949,6 @@ describe("createHubChatPlatform", () => {
     // deactivates or deletes the already-durable run.
     expect(db.updated).toEqual([]);
     expect(db.deleted.some((row) => row.table === workflowRun)).toBe(false);
-    expect(db.deleted.some((row) => row.table === foldedRun)).toBe(false);
   });
 
   test("a failed wake keeps the run retryable even when a child leaked", async () => {
@@ -1045,7 +1020,6 @@ describe("createHubChatPlatform", () => {
     ).rejects.toThrow(SessionLaunchError);
 
     expect(db.deleted.some((row) => row.table === workflowRun)).toBe(false);
-    expect(db.deleted.some((row) => row.table === foldedRun)).toBe(false);
     const runUpdate = db.updated.find((row) => row.table === workflowRun);
     expect(runUpdate).toBeUndefined();
   });
@@ -1428,8 +1402,8 @@ describe("createHubChatPlatform", () => {
   // (ciphertext, if it was ever encrypted) gets handed to the provider as
   // its API key instead of the decrypted plaintext.
   // Interchange takes catalog offering ids; chat does not decrypt
-  // credentials. The cipher still has to be a real cipher because mail
-  // still goes through folded-runs, but launch looks up offerings.
+  // credentials. The cipher still has to be a real cipher because
+  // `sendRunMail` signs outbound frames with it.
   test("launchInvite looks up catalog offerings and passes their ids to Interchange", async () => {
     const db = createFakeDb({
       assetRow: {
@@ -1474,7 +1448,7 @@ describe("createHubChatPlatform", () => {
     });
   });
 
-  test("refuses to mint FoldedRunsDeps when credentialCipher is missing", () => {
+  test("refuses to mint the platform when credentialCipher is missing", () => {
     expect(() =>
       createHubChatPlatform({
         toolGrantsForPins: () => [],
@@ -1488,7 +1462,7 @@ describe("createHubChatPlatform", () => {
     ).toThrow(/missing or has the wrong shape/);
   });
 
-  test("refuses to mint FoldedRunsDeps when credentialCipher has the wrong shape", () => {
+  test("refuses to mint the platform when credentialCipher has the wrong shape", () => {
     expect(() =>
       createHubChatPlatform({
         toolGrantsForPins: () => [],
@@ -3323,7 +3297,6 @@ describe("createHubChatPlatform relaunch sweep", () => {
 
   function createSweepFixture(opts: {
     runStatus: string;
-    parked: boolean;
     /**
      * `false` builds the standalone/invited-agent shape (CL-6367): a
      * section-mode participant whose relaunch must deploy the same
@@ -3346,7 +3319,6 @@ describe("createHubChatPlatform relaunch sweep", () => {
         definitionId: "wfd_room1",
         status: opts.runStatus,
       },
-      foldedRunMarker: opts.parked,
       workbenchLaunchRow: {
         tenantId: "ten_1",
         instanceId: "ins_room1",
@@ -3378,7 +3350,6 @@ describe("createHubChatPlatform relaunch sweep", () => {
   test("relaunches a routable-but-dead participant and tells the room", async () => {
     const { db, platform, sessionService, notices } = createSweepFixture({
       runStatus: "failed",
-      parked: false,
     });
 
     const swept = await platform.sweepTerminalRuns();
@@ -3417,7 +3388,6 @@ describe("createHubChatPlatform relaunch sweep", () => {
     const { db, platform, sessionService, assetService, notices } =
       createSweepFixture({
         runStatus: "failed",
-        parked: false,
         noopInference: false,
       });
 
@@ -3449,24 +3419,25 @@ describe("createHubChatPlatform relaunch sweep", () => {
     ]);
   });
 
-  test("leaves a folded run merely parked between messages alone", async () => {
-    const { platform, sessionService, notices } = createSweepFixture({
+  test("relaunches a completed run — wake is a fresh provision", async () => {
+    const { db, platform, notices } = createSweepFixture({
       runStatus: "completed",
-      parked: true,
     });
 
-    expect(await platform.sweepTerminalRuns()).toEqual({
-      scanned: 0,
-      relaunched: 0,
-    });
-    expect(lastAllocationService.prepareCalls).toHaveLength(0);
-    expect(notices).toEqual([]);
+    const swept = await platform.sweepTerminalRuns();
+
+    expect(swept).toEqual({ scanned: 1, relaunched: 1 });
+    expect(lastAllocationService.prepareCalls).toHaveLength(1);
+    expect(notices).toHaveLength(1);
+    const repointed = db.updated.at(-1)?.values as {
+      currentRunId: string;
+    };
+    expect(repointed.currentRunId).not.toBe("run_dead");
   });
 
   test("leaves a running participant alone", async () => {
-    const { platform, sessionService, notices } = createSweepFixture({
+    const { platform, notices } = createSweepFixture({
       runStatus: "running",
-      parked: false,
     });
 
     expect(await platform.sweepTerminalRuns()).toEqual({

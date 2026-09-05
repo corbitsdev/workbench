@@ -322,6 +322,22 @@ export type {
   CreateHubChatPlatformDeps,
   HubChatPlatform,
 } from "./platform-adapter";
+export { createCryptoProviderCache } from "./crypto-cache";
+export type { CryptoProviderCache } from "./crypto-cache";
+export { tagCredentialCipher } from "./credential-cipher-tag";
+export { InferenceResolutionError } from "./model-unavailable";
+export type {
+  McpCredentialBindingsFor,
+  PinnedPackageCredentialBindingsFor,
+  PinnedToolGrantDeclaration,
+  ToolGrantsForPins,
+} from "./pin-ports";
+export { sendRunMail } from "./send-run-mail";
+export type {
+  RunMailDeps,
+  SendRunMailParams,
+  SentRunMail,
+} from "./send-run-mail";
 
 export {
   createRelaunchNoticePoster,

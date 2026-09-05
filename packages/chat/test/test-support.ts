@@ -15,6 +15,7 @@ import {
 } from "../src/room-messages";
 import { createInMemoryWorkbenchTenancyStore } from "../src/workbench-tenancy";
 import type { MailContent } from "../src/codec";
+import type { MailboxFanoutDeps } from "../src/mailbox-fanout";
 
 export const TENANT = {
   id: "tnt_1",
@@ -226,6 +227,24 @@ export function mountAs(
  * delivered copies — or on their order — has to settle them first. */
 const startedFanouts: Promise<void>[] = [];
 
+export function stubMailbox(
+  domain: string = TENANT.domain,
+): MailboxFanoutDeps {
+  return {
+    writer: {
+      async writeBatch(items) {
+        return items.map((item) => ({
+          messageKey: item.messageId,
+          id: item.messageId,
+        }));
+      },
+    },
+    resolveKnownPrincipalIds: async (_tenantId, candidateIds) =>
+      new Set(candidateIds),
+    resolveTenantDomain: async () => domain,
+  };
+}
+
 export function buildDeps(
   overrides: Partial<CreateChatRoutesDeps> = {},
 ): CreateChatRoutesDeps {
@@ -239,6 +258,7 @@ export function buildDeps(
     },
     isInvitableDefinition: () => true,
     turnTimeoutMs: 60_000,
+    mailbox: stubMailbox(),
     onMessageFanout: (fanoutDelivered) => {
       startedFanouts.push(fanoutDelivered);
     },

@@ -12,7 +12,7 @@
 // `@corbits/chat`'s catalog-only `listConnectedProviders`).
 import type { CredentialBinding } from "@intx/types";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
-import type { PinnedPackageCredentialBindingsFor } from "@corbits/folded-runs";
+import type { PinnedPackageCredentialBindingsFor } from "@corbits/chat";
 import { CONNECTOR_REGISTRY } from "@workbench/templates/connectors";
 
 export type IsConnectorConnected = (

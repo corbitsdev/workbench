@@ -24,7 +24,6 @@ import { type } from "arktype";
 import type { DB } from "@intx/db";
 import { workflowRun } from "@intx/db/schema";
 import { formatRunAddress } from "@intx/types";
-import { isFoldedRunSettled } from "@corbits/folded-runs";
 import { FoldedBodySchema } from "@corbits/workflows";
 import type { FoldedBody } from "@intx/workflow-deploy";
 import { workbenchLaunch } from "./schema";
@@ -254,9 +253,8 @@ export async function readPriorRuns(
 
 /**
  * The statuses a `workflow_run` can hold that mean "this run will never
- * accept mail again". A folded run's own idle settle lands on
- * "completed" too (see `@corbits/folded-runs`' `isFoldedRunSettled`),
- * and that one is ordinary — it wakes.
+ * accept mail again". Wake of a reaped or lost instance is a fresh
+ * `prepareProvisionedDeployment`, not a reuse of this row.
  */
 const TERMINAL_RUN_STATUSES: ReadonlySet<string> = new Set([
   "failed",
@@ -266,19 +264,15 @@ const TERMINAL_RUN_STATUSES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Whether this run is routable-but-dead: terminal in the hub's own
- * `workflow_run.status`, and not merely a folded run parked between
- * messages. A run this returns true for cannot be woken — its durable
- * event log already carries a terminal event, so redeploying the same
- * address would come straight back as `workflow_run_terminal` — it can
- * only be RELAUNCHED as a fresh run.
+ * Whether this run is dead: terminal in `workflow_run.status`. A run
+ * this returns true for cannot be woken — it can only be relaunched as
+ * a fresh provisioned deployment.
  */
 export async function isBeyondWake(
-  db: DB["db"],
+  _db: DB["db"],
   run: { id: string; status: string },
 ): Promise<boolean> {
-  if (!TERMINAL_RUN_STATUSES.has(run.status)) return false;
-  return !(await isFoldedRunSettled(db, run));
+  return TERMINAL_RUN_STATUSES.has(run.status);
 }
 
 /**

@@ -108,7 +108,7 @@ import {
   resolveAtCommand,
 } from "@corbits/commands";
 import type { CommandRegistry, CommandResult } from "@corbits/commands";
-import { InferenceResolutionError } from "@corbits/folded-runs";
+import { InferenceResolutionError } from "./model-unavailable";
 import { DefinitionProjectionMissingError } from "@corbits/workflows";
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
 import { cookiesFromHeader } from "@corbits/hub-api-client";

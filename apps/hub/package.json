@@ -27,7 +27,6 @@
     "@corbits/e2b-sandbox-sidecar": "workspace:*",
     "@corbits/evals": "workspace:*",
     "@corbits/folded-run-one-shot": "workspace:*",
-    "@corbits/folded-runs": "workspace:*",
     "@corbits/inbox": "workspace:*",
     "@corbits/inference-catalog": "workspace:*",
     "@corbits/insights": "workspace:*",

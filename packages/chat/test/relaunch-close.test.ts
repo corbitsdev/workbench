@@ -12,7 +12,7 @@
 // session really is a different session — which is the only reason
 // this test can fail.
 import { describe, expect, test } from "bun:test";
-import { createCryptoProviderCache } from "@corbits/folded-runs";
+import { createCryptoProviderCache } from "../src/crypto-cache";
 import { agentSession } from "@intx/db/schema";
 import { workbenchLaunch } from "../src/schema";
 import { createHubChatPlatform } from "../src/platform-adapter";

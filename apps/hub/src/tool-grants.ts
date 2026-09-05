@@ -11,7 +11,7 @@
 import type {
   PinnedToolGrantDeclaration,
   ToolGrantsForPins,
-} from "@corbits/folded-runs";
+} from "@corbits/chat";
 import type { CorbitsToolPackageDescription } from "@corbits/tool-registry-publish";
 
 export function createToolGrantsForPins(

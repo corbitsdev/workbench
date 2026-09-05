@@ -45,7 +45,7 @@
 // invite into a workbench it is not itself in.
 import { Hono } from "hono";
 import { type } from "arktype";
-import { InferenceResolutionError } from "@corbits/folded-runs";
+import { InferenceResolutionError } from "./model-unavailable";
 import { DefinitionProjectionMissingError } from "@corbits/workflows";
 
 import {
