@@ -177,7 +177,7 @@ import {
 } from "@corbits/mailbox";
 import {
   createHubMailboxAuthorizeSender,
-  createHubMailboxRowRefsStamper,
+  createHubMailboxResolveRefs,
 } from "./mailbox-persist";
 import {
   createCommandRegistry,
@@ -757,6 +757,10 @@ export async function createHub(config: HubConfig) {
     db,
     grantStore: createGrantStore(db),
   });
+  // Hoisted ahead of its other use below (`mountMemory`'s neighbors) so
+  // `createHubMailboxResolveRefs` can share this one instance rather than
+  // constructing a second one just for the mailbox wiring.
+  const chatStore = createDrizzleChatStore(db);
   const lookups = {
     ...baseLookups,
     materializeMailTriggeredRunGrants: mailTriggeredRunGrants,
@@ -766,12 +770,14 @@ export async function createHub(config: HubConfig) {
     // write. Dual-write independence is `createMailboxPersist`'s own
     // contract (upstream failing still attempts the mailbox write, and a
     // mailbox failure never fails upstream) -- no second try/catch belongs
-    // here.
+    // here. `resolveRefs` runs inside the package's own transaction, so the
+    // workbench ref is present before the post-commit bus event fires --
+    // no out-of-band UPDATE, no polling read.
     persistMail: createMailboxPersist(mailboxDb, {
       upstream: baseLookups.persistMail,
       authorizeSender: createHubMailboxAuthorizeSender(db),
       bus: mailboxBus,
-      onRow: createHubMailboxRowRefsStamper(mailboxDb),
+      resolveRefs: createHubMailboxResolveRefs(chatStore),
     }),
     async registerSignalCorrelation(
       args: Parameters<typeof baseLookups.registerSignalCorrelation>[0],
@@ -1359,7 +1365,6 @@ export async function createHub(config: HubConfig) {
     grantStore: chatGrantStore,
     conditionRegistry: chatConditionRegistry,
   });
-  const chatStore = createDrizzleChatStore(db);
   const threadStore = createDrizzleThreadStore(db);
   const blockResponseStore = createDrizzleBlockResponseStore(db);
   const reactionStore = createDrizzleReactionStore(db);

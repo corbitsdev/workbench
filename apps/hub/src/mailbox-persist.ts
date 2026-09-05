@@ -5,21 +5,31 @@
 //
 // Two small seams live here, both host-owned by the package's own contract
 // (`persist.ts` in `@corbits/mailbox`): `authorizeSender` decides which
-// sender addresses may write at all, and the `onRow` hook stamps a workbench
-// ref onto each row the package just inserted so the thread read can scope by
-// workbench.
+// sender addresses may write at all, and `resolveRefs` stamps a workbench
+// ref onto every row of the frame INSIDE the same transaction the package
+// already opens, so a bus subscriber sees the ref at event time -- no
+// out-of-band UPDATE, no polling read.
 
 import { eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { tenant as tenantTable } from "@intx/db/schema";
-import { reportError } from "@corbits/error-sink";
-import {
-  principalMail,
-  type MailboxDb,
-  type AuthorizeMailboxSender,
-  type PersistedMailboxRow,
+import type {
+  AuthorizeMailboxSender,
+  CreateMailboxPersistOpts,
+  MailboxRef,
 } from "@corbits/mailbox";
 import { resolveRoutableAddress } from "@intx/hub-sessions";
+import type { ChatStore } from "@corbits/chat";
+
+/**
+ * `@corbits/mailbox` does not export `ResolveMailboxRefs` itself (only the
+ * `CreateMailboxPersistOpts` shape it hangs off), so this derives the same
+ * type from the one place it is public rather than re-declaring its shape
+ * by hand and drifting from the package's own definition.
+ */
+type ResolveMailboxRefs = NonNullable<
+  CreateMailboxPersistOpts<unknown>["resolveRefs"]
+>;
 
 /**
  * Resolve a `mail.outbound` frame's sender run address to the mailbox
@@ -31,6 +41,17 @@ import { resolveRoutableAddress } from "@intx/hub-sessions";
  * re-deriving liveness some other way: a sender that is not a live run
  * resolves to `undefined` there and to `null` here, which skips the mailbox
  * write while the frame still goes upstream unchanged.
+ *
+ * This is a genuine double resolve of the same address across one frame --
+ * `baseLookups.persistMail` (vendor-owned, `hub-session-lookups.ts`) resolves
+ * `senderAddress` for its own `session_mail` write, and this seam resolves it
+ * again for mailbox authorization. `createMailboxPersist` calls `upstream`
+ * and `authorizeSender` as two independent stages and hands neither's result
+ * to the other, so there is no seam to thread one resolution through without
+ * changing the vendor-owned `persistMail` signature itself, which the
+ * ground rules rule out. Accepted as the cost of two owners agreeing on one
+ * fact from two directions: one extra indexed lookup by address per frame,
+ * not per recipient.
  */
 export function createHubMailboxAuthorizeSender(
   db: DB["db"],
@@ -49,32 +70,39 @@ export function createHubMailboxAuthorizeSender(
 }
 
 /**
- * Build the `onRow` hook: stamps `refs: [{ kind: "workbench", id: tenantId }]`
- * onto the row `createMailboxPersist` just inserted, so a thread read can
- * scope by workbench. The row's `tenantId` IS the sender run's workbench
- * tenant (`authorizeSender`'s own resolution), so no second lookup is needed.
+ * Build the `resolveRefs` seam: stamps
+ * `refs: [{ kind: "workbench", id: workbenchId }]` onto every recipient row
+ * of one frame.
  *
- * `onRow` is invoked strictly after the insert commits and is documented as
- * best-effort by the package (a throw is logged there and never rejects the
- * persist) -- but that catch only covers a SYNCHRONOUS throw. This hook does
- * its own work asynchronously, so it owns its own try/catch and reports
- * through `reportError` on failure rather than producing an unhandled
- * rejection the package's guard cannot see.
+ * `workbenchId` is NOT `senderAuthorization.tenantId`. An agent run is
+ * launched in its parent BENCH tenant -- that tenant is what
+ * `authorizeSender` resolves, and it is also what the resulting
+ * `principal_mail` rows themselves are scoped under (same tenant the
+ * addressed human principals belong to). The workbench the run is a
+ * participant of is a separate id `@corbits/chat` tracks inside that same
+ * bench tenant, on `workbench_settings.workbenchId` -- one bench tenant
+ * hosts many workbenches. Stamping the bench's tenant id here instead would
+ * point every row at an id no workbench thread read can ever resolve.
+ *
+ * `ChatStore.findWorkbenchByParticipantAddress(tenantId, address)` already
+ * owns exactly this mapping -- a real lookup over each workbench's own
+ * `chat/participants` list, the same list `launchAndJoinAgent` writes -- so
+ * this seam is a thin adapter over it, not a new index. A sender run that
+ * belongs to no workbench in this tenant (a plain workflow mail, never a
+ * chat participant) resolves to no match, and this returns `undefined`: no
+ * ref is stamped, per `ResolveMailboxRefs`'s own contract for "nothing to
+ * stamp".
  */
-export function createHubMailboxRowRefsStamper(
-  mailboxDb: MailboxDb,
-): (row: PersistedMailboxRow) => void {
-  return (row) => {
-    void mailboxDb
-      .update(principalMail)
-      .set({ refs: [{ kind: "workbench", id: row.tenantId }] })
-      .where(eq(principalMail.id, row.id))
-      .catch((error: unknown) => {
-        reportError(error, {
-          operation: "mailbox.persist.stampWorkbenchRef",
-          tenantId: row.tenantId,
-          extra: { principalMailId: row.id },
-        });
-      });
+export function createHubMailboxResolveRefs(
+  chatStore: ChatStore,
+): ResolveMailboxRefs {
+  return async ({ senderAddress, senderAuthorization }) => {
+    const found = await chatStore.findWorkbenchByParticipantAddress(
+      senderAuthorization.tenantId,
+      senderAddress,
+    );
+    if (found === undefined) return undefined;
+    const ref: MailboxRef = { kind: "workbench", id: found.workbenchId };
+    return [ref];
   };
 }
