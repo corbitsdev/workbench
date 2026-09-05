@@ -12,6 +12,8 @@ import type { BaseEnv } from "@intx/agent";
 import type { ToolCall, ToolResult } from "@intx/types/runtime";
 import { type } from "arktype";
 
+import { reportError } from "@corbits/error-sink";
+
 import { postQuestion, questionIdForCall } from "./client";
 import type { AskUserClientConfig } from "./client";
 
@@ -77,9 +79,10 @@ async function runAskUser(
       questionId: questionIdForCall(call.id),
     });
   } catch (err) {
-    // report-error-ignore: surfaced to the model as this call's own error
-    // result (isError: true), which the caller can see and retry — not a
-    // swallowed failure, so no separate incident report is warranted.
+    reportError(err, {
+      operation: "ask_user_post_question",
+      agentId: env.address,
+    });
     return errorResult(call.id, err);
   }
 
