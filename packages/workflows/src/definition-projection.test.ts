@@ -27,7 +27,7 @@ const {
   resolveNewestProjectedDefinition,
   DefinitionProjectionMissingError,
   MultiStepFoldUnsupportedError,
-} = await import("../src/definition");
+} = await import("./definition-projection");
 
 function inertProjection(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -134,7 +134,7 @@ describe("readFoldedBody", () => {
     ).toThrow(/not single-step/);
   });
 
-  // The fold's launch target (`@corbits/agent-runtime`'s
+  // The launch target (`@corbits/agent-runtime`'s
   // `AgentRuntimeConfig`) renders exactly one `systemPrompt` into one
   // mailbox-triggered turn -- it has no notion of step order, so a
   // multi-step definition must raise the named, guidance-bearing error

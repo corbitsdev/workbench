@@ -16,8 +16,8 @@
   "dependencies": {
     "@corbits/agent-runtime": "workspace:*",
     "@corbits/error-sink": "workspace:*",
-    "@corbits/folded-runs": "workspace:*",
     "@corbits/migration-runner": "workspace:*",
+    "@corbits/workflows": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/hub-common": "0.3.0",

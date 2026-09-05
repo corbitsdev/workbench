@@ -23,6 +23,7 @@
     "@intx/hub-common": "0.3.0",
     "@intx/hub-sessions": "workspace:*",
     "@intx/types": "workspace:*",
+    "@intx/workflow-deploy": "workspace:*",
     "arktype": "catalog:",
     "cronstrue": "^3.24.0",
     "drizzle-orm": "catalog:",

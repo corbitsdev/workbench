@@ -16,7 +16,7 @@
     "@corbits/agent-events": "workspace:*",
     "@corbits/agent-lifecycle": "workspace:*",
     "@corbits/agent-runtime": "workspace:*",
-    "@corbits/folded-runs": "workspace:*",
+    "@corbits/workflows": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-common": "0.3.0",
     "@intx/hub-sessions": "workspace:*",

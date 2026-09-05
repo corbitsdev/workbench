@@ -9,17 +9,6 @@ export type {
   ListedFoldedMailItem,
 } from "./types";
 export {
-  authoredDefinitionCandidates,
-  readDefinitionProjection,
-  readFoldedBody,
-  readLiveFoldedBody,
-  resolveNewestProjectedDefinition,
-  DefinitionProjectionMissingError,
-  MultiStepFoldUnsupportedError,
-  FoldedBodySchema,
-  type DefinitionCandidate,
-} from "./definition";
-export {
   createCryptoProviderCache,
   type CryptoProviderCache,
 } from "./crypto-cache";

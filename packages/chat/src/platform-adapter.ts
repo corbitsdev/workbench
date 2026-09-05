@@ -18,19 +18,21 @@ import {
   renderAgentRuntimeSourceTree,
 } from "@corbits/agent-runtime";
 import {
-  authoredDefinitionCandidates,
   type CryptoProviderCache,
-  DefinitionProjectionMissingError,
   domainOf,
   InferenceResolutionError,
-  readFoldedBody,
   resolveFoldedRunSessionId,
-  resolveNewestProjectedDefinition,
   sendFoldedMail,
   tagCredentialCipher,
   type FoldedRunsDeps,
   type SendFoldedMailParams,
 } from "@corbits/folded-runs";
+import {
+  authoredDefinitionCandidates,
+  DefinitionProjectionMissingError,
+  readFoldedBody,
+  resolveNewestProjectedDefinition,
+} from "@corbits/workflows";
 import {
   findStandingLaunchByDefinition,
   isBeyondWake,

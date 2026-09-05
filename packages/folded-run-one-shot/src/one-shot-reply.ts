@@ -11,7 +11,7 @@ import {
 } from "@corbits/agent-runtime";
 import type { AgentLifecycle } from "@corbits/agent-lifecycle";
 import { connectorReplyContent, messageRunEnded } from "@corbits/agent-events";
-import { readDefinitionProjection, readFoldedBody } from "@corbits/folded-runs";
+import { readDefinitionProjection, readFoldedBody } from "@corbits/workflows";
 import { listVisibleOfferings, type DB } from "@intx/db";
 import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
 import { generateId } from "@intx/hub-common";

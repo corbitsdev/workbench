@@ -1,4 +1,4 @@
-// Reads a folded `WorkflowDefinition`'s launch body back out of the hub's
+// Reads a `WorkflowDefinition`'s launch body back out of the hub's
 // own record of the definition.
 //
 // Under the `workflow.json` retirement a deployed definition's body is
@@ -85,14 +85,14 @@ export function authoredDefinitionCandidates<
 
 /**
  * Thrown when a definition's frozen projection carries more than one
- * step. The folded-run launch target (`@corbits/agent-runtime`'s
+ * step. The launch target (`@corbits/agent-runtime`'s
  * `AgentRuntimeConfig`) renders exactly one `systemPrompt` into one
  * mailbox-triggered turn — it has no notion of step order at all, so
  * there is nothing here a length check could safely relax: reading past
  * `stepOrder[0]` would silently drop every later step's behavior rather
  * than run it. Genuine multi-step launch needs a different deploy
  * front (Interchange's native workflow-run trigger, `@intx/workflow-host`'s
- * DAG supervisor) than this package provides. Carries consumer language
+ * DAG supervisor) than this module provides. Carries consumer language
  * so an HTTP boundary can answer with a named 4xx instead of an
  * unhandled 500, mirroring `DefinitionProjectionMissingError`.
  */
@@ -177,7 +177,7 @@ const InertOnTriggerStepSchema = type({
 /**
  * Extracts the agent-bearing step primitive `readFoldedBody` needs,
  * whichever of the two shapes a projection's launch step takes — a
- * bare `step` (the folded conversational shape) or an `onTrigger`
+ * bare `step` (the conversational shape) or an `onTrigger`
  * section whose inline body carries the one step that answers each
  * turn. One reader for both shapes: neither call site duplicates the
  * other's parsing.

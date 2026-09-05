@@ -31,6 +31,17 @@ export {
   type TriggerFieldsValidation,
 } from "./catalog";
 export {
+  authoredDefinitionCandidates,
+  readDefinitionProjection,
+  readFoldedBody,
+  readLiveFoldedBody,
+  resolveNewestProjectedDefinition,
+  DefinitionProjectionMissingError,
+  MultiStepFoldUnsupportedError,
+  FoldedBodySchema,
+  type DefinitionCandidate,
+} from "./definition-projection";
+export {
   CRON_FIELD_RANGES,
   cronExpressionCanFire,
   cronMatchesMinute,

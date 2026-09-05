@@ -18,7 +18,7 @@ import {
   type AgentRuntimeConfig,
 } from "@corbits/agent-runtime";
 import { reportError } from "@corbits/error-sink";
-import { readDefinitionProjection, readFoldedBody } from "@corbits/folded-runs";
+import { readDefinitionProjection, readFoldedBody } from "@corbits/workflows";
 import { listVisibleOfferings, type DB } from "@intx/db";
 import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
 import { generateId } from "@intx/hub-common";
