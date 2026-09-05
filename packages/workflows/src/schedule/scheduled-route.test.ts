@@ -139,6 +139,7 @@ describe("createScheduledWorkflowRoutes", () => {
       requiredConnections: ["github"],
       missingConnections: ["github"],
       connectionsSatisfied: false,
+      deployable: true,
     };
     const app = mount(async () => ({ runId: "run_x" }), [], {
       catalogAssetNames: ["code-review"],

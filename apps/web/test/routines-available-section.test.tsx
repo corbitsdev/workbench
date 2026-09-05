@@ -29,6 +29,7 @@ const codeReview = {
   requiredConnections: ["github"],
   missingConnections: ["github"],
   connectionsSatisfied: false,
+  deployable: true,
 };
 
 const echo = {
@@ -38,6 +39,18 @@ const echo = {
   requiredConnections: [],
   missingConnections: [],
   connectionsSatisfied: true,
+  deployable: true,
+};
+
+const granolaCall = {
+  assetName: "granola-call",
+  displayName: "Granola call",
+  description: "Polls Granola for new calls and starts a call-notes run.",
+  requiredConnections: ["granola"],
+  missingConnections: ["granola"],
+  connectionsSatisfied: false,
+  deployable: false,
+  notDeployableReason: "credential_bindings_unsupported",
 };
 
 async function render(
@@ -119,6 +132,32 @@ describe("AvailableCatalogWorkflowsSection", () => {
       expect(container.textContent).toContain("Connect GitHub first.");
       const link = container.querySelector("a");
       expect(link?.getAttribute("href")).toBe("/plugins");
+    } finally {
+      restoreFetch(container, root);
+    }
+  });
+
+  test("Add is disabled with 'Coming with the next platform update.' for a not-yet-deployable entry, and never links to Plugins", async () => {
+    const { container, root } = await render((async (
+      input: RequestInfo | URL,
+    ) => {
+      const url = String(input);
+      if (url.includes("/workflows/available")) {
+        return jsonResponse({ items: [granolaCall] });
+      }
+      return Promise.reject(new Error(`unrouted fetch: ${url}`));
+    }) as typeof fetch);
+    try {
+      const addButton = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent?.trim() === "Add",
+      );
+      expect(addButton).not.toBeUndefined();
+      expect(addButton?.hasAttribute("disabled")).toBe(true);
+      expect(container.textContent).toContain(
+        "Coming with the next platform update.",
+      );
+      expect(container.textContent).not.toContain("Connect");
+      expect(container.querySelector("a")).toBeNull();
     } finally {
       restoreFetch(container, root);
     }

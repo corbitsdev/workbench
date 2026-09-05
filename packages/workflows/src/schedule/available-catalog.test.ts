@@ -56,6 +56,29 @@ describe("availableCatalogWorkflowsFrom", () => {
     expect(result[0]?.connectionsSatisfied).toBe(true);
   });
 
+  test("defaults every entry to deployable when no pin check is given", () => {
+    const result = availableCatalogWorkflowsFrom({
+      catalogAssetNames: ["echo"],
+      deployedNames: new Set(),
+      isConnectorSatisfied: () => true,
+    });
+    expect(result[0]?.deployable).toBe(true);
+    expect(result[0]?.notDeployableReason).toBeUndefined();
+  });
+
+  test("marks an entry not deployable with a machine reason when the pin check says no", () => {
+    const result = availableCatalogWorkflowsFrom({
+      catalogAssetNames: ["code-review"],
+      deployedNames: new Set(),
+      isConnectorSatisfied: () => true,
+      isDeployableOnThisPin: () => false,
+    });
+    expect(result[0]?.deployable).toBe(false);
+    expect(result[0]?.notDeployableReason).toBe(
+      "credential_bindings_unsupported",
+    );
+  });
+
   test("carries the display name and description straight from WORKFLOW_CATALOG", () => {
     const result = availableCatalogWorkflowsFrom({
       catalogAssetNames: ["echo"],
