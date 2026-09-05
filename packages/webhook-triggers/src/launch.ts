@@ -149,9 +149,9 @@ export async function launchWebhookTrigger(
     );
   }
 
-  const offerings = [...(await listVisibleOfferings(deps.db, trigger.tenantId))].sort(
-    (a, b) => a.offering.priority - b.offering.priority,
-  );
+  const offerings = [
+    ...(await listVisibleOfferings(deps.db, trigger.tenantId)),
+  ].sort((a, b) => a.offering.priority - b.offering.priority);
   const sourceOfferingIds = offerings.map((o) => o.offering.id);
   const defaultSourceOfferingId = sourceOfferingIds[0];
   if (defaultSourceOfferingId === undefined) {

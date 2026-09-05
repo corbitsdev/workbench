@@ -28,9 +28,7 @@
 import path from "node:path";
 import { readdir } from "node:fs/promises";
 
-import {
-  applyChatMigrations,
-} from "../packages/chat/src/migrations";
+import { applyChatMigrations } from "../packages/chat/src/migrations";
 import { applyWebhookTriggersMigrations } from "../packages/webhook-triggers/src/migrations";
 import { reconcileDuplicateRepoGrants } from "../packages/connections/src/reconcile-duplicate-repo-grants";
 import { applyNotifyMigrations } from "../packages/notify/src/migrations";

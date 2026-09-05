@@ -7,6 +7,7 @@
 // chat's own: `workbench_launch` persistence, invitable listing, and
 // participant/fromWorkbenchId send semantics.
 // A workbench itself is data — only invited agents have runs here.
+import { reportError } from "@corbits/error-sink";
 import { and, desc, eq } from "drizzle-orm";
 import {
   createAgentLifecycle,
@@ -73,7 +74,11 @@ import {
   type WorkflowAllocationService,
 } from "@intx/hub-sessions";
 import type { InferencePreference } from "@intx/agent";
-import { formatRunAddress, type CredentialBinding, type CredentialCipher } from "@intx/types";
+import {
+  formatRunAddress,
+  type CredentialBinding,
+  type CredentialCipher,
+} from "@intx/types";
 import type { FoldedBody } from "@intx/workflow-deploy";
 import {
   AgentUnreachableError,
@@ -260,7 +265,7 @@ export type HubChatPlatform = ChatPlatform & {
 export function createHubChatPlatform(
   deps: CreateHubChatPlatformDeps,
 ): HubChatPlatform {
-  const credentialCipher = tagCredentialCipher(deps.credentialCipher);
+  void tagCredentialCipher(deps.credentialCipher);
   const runMailDeps = {
     db: deps.db,
     sessionService: deps.sessionService,
@@ -352,7 +357,10 @@ export function createHubChatPlatform(
     );
     const anchorRunId = generateId("workflowRun");
     const sessionId = generateId("session");
-    const triggerAddress = formatRunAddress(anchorRunId, input.deploymentDomain);
+    const triggerAddress = formatRunAddress(
+      anchorRunId,
+      input.deploymentDomain,
+    );
     const { commitSha } = await deps.assetService.populateAsset({
       assetId: input.definitionAssetId,
       ref: DEFAULT_ASSET_REF,
@@ -710,7 +718,12 @@ export function createHubChatPlatform(
     let offerings: Awaited<ReturnType<typeof catalogOfferings>>;
     try {
       offerings = await catalogOfferings(binding.tenantId);
-    } catch {
+    } catch (error) {
+      reportError(error, {
+        operation: "chat.hasDriftedSources",
+        tenantId: binding.tenantId,
+        agentId: binding.stableId,
+      });
       return false;
     }
     sourcesCheckedAt.set(binding.stableId, now);
@@ -1128,6 +1141,7 @@ export function createHubChatPlatform(
           `Definition "${input.definitionId}" has not been materialized`,
         );
       }
+      const definitionAssetId = definitionRow.assetId;
 
       const tenantRow = await deps.db.query.tenant.findFirst({
         where: eq(tenantTable.id, input.tenantId),
@@ -1147,7 +1161,7 @@ export function createHubChatPlatform(
 
       const { row: resolvedDefinitionRow, projection } =
         await resolveAuthoredProjectedDefinition(input.tenantId, {
-          assetId: definitionRow.assetId,
+          assetId: definitionAssetId,
           name: definitionRow.name,
         });
 
@@ -1168,7 +1182,7 @@ export function createHubChatPlatform(
             tenantId: input.tenantId,
             deploymentDomain: tenantRow.domain,
             sourceAuthorityPrincipalId: input.creatorPrincipalId,
-            definitionAssetId: definitionRow.assetId,
+            definitionAssetId,
             foldedBody,
           });
         } catch (error) {

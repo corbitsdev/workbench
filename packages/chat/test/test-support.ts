@@ -227,9 +227,7 @@ export function mountAs(
  * delivered copies — or on their order — has to settle them first. */
 const startedFanouts: Promise<void>[] = [];
 
-export function stubMailbox(
-  domain: string = TENANT.domain,
-): MailboxFanoutDeps {
+export function stubMailbox(domain: string = TENANT.domain): MailboxFanoutDeps {
   return {
     writer: {
       async writeBatch(items) {

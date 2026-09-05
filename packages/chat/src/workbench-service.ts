@@ -2124,7 +2124,7 @@ export async function dispatchTurn(
           })()
         : undefined;
 
-    const sent = await deps.platform.sendMail({
+    await deps.platform.sendMail({
       tenantId: input.tenantId,
       workbenchId: localPartOf(input.agentAddress),
       principalId: input.principalId,

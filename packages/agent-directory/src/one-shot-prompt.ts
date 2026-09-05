@@ -11,11 +11,11 @@ import {
 } from "@corbits/agent-runtime";
 import type { AgentLifecycle } from "@corbits/agent-lifecycle";
 import { connectorReplyContent, messageRunEnded } from "@corbits/agent-events";
+import { reportError } from "@corbits/error-sink";
 import { readDefinitionProjection, readFoldedBody } from "@corbits/workflows";
 import { listVisibleOfferings, type DB } from "@intx/db";
 import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
 import { generateId } from "@intx/hub-common";
-import { getLogger } from "@intx/log";
 import {
   DEFAULT_ASSET_REF,
   type AssetService,
@@ -26,8 +26,6 @@ import {
 import { formatRunAddress } from "@intx/types";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { FoldedBody } from "@intx/workflow-deploy";
-
-const log = getLogger(["agent-directory", "one-shot-prompt"]);
 
 export type CryptoProviderCache = {
   get(key: string): Promise<CryptoProvider>;
@@ -124,9 +122,9 @@ async function provisionOnAsset(
     readonly domain: string;
   },
 ): Promise<ProvisionedOneShot> {
-  const offerings = [...(await listVisibleOfferings(deps.db, input.tenantId))].sort(
-    (a, b) => a.offering.priority - b.offering.priority,
-  );
+  const offerings = [
+    ...(await listVisibleOfferings(deps.db, input.tenantId)),
+  ].sort((a, b) => a.offering.priority - b.offering.priority);
   const sourceOfferingIds = offerings.map((o) => o.offering.id);
   const defaultSourceOfferingId = sourceOfferingIds[0];
   if (defaultSourceOfferingId === undefined) {
@@ -283,9 +281,10 @@ export async function runOneShotPrompt(
       try {
         await deps.undeploy(launched.address, reason);
       } catch (err) {
-        log.error`one-shot run ${launched.address}: undeploy failed during teardown (${reason}): ${
-          err instanceof Error ? err.message : String(err)
-        }`;
+        reportError(err, {
+          operation: "agent-directory.one-shot.undeploy",
+          extra: { address: launched.address, reason },
+        });
       }
       deps.lifecycle?.untrack(launched.address);
       finish();
@@ -322,6 +321,10 @@ export async function runOneShotPrompt(
           cryptoProvider,
         });
       } catch (cause) {
+        reportError(cause, {
+          operation: "agent-directory.one-shot.send",
+          extra: { address: launched.address },
+        });
         void settle("planning-run-send-failed", () => {
           reject(cause instanceof Error ? cause : new Error(String(cause)));
         });

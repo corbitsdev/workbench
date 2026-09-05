@@ -19,9 +19,9 @@ test("a workflow built from this definition carries its tool-package pins on the
   const definition = buildMorningBriefWorkflow(INPUT);
   const step = definition.steps[MORNING_BRIEF_STEP_ID];
   expect(step?.kind).toBe("step");
-  expect(step?.kind === "step" ? step.agent.toolPackagePins : undefined).toEqual(
-    [...MORNING_BRIEF_TOOL_PACKAGE_PINS],
-  );
+  expect(
+    step?.kind === "step" ? step.agent.toolPackagePins : undefined,
+  ).toEqual([...MORNING_BRIEF_TOOL_PACKAGE_PINS]);
 });
 
 test("the workflow declares exactly one step", () => {

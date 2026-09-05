@@ -39,9 +39,7 @@ import {
 } from "@intx/db/schema";
 import { SessionLaunchError } from "@intx/hub-sessions";
 import type { EventCollectorRegistry, SidecarRouter } from "@intx/hub-sessions";
-import { DEFAULT_ASSET_REF } from "@intx/hub-sessions";
 import { workbenchLaunch } from "../src/schema";
-import { createCryptoProviderCache } from "../src/crypto-cache";
 import type { CreateHubChatPlatformDeps } from "../src/platform-adapter";
 import { MODEL_UNAVAILABLE_CONSUMER_MESSAGE } from "../src/model-unavailable";
 import {
@@ -128,7 +126,18 @@ const PASSTHROUGH_CIPHER = {
   decrypt: async (blob: string) => blob,
 };
 
-function createFakeWorkflowAllocationService() {
+function createFakeWorkflowAllocationService(): {
+  prepareCalls: unknown[];
+  prepareProvisionedDeployment: (args: {
+    anchorRunId: string;
+    deploymentDomain: string;
+  }) => Promise<{
+    anchorRunId: string;
+    deploymentAddress: string;
+    allocationId: string;
+    status: "pending";
+  }>;
+} {
   const prepareCalls: unknown[] = [];
   return {
     prepareCalls,
@@ -147,7 +156,12 @@ function createFakeWorkflowAllocationService() {
   };
 }
 
-let lastAllocationService = createFakeWorkflowAllocationService();
+type FakeWorkflowAllocationService = ReturnType<
+  typeof createFakeWorkflowAllocationService
+>;
+
+let lastAllocationService: FakeWorkflowAllocationService =
+  createFakeWorkflowAllocationService();
 
 function createHubChatPlatform(
   deps: Omit<
@@ -155,7 +169,7 @@ function createHubChatPlatform(
     "cryptoProviders" | "workflowAllocationService"
   > & {
     cryptoProviders?: CryptoProviderCache;
-    workflowAllocationService?: CreateHubChatPlatformDeps["workflowAllocationService"];
+    workflowAllocationService?: FakeWorkflowAllocationService;
   },
 ) {
   return buildHubChatPlatform({
@@ -591,6 +605,16 @@ type AdoptedDeployCall = {
 type FakeSessionService = {
   adoptedDeployCalls: unknown[];
   sendUserMessageCalls: unknown[];
+  sendUserMessage: (params: unknown) => Promise<Uint8Array>;
+  stageWorkflowStep: () => Promise<void>;
+  deployInstanceAtHead: () => Promise<never>;
+  deployAdoptedWorkflowFromSource: (params: AdoptedDeployCall) => Promise<{
+    anchorRunId: string;
+    deploymentAddress: string;
+    publicKey: string;
+  }>;
+  deployWorkflowDefinition: () => Promise<never>;
+  endSession: () => Promise<void>;
 };
 
 function createFakeSessionService(): FakeSessionService {
@@ -624,7 +648,7 @@ function createFakeSessionService(): FakeSessionService {
       return new TextEncoder().encode("raw-mime-bytes");
     },
     async endSession() {},
-  } as unknown as FakeSessionService;
+  };
 }
 
 /**
@@ -1320,8 +1344,12 @@ describe("createHubChatPlatform", () => {
       launched.address,
     );
 
-    expect(db.inserted.find((row) => row.table === workflowRun)).toBeUndefined();
-    const launchInsert = db.inserted.find((row) => row.table === workbenchLaunch);
+    expect(
+      db.inserted.find((row) => row.table === workflowRun),
+    ).toBeUndefined();
+    const launchInsert = db.inserted.find(
+      (row) => row.table === workbenchLaunch,
+    );
     expect(launchInsert?.values).toMatchObject({
       instanceId: launched.instanceId,
       currentRunId: launched.instanceId,
@@ -2903,9 +2931,9 @@ describe("createHubChatPlatform", () => {
       });
 
       expect(lastAllocationService.prepareCalls).toHaveLength(1);
-      expect(JSON.stringify(deployedDefinition(assetService.populatedTrees))).toContain(
-        "You are now a blunt, no-nonsense assistant.",
-      );
+      expect(
+        JSON.stringify(deployedDefinition(assetService.populatedTrees)),
+      ).toContain("You are now a blunt, no-nonsense assistant.");
     });
 
     // CL-6452: the deploy repoints `workflow_run.definitionId` at the
@@ -3199,9 +3227,9 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
     });
 
     expect(lastAllocationService.prepareCalls).toHaveLength(1);
-    expect(JSON.stringify(deployedDefinition(assetService.populatedTrees))).toContain(
-      FIXED_SYSTEM_PROMPT,
-    );
+    expect(
+      JSON.stringify(deployedDefinition(assetService.populatedTrees)),
+    ).toContain(FIXED_SYSTEM_PROMPT);
   });
 
   // The coordinator's explicit ask: "unknown" (no authored sibling this
@@ -3348,7 +3376,7 @@ describe("createHubChatPlatform relaunch sweep", () => {
   }
 
   test("relaunches a routable-but-dead participant and tells the room", async () => {
-    const { db, platform, sessionService, notices } = createSweepFixture({
+    const { db, platform, notices } = createSweepFixture({
       runStatus: "failed",
     });
 
@@ -3385,11 +3413,10 @@ describe("createHubChatPlatform relaunch sweep", () => {
   // the redeployed bytes, and the room told — never the host's folded
   // step.
   test("relaunches a dead section participant as a fresh onTrigger section", async () => {
-    const { db, platform, sessionService, assetService, notices } =
-      createSweepFixture({
-        runStatus: "failed",
-        noopInference: false,
-      });
+    const { db, platform, assetService, notices } = createSweepFixture({
+      runStatus: "failed",
+      noopInference: false,
+    });
 
     const swept = await platform.sweepTerminalRuns();
 

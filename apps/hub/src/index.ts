@@ -203,7 +203,6 @@ import {
   createDrizzleRunKeyHistoryStore,
   createRunKeyHistoryListener,
   createRunKeyHistoryRoutes,
-  lookupRunKeyHistoryReconnectKey,
 } from "@corbits/run-key-history";
 
 import {
@@ -269,10 +268,7 @@ import {
   type PresenceRoomKey,
 } from "@corbits/presence";
 import { supportedCredentialProviders } from "@corbits/connections/credential-test";
-import {
-  CATALOG_WORKFLOWS,
-  createGitWorkflowPusher,
-} from "@corbits/seeding";
+import { CATALOG_WORKFLOWS, createGitWorkflowPusher } from "@corbits/seeding";
 import { createHubAPI } from "@corbits/hub-api-client";
 import {
   createDrizzlePendingSeedStore,
@@ -762,25 +758,6 @@ export async function createHub(config: HubConfig) {
       if (gate !== undefined) return gate(args);
       return baseLookups.registerSignalCorrelation(args);
     },
-    async lookupPublicKey(agentAddress: string): Promise<string | null> {
-      // CL-6281: the repair runs before `baseLookups` because the case
-      // it exists for is exactly the one `baseLookups` answers WRONGLY —
-      // a live run whose `workflow_run.public_key` missed its own
-      // `agent.deploy.ack` — so deferring to that answer would never
-      // reach the repair at all. It cannot widen which runs may
-      // reconnect: it reads the same `liveWorkflowRunStatuses` gate
-      // `baseLookups` does, so a retired run still fails closed here.
-      // See `@corbits/run-key-history`'s `reconnect.ts` for why
-      // preferring this package's own record on disagreement is safe.
-      const reconciled = await lookupRunKeyHistoryReconnectKey(
-        db,
-        runKeyHistoryStore,
-        agentAddress,
-      );
-      if (reconciled !== null) return reconciled;
-      const key = await baseLookups.lookupPublicKey(agentAddress);
-      return key;
-    },
   };
   const hubPublicKey = hexEncode(signingKey.publicKey);
   // CL-6149: a folded run's pinned tool packages (`toolPackagePins`)
@@ -933,7 +910,6 @@ export async function createHub(config: HubConfig) {
     router: sidecarRouter,
     db,
     eventCollectors,
-    agentRepoStore,
   });
   // A second, independent listener on the same `agent.deploy.ack` event
   // `createHubSessionOrchestrator` already reacts to above: that vendor
@@ -964,7 +940,6 @@ export async function createHub(config: HubConfig) {
     createDeployPack: agentRepoStore.createDeployPack,
     receiveAgentStatePack: agentRepoStore.receiveAgentStatePack,
     receiveWorkflowRunPack: agentRepoStore.receiveWorkflowRunPack,
-    getDeployRef: agentRepoStore.getDeployRef,
     getSigningPublicKey: agentRepoStore.getSigningPublicKey,
     repoStore: launchCaches.repoStore,
   };

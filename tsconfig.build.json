@@ -26,6 +26,9 @@
       "path": "./packages/artifact-ui/tsconfig.src.json"
     },
     {
+      "path": "./packages/artifacts-hub/tsconfig.src.json"
+    },
+    {
       "path": "./packages/bench/tsconfig.src.json"
     },
     {
@@ -101,6 +104,9 @@
       "path": "./packages/mcp-tools/tsconfig.src.json"
     },
     {
+      "path": "./packages/memory-hub/tsconfig.src.json"
+    },
+    {
       "path": "./packages/memory-tools/tsconfig.src.json"
     },
     {
@@ -129,6 +135,9 @@
     },
     {
       "path": "./packages/run-key-history/tsconfig.src.json"
+    },
+    {
+      "path": "./packages/run-scope/tsconfig.src.json"
     },
     {
       "path": "./packages/sandbox-sidecar/tsconfig.src.json"
