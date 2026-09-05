@@ -701,6 +701,7 @@
       "dependencies": {
         "@corbits/agent-events": "workspace:*",
         "@corbits/agent-lifecycle": "workspace:*",
+        "@corbits/agent-runtime": "workspace:*",
         "@corbits/folded-runs": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-common": "0.3.0",
@@ -1442,6 +1443,7 @@
       "name": "@corbits/webhook-triggers",
       "version": "0.0.1",
       "dependencies": {
+        "@corbits/agent-runtime": "workspace:*",
         "@corbits/error-sink": "workspace:*",
         "@corbits/folded-runs": "workspace:*",
         "@corbits/migration-runner": "workspace:*",
@@ -1914,7 +1916,6 @@
         "arktype": "catalog:",
       },
       "devDependencies": {
-        "@corbits/folded-runs": "workspace:*",
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },

@@ -2845,23 +2845,10 @@ export async function createHub(config: HubConfig) {
     bus: mailboxBus,
   });
 
-  // Shared `FoldedRunsDeps` for every one-shot Myra prompt below
-  // (agent-definition drafting): a real one-shot inference call
-  // that launches a folded run, awaits its single reply, and tears the run
+  // One-shot Myra prompt (agent-definition drafting): provisions a run
+  // through Interchange, awaits its single reply, and tears the run
   // down immediately — never a resident that outlives the request, so no
   // idle-sleep lifecycle is needed for it.
-  const oneShotFoldedRunsDeps = {
-    db,
-    sessionService,
-    assetService,
-    sidecarRouter,
-    eventCollectors,
-    credentialCipher,
-    hubPublicKey,
-    toolGrantsForPins,
-    mcpCredentialBindingsFor,
-    pinnedPackageCredentialBindingsFor,
-  };
 
   // Every genuine top-level deployment run, folded runs (workbench hosts,
   // invited agents) excluded — the scoped listing CL-6061 adds
@@ -3056,11 +3043,15 @@ export async function createHub(config: HubConfig) {
           run: (runnerInput) =>
             runOneShotFoldedPrompt(
               {
-                foldedRuns: oneShotFoldedRunsDeps,
+                db,
                 events: sidecarRouter.events,
                 cryptoProviders,
                 undeploy: (address, reason) =>
                   sidecarRouter.sendAgentUndeploy(address, reason),
+                assetService,
+                workflowAllocationService,
+                sessionService,
+                launchMode: AGENT_SECTION_MODE,
               },
               runnerInput,
             ),

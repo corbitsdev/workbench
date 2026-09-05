@@ -1,74 +1,84 @@
-// A synchronous wrapper around one folded run's opening turn: launch,
-// send the prompt, wait for exactly one reply, tear down the
-// subscription AND the launched run itself. Other run launchers return
-// as soon as the run starts, with the reply landing asynchronously via
-// a subscription to the run's own event stream and a later delivery
-// (an Inbox item, say); this module is the one place that turns that
-// same event stream into an awaitable promise, for a caller — a
-// drafting or planning prompt, e.g. — that has no such later-delivery
-// surface to hang a reply on and must resolve in the same
-// request/response cycle that asked for it.
+// A synchronous wrapper around one provisioned run's opening turn:
+// prepare, send the prompt, wait for exactly one reply, tear down the
+// subscription AND the launched run itself. Other launchers return as
+// soon as the run starts; this module turns the event stream into an
+// awaitable promise for a caller that has no later-delivery surface.
 import { and, eq } from "drizzle-orm";
+import {
+  AGENT_RUNTIME_ENTRY_PATH,
+  renderAgentRuntimeSourceTree,
+  type AgentRuntimeConfig,
+} from "@corbits/agent-runtime";
+import type { AgentLifecycle } from "@corbits/agent-lifecycle";
+import { connectorReplyContent, messageRunEnded } from "@corbits/agent-events";
+import { readDefinitionProjection, readFoldedBody } from "@corbits/folded-runs";
+import { listVisibleOfferings, type DB } from "@intx/db";
 import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
-import type { SidecarEventEmitter } from "@intx/hub-sessions";
-import { formatRunAddress } from "@intx/types";
-import type { FoldedBody } from "@intx/workflow-deploy";
-import type { AgentLifecycle } from "@corbits/agent-lifecycle";
-import { connectorReplyContent, messageRunEnded } from "@corbits/agent-events";
 import {
-  readDefinitionProjection,
-  readFoldedBody,
-  launchFoldedRun as launchFoldedRunDefault,
-  sendFoldedMailWithRetry as sendFoldedMailWithRetryDefault,
-  type CryptoProviderCache,
-  type FoldedRunsDeps,
-} from "@corbits/folded-runs";
+  DEFAULT_ASSET_REF,
+  type AssetService,
+  type SessionService,
+  type SidecarEventEmitter,
+  type WorkflowAllocationService,
+} from "@intx/hub-sessions";
+import { formatRunAddress } from "@intx/types";
+import type { CryptoProvider } from "@intx/types/runtime";
+import type { FoldedBody } from "@intx/workflow-deploy";
 
-const log = getLogger(["folded-runs", "one-shot-reply"]);
+const log = getLogger(["folded-run-one-shot"]);
+
+export type CryptoProviderCache = {
+  get(key: string): Promise<CryptoProvider>;
+};
 
 export type OneShotReply = {
   readonly content: string;
   readonly runId: string;
 };
 
+export type ProvisionedOneShot = {
+  readonly runId: string;
+  readonly address: string;
+  readonly sessionId: string;
+};
+
 export type OneShotRunnerDeps = {
-  readonly foldedRuns: FoldedRunsDeps;
+  readonly db: DB["db"];
   readonly events: SidecarEventEmitter;
   readonly cryptoProviders: CryptoProviderCache;
-  /** Same optional idle-sleep lifecycle tracking a longer-lived
-   * launched run takes — optional, since a caller that hasn't wired
-   * lifecycle tracking yet still gets a working call, just without
-   * idle-sleep bookkeeping. */
+  readonly undeploy: (address: string, reason: string) => Promise<void>;
   readonly lifecycle?: Pick<
     AgentLifecycle,
     "track" | "recordActivity" | "untrack"
   >;
+  readonly assetService: Pick<AssetService, "populateAsset">;
+  readonly workflowAllocationService: Pick<
+    WorkflowAllocationService,
+    "prepareProvisionedDeployment"
+  >;
+  readonly sessionService: Pick<SessionService, "sendUserMessage">;
+  readonly launchMode: AgentRuntimeConfig["mode"];
   /**
-   * Tears the launched run's address down on the host. REQUIRED,
-   * unlike `lifecycle`: a longer-lived launched run lives on after
-   * it launches, tracked by idle-sleep until it goes quiet — but a
-   * one-shot run has no further purpose once it settles, so it must be
-   * torn down immediately on every settle path (success, failure,
-   * timeout, or a send-path throw), never left for an idle sweep. The
-   * same raw port a host's own `AgentLifecycle`'s `undeploy` option
-   * already is — e.g. `apps/hub`'s `sidecarRouter.sendAgentUndeploy`.
+   * Test seam only. Production never sets these; they default to
+   * Interchange `prepareProvisionedDeployment` and `sendUserMessage`.
    */
-  readonly undeploy: (address: string, reason: string) => Promise<void>;
-  /**
-   * Test seam only — no production caller ever sets these. Defaults to
-   * the real `@corbits/folded-runs` `launchFoldedRun`/
-   * `sendFoldedMailWithRetry`. Exists because a whole-repo `bun test`
-   * run shares one process-wide module registry across every package —
-   * `@corbits/folded-runs`' own `test/launch.test.ts` and
-   * `test/mail.test.ts` dynamically import the exact modules a
-   * `mock.module("@corbits/folded-runs", ...)` here would replace — a
-   * plain injected override sidesteps that shared-registry collision
-   * entirely rather than racing it.
-   */
-  readonly launchFoldedRun?: typeof launchFoldedRunDefault;
-  readonly sendFoldedMailWithRetry?: typeof sendFoldedMailWithRetryDefault;
+  readonly provision?: (input: {
+    readonly tenantId: string;
+    readonly principalId: string;
+    readonly definitionId: string;
+    readonly foldedBody: FoldedBody;
+    readonly domain: string;
+  }) => Promise<ProvisionedOneShot>;
+  readonly sendMail?: (input: {
+    readonly tenantId: string;
+    readonly sessionId: string;
+    readonly agentAddress: string;
+    readonly from: string;
+    readonly content: string;
+    readonly cryptoProvider: CryptoProvider;
+  }) => Promise<void>;
 };
 
 export type OneShotPromptInput = {
@@ -104,79 +114,136 @@ export class FoldedRunFailedError extends Error {
   }
 }
 
+async function provisionOnAsset(
+  deps: OneShotRunnerDeps,
+  input: {
+    readonly tenantId: string;
+    readonly principalId: string;
+    readonly definitionAssetId: string;
+    readonly foldedBody: FoldedBody;
+    readonly domain: string;
+  },
+): Promise<ProvisionedOneShot> {
+  const offerings = [...(await listVisibleOfferings(deps.db, input.tenantId))].sort(
+    (a, b) => a.offering.priority - b.offering.priority,
+  );
+  const sourceOfferingIds = offerings.map((o) => o.offering.id);
+  const defaultSourceOfferingId = sourceOfferingIds[0];
+  if (defaultSourceOfferingId === undefined) {
+    throw new Error(
+      `no catalog offerings visible to tenant "${input.tenantId}"`,
+    );
+  }
+  const anchorRunId = generateId("workflowRun");
+  const sessionId = generateId("session");
+  const triggerAddress = formatRunAddress(anchorRunId, input.domain);
+  const { commitSha } = await deps.assetService.populateAsset({
+    assetId: input.definitionAssetId,
+    ref: DEFAULT_ASSET_REF,
+    principal: { kind: "hub" },
+    tree: {
+      files: renderAgentRuntimeSourceTree({
+        packageName: `agent-${anchorRunId}`,
+        config: {
+          workflowId: `wf_${anchorRunId}`,
+          agentId: anchorRunId,
+          triggerAddress,
+          systemPrompt: input.foldedBody.systemPrompt,
+          inferencePreferences: offerings.map((o) => ({
+            provider: o.provider.name,
+            model: o.model.canonicalName,
+          })),
+          toolPackagePins: [...input.foldedBody.toolPackagePins],
+          credentialBindings: [...input.foldedBody.credentialBindings],
+          mode: deps.launchMode,
+        },
+      }),
+      message: `Provision agent ${anchorRunId}`,
+    },
+  });
+  const prepared =
+    await deps.workflowAllocationService.prepareProvisionedDeployment({
+      tenantId: input.tenantId,
+      anchorRunId,
+      sessionId,
+      deploymentDomain: input.domain,
+      source: {
+        kind: "asset",
+        assetId: input.definitionAssetId,
+        package: { format: "source", commitSha },
+      },
+      entry: AGENT_RUNTIME_ENTRY_PATH,
+      definitionAssetId: input.definitionAssetId,
+      sourceAuthorityPrincipalId: input.principalId,
+      sourceOfferingIds,
+      defaultSourceOfferingId,
+      deployContent: { systemPrompt: "" },
+      ...(input.foldedBody.toolPackagePins.length > 0
+        ? { toolPackagePins: input.foldedBody.toolPackagePins }
+        : {}),
+    });
+  return {
+    runId: prepared.anchorRunId,
+    address: prepared.deploymentAddress,
+    sessionId,
+  };
+}
+
 /**
- * Launches a folded run against `input.definitionId`, sends
- * `input.prompt` as its opening mail, and resolves with the run's
- * accumulated `connector.reply` content once its opening turn's
- * `message.run.ended` bracket closes — or rejects with
- * `FoldedRunFailedError` (the run itself ended `"failed"`) or
- * `FoldedRunTimedOutError` (`input.timeoutMs` elapsed first).
+ * Provisions a run against `input.definitionId`, sends `input.prompt`
+ * as its opening mail, and resolves with the run's accumulated
+ * `connector.reply` content once its opening turn's `message.run.ended`
+ * bracket closes.
  *
- * Deliberately bypasses any task/Inbox-delivery launcher: this run
- * gets no owning row and no Inbox delivery — `launchFoldedRun` is
- * called directly with no `persistExtra`. The event subscription always
- * unsubscribes exactly once, and `deps.undeploy` always tears the
- * launched run down exactly once, on every exit path (success, run
- * failure, timeout, or a send-path throw) — a caller that runs many
- * one-shot prompts in one process never leaks listeners OR live run
- * instances.
+ * No owning workbench_launch row and no Inbox delivery. The event
+ * subscription unsubscribes exactly once, and `deps.undeploy` tears the
+ * run down exactly once, on every exit path.
  */
 export async function runOneShotFoldedPrompt(
   deps: OneShotRunnerDeps,
   input: OneShotPromptInput,
 ): Promise<OneShotReply> {
-  const definitionRow =
-    await deps.foldedRuns.db.query.workflowDefinition.findFirst({
-      where: and(
-        eq(workflowDefinition.id, input.definitionId),
-        eq(workflowDefinition.tenantId, input.tenantId),
-      ),
-    });
+  const definitionRow = await deps.db.query.workflowDefinition.findFirst({
+    where: and(
+      eq(workflowDefinition.id, input.definitionId),
+      eq(workflowDefinition.tenantId, input.tenantId),
+    ),
+  });
   if (definitionRow === undefined || definitionRow.assetId === null) {
     throw new OneShotDefinitionNotFoundError(input.definitionId);
   }
 
-  const tenantRow = await deps.foldedRuns.db.query.tenant.findFirst({
+  const tenantRow = await deps.db.query.tenant.findFirst({
     where: eq(tenantTable.id, input.tenantId),
   });
   if (tenantRow === undefined) {
     throw new Error(`No tenant "${input.tenantId}"`);
   }
 
-  const projection = await readDefinitionProjection(
-    deps.foldedRuns.db,
-    definitionRow,
-  );
-  const definitionBody = readFoldedBody(
+  const projection = await readDefinitionProjection(deps.db, definitionRow);
+  const foldedBody = readFoldedBody(
     projection,
     definitionRow.grantRequirements,
   );
-  const foldedBody: FoldedBody = {
-    systemPrompt: definitionBody.systemPrompt,
-    toolPackagePins: definitionBody.toolPackagePins,
-    grantRequirements: definitionBody.grantRequirements,
-    credentialBindings: definitionBody.credentialBindings,
-    model: definitionBody.model,
-  };
 
-  const instanceId = generateId("workflowRun");
-  const triggerAddress = formatRunAddress(instanceId, tenantRow.domain);
+  const launched = await (deps.provision !== undefined
+    ? deps.provision({
+        tenantId: input.tenantId,
+        principalId: input.principalId,
+        definitionId: input.definitionId,
+        foldedBody,
+        domain: tenantRow.domain,
+      })
+    : provisionOnAsset(deps, {
+        tenantId: input.tenantId,
+        principalId: input.principalId,
+        definitionAssetId: definitionRow.assetId,
+        foldedBody,
+        domain: tenantRow.domain,
+      }));
 
-  const launchRun = deps.launchFoldedRun ?? launchFoldedRunDefault;
-  const sendMail =
-    deps.sendFoldedMailWithRetry ?? sendFoldedMailWithRetryDefault;
-
-  const launched = await launchRun(deps.foldedRuns, {
-    tenantId: input.tenantId,
-    instanceId,
-    triggerAddress,
-    definitionId: input.definitionId,
-    foldedBody,
-    launchLabel: "the planning run",
-  });
-
-  deps.lifecycle?.track(triggerAddress);
-  deps.lifecycle?.recordActivity(triggerAddress);
+  deps.lifecycle?.track(launched.address);
+  deps.lifecycle?.recordActivity(launched.address);
 
   return new Promise<OneShotReply>((resolve, reject) => {
     let settled = false;
@@ -185,7 +252,7 @@ export async function runOneShotFoldedPrompt(
     const unsubscribe = deps.events.on(
       "agent.event",
       ({ agentAddress, event }) => {
-        if (agentAddress !== triggerAddress || settled) return;
+        if (agentAddress !== launched.address || settled) return;
 
         const content = connectorReplyContent(event);
         if (content !== undefined) {
@@ -203,30 +270,24 @@ export async function runOneShotFoldedPrompt(
           return;
         }
         void settle("planning-run-complete", () => {
-          resolve({ content: accumulated, runId: instanceId });
+          resolve({ content: accumulated, runId: launched.runId });
         });
       },
     );
 
-    // Tears the run down exactly once, on whichever exit path calls it
-    // first — success, failure, timeout, or a send-path throw. `finish`
-    // (the caller's own resolve/reject) only runs once teardown has
-    // settled, so a failed `undeploy` never masks the real outcome and
-    // never leaves the outer promise hanging: it's logged and teardown
-    // proceeds to `untrack` regardless.
     async function settle(reason: string, finish: () => void): Promise<void> {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       unsubscribe();
       try {
-        await deps.undeploy(triggerAddress, reason);
+        await deps.undeploy(launched.address, reason);
       } catch (err) {
-        log.error`one-shot run ${triggerAddress}: undeploy failed during teardown (${reason}): ${
+        log.error`one-shot run ${launched.address}: undeploy failed during teardown (${reason}): ${
           err instanceof Error ? err.message : String(err)
         }`;
       }
-      deps.lifecycle?.untrack(triggerAddress);
+      deps.lifecycle?.untrack(launched.address);
       finish();
     }
 
@@ -238,29 +299,28 @@ export async function runOneShotFoldedPrompt(
 
     void (async () => {
       try {
-        // Keyed by the launched run's instance id (`generateId("workflowRun")`),
-        // the same string shape chat uses for workbench ids — the host
-        // injects its process-wide cache rather than this runner minting
-        // one of its own.
-        const cryptoProvider = await deps.cryptoProviders.get(instanceId);
-        const sent = await sendMail(deps.foldedRuns, {
-          tenantId: input.tenantId,
-          sessionId: launched.sessionId,
-          agentAddress: triggerAddress,
+        const cryptoProvider = await deps.cryptoProviders.get(launched.runId);
+        if (deps.sendMail !== undefined) {
+          await deps.sendMail({
+            tenantId: input.tenantId,
+            sessionId: launched.sessionId,
+            agentAddress: launched.address,
+            from: `${input.principalId}@${tenantRow.domain}`,
+            content: input.prompt,
+            cryptoProvider,
+          });
+          return;
+        }
+        await deps.sessionService.sendUserMessage({
+          agentAddress: launched.address,
           from: `${input.principalId}@${tenantRow.domain}`,
-          domain: tenantRow.domain,
+          messageId: `<${crypto.randomUUID()}@${tenantRow.domain}>`,
+          date: new Date(),
           content: input.prompt,
+          sessionId: launched.sessionId,
+          tenantId: input.tenantId,
           cryptoProvider,
         });
-        if (!sent.ok) {
-          void settle("planning-run-send-failed", () => {
-            reject(
-              sent.error instanceof Error
-                ? sent.error
-                : new Error(String(sent.error)),
-            );
-          });
-        }
       } catch (cause) {
         void settle("planning-run-send-failed", () => {
           reject(cause instanceof Error ? cause : new Error(String(cause)));

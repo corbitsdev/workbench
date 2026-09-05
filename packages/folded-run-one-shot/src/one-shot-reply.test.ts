@@ -1,13 +1,5 @@
-// `launchFoldedRun` and `sendFoldedMailWithRetry` — the two free
-// functions this module calls directly rather than threading through
-// `FoldedRunsDeps` — are stubbed via `OneShotRunnerDeps`' own
-// `launchFoldedRun`/`sendFoldedMailWithRetry` test seam (a plain
-// injected override), NOT `mock.module`: `test/launch.test.ts` and
-// `test/mail.test.ts`, this package's own tests for those two
-// modules, both dynamically import the exact files a
-// `mock.module("./launch", ...)`/`mock.module("./mail", ...)` here
-// would replace, in the same `bun test` process — a shared-registry
-// collision a plain injected fake sidesteps entirely.
+// `provision` and `sendMail` are stubbed via `OneShotRunnerDeps`' own
+// test seam (a plain injected override), NOT `mock.module`.
 import { describe, expect, test } from "bun:test";
 
 import {
@@ -100,58 +92,36 @@ function createFakeEmitter() {
   };
 }
 
-/** A fake `launchFoldedRun`: records every call, always "succeeds," and
- * captures the `triggerAddress` it was launched under so a test can
- * emit fake sidecar events for that exact address without needing to
- * predict the real (randomly generated) instance id. */
-function createFakeLaunch() {
-  const calls: { triggerAddress: string; instanceId: string }[] = [];
+/** A fake `provision`: records every call, always succeeds, and
+ * returns a stable address so a test can emit sidecar events for it. */
+function createFakeProvision() {
+  const calls: { address: string; runId: string }[] = [];
   return {
     calls,
-    launchFoldedRun: async (
-      _foldedRuns: unknown,
-      params: { triggerAddress: string; instanceId: string },
-    ) => {
-      calls.push({
-        triggerAddress: params.triggerAddress,
-        instanceId: params.instanceId,
-      });
-      return { instancePrincipalId: "prn_run", sessionId: "sess_1" };
+    provision: async () => {
+      const runId = "run_1";
+      const address = `${runId}@acme.example`;
+      calls.push({ address, runId });
+      return { runId, address, sessionId: "sess_1" };
     },
   };
 }
 
-/** A fake `sendFoldedMailWithRetry`: records every call and either
- * succeeds, returns an `!ok` result, or throws — controlled per test. */
-function createFakeSend(behavior: "ok" | "not-ok" | "throws" = "ok"): {
+/** A fake `sendMail`: records every call and either succeeds or throws. */
+function createFakeSend(behavior: "ok" | "throws" = "ok"): {
   calls: number;
-  sendFoldedMailWithRetry: (
-    ...args: unknown[]
-  ) => Promise<
-    { ok: true; mail: unknown } | { ok: false; error: Error; attempts: number }
-  >;
+  sendMail: (...args: unknown[]) => Promise<void>;
 } {
   let calls = 0;
   return {
     get calls() {
       return calls;
     },
-    sendFoldedMailWithRetry: async () => {
+    sendMail: async () => {
       calls++;
       if (behavior === "throws") {
         throw new Error("cipher unavailable");
       }
-      if (behavior === "not-ok") {
-        return {
-          ok: false as const,
-          error: new Error("send failed"),
-          attempts: 3,
-        };
-      }
-      return {
-        ok: true as const,
-        mail: { id: "mail_1", createdAt: new Date().toISOString() },
-      };
     },
   };
 }
@@ -192,13 +162,11 @@ function createFakeLifecycle() {
 
 function createBaseDeps() {
   return {
-    foldedRuns: {
-      db: fakeDb(),
-      assetService: {},
-      sessionService: {},
-      sidecarRouter: {},
-      eventCollectors: {},
-    },
+    db: fakeDb(),
+    assetService: {},
+    workflowAllocationService: {},
+    sessionService: {},
+    launchMode: { kind: "section" as const, turnTimeoutMs: 1 },
     cryptoProviders: {
       async get() {
         return {};
@@ -218,16 +186,16 @@ const INPUT = {
 describe("runOneShotFoldedPrompt", () => {
   test("happy path resolves with accumulated reply content, tears the run down, and untracks it", async () => {
     const fake = createFakeEmitter();
-    const { launchFoldedRun, calls: launchCalls } = createFakeLaunch();
+    const { provision, calls: launchCalls } = createFakeProvision();
     const fakeSend = createFakeSend("ok");
-    const { sendFoldedMailWithRetry } = fakeSend;
+    const { sendMail } = fakeSend;
     const { undeploy, calls: undeployCalls } = createFakeUndeploy();
     const { lifecycle, tracked, activity, untracked } = createFakeLifecycle();
     const deps = {
       ...createBaseDeps(),
       events: fake.emitter,
-      launchFoldedRun,
-      sendFoldedMailWithRetry,
+      provision,
+      sendMail,
       undeploy,
       lifecycle,
     } as never;
@@ -236,7 +204,7 @@ describe("runOneShotFoldedPrompt", () => {
 
     // Let the async launch+send chain settle before emitting events.
     await new Promise((r) => setTimeout(r, 10));
-    const triggerAddress = firstCall(launchCalls).triggerAddress;
+    const triggerAddress = firstCall(launchCalls).address;
     expect(triggerAddress).toBeTruthy();
 
     fake.emit("agent.event", {
@@ -258,7 +226,7 @@ describe("runOneShotFoldedPrompt", () => {
 
     const result = await promise;
     expect(result.content).toBe("Hello world");
-    expect(result.runId).toBe(firstCall(launchCalls).instanceId);
+    expect(result.runId).toBe(firstCall(launchCalls).runId);
     expect(launchCalls).toHaveLength(1);
     expect(fakeSend.calls).toBe(1);
     expect(fake.listenerCount("agent.event")).toBe(0);
@@ -272,20 +240,20 @@ describe("runOneShotFoldedPrompt", () => {
 
   test("a failed run rejects with FoldedRunFailedError, unsubscribes, and tears the run down", async () => {
     const fake = createFakeEmitter();
-    const { launchFoldedRun, calls: launchCalls } = createFakeLaunch();
-    const { sendFoldedMailWithRetry } = createFakeSend("ok");
+    const { provision, calls: launchCalls } = createFakeProvision();
+    const { sendMail } = createFakeSend("ok");
     const { undeploy, calls: undeployCalls } = createFakeUndeploy();
     const deps = {
       ...createBaseDeps(),
       events: fake.emitter,
-      launchFoldedRun,
-      sendFoldedMailWithRetry,
+      provision,
+      sendMail,
       undeploy,
     } as never;
 
     const promise = runOneShotFoldedPrompt(deps, INPUT);
     await new Promise((r) => setTimeout(r, 10));
-    const triggerAddress = firstCall(launchCalls).triggerAddress;
+    const triggerAddress = firstCall(launchCalls).address;
 
     fake.emit("agent.event", {
       agentAddress: triggerAddress,
@@ -304,22 +272,19 @@ describe("runOneShotFoldedPrompt", () => {
 
   test("an unknown definition throws OneShotDefinitionNotFoundError", async () => {
     const fake = createFakeEmitter();
-    const { launchFoldedRun } = createFakeLaunch();
-    const { sendFoldedMailWithRetry } = createFakeSend("ok");
+    const { provision } = createFakeProvision();
+    const { sendMail } = createFakeSend("ok");
     const { undeploy } = createFakeUndeploy();
     const deps = {
       ...createBaseDeps(),
       events: fake.emitter,
-      launchFoldedRun,
-      sendFoldedMailWithRetry,
+      provision,
+      sendMail,
       undeploy,
-      foldedRuns: {
-        ...createBaseDeps().foldedRuns,
-        db: {
-          query: {
-            workflowDefinition: { findFirst: async () => undefined },
-            tenant: { findFirst: async () => TENANT_ROW },
-          },
+      db: {
+        query: {
+          workflowDefinition: { findFirst: async () => undefined },
+          tenant: { findFirst: async () => TENANT_ROW },
         },
       },
     } as never;
@@ -333,8 +298,8 @@ describe("runOneShotFoldedPrompt", () => {
 describe("send-path throw (not an !ok result)", () => {
   test("a throwing cryptoProviders.get is caught, torn down, and rejects promptly with the real cause", async () => {
     const fake = createFakeEmitter();
-    const { launchFoldedRun, calls: launchCalls } = createFakeLaunch();
-    const { sendFoldedMailWithRetry } = createFakeSend("ok");
+    const { provision, calls: launchCalls } = createFakeProvision();
+    const { sendMail } = createFakeSend("ok");
     const { undeploy, calls: undeployCalls } = createFakeUndeploy();
     const deps = {
       ...createBaseDeps(),
@@ -344,8 +309,8 @@ describe("send-path throw (not an !ok result)", () => {
         },
       },
       events: fake.emitter,
-      launchFoldedRun,
-      sendFoldedMailWithRetry,
+      provision,
+      sendMail,
       undeploy,
     } as never;
 
@@ -357,7 +322,7 @@ describe("send-path throw (not an !ok result)", () => {
       caught = err;
     }
     const elapsed = Date.now() - started;
-    const triggerAddress = firstCall(launchCalls).triggerAddress;
+    const triggerAddress = firstCall(launchCalls).address;
 
     // The real cause propagates directly, well before the timeout.
     expect(caught).toBeInstanceOf(Error);
@@ -373,21 +338,21 @@ describe("send-path throw (not an !ok result)", () => {
 describe("timeout tears the launched run down", () => {
   test("a timeout unsubscribes AND undeploys the run it launched, before rejecting", async () => {
     const fake = createFakeEmitter();
-    const { launchFoldedRun, calls: launchCalls } = createFakeLaunch();
-    const { sendFoldedMailWithRetry } = createFakeSend("ok");
+    const { provision, calls: launchCalls } = createFakeProvision();
+    const { sendMail } = createFakeSend("ok");
     const { undeploy, calls: undeployCalls } = createFakeUndeploy();
     const deps = {
       ...createBaseDeps(),
       events: fake.emitter,
-      launchFoldedRun,
-      sendFoldedMailWithRetry,
+      provision,
+      sendMail,
       undeploy,
     } as never;
 
     await expect(
       runOneShotFoldedPrompt(deps, { ...INPUT, timeoutMs: 100 }),
     ).rejects.toBeInstanceOf(FoldedRunTimedOutError);
-    const triggerAddress = firstCall(launchCalls).triggerAddress;
+    const triggerAddress = firstCall(launchCalls).address;
 
     // A run WAS launched (workflow_run row + deployed sidecar instance)...
     expect(launchCalls).toHaveLength(1);
