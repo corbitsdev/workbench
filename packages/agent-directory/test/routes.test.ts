@@ -21,6 +21,7 @@ import { CORBITS_TOOLS_REGISTRY } from "@corbits/tool-registry-publish";
 import {
   buildAgentDefinitionWorkflow,
   serializeAgentDefinitionWorkflow,
+  withAgentToolPackagePin,
 } from "../src/agent-workflow";
 import {
   agentDefinitionSourceTree,
@@ -1064,6 +1065,70 @@ test("PUT /:definitionId writes the new system prompt in a single source-tree co
   });
 });
 
+// CL-7389: PUT /:definitionId only rewrites the name and system prompt —
+// it must never re-touch tool-package pins, so a tarball that lands in
+// the registry after this definition deployed never silently moves an
+// already-deployed specialist's stored pin.
+test("PUT instructions after a newer tarball lands keeps the stored pin version", async () => {
+  const pinned = withAgentToolPackagePin(
+    serializeAgentDefinitionWorkflow(
+      buildAgentDefinitionWorkflow({
+        handle: "research-buddy",
+        tenantDomain: TENANT.domain,
+        description: "",
+        systemPrompt: "You are a careful research assistant.",
+      }),
+    ),
+    { name: "@corbits/memory-tools", version: "1.4.0" },
+  );
+  const tree = agentDefinitionSourceTree({
+    handle: "research-buddy",
+    workflowJson: pinned,
+  });
+  let current = new TextEncoder().encode(tree[AGENT_DEFINITION_ENTRY_PATH]);
+  let writtenEntry: string | undefined;
+  let listCalls = 0;
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: async () => current,
+      populateAsset: (params) => {
+        const entry = params.tree.files[AGENT_DEFINITION_ENTRY_PATH];
+        if (typeof entry !== "string") {
+          throw new Error("populateAsset wrote no entry module");
+        }
+        writtenEntry = entry;
+        current = new TextEncoder().encode(entry);
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+      // A newer tarball has landed since this definition deployed. The
+      // PUT below must never look at it.
+      listAssetBlobs: () => {
+        listCalls++;
+        return Promise.resolve([
+          "corbits-memory-tools-1.4.0.tgz",
+          "corbits-memory-tools-1.5.0.tgz",
+        ]);
+      },
+    }),
+    fakeInstructionsDb({
+      id: "def_1",
+      assetId: "ast_1",
+      name: "research-buddy",
+    }),
+  );
+  const response = await put(app, "/def_1", {
+    name: "Research Buddy",
+    systemPrompt: "You are now a blunt, no-nonsense researcher.",
+  });
+  expect(response.status).toBe(200);
+  expect(listCalls).toBe(0);
+  expect(
+    pinsFrom(
+      definitionFrom({ [AGENT_DEFINITION_ENTRY_PATH]: writtenEntry ?? "" }),
+    ),
+  ).toEqual([{ name: "@corbits/memory-tools", version: "1.4.0" }]);
+});
+
 test("PUT /:definitionId 404s for an unknown definition", async () => {
   const app = buildApp(fakeAssetService(), fakeInstructionsDb(undefined));
   const response = await put(app, "/def_missing", {
@@ -1713,6 +1778,77 @@ test("adding a tool package pin merges it into the definition in one commit, nam
   };
   expect(body.toolPackagePins).toEqual([
     { name: "@corbits/github-tools", version: "3.1.0" },
+  ]);
+});
+
+test("re-adding an already-pinned tool package keeps its stored version after a newer tarball lands", async () => {
+  let writtenFiles: Record<string, string | Uint8Array> | undefined;
+  let writtenMessage: string | undefined;
+  const app = buildApp(
+    fakeAssetService({
+      readAssetBlob: readAssetBlobFor(
+        new TextEncoder().encode(
+          agentDefinitionSourceTree({
+            handle: "research-buddy",
+            workflowJson: withAgentToolPackagePin(
+              serializeAgentDefinitionWorkflow(
+                buildAgentDefinitionWorkflow({
+                  handle: "research-buddy",
+                  tenantDomain: TENANT.domain,
+                  description: "",
+                  systemPrompt: "You are a careful research assistant.",
+                }),
+              ),
+              { name: "@corbits/memory-tools", version: "1.4.0" },
+            ),
+          })[AGENT_DEFINITION_ENTRY_PATH] as string,
+        ),
+      ),
+      populateAsset: (params) => {
+        writtenFiles = params.tree.files;
+        writtenMessage = params.tree.message;
+        return Promise.resolve({ commitSha: "deadbeef" });
+      },
+      // A newer tarball has landed since the pin was first added — this
+      // re-add must not bump onto it.
+      listAssetBlobs: () =>
+        Promise.resolve([
+          "corbits-memory-tools-1.4.0.tgz",
+          "corbits-memory-tools-1.5.0.tgz",
+        ]),
+    }),
+    withToolPackageRegistryQueries(
+      fakeInstructionsDb({
+        id: "def_1",
+        assetId: "ast_1",
+        name: "research-buddy",
+      }),
+    ),
+    allowAllRequireGrant,
+    fakeHistory(),
+    {
+      resolve: () =>
+        Promise.resolve({
+          toolPackages: [{ name: "@corbits/memory-tools" }],
+          skills: [],
+          models: [],
+        }),
+    },
+  );
+  const response = await postTo(app, "/def_1/capabilities", {
+    kind: "toolPackage",
+    name: "@corbits/memory-tools",
+  });
+  expect(response.status).toBe(200);
+  expect(pinsFrom(definitionFrom(writtenFiles))).toEqual([
+    { name: "@corbits/memory-tools", version: "1.4.0" },
+  ]);
+  expect(writtenMessage).not.toContain("Add");
+  const body = (await response.json()) as {
+    toolPackagePins: { name: string; version: string }[];
+  };
+  expect(body.toolPackagePins).toEqual([
+    { name: "@corbits/memory-tools", version: "1.4.0" },
   ]);
 });
 
