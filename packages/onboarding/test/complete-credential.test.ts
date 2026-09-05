@@ -478,12 +478,7 @@ describe("completeCredentialSetup", () => {
       kind: "seeded",
       tenantId: TENANT_ID,
       tenantSlug: TENANT_SLUG,
-      workflows: [
-        "assistant",
-        "echo",
-        "workbench-digest",
-        "last-30-days-research",
-      ],
+      workflows: ["assistant"],
     });
     expect(seedCatalogCalls).toHaveLength(1);
     expect(seedTenantCalls[0]?.model.provider).toBe("anthropic");
@@ -528,12 +523,7 @@ describe("completeCredentialSetup", () => {
       kind: "seeded",
       tenantId: TENANT_ID,
       tenantSlug: TENANT_SLUG,
-      workflows: [
-        "assistant",
-        "echo",
-        "workbench-digest",
-        "last-30-days-research",
-      ],
+      workflows: ["assistant"],
     });
     expect(seedCatalogCalls).toHaveLength(1);
     expect(seedTenantCalls).toHaveLength(1);
@@ -578,12 +568,7 @@ describe("completeCredentialSetup", () => {
       kind: "seeded",
       tenantId: TENANT_ID,
       tenantSlug: TENANT_SLUG,
-      workflows: [
-        "assistant",
-        "echo",
-        "workbench-digest",
-        "last-30-days-research",
-      ],
+      workflows: ["assistant"],
     });
     expect(seedCatalogCalls).toHaveLength(1);
     expect(seedCatalogCalls[0]?.provider).toBe("groq");
@@ -970,12 +955,7 @@ describe("completeCredentialSetup", () => {
 
     expect(result.kind).toBe("seeded");
     if (result.kind === "seeded") {
-      expect(result.workflows).toEqual([
-        "assistant",
-        "echo",
-        "workbench-digest",
-        "last-30-days-research",
-      ]);
+      expect(result.workflows).toEqual(["assistant"]);
     }
   });
 
@@ -1458,8 +1438,8 @@ describe("completeCredentialSetup", () => {
     // (one POST each for model and offering); the rest of the chain is
     // still a single provider/credential row.
     const anthropicCatalogSize = CATALOG_SEEDS.anthropic.models.length;
-    expect(assetCreatePosts).toBe(4);
-    expect(deploymentCreatePosts).toBe(4);
+    expect(assetCreatePosts).toBe(1);
+    expect(deploymentCreatePosts).toBe(1);
     expect(catalogModelCreatePosts).toBe(anthropicCatalogSize);
     expect(catalogProviderCreatePosts).toBe(1);
     expect(catalogOfferingCreatePosts).toBe(anthropicCatalogSize);
@@ -1468,8 +1448,8 @@ describe("completeCredentialSetup", () => {
     // existing row rather than leaving it untouched (the CL-6103 fix,
     // updated by CL-6123 to no longer require a probe first).
     expect(credentialRotatePatches).toBe(1);
-    expect(assets.length).toBe(4);
-    expect(deployments.length).toBe(4);
+    expect(assets.length).toBe(1);
+    expect(deployments.length).toBe(1);
   });
 
   test("a pasted key with no metadata stays an ordinary api_key credential", async () => {
@@ -1563,12 +1543,7 @@ describe("completeCredentialSetup", () => {
       principalId: PRINCIPAL_ID,
       tenantDomain: "alice-user1.bench.local",
       deployed: [],
-      pending: [
-        "assistant",
-        "echo",
-        "workbench-digest",
-        "last-30-days-research",
-      ],
+      pending: ["assistant"],
       message: "Your workbench is ready — agents will come online shortly.",
     });
   });
@@ -1767,12 +1742,7 @@ describe("ensureSeeded (the slow half)", () => {
 
     expect(result).toEqual({
       kind: "seeded",
-      workflows: [
-        "assistant",
-        "echo",
-        "workbench-digest",
-        "last-30-days-research",
-      ],
+      workflows: ["assistant"],
     });
     expectNoConfirmation(seedTenantCalls);
     expect(seedTenantCalls[0]?.model.provider).toBe("anthropic");
@@ -1783,6 +1753,9 @@ describe("ensureSeeded (the slow half)", () => {
     // (bench-provisioning's `runOnce` → `ensureSeeded` → `seedTenant`),
     // and `seedTenant` works through the list in order at ~20s each — so
     // the order handed in here is the order a fresh signup experiences.
+    // CL-7074 narrowed DEFAULT_WORKFLOWS to just the setup agent, so
+    // "before anything else" is now trivially satisfied by being the
+    // only entry — this still pins that fact rather than assuming it.
     const workflowOrder: string[] = [];
 
     await ensureSeeded({
@@ -1806,7 +1779,7 @@ describe("ensureSeeded (the slow half)", () => {
     });
 
     expect(workflowOrder[0]).toBe(SETUP_AGENT_ASSET_NAME);
-    expect(workflowOrder.length).toBeGreaterThan(1);
+    expect(workflowOrder.length).toBeGreaterThanOrEqual(1);
   });
 
   test("two overlapping calls for the same tenant never double-deploy — the same 409-then-list tolerance seedTenant already has", async () => {
@@ -1984,10 +1957,10 @@ describe("ensureSeeded (the slow half)", () => {
 
     expect(first.kind).toBe("seeded");
     expect(second.kind).toBe("seeded");
-    expect(assetCreatePosts).toBe(4);
-    expect(deploymentCreatePosts).toBe(4);
-    expect(assets.length).toBe(4);
-    expect(deployments.length).toBe(4);
+    expect(assetCreatePosts).toBe(1);
+    expect(deploymentCreatePosts).toBe(1);
+    expect(assets.length).toBe(1);
+    expect(deployments.length).toBe(1);
   });
 
   // CL-6264: tonight's live failure — completeCredentialSetup ->
@@ -2056,8 +2029,8 @@ describe("ensureSeeded (the slow half)", () => {
 
     expect(result).toEqual({
       kind: "seeded-pending-agents",
-      deployed: ["assistant", "echo"],
-      pending: ["workbench-digest", "last-30-days-research"],
+      deployed: ["assistant"],
+      pending: [],
       message: "Your workbench is ready — agents will come online shortly.",
     });
   });

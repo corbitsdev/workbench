@@ -13,6 +13,7 @@ import { describe, expect, test } from "bun:test";
 import { CORBITS_TOOL_PACKAGE_DIRS } from "@corbits/tool-registry-publish";
 import {
   CATALOG_TEST_WORKFLOWS,
+  CATALOG_WORKFLOWS,
   DEFAULT_WORKFLOWS,
   type DefaultWorkflow,
 } from "../src/seed";
@@ -85,7 +86,11 @@ function pinsFor(workflows: readonly DefaultWorkflow[]): {
 describe("corbits-tools registry coverage", () => {
   test("every @corbits pin among the workflows seedTenant deploys is published by CORBITS_TOOL_PACKAGE_DIRS", () => {
     const published = publishedCorbitsPackageNames();
-    const deployed = pinsFor([...DEFAULT_WORKFLOWS, ...CATALOG_TEST_WORKFLOWS]);
+    const deployed = pinsFor([
+      ...DEFAULT_WORKFLOWS,
+      ...CATALOG_WORKFLOWS,
+      ...CATALOG_TEST_WORKFLOWS,
+    ]);
     const missing = deployed.filter(({ pin }) => !published.has(pin.name));
 
     if (missing.length > 0) {
@@ -118,9 +123,11 @@ describe("corbits-tools registry coverage", () => {
   test("catalog-wide (informational): unpublished @corbits pins outside the deployed set are exactly the known, tracked gap", () => {
     const published = publishedCorbitsPackageNames();
     const deployedAssetNames = new Set(
-      [...DEFAULT_WORKFLOWS, ...CATALOG_TEST_WORKFLOWS].map(
-        (workflow) => workflow.assetName,
-      ),
+      [
+        ...DEFAULT_WORKFLOWS,
+        ...CATALOG_WORKFLOWS,
+        ...CATALOG_TEST_WORKFLOWS,
+      ].map((workflow) => workflow.assetName),
     );
     const workflowsDir = path.join(REPO_ROOT, "workflows");
     const pinPattern = /name:\s*"(@corbits\/[a-zA-Z0-9_-]+)"/g;
