@@ -2289,15 +2289,13 @@ export async function createHub(config: HubConfig) {
             db,
             sessionService,
             assetService,
-            sidecarRouter,
-            eventCollectors,
+            workflowAllocationService,
             credentialCipher,
-            toolGrantsForPins,
-            mcpCredentialBindingsFor,
-            pinnedPackageCredentialBindingsFor,
             cryptoProviderCache: cryptoProviders,
             launchMode: AGENT_SECTION_MODE,
-            persistLaunch: workbenchLaunchPersistExtra,
+            persistLaunch: async (input) => {
+              await workbenchLaunchPersistExtra(input)(db);
+            },
             recordLaunchSources: ({ instanceId, sourcesDigest }) =>
               recordSourcesDigest(db, instanceId, sourcesDigest),
           },
