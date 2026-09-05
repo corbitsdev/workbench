@@ -43,6 +43,12 @@ export type CreateScheduledWorkflowRoutesDeps = {
    * the caller (`apps/hub`) rather than imported here: `@corbits/seeding`
    * already depends on this package, so importing it back would cycle. */
   catalogAssetNames?: readonly string[];
+  /** `@corbits/seeding`'s `catalogWorkflowDeployableOnThisPin`, passed in
+   * rather than imported here for the same reason `catalogAssetNames`
+   * is: `@corbits/seeding` already depends on this package. Defaults to
+   * "everything is deployable" so a caller that never wires this in
+   * (a test double, an older caller) keeps its prior behavior. */
+  catalogWorkflowDeployable?: (assetName: string) => boolean;
   listAvailable?: (
     db: DB["db"],
     tenantId: string,
@@ -56,11 +62,15 @@ export function createScheduledWorkflowRoutes({
   runNow,
   listScheduled = listScheduledWorkflowDefinitions,
   catalogAssetNames = [],
+  catalogWorkflowDeployable,
   listAvailable = (dbHandle, tenantId, names) =>
     listAvailableCatalogWorkflows({
       db: dbHandle,
       tenantId,
       catalogAssetNames: names,
+      ...(catalogWorkflowDeployable !== undefined
+        ? { isDeployableOnThisPin: catalogWorkflowDeployable }
+        : {}),
     }),
 }: CreateScheduledWorkflowRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();

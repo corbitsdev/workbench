@@ -52,3 +52,6 @@ export function missingConnectionsReason(
 }
 
 export const CONNECT_LINK_LABEL = "Go to Plugins";
+
+export const NOT_DEPLOYABLE_YET_REASON =
+  "Coming with the next platform update.";

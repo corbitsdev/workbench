@@ -45,6 +45,7 @@ import {
   AVAILABLE_SECTION_SUBTITLE,
   AVAILABLE_SECTION_TITLE,
   CONNECT_LINK_LABEL,
+  NOT_DEPLOYABLE_YET_REASON,
   addFailureMessage,
   addSuccessMessage,
   missingConnectionsReason,
@@ -107,7 +108,8 @@ export function AvailableCatalogWorkflowsSection({
       </div>
       <ul className="flex flex-col gap-2">
         {items.map((entry) => {
-          const disabled = !entry.connectionsSatisfied;
+          const notDeployableYet = !entry.deployable;
+          const disabled = notDeployableYet || !entry.connectionsSatisfied;
           const busy = pendingAssetName === entry.assetName;
           return (
             <li
@@ -120,7 +122,11 @@ export function AvailableCatalogWorkflowsSection({
                 <span className="text-xs text-[var(--ui-fg-muted)]">
                   {entry.description}
                 </span>
-                {disabled ? (
+                {notDeployableYet ? (
+                  <span className="text-xs text-[var(--ui-fg-muted)]">
+                    {NOT_DEPLOYABLE_YET_REASON}
+                  </span>
+                ) : !entry.connectionsSatisfied ? (
                   <span className="flex items-center gap-2 text-xs text-[var(--ui-fg-muted)]">
                     {missingConnectionsReason(entry.missingConnections)}
                     <Link to={PLUGINS_PATH_PREFIX} className="underline">

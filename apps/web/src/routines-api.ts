@@ -39,6 +39,8 @@ export const AvailableCatalogWorkflow = type({
   requiredConnections: "string[]",
   missingConnections: "string[]",
   connectionsSatisfied: "boolean",
+  deployable: "boolean",
+  "notDeployableReason?": "'credential_bindings_unsupported'",
 });
 
 export type AvailableCatalogWorkflow = typeof AvailableCatalogWorkflow.infer;
