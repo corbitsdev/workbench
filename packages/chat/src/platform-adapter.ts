@@ -1264,11 +1264,28 @@ export function createHubChatPlatform(
         attachments !== undefined
           ? { ...sendMailBase, attachments }
           : sendMailBase;
-      const sent = await sendFoldedMailWithReclaimRetry(
+      const withReplyTo =
         input.content.replyTo !== undefined
           ? { ...withAttachments, replyTo: input.content.replyTo }
-          : withAttachments,
-      );
+          : withAttachments;
+      // RFC 5322 threading, straight from the timeline row this mail
+      // carries (CL-7450): its own `Message-ID`, and the parentage a
+      // reply correlates back through. `replyTo` above is the unrelated
+      // mention-fan-out room hint `chat-orchestrator.ts` reads back off
+      // the event — both can be present on the same mail.
+      const withThreading = {
+        ...withReplyTo,
+        ...(input.content.messageId !== undefined
+          ? { messageId: input.content.messageId }
+          : {}),
+        ...(input.content.inReplyTo !== undefined
+          ? { inReplyTo: input.content.inReplyTo }
+          : {}),
+        ...(input.content.references !== undefined
+          ? { references: input.content.references }
+          : {}),
+      };
+      const sent = await sendFoldedMailWithReclaimRetry(withThreading);
 
       lifecycle?.recordActivity(deliveryAddress);
 

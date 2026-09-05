@@ -117,7 +117,10 @@ import { cookiesFromHeader } from "@corbits/hub-api-client";
 import type { AgentTurnStore } from "./agent-turns";
 import type { ThreadStore } from "./threads";
 import { ThreadDepthCapError } from "./threads";
-import type { MailboxFanoutDeps } from "./mailbox-fanout";
+import {
+  MailboxFanoutFailedError,
+  type MailboxFanoutDeps,
+} from "./mailbox-fanout";
 import type { WorkbenchShareStore } from "./workbench-share";
 import { monogramFromName } from "./workbench-share";
 import type { FederationTrustStore } from "./federation-trust";
@@ -2299,45 +2302,70 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
       // reaching an agent happens off this path — an agent that cannot
       // be reached answers with a notice on the timeline in its own
       // voice (see `sendWorkbenchMessage`), never a failed send.
-      const sent = await sendWorkbenchMessage(
-        {
-          store: deps.store,
-          platform: deps.platform,
-          roomMessages: deps.roomMessages,
-          publish,
-          turnQueue,
-          turnCancellation,
-          ...(deps.agentTurns !== undefined
-            ? { agentTurns: deps.agentTurns }
-            : {}),
-          ...(deps.threads !== undefined ? { threads: deps.threads } : {}),
-          ...(deps.turnMailCorrelation !== undefined
-            ? { turnMailCorrelation: deps.turnMailCorrelation }
-            : {}),
-          ...(deps.turnDispatchTimeoutMs !== undefined
-            ? { turnDispatchTimeoutMs: deps.turnDispatchTimeoutMs }
-            : {}),
-          ...(deps.waitUntilFreeTimeoutMs !== undefined
-            ? { waitUntilFreeTimeoutMs: deps.waitUntilFreeTimeoutMs }
-            : {}),
-          ...(deps.mailbox !== undefined ? { mailbox: deps.mailbox } : {}),
-        },
-        {
-          tenantId: ownerTenantId,
-          principalId: principal.id,
-          senderAddress: senderAddressOf(c),
-          workbenchId,
-          messageParts,
-          ...(parsed.inReplyToMessageId !== undefined
-            ? { inReplyToMessageId: parsed.inReplyToMessageId }
-            : {}),
-          ...(targetThreadId !== undefined ? { threadId: targetThreadId } : {}),
-          ...(commandDecision !== undefined &&
-          "routeToParticipant" in commandDecision
-            ? { forcedRecipientAddress: commandDecision.routeToParticipant }
-            : {}),
-        },
-      );
+      //
+      // `MailboxFanoutFailedError` is caught here rather than falling
+      // through to the hub's global `app.onError`: `writeChatMailboxFanout`
+      // already reported it once, under the `refId` the error carries, so
+      // this quotes that ref rather than reporting the same failure again
+      // under a second one.
+      let sent;
+      try {
+        sent = await sendWorkbenchMessage(
+          {
+            store: deps.store,
+            platform: deps.platform,
+            roomMessages: deps.roomMessages,
+            publish,
+            turnQueue,
+            turnCancellation,
+            ...(deps.agentTurns !== undefined
+              ? { agentTurns: deps.agentTurns }
+              : {}),
+            ...(deps.threads !== undefined ? { threads: deps.threads } : {}),
+            ...(deps.turnMailCorrelation !== undefined
+              ? { turnMailCorrelation: deps.turnMailCorrelation }
+              : {}),
+            ...(deps.turnDispatchTimeoutMs !== undefined
+              ? { turnDispatchTimeoutMs: deps.turnDispatchTimeoutMs }
+              : {}),
+            ...(deps.waitUntilFreeTimeoutMs !== undefined
+              ? { waitUntilFreeTimeoutMs: deps.waitUntilFreeTimeoutMs }
+              : {}),
+            ...(deps.mailbox !== undefined ? { mailbox: deps.mailbox } : {}),
+          },
+          {
+            tenantId: ownerTenantId,
+            principalId: principal.id,
+            senderAddress: senderAddressOf(c),
+            workbenchId,
+            messageParts,
+            ...(parsed.inReplyToMessageId !== undefined
+              ? { inReplyToMessageId: parsed.inReplyToMessageId }
+              : {}),
+            ...(targetThreadId !== undefined
+              ? { threadId: targetThreadId }
+              : {}),
+            ...(commandDecision !== undefined &&
+            "routeToParticipant" in commandDecision
+              ? { forcedRecipientAddress: commandDecision.routeToParticipant }
+              : {}),
+          },
+        );
+      } catch (err) {
+        if (err instanceof MailboxFanoutFailedError) {
+          return c.json(
+            makeErrorEnvelope({
+              code: "mailbox_fanout_failed",
+              userMessage:
+                "Your message could not be saved to everyone's inbox; " +
+                "nothing was sent. Try again.",
+              refId: err.refId,
+            }),
+            502,
+          );
+        }
+        throw err;
+      }
       deps.onMessageFanout?.(sent.fanoutDelivered);
 
       if (parsed.clientId !== undefined && deps.clientIds !== undefined) {
@@ -2544,11 +2572,17 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             );
             deps.onMessageFanout?.(answer.fanoutDelivered);
           } catch (err) {
-            const refId = reportError(err, {
-              operation: "chat.blockResponse.notifyQuestionAnswer",
-              tenantId: ownerTenantId,
-              roomId: workbenchId,
-            });
+            // `MailboxFanoutFailedError` already reported itself under its
+            // own `refId` — quoting that instead of calling `reportError`
+            // again is what keeps one failure to one ref (CL-7450).
+            const refId =
+              err instanceof MailboxFanoutFailedError
+                ? err.refId
+                : reportError(err, {
+                    operation: "chat.blockResponse.notifyQuestionAnswer",
+                    tenantId: ownerTenantId,
+                    roomId: workbenchId,
+                  });
             await deps.blockResponses.releaseBlockResponseNotification(
               responseKey,
               claimToken,

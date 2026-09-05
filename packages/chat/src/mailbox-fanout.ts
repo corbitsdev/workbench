@@ -53,6 +53,22 @@ import type { ParticipantRecord } from "./participants";
 
 const logger = getLogger(["chat", "mailbox-fanout"]);
 
+/**
+ * Thrown by `writeChatMailboxFanout` when its batch write fails. Carries
+ * the `refId` its own `reportError` call already minted, so a caller that
+ * turns this into a consumer-facing response quotes that same ref rather
+ * than reporting the failure a second time under a different one — see
+ * `routes.ts`'s send handler, which is the one place this is caught.
+ */
+export class MailboxFanoutFailedError extends Error {
+  readonly refId: string;
+  constructor(refId: string, options?: { cause?: unknown }) {
+    super("mailbox fan-out failed", options);
+    this.name = "MailboxFanoutFailedError";
+    this.refId = refId;
+  }
+}
+
 /** One recipient's row within a fan-out batch. */
 export type MailboxBatchItem = {
   readonly tenantId: string;
@@ -68,6 +84,10 @@ export type MailboxBatchItem = {
   readonly messageId: string;
   readonly direction: "inbound" | "outbound";
   readonly inReplyTo?: string;
+  /** The full ancestry chain, oldest first (`mailAncestryOf`) — what the
+   * stored frame's `References:` header carries. Absent on a root-feed
+   * row, which answers nothing. */
+  readonly references?: readonly string[];
   readonly refs?: readonly MailboxRef[];
 };
 
@@ -118,6 +138,9 @@ export function createDrizzleMailboxWriter(
           ...(item.inReplyTo !== undefined
             ? { inReplyTo: item.inReplyTo }
             : {}),
+          ...(item.references !== undefined && item.references.length > 0
+            ? { references: [...item.references] }
+            : {}),
           ...(item.refs !== undefined ? { refs: [...item.refs] } : {}),
         },
       }));
@@ -161,6 +184,9 @@ export type WriteChatMailboxFanoutInput = {
    * minted against the row's OWNING tenant's domain. */
   readonly messageId: string;
   readonly inReplyTo?: string;
+  /** The full ancestry chain, oldest first — see `MailboxBatchItem`'s own
+   * doc comment. */
+  readonly references?: readonly string[];
   readonly subject: string;
   readonly body: string;
 };
@@ -243,6 +269,9 @@ export async function writeChatMailboxFanout(
         principalId === input.senderPrincipalId ? "outbound" : "inbound",
       refs,
       ...(input.inReplyTo !== undefined ? { inReplyTo: input.inReplyTo } : {}),
+      ...(input.references !== undefined && input.references.length > 0
+        ? { references: input.references }
+        : {}),
     });
   }
 
@@ -251,13 +280,13 @@ export async function writeChatMailboxFanout(
   try {
     await deps.writer.writeBatch(batch);
   } catch (err) {
-    reportError(err, {
+    const refId = reportError(err, {
       operation: "chat.mailboxFanout.write",
       tenantId: input.tenantId,
       roomId: input.workbenchId,
       extra: { messageId: input.messageId },
     });
-    throw err;
+    throw new MailboxFanoutFailedError(refId, { cause: err });
   }
 }
 

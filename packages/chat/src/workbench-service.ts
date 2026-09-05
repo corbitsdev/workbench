@@ -56,7 +56,7 @@ import {
   publishRoomMessageEvent,
   type RoomMessageStore,
 } from "./room-messages";
-import { mailMessageIdFor } from "./mail-headers";
+import { mailMessageIdFor, mailThreadHeaders } from "./mail-headers";
 import { mailAncestryOf } from "./threads";
 import {
   writeChatMailboxFanout,
@@ -1496,13 +1496,26 @@ async function replyTargetAgent(
  * participant's mailbox BEFORE the row is published or any agent is
  * dispatched: store row -> stamp Message-ID -> fan-out (one batch) ->
  * publish -> dispatch. A fan-out failure must fail the send before
- * anything is visible: no phantom bubble on the sender's own timeline,
- * and no duplicate row on a client retry. The just-inserted row is
- * therefore deleted on a fan-out failure (nothing has been published yet,
- * so nothing has seen it) and the failure is rethrown to the caller —
- * unlike agent dispatch (`routeMessage`, fire-and-forget so a slept
- * agent's wake never blocks the sender's own bubble), a mailbox write
- * failure is never swallowed into an apparently-successful send.
+ * anything is VISIBLE: no phantom bubble on the sender's own timeline
+ * (no `chat.message` publish yet), and no duplicate row on a client
+ * retry. The just-inserted row is therefore deleted on a fan-out failure
+ * and the failure is rethrown to the caller — unlike agent dispatch
+ * (`routeMessage`, fire-and-forget so a slept agent's wake never blocks
+ * the sender's own bubble), a mailbox write failure is never swallowed
+ * into an apparently-successful send.
+ *
+ * This is not a transactional guarantee: the row and the mailbox batch
+ * are two separate writes (`insertRoomMessageRow` commits before
+ * `mailboxFanOutForSend` ever runs), so a concurrent `GET` of the
+ * timeline between the two CAN read the row before this function decides
+ * whether to delete it again. The window is real, not merely believed
+ * closed — it is bounded to the time between those two writes, not open
+ * indefinitely, and nothing durable is built on top of what that window
+ * exposes (no reply has been dispatched, no mailbox row written) before
+ * the delete either lands or the row survives for good. A fan-out
+ * failure surfaces as `MailboxFanoutFailedError` (`./mailbox-fanout.ts`),
+ * which already carries the one `refId` `writeChatMailboxFanout` reported
+ * under — the route layer quotes that ref rather than reporting again.
  */
 export async function sendWorkbenchMessage(
   deps: SendWorkbenchMessageDeps,
@@ -1593,6 +1606,9 @@ async function mailboxFanOutForSend(
     ancestors.length > 0
       ? mailMessageIdFor(ancestors[ancestors.length - 1] as string, domain)
       : undefined;
+  const references = ancestors.map((ancestor) =>
+    mailMessageIdFor(ancestor, domain),
+  );
 
   const body = mailboxBodyOf(input.messageParts);
   await writeChatMailboxFanout(mailboxDeps, {
@@ -1605,6 +1621,7 @@ async function mailboxFanOutForSend(
     subject: mailboxSubjectOf(body),
     body,
     ...(inReplyTo !== undefined ? { inReplyTo } : {}),
+    ...(references.length > 0 ? { references } : {}),
   });
 }
 
@@ -1787,6 +1804,8 @@ async function dispatchTurnBatch(
     | "agentTurns"
     | "turnCancellation"
     | "turnMailCorrelation"
+    | "mailbox"
+    | "threads"
   >,
   tenantId: string,
   workbenchId: string,
@@ -2007,6 +2026,8 @@ export async function dispatchTurn(
     | "roomMessages"
     | "publish"
     | "turnMailCorrelation"
+    | "mailbox"
+    | "threads"
   >,
   input: DispatchTurnInput,
   signal?: AbortSignal,
@@ -2062,11 +2083,55 @@ export async function dispatchTurn(
   signal?.addEventListener("abort", closeAsTimedOut, { once: true });
 
   try {
+    // RFC 5322 threading (CL-7450): the dispatched frame carries the same
+    // identity the row it answers already carries on the timeline — its
+    // Message-ID is derived, never minted separately (`mailMessageIdFor`),
+    // so it always equals what `mailboxFanOutForSend` already stamped for
+    // that row — and names the row's own parent chain in
+    // `In-Reply-To`/`References`. Degrades to unthreaded (as before) when
+    // this composition has no mailbox domain to derive it from.
+    const sourceMessageId =
+      input.requestMessageIds[input.requestMessageIds.length - 1];
+    const mailboxDeps = deps.mailbox;
+    const threadHeaders =
+      mailboxDeps !== undefined && sourceMessageId !== undefined
+        ? await (async () => {
+            const domain = await mailboxDeps.resolveTenantDomain(
+              input.tenantId,
+            );
+            const threadId =
+              deps.threads !== undefined
+                ? ((await deps.threads.threadIdForMessage(
+                    input.tenantId,
+                    input.workbenchId,
+                    sourceMessageId,
+                  )) ?? null)
+                : null;
+            const ancestors =
+              deps.threads !== undefined
+                ? await mailAncestryOf(
+                    deps.threads,
+                    input.tenantId,
+                    input.workbenchId,
+                    threadId,
+                  )
+                : [];
+            return mailThreadHeaders({
+              rowId: sourceMessageId,
+              domain,
+              ancestors,
+            });
+          })()
+        : undefined;
+
     const sent = await deps.platform.sendMail({
       tenantId: input.tenantId,
       workbenchId: localPartOf(input.agentAddress),
       principalId: input.principalId,
-      content: encodeParts(input.parts, { replyTo: input.workbenchId }),
+      content: encodeParts(input.parts, {
+        replyTo: input.workbenchId,
+        ...threadHeaders,
+      }),
       fromWorkbenchId: input.workbenchId,
     });
     // The reply path threads under the turn that produced it (CL-6314),
@@ -2076,8 +2141,6 @@ export async function dispatchTurn(
     // the conversation is where its newest message is. A record that
     // fails is reported, never thrown: the turn was dispatched, and
     // threading degrades to unthreaded rather than failing it.
-    const sourceMessageId =
-      input.requestMessageIds[input.requestMessageIds.length - 1];
     if (
       sourceMessageId !== undefined &&
       deps.turnMailCorrelation !== undefined
