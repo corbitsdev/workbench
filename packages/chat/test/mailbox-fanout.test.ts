@@ -11,6 +11,7 @@ import {
   writeChatMailboxFanout,
   mailboxBodyOf,
   mailboxSubjectOf,
+  MailboxFanoutFailedError,
   type MailboxBatchItem,
   type MailboxBatchResult,
   type MailboxWriter,
@@ -248,15 +249,16 @@ describe("writeChatMailboxFanout (CL-7450)", () => {
     }
   });
 
-  test("propagates a batch write failure rather than swallowing it", async () => {
+  test("propagates a batch write failure rather than swallowing it, as a MailboxFanoutFailedError carrying its own refId", async () => {
     const failing: MailboxWriter = {
       async writeBatch() {
         throw new Error("db exploded");
       },
     };
 
-    await expect(
-      writeChatMailboxFanout(
+    let caught: unknown;
+    try {
+      await writeChatMailboxFanout(
         {
           writer: failing,
           resolveKnownPrincipalIds: knownPrincipals([SENDER, "prn_bob"]),
@@ -272,8 +274,14 @@ describe("writeChatMailboxFanout (CL-7450)", () => {
           subject: "hello",
           body: "hello",
         },
-      ),
-    ).rejects.toThrow("db exploded");
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(MailboxFanoutFailedError);
+    const failure = caught as MailboxFanoutFailedError;
+    expect(typeof failure.refId).toBe("string");
+    expect((failure.cause as Error)?.message).toBe("db exploded");
   });
 
   test("inReplyTo threads through to every recipient's write", async () => {
@@ -300,6 +308,63 @@ describe("writeChatMailboxFanout (CL-7450)", () => {
 
     for (const row of rows) {
       expect(row.inReplyTo).toBe("<msg_5@acme.example>");
+    }
+  });
+
+  test("references threads through to every recipient's write (CL-7450 finding 2)", async () => {
+    const { writer, rows } = inMemoryWriter();
+
+    await writeChatMailboxFanout(
+      {
+        writer,
+        resolveKnownPrincipalIds: knownPrincipals([SENDER, "prn_bob"]),
+        resolveTenantDomain: domainOf(DOMAIN),
+      },
+      {
+        tenantId: TENANT_ID,
+        workbenchId: WORKBENCH_ID,
+        senderAddress: `${SENDER}@${DOMAIN}`,
+        senderPrincipalId: SENDER,
+        participants: participantsOf(SENDER, ["prn_bob"], AGENT_ADDRESS),
+        messageId: "<msg_7@acme.example>",
+        inReplyTo: "<msg_6@acme.example>",
+        references: ["<msg_5@acme.example>", "<msg_6@acme.example>"],
+        subject: "hello",
+        body: "hello",
+      },
+    );
+
+    for (const row of rows) {
+      expect(row.references).toEqual([
+        "<msg_5@acme.example>",
+        "<msg_6@acme.example>",
+      ]);
+    }
+  });
+
+  test("a root-feed send carries no references at all", async () => {
+    const { writer, rows } = inMemoryWriter();
+
+    await writeChatMailboxFanout(
+      {
+        writer,
+        resolveKnownPrincipalIds: knownPrincipals([SENDER, "prn_bob"]),
+        resolveTenantDomain: domainOf(DOMAIN),
+      },
+      {
+        tenantId: TENANT_ID,
+        workbenchId: WORKBENCH_ID,
+        senderAddress: `${SENDER}@${DOMAIN}`,
+        senderPrincipalId: SENDER,
+        participants: participantsOf(SENDER, ["prn_bob"], AGENT_ADDRESS),
+        messageId: "<msg_8@acme.example>",
+        subject: "hello",
+        body: "hello",
+      },
+    );
+
+    for (const row of rows) {
+      expect(row.references).toBeUndefined();
     }
   });
 });
@@ -446,7 +511,7 @@ describe("sendWorkbenchMessage's mailbox fan-out wiring (CL-7450)", () => {
           messageParts: [{ kind: "text", text: "hello everyone" }],
         },
       ),
-    ).rejects.toThrow("db exploded");
+    ).rejects.toBeInstanceOf(MailboxFanoutFailedError);
 
     expect(publishedIds).toEqual([]);
     const page = await roomMessages.listMessages({
