@@ -213,10 +213,6 @@ import {
   createRunKeyHistoryRoutes,
   lookupRunKeyHistoryReconnectKey,
 } from "@corbits/run-key-history";
-import {
-  createDrizzleWorkflowDeploySourceStore,
-  withDeploySourceRecording,
-} from "@corbits/workflows";
 import { runOneShotFoldedPrompt } from "@corbits/folded-run-one-shot";
 
 import {
@@ -991,28 +987,22 @@ export async function createHub(config: HubConfig) {
     getSigningPublicKey: agentRepoStore.getSigningPublicKey,
     repoStore: launchCaches.repoStore,
   };
-  // Shared placement's code-sourced deploys previously left their
-  // `WorkflowDefinitionSource` durable nowhere on the hub -- only on the
-  // sidecar's local `deployment.json` (CL-6581). Wrapping the two deploy
-  // methods here, at the composition root, records that source into
-  // Postgres on every deploy without touching vendored
-  // `session-service.ts`; exclusive placement already persists its own via
-  // `workflow_run_launch_spec`, untouched.
-  const workflowDeploySourceStore = createDrizzleWorkflowDeploySourceStore(db);
-  const sessionService = withDeploySourceRecording(
-    createSessionService({
-      sidecarRouter,
-      agentRepoStore: launchAgentRepoStore,
-      assetService: launchCaches.assetService,
-      db,
-      toolPackageRegistries: {
-        httpRegistries: REGISTRIES,
-        defaultRegistry: "npmjs",
-        scopeRouting: [{ scope: "@corbits", registry: CORBITS_TOOLS_REGISTRY }],
-      },
-    }),
-    workflowDeploySourceStore,
-  );
+  // Shared-capacity `deployWorkflowFromSource` / `deployAdoptedWorkflowFromSource`
+  // are gone on this pin. The provisioned path persists its source in
+  // `workflow_run_launch_spec`; there is nothing left for a session-service
+  // wrapper to record.
+  const sessionService = createSessionService({
+    sidecarRouter,
+    sidecarAllocationRouter: sidecarRouter,
+    agentRepoStore: launchAgentRepoStore,
+    assetService: launchCaches.assetService,
+    db,
+    toolPackageRegistries: {
+      httpRegistries: REGISTRIES,
+      defaultRegistry: "npmjs",
+      scopeRouting: [{ scope: "@corbits", registry: CORBITS_TOOLS_REGISTRY }],
+    },
+  });
   const hubWebSocketUrl =
     config.sidecarWebSocketUrl ??
     `${config.baseUrl.replace(/^http/, "ws")}/api/sidecars/ws`;
@@ -1043,10 +1033,14 @@ export async function createHub(config: HubConfig) {
   });
   const workflowAllocationService = createWorkflowAllocationService({
     db,
-    plugins: sidecarPlugins,
+    deploymentPlugins: sidecarPlugins,
+    // Workbench has one provisioner list; probes and frozen deployments
+    // share it until a separate probe backend is configured.
+    probePlugins: sidecarPlugins,
     preparedDeployer: sessionService,
     credentialCipher,
     allocationRouter: sidecarRouter,
+    hubWebSocketUrl,
   });
   const sidecarAllocationStore = createSidecarAllocationStore(db);
   const workflowDispatchService = createWorkflowDispatchService({
@@ -1073,6 +1067,7 @@ export async function createHub(config: HubConfig) {
       );
     },
   });
+  await workflowAllocationService.initialize?.();
   await sidecarAllocationReconciler.initialize();
   sidecarRouter.events.on("sidecar.disconnect", ({ allocated }) => {
     if (allocated === undefined) return;
