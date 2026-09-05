@@ -584,6 +584,43 @@ export function deployableCatalogWorkflow(
   return CATALOG_WORKFLOWS.find((workflow) => workflow.assetName === assetName);
 }
 
+/**
+ * Whether a catalog entry's own definition carries `credentialBindings` —
+ * the same field `deployCodeSourcedWorkflow` (`vendor/intx/hub-sessions`)
+ * refuses to resolve without a `credentialCipher`, a seam the current
+ * Interchange pin's `POST /template-blocks/:assetName/deploy` front does
+ * not supply (see `docs/seed-reconciliation.md`; closes at the re-pin,
+ * CL-7107 / PR #632, pin 692c3106). Derived by rendering the entry's own
+ * `buildJson` with placeholder deploy args and reading the serialized
+ * definition's `credentialBindings` back — never a hand-kept list, so this
+ * can never drift from the workflows that actually declare bindings.
+ */
+export function catalogWorkflowRequiresCredentialCipher(
+  entry: DefaultWorkflow,
+): boolean {
+  const rendered = entry.buildJson("example.workbench.invalid", []);
+  const parsed = JSON.parse(rendered) as {
+    credentialBindings?: readonly unknown[];
+  };
+  return (parsed.credentialBindings?.length ?? 0) > 0;
+}
+
+/**
+ * Whether a catalog asset name can deploy through the current
+ * `POST /template-blocks/:assetName/deploy` front on this Interchange pin.
+ * `false` for a name with no `CATALOG_WORKFLOWS` entry at all (nothing
+ * deployable) or one whose entry requires a `credentialCipher` this pin
+ * cannot supply — the route and the available-catalog listing both call
+ * this instead of keeping their own copy of which six entries qualify.
+ */
+export function catalogWorkflowDeployableOnThisPin(
+  assetName: string,
+): boolean {
+  const entry = deployableCatalogWorkflow(assetName);
+  if (entry === undefined) return false;
+  return !catalogWorkflowRequiresCredentialCipher(entry);
+}
+
 // The grants the deploy, trigger, and run-listing routes gate on,
 // planted at the wildcard scope the authz glob matcher resolves
 // against any concrete deployment (the deployment id is minted at
