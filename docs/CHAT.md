@@ -137,6 +137,53 @@ fan-out logic and its `MailboxWriter` seam, and `./platform-port.ts`/
 `routes.ts`'s `mailbox` dep for how a host wires a live `@corbits/mailbox`
 instance in.
 
+### Backfilling history into the mailbox (CL-7454)
+
+CL-7450 wired the LIVE send path; it wrote nothing for a message posted
+before that rollout, and nothing retroactively fills a quiet workbench's
+gap on its own. `./mailbox-backfill.ts`'s `runMailboxBackfillPass` is that
+fill: a replay that walks `workbench_messages` oldest-first, per
+workbench, minting and stamping `mail_message_id` for any row that
+predates CL-7104, and writing the same author-aware fan-out
+`writeChatMailboxFanout` would have written at send time — an outbound
+copy for a human author, an inbound copy for every other human, and an
+inbound-only copy (no outbound self-copy, since it has no mailbox of its
+own) for an agent-authored row. A workbench with no human participant at
+all is skipped and reported rather than walked.
+
+Idempotent by the same default transport key a live send dedupes on, so a
+rerun of a workbench already fully replayed writes nothing new; a
+per-workbench progress cursor (`chat.mailbox_backfill_cursor`, one row per
+workbench, `(last_message_id, last_created_at)`) is a courtesy on top of
+that guarantee — it lets a rerun skip straight past everything already
+replayed rather than re-issuing a no-op write per historical row, not the
+source of the idempotency itself. A row whose write fails stops that
+workbench's pass without advancing its cursor past it, so the next pass
+retries the same row rather than silently skipping it.
+
+Every mailbox row this replay writes carries an extra `{ kind: "import",
+id: "chat-backfill" }` ref alongside its ordinary `{ kind: "workbench", id
+}` one, so a reader can tell a backfilled copy apart from one a live send
+wrote. `@corbits/mailbox`'s own per-row `priority`/`classification`/
+`status` triage columns were the other candidate for this marker, but they
+are the mount boundary's own vocabulary (see `write.ts`'s
+`WriteMailboxMessageArgs` doc comment) — this package has no such
+vocabulary to mint a value into, so the open `refs` shape carries the
+marker instead.
+
+`apps/hub/src/index.ts` runs one pass on boot, fire-and-forget, reusing
+the exact `mailbox` dep (`writer`/`resolveKnownPrincipalIds`/
+`resolveTenantDomain`) the live send path fans out through, so a
+backfilled row and a live-sent row are addressed and idempotency-keyed
+identically — never blocking the hub's own boot, and reporting a failure
+rather than leaving it silent, the same posture as the relaunch sweep
+beside it.
+
+This module, its migration (`0030_mailbox_backfill_cursor`), and its boot
+step are all meant to be temporary: once `workbench_messages` itself is
+retired, there is nothing left to backfill from, and all three should be
+deleted together.
+
 ## One turn in flight per workbench (CL-6331)
 
 A workbench claims itself before it asks any agent for a turn: `dispatchTurn`
