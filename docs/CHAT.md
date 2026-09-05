@@ -456,27 +456,40 @@ invite, so the section has nothing to show; Members and Danger zone are
 already trimmed for every 1:1 chat, agent or person). One derivation, no
 second signal to keep in sync.
 
-## The reply bridge
+## How an invited agent is launched
 
-An invited agent's reply is not something it posts back into the workbench on
-its own — replies surface only as `connector.reply` events on that agent's
-own event stream, never as mail it sends. The **reply bridge** is the piece
-that turns those events into workbench messages: for each agent participant,
-the platform subscribes to that agent's event stream and, on a
-`connector.reply` event, posts its content onto the workbench's timeline as
-a message from that agent's own address, carrying the run id it came from.
+Inviting an agent (or opening its DM) calls Interchange
+`prepareProvisionedDeployment` onto that definition's own `kind:workflow`
+asset. Interchange mints the run row, the allocation, and (on first
+trigger) the run principal. Chat records the returned run id, deployment
+id, and mail address — it does not mint the run, own an `agent_session`,
+or render a per-run `sourceRef`.
 
-The bridge is armed when an agent is invited, and idempotently re-armed
-whenever a workbench's messages are read — bridges are in-memory, so a host
-restart loses them, and a read is the natural moment to notice and recreate
-one.
+Launch is asynchronous. A message sent before the sidecar is ready sits
+on the reconciler's ready hook and the `workflowDispatchService` queue
+until the instance can take it; the UI shows a starting state, with
+presence from allocation/deployment status rather than a run principal.
+Wake of a reaped or lost instance is a fresh `prepareProvisionedDeployment`
+onto the same asset; chat updates the ids it recorded.
 
-**The bridge is being retired (CL-7104).** Now that a dispatch carries a
-real `Message-ID` and a reply is correlated by `In-Reply-To` /
-`References`, the bridge's event-stream hop is the one place a reply
-still travels as something other than mail — the reply belongs on the
-same transport its dispatch went out on. It stays wired until that
-cutover lands; nothing new should be built on it.
+Turns are one native `sendUserMessage` per addressed agent, carrying the
+row's `Message-ID` / `In-Reply-To` / `References`. Inference sources on
+the deployment are catalog offering ids (`sourceOfferingIds` /
+`defaultSourceOfferingId`).
+
+## How a reply reaches a human
+
+An invited agent's reply is not something chat scrapes off
+`connector.reply` events. Sidecar outbound mail hits the hub
+`persistMail` lookup; a Workbench wrapper dual-writes that frame into
+`@corbits/mailbox` so each human gets a copy. Attachments for humans are
+read from that mailbox frame, not from Interchange `session_mail`.
+Correlation is the RFC 5322 headers on the mail, never a `correlationId`.
+
+The old per-agent event-stream **reply bridge** is gone. A process-lifetime
+chat orchestrator still watches sidecar events for turn projection and
+in-chat approval parks; it is not the path that delivers the agent's
+words to a person.
 
 ## Bench defaults and per-workbench overrides
 
