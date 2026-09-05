@@ -114,6 +114,11 @@ import {
   createDrizzleMailboxWriter,
   type MailboxFanoutDeps,
 } from "@corbits/chat/mailbox-fanout";
+import {
+  runMailboxBackfillPass,
+  createDrizzleMailboxBackfillMessageSource,
+  createDrizzleMailboxBackfillCursorStore,
+} from "@corbits/chat/mailbox-backfill";
 import type { RelaunchNoticePort } from "@corbits/chat";
 import { reportError } from "@corbits/error-sink";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
@@ -2879,6 +2884,38 @@ export async function createHub(config: HubConfig) {
     store: createDrizzleInboxUnsnoozeSweepStore(mailboxDb),
     bus: mailboxBus,
   });
+
+  // CL-7454: one-shot, best-effort replay of every workbench message
+  // posted before CL-7450 into every human participant's mailbox — the
+  // gap CL-7450's live fan-out leaves for a workbench's own pre-rollout
+  // history. Fire-and-forget, same posture as the relaunch sweep above:
+  // it never blocks the hub's own boot, and a failure (per row, per
+  // workbench, or the whole pass) is reported rather than left silent.
+  // Reuses `chatDeps.mailbox` (the exact writer/resolver triple the live
+  // send path fans out through) so a backfilled row and a live-sent row
+  // are addressed and idempotency-keyed identically.
+  void runMailboxBackfillPass({
+    messages: createDrizzleMailboxBackfillMessageSource(db),
+    roomMessages,
+    threads: threadStore,
+    settings: { getWorkbenchSettings: chatStore.getWorkbenchSettings },
+    mailbox: chatDeps.mailbox as MailboxFanoutDeps,
+    cursors: createDrizzleMailboxBackfillCursorStore(db),
+  })
+    .then((summary) => {
+      getLogger(["chat", "mailbox-backfill"]).info(
+        "mailbox backfill boot pass: {workbenchCount} workbenches, " +
+          "{totalReplayed} rows replayed, {totalFailed} failed",
+        {
+          workbenchCount: summary.workbenches.length,
+          totalReplayed: summary.totalReplayed,
+          totalFailed: summary.totalFailed,
+        },
+      );
+    })
+    .catch((cause: unknown) => {
+      reportError(cause, { operation: "chat.mailboxBackfill.bootPass" });
+    });
 
   // Shared `FoldedRunsDeps` for every one-shot Myra prompt below
   // (agent-definition drafting): a real one-shot inference call

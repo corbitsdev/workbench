@@ -555,6 +555,34 @@ export const turnMailCorrelation = chatSchema.table(
  * the reply message's `run_id` carries. `section_run_id` is null until a
  * dispatch gets far enough to learn it.
  */
+/**
+ * Per-workbench progress cursor for the mailbox backfill replay (CL-7454):
+ * the last `workbench_messages` row it has successfully written into every
+ * human participant's mailbox, so a rerun (a redeploy, a restarted hub)
+ * resumes from where the previous pass stopped rather than re-walking a
+ * workbench's entire history. `(last_created_at, last_message_id)` is the
+ * same `(created_at, id)` keyset order the timeline itself pages by (see
+ * `room-messages.ts`'s cursor), just walked oldest-first instead of
+ * newest-first. Removed once `workbench_messages` itself is dropped — see
+ * docs/CHAT.md.
+ */
+export const chatMailboxBackfillCursor = chatSchema.table(
+  "mailbox_backfill_cursor",
+  {
+    tenantId: text("tenant_id").notNull(),
+    workbenchId: text("workbench_id").notNull(),
+    lastMessageId: text("last_message_id").notNull(),
+    lastCreatedAt: timestamp("last_created_at", {
+      withTimezone: true,
+      precision: 3,
+    }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.tenantId, table.workbenchId] })],
+);
+
 export const agentTurns = chatSchema.table(
   "agent_turns",
   {

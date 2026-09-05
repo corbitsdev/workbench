@@ -194,7 +194,9 @@ export type WriteChatMailboxFanoutInput = {
 /** The human participants of a workbench, by their bare principal id —
  * a human's own participant address is never suffixed with a domain
  * (see `workbench-service.ts`'s member-add path), unlike an agent's. */
-function humanPrincipalIds(
+/** Exported for `./mailbox-backfill.ts`, which fans a historical row into
+ * the same set of human mailboxes a live send does. */
+export function humanPrincipalIds(
   participants: readonly ParticipantRecord[],
 ): readonly string[] {
   return participants

@@ -19,7 +19,8 @@
     "./workbench-host-naming": "./src/workbench-host-naming.ts",
     "./display-name": "./src/display-name.ts",
     "./id-leak-guard": "./src/id-leak-guard.ts",
-    "./mailbox-fanout": "./src/mailbox-fanout.ts"
+    "./mailbox-fanout": "./src/mailbox-fanout.ts",
+    "./mailbox-backfill": "./src/mailbox-backfill.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

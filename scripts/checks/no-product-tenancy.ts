@@ -41,7 +41,7 @@ const ALLOWLIST: readonly {
 }[] = [
   {
     relPath: "packages/chat/src/schema.ts",
-    maxOccurrences: 17,
+    maxOccurrences: 18,
     tables: [
       // Created as channel_settings et al.; renamed to workbench_* by
       // 0018_rename_channel_to_workbench (CL-6260) — see migrations.ts.
@@ -74,6 +74,11 @@ const ALLOWLIST: readonly {
       // reply path threads under that source. Chat-owned correlation,
       // not tenancy — see turnMailCorrelation in schema.ts.
       "turn_mail_correlation",
+      // The mailbox backfill replay's own per-workbench progress cursor
+      // (CL-7454) — chat-owned bookkeeping, not tenancy. Temporary:
+      // dropped together with the replay once workbench_messages itself
+      // is retired — see chatMailboxBackfillCursor in schema.ts.
+      "mailbox_backfill_cursor",
     ],
   },
   {

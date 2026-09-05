@@ -562,6 +562,23 @@ export const chatMigrations: readonly ChatMigration[] = [
         ON "chat"."workbench_messages" ("tenant_id", "mail_message_id");
     `,
   },
+  {
+    // CL-7454: the mailbox backfill replay's own per-workbench progress
+    // cursor — see `mailbox-backfill.ts`. No data to seed: an absent row
+    // means "never run", and the replay starts that workbench from
+    // scratch.
+    name: "0030_mailbox_backfill_cursor",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "chat"."mailbox_backfill_cursor" (
+        "tenant_id" text NOT NULL,
+        "workbench_id" text NOT NULL,
+        "last_message_id" text NOT NULL,
+        "last_created_at" timestamptz(3) NOT NULL,
+        "updated_at" timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY ("tenant_id", "workbench_id")
+      );
+    `,
+  },
 ];
 
 /**
