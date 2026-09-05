@@ -71,6 +71,32 @@ test("ask_user posts a question block and ends the turn with the answer arriving
   expect(String(result.content)).toMatch(/next inbound message/i);
 });
 
+test("ask_user's result text tells the model to stop, not to wait for a reply here", async () => {
+  const fetchImpl = (async () =>
+    new Response(
+      JSON.stringify({ id: "msg_1", createdAt: "2026-08-17T00:00:00.000Z" }),
+      { status: 201 },
+    )) as unknown as typeof fetch;
+
+  const bundle = interactionTools(testEnv());
+  const result = await withFetch(fetchImpl, () =>
+    bundle.run(
+      {
+        id: "call_1",
+        name: ASK_USER_TOOL,
+        arguments: { question: "Which environment?", options: ["A", "B"] },
+      },
+      new AbortController().signal,
+    ),
+  );
+
+  // This is instruction text in the model's own context, not something the
+  // runtime enforces: nothing stops the model from calling another tool or
+  // continuing to talk after reading it (docs/CHAT.md).
+  expect(String(result.content)).toMatch(/end this turn now/i);
+  expect(String(result.content)).toMatch(/do not wait for a reply here/i);
+});
+
 test("retrying ask_user for the same call reuses the questionId so a crash between post and return cannot orphan a second card", async () => {
   const postedQuestionIds: string[] = [];
   const fetchImpl = (async (_url: string | URL, init?: RequestInit) => {
