@@ -647,7 +647,17 @@ becomes the agent's next inbound message and therefore its next turn —
 never this call's own result. (Before CL-7443, `ask_user` parked the call
 on a vendored `message_response` signal/gate until a correlated reply
 resolved it; that machinery, and the correlation-id plumbing it needed
-through `sendMail`/`sendUserMessage`, is retired.)
+through `sendMail`/`sendUserMessage`, is retired.) The tool result's
+instruction to end the turn is just text in the model's context — the
+runtime does not enforce it, so a model that calls another tool or keeps
+talking after `ask_user` is not stopped from doing so.
+
+Because there is no park, a warm agent's persisted pending operations can
+still carry a retired kind from before this change (a `message_response`
+op written by a pre-CL-7443 build). Restore drops any such unclassified
+kind rather than throwing, reporting each drop — so an in-flight question
+still open at deploy is simply lost: the person's eventual answer arrives
+as an ordinary next turn instead of resolving anything.
 
 ### Question answers notify at most once (CL-7192)
 
