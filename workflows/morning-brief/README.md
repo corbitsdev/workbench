@@ -143,4 +143,5 @@ markdown brief.
 See [`workflows/README.md`](../README.md#status-note) for what
 registration/automatable/seeded mean — this one is `automatable: true`
 but not seeded, since it needs real Granola/Linear credentials to be
-useful, unlike `workbench-digest`.
+useful. `workbench-digest` is not seeded either; both are deployable
+through the catalog instantiate route (CL-7073).

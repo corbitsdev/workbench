@@ -55,6 +55,7 @@ import { describe, expect, test } from "bun:test";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
+  CATALOG_WORKFLOWS,
   createGitWorkflowPusher,
   DEFAULT_WORKFLOWS,
   isLiveDeploymentStatus,
@@ -423,10 +424,11 @@ describe.skipIf(databaseUrl === undefined)(
       );
 
       await hop(
-        "every default workflow — echo, workbench-digest, and assistant — deploys and goes live",
+        "the default workflow (assistant) plus the on-demand catalog (echo, workbench-digest) deploy and go live (CL-7074: only assistant is seeded automatically; the rest deploy here via the same seeding-library path a real on-demand deploy would use)",
         async () => {
-          await deploySeededWorkflows(DEFAULT_WORKFLOWS);
-          for (const workflow of DEFAULT_WORKFLOWS) {
+          const workflows = [...DEFAULT_WORKFLOWS, ...CATALOG_WORKFLOWS];
+          await deploySeededWorkflows(workflows);
+          for (const workflow of workflows) {
             const assetsRes = await api(
               hub.baseUrl,
               "GET",

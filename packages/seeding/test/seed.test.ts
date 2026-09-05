@@ -6,6 +6,7 @@ import {
 } from "@corbits/hub-api-client";
 import {
   CATALOG_TEST_WORKFLOWS,
+  CATALOG_WORKFLOWS,
   DEFAULT_WORKFLOWS,
   NOOP_MODEL_SOURCE,
   reconcileSeedGrants,
@@ -255,7 +256,7 @@ describe("seedTenant", () => {
       return undefined;
     };
 
-    const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
+    const echoOnly = CATALOG_WORKFLOWS.filter((w) => w.assetName === "echo");
     await seedTenant(
       args({
         api: fakeAPI(handler),
@@ -344,7 +345,7 @@ describe("seedTenant", () => {
       return undefined;
     };
 
-    const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
+    const echoOnly = CATALOG_WORKFLOWS.filter((w) => w.assetName === "echo");
     await seedTenant(
       args({
         api: fakeAPI(handler),
@@ -413,7 +414,7 @@ describe("seedTenant", () => {
       return undefined;
     };
 
-    const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
+    const echoOnly = CATALOG_WORKFLOWS.filter((w) => w.assetName === "echo");
     await seedTenant(
       args({
         api: fakeAPI(handler),
@@ -573,7 +574,7 @@ describe("seedTenant", () => {
       return baseRoutes(method, path);
     };
 
-    const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
+    const echoOnly = CATALOG_WORKFLOWS.filter((w) => w.assetName === "echo");
     await seedTenant(
       args({
         api: fakeAPI(handler),
@@ -674,7 +675,7 @@ describe("seedTenant", () => {
       return baseRoutes(method, path);
     };
 
-    const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
+    const echoOnly = CATALOG_WORKFLOWS.filter((w) => w.assetName === "echo");
     await seedTenant(
       args({
         api: fakeAPI(handler),
@@ -840,8 +841,11 @@ describe("seedTenant", () => {
     expect(DEFAULT_WORKFLOWS[0]?.assetName).toBe(SETUP_AGENT_ASSET_NAME);
   });
 
-  test("the default set also includes the echo walking skeleton", () => {
-    expect(DEFAULT_WORKFLOWS.map((w) => w.assetName)).toContain("echo");
+  test("the default set is Myra only; echo is deployed on demand from the catalog", () => {
+    // CL-7074: a fresh signup no longer pays a git push and sidecar
+    // probe for workflows nobody asked for.
+    expect(DEFAULT_WORKFLOWS.map((w) => w.assetName)).toEqual(["assistant"]);
+    expect(CATALOG_WORKFLOWS.map((w) => w.assetName)).toContain("echo");
   });
 
   test("the seeded assistant is productized under the Myra display name", () => {
@@ -865,37 +869,40 @@ describe("seedTenant", () => {
   });
 
   test("echo and assistant carry no modelSource override, so they deploy against the tenant's real model", () => {
-    const realModelWorkflows = DEFAULT_WORKFLOWS.filter(
-      (w) => w.assetName === "echo" || w.assetName === "assistant",
-    );
+    const realModelWorkflows = [
+      ...CATALOG_WORKFLOWS,
+      ...DEFAULT_WORKFLOWS,
+    ].filter((w) => w.assetName === "echo" || w.assetName === "assistant");
     expect(realModelWorkflows).toHaveLength(2);
     for (const workflow of realModelWorkflows) {
       expect(workflow.modelSource).toBeUndefined();
     }
   });
 
-  test("the default set consumed by real tenant provisioning is assistant, echo, workbench-digest, and last-30-days-research", () => {
+  test("the default set consumed by real tenant provisioning is assistant only; echo, workbench-digest, and last-30-days-research are on-demand catalog entries", () => {
     // provisionPersonalTenantIfNeeded (@workbench/onboarding) deploys
-    // DEFAULT_WORKFLOWS for every real signup. workbench-digest is the
-    // seed automation the native ScheduleTrigger ticks. last-30-days-
-    // research is a deployed automation, not a routine wrapper.
-    // The remaining catalog-test workflows exist only to
-    // exercise the platform continuously and must never reach a real
-    // user through this array — they are seeded only via the explicit
+    // DEFAULT_WORKFLOWS for every real signup (CL-7074: Myra only). The
+    // remaining catalog workflows — echo, workbench-digest,
+    // last-30-days-research — deploy on demand (CL-7073) from
+    // CATALOG_WORKFLOWS, never automatically onto a real signup. The
+    // catalog-test workflows exist only to exercise the platform
+    // continuously and must never reach a real user through either
+    // array — they are seeded only via the explicit
     // CATALOG_TEST_WORKFLOWS opt-in.
-    expect(DEFAULT_WORKFLOWS.map((w) => w.assetName)).toEqual([
-      "assistant",
+    expect(DEFAULT_WORKFLOWS.map((w) => w.assetName)).toEqual(["assistant"]);
+    expect(CATALOG_WORKFLOWS.map((w) => w.assetName)).toEqual([
       "echo",
       "workbench-digest",
       "last-30-days-research",
     ]);
   });
 
-  test("catalog-test workflows declare a modelSource override; defaults do not", () => {
-    // Defaults (echo, assistant, workbench-digest) deploy against the
+  test("catalog-test workflows declare a modelSource override; defaults and on-demand catalog workflows do not", () => {
+    // Defaults (assistant) and the on-demand catalog (echo,
+    // workbench-digest, last-30-days-research) deploy against the
     // tenant's real model. Catalog-test entries stay free via
     // NOOP_MODEL_SOURCE.
-    for (const workflow of DEFAULT_WORKFLOWS) {
+    for (const workflow of [...DEFAULT_WORKFLOWS, ...CATALOG_WORKFLOWS]) {
       expect(workflow.modelSource).toBeUndefined();
     }
     for (const workflow of CATALOG_TEST_WORKFLOWS) {
@@ -1004,14 +1011,14 @@ describe("seedTenant", () => {
     expect(output).toContain("confirmed workflow heartbeat: run run_1 started");
   });
 
-  test("the default set includes the workbench-digest automation", () => {
-    expect(DEFAULT_WORKFLOWS.map((w) => w.assetName)).toContain(
+  test("the on-demand catalog includes the workbench-digest automation", () => {
+    expect(CATALOG_WORKFLOWS.map((w) => w.assetName)).toContain(
       "workbench-digest",
     );
   });
 
   test("workbench-digest is automatable with a friendly display name and no noop pin", () => {
-    const workbenchDigest = DEFAULT_WORKFLOWS.find(
+    const workbenchDigest = CATALOG_WORKFLOWS.find(
       (w) => w.assetName === "workbench-digest",
     );
     if (!workbenchDigest)
@@ -1024,7 +1031,9 @@ describe("seedTenant", () => {
 
   test("echo and assistant are not automatable", () => {
     for (const name of ["echo", "assistant"] as const) {
-      const workflow = DEFAULT_WORKFLOWS.find((w) => w.assetName === name);
+      const workflow = [...CATALOG_WORKFLOWS, ...DEFAULT_WORKFLOWS].find(
+        (w) => w.assetName === name,
+      );
       if (!workflow) throw new Error(`expected ${name}`);
       expect(workflow.automatable).toBe(false);
       expect(workflow.displayName.length).toBeGreaterThan(0);
@@ -1087,7 +1096,7 @@ describe("seedTenant", () => {
       return undefined;
     };
 
-    const digestOnly = DEFAULT_WORKFLOWS.filter(
+    const digestOnly = CATALOG_WORKFLOWS.filter(
       (w) => w.assetName === "workbench-digest",
     );
     await seedTenant(
@@ -1204,7 +1213,7 @@ describe("seedTenant", () => {
       args({
         api: fakeAPI(handler),
         log,
-        workflows: DEFAULT_WORKFLOWS.filter(
+        workflows: CATALOG_WORKFLOWS.filter(
           (w) => w.assetName === "workbench-digest",
         ),
       }),
@@ -1294,7 +1303,7 @@ describe("seedTenant", () => {
       args({
         api: fakeAPI(handler),
         log,
-        workflows: DEFAULT_WORKFLOWS.filter(
+        workflows: CATALOG_WORKFLOWS.filter(
           (w) => w.assetName === "workbench-digest",
         ),
         confirmDeployments: false,
@@ -1358,16 +1367,23 @@ describe("seedTenant", () => {
       return undefined;
     };
 
+    // Deploy the full default set plus the on-demand catalog (which
+    // still carries workbench-digest's startStopped handshake) so this
+    // test keeps covering both a plain deploy and the stop-pristine
+    // path with confirmDeployments off, regardless of which set a real
+    // signup deploys by default.
+    const workflows = [...DEFAULT_WORKFLOWS, ...CATALOG_WORKFLOWS];
     await seedTenant(
       args({
         api: fakeAPI(handler),
         pushWorkflow: push,
         log,
         confirmDeployments: false,
+        workflows,
       }),
     );
 
-    expect(pushes).toHaveLength(DEFAULT_WORKFLOWS.length);
+    expect(pushes).toHaveLength(workflows.length);
     // CL-6462: deploy order is the product decision — the setup agent is
     // pushed and deployed before any other seeded workflow, so someone
     // who just connected can start talking while the rest converge.
@@ -1375,11 +1391,11 @@ describe("seedTenant", () => {
       `/assets/workflow/${SETUP_AGENT_ASSET_NAME}.git`,
     );
     const output = lines.join("\n");
-    for (const workflow of DEFAULT_WORKFLOWS) {
+    for (const workflow of workflows) {
       expect(output).not.toContain(`confirmed workflow ${workflow.assetName}`);
     }
     expect(output).toContain(
-      `seed complete: ${DEFAULT_WORKFLOWS.length} workflow(s) deployed`,
+      `seed complete: ${workflows.length} workflow(s) deployed`,
     );
     expect(output).not.toContain("deployed and confirmed");
     expect(output).toContain(
@@ -1509,7 +1525,7 @@ describe("default skills seeding", () => {
       return workflowRoutes(method, path);
     };
 
-    const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
+    const echoOnly = CATALOG_WORKFLOWS.filter((w) => w.assetName === "echo");
     await seedTenant(
       args({
         api: fakeAPI(handler),
@@ -1545,7 +1561,7 @@ describe("default skills seeding", () => {
       return workflowRoutes(method, path);
     };
 
-    const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
+    const echoOnly = CATALOG_WORKFLOWS.filter((w) => w.assetName === "echo");
     await seedTenant(
       args({
         api: fakeAPI(handler),
@@ -1590,7 +1606,7 @@ describe("default skills seeding", () => {
       return workflowRoutes(method, path);
     };
 
-    const echoOnly = DEFAULT_WORKFLOWS.filter((w) => w.assetName === "echo");
+    const echoOnly = CATALOG_WORKFLOWS.filter((w) => w.assetName === "echo");
     await seedTenant(
       args({
         api: fakeAPI(handler),
