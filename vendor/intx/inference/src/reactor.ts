@@ -42,7 +42,6 @@ import type {
 
 import { getLogger } from "@intx/log";
 import { ApprovalDecision, signalKindToGateType } from "@intx/types";
-import type { SignalKind } from "@intx/types";
 import { canonicalJsonStringify } from "@intx/types/wire-definition-hash";
 import { type } from "arktype";
 import { runInference } from "./harness";
@@ -71,18 +70,6 @@ const SUSPENDED = Symbol("suspended");
 // here, so the switch cannot silently drop an unhandled case.
 function assertNever(x: never): never {
   throw new Error(`Unhandled resume case: ${JSON.stringify(x)}`);
-}
-
-// Synthetic error text for a parked call whose gate timed out with no reply.
-// Exhaustive over SignalKind so a newly added kind must supply its own wording
-// rather than inheriting another kind's message.
-function timeoutMessageFor(kind: SignalKind): string {
-  switch (kind) {
-    case "approval":
-      return "approval timed out";
-    default:
-      return assertNever(kind);
-  }
 }
 
 function buildHarnessOpts(
@@ -461,16 +448,17 @@ export function createReactor(config: ReactorConfig): Reactor {
     | { mode: "gate-cleared" }
     | { mode: "error_result"; result: ToolResult };
 
-  // Decide how a correlated ask-flow pending operation resumes. An operation
-  // that carries a `suspendedCall` is an ask-flow suspension: the correlated
-  // reply routes it down whichever rail its `kind` defines. An operation
-  // without one is an async-tool pending marker, which resumes on the normal
-  // gate-cleared rail.
+  // Decide how a correlated approval-kind pending operation resumes, granting
+  // any one-shot bypass synchronously so no delivery can interleave between the
+  // grant and the re-dispatch enqueued by the caller. An operation that carries
+  // a `suspendedCall` is an ask-flow suspension: the approver's decision routes
+  // it down the re-dispatch rail. An operation without one is an async-tool
+  // pending marker, which resumes on the normal gate-cleared rail.
   //
-  // The outer switch is total: `assertNever(op.kind)` rejects a future
-  // SignalKind at compile time. `approval` additionally parses its reply as a
-  // structured `ApprovalDecision`, failing loud at that parse boundary rather
-  // than reaching its own nested `assertNever`.
+  // The nested switch is total: the outer `assertNever(op.kind)` rejects a
+  // future SignalKind at compile time, and the inner `assertNever` rejects a
+  // future decision outcome. A malformed decision body fails loud at the parse
+  // boundary before the switch.
   function resumePendingOperation(
     op: PendingOperation,
     message: InboundMessage,
@@ -480,29 +468,29 @@ export function createReactor(config: ReactorConfig): Reactor {
     }
     const suspendedCall = op.suspendedCall;
 
-    switch (op.kind) {
-      case "approval": {
-        if (message.content === undefined) {
-          throw new Error(
-            `Correlated approval decision for ${op.correlationId} has no body to parse`,
-          );
-        }
-        let raw: unknown;
-        try {
-          raw = JSON.parse(message.content);
-        } catch (cause) {
-          throw new Error(
-            `Correlated approval decision for ${op.correlationId} is not valid JSON`,
-            { cause },
-          );
-        }
-        const decision = ApprovalDecision(raw);
-        if (decision instanceof type.errors) {
-          throw new Error(
-            `Correlated approval decision for ${op.correlationId} is malformed: ${decision.summary}`,
-          );
-        }
+    if (message.content === undefined) {
+      throw new Error(
+        `Correlated approval decision for ${op.correlationId} has no body to parse`,
+      );
+    }
+    let raw: unknown;
+    try {
+      raw = JSON.parse(message.content);
+    } catch (cause) {
+      throw new Error(
+        `Correlated approval decision for ${op.correlationId} is not valid JSON`,
+        { cause },
+      );
+    }
+    const decision = ApprovalDecision(raw);
+    if (decision instanceof type.errors) {
+      throw new Error(
+        `Correlated approval decision for ${op.correlationId} is malformed: ${decision.summary}`,
+      );
+    }
 
+    switch (op.kind) {
+      case "approval":
         switch (decision.outcome) {
           case "approved":
             // Authorize the exact parked call to run once, then re-dispatch it.
@@ -529,7 +517,6 @@ export function createReactor(config: ReactorConfig): Reactor {
           default:
             return assertNever(decision.outcome);
         }
-      }
       default:
         return assertNever(op.kind);
     }
@@ -600,9 +587,9 @@ export function createReactor(config: ReactorConfig): Reactor {
       }
       case "error_result": {
         // The approver denied the call. Clear the gate SILENTLY (like the
-        // approved redispatch) so it cannot also trip onGateCleared and
-        // enqueue a second continuation. The result answers the parked call
-        // directly; the director appends it and re-infers once.
+        // approved redispatch) so it cannot also trip onGateCleared and enqueue
+        // a second continuation. The synthetic error result answers the parked
+        // call; the director appends it and re-infers once.
         if (gate !== undefined) {
           gates.clearSilently(gate.gateId);
           if (stateManager !== null) {
@@ -1158,7 +1145,7 @@ export function createReactor(config: ReactorConfig): Reactor {
           type: "resume.tool_result",
           result: {
             callId: op.suspendedCall.id,
-            content: timeoutMessageFor(op.kind),
+            content: "approval timed out",
             isError: true,
           },
         });
