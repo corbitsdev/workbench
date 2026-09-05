@@ -20,11 +20,22 @@ export type {
 export { WorkbenchLoadingState } from "./loading-state";
 
 export {
-  AVATAR_IDENTITY_CLASS,
-  generatedAvatarStyle,
+  CorbitAvatar,
+  CORBIT_DEFAULT_COLOR,
+  CORBIT_VISOR_COLOR,
+  CORBIT_GLINT_COLOR,
+  AVATAR_COLORS,
+  avatarColorClass,
+  avatarColorForPrincipal,
+  avatarClassForPrincipal,
   resolveAvatarFill,
-} from "./avatar-identity";
-export type { AvatarFill, GeneratedAvatarStyle } from "./avatar-identity";
+} from "./avatar";
+export type {
+  AvatarFill,
+  AvatarColor,
+  CorbitAvatarProps,
+  CorbitAvatarSize,
+} from "./avatar";
 
 export { PinnedStrip } from "./pinned-strip";
 export type { PinsStatus } from "./use-workbench-feed";

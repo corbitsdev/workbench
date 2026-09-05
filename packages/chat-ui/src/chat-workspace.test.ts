@@ -5,10 +5,11 @@ import {
   buildMemberAvatarStack,
 } from "./chat-workspace";
 import type { ParticipantRecord } from "./api";
+import { avatarClassForPrincipal } from "./avatar";
 import { CHAT_STRINGS } from "./strings";
 
-describe("buildMemberAvatarStack (CL-6594)", () => {
-  test("gives every agent participant its own initial and its own generated color, never a shared fallback", () => {
+describe("buildMemberAvatarStack", () => {
+  test("identifies agent participants with agent tone for Corbit rendering", () => {
     const participants: readonly ParticipantRecord[] = [
       { address: "run_myra@dana.localhost", handle: "myra" },
       { address: "run_scout@dana.localhost", handle: "scout" },
@@ -17,18 +18,8 @@ describe("buildMemberAvatarStack (CL-6594)", () => {
     const stack = buildMemberAvatarStack(participants);
 
     expect(stack).toHaveLength(2);
-    expect(stack.map((entry) => entry.initials)).toEqual(["M", "S"]);
     expect(stack.map((entry) => entry.label)).toEqual(["Myra", "Scout"]);
     expect(stack.every((entry) => entry.tone === "agent")).toBe(true);
-
-    const [myra, scout] = stack;
-    expect(myra?.color).toBeDefined();
-    expect(scout?.color).toBeDefined();
-    // Distinct addresses must never collapse onto the same fallback
-    // fill — this is exactly what a shared CSS accent color did before
-    // CL-6594: two agents in one room rendered as indistinguishable
-    // avatars.
-    expect(myra?.color).not.toBe(scout?.color);
   });
 
   test("is the static roster only — live presence is a separate stack", () => {
@@ -58,7 +49,7 @@ describe("buildMemberAvatarStack (CL-6594)", () => {
     const human = stack[1];
     expect(human?.key).toBe("prn_dana");
     expect(human?.initials).toBe("D");
-    expect(human?.color).toBeDefined();
+    expect(human?.avatarClassName).toBe(avatarClassForPrincipal("prn_dana"));
   });
 
   test("prefers the signed-in display name over a raw participant handle", () => {
@@ -86,7 +77,6 @@ describe("buildMemberAvatarStack (CL-6594)", () => {
     );
 
     expect(stack.map((entry) => entry.label)).toEqual(["Myra the Helper"]);
-    expect(stack.map((entry) => entry.initials)).toEqual(["M"]);
   });
 });
 

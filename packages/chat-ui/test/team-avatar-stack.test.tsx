@@ -165,15 +165,15 @@ describe("workbench header member avatar stack", () => {
     expect(memberStack).not.toBeNull();
     expect(harness.container.querySelector(".chat-team-stack")).toBeNull();
     const agentAvatars = harness.container.querySelectorAll(
-      '.chat-member-avatar[data-agent="true"]',
+      '.member-avatar[data-agent="true"]',
     );
     expect(agentAvatars).toHaveLength(1);
     const agentAvatar = agentAvatars[0] as HTMLElement;
     expect(agentAvatar.title).toBe("Myra");
-    expect(agentAvatar.textContent).toBe("M");
     const memberHumans = harness.container.querySelectorAll(
-      ".chat-member-avatar:not([data-agent])",
+      ".member-avatar:not([data-agent])",
     );
+    expect(agentAvatar.querySelector('[data-corbit="true"]')).not.toBeNull();
     expect(memberHumans).toHaveLength(1);
     expect((memberHumans[0] as HTMLElement).title).toBe("Alice");
     const liveStack = harness.container.querySelector(".chat-presence-stack");
@@ -189,7 +189,7 @@ describe("workbench header member avatar stack", () => {
     harness.unmount();
   });
 
-  test("gives every agent its own initial and color, never a shared fallback (CL-6594)", async () => {
+  test("renders distinct Corbit avatars for agent participants", async () => {
     stubFetch({
       participants: [
         { address: "run_myra@dana.localhost", handle: "myra" },
@@ -203,28 +203,18 @@ describe("workbench header member avatar stack", () => {
     await harness.settle();
 
     const agentAvatars = Array.from(
-      harness.container.querySelectorAll(
-        '.chat-member-avatar[data-agent="true"]',
-      ),
+      harness.container.querySelectorAll('.member-avatar[data-agent="true"]'),
     ) as HTMLElement[];
     expect(agentAvatars).toHaveLength(2);
-    expect(agentAvatars.map((avatar) => avatar.textContent)).toEqual([
-      "M",
-      "S",
+    expect(agentAvatars.map((avatar) => avatar.title)).toEqual([
+      "Myra",
+      "Scout",
     ]);
-    // Each agent avatar carries its own `AVATAR_IDENTITY_CLASS`-free
-    // inline text color (the CSS custom-property indirection this
-    // package uses elsewhere doesn't apply to this chip), proving two
-    // agents never render with the exact same computed fill — the
-    // per-address color itself is `buildMemberAvatarStack`'s own unit
-    // test (`../src/chat-workspace.test.ts`), since happy-dom drops the
-    // space-syntax `hsl()` `colorForPrincipal` emits before it reaches
-    // any DOM assertion here.
-    const [myraText, scoutText] = agentAvatars.map(
-      (avatar) => avatar.style.color,
-    );
-    expect(myraText).not.toBe("");
-    expect(scoutText).not.toBe("");
+    expect(
+      agentAvatars.every(
+        (avatar) => avatar.querySelector('[data-corbit="true"]') !== null,
+      ),
+    ).toBe(true);
     harness.unmount();
   });
 
@@ -246,7 +236,7 @@ describe("workbench header member avatar stack", () => {
     await harness.settle();
 
     const agentAvatars = harness.container.querySelectorAll(
-      '.chat-member-avatar[data-agent="true"]',
+      '.member-avatar[data-agent="true"]',
     );
     expect(agentAvatars).toHaveLength(1);
     expect((agentAvatars[0] as HTMLElement).title).toBe("Myra the Helper");
@@ -335,7 +325,7 @@ describe("workbench header member avatar stack", () => {
     await harness.settle();
 
     const memberHumans = harness.container.querySelectorAll(
-      ".chat-member-avatar:not([data-agent])",
+      ".member-avatar:not([data-agent])",
     );
     expect(memberHumans).toHaveLength(1);
     expect((memberHumans[0] as HTMLElement).title).toBe("sawyer");

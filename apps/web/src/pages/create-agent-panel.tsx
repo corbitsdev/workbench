@@ -39,7 +39,6 @@
 // lane).
 
 import {
-  Avatar,
   Button,
   Dialog,
   DialogBody,
@@ -51,8 +50,15 @@ import {
   IntakeForm,
   Textarea,
 } from "@corbits/react-ui";
-import type { AvatarTone, IntakeField } from "@corbits/react-ui";
+import type { IntakeField } from "@corbits/react-ui";
 import { useEffect, useState } from "react";
+import {
+  AVATAR_COLORS,
+  avatarColorClass,
+  CORBIT_DEFAULT_COLOR,
+  CorbitAvatar,
+} from "@corbits/chat-ui";
+import type { AvatarColor } from "@corbits/chat-ui";
 
 import { ApiQueryError } from "@corbits/api-query";
 
@@ -82,23 +88,6 @@ function submitErrorFromCause(
     ...(cause.refId !== undefined ? { refId: cause.refId } : {}),
   };
 }
-
-function initialsFromName(name: string): string {
-  const [first, second] = name.trim().split(/\s+/).filter(Boolean);
-  if (first === undefined) return "?";
-  if (second === undefined) return first.slice(0, 2);
-  return `${first[0]}${second[0]}`;
-}
-
-const AVATAR_TONES: readonly {
-  readonly tone: AvatarTone;
-  readonly label: string;
-}[] = [
-  { tone: "neutral", label: "Grey" },
-  { tone: "agent", label: "Orange" },
-  { tone: "agent2", label: "Blue" },
-  { tone: "agent3", label: "Green" },
-];
 
 type FormValues = {
   readonly name: string;
@@ -248,7 +237,8 @@ export function CreateAgentPanel({
   readonly onCreated: (definition: AgentDefinition) => void;
 }) {
   const [values, setValues] = useState<FormValues>(EMPTY_VALUES);
-  const [tone, setTone] = useState<AvatarTone>("agent");
+  const [avatarColor, setAvatarColor] =
+    useState<AvatarColor>(CORBIT_DEFAULT_COLOR);
   const [handleTouched, setHandleTouched] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [draftFailed, setDraftFailed] = useState(false);
@@ -284,7 +274,7 @@ export function CreateAgentPanel({
 
   function reset() {
     setValues(EMPTY_VALUES);
-    setTone("agent");
+    setAvatarColor(CORBIT_DEFAULT_COLOR);
     setHandleTouched(false);
     setAdvancedOpen(false);
     setDraftFailed(false);
@@ -437,27 +427,22 @@ export function CreateAgentPanel({
             </p>
           )}
 
-          <div className="create-agent-identity">
-            <Avatar
-              initials={initialsFromName(values.name)}
-              label={values.name.trim() === "" ? "New agent" : values.name}
-              tone={tone}
+          <div className="flex items-center gap-3">
+            <CorbitAvatar
+              ariaLabel={values.name.trim() === "" ? "New agent" : values.name}
+              color={avatarColor}
               size="lg"
             />
-            <div
-              role="group"
-              aria-label="Agent color"
-              className="create-agent-tone-row"
-            >
-              {AVATAR_TONES.map((entry) => (
+            <div role="group" aria-label="Agent color" className="flex gap-1.5">
+              {AVATAR_COLORS.map((color) => (
                 <button
-                  key={entry.tone}
+                  key={color}
                   type="button"
-                  aria-label={entry.label}
-                  aria-pressed={tone === entry.tone}
-                  className={`create-agent-tone-swatch create-agent-tone-${entry.tone}`}
+                  aria-label={`Choose ${color} avatar color`}
+                  aria-pressed={avatarColor === color}
+                  className={`size-6 cursor-pointer rounded-full border-2 border-transparent p-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground aria-pressed:border-foreground ${avatarColorClass[color]}`}
                   disabled={submitting}
-                  onClick={() => setTone(entry.tone)}
+                  onClick={() => setAvatarColor(color)}
                 />
               ))}
             </div>
