@@ -175,6 +175,35 @@ state of its own, so handing an old run's identity to a new sidecar
 process would silently pretend session state survived that never did.
 A genuine redeploy is the only honest repair.
 
+## How a person adds a catalog workflow (CL-7073)
+
+The Routines page's Available section is the read side of this
+invariant, surfaced to a person rather than an operator: `GET
+/api/tenants/:tenantId/workflows/available`
+(`packages/workflows/src/schedule/scheduled-route.ts`,
+`available-catalog.ts`) answers every `CATALOG_WORKFLOWS` asset name
+with no deployed `workflow_definition` on the caller's tenant yet,
+each carrying `WORKFLOW_CATALOG`'s display name and one-line
+description (`packages/workflows/src/catalog.ts`), its required
+connections, and whether the tenant already satisfies every one of
+them — a `provider` row named after the connector id exists and its
+newest `credential` is `active` (mirroring
+`@corbits/settings-ui`'s `connectorStatus` exactly, without importing
+a UI package into a domain package). The route is injected the
+catalog's asset-name list from `apps/hub` rather than importing
+`@corbits/seeding` directly: that package already depends on
+`@corbits/workflows`, so the reverse import would cycle.
+
+The web page's Add action POSTs the same
+`/template-blocks/:assetName/deploy` route the GTM template's blocks
+already use (`docs/seed-reconciliation.md`'s "Deployable through the
+catalog" section above) — there is no second create path. A
+disabled Add (a missing required connection) links to Plugins rather
+than letting the request 404/500; the request itself is only ever
+made once every required connection reads satisfied. On success the
+entry moves out of Available into the ordinary scheduled/deployed
+list the rest of the page already reads.
+
 ## Env provider credentials (hub boot)
 
 `apps/hub/src/env-credential-plant.ts` delegates to
