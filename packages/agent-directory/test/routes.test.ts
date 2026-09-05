@@ -120,9 +120,7 @@ const CORBITS_TOOLS_REGISTRY_ASSET = {
 /** Merges the `db.query.tenant`/`db.query.asset` lookups
  * `resolvePinnedVersion` needs into a fake db's `query` object, leaving
  * every other query untouched. */
-function withToolPackageRegistryQueries<T extends { query: object }>(
-  db: T,
-): T {
+function withToolPackageRegistryQueries<T extends { query: object }>(db: T): T {
   return {
     ...db,
     query: {
@@ -1690,8 +1688,7 @@ test("adding a tool package pin merges it into the definition in one commit, nam
         writtenMessage = params.tree.message;
         return Promise.resolve({ commitSha: "deadbeef" });
       },
-      listAssetBlobs: () =>
-        Promise.resolve(["corbits-github-tools-3.1.0.tgz"]),
+      listAssetBlobs: () => Promise.resolve(["corbits-github-tools-3.1.0.tgz"]),
     }),
     withToolPackageRegistryQueries(
       fakeInstructionsDb({

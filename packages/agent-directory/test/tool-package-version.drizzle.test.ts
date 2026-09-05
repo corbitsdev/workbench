@@ -28,7 +28,9 @@ const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const SCHEMA = "agent_directory_tool_package_version_test";
 
-function fakeAssetService(filenamesByDir: Record<string, string[]>): AssetService {
+function fakeAssetService(
+  filenamesByDir: Record<string, string[]>,
+): AssetService {
   return {
     createAsset: () => {
       throw new Error("not used in these tests");
