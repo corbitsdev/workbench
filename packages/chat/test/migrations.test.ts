@@ -51,6 +51,7 @@ const migrationNames = [
   "0027_block_responses_notified_at",
   "0028_turn_mail_correlation",
   "0029_workbench_messages_mail_message_id",
+  "0030_mailbox_backfill_cursor",
 ];
 
 describeIfDb("applyChatMigrations", () => {
