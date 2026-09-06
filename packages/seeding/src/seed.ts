@@ -663,6 +663,15 @@ export const SEED_GRANTS: readonly { resource: string; action: string }[] = [
   // vocabulary.
   { resource: "asset:*", action: "create" },
   { resource: "asset:*", action: "write" },
+  // `@corbits/access-tools`' workflow-run-authenticated routes
+  // (`list_principals`, `list_grants`, `grant_access`, `revoke_access`):
+  // read on both, plus create/manage on grants so a seeded principal
+  // can actually mint and revoke the scoped grants it stands up for its
+  // own specialist agents.
+  { resource: "principal:*", action: "read" },
+  { resource: "grant:*", action: "read" },
+  { resource: "grant:*", action: "create" },
+  { resource: "grant:*", action: "manage" },
 ];
 
 // The grants table has no unique constraint and the create route is a
