@@ -184,27 +184,27 @@ export async function fetchEstimate(
   );
 }
 
-// --- Tenant catalog administration -----------------------------------
+// --- Catalog administration -------------------------------------------
 //
 // `list_model_concepts`/`pick_models`/`estimate_run_cost` above read the
 // run-authenticated `/api/workflow-inference-catalog` surface. The tools
-// below instead write through the tenant-admin surface Interchange's own
-// `apps/hub-web` settings UI uses directly:
-// `vendor/intx/hub-api/src/routes/{models,model-providers,model-offerings}.ts`,
-// mounted at `/api/tenants/:id/catalog/{models,providers,offerings}`. They
-// carry the same sidecar bearer token and run address as every other call
-// in this file — the hub is expected to resolve that credential to this
-// tenant's own principal for these routes exactly as it already does for
-// `/api/workflow-inference-catalog`.
+// below write through `@corbits/catalog-tools`' own workflow-run-
+// authenticated mirror of the tenant-admin catalog surface Interchange's
+// own `apps/hub-web` settings UI uses via a browser session
+// (`vendor/intx/hub-api/src/routes/{models,model-providers,
+// model-offerings}.ts`, mounted at `/api/tenants/:id/catalog/*`): see
+// `./routes.ts`'s `createWorkflowCatalogAdminRoutes`, mounted in
+// `apps/hub` at `/api/workflow-catalog-admin`. Same sidecar bearer token
+// and run address as every other call in this file; the hub resolves
+// that credential to the run's own tenant/principal, so the tenant never
+// rides in the request the way it does in the tenant-admin routes' URL
+// path.
 
 export interface CatalogAdminClientConfig {
   /** Same hub origin as {@link CatalogToolClientConfig.hubCatalogUrl}. */
   readonly hubCatalogUrl: string;
   readonly sidecarToken: string;
   readonly address: string;
-  /** The tenant this run belongs to — the tenant-admin routes are scoped
-   * by this id in their URL path. */
-  readonly tenantId: string;
   /** Override for tests; defaults to the global `fetch`. */
   readonly fetchImpl?: typeof fetch;
 }
@@ -239,7 +239,7 @@ async function adminCall<T>(
 ): Promise<T> {
   const doFetch = config.fetchImpl ?? fetch;
   const response = await doFetch(
-    `${config.hubCatalogUrl}/api/tenants/${config.tenantId}${path}`,
+    `${config.hubCatalogUrl}/api/workflow-catalog-admin${path}`,
     { ...init, headers: { ...adminAuthHeaders(config), ...init?.headers } },
   );
   if (!response.ok) {
@@ -272,7 +272,7 @@ export async function findModelIdByCanonicalName(
       : "?limit=100";
     const page = await adminCall(
       config,
-      `/catalog/models${qs}`,
+      `/models${qs}`,
       "Listing this workbench's own models",
       (raw) => ModelsPage(raw),
     );
@@ -300,7 +300,7 @@ export async function findModelProviderIdByName(
       : "?limit=100";
     const page = await adminCall(
       config,
-      `/catalog/providers${qs}`,
+      `/providers${qs}`,
       "Listing this workbench's own model providers",
       (raw) => ModelProvidersPage(raw),
     );
@@ -328,7 +328,7 @@ export async function createOffering(
 ): Promise<typeof ModelOfferingResponse.infer> {
   return await adminCall(
     config,
-    "/catalog/offerings",
+    "/offerings",
     "Creating the offering",
     (raw) => ModelOfferingResponse(raw),
     { method: "POST", body: JSON.stringify(CreateModelOffering.assert(request)) },
@@ -343,7 +343,7 @@ export async function setOfferingPriority(
 ): Promise<typeof ModelOfferingResponse.infer> {
   return await adminCall(
     config,
-    `/catalog/offerings/${offeringId}`,
+    `/offerings/${offeringId}`,
     "Setting the offering's priority",
     (raw) => ModelOfferingResponse(raw),
     {
@@ -361,7 +361,7 @@ export async function disableOffering(
 ): Promise<typeof ModelOfferingResponse.infer> {
   return await adminCall(
     config,
-    `/catalog/offerings/${offeringId}`,
+    `/offerings/${offeringId}`,
     "Disabling the offering",
     (raw) => ModelOfferingResponse(raw),
     {

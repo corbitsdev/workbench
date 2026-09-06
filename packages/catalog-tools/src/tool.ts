@@ -112,13 +112,13 @@ function clientConfig(env: WorkflowCatalogEnv): CatalogToolClientConfig {
 
 /** Env `create_offering`/`set_offering_priority`/`disable_offering` need
  * beyond `BaseEnv`: the same hub-reach credential as
- * {@link WorkflowCatalogEnv}, plus the tenant those tenant-admin catalog
- * routes are scoped to. */
+ * {@link WorkflowCatalogEnv}. The hub resolves the run's own tenant from
+ * that same credential, so no tenant id rides in the env or the
+ * request. */
 export interface WorkflowCatalogOfferingEnv extends BaseEnv {
   readonly hubCatalogUrl: string;
   readonly sidecarToken: string;
   readonly address: string;
-  readonly tenantId: string;
 }
 
 function adminClientConfig(
@@ -128,7 +128,6 @@ function adminClientConfig(
     hubCatalogUrl: env.hubCatalogUrl,
     sidecarToken: env.sidecarToken,
     address: env.address,
-    tenantId: env.tenantId,
   };
 }
 
@@ -479,7 +478,7 @@ export const catalogTools = defineTool<WorkflowCatalogEnv>({
  */
 export const catalogOfferingTools = defineTool<WorkflowCatalogOfferingEnv>({
   id: "@corbits/catalog-tools/offerings",
-  requires: ["hubCatalogUrl", "sidecarToken", "address", "tenantId"],
+  requires: ["hubCatalogUrl", "sidecarToken", "address"],
   definitions: [
     { name: CREATE_OFFERING_TOOL, approval: "ask" },
     { name: SET_OFFERING_PRIORITY_TOOL },

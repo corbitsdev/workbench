@@ -245,7 +245,6 @@ function offeringEnv(): WorkflowCatalogOfferingEnv {
     hubCatalogUrl: "https://hub.example.com",
     sidecarToken: "sc-token",
     address: "run_1@workflow",
-    tenantId: "tenant_1",
   } as unknown as WorkflowCatalogOfferingEnv;
 }
 
@@ -338,12 +337,11 @@ describe("the offering bundle's shape", () => {
     ]);
   });
 
-  test("requires the tenant id alongside the sanctioned workflow-run env keys", () => {
+  test("requires only the sanctioned workflow-run env keys", () => {
     expect(catalogOfferingTools.requires).toEqual([
       "hubCatalogUrl",
       "sidecarToken",
       "address",
-      "tenantId",
     ]);
   });
 });
@@ -351,9 +349,9 @@ describe("the offering bundle's shape", () => {
 describe("create_offering", () => {
   test("resolves both names to ids, then creates the offering", async () => {
     globalThis.fetch = routedFetch({
-      "/catalog/models": ok(OWN_MODELS_PAGE),
-      "/catalog/providers": ok(OWN_PROVIDERS_PAGE),
-      "/catalog/offerings": ok(OFFERING_ROW, 201),
+      "/models": ok(OWN_MODELS_PAGE),
+      "/providers": ok(OWN_PROVIDERS_PAGE),
+      "/offerings": ok(OFFERING_ROW, 201),
     });
     const result = await catalogOfferingTools(offeringEnv()).run(
       callFor(CREATE_OFFERING_TOOL, {
@@ -370,8 +368,8 @@ describe("create_offering", () => {
 
   test("an unknown canonical name is refused, never a guessed id", async () => {
     globalThis.fetch = routedFetch({
-      "/catalog/models": ok({ data: [], nextCursor: null }),
-      "/catalog/providers": ok(OWN_PROVIDERS_PAGE),
+      "/models": ok({ data: [], nextCursor: null }),
+      "/providers": ok(OWN_PROVIDERS_PAGE),
     });
     const result = await catalogOfferingTools(offeringEnv()).run(
       callFor(CREATE_OFFERING_TOOL, {
@@ -388,8 +386,8 @@ describe("create_offering", () => {
 
   test("a 403 from the hub surfaces as a refusal, not a thrown crash", async () => {
     globalThis.fetch = routedFetch({
-      "/catalog/models": () => forbidden(),
-      "/catalog/providers": ok(OWN_PROVIDERS_PAGE),
+      "/models": () => forbidden(),
+      "/providers": ok(OWN_PROVIDERS_PAGE),
     });
     const result = await catalogOfferingTools(offeringEnv()).run(
       callFor(CREATE_OFFERING_TOOL, {
@@ -408,7 +406,7 @@ describe("create_offering", () => {
 describe("set_offering_priority", () => {
   test("reorders an offering this workbench already owns", async () => {
     globalThis.fetch = routedFetch({
-      "/catalog/offerings/offering_1": ok({ ...OFFERING_ROW, priority: 5 }),
+      "/offerings/offering_1": ok({ ...OFFERING_ROW, priority: 5 }),
     });
     const result = await catalogOfferingTools(offeringEnv()).run(
       callFor(SET_OFFERING_PRIORITY_TOOL, {
@@ -423,7 +421,7 @@ describe("set_offering_priority", () => {
 
   test("a 403 from the hub surfaces as a refusal", async () => {
     globalThis.fetch = routedFetch({
-      "/catalog/offerings/offering_1": () => forbidden(),
+      "/offerings/offering_1": () => forbidden(),
     });
     const result = await catalogOfferingTools(offeringEnv()).run(
       callFor(SET_OFFERING_PRIORITY_TOOL, {
@@ -439,7 +437,7 @@ describe("set_offering_priority", () => {
 describe("disable_offering", () => {
   test("restricts an offering this workbench already owns", async () => {
     globalThis.fetch = routedFetch({
-      "/catalog/offerings/offering_1": ok({ ...OFFERING_ROW, disabled: true }),
+      "/offerings/offering_1": ok({ ...OFFERING_ROW, disabled: true }),
     });
     const result = await catalogOfferingTools(offeringEnv()).run(
       callFor(DISABLE_OFFERING_TOOL, { offeringId: "offering_1" }),
@@ -451,7 +449,7 @@ describe("disable_offering", () => {
 
   test("a 403 from the hub surfaces as a refusal", async () => {
     globalThis.fetch = routedFetch({
-      "/catalog/offerings/offering_1": () => forbidden(),
+      "/offerings/offering_1": () => forbidden(),
     });
     const result = await catalogOfferingTools(offeringEnv()).run(
       callFor(DISABLE_OFFERING_TOOL, { offeringId: "offering_1" }),
