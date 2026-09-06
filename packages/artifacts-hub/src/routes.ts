@@ -11,7 +11,6 @@
  */
 import {
   ARTIFACT_UPLOAD_POLICY,
-  anonymousIdentity,
   createFileArtifact,
   getArtifact,
   listArtifacts,
@@ -235,12 +234,7 @@ export function createArtifactDbStore(
           : { limit: opts.limit };
       const filters =
         opts.query !== null ? { ...withCursor, query: opts.query } : withCursor;
-      const result = await listArtifacts(
-        db,
-        anonymousIdentity,
-        tenantId,
-        filters,
-      );
+      const result = await listArtifacts(db, tenantId, filters);
       return {
         data: result.rows.map(serializeArtifactListItem),
         nextCursor: result.nextCursor,

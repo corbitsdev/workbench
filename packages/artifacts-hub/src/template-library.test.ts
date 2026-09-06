@@ -96,7 +96,6 @@ function memoryEngine(): {
     },
     async listArtifacts(
       _db: unknown,
-      _identity: unknown,
       tenantId: string,
       filters: { kind?: string },
     ) {

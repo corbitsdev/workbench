@@ -4,6 +4,7 @@
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
   "compilerOptions": {
     "types": ["bun"],
+    "noEmit": true,
     "composite": true,
     "emitDeclarationOnly": true,
     "outDir": "dist",
@@ -18,9 +19,6 @@
     },
     {
       "path": "../../vendor/intx/hub-api/tsconfig.src.json"
-    },
-    {
-      "path": "../../vendor/intx/hub-sessions/tsconfig.src.json"
     },
     {
       "path": "../../vendor/intx/types/tsconfig.src.json"
