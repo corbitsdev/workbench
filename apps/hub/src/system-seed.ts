@@ -164,7 +164,10 @@ export async function runSystemSeed(deps: SystemSeedDeps): Promise<void> {
         // next boot can retry its way out of, so it is a logged skip
         // rather than an error (which `reportError` would otherwise
         // paint red on every single boot).
-        if (deps.seedModel === undefined && reason.includes(NO_CATALOG_OFFERINGS_REASON)) {
+        if (
+          deps.seedModel === undefined &&
+          reason.includes(NO_CATALOG_OFFERINGS_REASON)
+        ) {
           log.info`root tenant seed skipped: no operator seed key configured, so the tenant has no catalog offerings to deploy against yet`;
           return;
         }

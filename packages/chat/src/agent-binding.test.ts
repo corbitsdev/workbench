@@ -145,7 +145,6 @@ describe("readBindingByAddress: tenant scoping (CL-7474)", () => {
       await readBindingByAddress(db, "run_b1@acme.example", "tnt_a"),
     ).toBeUndefined();
   });
-
 });
 
 describe("readBindingByAddressAnyTenant", () => {
