@@ -10,8 +10,7 @@ import { createRoot } from "react-dom/client";
 
 import { useStreamingReply } from "../src/streaming-reply";
 import type { StreamingReplyState } from "../src/streaming-reply";
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+import { createFakeClock } from "./fake-clock";
 
 function mount(
   initialWorkbenchId: string | null,
@@ -21,6 +20,7 @@ function mount(
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
+  const fakeClock = createFakeClock();
   let latestState: StreamingReplyState = null;
   let latestTimedOutRefId: string | null = null;
   let send: (eventType: string, data: unknown) => void = () => {};
@@ -39,7 +39,7 @@ function mount(
       handleStreamEvent,
       noteAwaitingReply,
       resumeFromTurn,
-    } = useStreamingReply(workbenchId, clearMs, minVisibleMs);
+    } = useStreamingReply(workbenchId, clearMs, minVisibleMs, fakeClock.clock);
     latestState = streamingReply;
     latestTimedOutRefId = replyTimedOutRefId;
     send = handleStreamEvent;
@@ -71,7 +71,7 @@ function mount(
       act(() => {
         resume(runningTurn);
       }),
-    settle: (ms: number) => act(() => sleep(ms)),
+    settle: (ms: number) => act(() => fakeClock.advance(ms)),
     get: () => latestState,
     timedOutRefId: () => latestTimedOutRefId,
     unmount: () => act(() => root.unmount()),
