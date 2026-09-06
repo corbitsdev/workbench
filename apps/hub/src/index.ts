@@ -2258,6 +2258,8 @@ export async function createHub(config: HubConfig) {
             repoStore: agentRepoStore.repoStore,
             workflowAllocationService,
             credentialCipher,
+            isRoutable: (address) =>
+              sidecarRouter.getRoutableAddresses().includes(address),
             cryptoProviderCache: cryptoProviders,
             persistLaunch: async (input) => {
               await workbenchLaunchPersistExtra(input)(db);
