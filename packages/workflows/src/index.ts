@@ -56,10 +56,10 @@ export {
 } from "./schedule/cron";
 export { scheduleCronFromProjection } from "./schedule/from-projection";
 export {
-  recordAgentSessionForRun,
+  recordAgentSessionAtProvision,
+  ensureRunSession,
   endAgentSessionForPrincipal,
   endAgentSessionForRun,
-  type RecordAgentSessionParams,
   type EventCollectorPort,
 } from "./launch/agent-session";
 export {
