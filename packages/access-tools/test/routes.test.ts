@@ -222,15 +222,17 @@ describeIfDb("createWorkflowAccessRoutes", () => {
       grants: { id: string; resource: string; action: string }[];
     };
     expect(body.grants).toHaveLength(1);
-    expect(body.grants[0]?.resource).toBe("room:*");
+    const createdGrant = body.grants[0];
+    if (createdGrant === undefined) throw new Error("expected a created grant");
+    expect(createdGrant.resource).toBe("room:*");
 
     await db.db
       .delete(schema.grant)
-      .where(eq(schema.grant.id, body.grants[0]!.id));
+      .where(eq(schema.grant.id, createdGrant.id));
   });
 
   test("revoke: 403 outside the caller's own ceiling", async () => {
-    const [ungrantableRow] = await db.db
+    const inserted = await db.db
       .insert(schema.grant)
       .values({
         id: generateId("grant"),
@@ -247,6 +249,9 @@ describeIfDb("createWorkflowAccessRoutes", () => {
         updatedAt: new Date(),
       })
       .returning();
+    const ungrantableRow = inserted[0];
+    if (ungrantableRow === undefined)
+      throw new Error("expected an inserted grant");
 
     const grantStore = createInMemoryGrantStore([
       {
@@ -263,18 +268,18 @@ describeIfDb("createWorkflowAccessRoutes", () => {
     ]);
     const app = mountedApp(grantStore);
     const res = await app.request(
-      request(`/grants/${ungrantableRow!.id}`, { method: "DELETE" }),
+      request(`/grants/${ungrantableRow.id}`, { method: "DELETE" }),
     );
     expect(res.status).toBe(403);
 
     const stillThere = await db.db.query.grant.findFirst({
-      where: eq(schema.grant.id, ungrantableRow!.id),
+      where: eq(schema.grant.id, ungrantableRow.id),
     });
     expect(stillThere).toBeDefined();
 
     await db.db
       .delete(schema.grant)
-      .where(eq(schema.grant.id, ungrantableRow!.id));
+      .where(eq(schema.grant.id, ungrantableRow.id));
   });
 
   test("404 for an unknown grant id", async () => {
