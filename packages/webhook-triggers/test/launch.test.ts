@@ -88,7 +88,32 @@ function createFakeDb() {
     query: {
       workflowDefinition: { findFirst: async () => DEFINITION_ROW },
       tenant: { findFirst: async () => TENANT_ROW },
+      workflowRun: {
+        findFirst: async () => ({
+          id: INTERCHANGE_RUN_ID,
+          tenantId: TENANT_ROW.id,
+          definitionId: DEFINITION_ROW.id,
+          address: INTERCHANGE_ADDRESS,
+          principalId: null,
+        }),
+      },
     },
+    insert: () => ({
+      values: () => ({
+        onConflictDoNothing: async () => undefined,
+      }),
+    }),
+  };
+}
+
+let eventCollectorCreateCalls: unknown[] = [];
+
+function createFakeEventCollectors() {
+  return {
+    create: (...args: unknown[]) => {
+      eventCollectorCreateCalls.push(args);
+    },
+    has: () => false,
   };
 }
 
@@ -179,6 +204,7 @@ function baseDeps() {
       },
     },
     isRoutable: () => isRoutableForTest,
+    eventCollectors: createFakeEventCollectors(),
   };
 }
 
@@ -190,6 +216,7 @@ function resetLaunchSpies() {
   sendUserMessageCalls = [];
   cryptoGetKeys = [];
   reportErrorCalls = [];
+  eventCollectorCreateCalls = [];
   visibleOfferings = [...DEFAULT_VISIBLE_OFFERINGS];
   frozenProjection = INERT_PROJECTION;
   sendUserMessageImpl = async () => new Uint8Array([1]);

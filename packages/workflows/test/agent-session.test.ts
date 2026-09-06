@@ -2,11 +2,16 @@
 // repo's convention for tests that talk to a real Postgres (see
 // `packages/access-tools/test/routes.test.ts`).
 //
-// CL-7477/CL-7480: nothing writes `agent_session` for a native launch
-// until something calls `ensureRunSession` — this proves it writes a
-// row `resolveRunSessionId` (vendor's mail-routing lookup) actually
-// reads back, only once the run is anchored with a principal, and stays
-// idempotent (one insert, one collector) across repeated calls.
+// CL-7481: `recordAgentSessionAtProvision` is the eager write every
+// native launcher makes right after `prepareProvisionedDeployment`
+// returns — this proves it lands the `agent_session` row under the
+// *deploying* principal (the run's own principal does not exist yet)
+// and creates the run's event collector exactly once, idempotently.
+// `ensureRunSession` is now purely a re-key: once the run's first
+// trigger anchors a real principal onto it, this proves the session
+// moves onto that principal without ever touching the session id, and
+// that a run with no launch spec row is a bug this throws on rather
+// than papering over.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 
@@ -15,7 +20,10 @@ import { generateId } from "@intx/hub-common";
 import { resolveRunSessionId } from "@intx/hub-sessions";
 import { dbGate } from "../../../scripts/e2e/db-gate";
 
-import { ensureRunSession } from "../src/launch/agent-session";
+import {
+  ensureRunSession,
+  recordAgentSessionAtProvision,
+} from "../src/launch/agent-session";
 
 function dbConfigFromUrl(databaseUrl: string) {
   const url = new URL(databaseUrl);
@@ -31,14 +39,15 @@ function dbConfigFromUrl(databaseUrl: string) {
 const databaseUrl = process.env["DATABASE_URL"];
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
-describeIfDb("ensureRunSession", () => {
+describeIfDb("recordAgentSessionAtProvision / ensureRunSession", () => {
   let db: DB;
 
   const tenantId = generateId("tenant");
-  const principalId = generateId("principal");
+  const deployingPrincipalId = generateId("principal");
+  const runPrincipalId = generateId("principal");
   const definitionId = generateId("workflowDefinition");
-  const anchoredRunId = generateId("workflowRun");
-  const unanchoredRunId = generateId("workflowRun");
+  const provisionedRunId = generateId("workflowRun");
+  const noLaunchSpecRunId = generateId("workflowRun");
   const sessionId = generateId("session");
   const domain = `agent-session-${tenantId}.localhost`;
 
@@ -55,55 +64,65 @@ describeIfDb("ensureRunSession", () => {
       config: null,
     });
 
-    await db.db.insert(schema.principal).values({
-      id: principalId,
-      tenantId,
-      kind: "workflow",
-      refId: anchoredRunId,
-      status: "active",
-    });
+    await db.db.insert(schema.principal).values([
+      {
+        id: deployingPrincipalId,
+        tenantId,
+        kind: "human",
+        refId: "usr_test",
+        status: "active",
+      },
+      {
+        id: runPrincipalId,
+        tenantId,
+        kind: "workflow",
+        refId: provisionedRunId,
+        status: "active",
+      },
+    ]);
 
     await db.db.insert(schema.workflowDefinition).values({
       id: definitionId,
       tenantId,
-      creatorPrincipalId: principalId,
+      creatorPrincipalId: deployingPrincipalId,
       assetId: null,
       name: "agent-session-test-definition",
     });
 
-    // Anchored: has a principal, so `ensureRunSession` can insert its
-    // `agent_session` row.
+    // Born the instant `prepareProvisionedDeployment` returns: a run row
+    // exists, its own principal is still null, and its launch spec names
+    // the session `recordAgentSessionAtProvision` will record.
     await db.db.insert(schema.workflowRun).values({
-      id: anchoredRunId,
+      id: provisionedRunId,
       definitionId,
-      anchorRunId: anchoredRunId,
+      anchorRunId: provisionedRunId,
       tenantId,
-      principalId,
-      address: `${anchoredRunId}@${domain}`,
-      status: "running",
+      principalId: null,
+      address: `${provisionedRunId}@${domain}`,
+      status: "deployed",
     });
     await db.db.insert(schema.workflowRunLaunchSpec).values({
-      anchorRunId: anchoredRunId,
+      anchorRunId: provisionedRunId,
       sessionId,
       deploymentDomain: domain,
-      sourceAuthorityPrincipalId: principalId,
+      sourceAuthorityPrincipalId: deployingPrincipalId,
       frozenApprovalBundle: {},
       sourceOfferingIds: [],
       defaultSourceOfferingId: "off_test",
       deployContent: { systemPrompt: "" },
     });
 
-    // Unanchored: `prepareProvisionedDeployment` minted the row, but no
-    // trigger has reconciled a principal onto it yet — the normal state
-    // for a freshly provisioned invite.
+    // A run with no launch spec row at all: a launcher that skipped the
+    // shared provisioning path — a bug `ensureRunSession` must surface,
+    // not silently no-op past.
     await db.db.insert(schema.workflowRun).values({
-      id: unanchoredRunId,
+      id: noLaunchSpecRunId,
       definitionId,
-      anchorRunId: unanchoredRunId,
+      anchorRunId: noLaunchSpecRunId,
       tenantId,
       principalId: null,
-      address: `${unanchoredRunId}@${domain}`,
-      status: "running",
+      address: `${noLaunchSpecRunId}@${domain}`,
+      status: "deployed",
     });
   });
 
@@ -114,44 +133,26 @@ describeIfDb("ensureRunSession", () => {
       .where(eq(schema.agentSession.id, sessionId));
     await db.db
       .delete(schema.workflowRunLaunchSpec)
-      .where(eq(schema.workflowRunLaunchSpec.anchorRunId, anchoredRunId));
+      .where(eq(schema.workflowRunLaunchSpec.anchorRunId, provisionedRunId));
     await db.db
       .delete(schema.workflowRun)
-      .where(eq(schema.workflowRun.id, anchoredRunId));
+      .where(eq(schema.workflowRun.id, provisionedRunId));
     await db.db
       .delete(schema.workflowRun)
-      .where(eq(schema.workflowRun.id, unanchoredRunId));
+      .where(eq(schema.workflowRun.id, noLaunchSpecRunId));
     await db.db
       .delete(schema.workflowDefinition)
       .where(eq(schema.workflowDefinition.id, definitionId));
     await db.db
       .delete(schema.principal)
-      .where(eq(schema.principal.id, principalId));
+      .where(eq(schema.principal.id, runPrincipalId));
+    await db.db
+      .delete(schema.principal)
+      .where(eq(schema.principal.id, deployingPrincipalId));
     await db.db.delete(schema.tenant).where(eq(schema.tenant.id, tenantId));
   });
 
-  test("an unanchored run returns null and writes nothing", async () => {
-    const createCalls: unknown[] = [];
-    const resolved = await ensureRunSession({
-      db: db.db,
-      eventCollectors: {
-        create: (...args: unknown[]) => {
-          createCalls.push(args);
-        },
-        has: () => false,
-      },
-      runId: unanchoredRunId,
-    });
-
-    expect(resolved).toBeNull();
-    expect(createCalls).toEqual([]);
-    const sessionRow = await db.db.query.agentSession.findFirst({
-      where: eq(schema.agentSession.agentId, definitionId),
-    });
-    expect(sessionRow).toBeUndefined();
-  });
-
-  test("an anchored run inserts its session and creates its collector once across two calls", async () => {
+  test("records the session under the deploying principal and creates the collector once", async () => {
     const createCalls: unknown[] = [];
     let hasCollector = false;
     const eventCollectors = {
@@ -162,24 +163,65 @@ describeIfDb("ensureRunSession", () => {
       has: () => hasCollector,
     };
 
-    const first = await ensureRunSession({
+    await recordAgentSessionAtProvision({
       db: db.db,
       eventCollectors,
-      runId: anchoredRunId,
+      runId: provisionedRunId,
+      sessionId,
+      sourceAuthorityPrincipalId: deployingPrincipalId,
     });
-    const second = await ensureRunSession({
+    // A second call for the same run is a no-op, not a conflict, and
+    // must not create a second collector.
+    await recordAgentSessionAtProvision({
       db: db.db,
       eventCollectors,
-      runId: anchoredRunId,
+      runId: provisionedRunId,
+      sessionId,
+      sourceAuthorityPrincipalId: deployingPrincipalId,
     });
 
-    expect(first).toBe(sessionId);
-    expect(second).toBe(sessionId);
     expect(createCalls).toEqual([
-      [`${anchoredRunId}@${domain}`, tenantId, sessionId, anchoredRunId],
+      [`${provisionedRunId}@${domain}`, tenantId, sessionId, provisionedRunId],
     ]);
 
-    const resolved = await resolveRunSessionId(db.db, principalId);
+    const sessionRow = await db.db.query.agentSession.findFirst({
+      where: eq(schema.agentSession.id, sessionId),
+    });
+    expect(sessionRow?.principalId).toBe(deployingPrincipalId);
+    expect(sessionRow?.agentId).toBe(definitionId);
+  });
+
+  test("re-keys the session onto the run principal once Interchange anchors it", async () => {
+    await db.db
+      .update(schema.workflowRun)
+      .set({ principalId: runPrincipalId, status: "running" })
+      .where(eq(schema.workflowRun.id, provisionedRunId));
+
+    const resolved = await ensureRunSession({
+      db: db.db,
+      eventCollectors: { create: () => {}, has: () => true },
+      runId: provisionedRunId,
+    });
+
     expect(resolved).toBe(sessionId);
+    const sessionRow = await db.db.query.agentSession.findFirst({
+      where: eq(schema.agentSession.id, sessionId),
+    });
+    expect(sessionRow?.principalId).toBe(runPrincipalId);
+
+    // Interchange's own mail-routing lookup now finds the session by the
+    // run's own principal, exactly as it would for a folded run.
+    const viaVendorLookup = await resolveRunSessionId(db.db, runPrincipalId);
+    expect(viaVendorLookup).toBe(sessionId);
+  });
+
+  test("throws for a run with no launch spec row", async () => {
+    await expect(
+      ensureRunSession({
+        db: db.db,
+        eventCollectors: { create: () => {}, has: () => false },
+        runId: noLaunchSpecRunId,
+      }),
+    ).rejects.toThrow(/no workflow_run_launch_spec/);
   });
 });
