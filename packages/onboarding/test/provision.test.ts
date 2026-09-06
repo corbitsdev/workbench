@@ -96,27 +96,23 @@ function catalogOfferingsResponse(
   path: string,
   tenantId: string,
 ): { status: number; data: unknown; cookies: string[] } | undefined {
-  if (method !== "GET" || path !== `/api/tenants/${tenantId}/catalog/offerings`)
+  if (
+    method !== "GET" ||
+    path !== `/api/tenants/${tenantId}/catalog/resolved-offerings`
+  )
     return undefined;
   return {
     status: 200,
     data: {
-      data: [
+      offerings: [
         {
           id: "off_1",
-          tenantId,
+          priority: 0,
           modelId: "mdl_1",
           providerId: "mpr_1",
-          priority: 0,
-          deploymentTags: [],
-          capabilities: [],
-          quirks: null,
-          disabled: false,
-          createdAt: "2026-01-01T00:00:00.000Z",
-          updatedAt: "2026-01-01T00:00:00.000Z",
+          origin: { tenantId, direct: true },
         },
       ],
-      nextCursor: null,
     },
     cookies: [],
   };
@@ -243,27 +239,20 @@ function firstLoginSeedHub(args: { expectedParentId?: string }) {
     }
     if (
       method === "GET" &&
-      path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      path === `/api/tenants/${TENANT_ID}/catalog/resolved-offerings`
     ) {
       return {
         status: 200,
         data: {
-          data: [
+          offerings: [
             {
               id: "off_1",
-              tenantId: TENANT_ID,
+              priority: 0,
               modelId: "mdl_1",
               providerId: "mpr_1",
-              priority: 0,
-              deploymentTags: [],
-              capabilities: [],
-              quirks: null,
-              disabled: false,
-              createdAt: "2026-01-01T00:00:00.000Z",
-              updatedAt: "2026-01-01T00:00:00.000Z",
+              origin: { tenantId: TENANT_ID, direct: true },
             },
           ],
-          nextCursor: null,
         },
         cookies: [],
       };
@@ -702,27 +691,20 @@ describe("provisionPersonalTenantIfNeeded", () => {
       if (registry !== undefined) return registry;
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+        path === `/api/tenants/${TENANT_ID}/catalog/resolved-offerings`
       ) {
         return {
           status: 200,
           data: {
-            data: [
+            offerings: [
               {
                 id: "off_1",
-                tenantId: TENANT_ID,
+                priority: 0,
                 modelId: "mdl_1",
                 providerId: "mpr_1",
-                priority: 0,
-                deploymentTags: [],
-                capabilities: [],
-                quirks: null,
-                disabled: false,
-                createdAt: "2026-01-01T00:00:00.000Z",
-                updatedAt: "2026-01-01T00:00:00.000Z",
+                origin: { tenantId: TENANT_ID, direct: true },
               },
             ],
-            nextCursor: null,
           },
           cookies: [],
         };

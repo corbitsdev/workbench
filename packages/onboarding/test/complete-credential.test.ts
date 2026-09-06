@@ -72,22 +72,15 @@ function fixedOfferingsResponse() {
   return {
     status: 200,
     data: {
-      data: [
+      offerings: [
         {
           id: "off_1",
-          tenantId: TENANT_ID,
+          priority: 0,
           modelId: "mdl_1",
           providerId: "mpr_1",
-          priority: 0,
-          deploymentTags: [],
-          capabilities: [],
-          quirks: null,
-          disabled: false,
-          createdAt: "2026-01-01T00:00:00.000Z",
-          updatedAt: "2026-01-01T00:00:00.000Z",
+          origin: { tenantId: TENANT_ID, direct: true },
         },
       ],
-      nextCursor: null,
     },
     cookies: [],
   };
@@ -179,19 +172,12 @@ function ownedCatalogModelsResponse(canonicalNames: string[]) {
 }
 
 describe("modelSourceFor", () => {
-  test("every other provider ignores a baseURLOverride and never calls the hub", async () => {
+  test("every other provider resolves to its curated default and never calls the hub", async () => {
     const api: ApiCall = (async () => {
       throw new Error("must not be called for a fixed curated provider");
     }) as ApiCall;
     expect(
-      await modelSourceFor(
-        api,
-        ["session=abc"],
-        TENANT_ID,
-        "anthropic",
-        "sk-ant",
-        "https://ignored",
-      ),
+      await modelSourceFor(api, ["session=abc"], TENANT_ID, "anthropic"),
     ).toEqual({
       provider: "anthropic",
       model: "claude-sonnet-5",
@@ -216,7 +202,7 @@ describe("modelSourceFor", () => {
     };
 
     expect(
-      await modelSourceFor(api, ["session=abc"], TENANT_ID, "ollama", "ollama"),
+      await modelSourceFor(api, ["session=abc"], TENANT_ID, "ollama"),
     ).toEqual({
       provider: "openai-compatible",
       model: "llama3.2",
@@ -249,7 +235,6 @@ describe("modelSourceFor", () => {
       api,
       ["session=abc"],
       TENANT_ID,
-      "ollama",
       "ollama",
     );
     expect(result.model).toBe("llama3.2");
@@ -284,7 +269,6 @@ describe("modelSourceFor", () => {
       api,
       ["session=abc"],
       TENANT_ID,
-      "ollama",
       "ollama",
     );
     expect(result.model).toBe("gpt-oss:20b");
@@ -323,7 +307,6 @@ describe("modelSourceFor", () => {
       ["session=abc"],
       TENANT_ID,
       "ollama",
-      "ollama",
     );
     expect(result.model).toBe("llama3.2");
   });
@@ -360,43 +343,8 @@ describe("modelSourceFor", () => {
       ["session=abc"],
       TENANT_ID,
       "ollama",
-      "ollama",
     );
     expect(result.model).toBe("gpt-oss:20b");
-  });
-
-  // `modelSourceFor` resolves a provider/model pair only — the deploy
-  // itself resolves inference from the tenant's own catalog offerings
-  // (CL-7461), so a `baseURLOverride` here is accepted (every caller
-  // already resolved one for `seedCatalog`'s earlier catalog plant) but
-  // never affects this resolution.
-  test("ollama resolves the same model whether or not a baseURLOverride is given", async () => {
-    const api: ApiCall = async (method, path) => {
-      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/models`) {
-        return resolvedCatalogResponse([
-          {
-            canonicalName: "qwen3.8:27b",
-            providerName: "ollama",
-            capabilities: ["plain-text"],
-          },
-        ]);
-      }
-      throw new Error(`unexpected call: ${method} ${path}`);
-    };
-
-    expect(
-      await modelSourceFor(
-        api,
-        ["session=abc"],
-        TENANT_ID,
-        "ollama",
-        "ollama",
-        "https://home-mac.example.ts.net",
-      ),
-    ).toEqual({
-      provider: "openai-compatible",
-      model: "qwen3.8:27b",
-    });
   });
 });
 
@@ -780,12 +728,11 @@ describe("completeCredentialSetup", () => {
       }
       if (
         method === "GET" &&
-        (path === `/api/tenants/${TENANT_ID}/catalog/offerings` ||
-          path.startsWith(`/api/tenants/${TENANT_ID}/catalog/offerings?`))
+        path === `/api/tenants/${TENANT_ID}/catalog/resolved-offerings`
       ) {
         return {
           status: 200,
-          data: { data: [], nextCursor: null },
+          data: { offerings: [] },
           cookies: [],
         };
       }
@@ -839,7 +786,7 @@ describe("completeCredentialSetup", () => {
       }
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+        path === `/api/tenants/${TENANT_ID}/catalog/resolved-offerings`
       ) {
         return fixedOfferingsResponse();
       }
@@ -1422,8 +1369,7 @@ describe("completeCredentialSetup", () => {
       }
       if (
         method === "GET" &&
-        (path === `/api/tenants/${TENANT_ID}/catalog/offerings` ||
-          path.startsWith(`/api/tenants/${TENANT_ID}/catalog/offerings?`))
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
       ) {
         return {
           status: 200,
@@ -1442,6 +1388,24 @@ describe("completeCredentialSetup", () => {
               updatedAt: TIMESTAMP,
             })),
             nextCursor: null,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/resolved-offerings`
+      ) {
+        return {
+          status: 200,
+          data: {
+            offerings: catalogOfferings.map((o) => ({
+              id: o.id,
+              modelId: o.modelId,
+              providerId: o.providerId,
+              priority: o.priority,
+              origin: { tenantId: TENANT_ID, direct: true },
+            })),
           },
           cookies: [],
         };
@@ -1828,7 +1792,7 @@ describe("ensureSeeded (the slow half)", () => {
     const api: ApiCall = async (method, path, body) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+        path === `/api/tenants/${TENANT_ID}/catalog/resolved-offerings`
       ) {
         return fixedOfferingsResponse();
       }
