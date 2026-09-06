@@ -30,7 +30,7 @@
     "eval": "bun run scripts/evals-run.ts"
   },
   "devDependencies": {
-    "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#81049ed24a64e927498c7238bda6ffa66b63d2ab",
+    "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#dc435ba749b4378f19e5de772159c2a57e932938",
     "@corbits/artifacts-hub": "workspace:*",
     "@corbits/evals": "workspace:*",
     "@corbits/ollama-adapter": "workspace:*",
