@@ -26,7 +26,6 @@ import {
   publishCorbitsToolsRegistry,
   DEFAULT_WORKFLOWS,
   PLACEHOLDER_CATALOG_API_KEY,
-  type ModelSource,
 } from "@corbits/seeding";
 import { createHubAPI, signIn, type ApiCall } from "@corbits/hub-api-client";
 import { findPersonalTenant } from "@workbench/onboarding";
@@ -43,14 +42,28 @@ const DEFAULT_POLL_INTERVAL_MS = 2_000;
 // and the catalog is still browsable, just not launchable.
 const SEED_MODEL_PROVIDER = "anthropic";
 const SEED_MODEL = "claude-sonnet-5";
-const SEED_MODEL_BASE_URL = "https://api.anthropic.com";
 
-function resolvedModel(seedModel: ModelSource | undefined): ModelSource {
+/**
+ * The root tenant's seed model: a provider/model pair for
+ * `seedTenant`'s deployed definitions, plus the real (or placeholder)
+ * API key `seedCatalog` needs to plant a launchable credential. Distinct
+ * from `@corbits/seeding`'s `ModelSource`, which carries no key —
+ * `seedTenant` never needs one; the deploy itself resolves inference
+ * from the tenant's catalog offerings (CL-7461).
+ */
+export type SeedModelConfig = {
+  readonly provider: string;
+  readonly model: string;
+  readonly apiKey: string;
+};
+
+function resolvedModel(
+  seedModel: SeedModelConfig | undefined,
+): SeedModelConfig {
   return (
     seedModel ?? {
       provider: SEED_MODEL_PROVIDER,
       model: SEED_MODEL,
-      baseURL: SEED_MODEL_BASE_URL,
       apiKey: PLACEHOLDER_CATALOG_API_KEY,
     }
   );
@@ -60,7 +73,7 @@ export type SystemSeedDeps = {
   baseUrl: string;
   orgSlug: string;
   admin: { email: string; password: string };
-  seedModel?: ModelSource;
+  seedModel?: SeedModelConfig;
   deadlineMs?: number;
   pollIntervalMs?: number;
 };
@@ -116,7 +129,7 @@ export async function runSystemSeed(deps: SystemSeedDeps): Promise<void> {
           principalId: tenant.principalId,
           domain: tenant.tenantDomain,
         },
-        model,
+        model: { provider: model.provider, model: model.model },
         pushWorkflow,
         log: (line) => log.info`${line}`,
         workflows: DEFAULT_WORKFLOWS,

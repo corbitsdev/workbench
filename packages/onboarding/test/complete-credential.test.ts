@@ -63,6 +63,36 @@ function seedHandshake(method: string, path: string) {
   return { ...handshake, cookies: [] };
 }
 
+// `ensureDeployment` resolves a real (non-noop-pinned) workflow's deploy
+// source from the tenant's own catalog offerings (CL-7461). A test that
+// never seeds its own catalog (it stubs `seedCatalogFn` instead) still
+// needs one listable offering for the "assistant" workflow's own deploy
+// to succeed — this fixed single row is that.
+function fixedOfferingsResponse() {
+  return {
+    status: 200,
+    data: {
+      data: [
+        {
+          id: "off_1",
+          tenantId: TENANT_ID,
+          modelId: "mdl_1",
+          providerId: "mpr_1",
+          priority: 0,
+          deploymentTags: [],
+          capabilities: [],
+          quirks: null,
+          disabled: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      nextCursor: null,
+    },
+    cookies: [],
+  };
+}
+
 function principalsResponse() {
   return {
     status: 200,
@@ -165,8 +195,6 @@ describe("modelSourceFor", () => {
     ).toEqual({
       provider: "anthropic",
       model: "claude-sonnet-5",
-      baseURL: "https://api.anthropic.com",
-      apiKey: "sk-ant",
     });
   });
 
@@ -192,8 +220,6 @@ describe("modelSourceFor", () => {
     ).toEqual({
       provider: "openai-compatible",
       model: "llama3.2",
-      baseURL: "http://localhost:11434/v1",
-      apiKey: "ollama",
     });
   });
 
@@ -339,7 +365,12 @@ describe("modelSourceFor", () => {
     expect(result.model).toBe("gpt-oss:20b");
   });
 
-  test("ollama's baseURLOverride is normalized to the /v1 form", async () => {
+  // `modelSourceFor` resolves a provider/model pair only — the deploy
+  // itself resolves inference from the tenant's own catalog offerings
+  // (CL-7461), so a `baseURLOverride` here is accepted (every caller
+  // already resolved one for `seedCatalog`'s earlier catalog plant) but
+  // never affects this resolution.
+  test("ollama resolves the same model whether or not a baseURLOverride is given", async () => {
     const api: ApiCall = async (method, path) => {
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}/models`) {
         return resolvedCatalogResponse([
@@ -365,8 +396,6 @@ describe("modelSourceFor", () => {
     ).toEqual({
       provider: "openai-compatible",
       model: "qwen3.8:27b",
-      baseURL: "https://home-mac.example.ts.net/v1",
-      apiKey: "ollama",
     });
   });
 });
@@ -807,6 +836,12 @@ describe("completeCredentialSetup", () => {
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
         return tenantResponse();
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      ) {
+        return fixedOfferingsResponse();
       }
       if (
         method === "GET" &&
@@ -1791,6 +1826,12 @@ describe("ensureSeeded (the slow half)", () => {
     let deploymentCreatePosts = 0;
 
     const api: ApiCall = async (method, path, body) => {
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+      ) {
+        return fixedOfferingsResponse();
+      }
       if (
         method === "GET" &&
         path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)

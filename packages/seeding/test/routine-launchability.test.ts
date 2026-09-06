@@ -27,8 +27,6 @@ import {
 const FAKE_MODEL: ModelSource = {
   provider: "ollama",
   model: "qwen-test",
-  baseURL: "http://localhost:11434",
-  apiKey: "test-key",
 };
 
 type SerializedStepDefinition = {

@@ -272,7 +272,6 @@ function parsePositiveMsEnv(
 
 const SEED_MODEL_PROVIDER = "anthropic";
 const SEED_MODEL = "claude-sonnet-5";
-const SEED_MODEL_BASE_URL = "https://api.anthropic.com";
 
 // Matches boot-time seeding's own defaults (`system-seed.ts`) exactly,
 // so a zero-.env-edit local checkout that seeds its admin account
@@ -282,10 +281,14 @@ const DEFAULT_PLANT_ADMIN_EMAIL = "alice@example.com";
 const DEFAULT_PLANT_ADMIN_PASSWORD = "password123";
 const DEFAULT_PLANT_ORG_SLUG = "workbench";
 
+/** The root tenant's boot-time seed model: a provider/model pair
+ * `seedTenant` names in every deployed definition, plus the real (or
+ * placeholder) key `seedCatalog` plants a launchable credential with. No
+ * `baseURL` — a workflow deploy resolves inference from the tenant's
+ * catalog offerings, never a bare source tuple (CL-7461). */
 export type ModelSource = {
   readonly provider: string;
   readonly model: string;
-  readonly baseURL: string;
   readonly apiKey: string;
 };
 
@@ -624,7 +627,6 @@ function seedModelFrom(parsed: ParsedHubEnv): ModelSource | undefined {
   return {
     provider: SEED_MODEL_PROVIDER,
     model: SEED_MODEL,
-    baseURL: SEED_MODEL_BASE_URL,
     apiKey,
   };
 }

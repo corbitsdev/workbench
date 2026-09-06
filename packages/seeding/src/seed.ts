@@ -141,11 +141,6 @@ const DILIGENCE_BRIEF_TURN_TIMEOUT_MS = 2 * 60 * 1000;
 const RUN_START_TIMEOUT_MS = 30_000;
 const RUN_POLL_INTERVAL_MS = 1000;
 
-// The deploy source the per-step agents launch against. The id is the
-// routing key `defaultSource` must name; with exactly one source there
-// is exactly one honest value for it.
-const SEED_SOURCE_ID = "default";
-
 // The provider/model pair `noop-inference` (packages/chat/src/noop-inference.ts)
 // answers for any request, regardless of what is actually sent — the
 // route ignores its body and `x-api-key` entirely. Naming a distinct
@@ -154,24 +149,31 @@ const SEED_SOURCE_ID = "default";
 // UI and logs.
 const NOOP_PROVIDER = "anthropic";
 const NOOP_MODEL = "noop";
+// The catalog provider/credential name a noop-pinned deployment's own
+// offering is planted under — distinct from any real curated provider
+// name (`CATALOG_SEEDS`'s keys), so `ensureNoopCatalogOffering` never
+// collides with a tenant's real catalog and is trivially recognizable
+// in the hub's own catalog UI.
+const NOOP_CATALOG_PROVIDER_NAME = "noop";
+// Priority is meaningless for this offering — it is never included in
+// a real workflow's `sourceOfferingIds` (`ensureNoopCatalogOffering`'s
+// id is threaded through explicitly, never discovered by sorting), so
+// any fixed value is honest here.
+const NOOP_OFFERING_PRIORITY = 0;
 
 /**
- * A `ModelSource` pointed at the hub's own `noop-inference` endpoint
+ * The provider/model pair naming the hub's own `noop-inference` endpoint
  * instead of a real provider — the same substitution
  * `packages/chat/src/platform-adapter.ts`'s `noopSourcesOverride` makes
- * for workbench-host launches, reused here so a workflow deployed with
- * this source resolves every turn instantly against a constant,
- * locally served reply and never reaches a real model. `hubUrl` is the
- * same base URL `seedTenant` already receives, so no new configuration
- * is required to use it.
+ * for workbench-host launches, reused here so a workflow's rendered
+ * definition names this pair in its inference preferences. The actual
+ * deploy source is a catalog offering pinned at this same endpoint
+ * (`ensureNoopCatalogOffering`), not this pair directly — a workflow
+ * deployment resolves inference from catalog offering ids, never a bare
+ * provider/model/baseURL/apiKey tuple (CL-7461).
  */
-export function NOOP_MODEL_SOURCE(hubUrl: string): ModelSource {
-  return {
-    provider: NOOP_PROVIDER,
-    model: NOOP_MODEL,
-    baseURL: `${hubUrl}/api/chat/noop-inference`,
-    apiKey: "noop",
-  };
+export function NOOP_MODEL_SOURCE(): ModelSource {
+  return { provider: NOOP_PROVIDER, model: NOOP_MODEL };
 }
 
 const GitTokenMintResponse = type({ id: "string", secret: "string" });
@@ -191,11 +193,18 @@ const WorkflowRunTriggerResponse = type({
   messageId: "string",
 });
 
+/**
+ * A provider/model pair a deployed workflow's rendered definition names
+ * in its inference preferences (`DefaultWorkflow.buildJson`'s second
+ * argument). What a deployment actually resolves inference against is
+ * the tenant's catalog offerings, resolved separately by `ensureDeployment`
+ * (or, for a noop-pinned workflow, `ensureNoopCatalogOffering`) — this
+ * type carries no `baseURL`/`apiKey` because `seedTenant` never needs
+ * either (CL-7461).
+ */
 export type ModelSource = {
   readonly provider: string;
   readonly model: string;
-  readonly baseURL: string;
-  readonly apiKey: string;
 };
 
 /**
@@ -240,9 +249,9 @@ export type DefaultWorkflow = {
    * Renders the definition's JSON given the tenant's mail domain and the
    * ordered provider/model preferences to deploy against. Takes the bare
    * preference list — never a full `ModelSource` — so this same
-   * function serves both `seedTenant`'s HTTP-deploy path (which also
-   * needs a `ModelSource`'s `baseURL`/`apiKey` for the deployment's
-   * `sources`, resolved separately) and a native in-process deploy path
+   * function serves both `seedTenant`'s HTTP-deploy path (whose actual
+   * deploy source is a set of catalog offering ids, resolved separately
+   * by `ensureDeployment`) and a native in-process deploy path
    * (`apps/hub/src/templates/block-workflows.ts`) that only ever has the
    * tenant's real, possibly multi-entry inference preferences on hand.
    */
@@ -251,15 +260,16 @@ export type DefaultWorkflow = {
     inferencePreferences: readonly InferencePreference[],
   ) => string;
   /**
-   * Overrides the deploy's inference source for this workflow only,
-   * given the hub's own base URL. Present on the catalog-test workflow
-   * `heartbeat`, which must stay free to run continuously: it names
-   * `NOOP_MODEL_SOURCE` instead of the tenant's real catalog model.
-   * Absent on every conversational workflow and on the seeded
-   * workbench-digest automation, which deploy against the tenant's real
-   * model.
+   * Overrides the deploy's inference source for this workflow only.
+   * Present on the catalog-test workflow `heartbeat`, which must stay
+   * free to run continuously: it names `NOOP_MODEL_SOURCE` instead of
+   * the tenant's real catalog model, and `seedTenant` deploys it against
+   * a dedicated noop catalog offering (`ensureNoopCatalogOffering`)
+   * rather than the tenant's own resolved offerings. Absent on every
+   * conversational workflow and on the seeded workbench-digest
+   * automation, which deploy against the tenant's real model.
    */
-  modelSource?: (hubUrl: string) => ModelSource;
+  modelSource?: () => ModelSource;
   /**
    * When true, PUT the authored definition to `stopped` after deploy so
    * a native ScheduleTrigger does not fire every tenant at the next
@@ -901,7 +911,8 @@ async function ensureDeployment(
     assetId: string;
     assetName: string;
     commitSha: string;
-    model: ModelSource;
+    sourceOfferingIds: readonly string[];
+    defaultSourceOfferingId: string;
   },
   log: (line: string) => void,
 ): Promise<string> {
@@ -950,16 +961,8 @@ async function ensureDeployment(
         package: { format: "source", commitSha: args.commitSha },
       },
       entry: WORKFLOW_SOURCE_ENTRY,
-      sources: [
-        {
-          id: SEED_SOURCE_ID,
-          provider: args.model.provider,
-          baseURL: args.model.baseURL,
-          apiKey: args.model.apiKey,
-          model: args.model.model,
-        },
-      ],
-      defaultSource: SEED_SOURCE_ID,
+      sourceOfferingIds: args.sourceOfferingIds,
+      defaultSourceOfferingId: args.defaultSourceOfferingId,
     },
     cookies,
   );
@@ -982,6 +985,169 @@ async function ensureDeployment(
   );
   log(`deployed workflow ${args.assetName} as ${deployment.id}`);
   return deployment.id;
+}
+
+/**
+ * Lists every catalog offering owned directly by a tenant, paging past
+ * `paginatedSchema`'s cursor. This is deliberately the tenant-owned list
+ * (`GET .../catalog/offerings`, never the ancestor-inheriting "resolved"
+ * view `listVisibleOfferings` computes in-process, `apps/hub/src/index.ts`'s
+ * `workflowDeployer` and `packages/chat/src/platform-adapter.ts`'s
+ * `catalogOfferings`): `seedCatalog` always plants a tenant's catalog
+ * directly on that same tenant, so the owned list already carries
+ * everything a plain `workbench seed` or the self-served connect flow
+ * ever seeded, with no HTTP surface exposing the resolved view to a
+ * caller outside the hub process.
+ */
+async function listTenantCatalogOfferings(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+): Promise<(typeof ModelOfferingResponse.infer)[]> {
+  const items: (typeof ModelOfferingResponse.infer)[] = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const query =
+      cursor === undefined ? "" : `?cursor=${encodeURIComponent(cursor)}`;
+    const listed = await api(
+      "GET",
+      `/api/tenants/${tenantId}/catalog/offerings${query}`,
+      undefined,
+      cookies,
+    );
+    const page = parseAs(
+      paginatedSchema(ModelOfferingResponse),
+      listed.data,
+      "catalog offerings response",
+    );
+    items.push(...page.data);
+    if (page.nextCursor === null) return items;
+    if (items.length > 10_000) {
+      throw new HubApiError(
+        `catalog offerings list for tenant ${tenantId} did not terminate while paging`,
+        "check the hub logs for the underlying failure, then re-run: workbench seed",
+      );
+    }
+    cursor = page.nextCursor;
+  }
+}
+
+/**
+ * Resolves the catalog offering ids a REAL (non-noop-pinned) workflow
+ * deploys against: every enabled offering the tenant owns, ordered by
+ * priority ascending, with the lowest-priority offering as the default —
+ * the SAME rule `apps/hub/src/index.ts`'s `workflowDeployer.deploy` and
+ * `packages/chat/src/platform-adapter.ts`'s `catalogOfferings` apply
+ * in-process via `listVisibleOfferings`. `excludeOfferingId` drops the
+ * noop offering (`ensureNoopCatalogOffering`) from this list when one
+ * has already been planted on the same tenant this run — it must never
+ * win a real workflow's default just because it happens to sort first.
+ *
+ * Throws when nothing is left to deploy against: "seeded but not
+ * launchable" (`seedCatalog` with no credential) is a valid catalog
+ * state, but a workflow deploy that names zero sources is not a
+ * lesser success, it is the failure this function exists to catch
+ * before the hub's own `sourceOfferingIds` validation would.
+ */
+async function resolveRealSourceOfferingIds(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+  excludeOfferingId: string | undefined,
+): Promise<{
+  sourceOfferingIds: readonly string[];
+  defaultSourceOfferingId: string;
+}> {
+  const offerings = (await listTenantCatalogOfferings(api, cookies, tenantId))
+    .filter(
+      (offering) => !offering.disabled && offering.id !== excludeOfferingId,
+    )
+    .sort((a, b) => a.priority - b.priority);
+  const defaultSourceOfferingId = offerings[0]?.id;
+  if (defaultSourceOfferingId === undefined) {
+    throw new HubApiError(
+      "this tenant has no catalog offerings to deploy against — nothing is launchable yet",
+      "seed the tenant's catalog with a real provider key (or a placeholder credential for a keyless dev/CI run), then re-run: workbench seed",
+    );
+  }
+  return {
+    sourceOfferingIds: offerings.map((offering) => offering.id),
+    defaultSourceOfferingId,
+  };
+}
+
+/**
+ * Plants (or finds) the dedicated catalog offering a noop-pinned
+ * workflow (`DefaultWorkflow.modelSource`, e.g. `heartbeat`) deploys
+ * against: a catalog model named `NOOP_MODEL`, a provider pointed at the
+ * hub's own `noop-inference` endpoint, and a placeholder credential —
+ * the same `ensureCatalogModel` / `ensureProvider` / `ensureCredential` /
+ * `ensureCatalogProvider` / `ensureCatalogOffering` sequence
+ * `seedCatalog` runs for a real provider, run here for this one
+ * synthetic one. Idempotent, same as every other seed step: a re-run
+ * finds the existing rows by name and reuses them.
+ */
+async function ensureNoopCatalogOffering(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+  hubUrl: string,
+  log: (line: string) => void,
+): Promise<string> {
+  const baseURL = `${hubUrl}/api/chat/noop-inference`;
+  const modelId = await ensureCatalogModel(
+    api,
+    cookies,
+    { tenantId, canonicalName: NOOP_MODEL },
+    log,
+  );
+  const providerId = await ensureProvider(
+    api,
+    cookies,
+    {
+      tenantId,
+      name: NOOP_CATALOG_PROVIDER_NAME,
+      plugin: NOOP_PROVIDER,
+      apiBaseUrl: baseURL,
+    },
+    log,
+  );
+  const credentialId = await ensureCredential(
+    api,
+    cookies,
+    {
+      tenantId,
+      providerId,
+      name: inferenceCredentialName(NOOP_CATALOG_PROVIDER_NAME),
+      secret: PLACEHOLDER_CATALOG_API_KEY,
+      type: "api_key",
+    },
+    log,
+  );
+  const catalogProviderId = await ensureCatalogProvider(
+    api,
+    cookies,
+    {
+      tenantId,
+      name: NOOP_CATALOG_PROVIDER_NAME,
+      plugin: NOOP_PROVIDER,
+      baseURL,
+      credentialId,
+    },
+    log,
+  );
+  return ensureCatalogOffering(
+    api,
+    cookies,
+    {
+      tenantId,
+      modelId,
+      providerId: catalogProviderId,
+      priority: NOOP_OFFERING_PRIORITY,
+      capabilities: [],
+    },
+    log,
+  );
 }
 
 /**
@@ -1160,6 +1326,14 @@ export type SeedTenantArgs = {
   cookies: string[];
   hubUrl: string;
   tenant: SeedTenant;
+  /**
+   * The provider/model pair a real (non-noop-pinned) workflow's rendered
+   * definition names in its inference preferences. The deploy itself
+   * resolves inference from the tenant's own catalog offerings
+   * (`resolveRealSourceOfferingIds`), not from this pair — a tenant with
+   * no catalog offerings still fails clearly at deploy time even if this
+   * pair happens to name a real model.
+   */
   model: ModelSource;
   pushWorkflow: WorkflowPusher;
   log: (line: string) => void;
@@ -1228,9 +1402,41 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
 
   await plantDefaultSkills(api, cookies, tenant.tenantId, log);
 
+  // Resolved lazily and cached across the loop below: most seed runs
+  // deploy several workflows against the same tenant catalog state, so
+  // this fetches the tenant's real offerings (or plants the noop one)
+  // at most once each, however many workflows ask for them.
+  let noopOfferingId: string | undefined;
+  let realOfferings:
+    | { sourceOfferingIds: readonly string[]; defaultSourceOfferingId: string }
+    | undefined;
+
   let confirmed = 0;
   for (const workflow of workflows) {
-    const workflowModel = workflow.modelSource?.(hubUrl) ?? model;
+    const workflowModel = workflow.modelSource?.() ?? model;
+
+    let sourceOfferingIds: readonly string[];
+    let defaultSourceOfferingId: string;
+    if (workflow.modelSource !== undefined) {
+      noopOfferingId ??= await ensureNoopCatalogOffering(
+        api,
+        cookies,
+        tenant.tenantId,
+        hubUrl,
+        log,
+      );
+      sourceOfferingIds = [noopOfferingId];
+      defaultSourceOfferingId = noopOfferingId;
+    } else {
+      realOfferings ??= await resolveRealSourceOfferingIds(
+        api,
+        cookies,
+        tenant.tenantId,
+        noopOfferingId,
+      );
+      ({ sourceOfferingIds, defaultSourceOfferingId } = realOfferings);
+    }
+
     const assetId = await ensureWorkflowAsset(
       api,
       cookies,
@@ -1265,7 +1471,8 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
         assetId,
         assetName: workflow.assetName,
         commitSha: pushed.commitSha,
-        model: workflowModel,
+        sourceOfferingIds,
+        defaultSourceOfferingId,
       },
       log,
     );
@@ -1666,7 +1873,7 @@ async function ensureCatalogOffering(
     quirks?: Record<string, unknown>;
   },
   log: (line: string) => void,
-): Promise<void> {
+): Promise<string> {
   const body: Record<string, unknown> = {
     modelId: args.modelId,
     providerId: args.providerId,
@@ -1681,9 +1888,13 @@ async function ensureCatalogOffering(
     cookies,
   );
   if (created.status === 201) {
-    parseAs(ModelOfferingResponse, created.data, "catalog offering response");
+    const offering = parseAs(
+      ModelOfferingResponse,
+      created.data,
+      "catalog offering response",
+    );
     log("created catalog offering");
-    return;
+    return offering.id;
   }
   if (created.status === 409) {
     let cursor: string | null = null;
@@ -1715,7 +1926,7 @@ async function ensureCatalogOffering(
     }
     if (existing.priority === args.priority) {
       log("catalog offering already exists (skipped)");
-      return;
+      return existing.id;
     }
 
     const updated = await api(
@@ -1730,9 +1941,13 @@ async function ensureCatalogOffering(
         "check the hub logs for the underlying failure, then re-run: workbench seed",
       );
     }
-    parseAs(ModelOfferingResponse, updated.data, "catalog offering response");
+    const offering = parseAs(
+      ModelOfferingResponse,
+      updated.data,
+      "catalog offering response",
+    );
     log("updated catalog offering priority");
-    return;
+    return offering.id;
   }
   throw new HubApiError(
     `the hub rejected creation of the catalog offering with status ${created.status}: ${JSON.stringify(created.data)}`,
