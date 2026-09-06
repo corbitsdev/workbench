@@ -126,6 +126,7 @@ test("the agent pins memory, capability, and the manager-tools bundles at the ve
     "@corbits/interaction-tools",
     "@corbits/manus-tools",
     "@corbits/workflow-authoring-tools",
+    "@corbits/access-tools",
   ]);
   // A pin the registry cannot resolve fails every assistant deploy, so
   // each one must name a version the workspace actually publishes.
@@ -243,9 +244,12 @@ test("the prompt asks only for facts Myra can't infer, never permission to use t
 
 test("the prompt builds the whole team on the person's OK: agents, routines, and memory in one go", () => {
   expect(ASSISTANT_SYSTEM_PROMPT).toContain(
-    "On their OK, build the whole thing in one go: create the " +
-      "specialists (each gets their own chat), create the routines, " +
-      "and save the facts they gave you to memory",
+    "On their OK, build the whole thing in one go: for each " +
+      "specialist, check list_agents first and reuse one that already " +
+      "fits; otherwise author it, deploy it, grant it only the access " +
+      "its job needs, and add it to the bench or a DM (each gets its " +
+      "own chat) — then create the routines and save the facts they " +
+      "gave you to memory",
   );
   expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("invite them in");
   expect(ASSISTANT_SYSTEM_PROMPT).not.toContain("create_channel");
