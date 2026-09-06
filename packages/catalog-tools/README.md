@@ -20,3 +20,32 @@ Everything comes from `@corbits/inference-catalog`'s run-authenticated
 surface at `/api/workflow-inference-catalog`, reached with the sidecar bearer
 token and run address like every other workflow-run tool bundle. All three
 tools read only, so none is gated behind approval.
+
+## Managing offerings
+
+Three more tools let an agent write to the tenant's own inference catalog,
+through this package's own workflow-run-authenticated mirror of the
+tenant-admin catalog routes (`./src/routes.ts`'s
+`createWorkflowCatalogAdminRoutes`, mounted in `apps/hub` at
+`/api/workflow-catalog-admin`) rather than the read-only concept surface
+above. The tenant-admin routes themselves
+(`vendor/intx/hub-api/src/routes/{models,model-providers,
+model-offerings}.ts`) only accept a browser session, which a workflow run
+never has — only its sidecar bearer token and run address, the same
+credential the read-only surface above already uses.
+
+- **`create_offering`** — pairs a model (by canonical name) with a model
+  provider (by name), both already present in this workbench's own catalog,
+  at a given priority with a set of advertised capabilities. Gated behind
+  `approval: "ask"`: it changes what this bench can resolve to at runtime.
+- **`set_offering_priority`** — reorders an offering this workbench already
+  owns directly, changing where it falls in source-resolution fallback
+  order. Ungated: it only reorders an offering already live.
+- **`disable_offering`** — restricts an offering this workbench already owns
+  directly, taking it out of source resolution without deleting its pricing
+  history. Gated behind `approval: "ask"`: running instances resolved
+  through it fail over to the next eligible source.
+
+`create_offering` never invents a model or provider id — it resolves the
+given canonical name and provider name against this tenant's own catalog
+listing first, and refuses rather than guessing when neither is found.

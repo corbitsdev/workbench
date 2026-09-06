@@ -27,7 +27,6 @@
  * testable without a live Postgres.
  */
 import {
-  anonymousIdentity,
   artifact,
   createArtifact,
   findArtifactByTitle,
@@ -318,7 +317,7 @@ export function createTemplateLibraryDbStore(
 ): TemplateLibraryStore {
   return {
     async list(tenantId) {
-      const page = await engine.listArtifacts(db, anonymousIdentity, tenantId, {
+      const page = await engine.listArtifacts(db, tenantId, {
         kind: WORKBENCH_TEMPLATE_ARTIFACT_KIND,
       });
       const entries: TemplateLibraryEntry[] = [];
