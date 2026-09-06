@@ -322,10 +322,7 @@ export type {
   CreateHubChatPlatformDeps,
   HubChatPlatform,
 } from "./platform-adapter";
-export {
-  createRunTriggerClient,
-  RunTriggerError,
-} from "./run-trigger-client";
+export { createRunTriggerClient, RunTriggerError } from "./run-trigger-client";
 export type {
   RunTriggerClient,
   RunTriggerClientDeps,

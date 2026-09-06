@@ -119,6 +119,11 @@ async function readJson(response: Response): Promise<unknown> {
   try {
     return await response.json();
   } catch {
+    // report-error-ignore: a response body that fails to parse as JSON
+    // is handled by the caller's own arktype parse — `TriggerErrorBody`
+    // or `TriggerResponse` rejecting `null` — which throws a real,
+    // reported error naming the malformed response; this local catch
+    // only stops a parse failure itself from masking that path.
     return null;
   }
 }
@@ -130,7 +135,10 @@ export function createRunTriggerClient(
     async triggerMail(input): Promise<TriggeredWorkflowRunMail> {
       const signToken = deps.signToken ?? signInternalRunTriggerToken;
       const token = signToken(deps.internalAuthSecret, input.authAsUserId);
-      const body: { content: string; attachments?: MailContent["attachments"] } =
+      const body: {
+        content: string;
+        attachments?: MailContent["attachments"];
+      } =
         input.attachments !== undefined
           ? { content: input.content, attachments: input.attachments }
           : { content: input.content };
