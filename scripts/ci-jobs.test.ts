@@ -26,7 +26,7 @@ function jobBodies(yaml: string): Map<string, string> {
 
 const SETUP = "./.github/actions/setup-workbench";
 const POSTGRES_IMAGE = "pgvector/pgvector:pg17";
-const DB_JOBS = ["e2e", "isolation", "db-suites"] as const;
+const DB_JOBS = ["e2e-suite", "isolation", "db-suites"] as const;
 // "build-test" itself is a no-op summary job over the build-test-shard
 // matrix (see ci.yml) — the matrix job is the one that actually checks
 // out the repo and needs full history for tool-package-freshness's
@@ -75,6 +75,50 @@ test("CI splits e2e, isolation, and db-suites onto their own Postgres jobs", asy
   expect(e2eSetupIndex).toBeGreaterThan(-1);
   expect(plainSetupIndex).toBeLessThan(hubSuiteIndex);
   expect(e2eSetupIndex).toBeLessThan(hubSuiteIndex);
+});
+
+test('e2e runs as a plan/matrix/summary trio so branch protection\'s "e2e" check still exists', async () => {
+  const yaml = await readFile(join(ROOT, ".github/workflows/ci.yml"), "utf8");
+  const jobs = jobBodies(yaml);
+
+  const plan = jobs.get("e2e-plan");
+  expect(plan).toBeDefined();
+  expect(plan).toContain("scripts/e2e/list-suites.ts");
+  expect(plan).toContain("outputs:");
+
+  const suite = jobs.get("e2e-suite");
+  expect(suite).toBeDefined();
+  expect(suite).toContain("needs: e2e-plan");
+  expect(suite).toContain("fail-fast: false");
+  expect(suite).toContain("matrix:");
+  expect(suite).toContain("fromJson(needs.e2e-plan.outputs.suites)");
+  expect(suite).toContain("postgres:");
+  expect(suite).toContain(`image: ${POSTGRES_IMAGE}`);
+  expect(suite).toContain("E2E_LOG_DIR");
+  expect(suite).toContain("actions/upload-artifact@v4");
+  expect(suite).toContain("if: always()");
+
+  const summary = jobs.get("e2e");
+  expect(summary).toBeDefined();
+  expect(summary).toContain("needs: e2e-suite");
+  expect(summary).toContain("if: always()");
+});
+
+test('build-test runs as a shard/summary pair so branch protection\'s "build-test" check still exists', async () => {
+  const yaml = await readFile(join(ROOT, ".github/workflows/ci.yml"), "utf8");
+  const jobs = jobBodies(yaml);
+
+  const shard = jobs.get("build-test-shard");
+  expect(shard).toBeDefined();
+  expect(shard).toContain("fail-fast: false");
+  expect(shard).toContain("matrix:");
+  expect(shard).toContain("shard:");
+  expect(shard).toContain("run: bun run scripts/run-all.ts test --shard");
+
+  const summary = jobs.get("build-test");
+  expect(summary).toBeDefined();
+  expect(summary).toContain("needs: build-test-shard");
+  expect(summary).toContain("if: always()");
 });
 
 test("the structural job runs the same list as local check:structural", async () => {
