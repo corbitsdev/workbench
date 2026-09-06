@@ -96,6 +96,56 @@ describe("readBindingByAddress", () => {
   });
 });
 
+describe("readBindingByAddress: tenant scoping (CL-7474)", () => {
+  // Two tenants that each independently invited "the same" agent
+  // (definitionId happens to differ per tenant in practice, but the
+  // launch rows below are shaped exactly like two independent
+  // launches — different stable ids, different run ids, different
+  // tenants). `instanceId`/`currentRunId` are collision-resistant
+  // generated ids, not scoped to a tenant, so nothing but an explicit
+  // `expectedTenantId` check stops tenant B's caller from resolving
+  // tenant A's row if it ever guessed or replayed tenant A's address.
+  const tenantALaunch: LaunchRow = {
+    tenantId: "tnt_a",
+    instanceId: "run_a1",
+    currentRunId: "run_a1",
+    priorRunIds: [],
+    foldedBody: FOLDED_BODY,
+  };
+  const tenantBLaunch: LaunchRow = {
+    tenantId: "tnt_b",
+    instanceId: "run_b1",
+    currentRunId: "run_b1",
+    priorRunIds: [],
+    foldedBody: FOLDED_BODY,
+  };
+  const db = fakeDb([tenantALaunch, tenantBLaunch]);
+
+  test("each tenant's DM resolves to its own distinct run id and address", async () => {
+    const a = await readBindingByAddress(db, "run_a1@acme.example", "tnt_a");
+    const b = await readBindingByAddress(db, "run_b1@acme.example", "tnt_b");
+    expect(a?.currentRunId).toBe("run_a1");
+    expect(b?.currentRunId).toBe("run_b1");
+    expect(a?.currentRunId).not.toBe(b?.currentRunId);
+    expect(a?.roomAddress).not.toBe(b?.roomAddress);
+  });
+
+  test("a bench invite in tenant B never resolves tenant A's launch", async () => {
+    expect(
+      await readBindingByAddress(db, "run_a1@acme.example", "tnt_b"),
+    ).toBeUndefined();
+    expect(
+      await readBindingByAddress(db, "run_b1@acme.example", "tnt_a"),
+    ).toBeUndefined();
+  });
+
+  test("omitting expectedTenantId keeps the pre-existing address-only resolution (event-stream discovery)", async () => {
+    expect(
+      (await readBindingByAddress(db, "run_a1@acme.example"))?.tenantId,
+    ).toBe("tnt_a");
+  });
+});
+
 describe("resolveRoomAddress", () => {
   test("leaves a non-participant address alone", async () => {
     expect(
