@@ -5,18 +5,23 @@ import { Glob } from "bun";
 import { availableParallelism } from "node:os";
 
 import { CONCURRENCY_ENV } from "./concurrency.ts";
-import { SEQUENTIAL_SCRIPTS } from "./sequential-scripts.ts";
 
 type Job = { readonly name: string; readonly dir: string };
 
+// `script` used to gate the test phase to concurrency 1 (see git history
+// for `scripts/sequential-scripts.ts`, removed once each test suite's own
+// isolation — a per-run HUB_DATA_DIR, a per-run scratch database, no
+// fixed ports — made fanning tests out across packages safe). Kept as a
+// parameter so a future script-specific override has somewhere to hang
+// without changing every call site again.
 export function resolveConcurrency(
   script: string,
   env: NodeJS.ProcessEnv = process.env,
   cores: number = availableParallelism(),
 ): number {
+  void script;
   const raw = env[CONCURRENCY_ENV];
   if (raw === undefined || raw === "") {
-    if (SEQUENTIAL_SCRIPTS.has(script)) return 1;
     // Locally each job saturates about one core, so leave a couple free for
     // the editor and type server a developer runs alongside the gate. CI
     // runners have no editor — use every core so package fan-out is not
