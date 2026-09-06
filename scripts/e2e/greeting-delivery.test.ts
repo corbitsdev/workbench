@@ -267,23 +267,12 @@ describe.skipIf(databaseUrl === undefined)(
                 principalId: tenant.principalId,
                 domain: tenant.tenantDomain,
               },
-              model:
-                USE_OLLAMA && OLLAMA_BASE_URL !== undefined
-                  ? await modelSourceFor(
-                      hubApi,
-                      user.cookies,
-                      tenant.tenantId,
-                      CONNECT_PROVIDER,
-                      CONNECT_API_KEY,
-                      OLLAMA_BASE_URL,
-                    )
-                  : await modelSourceFor(
-                      hubApi,
-                      user.cookies,
-                      tenant.tenantId,
-                      CONNECT_PROVIDER,
-                      CONNECT_API_KEY,
-                    ),
+              model: await modelSourceFor(
+                hubApi,
+                user.cookies,
+                tenant.tenantId,
+                CONNECT_PROVIDER,
+              ),
               pushWorkflow,
               log: () => undefined,
               workflows: DEFAULT_WORKFLOWS,
