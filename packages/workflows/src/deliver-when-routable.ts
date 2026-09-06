@@ -3,9 +3,9 @@
 // sidecar has finished booting and registering with the hub, so the send
 // fails with "agent is unreachable" even though nothing is actually wrong
 // — the address just isn't routable yet. The webhook trigger's ingress
-// delivery goes through this helper; chat keeps its own existing
-// wake-and-retry loop (`sendRunMailWithReclaimRetry`) instead.
-const DEFAULT_DEADLINE_MS = 20_000;
+// delivery goes through this helper; chat's `sendRunMailWithReclaimRetry`
+// (CL-7488) shares this same budget rather than declaring its own.
+export const DEFAULT_ROUTABLE_DEADLINE_MS = 20_000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
 
 export function isAgentUnreachableError(err: unknown): boolean {
@@ -48,7 +48,7 @@ export async function deliverWhenRoutable<T>(
     if (!isUnreachable(err)) {
       throw err;
     }
-    const deadline = Date.now() + (opts.deadlineMs ?? DEFAULT_DEADLINE_MS);
+    const deadline = Date.now() + (opts.deadlineMs ?? DEFAULT_ROUTABLE_DEADLINE_MS);
     const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     const sleep = opts.sleep ?? defaultSleep;
     while (!opts.isRoutable()) {

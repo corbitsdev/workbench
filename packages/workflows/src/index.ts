@@ -65,6 +65,7 @@ export {
 export {
   deliverWhenRoutable,
   isAgentUnreachableError,
+  DEFAULT_ROUTABLE_DEADLINE_MS,
   type DeliverWhenRoutableOptions,
 } from "./deliver-when-routable";
 export {

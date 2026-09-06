@@ -16,8 +16,10 @@ import { and, desc, eq } from "drizzle-orm";
 import {
   authoredDefinitionCandidates,
   DefinitionProjectionMissingError,
+  deliverWhenRoutable,
   endAgentSessionForRun,
   ensureRunSession,
+  isAgentUnreachableError,
   readFoldedBody,
   recordAgentSessionAtProvision,
   resolveNewestProjectedDefinition,
@@ -140,19 +142,22 @@ export type CreateHubChatPlatformDeps = {
    */
   lifecycle?: { idleSleepMs: number; sweepIntervalMs?: number };
   /**
-   * `sendRunMailWithReclaimRetry`'s backoff between retries of a
-   * mail send that failed with "agent is unreachable" (see
-   * RECLAIM_RETRY_DELAYS_MS below). Injectable so tests exercise the
-   * backoff in milliseconds instead of the production ~8s budget.
-   */
-  reclaimRetryDelaysMs?: readonly number[];
-  /**
    * Per-attempt wall-clock bound on `sendRunMail` inside
    * `sendRunMailWithReclaimRetry` (CL-6644). Defaults to
    * `DEFAULT_WAKE_TIMEOUT_MS`. Injectable so tests exercise the bound
    * in milliseconds instead of the production ~30s budget.
    */
   mailDeliveryTimeoutMs?: number;
+  /**
+   * How long `sendRunMailWithReclaimRetry` waits for a freshly
+   * woken/relaunched run's address to show up in the hub's routing
+   * table before giving up (see `deliverWhenRoutable` in
+   * `@corbits/workflows`). Defaults to `DEFAULT_ROUTABLE_DEADLINE_MS`
+   * — the same boot-and-register budget the webhook trigger's ingress
+   * delivery waits on (CL-7476). Injectable so tests exercise the wait
+   * in milliseconds instead of the production ~20s budget.
+   */
+  routableWaitDeadlineMs?: number;
   /**
    * The invite-launch model fallback (see `./inference-preferences.ts`'s
    * `createWorkbenchHostInferencePreferencesResolver`): a
@@ -409,34 +414,16 @@ export function createHubChatPlatform(
   const lifecycle =
     deps.lifecycle !== undefined ? buildLifecycle(deps.lifecycle) : undefined;
 
-  // Bounded backoff for a wake racing the sidecar's own post-restart
-  // reclaim, and separately for a mail delivery racing the same
-  // window: 250ms, 500ms, 1s, 2s, 4s — a ~7.75s budget, long enough
-  // for a normal reconnect challenge to settle without leaving a
-  // sender stuck for much longer than that.
-  const RECLAIM_RETRY_DELAYS_MS = deps.reclaimRetryDelaysMs ?? [
-    250, 500, 1000, 2000, 4000,
-  ];
-
-  // CL-6644: the reclaim-retry loop's own delays only run between
-  // attempts that already failed LOUD with "agent is unreachable" --
-  // they bound nothing about an attempt that instead stalls forever
-  // (a sidecar ack that never comes, a wedged promise anywhere in
-  // `sendRunMail`'s call chain) without ever throwing. Each
-  // attempt gets the same kind of wall-clock bound `wakeByAddressBounded`
-  // already puts on the wake itself, so that hang becomes a rejection
+  // CL-6644: a per-attempt bound on `sendRunMail` inside
+  // `sendRunMailWithReclaimRetry` -- a send that stalls forever (a
+  // sidecar ack that never comes, a wedged promise anywhere in
+  // `sendRunMail`'s call chain) without ever throwing gets the same
+  // kind of wall-clock bound `wakeByAddressBounded` already puts on
+  // the wake itself, so that hang becomes a rejection
   // `dispatchTurnBatch`'s catch can report and notify on, instead of a
   // promise nothing ever settles.
   const MAIL_DELIVERY_TIMEOUT_MS =
     deps.mailDeliveryTimeoutMs ?? DEFAULT_WAKE_TIMEOUT_MS;
-
-  function sleep(ms: number): Promise<void> {
-    return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
-  }
-
-  function isAgentUnreachable(err: unknown): boolean {
-    return err instanceof Error && err.message.includes("agent is unreachable");
-  }
 
   function isRoutable(address: string): boolean {
     return deps.sidecarRouter.getRoutableAddresses().includes(address);
@@ -977,83 +964,89 @@ export function createHubChatPlatform(
   }
 
   /**
-   * `sendRunMail` delivers synchronously against the sidecar's
-   * current routable set — the same in-memory index `isRoutable` reads
-   * — so a send that lands in the same post-restart reclaim window
-   * `wakeByAddress` above tolerates can still fail with "agent is
-   * unreachable" even right after a successful (or no-op) wake. Each
-   * retry forces a fresh wake first: if the earlier reclaim tore the
-   * agent down, this becomes the genuine redeploy that recovers it; if
-   * the reclaim is still in flight, the wake itself waits it out (or
-   * redeploys once its own budget is exhausted) and the delay gives it
-   * more time regardless. Exhausting every delay means the condition
-   * is not transient and the caller gets a clean `AgentUnreachableError`
-   * rather than an unhandled 500.
+   * `sendRunMail` delivers synchronously against the sidecar's current
+   * routable set — the same in-memory index `isRoutable` reads — so a
+   * send lands in "agent is unreachable" for two different reasons
+   * that both need the same treatment: a run whose sidecar just
+   * finished a provisioned deploy and hasn't registered yet (CL-7476 —
+   * `deliverWhenRoutable` from `@corbits/workflows` is the exact same
+   * wait the webhook trigger's ingress delivery already uses for this),
+   * and a run that this loop's own wake tore down and is mid-reclaim.
+   * `deliverWhenRoutable` sends once, and — only on an unreachable
+   * failure — polls the routing table for `current.agentAddress` up to
+   * its shared deadline (`DEFAULT_ROUTABLE_DEADLINE_MS`, the same
+   * boot-and-register budget the webhook path waits on) before sending
+   * exactly once more.
    *
-   * CL-7486: a wake this loop runs between retries can itself relaunch
-   * the run — `wakeByAddress`'s dead-run branch repoints the room's
-   * stable participant at a fresh address without telling this loop.
-   * Retrying `sendRunMail` against the address it started with would
-   * then keep hammering a run that will never become routable again,
-   * and the wake ahead of the NEXT retry would fail outright (no
-   * `workbench_launch` row still names that address at all) instead of
-   * the "unreachable" this loop knows how to ride out. `reresolve`
-   * re-reads the live address (and its session) off the stable
-   * participant id before every wake/retry, so this loop always chases
-   * whichever run is actually current.
+   * CL-7486: a wake this loop runs on the first failure can itself
+   * relaunch the run — `wakeByAddress`'s dead-run branch repoints the
+   * room's stable participant at a fresh address without telling this
+   * loop. Retrying `sendRunMail` against the address it started with
+   * would then keep hammering a run that will never become routable
+   * again. `reresolve` re-reads the live address (and its session) off
+   * the stable participant id every time `send` runs — including the
+   * one `deliverWhenRoutable` runs again after the routing-table wait —
+   * so this loop always chases whichever run is actually current, even
+   * one relaunched again while it was waiting.
    */
   async function sendRunMailWithReclaimRetry(
     params: SendRunMailParams,
     reresolve: () => Promise<{ agentAddress: string; sessionId: string }>,
   ): Promise<Awaited<ReturnType<typeof sendRunMail>>> {
     let current = params;
-    let loggedRetryStart = false;
-    for (let attempt = 0; ; attempt++) {
-      try {
-        // CL-7193: `sendRunMail` does a DB write plus a sidecar
-        // delivery that shouldn't be half-cancelled, and has no signal
-        // to accept regardless — the signal parameter is unused here,
-        // same abandon-on-timeout behavior as before.
-        return await withTimeout(
-          () => sendRunMail(runMailDeps, current),
-          MAIL_DELIVERY_TIMEOUT_MS,
-          `mail to ${current.agentAddress} did not settle within ${String(MAIL_DELIVERY_TIMEOUT_MS)}ms`,
-        );
-      } catch (err) {
-        const delay = RECLAIM_RETRY_DELAYS_MS[attempt];
-        if (!isAgentUnreachable(err) || delay === undefined) {
-          if (loggedRetryStart) {
-            wakeLogger.info`mail to ${current.agentAddress} exhausted every reclaim retry; giving up`;
+    let wakedOnFailure = false;
+    async function sendCurrent() {
+      // CL-7193: `sendRunMail` does a DB write plus a sidecar delivery
+      // that shouldn't be half-cancelled, and has no signal to accept
+      // regardless — the signal parameter is unused here, same
+      // abandon-on-timeout behavior as before.
+      return withTimeout(
+        () => sendRunMail(runMailDeps, current),
+        MAIL_DELIVERY_TIMEOUT_MS,
+        `mail to ${current.agentAddress} did not settle within ${String(MAIL_DELIVERY_TIMEOUT_MS)}ms`,
+      );
+    }
+    try {
+      return await deliverWhenRoutable({
+        send: async () => {
+          try {
+            return await sendCurrent();
+          } catch (err) {
+            if (!isAgentUnreachableError(err) || wakedOnFailure) throw err;
+            // Wake exactly once, the moment the first attempt reports
+            // unreachable: if the run had already died, this is the
+            // genuine redeploy that recovers it; if a deploy is merely
+            // still booting, `wakeByAddress`/`lifecycle.ensureAwake`
+            // no-op past the routability check and this becomes a
+            // cheap reconcile. Re-resolving only after the wake means a
+            // relaunch it just performed is exactly what the fresh read
+            // picks up, rather than the address that was current a
+            // moment before.
+            wakeLogger.info`mail to ${current.agentAddress} hit "agent is unreachable"; waiting for it to become routable`;
+            wakedOnFailure = true;
+            await wakeByAddressBounded(current.agentAddress);
+            const fresh = await reresolve();
+            current = {
+              ...current,
+              agentAddress: fresh.agentAddress,
+              sessionId: fresh.sessionId,
+            };
+            throw err;
           }
-          if (isAgentUnreachable(err)) {
-            throw new AgentUnreachableError(current.agentAddress, {
-              cause: err,
-            });
-          }
-          throw err;
-        }
-        if (!loggedRetryStart) {
-          wakeLogger.info`mail to ${current.agentAddress} hit "agent is unreachable"; retrying with backoff while the post-restart reclaim settles`;
-          loggedRetryStart = true;
-        }
-        await sleep(delay);
-        // Wake whatever this loop still believes is live — `wakeByAddress`
-        // itself tolerates an address one relaunch behind the room's
-        // current one (its lookup matches either the stable participant
-        // id or the live run id) — and only THEN re-resolve, since the
-        // wake just run is exactly the kind of relaunch that can leave
-        // `current.agentAddress` pointing at a run that no longer exists
-        // at all. Re-resolving before the wake instead would still hand
-        // the next retry whatever address was current a moment ago,
-        // stale again the instant this wake relaunches it.
-        await wakeByAddressBounded(current.agentAddress);
-        const fresh = await reresolve();
-        current = {
-          ...current,
-          agentAddress: fresh.agentAddress,
-          sessionId: fresh.sessionId,
-        };
+        },
+        isRoutable: () => isRoutable(current.agentAddress),
+        ...(deps.routableWaitDeadlineMs !== undefined
+          ? { deadlineMs: deps.routableWaitDeadlineMs }
+          : {}),
+      });
+    } catch (err) {
+      if (isAgentUnreachableError(err)) {
+        wakeLogger.info`mail to ${current.agentAddress} exhausted the routable-wait budget; giving up`;
+        throw new AgentUnreachableError(current.agentAddress, {
+          cause: err,
+        });
       }
+      throw err;
     }
   }
 
