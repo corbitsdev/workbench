@@ -135,13 +135,25 @@ async function readLaunchRow(
 export async function readBindingByAddress(
   db: DB["db"],
   address: string,
+  expectedTenantId?: string,
 ): Promise<AgentBinding | undefined> {
   const domain = requireDomain(address);
   const localPart = localPartOf(address);
   const byStableId = await readLaunchRow(db, "instanceId", localPart);
-  if (byStableId !== undefined) return bindingFrom(byStableId, domain);
-  const byRunId = await readLaunchRow(db, "currentRunId", localPart);
-  return byRunId === undefined ? undefined : bindingFrom(byRunId, domain);
+  const row = byStableId ?? (await readLaunchRow(db, "currentRunId", localPart));
+  if (row === undefined) return undefined;
+  // A caller that already knows which tenant it is acting for must
+  // never accept a binding minted by another one — `instanceId` and
+  // `currentRunId` are collision-resistant generated ids, not scoped to
+  // a tenant, so nothing else stops an address that happens to name a
+  // row from a different tenant from resolving here. A caller with no
+  // tenant of its own yet (the event-stream handler discovering which
+  // tenant an inbound address even belongs to) passes no
+  // `expectedTenantId` and gets the address-only resolution it needs.
+  if (expectedTenantId !== undefined && row.tenantId !== expectedTenantId) {
+    return undefined;
+  }
+  return bindingFrom(row, domain);
 }
 
 /**
@@ -183,9 +195,16 @@ export async function resolveLiveAgent(
 export async function resolveLiveByStableId(
   db: DB["db"],
   stableId: string,
+  expectedTenantId?: string,
 ): Promise<LiveAgent | undefined> {
   const row = await readLaunchRow(db, "instanceId", stableId);
   if (row === undefined) return undefined;
+  // See the matching note on `readBindingByAddress`: a caller that
+  // knows its own tenant must never be handed another tenant's launch
+  // for a stable id it happens to guess or receive by mistake.
+  if (expectedTenantId !== undefined && row.tenantId !== expectedTenantId) {
+    return undefined;
+  }
   const run = await readRun(db, row.currentRunId);
   if (run === undefined || run.address === null) return undefined;
   return { binding: bindingFrom(row, requireDomain(run.address)), run };

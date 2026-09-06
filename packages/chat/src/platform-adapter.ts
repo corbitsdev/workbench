@@ -258,7 +258,15 @@ export function createHubChatPlatform(
   };
 
   function offeringDigest(sourceOfferingIds: readonly string[]): string {
-    return sourceOfferingIds.join("\0");
+    // `sources_digest` is a `text` column and this digest rides straight
+    // into it (`platform-adapter.ts`'s `insert(workbenchLaunch)`). A
+    // `\0`-joined id list is not valid UTF-8 text to Postgres
+    // (`invalid byte sequence for encoding "UTF8": 0x00`) the moment a
+    // tenant's catalog carries more than one visible offering, which
+    // permanently failed every agent launch for such a tenant. `\n` never
+    // appears inside a generated offering id, so this stays a lossless,
+    // order-sensitive join — just one Postgres can actually store.
+    return sourceOfferingIds.join("\n");
   }
 
   async function catalogOfferings(tenantId: string): Promise<{
@@ -913,8 +921,11 @@ export function createHubChatPlatform(
    * participant id — not the room's own address, once anything has been
    * relaunched.
    */
-  async function requireLive(stableId: string): Promise<LiveAgent> {
-    const live = await resolveLiveByStableId(deps.db, stableId);
+  async function requireLive(
+    stableId: string,
+    expectedTenantId?: string,
+  ): Promise<LiveAgent> {
+    const live = await resolveLiveByStableId(deps.db, stableId, expectedTenantId);
     if (live === undefined) {
       throw new Error(`No live workbench run for "${stableId}"`);
     }
@@ -1176,7 +1187,7 @@ export function createHubChatPlatform(
       _workbenchId,
       address,
     ): Promise<void> {
-      const binding = await readBindingByAddress(deps.db, address);
+      const binding = await readBindingByAddress(deps.db, address, tenantId);
       if (binding === undefined) return;
       const live = await resolveLiveAgent(deps.db, binding);
       const definitionId = live?.run.definitionId;
@@ -1216,7 +1227,7 @@ export function createHubChatPlatform(
       // The stable id names the room's participant; the run it resolves
       // to is whichever one is alive right now, which is a different
       // run (and a different address) after every relaunch.
-      const { binding } = await requireLive(input.workbenchId);
+      const { binding } = await requireLive(input.workbenchId, input.tenantId);
       const liveAddress = binding.liveAddress;
 
       // Wake before send: a sleeping instance (the lifecycle package's
@@ -1270,7 +1281,7 @@ export function createHubChatPlatform(
       } catch (error) {
         throw wrapWakeInferenceError(error);
       }
-      const delivery = await requireLive(input.workbenchId);
+      const delivery = await requireLive(input.workbenchId, input.tenantId);
       const deliveryAddress = delivery.binding.liveAddress;
       // Tracking here (not only at launch) brings instances that were
       // already resident before this hub process started — restored by
