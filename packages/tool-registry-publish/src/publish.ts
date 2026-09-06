@@ -110,7 +110,19 @@ async function ensureRegistryAsset(
   if (created.status === 201) {
     return parseSchema(AssetResponse, created.data, "create asset response").id;
   }
-  if (created.status !== 409) {
+  // CL-7486: two overlapping seed runs for the same tenant (the root
+  // tenant's own boot-time seed racing a second caller seeding that
+  // same tenant) can both pass the `listRegistryAsset` check above
+  // before either has created the row, then both post-create — the
+  // loser hits the `asset_tenant_kind_name` unique constraint. The
+  // substrate answers that as `409` in the common case; asserted here
+  // by name too, in case a raw constraint violation surfaces as a
+  // generic 500 instead, so the loser still resolves the winner's row
+  // rather than throwing on a race this ensure is meant to tolerate.
+  const isNameCollision =
+    created.status === 409 ||
+    JSON.stringify(created.data).includes("asset_tenant_kind_name");
+  if (!isNameCollision) {
     throw new Error(
       `publishCorbitsToolsRegistry: failed to create the ${CORBITS_TOOLS_REGISTRY} asset: ${String(created.status)}`,
     );

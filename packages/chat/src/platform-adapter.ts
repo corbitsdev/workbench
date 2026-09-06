@@ -989,10 +989,24 @@ export function createHubChatPlatform(
    * more time regardless. Exhausting every delay means the condition
    * is not transient and the caller gets a clean `AgentUnreachableError`
    * rather than an unhandled 500.
+   *
+   * CL-7486: a wake this loop runs between retries can itself relaunch
+   * the run — `wakeByAddress`'s dead-run branch repoints the room's
+   * stable participant at a fresh address without telling this loop.
+   * Retrying `sendRunMail` against the address it started with would
+   * then keep hammering a run that will never become routable again,
+   * and the wake ahead of the NEXT retry would fail outright (no
+   * `workbench_launch` row still names that address at all) instead of
+   * the "unreachable" this loop knows how to ride out. `reresolve`
+   * re-reads the live address (and its session) off the stable
+   * participant id before every wake/retry, so this loop always chases
+   * whichever run is actually current.
    */
   async function sendRunMailWithReclaimRetry(
     params: SendRunMailParams,
+    reresolve: () => Promise<{ agentAddress: string; sessionId: string }>,
   ): Promise<Awaited<ReturnType<typeof sendRunMail>>> {
+    let current = params;
     let loggedRetryStart = false;
     for (let attempt = 0; ; attempt++) {
       try {
@@ -1001,29 +1015,44 @@ export function createHubChatPlatform(
         // to accept regardless — the signal parameter is unused here,
         // same abandon-on-timeout behavior as before.
         return await withTimeout(
-          () => sendRunMail(runMailDeps, params),
+          () => sendRunMail(runMailDeps, current),
           MAIL_DELIVERY_TIMEOUT_MS,
-          `mail to ${params.agentAddress} did not settle within ${String(MAIL_DELIVERY_TIMEOUT_MS)}ms`,
+          `mail to ${current.agentAddress} did not settle within ${String(MAIL_DELIVERY_TIMEOUT_MS)}ms`,
         );
       } catch (err) {
         const delay = RECLAIM_RETRY_DELAYS_MS[attempt];
         if (!isAgentUnreachable(err) || delay === undefined) {
           if (loggedRetryStart) {
-            wakeLogger.info`mail to ${params.agentAddress} exhausted every reclaim retry; giving up`;
+            wakeLogger.info`mail to ${current.agentAddress} exhausted every reclaim retry; giving up`;
           }
           if (isAgentUnreachable(err)) {
-            throw new AgentUnreachableError(params.agentAddress, {
+            throw new AgentUnreachableError(current.agentAddress, {
               cause: err,
             });
           }
           throw err;
         }
         if (!loggedRetryStart) {
-          wakeLogger.info`mail to ${params.agentAddress} hit "agent is unreachable"; retrying with backoff while the post-restart reclaim settles`;
+          wakeLogger.info`mail to ${current.agentAddress} hit "agent is unreachable"; retrying with backoff while the post-restart reclaim settles`;
           loggedRetryStart = true;
         }
         await sleep(delay);
-        await wakeByAddressBounded(params.agentAddress);
+        // Wake whatever this loop still believes is live — `wakeByAddress`
+        // itself tolerates an address one relaunch behind the room's
+        // current one (its lookup matches either the stable participant
+        // id or the live run id) — and only THEN re-resolve, since the
+        // wake just run is exactly the kind of relaunch that can leave
+        // `current.agentAddress` pointing at a run that no longer exists
+        // at all. Re-resolving before the wake instead would still hand
+        // the next retry whatever address was current a moment ago,
+        // stale again the instant this wake relaunches it.
+        await wakeByAddressBounded(current.agentAddress);
+        const fresh = await reresolve();
+        current = {
+          ...current,
+          agentAddress: fresh.agentAddress,
+          sessionId: fresh.sessionId,
+        };
       }
     }
   }
@@ -1399,7 +1428,27 @@ export function createHubChatPlatform(
           ? { references: input.content.references }
           : {}),
       };
-      const sent = await sendRunMailWithReclaimRetry(withThreading);
+      const sent = await sendRunMailWithReclaimRetry(withThreading, async () => {
+        const relive = await requireLive(input.workbenchId, input.tenantId);
+        try {
+          await ensureRunSession({
+            db: deps.db,
+            eventCollectors: deps.eventCollectors,
+            runId: relive.run.id,
+          });
+        } catch (err) {
+          reportError(err, {
+            operation: "chat.sendMail.ensureRunSession",
+            tenantId: input.tenantId,
+            agentId: relive.binding.liveAddress,
+            extra: { runId: relive.run.id },
+          });
+        }
+        return {
+          agentAddress: relive.binding.liveAddress,
+          sessionId: await resolveRunSessionIdOrThrow(deps.db, relive.run),
+        };
+      });
 
       lifecycle?.recordActivity(deliveryAddress);
 
