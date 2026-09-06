@@ -10,7 +10,7 @@ import type { Root } from "react-dom/client";
 
 import { MCP_PRESETS } from "@workbench/templates/connectors";
 
-import { McpPresetCardsSection } from "../src/mcp-preset-cards";
+import { McpPresetCard, useMcpPresetCatalog } from "../src/mcp-preset-cards";
 
 const realFetch = globalThis.fetch;
 let mountedRoots: Root[] = [];
@@ -30,9 +30,32 @@ function mountSection() {
   const root: Root = createRoot(container);
   mountedRoots.push(root);
   act(() => {
-    root.render(<McpPresetCardsSection tenantId="tenant_test" />);
+    root.render(<PresetCatalogHarness />);
   });
   return container;
+}
+
+function PresetCatalogHarness() {
+  const catalog = useMcpPresetCatalog("tenant_test");
+  if (!catalog.loaded) return null;
+  if (catalog.loadError !== null) {
+    return <p role="alert">{catalog.loadError}</p>;
+  }
+  return (
+    <div>
+      {catalog.presets.map((preset) => (
+        <McpPresetCard
+          key={preset.slug}
+          tenantId="tenant_test"
+          preset={preset}
+          toolCount={catalog.toolCounts.get(preset.slug)}
+          onChanged={(toolCount) =>
+            catalog.handleChanged(preset.slug, toolCount)
+          }
+        />
+      ))}
+    </div>
+  );
 }
 
 const PRESETS = [
@@ -70,7 +93,7 @@ const PRESETS = [
   },
 ];
 
-describe("McpPresetCardsSection", () => {
+describe("MCP preset catalog", () => {
   test("renders one compact row per preset with its outcome sentence", async () => {
     globalThis.fetch = (async () =>
       new Response(
@@ -283,9 +306,7 @@ describe("McpPresetCardsSection", () => {
     ) as HTMLElement;
     expect(canvaCard.textContent).toContain("40 tools");
     expect(canvaCard.textContent).not.toContain("Not connected");
-    expect(
-      canvaCard.querySelector('[aria-label="Disconnect Canva"]'),
-    ).not.toBeNull();
+    expect(canvaCard.textContent).toContain("Manage");
 
     const granolaCard = container.querySelector(
       '[data-plugin-slug="granola"]',
@@ -329,7 +350,7 @@ describe("McpPresetCardsSection", () => {
     expect(canvaCard.textContent).not.toContain("tools");
   });
 
-  test("Disconnect's accessible name includes the preset display name (CL-6794)", async () => {
+  test("Manage reveals a named Disconnect confirmation (CL-6794)", async () => {
     globalThis.fetch = (async () =>
       new Response(
         JSON.stringify({
@@ -342,11 +363,22 @@ describe("McpPresetCardsSection", () => {
     const container = mountSection();
     await settle();
 
-    const disconnectExa = container.querySelector(
-      '[aria-label="Disconnect Exa"]',
+    const exaCard = container.querySelector(
+      '[data-plugin-slug="exa"]',
+    ) as HTMLElement;
+    const manageExa = [...exaCard.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Manage") === true,
     );
-    expect(disconnectExa).not.toBeNull();
-    expect(disconnectExa?.textContent?.trim()).toBe("Disconnect");
+    expect(manageExa?.textContent).toContain("Exa");
+
+    act(() => {
+      manageExa?.click();
+    });
+
+    const disconnectExa = [...exaCard.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Disconnect") === true,
+    );
+    expect(disconnectExa?.textContent).toContain("Exa");
   });
 
   test("connect calls the preset connect route with the preset's slug", async () => {
@@ -503,18 +535,16 @@ describe("McpPresetCardsSection", () => {
     const exaCard = container.querySelector(
       '[data-plugin-slug="exa"]',
     ) as HTMLElement;
-    const disconnectButton = [...exaCard.querySelectorAll("button")].find(
-      (button) => button.textContent?.includes("Disconnect"),
+    const manageButton = [...exaCard.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Manage"),
     ) as HTMLButtonElement;
 
     await act(async () => {
-      disconnectButton.dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
-      );
+      manageButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
     const confirmButton = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Disconnect",
+      (button) => button.textContent?.includes("Disconnect") === true,
     ) as HTMLButtonElement;
     await act(async () => {
       confirmButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -560,11 +590,7 @@ describe("McpPresetCardsSection", () => {
     }
   });
 
-  // CL-6472: this section must never silently disappear. Before this
-  // fix it `return null`ed for any load that resolved with zero presets
-  // (including one still in flight), which is indistinguishable from the
-  // whole "Connect apps" catalog vanishing.
-  test("never renders nothing — a failed load surfaces an error, not silence", async () => {
+  test("a failed catalog load surfaces an error, not silence", async () => {
     globalThis.fetch = (async () =>
       new Response("Internal Server Error", {
         status: 500,
@@ -573,7 +599,6 @@ describe("McpPresetCardsSection", () => {
     const container = mountSection();
     await settle();
 
-    expect(container.textContent).toContain("Connect apps");
     expect(container.querySelector('[role="alert"]')).not.toBeNull();
   });
 });
