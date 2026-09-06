@@ -23,15 +23,17 @@ import {
   expectStatus,
   freePort,
   provisionSidecar,
-  pushWorkflowSource,
   runCleanups,
   startHub,
   startSidecar,
-  workflowDeployBody,
   type ApiResult,
   type HubHandle,
   type SpawnedApp,
 } from "../../../scripts/e2e/harness.ts";
+import {
+  pushWorkflowSource,
+  workflowDeployBody,
+} from "../../../scripts/e2e/workflow-source.ts";
 import {
   buildHeartbeatWorkflow,
   serializeHeartbeatWorkflow,

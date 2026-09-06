@@ -47,14 +47,13 @@ import {
   expectStatus,
   freePort,
   provisionSidecar,
-  pushWorkflowSource,
-  workflowDeployBody,
   startHub,
   startSidecar,
   type ApiResult,
   type HubHandle,
   type SpawnedApp,
 } from "./harness.ts";
+import { pushWorkflowSource, workflowDeployBody } from "./workflow-source.ts";
 
 const databaseUrl = e2eDatabaseUrl();
 if (databaseUrl === undefined) {

@@ -22,10 +22,10 @@ function waitForTicks(count = 1): Promise<void> {
       if (remaining <= 0) {
         resolve();
       } else {
-        setTimeout(tick, 5);
+        setTimeout(tick, 40);
       }
     };
-    setTimeout(tick, 5);
+    setTimeout(tick, 40);
   });
 }
 
@@ -41,8 +41,8 @@ describe("createAgentLifecycle", () => {
     const routable = new Set(["agent-1@t.test"]);
 
     const lifecycle = createAgentLifecycle({
-      idleSleepMs: 10,
-      sweepIntervalMs: 5,
+      idleSleepMs: 80,
+      sweepIntervalMs: 40,
       isRoutable: (address) => routable.has(address),
       undeploy: async (address, reason) => {
         undeployCalls.push({ address, reason });
@@ -59,13 +59,13 @@ describe("createAgentLifecycle", () => {
     lifecycle.track("agent-1@t.test");
     lifecycle.recordActivity("agent-1@t.test");
 
-    // First sweep tick happens quickly (sweepIntervalMs=5) but the
-    // instance is not idle for the full 10ms yet.
+    // First sweep tick happens quickly (sweepIntervalMs=40) but the
+    // instance is not idle for the full 80ms yet.
     await waitForTicks(1);
     expect(undeployCalls).toEqual([]);
 
     // Wait past idleSleepMs and let another sweep tick run.
-    await new Promise((resolve) => setTimeout(resolve, 15));
+    await new Promise((resolve) => setTimeout(resolve, 120));
     await waitForTicks(1);
 
     expect(undeployCalls).toEqual([
@@ -79,7 +79,7 @@ describe("createAgentLifecycle", () => {
 
     const lifecycle = createAgentLifecycle({
       idleSleepMs: 1_000,
-      sweepIntervalMs: 5,
+      sweepIntervalMs: 40,
       isRoutable: (address) => routable.has(address),
       undeploy: async (address, reason) => {
         undeployCalls.push({ address, reason });
@@ -101,8 +101,8 @@ describe("createAgentLifecycle", () => {
     const routable = new Set(["agent-1@t.test"]);
 
     const lifecycle = createAgentLifecycle({
-      idleSleepMs: 10,
-      sweepIntervalMs: 5,
+      idleSleepMs: 80,
+      sweepIntervalMs: 40,
       isRoutable: (address) => routable.has(address),
       undeploy: async (address, reason) => {
         undeployCalls.push({ address, reason });
@@ -116,7 +116,7 @@ describe("createAgentLifecycle", () => {
     lifecycle.track("agent-1@t.test");
     lifecycle.recordActivity("agent-1@t.test");
 
-    await new Promise((resolve) => setTimeout(resolve, 15));
+    await new Promise((resolve) => setTimeout(resolve, 120));
     await waitForTicks(1);
 
     expect(undeployCalls).toEqual([]);
@@ -127,8 +127,8 @@ describe("createAgentLifecycle", () => {
     const routable = new Set(["agent-1@t.test"]);
 
     const lifecycle = createAgentLifecycle({
-      idleSleepMs: 10,
-      sweepIntervalMs: 5,
+      idleSleepMs: 80,
+      sweepIntervalMs: 40,
       isRoutable: (address) => routable.has(address),
       undeploy: async (address, reason) => {
         undeployCalls.push({ address, reason });
@@ -142,7 +142,7 @@ describe("createAgentLifecycle", () => {
     // swept.
     lifecycle.recordActivity("agent-1@t.test");
 
-    await new Promise((resolve) => setTimeout(resolve, 15));
+    await new Promise((resolve) => setTimeout(resolve, 120));
     await waitForTicks(1);
 
     expect(undeployCalls).toEqual([]);
@@ -153,8 +153,8 @@ describe("createAgentLifecycle", () => {
     const routable = new Set(["agent-1@t.test"]);
 
     const lifecycle = createAgentLifecycle({
-      idleSleepMs: 10,
-      sweepIntervalMs: 5,
+      idleSleepMs: 80,
+      sweepIntervalMs: 40,
       isRoutable: (address) => routable.has(address),
       undeploy: async (address, reason) => {
         undeployCalls.push({ address, reason });
@@ -174,7 +174,7 @@ describe("createAgentLifecycle", () => {
     expect(undeployCalls).toEqual([]);
 
     // Only after the grace-seeded clock itself goes idle does it sleep.
-    await new Promise((resolve) => setTimeout(resolve, 15));
+    await new Promise((resolve) => setTimeout(resolve, 120));
     await waitForTicks(1);
     expect(undeployCalls).toEqual([
       { address: "agent-1@t.test", reason: IDLE_HIBERNATE_UNDEPLOY_REASON },
@@ -186,8 +186,8 @@ describe("createAgentLifecycle", () => {
     const routable = new Set<string>();
 
     const lifecycle = createAgentLifecycle({
-      idleSleepMs: 10,
-      sweepIntervalMs: 5,
+      idleSleepMs: 80,
+      sweepIntervalMs: 40,
       isRoutable: (address) => routable.has(address),
       undeploy: async (address, reason) => {
         undeployCalls.push({ address, reason });
@@ -200,7 +200,7 @@ describe("createAgentLifecycle", () => {
     lifecycle.track("agent-1@t.test");
     lifecycle.recordActivity("agent-1@t.test");
 
-    await new Promise((resolve) => setTimeout(resolve, 15));
+    await new Promise((resolve) => setTimeout(resolve, 120));
     await waitForTicks(1);
 
     expect(undeployCalls).toEqual([]);
@@ -214,8 +214,8 @@ describe("createAgentLifecycle", () => {
     let maxConcurrentUndeploys = 0;
 
     const lifecycle = createAgentLifecycle({
-      idleSleepMs: 10,
-      sweepIntervalMs: 5,
+      idleSleepMs: 80,
+      sweepIntervalMs: 40,
       isRoutable: (address) => routable.has(address),
       undeploy: async (address) => {
         concurrentUndeploys += 1;
@@ -242,7 +242,7 @@ describe("createAgentLifecycle", () => {
     // land while the first sweep's undeploy is still pending. If ticks
     // overlapped, this would call undeploy on the same address a
     // second time before the first has resolved.
-    await new Promise((resolve) => setTimeout(resolve, 15));
+    await new Promise((resolve) => setTimeout(resolve, 120));
     await waitForTicks(1);
     expect(undeployCalls).toEqual(["agent-1@t.test"]);
 
@@ -251,7 +251,7 @@ describe("createAgentLifecycle", () => {
     expect(maxConcurrentUndeploys).toBe(1);
 
     releaseUndeploy?.();
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await new Promise((resolve) => setTimeout(resolve, 40));
   });
 
   test("ensureAwake no-ops when already routable", async () => {
@@ -297,7 +297,7 @@ describe("createAgentLifecycle", () => {
 
     // Give both calls a tick to have entered `ensureAwake` and observed
     // the same pending wake.
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await new Promise((resolve) => setTimeout(resolve, 40));
     expect(wakeCalls).toEqual(["agent-1@t.test"]);
 
     resolveWake?.();
@@ -354,7 +354,7 @@ describe("createAgentLifecycle", () => {
 
     const lifecycle = createAgentLifecycle({
       idleSleepMs: 1_000,
-      wakeTimeoutMs: 20,
+      wakeTimeoutMs: 160,
       isRoutable: (address) => routable.has(address),
       undeploy: async () => undefined,
       wake: async () => {
@@ -405,7 +405,7 @@ describe("createAgentLifecycle", () => {
 
     const lifecycle = createAgentLifecycle({
       idleSleepMs: 1_000,
-      wakeTimeoutMs: 20,
+      wakeTimeoutMs: 160,
       isRoutable: (address) => routable.has(address),
       undeploy: async () => undefined,
       wake: async (address) => {
@@ -421,7 +421,7 @@ describe("createAgentLifecycle", () => {
 
     const first = lifecycle.ensureAwake("agent-1@t.test");
 
-    // The first caller's own 20ms budget expires while the underlying
+    // The first caller's own 160ms budget expires while the underlying
     // wake is still running.
     await expect(first).rejects.toThrow(/wake/i);
     expect(wakeCalls).toBe(1);

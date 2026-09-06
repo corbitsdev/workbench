@@ -72,8 +72,9 @@ check:structural <name>`.
     `docker compose -f docker-compose.test.yml up -d`. On CI jobs that
     provision Postgres (`e2e-suite`, `isolation`, `db-suites`), `CI=true`
     turns a missing URL into a hard failure via `dbGate`. The unit
-    jobs (`build-test`, `structural`, `lint`, `typecheck`) never
-    provision Postgres and still skip.
+    jobs (`build-test-shard` — `build-test` itself is now a summary job
+    over its 3-way shard matrix — `structural`, `lint`, `typecheck`)
+    never provision Postgres and still skip.
   - `HUB_DATA_DIR` — hub boot fails. This is required runtime config,
     not a test flag.
   - `CI` — set automatically by GitHub Actions (`true`). Not a caller

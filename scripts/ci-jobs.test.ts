@@ -27,7 +27,15 @@ function jobBodies(yaml: string): Map<string, string> {
 const SETUP = "./.github/actions/setup-workbench";
 const POSTGRES_IMAGE = "pgvector/pgvector:pg17";
 const DB_JOBS = ["e2e-suite", "isolation", "db-suites"] as const;
-const MERGE_BASE_JOBS = ["typecheck", "build-test", "structural"] as const;
+// "build-test" itself is a no-op summary job over the build-test-shard
+// matrix (see ci.yml) — the matrix job is the one that actually checks
+// out the repo and needs full history for tool-package-freshness's
+// merge-base diff.
+const MERGE_BASE_JOBS = [
+  "typecheck",
+  "build-test-shard",
+  "structural",
+] as const;
 
 test("CI splits e2e, isolation, and db-suites onto their own Postgres jobs", async () => {
   const yaml = await readFile(join(ROOT, ".github/workflows/ci.yml"), "utf8");
@@ -93,6 +101,23 @@ test('e2e runs as a plan/matrix/summary trio so branch protection\'s "e2e" check
   const summary = jobs.get("e2e");
   expect(summary).toBeDefined();
   expect(summary).toContain("needs: e2e-suite");
+  expect(summary).toContain("if: always()");
+});
+
+test('build-test runs as a shard/summary pair so branch protection\'s "build-test" check still exists', async () => {
+  const yaml = await readFile(join(ROOT, ".github/workflows/ci.yml"), "utf8");
+  const jobs = jobBodies(yaml);
+
+  const shard = jobs.get("build-test-shard");
+  expect(shard).toBeDefined();
+  expect(shard).toContain("fail-fast: false");
+  expect(shard).toContain("matrix:");
+  expect(shard).toContain("shard:");
+  expect(shard).toContain("run: bun run scripts/run-all.ts test --shard");
+
+  const summary = jobs.get("build-test");
+  expect(summary).toBeDefined();
+  expect(summary).toContain("needs: build-test-shard");
   expect(summary).toContain("if: always()");
 });
 

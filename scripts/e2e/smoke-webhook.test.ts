@@ -38,12 +38,11 @@ import {
   freePort,
   hop,
   provisionSidecar,
-  pushWorkflowSource,
-  workflowDeployBody,
   startHub,
   startSidecar,
   type HubHandle,
 } from "./harness.ts";
+import { pushWorkflowSource, workflowDeployBody } from "./workflow-source.ts";
 
 const { tempDir, track } = createCleanupHarness();
 

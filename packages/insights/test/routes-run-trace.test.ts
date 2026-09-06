@@ -15,7 +15,7 @@ import { generateId } from "@intx/hub-common";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 
 import { setupDatabase } from "../../../scripts/db-setup";
-import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { createInsightsRoutes } from "../src/routes";
 import { createDrizzleRunTraceReader } from "../src/trace-reader";
 import { createMemoryUsageStore } from "../src/store";
