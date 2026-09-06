@@ -21,7 +21,7 @@ lastSeenByUser.get(userId); // undefined once ttlMs has elapsed
 
 This is the first primitive in the package. `apps/hub/src/launch-caches.ts`'s
 `BoundedCache` (size-capped LRU, no TTL) is a sibling that predates this
-package. `@corbits/folded-runs`' `createCryptoProviderCache` now consumes
+package. `@corbits/chat`'s `createCryptoProviderCache` now consumes
 `createExpiringMap` directly (CL-7223); CL-7229 is expected to either do
 the same or contribute the size-capped-LRU shape here so `BoundedCache`
 can retire in favor of one place for this problem.

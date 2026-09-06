@@ -1,8 +1,9 @@
 // The one typed signal for "this connector's credential is missing" —
 // the pop-up that lets someone connect it can't target the right
 // connector unless that identity survives past the failure. Today it
-// doesn't: `packages/folded-runs/src/launch.ts` discards
-// `buildCredentialDelivery`'s own `reason.binding.provider` into a
+// doesn't: `vendor/intx/hub-sessions/src/session-service.ts`'s
+// `deployCodeSourcedWorkflow` discards `buildCredentialDelivery`'s own
+// `reason.binding.provider` into a
 // generic `Error` string, and every tool package bakes its own
 // hardcoded "not connected" prose instead of naming the connector
 // structurally. This class is the shared, identifiable shape a thrower

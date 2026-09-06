@@ -3,9 +3,9 @@
 // `listRoutineActivity`, never on where the data actually comes from.
 // Filled from `./agents-api.ts`'s `listRoutineRunFires` — the `feed=fires`
 // listing, the one top-level-runs view that keeps a routine's fire despite
-// it being a folded run (see that function's own comment). The plain
-// `listTopLevelRuns` feed looks tempting here but is wrong: its
-// `notExists(folded_run)` filter drops every routine fire by construction,
+// it not being a top-level run (see that function's own comment). The
+// plain `listTopLevelRuns` feed looks tempting here but is wrong: its
+// top-level-only filter drops every routine fire by construction,
 // so a routine genuinely running would never show up in this band or count
 // toward Mission Control's "Active runs" — exactly CL-6595's desync
 // between the Routines page's own "Running now" pill and Mission Control's

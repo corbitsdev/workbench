@@ -53,7 +53,7 @@ export type UserFacingAgentInstance = {
  * sidebar's DM list; `automatable` (schedulable as a routine) is orthogonal
  * and never decides this. Definitions never need the run-id filter
  * `purposeAgentInstances` below takes: definition rows aren't run rows, so a
- * folded run's own id can never match here — an invited agent's real
+ * chat-plumbing run's own id can never match here — an invited agent's real
  * `definitionId` stays a legitimate, reusable template even though its
  * *instance* is chat plumbing. */
 export function purposeAgentDefinitions<T extends UserFacingAgentDefinition>(
@@ -67,11 +67,11 @@ export function purposeAgentDefinitions<T extends UserFacingAgentDefinition>(
 }
 
 /**
- * `excludeRunIds` additionally drops folded chat runs (invited agents):
+ * `excludeRunIds` additionally drops chat-plumbing runs (invited agents):
  * they self-anchor like a real deployment and launch under a real,
  * user-authored `definitionId` that `isWorkbenchHostDefinitionName` never
  * catches, so the host names them by id instead. Defaults to an empty
- * set so callers without a folded-run source keep the name-only filter.
+ * set so callers without a run-id source keep the name-only filter.
  */
 export function purposeAgentInstances<T extends UserFacingAgentInstance>(
   instances: readonly T[],
