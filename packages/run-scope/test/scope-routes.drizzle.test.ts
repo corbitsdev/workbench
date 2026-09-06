@@ -15,7 +15,7 @@ import { dbGate } from "../../../scripts/e2e/db-gate";
 const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
-const SCHEMA = "folded_runs_scope_routes_test";
+const SCHEMA = "run_scope_scope_routes_test";
 const TENANT = "tnt_scope_routes";
 
 describeIfDb("listTopLevelRuns", () => {
@@ -145,7 +145,7 @@ describeIfDb("listTopLevelRuns", () => {
   });
 });
 
-const FIRES_SCHEMA = "folded_runs_scope_routes_fires_test";
+const FIRES_SCHEMA = "run_scope_scope_routes_fires_test";
 const FIRES_TENANT = "tnt_scope_routes_fires";
 
 describeIfDb("listTopLevelRunFires", () => {

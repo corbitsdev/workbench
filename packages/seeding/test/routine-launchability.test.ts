@@ -1,5 +1,5 @@
 // CL-6495 found that every routine "run now" (and every scheduled
-// fire) launched through `@corbits/folded-runs`' `readFoldedBody` (via
+// fire) launched through `@corbits/workflows`' `readFoldedBody` (via
 // `apps/hub/src/routine-launcher.ts`), which has always required
 // exactly one step — a multi-step `DEFAULT_WORKFLOWS` entry threw
 // synchronously, uncaught, turning into a bare 500 on the very first

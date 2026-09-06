@@ -1,9 +1,9 @@
 // Static description of every published `@corbits/*-tools` package's
 // tool surface, read by importing each package's own `src/index.ts`
 // module (the pre-bundle source, not the packed tarball). The hub's
-// folded-run launch composition (`apps/hub/src/index.ts`) uses this to
+// chat launch composition (`apps/hub/src/index.ts`) uses this to
 // derive the `tool:<qualifiedId>` grants a launch's pinned packages
-// need — see `@corbits/folded-runs`'s `ToolGrantsForPins` for why those
+// need — see `@corbits/chat`'s `ToolGrantsForPins` for why those
 // grants have to be minted at deploy time rather than left to the
 // deploy-time capability walk, which only covers inline tool factories.
 import { readFile } from "node:fs/promises";

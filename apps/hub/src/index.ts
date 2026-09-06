@@ -757,17 +757,17 @@ export async function createHub(config: HubConfig) {
     },
   };
   const hubPublicKey = hexEncode(signingKey.publicKey);
-  // CL-6149: a folded run's pinned tool packages (`toolPackagePins`)
-  // carry no grants of their own — the deploy-time capability walk
+  // CL-6149: a launch's pinned tool packages (`toolPackagePins`) carry
+  // no grants of their own — the deploy-time capability walk
   // (`vendor/intx/workflow-deploy/src/capability-walk.ts`) only derives
   // `tool:` grants for inline tool factories, so a pinned package's
   // tools failed every call closed with "No matching grants". Every
   // `@corbits/*-tools` package's namespaced tool ids and approval marks
   // are read once here (`describeCorbitsToolPackages`), so
-  // `toolGrantsForPins` — the port every `FoldedRunsDeps` below is
-  // built with — can synchronously turn a launch's pins into the
-  // `tool:<qualifiedId>` grants `@corbits/folded-runs`' `deployAtHead`
-  // mints against the run's own principal.
+  // `toolGrantsForPins` — the port `createHubChatPlatform`'s
+  // `CreateHubChatPlatformDeps` is built with — can synchronously turn a
+  // launch's pins into the `tool:<qualifiedId>` grants minted against
+  // the run's own principal.
   const toolGrantsForPins = createToolGrantsForPins(
     await describeCorbitsToolPackages(),
   );
@@ -2800,11 +2800,11 @@ export async function createHub(config: HubConfig) {
   // down immediately — never a resident that outlives the request, so no
   // idle-sleep lifecycle is needed for it.
 
-  // Every genuine top-level deployment run, folded runs (workbench hosts,
-  // invited agents) excluded — the scoped listing CL-6061 adds
-  // so the Agent Directory and the shell's "Running" bands stop
-  // deriving that exclusion client-side from a tenant's workbenches alone
-  // (see `@corbits/folded-runs`'s `scope-routes.ts`, which a folded run
+  // Every genuine top-level deployment run, workbench-hosted and invited-agent
+  // runs excluded — the scoped listing CL-6061 adds so the Agent Directory
+  // and the shell's "Running" bands stop deriving that exclusion
+  // client-side from a tenant's workbenches alone (see
+  // `@corbits/run-scope`'s `scope-routes.ts`, which a non-top-level run
   // with no workbench involved silently slipped past).
   app.route(
     `${TENANT_PREFIX}/top-level-runs`,

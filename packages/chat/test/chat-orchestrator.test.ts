@@ -150,9 +150,9 @@ function launchRowFor(runId: string, tenantId: string) {
   };
 }
 
-// The real `findFoldedRunByAddress` (exercised, not mocked, so this
-// file never risks poisoning `@corbits/folded-runs`'s module namespace
-// for `platform-adapter.test.ts` when the whole package's suite runs
+// The real address→run resolution (exercised, not mocked, so this
+// file never risks poisoning `@corbits/chat`'s module namespace for
+// `platform-adapter.test.ts` when the whole package's suite runs
 // in one process) calls `db.query.workflowRun.findFirst({ where:
 // eq(workflowRun.address, address) })`. Every scenario here configures
 // at most one run, so this fake ignores the `where` filter and simply
@@ -1237,8 +1237,8 @@ describe("createChatOrchestrator", () => {
   // stores, so every assertion below proves the posted row AND its
   // membership land in the source message's thread.
   //
-  // `findFoldedRunByAddress` is exercised for real (see this file's
-  // header comment), so the two-address fake answers by call order
+  // The real address→run resolution is exercised for real (see this
+  // file's header comment), so the two-address fake answers by call order
   // rather than inspecting the drizzle `where` expression: the tests
   // below await a macrotask between emissions, so resolutions happen in
   // emission order.

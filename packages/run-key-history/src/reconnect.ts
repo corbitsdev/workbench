@@ -50,9 +50,8 @@ import { liveWorkflowRunStatuses, workflowRun } from "@intx/db/schema";
 import type { RunKeyHistoryStore } from "./store";
 
 /**
- * The hub app wires this AFTER the platform's own `lookupPublicKey`,
- * alongside `@corbits/folded-runs`' `lookupFoldedRunReconnectKey`: the
- * platform's answer stands whenever it has one, and this repair is
+ * The hub app wires this AFTER the platform's own `lookupPublicKey`:
+ * the platform's answer stands whenever it has one, and this repair is
  * reached only for a live run whose `workflow_run` key the platform
  * could not supply or which disagrees with the last observed ack.
  *
