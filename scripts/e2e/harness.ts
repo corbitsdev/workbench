@@ -672,8 +672,9 @@ export async function pushWorkflowSource(options: {
  * `interchange.workflow` module the sidecar evaluates. The native route
  * resolves inference against the tenant's own catalog, so the caller
  * supplies the ordered catalog offering ids to deploy against rather
- * than a raw provider/baseURL/apiKey triple — see `seedNoopCatalogOffering`
- * for the zero-cost way to obtain one.
+ * than a raw provider/baseURL/apiKey triple — see
+ * `@corbits/seeding`'s `ensureNoopCatalogOffering` for the zero-cost way
+ * to obtain one.
  */
 export function workflowDeployBody(options: {
   assetId: string;
@@ -691,102 +692,4 @@ export function workflowDeployBody(options: {
     sourceOfferingIds: options.sourceOfferingIds,
     defaultSourceOfferingId: options.defaultSourceOfferingId,
   };
-}
-
-/**
- * Plants the zero-cost catalog chain every deploying e2e suite needs: a
- * catalog model, an `anthropic`-plugin provider/credential pointed at
- * `noopBaseUrl` (never a real provider host — enforced below), and the
- * catalog offering joining them. Returns the offering id a deploy's
- * `sourceOfferingIds`/`defaultSourceOfferingId` resolves against.
- * Mirrors the chain `smoke-webhook.test.ts` proved out by hand.
- */
-export async function seedNoopCatalogOffering(options: {
-  call: (
-    method: string,
-    path: string,
-    body?: unknown,
-    cookies?: string[],
-  ) => Promise<ApiResult>;
-  tenantId: string;
-  cookies: string[];
-  noopBaseUrl: string;
-}): Promise<{ offeringId: string }> {
-  assertNeverRealProvider(options.noopBaseUrl, "noop catalog provider baseURL");
-  const { call, tenantId, cookies } = options;
-
-  const model = await call(
-    "POST",
-    `/api/tenants/${tenantId}/catalog/models`,
-    { canonicalName: "noop" },
-    cookies,
-  );
-  expectStatus("create catalog model", model, 201);
-  const modelId = stringFieldOf(model.data, "id", "create catalog model");
-
-  const provider = await call(
-    "POST",
-    `/api/tenants/${tenantId}/providers`,
-    { name: "anthropic", plugin: "anthropic" },
-    cookies,
-  );
-  expectStatus("create provider", provider, 201);
-  const providerId = stringFieldOf(provider.data, "id", "create provider");
-
-  const credential = await call(
-    "POST",
-    `/api/tenants/${tenantId}/credentials`,
-    {
-      providerId,
-      name: "anthropic-default",
-      type: "api_key",
-      secret: "noop",
-    },
-    cookies,
-  );
-  expectStatus("create credential", credential, 201);
-  const credentialId = stringFieldOf(
-    credential.data,
-    "id",
-    "create credential",
-  );
-
-  const catalogProvider = await call(
-    "POST",
-    `/api/tenants/${tenantId}/catalog/providers`,
-    {
-      name: "anthropic",
-      plugin: "anthropic",
-      baseURL: options.noopBaseUrl,
-      credentialId,
-    },
-    cookies,
-  );
-  expectStatus("create catalog provider", catalogProvider, 201);
-  const catalogProviderId = stringFieldOf(
-    catalogProvider.data,
-    "id",
-    "create catalog provider",
-  );
-
-  const offering = await call(
-    "POST",
-    `/api/tenants/${tenantId}/catalog/offerings`,
-    { modelId, providerId: catalogProviderId },
-    cookies,
-  );
-  expectStatus("create catalog offering", offering, 201);
-  return {
-    offeringId: stringFieldOf(offering.data, "id", "create catalog offering"),
-  };
-}
-
-function stringFieldOf(data: unknown, field: string, what: string): string {
-  if (typeof data === "object" && data !== null && field in data) {
-    const value = (data as Record<string, unknown>)[field];
-    if (typeof value === "string" && value !== "") return value;
-  }
-  throw new Error(
-    `${what}: missing string field "${field}": ${JSON.stringify(data)}`,
-  );
 }

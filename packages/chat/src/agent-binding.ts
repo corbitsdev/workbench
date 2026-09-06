@@ -135,26 +135,48 @@ async function readLaunchRow(
 export async function readBindingByAddress(
   db: DB["db"],
   address: string,
-  expectedTenantId?: string,
+  tenantId: string,
 ): Promise<AgentBinding | undefined> {
-  const domain = requireDomain(address);
-  const localPart = localPartOf(address);
-  const byStableId = await readLaunchRow(db, "instanceId", localPart);
-  const row =
-    byStableId ?? (await readLaunchRow(db, "currentRunId", localPart));
+  const row = await readBindingRowByAddress(db, address);
   if (row === undefined) return undefined;
   // A caller that already knows which tenant it is acting for must
   // never accept a binding minted by another one — `instanceId` and
   // `currentRunId` are collision-resistant generated ids, not scoped to
   // a tenant, so nothing else stops an address that happens to name a
-  // row from a different tenant from resolving here. A caller with no
-  // tenant of its own yet (the event-stream handler discovering which
-  // tenant an inbound address even belongs to) passes no
-  // `expectedTenantId` and gets the address-only resolution it needs.
-  if (expectedTenantId !== undefined && row.tenantId !== expectedTenantId) {
-    return undefined;
-  }
-  return bindingFrom(row, domain);
+  // row from a different tenant from resolving here. `tenantId` is
+  // required precisely so a caller cannot silently fall back to the
+  // unscoped read by forgetting to pass it — see
+  // `readBindingByAddressAnyTenant` for the one place that read is
+  // actually correct.
+  if (row.row.tenantId !== tenantId) return undefined;
+  return bindingFrom(row.row, row.domain);
+}
+
+/**
+ * The unscoped counterpart of `readBindingByAddress`, for the one caller
+ * that genuinely cannot know the tenant yet: the inbound event-stream
+ * handler discovering which tenant an address even belongs to before it
+ * can act as that tenant. Every other caller already knows its own
+ * tenant and must use `readBindingByAddress` instead.
+ */
+export async function readBindingByAddressAnyTenant(
+  db: DB["db"],
+  address: string,
+): Promise<AgentBinding | undefined> {
+  const row = await readBindingRowByAddress(db, address);
+  return row === undefined ? undefined : bindingFrom(row.row, row.domain);
+}
+
+async function readBindingRowByAddress(
+  db: DB["db"],
+  address: string,
+): Promise<{ row: LaunchRow; domain: string } | undefined> {
+  const domain = requireDomain(address);
+  const localPart = localPartOf(address);
+  const byStableId = await readLaunchRow(db, "instanceId", localPart);
+  const row =
+    byStableId ?? (await readLaunchRow(db, "currentRunId", localPart));
+  return row === undefined ? undefined : { row, domain };
 }
 
 /**
@@ -167,7 +189,7 @@ export async function resolveRoomAddress(
   db: DB["db"],
   liveAddress: string,
 ): Promise<string> {
-  const binding = await readBindingByAddress(db, liveAddress);
+  const binding = await readBindingByAddressAnyTenant(db, liveAddress);
   return binding?.roomAddress ?? liveAddress;
 }
 
@@ -196,16 +218,36 @@ export async function resolveLiveAgent(
 export async function resolveLiveByStableId(
   db: DB["db"],
   stableId: string,
-  expectedTenantId?: string,
+  tenantId: string,
 ): Promise<LiveAgent | undefined> {
   const row = await readLaunchRow(db, "instanceId", stableId);
   if (row === undefined) return undefined;
   // See the matching note on `readBindingByAddress`: a caller that
   // knows its own tenant must never be handed another tenant's launch
-  // for a stable id it happens to guess or receive by mistake.
-  if (expectedTenantId !== undefined && row.tenantId !== expectedTenantId) {
-    return undefined;
-  }
+  // for a stable id it happens to guess or receive by mistake. Required,
+  // not optional — see `resolveLiveByStableIdAnyTenant` for the unscoped
+  // read.
+  if (row.tenantId !== tenantId) return undefined;
+  return resolveLiveRunForRow(db, row);
+}
+
+/**
+ * The unscoped counterpart of `resolveLiveByStableId`, for a caller that
+ * has no tenant of its own to check against (e.g. it is resolving a
+ * stable id it does not yet know the tenant for).
+ */
+export async function resolveLiveByStableIdAnyTenant(
+  db: DB["db"],
+  stableId: string,
+): Promise<LiveAgent | undefined> {
+  const row = await readLaunchRow(db, "instanceId", stableId);
+  return row === undefined ? undefined : resolveLiveRunForRow(db, row);
+}
+
+async function resolveLiveRunForRow(
+  db: DB["db"],
+  row: LaunchRow,
+): Promise<LiveAgent | undefined> {
   const run = await readRun(db, row.currentRunId);
   if (run === undefined || run.address === null) return undefined;
   return { binding: bindingFrom(row, requireDomain(run.address)), run };

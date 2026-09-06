@@ -57,7 +57,10 @@ import { consumerFacingInferenceText } from "./consumer-inference-text";
 import type { ConnectedProviderLister } from "./inference-preferences";
 import { mentionedParticipants } from "./mentions";
 import { domainOf, localPartOf } from "./agent-address";
-import { readBindingByAddress, resolveLiveAgent } from "./agent-binding";
+import {
+  readBindingByAddressAnyTenant,
+  resolveLiveAgent,
+} from "./agent-binding";
 import { parseParticipants, type ParticipantRecord } from "./participants";
 import type { Part, TextPart } from "./parts";
 import type { ChatPlatform } from "./platform-port";
@@ -448,7 +451,10 @@ async function resolveMemberWorkbenches(
   // event's address against `workflow_run.address` directly: after a
   // relaunch the two differ, and only the mapping knows that the run
   // announcing itself under a fresh address is the same room teammate.
-  const binding = await readBindingByAddress(deps.db, agentAddress);
+  // The tenant an inbound event's address belongs to is exactly what
+  // this discovery is trying to find out, so it cannot pass one yet —
+  // see `readBindingByAddressAnyTenant`.
+  const binding = await readBindingByAddressAnyTenant(deps.db, agentAddress);
   if (binding === undefined) {
     // Not every agent address on the event stream belongs to a chat
     // workbench (an echo instance, say) — an address this package's own
