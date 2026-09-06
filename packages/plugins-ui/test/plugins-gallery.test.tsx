@@ -1,11 +1,5 @@
-// The gallery renders from a fixture registry: cards for every resolved
-// plugin, the installed strip only for connected/needs-attention ones,
-// search filtering both tabs, outcome copy on every card, and the Skills
-// tab mounting its own card grid rather than the Settings list rows.
-
-import { describe, expect, test } from "bun:test";
-import { act } from "react";
-import { useState } from "react";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
@@ -27,45 +21,40 @@ function descriptor(
     authKind,
     docsUrl: `https://example.test/${id}`,
     credentialPlugin: "http",
-    // A non-empty `feedsTools` marks a real tool connector rather than an
-    // inference provider (CL-6272.2) — every fixture here is a tool
-    // connector, never a provider, so this suite exercises the plugin
-    // grid rather than the provider-exclusion rule.
     feedsTools: [`@corbits/${id}-tools`],
   };
 }
 
-const CONNECTED: ResolvedPlugin = {
-  descriptor: descriptor("github", "GitHub"),
-  status: "connected",
-  provenance: "this-workbench",
-  credentialId: "cred_github",
-  credentialName: "GitHub",
-};
-
-// Not "scrapecreators" — that id is now an MCP-preset connector
-// (CL-6256) filtered out of this static grid, which would make this
-// fixture's row vanish for a reason unrelated to what this suite tests.
-const INHERITED: ResolvedPlugin = {
-  descriptor: descriptor("notion", "Notion"),
-  status: "connected",
-  provenance: "inherited",
-  credentialId: "cred_notion",
-  credentialName: "Notion",
-};
-
-const NOT_CONNECTED: ResolvedPlugin = {
-  descriptor: descriptor("huggingface", "Hugging Face"),
-  status: "not_connected",
-  provenance: null,
-  credentialId: null,
-  credentialName: null,
-};
+function plugin(
+  id: string,
+  displayName: string,
+  status: ResolvedPlugin["status"],
+): ResolvedPlugin {
+  const pluginDescriptor = descriptor(id, displayName);
+  if (status === "not_connected") {
+    return {
+      descriptor: pluginDescriptor,
+      status,
+      provenance: null,
+      credentialId: null,
+      credentialName: null,
+    };
+  }
+  return {
+    descriptor: pluginDescriptor,
+    status,
+    provenance: "this-workbench",
+    credentialId: `cred_${id}`,
+    credentialName: displayName,
+  };
+}
 
 const PLUGINS: readonly ResolvedPlugin[] = [
-  CONNECTED,
-  INHERITED,
-  NOT_CONNECTED,
+  plugin("github", "GitHub", "connected"),
+  plugin("notion", "Notion registry duplicate", "connected"),
+  plugin("huggingface", "Hugging Face", "not_connected"),
+  plugin("manus", "Manus", "not_connected"),
+  plugin("scrapecreators", "ScrapeCreators", "connected"),
 ];
 
 const PROVIDER: ResolvedPlugin = {
@@ -75,7 +64,6 @@ const PROVIDER: ResolvedPlugin = {
     authKind: "api-key",
     docsUrl: "https://example.test/anthropic",
     credentialPlugin: "http",
-    // Real inference-provider descriptors feed no tool package.
     feedsTools: [],
   },
   status: "connected",
@@ -99,17 +87,44 @@ const SKILLS: readonly SkillCardData[] = [
   },
 ];
 
-// `McpServersSection` fetches its server list on mount — stub `fetch` so
-// this suite (which only exercises the plugin/skill grid) never issues a
-// real request, and resolve within an `act()` flush so the state update
-// isn't reported unwrapped.
-globalThis.fetch = (async (input: string | URL | Request) => {
-  const url = String(input);
-  if (url.includes("/webhook-triggers") || url.includes("/routines")) {
-    return new Response(JSON.stringify({ items: [] }));
-  }
-  return new Response(JSON.stringify({ data: [], nextCursor: null }));
-}) as unknown as typeof fetch;
+const PRESETS = MCP_PRESETS.map((preset) => ({
+  slug: preset.slug,
+  displayName: preset.displayName,
+  description: preset.description,
+  url: preset.url,
+  connectionMode: preset.connectionMode,
+  docsUrl: preset.docsUrl,
+  ...(preset.icon === undefined ? {} : { icon: preset.icon }),
+  ...(preset.tokenSteps === undefined ? {} : { tokenSteps: preset.tokenSteps }),
+  connected: preset.slug === "exa",
+}));
+
+const realFetch = globalThis.fetch;
+let mountedRoots: Root[] = [];
+
+function installFetch(presets: readonly (typeof PRESETS)[number][] = PRESETS) {
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("/mcp-servers/presets")) {
+      return new Response(JSON.stringify({ data: presets }));
+    }
+    if (url.includes("/webhook-triggers") || url.includes("/routines")) {
+      return new Response(JSON.stringify({ items: [] }));
+    }
+    return new Response(JSON.stringify({ data: [], nextCursor: null }));
+  }) as unknown as typeof fetch;
+}
+
+beforeEach(() => {
+  installFetch();
+});
+
+afterEach(() => {
+  globalThis.fetch = realFetch;
+  for (const root of mountedRoots) act(() => root.unmount());
+  mountedRoots = [];
+  document.body.replaceChildren();
+});
 
 function GalleryHarness({
   plugins,
@@ -133,195 +148,199 @@ function GalleryHarness({
   );
 }
 
-function renderGallery(
+async function renderGallery(
   plugins: readonly ResolvedPlugin[] = PLUGINS,
   initialQuery = "",
 ) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root: Root = createRoot(container);
+  mountedRoots.push(root);
   act(() => {
     root.render(
       <GalleryHarness plugins={plugins} initialQuery={initialQuery} />,
     );
   });
+  await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
   return { container, root };
 }
 
+function chip(container: HTMLElement, label: string): HTMLButtonElement {
+  const match = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent?.startsWith(label) === true,
+  );
+  if (match === undefined) throw new Error(`Missing ${label} filter chip`);
+  return match;
+}
+
+function catalogNames(container: HTMLElement): string[] {
+  return [...container.querySelectorAll<HTMLElement>("[data-plugin-name]")].map(
+    (element) => element.dataset.pluginName ?? "",
+  );
+}
+
 describe("PluginsGallery", () => {
-  test("renders every tool connector regardless of connection state (CL-6386)", () => {
-    const { container } = renderGallery();
+  test("Plugins and Skills are the only tabs; catalog filters are pressed buttons", async () => {
+    const { container } = await renderGallery();
 
-    expect(container.textContent).toContain("GitHub");
-    expect(container.textContent).toContain("Notion");
-    expect(container.textContent).toContain("Hugging Face");
+    expect(container.querySelectorAll('[role="tablist"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(2);
+    expect(
+      container.querySelectorAll(
+        '[aria-label="Plugin catalog filters"] [role="tab"]',
+      ),
+    ).toHaveLength(0);
+    expect(container.querySelector('[aria-label="Filter plugins"]')).toBeNull();
+    expect(chip(container, "All").getAttribute("aria-pressed")).toBe("true");
+    expect(
+      chip(container, "Research & data").getAttribute("aria-pressed"),
+    ).toBe("false");
+  });
+
+  test("chip counts describe the query-matched catalog", async () => {
+    const { container } = await renderGallery();
+
+    expect(chip(container, "All").textContent).toContain("15");
+    expect(chip(container, "Connected").textContent).toContain("3");
+    expect(chip(container, "Communication").textContent).toContain("0");
+    expect(chip(container, "Productivity").textContent).toContain("4");
+    expect(chip(container, "Sales & customer").textContent).toContain("1");
+    expect(chip(container, "Engineering").textContent).toContain("6");
+    expect(chip(container, "Research & data").textContent).toContain("3");
+  });
+
+  test("category filtering keeps one unified catalog", async () => {
+    const { container } = await renderGallery();
+
+    act(() => {
+      chip(container, "Research & data").click();
+    });
+
+    expect(catalogNames(container)).toEqual([
+      "Exa",
+      "Sumble",
+      "ScrapeCreators",
+    ]);
+    expect(
+      container.querySelectorAll('[aria-label="Plugin catalog"]'),
+    ).toHaveLength(1);
+  });
+
+  test("search and a chip filter intersect instead of replacing each other", async () => {
+    const { container } = await renderGallery(PLUGINS, "live web");
+
+    expect(chip(container, "All").textContent).toContain("1");
+    expect(chip(container, "Research & data").textContent).toContain("1");
+    act(() => {
+      chip(container, "Research & data").click();
+    });
+    expect(catalogNames(container)).toEqual(["Exa"]);
+  });
+
+  test("original categories separate productivity and sales and handle empty groups", async () => {
+    const { container } = await renderGallery();
+
+    act(() => chip(container, "Productivity").click());
+    expect(catalogNames(container)).toEqual([
+      "Granola",
+      "Notion",
+      "Canva",
+      "Manus",
+    ]);
+
+    act(() => chip(container, "Sales & customer").click());
+    expect(catalogNames(container)).toEqual(["Attio"]);
+
+    act(() => chip(container, "Communication").click());
+    expect(catalogNames(container)).toEqual([]);
     expect(container.textContent).toContain(
-      "Lets agents read and open pull requests in your GitHub repos.",
+      "No plugins are available in this filter.",
     );
   });
 
-  test("a not-connected tool connector renders a Connect affordance", () => {
-    const { container } = renderGallery();
+  test("search matches the original category labels", async () => {
+    const { container } = await renderGallery(PLUGINS, "engineering");
 
-    const connectButton = container.querySelector(
-      '[aria-label="Connect Hugging Face"]',
+    expect(catalogNames(container)).toEqual([
+      "Linear",
+      "GitHub MCP",
+      "Sentry",
+      "Railway",
+      "PostHog",
+      "GitHub",
+    ]);
+    expect(chip(container, "Engineering").textContent).toContain("6");
+  });
+
+  test("preset-backed registry entries and inference providers stay out of the catalog", async () => {
+    const { container } = await renderGallery([...PLUGINS, PROVIDER]);
+
+    expect(container.textContent).toContain("Notion");
+    expect(container.textContent).not.toContain("Notion registry duplicate");
+    expect(container.textContent).not.toContain("Anthropic");
+  });
+
+  test("connected and disconnected entries preserve Manage and Connect flows", async () => {
+    const { container } = await renderGallery();
+
+    expect(
+      container.querySelector('[aria-label="Manage GitHub"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[aria-label="Connect Manus"]'),
+    ).not.toBeNull();
+    const exa = container.querySelector('[data-plugin-slug="exa"]');
+    expect(exa?.textContent).toContain("Connected");
+    expect(exa?.textContent).toContain("Manage");
+  });
+
+  test("status remains visible as a core field", async () => {
+    const { container } = await renderGallery();
+    const caption = [...container.querySelectorAll("span")].find(
+      (element) => element.textContent === "Connected · Connected here",
     );
-    expect(connectButton).not.toBeNull();
-    // Visible label stays the single verb (CL-6794).
-    expect(connectButton?.textContent?.trim()).toBe("Connect");
+
+    expect(caption).not.toBeUndefined();
+    expect(caption?.className).not.toContain("hidden");
   });
 
-  test("a connected tool connector's Manage button includes the plugin name in its accessible name (CL-6794)", () => {
-    const { container } = renderGallery();
-
-    const manageButton = container.querySelector(
-      '[aria-label="Manage GitHub"]',
-    );
-    expect(manageButton).not.toBeNull();
-    expect(manageButton?.textContent?.trim()).toBe("Manage");
-  });
-
-  test("filters out the old registry card for a connector an MCP preset now fronts", () => {
-    const { container } = renderGallery();
-
-    expect(container.textContent).not.toContain(
-      "Lets agents run live web search and research lookups.",
-    );
-  });
-
-  test("does not duplicate connected plugins in an icon-only strip", () => {
-    const { container } = renderGallery();
-
-    const strip = container.querySelector('[aria-label="Installed plugins"]');
-    expect(strip).toBeNull();
-  });
-
-  test("provenance reads as plain words on a plugin card", () => {
-    const { container } = renderGallery();
-
-    expect(container.textContent).toContain("Connected here");
-    expect(container.textContent).toContain("Inherited");
-  });
-
-  test("the plugins tab renders the list heading", () => {
-    const { container } = renderGallery();
-
-    const heading = container.querySelector("h1");
-    expect(heading?.textContent).toBe("Plugins");
-  });
-
-  test("a plugin row's status caption is never hidden — it is a core column, not overflow (CL-6467)", () => {
-    const { container } = renderGallery();
-
-    expect(container.textContent).toContain("Connected here");
-    const captions = [...container.querySelectorAll("span")].filter(
-      (span) => span.textContent === "Connected · Connected here",
-    );
-    expect(captions.length).toBeGreaterThan(0);
-    for (const caption of captions) {
-      expect(caption.className).not.toContain("hidden");
-    }
-  });
-
-  test("an empty plugin directory renders no group rows", () => {
-    const { container } = renderGallery([]);
-
-    expect(container.querySelector(".border.border-border")).toBeNull();
-  });
-
-  test("search narrows the plugin grid to matches only", () => {
-    const { container } = renderGallery(PLUGINS, "git");
-
-    expect(container.textContent).toContain("GitHub");
-    expect(container.textContent).not.toContain("Hugging Face");
-  });
-
-  test("switching to the Skills tab renders skill cards with outcome copy and scope badges", () => {
-    const { container } = renderGallery();
+  test("switching to Skills preserves the existing skill gallery", async () => {
+    const { container } = await renderGallery();
     const skillsTab = [...container.querySelectorAll("button")].find(
       (button) => button.textContent?.includes("Skills") === true,
     );
-    expect(skillsTab).not.toBeUndefined();
 
     act(() => {
-      skillsTab?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      skillsTab?.click();
     });
 
     expect(container.textContent).toContain("Weekly digest");
-    expect(container.textContent).toContain(
-      "Summarizes the week's channel activity.",
-    );
     expect(container.textContent).toContain("Shared with everyone");
     expect(container.textContent).toContain("Just you");
   });
 
-  test("an inference provider never appears in the plugin directory (CL-6272.2)", () => {
-    const { container } = renderGallery([...PLUGINS, PROVIDER]);
+  test("every preset returned by the route reaches a fresh catalog", async () => {
+    const { container } = await renderGallery([]);
 
-    expect(container.textContent).toContain("GitHub");
-    expect(container.textContent).not.toContain("Anthropic");
-  });
-
-  test("omits unverified MCP suggestions and API-key-only registry entries", () => {
-    const { container } = renderGallery();
-
-    for (const excluded of [
-      "Slack",
-      "Vercel",
-      "Render",
-      "HubSpot",
-      "Zoom",
-      "Google Workspace",
-      "Browserbase",
-      "ScrapeCreators",
-    ]) {
-      expect(container.textContent).not.toContain(excluded);
+    expect(container.querySelectorAll("[data-plugin-slug]")).toHaveLength(
+      MCP_PRESETS.length,
+    );
+    for (const preset of MCP_PRESETS) {
+      expect(container.textContent).toContain(preset.displayName);
     }
-    expect(container.textContent).not.toContain("Add MCP server");
   });
 
-  // CL-6472: the owner's live repro found the presets route returns all 10
-  // curated MCP presets on a fresh bench with zero connections, but the
-  // gallery showed none of them. Reproduce that exact fetch shape here so
-  // a regression in how the gallery composes `McpPresetCardsSection`
-  // (as opposed to a bug in that component alone) gets caught too.
-  test("every MCP preset the route returns reaches the gallery on a fresh bench (CL-6472)", async () => {
-    const originalFetch = globalThis.fetch;
+  test("a failed preset load reports the error and still shows native plugins", async () => {
     globalThis.fetch = (async (input: string | URL | Request) => {
-      const url = String(input);
-      if (url.includes("/mcp-servers/presets")) {
-        return new Response(
-          JSON.stringify({
-            data: MCP_PRESETS.map((preset) => ({
-              slug: preset.slug,
-              displayName: preset.displayName,
-              description: preset.description,
-              url: preset.url,
-              connectionMode: preset.connectionMode,
-              docsUrl: preset.docsUrl,
-              ...(preset.icon === undefined ? {} : { icon: preset.icon }),
-              ...(preset.tokenSteps === undefined
-                ? {}
-                : { tokenSteps: preset.tokenSteps }),
-              connected: false,
-            })),
-          }),
-        );
+      if (String(input).includes("/mcp-servers/presets")) {
+        return new Response("Internal Server Error", { status: 500 });
       }
-      return new Response(JSON.stringify({ data: [] }));
+      return new Response(JSON.stringify({ data: [], nextCursor: null }));
     }) as unknown as typeof fetch;
 
-    try {
-      const { container } = renderGallery([]);
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      });
+    const { container } = await renderGallery();
 
-      for (const preset of MCP_PRESETS) {
-        expect(container.textContent).toContain(preset.displayName);
-      }
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(container.textContent).toContain("GitHub");
   });
 });

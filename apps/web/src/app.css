@@ -9,7 +9,6 @@
 @import "@corbits/chat-ui/styles.css";
 @import "@corbits/bench-ui/styles.css";
 @import "@corbits/settings-ui/styles.css";
-@import "@corbits/plugins-ui/styles.css";
 
 /* react-ui's `.corbits-toast` ships a hardcoded horizontal-center transform
    (`left: 50%; transform: translateX(-50%) !important`) regardless of the
