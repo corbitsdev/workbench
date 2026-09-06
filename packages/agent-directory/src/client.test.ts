@@ -86,12 +86,12 @@ describe("purposeAgentInstances", () => {
     expect(result).toEqual([instance]);
   });
 
-  test("with no folded-run-id set, leaves an ordinary top-level deployment alone", () => {
+  test("with no excludeRunIds set, leaves an ordinary top-level deployment alone", () => {
     const result = purposeAgentInstances([instance]);
     expect(result).toEqual([instance]);
   });
 
-  test("drops an invited-agent chat run whose id is in the folded-run-id set, even under a real definitionId", () => {
+  test("drops an invited-agent chat run whose id is in excludeRunIds, even under a real definitionId", () => {
     const result = purposeAgentInstances(
       [instance, invitedAgentInstance],
       new Set([invitedAgentInstance.id]),
@@ -99,7 +99,7 @@ describe("purposeAgentInstances", () => {
     expect(result).toEqual([instance]);
   });
 
-  test("still drops a workbench host when a folded-run-id set is also given", () => {
+  test("still drops a workbench host when excludeRunIds is also given", () => {
     const result = purposeAgentInstances(
       [instance, workbenchHostInstance, invitedAgentInstance],
       new Set([invitedAgentInstance.id]),
