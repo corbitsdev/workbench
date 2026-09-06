@@ -7,7 +7,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
-import { resolveConcurrency } from "./run-all.ts";
+import { parseShardArg, resolveConcurrency, selectShard } from "./run-all.ts";
 
 const RUNNER = join(import.meta.dir, "run-all.ts");
 
@@ -62,6 +62,7 @@ type RunnerResult = {
 async function runProbe(
   extraEnv: Record<string, string> = {},
   script = "probe",
+  extraArgs: readonly string[] = [],
 ): Promise<RunnerResult> {
   logCounter += 1;
   const logPath = join(workspace, `probe-${logCounter}.log`);
@@ -79,7 +80,7 @@ async function runProbe(
     delete env["WORKBENCH_CHECK_CONCURRENCY"];
   }
 
-  const child = Bun.spawn(["bun", "run", RUNNER, script], {
+  const child = Bun.spawn(["bun", "run", RUNNER, script, ...extraArgs], {
     cwd: workspace,
     env,
     stdout: "pipe",
@@ -261,5 +262,46 @@ describe("run-all", () => {
 
   test("fixture workspace holds only the packages the tests declare", () => {
     expect(basename(workspace).startsWith("workbench-run-all-")).toBe(true);
+  });
+
+  test("splits a package run across shards with --shard i/n", async () => {
+    const results = await Promise.all(
+      [1, 2, 3].map((i) => runProbe({}, "probe", ["--shard", `${i}/3`])),
+    );
+
+    const ranIn = (stdout: string) =>
+      WITH_PROBE.filter((name) => stdout.includes(`probe ran in ${name}`));
+    const allRun = results.flatMap((r) => ranIn(r.stdout));
+
+    // Every package the fixture declares runs exactly once across the
+    // three shards combined — none dropped, none run twice.
+    expect(allRun.sort()).toEqual([...WITH_PROBE].sort());
+    for (const result of results) expect(result.exitCode).toBe(0);
+  });
+
+  test("rejects a malformed --shard argument", async () => {
+    const result = await runProbe({}, "probe", ["--shard", "bogus"]);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toContain("--shard");
+  });
+
+  test("selectShard partitions a stably-ordered job list with no overlap", () => {
+    const jobs = Array.from({ length: 10 }, (_, i) => ({
+      name: `pkg-${i}`,
+      dir: `packages/pkg-${i}`,
+    }));
+    const shards = [1, 2, 3].map((i) =>
+      selectShard(jobs, parseShardArg(`${i}/3`)),
+    );
+
+    const combined = shards.flatMap((s) => s.map((j) => j.name)).sort();
+    expect(combined).toEqual(jobs.map((j) => j.name).sort());
+  });
+
+  test("parseShardArg rejects an out-of-range or malformed shard", () => {
+    expect(() => parseShardArg("bogus")).toThrow();
+    expect(() => parseShardArg("0/3")).toThrow();
+    expect(() => parseShardArg("4/3")).toThrow();
   });
 });
