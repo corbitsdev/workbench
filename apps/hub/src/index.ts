@@ -2337,6 +2337,7 @@ export async function createHub(config: HubConfig) {
             isRoutable: (address) =>
               sidecarRouter.getRoutableAddresses().includes(address),
             cryptoProviderCache: cryptoProviders,
+            eventCollectors,
             persistLaunch: async (input) => {
               await workbenchLaunchPersistExtra(input)(db);
             },
