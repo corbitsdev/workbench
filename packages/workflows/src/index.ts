@@ -60,6 +60,7 @@ export {
   endAgentSessionForPrincipal,
   endAgentSessionForRun,
   type RecordAgentSessionParams,
+  type EventCollectorPort,
 } from "./launch/agent-session";
 export {
   deliverWhenRoutable,

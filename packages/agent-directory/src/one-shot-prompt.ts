@@ -13,6 +13,7 @@ import {
   readFoldedBody,
   recordAgentSessionForRun,
   WORKFLOW_SOURCE_ENTRY,
+  type EventCollectorPort,
 } from "@corbits/workflows";
 import { listVisibleOfferings, type DB } from "@intx/db";
 import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
@@ -57,6 +58,7 @@ export type OneShotRunnerDeps = {
     "prepareProvisionedDeployment"
   >;
   readonly sessionService: Pick<SessionService, "sendUserMessage">;
+  readonly eventCollectors: EventCollectorPort;
   /**
    * Test seam only. Production never sets these; they default to
    * Interchange `prepareProvisionedDeployment` and `sendUserMessage`.
@@ -267,7 +269,11 @@ export async function runOneShotPrompt(
       clearTimeout(timer);
       unsubscribe();
       try {
-        await endAgentSessionForRun(deps.db, launched.runId);
+        await endAgentSessionForRun(
+          deps.db,
+          launched.runId,
+          deps.eventCollectors,
+        );
       } catch (err) {
         reportError(err, {
           operation: "agent-directory.one-shot.end-session",
@@ -321,10 +327,14 @@ export async function runOneShotPrompt(
         // provisioned `workflow_run` (CL-7477) — recording only now is
         // what makes this ever find one.
         try {
-          await recordAgentSessionForRun(deps.db, {
-            sessionId: launched.sessionId,
-            anchorRunId: launched.runId,
-          });
+          await recordAgentSessionForRun(
+            deps.db,
+            {
+              sessionId: launched.sessionId,
+              anchorRunId: launched.runId,
+            },
+            deps.eventCollectors,
+          );
         } catch (err) {
           reportError(err, {
             operation: "agent-directory.one-shot.recordAgentSession",

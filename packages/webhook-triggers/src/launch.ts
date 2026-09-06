@@ -19,6 +19,7 @@ import {
   readFoldedBody,
   recordAgentSessionForRun,
   WORKFLOW_SOURCE_ENTRY,
+  type EventCollectorPort,
 } from "@corbits/workflows";
 import { listVisibleOfferings, type DB } from "@intx/db";
 import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
@@ -58,6 +59,7 @@ export type LaunchWebhookTriggerDeps = {
    */
   isRoutable: (address: string) => boolean;
   cryptoProviderCache: CryptoProviderCache;
+  eventCollectors: Pick<EventCollectorPort, "create">;
   /**
    * Host-supplied cipher. Interchange decrypts bindings inside
    * `prepareProvisionedDeployment`; this port still owns the field so
@@ -245,10 +247,14 @@ export async function launchWebhookTrigger(
   // a run that never became routable stays without a session until its
   // first successful send.
   try {
-    await recordAgentSessionForRun(deps.db, {
-      sessionId,
-      anchorRunId: prepared.anchorRunId,
-    });
+    await recordAgentSessionForRun(
+      deps.db,
+      {
+        sessionId,
+        anchorRunId: prepared.anchorRunId,
+      },
+      deps.eventCollectors,
+    );
   } catch (error) {
     reportError(error, {
       operation: "webhookTriggers.launch.recordAgentSession",

@@ -1,6 +1,9 @@
 // Signs one inbound message via Interchange `sendUserMessage` and
 // records it on session_mail so the run's own live subscribers see it.
-import { recordAgentSessionForRun } from "@corbits/workflows";
+import {
+  recordAgentSessionForRun,
+  type EventCollectorPort,
+} from "@corbits/workflows";
 import { reportError } from "@corbits/error-sink";
 import { sessionMail } from "@intx/db/schema";
 import type { DB } from "@intx/db";
@@ -11,6 +14,7 @@ export type RunMailDeps = {
   db: DB["db"];
   sessionService: Pick<SessionService, "sendUserMessage">;
   sidecarRouter: Pick<SidecarRouter, "dispatchAgentEvent">;
+  eventCollectors: Pick<EventCollectorPort, "create">;
 };
 
 export type SendRunMailParams = {
@@ -109,10 +113,14 @@ export async function sendRunMail(
   // first successful call; a failure here must not swallow the mail
   // that already sent.
   try {
-    await recordAgentSessionForRun(deps.db, {
-      sessionId: params.sessionId,
-      address: params.agentAddress,
-    });
+    await recordAgentSessionForRun(
+      deps.db,
+      {
+        sessionId: params.sessionId,
+        address: params.agentAddress,
+      },
+      deps.eventCollectors,
+    );
   } catch (err) {
     reportError(err, {
       operation: "chat.sendRunMail.recordAgentSession",
