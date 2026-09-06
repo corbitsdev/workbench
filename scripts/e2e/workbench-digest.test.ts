@@ -19,6 +19,7 @@ import {
   buildWorkbenchDigestWorkflow,
   serializeWorkbenchDigestWorkflow,
 } from "../../workflows/workbench-digest/src/index.ts";
+import { ensureNoopCatalogOffering } from "../../packages/seeding/src/index.ts";
 import {
   api,
   createCleanupHarness,
@@ -28,7 +29,6 @@ import {
   freePort,
   hop,
   pushWorkflowSource,
-  seedNoopCatalogOffering,
   workflowDeployBody,
   startHub,
   waitForRunCompletion,
@@ -187,14 +187,15 @@ describe.skipIf(databaseUrl === undefined)("workbench-digest workflow", () => {
     // whole point of this suite: a run started against this source
     // actually completes an inference call, at zero cost, because
     // noop-inference answers it locally without reaching a real model.
-    const { offeringId } = await hop("noop catalog seeding", () =>
-      seedNoopCatalogOffering({
-        call: (method, path, body, cookies) =>
+    const offeringId = await hop("noop catalog seeding", () =>
+      ensureNoopCatalogOffering(
+        (method, path, body, cookies) =>
           api(hub.baseUrl, method, path, body, cookies),
+        user.cookies,
         tenantId,
-        cookies: user.cookies,
-        noopBaseUrl: `${hub.baseUrl}/api/chat/noop-inference`,
-      }),
+        hub.baseUrl,
+        () => {},
+      ),
     );
 
     const deploymentId = await hop("workflow deploy", async () => {

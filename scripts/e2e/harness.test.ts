@@ -12,13 +12,10 @@ import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
   createCleanupHarness,
   e2eDatabaseUrl,
-  NOOP_CATALOG_MODEL,
   parseEnvFileDatabaseUrl,
   provisionSidecar,
   runCleanups,
-  seedNoopCatalogOffering,
   workflowDeployBody,
-  type ApiResult,
   type SpawnedApp,
 } from "./harness.ts";
 
@@ -98,56 +95,6 @@ describe("workflowDeployBody", () => {
   });
 });
 
-describe("seedNoopCatalogOffering", () => {
-  // CL-7473: a suite's workflow definition must declare its inference
-  // preference as `("anthropic", NOOP_CATALOG_MODEL)` to match what this
-  // helper plants — the deploy-time capability walk only auto-approves the
-  // (provider, model) pair a step's own agent declares, so a preference
-  // naming any other model 409s "no approved inference source" at deploy
-  // even though the suite never calls real inference. This pins the
-  // catalog-model creation call's `canonicalName` to the exported constant
-  // so the two can never drift apart silently again.
-  test("plants a catalog model named NOOP_CATALOG_MODEL", async () => {
-    const calls: { path: string; body: unknown }[] = [];
-    const call = async (
-      _method: string,
-      path: string,
-      body?: unknown,
-    ): Promise<ApiResult> => {
-      calls.push({ path, body });
-      if (path.endsWith("/catalog/models")) {
-        return { status: 201, data: { id: "model-1" }, cookies: [] };
-      }
-      if (path.endsWith("/providers")) {
-        return { status: 201, data: { id: "provider-1" }, cookies: [] };
-      }
-      if (path.endsWith("/credentials")) {
-        return { status: 201, data: { id: "credential-1" }, cookies: [] };
-      }
-      if (path.endsWith("/catalog/providers")) {
-        return {
-          status: 201,
-          data: { id: "catalog-provider-1" },
-          cookies: [],
-        };
-      }
-      return { status: 201, data: { id: "offering-1" }, cookies: [] };
-    };
-
-    await seedNoopCatalogOffering({
-      call,
-      tenantId: "tenant-1",
-      cookies: [],
-      noopBaseUrl: "https://inference.invalid",
-    });
-
-    const modelCall = calls.find((entry) =>
-      entry.path.endsWith("/catalog/models"),
-    );
-    expect(modelCall?.body).toEqual({ canonicalName: NOOP_CATALOG_MODEL });
-  });
-});
-
 describe("parseEnvFileDatabaseUrl", () => {
   test("reads DATABASE_URL and ignores comments and blanks", () => {
     expect(
@@ -220,9 +167,9 @@ describe("provisionSidecar", () => {
       // Resolved through the hub's own dependency tree, exactly as
       // `connectE2eDb` resolves `postgres` above — scripts/e2e is not
       // itself a workspace member of these `@intx/*` packages.
-      const dbModule = (await import(
-        Bun.resolveSync("@intx/db", HUB_DIR)
-      )) as { createDB: (raw: unknown) => { db: unknown; close: () => Promise<void> } };
+      const dbModule = (await import(Bun.resolveSync("@intx/db", HUB_DIR))) as {
+        createDB: (raw: unknown) => { db: unknown; close: () => Promise<void> };
+      };
       const hubSessionsModule = (await import(
         Bun.resolveSync("@intx/hub-sessions", HUB_DIR)
       )) as {

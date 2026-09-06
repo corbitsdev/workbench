@@ -28,14 +28,13 @@ import {
 } from "../../workflows/echo/src/index.ts";
 import {
   api,
+  assertNeverRealProvider,
   createCleanupHarness,
   e2eDatabaseUrl,
   expectStatus,
   freePort,
   hop,
-  NOOP_CATALOG_MODEL,
   pushWorkflowSource,
-  seedNoopCatalogOffering,
   workflowDeployBody,
   startHub,
   type ApiResult,
@@ -60,6 +59,153 @@ function stringField(data: unknown, field: string, what: string): string {
     `${what}: missing string field "${field}": ${JSON.stringify(data)}`,
   );
 }
+
+/**
+ * The (provider, model) pair `seedPlaceholderCatalogOffering` plants and
+ * the only pair the deploy below may declare as its inference preference.
+ * The deploy-time capability walk auto-approves exactly the (provider,
+ * model) pairs a step's own agent declares
+ * (`@intx/workflow-deploy`'s `pickStepInferenceSource`); naming any other
+ * model here 409s "no approved inference source" at deploy even though
+ * this suite never calls real inference (CL-7473).
+ */
+const PLACEHOLDER_MODEL = "noop";
+
+/**
+ * Plants the same catalog-model/provider/credential/offering chain as
+ * `@corbits/seeding`'s `ensureNoopCatalogOffering`, but pointed at an
+ * unreachable placeholder host rather than the hub's own
+ * `noop-inference` endpoint — deliberately, since this suite never
+ * calls inference and asserts only that the deploy is
+ * address-reachable (see the module comment above).
+ */
+async function seedPlaceholderCatalogOffering(options: {
+  call: (
+    method: string,
+    path: string,
+    body?: unknown,
+    cookies?: string[],
+  ) => Promise<ApiResult>;
+  tenantId: string;
+  cookies: string[];
+  placeholderBaseUrl: string;
+}): Promise<{ offeringId: string }> {
+  assertNeverRealProvider(
+    options.placeholderBaseUrl,
+    "placeholder catalog provider baseURL",
+  );
+  const { call, tenantId, cookies } = options;
+
+  const model = await call(
+    "POST",
+    `/api/tenants/${tenantId}/catalog/models`,
+    { canonicalName: PLACEHOLDER_MODEL },
+    cookies,
+  );
+  expectStatus("create catalog model", model, 201);
+  const modelId = stringField(model.data, "id", "create catalog model");
+
+  const provider = await call(
+    "POST",
+    `/api/tenants/${tenantId}/providers`,
+    { name: "anthropic", plugin: "anthropic" },
+    cookies,
+  );
+  expectStatus("create provider", provider, 201);
+  const providerId = stringField(provider.data, "id", "create provider");
+
+  const credential = await call(
+    "POST",
+    `/api/tenants/${tenantId}/credentials`,
+    {
+      providerId,
+      name: "anthropic-default",
+      type: "api_key",
+      secret: "noop",
+    },
+    cookies,
+  );
+  expectStatus("create credential", credential, 201);
+  const credentialId = stringField(credential.data, "id", "create credential");
+
+  const catalogProvider = await call(
+    "POST",
+    `/api/tenants/${tenantId}/catalog/providers`,
+    {
+      name: "anthropic",
+      plugin: "anthropic",
+      baseURL: options.placeholderBaseUrl,
+      credentialId,
+    },
+    cookies,
+  );
+  expectStatus("create catalog provider", catalogProvider, 201);
+  const catalogProviderId = stringField(
+    catalogProvider.data,
+    "id",
+    "create catalog provider",
+  );
+
+  const offering = await call(
+    "POST",
+    `/api/tenants/${tenantId}/catalog/offerings`,
+    { modelId, providerId: catalogProviderId },
+    cookies,
+  );
+  expectStatus("create catalog offering", offering, 201);
+  return {
+    offeringId: stringField(offering.data, "id", "create catalog offering"),
+  };
+}
+
+describe("seedPlaceholderCatalogOffering", () => {
+  // CL-7473: pins the helper's planted catalog model to PLACEHOLDER_MODEL
+  // — the same constant this suite's `buildEchoWorkflow` inference
+  // preference uses below. The two drifting apart is exactly what caused
+  // the deploy to 409 "no approved inference source": the capability walk
+  // only auto-approves the (provider, model) pair a step's own agent
+  // declares, so a preference naming a model the seeded catalog never
+  // offers can never resolve to an approved source.
+  test("plants a catalog model named PLACEHOLDER_MODEL", async () => {
+    const calls: { path: string; body: unknown }[] = [];
+    const call = async (
+      _method: string,
+      path: string,
+      body?: unknown,
+    ): Promise<ApiResult> => {
+      calls.push({ path, body });
+      if (path.endsWith("/catalog/models")) {
+        return { status: 201, data: { id: "model-1" }, cookies: [] };
+      }
+      if (path.endsWith("/providers")) {
+        return { status: 201, data: { id: "provider-1" }, cookies: [] };
+      }
+      if (path.endsWith("/credentials")) {
+        return { status: 201, data: { id: "credential-1" }, cookies: [] };
+      }
+      if (path.endsWith("/catalog/providers")) {
+        return {
+          status: 201,
+          data: { id: "catalog-provider-1" },
+          cookies: [],
+        };
+      }
+      return { status: 201, data: { id: "offering-1" }, cookies: [] };
+    };
+
+    await seedPlaceholderCatalogOffering({
+      call,
+      tenantId: "tenant-1",
+      cookies: [],
+      placeholderBaseUrl: "https://inference.invalid",
+    });
+
+    const modelCall = calls.find((entry) =>
+      entry.path.endsWith("/catalog/models"),
+    );
+    expect(modelCall?.body).toEqual({ canonicalName: PLACEHOLDER_MODEL });
+  });
+});
 
 const { tempDir, track } = createCleanupHarness();
 
@@ -161,18 +307,10 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
         );
         expectStatus("mint git token", minted, 201);
 
-        // Must name the same (provider, model) `seedNoopCatalogOffering`
-        // below plants, like every other e2e suite's echo/agent fixture
-        // (see `heartbeat.test.ts`, `smoke-webhook.test.ts`,
-        // `workbench-digest.test.ts`) — the deploy-time capability walk
-        // only auto-approves the (provider, model) pairs a step's own
-        // agent declares (CL-7473), so a preference naming a model the
-        // seeded catalog never offers 409s with "no approved inference
-        // source" even though deployment never calls inference.
         const definition = buildEchoWorkflow({
           triggerAddress: `echo@${slug}.localhost`,
           inferencePreferences: [
-            { provider: "anthropic", model: NOOP_CATALOG_MODEL },
+            { provider: "anthropic", model: "claude-sonnet-5" },
           ],
           turnTimeoutMs: 60_000,
         });
@@ -192,12 +330,12 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
     // still names an unreachable placeholder host, since deployment
     // never calls inference and full run-completion is not asserted.
     const { offeringId } = await hop("noop catalog seeding", () =>
-      seedNoopCatalogOffering({
+      seedPlaceholderCatalogOffering({
         call: (method, path, body, cookies) =>
           api(hub.baseUrl, method, path, body, cookies),
         tenantId,
         cookies: user.cookies,
-        noopBaseUrl: "https://inference.invalid",
+        placeholderBaseUrl: "https://inference.invalid",
       }),
     );
 
