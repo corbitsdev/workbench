@@ -24,9 +24,15 @@ tools read only, so none is gated behind approval.
 ## Managing offerings
 
 Three more tools let an agent write to the tenant's own inference catalog,
-through the tenant-admin catalog routes
-(`vendor/intx/hub-api/src/routes/{models,model-providers,model-offerings}.ts`)
-rather than the read-only concept surface above.
+through this package's own workflow-run-authenticated mirror of the
+tenant-admin catalog routes (`./src/routes.ts`'s
+`createWorkflowCatalogAdminRoutes`, mounted in `apps/hub` at
+`/api/workflow-catalog-admin`) rather than the read-only concept surface
+above. The tenant-admin routes themselves
+(`vendor/intx/hub-api/src/routes/{models,model-providers,
+model-offerings}.ts`) only accept a browser session, which a workflow run
+never has — only its sidecar bearer token and run address, the same
+credential the read-only surface above already uses.
 
 - **`create_offering`** — pairs a model (by canonical name) with a model
   provider (by name), both already present in this workbench's own catalog,
