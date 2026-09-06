@@ -6,7 +6,15 @@
 // Authenticated the same way: sidecar bearer token plus run address, never a
 // human browser session.
 import { type } from "arktype";
-import { Capability } from "@intx/types";
+import {
+  Capability,
+  CreateModelOffering,
+  ModelOfferingResponse,
+  ModelProviderResponse,
+  ModelResponse,
+  UpdateModelOffering,
+  paginatedSchema,
+} from "@intx/types";
 
 export interface CatalogToolClientConfig {
   /** The hub's plain HTTP origin — the same value connections-tools'
@@ -173,5 +181,195 @@ export async function fetchEstimate(
     "Estimating run cost",
     (raw) => EstimateResponse(raw),
     request,
+  );
+}
+
+// --- Catalog administration -------------------------------------------
+//
+// `list_model_concepts`/`pick_models`/`estimate_run_cost` above read the
+// run-authenticated `/api/workflow-inference-catalog` surface. The tools
+// below write through `@corbits/catalog-tools`' own workflow-run-
+// authenticated mirror of the tenant-admin catalog surface Interchange's
+// own `apps/hub-web` settings UI uses via a browser session
+// (`vendor/intx/hub-api/src/routes/{models,model-providers,
+// model-offerings}.ts`, mounted at `/api/tenants/:id/catalog/*`): see
+// `./routes.ts`'s `createWorkflowCatalogAdminRoutes`, mounted in
+// `apps/hub` at `/api/workflow-catalog-admin`. Same sidecar bearer token
+// and run address as every other call in this file; the hub resolves
+// that credential to the run's own tenant/principal, so the tenant never
+// rides in the request the way it does in the tenant-admin routes' URL
+// path.
+
+export interface CatalogAdminClientConfig {
+  /** Same hub origin as {@link CatalogToolClientConfig.hubCatalogUrl}. */
+  readonly hubCatalogUrl: string;
+  readonly sidecarToken: string;
+  readonly address: string;
+  /** Override for tests; defaults to the global `fetch`. */
+  readonly fetchImpl?: typeof fetch;
+}
+
+/** Thrown when no model this tenant owns directly matches the requested
+ * canonical name. */
+export class UnknownCanonicalNameError extends Error {}
+
+/** Thrown when no model-provider this tenant owns directly matches the
+ * requested name. */
+export class UnknownProviderNameError extends Error {}
+
+const ModelsPage = paginatedSchema(ModelResponse);
+const ModelProvidersPage = paginatedSchema(ModelProviderResponse);
+
+function adminAuthHeaders(
+  config: CatalogAdminClientConfig,
+): Record<string, string> {
+  return {
+    authorization: `Bearer ${config.sidecarToken}`,
+    "x-workflow-run-address": config.address,
+    "content-type": "application/json",
+  };
+}
+
+async function adminCall<T>(
+  config: CatalogAdminClientConfig,
+  path: string,
+  what: string,
+  schema: (body: unknown) => T | type.errors,
+  init?: RequestInit,
+): Promise<T> {
+  const doFetch = config.fetchImpl ?? fetch;
+  const response = await doFetch(
+    `${config.hubCatalogUrl}/api/workflow-catalog-admin${path}`,
+    { ...init, headers: { ...adminAuthHeaders(config), ...init?.headers } },
+  );
+  if (!response.ok) {
+    const detail: unknown = await response.json().catch(() => undefined);
+    const message =
+      errorMessageFrom(detail) ?? `${response.status} ${response.statusText}`;
+    throw new Error(`${what} failed: ${message}`);
+  }
+  const parsed = schema(await response.json());
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `${what} came back in an unexpected shape: ${parsed.summary}`,
+    );
+  }
+  return parsed;
+}
+
+/** Finds the id of a model this tenant owns directly by its canonical
+ * name, paging through the tenant's own model list. Throws
+ * {@link UnknownCanonicalNameError} rather than inventing an id when
+ * nothing matches. */
+export async function findModelIdByCanonicalName(
+  config: CatalogAdminClientConfig,
+  canonicalName: string,
+): Promise<string> {
+  let cursor: string | undefined;
+  do {
+    const qs = cursor
+      ? `?limit=100&cursor=${encodeURIComponent(cursor)}`
+      : "?limit=100";
+    const page = await adminCall(
+      config,
+      `/models${qs}`,
+      "Listing this workbench's own models",
+      (raw) => ModelsPage(raw),
+    );
+    const found = page.data.find((row) => row.canonicalName === canonicalName);
+    if (found !== undefined) return found.id;
+    cursor = page.nextCursor ?? undefined;
+  } while (cursor !== undefined);
+  throw new UnknownCanonicalNameError(
+    `No model named "${canonicalName}" in this workbench's own catalog.`,
+  );
+}
+
+/** Finds the id of a model-provider this tenant owns directly by its
+ * name, paging through the tenant's own provider list. Throws
+ * {@link UnknownProviderNameError} rather than inventing an id when
+ * nothing matches. */
+export async function findModelProviderIdByName(
+  config: CatalogAdminClientConfig,
+  providerName: string,
+): Promise<string> {
+  let cursor: string | undefined;
+  do {
+    const qs = cursor
+      ? `?limit=100&cursor=${encodeURIComponent(cursor)}`
+      : "?limit=100";
+    const page = await adminCall(
+      config,
+      `/providers${qs}`,
+      "Listing this workbench's own model providers",
+      (raw) => ModelProvidersPage(raw),
+    );
+    const found = page.data.find((row) => row.name === providerName);
+    if (found !== undefined) return found.id;
+    cursor = page.nextCursor ?? undefined;
+  } while (cursor !== undefined);
+  throw new UnknownProviderNameError(
+    `No model provider named "${providerName}" in this workbench's own catalog.`,
+  );
+}
+
+export type CreateOfferingRequest = {
+  readonly modelId: string;
+  readonly providerId: string;
+  readonly priority?: number;
+  readonly capabilities?: readonly Capability[];
+};
+
+/** Creates a tenant-owned offering pairing a tenant-owned model with a
+ * tenant-owned provider. */
+export async function createOffering(
+  config: CatalogAdminClientConfig,
+  request: CreateOfferingRequest,
+): Promise<typeof ModelOfferingResponse.infer> {
+  return await adminCall(
+    config,
+    "/offerings",
+    "Creating the offering",
+    (raw) => ModelOfferingResponse(raw),
+    {
+      method: "POST",
+      body: JSON.stringify(CreateModelOffering.assert(request)),
+    },
+  );
+}
+
+/** Reorders an offering this tenant already owns directly. */
+export async function setOfferingPriority(
+  config: CatalogAdminClientConfig,
+  offeringId: string,
+  priority: number,
+): Promise<typeof ModelOfferingResponse.infer> {
+  return await adminCall(
+    config,
+    `/offerings/${offeringId}`,
+    "Setting the offering's priority",
+    (raw) => ModelOfferingResponse(raw),
+    {
+      method: "PATCH",
+      body: JSON.stringify(UpdateModelOffering.assert({ priority })),
+    },
+  );
+}
+
+/** Restricts an offering this tenant already owns directly, taking it out
+ * of resolution without deleting its pricing history. */
+export async function disableOffering(
+  config: CatalogAdminClientConfig,
+  offeringId: string,
+): Promise<typeof ModelOfferingResponse.infer> {
+  return await adminCall(
+    config,
+    `/offerings/${offeringId}`,
+    "Disabling the offering",
+    (raw) => ModelOfferingResponse(raw),
+    {
+      method: "PATCH",
+      body: JSON.stringify(UpdateModelOffering.assert({ disabled: true })),
+    },
   );
 }

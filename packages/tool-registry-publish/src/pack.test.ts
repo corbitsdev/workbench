@@ -71,6 +71,20 @@ describe("packToolPackageTarball", () => {
             "id" in (value as object),
         );
         expect(factories.length).toBeGreaterThan(0);
+
+        if (tarball.name === "@corbits/catalog-tools") {
+          // Both bundles this package exports (the read-only
+          // `catalogTools` and CL-7468's write-capable
+          // `catalogOfferingTools`) must resolve by id from the packed
+          // tarball the sidecar actually loads, not just from the
+          // workspace source tree — a bundle dropped from `./index.ts`'s
+          // re-exports would still leave `factories.length` above 0.
+          const ids = factories.map(
+            (factory) => (factory as { id: string }).id,
+          );
+          expect(ids).toContain("@corbits/catalog-tools/catalog");
+          expect(ids).toContain("@corbits/catalog-tools/off");
+        }
       } finally {
         await rm(extractDir, { recursive: true, force: true });
       }

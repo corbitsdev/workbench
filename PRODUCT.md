@@ -101,6 +101,16 @@ on that rail only after honest usage exists. New benches should not
 meet an empty Insights / Evals gallery before they have anything to
 put there.
 
+Myra is every tenant's default agent and the coordinator of its other
+agents, not merely the first-run guide. When a request needs a
+capability the bench doesn't have, she doesn't decline it or improvise
+an inline answer: she proposes a teammate — an agent, workflow, or
+skill — authors it as code, deploys it through the normal deploy flow,
+grants it only the access its job requires, and adds it to the bench
+or a DM, reporting back once it's live. She checks for an existing
+teammate that already fits before creating one, so a bench never ends
+up with two agents doing the same job.
+
 ### Code review's first minute
 
 Code review is the product scene for the definition-driven path:

@@ -33,6 +33,7 @@
     "@corbits/workbench-digest-workflow": "workspace:*",
     "@corbits/workflows": "workspace:*",
     "@intx/agent": "workspace:*",
+    "@intx/hub-common": "0.3.0",
     "@intx/inference": "workspace:*",
     "@intx/types": "workspace:*",
     "@corbits/connections": "workspace:*",
