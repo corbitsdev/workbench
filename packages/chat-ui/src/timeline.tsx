@@ -29,7 +29,7 @@ import {
   displayNameForAddress,
   type AgentDisplayNames,
 } from "./agent-display-names";
-import { AVATAR_IDENTITY_CLASS, generatedAvatarStyle } from "./avatar-identity";
+import { CorbitAvatar, avatarClassForPrincipal } from "./avatar";
 import { groupTimelineParts } from "./tool-activity";
 import { ToolActivityGroup } from "./tool-activity-view";
 import {
@@ -45,7 +45,6 @@ import {
   Smiley,
 } from "@corbits/icons";
 import { memo } from "react";
-import type { CSSProperties } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
@@ -284,9 +283,8 @@ type SenderDisplay = {
   readonly handle?: string;
   readonly isAgent: boolean;
   readonly initials: string;
-  /** The wire address behind this sender — never shown, only hashed
-   * (`generatedAvatarStyle`) into a stable per-person fallback color for
-   * a human's avatar. */
+  /** The wire address behind this sender — never shown, only used to pick
+   * a stable per-person fallback color for a human's avatar. */
   readonly id: string;
 };
 
@@ -359,15 +357,6 @@ function senderDisplay(
   };
 }
 
-/** The message header's avatar chip — the same react-ui `Avatar` (tone by
- * agent-vs-neutral, a tooltip carrying the full name) `chat-workspace.tsx`'s
- * member stack already uses, rather than a bespoke initials box. A human
- * sender additionally gets `generatedAvatarStyle`'s deterministic
- * per-person fill — set on this wrap (Avatar takes no `style` prop) and
- * inherited into `Avatar`'s own root span through the
- * `AVATAR_IDENTITY_CLASS` className — so every human reads as their own
- * color instead of the same flat neutral gray agents already stand apart
- * from. */
 function SenderAvatar({
   id,
   initials,
@@ -383,26 +372,19 @@ function SenderAvatar({
   tenantMonogram?: string;
   tenantName?: string;
 }) {
-  const identityStyle = isAgent
-    ? undefined
-    : (generatedAvatarStyle(id) as CSSProperties);
   return (
-    <span
-      className="chat-sender-avatar-wrap"
-      title={label}
-      style={identityStyle}
-    >
-      <Avatar
-        initials={initials}
-        label={label}
-        tone={isAgent ? "agent" : "neutral"}
-        size="md"
-        className={
-          isAgent
-            ? "chat-sender-avatar"
-            : `chat-sender-avatar ${AVATAR_IDENTITY_CLASS}`
-        }
-      />
+    <span className="sender-avatar-wrap" title={label}>
+      {isAgent ? (
+        <CorbitAvatar ariaLabel={label} size="md" className="sender-avatar" />
+      ) : (
+        <Avatar
+          initials={initials}
+          label={label}
+          tone="neutral"
+          size="md"
+          className={`sender-avatar ${avatarClassForPrincipal(id)}`}
+        />
+      )}
       {tenantMonogram !== undefined ? (
         <span
           className="chat-sender-tenant-badge"
@@ -513,7 +495,7 @@ function TextBubble({
       {showHeader && display !== undefined && (
         <button
           type="button"
-          className="chat-sender-avatar-button"
+          className="sender-avatar-button"
           aria-label={`${CHAT_STRINGS.profileOpenAction}: ${display.label}`}
           disabled={profileSubject === null || onOpenProfile === undefined}
           onClick={handleOpenProfile}
@@ -2028,12 +2010,18 @@ function ThreadAffordance({
 }) {
   const replyCount = meta?.replyCount ?? 0;
   const addresses = meta?.participantAddresses ?? [];
-  const initials = addresses.slice(0, 3).map((address) => {
+  const chips = addresses.slice(0, 3).map((address) => {
+    const isAgent = isAgentAddress(address);
     const handle =
       displayNameForAddress(address, agentDisplayNames) ??
       participants.find((p) => p.address === address)?.handle ??
       address.slice(0, 1);
-    return initialsOf(handle);
+    return {
+      address,
+      isAgent,
+      label: handle,
+      initials: initialsOf(handle),
+    };
   });
   const activity = formatRelativeActivity(meta?.lastActivityAt ?? null);
   const label =
@@ -2051,13 +2039,25 @@ function ThreadAffordance({
       data-message-id={messageId}
       data-thread-affordance-mode={mode}
     >
-      {initials.length > 0 ? (
+      {chips.length > 0 ? (
         <span className="chat-thread-avatar-stack" aria-hidden="true">
-          {initials.map((value, index) => (
-            <span key={`${value}-${index}`} className="chat-thread-avatar-chip">
-              {value}
-            </span>
-          ))}
+          {chips.map((chip, index) =>
+            chip.isAgent ? (
+              <CorbitAvatar
+                key={`${chip.address}-${index}`}
+                ariaLabel={chip.label}
+                size={20}
+                className="thread-avatar-chip !overflow-hidden !rounded-full !bg-transparent !p-0"
+              />
+            ) : (
+              <span
+                key={`${chip.address}-${index}`}
+                className={`thread-avatar-chip ${avatarClassForPrincipal(chip.address)}`}
+              >
+                {chip.initials}
+              </span>
+            ),
+          )}
         </span>
       ) : null}
       <span className="chat-thread-affordance-meta">

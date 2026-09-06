@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import postgres from "postgres";
 
-import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { applyInferenceCatalogMigrations } from "../src/migrations";
 import { createPostgresBenchModelPolicyStore } from "../src/pg-store";
 import { EMPTY_POLICY } from "../src/policy";

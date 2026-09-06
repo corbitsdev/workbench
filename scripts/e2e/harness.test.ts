@@ -15,9 +15,9 @@ import {
   parseEnvFileDatabaseUrl,
   provisionSidecar,
   runCleanups,
-  workflowDeployBody,
   type SpawnedApp,
 } from "./harness.ts";
+import { workflowDeployBody } from "./workflow-source.ts";
 
 describe("createCleanupHarness", () => {
   test("tempDir mkdtemps a real directory named with its prefix", async () => {

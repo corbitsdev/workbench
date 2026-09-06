@@ -68,7 +68,19 @@ jobs:
             typecheck-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version', 'tsconfig.base.json', 'scripts/generate-tsconfig-references.ts') }}-
       - run: bun run typecheck
 
-  build-test:
+  # A hosted runner's 4 vCPUs cap how much a single job's package fan-out
+  # (scripts/run-all.ts's own concurrency) can cut wall-clock: the total
+  # CPU-seconds across every package's test script divided by 4 was still
+  # over 90s. Splitting the same total work across 3 runners, each with
+  # its own 4 vCPUs, is what actually buys more parallelism. --shard i/3
+  # (scripts/run-all.ts) round-robins the workspace's stably name-sorted
+  # package list across shards, so a run's set of packages-per-shard is
+  # reproducible and every package lands in exactly one shard.
+  build-test-shard:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -76,7 +88,26 @@ jobs:
           fetch-depth: 0
       - uses: ./.github/actions/setup-workbench
       - run: bun run build
-      - run: bun run test
+      # The root-level scripts/*.test.ts suite (scripts/run-all.test.ts
+      # among them) isn't itself sharded — it only needs to run once, so
+      # it rides along on shard 1.
+      - if: matrix.shard == 1
+        run: bun test ./scripts/*.test.ts
+      - run: bun run scripts/run-all.ts test --shard ${{ matrix.shard }}/3
+
+  # The required check every branch protection rule and PR template
+  # names is "build-test" (predating the shard split above); this job
+  # keeps that name live by depending on every shard and failing if any
+  # of them did.
+  build-test:
+    needs: build-test-shard
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - if: contains(needs.build-test-shard.result, 'failure') || contains(needs.build-test-shard.result, 'cancelled')
+        run: |
+          echo "at least one build-test shard failed" >&2
+          exit 1
 
   structural:
     runs-on: ubuntu-latest
@@ -87,9 +118,29 @@ jobs:
       - uses: ./.github/actions/setup-workbench
       - run: bun run check:structural
 
-  e2e:
+  e2e-plan:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    outputs:
+      suites: ${{ steps.list-suites.outputs.suites }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-workbench
+      - name: List e2e suites
+        id: list-suites
+        run: echo "suites=$(bun run scripts/e2e/list-suites.ts)" >> "$GITHUB_OUTPUT"
+
+  # One job per e2e suite so a PR's e2e wall-clock is the slowest suite
+  # rather than the sum of all of them, and a failing suite names itself
+  # instead of hiding behind "e2e failed". fail-fast is off so one flaky
+  # suite doesn't cancel every other suite's run.
+  e2e-suite:
+    needs: e2e-plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: ${{ fromJson(needs.e2e-plan.outputs.suites) }}
 
     services:
       postgres:
@@ -135,19 +186,38 @@ jobs:
           pg_isready -h localhost -p 5432
           git --version
 
-      - name: Run the walking skeleton
-        run: bun run test:e2e
+      - name: Run the suite
+        run: |
+          if [ "${{ matrix.suite }}" = "unit" ]; then
+            bun test scripts/e2e/harness.test.ts scripts/e2e/db-gate.test.ts scripts/e2e/db-setup.test.ts scripts/e2e/list-suites.test.ts --max-concurrency=1
+          else
+            bun test "scripts/e2e/${{ matrix.suite }}.test.ts" --max-concurrency=1
+          fi
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/workbench
-          E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
+          E2E_LOG_DIR: e2e-logs
 
-      - name: Upload hub/sidecar logs
+      - name: Upload e2e logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-logs
-          path: ${{ runner.temp }}/e2e-logs
+          name: e2e-logs-${{ matrix.suite }}
+          path: e2e-logs
           if-no-files-found: ignore
+
+  # Branch protection's required check is named "e2e"; this summary job
+  # keeps that name while the actual work runs as per-suite e2e-suite jobs.
+  e2e:
+    needs: e2e-suite
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check e2e-suite matrix result
+        run: |
+          if [ "${{ needs.e2e-suite.result }}" != "success" ]; then
+            echo "one or more e2e suites failed"
+            exit 1
+          fi
 
   isolation:
     runs-on: ubuntu-latest

@@ -12,7 +12,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createDB, runMigrations, dropSchema, schema } from "@intx/db";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
-import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { listVisibleAgentDefinitions } from "../src/visible-definitions";
 import { dbGate } from "../../../scripts/e2e/db-gate";
 

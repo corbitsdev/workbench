@@ -5,18 +5,23 @@ import { Glob } from "bun";
 import { availableParallelism } from "node:os";
 
 import { CONCURRENCY_ENV } from "./concurrency.ts";
-import { SEQUENTIAL_SCRIPTS } from "./sequential-scripts.ts";
 
 type Job = { readonly name: string; readonly dir: string };
 
+// `script` used to gate the test phase to concurrency 1 (see git history
+// for `scripts/sequential-scripts.ts`, removed once each test suite's own
+// isolation — a per-run HUB_DATA_DIR, a per-run scratch database, no
+// fixed ports — made fanning tests out across packages safe). Kept as a
+// parameter so a future script-specific override has somewhere to hang
+// without changing every call site again.
 export function resolveConcurrency(
   script: string,
   env: NodeJS.ProcessEnv = process.env,
   cores: number = availableParallelism(),
 ): number {
+  void script;
   const raw = env[CONCURRENCY_ENV];
   if (raw === undefined || raw === "") {
-    if (SEQUENTIAL_SCRIPTS.has(script)) return 1;
     // Locally each job saturates about one core, so leave a couple free for
     // the editor and type server a developer runs alongside the gate. CI
     // runners have no editor — use every core so package fan-out is not
@@ -58,7 +63,35 @@ async function discover(script: string): Promise<Job[]> {
       jobs.push({ name: manifest.name ?? dir, dir });
     }
   }
-  return jobs;
+  // Glob.scan's order depends on the filesystem, not the package name, so
+  // a shard split over unsorted output would assign a different package
+  // set from one CI run to the next. Sorting by name first makes the
+  // split (and which packages land in which shard) reproducible.
+  return jobs.toSorted((a, b) => a.name.localeCompare(b.name));
+}
+
+export type ShardSpec = { readonly index: number; readonly count: number };
+
+/** Parses a `--shard i/n` argument (1-based index, e.g. "1/3" is the
+ * first of three shards). Throws with the raw value on anything else. */
+export function parseShardArg(raw: string): ShardSpec {
+  const match = /^(\d+)\/(\d+)$/.exec(raw);
+  if (match === null) {
+    throw new Error(`--shard must look like "i/n", got "${raw}"`);
+  }
+  const index = Number.parseInt(match[1] ?? "", 10);
+  const count = Number.parseInt(match[2] ?? "", 10);
+  if (count < 1 || index < 1 || index > count) {
+    throw new Error(`--shard "i/n" needs 1 <= i <= n, got "${raw}"`);
+  }
+  return { index: index - 1, count };
+}
+
+/** Round-robins the (stably ordered) job list across shards rather than
+ * slicing it into contiguous runs, so a cluster of heavy packages next
+ * to each other alphabetically doesn't all land in the same shard. */
+export function selectShard(jobs: readonly Job[], shard: ShardSpec): Job[] {
+  return jobs.filter((_job, i) => i % shard.count === shard.index);
 }
 
 // Output is captured and flushed as one block per package. Streaming it would
@@ -88,10 +121,28 @@ async function runJob(job: Job, script: string): Promise<number> {
 if (import.meta.main) {
   const scriptArg = process.argv[2];
   if (!scriptArg) {
-    console.error("usage: bun run scripts/run-all.ts <script-name>");
+    console.error(
+      "usage: bun run scripts/run-all.ts <script-name> [--shard i/n]",
+    );
     process.exit(1);
   }
   const script: string = scriptArg;
+
+  const shardFlagIndex = process.argv.indexOf("--shard");
+  let shard: ShardSpec | undefined;
+  if (shardFlagIndex >= 0) {
+    const raw = process.argv[shardFlagIndex + 1];
+    if (raw === undefined) {
+      console.error('--shard requires an "i/n" argument');
+      process.exit(1);
+    }
+    try {
+      shard = parseShardArg(raw);
+    } catch (cause) {
+      console.error(cause instanceof Error ? cause.message : String(cause));
+      process.exit(1);
+    }
+  }
 
   let concurrency: number;
   try {
@@ -101,7 +152,8 @@ if (import.meta.main) {
     process.exit(1);
   }
 
-  const jobs = await discover(script);
+  const allJobs = await discover(script);
+  const jobs = shard === undefined ? allJobs : selectShard(allJobs, shard);
   if (jobs.length === 0) {
     console.log(`${script}: no workspace packages define it yet`);
     process.exit(0);

@@ -55,7 +55,7 @@ import { deriveResolvedBindings } from "@corbits/credential-providers";
 import type { ToolCall } from "@intx/types/runtime";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
-import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { GRANOLA_LIST_RECENT_NOTES_TOOL, granolaTools } from "../src/tool";
 import type { GranolaEnv } from "../src/tool";
 import { dbGate } from "../../../scripts/e2e/db-gate";
