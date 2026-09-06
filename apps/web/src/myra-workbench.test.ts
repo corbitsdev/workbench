@@ -105,9 +105,9 @@ describe("ensureMyraWorkbench", () => {
     const result = await ensureMyraWorkbench("tnt_1");
 
     expect(result).toEqual({ kind: "ready", workbenchId: "chat-1" });
-    expect(
-      calls.some((call) => call.path.includes("kind=workbench")),
-    ).toBe(false);
+    expect(calls.some((call) => call.path.includes("kind=workbench"))).toBe(
+      false,
+    );
     expect(calls.some((call) => call.path.includes("kind=chat"))).toBe(false);
     const createCall = calls.find((call) =>
       call.path.endsWith("/chat/workbenches"),
