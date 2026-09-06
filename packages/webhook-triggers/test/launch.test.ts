@@ -137,6 +137,7 @@ let sendUserMessageCalls: unknown[] = [];
 let sendUserMessageImpl: () => Promise<Uint8Array> = async () =>
   new Uint8Array([1]);
 let cryptoGetKeys: string[] = [];
+let isRoutableForTest = true;
 
 function baseDeps() {
   return {
@@ -177,6 +178,7 @@ function baseDeps() {
         return sendUserMessageImpl();
       },
     },
+    isRoutable: () => isRoutableForTest,
   };
 }
 
@@ -191,6 +193,7 @@ function resetLaunchSpies() {
   visibleOfferings = [...DEFAULT_VISIBLE_OFFERINGS];
   frozenProjection = INERT_PROJECTION;
   sendUserMessageImpl = async () => new Uint8Array([1]);
+  isRoutableForTest = true;
 }
 
 describe("launchWebhookTrigger", () => {
@@ -212,6 +215,39 @@ describe("launchWebhookTrigger", () => {
     expect(prepareCalls).toHaveLength(1);
     expect(resolveRefCalls).toHaveLength(1);
     expect(sendUserMessageCalls).toHaveLength(1);
+  });
+
+  // CL-7476: a freshly provisioned run's sidecar takes several seconds to
+  // boot and register with the hub. The opening mail can land in that
+  // gap and fail "agent is unreachable" even though the run deployed
+  // fine — `deliverWhenRoutable` must retry once the address becomes
+  // routable rather than dropping the mail for good.
+  test("retries the opening mail once the freshly provisioned run becomes routable", async () => {
+    resetLaunchSpies();
+    isRoutableForTest = false;
+    let sendAttempts = 0;
+    sendUserMessageImpl = async () => {
+      sendAttempts += 1;
+      if (sendAttempts === 1) {
+        throw new Error("agent is unreachable: ins_1@ten1.workbench.test");
+      }
+      return new Uint8Array([1]);
+    };
+
+    const deps = baseDeps();
+    const sendPromise = launchWebhookTrigger(deps, TRIGGER, { status: "ok" });
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    isRoutableForTest = true;
+
+    const result = await sendPromise;
+
+    expect(result).toEqual({
+      instanceId: INTERCHANGE_RUN_ID,
+      triggerAddress: INTERCHANGE_ADDRESS,
+    });
+    expect(sendUserMessageCalls).toHaveLength(2);
+    expect(reportErrorCalls).toHaveLength(0);
   });
 
   test("reports the delivery failure with the run's context", async () => {

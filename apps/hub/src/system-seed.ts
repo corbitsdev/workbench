@@ -35,6 +35,12 @@ const log = getLogger(["hub", "system-seed"]);
 const DEFAULT_DEADLINE_MS = 60_000;
 const DEFAULT_POLL_INTERVAL_MS = 2_000;
 
+// Matches `packages/seeding/src/seed.ts`'s `resolveRealSourceOfferingIds`
+// failure verbatim — the one deploy failure that is expected, not
+// transient, when no operator seed key is configured.
+const NO_CATALOG_OFFERINGS_REASON =
+  "this tenant has no catalog offerings to deploy against";
+
 // Matches `workbench seed`'s own default model source (readSeedConfig in
 // the now-deleted `packages/cli/src/config.ts`): real anthropic/
 // claude-sonnet-5 when a hub-owned key is configured (`config.seedModel`),
@@ -150,6 +156,21 @@ export async function runSystemSeed(deps: SystemSeedDeps): Promise<void> {
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : String(cause);
       if (Date.now() >= deadline) {
+        // No operator seed key means `seedCatalog` can only ever plant a
+        // placeholder credential — never a real, launchable offering —
+        // so a default workflow's deploy permanently has nothing to
+        // deploy against until an operator configures one. That is the
+        // expected shape of an unconfigured dev/CI boot, not a fault the
+        // next boot can retry its way out of, so it is a logged skip
+        // rather than an error (which `reportError` would otherwise
+        // paint red on every single boot).
+        if (
+          deps.seedModel === undefined &&
+          reason.includes(NO_CATALOG_OFFERINGS_REASON)
+        ) {
+          log.info`root tenant seed skipped: no operator seed key configured, so the tenant has no catalog offerings to deploy against yet`;
+          return;
+        }
         reportError(cause, { operation: "system-seed.seedRootTenant" });
         log.error`root tenant seed did not complete before its deadline (last error: ${reason}); the next boot will retry`;
         return;

@@ -56,6 +56,11 @@ export {
 } from "./schedule/cron";
 export { scheduleCronFromProjection } from "./schedule/from-projection";
 export {
+  deliverWhenRoutable,
+  isAgentUnreachableError,
+  type DeliverWhenRoutableOptions,
+} from "./deliver-when-routable";
+export {
   listScheduledWorkflowDefinitions,
   scheduledDefinitionsFromRows,
   type ScheduledWorkflowDefinition,

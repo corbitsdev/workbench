@@ -14,6 +14,7 @@
 // reports through `@corbits/error-sink`, naming the run.
 import { reportError } from "@corbits/error-sink";
 import {
+  deliverWhenRoutable,
   readDefinitionProjection,
   readFoldedBody,
   WORKFLOW_SOURCE_ENTRY,
@@ -46,6 +47,15 @@ export type LaunchWebhookTriggerDeps = {
     "prepareProvisionedDeployment"
   >;
   sessionService: Pick<SessionService, "sendUserMessage">;
+  /**
+   * Reads the hub's live sidecar routing table. A freshly provisioned
+   * run's sidecar takes several seconds to boot and register (CL-7476)
+   * — a webhook's opening mail can land in that gap and fail with
+   * "agent is unreachable" even though the run itself deployed fine.
+   * `deliverWhenRoutable` polls this until the address is routable
+   * before its one retry.
+   */
+  isRoutable: (address: string) => boolean;
   cryptoProviderCache: CryptoProviderCache;
   /**
    * Host-supplied cipher. Interchange decrypts bindings inside
@@ -201,15 +211,19 @@ export async function launchWebhookTrigger(
     prepared.anchorRunId,
   );
   try {
-    await deps.sessionService.sendUserMessage({
-      agentAddress: prepared.deploymentAddress,
-      from: `webhook-trigger:${trigger.id}`,
-      messageId: `<${crypto.randomUUID()}@${tenantRow.domain}>`,
-      date: new Date(),
-      content,
-      sessionId,
-      tenantId: trigger.tenantId,
-      cryptoProvider,
+    await deliverWhenRoutable({
+      send: () =>
+        deps.sessionService.sendUserMessage({
+          agentAddress: prepared.deploymentAddress,
+          from: `webhook-trigger:${trigger.id}`,
+          messageId: `<${crypto.randomUUID()}@${tenantRow.domain}>`,
+          date: new Date(),
+          content,
+          sessionId,
+          tenantId: trigger.tenantId,
+          cryptoProvider,
+        }),
+      isRoutable: () => deps.isRoutable(prepared.deploymentAddress),
     });
   } catch (error) {
     reportError(error, {
