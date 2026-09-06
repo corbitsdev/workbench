@@ -139,10 +139,11 @@ describe("useBenchActivity", () => {
         },
       ],
       // The workbench host and the invited agent never appear here: the
-      // hub's `/top-level-runs?feed=fires` route excludes every folded
-      // run that isn't a routine fire (see `@corbits/folded-runs`'s
-      // `scope-routes.ts`). A routine's own fire IS a folded run, so it
-      // must still show up here (`run_routine1`, tagged with its
+      // hub's `/top-level-runs?feed=fires` route excludes every
+      // non-top-level run that isn't a routine fire (see
+      // `@corbits/run-scope`'s `scope-routes.ts`). A routine's own fire
+      // is not a top-level run, so it must still show up here
+      // (`run_routine1`, tagged with its
       // `routineId`) -- that is the CL-6595 fix; a directly-triggered
       // deployment with no routine parent (`run_deployment1`) is not
       // routine activity and must not appear.

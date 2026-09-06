@@ -60,12 +60,13 @@ export const INSIGHTS_RECENT_LIMIT = 12;
 /**
  * Purpose runs only — drop workbench-host anchors the same way Home does.
  * `insights-page.tsx` sources `runs` from `insightsTopLevelRunsPath` (see
- * `./insights-api.ts`), which already excludes every folded run with no
- * routine parent, and the resident never-fired deployment placeholder,
- * server-side via `@corbits/folded-runs`'s `scope-routes.ts`'s
- * `listTopLevelRunFires`. This filter is a client-side belt-and-suspenders
- * pass against the workbench-host naming pattern alone, not a second scoping
- * layer — a caller no longer needs to (and cannot) hand this a folded-run
+ * `./insights-api.ts`), which already excludes every non-top-level run
+ * (workbench host, invited agent) with no routine parent, and the
+ * resident never-fired deployment placeholder, server-side via
+ * `@corbits/run-scope`'s `scope-routes.ts`'s `listTopLevelRunFires`. This
+ * filter is a client-side belt-and-suspenders pass against the
+ * workbench-host naming pattern alone, not a second scoping layer — a
+ * caller no longer needs to (and cannot) hand this a non-top-level run
  * id set. CL-6062 replaced the dead `/me/workflows/runs` feed (its
  * `anchorRunId IS NULL` filter never matched anything, since every
  * addressed run self-anchors at creation) with this scoped one.
@@ -83,7 +84,7 @@ export function purposeRunsForInsights(
  * from one, honestly falling back to the definition name for a run with
  * no routine/task parent — e.g. a directly launched workflow. Never
  * mapped from a client-side lookup table; the route already resolved
- * `routineName` server-side (`@corbits/folded-runs`'s
+ * `routineName` server-side (`@corbits/run-scope`'s
  * `listTopLevelRunFires`).
  */
 export function runDisplayName(run: InsightsRun): string {
