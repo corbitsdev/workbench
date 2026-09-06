@@ -28,13 +28,13 @@ import {
 } from "../../workflows/echo/src/index.ts";
 import {
   api,
+  assertNeverRealProvider,
   createCleanupHarness,
   e2eDatabaseUrl,
   expectStatus,
   freePort,
   hop,
   pushWorkflowSource,
-  seedNoopCatalogOffering,
   workflowDeployBody,
   startHub,
   type ApiResult,
@@ -58,6 +58,104 @@ function stringField(data: unknown, field: string, what: string): string {
   throw new Error(
     `${what}: missing string field "${field}": ${JSON.stringify(data)}`,
   );
+}
+
+/**
+ * The (provider, model) pair `seedPlaceholderCatalogOffering` plants and
+ * the only pair the deploy below may declare as its inference preference.
+ * The deploy-time capability walk auto-approves exactly the (provider,
+ * model) pairs a step's own agent declares
+ * (`@intx/workflow-deploy`'s `pickStepInferenceSource`); naming any other
+ * model here 409s "no approved inference source" at deploy even though
+ * this suite never calls real inference (CL-7473).
+ */
+const PLACEHOLDER_MODEL = "noop";
+
+/**
+ * Plants the same catalog-model/provider/credential/offering chain as
+ * `@corbits/seeding`'s `ensureNoopCatalogOffering`, but pointed at an
+ * unreachable placeholder host rather than the hub's own
+ * `noop-inference` endpoint — deliberately, since this suite never
+ * calls inference and asserts only that the deploy is
+ * address-reachable (see the module comment above).
+ */
+async function seedPlaceholderCatalogOffering(options: {
+  call: (
+    method: string,
+    path: string,
+    body?: unknown,
+    cookies?: string[],
+  ) => Promise<ApiResult>;
+  tenantId: string;
+  cookies: string[];
+  placeholderBaseUrl: string;
+}): Promise<{ offeringId: string }> {
+  assertNeverRealProvider(
+    options.placeholderBaseUrl,
+    "placeholder catalog provider baseURL",
+  );
+  const { call, tenantId, cookies } = options;
+
+  const model = await call(
+    "POST",
+    `/api/tenants/${tenantId}/catalog/models`,
+    { canonicalName: PLACEHOLDER_MODEL },
+    cookies,
+  );
+  expectStatus("create catalog model", model, 201);
+  const modelId = stringField(model.data, "id", "create catalog model");
+
+  const provider = await call(
+    "POST",
+    `/api/tenants/${tenantId}/providers`,
+    { name: "anthropic", plugin: "anthropic" },
+    cookies,
+  );
+  expectStatus("create provider", provider, 201);
+  const providerId = stringField(provider.data, "id", "create provider");
+
+  const credential = await call(
+    "POST",
+    `/api/tenants/${tenantId}/credentials`,
+    {
+      providerId,
+      name: "anthropic-default",
+      type: "api_key",
+      secret: "noop",
+    },
+    cookies,
+  );
+  expectStatus("create credential", credential, 201);
+  const credentialId = stringField(credential.data, "id", "create credential");
+
+  const catalogProvider = await call(
+    "POST",
+    `/api/tenants/${tenantId}/catalog/providers`,
+    {
+      name: "anthropic",
+      plugin: "anthropic",
+      baseURL: options.placeholderBaseUrl,
+      credentialId,
+    },
+    cookies,
+  );
+  expectStatus("create catalog provider", catalogProvider, 201);
+  const catalogProviderId = stringField(
+    catalogProvider.data,
+    "id",
+    "create catalog provider",
+  );
+
+  const offering = await call(
+    "POST",
+    `/api/tenants/${tenantId}/catalog/offerings`,
+    { modelId, providerId: catalogProviderId },
+    cookies,
+  );
+  expectStatus("create catalog offering", offering, 201);
+  return {
+    offeringId: stringField(offering.data, "id", "create catalog offering"),
+  };
 }
 
 const { tempDir, track } = createCleanupHarness();
@@ -163,7 +261,7 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
         const definition = buildEchoWorkflow({
           triggerAddress: `echo@${slug}.localhost`,
           inferencePreferences: [
-            { provider: "anthropic", model: "claude-sonnet-5" },
+            { provider: "anthropic", model: PLACEHOLDER_MODEL },
           ],
           turnTimeoutMs: 60_000,
         });
@@ -183,12 +281,12 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
     // still names an unreachable placeholder host, since deployment
     // never calls inference and full run-completion is not asserted.
     const { offeringId } = await hop("noop catalog seeding", () =>
-      seedNoopCatalogOffering({
+      seedPlaceholderCatalogOffering({
         call: (method, path, body, cookies) =>
           api(hub.baseUrl, method, path, body, cookies),
         tenantId,
         cookies: user.cookies,
-        noopBaseUrl: "https://inference.invalid",
+        placeholderBaseUrl: "https://inference.invalid",
       }),
     );
 
