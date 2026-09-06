@@ -218,8 +218,8 @@ function validateEnsureRequest(request: EnsureSidecarRequest): string | null {
   if (request.token === "") return "token must not be empty";
   if (request.hubWebSocketUrl === "")
     return "hubWebSocketUrl must not be empty";
-  if (!Number.isInteger(request.generation) || request.generation <= 0) {
-    return "generation must be a positive integer";
+  if (!Number.isInteger(request.generation) || request.generation < 0) {
+    return "generation must be a non-negative integer";
   }
   return null;
 }
@@ -227,8 +227,8 @@ function validateEnsureRequest(request: EnsureSidecarRequest): string | null {
 function validateDestroyRequest(request: DestroySidecarRequest): string | null {
   if (request.allocationId === "") return "allocationId must not be empty";
   if (request.sidecarId === "") return "sidecarId must not be empty";
-  if (!Number.isInteger(request.generation) || request.generation <= 0) {
-    return "generation must be a positive integer";
+  if (!Number.isInteger(request.generation) || request.generation < 0) {
+    return "generation must be a non-negative integer";
   }
   return null;
 }
