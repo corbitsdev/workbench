@@ -21,9 +21,10 @@
 // shipped the OG's six stages as six chained `@intx/workflow` steps
 // (`after: [...]`) — the first genuinely multi-step definition in this
 // catalog. Every routine "run now"/scheduled fire in this repo launches
-// through `@corbits/folded-runs`' `readFoldedBody`
-// (`apps/hub/src/routine-launcher.ts`), and that reader has always
-// required exactly one step (`packages/folded-runs/src/definition.ts`):
+// through `@corbits/workflows`' `readFoldedBody`
+// (`apps/hub/src/native-workflow-routine-launch.ts`), and that reader has
+// always required exactly one step
+// (`packages/workflows/src/definition-projection.ts`):
 // it throws `"definition ... is not single-step (N steps)"` synchronously,
 // before any run row or sidecar deploy exists, which Hono turns into a
 // bare 500 on every single launch. There is no second, native multi-step
