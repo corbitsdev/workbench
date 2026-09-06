@@ -33,6 +33,7 @@ import {
   expectStatus,
   freePort,
   hop,
+  NOOP_CATALOG_MODEL,
   pushWorkflowSource,
   seedNoopCatalogOffering,
   workflowDeployBody,
@@ -160,10 +161,18 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
         );
         expectStatus("mint git token", minted, 201);
 
+        // Must name the same (provider, model) `seedNoopCatalogOffering`
+        // below plants, like every other e2e suite's echo/agent fixture
+        // (see `heartbeat.test.ts`, `smoke-webhook.test.ts`,
+        // `workbench-digest.test.ts`) — the deploy-time capability walk
+        // only auto-approves the (provider, model) pairs a step's own
+        // agent declares (CL-7473), so a preference naming a model the
+        // seeded catalog never offers 409s with "no approved inference
+        // source" even though deployment never calls inference.
         const definition = buildEchoWorkflow({
           triggerAddress: `echo@${slug}.localhost`,
           inferencePreferences: [
-            { provider: "anthropic", model: "claude-sonnet-5" },
+            { provider: "anthropic", model: NOOP_CATALOG_MODEL },
           ],
           turnTimeoutMs: 60_000,
         });
