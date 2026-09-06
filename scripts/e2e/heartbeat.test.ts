@@ -19,6 +19,7 @@ import {
   buildHeartbeatWorkflow,
   serializeHeartbeatWorkflow,
 } from "../../workflows/heartbeat/src/index.ts";
+import { ensureNoopCatalogOffering } from "../../packages/seeding/src/index.ts";
 import {
   api,
   createCleanupHarness,
@@ -203,16 +204,23 @@ describe.skipIf(databaseUrl === undefined)("heartbeat workflow", () => {
     // whole point of this suite: a run started against this source
     // actually completes an inference call, at zero cost, because
     // noop-inference answers it locally without reaching a real model.
+    const offeringId = await hop("noop catalog seeding", () =>
+      ensureNoopCatalogOffering(
+        (method, path, body, cookies) =>
+          api(hub.baseUrl, method, path, body, cookies),
+        user.cookies,
+        tenantId,
+        hub.baseUrl,
+        () => {},
+      ),
+    );
+
     const deploymentId = await hop("workflow deploy", async () => {
-      const sourceId = "src-heartbeat-e2e";
       const body = workflowDeployBody({
         assetId,
         commitSha,
-        sourceId: sourceId,
-        provider: "anthropic",
-        baseURL: `${hub.baseUrl}/api/chat/noop-inference`,
-        apiKey: "noop",
-        model: "noop",
+        sourceOfferingIds: [offeringId],
+        defaultSourceOfferingId: offeringId,
       });
       const deadline = Date.now() + 60_000;
       let res: ApiResult;

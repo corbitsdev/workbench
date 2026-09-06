@@ -437,7 +437,9 @@ export async function bootLongevityStack(
     // credential row still requires some string, so each target's own
     // `apiKey` (expected to be the same placeholder) is threaded through
     // unchanged rather than this package inventing its own convention.
-    async function seedCatalogChain(target: InferenceTarget): Promise<void> {
+    async function seedCatalogChain(
+      target: InferenceTarget,
+    ): Promise<{ offeringId: string }> {
       const model = await api(
         hub.baseUrl,
         "POST",
@@ -509,10 +511,15 @@ export async function bootLongevityStack(
         owner.cookies,
       );
       expectStatus(`create catalog offering ${target.model}`, offering, 201);
+      return {
+        offeringId: stringField(offering.data, "id", "create catalog offering"),
+      };
     }
 
+    const offeringIdByTargetLabel = new Map<string, string>();
     for (const target of options.realTargets) {
-      await seedCatalogChain(target);
+      const { offeringId } = await seedCatalogChain(target);
+      offeringIdByTargetLabel.set(target.label, offeringId);
     }
 
     for (const skill of options.skills ?? []) {
@@ -668,6 +675,13 @@ export async function bootLongevityStack(
         workflowJson,
       });
 
+      const offeringId = offeringIdByTargetLabel.get(target.label);
+      if (offeringId === undefined) {
+        throw new Error(
+          `agent ${spec.key}: no catalog offering seeded for realTarget "${target.label}"`,
+        );
+      }
+
       const deployDeadline = Date.now() + 90_000;
       for (;;) {
         if (sidecar.exited()) {
@@ -682,11 +696,8 @@ export async function bootLongevityStack(
           workflowDeployBody({
             assetId,
             commitSha: pushed.commitSha,
-            sourceId: `src-agent-${spec.handle}`,
-            provider: target.provider,
-            baseURL: target.baseURL,
-            apiKey: target.apiKey,
-            model: target.model,
+            sourceOfferingIds: [offeringId],
+            defaultSourceOfferingId: offeringId,
           }),
           owner.cookies,
         );
@@ -847,6 +858,12 @@ export async function bootLongevityStack(
     if (routineTarget === undefined) {
       throw new Error("unreachable: realTargets checked non-empty above");
     }
+    const routineOfferingId = offeringIdByTargetLabel.get(routineTarget.label);
+    if (routineOfferingId === undefined) {
+      throw new Error(
+        `no catalog offering seeded for realTarget "${routineTarget.label}"`,
+      );
+    }
     const assetName = "longevity-heartbeat";
     const heartbeatAssetCreated = await api(
       hub.baseUrl,
@@ -912,11 +929,8 @@ export async function bootLongevityStack(
         workflowDeployBody({
           assetId: heartbeatAssetId,
           commitSha: heartbeatPushed.commitSha,
-          sourceId: "src-longevity-heartbeat",
-          provider: "openai-compatible",
-          baseURL: routineTarget.baseURL,
-          apiKey: routineTarget.apiKey,
-          model: routineTarget.model,
+          sourceOfferingIds: [routineOfferingId],
+          defaultSourceOfferingId: routineOfferingId,
         }),
         owner.cookies,
       );
