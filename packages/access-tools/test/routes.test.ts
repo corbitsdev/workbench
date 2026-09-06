@@ -9,17 +9,18 @@
 // `createRequireGrant` and the delegation-ceiling check both call — so
 // this proves the ceiling is enforced against the SAME grants a real
 // deploy would see, not a bundle-local approximation.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 
 import { createDB, schema, type DB } from "@intx/db";
 import { createInMemoryGrantStore, type GrantStore } from "@intx/authz";
 import { generateId } from "@intx/hub-common";
+import { dbGate } from "../../../scripts/e2e/db-gate";
 
 import {
   createWorkflowAccessRoutes,
   type WorkflowRunAuthenticator,
-} from "./routes";
+} from "../src/routes";
 
 function dbConfigFromUrl(databaseUrl: string) {
   const url = new URL(databaseUrl);
@@ -33,7 +34,7 @@ function dbConfigFromUrl(databaseUrl: string) {
 }
 
 const databaseUrl = process.env["DATABASE_URL"];
-const describeIfDb = databaseUrl === undefined ? describe.skip : describe;
+const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 describeIfDb("createWorkflowAccessRoutes", () => {
   let db: DB;
