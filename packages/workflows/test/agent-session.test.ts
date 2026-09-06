@@ -7,10 +7,13 @@
 // returns — this proves it lands the `agent_session` row under the
 // *deploying* principal (the run's own principal does not exist yet)
 // and creates the run's event collector exactly once, idempotently.
-// `ensureRunSession` is now purely a re-key: once the run's first
-// trigger anchors a real principal onto it, this proves the session
-// moves onto that principal without ever touching the session id, and
-// that a run with no launch spec row is a bug this throws on rather
+// `ensureRunSession` is a true upsert: once the run's first trigger
+// anchors a real principal onto it, this proves the session moves onto
+// that principal without ever touching the session id when a row
+// already exists, that it creates the row from scratch for a run
+// deployed straight through Interchange's own deployments route (no
+// Workbench launcher ever ran `recordAgentSessionAtProvision` for it),
+// and that a run with no launch spec row is a bug this throws on rather
 // than papering over.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
@@ -48,7 +51,10 @@ describeIfDb("recordAgentSessionAtProvision / ensureRunSession", () => {
   const definitionId = generateId("workflowDefinition");
   const provisionedRunId = generateId("workflowRun");
   const noLaunchSpecRunId = generateId("workflowRun");
+  const apiDeployedRunId = generateId("workflowRun");
+  const apiDeployedPrincipalId = generateId("principal");
   const sessionId = generateId("session");
+  const apiDeployedSessionId = generateId("session");
   const domain = `agent-session-${tenantId}.localhost`;
 
   beforeAll(async () => {
@@ -77,6 +83,13 @@ describeIfDb("recordAgentSessionAtProvision / ensureRunSession", () => {
         tenantId,
         kind: "workflow",
         refId: provisionedRunId,
+        status: "active",
+      },
+      {
+        id: apiDeployedPrincipalId,
+        tenantId,
+        kind: "workflow",
+        refId: apiDeployedRunId,
         status: "active",
       },
     ]);
@@ -124,6 +137,32 @@ describeIfDb("recordAgentSessionAtProvision / ensureRunSession", () => {
       address: `${noLaunchSpecRunId}@${domain}`,
       status: "deployed",
     });
+
+    // Deployed through Interchange's own deployments route rather than a
+    // Workbench launcher: Interchange itself writes the launch spec (it
+    // mints the session id), but nothing ever calls
+    // `recordAgentSessionAtProvision` for this path, so no `agent_session`
+    // row exists yet. Already anchored with its own principal by the time
+    // `ensureRunSession` is reached, same as at persist/dispatch.
+    await db.db.insert(schema.workflowRun).values({
+      id: apiDeployedRunId,
+      definitionId,
+      anchorRunId: apiDeployedRunId,
+      tenantId,
+      principalId: apiDeployedPrincipalId,
+      address: `${apiDeployedRunId}@${domain}`,
+      status: "running",
+    });
+    await db.db.insert(schema.workflowRunLaunchSpec).values({
+      anchorRunId: apiDeployedRunId,
+      sessionId: apiDeployedSessionId,
+      deploymentDomain: domain,
+      sourceAuthorityPrincipalId: deployingPrincipalId,
+      frozenApprovalBundle: {},
+      sourceOfferingIds: [],
+      defaultSourceOfferingId: "off_test",
+      deployContent: { systemPrompt: "" },
+    });
   });
 
   afterAll(async () => {
@@ -141,11 +180,23 @@ describeIfDb("recordAgentSessionAtProvision / ensureRunSession", () => {
       .delete(schema.workflowRun)
       .where(eq(schema.workflowRun.id, noLaunchSpecRunId));
     await db.db
+      .delete(schema.agentSession)
+      .where(eq(schema.agentSession.id, apiDeployedSessionId));
+    await db.db
+      .delete(schema.workflowRunLaunchSpec)
+      .where(eq(schema.workflowRunLaunchSpec.anchorRunId, apiDeployedRunId));
+    await db.db
+      .delete(schema.workflowRun)
+      .where(eq(schema.workflowRun.id, apiDeployedRunId));
+    await db.db
       .delete(schema.workflowDefinition)
       .where(eq(schema.workflowDefinition.id, definitionId));
     await db.db
       .delete(schema.principal)
       .where(eq(schema.principal.id, runPrincipalId));
+    await db.db
+      .delete(schema.principal)
+      .where(eq(schema.principal.id, apiDeployedPrincipalId));
     await db.db
       .delete(schema.principal)
       .where(eq(schema.principal.id, deployingPrincipalId));
@@ -213,6 +264,40 @@ describeIfDb("recordAgentSessionAtProvision / ensureRunSession", () => {
     // run's own principal, exactly as it would for a folded run.
     const viaVendorLookup = await resolveRunSessionId(db.db, runPrincipalId);
     expect(viaVendorLookup).toBe(sessionId);
+  });
+
+  test("creates the session and collector on first ensure for an API-deployed run", async () => {
+    const createCalls: unknown[] = [];
+    let hasCollector = false;
+    const eventCollectors = {
+      create: (...args: unknown[]) => {
+        createCalls.push(args);
+        hasCollector = true;
+      },
+      has: () => hasCollector,
+    };
+
+    const resolved = await ensureRunSession({
+      db: db.db,
+      eventCollectors,
+      runId: apiDeployedRunId,
+    });
+
+    expect(resolved).toBe(apiDeployedSessionId);
+    expect(createCalls).toEqual([
+      [
+        `${apiDeployedRunId}@${domain}`,
+        tenantId,
+        apiDeployedSessionId,
+        apiDeployedRunId,
+      ],
+    ]);
+
+    const sessionRow = await db.db.query.agentSession.findFirst({
+      where: eq(schema.agentSession.id, apiDeployedSessionId),
+    });
+    expect(sessionRow?.principalId).toBe(apiDeployedPrincipalId);
+    expect(sessionRow?.agentId).toBe(definitionId);
   });
 
   test("throws for a run with no launch spec row", async () => {
