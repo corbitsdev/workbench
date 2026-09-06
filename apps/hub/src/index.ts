@@ -168,6 +168,7 @@ import {
 import {
   createHubMailboxAuthorizeSender,
   createHubMailboxResolveRefs,
+  createHubPersistMailWithSessionEnsure,
 } from "./mailbox-persist";
 import {
   createCommandRegistry,
@@ -196,6 +197,7 @@ import {
   createScheduledWorkflowRoutes,
   renderWorkflowSourceTree,
   WORKFLOW_SOURCE_ENTRY,
+  ensureRunSession,
 } from "@corbits/workflows";
 import {
   createSidecarProvisioner as createE2BSidecarProvisioner,
@@ -219,6 +221,7 @@ import {
   createWorkflowAllocationService,
   createWorkflowDispatchService,
   DEFAULT_ASSET_REF,
+  resolveRoutableAddress,
   WorkflowProvisioningError,
   type AgentRepoStore,
   type EventCollectorRegistry,
@@ -713,6 +716,15 @@ export async function createHub(config: HubConfig) {
       args: Parameters<typeof baseLookups.registerSignalCorrelation>[0],
     ) => Promise<void>;
   } = {};
+  // Forward reference: `eventCollectors` (the wrapped
+  // `EventCollectorRegistry`) isn't constructed until later in this
+  // composition, but `createHubPersistMailWithSessionEnsure` below needs
+  // it. Set once `eventCollectors` exists; every persistMail call before
+  // that point (there are none — the server isn't serving requests yet)
+  // would just no-op.
+  const eventCollectorsRef: {
+    current?: Pick<EventCollectorRegistry, "create" | "has">;
+  } = {};
   // CL-6499 (native multi-step routines): materializes a mail-triggered
   // run's authorization grants from its deploy-approved snapshot, so
   // ANY plain mail delivered to a workflow deployment's address — not
@@ -746,7 +758,11 @@ export async function createHub(config: HubConfig) {
     // workbench ref is present before the post-commit bus event fires --
     // no out-of-band UPDATE, no polling read.
     persistMail: createMailboxPersist(mailboxDb, {
-      upstream: baseLookups.persistMail,
+      upstream: createHubPersistMailWithSessionEnsure(
+        db,
+        eventCollectorsRef,
+        baseLookups.persistMail,
+      ),
       authorizeSender: createHubMailboxAuthorizeSender(db),
       bus: mailboxBus,
       resolveRefs: createHubMailboxResolveRefs(chatStore, roomMessages),
@@ -885,6 +901,17 @@ export async function createHub(config: HubConfig) {
       baseEventCollectors.create(agentAddress, tenantId, sessionId, runId);
     },
     dispatch(agentAddress, event) {
+      // CL-7480: a run's turn events can start arriving before anything
+      // else ever recorded its session — the first inbound trigger that
+      // just reconciled its principal races this same dispatch. No live
+      // collector for the address is exactly that case: ensure the
+      // session (and, inside it, the collector) before delegating,
+      // rather than silently dropping the event for a collector that
+      // never gets created.
+      if (!baseEventCollectors.has(agentAddress)) {
+        void ensureCollectorThenDispatch(agentAddress, event);
+        return;
+      }
       turnLatency.onEvent(agentAddress, event);
       baseEventCollectors.dispatch(agentAddress, event);
       // Mirrors the registry's own `isTerminal` check (event-collector-registry.ts)
@@ -901,6 +928,36 @@ export async function createHub(config: HubConfig) {
       baseEventCollectors.abandon(agentAddress);
     },
   };
+  eventCollectorsRef.current = eventCollectors;
+  // Named so `dispatch`'s no-collector branch above reads clearly; not
+  // inlined there because it needs to be `async` and `dispatch` itself
+  // must stay synchronous (the `EventCollectorRegistry` contract).
+  async function ensureCollectorThenDispatch(
+    agentAddress: string,
+    event: Parameters<EventCollectorRegistry["dispatch"]>[1],
+  ): Promise<void> {
+    try {
+      const run = await resolveRoutableAddress(db, agentAddress);
+      if (run !== undefined) {
+        await ensureRunSession({
+          db,
+          eventCollectors: baseEventCollectors,
+          runId: run.id,
+        });
+      }
+    } catch (err) {
+      reportError(err, {
+        operation: "hub.eventCollectors.ensureRunSession",
+        extra: { agentAddress },
+      });
+    }
+    turnLatency.onEvent(agentAddress, event);
+    baseEventCollectors.dispatch(agentAddress, event);
+    const isTerminal =
+      event.type === "reactor.done" ||
+      (event.type === "reactor.error" && event.data.fatal);
+    if (isTerminal) turnLatency.onSessionEnd(agentAddress);
+  }
   createHubSessionOrchestrator({
     events: sidecarRouter.events,
     router: sidecarRouter,
@@ -2272,7 +2329,6 @@ export async function createHub(config: HubConfig) {
             isRoutable: (address) =>
               sidecarRouter.getRoutableAddresses().includes(address),
             cryptoProviderCache: cryptoProviders,
-            eventCollectors,
             persistLaunch: async (input) => {
               await workbenchLaunchPersistExtra(input)(db);
             },

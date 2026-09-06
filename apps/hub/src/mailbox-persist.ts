@@ -16,6 +16,7 @@ import { tenant as tenantTable } from "@intx/db/schema";
 import type {
   AuthorizeMailboxSender,
   CreateMailboxPersistOpts,
+  MailboxPersistArgs,
   MailboxRef,
 } from "@corbits/mailbox";
 import { resolveRoutableAddress } from "@intx/hub-sessions";
@@ -24,6 +25,8 @@ import {
   type ChatStore,
   type RoomMessageStore,
 } from "@corbits/chat";
+import { ensureRunSession, type EventCollectorPort } from "@corbits/workflows";
+import { reportError } from "@corbits/error-sink";
 
 /**
  * `@corbits/mailbox` does not export `ResolveMailboxRefs` itself (only the
@@ -57,6 +60,48 @@ type ResolveMailboxRefs = NonNullable<
  * fact from two directions: one extra indexed lookup by address per frame,
  * not per recipient.
  */
+/**
+ * Wraps the hub's own `persistMail` (vendor's `baseLookups.persistMail`)
+ * so a run's `agent_session` and event collector exist before that write
+ * runs — CL-7480: the first inbound mail on a freshly triggered run is
+ * often the earliest point the run is mail-routable at all, since
+ * `workflow_run.principal_id` only reconciles onto the trigger that just
+ * fired. Resolves the frame's own sender address to its run
+ * (`resolveRoutableAddress`, the same resolver `persistMail` itself
+ * uses) rather than assuming the caller already knows it; a sender that
+ * is not a live run resolves to `undefined` and this is a no-op past
+ * that point. Best-effort: `ensureRunSession` failing must not swallow
+ * the mail upstream is about to persist regardless, so this only
+ * degrades to "no session yet" rather than ever throwing past itself.
+ *
+ * `eventCollectorsRef` is a forward reference (the same pattern this
+ * file's other composition-order refs use, e.g. `apps/hub/src/index.ts`'s
+ * `grantAllowanceGateRef`): the wrapped `eventCollectors` registry isn't
+ * constructed until after `lookups` is, so this only reads `.current`
+ * inside the returned closure, never at wiring time.
+ */
+export function createHubPersistMailWithSessionEnsure<R>(
+  db: DB["db"],
+  eventCollectorsRef: { current?: Pick<EventCollectorPort, "create" | "has"> },
+  upstream: (args: MailboxPersistArgs) => Promise<R>,
+): (args: MailboxPersistArgs) => Promise<R> {
+  return async (args) => {
+    try {
+      const eventCollectors = eventCollectorsRef.current;
+      const sender = await resolveRoutableAddress(db, args.senderAddress);
+      if (sender !== undefined && eventCollectors !== undefined) {
+        await ensureRunSession({ db, eventCollectors, runId: sender.id });
+      }
+    } catch (err) {
+      reportError(err, {
+        operation: "hub.mailboxPersist.ensureRunSession",
+        extra: { senderAddress: args.senderAddress },
+      });
+    }
+    return upstream(args);
+  };
+}
+
 export function createHubMailboxAuthorizeSender(
   db: DB["db"],
 ): AuthorizeMailboxSender {

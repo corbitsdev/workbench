@@ -17,6 +17,7 @@ import {
   authoredDefinitionCandidates,
   DefinitionProjectionMissingError,
   endAgentSessionForRun,
+  ensureRunSession,
   readFoldedBody,
   resolveNewestProjectedDefinition,
   WORKFLOW_SOURCE_ENTRY,
@@ -258,7 +259,6 @@ export function createHubChatPlatform(
     db: deps.db,
     sessionService: deps.sessionService,
     sidecarRouter: deps.sidecarRouter,
-    eventCollectors: deps.eventCollectors,
   };
 
   function offeringDigest(sourceOfferingIds: readonly string[]): string {
@@ -344,11 +344,12 @@ export function createHubChatPlatform(
           ? { toolPackagePins: input.foldedBody.toolPackagePins }
           : {}),
       });
-    // Not `recordAgentSessionForRun` here: a freshly provisioned run's
+    // Not `ensureRunSession` here: a freshly provisioned run's
     // `workflow_run.principal_id` is still null (an invite sits
     // un-triggered until someone actually writes into it), so this
-    // would only ever no-op. `sendRunMail` records it instead, once the
-    // run's first turn has actually reconciled a principal onto it.
+    // would only ever no-op. The hub's own mail/dispatch seams ensure
+    // the session lazily instead, once the run's first turn has
+    // actually reconciled a principal onto it (CL-7480).
     return {
       runId: prepared.anchorRunId,
       address: prepared.deploymentAddress,
@@ -1313,6 +1314,25 @@ export function createHubChatPlatform(
       // idle sweep the moment they see traffic.
       lifecycle?.track(deliveryAddress);
 
+      // CL-7480: a run just woken/reconciled above can be routable
+      // before anything ever recorded its session — waking it is not
+      // itself a mail or dispatch seam, so nothing else along this path
+      // would ensure one. Best-effort: an ensure failure here still
+      // falls through to `resolveRunSessionIdOrThrow`'s own error.
+      try {
+        await ensureRunSession({
+          db: deps.db,
+          eventCollectors: deps.eventCollectors,
+          runId: delivery.run.id,
+        });
+      } catch (err) {
+        reportError(err, {
+          operation: "chat.sendMail.ensureRunSession",
+          tenantId: input.tenantId,
+          agentId: deliveryAddress,
+          extra: { runId: delivery.run.id },
+        });
+      }
       const sessionId = await resolveRunSessionIdOrThrow(deps.db, delivery.run);
       const domain = domainOf(deliveryAddress);
       // `fromWorkbenchId` names the room a dispatch speaks for. A room

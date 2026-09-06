@@ -13,22 +13,28 @@
 // keys on) is still null the instant `prepareProvisionedDeployment`
 // returns — a provisioned anchor is born "deployed" with no principal,
 // and only the run's first trigger reconciles one onto it (Interchange's
-// `anchorWithPrincipal`, `vendor/intx/db/src/workflow-run-store.ts`),
-// through the exact same trigger path every `sendUserMessage` drives. So
-// this cannot run right after provisioning (an invite sits un-triggered
-// until someone actually writes into it) — call it after a send that
-// just delivered the run's first turn instead. A run with no principal
-// yet is a normal, expected state, not a bug: this returns `false`
-// rather than throwing, and idempotent past its first successful call.
+// `anchorWithPrincipal`, `vendor/intx/db/src/workflow-run-store.ts`).
+// Pre-creating the run's principal to dodge this is not an option either:
+// Interchange's own grant materialization
+// (`vendor/intx/hub-api/src/run-grant-materialization.ts`) inserts the
+// principal row `onConflictDoNothing` and treats a conflict as "grants
+// already committed", throwing rather than re-materializing — so nothing
+// upstream of that first trigger may write the principal first.
+//
+// So `ensureRunSession` (CL-7480) is lazy and idempotent rather than
+// called once right after a send: every seam that might be the run's
+// first mail-routable moment (a hub mailbox persist, a session
+// orchestrator dispatch with no live collector yet) calls it before
+// doing its own work. A run with no principal yet is a normal, expected
+// state, not a bug — this returns `null` rather than throwing.
 import { eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
-import { agentSession, workflowRun } from "@intx/db/schema";
+import {
+  agentSession,
+  workflowRun,
+  workflowRunLaunchSpec,
+} from "@intx/db/schema";
 import type { EventCollectorRegistry } from "@intx/hub-sessions";
-
-export type RecordAgentSessionParams = {
-  /** The id `prepareProvisionedDeployment` was called with. */
-  readonly sessionId: string;
-} & ({ readonly anchorRunId: string } | { readonly address: string });
 
 /**
  * The one port every launcher threads the same wrapped
@@ -37,42 +43,52 @@ export type RecordAgentSessionParams = {
  * is what actually makes `inference_turn`/`turn_part` rows exist for a
  * run (CL-7479: nothing else ever called it once `folded-runs` was
  * deleted); `abandon` tears the collector down when a run's session
- * ends.
+ * ends; `has` lets a caller check whether a collector already exists
+ * before creating a second one.
  */
 export type EventCollectorPort = Pick<
   EventCollectorRegistry,
-  "create" | "abandon"
+  "create" | "abandon" | "has"
 >;
 
 /**
- * Inserts the `agent_session` row a run needs to be mail-routable: the
- * run's `tenantId`, `definitionId` (the `agent_id` FK — the column keeps
- * its old name but targets `workflow_definition` now), and `principalId`
- * are all read fresh off the `workflow_run` row, never guessed by the
- * caller. Returns `false` (and writes nothing) when the row has no
- * principal yet, `true` once the session is recorded (or already was —
- * a second call for the same `sessionId` is a no-op, not a conflict).
+ * Idempotently makes a run's session and event collector exist, the
+ * instant that becomes possible: the run's `tenantId`, `definitionId`
+ * (the `agent_id` FK), and `principalId` are all read fresh off the
+ * `workflow_run` row, never guessed by the caller. Returns `null` (and
+ * writes nothing) when the row has no principal yet — an un-anchored
+ * run is not a bug, just not ensurable yet. Returns the run's
+ * `sessionId` once the session exists (freshly inserted or already
+ * there — a second call for the same run is a no-op, not a conflict),
+ * with the run's event collector created too if none was live for its
+ * address.
  */
-export async function recordAgentSessionForRun(
-  db: DB["db"],
-  params: RecordAgentSessionParams,
-  eventCollectors: Pick<EventCollectorPort, "create">,
-): Promise<boolean> {
+export async function ensureRunSession(params: {
+  readonly db: DB["db"];
+  readonly eventCollectors: Pick<EventCollectorPort, "create" | "has">;
+  readonly runId: string;
+}): Promise<string | null> {
+  const { db, eventCollectors, runId } = params;
   const runRow = await db.query.workflowRun.findFirst({
-    where:
-      "anchorRunId" in params
-        ? eq(workflowRun.id, params.anchorRunId)
-        : eq(workflowRun.address, params.address),
+    where: eq(workflowRun.id, runId),
   });
   if (runRow === undefined || runRow.principalId === null) {
-    return false;
+    return null;
   }
+
+  const launchSpecRow = await db.query.workflowRunLaunchSpec.findFirst({
+    where: eq(workflowRunLaunchSpec.anchorRunId, runId),
+  });
+  if (launchSpecRow === undefined) {
+    return null;
+  }
+  const sessionId = launchSpecRow.sessionId;
 
   const now = new Date();
   await db
     .insert(agentSession)
     .values({
-      id: params.sessionId,
+      id: sessionId,
       tenantId: runRow.tenantId,
       agentId: runRow.definitionId,
       principalId: runRow.principalId,
@@ -82,19 +98,10 @@ export async function recordAgentSessionForRun(
     })
     .onConflictDoNothing({ target: agentSession.id });
 
-  const agentAddress = "address" in params ? params.address : runRow.address;
-  if (agentAddress !== null) {
-    // Idempotent across wakes: a collector already live for this
-    // address is replaced, matching the registry's own contract
-    // (`event-collector-registry.ts`'s `create`).
-    eventCollectors.create(
-      agentAddress,
-      runRow.tenantId,
-      params.sessionId,
-      runRow.id,
-    );
+  if (runRow.address !== null && !eventCollectors.has(runRow.address)) {
+    eventCollectors.create(runRow.address, runRow.tenantId, sessionId, runRow.id);
   }
-  return true;
+  return sessionId;
 }
 
 /**

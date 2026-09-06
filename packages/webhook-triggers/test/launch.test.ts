@@ -88,25 +88,7 @@ function createFakeDb() {
     query: {
       workflowDefinition: { findFirst: async () => DEFINITION_ROW },
       tenant: { findFirst: async () => TENANT_ROW },
-      // `recordAgentSessionForRun` reads the just-provisioned run back by
-      // id — production never inserts this row itself (Interchange's
-      // `prepareProvisionedDeployment` mints the anchor row
-      // transactionally before returning it), so this models the same
-      // row for `INTERCHANGE_RUN_ID`.
-      workflowRun: {
-        findFirst: async () => ({
-          id: INTERCHANGE_RUN_ID,
-          tenantId: TENANT_ROW.id,
-          definitionId: DEFINITION_ROW.id,
-          principalId: "prn_interchange",
-        }),
-      },
     },
-    insert: (_table: unknown) => ({
-      values: (_values: unknown) => ({
-        onConflictDoNothing: async (_opts: unknown) => {},
-      }),
-    }),
   };
 }
 
@@ -197,9 +179,6 @@ function baseDeps() {
       },
     },
     isRoutable: () => isRoutableForTest,
-    eventCollectors: {
-      create: () => undefined,
-    },
   };
 }
 

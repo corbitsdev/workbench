@@ -17,9 +17,7 @@ import {
   deliverWhenRoutable,
   readDefinitionProjection,
   readFoldedBody,
-  recordAgentSessionForRun,
   WORKFLOW_SOURCE_ENTRY,
-  type EventCollectorPort,
 } from "@corbits/workflows";
 import { listVisibleOfferings, type DB } from "@intx/db";
 import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
@@ -59,7 +57,6 @@ export type LaunchWebhookTriggerDeps = {
    */
   isRoutable: (address: string) => boolean;
   cryptoProviderCache: CryptoProviderCache;
-  eventCollectors: Pick<EventCollectorPort, "create">;
   /**
    * Host-supplied cipher. Interchange decrypts bindings inside
    * `prepareProvisionedDeployment`; this port still owns the field so
@@ -240,29 +237,11 @@ export async function launchWebhookTrigger(
     });
   }
 
-  // The delivery attempt above is what drove the run's trigger path,
-  // the only thing that ever reconciles a principal onto a freshly
-  // provisioned `workflow_run` (CL-7477) — recording only now, after
-  // that attempt, is what makes this call ever find one. Best-effort:
-  // a run that never became routable stays without a session until its
-  // first successful send.
-  try {
-    await recordAgentSessionForRun(
-      deps.db,
-      {
-        sessionId,
-        anchorRunId: prepared.anchorRunId,
-      },
-      deps.eventCollectors,
-    );
-  } catch (error) {
-    reportError(error, {
-      operation: "webhookTriggers.launch.recordAgentSession",
-      tenantId: trigger.tenantId,
-      agentId: prepared.deploymentAddress,
-      extra: { instanceId: prepared.anchorRunId },
-    });
-  }
+  // A run's session and event collector are ensured lazily now, at the
+  // hub seams that actually see the run become mail-routable
+  // (`apps/hub/src/mailbox-persist.ts`, the wrapped `eventCollectors`
+  // dispatch in `apps/hub/src/index.ts`) — CL-7480. Nothing here needs
+  // to record it.
 
   return {
     instanceId: prepared.anchorRunId,
