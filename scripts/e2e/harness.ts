@@ -760,7 +760,9 @@ export async function seedNoopCatalogOffering(options: {
     cookies,
   );
   expectStatus("create catalog offering", offering, 201);
-  return { offeringId: stringFieldOf(offering.data, "id", "create catalog offering") };
+  return {
+    offeringId: stringFieldOf(offering.data, "id", "create catalog offering"),
+  };
 }
 
 function stringFieldOf(data: unknown, field: string, what: string): string {

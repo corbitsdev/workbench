@@ -369,74 +369,77 @@ async function main(): Promise<void> {
   // on purpose, so it narrows the bench's own catalog to that model
   // through the catalog API rather than leaving the turn's model to a
   // coin flip the proof is not about.
-  const pinnedOfferingId = await hop("narrow the bench catalog to the pinned model", async () => {
-    await plantGrant("model-offering:*", "read");
-    await plantGrant("model-offering:*", "manage");
-    await plantGrant("model:*", "read");
+  const pinnedOfferingId = await hop(
+    "narrow the bench catalog to the pinned model",
+    async () => {
+      await plantGrant("model-offering:*", "read");
+      await plantGrant("model-offering:*", "manage");
+      await plantGrant("model:*", "read");
 
-    const models = await api(
-      hub.baseUrl,
-      "GET",
-      `/api/tenants/${tenant.tenantId}/catalog/models?limit=200`,
-      undefined,
-      user.cookies,
-    );
-    expectStatus("list the bench catalog models", models, 200);
-    const modelRows = arrayField(models.data, "data", "catalog models") as {
-      id: string;
-      canonicalName: string;
-    }[];
-    const pinned = modelRows.find(
-      (row) => row.canonicalName === proofModelSource.model,
-    );
-    if (pinned === undefined) {
-      throw new Error(
-        `the bench catalog carries no model named ${proofModelSource.model}; ` +
-          `it has ${JSON.stringify(modelRows.map((m) => m.canonicalName))}`,
-      );
-    }
-
-    const offerings = await api(
-      hub.baseUrl,
-      "GET",
-      `/api/tenants/${tenant.tenantId}/catalog/offerings?limit=200`,
-      undefined,
-      user.cookies,
-    );
-    expectStatus("list the bench model offerings", offerings, 200);
-    const offeringRows = arrayField(
-      offerings.data,
-      "data",
-      "model offerings",
-    ) as { id: string; modelId: string; disabled: boolean }[];
-    let pinnedOffering: { id: string; modelId: string } | undefined;
-    for (const offering of offeringRows) {
-      if (offering.modelId === pinned.id) {
-        pinnedOffering = offering;
-        continue;
-      }
-      if (offering.disabled) continue;
-      const patched = await api(
+      const models = await api(
         hub.baseUrl,
-        "PATCH",
-        `/api/tenants/${tenant.tenantId}/catalog/offerings/${offering.id}`,
-        { disabled: true },
+        "GET",
+        `/api/tenants/${tenant.tenantId}/catalog/models?limit=200`,
+        undefined,
         user.cookies,
       );
-      expectStatus(`disable offering ${offering.id}`, patched, 200);
-    }
-    if (pinnedOffering === undefined) {
-      throw new Error(
-        `no catalog offering resolves the pinned model ${proofModelSource.model} ` +
-          `(id ${pinned.id})`,
+      expectStatus("list the bench catalog models", models, 200);
+      const modelRows = arrayField(models.data, "data", "catalog models") as {
+        id: string;
+        canonicalName: string;
+      }[];
+      const pinned = modelRows.find(
+        (row) => row.canonicalName === proofModelSource.model,
       );
-    }
-    console.log(
-      `  TRANSCRIPT — bench catalog narrowed to ${proofModelSource.model} ` +
-        `(${String(offeringRows.length - 1)} other offerings disabled)`,
-    );
-    return pinnedOffering.id;
-  });
+      if (pinned === undefined) {
+        throw new Error(
+          `the bench catalog carries no model named ${proofModelSource.model}; ` +
+            `it has ${JSON.stringify(modelRows.map((m) => m.canonicalName))}`,
+        );
+      }
+
+      const offerings = await api(
+        hub.baseUrl,
+        "GET",
+        `/api/tenants/${tenant.tenantId}/catalog/offerings?limit=200`,
+        undefined,
+        user.cookies,
+      );
+      expectStatus("list the bench model offerings", offerings, 200);
+      const offeringRows = arrayField(
+        offerings.data,
+        "data",
+        "model offerings",
+      ) as { id: string; modelId: string; disabled: boolean }[];
+      let pinnedOffering: { id: string; modelId: string } | undefined;
+      for (const offering of offeringRows) {
+        if (offering.modelId === pinned.id) {
+          pinnedOffering = offering;
+          continue;
+        }
+        if (offering.disabled) continue;
+        const patched = await api(
+          hub.baseUrl,
+          "PATCH",
+          `/api/tenants/${tenant.tenantId}/catalog/offerings/${offering.id}`,
+          { disabled: true },
+          user.cookies,
+        );
+        expectStatus(`disable offering ${offering.id}`, patched, 200);
+      }
+      if (pinnedOffering === undefined) {
+        throw new Error(
+          `no catalog offering resolves the pinned model ${proofModelSource.model} ` +
+            `(id ${pinned.id})`,
+        );
+      }
+      console.log(
+        `  TRANSCRIPT — bench catalog narrowed to ${proofModelSource.model} ` +
+          `(${String(offeringRows.length - 1)} other offerings disabled)`,
+      );
+      return pinnedOffering.id;
+    },
+  );
 
   const assistantDefinitionId = await hop(
     "PROOF 1 — 'assistant' is invitable tenant-wide",
