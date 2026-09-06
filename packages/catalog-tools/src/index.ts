@@ -2,6 +2,9 @@ export {
   fetchChain,
   fetchEstimate,
   listConcepts,
+  UnknownCanonicalNameError,
+  UnknownProviderNameError,
+  type CatalogAdminClientConfig,
   type CatalogToolClientConfig,
   type ChainEntry,
   type ConceptSummary,
@@ -9,10 +12,15 @@ export {
   type ModelChainResult,
 } from "./client";
 export {
+  catalogOfferingTools,
   catalogTools,
   describeChain,
+  CREATE_OFFERING_TOOL,
+  DISABLE_OFFERING_TOOL,
   ESTIMATE_RUN_COST_TOOL,
   LIST_MODEL_CONCEPTS_TOOL,
   PICK_MODELS_TOOL,
+  SET_OFFERING_PRIORITY_TOOL,
   type WorkflowCatalogEnv,
+  type WorkflowCatalogOfferingEnv,
 } from "./tool";

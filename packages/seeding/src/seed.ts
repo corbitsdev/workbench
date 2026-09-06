@@ -663,6 +663,17 @@ export const SEED_GRANTS: readonly { resource: string; action: string }[] = [
   // vocabulary.
   { resource: "asset:*", action: "create" },
   { resource: "asset:*", action: "write" },
+  // CL-7468: `@corbits/catalog-tools`' `create_offering`/
+  // `set_offering_priority`/`disable_offering` resolve a canonical model
+  // name and a provider name to ids (read) before writing the offering
+  // itself (create/manage) through the tenant-admin catalog routes
+  // (`vendor/intx/hub-api/src/routes/{models,model-providers,
+  // model-offerings}.ts`).
+  { resource: "model:*", action: "read" },
+  { resource: "model-provider:*", action: "read" },
+  { resource: "model-offering:*", action: "read" },
+  { resource: "model-offering:*", action: "create" },
+  { resource: "model-offering:*", action: "manage" },
 ];
 
 // The grants table has no unique constraint and the create route is a
