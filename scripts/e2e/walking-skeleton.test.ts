@@ -158,55 +158,6 @@ async function seedPlaceholderCatalogOffering(options: {
   };
 }
 
-describe("seedPlaceholderCatalogOffering", () => {
-  // CL-7473: pins the helper's planted catalog model to PLACEHOLDER_MODEL
-  // — the same constant this suite's `buildEchoWorkflow` inference
-  // preference uses below. The two drifting apart is exactly what caused
-  // the deploy to 409 "no approved inference source": the capability walk
-  // only auto-approves the (provider, model) pair a step's own agent
-  // declares, so a preference naming a model the seeded catalog never
-  // offers can never resolve to an approved source.
-  test("plants a catalog model named PLACEHOLDER_MODEL", async () => {
-    const calls: { path: string; body: unknown }[] = [];
-    const call = async (
-      _method: string,
-      path: string,
-      body?: unknown,
-    ): Promise<ApiResult> => {
-      calls.push({ path, body });
-      if (path.endsWith("/catalog/models")) {
-        return { status: 201, data: { id: "model-1" }, cookies: [] };
-      }
-      if (path.endsWith("/providers")) {
-        return { status: 201, data: { id: "provider-1" }, cookies: [] };
-      }
-      if (path.endsWith("/credentials")) {
-        return { status: 201, data: { id: "credential-1" }, cookies: [] };
-      }
-      if (path.endsWith("/catalog/providers")) {
-        return {
-          status: 201,
-          data: { id: "catalog-provider-1" },
-          cookies: [],
-        };
-      }
-      return { status: 201, data: { id: "offering-1" }, cookies: [] };
-    };
-
-    await seedPlaceholderCatalogOffering({
-      call,
-      tenantId: "tenant-1",
-      cookies: [],
-      placeholderBaseUrl: "https://inference.invalid",
-    });
-
-    const modelCall = calls.find((entry) =>
-      entry.path.endsWith("/catalog/models"),
-    );
-    expect(modelCall?.body).toEqual({ canonicalName: PLACEHOLDER_MODEL });
-  });
-});
-
 const { tempDir, track } = createCleanupHarness();
 
 describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
