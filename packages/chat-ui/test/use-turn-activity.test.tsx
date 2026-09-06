@@ -10,13 +10,13 @@ import { act, createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import { useTurnActivity, TurnActivityStrip } from "../src/turn-activity";
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+import { createFakeClock } from "./fake-clock";
 
 function mount(initialWorkbenchId: string | null, staleMs?: number) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
+  const fakeClock = createFakeClock();
   let send: (eventType: string, data: unknown) => void = () => {};
   let setWorkbenchId: (id: string | null) => void = () => {};
 
@@ -26,6 +26,7 @@ function mount(initialWorkbenchId: string | null, staleMs?: number) {
     const { activity, handleStreamEvent } = useTurnActivity(
       workbenchId,
       staleMs,
+      fakeClock.clock,
     );
     send = handleStreamEvent;
     return createElement(TurnActivityStrip, { activity });
@@ -44,7 +45,7 @@ function mount(initialWorkbenchId: string | null, staleMs?: number) {
       act(() => {
         setWorkbenchId(id);
       }),
-    settle: (ms: number) => act(() => sleep(ms)),
+    settle: (ms: number) => act(() => fakeClock.advance(ms)),
     container,
     unmount: () => act(() => root.unmount()),
   };
