@@ -36,7 +36,9 @@ test("listPrincipals sends sidecar auth and parses the response", async () => {
 
   const result = await listPrincipals(testConfig(fetchImpl));
 
-  expect(seenUrl).toBe("https://hub.example.com/api/workflow-access/principals");
+  expect(seenUrl).toBe(
+    "https://hub.example.com/api/workflow-access/principals",
+  );
   expect(seenHeaders?.["authorization"]).toBe("Bearer sc-token");
   expect(seenHeaders?.["x-workflow-run-address"]).toBe("run_1@workflow");
   expect(result).toEqual([
@@ -149,6 +151,8 @@ test("revokeAccess sends a DELETE to the grant's own path", async () => {
 
   await revokeAccess(testConfig(fetchImpl), "grant_1");
 
-  expect(seenUrl).toBe("https://hub.example.com/api/workflow-access/grants/grant_1");
+  expect(seenUrl).toBe(
+    "https://hub.example.com/api/workflow-access/grants/grant_1",
+  );
   expect(seenMethod).toBe("DELETE");
 });
