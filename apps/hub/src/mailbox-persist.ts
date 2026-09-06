@@ -27,6 +27,9 @@ import {
 } from "@corbits/chat";
 import { ensureRunSession, type EventCollectorPort } from "@corbits/workflows";
 import { reportError } from "@corbits/error-sink";
+import { getLogger } from "@intx/log";
+
+const logger = getLogger(["hub", "mailbox-persist"]);
 
 /**
  * `@corbits/mailbox` does not export `ResolveMailboxRefs` itself (only the
@@ -80,15 +83,15 @@ type ResolveMailboxRefs = NonNullable<
  * constructed until after `lookups` is, so this only reads `.current`
  * inside the returned closure, never at wiring time.
  */
-export function createHubPersistMailWithSessionEnsure<R>(
+export function createHubPersistMailWithSessionEnsure<R extends readonly unknown[]>(
   db: DB["db"],
   eventCollectorsRef: { current?: Pick<EventCollectorPort, "create" | "has"> },
   upstream: (args: MailboxPersistArgs) => Promise<R>,
 ): (args: MailboxPersistArgs) => Promise<R> {
   return async (args) => {
+    const sender = await resolveRoutableAddress(db, args.senderAddress);
     try {
       const eventCollectors = eventCollectorsRef.current;
-      const sender = await resolveRoutableAddress(db, args.senderAddress);
       if (sender !== undefined && eventCollectors !== undefined) {
         await ensureRunSession({ db, eventCollectors, runId: sender.id });
       }
@@ -97,6 +100,24 @@ export function createHubPersistMailWithSessionEnsure<R>(
         operation: "hub.mailboxPersist.ensureRunSession",
         extra: { senderAddress: args.senderAddress },
       });
+    }
+    // The vendored `session_mail` ledger (`upstream`, `baseLookups.persistMail`)
+    // keys on the sender run's principal, which does not exist until the
+    // run's first trigger anchors one — a run's own first outbound mail can
+    // reach this wrapper before that happens. `@corbits/mailbox`'s own write
+    // (this function's caller, `createMailboxPersist`) is keyed on the run
+    // address instead and runs regardless, so it is already the durable
+    // record for this frame; skip the vendored delegate rather than let it
+    // throw "no session for address" past the caller.
+    if (sender !== undefined && sender.sessionId === null) {
+      logger.debug(
+        "skipping vendored persistMail for run {runId}: no session yet",
+        { runId: sender.id, senderAddress: args.senderAddress },
+      );
+      // No `session_mail` rows were written for this frame: an empty
+      // result, not a thrown error, so a caller iterating this like
+      // `handleMailPersist` does simply emits no `mail.persisted` events.
+      return [] as unknown as R;
     }
     return upstream(args);
   };

@@ -198,6 +198,7 @@ import {
   renderWorkflowSourceTree,
   WORKFLOW_SOURCE_ENTRY,
   ensureRunSession,
+  recordAgentSessionAtProvision,
 } from "@corbits/workflows";
 import {
   createSidecarProvisioner as createE2BSidecarProvisioner,
@@ -2074,15 +2075,7 @@ export async function createHub(config: HubConfig) {
       }
 
       try {
-        // Not `recordAgentSessionForRun` here: this mints a deployment
-        // with no message sent against it — a `workflow_run` born this
-        // way carries no principal until its first trigger (a call this
-        // deployer never makes) reconciles one onto it, so the call
-        // would only ever no-op. That trigger runs entirely through
-        // Interchange's own native route, with no Workbench-owned hook
-        // to record the session afterward (CL-7477 tracks the chat,
-        // webhook, and one-shot-prompt launch paths, which all send a
-        // message of their own and record there instead).
+        const sessionId = generateId("session");
         const prepared =
           await workflowAllocationService.prepareProvisionedDeployment({
             tenantId,
@@ -2095,12 +2088,26 @@ export async function createHub(config: HubConfig) {
             },
             entry,
             definitionAssetId: assetId,
-            sessionId: generateId("session"),
+            sessionId,
             sourceAuthorityPrincipalId: principalId,
             sourceOfferingIds,
             defaultSourceOfferingId,
             deployContent: { systemPrompt: "" },
           });
+        // The eager record every native launcher makes right after
+        // `prepareProvisionedDeployment` returns (CL-7481): this
+        // deployment mints no opening message of its own, but the
+        // trigger that eventually reconciles a principal onto it runs
+        // entirely through Interchange's own native route, with no
+        // Workbench-owned hook downstream to record the session
+        // afterward — so this is the only chance to record it at all.
+        await recordAgentSessionAtProvision({
+          db,
+          eventCollectors,
+          runId: prepared.anchorRunId,
+          sessionId,
+          sourceAuthorityPrincipalId: principalId,
+        });
         return {
           deploymentId: prepared.anchorRunId,
           definitionAssetId: assetId,
@@ -2326,6 +2333,7 @@ export async function createHub(config: HubConfig) {
             repoStore: agentRepoStore.repoStore,
             workflowAllocationService,
             credentialCipher,
+            eventCollectors,
             isRoutable: (address) =>
               sidecarRouter.getRoutableAddresses().includes(address),
             cryptoProviderCache: cryptoProviders,

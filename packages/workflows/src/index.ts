@@ -57,6 +57,7 @@ export {
 export { scheduleCronFromProjection } from "./schedule/from-projection";
 export {
   ensureRunSession,
+  recordAgentSessionAtProvision,
   endAgentSessionForPrincipal,
   endAgentSessionForRun,
   type EventCollectorPort,

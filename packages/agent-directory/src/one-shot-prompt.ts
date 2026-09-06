@@ -11,6 +11,7 @@ import {
   endAgentSessionForRun,
   readDefinitionProjection,
   readFoldedBody,
+  recordAgentSessionAtProvision,
   WORKFLOW_SOURCE_ENTRY,
   type EventCollectorPort,
 } from "@corbits/workflows";
@@ -165,10 +166,13 @@ async function provisionOnAsset(
         ? { toolPackagePins: input.foldedBody.toolPackagePins }
         : {}),
     });
-  // Not `ensureRunSession` here: a freshly provisioned run's
-  // `workflow_run.principal_id` is still null until its first trigger
-  // reconciles one onto it, and the hub's own mail/dispatch seams
-  // ensure the session lazily once that happens (CL-7480).
+  await recordAgentSessionAtProvision({
+    db: deps.db,
+    eventCollectors: deps.eventCollectors,
+    runId: prepared.anchorRunId,
+    sessionId,
+    sourceAuthorityPrincipalId: input.principalId,
+  });
   return {
     runId: prepared.anchorRunId,
     address: prepared.deploymentAddress,

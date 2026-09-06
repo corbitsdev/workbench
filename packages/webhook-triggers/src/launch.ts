@@ -17,7 +17,9 @@ import {
   deliverWhenRoutable,
   readDefinitionProjection,
   readFoldedBody,
+  recordAgentSessionAtProvision,
   WORKFLOW_SOURCE_ENTRY,
+  type EventCollectorPort,
 } from "@corbits/workflows";
 import { listVisibleOfferings, type DB } from "@intx/db";
 import { tenant as tenantTable, workflowDefinition } from "@intx/db/schema";
@@ -47,6 +49,13 @@ export type LaunchWebhookTriggerDeps = {
     "prepareProvisionedDeployment"
   >;
   sessionService: Pick<SessionService, "sendUserMessage">;
+  /**
+   * The same wrapped `EventCollectorRegistry` every native launcher
+   * threads through (`apps/hub/src/index.ts`'s `eventCollectors`) — this
+   * launcher records the run's `agent_session` and event collector the
+   * instant `prepareProvisionedDeployment` returns (CL-7481).
+   */
+  eventCollectors: Pick<EventCollectorPort, "create" | "has">;
   /**
    * Reads the hub's live sidecar routing table. A freshly provisioned
    * run's sidecar takes several seconds to boot and register (CL-7476)
@@ -196,6 +205,14 @@ export async function launchWebhookTrigger(
         : {}),
     });
 
+  await recordAgentSessionAtProvision({
+    db: deps.db,
+    eventCollectors: deps.eventCollectors,
+    runId: prepared.anchorRunId,
+    sessionId,
+    sourceAuthorityPrincipalId: trigger.createdBy,
+  });
+
   await deps.persistLaunch({
     tenantId: trigger.tenantId,
     instanceId: prepared.anchorRunId,
@@ -236,12 +253,6 @@ export async function launchWebhookTrigger(
       },
     });
   }
-
-  // A run's session and event collector are ensured lazily now, at the
-  // hub seams that actually see the run become mail-routable
-  // (`apps/hub/src/mailbox-persist.ts`, the wrapped `eventCollectors`
-  // dispatch in `apps/hub/src/index.ts`) — CL-7480. Nothing here needs
-  // to record it.
 
   return {
     instanceId: prepared.anchorRunId,

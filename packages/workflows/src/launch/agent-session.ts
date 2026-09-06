@@ -21,12 +21,21 @@
 // already committed", throwing rather than re-materializing — so nothing
 // upstream of that first trigger may write the principal first.
 //
-// So `ensureRunSession` (CL-7480) is lazy and idempotent rather than
-// called once right after a send: every seam that might be the run's
-// first mail-routable moment (a hub mailbox persist, a session
-// orchestrator dispatch with no live collector yet) calls it before
-// doing its own work. A run with no principal yet is a normal, expected
-// state, not a bug — this returns `null` rather than throwing.
+// CL-7480 made `ensureRunSession` lazy: called from every seam that
+// might be a run's first mail-routable moment, no-opping until a
+// principal existed to key the row on. That left a real gap — a run's
+// very first outbound message can itself be that seam, both for chat's
+// `sendMail` (which looks the session up by run principal) and for the
+// vendored `persistMail` a heartbeat run's own first outbound mail hits
+// — and both landed on an un-anchored run with nothing recorded yet.
+// CL-7481 fixes this at the root: `recordAgentSessionAtProvision` writes
+// the row immediately after `prepareProvisionedDeployment` returns,
+// keyed on the deploying principal (`sourceAuthorityPrincipalId`) since
+// the run principal does not exist yet — every other field the launcher
+// already knows or can read straight off the fresh run row.
+// `ensureRunSession` is now purely a re-key: once the run's first
+// trigger anchors a real principal onto it, this moves `principal_id`
+// onto that principal without ever touching the session id.
 import { eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import {
@@ -52,16 +61,75 @@ export type EventCollectorPort = Pick<
 >;
 
 /**
- * Idempotently makes a run's session and event collector exist, the
- * instant that becomes possible: the run's `tenantId`, `definitionId`
- * (the `agent_id` FK), and `principalId` are all read fresh off the
- * `workflow_run` row, never guessed by the caller. Returns `null` (and
- * writes nothing) when the row has no principal yet — an un-anchored
- * run is not a bug, just not ensurable yet. Returns the run's
- * `sessionId` once the session exists (freshly inserted or already
- * there — a second call for the same run is a no-op, not a conflict),
- * with the run's event collector created too if none was live for its
- * address.
+ * The one shared write every native launcher calls right after its own
+ * `prepareProvisionedDeployment` returns (CL-7481) — a run row exists
+ * the instant that call resolves, so the session it will use is known
+ * then too: the launch-spec `sessionId` it just minted, `tenantId` and
+ * `definitionId` read fresh off the new `workflow_run` row (Interchange
+ * resolves the asset id the caller passed to a real `workflow_definition`
+ * row internally; callers never see that id themselves), and the
+ * deploying principal (`sourceAuthorityPrincipalId`) standing in for the
+ * run's own principal, which does not exist yet. `onConflictDoNothing`
+ * makes a second call for the same run id a no-op. Every launcher threads
+ * the same wrapped `EventCollectorRegistry` through here so the run's
+ * `inference_turn`/`turn_part` rows have somewhere to land from its very
+ * first turn.
+ */
+export async function recordAgentSessionAtProvision(params: {
+  readonly db: DB["db"];
+  readonly eventCollectors: Pick<EventCollectorPort, "create" | "has">;
+  readonly runId: string;
+  readonly sessionId: string;
+  readonly sourceAuthorityPrincipalId: string;
+}): Promise<void> {
+  const { db, eventCollectors, runId, sessionId, sourceAuthorityPrincipalId } =
+    params;
+  const runRow = await db.query.workflowRun.findFirst({
+    where: eq(workflowRun.id, runId),
+  });
+  if (runRow === undefined) {
+    throw new Error(
+      `recordAgentSessionAtProvision: no workflow_run "${runId}" — prepareProvisionedDeployment must have already returned`,
+    );
+  }
+
+  const now = new Date();
+  await db
+    .insert(agentSession)
+    .values({
+      id: sessionId,
+      tenantId: runRow.tenantId,
+      agentId: runRow.definitionId,
+      principalId: sourceAuthorityPrincipalId,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoNothing({ target: agentSession.id });
+
+  if (runRow.address !== null && !eventCollectors.has(runRow.address)) {
+    eventCollectors.create(
+      runRow.address,
+      runRow.tenantId,
+      sessionId,
+      runRow.id,
+    );
+  }
+}
+
+/**
+ * Re-keys a run's `agent_session` onto the run's own principal once
+ * Interchange anchors one (`anchorWithPrincipal`, the run's first
+ * trigger) — before that, the session row is recorded under the
+ * deploying principal by `recordAgentSessionAtProvision`, since the run
+ * principal does not exist yet. The session id never changes; only
+ * `principal_id` moves, and only once (a session already re-keyed to the
+ * current run principal is left alone). The launch-spec row is the
+ * source of truth for which session belongs to this run — its absence
+ * means a launcher provisioned this run without going through the
+ * shared path, which is a bug, not a state to paper over. Also creates
+ * the run's event collector if none is live for its address (a fresh
+ * process has no in-memory collectors regardless of what is on disk).
  */
 export async function ensureRunSession(params: {
   readonly db: DB["db"];
@@ -72,7 +140,7 @@ export async function ensureRunSession(params: {
   const runRow = await db.query.workflowRun.findFirst({
     where: eq(workflowRun.id, runId),
   });
-  if (runRow === undefined || runRow.principalId === null) {
+  if (runRow === undefined) {
     return null;
   }
 
@@ -80,23 +148,28 @@ export async function ensureRunSession(params: {
     where: eq(workflowRunLaunchSpec.anchorRunId, runId),
   });
   if (launchSpecRow === undefined) {
-    return null;
+    throw new Error(
+      `ensureRunSession: no workflow_run_launch_spec for run "${runId}" — every launcher records one at provision time`,
+    );
   }
   const sessionId = launchSpecRow.sessionId;
 
-  const now = new Date();
-  await db
-    .insert(agentSession)
-    .values({
-      id: sessionId,
-      tenantId: runRow.tenantId,
-      agentId: runRow.definitionId,
-      principalId: runRow.principalId,
-      status: "active",
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoNothing({ target: agentSession.id });
+  if (runRow.principalId !== null) {
+    const sessionRow = await db.query.agentSession.findFirst({
+      where: eq(agentSession.id, sessionId),
+    });
+    if (sessionRow === undefined) {
+      throw new Error(
+        `ensureRunSession: no agent_session "${sessionId}" for run "${runId}" — recordAgentSessionAtProvision should have created it at launch`,
+      );
+    }
+    if (sessionRow.principalId !== runRow.principalId) {
+      await db
+        .update(agentSession)
+        .set({ principalId: runRow.principalId, updatedAt: new Date() })
+        .where(eq(agentSession.id, sessionId));
+    }
+  }
 
   if (runRow.address !== null && !eventCollectors.has(runRow.address)) {
     eventCollectors.create(

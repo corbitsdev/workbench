@@ -19,6 +19,7 @@ import {
   endAgentSessionForRun,
   ensureRunSession,
   readFoldedBody,
+  recordAgentSessionAtProvision,
   resolveNewestProjectedDefinition,
   WORKFLOW_SOURCE_ENTRY,
 } from "@corbits/workflows";
@@ -344,12 +345,13 @@ export function createHubChatPlatform(
           ? { toolPackagePins: input.foldedBody.toolPackagePins }
           : {}),
       });
-    // Not `ensureRunSession` here: a freshly provisioned run's
-    // `workflow_run.principal_id` is still null (an invite sits
-    // un-triggered until someone actually writes into it), so this
-    // would only ever no-op. The hub's own mail/dispatch seams ensure
-    // the session lazily instead, once the run's first turn has
-    // actually reconciled a principal onto it (CL-7480).
+    await recordAgentSessionAtProvision({
+      db: deps.db,
+      eventCollectors: deps.eventCollectors,
+      runId: prepared.anchorRunId,
+      sessionId,
+      sourceAuthorityPrincipalId: input.sourceAuthorityPrincipalId,
+    });
     return {
       runId: prepared.anchorRunId,
       address: prepared.deploymentAddress,
