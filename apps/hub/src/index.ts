@@ -23,6 +23,7 @@ import {
   model,
   modelPricing,
   tenant as tenantTable,
+  user as userTable,
   workflowDefinition,
 } from "@intx/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
@@ -92,6 +93,7 @@ import {
   createHubChatPlatform,
   createNoopInferenceRoutes,
   createRelaunchNoticePoster,
+  createRunTriggerClient,
   createWorkflowParticipantRoutes,
   isWorkbenchHostDefinitionName,
   listConnectedProviders,
@@ -105,6 +107,7 @@ import {
   workbenchLaunchPersistExtra,
   createCryptoProviderCache,
   tagCredentialCipher,
+  verifyInternalRunTriggerToken,
 } from "@corbits/chat";
 import {
   createDrizzleMailboxWriter,
@@ -1129,7 +1132,47 @@ export async function createHub(config: HubConfig) {
     workflowAllocationService,
     workflowDispatchService,
     credentialCipher,
+    // `@intx/hub-api`'s `GetSession` is a deliberately pluggable seam
+    // (its own doc comment: "so a third-party identity provider can be
+    // plugged in"), and this composition root owns it. `@corbits/chat`'s
+    // run-trigger client (CL-7490) has no browser cookie to present for
+    // most of its calls — mention fan-out, a relaunch resend, the
+    // mailbox-fanout persist seam all run with no inbound HTTP request
+    // in scope — so it signs a short-lived internal token instead (see
+    // `@corbits/chat`'s `run-trigger-internal-auth.ts`) naming the
+    // better-auth user it authenticates as. This checks that token
+    // FIRST and only falls through to the real cookie-session path when
+    // the header is absent; a PRESENT-but-invalid token fails closed
+    // (401 via a null session) rather than silently retrying as a
+    // session, the same posture `workflow-run-deploy-auth` documents for
+    // its own bearer mirror in `vendor/intx/hub-api`.
     getSession: async (headers) => {
+      const internalRunTriggerToken = headers.get(
+        "x-corbits-internal-run-trigger",
+      );
+      if (internalRunTriggerToken !== null) {
+        const userId = verifyInternalRunTriggerToken(
+          config.sessionSecret,
+          internalRunTriggerToken,
+        );
+        if (userId === null) return null;
+        const userRow = await db.query.user.findFirst({
+          where: eq(userTable.id, userId),
+        });
+        if (userRow === undefined) return null;
+        const now = new Date();
+        return {
+          user: userRow,
+          session: {
+            id: `internal_run_trigger_${userRow.id}`,
+            createdAt: now,
+            updatedAt: now,
+            userId: userRow.id,
+            expiresAt: new Date(now.getTime() + 30_000),
+            token: internalRunTriggerToken,
+          },
+        };
+      }
       const result = await auth.api.getSession({ headers });
       return result ? { user: result.user, session: result.session } : null;
     },
@@ -1430,9 +1473,17 @@ export async function createHub(config: HubConfig) {
   // across consumers. TTL-bounded by `createCryptoProviderCache` itself
   // (CL-7223).
   const cryptoProviders = createCryptoProviderCache();
+  // Delivers chat's outbound run mail through Interchange's own
+  // workflow-run mail-trigger route (CL-7490), in-process against this
+  // same `app` — see `@corbits/chat`'s `run-trigger-client.ts` and the
+  // `getSession` internal-token check above for how it authenticates.
+  const runTrigger = createRunTriggerClient({
+    app,
+    internalAuthSecret: config.sessionSecret,
+  });
   const chatPlatform = createHubChatPlatform({
     db,
-    sessionService,
+    runTrigger,
     repoStore: agentRepoStore.repoStore,
     sidecarRouter,
     eventCollectors,

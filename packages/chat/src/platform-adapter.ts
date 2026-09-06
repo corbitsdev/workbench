@@ -31,6 +31,7 @@ import type { CryptoProviderCache } from "./crypto-cache";
 import { InferenceResolutionError } from "./model-unavailable";
 import type { ToolGrantsForPins } from "./pin-ports";
 import { resolveRunSessionIdOrThrow } from "./run-session";
+import type { RunTriggerClient } from "./run-trigger-client";
 import { sendRunMail, type SendRunMailParams } from "./send-run-mail";
 import {
   findStandingLaunchByDefinition,
@@ -53,6 +54,7 @@ import type { DB } from "@intx/db";
 import { listVisibleOfferings } from "@intx/db";
 import {
   asset as assetTable,
+  principal as principalTable,
   sessionMail,
   tenant as tenantTable,
   workflowDefinition,
@@ -68,7 +70,6 @@ import {
   DEFAULT_ASSET_REF,
   type EventCollectorRegistry,
   type RepoStore,
-  type SessionService,
   type SidecarRouter,
   type WorkflowAllocationService,
 } from "@intx/hub-sessions";
@@ -94,7 +95,15 @@ function domainOf(address: string): string {
 
 export type CreateHubChatPlatformDeps = {
   db: DB["db"];
-  sessionService: Pick<SessionService, "sendUserMessage">;
+  /**
+   * Delivers outbound run mail through Interchange's own workflow-run
+   * mail-trigger route (CL-7490) — see `./run-trigger-client.ts` for why
+   * a raw `sessionService.sendUserMessage` can no longer stand in for
+   * this: it never reaches the trigger route's durable-dispatch branch,
+   * so a provisioned run invited but never yet triggered natively never
+   * gets its first `agent.deploy`.
+   */
+  runTrigger: RunTriggerClient;
   repoStore: Pick<RepoStore, "resolveRef">;
   /**
    * Interchange's provisioned-deployment front. Invite, wake, and
@@ -263,9 +272,67 @@ export function createHubChatPlatform(
   void tagCredentialCipher(deps.credentialCipher);
   const runMailDeps = {
     db: deps.db,
-    sessionService: deps.sessionService,
+    runTrigger: deps.runTrigger,
     sidecarRouter: deps.sidecarRouter,
   };
+
+  /**
+   * Resolves the principal a run-trigger's DB row names, then the
+   * better-auth `user.id` behind it — the identity
+   * `./run-trigger-client.ts` authenticates the trigger call as. Only a
+   * `kind: "user"` principal has a real login identity to authenticate
+   * as; anything else is a wiring bug this throws loud on rather than
+   * silently authenticating as nobody.
+   */
+  async function refIdForUserPrincipal(principalId: string): Promise<string> {
+    const rows = await deps.db
+      .select({ refId: principalTable.refId, kind: principalTable.kind })
+      .from(principalTable)
+      .where(eq(principalTable.id, principalId))
+      .limit(1);
+    const row = rows[0];
+    if (row === undefined || row.kind !== "user") {
+      throw new Error(
+        `principal "${principalId}" is not a user principal chat can authenticate the run trigger as`,
+      );
+    }
+    return row.refId;
+  }
+
+  /**
+   * The identity a `sendMail` call authenticates its run-trigger
+   * delivery as (see `./run-trigger-client.ts`'s `authAsUserId`):
+   * the sending human when `sendMail` named one directly, and
+   * otherwise the run's own workflow definition asset's
+   * `creatorPrincipalId` — the same authority
+   * `sourceAuthorityForAsset` already resolves for provisioning.
+   */
+  async function resolveTriggerAuthUserId(input: {
+    readonly principalId: string | undefined;
+    readonly definitionId: string | null;
+  }): Promise<string> {
+    if (input.principalId !== undefined) {
+      return refIdForUserPrincipal(input.principalId);
+    }
+    if (input.definitionId === null) {
+      throw new Error(
+        "run has no definitionId to resolve a run-trigger authority from",
+      );
+    }
+    const rows = await deps.db
+      .select({ assetId: workflowDefinition.assetId })
+      .from(workflowDefinition)
+      .where(eq(workflowDefinition.id, input.definitionId))
+      .limit(1);
+    const assetId = rows[0]?.assetId;
+    if (assetId === null || assetId === undefined) {
+      throw new Error(
+        `workflow definition "${input.definitionId}" has no asset`,
+      );
+    }
+    const creatorPrincipalId = await sourceAuthorityForAsset(assetId);
+    return refIdForUserPrincipal(creatorPrincipalId);
+  }
 
   function offeringDigest(sourceOfferingIds: readonly string[]): string {
     // `sources_digest` is a `text` column and this digest rides straight
@@ -974,7 +1041,11 @@ export function createHubChatPlatform(
    */
   async function sendRunMailWithReclaimRetry(
     params: SendRunMailParams,
-    reresolve: () => Promise<{ agentAddress: string; sessionId: string }>,
+    reresolve: () => Promise<{
+      agentAddress: string;
+      anchorRunId: string;
+      sessionId: string;
+    }>,
   ): Promise<Awaited<ReturnType<typeof sendRunMail>>> {
     let current = params;
     let wakedOnFailure = false;
@@ -1012,6 +1083,7 @@ export function createHubChatPlatform(
             current = {
               ...current,
               agentAddress: fresh.agentAddress,
+              anchorRunId: fresh.anchorRunId,
               sessionId: fresh.sessionId,
             };
             throw err;
@@ -1370,14 +1442,21 @@ export function createHubChatPlatform(
         }),
       );
 
+      const authAsUserId = await resolveTriggerAuthUserId({
+        principalId: input.principalId,
+        definitionId: delivery.run.definitionId,
+      });
+
       const sendMailBase = {
         tenantId: input.tenantId,
         sessionId,
         agentAddress: deliveryAddress,
+        anchorRunId: delivery.run.id,
         from,
         domain,
         content: input.content.content,
         cryptoProvider,
+        authAsUserId,
       };
       const withAttachments =
         attachments !== undefined
@@ -1424,6 +1503,7 @@ export function createHubChatPlatform(
           }
           return {
             agentAddress: relive.binding.liveAddress,
+            anchorRunId: relive.run.id,
             sessionId: await resolveRunSessionIdOrThrow(deps.db, relive.run),
           };
         },
