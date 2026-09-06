@@ -322,6 +322,20 @@ export type {
   CreateHubChatPlatformDeps,
   HubChatPlatform,
 } from "./platform-adapter";
+export {
+  createRunTriggerClient,
+  RunTriggerError,
+} from "./run-trigger-client";
+export type {
+  RunTriggerClient,
+  RunTriggerClientDeps,
+  TriggerWorkflowRunMailInput,
+  TriggeredWorkflowRunMail,
+} from "./run-trigger-client";
+export {
+  signInternalRunTriggerToken,
+  verifyInternalRunTriggerToken,
+} from "./run-trigger-internal-auth";
 export { createCryptoProviderCache } from "./crypto-cache";
 export type { CryptoProviderCache } from "./crypto-cache";
 export { tagCredentialCipher } from "./credential-cipher-tag";
