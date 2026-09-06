@@ -1,0 +1,32 @@
+{
+  "name": "@corbits/access-tools",
+  "private": true,
+  "description": "Myra's principal and grant tools: list_principals, list_grants, grant_access, and revoke_access as an @intx/agent tool bundle, plus the workflow-run-authenticated routes they call — a thin wrapper over the tenant's real principal/grant rows and Interchange's own grant-store authorization, never a reimplementation of authz",
+  "version": "0.0.1",
+  "license": "LGPL-2.1-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./routes": "./src/routes.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@corbits/error-sink": "workspace:*",
+    "@intx/agent": "workspace:*",
+    "@intx/authz": "0.3.0",
+    "@intx/db": "workspace:*",
+    "@intx/hub-api": "workspace:*",
+    "@intx/hub-common": "0.3.0",
+    "@intx/types": "workspace:*",
+    "arktype": "catalog:",
+    "drizzle-orm": "catalog:",
+    "hono": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:"
+  }
+}

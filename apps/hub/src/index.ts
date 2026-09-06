@@ -166,6 +166,7 @@ import {
   createSidecarPlacementRoutes,
 } from "@corbits/sidecar-placement";
 import { createWorkflowCatalogAdminRoutes } from "@corbits/catalog-tools/routes";
+import { createWorkflowAccessRoutes } from "@corbits/access-tools/routes";
 import { generateId } from "@intx/hub-common";
 
 import { ensureDefaultTenant } from "./default-tenant";
@@ -2885,6 +2886,24 @@ export async function createHub(config: HubConfig) {
       conditionRegistry: chatConditionRegistry,
       sidecarRouter,
       credentialCipher,
+    }),
+  );
+  // Myra's own principal/grant surface (`@corbits/access-tools`'
+  // `list_principals`/`list_grants`/`grant_access`/`revoke_access`): the
+  // workflow-run-authenticated counterpart to the tenant-session
+  // `/api/tenants/:tenantId/principals` and `/grants` routes
+  // `@intx/hub-api` mounts above. Reuses the SAME `chatGrantStore`/
+  // `chatConditionRegistry` every other extension's own requireGrant
+  // check runs against, so a seeded principal's real grants (see
+  // `@corbits/seeding`'s `SEED_GRANTS`) gate this surface exactly like
+  // every other write route.
+  app.route(
+    "/api/workflow-access",
+    createWorkflowAccessRoutes({
+      db,
+      authenticator: createWorkflowRunAuthenticator({ db }),
+      grantStore: chatGrantStore,
+      conditionRegistry: chatConditionRegistry,
     }),
   );
   // Notify-to-reconnect for an OAuth-connected credential whose token
