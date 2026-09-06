@@ -870,10 +870,15 @@ describe("createHubChatPlatform", () => {
         displayName: null,
       },
       definitionId: "wfd_workbench1",
+      // CL-7490: `wakeByAddress` only ever redeploys a genuinely dead
+      // run now — a merely not-yet-routable one is booting and is
+      // waited on, never redeployed — so this run must be terminal for
+      // the deploy failure below to actually be reached.
       workflowRunRow: {
         id: "ins_workbench1",
         address: "ins_workbench1@ten1.workbench.test",
         principalId: "prin_run1",
+        status: "failed",
       },
       workbenchLaunchRow: {
         tenantId: "ten_1",
@@ -947,10 +952,13 @@ describe("createHubChatPlatform", () => {
         displayName: null,
       },
       definitionId: "wfd_workbench1",
+      // CL-7490: same reasoning as above — the run must be terminal for
+      // `wakeByAddress` to attempt a redeploy at all.
       workflowRunRow: {
         id: "ins_workbench1",
         address: "ins_workbench1@ten1.workbench.test",
         principalId: "prin_run1",
+        status: "failed",
       },
       workbenchLaunchRow: {
         tenantId: "ten_1",
@@ -2028,7 +2036,12 @@ describe("createHubChatPlatform", () => {
   // when `deps.lifecycle` is configured, and that `sendMail` actually
   // redeploys a non-routable target before sending.
   describe("lifecycle wiring", () => {
-    test("sendMail wakes a non-routable workbench by redeploying before sending, then sends", async () => {
+    // CL-7490: a provisioned anchor stays "deployed" until its first
+    // trigger, so a run mid-boot looks exactly like this — live, not yet
+    // routable. `wakeByAddress` must not relaunch it; the run is waited
+    // on (`deliverWhenRoutable`, via `sendRunMailWithReclaimRetry`) until
+    // the sidecar finishes registering, then delivered once.
+    test("sendMail waits on a deployed, not-yet-routable workbench and delivers once it becomes routable, without relaunching it", async () => {
       resolveDefinitionSourcesResult = {
         ok: true,
         materials: [],
@@ -2044,6 +2057,7 @@ describe("createHubChatPlatform", () => {
         defaultSource: "off_1",
       };
 
+      const address = "ins_workbench1@ten1.workbench.test";
       const db = createFakeDb({
         assetRow: {
           tenantId: "ten_1",
@@ -2054,9 +2068,10 @@ describe("createHubChatPlatform", () => {
         definitionId: "wfd_workbench1",
         workflowRunRow: {
           id: "ins_workbench1",
-          address: "ins_workbench1@ten1.workbench.test",
-          principalId: "prin_run1",
+          address,
+          principalId: null,
           definitionId: "wfd_workbench1",
+          status: "deployed",
         },
         workflowDefinitionRow: {
           id: "wfd_workbench1",
@@ -2083,9 +2098,22 @@ describe("createHubChatPlatform", () => {
       });
 
       const sessionService = createFakeSessionService();
-      // Not in the sidecar's routable set: this workbench is asleep (or
-      // never came back after a restart) when the send arrives.
+      let sendAttempts = 0;
+      sessionService.sendUserMessage = async (params: unknown) => {
+        sessionService.sendUserMessageCalls.push(params);
+        sendAttempts += 1;
+        // The first attempt lands while the sidecar is still booting.
+        if (sendAttempts === 1) {
+          throw new Error("agent is unreachable");
+        }
+        return new TextEncoder().encode("raw-mime-bytes");
+      };
+      // Not routable yet — the sidecar is still finishing its boot;
+      // it registers a moment later, on its own, with no redeploy.
       const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
+      setTimeout(() => {
+        sidecarRouter.routableAddresses.push(address);
+      }, 10);
       const eventCollectors = createFakeEventCollectors();
 
       const platform = createPlatform({
@@ -2105,8 +2133,10 @@ describe("createHubChatPlatform", () => {
       });
 
       expect(sent.id).toBeTruthy();
-      expect(lastAllocationService.prepareCalls).toHaveLength(1);
-      expect(sessionService.sendUserMessageCalls).toHaveLength(1);
+      // No relaunch: the booting run kept its own run id and address —
+      // `wakeByAddress` never called `prepareProvisionedDeployment`.
+      expect(lastAllocationService.prepareCalls).toHaveLength(0);
+      expect(sessionService.sendUserMessageCalls).toHaveLength(2);
     });
 
     // CL-6267: the sidecar's own park/wake handler now owns respawning
@@ -2507,7 +2537,13 @@ describe("createHubChatPlatform", () => {
       expect(lastAllocationService.prepareCalls).toHaveLength(0);
     });
 
-    test("redeploys a non-routable address when lifecycle is configured", async () => {
+    // CL-7490: `ensureAwake` (via `wakeByAddress`) must not redeploy a
+    // merely not-yet-routable run — only a genuinely terminal one. A
+    // `deployed`/`running` run that has not yet registered is left alone
+    // here (no unit test needed for that: `wakeByAddress` becomes a
+    // pure no-op, nothing to assert beyond "did not call prepare", which
+    // the failed-run tests below cover by contrast).
+    test("relaunches a failed, non-routable address exactly once when lifecycle is configured", async () => {
       resolveDefinitionSourcesResult = {
         ok: true,
         materials: [],
@@ -2535,6 +2571,7 @@ describe("createHubChatPlatform", () => {
           id: "ins_workbench1",
           address,
           principalId: "prin_run1",
+          status: "failed",
         },
         workbenchLaunchRow: {
           tenantId: "ten_1",
@@ -2568,7 +2605,7 @@ describe("createHubChatPlatform", () => {
       expect(lastAllocationService.prepareCalls).toHaveLength(1);
     });
 
-    test("redeploys a non-routable address when lifecycle is not configured", async () => {
+    test("relaunches a failed, non-routable address exactly once when lifecycle is not configured", async () => {
       resolveDefinitionSourcesResult = {
         ok: true,
         materials: [],
@@ -2596,6 +2633,7 @@ describe("createHubChatPlatform", () => {
           id: "ins_workbench1",
           address,
           principalId: "prin_run1",
+          status: "failed",
         },
         workbenchLaunchRow: {
           tenantId: "ten_1",
@@ -2652,143 +2690,16 @@ describe("createHubChatPlatform", () => {
     });
   });
 
-  // CL-7214: `sendRunMailWithReclaimRetry`'s reclaim-retry loop used
-  // to call `wakeByAddress` directly, bypassing `lifecycle.ensureAwake`'s
-  // per-address coalescing entirely. Proves that a reclaim-retry wake and
-  // an independent, concurrent `ensureAwake` call for the same address
-  // now coalesce onto the same in-flight wake — never dispatching a
-  // second, concurrent `wakeByAddress` that would race the first on the
-  // same `session_asset` primary key and git ref.
-  describe("wakeByAddressBounded reclaim-retry coalescing", () => {
-    test("a reclaim-retry wake and a concurrent ensureAwake call for the same address never redeploy it twice", async () => {
-      resolveDefinitionSourcesResult = {
-        ok: true,
-        materials: [],
-        sources: [
-          {
-            id: "off_1",
-            provider: "anthropic",
-            baseURL: "https://inference.invalid",
-            credentialId: "cred_placeholder",
-            model: "claude-sonnet-5",
-          },
-        ],
-        defaultSource: "off_1",
-      };
-      const address = "ins_workbench1@ten1.workbench.test";
-      const db = createFakeDb({
-        assetRow: {
-          tenantId: "ten_1",
-          creatorPrincipalId: "prin_creator",
-          name: "workbench-1",
-          displayName: null,
-        },
-        definitionId: "wfd_workbench1",
-        workflowRunRow: {
-          id: "ins_workbench1",
-          address,
-          principalId: "prin_run1",
-        },
-        workbenchLaunchRow: {
-          tenantId: "ten_1",
-          instanceId: "ins_workbench1",
-          foldedBody: {
-            systemPrompt: "host prompt",
-            model: "claude-sonnet-5",
-            toolPackagePins: [],
-            grantRequirements: [],
-            credentialBindings: [],
-          },
-        },
-      });
-      db.inserted.push({
-        table: agentSession,
-        values: { id: "ses_run1", principalId: "prin_run1" },
-      });
-
-      const sessionService = createFakeSessionService();
-      let sendAttempts = 0;
-      sessionService.sendUserMessage = async (params: unknown) => {
-        sessionService.sendUserMessageCalls.push(params);
-        sendAttempts += 1;
-        // The first delivery attempt fails as "agent is unreachable",
-        // forcing `sendFoldedMailWithReclaimRetry` down its reclaim
-        // path — the call site that used to bypass coalescing.
-        if (sendAttempts === 1) {
-          throw new Error("agent is unreachable");
-        }
-        return new TextEncoder().encode("raw-mime-bytes");
-      };
-
-      // The first provision (the cold wake before the first send attempt)
-      // resolves immediately; every prepare after it is held open until
-      // the test releases it, so the reclaim-retry's redeploy is still
-      // in flight when the concurrent `ensureAwake` call joins it.
-      let deployCallCount = 0;
-      const gatedDeployReleases: (() => void)[] = [];
-      const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
-      const allocationService = createFakeWorkflowAllocationService();
-      const originalPrepare =
-        allocationService.prepareProvisionedDeployment.bind(allocationService);
-      allocationService.prepareProvisionedDeployment = async (
-        params: Parameters<typeof originalPrepare>[0],
-      ) => {
-        const result = await originalPrepare(params);
-        deployCallCount += 1;
-        if (deployCallCount >= 2) {
-          await new Promise<void>((resolve) => {
-            gatedDeployReleases.push(resolve);
-          });
-          // Models the sidecar registering once the reclaim retry's own
-          // redeploy actually completes — the routable-wait
-          // `sendRunMailWithReclaimRetry` now does (CL-7488) needs this
-          // to see the retried send through. The cold wake ahead of the
-          // first send attempt deliberately stays unrouted so that
-          // attempt still finds `wakeByAddress`'s own routability check
-          // false and takes the reclaim-retry path this test exercises.
-          sidecarRouter.routableAddresses.push(result.deploymentAddress);
-        }
-        return result;
-      };
-
-      const platform = createPlatform({
-        toolGrantsForPins: () => [],
-        db: db as never,
-        sessionService,
-        sidecarRouter,
-        eventCollectors: createFakeEventCollectors(),
-        lifecycle: { idleSleepMs: 60_000 },
-        routableWaitDeadlineMs: 5_000,
-        mailDeliveryTimeoutMs: 5_000,
-        workflowAllocationService: allocationService,
-      });
-
-      const sendMailPromise = platform.sendMail({
-        tenantId: "ten_1",
-        workbenchId: "ins_workbench1",
-        principalId: "prin_sender",
-        content: { content: "hello workbench" },
-      });
-
-      // Let the cold wake (prepare #1) resolve, the first send attempt
-      // fail, and the reclaim retry's own wake (prepare #2) start and
-      // gate.
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      expect(deployCallCount).toBe(2);
-
-      // A second, independent caller asks for the same address while
-      // prepare #2 is still in flight — the concurrent-wake race CL-7214
-      // closes.
-      const ensureAwakePromise = platform.ensureAwake(address);
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      expect(deployCallCount).toBe(2);
-
-      gatedDeployReleases.forEach((release) => release());
-      await Promise.all([sendMailPromise, ensureAwakePromise]);
-
-      expect(deployCallCount).toBe(2);
-    });
-  });
+  // CL-7214 proved `sendRunMailWithReclaimRetry`'s reclaim-retry wake and
+  // an independent, concurrent `ensureAwake` call coalesced onto the same
+  // in-flight redeploy rather than racing two `prepareProvisionedDeployment`
+  // calls on the same `session_asset` primary key and git ref. That
+  // redeploy is no longer wakeByAddress's behavior for a live, merely
+  // not-yet-routable run (CL-7490) — the only thing left to redeploy is a
+  // genuinely terminal run, and the coalescing that guards a concurrent
+  // redeploy of it is `@corbits/agent-lifecycle`'s `pendingWakes` map,
+  // proven directly in that package's own test suite (see the note above
+  // `describe("lifecycle wiring", ...)`), not re-proven here.
 
   // CL-7486: `sendRunMailWithReclaimRetry` used to retry every attempt
   // against the address it started with, even after a wake in between
@@ -2954,7 +2865,7 @@ describe("createHubChatPlatform", () => {
       model: "claude-sonnet-5",
     });
 
-    function buildRefreshableDb() {
+    function buildRefreshableDb(workflowRunStatus?: string) {
       return createFakeDb({
         assetRow: {
           tenantId: "ten_1",
@@ -2968,6 +2879,9 @@ describe("createHubChatPlatform", () => {
           address: "agent1@ten1.workbench.test",
           principalId: "prin_agent1",
           definitionId: "wfd_agent1",
+          ...(workflowRunStatus !== undefined
+            ? { status: workflowRunStatus }
+            : {}),
         },
         workflowDefinitionRow: {
           id: "wfd_agent1",
@@ -3032,7 +2946,12 @@ describe("createHubChatPlatform", () => {
         defaultSource: "off_1",
       };
 
-      const db = buildRefreshableDb();
+      // CL-7490: `wakeByAddress` no longer redeploys a merely
+      // not-yet-routable run — only a genuinely dead one, so this run
+      // must actually be terminal (not just offline) for `sendMail`'s
+      // wake-on-send path to be the one that carries the refreshed
+      // system prompt into a fresh deploy.
+      const db = buildRefreshableDb("failed");
       db.inserted.push({
         table: agentSession,
         values: { id: "ses_agent1", principalId: "prin_agent1" },
