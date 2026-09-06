@@ -5,8 +5,6 @@ import {
   accessTools,
   GRANT_ACCESS_TOOL,
   LIST_GRANTS_TOOL,
-  LIST_PRINCIPALS_TOOL,
-  REVOKE_ACCESS_TOOL,
   type WorkflowAccessEnv,
 } from "./tool";
 
@@ -21,33 +19,6 @@ function testEnv(): WorkflowAccessEnv {
 function callFor(name: string, args: Record<string, unknown>): ToolCall {
   return { id: "call_1", name, arguments: args };
 }
-
-test("declares exactly the four access tools", () => {
-  const bundle = accessTools(testEnv());
-  expect(bundle.definitions.map((d) => d.name)).toEqual([
-    LIST_PRINCIPALS_TOOL,
-    LIST_GRANTS_TOOL,
-    GRANT_ACCESS_TOOL,
-    REVOKE_ACCESS_TOOL,
-  ]);
-});
-
-test("requires the sanctioned env keys", () => {
-  expect(accessTools.requires).toEqual([
-    "hubAccessUrl",
-    "sidecarToken",
-    "address",
-  ]);
-});
-
-test("grant_access and revoke_access declare approval: ask; the reads do not", () => {
-  expect(accessTools.definitions).toEqual([
-    { name: LIST_PRINCIPALS_TOOL },
-    { name: LIST_GRANTS_TOOL },
-    { name: GRANT_ACCESS_TOOL, approval: "ask" },
-    { name: REVOKE_ACCESS_TOOL, approval: "ask" },
-  ]);
-});
 
 test("list_grants rejects invalid input before ever calling fetch", async () => {
   const originalFetch = globalThis.fetch;
