@@ -331,7 +331,10 @@ export async function createOffering(
     "/offerings",
     "Creating the offering",
     (raw) => ModelOfferingResponse(raw),
-    { method: "POST", body: JSON.stringify(CreateModelOffering.assert(request)) },
+    {
+      method: "POST",
+      body: JSON.stringify(CreateModelOffering.assert(request)),
+    },
   );
 }
 

@@ -49,7 +49,10 @@ import {
   type CredentialCipher,
 } from "@intx/types";
 import { makeErrorEnvelope } from "@corbits/error-sink";
-import { pushSourceUpdatesSubtree, type SidecarRouter } from "@intx/hub-sessions";
+import {
+  pushSourceUpdatesSubtree,
+  type SidecarRouter,
+} from "@intx/hub-sessions";
 
 export type WorkflowCatalogAdminRunScope = {
   readonly tenantId: string;
@@ -258,44 +261,42 @@ export function createWorkflowCatalogAdminRoutes(
     return c.json(paginatedResponse(rows.map(formatModel), rows, limit));
   });
 
-  app.get(
-    "/providers",
-    requireGrant("model-provider:*", "read"),
-    async (c) => {
-      const tenantCtx = c.get("tenant");
-      const { limit, cursor } = parsePageParams({
-        cursor: c.req.query("cursor"),
-        limit: c.req.query("limit"),
-      });
-      const conditions = [eq(modelProvider.tenantId, tenantCtx.id)];
-      if (cursor) {
-        conditions.push(
-          or(
-            lt(modelProvider.createdAt, new Date(cursor.t)),
-            and(
-              eq(modelProvider.createdAt, new Date(cursor.t)),
-              lt(modelProvider.id, cursor.id),
-            ),
-          ) ?? eq(modelProvider.id, modelProvider.id),
-        );
-      }
-      const rows = await deps.db.query.modelProvider.findMany({
-        where: and(...conditions),
-        orderBy: [desc(modelProvider.createdAt), desc(modelProvider.id)],
-        limit,
-      });
-      return c.json(
-        paginatedResponse(rows.map(formatModelProvider), rows, limit),
+  app.get("/providers", requireGrant("model-provider:*", "read"), async (c) => {
+    const tenantCtx = c.get("tenant");
+    const { limit, cursor } = parsePageParams({
+      cursor: c.req.query("cursor"),
+      limit: c.req.query("limit"),
+    });
+    const conditions = [eq(modelProvider.tenantId, tenantCtx.id)];
+    if (cursor) {
+      conditions.push(
+        or(
+          lt(modelProvider.createdAt, new Date(cursor.t)),
+          and(
+            eq(modelProvider.createdAt, new Date(cursor.t)),
+            lt(modelProvider.id, cursor.id),
+          ),
+        ) ?? eq(modelProvider.id, modelProvider.id),
       );
-    },
-  );
+    }
+    const rows = await deps.db.query.modelProvider.findMany({
+      where: and(...conditions),
+      orderBy: [desc(modelProvider.createdAt), desc(modelProvider.id)],
+      limit,
+    });
+    return c.json(
+      paginatedResponse(rows.map(formatModelProvider), rows, limit),
+    );
+  });
 
   app.post(
     "/offerings",
     requireGrant("model-offering:*", "create"),
     async (c) => {
       const tenantCtx = c.get("tenant");
-      const body = CreateModelOffering(await c.req.json().catch(() => undefined));
+      const body = CreateModelOffering(
+        await c.req.json().catch(() => undefined),
+      );
       if (body instanceof type.errors) {
         return c.json(
           makeErrorEnvelope({
@@ -307,7 +308,10 @@ export function createWorkflowCatalogAdminRoutes(
       }
 
       const modelRow = await deps.db.query.model.findFirst({
-        where: and(eq(model.id, body.modelId), eq(model.tenantId, tenantCtx.id)),
+        where: and(
+          eq(model.id, body.modelId),
+          eq(model.tenantId, tenantCtx.id),
+        ),
       });
       if (modelRow === undefined) {
         return c.json(
@@ -389,7 +393,9 @@ export function createWorkflowCatalogAdminRoutes(
     async (c) => {
       const tenantCtx = c.get("tenant");
       const offeringId = c.req.param("offeringId");
-      const body = UpdateModelOffering(await c.req.json().catch(() => undefined));
+      const body = UpdateModelOffering(
+        await c.req.json().catch(() => undefined),
+      );
       if (body instanceof type.errors) {
         return c.json(
           makeErrorEnvelope({

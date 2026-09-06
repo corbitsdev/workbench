@@ -299,9 +299,7 @@ const OFFERING_ROW = {
 /** Routes a stub fetch by which tenant-admin path it hits, rather than
  * one fixed body — `create_offering` makes several calls in sequence
  * (list models, list providers, then create). */
-function routedFetch(
-  handlers: Record<string, () => Response>,
-): typeof fetch {
+function routedFetch(handlers: Record<string, () => Response>): typeof fetch {
   return (async (input: string) => {
     const url = new URL(input);
     for (const [suffix, handler] of Object.entries(handlers)) {
@@ -379,9 +377,7 @@ describe("create_offering", () => {
       new AbortController().signal,
     );
     expect(result.isError).toBe(true);
-    expect(String(result.content)).toContain(
-      'No model named "does-not-exist"',
-    );
+    expect(String(result.content)).toContain('No model named "does-not-exist"');
   });
 
   test("a 403 from the hub surfaces as a refusal, not a thrown crash", async () => {

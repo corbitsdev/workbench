@@ -535,7 +535,8 @@ export const catalogOfferingTools = defineTool<WorkflowCatalogOfferingEnv>({
           properties: {
             offeringId: {
               type: "string",
-              description: "The offering's id, from create_offering or " +
+              description:
+                "The offering's id, from create_offering or " +
                 "the workbench's own catalog listing.",
             },
             priority: {

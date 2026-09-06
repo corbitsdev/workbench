@@ -30,15 +30,14 @@ const ACTIVE_PRINCIPAL = {
 
 function fakeDb(overrides?: {
   tenant?: typeof ACTIVE_TENANT | undefined;
-  principal?: (Omit<typeof ACTIVE_PRINCIPAL, "status"> & { status: string }) | undefined;
+  principal?:
+    (Omit<typeof ACTIVE_PRINCIPAL, "status"> & { status: string }) | undefined;
 }) {
   return {
     query: {
       tenant: {
         findFirst: async () =>
-          overrides && "tenant" in overrides
-            ? overrides.tenant
-            : ACTIVE_TENANT,
+          overrides && "tenant" in overrides ? overrides.tenant : ACTIVE_TENANT,
       },
       principal: {
         findFirst: async () =>
@@ -86,7 +85,9 @@ function resolvingAuthenticator(): WorkflowRunAuthenticator {
   };
 }
 
-function requestModels(app: ReturnType<typeof createWorkflowCatalogAdminRoutes>) {
+function requestModels(
+  app: ReturnType<typeof createWorkflowCatalogAdminRoutes>,
+) {
   return app.request("/models", {
     headers: {
       authorization: "Bearer sc-token",
