@@ -2,11 +2,11 @@
 // repo's convention for tests that talk to a real Postgres (see
 // `packages/access-tools/test/routes.test.ts`).
 //
-// CL-7477: before this fix, nothing wrote `agent_session` for a native
-// launch, so `resolveRunSessionId` (vendor's mail-routing lookup) could
-// never find a session for a run's principal and every launch's first
-// turn failed to persist mail. This proves `recordAgentSessionForRun`
-// writes a row `resolveRunSessionId` actually reads back.
+// CL-7477/CL-7480: nothing writes `agent_session` for a native launch
+// until something calls `ensureRunSession` — this proves it writes a
+// row `resolveRunSessionId` (vendor's mail-routing lookup) actually
+// reads back, only once the run is anchored with a principal, and stays
+// idempotent (one insert, one collector) across repeated calls.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 
@@ -15,10 +15,7 @@ import { generateId } from "@intx/hub-common";
 import { resolveRunSessionId } from "@intx/hub-sessions";
 import { dbGate } from "../../../scripts/e2e/db-gate";
 
-import {
-  endAgentSessionForRun,
-  recordAgentSessionForRun,
-} from "../src/launch/agent-session";
+import { ensureRunSession } from "../src/launch/agent-session";
 
 function dbConfigFromUrl(databaseUrl: string) {
   const url = new URL(databaseUrl);
@@ -34,14 +31,16 @@ function dbConfigFromUrl(databaseUrl: string) {
 const databaseUrl = process.env["DATABASE_URL"];
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
-describeIfDb("recordAgentSessionForRun", () => {
+describeIfDb("ensureRunSession", () => {
   let db: DB;
 
   const tenantId = generateId("tenant");
   const principalId = generateId("principal");
   const definitionId = generateId("workflowDefinition");
-  const anchorRunId = generateId("workflowRun");
+  const anchoredRunId = generateId("workflowRun");
+  const unanchoredRunId = generateId("workflowRun");
   const sessionId = generateId("session");
+  const domain = `agent-session-${tenantId}.localhost`;
 
   beforeAll(async () => {
     if (databaseUrl === undefined) return;
@@ -51,7 +50,7 @@ describeIfDb("recordAgentSessionForRun", () => {
       id: tenantId,
       name: "Agent Session Test Tenant",
       slug: `agent-session-${tenantId}`,
-      domain: `agent-session-${tenantId}.localhost`,
+      domain,
       parentId: null,
       config: null,
     });
@@ -60,7 +59,7 @@ describeIfDb("recordAgentSessionForRun", () => {
       id: principalId,
       tenantId,
       kind: "workflow",
-      refId: anchorRunId,
+      refId: anchoredRunId,
       status: "active",
     });
 
@@ -72,13 +71,38 @@ describeIfDb("recordAgentSessionForRun", () => {
       name: "agent-session-test-definition",
     });
 
+    // Anchored: has a principal, so `ensureRunSession` can insert its
+    // `agent_session` row.
     await db.db.insert(schema.workflowRun).values({
-      id: anchorRunId,
+      id: anchoredRunId,
       definitionId,
-      anchorRunId,
+      anchorRunId: anchoredRunId,
       tenantId,
       principalId,
-      address: `${anchorRunId}@agent-session-${tenantId}.localhost`,
+      address: `${anchoredRunId}@${domain}`,
+      status: "running",
+    });
+    await db.db.insert(schema.workflowRunLaunchSpec).values({
+      anchorRunId: anchoredRunId,
+      sessionId,
+      deploymentDomain: domain,
+      sourceAuthorityPrincipalId: principalId,
+      frozenApprovalBundle: {},
+      sourceOfferingIds: [],
+      defaultSourceOfferingId: "off_test",
+      deployContent: { systemPrompt: "" },
+    });
+
+    // Unanchored: `prepareProvisionedDeployment` minted the row, but no
+    // trigger has reconciled a principal onto it yet — the normal state
+    // for a freshly provisioned invite.
+    await db.db.insert(schema.workflowRun).values({
+      id: unanchoredRunId,
+      definitionId,
+      anchorRunId: unanchoredRunId,
+      tenantId,
+      principalId: null,
+      address: `${unanchoredRunId}@${domain}`,
       status: "running",
     });
   });
@@ -89,8 +113,14 @@ describeIfDb("recordAgentSessionForRun", () => {
       .delete(schema.agentSession)
       .where(eq(schema.agentSession.id, sessionId));
     await db.db
+      .delete(schema.workflowRunLaunchSpec)
+      .where(eq(schema.workflowRunLaunchSpec.anchorRunId, anchoredRunId));
+    await db.db
       .delete(schema.workflowRun)
-      .where(eq(schema.workflowRun.id, anchorRunId));
+      .where(eq(schema.workflowRun.id, anchoredRunId));
+    await db.db
+      .delete(schema.workflowRun)
+      .where(eq(schema.workflowRun.id, unanchoredRunId));
     await db.db
       .delete(schema.workflowDefinition)
       .where(eq(schema.workflowDefinition.id, definitionId));
@@ -100,56 +130,56 @@ describeIfDb("recordAgentSessionForRun", () => {
     await db.db.delete(schema.tenant).where(eq(schema.tenant.id, tenantId));
   });
 
-  test("writes an agent_session resolveRunSessionId reads back", async () => {
-    await recordAgentSessionForRun(
-      db.db,
-      { sessionId, anchorRunId },
-      { create: () => undefined },
-    );
-
-    const resolved = await resolveRunSessionId(db.db, principalId);
-    expect(resolved).toBe(sessionId);
-  });
-
-  test("creates the run's event collector with its address/tenant/session/run id", async () => {
+  test("an unanchored run returns null and writes nothing", async () => {
     const createCalls: unknown[] = [];
-    const otherSessionId = generateId("session");
-
-    await recordAgentSessionForRun(
-      db.db,
-      { sessionId: otherSessionId, anchorRunId },
-      {
+    const resolved = await ensureRunSession({
+      db: db.db,
+      eventCollectors: {
         create: (...args: unknown[]) => {
           createCalls.push(args);
         },
+        has: () => false,
       },
-    );
-
-    expect(createCalls).toEqual([
-      [
-        `${anchorRunId}@agent-session-${tenantId}.localhost`,
-        tenantId,
-        otherSessionId,
-        anchorRunId,
-      ],
-    ]);
-
-    await db.db
-      .delete(schema.agentSession)
-      .where(eq(schema.agentSession.id, otherSessionId));
-  });
-
-  test("abandons the run's event collector when the session ends", async () => {
-    const abandonCalls: string[] = [];
-
-    await endAgentSessionForRun(db.db, anchorRunId, {
-      abandon: (address: string) => {
-        abandonCalls.push(address);
-      },
+      runId: unanchoredRunId,
     });
 
-    expect(abandonCalls).toEqual([
-      `${anchorRunId}@agent-session-${tenantId}.localhost`,
+    expect(resolved).toBeNull();
+    expect(createCalls).toEqual([]);
+    const sessionRow = await db.db.query.agentSession.findFirst({
+      where: eq(schema.agentSession.agentId, definitionId),
+    });
+    expect(sessionRow).toBeUndefined();
+  });
+
+  test("an anchored run inserts its session and creates its collector once across two calls", async () => {
+    const createCalls: unknown[] = [];
+    let hasCollector = false;
+    const eventCollectors = {
+      create: (...args: unknown[]) => {
+        createCalls.push(args);
+        hasCollector = true;
+      },
+      has: () => hasCollector,
+    };
+
+    const first = await ensureRunSession({
+      db: db.db,
+      eventCollectors,
+      runId: anchoredRunId,
+    });
+    const second = await ensureRunSession({
+      db: db.db,
+      eventCollectors,
+      runId: anchoredRunId,
+    });
+
+    expect(first).toBe(sessionId);
+    expect(second).toBe(sessionId);
+    expect(createCalls).toEqual([
+      [`${anchoredRunId}@${domain}`, tenantId, sessionId, anchoredRunId],
     ]);
+
+    const resolved = await resolveRunSessionId(db.db, principalId);
+    expect(resolved).toBe(sessionId);
   });
 });
