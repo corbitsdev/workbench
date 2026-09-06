@@ -26,6 +26,7 @@ import {
   type WorkbenchDefinition,
   type WorkbenchOnboardingStep,
 } from "@workbench/templates";
+import { reportError } from "@corbits/error-sink";
 
 import {
   deployWorkbenchTemplateBlock,
@@ -43,6 +44,24 @@ import { workbenchPath } from "./workbench-path";
 import type { WorkbenchTemplateId } from "./workbench-templates";
 
 export { NEW_WORKBENCH_TITLE };
+
+export function refreshWorkbenchLists(
+  queryClient: QueryClient,
+  tenantId: string,
+  workbenchId: string,
+): void {
+  void queryClient
+    .invalidateQueries({
+      queryKey: workbenchesQueryKeyPrefix(tenantId),
+    })
+    .catch((cause) => {
+      reportError(cause, {
+        operation: "refresh_workbench_lists",
+        tenantId,
+        roomId: workbenchId,
+      });
+    });
+}
 
 /**
  * Marks the two precondition failures below as intentionally
@@ -280,15 +299,10 @@ export async function createWorkbenchFromTemplate(
         }
         throw cause;
       }
-      await queryClient.invalidateQueries({
-        queryKey: workbenchesQueryKeyPrefix(tenantId),
-      });
+      refreshWorkbenchLists(queryClient, tenantId, workbench.id);
     }
   }
 
-  await queryClient.invalidateQueries({
-    queryKey: workbenchesQueryKeyPrefix(tenantId),
-  });
-
+  refreshWorkbenchLists(queryClient, tenantId, workbench.id);
   navigate(workbenchPath(workbench.id));
 }

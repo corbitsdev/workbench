@@ -7,7 +7,7 @@
 // still instantiates its template exactly like the old "Create workbench"
 // button did.
 
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import {
   CODE_REVIEW_TEMPLATE,
   DUE_DILIGENCE_TEMPLATE,
@@ -19,7 +19,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { BenchProvider } from "../src/bench-context";
 import { NavigationProvider } from "../src/navigation";
 import { NewWorkbenchPickerRoute } from "../src/pages/new-workbench-picker";
-import { TestQueryProvider } from "./test-query-provider";
+import {
+  createTestQueryClient,
+  TestQueryProvider,
+} from "./test-query-provider";
 
 const realFetch = globalThis.fetch;
 
@@ -120,13 +123,14 @@ const settle = () => act(() => sleep(10));
 
 async function renderPicker(
   navigate: (to: string) => void = () => undefined,
+  queryClient = createTestQueryClient(),
 ): Promise<void> {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
     root?.render(
-      <TestQueryProvider>
+      <TestQueryProvider client={queryClient}>
         <NavigationProvider navigate={navigate}>
           <BenchProvider>
             <NewWorkbenchPickerRoute />
@@ -413,6 +417,36 @@ describe("NewWorkbenchPickerRoute", () => {
     }
 
     expect(navigated).toEqual(["/w/chan_new"]);
+  });
+
+  test("a failed sidebar refresh does not block opening a recoverable workbench", async () => {
+    stubBlankCreate(undefined, json({ error: "agent launch failed" }, 409));
+    const queryClient = createTestQueryClient();
+    const invalidate = spyOn(
+      queryClient,
+      "invalidateQueries",
+    ).mockRejectedValue(new Error("sidebar refresh failed"));
+    const navigated: string[] = [];
+    try {
+      await renderPicker((to) => navigated.push(to), queryClient);
+
+      await act(async () => {
+        typeIntoPrompt("Research our next partner");
+      });
+      await act(async () => {
+        promptInput()?.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+        );
+      });
+      for (let i = 0; i < 20; i++) {
+        await settle();
+        if (navigated.length > 0) break;
+      }
+
+      expect(navigated).toEqual(["/w/chan_new"]);
+    } finally {
+      invalidate.mockRestore();
+    }
   });
 
   test("a selected agent is pre-invited with the opening message", async () => {

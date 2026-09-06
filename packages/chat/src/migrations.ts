@@ -562,6 +562,32 @@ export const chatMigrations: readonly ChatMigration[] = [
         ON "chat"."workbench_messages" ("tenant_id", "mail_message_id");
     `,
   },
+  {
+    name: "0030_agent_turns_agent_occurrence_key",
+    sql: `
+      DROP INDEX IF EXISTS "chat"."agent_turns_occurrence_key";
+
+      WITH "ranked" AS (
+        SELECT
+          "id",
+          row_number() OVER (
+            PARTITION BY "tenant_id", "agent_address"
+            ORDER BY "started_at", "id"
+          ) - 1 AS "occurrence"
+        FROM "chat"."agent_turns"
+      )
+      UPDATE "chat"."agent_turns" AS "turn"
+      SET
+        "occurrence" = "ranked"."occurrence",
+        "child_run_id" = concat('turn__', "ranked"."occurrence"::text)
+      FROM "ranked"
+      WHERE "turn"."id" = "ranked"."id";
+
+      CREATE UNIQUE INDEX IF NOT EXISTS "agent_turns_occurrence_key"
+        ON "chat"."agent_turns"
+        ("tenant_id", "agent_address", "occurrence");
+    `,
+  },
 ];
 
 /**

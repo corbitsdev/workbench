@@ -114,7 +114,11 @@ export type ChatOrchestratorDeps = {
    */
   agentTurns?: Pick<
     AgentTurnStore,
-    "findRunningTurn" | "finishTurn" | "listTurns" | "getTurn"
+    | "findRunningTurn"
+    | "findTurnByChildRun"
+    | "finishTurn"
+    | "listTurns"
+    | "getTurn"
   >;
   /**
    * Resolves a gate-blocked event's `correlationId` to the approval row the
@@ -671,6 +675,32 @@ async function latestTurnForAgent(
   return turns.find((turn) => turn.agentAddress === agentAddress);
 }
 
+async function runningTurnForReply(
+  agentTurns:
+    Pick<AgentTurnStore, "findRunningTurn" | "findTurnByChildRun"> | undefined,
+  input: {
+    readonly tenantId: string;
+    readonly workbenchId: string;
+    readonly agentAddress: string;
+    readonly childRunId?: string;
+  },
+) {
+  if (agentTurns === undefined) return undefined;
+  const exact = await agentTurns.findRunningTurn(input);
+  if (exact !== undefined || input.childRunId === undefined) return exact;
+  const known = await agentTurns.findTurnByChildRun({
+    tenantId: input.tenantId,
+    agentAddress: input.agentAddress,
+    childRunId: input.childRunId,
+  });
+  if (known !== undefined) return undefined;
+  return agentTurns.findRunningTurn({
+    tenantId: input.tenantId,
+    workbenchId: input.workbenchId,
+    agentAddress: input.agentAddress,
+  });
+}
+
 async function postReply(
   deps: ChatOrchestratorDeps,
   agentAddress: string,
@@ -692,7 +722,7 @@ async function postReply(
 
   const members: ReplyMember[] = [];
   for (const workbenchId of resolved.workbenchIds) {
-    const turn = await deps.agentTurns?.findRunningTurn({
+    const turn = await runningTurnForReply(deps.agentTurns, {
       tenantId: resolved.tenantId,
       workbenchId,
       agentAddress: resolved.roomAddress,
@@ -755,7 +785,7 @@ async function postReply(
   }
 
   for (const workbenchId of targetIds) {
-    const turn = await deps.agentTurns?.findRunningTurn({
+    const turn = await runningTurnForReply(deps.agentTurns, {
       tenantId: resolved.tenantId,
       workbenchId,
       agentAddress: resolved.roomAddress,
@@ -773,7 +803,7 @@ async function postReply(
       workbenchId,
       sender: { name: null, address: resolved.roomAddress },
       parts: [...parts],
-      ...(turn !== undefined ? { runId: turn.childRunId } : {}),
+      ...(turn !== undefined ? { runId: childRunId ?? turn.childRunId } : {}),
       ...(threadId !== undefined ? { threadId } : {}),
     });
     if (turn !== undefined) {
@@ -782,6 +812,7 @@ async function postReply(
         turnId: turn.id,
         status: outcome.status,
         replyMessageId: posted.id,
+        ...(childRunId !== undefined ? { childRunId } : {}),
         ...(outcome.status === "failed" ? { error: outcome.error } : {}),
       });
     }

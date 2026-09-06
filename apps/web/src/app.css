@@ -3462,6 +3462,7 @@ tr.insights-row-clickable:hover {
   resize: none;
   border: 0;
   background: transparent;
+  caret-color: var(--shell-accent);
   font: inherit;
   font-size: 1.25rem;
   line-height: 1.45;
@@ -3507,11 +3508,22 @@ tr.insights-row-clickable:hover {
   cursor: pointer;
 }
 
-.new-workbench-prompt-examples button:hover,
+.new-workbench-prompt-examples button:hover {
+  border-color: var(--border-strong, var(--border));
+  background: color-mix(in srgb, var(--muted) 72%, var(--foreground));
+}
+
 .new-workbench-add-agent:hover,
 .new-workbench-add-agent[aria-expanded="true"] {
   border-color: var(--border-strong, var(--border));
   background: var(--background);
+}
+
+.new-workbench-prompt-examples button.is-selected,
+.new-workbench-prompt-examples button.is-selected:hover {
+  border-color: var(--foreground);
+  background: var(--foreground);
+  color: var(--background);
 }
 
 .new-workbench-prompt-actions {
@@ -3635,13 +3647,6 @@ tr.insights-row-clickable:hover {
 
 .new-workbench-agent-empty {
   padding: 0.75rem 0.5rem;
-}
-
-.new-workbench-enter-hint {
-  flex-shrink: 0;
-  color: var(--muted-foreground);
-  font-family: ui-monospace, monospace;
-  font-size: 0.75rem;
 }
 
 .new-workbench-prefab-grid {

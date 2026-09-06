@@ -71,7 +71,7 @@ describeIfDb("createDrizzleAgentTurnStore", () => {
     });
   });
 
-  test("occurrences advance per (workbench, agent), and a turn round-trips", async () => {
+  test("occurrences advance per agent across workbenches, and a turn round-trips", async () => {
     const sql = postgres(scratchUrl, { max: 5, onnotice: () => undefined });
     try {
       const store = createDrizzleAgentTurnStore(drizzle(sql));
@@ -94,12 +94,19 @@ describeIfDb("createDrizzleAgentTurnStore", () => {
         agentAddress: "ins_echo2@acme.example",
         requestMessageIds: ["msg_2"],
       });
+      const otherWorkbench = await store.startTurn({
+        tenantId: TENANT,
+        workbenchId: "run_workbench2",
+        agentAddress: AGENT,
+        requestMessageIds: ["msg_3"],
+      });
 
       expect([first.childRunId, second.childRunId]).toEqual([
         "turn__0",
         "turn__1",
       ]);
       expect(otherAgent.childRunId).toBe("turn__0");
+      expect(otherWorkbench.childRunId).toBe("turn__2");
       expect(first.status).toBe("running");
       expect(first.requestMessageIds).toEqual(["msg_1"]);
 
@@ -211,7 +218,7 @@ describeIfDb("createDrizzleAgentTurnStore", () => {
       const input = {
         tenantId: TENANT,
         workbenchId: "run_child_run_id",
-        agentAddress: AGENT,
+        agentAddress: "ins_lookup@acme.example",
         requestMessageIds: ["msg_lookup"],
       };
       const first = await store.startTurn(input);

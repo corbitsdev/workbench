@@ -22,7 +22,6 @@ import {
   describeChatError,
   listTenantInvitableDefinitions,
   WorkbenchLoadingState,
-  workbenchesQueryKeyPrefix,
 } from "@corbits/chat-ui";
 import { humanizeSlug } from "@corbits/chat/display-name";
 import { useEffect, useRef, useState } from "react";
@@ -36,6 +35,7 @@ import { TemplateLibraryPage } from "../workbench-templates-api";
 import { useBench } from "../bench-context";
 import {
   createWorkbenchFromTemplate,
+  refreshWorkbenchLists,
   WorkbenchPostCreateError,
   WorkbenchPreconditionError,
 } from "../instant-agent-create";
@@ -244,9 +244,7 @@ export function NewWorkbenchPickerRoute() {
           roomId: cause.workbenchId,
           extra: { stage: cause.stage },
         });
-        await queryClient.invalidateQueries({
-          queryKey: workbenchesQueryKeyPrefix(selectedTenantId),
-        });
+        refreshWorkbenchLists(queryClient, selectedTenantId, cause.workbenchId);
         navigate(workbenchPath(cause.workbenchId));
         toast(describeWorkbenchCreateFailure(cause, refId));
         return;
@@ -398,6 +396,8 @@ export function NewWorkbenchPickerRoute() {
                     <button
                       key={example}
                       type="button"
+                      aria-pressed={prompt === example}
+                      className={prompt === example ? "is-selected" : undefined}
                       onClick={() => setPrompt(example)}
                     >
                       {example}
@@ -552,7 +552,6 @@ export function NewWorkbenchPickerRoute() {
                     </div>
                   )}
                 </div>
-                <span className="new-workbench-enter-hint">↵ Enter</span>
                 <Button
                   type="submit"
                   aria-label="Start this workbench"

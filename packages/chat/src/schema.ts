@@ -583,7 +583,6 @@ export const agentTurns = chatSchema.table(
     ),
     unique("agent_turns_occurrence_key").on(
       table.tenantId,
-      table.workbenchId,
       table.agentAddress,
       table.occurrence,
     ),

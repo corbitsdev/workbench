@@ -327,11 +327,115 @@ describe("createChatOrchestrator", () => {
     orchestrator.dispose();
   });
 
-  // CL-7172: waitUntilFree is per workbench, so the same host can have a
-  // running turn in room A and room B at once. Collecting every running
-  // row would post one connector.reply into both rooms and finishTurn
-  // both — then the second reply would see no running turns and two
-  // memberships and silently drop. Originating workbench is singular.
+  test("reconciles a sidecar child run after the projection restarts", async () => {
+    const room = fakeRoom();
+    const agentTurns = createInMemoryAgentTurnStore();
+    const agentAddress = "ins_echo1@ten1.workbench.test";
+    const turn = await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_room_a",
+      agentAddress,
+      requestMessageIds: ["msg_a"],
+    });
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+      store: {
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_room_a", [agentAddress]),
+          workbenchRow("ins_room_b", [agentAddress]),
+        ],
+      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
+      events,
+      agentTurns,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_1",
+      childRunId: "turn__9",
+      event: { type: "connector.reply", data: { content: "reconciled" } },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(room.posted).toHaveLength(1);
+    expect(room.posted[0]).toMatchObject({
+      workbenchId: "ins_room_a",
+      runId: "turn__9",
+      parts: [{ kind: "text", text: "reconciled" }],
+    });
+    expect(
+      await agentTurns.getTurn({ tenantId: "ten_1", turnId: turn.id }),
+    ).toMatchObject({ status: "completed", childRunId: "turn__9" });
+
+    orchestrator.dispose();
+  });
+
+  test("a reply from a closed occurrence cannot finish a newer turn in another room", async () => {
+    const room = fakeRoom();
+    const agentTurns = createInMemoryAgentTurnStore();
+    const agentAddress = "ins_echo1@ten1.workbench.test";
+    const closed = await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_room_a",
+      agentAddress,
+      requestMessageIds: ["msg_a"],
+    });
+    await agentTurns.finishTurn({
+      tenantId: "ten_1",
+      turnId: closed.id,
+      status: "cancelled",
+    });
+    const current = await agentTurns.startTurn({
+      tenantId: "ten_1",
+      workbenchId: "ins_room_b",
+      agentAddress,
+      requestMessageIds: ["msg_b"],
+    });
+    const events = createSidecarEmitter();
+    const orchestrator = createChatOrchestrator({
+      db: createFakeDb({ id: "ins_echo1", tenantId: "ten_1" }) as never,
+      store: {
+        listWorkbenchSettings: async () => [
+          workbenchRow("ins_room_a", [agentAddress]),
+          workbenchRow("ins_room_b", [agentAddress]),
+        ],
+      },
+      roomMessages: room.roomMessages,
+      publish: room.publish,
+      platform: fakeMail().platform,
+      events,
+      agentTurns,
+      claims: fakeClaims(),
+      approvals: { findByCorrelationId: async () => null },
+    });
+
+    events.emit("agent.event", {
+      agentAddress,
+      sessionId: "ses_1",
+      childRunId: closed.childRunId,
+      event: { type: "connector.reply", data: { content: "late reply" } },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(room.posted).toHaveLength(0);
+    expect(
+      await agentTurns.getTurn({ tenantId: "ten_1", turnId: current.id }),
+    ).toMatchObject({ status: "running", childRunId: "turn__1" });
+
+    orchestrator.dispose();
+  });
+
+  // Direct projection writes can still construct two running rows for a
+  // shared agent. The orchestrator must not spray a single reply into both
+  // rooms; the originating workbench is singular.
   test("a connector.reply does not post into two rooms that both have a running turn for the same agent", async () => {
     const room = fakeRoom();
     const agentTurns = createInMemoryAgentTurnStore();
