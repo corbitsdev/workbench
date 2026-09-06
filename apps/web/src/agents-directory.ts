@@ -40,9 +40,9 @@ export function purposeAgentDefinitions(
 
 /**
  * `instances` is expected to already come from `listTopLevelRuns`
- * (see `./agents-api.ts`), which excludes every folded run (workbench
- * host, invited agent, task) server-side — see
- * `@corbits/folded-runs`'s `scope-routes.ts`. This still applies the
+ * (see `./agents-api.ts`), which excludes every non-top-level run
+ * (workbench host, invited agent, task) server-side — see
+ * `@corbits/run-scope`'s `scope-routes.ts`. This still applies the
  * shared name-based workbench-host filter as defense in depth.
  */
 export function purposeAgentInstances(
