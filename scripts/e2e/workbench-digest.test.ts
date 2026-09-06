@@ -29,6 +29,7 @@ import {
   hop,
   provisionSidecar,
   pushWorkflowSource,
+  seedNoopCatalogOffering,
   workflowDeployBody,
   startHub,
   startSidecar,
@@ -207,16 +208,22 @@ describe.skipIf(databaseUrl === undefined)("workbench-digest workflow", () => {
     // whole point of this suite: a run started against this source
     // actually completes an inference call, at zero cost, because
     // noop-inference answers it locally without reaching a real model.
+    const { offeringId } = await hop("noop catalog seeding", () =>
+      seedNoopCatalogOffering({
+        call: (method, path, body, cookies) =>
+          api(hub.baseUrl, method, path, body, cookies),
+        tenantId,
+        cookies: user.cookies,
+        noopBaseUrl: `${hub.baseUrl}/api/chat/noop-inference`,
+      }),
+    );
+
     const deploymentId = await hop("workflow deploy", async () => {
-      const sourceId = "src-workbench-digest-e2e";
       const body = workflowDeployBody({
         assetId,
         commitSha,
-        sourceId: sourceId,
-        provider: "anthropic",
-        baseURL: `${hub.baseUrl}/api/chat/noop-inference`,
-        apiKey: "noop",
-        model: "noop",
+        sourceOfferingIds: [offeringId],
+        defaultSourceOfferingId: offeringId,
       });
       const deadline = Date.now() + 60_000;
       let res: ApiResult;

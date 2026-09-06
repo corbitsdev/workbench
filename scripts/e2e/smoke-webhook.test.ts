@@ -30,7 +30,6 @@ import {
 } from "../../workflows/heartbeat/src/index.ts";
 import {
   api,
-  assertNeverRealProvider,
   connectE2eDb,
   createCleanupHarness,
   e2eDatabaseUrl,
@@ -39,6 +38,7 @@ import {
   hop,
   provisionSidecar,
   pushWorkflowSource,
+  seedNoopCatalogOffering,
   workflowDeployBody,
   startHub,
   startSidecar,
@@ -138,77 +138,17 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
 
       // The zero-cost catalog chain: an anthropic-plugin provider whose
       // base URL is the hub's own noop-inference endpoint, never a real
-      // model. Mirrors `workbench-digest.test.ts`'s noop catalog seeding.
+      // model.
       const noopBaseUrl = `${hub.baseUrl}/api/chat/noop-inference`;
-      assertNeverRealProvider(noopBaseUrl, "noop catalog provider baseURL");
-      await hop("noop catalog seeding", async () => {
-        const model = await api(
-          hub.baseUrl,
-          "POST",
-          `/api/tenants/${tenantId}/catalog/models`,
-          { canonicalName: "noop" },
+      const { offeringId } = await hop("noop catalog seeding", () =>
+        seedNoopCatalogOffering({
+          call: (method, path, body, cookies2) =>
+            api(hub.baseUrl, method, path, body, cookies2),
+          tenantId,
           cookies,
-        );
-        expectStatus("create catalog model", model, 201);
-        const modelId = stringField(model.data, "id", "create catalog model");
-
-        const provider = await api(
-          hub.baseUrl,
-          "POST",
-          `/api/tenants/${tenantId}/providers`,
-          { name: "anthropic", plugin: "anthropic" },
-          cookies,
-        );
-        expectStatus("create provider", provider, 201);
-        const providerId = stringField(provider.data, "id", "create provider");
-
-        const credential = await api(
-          hub.baseUrl,
-          "POST",
-          `/api/tenants/${tenantId}/credentials`,
-          {
-            providerId,
-            name: "anthropic-default",
-            type: "api_key",
-            secret: "noop",
-          },
-          cookies,
-        );
-        expectStatus("create credential", credential, 201);
-        const credentialId = stringField(
-          credential.data,
-          "id",
-          "create credential",
-        );
-
-        const catalogProvider = await api(
-          hub.baseUrl,
-          "POST",
-          `/api/tenants/${tenantId}/catalog/providers`,
-          {
-            name: "anthropic",
-            plugin: "anthropic",
-            baseURL: noopBaseUrl,
-            credentialId,
-          },
-          cookies,
-        );
-        expectStatus("create catalog provider", catalogProvider, 201);
-        const catalogProviderId = stringField(
-          catalogProvider.data,
-          "id",
-          "create catalog provider",
-        );
-
-        const offering = await api(
-          hub.baseUrl,
-          "POST",
-          `/api/tenants/${tenantId}/catalog/offerings`,
-          { modelId, providerId: catalogProviderId },
-          cookies,
-        );
-        expectStatus("create catalog offering", offering, 201);
-      });
+          noopBaseUrl,
+        }),
+      );
 
       const assetName = "heartbeat";
       const { assetId, commitSha } = await hop(
@@ -256,16 +196,11 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
       );
 
       const definitionId = await hop("workflow deploy", async () => {
-        const sourceId = "src-smoke-webhook-e2e";
-        assertNeverRealProvider(noopBaseUrl, "workflow deploy source baseURL");
         const body = workflowDeployBody({
           assetId,
           commitSha,
-          sourceId: sourceId,
-          provider: "anthropic",
-          baseURL: noopBaseUrl,
-          apiKey: "noop",
-          model: "noop",
+          sourceOfferingIds: [offeringId],
+          defaultSourceOfferingId: offeringId,
         });
         const deadline = Date.now() + 60_000;
         for (;;) {

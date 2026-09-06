@@ -369,7 +369,7 @@ async function main(): Promise<void> {
   // on purpose, so it narrows the bench's own catalog to that model
   // through the catalog API rather than leaving the turn's model to a
   // coin flip the proof is not about.
-  await hop("narrow the bench catalog to the pinned model", async () => {
+  const pinnedOfferingId = await hop("narrow the bench catalog to the pinned model", async () => {
     await plantGrant("model-offering:*", "read");
     await plantGrant("model-offering:*", "manage");
     await plantGrant("model:*", "read");
@@ -409,8 +409,13 @@ async function main(): Promise<void> {
       "data",
       "model offerings",
     ) as { id: string; modelId: string; disabled: boolean }[];
+    let pinnedOffering: { id: string; modelId: string } | undefined;
     for (const offering of offeringRows) {
-      if (offering.modelId === pinned.id || offering.disabled) continue;
+      if (offering.modelId === pinned.id) {
+        pinnedOffering = offering;
+        continue;
+      }
+      if (offering.disabled) continue;
       const patched = await api(
         hub.baseUrl,
         "PATCH",
@@ -420,10 +425,17 @@ async function main(): Promise<void> {
       );
       expectStatus(`disable offering ${offering.id}`, patched, 200);
     }
+    if (pinnedOffering === undefined) {
+      throw new Error(
+        `no catalog offering resolves the pinned model ${proofModelSource.model} ` +
+          `(id ${pinned.id})`,
+      );
+    }
     console.log(
       `  TRANSCRIPT — bench catalog narrowed to ${proofModelSource.model} ` +
         `(${String(offeringRows.length - 1)} other offerings disabled)`,
     );
+    return pinnedOffering.id;
   });
 
   const assistantDefinitionId = await hop(
@@ -694,7 +706,6 @@ async function main(): Promise<void> {
   // own durable event log, which is the artefact the milestone's
   // `RunStarted` assertion was always about.
   const SECTION_ASSET_NAME = "cl6324-section";
-  const SECTION_SOURCE_ID = "cl6324-section-source";
   const SECTION_TURN_TIMEOUT_MS = 180_000;
   const sectionAddress = `${SECTION_ASSET_NAME}@${tenant.tenantDomain}`;
 
@@ -780,16 +791,8 @@ async function main(): Promise<void> {
                 package: { format: "source", commitSha: pushed.commitSha },
               },
               entry: WORKFLOW_SOURCE_ENTRY,
-              sources: [
-                {
-                  id: SECTION_SOURCE_ID,
-                  provider: model.provider,
-                  baseURL: model.baseURL,
-                  apiKey: model.apiKey,
-                  model: model.model,
-                },
-              ],
-              defaultSource: SECTION_SOURCE_ID,
+              sourceOfferingIds: [pinnedOfferingId],
+              defaultSourceOfferingId: pinnedOfferingId,
             },
             user.cookies,
           );

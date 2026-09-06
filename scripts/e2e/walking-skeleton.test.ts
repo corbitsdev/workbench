@@ -35,6 +35,7 @@ import {
   hop,
   provisionSidecar,
   pushWorkflowSource,
+  seedNoopCatalogOffering,
   workflowDeployBody,
   startHub,
   startSidecar,
@@ -199,20 +200,30 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
       },
     );
 
+    // Hop: noop catalog seeding. The native deploy resolves inference
+    // against a real catalog offering; this suite's chosen offering
+    // still names an unreachable placeholder host, since deployment
+    // never calls inference and full run-completion is not asserted.
+    const { offeringId } = await hop("noop catalog seeding", () =>
+      seedNoopCatalogOffering({
+        call: (method, path, body, cookies) =>
+          api(hub.baseUrl, method, path, body, cookies),
+        tenantId,
+        cookies: user.cookies,
+        noopBaseUrl: "https://inference.invalid",
+      }),
+    );
+
     // Hop: workflow deploy via the native deploy API. Retries while
     // the hub still answers 502 (the sidecar's dial-in may not have
     // completed yet); any other failure is final. The inference
     // source is a placeholder — deployment does not call inference.
     const deploymentId = await hop("workflow deploy", async () => {
-      const sourceId = "src-echo-e2e";
       const body = workflowDeployBody({
         assetId,
         commitSha,
-        sourceId: sourceId,
-        provider: "anthropic",
-        baseURL: "https://inference.invalid",
-        apiKey: "e2e-placeholder",
-        model: "claude-sonnet-5",
+        sourceOfferingIds: [offeringId],
+        defaultSourceOfferingId: offeringId,
       });
       const deadline = Date.now() + 60_000;
       let res: ApiResult;

@@ -266,6 +266,47 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       log: () => undefined,
     });
 
+    // The echo deploy resolves against the catalog offering `seedCatalog`
+    // just planted for the same provider/model this workflow declares,
+    // rather than seeding a second inference chain.
+    const echoModelsListed = await api(
+      "GET",
+      `/api/tenants/${tenantId}/catalog/models`,
+      undefined,
+      user1.cookies,
+    );
+    expectStatus("list catalog models", echoModelsListed, 200);
+    const echoModelRows = (
+      echoModelsListed.data as { data: { id: string; canonicalName: string }[] }
+    ).data;
+    const echoModelId = echoModelRows.find(
+      (row) => row.canonicalName === "claude-sonnet-5",
+    )?.id;
+    if (echoModelId === undefined) {
+      throw new Error(
+        `no catalog model named "claude-sonnet-5": ${JSON.stringify(echoModelsListed.data)}`,
+      );
+    }
+
+    const echoOfferingsListed = await api(
+      "GET",
+      `/api/tenants/${tenantId}/catalog/offerings`,
+      undefined,
+      user1.cookies,
+    );
+    expectStatus("list catalog offerings", echoOfferingsListed, 200);
+    const echoOfferingRows = (
+      echoOfferingsListed.data as { data: { id: string; modelId: string }[] }
+    ).data;
+    const echoOfferingId = echoOfferingRows.find(
+      (row) => row.modelId === echoModelId,
+    )?.id;
+    if (echoOfferingId === undefined) {
+      throw new Error(
+        `no catalog offering for model "${echoModelId}": ${JSON.stringify(echoOfferingsListed.data)}`,
+      );
+    }
+
     // Seed the echo workflow as a deployed, invitable definition: the
     // same asset-publish → git-token → smart-HTTP push → native deploy
     // path `scripts/e2e/walking-skeleton.test.ts` proves end to end.
@@ -334,11 +375,8 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
         workflowDeployBody({
           assetId: echoAssetId,
           commitSha: echoPushed.commitSha,
-          sourceId: "src-echo-e2e",
-          provider: "anthropic",
-          baseURL: "https://inference.invalid",
-          apiKey: "e2e-placeholder",
-          model: "claude-sonnet-5",
+          sourceOfferingIds: [echoOfferingId],
+          defaultSourceOfferingId: echoOfferingId,
         }),
         user1.cookies,
       );
