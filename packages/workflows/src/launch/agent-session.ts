@@ -23,11 +23,26 @@
 import { eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { agentSession, workflowRun } from "@intx/db/schema";
+import type { EventCollectorRegistry } from "@intx/hub-sessions";
 
 export type RecordAgentSessionParams = {
   /** The id `prepareProvisionedDeployment` was called with. */
   readonly sessionId: string;
 } & ({ readonly anchorRunId: string } | { readonly address: string });
+
+/**
+ * The one port every launcher threads the same wrapped
+ * `EventCollectorRegistry` through (`apps/hub/src/index.ts`'s
+ * `eventCollectors`) — never a second registry construction. `create`
+ * is what actually makes `inference_turn`/`turn_part` rows exist for a
+ * run (CL-7479: nothing else ever called it once `folded-runs` was
+ * deleted); `abandon` tears the collector down when a run's session
+ * ends.
+ */
+export type EventCollectorPort = Pick<
+  EventCollectorRegistry,
+  "create" | "abandon"
+>;
 
 /**
  * Inserts the `agent_session` row a run needs to be mail-routable: the
@@ -41,6 +56,7 @@ export type RecordAgentSessionParams = {
 export async function recordAgentSessionForRun(
   db: DB["db"],
   params: RecordAgentSessionParams,
+  eventCollectors: Pick<EventCollectorPort, "create">,
 ): Promise<boolean> {
   const runRow = await db.query.workflowRun.findFirst({
     where:
@@ -65,6 +81,19 @@ export async function recordAgentSessionForRun(
       updatedAt: now,
     })
     .onConflictDoNothing({ target: agentSession.id });
+
+  const agentAddress = "address" in params ? params.address : runRow.address;
+  if (agentAddress !== null) {
+    // Idempotent across wakes: a collector already live for this
+    // address is replaced, matching the registry's own contract
+    // (`event-collector-registry.ts`'s `create`).
+    eventCollectors.create(
+      agentAddress,
+      runRow.tenantId,
+      params.sessionId,
+      runRow.id,
+    );
+  }
   return true;
 }
 
@@ -87,14 +116,19 @@ export async function endAgentSessionForPrincipal(
 
 /**
  * Same as `endAgentSessionForPrincipal`, keyed by the run's own id
- * instead — for a caller (e.g. a one-shot prompt's teardown) that only
- * ever held the run id, never minted or looked up its principal.
- * No-ops for a run row already gone, or one never triggered (no
- * principal, hence no session was ever recorded for it).
+ * instead — for a caller (e.g. a one-shot prompt's teardown, or a chat
+ * relaunch replacing a terminal run) that only ever held the run id,
+ * never minted or looked up its principal. Also abandons the outgoing
+ * run's event collector, through the same shared
+ * `EventCollectorPort` every launcher threads — one mechanism for
+ * ending a run's session. No-ops for a run row already gone, or one
+ * never triggered (no principal, hence no session was ever recorded
+ * for it).
  */
 export async function endAgentSessionForRun(
   db: DB["db"],
   anchorRunId: string,
+  eventCollectors: Pick<EventCollectorPort, "abandon">,
 ): Promise<void> {
   const runRow = await db.query.workflowRun.findFirst({
     where: eq(workflowRun.id, anchorRunId),
@@ -103,4 +137,7 @@ export async function endAgentSessionForRun(
     return;
   }
   await endAgentSessionForPrincipal(db, runRow.principalId);
+  if (runRow.address !== null) {
+    eventCollectors.abandon(runRow.address);
+  }
 }

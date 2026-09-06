@@ -16,7 +16,7 @@ import { and, desc, eq } from "drizzle-orm";
 import {
   authoredDefinitionCandidates,
   DefinitionProjectionMissingError,
-  endAgentSessionForPrincipal,
+  endAgentSessionForRun,
   readFoldedBody,
   resolveNewestProjectedDefinition,
   WORKFLOW_SOURCE_ENTRY,
@@ -258,6 +258,7 @@ export function createHubChatPlatform(
     db: deps.db,
     sessionService: deps.sessionService,
     sidecarRouter: deps.sidecarRouter,
+    eventCollectors: deps.eventCollectors,
   };
 
   function offeringDigest(sourceOfferingIds: readonly string[]): string {
@@ -476,9 +477,7 @@ export function createHubChatPlatform(
       foldedBody: binding.foldedBody,
     });
 
-    if (run.principalId !== null) {
-      await endAgentSessionForPrincipal(deps.db, run.principalId);
-    }
+    await endAgentSessionForRun(deps.db, run.id, deps.eventCollectors);
 
     await repointBinding(
       deps.db,
