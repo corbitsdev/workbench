@@ -394,7 +394,8 @@ export function useStreamingReply(
       pendingSinceRef.current !== null &&
       now - pendingSinceRef.current < minVisibleMs
     ) {
-      if (holdTimerRef.current !== null) clock.clearTimeout(holdTimerRef.current);
+      if (holdTimerRef.current !== null)
+        clock.clearTimeout(holdTimerRef.current);
       const remaining = minVisibleMs - (now - pendingSinceRef.current);
       const held = next;
       holdTimerRef.current = clock.setTimeout(() => {
