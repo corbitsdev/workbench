@@ -1,6 +1,7 @@
-// The `PinnedPackageCredentialBindingsFor` port every `FoldedRunsDeps`
-// below is wired with — see `@corbits/folded-runs`' `types.ts` for why
-// this has to be supplied by the composition root rather than declared as
+// The `PinnedPackageCredentialBindingsFor` port `createHubChatPlatform`'s
+// `CreateHubChatPlatformDeps` is wired with — see `@corbits/chat`'s
+// `platform-adapter.ts` for why this has to be supplied by the
+// composition root rather than declared as
 // a required assistant `credentialBindings` entry. Static-handle packages
 // (`@corbits/manus-tools`, granola-tools, …) declare
 // `interchange.credentials`, but requiring those binds on the assistant

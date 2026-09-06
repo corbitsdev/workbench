@@ -987,55 +987,51 @@ async function ensureDeployment(
   return deployment.id;
 }
 
+const ResolvedOfferingResponse = type({
+  id: "string",
+  priority: "number",
+  modelId: "string",
+  providerId: "string",
+  origin: { tenantId: "string", direct: "boolean" },
+});
+
+const ResolvedOfferingsResponse = type({
+  offerings: ResolvedOfferingResponse.array(),
+});
+
 /**
- * Lists every catalog offering owned directly by a tenant, paging past
- * `paginatedSchema`'s cursor. This is deliberately the tenant-owned list
- * (`GET .../catalog/offerings`, never the ancestor-inheriting "resolved"
- * view `listVisibleOfferings` computes in-process, `apps/hub/src/index.ts`'s
- * `workflowDeployer` and `packages/chat/src/platform-adapter.ts`'s
- * `catalogOfferings`): `seedCatalog` always plants a tenant's catalog
- * directly on that same tenant, so the owned list already carries
- * everything a plain `workbench seed` or the self-served connect flow
- * ever seeded, with no HTTP surface exposing the resolved view to a
- * caller outside the hub process.
+ * Lists the offerings visible to a tenant, including any inherited from
+ * an ancestor tenant — the same resolved view `listVisibleOfferings`
+ * (`@intx/db`) gives the hub's own workflow deployer
+ * (`apps/hub/src/index.ts`'s `workflowDeployer`), exposed at
+ * `GET .../catalog/resolved-offerings`. Seeding a tenant whose catalog is
+ * inherited rather than directly owned (e.g. a sub-tenant under a
+ * parent that already carries a real provider key) needs this resolved
+ * list, not the tenant-owned-only `GET .../catalog/offerings`.
  */
-async function listTenantCatalogOfferings(
+async function listResolvedCatalogOfferings(
   api: ApiCall,
   cookies: string[],
   tenantId: string,
-): Promise<(typeof ModelOfferingResponse.infer)[]> {
-  const items: (typeof ModelOfferingResponse.infer)[] = [];
-  let cursor: string | undefined;
-  for (;;) {
-    const query =
-      cursor === undefined ? "" : `?cursor=${encodeURIComponent(cursor)}`;
-    const listed = await api(
-      "GET",
-      `/api/tenants/${tenantId}/catalog/offerings${query}`,
-      undefined,
-      cookies,
-    );
-    const page = parseAs(
-      paginatedSchema(ModelOfferingResponse),
-      listed.data,
-      "catalog offerings response",
-    );
-    items.push(...page.data);
-    if (page.nextCursor === null) return items;
-    if (items.length > 10_000) {
-      throw new HubApiError(
-        `catalog offerings list for tenant ${tenantId} did not terminate while paging`,
-        "check the hub logs for the underlying failure, then re-run: workbench seed",
-      );
-    }
-    cursor = page.nextCursor;
-  }
+): Promise<(typeof ResolvedOfferingResponse.infer)[]> {
+  const listed = await api(
+    "GET",
+    `/api/tenants/${tenantId}/catalog/resolved-offerings`,
+    undefined,
+    cookies,
+  );
+  return parseAs(
+    ResolvedOfferingsResponse,
+    listed.data,
+    "resolved catalog offerings response",
+  ).offerings;
 }
 
 /**
  * Resolves the catalog offering ids a REAL (non-noop-pinned) workflow
- * deploys against: every enabled offering the tenant owns, ordered by
- * priority ascending, with the lowest-priority offering as the default —
+ * deploys against: every offering visible to the tenant (owned or
+ * inherited from an ancestor), ordered by priority ascending, with the
+ * lowest-priority offering as the default —
  * the SAME rule `apps/hub/src/index.ts`'s `workflowDeployer.deploy` and
  * `packages/chat/src/platform-adapter.ts`'s `catalogOfferings` apply
  * in-process via `listVisibleOfferings`. `excludeOfferingId` drops the
@@ -1058,10 +1054,8 @@ async function resolveRealSourceOfferingIds(
   sourceOfferingIds: readonly string[];
   defaultSourceOfferingId: string;
 }> {
-  const offerings = (await listTenantCatalogOfferings(api, cookies, tenantId))
-    .filter(
-      (offering) => !offering.disabled && offering.id !== excludeOfferingId,
-    )
+  const offerings = (await listResolvedCatalogOfferings(api, cookies, tenantId))
+    .filter((offering) => offering.id !== excludeOfferingId)
     .sort((a, b) => a.priority - b.priority);
   const defaultSourceOfferingId = offerings[0]?.id;
   if (defaultSourceOfferingId === undefined) {
@@ -1087,7 +1081,7 @@ async function resolveRealSourceOfferingIds(
  * synthetic one. Idempotent, same as every other seed step: a re-run
  * finds the existing rows by name and reuses them.
  */
-async function ensureNoopCatalogOffering(
+export async function ensureNoopCatalogOffering(
   api: ApiCall,
   cookies: string[],
   tenantId: string,

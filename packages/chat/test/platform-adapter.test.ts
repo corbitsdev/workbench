@@ -2525,12 +2525,12 @@ describe("createHubChatPlatform", () => {
     });
   });
 
-  // CL-7214: `sendFoldedMailWithReclaimRetry`'s reclaim-retry loop used
+  // CL-7214: `sendRunMailWithReclaimRetry`'s reclaim-retry loop used
   // to call `wakeByAddress` directly, bypassing `lifecycle.ensureAwake`'s
   // per-address coalescing entirely. Proves that a reclaim-retry wake and
   // an independent, concurrent `ensureAwake` call for the same address
   // now coalesce onto the same in-flight wake — never dispatching a
-  // second, concurrent `wakeFoldedRun` that would race the first on the
+  // second, concurrent `wakeByAddress` that would race the first on the
   // same `session_asset` primary key and git ref.
   describe("wakeByAddressBounded reclaim-retry coalescing", () => {
     test("a reclaim-retry wake and a concurrent ensureAwake call for the same address never redeploy it twice", async () => {
@@ -2655,7 +2655,7 @@ describe("createHubChatPlatform", () => {
   });
 
   // Proves the actual lever an edited system prompt reaches a running
-  // instance through: `wakeFoldedRun` (exercised via `sendMail`'s
+  // instance through: `wakeByAddress` (exercised via `sendMail`'s
   // wake-on-send path above) replays `workbench_launch.foldedBody`
   // verbatim and never reads the definition's asset itself, so a
   // definition edit only reaches a running instance if something

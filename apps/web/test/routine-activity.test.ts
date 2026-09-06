@@ -1,9 +1,10 @@
 // CL-6595: the shell's "Running" section and Mission Control's active-run
 // count both read `listRoutineActivity`, which must source the `feed=fires`
 // listing — the one top-level-runs view that keeps a routine's fire (see
-// `@corbits/folded-runs`'s `scope-routes.ts`). The plain `listTopLevelRuns`
-// feed excludes every folded run, and a routine fire IS a folded run, so a
-// routine genuinely running would never appear here at all -- Mission
+// `@corbits/run-scope`'s `scope-routes.ts`). The plain `listTopLevelRuns`
+// feed excludes every non-top-level run, and a routine fire is not a
+// top-level run, so a routine genuinely running would never appear
+// here at all -- Mission
 // Control would read "0 active" while the Routines page's own "Running
 // now" pill (driven by the same run's `workflow_run.status`) disagreed.
 
@@ -131,8 +132,8 @@ describe("listRoutineActivity", () => {
   });
 
   // A directly-triggered deployment run is also a `feed=fires` row (it is
-  // not a folded run at all), but it has no routine parent -- it must not
-  // be counted as routine activity.
+  // a top-level run), but it has no routine parent -- it must not be
+  // counted as routine activity.
   test("drops a fires-feed row with no routine parent", async () => {
     stubTopLevelRunsFetch([nonRoutineFire]);
     expect(await listRoutineActivity("tnt_1")).toEqual([]);

@@ -71,6 +71,24 @@ function offeringsPage(ids: readonly string[] = [OFFERING_ID]): {
   };
 }
 
+function resolvedOfferingsPage(ids: readonly string[] = [OFFERING_ID]): {
+  status: number;
+  data: unknown;
+} {
+  return {
+    status: 200,
+    data: {
+      offerings: ids.map((id, index) => ({
+        id,
+        modelId: `mdl_${id}`,
+        providerId: `mpr_${id}`,
+        priority: index,
+        origin: { tenantId: TENANT_ID, direct: true },
+      })),
+    },
+  };
+}
+
 const instantSleep = async (_ms: number) => {};
 
 const recordingPusher = () => {
@@ -132,6 +150,11 @@ function baseRoutes(method: string, path: string) {
     path === `/api/tenants/${TENANT_ID}/catalog/offerings`
   )
     return offeringsPage();
+  if (
+    method === "GET" &&
+    path === `/api/tenants/${TENANT_ID}/catalog/resolved-offerings`
+  )
+    return resolvedOfferingsPage();
   // The noop catalog chain `ensureNoopCatalogOffering` plants for a
   // modelSource-pinned workflow (heartbeat) — every seedTenant test that
   // deploys one needs this fresh chain to succeed, so it lives in the

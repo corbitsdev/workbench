@@ -372,17 +372,12 @@ async function resolveOllamaModelSource(
  * diverge from that curated name entirely (CL-6366) — its resolution
  * defers to `resolveOllamaModelSource`, which reads back what
  * `seedCatalog` actually found on the instance rather than repeating the
- * static pin. `apiKey`/`baseURLOverride` are accepted only because every
- * caller already resolved them for `seedCatalog`'s own credential/catalog
- * plant, which runs ahead of this in the same connect flow; this
- * function itself needs neither. */
+ * static pin. */
 export async function modelSourceFor(
   api: ApiCall,
   cookies: string[],
   tenantId: string,
   provider: SupportedCredentialProvider,
-  _apiKey: string,
-  _baseURLOverride?: string,
 ): Promise<ModelSource> {
   if (provider === "ollama") {
     return resolveOllamaModelSource(api, cookies, tenantId);
@@ -496,8 +491,6 @@ export async function ensureSeeded(
       args.cookies,
       args.tenant.tenantId,
       args.provider,
-      args.apiKey,
-      args.baseURLOverride,
     ),
     pushWorkflow: args.pushWorkflow,
     log: args.log,

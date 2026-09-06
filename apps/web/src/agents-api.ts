@@ -152,14 +152,15 @@ export function listAgentInstances(
 }
 
 /**
- * The tenant's genuine top-level deployment runs — every folded run
- * (workbench host, invited agent, routine fire, task) excluded server-side
- * by the hub's own `folded_run` marker table (see `@corbits/folded-runs`'s
- * `scope-routes.ts`), not derived client-side from a tenant's workbenches
- * the way `foldedRunIdsFromWorkbenches` used to. Used wherever a page needs
- * "real deployments only" — the Agent Directory. A routine fire IS a
- * folded run, so this feed structurally never carries one; a caller that
- * needs routine activity wants `listRoutineRunFires` below instead.
+ * The tenant's genuine top-level deployment runs — every non-top-level
+ * run (workbench host, invited agent, routine fire, task) excluded
+ * server-side by the same predicate `isTopLevelRun` uses (see
+ * `@corbits/run-scope`'s `scope-routes.ts`), not derived client-side
+ * from a tenant's workbenches the way `foldedRunIdsFromWorkbenches` used
+ * to. Used wherever a page needs "real deployments only" — the Agent
+ * Directory. A routine fire is NOT top-level, so this feed structurally
+ * never carries one; a caller that needs routine activity wants
+ * `listRoutineRunFires` below instead.
  */
 export function listTopLevelRuns(
   tenantId: string,
@@ -172,13 +173,13 @@ export function listTopLevelRuns(
 
 /**
  * `feed=fires` (CL-6249): the tenant's genuine *executed* runs — unlike
- * `listTopLevelRuns`, a routine's fire is kept even though it is a folded
- * run, tagged with the routine that fired it (see
- * `@corbits/folded-runs`'s `scope-routes.ts`'s `listTopLevelRunFires`).
+ * `listTopLevelRuns`, a routine's fire is kept even though it is not a
+ * top-level run, tagged with the routine that fired it (see
+ * `@corbits/run-scope`'s `scope-routes.ts`'s `listTopLevelRunFires`).
  * The shell's "Running" activity band (CL-6595) reads this, not
  * `listTopLevelRuns`, so a routine's own run is actually visible here —
- * `listTopLevelRuns`'s `notExists(folded_run)` filter drops every routine
- * fire by construction, which left Mission Control's active-run count
+ * `listTopLevelRuns`'s top-level-only filter drops every routine fire by
+ * construction, which left Mission Control's active-run count
  * permanently desynced from the Routines page's own "Running now" pill.
  */
 export function listRoutineRunFires(
@@ -466,8 +467,8 @@ type SkillsOutcome =
  * so either failing alone never blanks the page. Failures surface as
  * `modelsError` / `skillsError` rather than silent empty collections.
  * `instances` comes from `listTopLevelRuns`, which already excludes every
- * folded run (workbench host, invited agent) server-side — see
- * `@corbits/folded-runs`'s `scope-routes.ts` — so this page never has to
+ * non-top-level run (workbench host, invited agent) server-side — see
+ * `@corbits/run-scope`'s `scope-routes.ts` — so this page never has to
  * derive that exclusion itself from a tenant's workbenches.
  */
 export async function loadAgentDirectory(

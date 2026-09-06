@@ -28,6 +28,7 @@ import {
   buildHeartbeatWorkflow,
   serializeHeartbeatWorkflow,
 } from "../../workflows/heartbeat/src/index.ts";
+import { ensureNoopCatalogOffering } from "../../packages/seeding/src/index.ts";
 import {
   api,
   connectE2eDb,
@@ -38,7 +39,6 @@ import {
   hop,
   provisionSidecar,
   pushWorkflowSource,
-  seedNoopCatalogOffering,
   workflowDeployBody,
   startHub,
   startSidecar,
@@ -139,15 +139,15 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
       // The zero-cost catalog chain: an anthropic-plugin provider whose
       // base URL is the hub's own noop-inference endpoint, never a real
       // model.
-      const noopBaseUrl = `${hub.baseUrl}/api/chat/noop-inference`;
-      const { offeringId } = await hop("noop catalog seeding", () =>
-        seedNoopCatalogOffering({
-          call: (method, path, body, cookies2) =>
+      const offeringId = await hop("noop catalog seeding", () =>
+        ensureNoopCatalogOffering(
+          (method, path, body, cookies2) =>
             api(hub.baseUrl, method, path, body, cookies2),
-          tenantId,
           cookies,
-          noopBaseUrl,
-        }),
+          tenantId,
+          hub.baseUrl,
+          () => {},
+        ),
       );
 
       const assetName = "heartbeat";

@@ -26,6 +26,7 @@ export {
   inferenceCredentialName,
   PLACEHOLDER_CATALOG_API_KEY,
   ensureCredential,
+  ensureNoopCatalogOffering,
   ensureProvider,
   reconcileSeedGrants,
   seedCatalog,

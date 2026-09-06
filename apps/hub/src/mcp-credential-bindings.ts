@@ -1,6 +1,7 @@
-// The `McpCredentialBindingsFor` port every `FoldedRunsDeps` below is wired
-// with — see `@corbits/folded-runs`' `types.ts` for why this has to be
-// supplied by the composition root rather than derived by the deploy-time
+// The `McpCredentialBindingsFor` port `createHubChatPlatform`'s
+// `CreateHubChatPlatformDeps` is wired with — see `@corbits/chat`'s
+// `platform-adapter.ts` for why this has to be supplied by the
+// composition root rather than derived by the deploy-time
 // capability walk. `@corbits/mcp-tools`' credential handles are dynamic
 // (one `mcp.<slug>` per tenant-connected server), so this builds one
 // `CredentialBinding` per connection `@corbits/connections`' own
