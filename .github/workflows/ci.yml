@@ -139,6 +139,15 @@ jobs:
         run: bun run test:e2e
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/workbench
+          E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
+
+      - name: Upload hub/sidecar logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs
+          path: ${{ runner.temp }}/e2e-logs
+          if-no-files-found: ignore
 
   isolation:
     runs-on: ubuntu-latest

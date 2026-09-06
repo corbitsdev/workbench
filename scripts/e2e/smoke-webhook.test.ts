@@ -12,9 +12,8 @@
 // events by bare id (the native events route requires a deployment-anchor
 // run). This test instead reads the run row the ingress delivery created
 // straight out of the database — a harness-side fact with no route,
-// exactly as `provisionSidecar` already does for the sidecar identity
-// row — and confirms the trigger itself recorded the delivery
-// (`lastFiredAt`).
+// via `connectE2eDb` — and confirms the trigger itself recorded the
+// delivery (`lastFiredAt`).
 
 import {
   signPayload,
@@ -37,11 +36,9 @@ import {
   expectStatus,
   freePort,
   hop,
-  provisionSidecar,
   pushWorkflowSource,
   workflowDeployBody,
   startHub,
-  startSidecar,
   type HubHandle,
 } from "./harness.ts";
 
@@ -77,13 +74,6 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
     });
 
     const hubDataDir = await tempDir("e2e-smoke-webhook-hub-data-");
-    const sidecarDataDir = await tempDir("e2e-smoke-webhook-sidecar-data-");
-
-    const sidecarId = "sidecar-e2e-smoke-webhook";
-    const sidecarToken = crypto.randomUUID();
-    await hop("sidecar provisioning", () =>
-      provisionSidecar(url, sidecarId, sidecarToken),
-    );
 
     const hub: HubHandle = await hop("hub boot", () =>
       startHub({
@@ -96,18 +86,6 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
       }),
     );
     track(hub);
-
-    const sidecar = await hop("sidecar boot", () =>
-      Promise.resolve(
-        startSidecar({
-          hubPort: Number(new URL(hub.baseUrl).port),
-          sidecarId,
-          token: sidecarToken,
-          dataDir: sidecarDataDir,
-        }),
-      ),
-    );
-    track(sidecar);
 
     {
       const cookies = await hop("sign-up", async () => {
@@ -204,9 +182,9 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
         });
         const deadline = Date.now() + 60_000;
         for (;;) {
-          if (sidecar.exited()) {
+          if (hub.exited()) {
             throw new Error(
-              `sidecar exited before deploy; output:\n${sidecar.output()}`,
+              `hub exited before deploy; output:\n${hub.output()}`,
             );
           }
           const res = await api(
@@ -219,7 +197,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
           if (res.status === 502) {
             if (Date.now() > deadline) {
               throw new Error(
-                `sidecar never became deployable (hub kept answering 502): ${JSON.stringify(res.data)}\nsidecar output:\n${sidecar.output()}`,
+                `sidecar never became deployable (hub kept answering 502): ${JSON.stringify(res.data)}\nhub output:\n${hub.output()}`,
               );
             }
             await Bun.sleep(200);
@@ -346,8 +324,8 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
           // No platform route reads a non-anchored run's row by bare id
           // (see the file header); this reads the fact the ingress
           // route's own launch is required to have produced, the same
-          // way `provisionSidecar` reaches the database directly for a
-          // fact no route exposes.
+          // way `connectE2eDb` reaches the database directly for a fact
+          // no route exposes.
           const sql = await connectE2eDb(url);
           try {
             const rows = await sql.unsafe(

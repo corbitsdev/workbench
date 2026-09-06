@@ -29,12 +29,9 @@ import {
   e2eDatabaseUrl,
   expectStatus,
   freePort,
-  provisionSidecar,
   startHub,
-  startSidecar,
   type ApiResult,
   type HubHandle,
-  type SpawnedApp,
 } from "./harness.ts";
 
 const databaseUrl = e2eDatabaseUrl();
@@ -76,7 +73,6 @@ describe.skipIf(databaseUrl === undefined)("workbench reconnect e2e", () => {
   let hubPort: number;
   let sessionSecret: string;
   let hub: HubHandle;
-  let sidecar: SpawnedApp;
   let api: ApiCall;
   let cookies: string[];
   let tenantId: string;
@@ -93,10 +89,6 @@ describe.skipIf(databaseUrl === undefined)("workbench reconnect e2e", () => {
     expect(report.action).toBe("migrated");
     expect(report.migrations).toBeGreaterThan(0);
 
-    const sidecarId = "workbench-reconnect-e2e-sidecar";
-    const sidecarToken = crypto.randomUUID();
-    await provisionSidecar(url, sidecarId, sidecarToken);
-
     hubPort = freePort();
     sessionSecret = Buffer.from(
       crypto.getRandomValues(new Uint8Array(32)),
@@ -109,14 +101,6 @@ describe.skipIf(databaseUrl === undefined)("workbench reconnect e2e", () => {
       dataDir: await tempDir("e2e-workbench-reconnect-hub-data-"),
     });
     track(hub);
-
-    sidecar = startSidecar({
-      hubPort,
-      sidecarId,
-      token: sidecarToken,
-      dataDir: await tempDir("e2e-workbench-reconnect-sidecar-data-"),
-    });
-    track(sidecar);
 
     api = createHubAPI(hub.baseUrl);
 
@@ -159,9 +143,9 @@ describe.skipIf(databaseUrl === undefined)("workbench reconnect e2e", () => {
     const deadline = Date.now() + 60_000;
     let res: ApiResult;
     for (;;) {
-      if (sidecar.exited()) {
+      if (hub.exited()) {
         throw new Error(
-          `sidecar exited before workbench creation; output:\n${sidecar.output()}`,
+          `hub exited before workbench creation; output:\n${hub.output()}`,
         );
       }
       res = await api(
@@ -174,7 +158,7 @@ describe.skipIf(databaseUrl === undefined)("workbench reconnect e2e", () => {
       if (Date.now() > deadline) {
         throw new Error(
           `workbench never became launchable (hub kept answering 500): ` +
-            `${JSON.stringify(res.data)}\nsidecar output:\n${sidecar.output()}`,
+            `${JSON.stringify(res.data)}\nhub output:\n${hub.output()}`,
         );
       }
       await Bun.sleep(1000);
@@ -244,10 +228,10 @@ describe.skipIf(databaseUrl === undefined)("workbench reconnect e2e", () => {
     // hub process on the same port against the same database, exactly
     // as a real restart looks from the sidecar's and the browser's
     // side: same DB rows, same session cookie, new process. The port
-    // must stay the same — the sidecar's own `HUB_WS_URL` is fixed at
-    // its boot and is never reconfigured here (only the hub restarts),
-    // so a different port would leave the sidecar dialing a hub that
-    // is no longer there.
+    // must stay the same — the process-provisioner-spawned sidecar's
+    // own `HUB_WS_URL` is fixed at its boot and is never reconfigured
+    // here (only the hub restarts), so a different port would leave the
+    // sidecar dialing a hub that is no longer there.
     await hub.stop();
 
     const restarted = await startHub({
@@ -269,9 +253,9 @@ describe.skipIf(databaseUrl === undefined)("workbench reconnect e2e", () => {
     const deadline = Date.now() + 180_000;
     let posted: ApiResult;
     for (;;) {
-      if (sidecar.exited()) {
+      if (hub.exited()) {
         throw new Error(
-          `sidecar exited after hub restart; output:\n${sidecar.output()}`,
+          `hub exited after hub restart; output:\n${hub.output()}`,
         );
       }
       posted = await postMessage(after);
@@ -279,8 +263,7 @@ describe.skipIf(databaseUrl === undefined)("workbench reconnect e2e", () => {
       if (Date.now() > deadline) {
         throw new Error(
           `message after hub restart never accepted: status=${posted.status} ` +
-            `${JSON.stringify(posted.data)}\nsidecar output:\n${sidecar.output()}` +
-            `\nhub output:\n${hub.output()}`,
+            `${JSON.stringify(posted.data)}\nhub output:\n${hub.output()}`,
         );
       }
       await Bun.sleep(1000);

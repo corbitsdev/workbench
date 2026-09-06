@@ -46,14 +46,11 @@ import {
   e2eDatabaseUrl,
   expectStatus,
   freePort,
-  provisionSidecar,
   pushWorkflowSource,
   workflowDeployBody,
   startHub,
-  startSidecar,
   type ApiResult,
   type HubHandle,
-  type SpawnedApp,
 } from "./harness.ts";
 
 const databaseUrl = e2eDatabaseUrl();
@@ -139,7 +136,6 @@ const textPart = (text: string): Part[] => [{ kind: "text", text }];
 
 describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   let hub: HubHandle;
-  let sidecar: SpawnedApp;
   let api: ApiCall;
   let user1: SignedUpUser;
   let user2: SignedUpUser;
@@ -159,10 +155,6 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     expect(report.action).toBe("migrated");
     expect(report.migrations).toBeGreaterThan(0);
 
-    const sidecarId = "chat-e2e-sidecar";
-    const sidecarToken = crypto.randomUUID();
-    await provisionSidecar(url, sidecarId, sidecarToken);
-
     hub = await startHub({
       databaseUrl: url,
       port: freePort(),
@@ -172,16 +164,6 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       dataDir: await tempDir("e2e-chat-hub-data-"),
     });
     track(hub);
-
-    sidecar = startSidecar({
-      hubPort: new URL(hub.baseUrl).port
-        ? Number(new URL(hub.baseUrl).port)
-        : 80,
-      sidecarId,
-      token: sidecarToken,
-      dataDir: await tempDir("e2e-chat-sidecar-data-"),
-    });
-    track(sidecar);
 
     api = createHubAPI(hub.baseUrl);
 
@@ -358,15 +340,15 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       ),
     });
 
-    // Retries while the hub still answers 502 (the sidecar's dial-in
-    // may not have completed yet), matching `createWorkbench`'s own
-    // retry loop below.
+    // Retries while the hub still answers 502 (the process
+    // provisioner's spawned sidecar may not have dialed in yet),
+    // matching `createWorkbench`'s own retry loop below.
     const echoDeployDeadline = Date.now() + 60_000;
     let echoDeployed: ApiResult;
     for (;;) {
-      if (sidecar.exited()) {
+      if (hub.exited()) {
         throw new Error(
-          `sidecar exited before echo deploy; output:\n${sidecar.output()}`,
+          `hub exited before echo deploy; output:\n${hub.output()}`,
         );
       }
       echoDeployed = await api(
@@ -384,7 +366,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       if (Date.now() > echoDeployDeadline) {
         throw new Error(
           `echo workflow never became deployable (hub kept answering 502): ` +
-            `${JSON.stringify(echoDeployed.data)}\nsidecar output:\n${sidecar.output()}`,
+            `${JSON.stringify(echoDeployed.data)}\nhub output:\n${hub.output()}`,
         );
       }
       await Bun.sleep(1000);
@@ -393,22 +375,22 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   }, 120_000);
 
   // Launching a workbench is the go/no-go signal for the whole suite: it
-  // launches the anchor instance in-process, which needs the
-  // sidecar's dial-in to have completed. `packages/chat/src/routes.ts`
-  // has no 502-style retry translation of its own (unlike the native
-  // workflow deploy route), so a launch attempted before the sidecar
-  // connects fails with an uncaught 500 — retried here directly until
-  // the sidecar is ready, exactly as the walking skeleton retries a
-  // 502 for the native deploy route.
+  // launches the anchor instance in-process, which needs its
+  // process-provisioner-spawned sidecar's dial-in to have completed.
+  // `packages/chat/src/routes.ts` has no 502-style retry translation of
+  // its own (unlike the native workflow deploy route), so a launch
+  // attempted before the sidecar connects fails with an uncaught 500 —
+  // retried here directly until the sidecar is ready, exactly as the
+  // walking skeleton retries a 502 for the native deploy route.
   async function createWorkbench(
     body: Record<string, unknown>,
   ): Promise<ApiResult> {
     const deadline = Date.now() + 60_000;
     let res: ApiResult;
     for (;;) {
-      if (sidecar.exited()) {
+      if (hub.exited()) {
         throw new Error(
-          `sidecar exited before workbench creation; output:\n${sidecar.output()}`,
+          `hub exited before workbench creation; output:\n${hub.output()}`,
         );
       }
       res = await api(
@@ -421,7 +403,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       if (Date.now() > deadline) {
         throw new Error(
           `workbench never became launchable (hub kept answering 500): ` +
-            `${JSON.stringify(res.data)}\nhub output:\n${hub.output()}\nsidecar output:\n${sidecar.output()}`,
+            `${JSON.stringify(res.data)}\nhub output:\n${hub.output()}`,
         );
       }
       await Bun.sleep(1000);
@@ -1021,10 +1003,13 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   // temporarily reverting the self-anchor fix locally: the sidecar log
   // then carries ten `enqueueInbox failed, withholding ack` lines, one
   // per rejected pack, for this same suite; with the fix applied, zero.
+  // Every process-provisioner-spawned sidecar inherits the hub
+  // process's own stdio (`process-runner.ts`'s `stdout: "inherit"`), so
+  // `hub.output()` already carries every sidecar's log lines.
   test("no chat/folded run's workflow-run pack was ever permanently rejected", () => {
-    const sidecarOutput = sidecar.output();
-    expect(sidecarOutput).not.toContain("enqueueInbox failed");
-    expect(sidecarOutput).not.toContain("withholding ack");
-    expect(sidecarOutput).not.toContain("rejecting inbound mail");
+    const hubOutput = hub.output();
+    expect(hubOutput).not.toContain("enqueueInbox failed");
+    expect(hubOutput).not.toContain("withholding ack");
+    expect(hubOutput).not.toContain("rejecting inbound mail");
   });
 });
