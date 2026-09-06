@@ -199,6 +199,7 @@ function baseDeps() {
     isRoutable: () => isRoutableForTest,
     eventCollectors: {
       create: () => undefined,
+      has: () => false,
     },
   };
 }
