@@ -167,9 +167,9 @@ describe("provisionSidecar", () => {
       // Resolved through the hub's own dependency tree, exactly as
       // `connectE2eDb` resolves `postgres` above — scripts/e2e is not
       // itself a workspace member of these `@intx/*` packages.
-      const dbModule = (await import(
-        Bun.resolveSync("@intx/db", HUB_DIR)
-      )) as { createDB: (raw: unknown) => { db: unknown; close: () => Promise<void> } };
+      const dbModule = (await import(Bun.resolveSync("@intx/db", HUB_DIR))) as {
+        createDB: (raw: unknown) => { db: unknown; close: () => Promise<void> };
+      };
       const hubSessionsModule = (await import(
         Bun.resolveSync("@intx/hub-sessions", HUB_DIR)
       )) as {

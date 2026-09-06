@@ -183,7 +183,9 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
         const deadline = Date.now() + 60_000;
         for (;;) {
           if (hub.exited()) {
-            throw new Error(`hub exited before deploy; output:\n${hub.output()}`);
+            throw new Error(
+              `hub exited before deploy; output:\n${hub.output()}`,
+            );
           }
           const res = await api(
             hub.baseUrl,
