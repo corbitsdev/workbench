@@ -78,6 +78,22 @@ function createFakeDb(opts: {
           );
         },
       },
+      // CL-7481: `resolveRunSessionIdOrThrow` reads the launch spec by
+      // run id instead of walking through the run's principal — the
+      // session id it returns still matches this fixture's
+      // `ses_<principalId>` convention, since every run here is already
+      // "anchored" with a fixed principal from the moment it's defined.
+      workflowRunLaunchSpec: {
+        findFirst: async ({ where }: { where: unknown }) => {
+          const [anchorRunId] = comparedValues(where);
+          const run = opts.runs.find((row) => row.id === anchorRunId);
+          if (run === undefined) return undefined;
+          return {
+            anchorRunId,
+            sessionId: `ses_${run.principalId ?? ""}`,
+          };
+        },
+      },
     },
     select: () => ({
       from: (table: unknown) => ({

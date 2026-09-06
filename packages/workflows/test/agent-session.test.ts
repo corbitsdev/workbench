@@ -68,7 +68,7 @@ describeIfDb("recordAgentSessionAtProvision / ensureRunSession", () => {
       {
         id: deployingPrincipalId,
         tenantId,
-        kind: "human",
+        kind: "user",
         refId: "usr_test",
         status: "active",
       },

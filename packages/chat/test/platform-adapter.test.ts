@@ -34,7 +34,6 @@ import {
   workflowDefinition,
   workflowDefinitionVersion,
   workflowRun,
-  workflowRunLaunchSpec,
 } from "@intx/db/schema";
 import { SessionLaunchError } from "@intx/hub-sessions";
 import type { EventCollectorRegistry, SidecarRouter } from "@intx/hub-sessions";
@@ -355,8 +354,7 @@ function createFakeDb(opts: {
    * call site.
    */
   workflowRunLaunchSpecRow?:
-    | { anchorRunId: string; sessionId: string }
-    | undefined;
+    { anchorRunId: string; sessionId: string } | undefined;
 }) {
   const inserted: { table: unknown; values: unknown }[] = [];
   const updated: { table: unknown; values: unknown }[] = [];
@@ -477,8 +475,7 @@ function createFakeDb(opts: {
           return inserted.findLast(
             (row) =>
               row.table === agentSession &&
-              (id === undefined ||
-                (row.values as { id?: string }).id === id),
+              (id === undefined || (row.values as { id?: string }).id === id),
           )?.values as { id: string; principalId: string } | undefined;
         },
       },

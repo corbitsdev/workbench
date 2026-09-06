@@ -83,7 +83,9 @@ type ResolveMailboxRefs = NonNullable<
  * constructed until after `lookups` is, so this only reads `.current`
  * inside the returned closure, never at wiring time.
  */
-export function createHubPersistMailWithSessionEnsure<R extends readonly unknown[]>(
+export function createHubPersistMailWithSessionEnsure<
+  R extends readonly unknown[],
+>(
   db: DB["db"],
   eventCollectorsRef: { current?: Pick<EventCollectorPort, "create" | "has"> },
   upstream: (args: MailboxPersistArgs) => Promise<R>,
