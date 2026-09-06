@@ -8,7 +8,6 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
 import { resolveConcurrency } from "./run-all.ts";
-import { SEQUENTIAL_SCRIPTS } from "./sequential-scripts.ts";
 
 const RUNNER = join(import.meta.dir, "run-all.ts");
 
@@ -31,7 +30,11 @@ if (process.env["PROBE_FAIL"] === name) process.exit(1);
 
 const WITH_PROBE = ["alpha", "bravo", "charlie", "delta"] as const;
 const WITHOUT_PROBE = "echo-only";
-const SEQUENTIAL_SCRIPT = "test";
+// The root gate's own "test" script fans out across packages exactly
+// like any other script now (see run-all.ts's resolveConcurrency); it
+// gets its own probe run below purely to prove that specific script name
+// carries no special-cased concurrency any more.
+const TEST_SCRIPT = "test";
 
 let workspace = "";
 let logCounter = 0;
@@ -113,7 +116,7 @@ describe("run-all", () => {
     for (const name of WITH_PROBE) {
       await writePackage(workspace, name, {
         probe: "bun run probe.ts",
-        [SEQUENTIAL_SCRIPT]: "bun run probe.ts",
+        [TEST_SCRIPT]: "bun run probe.ts",
       });
       await writeFile(
         join(workspace, "packages", name, "probe.ts"),
@@ -171,35 +174,22 @@ describe("run-all", () => {
     }
   });
 
-  test("runs the test script one package at a time by default", async () => {
-    const result = await runProbe({}, SEQUENTIAL_SCRIPT);
+  test("runs the test script concurrently like any other script", async () => {
+    const result = await runProbe(
+      { WORKBENCH_CHECK_CONCURRENCY: "4" },
+      TEST_SCRIPT,
+    );
 
-    expect(peakOverlap(result.log)).toBe(1);
+    expect(peakOverlap(result.log)).toBeGreaterThan(1);
     for (const name of WITH_PROBE) {
       expect(result.stdout).toContain(`probe ran in ${name}`);
-    }
-  });
-
-  test("default sequential run ignores ambient WORKBENCH_CHECK_CONCURRENCY", async () => {
-    const previous = process.env["WORKBENCH_CHECK_CONCURRENCY"];
-    process.env["WORKBENCH_CHECK_CONCURRENCY"] = "4";
-    try {
-      const result = await runProbe({}, SEQUENTIAL_SCRIPT);
-
-      expect(peakOverlap(result.log)).toBe(1);
-    } finally {
-      if (previous === undefined) {
-        delete process.env["WORKBENCH_CHECK_CONCURRENCY"];
-      } else {
-        process.env["WORKBENCH_CHECK_CONCURRENCY"] = previous;
-      }
     }
   });
 
   test("honours an explicit concurrency for the test script", async () => {
     const result = await runProbe(
       { WORKBENCH_CHECK_CONCURRENCY: "3" },
-      SEQUENTIAL_SCRIPT,
+      TEST_SCRIPT,
     );
 
     expect(peakOverlap(result.log)).toBeGreaterThan(1);
@@ -224,7 +214,8 @@ describe("run-all", () => {
         8,
       ),
     ).toBe(3);
-    expect(resolveConcurrency("test", { GITHUB_ACTIONS: "true" }, 8)).toBe(1);
+    expect(resolveConcurrency("test", { GITHUB_ACTIONS: "true" }, 8)).toBe(8);
+    expect(resolveConcurrency("test", {}, 8)).toBe(6);
   });
 
   test("fails the run and names the package whose script failed", async () => {
@@ -270,24 +261,5 @@ describe("run-all", () => {
 
   test("fixture workspace holds only the packages the tests declare", () => {
     expect(basename(workspace).startsWith("workbench-run-all-")).toBe(true);
-  });
-
-  // Without this, renaming the script the root gate hands the runner would
-  // silently restore concurrency to the test phase, and the flakiness that
-  // causes would surface later as an unrelated-looking regression.
-  test("the root gate runs its test phase through a script declared sequential", async () => {
-    const manifest = (await Bun.file(
-      join(import.meta.dir, "..", "package.json"),
-    ).json()) as { scripts?: Record<string, string> };
-    const testScript = manifest.scripts?.["test"] ?? "";
-
-    const invoked = [...testScript.matchAll(/run-all\.ts\s+([\w:-]+)/g)].map(
-      (match) => match[1],
-    );
-
-    expect(invoked.length).toBeGreaterThan(0);
-    for (const script of invoked) {
-      expect(SEQUENTIAL_SCRIPTS.has(script ?? "")).toBe(true);
-    }
   });
 });
