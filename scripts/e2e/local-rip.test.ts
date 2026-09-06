@@ -345,7 +345,6 @@ describe.skipIf(databaseUrl === undefined)(
                 user.cookies,
                 tenant.tenantId,
                 "anthropic",
-                STUB_API_KEY,
               ),
               pushWorkflow,
               log: () => undefined,
