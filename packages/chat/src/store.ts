@@ -217,6 +217,19 @@ export interface ChatStore {
     tenantId: string,
     address: string,
   ): Promise<WorkbenchByParticipantAddress | undefined>;
+  /**
+   * Every workbench in `tenantId` that lists `address` as a participant --
+   * the same scan `findWorkbenchByParticipantAddress` runs, but reporting
+   * ALL matches rather than stopping at the first. An agent that
+   * participates in more than one workbench is exactly the case a single
+   * best-guess match cannot resolve honestly (CL-7449); a caller that needs
+   * to tell "exactly one" from "several" needs the full list, not a first
+   * pick.
+   */
+  findWorkbenchIdsByParticipantAddress(
+    tenantId: string,
+    address: string,
+  ): Promise<string[]>;
 }
 
 /** Top-level JSONB merge: only keys present in `patch` overwrite. */
@@ -527,6 +540,20 @@ export function createDrizzleChatStore<TSchema extends Record<string, unknown>>(
       }
       return undefined;
     },
+
+    async findWorkbenchIdsByParticipantAddress(tenantId, address) {
+      const rows = await db
+        .select()
+        .from(workbenchSettings)
+        .where(eq(workbenchSettings.tenantId, tenantId));
+      return (rows as WorkbenchSettingsRow[])
+        .filter((row) =>
+          participantsOf(row.settings).some(
+            (participant) => participant.address === address,
+          ),
+        )
+        .map((row) => row.workbenchId);
+    },
   };
 }
 
@@ -728,6 +755,21 @@ export function createInMemoryChatStore(): ChatStore {
         }
       }
       return undefined;
+    },
+
+    async findWorkbenchIdsByParticipantAddress(tenantId, address) {
+      const ids: string[] = [];
+      for (const row of settingsByKey.values()) {
+        if (row.tenantId !== tenantId) continue;
+        if (
+          participantsOf(row.settings).some(
+            (participant) => participant.address === address,
+          )
+        ) {
+          ids.push(row.workbenchId);
+        }
+      }
+      return ids;
     },
   };
 }

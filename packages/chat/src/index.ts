@@ -332,6 +332,8 @@ export type {
   PostRoomMessageInput,
 } from "./room-messages";
 
+export { resolveWorkbenchIdForAgentFrame } from "./mail-headers";
+
 export {
   createArtifactDeliveryHandler,
   createChatOrchestrator,
