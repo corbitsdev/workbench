@@ -64,6 +64,10 @@ export {
   type CreateBenchModelPolicyRoutesDeps,
 } from "./routes";
 export {
+  createResolvedOfferingsRoutes,
+  type CreateResolvedOfferingsRoutesDeps,
+} from "./resolved-offerings-routes";
+export {
   createWorkflowCatalogRoutes,
   estimateUsd,
   type CreateWorkflowCatalogRoutesDeps,
