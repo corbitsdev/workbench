@@ -584,7 +584,6 @@ export async function setupDatabase(
 // package's tables, not only the platform's.
 const PACKAGE_SCHEMAS = [
   "mailbox",
-  "folded_runs",
   "chat",
   "routines",
   "insights",
