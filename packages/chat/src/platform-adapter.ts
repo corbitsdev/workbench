@@ -925,7 +925,11 @@ export function createHubChatPlatform(
     stableId: string,
     expectedTenantId?: string,
   ): Promise<LiveAgent> {
-    const live = await resolveLiveByStableId(deps.db, stableId, expectedTenantId);
+    const live = await resolveLiveByStableId(
+      deps.db,
+      stableId,
+      expectedTenantId,
+    );
     if (live === undefined) {
       throw new Error(`No live workbench run for "${stableId}"`);
     }

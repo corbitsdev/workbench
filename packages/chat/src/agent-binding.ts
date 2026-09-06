@@ -140,7 +140,8 @@ export async function readBindingByAddress(
   const domain = requireDomain(address);
   const localPart = localPartOf(address);
   const byStableId = await readLaunchRow(db, "instanceId", localPart);
-  const row = byStableId ?? (await readLaunchRow(db, "currentRunId", localPart));
+  const row =
+    byStableId ?? (await readLaunchRow(db, "currentRunId", localPart));
   if (row === undefined) return undefined;
   // A caller that already knows which tenant it is acting for must
   // never accept a binding minted by another one — `instanceId` and
