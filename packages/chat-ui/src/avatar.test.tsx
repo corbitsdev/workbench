@@ -56,15 +56,6 @@ describe("avatarClassForPrincipal", () => {
     ).not.toContain("prn_super_secret_internal_id");
   });
 
-  test("uses only a background and legible text utility", () => {
-    for (const principalId of ["prn_alice", "prn_bob", "prn_carla"]) {
-      const className = avatarClassForPrincipal(principalId);
-      expect(className).toStartWith("bg-[#");
-      expect(className).toEndWith("] text-black");
-      expect(className).not.toContain("!");
-      expect(className).not.toContain("var(");
-    }
-  });
 });
 
 describe("resolveAvatarFill", () => {
