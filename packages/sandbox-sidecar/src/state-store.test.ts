@@ -30,6 +30,16 @@ describe("observeEnsure", () => {
     expect(result.kind).toBe("observed");
   });
 
+  test("accepts generation 0, the allocation service's initial generation", async () => {
+    const store = createAllocationStateStore(statePath());
+    const result = await store.observeEnsure({
+      allocationId: "alloc-1",
+      sidecarId: "sidecar-1",
+      generation: 0,
+    });
+    expect(result.kind).toBe("observed");
+  });
+
   test("is idempotent when observed again at the same generation", async () => {
     const store = createAllocationStateStore(statePath());
     await store.observeEnsure({
