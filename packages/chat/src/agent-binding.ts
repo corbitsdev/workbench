@@ -314,27 +314,46 @@ export async function readPriorRuns(
 }
 
 /**
- * The statuses a `workflow_run` can hold that mean "this run will never
- * accept mail again". Wake of a reaped or lost instance is a fresh
- * `prepareProvisionedDeployment`, not a reuse of this row.
+ * The statuses a `workflow_run` can hold that are terminal regardless of
+ * whether the run ever took a turn. `"completed"` is deliberately absent
+ * here — a deployment `markTerminal`'d before its first trigger settles
+ * "completed" too (see `workflow-run-store.ts`'s `markTerminal`), and that
+ * is a run that is still booting, not one that will "never accept mail
+ * again". `isBeyondWake` below folds `"completed"` back in only once it
+ * can tell the two apart.
  */
-const TERMINAL_RUN_STATUSES: ReadonlySet<string> = new Set([
+const UNCONDITIONALLY_TERMINAL_RUN_STATUSES: ReadonlySet<string> = new Set([
   "failed",
   "cancelled",
   "canceled",
-  "completed",
 ]);
 
 /**
- * Whether this run is dead: terminal in `workflow_run.status`. A run
- * this returns true for cannot be woken — it can only be relaunched as
- * a fresh provisioned deployment.
+ * Whether this run is dead: terminal in `workflow_run.status`, in a way
+ * that actually means "this run will never accept mail again" rather than
+ * "this deployment never got as far as its first trigger". A run this
+ * returns true for cannot be woken — it can only be relaunched as a fresh
+ * provisioned deployment. A run this returns false for — `"deployed"` or
+ * `"running"`, or `"completed"` with no principal ever anchored to it — is
+ * still live or still booting: waking it means waiting for it to become
+ * routable (`deliverWhenRoutable`), never relaunching it (CL-7490).
+ *
+ * `principalId` is the signal for "ever took a turn": `anchorWithPrincipal`
+ * sets it in the same update that flips `"deployed"` -> `"running"` on a
+ * deployment's first trigger, and a child run is born with one already. A
+ * `"completed"` run with no `principalId` can only be a deployment torn
+ * down before that first trigger ever landed — the store cannot tell that
+ * apart from a mid-boot deployment misreporting itself terminal, so it is
+ * treated as still booting rather than relaunched out from under a caller
+ * that is only waiting on it.
  */
 export async function isBeyondWake(
   _db: DB["db"],
-  run: { id: string; status: string },
+  run: { id: string; status: string; principalId?: string | null },
 ): Promise<boolean> {
-  return TERMINAL_RUN_STATUSES.has(run.status);
+  if (UNCONDITIONALLY_TERMINAL_RUN_STATUSES.has(run.status)) return true;
+  if (run.status !== "completed") return false;
+  return run.principalId !== null && run.principalId !== undefined;
 }
 
 /**

@@ -733,35 +733,18 @@ export function createHubChatPlatform(
         return;
       }
 
-      if (live.run.definitionId === null) {
-        throw new Error(
-          `Cannot wake "${binding.stableId}": its run ${live.run.id} names no definition`,
-        );
-      }
-      const definitionAssetId = await resolveDefinitionAssetId(
-        live.run.definitionId,
-      );
-      if (definitionAssetId === undefined) {
-        throw new Error(
-          `Cannot wake "${binding.stableId}": definition ${live.run.definitionId} has no workflow asset`,
-        );
-      }
-      const prepared = await provisionOnAsset({
-        tenantId: binding.tenantId,
-        deploymentDomain: domainOf(binding.roomAddress),
-        sourceAuthorityPrincipalId:
-          await sourceAuthorityForAsset(definitionAssetId),
-        definitionAssetId,
-        foldedBody: binding.foldedBody,
-      });
-      await repointBinding(
-        deps.db,
-        binding,
-        prepared.runId,
-        prepared.sourcesDigest,
-      );
-      lifecycle?.untrack(binding.liveAddress);
-      lifecycle?.track(prepared.address);
+      // CL-7490: not terminal, and not (yet) routable. A provisioned
+      // anchor stays "deployed" until its first trigger — this is
+      // exactly what a run mid-boot looks like from here, and relaunching
+      // it out from under its own in-flight sidecar registration is what
+      // supersedes the allocation and restarts the boot forever (the
+      // "Deployed agent" line never appears; a fresh sidecar/allocation
+      // shows up every few seconds instead). There is nothing this
+      // function can safely do for a live-but-not-yet-routable run: the
+      // caller's own routable wait (`deliverWhenRoutable`, wired through
+      // `sendRunMailWithReclaimRetry`) is what actually resolves this, by
+      // polling the routing table until the boot finishes or its budget
+      // runs out. A no-op here is the correct "nothing more to do".
     } catch (error) {
       throw wrapWakeInferenceError(error);
     }

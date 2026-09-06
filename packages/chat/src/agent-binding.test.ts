@@ -186,12 +186,29 @@ describe("isBeyondWake", () => {
     ).toBe(false);
   });
 
-  test("a completed run is beyond waking — wake is a fresh provision", async () => {
+  test("a completed run that took a turn is beyond waking — wake is a fresh provision", async () => {
     expect(
       await isBeyondWake(fakeDb([]), {
         id: "run_done",
         status: "completed",
+        principalId: "prin_1",
       }),
     ).toBe(true);
+  });
+
+  // CL-7490: a deployment `markTerminal`'d before its first trigger ever
+  // landed settles "completed" too (see `workflow-run-store.ts`'s
+  // `markTerminal`), and the store cannot otherwise tell that apart from a
+  // run still mid-boot. Treating it as beyond waking here is exactly the
+  // bug that made a booting run's status read as terminal and relaunched
+  // it out from under its own in-flight sidecar registration.
+  test("a completed run that never took a turn is not beyond waking — the store cannot tell it apart from still booting", async () => {
+    expect(
+      await isBeyondWake(fakeDb([]), {
+        id: "run_never_triggered",
+        status: "completed",
+        principalId: null,
+      }),
+    ).toBe(false);
   });
 });
