@@ -150,6 +150,7 @@ import {
   applyInferenceCatalogMigrations,
   createBenchModelPolicyRoutes,
   createPostgresBenchModelPolicyStore,
+  createResolvedOfferingsRoutes,
   createWorkflowCatalogRoutes,
 } from "@corbits/inference-catalog";
 import { generateId } from "@intx/hub-common";
@@ -1871,6 +1872,21 @@ export async function createHub(config: HubConfig) {
     `${TENANT_PREFIX}/bench-model-policy`,
     createBenchModelPolicyRoutes({
       store: benchModelPolicy.store,
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+    }),
+  );
+  // Resolved catalog offerings: the same ancestor-inheriting view
+  // `listVisibleOfferings` gives `workflowDeployer` above, exposed over
+  // HTTP so an out-of-process deployer (`workbench seed`) can deploy
+  // against exactly what the hub itself would deploy against, not just
+  // the offerings a tenant owns directly.
+  app.route(
+    `${TENANT_PREFIX}/catalog/resolved-offerings`,
+    createResolvedOfferingsRoutes({
+      listOfferings: (tenantId) => listVisibleOfferings(db, tenantId),
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
