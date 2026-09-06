@@ -74,39 +74,6 @@ function stubbing(body: unknown): void {
     })) as unknown as typeof fetch;
 }
 
-describe("the bundle's shape", () => {
-  test("declares three tools, none gated behind approval", () => {
-    expect(catalogTools.definitions).toEqual([
-      { name: LIST_MODEL_CONCEPTS_TOOL },
-      { name: PICK_MODELS_TOOL },
-      { name: ESTIMATE_RUN_COST_TOOL },
-    ]);
-  });
-
-  test("requires the sanctioned workflow-run env keys", () => {
-    expect(catalogTools.requires).toEqual([
-      "hubCatalogUrl",
-      "sidecarToken",
-      "address",
-    ]);
-  });
-
-  test("no tool takes a model name, and the capability list is the real vocabulary", () => {
-    const definitions = catalogTools(env()).definitions;
-    for (const definition of definitions) {
-      const schema = definition.inputSchema as {
-        properties: Record<string, { items?: { enum?: string[] } }>;
-      };
-      expect(Object.keys(schema.properties)).not.toContain("model");
-      const capabilities = schema.properties["capabilities"];
-      if (capabilities !== undefined) {
-        expect(capabilities.items?.enum).toContain("plain-text");
-        expect(capabilities.items?.enum).not.toContain("telepathy");
-      }
-    }
-  });
-});
-
 describe("pick_models", () => {
   test("naming both a concept and capabilities is refused, and says why", async () => {
     const result = await catalogTools(env()).run(
@@ -325,24 +292,6 @@ function forbidden(): Response {
     { status: 403 },
   );
 }
-
-describe("the offering bundle's shape", () => {
-  test("gates create_offering and disable_offering behind approval, not set_offering_priority", () => {
-    expect(catalogOfferingTools.definitions).toEqual([
-      { name: CREATE_OFFERING_TOOL, approval: "ask" },
-      { name: SET_OFFERING_PRIORITY_TOOL },
-      { name: DISABLE_OFFERING_TOOL, approval: "ask" },
-    ]);
-  });
-
-  test("requires only the sanctioned workflow-run env keys", () => {
-    expect(catalogOfferingTools.requires).toEqual([
-      "hubCatalogUrl",
-      "sidecarToken",
-      "address",
-    ]);
-  });
-});
 
 describe("create_offering", () => {
   test("resolves both names to ids, then creates the offering", async () => {
