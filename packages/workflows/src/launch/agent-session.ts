@@ -33,9 +33,17 @@
 // keyed on the deploying principal (`sourceAuthorityPrincipalId`) since
 // the run principal does not exist yet — every other field the launcher
 // already knows or can read straight off the fresh run row.
-// `ensureRunSession` is now purely a re-key: once the run's first
-// trigger anchors a real principal onto it, this moves `principal_id`
-// onto that principal without ever touching the session id.
+// `ensureRunSession` re-keys onto the run's own principal once one is
+// anchored, moving `principal_id` without ever touching the session id.
+//
+// That eager write only ever runs for a Workbench launcher, though — a
+// run deployed straight through Interchange's own
+// `POST /api/tenants/:id/workflows/deployments` route (the e2e suites,
+// or any other API client) never passes through one, so no
+// `agent_session` row exists for it until something creates one.
+// CL-7489 makes `ensureRunSession` a true upsert: by the time
+// persist/dispatch call it the run is anchored, so a missing row is
+// created rather than treated as a bug.
 import { eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import {
@@ -118,18 +126,24 @@ export async function recordAgentSessionAtProvision(params: {
 }
 
 /**
- * Re-keys a run's `agent_session` onto the run's own principal once
- * Interchange anchors one (`anchorWithPrincipal`, the run's first
- * trigger) — before that, the session row is recorded under the
- * deploying principal by `recordAgentSessionAtProvision`, since the run
- * principal does not exist yet. The session id never changes; only
- * `principal_id` moves, and only once (a session already re-keyed to the
- * current run principal is left alone). The launch-spec row is the
- * source of truth for which session belongs to this run — its absence
- * means a launcher provisioned this run without going through the
- * shared path, which is a bug, not a state to paper over. Also creates
- * the run's event collector if none is live for its address (a fresh
- * process has no in-memory collectors regardless of what is on disk).
+ * True upsert of a run's `agent_session`, keyed by the run's own
+ * principal once Interchange anchors one (`anchorWithPrincipal`, the
+ * run's first trigger). Before that, `recordAgentSessionAtProvision`
+ * records the row under the deploying principal for a Workbench-launched
+ * run — but a run deployed straight through Interchange's own
+ * `POST /api/tenants/:id/workflows/deployments` route (the e2e suites,
+ * or any other API client) never passes through a Workbench launcher, so
+ * that eager write never runs for it, and no `agent_session` row exists
+ * yet when this seam is first reached. By the time persist/dispatch call
+ * this, though, the run is anchored (`runRow.principalId` is set), so
+ * everything needed to create the row is on hand: this inserts it rather
+ * than treating the missing row as a bug. The launch-spec row is still
+ * the source of truth for which session id belongs to this run — its
+ * absence means a launcher provisioned this run without going through
+ * the shared path, which is a bug, not a state to paper over. Also
+ * creates the run's event collector if none is live for its address (a
+ * fresh process has no in-memory collectors regardless of what is on
+ * disk).
  */
 export async function ensureRunSession(params: {
   readonly db: DB["db"];
@@ -159,11 +173,20 @@ export async function ensureRunSession(params: {
       where: eq(agentSession.id, sessionId),
     });
     if (sessionRow === undefined) {
-      throw new Error(
-        `ensureRunSession: no agent_session "${sessionId}" for run "${runId}" — recordAgentSessionAtProvision should have created it at launch`,
-      );
-    }
-    if (sessionRow.principalId !== runRow.principalId) {
+      const now = new Date();
+      await db
+        .insert(agentSession)
+        .values({
+          id: sessionId,
+          tenantId: runRow.tenantId,
+          agentId: runRow.definitionId,
+          principalId: runRow.principalId,
+          status: "active",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoNothing({ target: agentSession.id });
+    } else if (sessionRow.principalId !== runRow.principalId) {
       await db
         .update(agentSession)
         .set({ principalId: runRow.principalId, updatedAt: new Date() })
