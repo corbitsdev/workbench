@@ -1653,10 +1653,10 @@ export function createSidecarDeployRouter(deps: {
    *
    * Returns `"deferred-to-wake"` instead of restoring for a single-step
    * ("warm-keep") deployment (CL-6648): that shape is exactly what a
-   * folded run deploys, and folded runs already have a working lazy-wake
-   * port (`@corbits/agent-lifecycle`'s `ensureAwake` ->
-   * `@corbits/folded-runs`' `wakeFoldedRun` -> `deployAtHead`) that
-   * re-resolves inference sources fresh against the tenant's LIVE catalog
+   * chat launch deploys, and it already has a working lazy-wake port
+   * (`@corbits/agent-lifecycle`'s `ensureAwake` -> `@corbits/chat`'s
+   * `wakeByAddress` -> `prepareProvisionedDeployment`) that re-resolves
+   * inference sources fresh against the tenant's LIVE catalog
    * on every wake -- `record.sources` is only ever a snapshot of what
    * resolved at the deployment's last deploy or rotation. Restoring one
    * eagerly here would instead replay that frozen snapshot forever,
