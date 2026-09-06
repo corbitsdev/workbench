@@ -61,6 +61,17 @@ function stringField(data: unknown, field: string, what: string): string {
 }
 
 /**
+ * The (provider, model) pair `seedPlaceholderCatalogOffering` plants and
+ * the only pair the deploy below may declare as its inference preference.
+ * The deploy-time capability walk auto-approves exactly the (provider,
+ * model) pairs a step's own agent declares
+ * (`@intx/workflow-deploy`'s `pickStepInferenceSource`); naming any other
+ * model here 409s "no approved inference source" at deploy even though
+ * this suite never calls real inference (CL-7473).
+ */
+const PLACEHOLDER_MODEL = "noop";
+
+/**
  * Plants the same catalog-model/provider/credential/offering chain as
  * `@corbits/seeding`'s `ensureNoopCatalogOffering`, but pointed at an
  * unreachable placeholder host rather than the hub's own
@@ -88,7 +99,7 @@ async function seedPlaceholderCatalogOffering(options: {
   const model = await call(
     "POST",
     `/api/tenants/${tenantId}/catalog/models`,
-    { canonicalName: "noop" },
+    { canonicalName: PLACEHOLDER_MODEL },
     cookies,
   );
   expectStatus("create catalog model", model, 201);
@@ -250,7 +261,7 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
         const definition = buildEchoWorkflow({
           triggerAddress: `echo@${slug}.localhost`,
           inferencePreferences: [
-            { provider: "anthropic", model: "claude-sonnet-5" },
+            { provider: "anthropic", model: PLACEHOLDER_MODEL },
           ],
           turnTimeoutMs: 60_000,
         });
