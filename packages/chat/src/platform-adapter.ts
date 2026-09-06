@@ -1421,27 +1421,30 @@ export function createHubChatPlatform(
           ? { references: input.content.references }
           : {}),
       };
-      const sent = await sendRunMailWithReclaimRetry(withThreading, async () => {
-        const relive = await requireLive(input.workbenchId, input.tenantId);
-        try {
-          await ensureRunSession({
-            db: deps.db,
-            eventCollectors: deps.eventCollectors,
-            runId: relive.run.id,
-          });
-        } catch (err) {
-          reportError(err, {
-            operation: "chat.sendMail.ensureRunSession",
-            tenantId: input.tenantId,
-            agentId: relive.binding.liveAddress,
-            extra: { runId: relive.run.id },
-          });
-        }
-        return {
-          agentAddress: relive.binding.liveAddress,
-          sessionId: await resolveRunSessionIdOrThrow(deps.db, relive.run),
-        };
-      });
+      const sent = await sendRunMailWithReclaimRetry(
+        withThreading,
+        async () => {
+          const relive = await requireLive(input.workbenchId, input.tenantId);
+          try {
+            await ensureRunSession({
+              db: deps.db,
+              eventCollectors: deps.eventCollectors,
+              runId: relive.run.id,
+            });
+          } catch (err) {
+            reportError(err, {
+              operation: "chat.sendMail.ensureRunSession",
+              tenantId: input.tenantId,
+              agentId: relive.binding.liveAddress,
+              extra: { runId: relive.run.id },
+            });
+          }
+          return {
+            agentAddress: relive.binding.liveAddress,
+            sessionId: await resolveRunSessionIdOrThrow(deps.db, relive.run),
+          };
+        },
+      );
 
       lifecycle?.recordActivity(deliveryAddress);
 

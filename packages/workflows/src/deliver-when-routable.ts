@@ -48,7 +48,8 @@ export async function deliverWhenRoutable<T>(
     if (!isUnreachable(err)) {
       throw err;
     }
-    const deadline = Date.now() + (opts.deadlineMs ?? DEFAULT_ROUTABLE_DEADLINE_MS);
+    const deadline =
+      Date.now() + (opts.deadlineMs ?? DEFAULT_ROUTABLE_DEADLINE_MS);
     const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     const sleep = opts.sleep ?? defaultSleep;
     while (!opts.isRoutable()) {
