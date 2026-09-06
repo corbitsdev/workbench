@@ -36,6 +36,7 @@ import {
   type RequireGrant,
   type TenantEnv,
 } from "@intx/hub-api";
+import { authorize } from "@intx/authz";
 import type { ConditionRegistry, GrantStore } from "@intx/types/authz";
 import { makeErrorEnvelope } from "@corbits/error-sink";
 
@@ -97,6 +98,36 @@ export type CreateWorkflowAccessRoutesDeps = {
   grantStore: GrantStore;
   conditionRegistry: ConditionRegistry;
 };
+
+// A caller may only grant (or revoke) authority it already holds itself —
+// otherwise `grant:*`/`create` alone would let any principal escalate past
+// its own ceiling. Reuses `@intx/authz`'s own `authorize` against the same
+// grant store `requireGrant` checks against, per requested pair.
+async function firstPairOutsideCeiling(
+  deps: Pick<
+    CreateWorkflowAccessRoutesDeps,
+    "grantStore" | "conditionRegistry"
+  >,
+  callerPrincipalId: string,
+  tenantId: string,
+  resource: string,
+  actions: readonly string[],
+): Promise<string | null> {
+  for (const action of actions) {
+    const result = await authorize(
+      deps.grantStore,
+      callerPrincipalId,
+      tenantId,
+      resource,
+      action,
+      deps.conditionRegistry,
+    );
+    if (result.effect !== "allow") {
+      return action;
+    }
+  }
+  return null;
+}
 
 export function createWorkflowAccessRoutes(
   deps: CreateWorkflowAccessRoutesDeps,
@@ -181,6 +212,7 @@ export function createWorkflowAccessRoutes(
 
   app.post("/grants", requireGrant("grant:*", "create"), async (c) => {
     const tenantCtx = c.get("tenant");
+    const callerPrincipal = c.get("principal");
     const body = GrantAccessInput(await c.req.json().catch(() => undefined));
     if (body instanceof type.errors) {
       return c.json(
@@ -189,6 +221,23 @@ export function createWorkflowAccessRoutes(
           userMessage: `invalid grant request: ${body.summary}`,
         }),
         400,
+      );
+    }
+
+    const disallowedAction = await firstPairOutsideCeiling(
+      deps,
+      callerPrincipal.id,
+      tenantCtx.id,
+      body.resource,
+      body.actions,
+    );
+    if (disallowedAction !== null) {
+      return c.json(
+        makeErrorEnvelope({
+          code: "forbidden",
+          userMessage: `Cannot grant "${body.resource}" "${disallowedAction}": exceeds the caller's own authority`,
+        }),
+        403,
       );
     }
 
@@ -241,7 +290,38 @@ export function createWorkflowAccessRoutes(
     requireGrant(idResource("grant", "grantId"), "manage"),
     async (c) => {
       const tenantCtx = c.get("tenant");
+      const callerPrincipal = c.get("principal");
       const grantId = c.req.param("grantId");
+      const target = await deps.db.query.grant.findFirst({
+        where: and(eq(grant.id, grantId), eq(grant.tenantId, tenantCtx.id)),
+      });
+      if (target === undefined) {
+        return c.json(
+          makeErrorEnvelope({
+            code: "not_found",
+            userMessage: `No grant "${grantId}" in this tenant`,
+          }),
+          404,
+        );
+      }
+
+      const disallowedAction = await firstPairOutsideCeiling(
+        deps,
+        callerPrincipal.id,
+        tenantCtx.id,
+        target.resource,
+        [target.action],
+      );
+      if (disallowedAction !== null) {
+        return c.json(
+          makeErrorEnvelope({
+            code: "forbidden",
+            userMessage: `Cannot revoke "${target.resource}" "${target.action}": exceeds the caller's own authority`,
+          }),
+          403,
+        );
+      }
+
       const deleted = await deps.db
         .delete(grant)
         .where(and(eq(grant.id, grantId), eq(grant.tenantId, tenantCtx.id)))
