@@ -12,10 +12,13 @@ import { resetSchema, setupDatabase } from "../db-setup.ts";
 import {
   createCleanupHarness,
   e2eDatabaseUrl,
+  NOOP_CATALOG_MODEL,
   parseEnvFileDatabaseUrl,
   provisionSidecar,
   runCleanups,
+  seedNoopCatalogOffering,
   workflowDeployBody,
+  type ApiResult,
   type SpawnedApp,
 } from "./harness.ts";
 
@@ -92,6 +95,56 @@ describe("workflowDeployBody", () => {
     });
     expect(body).not.toHaveProperty("sources");
     expect(body).not.toHaveProperty("defaultSource");
+  });
+});
+
+describe("seedNoopCatalogOffering", () => {
+  // CL-7473: a suite's workflow definition must declare its inference
+  // preference as `("anthropic", NOOP_CATALOG_MODEL)` to match what this
+  // helper plants — the deploy-time capability walk only auto-approves the
+  // (provider, model) pair a step's own agent declares, so a preference
+  // naming any other model 409s "no approved inference source" at deploy
+  // even though the suite never calls real inference. This pins the
+  // catalog-model creation call's `canonicalName` to the exported constant
+  // so the two can never drift apart silently again.
+  test("plants a catalog model named NOOP_CATALOG_MODEL", async () => {
+    const calls: { path: string; body: unknown }[] = [];
+    const call = async (
+      _method: string,
+      path: string,
+      body?: unknown,
+    ): Promise<ApiResult> => {
+      calls.push({ path, body });
+      if (path.endsWith("/catalog/models")) {
+        return { status: 201, data: { id: "model-1" }, cookies: [] };
+      }
+      if (path.endsWith("/providers")) {
+        return { status: 201, data: { id: "provider-1" }, cookies: [] };
+      }
+      if (path.endsWith("/credentials")) {
+        return { status: 201, data: { id: "credential-1" }, cookies: [] };
+      }
+      if (path.endsWith("/catalog/providers")) {
+        return {
+          status: 201,
+          data: { id: "catalog-provider-1" },
+          cookies: [],
+        };
+      }
+      return { status: 201, data: { id: "offering-1" }, cookies: [] };
+    };
+
+    await seedNoopCatalogOffering({
+      call,
+      tenantId: "tenant-1",
+      cookies: [],
+      noopBaseUrl: "https://inference.invalid",
+    });
+
+    const modelCall = calls.find((entry) =>
+      entry.path.endsWith("/catalog/models"),
+    );
+    expect(modelCall?.body).toEqual({ canonicalName: NOOP_CATALOG_MODEL });
   });
 });
 

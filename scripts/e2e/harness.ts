@@ -700,7 +700,18 @@ export function workflowDeployBody(options: {
  * catalog offering joining them. Returns the offering id a deploy's
  * `sourceOfferingIds`/`defaultSourceOfferingId` resolves against.
  * Mirrors the chain `smoke-webhook.test.ts` proved out by hand.
+ *
+ * The (provider, model) pair this plants is `("anthropic",
+ * NOOP_CATALOG_MODEL)`. A caller's workflow definition must declare that
+ * exact pair as its inference preference — the deploy-time capability walk
+ * only auto-approves the (provider, model) pairs a step's own agent
+ * declares (see `@intx/workflow-deploy`'s `pickStepInferenceSource`), so a
+ * preference naming any other model 409s "no approved inference source"
+ * even though a suite using this helper never calls real inference
+ * (CL-7473).
  */
+export const NOOP_CATALOG_MODEL = "noop";
+
 export async function seedNoopCatalogOffering(options: {
   call: (
     method: string,
@@ -718,7 +729,7 @@ export async function seedNoopCatalogOffering(options: {
   const model = await call(
     "POST",
     `/api/tenants/${tenantId}/catalog/models`,
-    { canonicalName: "noop" },
+    { canonicalName: NOOP_CATALOG_MODEL },
     cookies,
   );
   expectStatus("create catalog model", model, 201);
