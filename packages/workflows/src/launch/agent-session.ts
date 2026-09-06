@@ -99,7 +99,12 @@ export async function ensureRunSession(params: {
     .onConflictDoNothing({ target: agentSession.id });
 
   if (runRow.address !== null && !eventCollectors.has(runRow.address)) {
-    eventCollectors.create(runRow.address, runRow.tenantId, sessionId, runRow.id);
+    eventCollectors.create(
+      runRow.address,
+      runRow.tenantId,
+      sessionId,
+      runRow.id,
+    );
   }
   return sessionId;
 }
