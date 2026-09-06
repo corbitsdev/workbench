@@ -1,14 +1,17 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "include": ["src", "package.json", "src/**/*.json"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
+  "extends": "./tsconfig.src.json",
   "compilerOptions": {
-    "types": ["bun"],
-    "composite": true,
-    "emitDeclarationOnly": true,
-    "outDir": "dist",
-    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
+    "composite": false,
+    "noEmit": true,
+    "disableSourceOfProjectReferenceRedirect": true,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "tsBuildInfoFile": "tsconfig.tsbuildinfo",
+    "rootDir": "../.."
   },
+  "include": ["src", "test"],
+  "exclude": [],
   "references": [
     {
       "path": "../../vendor/intx/agent/tsconfig.src.json"
@@ -18,9 +21,6 @@
     },
     {
       "path": "../../vendor/intx/hub-api/tsconfig.src.json"
-    },
-    {
-      "path": "../../vendor/intx/hub-sessions/tsconfig.src.json"
     },
     {
       "path": "../../vendor/intx/types/tsconfig.src.json"

@@ -20,10 +20,20 @@ import type { ToolCall, ToolResult } from "@intx/types/runtime";
 import { WIRE_CAPABILITIES, type Capability } from "@intx/types";
 import { type } from "arktype";
 
+import { reportError } from "@corbits/error-sink";
+
 import {
+  createOffering,
+  disableOffering,
   fetchChain,
   fetchEstimate,
+  findModelIdByCanonicalName,
+  findModelProviderIdByName,
   listConcepts,
+  setOfferingPriority,
+  UnknownCanonicalNameError,
+  UnknownProviderNameError,
+  type CatalogAdminClientConfig,
   type CatalogToolClientConfig,
   type ChainEntry,
   type ModelChainResult,
@@ -32,6 +42,9 @@ import {
 export const LIST_MODEL_CONCEPTS_TOOL = "list_model_concepts";
 export const PICK_MODELS_TOOL = "pick_models";
 export const ESTIMATE_RUN_COST_TOOL = "estimate_run_cost";
+export const CREATE_OFFERING_TOOL = "create_offering";
+export const SET_OFFERING_PRIORITY_TOOL = "set_offering_priority";
+export const DISABLE_OFFERING_TOOL = "disable_offering";
 
 /** Env this bundle needs beyond `BaseEnv`: the run's hub-reach credential,
  * mirroring `@corbits/connections-tools`' `WorkflowConnectionEnv`. */
@@ -96,6 +109,46 @@ function clientConfig(env: WorkflowCatalogEnv): CatalogToolClientConfig {
     address: env.address,
   };
 }
+
+/** Env `create_offering`/`set_offering_priority`/`disable_offering` need
+ * beyond `BaseEnv`: the same hub-reach credential as
+ * {@link WorkflowCatalogEnv}. The hub resolves the run's own tenant from
+ * that same credential, so no tenant id rides in the env or the
+ * request. */
+export interface WorkflowCatalogOfferingEnv extends BaseEnv {
+  readonly hubCatalogUrl: string;
+  readonly sidecarToken: string;
+  readonly address: string;
+}
+
+function adminClientConfig(
+  env: WorkflowCatalogOfferingEnv,
+): CatalogAdminClientConfig {
+  return {
+    hubCatalogUrl: env.hubCatalogUrl,
+    sidecarToken: env.sidecarToken,
+    address: env.address,
+  };
+}
+
+const CreateOfferingInput = type({
+  modelCanonicalName: "string > 0",
+  providerName: "string > 0",
+  "priority?": "number",
+  "capabilities?": type.enumerated(...WIRE_CAPABILITIES).array(),
+});
+type CreateOfferingInput = typeof CreateOfferingInput.infer;
+
+const SetOfferingPriorityInput = type({
+  offeringId: "string > 0",
+  priority: "number",
+});
+type SetOfferingPriorityInput = typeof SetOfferingPriorityInput.infer;
+
+const DisableOfferingInput = type({
+  offeringId: "string > 0",
+});
+type DisableOfferingInput = typeof DisableOfferingInput.infer;
 
 /** The need, as exactly one of the two forms the hub accepts. The input
  * schema has already rejected both-at-once and neither. */
@@ -217,6 +270,90 @@ async function runEstimateRunCost(
   }
 }
 
+async function runCreateOffering(
+  env: WorkflowCatalogOfferingEnv,
+  call: ToolCall,
+  parsed: CreateOfferingInput,
+): Promise<ToolResult> {
+  try {
+    const config = adminClientConfig(env);
+    const [modelId, providerId] = await Promise.all([
+      findModelIdByCanonicalName(config, parsed.modelCanonicalName),
+      findModelProviderIdByName(config, parsed.providerName),
+    ]);
+    const offering = await createOffering(config, {
+      modelId,
+      providerId,
+      ...(parsed.priority !== undefined ? { priority: parsed.priority } : {}),
+      ...(parsed.capabilities !== undefined
+        ? { capabilities: parsed.capabilities }
+        : {}),
+    });
+    return {
+      callId: call.id,
+      isError: false,
+      content:
+        `Created offering ${offering.id}: ${parsed.modelCanonicalName} via ` +
+        `${parsed.providerName}, priority ${String(offering.priority)}.`,
+    };
+  } catch (err) {
+    if (
+      err instanceof UnknownCanonicalNameError ||
+      err instanceof UnknownProviderNameError
+    ) {
+      return errorResult(call.id, err);
+    }
+    reportError(err, { operation: "create_offering", agentId: env.address });
+    return errorResult(call.id, err);
+  }
+}
+
+async function runSetOfferingPriority(
+  env: WorkflowCatalogOfferingEnv,
+  call: ToolCall,
+  parsed: SetOfferingPriorityInput,
+): Promise<ToolResult> {
+  try {
+    const offering = await setOfferingPriority(
+      adminClientConfig(env),
+      parsed.offeringId,
+      parsed.priority,
+    );
+    return {
+      callId: call.id,
+      isError: false,
+      content: `Offering ${offering.id} is now priority ${String(offering.priority)}.`,
+    };
+  } catch (err) {
+    reportError(err, {
+      operation: "set_offering_priority",
+      agentId: env.address,
+    });
+    return errorResult(call.id, err);
+  }
+}
+
+async function runDisableOffering(
+  env: WorkflowCatalogOfferingEnv,
+  call: ToolCall,
+  parsed: DisableOfferingInput,
+): Promise<ToolResult> {
+  try {
+    const offering = await disableOffering(
+      adminClientConfig(env),
+      parsed.offeringId,
+    );
+    return {
+      callId: call.id,
+      isError: false,
+      content: `Offering ${offering.id} is now disabled.`,
+    };
+  } catch (err) {
+    reportError(err, { operation: "disable_offering", agentId: env.address });
+    return errorResult(call.id, err);
+  }
+}
+
 /**
  * The `@corbits/catalog-tools` bundle factory: three read-only tools, no
  * approval gate, three env keys.
@@ -318,6 +455,163 @@ export const catalogTools = defineTool<WorkflowCatalogEnv>({
             );
           }
           return runEstimateRunCost(env, call, parsed);
+        }
+        default:
+          return Promise.resolve(
+            errorResult(
+              call.id,
+              new Error(`@corbits/catalog-tools: unknown tool "${call.name}"`),
+            ),
+          );
+      }
+    },
+  }),
+});
+
+/**
+ * The `@corbits/catalog-tools` offering-management bundle: three write
+ * tools over the tenant-admin catalog routes, `create_offering` and
+ * `disable_offering` gated behind approval — both change what this
+ * bench can resolve to at runtime. `set_offering_priority` only reorders
+ * an offering already live, so it stays ungated, matching how
+ * `pick_models`' own `order` param is ungated.
+ */
+export const catalogOfferingTools = defineTool<WorkflowCatalogOfferingEnv>({
+  id: "@corbits/catalog-tools/off",
+  requires: ["hubCatalogUrl", "sidecarToken", "address"],
+  definitions: [
+    { name: CREATE_OFFERING_TOOL, approval: "ask" },
+    { name: SET_OFFERING_PRIORITY_TOOL },
+    { name: DISABLE_OFFERING_TOOL, approval: "ask" },
+  ],
+  factory: (env) => ({
+    definitions: [
+      {
+        name: CREATE_OFFERING_TOOL,
+        description:
+          "add a tenant-owned offering pairing a model (by canonical " +
+          "name) with a model provider (by name), both already known to " +
+          "this workbench's own catalog. A human must approve before " +
+          "the offering becomes live.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            modelCanonicalName: {
+              type: "string",
+              description:
+                "The exact canonical name of a model already in this " +
+                "workbench's own catalog — never invented.",
+            },
+            providerName: {
+              type: "string",
+              description:
+                "The exact name of a model provider already in this " +
+                "workbench's own catalog — never invented.",
+            },
+            priority: {
+              type: "number",
+              description:
+                "Ordering hint for source resolution; lower values are " +
+                "preferred first. Defaults to 0.",
+            },
+            capabilities: {
+              type: "array",
+              items: { type: "string", enum: [...WIRE_CAPABILITIES] },
+              description:
+                "The capabilities this offering advertises for the model.",
+            },
+          },
+          required: ["modelCanonicalName", "providerName"],
+        },
+      },
+      {
+        name: SET_OFFERING_PRIORITY_TOOL,
+        description:
+          "reorder an offering this workbench already owns directly, " +
+          "changing where it falls in source-resolution fallback order. " +
+          "Lower values are preferred first.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            offeringId: {
+              type: "string",
+              description:
+                "The offering's id, from create_offering or " +
+                "the workbench's own catalog listing.",
+            },
+            priority: {
+              type: "number",
+              description:
+                "The offering's new priority; lower values are preferred " +
+                "first.",
+            },
+          },
+          required: ["offeringId", "priority"],
+        },
+      },
+      {
+        name: DISABLE_OFFERING_TOOL,
+        description:
+          "restrict an offering this workbench already owns directly, " +
+          "taking it out of source resolution without deleting its " +
+          "pricing history. A human must approve before it stops " +
+          "resolving. Running instances resolved through it fail over " +
+          "to the next eligible source.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            offeringId: {
+              type: "string",
+              description: "The offering's id to disable.",
+            },
+          },
+          required: ["offeringId"],
+        },
+      },
+    ],
+    run: (call: ToolCall, _signal: AbortSignal) => {
+      switch (call.name) {
+        case CREATE_OFFERING_TOOL: {
+          const parsed = CreateOfferingInput(call.arguments);
+          if (parsed instanceof type.errors) {
+            return Promise.resolve(
+              errorResult(
+                call.id,
+                new Error(
+                  `create_offering received invalid input: ${parsed.summary}`,
+                ),
+              ),
+            );
+          }
+          return runCreateOffering(env, call, parsed);
+        }
+        case SET_OFFERING_PRIORITY_TOOL: {
+          const parsed = SetOfferingPriorityInput(call.arguments);
+          if (parsed instanceof type.errors) {
+            return Promise.resolve(
+              errorResult(
+                call.id,
+                new Error(
+                  `set_offering_priority received invalid input: ${parsed.summary}`,
+                ),
+              ),
+            );
+          }
+          return runSetOfferingPriority(env, call, parsed);
+        }
+        case DISABLE_OFFERING_TOOL: {
+          const parsed = DisableOfferingInput(call.arguments);
+          if (parsed instanceof type.errors) {
+            return Promise.resolve(
+              errorResult(
+                call.id,
+                new Error(
+                  `disable_offering received invalid input: ${parsed.summary}`,
+                ),
+              ),
+            );
+          }
+          return runDisableOffering(env, call, parsed);
         }
         default:
           return Promise.resolve(
