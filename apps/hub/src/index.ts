@@ -2017,6 +2017,15 @@ export async function createHub(config: HubConfig) {
       }
 
       try {
+        // Not `recordAgentSessionForRun` here: this mints a deployment
+        // with no message sent against it — a `workflow_run` born this
+        // way carries no principal until its first trigger (a call this
+        // deployer never makes) reconciles one onto it, so the call
+        // would only ever no-op. That trigger runs entirely through
+        // Interchange's own native route, with no Workbench-owned hook
+        // to record the session afterward (CL-7477 tracks the chat,
+        // webhook, and one-shot-prompt launch paths, which all send a
+        // message of their own and record there instead).
         const prepared =
           await workflowAllocationService.prepareProvisionedDeployment({
             tenantId,

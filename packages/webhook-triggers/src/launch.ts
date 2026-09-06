@@ -17,6 +17,7 @@ import {
   deliverWhenRoutable,
   readDefinitionProjection,
   readFoldedBody,
+  recordAgentSessionForRun,
   WORKFLOW_SOURCE_ENTRY,
 } from "@corbits/workflows";
 import { listVisibleOfferings, type DB } from "@intx/db";
@@ -234,6 +235,26 @@ export async function launchWebhookTrigger(
         instanceId: prepared.anchorRunId,
         triggerId: trigger.id,
       },
+    });
+  }
+
+  // The delivery attempt above is what drove the run's trigger path,
+  // the only thing that ever reconciles a principal onto a freshly
+  // provisioned `workflow_run` (CL-7477) — recording only now, after
+  // that attempt, is what makes this call ever find one. Best-effort:
+  // a run that never became routable stays without a session until its
+  // first successful send.
+  try {
+    await recordAgentSessionForRun(deps.db, {
+      sessionId,
+      anchorRunId: prepared.anchorRunId,
+    });
+  } catch (error) {
+    reportError(error, {
+      operation: "webhookTriggers.launch.recordAgentSession",
+      tenantId: trigger.tenantId,
+      agentId: prepared.deploymentAddress,
+      extra: { instanceId: prepared.anchorRunId },
     });
   }
 

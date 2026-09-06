@@ -16,6 +16,7 @@ import { and, desc, eq } from "drizzle-orm";
 import {
   authoredDefinitionCandidates,
   DefinitionProjectionMissingError,
+  endAgentSessionForPrincipal,
   readFoldedBody,
   resolveNewestProjectedDefinition,
   WORKFLOW_SOURCE_ENTRY,
@@ -342,6 +343,11 @@ export function createHubChatPlatform(
           ? { toolPackagePins: input.foldedBody.toolPackagePins }
           : {}),
       });
+    // Not `recordAgentSessionForRun` here: a freshly provisioned run's
+    // `workflow_run.principal_id` is still null (an invite sits
+    // un-triggered until someone actually writes into it), so this
+    // would only ever no-op. `sendRunMail` records it instead, once the
+    // run's first turn has actually reconciled a principal onto it.
     return {
       runId: prepared.anchorRunId,
       address: prepared.deploymentAddress,
@@ -469,6 +475,10 @@ export function createHubChatPlatform(
       definitionAssetId,
       foldedBody: binding.foldedBody,
     });
+
+    if (run.principalId !== null) {
+      await endAgentSessionForPrincipal(deps.db, run.principalId);
+    }
 
     await repointBinding(
       deps.db,

@@ -8,8 +8,10 @@ import type { AgentLifecycle } from "@corbits/agent-lifecycle";
 import { connectorReplyContent, messageRunEnded } from "@corbits/agent-events";
 import { reportError } from "@corbits/error-sink";
 import {
+  endAgentSessionForRun,
   readDefinitionProjection,
   readFoldedBody,
+  recordAgentSessionForRun,
   WORKFLOW_SOURCE_ENTRY,
 } from "@corbits/workflows";
 import { listVisibleOfferings, type DB } from "@intx/db";
@@ -162,6 +164,10 @@ async function provisionOnAsset(
         ? { toolPackagePins: input.foldedBody.toolPackagePins }
         : {}),
     });
+  // Not `recordAgentSessionForRun` here: a freshly provisioned run's
+  // `workflow_run.principal_id` is still null until its first trigger
+  // reconciles one onto it — `runOneShotPrompt` records the session
+  // right after the opening prompt actually sends.
   return {
     runId: prepared.anchorRunId,
     address: prepared.deploymentAddress,
@@ -261,6 +267,14 @@ export async function runOneShotPrompt(
       clearTimeout(timer);
       unsubscribe();
       try {
+        await endAgentSessionForRun(deps.db, launched.runId);
+      } catch (err) {
+        reportError(err, {
+          operation: "agent-directory.one-shot.end-session",
+          extra: { runId: launched.runId, reason },
+        });
+      }
+      try {
         await deps.undeploy(launched.address, reason);
       } catch (err) {
         reportError(err, {
@@ -290,18 +304,33 @@ export async function runOneShotPrompt(
             content: input.prompt,
             cryptoProvider,
           });
-          return;
+        } else {
+          await deps.sessionService.sendUserMessage({
+            agentAddress: launched.address,
+            from: `${input.principalId}@${tenantRow.domain}`,
+            messageId: `<${crypto.randomUUID()}@${tenantRow.domain}>`,
+            date: new Date(),
+            content: input.prompt,
+            sessionId: launched.sessionId,
+            tenantId: input.tenantId,
+            cryptoProvider,
+          });
         }
-        await deps.sessionService.sendUserMessage({
-          agentAddress: launched.address,
-          from: `${input.principalId}@${tenantRow.domain}`,
-          messageId: `<${crypto.randomUUID()}@${tenantRow.domain}>`,
-          date: new Date(),
-          content: input.prompt,
-          sessionId: launched.sessionId,
-          tenantId: input.tenantId,
-          cryptoProvider,
-        });
+        // The send above just drove the run's trigger path, the only
+        // thing that ever reconciles a principal onto a freshly
+        // provisioned `workflow_run` (CL-7477) — recording only now is
+        // what makes this ever find one.
+        try {
+          await recordAgentSessionForRun(deps.db, {
+            sessionId: launched.sessionId,
+            anchorRunId: launched.runId,
+          });
+        } catch (err) {
+          reportError(err, {
+            operation: "agent-directory.one-shot.recordAgentSession",
+            extra: { address: launched.address },
+          });
+        }
       } catch (cause) {
         reportError(cause, {
           operation: "agent-directory.one-shot.send",
