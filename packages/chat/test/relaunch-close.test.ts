@@ -128,7 +128,7 @@ function createPlatform(db: never) {
   return createHubChatPlatform({
     db,
     toolGrantsForPins: () => [],
-    sessionService: {} as never,
+    runTrigger: {} as never,
     repoStore: { resolveRef: async () => "sha_test" },
     sidecarRouter: { getRoutableAddresses: () => [] } as never,
     eventCollectors: {} as never,
