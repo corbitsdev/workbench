@@ -310,7 +310,7 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
         const definition = buildEchoWorkflow({
           triggerAddress: `echo@${slug}.localhost`,
           inferencePreferences: [
-            { provider: "anthropic", model: "claude-sonnet-5" },
+            { provider: "anthropic", model: PLACEHOLDER_MODEL },
           ],
           turnTimeoutMs: 60_000,
         });
