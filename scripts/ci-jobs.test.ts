@@ -27,7 +27,15 @@ function jobBodies(yaml: string): Map<string, string> {
 const SETUP = "./.github/actions/setup-workbench";
 const POSTGRES_IMAGE = "pgvector/pgvector:pg17";
 const DB_JOBS = ["e2e", "isolation", "db-suites"] as const;
-const MERGE_BASE_JOBS = ["typecheck", "build-test", "structural"] as const;
+// "build-test" itself is a no-op summary job over the build-test-shard
+// matrix (see ci.yml) — the matrix job is the one that actually checks
+// out the repo and needs full history for tool-package-freshness's
+// merge-base diff.
+const MERGE_BASE_JOBS = [
+  "typecheck",
+  "build-test-shard",
+  "structural",
+] as const;
 
 test("CI splits e2e, isolation, and db-suites onto their own Postgres jobs", async () => {
   const yaml = await readFile(join(ROOT, ".github/workflows/ci.yml"), "utf8");
