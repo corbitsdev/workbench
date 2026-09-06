@@ -55,7 +55,6 @@ describe("avatarClassForPrincipal", () => {
       avatarClassForPrincipal("prn_super_secret_internal_id"),
     ).not.toContain("prn_super_secret_internal_id");
   });
-
 });
 
 describe("resolveAvatarFill", () => {
