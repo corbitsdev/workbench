@@ -182,7 +182,10 @@ frozen projection carries a native `ScheduleTrigger`. Cadence is set
 from inside conversation, not from a separate scheduling console: a
 person names what should happen again, on what schedule, and where the
 result should land. See `@corbits/workflows` for the schedule/cron
-helpers and the hub's `workflow-scheduler.ts` for the poller.
+helpers and the hub's `workflow-scheduler.ts` for the poller. The
+Routines page also offers an Available section (CL-7073): every
+catalog workflow this workbench hasn't added yet, with an Add action
+that deploys it in place — no separate create flow.
 
 ## Inbox and approvals
 

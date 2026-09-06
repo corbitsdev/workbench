@@ -33,4 +33,17 @@ describe("describeCorbitsToolPackages", () => {
     const second = await describeCorbitsToolPackages();
     expect(second).toBe(first);
   });
+
+  test("tools-skills grants exactly one qualifiedId for skills_load, not the old load_skill name", async () => {
+    const descriptions = await describeCorbitsToolPackages();
+    const skills = descriptions.find(
+      (description) => description.name === "@corbits/tools-skills",
+    );
+    expect(skills).toBeDefined();
+    const qualifiedIds = skills?.tools.map((tool) => tool.qualifiedId) ?? [];
+    expect(qualifiedIds).toContain("@corbits/tools-skills/skills:skills_load");
+    expect(qualifiedIds).not.toContain(
+      "@corbits/tools-skills/skills:load_skill",
+    );
+  });
 });

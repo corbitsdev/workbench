@@ -236,6 +236,7 @@ export function createWorkflowCapabilityRoutes(
     assertCapabilityInInventory(body, inventory);
 
     const added = await commitAgentCapabilityAdd({
+      db: deps.db,
       assetService: deps.assetService,
       deployer: deps.deployer,
       skillsStore: deps.skillsStore,

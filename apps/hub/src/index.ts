@@ -110,6 +110,10 @@ import {
   settleConnectedService,
   workbenchLaunchPersistExtra,
 } from "@corbits/chat";
+import {
+  createDrizzleMailboxWriter,
+  type MailboxFanoutDeps,
+} from "@corbits/chat/mailbox-fanout";
 import type { RelaunchNoticePort } from "@corbits/chat";
 import { reportError } from "@corbits/error-sink";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
@@ -168,8 +172,13 @@ import { runSystemSeed } from "./system-seed";
 import {
   createInMemoryMailboxEventBus,
   createMailboxDb,
+  createMailboxPersist,
   mountMailbox,
 } from "@corbits/mailbox";
+import {
+  createHubMailboxAuthorizeSender,
+  createHubMailboxResolveRefs,
+} from "./mailbox-persist";
 import {
   createCommandRegistry,
   createCommandRoutes,
@@ -221,8 +230,8 @@ import {
   createSessionService,
   createSidecarAllocationReconciler,
   createSidecarPluginRegistry,
+  createSidecarCredentialResolver,
   createSidecarRouter,
-  createSidecarTokenAuthenticator,
   createWorkflowAllocationService,
   createWorkflowDispatchService,
   DEFAULT_ASSET_REF,
@@ -251,6 +260,10 @@ import {
   createTenantGrantLister,
 } from "./grant-allowance";
 import { createDockerSidecarProvisioner } from "@corbits/docker-provisioner";
+import {
+  createProcessSidecarProvisioner,
+  readProcessProvisionerConfig,
+} from "@corbits/process-provisioner";
 import { getArtifact, writeArtifactVersion } from "@corbits/artifacts";
 import {
   createArtifactDbStore,
@@ -272,7 +285,11 @@ import {
   type PresenceRoomKey,
 } from "@corbits/presence";
 import { supportedCredentialProviders } from "@corbits/connections/credential-test";
-import { createGitWorkflowPusher } from "@corbits/seeding";
+import {
+  CATALOG_WORKFLOWS,
+  catalogWorkflowDeployableOnThisPin,
+  createGitWorkflowPusher,
+} from "@corbits/seeding";
 import { createHubAPI } from "@corbits/hub-api-client";
 import {
   createDrizzlePendingSeedStore,
@@ -527,8 +544,30 @@ export function hubCredentialCipher(
 function buildSidecarProvisioner(
   config: SidecarProvisionerConfig,
   hubDataDir: string,
+  hubWebSocketUrl: string,
 ): SidecarProvisioner {
   switch (config.id) {
+    case "process":
+      // Same derivation as the other two backends: the hub-side
+      // allocation state lives under the hub's own data dir, and so do
+      // the per-allocation directories each spawned sidecar uses as its
+      // own SIDECAR_DATA_DIR.
+      return createProcessSidecarProvisioner({
+        config: readProcessProvisionerConfig({
+          env: {
+            ...(config.sidecarEntryPath === undefined
+              ? {}
+              : {
+                  PROCESS_PROVISIONER_SIDECAR_ENTRY: config.sidecarEntryPath,
+                }),
+            ...(config.runtimePath === undefined
+              ? {}
+              : { PROCESS_PROVISIONER_RUNTIME: config.runtimePath }),
+          },
+          dataDir: path.resolve(hubDataDir, "process-provisioner"),
+          hubWebSocketUrl,
+        }),
+      });
     case "docker":
       return createDockerSidecarProvisioner({
         config: {
@@ -718,9 +757,30 @@ export async function createHub(config: HubConfig) {
     db,
     grantStore: createGrantStore(db),
   });
+  // Hoisted ahead of their other uses below (`mountMemory`'s neighbors,
+  // the room timeline store at CL-6327) so `createHubMailboxResolveRefs`
+  // can share these two instances rather than constructing its own just
+  // for the mailbox wiring.
+  const chatStore = createDrizzleChatStore(db);
+  const roomMessages = createDrizzleRoomMessageStore(db);
   const lookups = {
     ...baseLookups,
     materializeMailTriggeredRunGrants: mailTriggeredRunGrants,
+    // CL-7449: every outbound agent frame also lands a durable
+    // `principal_mail` row in each addressed human participant's mailbox,
+    // dual-written alongside `baseLookups.persistMail`'s `session_mail`
+    // write. Dual-write independence is `createMailboxPersist`'s own
+    // contract (upstream failing still attempts the mailbox write, and a
+    // mailbox failure never fails upstream) -- no second try/catch belongs
+    // here. `resolveRefs` runs inside the package's own transaction, so the
+    // workbench ref is present before the post-commit bus event fires --
+    // no out-of-band UPDATE, no polling read.
+    persistMail: createMailboxPersist(mailboxDb, {
+      upstream: baseLookups.persistMail,
+      authorizeSender: createHubMailboxAuthorizeSender(db),
+      bus: mailboxBus,
+      resolveRefs: createHubMailboxResolveRefs(chatStore, roomMessages),
+    }),
     async registerSignalCorrelation(
       args: Parameters<typeof baseLookups.registerSignalCorrelation>[0],
     ): Promise<void> {
@@ -780,9 +840,20 @@ export async function createHub(config: HubConfig) {
     )) !== null;
   const pinnedPackageCredentialBindingsFor =
     createPinnedPackageCredentialBindingsFor(isConnectorConnected);
+  // One resolver serves both seams, exactly as @intx/hub-sessions's own
+  // reference host wires them: `resolve` turns a presented bearer token
+  // into a verified identity at the handshake, and `isCurrent`
+  // revalidates that identity at the registration, readiness, and
+  // routing boundaries. Without the second one the router falls back to
+  // its always-true default, and a provisioner-issued token stays
+  // accepted after its allocation was superseded or destroyed — which a
+  // process-provisioned sidecar reaches easily, since a child that
+  // outlives its allocation keeps reconnecting to the same hub.
+  const sidecarCredentials = createSidecarCredentialResolver({ db });
   const sidecarRouter = createSidecarRouter({
     hubPublicKey,
-    authenticateSidecar: createSidecarTokenAuthenticator({ db }),
+    authenticateSidecar: async ({ token }) => sidecarCredentials.resolve(token),
+    validateSidecarIdentity: sidecarCredentials.isCurrent,
     lookups,
   });
   // A finalized turn's persisted-artifact tool-call results become
@@ -946,20 +1017,26 @@ export async function createHub(config: HubConfig) {
     }),
     workflowDeploySourceStore,
   );
+  const hubWebSocketUrl =
+    config.sidecarWebSocketUrl ??
+    `${config.baseUrl.replace(/^http/, "ws")}/api/sidecars/ws`;
   // Provisioner plugins are injected at the application composition
-  // boundary, mirroring @intx/hub-sessions's own reference wiring: the
-  // registry always exists, but ships with no provisioners (and no
-  // default) until SIDECAR_PROVISIONERS names one or more builds. A
-  // workbench's "run this workbench on its own sidecar" setting can then
-  // always write a tenant's exclusive `sidecarPlacement`; without any
-  // configured provisioner that placement simply fails closed at
-  // deployment time rather than silently falling back to the shared
-  // sidecar. Adding a new backend here is: implement `SidecarProvisioner`
-  // in its own package, add a case to `buildSidecarProvisioner`, and add
-  // its id to `apps/hub/src/config.ts`'s `SIDECAR_PROVISIONER_IDS`.
+  // boundary, mirroring @intx/hub-sessions's own reference wiring. An
+  // install that configures nothing registers the `process` backend
+  // (`@corbits/process-provisioner`) as the sole default, so a
+  // workbench's "run this workbench on its own sidecar" setting works on
+  // one server with no operator setup; `SIDECAR_PROVISIONERS` is the one
+  // variable that changes where sidecars run. Adding a new backend here
+  // is: implement `SidecarProvisioner` in its own package, add a case to
+  // `buildSidecarProvisioner`, and add its id to
+  // `apps/hub/src/config.ts`'s `SIDECAR_PROVISIONER_IDS`.
   const sidecarPlugins = createSidecarPluginRegistry({
     provisioners: config.sidecarProvisioners.map((provisionerConfig) =>
-      buildSidecarProvisioner(provisionerConfig, config.hubDataDir),
+      buildSidecarProvisioner(
+        provisionerConfig,
+        config.hubDataDir,
+        hubWebSocketUrl,
+      ),
     ),
     ...(config.defaultSidecarProvisionerId !== undefined
       ? { defaultProvisionerId: config.defaultSidecarProvisionerId }
@@ -985,9 +1062,6 @@ export async function createHub(config: HubConfig) {
       return row?.address ?? null;
     },
   });
-  const hubWebSocketUrl =
-    config.sidecarWebSocketUrl ??
-    `${config.baseUrl.replace(/^http/, "ws")}/api/sidecars/ws`;
   const sidecarAllocationReconciler = createSidecarAllocationReconciler({
     allocationStore: sidecarAllocationStore,
     plugins: sidecarPlugins,
@@ -1293,7 +1367,6 @@ export async function createHub(config: HubConfig) {
     grantStore: chatGrantStore,
     conditionRegistry: chatConditionRegistry,
   });
-  const chatStore = createDrizzleChatStore(db);
   const threadStore = createDrizzleThreadStore(db);
   const blockResponseStore = createDrizzleBlockResponseStore(db);
   const reactionStore = createDrizzleReactionStore(db);
@@ -1405,9 +1478,6 @@ export async function createHub(config: HubConfig) {
   // shared the same way `turnQueue` above is, so a cancel request lands
   // wherever a workbench's turn was actually dispatched from.
   const turnCancellation = createTurnCancelRegistry();
-  // The room timeline store (CL-6327): a workbench's own messages, held
-  // as workbench data rather than platform mail.
-  const roomMessages = createDrizzleRoomMessageStore(db);
   relaunchNoticeRef.current = createRelaunchNoticePoster({
     store: chatStore,
     roomMessages,
@@ -1639,6 +1709,40 @@ export async function createHub(config: HubConfig) {
     // messages to it.
     releaseAgentInstance: (address, reason) =>
       sidecarRouter.sendAgentUndeploy(address, reason),
+    // CL-7450: fans a sent human message into every human participant's
+    // `@corbits/mailbox` inbox, on the same `mailboxDb`/`mailboxBus` every
+    // other mailbox consumer in this file shares. `resolveKnownPrincipalIds`
+    // reads the control plane's own `principal` table directly (the
+    // authoritative "is this a real principal in this tenant" check),
+    // rather than `@corbits/mailbox`'s FK, so an unknown participant is a
+    // reported skip, not a database error deep in a transaction.
+    mailbox: {
+      writer: createDrizzleMailboxWriter(mailboxDb, mailboxBus),
+      resolveKnownPrincipalIds: async (tenantId, candidateIds) => {
+        if (candidateIds.length === 0) return new Set();
+        const rows = await db.query.principal.findMany({
+          where: (p, { eq: equals, and: andAll }) =>
+            andAll(equals(p.tenantId, tenantId), inArray(p.id, candidateIds)),
+          columns: { id: true },
+        });
+        return new Set(rows.map((row) => row.id));
+      },
+      // A row's Message-ID always addresses under the row's OWN tenant's
+      // domain, never the acting caller's — see `mailbox-fanout.ts`'s
+      // `MailboxFanoutDeps.resolveTenantDomain` doc comment. Same
+      // `tenant` lookup `workflowDeployer.deploy` above uses for the
+      // identical reason (an instance's trigger address, minted against
+      // its own tenant's domain).
+      resolveTenantDomain: async (tenantId) => {
+        const tenantRow = await db.query.tenant.findFirst({
+          where: eq(tenantTable.id, tenantId),
+        });
+        if (tenantRow === undefined) {
+          throw new Error(`no tenant "${tenantId}" to address a mailbox from`);
+        }
+        return tenantRow.domain;
+      },
+    } satisfies MailboxFanoutDeps,
   };
   app.route(`${TENANT_PREFIX}/chat`, createChatRoutes(chatDeps));
   // Myra's workflow-run chat surfaces (`@corbits/agent-directory-tools`'
@@ -1765,6 +1869,10 @@ export async function createHub(config: HubConfig) {
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
       }),
+      catalogAssetNames: CATALOG_WORKFLOWS.map(
+        (workflow) => workflow.assetName,
+      ),
+      catalogWorkflowDeployable: catalogWorkflowDeployableOnThisPin,
       runNow: async (args) =>
         runNowScheduledDefinition(
           { db, sidecarRouter, ...scheduledDeliveryJoinDeps },
@@ -3318,6 +3426,22 @@ export async function createHub(config: HubConfig) {
       if (sidecarAllocationReconciliationTimer !== undefined) {
         clearTimeout(sidecarAllocationReconciliationTimer);
       }
+      // Retire the relaunch sweep's series so any in-flight pass's
+      // `.finally` reschedule is a no-op, and cancel whatever pass is
+      // currently pending. Without this the sweep outlives `close()`
+      // entirely (it's only ever re-armed, never torn down) and keeps
+      // querying `chat.workbench_launch` on a timer this function is
+      // about to end — including, once `close()` below tears down the
+      // db pool, querying a pool that's already shut down. In a test
+      // suite that boots many hubs back to back (e.g.
+      // slack-tag-mount.test.ts, CL-7453) those leaked timers pile up
+      // across the whole `bun test` process and contend with later
+      // tests' own boots for Postgres connections, which is what
+      // surfaced as `chat·relaunch-sweep: relaunch sweep pass failed:
+      // Failed query: select ... from chat.workbench_launch` and an
+      // intermittent test timeout.
+      relaunchSweepSeries += 1;
+      clearTimeout(relaunchSweepTimer);
       envCredentialPlant.stop();
       chatOrchestrator.dispose();
       workflowScheduler.stop();

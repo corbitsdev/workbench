@@ -175,6 +175,14 @@ export const workbenchMessages = chatSchema.table(
     senderPrincipalId: text("sender_principal_id"),
     runId: text("run_id"),
     threadId: text("thread_id"),
+    /**
+     * The RFC 5322 `Message-ID` this row went out as when it was
+     * dispatched to an agent (CL-7104) — `<id@domain>`, derived from the
+     * row's own primary key and stamped once at dispatch. Null for a row
+     * that was never dispatched as mail (a join notice, an event, a
+     * message nobody was asked to answer).
+     */
+    mailMessageId: text("mail_message_id"),
     parts: jsonb("parts").notNull(),
     // Millisecond precision, not the default microsecond: a cursor is a
     // JS `Date` rendered to an ISO string, which carries milliseconds

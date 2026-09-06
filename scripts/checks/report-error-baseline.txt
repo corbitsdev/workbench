@@ -168,7 +168,6 @@ packages/granola-tools/src/tool.ts	1	return null;
 packages/granola-tools/src/tool.ts	1	return {
 packages/granola-tools/src/tool.ts	2	return {
 packages/inbox/src/routes.ts	1	publishLog.error(
-packages/interaction-tools/src/tool.ts	1	if (err instanceof NoOwnChannelError) {
 packages/jimmy-agent/src/gif-search-tool.ts	1	return false;
 packages/jimmy-agent/src/gif-search-tool.ts	1	return null;
 packages/jimmy-agent/src/gif-search-tool.ts	1	return {

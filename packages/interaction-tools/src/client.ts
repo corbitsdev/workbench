@@ -73,8 +73,8 @@ const PostedMessageResponse = type({ id: "string", createdAt: "string" });
  * Derives the question card's `questionId` from a tool-call id. The call
  * id is assigned by the runtime, not the model, so it is stable across a
  * crash-retry of the same `ask_user` invocation — hashing it into the
- * `q_<hex32>` shape `postQuestion` otherwise mints keeps the card and the
- * `message_response` gate on one id without trusting model-supplied input.
+ * `q_<hex32>` shape `postQuestion` otherwise mints keeps a retried call
+ * re-posting the same card without trusting model-supplied input.
  */
 export function questionIdForCall(callId: string): string {
   return `q_${createHash("sha256").update(callId).digest("hex").slice(0, 32)}`;
@@ -84,21 +84,19 @@ export function questionIdForCall(callId: string): string {
  * Posts a `question` block into the caller's own channel. Uses a caller-
  * supplied `questionId` when present (never trusts the model to supply a
  * stable, collision-free id — `ask_user` derives it from the tool-call id)
- * and otherwise mints one here. Returns the id: `beforeAskUser`
- * (`./tool.ts`) reuses it verbatim as the `message_response` gate's own
- * `correlationId`, and the block-response route persists (and later
- * relays) an answer keyed on this same id as `blockId` — a question
- * block's `blockId` IS its `questionId`, the same way a poll's is its
- * `pollId` (`packages/chat/src/schema.ts`'s `block_responses` table
- * comment). `@intx/hub-common`'s `generateId` is a closed enum of
- * platform id kinds (vendored, read-only source) with no "question"
- * entry, so a minted id is `q_`-prefixed the same way
- * `packages/chat/src/threads.ts`'s `thr_` ids are.
+ * and otherwise mints one here. Returns the id: the block-response route
+ * persists (and later relays, as an ordinary reply message) an answer keyed
+ * on this same id as `blockId` — a question block's `blockId` IS its
+ * `questionId`, the same way a poll's is its `pollId`
+ * (`packages/chat/src/schema.ts`'s `block_responses` table comment).
+ * `@intx/hub-common`'s `generateId` is a closed enum of platform id kinds
+ * (vendored, read-only source) with no "question" entry, so a minted id is
+ * `q_`-prefixed the same way `packages/chat/src/threads.ts`'s `thr_` ids are.
  *
  * Re-posting the same `questionId` into the same workbench is a no-op:
  * the participants/messages route returns the existing card rather than
- * inserting a second one, so a crash between this post and
- * `suspendOnGate` cannot orphan a duplicate on retry.
+ * inserting a second one, so a crash between this post and the tool call
+ * returning cannot orphan a duplicate on retry.
  */
 export async function postQuestion(
   config: AskUserClientConfig,
