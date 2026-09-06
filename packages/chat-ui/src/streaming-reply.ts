@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import { isAgentAddress, mentionedParticipants } from "@corbits/chat/mentions";
 import { reportError } from "@corbits/error-sink";
 import type { Part, ParticipantRecord } from "./api";
+import { REAL_CLOCK, type Clock } from "./clock";
 import {
   displayNameForAddress,
   type AgentDisplayNames,
@@ -307,6 +308,7 @@ export function useStreamingReply(
   workbenchId: string | null,
   clearMs: number = PENDING_REPLY_CLEAR_MS,
   minVisibleMs: number = TYPING_INDICATOR_MIN_VISIBLE_MS,
+  clock: Clock = REAL_CLOCK,
 ): {
   readonly streamingReply: StreamingReplyState;
   /** Set once the backstop above has fired for the turn just cleared — a
@@ -333,17 +335,17 @@ export function useStreamingReply(
     null,
   );
   const pendingSinceRef = useRef<number | null>(null);
-  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdTimerRef = useRef<unknown>(null);
 
   useEffect(() => {
     setStreamingReply(null);
     setReplyTimedOutRefId(null);
     pendingSinceRef.current = null;
     if (holdTimerRef.current !== null) {
-      clearTimeout(holdTimerRef.current);
+      clock.clearTimeout(holdTimerRef.current);
       holdTimerRef.current = null;
     }
-  }, [workbenchId]);
+  }, [workbenchId, clock]);
 
   useEffect(() => {
     // Arm for the whole "awaiting" phase, not just its tokenless prefix
@@ -356,7 +358,7 @@ export function useStreamingReply(
     if (streamingReply === null || streamingReply.phase !== "awaiting") {
       return;
     }
-    const timer = setTimeout(() => {
+    const timer = clock.setTimeout(() => {
       // The dependency below re-arms this effect (clearing this exact
       // timer) the instant `streamingReply` changes, so this callback only
       // ever runs while it's still the same pending reply it was armed
@@ -375,14 +377,14 @@ export function useStreamingReply(
       setReplyTimedOutRefId(refId);
       pendingSinceRef.current = null;
     }, clearMs);
-    return () => clearTimeout(timer);
-  }, [streamingReply, clearMs, workbenchId]);
+    return () => clock.clearTimeout(timer);
+  }, [streamingReply, clearMs, workbenchId, clock]);
 
   function commitReply(
     next: StreamingReplyState,
     current: StreamingReplyState,
   ): StreamingReplyState {
-    const now = Date.now();
+    const now = clock.now();
     const becamePending = isPendingReply(next) && !isPendingReply(current);
     if (becamePending) pendingSinceRef.current = now;
 
@@ -392,10 +394,10 @@ export function useStreamingReply(
       pendingSinceRef.current !== null &&
       now - pendingSinceRef.current < minVisibleMs
     ) {
-      if (holdTimerRef.current !== null) clearTimeout(holdTimerRef.current);
+      if (holdTimerRef.current !== null) clock.clearTimeout(holdTimerRef.current);
       const remaining = minVisibleMs - (now - pendingSinceRef.current);
       const held = next;
-      holdTimerRef.current = setTimeout(() => {
+      holdTimerRef.current = clock.setTimeout(() => {
         holdTimerRef.current = null;
         pendingSinceRef.current = null;
         setStreamingReply(held);
@@ -404,7 +406,7 @@ export function useStreamingReply(
     }
 
     if (holdTimerRef.current !== null) {
-      clearTimeout(holdTimerRef.current);
+      clock.clearTimeout(holdTimerRef.current);
       holdTimerRef.current = null;
     }
     if (!isPendingReply(next)) pendingSinceRef.current = null;

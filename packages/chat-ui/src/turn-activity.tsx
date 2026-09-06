@@ -15,6 +15,7 @@
 
 import { useEffect, useState } from "react";
 
+import { REAL_CLOCK, type Clock } from "./clock";
 import {
   describeToolCall,
   resolveToolIdentity,
@@ -336,11 +337,14 @@ const TURN_ACTIVITY_STALE_MS = 120_000;
  * workbench switch — activity from the workbench just left belongs to that
  * workbench, not the new one. `staleMs` (default `TURN_ACTIVITY_STALE_MS`)
  * is a test seam, mirroring `useTypingIndicator`'s own configurable
- * timeout.
+ * timeout. `clock` (default `REAL_CLOCK`) is the same kind of seam for the
+ * wall-clock reads and the backstop timer itself — a test drives both
+ * synchronously with a fake clock instead of sleeping on the real one.
  */
 export function useTurnActivity(
   workbenchId: string | null,
   staleMs: number = TURN_ACTIVITY_STALE_MS,
+  clock: Clock = REAL_CLOCK,
 ): {
   readonly activity: TurnActivityState;
   readonly handleStreamEvent: (eventType: string, data: unknown) => void;
@@ -358,15 +362,15 @@ export function useTurnActivity(
   // thing that ever clears it in that case.
   useEffect(() => {
     if (activity === null) return;
-    const timer = setTimeout(() => {
+    const timer = clock.setTimeout(() => {
       setActivity((current) => (current === activity ? null : current));
     }, staleMs);
-    return () => clearTimeout(timer);
-  }, [activity, staleMs]);
+    return () => clock.clearTimeout(timer);
+  }, [activity, staleMs, clock]);
 
   function handleStreamEvent(eventType: string, data: unknown) {
     setActivity((current) =>
-      nextTurnActivityState(current, { eventType, data }, Date.now()),
+      nextTurnActivityState(current, { eventType, data }, clock.now()),
     );
   }
 
