@@ -8,6 +8,9 @@
       "path": "./packages/access-policy/tsconfig.src.json"
     },
     {
+      "path": "./packages/access-tools/tsconfig.src.json"
+    },
+    {
       "path": "./packages/agent-directory-tools/tsconfig.src.json"
     },
     {

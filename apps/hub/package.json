@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@chat-adapter/state-memory": "^4.35.0",
+    "@corbits/access-tools": "workspace:*",
     "@corbits/agent-directory": "workspace:*",
     "@corbits/agent-lifecycle": "workspace:*",
     "@corbits/approvals": "workspace:*",
