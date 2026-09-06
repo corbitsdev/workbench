@@ -25,6 +25,7 @@ import {
   Capability,
 } from "@intx/types";
 import { type } from "arktype";
+import { deriveRunPrincipalId } from "@intx/hub-common";
 import type { InferencePreference } from "@intx/agent";
 import {
   buildAssistantWorkflow,
@@ -663,11 +664,21 @@ export const SEED_GRANTS: readonly { resource: string; action: string }[] = [
   // vocabulary.
   { resource: "asset:*", action: "create" },
   { resource: "asset:*", action: "write" },
-  // `@corbits/access-tools`' workflow-run-authenticated routes
-  // (`list_principals`, `list_grants`, `grant_access`, `revoke_access`):
-  // read on both, plus create/manage on grants so a seeded principal
-  // can actually mint and revoke the scoped grants it stands up for its
-  // own specialist agents.
+];
+
+// `@corbits/access-tools`' workflow-run-authenticated routes
+// (`list_principals`, `list_grants`, `grant_access`, `revoke_access`):
+// read on both, plus create/manage on grants so Myra can mint and revoke
+// the scoped grants she stands up for her own specialist agents. Planted
+// ONLY on Myra's own run principal (see `plantAssistantAccessToolsGrants`)
+// — every other `SEED_GRANTS` entry above lands on the tenant's shared
+// principal, and `principal:*`/`grant:*` there would let that shared
+// principal read and mint grants for every principal in the tenant, not
+// just its own specialist agents.
+const ASSISTANT_ACCESS_TOOLS_GRANTS: readonly {
+  resource: string;
+  action: string;
+}[] = [
   { resource: "principal:*", action: "read" },
   { resource: "grant:*", action: "read" },
   { resource: "grant:*", action: "create" },
@@ -754,6 +765,45 @@ export async function reconcileSeedGrants(
       api,
       cookies,
       { tenantId, principalId, resource: grant.resource, action: grant.action },
+      log,
+    );
+  }
+}
+
+/**
+ * Plants the `@corbits/access-tools` grants on Myra's OWN run principal,
+ * not the tenant's shared principal (CL-7467). `deriveRunPrincipalId` is
+ * the same deterministic `(tenantId, runId)` derivation
+ * `@intx/hub-api`'s `workflow-run-trigger` uses to mint a deployment's
+ * run principal on its first materialized trigger — since a deployment's
+ * top-level run id never changes across a relaunch, this stays stable
+ * for the life of the deployment, unlike a fresh per-invocation run id.
+ * Only called once `confirmDeploymentAnswers` has actually triggered the
+ * assistant deployment (`confirmDeployments: true`), because that
+ * trigger is what commits the run-principal row this grant references;
+ * the connect flow's `confirmDeployments: false` path defers this until
+ * the tenant's next `workbench seed` run finds a confirmed deployment.
+ */
+async function plantAssistantAccessToolsGrants(
+  api: ApiCall,
+  cookies: string[],
+  args: { tenantId: string; deploymentId: string },
+  log: (line: string) => void,
+): Promise<void> {
+  const runPrincipalId = await deriveRunPrincipalId(
+    args.tenantId,
+    args.deploymentId,
+  );
+  for (const grant of ASSISTANT_ACCESS_TOOLS_GRANTS) {
+    await plantGrant(
+      api,
+      cookies,
+      {
+        tenantId: args.tenantId,
+        principalId: runPrincipalId,
+        resource: grant.resource,
+        action: grant.action,
+      },
       log,
     );
   }
@@ -1336,6 +1386,14 @@ export async function seedTenant(args: SeedTenantArgs): Promise<void> {
         },
         log,
       );
+      if (workflow.assetName === SETUP_AGENT_ASSET_NAME) {
+        await plantAssistantAccessToolsGrants(
+          api,
+          cookies,
+          { tenantId: tenant.tenantId, deploymentId },
+          log,
+        );
+      }
     }
     confirmed += 1;
   }
