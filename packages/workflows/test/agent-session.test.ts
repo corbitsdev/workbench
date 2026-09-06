@@ -15,7 +15,10 @@ import { generateId } from "@intx/hub-common";
 import { resolveRunSessionId } from "@intx/hub-sessions";
 import { dbGate } from "../../../scripts/e2e/db-gate";
 
-import { recordAgentSessionForRun } from "../src/launch/agent-session";
+import {
+  endAgentSessionForRun,
+  recordAgentSessionForRun,
+} from "../src/launch/agent-session";
 
 function dbConfigFromUrl(databaseUrl: string) {
   const url = new URL(databaseUrl);
@@ -98,9 +101,55 @@ describeIfDb("recordAgentSessionForRun", () => {
   });
 
   test("writes an agent_session resolveRunSessionId reads back", async () => {
-    await recordAgentSessionForRun(db.db, { sessionId, anchorRunId });
+    await recordAgentSessionForRun(
+      db.db,
+      { sessionId, anchorRunId },
+      { create: () => undefined },
+    );
 
     const resolved = await resolveRunSessionId(db.db, principalId);
     expect(resolved).toBe(sessionId);
+  });
+
+  test("creates the run's event collector with its address/tenant/session/run id", async () => {
+    const createCalls: unknown[] = [];
+    const otherSessionId = generateId("session");
+
+    await recordAgentSessionForRun(
+      db.db,
+      { sessionId: otherSessionId, anchorRunId },
+      {
+        create: (...args: unknown[]) => {
+          createCalls.push(args);
+        },
+      },
+    );
+
+    expect(createCalls).toEqual([
+      [
+        `${anchorRunId}@agent-session-${tenantId}.localhost`,
+        tenantId,
+        otherSessionId,
+        anchorRunId,
+      ],
+    ]);
+
+    await db.db
+      .delete(schema.agentSession)
+      .where(eq(schema.agentSession.id, otherSessionId));
+  });
+
+  test("abandons the run's event collector when the session ends", async () => {
+    const abandonCalls: string[] = [];
+
+    await endAgentSessionForRun(db.db, anchorRunId, {
+      abandon: (address: string) => {
+        abandonCalls.push(address);
+      },
+    });
+
+    expect(abandonCalls).toEqual([
+      `${anchorRunId}@agent-session-${tenantId}.localhost`,
+    ]);
   });
 });
