@@ -77,12 +77,13 @@ just at different points in the request lifecycle.
 
 **A host injects:** its own definition and instance lists, already fetched
 from wherever it gets them (`apps/web/src/agents-api.ts`'s
-`loadAgentDirectory`, for this repo), and the folded-run-id set for
-`excludeRunIds` (from `@corbits/chat-ui`'s
-`foldedRunIdsFromChannels`, for this repo) — this subpath issues no
-request and holds no state of its own. Every function is generic over the host's
-concrete row type (constrained to the minimal shape it reads), so a host's
-richer types pass through untouched.
+`loadAgentDirectory`, for this repo) — this subpath issues no request and
+holds no state of its own. `excludeRunIds` is available for a host whose
+instance listing isn't already scoped server-side; this repo's own host
+gets that scoping for free from `listTopLevelRuns` (see
+`@corbits/run-scope`) and so never passes it. Every function is generic
+over the host's concrete row type (constrained to the minimal shape it
+reads), so a host's richer types pass through untouched.
 
 **Depends on:** `@corbits/chat/workbench-host-naming` directly — a domain
 package's naming contract, not app state, so it is a package dependency

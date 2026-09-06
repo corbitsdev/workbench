@@ -60,10 +60,7 @@ import {
   TenantResponse,
   paginatedSchema,
 } from "@intx/types";
-import {
-  ollamaOpenAICompatBaseURL,
-  type SupportedCredentialProvider,
-} from "@corbits/connections/credential-test";
+import { type SupportedCredentialProvider } from "@corbits/connections/credential-test";
 import { preferCompletionCapable } from "@corbits/connections/model-capability";
 import {
   CATALOG_SEEDS,
@@ -280,13 +277,8 @@ async function resolveOllamaModelSource(
   api: ApiCall,
   cookies: string[],
   tenantId: string,
-  apiKey: string,
-  baseURLOverride: string | undefined,
 ): Promise<ModelSource> {
   const catalogSeed = CATALOG_SEEDS.ollama;
-  const baseURL = ollamaOpenAICompatBaseURL(
-    baseURLOverride ?? catalogSeed.provider.baseURL,
-  );
 
   const response = await api(
     "GET",
@@ -368,39 +360,27 @@ async function resolveOllamaModelSource(
   return {
     provider: winner.plugin,
     model: winner.canonicalName,
-    baseURL,
-    apiKey,
   };
 }
 
-/** The `ModelSource` `ensureSeeded` deploys every default workflow
- * against. Every provider but `ollama` has a fixed, always-available
- * curated model list (`CATALOG_SEEDS`), so its curated default is a safe
- * pin. `ollama` is the one provider whose actual model list is
- * per-instance and can diverge from that curated name entirely
- * (CL-6366) — its resolution defers to `resolveOllamaModelSource`, which
- * reads back what `seedCatalog` actually found on the instance rather
- * than repeating the static pin. `baseURLOverride` is the
- * configurable-base-URL seam every provider but `ollama` ignores (a
- * fixed origin); for `ollama` it is the root the person actually pointed
- * their instance at, normalized to the OpenAI-compatible `/v1` form this
- * deploys against. */
+/** The `ModelSource` `ensureSeeded` names in every deployed definition's
+ * inference preferences — never what the deploy itself resolves
+ * inference against (the tenant's catalog offerings, CL-7461). Every
+ * provider but `ollama` has a fixed, always-available curated model list
+ * (`CATALOG_SEEDS`), so its curated default is a safe pin. `ollama` is
+ * the one provider whose actual model list is per-instance and can
+ * diverge from that curated name entirely (CL-6366) — its resolution
+ * defers to `resolveOllamaModelSource`, which reads back what
+ * `seedCatalog` actually found on the instance rather than repeating the
+ * static pin. */
 export async function modelSourceFor(
   api: ApiCall,
   cookies: string[],
   tenantId: string,
   provider: SupportedCredentialProvider,
-  apiKey: string,
-  baseURLOverride?: string,
 ): Promise<ModelSource> {
   if (provider === "ollama") {
-    return resolveOllamaModelSource(
-      api,
-      cookies,
-      tenantId,
-      apiKey,
-      baseURLOverride,
-    );
+    return resolveOllamaModelSource(api, cookies, tenantId);
   }
 
   const catalogSeed = CATALOG_SEEDS[provider];
@@ -413,8 +393,6 @@ export async function modelSourceFor(
   return {
     provider: catalogSeed.provider.plugin,
     model: defaultModel.canonicalName,
-    baseURL: catalogSeed.provider.baseURL,
-    apiKey,
   };
 }
 
@@ -513,8 +491,6 @@ export async function ensureSeeded(
       args.cookies,
       args.tenant.tenantId,
       args.provider,
-      args.apiKey,
-      args.baseURLOverride,
     ),
     pushWorkflow: args.pushWorkflow,
     log: args.log,

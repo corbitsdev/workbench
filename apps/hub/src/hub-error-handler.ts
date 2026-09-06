@@ -16,7 +16,7 @@ import { makeErrorEnvelope } from "@corbits/error-sink";
  * Duck-typed rather than an `instanceof` allowlist: any error carrying a
  * string `guidance` alongside its `message` is a named, consumer-facing
  * failure the thrower already wrote for a human to read — see
- * `@corbits/folded-runs`'s `DefinitionProjectionMissingError` and
+ * `@corbits/workflows`'s `DefinitionProjectionMissingError` and
  * `MultiStepFoldUnsupportedError`. Its `message` is safe to return
  * verbatim; anything else is a platform fault whose internals must not
  * leak to a client.

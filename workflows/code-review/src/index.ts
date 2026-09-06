@@ -5,8 +5,8 @@
 // One step, one agent — the shape every definition in this catalog
 // commits to, and the shape the webhook ingress can launch today
 // (`@corbits/webhook-triggers` launches a folded, single-step definition
-// through `@corbits/folded-runs`). A GitHub `pull_request` webhook
-// registered against this definition renders its input template into the
+// through `@corbits/workflows`' `readFoldedBody`). A GitHub `pull_request`
+// webhook registered against this definition renders its input template into the
 // run's first message, so the trigger is a real PR event, not a poll.
 //
 // The three reviewer lenses are not restated here: their prompts come

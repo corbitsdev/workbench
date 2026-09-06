@@ -3,9 +3,9 @@
 // its last deploy or rotation. Restoring one eagerly from that snapshot
 // at boot would replay a chain whose credential died after the freeze
 // forever -- the deployment reads as "already live" to every later wake
-// check, so the folded-run wake path (`ensureAwake` ->
-// `wakeFoldedRun`/`deployAtHead`, which DOES re-resolve fresh against the
-// live catalog on every call) never gets a chance to heal it.
+// check, so the lazy-wake path (`ensureAwake` -> `@corbits/chat`'s
+// `wakeByAddress`, which DOES re-resolve fresh against the live catalog
+// on every call) never gets a chance to heal it.
 //
 // The fix: boot-time restore defers a single-step deployment to that
 // wake path instead of restoring it from frozen sources -- proven here by
