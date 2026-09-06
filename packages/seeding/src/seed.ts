@@ -1060,8 +1060,7 @@ async function resolveRealSourceOfferingIds(
 }> {
   const offerings = (await listTenantCatalogOfferings(api, cookies, tenantId))
     .filter(
-      (offering) =>
-        !offering.disabled && offering.id !== excludeOfferingId,
+      (offering) => !offering.disabled && offering.id !== excludeOfferingId,
     )
     .sort((a, b) => a.priority - b.priority);
   const defaultSourceOfferingId = offerings[0]?.id;

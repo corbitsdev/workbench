@@ -57,7 +57,9 @@ export type SeedModelConfig = {
   readonly apiKey: string;
 };
 
-function resolvedModel(seedModel: SeedModelConfig | undefined): SeedModelConfig {
+function resolvedModel(
+  seedModel: SeedModelConfig | undefined,
+): SeedModelConfig {
   return (
     seedModel ?? {
       provider: SEED_MODEL_PROVIDER,

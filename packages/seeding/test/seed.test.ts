@@ -46,9 +46,10 @@ const MODEL = {
 // the tenant's catalog rather than a bare `ModelSource`.
 const OFFERING_ID = "off_1";
 
-function offeringsPage(
-  ids: readonly string[] = [OFFERING_ID],
-): { status: number; data: unknown } {
+function offeringsPage(ids: readonly string[] = [OFFERING_ID]): {
+  status: number;
+  data: unknown;
+} {
   return {
     status: 200,
     data: {
