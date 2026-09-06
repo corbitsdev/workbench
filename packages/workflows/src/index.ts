@@ -56,6 +56,12 @@ export {
 } from "./schedule/cron";
 export { scheduleCronFromProjection } from "./schedule/from-projection";
 export {
+  recordAgentSessionForRun,
+  endAgentSessionForPrincipal,
+  endAgentSessionForRun,
+  type RecordAgentSessionParams,
+} from "./launch/agent-session";
+export {
   deliverWhenRoutable,
   isAgentUnreachableError,
   type DeliverWhenRoutableOptions,

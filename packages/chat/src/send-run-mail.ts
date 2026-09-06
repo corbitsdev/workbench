@@ -1,5 +1,7 @@
 // Signs one inbound message via Interchange `sendUserMessage` and
 // records it on session_mail so the run's own live subscribers see it.
+import { recordAgentSessionForRun } from "@corbits/workflows";
+import { reportError } from "@corbits/error-sink";
 import { sessionMail } from "@intx/db/schema";
 import type { DB } from "@intx/db";
 import type { SessionService, SidecarRouter } from "@intx/hub-sessions";
@@ -100,5 +102,24 @@ export async function sendRunMail(
   const mailId = crypto.randomUUID();
   const now = new Date();
   const rawMIME = await deliverRunMailMIME(deps, params, mailId, now);
+  // `sendUserMessage` just drove this run's trigger path, which is the
+  // only thing that ever reconciles a principal onto a freshly
+  // provisioned `workflow_run` (CL-7477) — so the run is mail-routable
+  // now if it never was before. Best-effort and idempotent past the
+  // first successful call; a failure here must not swallow the mail
+  // that already sent.
+  try {
+    await recordAgentSessionForRun(deps.db, {
+      sessionId: params.sessionId,
+      address: params.agentAddress,
+    });
+  } catch (err) {
+    reportError(err, {
+      operation: "chat.sendRunMail.recordAgentSession",
+      tenantId: params.tenantId,
+      agentId: params.agentAddress,
+      extra: { sessionId: params.sessionId },
+    });
+  }
   return recordRunMail(deps, params, mailId, now, rawMIME);
 }
