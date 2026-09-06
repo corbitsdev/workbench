@@ -74,13 +74,13 @@ async function runInParallel(commands: readonly string[][]): Promise<boolean> {
   return ok;
 }
 
-const buildCode = await run(["bunx", "tsc", "--build", "tsconfig.build.json"]);
+const buildCode = await run(["bunx", "tsgo", "--build", "tsconfig.build.json"]);
 if (buildCode !== 0) process.exit(buildCode);
 
 const projectPaths = await discoverProjectPaths();
 const projectCommands = projectPaths.map((path) => [
   "bunx",
-  "tsc",
+  "tsgo",
   "-p",
   path,
   "--noEmit",
@@ -89,9 +89,9 @@ const projectCommands = projectPaths.map((path) => [
 const projectsOk = await runInParallel(projectCommands);
 
 const [rootCode, isolationCode, hubDataDirCode] = await Promise.all([
-  run(["bunx", "tsc", "-p", "tsconfig.json", "--noEmit"]),
-  run(["bunx", "tsc", "-p", "test/isolation/tsconfig.json", "--noEmit"]),
-  run(["bunx", "tsc", "-p", "test/tsconfig.json", "--noEmit"]),
+  run(["bunx", "tsgo", "-p", "tsconfig.json", "--noEmit"]),
+  run(["bunx", "tsgo", "-p", "test/isolation/tsconfig.json", "--noEmit"]),
+  run(["bunx", "tsgo", "-p", "test/tsconfig.json", "--noEmit"]),
 ]);
 if (
   !projectsOk ||
