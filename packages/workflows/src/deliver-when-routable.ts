@@ -1,11 +1,10 @@
 // CL-7476: since the process provisioner started spawning one sidecar per
 // allocation, a freshly launched run's first mail can arrive before that
-// sidecar has finished booting and registering with the hub. The send
+// sidecar has finished booting and registering with the hub, so the send
 // fails with "agent is unreachable" even though nothing is actually wrong
-// — the address just isn't routable yet. Chat's send/fan-out path, its
-// invite first-turn delivery, and the webhook trigger's ingress delivery
-// each hit this same race independently; this is the one shared retry
-// they all go through instead of three ad hoc copies.
+// — the address just isn't routable yet. The webhook trigger's ingress
+// delivery goes through this helper; chat keeps its own existing
+// wake-and-retry loop (`sendRunMailWithReclaimRetry`) instead.
 const DEFAULT_DEADLINE_MS = 20_000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
 
