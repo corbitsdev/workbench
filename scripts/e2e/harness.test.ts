@@ -11,6 +11,7 @@ import {
   createCleanupHarness,
   parseEnvFileDatabaseUrl,
   runCleanups,
+  workflowDeployBody,
   type SpawnedApp,
 } from "./harness.ts";
 
@@ -64,6 +65,29 @@ describe("createCleanupHarness", () => {
     await expect(runCleanups(cleanups)).rejects.toThrow("boom");
     expect(ran).toEqual(["last-registered", "first-registered"]);
     expect(cleanups).toHaveLength(0);
+  });
+});
+
+describe("workflowDeployBody", () => {
+  test("carries catalog offering ids, never a raw provider/apiKey source", () => {
+    const body = workflowDeployBody({
+      assetId: "asset-1",
+      commitSha: "deadbeef",
+      sourceOfferingIds: ["offering-1", "offering-2"],
+      defaultSourceOfferingId: "offering-1",
+    });
+    expect(body).toEqual({
+      source: {
+        kind: "asset",
+        assetId: "asset-1",
+        package: { format: "source", commitSha: "deadbeef" },
+      },
+      entry: (body as { entry: string }).entry,
+      sourceOfferingIds: ["offering-1", "offering-2"],
+      defaultSourceOfferingId: "offering-1",
+    });
+    expect(body).not.toHaveProperty("sources");
+    expect(body).not.toHaveProperty("defaultSource");
   });
 });
 
