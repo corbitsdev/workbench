@@ -2726,6 +2726,7 @@ describe("createHubChatPlatform", () => {
       // in flight when the concurrent `ensureAwake` call joins it.
       let deployCallCount = 0;
       const gatedDeployReleases: (() => void)[] = [];
+      const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
       const allocationService = createFakeWorkflowAllocationService();
       const originalPrepare =
         allocationService.prepareProvisionedDeployment.bind(allocationService);
@@ -2738,6 +2739,14 @@ describe("createHubChatPlatform", () => {
           await new Promise<void>((resolve) => {
             gatedDeployReleases.push(resolve);
           });
+          // Models the sidecar registering once the reclaim retry's own
+          // redeploy actually completes — the routable-wait
+          // `sendRunMailWithReclaimRetry` now does (CL-7488) needs this
+          // to see the retried send through. The cold wake ahead of the
+          // first send attempt deliberately stays unrouted so that
+          // attempt still finds `wakeByAddress`'s own routability check
+          // false and takes the reclaim-retry path this test exercises.
+          sidecarRouter.routableAddresses.push(result.deploymentAddress);
         }
         return result;
       };
@@ -2746,10 +2755,10 @@ describe("createHubChatPlatform", () => {
         toolGrantsForPins: () => [],
         db: db as never,
         sessionService,
-        sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
+        sidecarRouter,
         eventCollectors: createFakeEventCollectors(),
         lifecycle: { idleSleepMs: 60_000 },
-        reclaimRetryDelaysMs: [1],
+        routableWaitDeadlineMs: 5_000,
         mailDeliveryTimeoutMs: 5_000,
         workflowAllocationService: allocationService,
       });
@@ -2876,13 +2885,30 @@ describe("createHubChatPlatform", () => {
         routableAddresses: [staleAddress],
       });
 
+      // Models the sidecar registering the relaunch's fresh address the
+      // moment its deploy actually completes — `sendRunMailWithReclaimRetry`
+      // now waits on this routing-table transition (CL-7488) instead of a
+      // fixed backoff, so the retried send needs it to flip before it can
+      // see the run through.
+      const allocationService = createFakeWorkflowAllocationService();
+      const originalPrepare =
+        allocationService.prepareProvisionedDeployment.bind(allocationService);
+      allocationService.prepareProvisionedDeployment = async (
+        params: Parameters<typeof originalPrepare>[0],
+      ) => {
+        const result = await originalPrepare(params);
+        sidecarRouter.routableAddresses.push(result.deploymentAddress);
+        return result;
+      };
+
       const platform = createPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
         sessionService,
         sidecarRouter,
         eventCollectors: createFakeEventCollectors(),
-        reclaimRetryDelaysMs: [1],
+        workflowAllocationService: allocationService,
+        routableWaitDeadlineMs: 5_000,
         mailDeliveryTimeoutMs: 5_000,
       });
 
