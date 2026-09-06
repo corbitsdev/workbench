@@ -2,20 +2,28 @@
   "name": "@corbits/catalog-tools",
   "private": true,
   "description": "The list_model_concepts, pick_models and estimate_run_cost tools as an @intx/agent bundle: an agent asks for a model by what the work needs and gets back an ordered, priced chain of what this bench can actually reach — never a model named by hand.",
-  "version": "0.0.2",
+  "version": "0.0.4",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./routes": "./src/routes.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/error-sink": "workspace:*",
     "@intx/agent": "workspace:*",
+    "@intx/db": "workspace:*",
+    "@intx/hub-api": "workspace:*",
+    "@intx/hub-common": "0.3.0",
+    "@intx/hub-sessions": "workspace:*",
     "@intx/types": "workspace:*",
-    "arktype": "catalog:"
+    "arktype": "catalog:",
+    "drizzle-orm": "catalog:",
+    "hono": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
