@@ -166,6 +166,7 @@ import {
   createSidecarPlacementRoutes,
 } from "@corbits/sidecar-placement";
 import { createWorkflowAccessRoutes } from "@corbits/access-tools/routes";
+import { createWorkflowCatalogAdminRoutes } from "@corbits/catalog-tools/routes";
 import { generateId } from "@intx/hub-common";
 
 import { ensureDefaultTenant } from "./default-tenant";
@@ -2882,6 +2883,27 @@ export async function createHub(config: HubConfig) {
       authenticator: createWorkflowRunAuthenticator({ db }),
       grantStore: chatGrantStore,
       conditionRegistry: chatConditionRegistry,
+    }),
+  );
+  // Myra's own catalog-administration surface
+  // (`@corbits/catalog-tools`' `create_offering`/`set_offering_priority`/
+  // `disable_offering`): the workflow-run-authenticated counterpart to
+  // `@intx/hub-api`'s tenant-session `/api/tenants/:tenantId/catalog/
+  // {models,providers,offerings}` mount, which only accepts a browser
+  // session and so 401s a workflow child. Reuses the SAME grant store and
+  // condition registry every other extension's own requireGrant check
+  // runs against, and the SAME sidecarRouter/credentialCipher the
+  // tenant-session mount pushes source updates through on every offering
+  // write, so a write through either surface propagates identically.
+  app.route(
+    "/api/workflow-catalog-admin",
+    createWorkflowCatalogAdminRoutes({
+      db,
+      authenticator: createWorkflowRunAuthenticator({ db }),
+      grantStore: chatGrantStore,
+      conditionRegistry: chatConditionRegistry,
+      sidecarRouter,
+      credentialCipher,
     }),
   );
   // Notify-to-reconnect for an OAuth-connected credential whose token

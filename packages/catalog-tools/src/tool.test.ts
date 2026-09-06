@@ -2,11 +2,16 @@ import { describe, expect, test } from "bun:test";
 import type { ToolCall } from "@intx/types/runtime";
 
 import {
+  catalogOfferingTools,
   catalogTools,
+  CREATE_OFFERING_TOOL,
+  DISABLE_OFFERING_TOOL,
   ESTIMATE_RUN_COST_TOOL,
   LIST_MODEL_CONCEPTS_TOOL,
   PICK_MODELS_TOOL,
+  SET_OFFERING_PRIORITY_TOOL,
   type WorkflowCatalogEnv,
+  type WorkflowCatalogOfferingEnv,
 } from "./tool";
 
 const CHAIN_BODY = {
@@ -232,5 +237,220 @@ describe("list_model_concepts", () => {
     expect(content).toContain("cheap-loop");
     expect(content).toContain("2 models here, best via globex");
     expect(content).toContain("nothing here can do it yet");
+  });
+});
+
+function offeringEnv(): WorkflowCatalogOfferingEnv {
+  return {
+    hubCatalogUrl: "https://hub.example.com",
+    sidecarToken: "sc-token",
+    address: "run_1@workflow",
+  } as unknown as WorkflowCatalogOfferingEnv;
+}
+
+const OWN_MODELS_PAGE = {
+  data: [
+    {
+      id: "model_1",
+      tenantId: "tenant_1",
+      canonicalName: "thrifty",
+      displayName: null,
+      description: null,
+      disabled: false,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+  ],
+  nextCursor: null,
+};
+
+const OWN_PROVIDERS_PAGE = {
+  data: [
+    {
+      id: "provider_1",
+      tenantId: "tenant_1",
+      name: "globex",
+      plugin: "openai-compatible",
+      baseURL: "https://globex.example.com",
+      credentialId: "cred_1",
+      walletId: null,
+      disabled: false,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+  ],
+  nextCursor: null,
+};
+
+const OFFERING_ROW = {
+  id: "offering_1",
+  tenantId: "tenant_1",
+  modelId: "model_1",
+  providerId: "provider_1",
+  priority: 0,
+  deploymentTags: [],
+  capabilities: ["plain-text"],
+  quirks: null,
+  disabled: false,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+};
+
+/** Routes a stub fetch by which tenant-admin path it hits, rather than
+ * one fixed body — `create_offering` makes several calls in sequence
+ * (list models, list providers, then create). */
+function routedFetch(handlers: Record<string, () => Response>): typeof fetch {
+  return (async (input: string) => {
+    const url = new URL(input);
+    for (const [suffix, handler] of Object.entries(handlers)) {
+      if (url.pathname.endsWith(suffix)) return handler();
+    }
+    throw new Error(`unstubbed request: ${url.pathname}`);
+  }) as unknown as typeof fetch;
+}
+
+function ok(body: unknown, status = 200): () => Response {
+  return () => new Response(JSON.stringify(body), { status });
+}
+
+function forbidden(): Response {
+  return new Response(
+    JSON.stringify({
+      error: {
+        code: "forbidden",
+        userMessage: "You do not have permission to perform this action",
+        refId: "ref_test",
+      },
+    }),
+    { status: 403 },
+  );
+}
+
+describe("the offering bundle's shape", () => {
+  test("gates create_offering and disable_offering behind approval, not set_offering_priority", () => {
+    expect(catalogOfferingTools.definitions).toEqual([
+      { name: CREATE_OFFERING_TOOL, approval: "ask" },
+      { name: SET_OFFERING_PRIORITY_TOOL },
+      { name: DISABLE_OFFERING_TOOL, approval: "ask" },
+    ]);
+  });
+
+  test("requires only the sanctioned workflow-run env keys", () => {
+    expect(catalogOfferingTools.requires).toEqual([
+      "hubCatalogUrl",
+      "sidecarToken",
+      "address",
+    ]);
+  });
+});
+
+describe("create_offering", () => {
+  test("resolves both names to ids, then creates the offering", async () => {
+    globalThis.fetch = routedFetch({
+      "/models": ok(OWN_MODELS_PAGE),
+      "/providers": ok(OWN_PROVIDERS_PAGE),
+      "/offerings": ok(OFFERING_ROW, 201),
+    });
+    const result = await catalogOfferingTools(offeringEnv()).run(
+      callFor(CREATE_OFFERING_TOOL, {
+        modelCanonicalName: "thrifty",
+        providerName: "globex",
+        priority: 0,
+        capabilities: ["plain-text"],
+      }),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBe(false);
+    expect(String(result.content)).toContain("offering_1");
+  });
+
+  test("an unknown canonical name is refused, never a guessed id", async () => {
+    globalThis.fetch = routedFetch({
+      "/models": ok({ data: [], nextCursor: null }),
+      "/providers": ok(OWN_PROVIDERS_PAGE),
+    });
+    const result = await catalogOfferingTools(offeringEnv()).run(
+      callFor(CREATE_OFFERING_TOOL, {
+        modelCanonicalName: "does-not-exist",
+        providerName: "globex",
+      }),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBe(true);
+    expect(String(result.content)).toContain('No model named "does-not-exist"');
+  });
+
+  test("a 403 from the hub surfaces as a refusal, not a thrown crash", async () => {
+    globalThis.fetch = routedFetch({
+      "/models": () => forbidden(),
+      "/providers": ok(OWN_PROVIDERS_PAGE),
+    });
+    const result = await catalogOfferingTools(offeringEnv()).run(
+      callFor(CREATE_OFFERING_TOOL, {
+        modelCanonicalName: "thrifty",
+        providerName: "globex",
+      }),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBe(true);
+    expect(String(result.content)).toContain(
+      "You do not have permission to perform this action",
+    );
+  });
+});
+
+describe("set_offering_priority", () => {
+  test("reorders an offering this workbench already owns", async () => {
+    globalThis.fetch = routedFetch({
+      "/offerings/offering_1": ok({ ...OFFERING_ROW, priority: 5 }),
+    });
+    const result = await catalogOfferingTools(offeringEnv()).run(
+      callFor(SET_OFFERING_PRIORITY_TOOL, {
+        offeringId: "offering_1",
+        priority: 5,
+      }),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBe(false);
+    expect(String(result.content)).toContain("priority 5");
+  });
+
+  test("a 403 from the hub surfaces as a refusal", async () => {
+    globalThis.fetch = routedFetch({
+      "/offerings/offering_1": () => forbidden(),
+    });
+    const result = await catalogOfferingTools(offeringEnv()).run(
+      callFor(SET_OFFERING_PRIORITY_TOOL, {
+        offeringId: "offering_1",
+        priority: 5,
+      }),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBe(true);
+  });
+});
+
+describe("disable_offering", () => {
+  test("restricts an offering this workbench already owns", async () => {
+    globalThis.fetch = routedFetch({
+      "/offerings/offering_1": ok({ ...OFFERING_ROW, disabled: true }),
+    });
+    const result = await catalogOfferingTools(offeringEnv()).run(
+      callFor(DISABLE_OFFERING_TOOL, { offeringId: "offering_1" }),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBe(false);
+    expect(String(result.content)).toContain("now disabled");
+  });
+
+  test("a 403 from the hub surfaces as a refusal", async () => {
+    globalThis.fetch = routedFetch({
+      "/offerings/offering_1": () => forbidden(),
+    });
+    const result = await catalogOfferingTools(offeringEnv()).run(
+      callFor(DISABLE_OFFERING_TOOL, { offeringId: "offering_1" }),
+      new AbortController().signal,
+    );
+    expect(result.isError).toBe(true);
   });
 });
