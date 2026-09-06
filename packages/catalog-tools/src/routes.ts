@@ -26,7 +26,7 @@
 // offering write also pushes the same `pushSourceUpdatesSubtree` sidecar
 // refresh the tenant-session routes push, so a running instance resolves
 // the change the same way either surface made it.
-import { and, desc, eq, lt, or } from "drizzle-orm";
+import { and, desc, eq, lt, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { type } from "arktype";
 
@@ -247,10 +247,13 @@ export function createWorkflowCatalogAdminRoutes(
     const conditions = [eq(model.tenantId, tenantCtx.id)];
     if (cursor) {
       conditions.push(
+        // Both branches always produce valid SQL, so or() never actually
+        // returns undefined here (mirroring
+        // `vendor/intx/hub-api/src/pagination.ts`'s `cursorCondition`).
         or(
           lt(model.createdAt, new Date(cursor.t)),
           and(eq(model.createdAt, new Date(cursor.t)), lt(model.id, cursor.id)),
-        ) ?? eq(model.id, model.id),
+        ) ?? sql`false`,
       );
     }
     const rows = await deps.db.query.model.findMany({
@@ -270,13 +273,16 @@ export function createWorkflowCatalogAdminRoutes(
     const conditions = [eq(modelProvider.tenantId, tenantCtx.id)];
     if (cursor) {
       conditions.push(
+        // Both branches always produce valid SQL, so or() never actually
+        // returns undefined here (mirroring
+        // `vendor/intx/hub-api/src/pagination.ts`'s `cursorCondition`).
         or(
           lt(modelProvider.createdAt, new Date(cursor.t)),
           and(
             eq(modelProvider.createdAt, new Date(cursor.t)),
             lt(modelProvider.id, cursor.id),
           ),
-        ) ?? eq(modelProvider.id, modelProvider.id),
+        ) ?? sql`false`,
       );
     }
     const rows = await deps.db.query.modelProvider.findMany({

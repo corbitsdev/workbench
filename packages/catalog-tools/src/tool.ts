@@ -477,7 +477,7 @@ export const catalogTools = defineTool<WorkflowCatalogEnv>({
  * `pick_models`' own `order` param is ungated.
  */
 export const catalogOfferingTools = defineTool<WorkflowCatalogOfferingEnv>({
-  id: "@corbits/catalog-tools/offerings",
+  id: "@corbits/catalog-tools/off",
   requires: ["hubCatalogUrl", "sidecarToken", "address"],
   definitions: [
     { name: CREATE_OFFERING_TOOL, approval: "ask" },
