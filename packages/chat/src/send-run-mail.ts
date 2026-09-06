@@ -1,10 +1,5 @@
 // Signs one inbound message via Interchange `sendUserMessage` and
 // records it on session_mail so the run's own live subscribers see it.
-import {
-  recordAgentSessionForRun,
-  type EventCollectorPort,
-} from "@corbits/workflows";
-import { reportError } from "@corbits/error-sink";
 import { sessionMail } from "@intx/db/schema";
 import type { DB } from "@intx/db";
 import type { SessionService, SidecarRouter } from "@intx/hub-sessions";
@@ -14,7 +9,6 @@ export type RunMailDeps = {
   db: DB["db"];
   sessionService: Pick<SessionService, "sendUserMessage">;
   sidecarRouter: Pick<SidecarRouter, "dispatchAgentEvent">;
-  eventCollectors: Pick<EventCollectorPort, "create">;
 };
 
 export type SendRunMailParams = {
@@ -106,28 +100,10 @@ export async function sendRunMail(
   const mailId = crypto.randomUUID();
   const now = new Date();
   const rawMIME = await deliverRunMailMIME(deps, params, mailId, now);
-  // `sendUserMessage` just drove this run's trigger path, which is the
-  // only thing that ever reconciles a principal onto a freshly
-  // provisioned `workflow_run` (CL-7477) — so the run is mail-routable
-  // now if it never was before. Best-effort and idempotent past the
-  // first successful call; a failure here must not swallow the mail
-  // that already sent.
-  try {
-    await recordAgentSessionForRun(
-      deps.db,
-      {
-        sessionId: params.sessionId,
-        address: params.agentAddress,
-      },
-      deps.eventCollectors,
-    );
-  } catch (err) {
-    reportError(err, {
-      operation: "chat.sendRunMail.recordAgentSession",
-      tenantId: params.tenantId,
-      agentId: params.agentAddress,
-      extra: { sessionId: params.sessionId },
-    });
-  }
+  // A run's session and event collector are ensured lazily now, at the
+  // hub seams that actually see the run become mail-routable
+  // (`apps/hub/src/mailbox-persist.ts`, the wrapped `eventCollectors`
+  // dispatch in `apps/hub/src/index.ts`) — CL-7480. Nothing here needs
+  // to record it.
   return recordRunMail(deps, params, mailId, now, rawMIME);
 }

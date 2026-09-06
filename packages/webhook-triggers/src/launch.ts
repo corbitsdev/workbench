@@ -17,7 +17,7 @@ import {
   deliverWhenRoutable,
   readDefinitionProjection,
   readFoldedBody,
-  recordAgentSessionForRun,
+  recordAgentSessionAtProvision,
   WORKFLOW_SOURCE_ENTRY,
   type EventCollectorPort,
 } from "@corbits/workflows";
@@ -50,6 +50,13 @@ export type LaunchWebhookTriggerDeps = {
   >;
   sessionService: Pick<SessionService, "sendUserMessage">;
   /**
+   * The same wrapped `EventCollectorRegistry` every native launcher
+   * threads through (`apps/hub/src/index.ts`'s `eventCollectors`) — this
+   * launcher records the run's `agent_session` and event collector the
+   * instant `prepareProvisionedDeployment` returns (CL-7481).
+   */
+  eventCollectors: Pick<EventCollectorPort, "create" | "has">;
+  /**
    * Reads the hub's live sidecar routing table. A freshly provisioned
    * run's sidecar takes several seconds to boot and register (CL-7476)
    * — a webhook's opening mail can land in that gap and fail with
@@ -59,7 +66,6 @@ export type LaunchWebhookTriggerDeps = {
    */
   isRoutable: (address: string) => boolean;
   cryptoProviderCache: CryptoProviderCache;
-  eventCollectors: Pick<EventCollectorPort, "create">;
   /**
    * Host-supplied cipher. Interchange decrypts bindings inside
    * `prepareProvisionedDeployment`; this port still owns the field so
@@ -199,6 +205,14 @@ export async function launchWebhookTrigger(
         : {}),
     });
 
+  await recordAgentSessionAtProvision({
+    db: deps.db,
+    eventCollectors: deps.eventCollectors,
+    runId: prepared.anchorRunId,
+    sessionId,
+    sourceAuthorityPrincipalId: trigger.createdBy,
+  });
+
   await deps.persistLaunch({
     tenantId: trigger.tenantId,
     instanceId: prepared.anchorRunId,
@@ -237,30 +251,6 @@ export async function launchWebhookTrigger(
         instanceId: prepared.anchorRunId,
         triggerId: trigger.id,
       },
-    });
-  }
-
-  // The delivery attempt above is what drove the run's trigger path,
-  // the only thing that ever reconciles a principal onto a freshly
-  // provisioned `workflow_run` (CL-7477) — recording only now, after
-  // that attempt, is what makes this call ever find one. Best-effort:
-  // a run that never became routable stays without a session until its
-  // first successful send.
-  try {
-    await recordAgentSessionForRun(
-      deps.db,
-      {
-        sessionId,
-        anchorRunId: prepared.anchorRunId,
-      },
-      deps.eventCollectors,
-    );
-  } catch (error) {
-    reportError(error, {
-      operation: "webhookTriggers.launch.recordAgentSession",
-      tenantId: trigger.tenantId,
-      agentId: prepared.deploymentAddress,
-      extra: { instanceId: prepared.anchorRunId },
     });
   }
 

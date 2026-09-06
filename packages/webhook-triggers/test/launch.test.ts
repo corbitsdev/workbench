@@ -88,25 +88,32 @@ function createFakeDb() {
     query: {
       workflowDefinition: { findFirst: async () => DEFINITION_ROW },
       tenant: { findFirst: async () => TENANT_ROW },
-      // `recordAgentSessionForRun` reads the just-provisioned run back by
-      // id — production never inserts this row itself (Interchange's
-      // `prepareProvisionedDeployment` mints the anchor row
-      // transactionally before returning it), so this models the same
-      // row for `INTERCHANGE_RUN_ID`.
       workflowRun: {
         findFirst: async () => ({
           id: INTERCHANGE_RUN_ID,
           tenantId: TENANT_ROW.id,
           definitionId: DEFINITION_ROW.id,
-          principalId: "prn_interchange",
+          address: INTERCHANGE_ADDRESS,
+          principalId: null,
         }),
       },
     },
-    insert: (_table: unknown) => ({
-      values: (_values: unknown) => ({
-        onConflictDoNothing: async (_opts: unknown) => {},
+    insert: () => ({
+      values: () => ({
+        onConflictDoNothing: async () => undefined,
       }),
     }),
+  };
+}
+
+let eventCollectorCreateCalls: unknown[] = [];
+
+function createFakeEventCollectors() {
+  return {
+    create: (...args: unknown[]) => {
+      eventCollectorCreateCalls.push(args);
+    },
+    has: () => false,
   };
 }
 
@@ -197,9 +204,7 @@ function baseDeps() {
       },
     },
     isRoutable: () => isRoutableForTest,
-    eventCollectors: {
-      create: () => undefined,
-    },
+    eventCollectors: createFakeEventCollectors(),
   };
 }
 
@@ -211,6 +216,7 @@ function resetLaunchSpies() {
   sendUserMessageCalls = [];
   cryptoGetKeys = [];
   reportErrorCalls = [];
+  eventCollectorCreateCalls = [];
   visibleOfferings = [...DEFAULT_VISIBLE_OFFERINGS];
   frozenProjection = INERT_PROJECTION;
   sendUserMessageImpl = async () => new Uint8Array([1]);

@@ -343,6 +343,18 @@ function createFakeDb(opts: {
    * production code asks for, in any order.
    */
   wireProjectionsByDefinitionId?: Record<string, unknown | null> | undefined;
+  /**
+   * The `workflow_run_launch_spec` row `resolveRunSessionIdOrThrow`
+   * (CL-7481) reads by run id — the session id is fixed at provision
+   * time, unlike the principal it used to be looked up by. Explicit
+   * only where a test cares about an un-anchored run's session
+   * resolving before its principal ever exists; every other test here
+   * predates CL-7481 and seeds an `agentSession` row directly, so the
+   * fallback below derives one from that instead of touching every
+   * call site.
+   */
+  workflowRunLaunchSpecRow?:
+    { anchorRunId: string; sessionId: string } | undefined;
 }) {
   const inserted: { table: unknown; values: unknown }[] = [];
   const updated: { table: unknown; values: unknown }[] = [];
@@ -427,12 +439,62 @@ function createFakeDb(opts: {
               status: "pending",
             };
           }
-          return inserted.findLast((row) => row.table === workflowRun)
-            ?.values as typeof opts.workflowRunRow | undefined;
+          const insertedRow = inserted.findLast(
+            (row) => row.table === workflowRun,
+          )?.values as typeof opts.workflowRunRow | undefined;
+          if (insertedRow !== undefined) return insertedRow;
+          // A run this fixture never configured: the freshly minted
+          // `anchorRunId` a fake `prepareProvisionedDeployment` just
+          // returned, which never wrote a `workflowRun` row into this
+          // fake db (Interchange's own provisioning is entirely mocked
+          // out here). `recordAgentSessionAtProvision` (CL-7481) reads
+          // the run row it just "provisioned" immediately after — this
+          // synthesizes the generic shape production code would see,
+          // so that read succeeds without every test wiring one up.
+          if (id === undefined) return undefined;
+          const domain =
+            opts.tenantRow?.domain ??
+            opts.workflowRunRow?.address?.split("@")[1] ??
+            "ten1.workbench.test";
+          return {
+            id,
+            tenantId: opts.tenantRow?.id ?? "ten_1",
+            definitionId: opts.definitionId,
+            address: `${id}@${domain}`,
+            principalId: null,
+          };
         },
       },
       sessionMail: {
         findFirst: async () => opts.sessionMailRow,
+      },
+      agentSession: {
+        findFirst: async (query?: { where?: unknown }) => {
+          const [id] =
+            query?.where !== undefined ? boundStringValues(query.where) : [];
+          return inserted.findLast(
+            (row) =>
+              row.table === agentSession &&
+              (id === undefined || (row.values as { id?: string }).id === id),
+          )?.values as { id: string; principalId: string } | undefined;
+        },
+      },
+      workflowRunLaunchSpec: {
+        findFirst: async (query?: { where?: unknown }) => {
+          const [id] =
+            query?.where !== undefined ? boundStringValues(query.where) : [];
+          if (opts.workflowRunLaunchSpecRow !== undefined) {
+            return id === undefined ||
+              id === opts.workflowRunLaunchSpecRow.anchorRunId
+              ? opts.workflowRunLaunchSpecRow
+              : undefined;
+          }
+          const seededSession = inserted.find(
+            (row) => row.table === agentSession,
+          )?.values as { id: string } | undefined;
+          if (seededSession === undefined) return undefined;
+          return { anchorRunId: id, sessionId: seededSession.id };
+        },
       },
       workflowDefinition: {
         findFirst: async () =>
@@ -1018,6 +1080,71 @@ describe("createHubChatPlatform", () => {
     expect(sidecarRouter.dispatchAgentEventCalls[0]?.address).toBe(
       "ins_workbench1@ten1.workbench.test",
     );
+  });
+
+  test("sendMail on a freshly provisioned, un-anchored run resolves the launch-spec session id (CL-7481)", async () => {
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      materials: [],
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          credentialId: "cred_placeholder",
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+
+    // No principal on the run yet — an invite sits un-triggered until
+    // its first message. Before CL-7481, `resolveRunSessionIdOrThrow`
+    // looked the session up by this (null) principal and found nothing;
+    // now it reads the launch spec `recordAgentSessionAtProvision`
+    // wrote at provision time, keyed by the run's own id instead.
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "workbench-1",
+        displayName: null,
+      },
+      definitionId: "wfd_workbench1",
+      workflowRunRow: {
+        id: "ins_workbench1",
+        address: "ins_workbench1@ten1.workbench.test",
+        principalId: null,
+      },
+      workflowRunLaunchSpecRow: {
+        anchorRunId: "ins_workbench1",
+        sessionId: "ses_unanchored",
+      },
+    });
+
+    const sessionService = createFakeSessionService();
+    const sidecarRouter = createFakeSidecarRouter();
+
+    const platform = createPlatform({
+      toolGrantsForPins: () => [],
+      db: db as never,
+      sessionService,
+      sidecarRouter,
+      eventCollectors: createFakeEventCollectors(),
+    });
+
+    const sent = await platform.sendMail({
+      tenantId: "ten_1",
+      workbenchId: "ins_workbench1",
+      principalId: "prin_sender",
+      content: { content: "hello workbench" },
+    });
+
+    expect(sent.id).toBeTruthy();
+    const call = sessionService.sendUserMessageCalls[0] as {
+      sessionId: string;
+    };
+    expect(call.sessionId).toBe("ses_unanchored");
   });
 
   test("sendMail signs with the injected crypto cache keyed by workbenchId", async () => {

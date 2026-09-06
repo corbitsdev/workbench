@@ -11,7 +11,7 @@ import {
   endAgentSessionForRun,
   readDefinitionProjection,
   readFoldedBody,
-  recordAgentSessionForRun,
+  recordAgentSessionAtProvision,
   WORKFLOW_SOURCE_ENTRY,
   type EventCollectorPort,
 } from "@corbits/workflows";
@@ -166,10 +166,13 @@ async function provisionOnAsset(
         ? { toolPackagePins: input.foldedBody.toolPackagePins }
         : {}),
     });
-  // Not `recordAgentSessionForRun` here: a freshly provisioned run's
-  // `workflow_run.principal_id` is still null until its first trigger
-  // reconciles one onto it — `runOneShotPrompt` records the session
-  // right after the opening prompt actually sends.
+  await recordAgentSessionAtProvision({
+    db: deps.db,
+    eventCollectors: deps.eventCollectors,
+    runId: prepared.anchorRunId,
+    sessionId,
+    sourceAuthorityPrincipalId: input.principalId,
+  });
   return {
     runId: prepared.anchorRunId,
     address: prepared.deploymentAddress,
@@ -322,25 +325,11 @@ export async function runOneShotPrompt(
             cryptoProvider,
           });
         }
-        // The send above just drove the run's trigger path, the only
-        // thing that ever reconciles a principal onto a freshly
-        // provisioned `workflow_run` (CL-7477) — recording only now is
-        // what makes this ever find one.
-        try {
-          await recordAgentSessionForRun(
-            deps.db,
-            {
-              sessionId: launched.sessionId,
-              anchorRunId: launched.runId,
-            },
-            deps.eventCollectors,
-          );
-        } catch (err) {
-          reportError(err, {
-            operation: "agent-directory.one-shot.recordAgentSession",
-            extra: { address: launched.address },
-          });
-        }
+        // A run's session and event collector are ensured lazily now, at
+        // the hub seams that actually see the run become mail-routable
+        // (`apps/hub/src/mailbox-persist.ts`, the wrapped
+        // `eventCollectors` dispatch in `apps/hub/src/index.ts`) —
+        // CL-7480. Nothing here needs to record it.
       } catch (cause) {
         reportError(cause, {
           operation: "agent-directory.one-shot.send",
