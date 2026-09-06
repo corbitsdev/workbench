@@ -81,9 +81,7 @@ import {
   expectStatus,
   freePort,
   hop,
-  provisionSidecar,
   startHub,
-  startSidecar,
   type HubHandle,
 } from "./harness.ts";
 
@@ -187,10 +185,6 @@ describe.skipIf(databaseUrl === undefined)(
         }
       });
 
-      const sidecarId = "local-rip-sidecar";
-      const sidecarToken = crypto.randomUUID();
-      await provisionSidecar(url, sidecarId, sidecarToken);
-
       const hub: HubHandle = await hop("hub boot", async () =>
         startHub({
           databaseUrl: url,
@@ -207,16 +201,6 @@ describe.skipIf(databaseUrl === undefined)(
         }),
       );
       track(hub);
-
-      const sidecar = startSidecar({
-        hubPort: new URL(hub.baseUrl).port
-          ? Number(new URL(hub.baseUrl).port)
-          : 80,
-        sidecarId,
-        token: sidecarToken,
-        dataDir: await tempDir("e2e-local-rip-sidecar-data-"),
-      });
-      track(sidecar);
 
       const hubApi: ApiCall = createHubAPI(hub.baseUrl);
 
@@ -341,9 +325,9 @@ describe.skipIf(databaseUrl === undefined)(
       ): Promise<Awaited<ReturnType<typeof seedTenant>>> {
         const deadline = Date.now() + 60_000;
         for (;;) {
-          if (sidecar.exited()) {
+          if (hub.exited()) {
             throw new Error(
-              `sidecar exited before default workflows could deploy; output:\n${sidecar.output()}`,
+              `hub exited before default workflows could deploy; output:\n${hub.output()}`,
             );
           }
           try {
@@ -398,9 +382,9 @@ describe.skipIf(databaseUrl === undefined)(
         async () => {
           const deadline = Date.now() + 60_000;
           for (;;) {
-            if (sidecar.exited()) {
+            if (hub.exited()) {
               throw new Error(
-                `sidecar exited before ensureSeeded could run; output:\n${sidecar.output()}`,
+                `hub exited before ensureSeeded could run; output:\n${hub.output()}`,
               );
             }
             try {

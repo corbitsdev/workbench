@@ -20,9 +20,7 @@ import {
   expectStatus,
   freePort,
   hop,
-  provisionSidecar,
   startHub,
-  startSidecar,
   type HubHandle,
 } from "./harness.ts";
 
@@ -58,13 +56,6 @@ describe.skipIf(databaseUrl === undefined)("smoke: chat round-trip", () => {
     });
 
     const hubDataDir = await tempDir("e2e-smoke-chat-hub-data-");
-    const sidecarDataDir = await tempDir("e2e-smoke-chat-sidecar-data-");
-
-    const sidecarId = "sidecar-e2e-smoke-chat";
-    const sidecarToken = crypto.randomUUID();
-    await hop("sidecar provisioning", () =>
-      provisionSidecar(url, sidecarId, sidecarToken),
-    );
 
     const hub: HubHandle = await hop("hub boot", () =>
       startHub({
@@ -77,18 +68,6 @@ describe.skipIf(databaseUrl === undefined)("smoke: chat round-trip", () => {
       }),
     );
     track(hub);
-
-    const sidecar = await hop("sidecar boot", () =>
-      Promise.resolve(
-        startSidecar({
-          hubPort: Number(new URL(hub.baseUrl).port),
-          sidecarId,
-          token: sidecarToken,
-          dataDir: sidecarDataDir,
-        }),
-      ),
-    );
-    track(sidecar);
 
     {
       const cookies = await hop("sign-up", async () => {
@@ -123,9 +102,9 @@ describe.skipIf(databaseUrl === undefined)("smoke: chat round-trip", () => {
         // through the transient 500 the same way chat.test.ts does.
         const deadline = Date.now() + 60_000;
         for (;;) {
-          if (sidecar.exited()) {
+          if (hub.exited()) {
             throw new Error(
-              `sidecar exited before workbench creation; output:\n${sidecar.output()}`,
+              `hub exited before workbench creation; output:\n${hub.output()}`,
             );
           }
           const res = await api(
@@ -141,7 +120,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: chat round-trip", () => {
           }
           if (Date.now() > deadline) {
             throw new Error(
-              `workbench never became launchable (hub kept answering 500): ${JSON.stringify(res.data)}\nsidecar output:\n${sidecar.output()}`,
+              `workbench never became launchable (hub kept answering 500): ${JSON.stringify(res.data)}\nhub output:\n${hub.output()}`,
             );
           }
           await Bun.sleep(1000);
@@ -171,7 +150,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: chat round-trip", () => {
           if (Date.now() > deadline) {
             throw new Error(
               `post message kept answering 500: ${JSON.stringify(res.data)}` +
-                `\nsidecar output:\n${sidecar.output()}`,
+                `\nhub output:\n${hub.output()}`,
             );
           }
           await Bun.sleep(1000);

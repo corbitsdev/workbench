@@ -33,12 +33,10 @@ import {
   expectStatus,
   freePort,
   hop,
-  provisionSidecar,
   pushWorkflowSource,
   seedNoopCatalogOffering,
   workflowDeployBody,
   startHub,
-  startSidecar,
   type ApiResult,
   type HubHandle,
 } from "./harness.ts";
@@ -81,15 +79,10 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
       expect(second.migrations).toBe(first.migrations);
     });
 
-    // Hop: sidecar provisioning. The identity row the hub checks the
-    // sidecar's dial-in token against.
-    const sidecarId = "sidecar-e2e";
-    const sidecarToken = crypto.randomUUID();
-    await hop("sidecar provisioning", () =>
-      provisionSidecar(url, sidecarId, sidecarToken),
-    );
-
-    // Hop: hub boot. The composition root as a real process.
+    // Hop: hub boot. The composition root as a real process. The hub's
+    // own process provisioner spawns a dedicated sidecar for every
+    // allocation on demand (one `apps/sidecar` per deployment) — there
+    // is no shared, pre-provisioned sidecar identity to dial in here.
     const hub: HubHandle = await hop("hub boot", async () => {
       const handle = await startHub({
         databaseUrl: url,
@@ -101,21 +94,6 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
       });
       track(handle);
       return handle;
-    });
-
-    // Hop: sidecar boot. Dial-in readiness is observed at the deploy
-    // hop (the hub answers 502 until a sidecar is connected).
-    const sidecar = await hop("sidecar boot", async () => {
-      const app = startSidecar({
-        hubPort: new URL(hub.baseUrl).port
-          ? Number(new URL(hub.baseUrl).port)
-          : 80,
-        sidecarId,
-        token: sidecarToken,
-        dataDir: await tempDir("e2e-sidecar-data-"),
-      });
-      track(app);
-      return app;
     });
 
     // Hop: sign-up. A browser-shaped account creation through the
@@ -215,9 +193,10 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
     );
 
     // Hop: workflow deploy via the native deploy API. Retries while
-    // the hub still answers 502 (the sidecar's dial-in may not have
-    // completed yet); any other failure is final. The inference
-    // source is a placeholder — deployment does not call inference.
+    // the hub still answers 502 (the process provisioner's spawned
+    // sidecar may not have dialed in yet); any other failure is final.
+    // The inference source is a placeholder — deployment does not call
+    // inference.
     const deploymentId = await hop("workflow deploy", async () => {
       const body = workflowDeployBody({
         assetId,
@@ -228,10 +207,8 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
       const deadline = Date.now() + 60_000;
       let res: ApiResult;
       for (;;) {
-        if (sidecar.exited()) {
-          throw new Error(
-            `sidecar exited before deploy; output:\n${sidecar.output()}`,
-          );
+        if (hub.exited()) {
+          throw new Error(`hub exited before deploy; output:\n${hub.output()}`);
         }
         res = await api(
           hub.baseUrl,
@@ -244,7 +221,7 @@ describe.skipIf(databaseUrl === undefined)("walking skeleton", () => {
         if (Date.now() > deadline) {
           throw new Error(
             `sidecar never became deployable (hub kept answering 502): ` +
-              `${JSON.stringify(res.data)}\nsidecar output:\n${sidecar.output()}`,
+              `${JSON.stringify(res.data)}\nhub output:\n${hub.output()}`,
           );
         }
         await Bun.sleep(200);
