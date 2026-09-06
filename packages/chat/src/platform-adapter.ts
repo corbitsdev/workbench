@@ -33,11 +33,13 @@ import {
   listLaunchesBeyondWake,
   listLaunchesForTenant,
   readBindingByAddress,
+  readBindingByAddressAnyTenant,
   readPriorRuns,
   recordSourcesDigest,
   repointBinding,
   resolveLiveAgent,
   resolveLiveByStableId,
+  resolveLiveByStableIdAnyTenant,
   type AgentBinding,
   type LiveAgent,
 } from "./agent-binding";
@@ -703,7 +705,13 @@ export function createHubChatPlatform(
    * that treatment, just triggered by content drift instead of death.
    */
   async function wakeByAddress(address: string): Promise<void> {
-    const binding = await readBindingByAddress(deps.db, address);
+    // Every caller of `wakeByAddress` already reached `address` through
+    // a tenant-scoped resolution of its own (`sendMail`'s
+    // `requireLive(workbenchId, tenantId)`, `ensureAwake`'s caller-held
+    // address) — re-deriving the binding here is bookkeeping for a wake
+    // already authorized upstream, not a new trust boundary crossing, so
+    // the unscoped read is correct.
+    const binding = await readBindingByAddressAnyTenant(deps.db, address);
     if (binding === undefined) {
       throw new Error(
         `No workbench_launch binding for address "${address}"; instances ` +
@@ -809,7 +817,9 @@ export function createHubChatPlatform(
    * check that used to never run for it.
    */
   async function reconcileDriftedRun(address: string): Promise<boolean> {
-    const binding = await readBindingByAddress(deps.db, address);
+    // See the matching note in `wakeByAddress`: `address` is always
+    // reached through a tenant-scoped resolution upstream.
+    const binding = await readBindingByAddressAnyTenant(deps.db, address);
     if (binding === undefined) return false;
     const live = await resolveLiveAgent(deps.db, binding);
     if (live === undefined || live.run.address === null) return false;
@@ -925,11 +935,10 @@ export function createHubChatPlatform(
     stableId: string,
     expectedTenantId?: string,
   ): Promise<LiveAgent> {
-    const live = await resolveLiveByStableId(
-      deps.db,
-      stableId,
-      expectedTenantId,
-    );
+    const live =
+      expectedTenantId === undefined
+        ? await resolveLiveByStableIdAnyTenant(deps.db, stableId)
+        : await resolveLiveByStableId(deps.db, stableId, expectedTenantId);
     if (live === undefined) {
       throw new Error(`No live workbench run for "${stableId}"`);
     }
@@ -1166,7 +1175,9 @@ export function createHubChatPlatform(
     },
 
     async resolveDefinitionIdByAddress(address): Promise<string | undefined> {
-      const binding = await readBindingByAddress(deps.db, address);
+      // No tenant is threaded through this platform method's own
+      // signature; unscoped by necessity, not by omission.
+      const binding = await readBindingByAddressAnyTenant(deps.db, address);
       if (binding === undefined) return undefined;
       const live = await resolveLiveAgent(deps.db, binding);
       return live?.run.definitionId ?? undefined;
@@ -1409,7 +1420,7 @@ export function createHubChatPlatform(
       let cancelled = false;
       let unsubscribeAgent: (() => void) | undefined;
 
-      void resolveLiveByStableId(deps.db, workbenchId)
+      void resolveLiveByStableIdAnyTenant(deps.db, workbenchId)
         .then((live) => {
           if (cancelled || live === undefined) return;
           unsubscribeAgent = deps.sidecarRouter.subscribeAgent(
@@ -1437,7 +1448,7 @@ export function createHubChatPlatform(
       // undelivered-mail handler holds whatever the envelope named), so
       // the lifecycle is driven on the LIVE address it resolves to —
       // that is the only address the sidecar ever announces.
-      const binding = await readBindingByAddress(deps.db, address);
+      const binding = await readBindingByAddressAnyTenant(deps.db, address);
       if (binding === undefined) {
         throw new Error(`No workbench_launch binding for address "${address}"`);
       }

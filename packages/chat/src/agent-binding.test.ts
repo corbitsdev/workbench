@@ -5,6 +5,7 @@ import { describe, expect, test } from "bun:test";
 import {
   isBeyondWake,
   readBindingByAddress,
+  readBindingByAddressAnyTenant,
   resolveRoomAddress,
 } from "./agent-binding";
 
@@ -71,6 +72,7 @@ describe("readBindingByAddress", () => {
     const binding = await readBindingByAddress(
       fakeDb([relaunched]),
       "run_original@acme.example",
+      "ten_1",
     );
     expect(binding?.stableId).toBe("run_original");
     expect(binding?.currentRunId).toBe("run_fresh");
@@ -85,13 +87,18 @@ describe("readBindingByAddress", () => {
     const binding = await readBindingByAddress(
       fakeDb([relaunched]),
       "run_fresh@acme.example",
+      "ten_1",
     );
     expect(binding?.roomAddress).toBe("run_original@acme.example");
   });
 
   test("is undefined for an address this package never launched", async () => {
     expect(
-      await readBindingByAddress(fakeDb([relaunched]), "echo_1@acme.example"),
+      await readBindingByAddress(
+        fakeDb([relaunched]),
+        "echo_1@acme.example",
+        "ten_1",
+      ),
     ).toBeUndefined();
   });
 });
@@ -139,10 +146,17 @@ describe("readBindingByAddress: tenant scoping (CL-7474)", () => {
     ).toBeUndefined();
   });
 
-  test("omitting expectedTenantId keeps the pre-existing address-only resolution (event-stream discovery)", async () => {
+});
+
+describe("readBindingByAddressAnyTenant", () => {
+  test("the address-only resolution event-stream discovery needs, with no tenant to check against", async () => {
+    const anyTenantDb = fakeDb([
+      { ...relaunched, instanceId: "run_a1", currentRunId: "run_a1" },
+    ]);
     expect(
-      (await readBindingByAddress(db, "run_a1@acme.example"))?.tenantId,
-    ).toBe("tnt_a");
+      (await readBindingByAddressAnyTenant(anyTenantDb, "run_a1@acme.example"))
+        ?.tenantId,
+    ).toBe("ten_1");
   });
 });
 
