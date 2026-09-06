@@ -91,12 +91,17 @@ grid:
   identifying column never drops.
 
 This is a default, not a mandate. A directory that scans better as dense
-grouped rows than as a table — the plugins gallery is the standing
-example — keeps that idiom. Density over cards: one row per item, a small
-logo tile, name, a single-line outcome sentence, a status/provenance
-caption, and one honest action button that reflects the item's actual
-state. Extend an existing idiom to a new directory before inventing a
-third pattern; three ways to list things is a defect, not a design system.
+grouped rows than as a table — Settings > Connections is the standing
+example (`ConnectorRow` / `OAuthConnectorRow`,
+`packages/settings-ui/src/connections-section.tsx`) — keeps that idiom.
+Density over cards: one row per item, a small logo tile, name, a
+single-line outcome sentence, a status/provenance caption, and one honest
+action button that reflects the item's actual state. A browseable catalog
+of installable things, each with its own status and actions — the plugins
+gallery is the standing example — is the one case where a two-column card
+catalog with status/category chip filters is the right idiom instead.
+Extend an existing idiom to a new directory before inventing a fourth
+pattern; three ways to list things is a defect, not a design system.
 
 ## Detail Pages
 
