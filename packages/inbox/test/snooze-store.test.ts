@@ -23,7 +23,7 @@ import {
 } from "@corbits/mailbox";
 
 import { setupDatabase } from "../../../scripts/db-setup";
-import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { createInboxRoutes } from "../src/routes";
 import { dbGate } from "../../../scripts/e2e/db-gate";
 import {

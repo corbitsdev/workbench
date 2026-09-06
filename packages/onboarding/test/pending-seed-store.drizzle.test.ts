@@ -23,7 +23,7 @@ import {
   createNoopCredentialCipher,
 } from "@intx/crypto";
 
-import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { applyOnboardingMigrations } from "../src/migrations";
 import { dbGate } from "../../../scripts/e2e/db-gate";
 import {

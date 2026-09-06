@@ -20,7 +20,7 @@ import { applyFoldedRunsMigrations } from "@corbits/folded-runs/migrations";
 import { foldedRun } from "@corbits/folded-runs";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
-import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { listTopLevelRuns, listTopLevelRunFires } from "../src/scope-routes";
 import { dbGate } from "../../../scripts/e2e/db-gate";
 

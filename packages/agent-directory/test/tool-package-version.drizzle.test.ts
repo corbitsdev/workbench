@@ -18,7 +18,7 @@ import type { AssetService } from "@intx/hub-sessions";
 import { CORBITS_TOOLS_REGISTRY } from "@corbits/tool-registry-publish";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
-import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { dbGate } from "../../../scripts/e2e/db-gate";
 import { CapabilityOutOfInventoryError } from "../src/capability-inventory";
 import { resolvePinnedVersion } from "../src/tool-package-version";

@@ -24,7 +24,7 @@ import {
 } from "@corbits/notify";
 
 import { setupDatabase } from "../../../scripts/db-setup";
-import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { createWorkbenchMailboxDelivery } from "../src/delivery";
 import { inboxGroupOf } from "../src/group";
 import { WORKBENCH_INBOX_PRIORITIES } from "../src/vocabulary";
