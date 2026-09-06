@@ -2726,6 +2726,7 @@ describe("createHubChatPlatform", () => {
       // in flight when the concurrent `ensureAwake` call joins it.
       let deployCallCount = 0;
       const gatedDeployReleases: (() => void)[] = [];
+      const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
       const allocationService = createFakeWorkflowAllocationService();
       const originalPrepare =
         allocationService.prepareProvisionedDeployment.bind(allocationService);
@@ -2738,6 +2739,14 @@ describe("createHubChatPlatform", () => {
           await new Promise<void>((resolve) => {
             gatedDeployReleases.push(resolve);
           });
+          // Models the sidecar registering once the reclaim retry's own
+          // redeploy actually completes — the routable-wait
+          // `sendRunMailWithReclaimRetry` now does (CL-7488) needs this
+          // to see the retried send through. The cold wake ahead of the
+          // first send attempt deliberately stays unrouted so that
+          // attempt still finds `wakeByAddress`'s own routability check
+          // false and takes the reclaim-retry path this test exercises.
+          sidecarRouter.routableAddresses.push(result.deploymentAddress);
         }
         return result;
       };
@@ -2746,10 +2755,10 @@ describe("createHubChatPlatform", () => {
         toolGrantsForPins: () => [],
         db: db as never,
         sessionService,
-        sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
+        sidecarRouter,
         eventCollectors: createFakeEventCollectors(),
         lifecycle: { idleSleepMs: 60_000 },
-        reclaimRetryDelaysMs: [1],
+        routableWaitDeadlineMs: 5_000,
         mailDeliveryTimeoutMs: 5_000,
         workflowAllocationService: allocationService,
       });
@@ -2778,6 +2787,156 @@ describe("createHubChatPlatform", () => {
       await Promise.all([sendMailPromise, ensureAwakePromise]);
 
       expect(deployCallCount).toBe(2);
+    });
+  });
+
+  // CL-7486: `sendRunMailWithReclaimRetry` used to retry every attempt
+  // against the address it started with, even after a wake in between
+  // attempts relaunched the run. A run already one relaunch generation
+  // in (`instanceId` stable, `currentRunId` already repointed once) that
+  // dies again while this loop is retrying reproduces the production
+  // failure exactly: a second relaunch repoints `currentRunId` again,
+  // and the address this loop still holds is now neither the stable
+  // `instanceId` nor the current `currentRunId` — invisible to
+  // `readBindingByAddressAnyTenant`, so the next wake for it throws "No
+  // workbench_launch binding" instead of finding the run that replaced
+  // it.
+  describe("sendRunMailWithReclaimRetry re-resolves the live address", () => {
+    test("a relaunch between retries is chased to its new address, not retried against the one that died", async () => {
+      resolveDefinitionSourcesResult = {
+        ok: true,
+        materials: [],
+        sources: [
+          {
+            id: "off_1",
+            provider: "anthropic",
+            baseURL: "https://inference.invalid",
+            credentialId: "cred_placeholder",
+            model: "claude-sonnet-5",
+          },
+        ],
+        defaultSource: "off_1",
+      };
+
+      const staleAddress = "run_gen1@ten1.workbench.test";
+      const db = createFakeDb({
+        assetRow: {
+          tenantId: "ten_1",
+          creatorPrincipalId: "prin_creator",
+          name: "ins_room1",
+          displayName: null,
+        },
+        definitionId: "wfd_room1",
+        workflowRunRow: {
+          id: "run_gen1",
+          address: staleAddress,
+          principalId: "prin_room1",
+          definitionId: "wfd_room1",
+          // Already dead by the time the reclaim retry's own wake reads
+          // it — the run died again while this loop was mid-retry, not
+          // at the top of `sendMail` (which would have relaunched it
+          // before ever reaching this retry loop at all).
+          status: "failed",
+        },
+        workflowDefinitionRow: {
+          id: "wfd_room1",
+          tenantId: "ten_1",
+          status: "deployed",
+          origin: "authored",
+          assetId: "asst_room1",
+        },
+        workbenchLaunchRow: {
+          tenantId: "ten_1",
+          // `instanceId` is the room's own stable id, already distinct
+          // from `currentRunId` — this participant has been relaunched
+          // once before this test even starts.
+          instanceId: "ins_room1",
+          currentRunId: "run_gen1",
+          foldedBody: {
+            systemPrompt: "host prompt",
+            model: "claude-sonnet-5",
+            toolPackagePins: [],
+            grantRequirements: [],
+            credentialBindings: [],
+          },
+        },
+      });
+      db.inserted.push({
+        table: agentSession,
+        values: { id: "ses_run1", principalId: "prin_room1" },
+      });
+
+      const sessionService = createFakeSessionService();
+      sessionService.sendUserMessage = async (params: unknown) => {
+        sessionService.sendUserMessageCalls.push(params);
+        const { agentAddress } = params as { agentAddress: string };
+        // The dead run never becomes reachable again — only a send to
+        // whatever address the relaunch actually produced can succeed.
+        if (agentAddress === staleAddress) {
+          throw new Error("agent is unreachable");
+        }
+        return new TextEncoder().encode("raw-mime-bytes");
+      };
+
+      // Routable so `sendMail`'s own opening wake-before-send gate skips
+      // waking it — the relaunch this test cares about must happen
+      // inside the reclaim-retry loop below, not before it.
+      const sidecarRouter = createFakeSidecarRouter({
+        routableAddresses: [staleAddress],
+      });
+
+      // Models the sidecar registering the relaunch's fresh address the
+      // moment its deploy actually completes — `sendRunMailWithReclaimRetry`
+      // now waits on this routing-table transition (CL-7488) instead of a
+      // fixed backoff, so the retried send needs it to flip before it can
+      // see the run through.
+      const allocationService = createFakeWorkflowAllocationService();
+      const originalPrepare =
+        allocationService.prepareProvisionedDeployment.bind(allocationService);
+      allocationService.prepareProvisionedDeployment = async (
+        params: Parameters<typeof originalPrepare>[0],
+      ) => {
+        const result = await originalPrepare(params);
+        sidecarRouter.routableAddresses.push(result.deploymentAddress);
+        return result;
+      };
+
+      const platform = createPlatform({
+        toolGrantsForPins: () => [],
+        db: db as never,
+        sessionService,
+        sidecarRouter,
+        eventCollectors: createFakeEventCollectors(),
+        workflowAllocationService: allocationService,
+        routableWaitDeadlineMs: 5_000,
+        mailDeliveryTimeoutMs: 5_000,
+      });
+
+      const sent = await platform.sendMail({
+        tenantId: "ten_1",
+        workbenchId: "ins_room1",
+        principalId: "prin_sender",
+        content: { content: "hello" },
+      });
+
+      expect(sent.id).toBeTruthy();
+      expect(sessionService.sendUserMessageCalls).toHaveLength(2);
+      const [first, second] = sessionService.sendUserMessageCalls as {
+        agentAddress: string;
+      }[];
+      expect(first?.agentAddress).toBe(staleAddress);
+      // The retry that follows the relaunch targets the run that
+      // replaced `run_gen1`, never the dead address the loop started
+      // with.
+      expect(second?.agentAddress).not.toBe(staleAddress);
+
+      const repointed = db.updated.at(-1)?.values as {
+        currentRunId: string;
+        priorRunIds: string[];
+      };
+      const secondAddress = second?.agentAddress ?? "";
+      expect(repointed.currentRunId).toBe(secondAddress.split("@")[0] ?? "");
+      expect(repointed.priorRunIds).toEqual(["run_gen1"]);
     });
   });
 
