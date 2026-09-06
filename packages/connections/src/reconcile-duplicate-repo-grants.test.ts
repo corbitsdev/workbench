@@ -12,7 +12,7 @@ import postgres from "postgres";
 
 import { runMigrations } from "@intx/db";
 
-import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { reconcileDuplicateRepoGrants } from "./reconcile-duplicate-repo-grants";
 import { dbGate } from "../../../scripts/e2e/db-gate";
 

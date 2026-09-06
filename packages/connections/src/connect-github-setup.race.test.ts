@@ -33,7 +33,7 @@ import {
 } from "@corbits/webhook-triggers";
 import type { GitHubRepoSummary } from "@corbits/github-tools";
 
-import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { dbGate } from "../../../scripts/e2e/db-gate";
 import {
   startReviewingRepos,
