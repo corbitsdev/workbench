@@ -207,7 +207,8 @@ export type CompleteCredentialArgs = CommonArgs &
  * must keep throwing until the root bench is actually visible to the
  * admin, never seed onto the first principal that happens to be visible.
  *
- * The connect-flow callers (`testAndPersistCredential`, the
+ * The connect-flow callers (`testAndPersistCredential`, the OAuth
+ * duplicate-callback recovery `recentlyConnectedCredential`, and the
  * `/complete-setup` route) pass `fallbackToFirstPrincipal` so a caller
  * that already has a bench but under a different slug — a seeded admin
  * whose only membership is the root bench (CL-7506) — resolves to the
