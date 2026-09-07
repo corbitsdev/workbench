@@ -255,6 +255,7 @@ import { createDockerSidecarProvisioner } from "@corbits/docker-provisioner";
 import {
   createProcessSidecarProvisioner,
   readProcessProvisionerConfig,
+  type ProcessProvisionerRole,
 } from "@corbits/process-provisioner";
 import { getArtifact, writeArtifactVersion } from "@corbits/artifacts";
 import {
@@ -531,14 +532,17 @@ function buildSidecarProvisioner(
   config: SidecarProvisionerConfig,
   hubDataDir: string,
   hubWebSocketUrl: string,
+  role: ProcessProvisionerRole,
 ): SidecarProvisioner {
   switch (config.id) {
     case "process":
       // Same derivation as the other two backends: the hub-side
       // allocation state lives under the hub's own data dir, and so do
       // the per-allocation directories each spawned sidecar uses as its
-      // own SIDECAR_DATA_DIR.
+      // own SIDECAR_DATA_DIR. Probe and deployment instances keep
+      // separate state so neither can adopt the other's allocations.
       return createProcessSidecarProvisioner({
+        role,
         config: readProcessProvisionerConfig({
           env: {
             ...(config.sidecarEntryPath === undefined
@@ -550,7 +554,12 @@ function buildSidecarProvisioner(
               ? {}
               : { PROCESS_PROVISIONER_RUNTIME: config.runtimePath }),
           },
-          dataDir: path.resolve(hubDataDir, "process-provisioner"),
+          dataDir: path.resolve(
+            hubDataDir,
+            role === "probe"
+              ? "process-provisioner-probe"
+              : "process-provisioner",
+          ),
           hubWebSocketUrl,
         }),
       });
@@ -1032,24 +1041,29 @@ export async function createHub(config: HubConfig) {
   // implement `SidecarProvisioner` in its own package, add a case to
   // `buildSidecarProvisioner`, and add its id to
   // `apps/hub/src/config.ts`'s `SIDECAR_PROVISIONER_IDS`.
-  const sidecarPlugins = createSidecarPluginRegistry({
-    provisioners: config.sidecarProvisioners.map((provisionerConfig) =>
-      buildSidecarProvisioner(
-        provisionerConfig,
-        config.hubDataDir,
-        hubWebSocketUrl,
+  // Probes and deployments get distinct provisioner instances: when they
+  // match, Interchange adopts the probe's allocation for the deployment,
+  // and at pin 692c3106 that adopt path never deploys the workflow after
+  // the sidecar reconnects (CL-7492).
+  const buildSidecarPlugins = (role: ProcessProvisionerRole) =>
+    createSidecarPluginRegistry({
+      provisioners: config.sidecarProvisioners.map((provisionerConfig) =>
+        buildSidecarProvisioner(
+          provisionerConfig,
+          config.hubDataDir,
+          hubWebSocketUrl,
+          role,
+        ),
       ),
-    ),
-    ...(config.defaultSidecarProvisionerId !== undefined
-      ? { defaultProvisionerId: config.defaultSidecarProvisionerId }
-      : {}),
-  });
+      ...(config.defaultSidecarProvisionerId !== undefined
+        ? { defaultProvisionerId: config.defaultSidecarProvisionerId }
+        : {}),
+    });
+  const sidecarPlugins = buildSidecarPlugins("deployment");
   const workflowAllocationService = createWorkflowAllocationService({
     db,
     deploymentPlugins: sidecarPlugins,
-    // Workbench has one provisioner list; probes and frozen deployments
-    // share it until a separate probe backend is configured.
-    probePlugins: sidecarPlugins,
+    probePlugins: buildSidecarPlugins("probe"),
     preparedDeployer: sessionService,
     credentialCipher,
     allocationRouter: sidecarRouter,
