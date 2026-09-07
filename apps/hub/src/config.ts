@@ -184,8 +184,11 @@ const HubEnv = type({
   "CREDENTIAL_ENCRYPTION_KEY?": type(/^[0-9a-fA-F]{64}$/).describe(
     "a 64-character hex-encoded 32-byte AES-256 key (openssl rand -hex 32) encrypting secrets at rest through Interchange's CredentialCipher seam — webhook-trigger signing secrets and onboarding's OAuth PKCE connect state; boot fails without it unless ALLOW_PLAINTEXT_SECRETS opts into dev/test's unencrypted fallback",
   ),
+  "PRINCIPAL_KEY_ENCRYPTION_KEY?": type(/^[0-9a-fA-F]{64}$/).describe(
+    "a 64-character hex-encoded 32-byte AES-256 key (openssl rand -hex 32) sealing every principal's per-principal signing key at rest through Interchange's principal-key store — deliberately separate from CREDENTIAL_ENCRYPTION_KEY so the two rotate independently; boot fails without it unless ALLOW_PLAINTEXT_SECRETS opts into dev/test's unencrypted fallback",
+  ),
   "ALLOW_PLAINTEXT_SECRETS?": type("'1' | 'true'").describe(
-    "dev/test-only opt-in to boot without CREDENTIAL_ENCRYPTION_KEY, storing secrets at rest unencrypted with a boot warning; refused unless BASE_URL is a loopback address, so a real deployment can never inherit it by accident",
+    "dev/test-only opt-in to boot without CREDENTIAL_ENCRYPTION_KEY or PRINCIPAL_KEY_ENCRYPTION_KEY, storing secrets and signing keys at rest unencrypted with a boot warning; refused unless BASE_URL is a loopback address, so a real deployment can never inherit it by accident",
   ),
   "ALLOW_UNVERIFIED_EMAILS?": type("'1' | 'true'").describe(
     "dev/test-only opt-in to let @workbench/access-policy trust an email that better-auth has not verified — self-signup domain checks and pending-invite redemption normally require emailVerified; never set this for a real deployment",
@@ -377,6 +380,8 @@ export type HubConfig = {
    * tests/evals — never set this for a real deployment. */
   readonly githubApiBaseUrl?: string;
   readonly credentialEncryptionKeyHex?: string;
+  /** Seals per-principal signing keys at rest; see PRINCIPAL_KEY_ENCRYPTION_KEY. */
+  readonly principalKeyEncryptionKeyHex?: string;
   /** Dev/test-only opt-in to boot without CREDENTIAL_ENCRYPTION_KEY. */
   readonly allowPlaintextSecrets: boolean;
   /** Dev/test-only opt-in to skip @workbench/access-policy's email-
@@ -743,6 +748,9 @@ export function readHubConfig(
     hubConfig.githubApiBaseUrl = parsed.GITHUB_API_BASE_URL;
   if (parsed.CREDENTIAL_ENCRYPTION_KEY !== undefined)
     hubConfig.credentialEncryptionKeyHex = parsed.CREDENTIAL_ENCRYPTION_KEY;
+  if (parsed.PRINCIPAL_KEY_ENCRYPTION_KEY !== undefined)
+    hubConfig.principalKeyEncryptionKeyHex =
+      parsed.PRINCIPAL_KEY_ENCRYPTION_KEY;
   if (parsed.HUB_SIDECAR_WEBSOCKET_URL !== undefined)
     hubConfig.sidecarWebSocketUrl = parsed.HUB_SIDECAR_WEBSOCKET_URL;
   if (sidecarProvisioners.defaultProvisionerId !== undefined)

@@ -9,7 +9,8 @@ import { and, eq } from "drizzle-orm";
 import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { setupDatabase } from "../../../scripts/db-setup";
 import { dbGate } from "../../../scripts/e2e/db-gate";
-import { createDB } from "@intx/db";
+import { createDB, createPrincipalKeyStore } from "@intx/db";
+import { createNoopCredentialCipher } from "@intx/crypto";
 import { grant, principal, principalRole, role, tenant } from "@intx/db/schema";
 import { ensureDefaultTenant, type BootAdminAuth } from "./default-tenant";
 
@@ -74,6 +75,12 @@ describeIfDb("ensureDefaultTenant", () => {
     password: decodeURIComponent(new URL(scratchUrl).password),
     database: scratchDatabase,
   });
+  // The dev/test principal-key store: unencrypted at rest, matching the
+  // ALLOW_PLAINTEXT_SECRETS posture of every other suite in this package.
+  const principalKeyStore = createPrincipalKeyStore({
+    db: db.db,
+    cipher: createNoopCredentialCipher(),
+  });
 
   beforeAll(async () => {
     const maintenanceUrl = new URL(scratchUrl);
@@ -119,7 +126,13 @@ describeIfDb("ensureDefaultTenant", () => {
 
   test("creates the root tenant when absent, with a derived name, domain, and null parent", async () => {
     const { auth } = fakeBootAuth();
-    const id = await ensureDefaultTenant(db.db, auth, ADMIN, "acme");
+    const id = await ensureDefaultTenant(
+      db.db,
+      auth,
+      ADMIN,
+      "acme",
+      principalKeyStore,
+    );
     expect(id).toMatch(/^tnt_/);
     const rows = await rowsFor("acme");
     expect(rows).toHaveLength(1);
@@ -131,7 +144,13 @@ describeIfDb("ensureDefaultTenant", () => {
 
   test("seeds the boot admin as an owner member of a freshly created root", async () => {
     const { auth, calls } = fakeBootAuth();
-    const id = await ensureDefaultTenant(db.db, auth, ADMIN, "seeded-root");
+    const id = await ensureDefaultTenant(
+      db.db,
+      auth,
+      ADMIN,
+      "seeded-root",
+      principalKeyStore,
+    );
 
     expect(calls.userCreated).toBe(1);
     expect(calls.accountsLinked).toBe(1);
@@ -172,8 +191,20 @@ describeIfDb("ensureDefaultTenant", () => {
 
   test("re-runs are a no-op: the tenant, roles, grants, and membership are not duplicated", async () => {
     const { auth } = fakeBootAuth();
-    const first = await ensureDefaultTenant(db.db, auth, ADMIN, "acme");
-    const second = await ensureDefaultTenant(db.db, auth, ADMIN, "acme");
+    const first = await ensureDefaultTenant(
+      db.db,
+      auth,
+      ADMIN,
+      "acme",
+      principalKeyStore,
+    );
+    const second = await ensureDefaultTenant(
+      db.db,
+      auth,
+      ADMIN,
+      "acme",
+      principalKeyStore,
+    );
 
     expect(second).toBe(first);
     expect(await rowsFor("acme")).toHaveLength(1);
@@ -203,7 +234,13 @@ describeIfDb("ensureDefaultTenant", () => {
       })
       .onConflictDoNothing();
     const { auth } = fakeBootAuth();
-    const id = await ensureDefaultTenant(db.db, auth, ADMIN, "bee-co");
+    const id = await ensureDefaultTenant(
+      db.db,
+      auth,
+      ADMIN,
+      "bee-co",
+      principalKeyStore,
+    );
     expect(id).toBe(concurrentId);
     expect(await rowsFor("bee-co")).toHaveLength(1);
   });
@@ -218,7 +255,13 @@ describeIfDb("ensureDefaultTenant", () => {
       parentId: null,
     });
     const { auth } = fakeBootAuth();
-    const id = await ensureDefaultTenant(db.db, auth, ADMIN, "unowned");
+    const id = await ensureDefaultTenant(
+      db.db,
+      auth,
+      ADMIN,
+      "unowned",
+      principalKeyStore,
+    );
     expect(id).toBe("tnt_unowned");
 
     const memberships = await membershipsFor(id);
@@ -254,7 +297,13 @@ describeIfDb("ensureDefaultTenant", () => {
     });
 
     const { auth } = fakeBootAuth();
-    const id = await ensureDefaultTenant(db.db, auth, ADMIN, "already");
+    const id = await ensureDefaultTenant(
+      db.db,
+      auth,
+      ADMIN,
+      "already",
+      principalKeyStore,
+    );
     expect(id).toBe("tnt_already");
 
     const memberships = await membershipsFor(id);
@@ -292,7 +341,13 @@ describeIfDb("ensureDefaultTenant", () => {
     });
 
     const { auth } = fakeBootAuth();
-    const id = await ensureDefaultTenant(db.db, auth, ADMIN, "foreign");
+    const id = await ensureDefaultTenant(
+      db.db,
+      auth,
+      ADMIN,
+      "foreign",
+      principalKeyStore,
+    );
     expect(id).toBe("tnt_foreign");
 
     const memberships = await membershipsFor(id);
@@ -306,7 +361,13 @@ describeIfDb("ensureDefaultTenant", () => {
     const { auth, calls } = fakeBootAuth({
       preexistingUserWithoutCredential: true,
     });
-    await ensureDefaultTenant(db.db, auth, ADMIN, "cred-repair");
+    await ensureDefaultTenant(
+      db.db,
+      auth,
+      ADMIN,
+      "cred-repair",
+      principalKeyStore,
+    );
 
     expect(calls.userCreated).toBe(0);
     expect(calls.accountsLinked).toBe(1);
@@ -330,7 +391,13 @@ describeIfDb("ensureDefaultTenant", () => {
     });
 
     const { auth } = fakeBootAuth();
-    const id = await ensureDefaultTenant(db.db, auth, ADMIN, "roleless");
+    const id = await ensureDefaultTenant(
+      db.db,
+      auth,
+      ADMIN,
+      "roleless",
+      principalKeyStore,
+    );
     expect(id).toBe("tnt_roleless");
 
     const memberships = await membershipsFor(id);

@@ -10,9 +10,11 @@ import type { CredentialCipher } from "@intx/types";
 import {
   type DB,
   type ApprovalStore,
+  type PrincipalKeyStore,
   type SignalCorrelationStore,
   createGrantStore,
   createApprovalStore,
+  createPrincipalKeyStore,
   createSignalCorrelationStore,
 } from "@intx/db";
 import type { ConditionRegistry, GrantStore } from "@intx/types/authz";
@@ -97,6 +99,26 @@ function resolveCredentialCipher(
   return createNoopCredentialCipher();
 }
 
+/**
+ * Resolve the principal key store, falling back to a noop-cipher store when
+ * none is provided. The fallback seals nothing, so a minted signing key's
+ * private seed is stored in the CLEAR; it is expected only in tests and local
+ * development and warns loudly so a production deployment that forgot to
+ * configure `PRINCIPAL_KEY_ENCRYPTION_KEY` is not silently persisting private
+ * keys unencrypted. The composition root (`apps/hub`) always supplies a real
+ * store, gated by a required key at boot.
+ */
+function resolvePrincipalKeyStore(
+  provided: PrincipalKeyStore | undefined,
+  db: DB["db"],
+): PrincipalKeyStore {
+  if (provided) return provided;
+  log.warn(
+    "No principalKeyStore configured; principal signing keys will be stored UNENCRYPTED. Expected in tests/local dev but MUST NOT happen in production.",
+  );
+  return createPrincipalKeyStore({ db, cipher: createNoopCredentialCipher() });
+}
+
 export type CreateHubContextMiddlewareDeps = {
   getSession: GetSession;
 };
@@ -126,6 +148,22 @@ export type MountHubRoutesDeps = {
    * secrets can omit it.
    */
   credentialCipher?: CredentialCipher;
+  /**
+   * Mints and custodies the per-principal signing key on principal creation.
+   * Optional: when omitted, a noop-cipher store is used and a warning is
+   * logged. Production supplies a real store gated by
+   * `PRINCIPAL_KEY_ENCRYPTION_KEY`; tests may omit it.
+   */
+  principalKeyStore?: PrincipalKeyStore;
+  /**
+   * Resolves a sidecar bearer token + run address to the tenant/principal
+   * it acts as. When supplied, `POST/GET .../workflows/deployments`
+   * additionally accepts a bearer-authenticated workflow-run caller (see
+   * `./middleware/workflow-run-deploy-auth.ts`), mirroring every other
+   * workflow-run write surface. Omitted in tests that have no reason to
+   * exercise that path -- the session-cookie path is unaffected either way.
+   */
+  workflowRunAuthenticator?: WorkflowRunAuthenticator;
   grantStore?: GrantStore;
   conditionRegistry?: ConditionRegistry;
   approvalStore?: ApprovalStore;
@@ -147,15 +185,6 @@ export type MountHubRoutesDeps = {
    * asset surface supply their own cap.
    */
   maxTarballBytes: number;
-  /**
-   * Resolves a sidecar bearer token + run address to the tenant/principal
-   * it acts as. When supplied, `POST/GET .../workflows/deployments`
-   * additionally accepts a bearer-authenticated workflow-run caller (see
-   * `./middleware/workflow-run-deploy-auth.ts`), mirroring every other
-   * workflow-run write surface. Omitted in tests that have no reason to
-   * exercise that path -- the session-cookie path is unaffected either way.
-   */
-  workflowRunAuthenticator?: WorkflowRunAuthenticator;
 };
 
 /**
@@ -173,6 +202,10 @@ export function mountHubRoutes(
   opts: MountHubRoutesDeps,
 ): void {
   const credentialCipher = resolveCredentialCipher(opts.credentialCipher);
+  const principalKeyStore = resolvePrincipalKeyStore(
+    opts.principalKeyStore,
+    opts.db,
+  );
   const {
     db,
     sidecarRouter,
@@ -185,6 +218,7 @@ export function mountHubRoutes(
     repoStore,
     readRunLifecycles,
     maxTarballBytes,
+    workflowRunAuthenticator,
   } = opts;
   if ((assetService === null) !== (repoStore === null)) {
     throw new Error(
@@ -277,7 +311,7 @@ export function mountHubRoutes(
   app.use("/api/tenants/:tenantId/*", resolveTenant);
 
   // Global tenant routes (create needs auth, detail/update handle auth inline)
-  app.route("/api/tenants", createTenantRoutes({ db }));
+  app.route("/api/tenants", createTenantRoutes({ db, principalKeyStore }));
 
   // Tenant-scoped routes
   app.route(
@@ -286,7 +320,7 @@ export function mountHubRoutes(
   );
   app.route(
     "/api/tenants/:tenantId/members/invite",
-    createInviteRoutes({ db, requireGrant }),
+    createInviteRoutes({ db, principalKeyStore, requireGrant }),
   );
   app.route(
     "/api/tenants/:tenantId/roles",
@@ -313,6 +347,7 @@ export function mountHubRoutes(
     "/api/tenants/:tenantId/workflows/runs",
     createRunRoutes({
       db,
+      principalKeyStore,
       sessionService,
       sidecarRouter,
       eventCollectors,
@@ -346,6 +381,7 @@ export function mountHubRoutes(
       "/api/tenants/:tenantId/workflows",
       createWorkflowRoutes({
         db,
+        principalKeyStore,
         ...(workflowAllocationService !== undefined
           ? { workflowAllocationService }
           : {}),
@@ -534,6 +570,15 @@ export type CreateAppOpts = {
    * secrets can omit it.
    */
   credentialCipher?: CredentialCipher;
+  /**
+   * Mints and custodies the per-principal signing key on principal creation.
+   * Optional: when omitted, a noop-cipher store is used and a warning is
+   * logged. Production supplies a real store gated by
+   * `PRINCIPAL_KEY_ENCRYPTION_KEY`.
+   */
+  principalKeyStore?: PrincipalKeyStore;
+  /** See `MountHubRoutesDeps.workflowRunAuthenticator`. */
+  workflowRunAuthenticator?: WorkflowRunAuthenticator;
   grantStore?: GrantStore;
   approvalStore?: ApprovalStore;
   signalCorrelationStore?: SignalCorrelationStore;
@@ -547,8 +592,6 @@ export type CreateAppOpts = {
    * (or its config default) and supplies a concrete value.
    */
   maxTarballBytes: number;
-  /** See `MountHubRoutesDeps.workflowRunAuthenticator`. */
-  workflowRunAuthenticator?: WorkflowRunAuthenticator;
 };
 
 export function createApp({
@@ -561,6 +604,8 @@ export function createApp({
   workflowDispatchService,
   eventCollectors,
   credentialCipher,
+  principalKeyStore,
+  workflowRunAuthenticator,
   grantStore,
   approvalStore,
   signalCorrelationStore,
@@ -569,7 +614,6 @@ export function createApp({
   assetService,
   repoStore,
   maxTarballBytes,
-  workflowRunAuthenticator,
 }: CreateAppOpts) {
   const app = new Hono<AppEnv>();
 
@@ -596,12 +640,13 @@ export function createApp({
       : {}),
     eventCollectors,
     ...(credentialCipher ? { credentialCipher } : {}),
-    assetService,
-    repoStore,
-    maxTarballBytes,
+    ...(principalKeyStore ? { principalKeyStore } : {}),
     ...(workflowRunAuthenticator !== undefined
       ? { workflowRunAuthenticator }
       : {}),
+    assetService,
+    repoStore,
+    maxTarballBytes,
     ...(grantStore ? { grantStore } : {}),
     ...(approvalStore ? { approvalStore } : {}),
     ...(signalCorrelationStore ? { signalCorrelationStore } : {}),

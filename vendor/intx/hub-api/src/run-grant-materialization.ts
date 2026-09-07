@@ -26,8 +26,12 @@ import {
   workflowDefinition,
   workflowRun,
 } from "@intx/db/schema";
-import type { DB, DBExecutor } from "@intx/db";
-import { createWorkflowRunStore, loadFrozenGrantSnapshot } from "@intx/db";
+import type { DB, DBExecutor, PrincipalKeyStore } from "@intx/db";
+import {
+  createPrincipalStore,
+  createWorkflowRunStore,
+  loadFrozenGrantSnapshot,
+} from "@intx/db";
 import type { GrantStore, GrantRule } from "@intx/types/authz";
 import {
   isSidecarAllocationDispatchable,
@@ -278,6 +282,7 @@ export async function collectCreatorGrants(
 
 export type CommitRunGrantsArgs = {
   db: DB["db"];
+  principalKeyStore: PrincipalKeyStore;
   tenantId: string;
   anchorRunId: string;
   /**
@@ -480,6 +485,7 @@ export async function commitRunGrants(
   tx?: DBExecutor,
 ): Promise<RunGrantsFrame["stepGrants"]> {
   const workflowRunStore = createWorkflowRunStore(args.db);
+  const principalStore = createPrincipalStore(args.db, args.principalKeyStore);
   const commit = async (
     executor: DBExecutor,
   ): Promise<RunGrantsFrame["stepGrants"]> => {
@@ -490,9 +496,8 @@ export async function commitRunGrants(
     );
     if (existing !== null) return existing.stepGrants;
 
-    const [insertedPrincipal] = await executor
-      .insert(principalTable)
-      .values({
+    const insertedPrincipal = await principalStore.createIfAbsent(
+      {
         id: args.runPrincipalId,
         tenantId: args.tenantId,
         kind: "workflow",
@@ -500,16 +505,10 @@ export async function commitRunGrants(
         status: "active",
         createdAt: args.now,
         updatedAt: args.now,
-      })
-      .onConflictDoNothing({
-        target: [
-          principalTable.tenantId,
-          principalTable.kind,
-          principalTable.refId,
-        ],
-      })
-      .returning({ id: principalTable.id });
-    if (insertedPrincipal === undefined) {
+      },
+      executor,
+    );
+    if (insertedPrincipal === null) {
       const winner = await loadCommittedRunGrantsFromExecutor(
         executor,
         args.tenantId,
@@ -549,6 +548,7 @@ export async function commitRunGrants(
 
 export type MailTriggeredRunGrantsDeps = {
   db: DB["db"];
+  principalKeyStore: PrincipalKeyStore;
   grantStore: GrantStore;
 };
 
@@ -745,6 +745,7 @@ export function createMailTriggeredRunGrantsMaterializer(
       return commitRunGrants(
         {
           db: deps.db,
+          principalKeyStore: deps.principalKeyStore,
           tenantId,
           anchorRunId,
           definitionId: anchor.definitionId,

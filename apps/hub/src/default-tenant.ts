@@ -17,7 +17,11 @@
 
 import { and, eq } from "drizzle-orm";
 import { generateId } from "@intx/hub-common";
-import type { DB } from "@intx/db";
+import {
+  createPrincipalStore,
+  type DB,
+  type PrincipalKeyStore,
+} from "@intx/db";
 import { grant, principal, principalRole, role, tenant } from "@intx/db/schema";
 
 /**
@@ -210,6 +214,7 @@ async function ensureOwnerMembership(
   tenantId: string,
   adminUserId: string,
   ownerRoleId: string,
+  principalKeyStore: PrincipalKeyStore,
 ): Promise<void> {
   const adminMemberships = await db
     .select({ id: principal.id })
@@ -252,18 +257,15 @@ async function ensureOwnerMembership(
   if (userMemberships.length > 0) return;
 
   const now = new Date();
-  await db
-    .insert(principal)
-    .values({
-      id: generateId("principal"),
-      tenantId,
-      kind: "user",
-      refId: adminUserId,
-      status: "active",
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoNothing();
+  await createPrincipalStore(db, principalKeyStore).createIfAbsent({
+    id: generateId("principal"),
+    tenantId,
+    kind: "user",
+    refId: adminUserId,
+    status: "active",
+    createdAt: now,
+    updatedAt: now,
+  });
 
   const created = await db
     .select({ id: principal.id })
@@ -312,6 +314,7 @@ export async function ensureDefaultTenant(
   auth: BootAdminAuth,
   admin: { email: string; password: string },
   slug: string,
+  principalKeyStore: PrincipalKeyStore,
 ): Promise<string> {
   // The membership references the admin user, so the user exists first.
   const adminUserId = await ensureAdminUser(auth, admin);
@@ -370,7 +373,13 @@ export async function ensureDefaultTenant(
     await ensureSystemRoleGrants(db, tenantId, roleName, roleIds[roleName]);
   }
 
-  await ensureOwnerMembership(db, tenantId, adminUserId, roleIds.owner);
+  await ensureOwnerMembership(
+    db,
+    tenantId,
+    adminUserId,
+    roleIds.owner,
+    principalKeyStore,
+  );
 
   return tenantId;
 }

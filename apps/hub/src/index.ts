@@ -11,6 +11,8 @@ import {
   createApprovalStore,
   createDB,
   createGrantStore,
+  createPrincipalKeyStore,
+  createPrincipalStore,
   createSidecarAllocationStore,
   createSignalCorrelationStore,
   createWorkflowRunDispatchStore,
@@ -511,6 +513,52 @@ export function credentialCipherFrom(
 }
 
 /**
+ * Hub-boot mint of the per-principal signing-key store: seals every minted
+ * signing key's private seed under `PRINCIPAL_KEY_ENCRYPTION_KEY` — a key
+ * deliberately separate from `CREDENTIAL_ENCRYPTION_KEY` so the two rotate
+ * independently. An unset key hard-fails boot for the same reason the
+ * credential cipher does: a hub that forgets this variable must not
+ * silently persist private keys in the clear — unless
+ * `ALLOW_PLAINTEXT_SECRETS` opts into the identity no-op cipher with a
+ * boot warning, for dev/test only.
+ */
+export function principalKeyStoreFrom(
+  config: HubConfig,
+  db: ReturnType<typeof createDB>["db"],
+  log: ReturnType<typeof getLogger>,
+) {
+  if (config.principalKeyEncryptionKeyHex === undefined) {
+    if (!config.allowPlaintextSecrets) {
+      throw new Error(
+        [
+          "PRINCIPAL_KEY_ENCRYPTION_KEY is not set.",
+          "It seals every principal's per-principal signing key at rest,",
+          "so the hub refuses to boot without it. Generate one and add it",
+          "to .env:",
+          "",
+          "  openssl rand -hex 32",
+          "",
+          "For local dev/test only, set ALLOW_PLAINTEXT_SECRETS=1 instead to",
+          "boot with signing keys stored unencrypted; never do this for a",
+          "real deployment.",
+        ].join("\n"),
+      );
+    }
+    log.warn`No PRINCIPAL_KEY_ENCRYPTION_KEY configured; per-principal signing keys will NOT be encrypted at rest. ALLOW_PLAINTEXT_SECRETS is set — expected in dev/test only, never for a real deployment.`;
+    return createPrincipalKeyStore({
+      db,
+      cipher: createNoopCredentialCipher(),
+    });
+  }
+  return createPrincipalKeyStore({
+    db,
+    cipher: createEnvKeyCredentialCipher(
+      Buffer.from(config.principalKeyEncryptionKeyHex, "hex"),
+    ),
+  });
+}
+
+/**
  * Hub-boot mint of the process-wide credential cipher: build from
  * config, then runtime-tag the result. Missing or wrong-shape input
  * fails closed — the hub does not boot.
@@ -613,6 +661,9 @@ export async function createHub(config: HubConfig) {
   // Built once, tagged, and shared by every secret-at-rest seam in this
   // composition root — see `hubCredentialCipher`.
   const credentialCipher = hubCredentialCipher(config, log);
+  // Per-principal signing keys are sealed under their own operator key —
+  // see `principalKeyStoreFrom`.
+  const principalKeyStore = principalKeyStoreFrom(config, db, log);
 
   const auth = betterAuth({
     baseURL: config.baseUrl,
@@ -691,6 +742,7 @@ export async function createHub(config: HubConfig) {
     auth,
     config.envCredentialPlantAdmin,
     config.defaultTenantSlug,
+    principalKeyStore,
   );
   // Account-keyed sign-in rate limit (CL-6494) — see `sign-in-rate-limit.ts`
   // for why this replaces better-auth's own IP-keyed sign-in enforcement
@@ -750,6 +802,7 @@ export async function createHub(config: HubConfig) {
   // relies on to trigger a native multi-step deployment safely.
   const mailTriggeredRunGrants = createMailTriggeredRunGrantsMaterializer({
     db,
+    principalKeyStore,
     grantStore: createGrantStore(db),
   });
   // Hoisted ahead of their other uses below (`mountMemory`'s neighbors,
@@ -1146,6 +1199,7 @@ export async function createHub(config: HubConfig) {
     workflowAllocationService,
     workflowDispatchService,
     credentialCipher,
+    principalKeyStore,
     // `@intx/hub-api`'s `GetSession` is a deliberately pluggable seam
     // (its own doc comment: "so a third-party identity provider can be
     // plugged in"), and this composition root owns it. `@corbits/chat`'s
@@ -1456,6 +1510,7 @@ export async function createHub(config: HubConfig) {
   const chatTenancy = createDrizzleWorkbenchTenancyStore(db, {
     conditionRegistry: chatConditionRegistry,
     api: selfApi,
+    principalStore: createPrincipalStore(db, principalKeyStore),
   });
   // Mounted outside the tenant prefix, like `/api/onboarding`: the bench
   // switcher asks this across every tenant a signed-in user belongs to,

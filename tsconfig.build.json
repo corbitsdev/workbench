@@ -194,6 +194,9 @@
       "path": "./vendor/intx/hub-api/tsconfig.src.json"
     },
     {
+      "path": "./vendor/intx/hub-common/tsconfig.src.json"
+    },
+    {
       "path": "./vendor/intx/hub-sessions/tsconfig.src.json"
     },
     {

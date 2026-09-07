@@ -10,7 +10,18 @@ export {
   rekeyCredentialSecrets,
   type RekeyReport,
 } from "./rekey-credential-secrets";
+export {
+  backfillPrincipalKeys,
+  type BackfillPrincipalKeysReport,
+} from "./backfill-principal-keys";
 export { createGrantStore } from "./grant-store";
+export { createPrincipalStore, type PrincipalStore } from "./principal-store";
+export {
+  createPrincipalKeyStore,
+  type CreatePrincipalKeyStoreDeps,
+  type PrincipalKeyStore,
+} from "./principal-key-store";
+export { lookupLocalPrincipalSigner } from "./signer-identity";
 export {
   createApprovalStore,
   type ApprovalStore,
@@ -128,6 +139,7 @@ export {
   parseGrantRow,
   parseApprovalRow,
   parsePrincipalRow,
+  parsePrincipalKeyRow,
   parseSignalCorrelationRow,
   parseWorkflowRunRow,
   parseWorkflowRunDispatchRow,

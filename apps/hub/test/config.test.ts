@@ -334,6 +334,39 @@ describe("readHubConfig", () => {
     expect(message).toContain("CREDENTIAL_ENCRYPTION_KEY");
   });
 
+  test("PRINCIPAL_KEY_ENCRYPTION_KEY absent by default", () => {
+    expect(
+      readHubConfig(validEnv).principalKeyEncryptionKeyHex,
+    ).toBeUndefined();
+  });
+
+  test("PRINCIPAL_KEY_ENCRYPTION_KEY accepts a 64-char hex key", () => {
+    const key = "b".repeat(64);
+    const config = readHubConfig({
+      ...validEnv,
+      PRINCIPAL_KEY_ENCRYPTION_KEY: key,
+    });
+    expect(config.principalKeyEncryptionKeyHex).toBe(key);
+  });
+
+  test("PRINCIPAL_KEY_ENCRYPTION_KEY rejects a key of the wrong length or shape", () => {
+    const message = readExpectingError({
+      ...validEnv,
+      PRINCIPAL_KEY_ENCRYPTION_KEY: "not-hex-and-too-short",
+    });
+    expect(message).toContain("PRINCIPAL_KEY_ENCRYPTION_KEY");
+  });
+
+  test("ALLOW_PLAINTEXT_SECRETS never substitutes a principal key — the key stays unset", () => {
+    const config = readHubConfig({
+      ...validEnv,
+      BASE_URL: "http://localhost:3000",
+      ALLOW_PLAINTEXT_SECRETS: "1",
+    });
+    expect(config.allowPlaintextSecrets).toBe(true);
+    expect(config.principalKeyEncryptionKeyHex).toBeUndefined();
+  });
+
   test("allowPlaintextSecrets is false by default", () => {
     expect(readHubConfig(validEnv).allowPlaintextSecrets).toBe(false);
   });

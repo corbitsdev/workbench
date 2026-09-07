@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.src.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true,
+    "disableSourceOfProjectReferenceRedirect": true,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "tsBuildInfoFile": "tsconfig.tsbuildinfo",
+    "rootDir": "../../.."
+  },
+  "include": [
+    "src",
+    "src/**/*.ts"
+  ],
+  "exclude": [],
+  "references": [
+    {
+      "path": "../types/tsconfig.src.json"
+    }
+  ]
+}
