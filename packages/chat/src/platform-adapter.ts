@@ -139,6 +139,14 @@ export type CreateHubChatPlatformDeps = {
    */
   cryptoProviders: CryptoProviderCache;
   /**
+   * CL-7505 serving-time token refresh: run before the wake in `sendMail`,
+   * this refreshes every due `oauth_token` credential in the tenant and
+   * pushes the refreshed frames, so the dial that follows serves a live
+   * token (or fails over past a credential that just went re-auth-required).
+   * Best-effort: absent or throwing, mail proceeds exactly as before.
+   */
+  refreshServingCredentials?: (tenantId: string) => Promise<void>;
+  /**
    * Opt-in idle-sleep for every launched instance: absent here, the adapter keeps today's
    * behavior exactly (nothing ever sleeps, no interval runs). When
    * present, this adapter builds a `@corbits/agent-lifecycle` instance
@@ -1373,6 +1381,23 @@ export function createHubChatPlatform(
         await lifecycle.ensureAwake(liveAddress);
       } else if (!isRoutable(liveAddress)) {
         await wakeByAddressBounded(liveAddress);
+      }
+      // CL-7505: serve on a live token. Any `oauth_token` credential the
+      // tenant's inference chain is about to dial that is at/near expiry
+      // refreshes here — with the refreshed frame pushed — so the run
+      // serves a live secret; a credential the grant cannot save is marked
+      // re-auth-required and the dial fails over past it. Best-effort: an
+      // unrefreshable token only skips the refresh, never the mail.
+      if (deps.refreshServingCredentials !== undefined) {
+        try {
+          await deps.refreshServingCredentials(input.tenantId);
+        } catch (cause) {
+          // report-error-ignore: best-effort by contract — an unrefreshable
+          // token must never block the mail; the hook itself reports the
+          // per-credential failure to the error sink already.
+          const logger = getLogger(["chat", "platform"]);
+          logger.warn`serving-time credential refresh failed (mail proceeding): ${String(cause)}`;
+        }
       }
       // CL-6588: `lifecycle.ensureAwake` returns immediately for an
       // address that is already routable — routability is the only

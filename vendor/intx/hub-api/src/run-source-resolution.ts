@@ -6,7 +6,11 @@
 // credential-bearing source chain a run launches against, so the launch route
 // and (later) the unified multi-step path cannot drift.
 
-import { resolveModelSources, type DB } from "@intx/db";
+import {
+  resolveModelSources,
+  type DB,
+  type ServingRefresh,
+} from "@intx/db";
 import type {
   CredentialCipher,
   ModelRequirement,
@@ -49,6 +53,10 @@ export async function resolveDefinitionSources(args: {
   // real cipher (resolved to a noop only at that edge for a keyless dev/test
   // composition).
   credentialCipher: CredentialCipher;
+  // CL-7505 local delta: optional serving-time refresh hook, threaded to
+  // buildSource so an expiring `oauth_token` credential refreshes in place
+  // (or the offering is skipped) before its secret is served.
+  servingRefresh?: ServingRefresh;
 }): Promise<DefinitionSourceResolution> {
   const requirements: ModelRequirement[] =
     args.modelRequirements !== null
@@ -62,7 +70,12 @@ export async function resolveDefinitionSources(args: {
     args.tenantId,
     requirements,
     args.credentialCipher,
-    { invokerPreferences: args.invokerPreferences },
+    {
+      invokerPreferences: args.invokerPreferences,
+      ...(args.servingRefresh !== undefined
+        ? { servingRefresh: args.servingRefresh }
+        : {}),
+    },
   );
   if (!resolution.ok) {
     const message =
