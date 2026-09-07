@@ -2,8 +2,9 @@
 // onboarding flow: drops the platform schema (database, auth tables,
 // every installed package's tables, and the db-setup ledger all live
 // in the same schema, so one drop clears them all) and removes the
-// on-disk directories the hub and the dev sidecar keep durable repo
-// and asset state in.
+// on-disk directory the hub keeps durable repo and asset state in.
+// Provisioned sidecar state lives under the hub data dir, so the hub
+// reset covers it.
 //
 // Refuses outright against a non-local DATABASE_URL — there is no
 // override. A schema drop is unrecoverable, and this script exists for
@@ -46,19 +47,16 @@ export function requireLocalDatabase(databaseUrl: string): void {
 }
 
 /**
- * The on-disk directories a local `bun run dev` checkout keeps durable
+ * The on-disk directory a local `bun run dev` checkout keeps durable
  * state in: the hub's `HUB_DATA_DIR` (resolved the same way the hub
- * itself resolves it — against `apps/hub`'s working directory) and the
- * dev sidecar's data directory, which `scripts/dev.ts` always pins to
- * `.data/sidecar` at the repo root regardless of `SIDECAR_DATA_DIR`.
+ * itself resolves it — against `apps/hub`'s working directory).
  */
 export function resolveLocalStateDirs(
   root: string,
   hubDataDir: string,
-): { hubDataDir: string; sidecarDataDir: string } {
+): { hubDataDir: string } {
   return {
     hubDataDir: path.resolve(path.join(root, "apps", "hub"), hubDataDir),
-    sidecarDataDir: path.join(root, ".data", "sidecar"),
   };
 }
 
@@ -82,10 +80,10 @@ const defaultDeps: ResetDeps = {
 };
 
 /**
- * Drop the platform schema and remove the on-disk asset directories,
+ * Drop the platform schema and remove the on-disk asset directory,
  * leaving a checkout in the same state as a fresh clone with `.env`
  * already filled in. `bun run dev` recreates the schema and the
- * directories on its next start.
+ * directory on its next start.
  */
 export async function resetLocalState(
   env: Record<string, string | undefined>,
@@ -98,7 +96,7 @@ export async function resetLocalState(
 
   const dirs = resolveLocalStateDirs(deps.root, config.hubDataDir);
   const removedDirs: string[] = [];
-  for (const dir of [dirs.hubDataDir, dirs.sidecarDataDir]) {
+  for (const dir of [dirs.hubDataDir]) {
     if (!deps.exists(dir)) continue;
     await deps.rm(dir, { recursive: true, force: true });
     removedDirs.push(dir);
@@ -128,7 +126,7 @@ if (import.meta.main) {
       `reset: dropped the platform schema in database ${JSON.stringify(report.database)}`,
     );
     if (report.removedDirs.length === 0) {
-      console.log("reset: no on-disk asset directories were present");
+      console.log("reset: no on-disk asset directory was present");
     } else {
       for (const dir of report.removedDirs) {
         console.log(`reset: removed ${dir}`);

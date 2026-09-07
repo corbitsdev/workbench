@@ -112,7 +112,8 @@ bun run reset
 ```
 
 `bun run reset` drops the platform database schema and removes the hub's
-and the dev sidecar's on-disk asset directories — everything boot-time
+on-disk asset directory (which also holds provisioned sidecar state) —
+everything boot-time
 seeding and onboarding created. Nothing is re-seeded until the next `bun
 run dev` — that recreates the schema and, once the hub is serving again,
 reprovisions and re-seeds the root tenant from scratch, landing you at a
