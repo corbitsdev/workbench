@@ -524,7 +524,9 @@ export interface WorkbenchTenancyStore {
   getWorkbenchOwnerUserId(tenantId: string): Promise<string | undefined>;
 }
 
-export interface WorkbenchTenancyAuthzDeps {
+export interface WorkbenchTenancyAuthzDeps<
+  TSchema extends Record<string, unknown> = Record<string, never>,
+> {
   /**
    * Passed straight through to `evaluateGrants` for the destination
    * check `moveWorkbenchTenancy` runs inside its own transaction — no
@@ -538,6 +540,22 @@ export interface WorkbenchTenancyAuthzDeps {
   readonly conditionRegistry?: ConditionRegistry;
   /** Self-HTTP caller used to mint native tenants and extra grants. */
   readonly api: ApiCall;
+  /**
+   * `@intx/db`'s single owner of principal creation, wired by the hub
+   * with its principal-key store: `addWorkbenchMember` creates the
+   * principal through it so every new member is minted a signing key in
+   * the same transaction that inserts the row. Typed structurally over
+   * this store's own transaction handle so the member write joins the
+   * surrounding transaction.
+   */
+  readonly principalStore: {
+    create(
+      row: typeof principal.$inferInsert,
+      tx: Parameters<
+        Parameters<WorkbenchTenancyDb<TSchema>["transaction"]>[0]
+      >[0],
+    ): Promise<{ id: string }>;
+  };
 }
 
 /**
@@ -550,8 +568,9 @@ export function createDrizzleWorkbenchTenancyStore<
   TSchema extends Record<string, unknown>,
 >(
   db: WorkbenchTenancyDb<TSchema>,
-  authz: WorkbenchTenancyAuthzDeps,
+  authz: WorkbenchTenancyAuthzDeps<TSchema>,
 ): WorkbenchTenancyStore {
+  const { principalStore } = authz;
   return {
     async createWorkbenchTenant(input) {
       const slug = slugForWorkbenchTenant(input.name);
@@ -838,16 +857,19 @@ export function createDrizzleWorkbenchTenancyStore<
         }
 
         const now = new Date();
-        const principalId = generateId("principal");
-        await tx.insert(principal).values({
-          id: principalId,
-          tenantId: link.tenantId,
-          kind: "user",
-          refId,
-          status: "active",
-          createdAt: now,
-          updatedAt: now,
-        });
+        const created = await principalStore.create(
+          {
+            id: generateId("principal"),
+            tenantId: link.tenantId,
+            kind: "user",
+            refId,
+            status: "active",
+            createdAt: now,
+            updatedAt: now,
+          },
+          tx,
+        );
+        const principalId = created.id;
         await tx.insert(principalRole).values({
           principalId,
           roleId: memberRole.id,
