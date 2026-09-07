@@ -285,7 +285,7 @@ function parseExternalRef(externalRef: string): {
   if (allocationId === undefined || allocationId === "") return null;
   const generation = Number(generationText);
   const pid = Number(pidText);
-  if (!Number.isInteger(generation) || generation <= 0) return null;
+  if (!Number.isInteger(generation) || generation < 0) return null;
   if (!Number.isInteger(pid) || pid <= 0) return null;
   return { allocationId, generation, pid };
 }
