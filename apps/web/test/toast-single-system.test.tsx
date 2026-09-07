@@ -192,7 +192,7 @@ describe("the one toast system (CL-6372)", () => {
       if (path.includes("/workflows/definitions")) {
         return Promise.resolve(json({ data: [], nextCursor: null }));
       }
-      if (path.endsWith("/api/onboarding/provisioning-status")) {
+      if (path.endsWith("/api/onboarding/provisioning-status?tenantId=tnt_1")) {
         return Promise.resolve(
           json({
             kind: "provisioning",

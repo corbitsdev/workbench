@@ -126,7 +126,9 @@ describe("routes.ts routes caught errors through reportError", () => {
       });
       const app = mountAuthenticated(routes);
 
-      const response = await app.request("/provisioning-status");
+      const response = await app.request(
+        `/provisioning-status?tenantId=${TENANT_ID}`,
+      );
 
       expect(response.status).toBe(500);
       expect(reportErrorCalls).toHaveLength(1);

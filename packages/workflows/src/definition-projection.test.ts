@@ -11,13 +11,30 @@
 // CL-6357's asset-drift walk: a pre-cutover sibling carrying no stored
 // projection must never win over a healthy newer one, and exhausting
 // every candidate raises the named `DefinitionProjectionMissingError`.
-import { describe, expect, mock, test } from "bun:test";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  mock,
+  spyOn,
+  test,
+} from "bun:test";
+import * as intxDb from "@intx/db";
+import { WorkflowProjectionDefinition } from "@intx/types/sidecar";
 
 const projectionsById: Record<string, unknown> = {};
-mock.module("@intx/db", () => ({
-  loadFrozenWireProjection: async (_db: unknown, definitionId: string) =>
-    projectionsById[definitionId] ?? null,
-}));
+beforeEach(() => {
+  spyOn(intxDb, "loadFrozenWireProjection").mockImplementation(
+    async (_db, definitionId) => {
+      const projection = projectionsById[definitionId];
+      return projection === undefined
+        ? null
+        : WorkflowProjectionDefinition.assert(projection);
+    },
+  );
+});
+afterEach(() => mock.restore());
 
 const {
   authoredDefinitionCandidates,
@@ -32,6 +49,7 @@ const {
 function inertProjection(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "wfd_1",
+    triggers: [],
     stepOrder: ["host"],
     steps: {
       host: {

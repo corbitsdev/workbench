@@ -453,37 +453,6 @@ export interface DbSetupReport {
 }
 
 /**
- * Ensure a sidecar identity row exists for `sidecarId` with the given
- * token: the hub authenticates a sidecar's WebSocket dial-in against
- * the token hash on the `sidecar` table, so the row must exist before
- * the sidecar process starts. Idempotent — re-running refreshes the
- * hash, so a changed token heals rather than locking the sidecar out.
- */
-export async function ensureSidecarIdentity(
-  databaseUrl: string,
-  sidecarId: string,
-  token: string,
-): Promise<void> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(token),
-  );
-  const postgres = await loadPostgres();
-  const target = dbTargetFromUrl(databaseUrl);
-  const sql = await connect(postgres, target);
-  try {
-    await sql.unsafe(
-      `INSERT INTO "sidecar" ("id", "url", "token_hash_sha256")
-       VALUES ($1, $2, $3)
-       ON CONFLICT ("id") DO UPDATE SET "token_hash_sha256" = $3`,
-      [sidecarId, "ws://local-sidecar", Buffer.from(digest)],
-    );
-  } finally {
-    await sql.end();
-  }
-}
-
-/**
  * Make the database in `databaseUrl` runnable: create the database if
  * missing, apply @intx/db's shipped migrations (platform tables plus
  * the better-auth tables) into the target schema, and record what was

@@ -7,7 +7,11 @@
 import type { AppEnv } from "@intx/hub-api";
 import { createExpiringMap } from "@corbits/collections";
 import { createNoopCredentialCipher } from "@intx/crypto";
-import { CredentialResponse, paginatedSchema } from "@intx/types";
+import {
+  CredentialResponse,
+  PrincipalSummary,
+  paginatedSchema,
+} from "@intx/types";
 import type { CredentialCipher } from "@intx/types";
 import {
   supportedCredentialProviders,
@@ -60,6 +64,8 @@ import type { PendingSeedStore } from "./pending-seed";
 import { exchangeCodeForKey } from "./openrouter-connect";
 import { exchangeCodeForToken as exchangeHuggingFaceCodeForToken } from "./huggingface-connect";
 import type { ProviderHealthStore } from "@corbits/connections/provider-health";
+
+const ProvisioningStatusQuery = type({ tenantId: "string > 0" });
 
 function assertNonEmpty<T>(arr: T[]): asserts arr is [T, ...T[]] {
   if (arr.length === 0) {
@@ -333,7 +339,7 @@ export function createOnboardingRoutes(
    */
   async function provisioningStatus(
     cookies: string[],
-    tenant: PersonalTenant,
+    tenant: Pick<PersonalTenant, "tenantId" | "tenantSlug">,
   ): Promise<ProvisioningStatusBody> {
     const { deployed, pending } = await seededWorkflowStatus(
       api,
@@ -952,21 +958,46 @@ export function createOnboardingRoutes(
       );
     }
 
+    const query = ProvisioningStatusQuery(c.req.query());
+    if (query instanceof type.errors) {
+      return c.json(
+        makeErrorEnvelope({
+          code: "invalid_request",
+          userMessage: "Select a workspace to check its agents.",
+        }),
+        400,
+      );
+    }
+
     const cookies = cookiesFromHeader(c.req.header("cookie"));
     // Known once the tenant lookup below resolves; a lookup failure
     // itself has no tenant yet.
     let tenantId: string | undefined;
     try {
-      const expectedSlug = personalTenantSlug(user.email, user.id);
-      const tenant = await findPersonalTenant(api, cookies, expectedSlug);
+      const response = await api(
+        "GET",
+        "/api/me/principals",
+        undefined,
+        cookies,
+      );
+      const principals = parseAs(
+        paginatedSchema(PrincipalSummary),
+        response.data,
+        "principals response",
+      );
+      const tenant = principals.data.find(
+        (principal) =>
+          principal.tenantId === query.tenantId &&
+          principal.status === "active",
+      );
       if (!tenant) {
         return c.json(
           makeErrorEnvelope({
-            code: "no_personal_bench",
+            code: "bench_unavailable",
             userMessage:
-              "No personal bench was found for this account yet. Reload and try again.",
+              "You no longer have access to this workspace. Select another workspace.",
           }),
-          409,
+          403,
         );
       }
       tenantId = tenant.tenantId;

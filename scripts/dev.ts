@@ -1,13 +1,13 @@
 // Local development bootstrap behind `bun run dev`: validates configuration,
-// verifies the Postgres in DATABASE_URL is reachable, and starts the hub and
-// sidecar together. Every prerequisite failure exits with a message naming
-// the actual problem and the fix.
+// verifies the Postgres in DATABASE_URL is reachable, and starts the hub.
+// The hub provisions sidecars on demand. Prerequisite failures name the
+// actual problem and the fix.
 import { existsSync, statSync, watch } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { join, resolve } from "node:path";
 import { readHubConfig, type HubConfig } from "../apps/hub/src/config.ts";
-import { ensureSidecarIdentity, setupDatabase } from "./db-setup.ts";
+import { setupDatabase } from "./db-setup.ts";
 import { localDevMemoryEmbedEnv } from "./setup-memory.ts";
 
 const repoRoot = resolve(import.meta.dir, "..");
@@ -132,33 +132,6 @@ interface App {
   command?: string[];
 }
 
-const DEV_SIDECAR_ID = "sidecar-dev";
-
-/**
- * The local sidecar's dial-in token, derived from SESSION_SECRET so it
- * is stable per checkout without another secret to manage. The database
- * stores only its hash; `ensureSidecarIdentity` refreshes the hash on
- * every dev start, so a changed SESSION_SECRET heals automatically.
- */
-async function devSidecarToken(config: HubConfig): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(`${DEV_SIDECAR_ID}:${config.sessionSecret}`),
-  );
-  return Buffer.from(digest).toString("hex");
-}
-
-function sidecarEnv(config: HubConfig, token: string): Record<string, string> {
-  const base = new URL(config.baseUrl);
-  const wsProtocol = base.protocol === "https:" ? "wss:" : "ws:";
-  return {
-    SIDECAR_DATA_DIR: join(repoRoot, ".data", "sidecar"),
-    HUB_WS_URL: `${wsProtocol}//${base.host}/api/sidecars/ws`,
-    SIDECAR_ID: DEV_SIDECAR_ID,
-    SIDECAR_TOKEN: token,
-  };
-}
-
 // Each command IS the final long-running process — never a `bun run`
 // script wrapper. Killing a wrapper leaves its grandchild running, which
 // is exactly how orphaned hubs end up squatting the port after Ctrl-C.
@@ -184,14 +157,7 @@ if (localMemoryEmbed !== undefined) {
   mergeHubEnv(localMemoryEmbed);
 }
 
-const apps: App[] = [
-  hubApp,
-  {
-    label: "sidecar",
-    dir: join(repoRoot, "apps", "sidecar"),
-    command: ["bun", "--watch", "src/index.ts"],
-  },
-];
+const apps: App[] = [hubApp];
 
 // The hub serves the web app's build output as static files, so dev
 // watches and rebuilds that output on every source change — a browser
@@ -206,16 +172,18 @@ const webApp: App = {
 };
 
 function requireApps(): void {
-  const missing = [...apps, webApp].filter(
-    (app) => !existsSync(join(app.dir, "package.json")),
-  );
+  const missing = [
+    ...apps,
+    webApp,
+    { dir: join(repoRoot, "apps", "sidecar") },
+  ].filter((app) => !existsSync(join(app.dir, "package.json")));
   if (missing.length === 0) return;
   fail(
     [
       "This checkout is missing runnable app(s):",
       ...missing.map((app) => `  - ${app.dir}`),
-      "The dev bootstrap starts the hub and the sidecar together; it cannot",
-      "run until both exist. Make sure you are on an up-to-date checkout.",
+      "The hub provisions sidecars from this checkout; it cannot",
+      "run until the required apps exist. Use an up-to-date checkout.",
     ].join("\n"),
   );
 }
@@ -519,11 +487,6 @@ if (import.meta.main) {
   await requireHubPortFree(config);
   await requireDatabaseReachable(config);
   await requireDatabaseSetUp(config);
-  const token = await devSidecarToken(config);
-  await ensureSidecarIdentity(config.databaseUrl, DEV_SIDECAR_ID, token);
-  console.log(`[dev] sidecar identity ${JSON.stringify(DEV_SIDECAR_ID)} ready`);
-  const sidecar = apps.find((app) => app.label === "sidecar");
-  if (sidecar) sidecar.env = sidecarEnv(config, token);
   requireApps();
   const hubStaticDir = resolve(
     join(repoRoot, "apps", "hub"),
