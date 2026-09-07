@@ -75,6 +75,7 @@ async function connectTo(url: string, database?: string): Promise<SqlClient> {
 
 describe.skipIf(databaseUrl === undefined)("db-setup", () => {
   const url = databaseUrl as string;
+  const databaseLifecycleTimeoutMs = 30_000;
 
   // The suite owns the one expensive fresh apply; every test starts
   // from a fully migrated scratch database instead of relying on a
@@ -83,7 +84,7 @@ describe.skipIf(databaseUrl === undefined)("db-setup", () => {
 
   beforeAll(async () => {
     freshApply = await setupDatabase(url);
-  });
+  }, databaseLifecycleTimeoutMs);
 
   afterAll(async () => {
     const maintenance = await connectTo(url, "postgres");
@@ -95,7 +96,7 @@ describe.skipIf(databaseUrl === undefined)("db-setup", () => {
     } finally {
       await maintenance.end();
     }
-  });
+  }, databaseLifecycleTimeoutMs);
 
   test("fresh database applies every vendored migration and records it", async () => {
     const shippedOnDisk = (await readdir(VENDORED_MIGRATIONS_DIR))
@@ -142,24 +143,28 @@ describe.skipIf(databaseUrl === undefined)("db-setup", () => {
     }
   });
 
-  test("resetSchema drops the mailbox package's own schema, not only the platform's", async () => {
-    await resetSchema(url);
-    const sql = await connectTo(url);
-    try {
-      const mailboxSchema = await sql.unsafe(
-        `SELECT 1 FROM information_schema.schemata WHERE schema_name = 'mailbox'`,
-      );
-      expect(mailboxSchema).toHaveLength(0);
-    } finally {
-      await sql.end();
-    }
+  test(
+    "resetSchema drops the mailbox package's own schema, not only the platform's",
+    async () => {
+      await resetSchema(url);
+      const sql = await connectTo(url);
+      try {
+        const mailboxSchema = await sql.unsafe(
+          `SELECT 1 FROM information_schema.schemata WHERE schema_name = 'mailbox'`,
+        );
+        expect(mailboxSchema).toHaveLength(0);
+      } finally {
+        await sql.end();
+      }
 
-    // Leave the scratch database migrated again for any later test in this
-    // file (and to prove the installed packages' migrations replay cleanly
-    // after a reset, not only on a first-ever apply).
-    const rebuilt = await setupDatabase(url);
-    expect(rebuilt.action).toBe("migrated");
-  });
+      // Leave the scratch database migrated again for any later test in this
+      // file (and to prove the installed packages' migrations replay cleanly
+      // after a reset, not only on a first-ever apply).
+      const rebuilt = await setupDatabase(url);
+      expect(rebuilt.action).toBe("migrated");
+    },
+    databaseLifecycleTimeoutMs,
+  );
 
   test("re-run on a current schema reports unchanged and touches nothing", async () => {
     const first = await setupDatabase(url);
@@ -169,26 +174,30 @@ describe.skipIf(databaseUrl === undefined)("db-setup", () => {
     expect(second.migrations).toBe(first.migrations);
   });
 
-  test("a ledger that disagrees with the shipped set fails loudly; reset recovers", async () => {
-    // Simulate a database set up under an older migration set (e.g. a
-    // pre-fold dev database) by shortening the recorded ledger.
-    const sql = await connectTo(url);
-    try {
-      await sql.unsafe(
-        `DELETE FROM "public"."workbench_setup_migration"
+  test(
+    "a ledger that disagrees with the shipped set fails loudly; reset recovers",
+    async () => {
+      // Simulate a database set up under an older migration set (e.g. a
+      // pre-fold dev database) by shortening the recorded ledger.
+      const sql = await connectTo(url);
+      try {
+        await sql.unsafe(
+          `DELETE FROM "public"."workbench_setup_migration"
          WHERE filename = (SELECT max(filename) FROM "public"."workbench_setup_migration")`,
+        );
+      } finally {
+        await sql.end();
+      }
+
+      await expect(setupDatabase(url)).rejects.toThrow(
+        /different @intx\/db migration set[\s\S]*--reset/,
       );
-    } finally {
-      await sql.end();
-    }
 
-    await expect(setupDatabase(url)).rejects.toThrow(
-      /different @intx\/db migration set[\s\S]*--reset/,
-    );
-
-    // The failure names the fix; prove the fix works.
-    await resetSchema(url);
-    const rebuilt = await setupDatabase(url);
-    expect(rebuilt.action).toBe("migrated");
-  });
+      // The failure names the fix; prove the fix works.
+      await resetSchema(url);
+      const rebuilt = await setupDatabase(url);
+      expect(rebuilt.action).toBe("migrated");
+    },
+    databaseLifecycleTimeoutMs,
+  );
 });
