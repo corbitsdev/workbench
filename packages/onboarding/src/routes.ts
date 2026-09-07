@@ -892,7 +892,9 @@ export function createOnboardingRoutes(
     let tenantId: string | undefined;
     try {
       const expectedSlug = personalTenantSlug(user.email, user.id);
-      const tenant = await findPersonalTenant(api, cookies, expectedSlug);
+      const tenant = await findPersonalTenant(api, cookies, expectedSlug, {
+        fallbackToFirstPrincipal: true,
+      });
       if (!tenant) {
         return c.json(
           makeErrorEnvelope({
