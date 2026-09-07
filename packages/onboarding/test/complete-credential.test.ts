@@ -2101,7 +2101,6 @@ describe("findPersonalTenant", () => {
       principalId: string;
       tenantId: string;
       tenantSlug: string;
-      tenantDomain?: string;
     }[],
   ) {
     return {
@@ -2144,7 +2143,6 @@ describe("findPersonalTenant", () => {
             principalId: "prn_root",
             tenantId: "ten_root",
             tenantSlug: "acme",
-            tenantDomain: "acme.bench.local",
           },
         ]);
       }
@@ -2235,13 +2233,11 @@ describe("findPersonalTenant", () => {
             principalId: "prn_first",
             tenantId: "ten_first",
             tenantSlug: "first-bench",
-            tenantDomain: "first.bench.local",
           },
           {
             principalId: "prn_second",
             tenantId: "ten_second",
             tenantSlug: "second-bench",
-            tenantDomain: "second.bench.local",
           },
         ]);
       }
