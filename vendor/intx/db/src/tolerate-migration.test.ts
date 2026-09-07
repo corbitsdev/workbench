@@ -1,4 +1,4 @@
-// WORKBENCH DELTA (see VENDORED.md): migration 0088 rewrites the retired
+// WORKBENCH DELTA (see VENDORED.md): migration 0091 rewrites the retired
 // `onBodyFailure: "continue"` literal to upstream's `"tolerate"` inside
 // frozen wire projections. Exercised against a scratch table carrying the
 // column the statement touches. DB-gated: skipped when DATABASE_URL is unset.
@@ -15,10 +15,10 @@ const MIGRATION = path.resolve(
   import.meta.dir,
   "..",
   "migrations",
-  "0088_workflow_definition_version_tolerate_body_failure.sql",
+  "0091_workflow_definition_version_tolerate_body_failure.sql",
 );
 
-describeIfDb("0088 rewrites onBodyFailure continue -> tolerate", () => {
+describeIfDb("0091 rewrites onBodyFailure continue -> tolerate", () => {
   const schema = `tolerate_test_${Date.now().toString(36)}`;
   const parsed = new URL(databaseUrl);
   const sql = postgres({
