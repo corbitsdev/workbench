@@ -28,8 +28,9 @@ export interface AgentTurn {
   readonly tenantId: string;
   readonly workbenchId: string;
   readonly agentAddress: string;
-  /** The warm (agent, workbench) section run, when the dispatch reached
-   * far enough to learn it; null for a turn that never got that far. */
+  /** The warm per-agent section run, when the dispatch reached far enough
+   * to learn it; null for a turn that never got that far. One warm run
+   * exists per agent, each inbound message an occurrence. */
   readonly sectionRunId: string | null;
   /** `turn__<occurrence>` — what the reply message's `run_id` carries. */
   readonly childRunId: string;

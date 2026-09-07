@@ -26,7 +26,6 @@ import {
 import { humanizeSlug } from "@corbits/chat/display-name";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getLogger } from "@corbits/client-log";
 import { ApiQueryError, describeApiError } from "@corbits/api-query";
 import { reportError } from "@corbits/error-sink";
 
@@ -47,8 +46,6 @@ import {
   WORKBENCH_TEMPLATES,
   type WorkbenchTemplateId,
 } from "../workbench-templates";
-
-const log = getLogger("web.new-workbench-picker");
 
 const GENERIC_CREATE_FAILURE =
   "Something went wrong creating this workbench. Try again.";
@@ -265,15 +262,13 @@ export function NewWorkbenchPickerRoute() {
           return;
         }
       }
-      log.error("Couldn't create the workbench", {
-        message: cause instanceof Error ? cause.message : String(cause),
-        status:
-          cause instanceof ApiQueryError || cause instanceof ChatApiError
-            ? cause.status
-            : undefined,
-        path: cause instanceof ApiQueryError ? cause.path : undefined,
+      // Every remaining cause is a genuinely failed create: report it with
+      // operation context and a quotable refId rather than a log line alone.
+      const refId = reportError(cause, {
+        operation: "workbench_create",
+        tenantId: selectedTenantId,
       });
-      toast(describeWorkbenchCreateFailure(cause));
+      toast(describeWorkbenchCreateFailure(cause, refId));
       setCreating(false);
     }
   }
@@ -490,10 +485,13 @@ export function NewWorkbenchPickerRoute() {
                                 );
                               }
                               if (event.key === "Enter") {
+                                // Implicit form submission would otherwise
+                                // fire on a miss, creating a workbench the
+                                // operator did not ask for.
+                                event.preventDefault();
                                 const activeAgent =
                                   filteredAgents[activeAgentIndex];
                                 if (activeAgent !== undefined) {
-                                  event.preventDefault();
                                   toggleAgent(activeAgent.id);
                                 }
                               }

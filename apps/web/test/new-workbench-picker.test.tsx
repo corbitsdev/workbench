@@ -491,6 +491,62 @@ describe("NewWorkbenchPickerRoute", () => {
     expect(navigated).toEqual(["/w/chan_new"]);
   });
 
+  test("Enter on a no-match agent search does not create a workbench", async () => {
+    const calls = stubBlankCreate(
+      undefined,
+      json({ error: "agent launch failed" }, 409),
+    );
+    const navigated: string[] = [];
+    await renderPicker((to) => navigated.push(to));
+    typeIntoPrompt("Research our next partner");
+
+    for (let i = 0; i < 20; i++) {
+      await settle();
+      if (container?.textContent?.includes("+ Add agent")) break;
+    }
+    const addAgent = Array.from(
+      container?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+    ).find((button) => button.textContent === "+ Add agent");
+    await act(async () => {
+      addAgent?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const search = document.querySelector<HTMLInputElement>(
+      'input[role="combobox"]',
+    );
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    await act(async () => {
+      setter?.call(search, "zzz-no-match");
+      search?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      // Synthetic keydown does not run the browser's implicit-submission
+      // default action, so the defect shows as a missing cancellation:
+      // pre-fix, a no-match Enter left the event uncancelled and the real
+      // browser submitted the form.
+      const event = new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+      });
+      search?.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+    });
+    await settle();
+
+    expect(document.querySelector(".new-workbench-agent-empty")).not.toBeNull();
+    expect(
+      calls.some(
+        (call) =>
+          call.path.endsWith("/chat/workbenches") &&
+          call.init?.method === "POST",
+      ),
+    ).toBe(false);
+    expect(navigated).toEqual([]);
+  });
+
   test("Escape closes the agent picker and returns focus to its trigger", async () => {
     stubFetch(() => undefined);
     await renderPicker();
