@@ -321,18 +321,40 @@ whether that would be a third level. `openReplyThread` (implicit replies)
 refuses on that signal; `forkThread` (explicit forks) redirects on it —
 neither reimplements depth math.
 
-An agent's reply lands in the thread of the message that woke its turn
-(CL-6314) — the same thread, whether that message lives on the root feed
-or inside a sub-thread. The dispatch records its mail id against the
-message it answers, and the reply path matches the turn's
-`message.run.started` bracket back to that record; after a hub restart
-that dropped the process-local bracket, the running turn's last
-`requestMessageIds` names the same source. Delegation needs no
-separate mechanism, since a delegating message has a thread like any
-other. Approve blocks and artifact deliveries thread under the turn that
-produced them the same way. A reply whose waking mail was never recorded
-and whose running turn names no source (a pre-rollout mail) posts
-unthreaded rather than vanishing.
+**Correlation is mail headers, and nothing else (CL-7104).** Chat is a
+mail thread, so every timeline row dispatched to an agent goes out under
+its own RFC 5322 `Message-ID` — `<{row id}@{mail domain}>`, derived from
+the row's primary key and stamped back onto it — and names its thread
+parentage in `In-Reply-To` and `References`, built per RFC 5322 from the
+`chat.threads` parent chain (the anchor of the thread it lives in, then
+that anchor's own anchor; the root feed answers nothing and carries
+neither header). The reply that answers it is matched by those headers.
+There is no `Interchange-Correlation-ID` on the wire, no reply-to address
+carrying a workbench id, and no "the last thing this address was asked"
+heuristic: two turns pending against one agent are told apart because
+their dispatches carry different `Message-ID`s, not because one of them
+is newer.
+
+An agent's reply therefore lands in the thread of the message that woke
+its turn — the same thread, whether that message lives on the root feed
+or inside a sub-thread. The reply path resolves the turn's
+`message.run.started` bracket, whose `messageId` IS the dispatched row's
+`Message-ID`, back to that row; after a hub restart that dropped the
+process-local bracket, the running turn's last `requestMessageIds` names
+the same source. Delegation needs no separate mechanism, since a
+delegating message has a thread like any other — the hop that wakes a
+mentioned specialist carries the delegating row's own `Message-ID`.
+Approve blocks and artifact deliveries thread under the turn that
+produced them the same way. A reply that names no parent at all is
+reported through `reportError` with its room and agent context and
+appended to the workbench's root thread — visible, with a `refId` a
+person can quote, and never attached to a guessed parent.
+
+A parked `message_response` gate is the same rule (CL-7104): the
+question card is posted with its own `Message-ID`, the gate is armed on
+that id, and the answer is dispatched as a reply naming it in
+`In-Reply-To`. An answer to a different question names a different id, so
+it never clears the wrong gate.
 
 Every outbound agent frame is also dual-written into each addressed human
 participant's `@corbits/mailbox` inbox (CL-7449) — the hub's `persistMail`
@@ -434,20 +456,40 @@ invite, so the section has nothing to show; Members and Danger zone are
 already trimmed for every 1:1 chat, agent or person). One derivation, no
 second signal to keep in sync.
 
-## The reply bridge
+## How an invited agent is launched
 
-An invited agent's reply is not something it posts back into the workbench on
-its own — replies surface only as `connector.reply` events on that agent's
-own event stream, never as mail it sends. The **reply bridge** is the piece
-that turns those events into workbench messages: for each agent participant,
-the platform subscribes to that agent's event stream and, on a
-`connector.reply` event, posts its content onto the workbench's timeline as
-a message from that agent's own address, carrying the run id it came from.
+Inviting an agent (or opening its DM) calls Interchange
+`prepareProvisionedDeployment` onto that definition's own `kind:workflow`
+asset. Interchange mints the run row, the allocation, and (on first
+trigger) the run principal. Chat records the returned run id, deployment
+id, and mail address — it does not mint the run, own an `agent_session`,
+or render a per-run `sourceRef`.
 
-The bridge is armed when an agent is invited, and idempotently re-armed
-whenever a workbench's messages are read — bridges are in-memory, so a host
-restart loses them, and a read is the natural moment to notice and recreate
-one.
+Launch is asynchronous. A message sent before the sidecar is ready sits
+on the reconciler's ready hook and the `workflowDispatchService` queue
+until the instance can take it; the UI shows a starting state, with
+presence from allocation/deployment status rather than a run principal.
+Wake of a reaped or lost instance is a fresh `prepareProvisionedDeployment`
+onto the same asset; chat updates the ids it recorded.
+
+Turns are one native `sendUserMessage` per addressed agent, carrying the
+row's `Message-ID` / `In-Reply-To` / `References`. Inference sources on
+the deployment are catalog offering ids (`sourceOfferingIds` /
+`defaultSourceOfferingId`).
+
+## How a reply reaches a human
+
+An invited agent's reply is not something chat scrapes off
+`connector.reply` events. Sidecar outbound mail hits the hub
+`persistMail` lookup; a Workbench wrapper dual-writes that frame into
+`@corbits/mailbox` so each human gets a copy. Attachments for humans are
+read from that mailbox frame, not from Interchange `session_mail`.
+Correlation is the RFC 5322 headers on the mail, never a `correlationId`.
+
+The old per-agent event-stream **reply bridge** is gone. A process-lifetime
+chat orchestrator still watches sidecar events for turn projection and
+in-chat approval parks; it is not the path that delivers the agent's
+words to a person.
 
 ## Bench defaults and per-workbench overrides
 

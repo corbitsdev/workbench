@@ -164,8 +164,17 @@ export {
   createInMemoryThreadStore,
   createDrizzleThreadStore,
   createDeliveryThread,
+  mailAncestryOf,
   resolveTargetThread,
 } from "./threads";
+
+export {
+  mailMessageIdFor,
+  mailThreadHeaders,
+  parentMailMessageId,
+  parseReferences,
+  rowIdFromMailMessageId,
+} from "./mail-headers";
 export type {
   ThreadStore,
   WorkbenchThread,
@@ -313,6 +322,33 @@ export type {
   CreateHubChatPlatformDeps,
   HubChatPlatform,
 } from "./platform-adapter";
+export { createRunTriggerClient, RunTriggerError } from "./run-trigger-client";
+export type {
+  RunTriggerClient,
+  RunTriggerClientDeps,
+  TriggerWorkflowRunMailInput,
+  TriggeredWorkflowRunMail,
+} from "./run-trigger-client";
+export {
+  signInternalRunTriggerToken,
+  verifyInternalRunTriggerToken,
+} from "./run-trigger-internal-auth";
+export { createCryptoProviderCache } from "./crypto-cache";
+export type { CryptoProviderCache } from "./crypto-cache";
+export { tagCredentialCipher } from "./credential-cipher-tag";
+export { InferenceResolutionError } from "./model-unavailable";
+export type {
+  McpCredentialBindingsFor,
+  PinnedPackageCredentialBindingsFor,
+  PinnedToolGrantDeclaration,
+  ToolGrantsForPins,
+} from "./pin-ports";
+export { sendRunMail } from "./send-run-mail";
+export type {
+  RunMailDeps,
+  SendRunMailParams,
+  SentRunMail,
+} from "./send-run-mail";
 
 export {
   createRelaunchNoticePoster,

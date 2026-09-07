@@ -1,5 +1,7 @@
 import { type } from "arktype";
 
+import type { SidecarCapabilityDeclaration } from "@intx/types";
+
 export type EnsureSidecarRequest = {
   readonly allocationId: string;
   readonly generation: number;
@@ -14,6 +16,12 @@ export type DestroySidecarRequest = {
   readonly allocationId: string;
   readonly generation: number;
   readonly sidecarId: string;
+  /**
+   * Optional provider handle recorded after ensure returns. A Hub crash can
+   * occur after capacity is created but before this value is persisted, so
+   * destroy must always be able to identify the capacity from allocationId,
+   * generation, and sidecarId alone.
+   */
   readonly externalRef?: string;
 };
 
@@ -48,6 +56,7 @@ export interface SidecarProvisioner {
   readonly apiVersion: 1;
   /** Stable, non-secret identity for the backend configuration. */
   readonly bindingFingerprint: string;
+  readonly capabilities: readonly SidecarCapabilityDeclaration[];
   /**
    * Converges infrastructure for this generation. Implementations must be
    * idempotent and reject generations older than one they have observed.
@@ -55,16 +64,13 @@ export interface SidecarProvisioner {
   ensure(request: EnsureSidecarRequest): Promise<EnsureSidecarResult>;
   /**
    * Idempotently destroys the allocation and fences older ensure calls so a
-   * delayed request cannot recreate infrastructure after destruction.
+   * delayed request cannot recreate infrastructure after destruction. It must
+   * succeed without an externalRef; that value is only an optional optimization.
    */
   destroy(request: DestroySidecarRequest): Promise<DestroySidecarResult>;
 }
 
 export type SidecarCredentialIdentity =
-  | {
-      readonly kind: "shared";
-      readonly sidecarId: string;
-    }
   | {
       readonly kind: "allocated";
       readonly sidecarId: string;
@@ -72,6 +78,13 @@ export type SidecarCredentialIdentity =
       readonly tenantId: string;
       readonly anchorRunId: string;
       readonly workflowRunAddress: string;
+      readonly generation: number;
+    }
+  | {
+      readonly kind: "probe";
+      readonly sidecarId: string;
+      readonly allocationId: string;
+      readonly tenantId: string;
       readonly generation: number;
     };
 

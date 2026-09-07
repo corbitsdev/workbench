@@ -18,7 +18,7 @@ artifacts without a database handle or a browser session.
   (`workflow-auth.ts`) instead of `resolveTenant` + `requireGrant`: the
   sidecar's bearer token (hashed and checked against the `sidecar` table
   via `@intx/crypto` + `@intx/db`) plus the run's own address (resolved
-  through `@corbits/folded-runs`' `findFoldedRunByAddress`) together
+  through `@intx/db`'s `workflowRun` address lookup) together
   scope the call to one run's tenant + principal.
 - Both surfaces wrap the same `@corbits/artifacts` engine db handle; the
   store is injected (`ArtifactRoutesStore` / `WorkflowArtifactRoutesStore`)

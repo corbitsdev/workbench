@@ -74,6 +74,6 @@ describe("hub crypto-provider cache wiring", () => {
     expect(firstCall(source, "launchWebhookTrigger")).toContain(
       `cryptoProviderCache: ${assigned}`,
     );
-    expect(firstCall(source, "runOneShotFoldedPrompt")).toContain(assigned);
+    expect(firstCall(source, "runOneShotPrompt")).toContain(assigned);
   });
 });

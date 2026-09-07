@@ -3,15 +3,15 @@
 Webhook-triggered workflow launches: an external service (e.g. Granola)
 posts a payload to a per-trigger URL, the payload is verified against an
 HMAC signature and mapped through a stored `{{path.to.field}}` template
-into a workflow's input, and the resulting run launches through the same
-folded-run path chat's invite flow uses.
+into a workflow's input, and the resulting run launches through
+Interchange's `prepareProvisionedDeployment` — the same provisioned
+front chat's invite flow uses.
 
 ## Composition with @intx/*
 
-Launching never talks to `sessionService`/`sidecarRouter` directly — only
-through `@corbits/folded-runs`' `launchFoldedRun` and
-`sendFoldedMailWithRetry`, the same shared launch core
-`apps/hub/src/routine-launcher.ts` and `@corbits/chat`'s invite flow use.
+Launching renders agent-runtime source onto the definition asset, then
+calls Interchange's `workflowAllocationService.prepareProvisionedDeployment`
+and delivers the opening message with `sessionService.sendUserMessage`.
 Routes are built on `@intx/hub-api`'s `TenantEnv`/`requireGrant` and
 `@intx/hub-sessions`; `@intx/db` provides the platform drizzle handle and
 schema (`tenant`, `workflowDefinition`); `@intx/hub-common` generates ids;

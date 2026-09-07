@@ -46,8 +46,9 @@ column at a time:
   things to join. Plus mints an empty channel. Nobody is auto-hosted.
 - **Agents are principals, not templates.** Opening Sales opens Sales —
   the one 1:1 tenant with that agent. The same agent can sit in its DM
-  and in many channels. Product reopens or invites; it does not clone
-  the definition or mint a sibling instance per room. Myra is the
+  and in many channels. Inviting an agent provisions a native
+  Interchange run of that definition; product reopens or invites, it
+  does not clone a sibling instance per room. Myra is the
   first-run guide in her DM, not a special home slot and not a
   parallel home route. When she creates a specialist (`create_agent`),
   the default is to mint or reopen that specialist's own DM

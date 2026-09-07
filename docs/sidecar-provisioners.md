@@ -62,6 +62,31 @@ The `process` backend additionally keeps each allocation's own
 allocation is destroyed — see
 [`packages/process-provisioner/README.md`](../packages/process-provisioner/README.md).
 
+### What a backend declares it can do
+
+Interchange selects a provisioner by matching a deployment's required
+capabilities against what each registered backend **declares**, and fails
+closed when nothing matches — an undeclared capability reads as `unknown`,
+never as "probably fine". The shipped backends declare the isolation they
+actually give the code they run, as a ladder (`isolation:process` →
+`isolation:container` → `isolation:vm`): each reaches every rung at or
+below its own and blocks every rung above it, plus `runtime:sidecar`, which
+all three provide.
+
+| Declaration           | `process`   | `docker`    | `e2b`     |
+| --------------------- | ----------- | ----------- | --------- |
+| `runtime:sidecar`     | available   | available   | available |
+| `isolation:process`   | available   | available   | available |
+| `isolation:container` | **blocked** | available   | available |
+| `isolation:vm`        | **blocked** | **blocked** | available |
+
+So a deployment that requires `isolation:vm` will not land on the default
+`process` backend; it selects `e2b` if registered, and otherwise fails
+provisioner selection with a message naming the mismatch. The ladder lives
+in one place — `sidecarCapabilityDeclarations` in
+`packages/sandbox-sidecar/src/capabilities.ts` — so a new backend states
+its isolation level and inherits the rest.
+
 ## Adding a backend
 
 Three steps, no hub surgery:
@@ -88,5 +113,3 @@ cases — an operator then reaches it by id, exactly like the shipped three.
   — the default backend's layout, environment, and trade-offs.
 - [`packages/e2b-sandbox-sidecar/README.md`](../packages/e2b-sandbox-sidecar/README.md)
   — building the E2B template.
-- [`docs/sidecar-placement-adoption.md`](sidecar-placement-adoption.md) —
-  the design analysis behind hub-authoritative placement.

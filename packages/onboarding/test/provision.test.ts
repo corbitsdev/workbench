@@ -87,6 +87,37 @@ function collector() {
   return { lines, log: (line: string) => lines.push(line) };
 }
 
+// `ensureDeployment` resolves a real (non-noop-pinned) workflow's deploy
+// source from the tenant's own catalog offerings (CL-7461); every test
+// that seeds a real default workflow needs at least one listable, since
+// none of these tests seed a catalog of its own.
+function catalogOfferingsResponse(
+  method: string,
+  path: string,
+  tenantId: string,
+): { status: number; data: unknown; cookies: string[] } | undefined {
+  if (
+    method !== "GET" ||
+    path !== `/api/tenants/${tenantId}/catalog/resolved-offerings`
+  )
+    return undefined;
+  return {
+    status: 200,
+    data: {
+      offerings: [
+        {
+          id: "off_1",
+          priority: 0,
+          modelId: "mdl_1",
+          providerId: "mpr_1",
+          origin: { tenantId, direct: true },
+        },
+      ],
+    },
+    cookies: [],
+  };
+}
+
 function firstLoginSeedHub(args: { expectedParentId?: string }) {
   let principalsCalls = 0;
   const startedRuns: string[] = [];
@@ -205,6 +236,26 @@ function firstLoginSeedHub(args: { expectedParentId?: string }) {
       path === `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
     ) {
       return { status: 200, data: [], cookies: [] };
+    }
+    if (
+      method === "GET" &&
+      path === `/api/tenants/${TENANT_ID}/catalog/resolved-offerings`
+    ) {
+      return {
+        status: 200,
+        data: {
+          offerings: [
+            {
+              id: "off_1",
+              priority: 0,
+              modelId: "mdl_1",
+              providerId: "mpr_1",
+              origin: { tenantId: TENANT_ID, direct: true },
+            },
+          ],
+        },
+        cookies: [],
+      };
     }
     if (
       method === "GET" &&
@@ -638,6 +689,26 @@ describe("provisionPersonalTenantIfNeeded", () => {
         "missing",
       );
       if (registry !== undefined) return registry;
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/resolved-offerings`
+      ) {
+        return {
+          status: 200,
+          data: {
+            offerings: [
+              {
+                id: "off_1",
+                priority: 0,
+                modelId: "mdl_1",
+                providerId: "mpr_1",
+                origin: { tenantId: TENANT_ID, direct: true },
+              },
+            ],
+          },
+          cookies: [],
+        };
+      }
       if (method === "GET" && path === "/api/me/principals") {
         return membership();
       }
@@ -890,6 +961,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
         SEEDED_MEMORY_TARBALL,
       ]);
       if (registry !== undefined) return registry;
+      const offerings = catalogOfferingsResponse(method, path, TENANT_ID);
+      if (offerings !== undefined) return offerings;
       if (method === "GET" && path === "/api/me/principals") {
         return {
           status: 200,
@@ -1019,6 +1092,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
         SEEDED_MEMORY_TARBALL,
       ]);
       if (registry !== undefined) return registry;
+      const offerings = catalogOfferingsResponse(method, path, TENANT_ID);
+      if (offerings !== undefined) return offerings;
       if (method === "GET" && path === "/api/me/principals") {
         return {
           status: 200,
@@ -1133,6 +1208,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
         "missing",
       );
       if (registry !== undefined) return registry;
+      const offerings = catalogOfferingsResponse(method, path, TENANT_ID);
+      if (offerings !== undefined) return offerings;
       if (method === "GET" && path === "/api/me/principals") {
         return {
           status: 200,
@@ -1243,6 +1320,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
         "missing",
       );
       if (registry !== undefined) return registry;
+      const offerings = catalogOfferingsResponse(method, path, TENANT_ID);
+      if (offerings !== undefined) return offerings;
       if (method === "GET" && path === "/api/me/principals") {
         return {
           status: 200,
@@ -1485,6 +1564,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
         "missing",
       );
       if (registry !== undefined) return registry;
+      const offerings = catalogOfferingsResponse(method, path, TENANT_ID);
+      if (offerings !== undefined) return offerings;
       if (method === "GET" && path === "/api/me/principals") {
         return {
           status: 200,
@@ -1832,6 +1913,8 @@ describe("provisionPersonalTenantIfNeeded", () => {
         [],
       );
       if (registry !== undefined) return registry;
+      const offerings = catalogOfferingsResponse(method, path, TENANT_ID);
+      if (offerings !== undefined) return offerings;
       if (method === "GET" && path === "/api/me/principals") {
         return {
           status: 200,

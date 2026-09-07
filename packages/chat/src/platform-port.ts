@@ -47,10 +47,11 @@ export interface ChatWorkbenchEvent {
  * when one is created. */
 export interface WorkbenchLauncher {
   /**
-   * Mints an interactive instance of an already-deployed workflow
-   * definition — the invited agent's own run — and returns its mail
-   * address. This writes DB rows only; the instance deploys on its
-   * first inbound mail or an explicit `ensureAwake` pre-warm.
+   * Provisions an interactive instance of an already-deployed workflow
+   * definition — the invited agent's own run — via Interchange
+   * `prepareProvisionedDeployment` and returns its mail address. Launch
+   * is asynchronous: the run is `pending` until the reconciler's ready
+   * hook deploys it. Mail sent before ready is queued.
    */
   launchInvite(input: {
     readonly tenantId: string;

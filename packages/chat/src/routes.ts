@@ -108,10 +108,8 @@ import {
   resolveAtCommand,
 } from "@corbits/commands";
 import type { CommandRegistry, CommandResult } from "@corbits/commands";
-import {
-  InferenceResolutionError,
-  DefinitionProjectionMissingError,
-} from "@corbits/folded-runs";
+import { InferenceResolutionError } from "./model-unavailable";
+import { DefinitionProjectionMissingError } from "@corbits/workflows";
 import type { WorkbenchTenancyStore } from "./workbench-tenancy";
 import { cookiesFromHeader } from "@corbits/hub-api-client";
 import type { AgentTurnStore } from "./agent-turns";
@@ -2534,6 +2532,18 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         const claimToken =
           await deps.blockResponses.claimBlockResponseNotification(responseKey);
         if (claimToken !== false) {
+          // The answer replies to the question card, so it lands in that
+          // card's own thread — which is also what gives its dispatch
+          // the card's `Message-ID` in `In-Reply-To` (CL-7104), the one
+          // thing that ties an answer to the question it answers.
+          const answerThread =
+            deps.threads === undefined
+              ? undefined
+              : await deps.threads.openReplyThread({
+                  tenantId: ownerTenantId,
+                  workbenchId,
+                  parentMessageId: messageId,
+                });
           try {
             const answer = await sendWorkbenchMessage(
               {
@@ -2568,9 +2578,26 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                 senderAddress: senderAddressOf(c),
                 workbenchId,
                 messageParts: [{ kind: "text", text: payload.answer }],
+                // The answer replies to the question card itself
+                // (CL-7104), so its dispatch names that card's
+                // `Message-ID` in `In-Reply-To` — the only thing that
+                // ties an answer to the question it answers. There is no
+                // correlation id on the wire.
+                inReplyToMessageId: messageId,
+                ...(answerThread !== undefined
+                  ? { threadId: answerThread.id }
+                  : {}),
               },
             );
             deps.onMessageFanout?.(answer.fanoutDelivered);
+            if (deps.threads !== undefined && answerThread !== undefined) {
+              await deps.threads.assignMessage({
+                tenantId: ownerTenantId,
+                workbenchId,
+                threadId: answerThread.id,
+                messageId: answer.id,
+              });
+            }
           } catch (err) {
             // `MailboxFanoutFailedError` already reported itself under its
             // own `refId` — quoting that instead of calling `reportError`

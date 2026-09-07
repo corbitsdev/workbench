@@ -15,6 +15,7 @@ import type {
   EnsureSidecarResult,
   SidecarProvisioner,
 } from "@intx/hub-sessions";
+import type { SidecarCapabilityDeclaration } from "@intx/types";
 
 import { BackendOperationError, type SidecarBackend } from "./backend";
 import type { AllocationStateStore } from "./state-store";
@@ -25,6 +26,13 @@ export type CreateSidecarProvisionerOpts = {
   readonly id: string;
   readonly apiVersion: 1;
   readonly bindingFingerprint: string;
+  /**
+   * Capabilities this backend declares to the hub's capability policy.
+   * Empty declares nothing, which matches any deployment that states no
+   * capability requirement -- the behaviour every allocation had before
+   * Interchange replaced the placement model with capability selection.
+   */
+  readonly capabilities: readonly SidecarCapabilityDeclaration[];
   readonly backend: SidecarBackend;
   readonly store: AllocationStateStore;
 };
@@ -111,6 +119,7 @@ export function createSidecarProvisioner(
     id: opts.id,
     apiVersion: opts.apiVersion,
     bindingFingerprint: opts.bindingFingerprint,
+    capabilities: opts.capabilities,
 
     ensure(request: EnsureSidecarRequest): Promise<EnsureSidecarResult> {
       const key = request.allocationId;
@@ -209,8 +218,8 @@ function validateEnsureRequest(request: EnsureSidecarRequest): string | null {
   if (request.token === "") return "token must not be empty";
   if (request.hubWebSocketUrl === "")
     return "hubWebSocketUrl must not be empty";
-  if (!Number.isInteger(request.generation) || request.generation <= 0) {
-    return "generation must be a positive integer";
+  if (!Number.isInteger(request.generation) || request.generation < 0) {
+    return "generation must be a non-negative integer";
   }
   return null;
 }
@@ -218,8 +227,8 @@ function validateEnsureRequest(request: EnsureSidecarRequest): string | null {
 function validateDestroyRequest(request: DestroySidecarRequest): string | null {
   if (request.allocationId === "") return "allocationId must not be empty";
   if (request.sidecarId === "") return "sidecarId must not be empty";
-  if (!Number.isInteger(request.generation) || request.generation <= 0) {
-    return "generation must be a positive integer";
+  if (!Number.isInteger(request.generation) || request.generation < 0) {
+    return "generation must be a non-negative integer";
   }
   return null;
 }

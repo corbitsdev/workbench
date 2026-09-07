@@ -253,9 +253,7 @@ export { findDirectWorkbenchWith } from "./direct-workbench";
 
 export {
   createDefaultAgentWorkbench,
-  findWorkbenchByTitle,
   findDefinitionByAssetName,
-  isWorkbenchTitleMatch,
 } from "./default-agent-workbench";
 export type {
   DefaultAgentWorkbench,

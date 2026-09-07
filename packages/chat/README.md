@@ -4,9 +4,10 @@ Workbenches as the workbench's chat surface: workbench lifecycle (create, join,
 invite), message send with mention fan-out, threads, reactions, pins,
 poll/form block responses, settings, tenancy (workbenches as child tenants),
 cross-tenant workbench sharing gated by bilateral trust, and the SSE stream a
-workbench's UI subscribes to. A workbench anchor is a folded interactive
-workflow run — this package launches and wakes it through
-`@corbits/folded-runs`, never reimplementing that machinery itself.
+workbench's UI subscribes to. Invited agents are provisioned
+workflow runs — this package launches and wakes them through
+Interchange `prepareProvisionedDeployment`, never reimplementing that
+machinery itself.
 
 ## Composing with `@intx/*`
 
@@ -18,7 +19,6 @@ workflow definition and its deployment, `@intx/db` for schema/query
 primitives, `@intx/authz` for grant checks, `@intx/crypto` for signing,
 `@intx/mime` for attachment validation, `@intx/log` for logging, and
 `@intx/types` for shared wire types. It also depends on
-`@corbits/folded-runs` (launch/wake/mail for folded runs) and
 `@corbits/agent-lifecycle` (idle-sleep/wake-on-mail).
 
 ## Key modules
@@ -29,10 +29,11 @@ primitives, `@intx/authz` for grant checks, `@intx/crypto` for signing,
   folded, single-agent run whose mailbox is the workbench's shared timeline.
 - **`src/platform-adapter.ts`** / **`src/platform-port.ts`** — the
   `ChatPlatform` port this package needs from its host, and the hub-side
-  implementation composed from `@corbits/folded-runs`. The adapter does
+  implementation composed from Interchange `prepareProvisionedDeployment`
+  and `sendUserMessage`. The adapter does
   not mint its own signing-key cache: the host injects one
   `CryptoProviderCache` so chat sendMail shares keys with every other
-  folded-mail sender in the process.
+  run-mail sender in the process.
 - **`src/chat-orchestrator.ts`** — turns invited-agent replies and
   approval-gate events into workbench messages and in-chat approve blocks.
 - **`src/workbench-service.ts`** — workbench-level orchestration above the

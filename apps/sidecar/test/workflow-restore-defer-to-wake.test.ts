@@ -3,9 +3,9 @@
 // its last deploy or rotation. Restoring one eagerly from that snapshot
 // at boot would replay a chain whose credential died after the freeze
 // forever -- the deployment reads as "already live" to every later wake
-// check, so the folded-run wake path (`ensureAwake` ->
-// `wakeFoldedRun`/`deployAtHead`, which DOES re-resolve fresh against the
-// live catalog on every call) never gets a chance to heal it.
+// check, so the lazy-wake path (`ensureAwake` -> `@corbits/chat`'s
+// `wakeByAddress`, which DOES re-resolve fresh against the live catalog
+// on every call) never gets a chance to heal it.
 //
 // The fix: boot-time restore defers a single-step deployment to that
 // wake path instead of restoring it from frozen sources -- proven here by
@@ -22,7 +22,6 @@ import { afterEach, expect, test } from "bun:test";
 import {
   createEd25519Crypto,
   generateKeyPair,
-  signEd25519,
   verifySSHSignature,
 } from "@intx/crypto";
 import {
@@ -77,7 +76,6 @@ async function makeRouter(
   const keyStore = createAgentKeyStore({
     dataDir,
     generateKeyPair,
-    signEd25519,
     verifySSHSig: verifySSHSignature,
   });
   const recordingSpawner: SubprocessSpawner = () => {
@@ -169,7 +167,7 @@ function makeDeadSource(provider: string): InferenceSource {
     id: `source-${provider}`,
     provider,
     baseURL: "https://api.example.com",
-    apiKey: "sk-dead-key-from-before-a-provider-reconfigure",
+    credentialId: "sk-dead-key-from-before-a-provider-reconfigure",
     model: "model-1",
   };
 }

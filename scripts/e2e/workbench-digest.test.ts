@@ -19,6 +19,7 @@ import {
   buildWorkbenchDigestWorkflow,
   serializeWorkbenchDigestWorkflow,
 } from "../../workflows/workbench-digest/src/index.ts";
+import { ensureNoopCatalogOffering } from "../../packages/seeding/src/index.ts";
 import {
   api,
   createCleanupHarness,
@@ -27,9 +28,7 @@ import {
   expectStepCompleted,
   freePort,
   hop,
-  provisionSidecar,
   startHub,
-  startSidecar,
   waitForRunCompletion,
   type ApiResult,
   type HubHandle,
@@ -98,12 +97,6 @@ describe.skipIf(databaseUrl === undefined)("workbench-digest workflow", () => {
       await setupDatabase(url);
     });
 
-    const sidecarId = "sidecar-e2e-workbench-digest";
-    const sidecarToken = crypto.randomUUID();
-    await hop("sidecar provisioning", () =>
-      provisionSidecar(url, sidecarId, sidecarToken),
-    );
-
     const hub: HubHandle = await hop("hub boot", async () => {
       const handle = await startHub({
         databaseUrl: url,
@@ -115,19 +108,6 @@ describe.skipIf(databaseUrl === undefined)("workbench-digest workflow", () => {
       });
       track(handle);
       return handle;
-    });
-
-    const sidecar = await hop("sidecar boot", async () => {
-      const app = startSidecar({
-        hubPort: new URL(hub.baseUrl).port
-          ? Number(new URL(hub.baseUrl).port)
-          : 80,
-        sidecarId,
-        token: sidecarToken,
-        dataDir: await tempDir("e2e-workbench-digest-sidecar-data-"),
-      });
-      track(app);
-      return app;
     });
 
     const user = await hop("sign-up", async () => {
@@ -206,24 +186,29 @@ describe.skipIf(databaseUrl === undefined)("workbench-digest workflow", () => {
     // whole point of this suite: a run started against this source
     // actually completes an inference call, at zero cost, because
     // noop-inference answers it locally without reaching a real model.
+    const offeringId = await hop("noop catalog seeding", () =>
+      ensureNoopCatalogOffering(
+        (method, path, body, cookies) =>
+          api(hub.baseUrl, method, path, body, cookies),
+        user.cookies,
+        tenantId,
+        hub.baseUrl,
+        () => {},
+      ),
+    );
+
     const deploymentId = await hop("workflow deploy", async () => {
-      const sourceId = "src-workbench-digest-e2e";
       const body = workflowDeployBody({
         assetId,
         commitSha,
-        sourceId: sourceId,
-        provider: "anthropic",
-        baseURL: `${hub.baseUrl}/api/chat/noop-inference`,
-        apiKey: "noop",
-        model: "noop",
+        sourceOfferingIds: [offeringId],
+        defaultSourceOfferingId: offeringId,
       });
       const deadline = Date.now() + 60_000;
       let res: ApiResult;
       for (;;) {
-        if (sidecar.exited()) {
-          throw new Error(
-            `sidecar exited before deploy; output:\n${sidecar.output()}`,
-          );
+        if (hub.exited()) {
+          throw new Error(`hub exited before deploy; output:\n${hub.output()}`);
         }
         res = await api(
           hub.baseUrl,
@@ -236,7 +221,7 @@ describe.skipIf(databaseUrl === undefined)("workbench-digest workflow", () => {
         if (Date.now() > deadline) {
           throw new Error(
             `sidecar never became deployable (hub kept answering 502): ` +
-              `${JSON.stringify(res.data)}\nsidecar output:\n${sidecar.output()}`,
+              `${JSON.stringify(res.data)}\nhub output:\n${hub.output()}`,
           );
         }
         await Bun.sleep(200);

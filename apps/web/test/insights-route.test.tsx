@@ -1,5 +1,5 @@
 // CL-6062: Insights' run feed reads from the tenant-scoped top-level-runs
-// endpoint (packages/folded-runs/src/scope-routes.ts), not the dead
+// endpoint (packages/run-scope/src/scope-routes.ts), not the dead
 // `/me/workflows/runs` (every addressed run self-anchors at creation, so
 // that feed's `anchorRunId IS NULL` filter never matched anything). These
 // tests exercise the real fetch wiring `InsightsRoute` owns — the unit

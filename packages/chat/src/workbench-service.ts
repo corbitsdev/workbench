@@ -2124,7 +2124,7 @@ export async function dispatchTurn(
           })()
         : undefined;
 
-    const sent = await deps.platform.sendMail({
+    await deps.platform.sendMail({
       tenantId: input.tenantId,
       workbenchId: localPartOf(input.agentAddress),
       principalId: input.principalId,
@@ -2148,7 +2148,7 @@ export async function dispatchTurn(
       try {
         await deps.turnMailCorrelation.recordTurnMail({
           tenantId: input.tenantId,
-          mailId: sent.id,
+          mailId: sourceMessageId,
           workbenchId: input.workbenchId,
           sourceMessageId,
         });
@@ -2158,7 +2158,7 @@ export async function dispatchTurn(
           tenantId: input.tenantId,
           roomId: input.workbenchId,
           agentId: input.agentAddress,
-          extra: { mailId: sent.id, sourceMessageId },
+          extra: { mailId: sourceMessageId, sourceMessageId },
         });
       }
     }

@@ -23,6 +23,7 @@ import {
   model,
   modelPricing,
   tenant as tenantTable,
+  user as userTable,
   workflowDefinition,
 } from "@intx/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
@@ -39,16 +40,10 @@ import {
   createMailTriggeredRunGrantsMaterializer,
   createRequireGrant,
   readDurableWorkflowRunLifecycles,
-  resolveDefinitionSources,
   type AppEnv,
   type TenantEnv,
 } from "@intx/hub-api";
-import {
-  deriveRunAddress,
-  deriveRunAgentId,
-  WorkflowDefinitionInvalidError,
-} from "@intx/workflow-deploy";
-import type { HarnessConfig } from "@intx/types/runtime";
+import { WorkflowDefinitionInvalidError } from "@intx/workflow-deploy";
 // CL-7362: computes the preview's wire hash from the probed-but-unapproved
 // projection `installAndApproveWorkflowSource` returns on `grants_not_approved`
 // — the gate itself only stamps this hash on the `ok:true` arm.
@@ -69,10 +64,10 @@ import {
   type InventoryModel,
   type InventorySources,
   type InventoryToolPackage,
+  runOneShotPrompt,
 } from "@corbits/agent-directory";
 
 import {
-  AGENT_SECTION_MODE,
   DEFAULT_TURN_CLAIM_TTL_MS,
   createArtifactDeliveryHandler,
   createDrizzleAgentTurnStore,
@@ -98,6 +93,7 @@ import {
   createHubChatPlatform,
   createNoopInferenceRoutes,
   createRelaunchNoticePoster,
+  createRunTriggerClient,
   createWorkflowParticipantRoutes,
   isWorkbenchHostDefinitionName,
   listConnectedProviders,
@@ -109,6 +105,9 @@ import {
   startWorkflowCommand,
   settleConnectedService,
   workbenchLaunchPersistExtra,
+  createCryptoProviderCache,
+  tagCredentialCipher,
+  verifyInternalRunTriggerToken,
 } from "@corbits/chat";
 import {
   createDrizzleMailboxWriter,
@@ -118,11 +117,6 @@ import type { RelaunchNoticePort } from "@corbits/chat";
 import { reportError } from "@corbits/error-sink";
 import type { FinalizedTurnToolCall } from "@corbits/turn-artifacts";
 import { decodedOrNull } from "@corbits/url-path";
-import {
-  createCryptoProviderCache,
-  lookupFoldedRunReconnectKey,
-  tagCredentialCipher,
-} from "@corbits/folded-runs";
 import { createTopLevelRunRoutes } from "@corbits/run-scope";
 import {
   createInboxRoutes,
@@ -159,12 +153,9 @@ import {
   applyInferenceCatalogMigrations,
   createBenchModelPolicyRoutes,
   createPostgresBenchModelPolicyStore,
+  createResolvedOfferingsRoutes,
   createWorkflowCatalogRoutes,
 } from "@corbits/inference-catalog";
-import {
-  createDrizzleSidecarPlacementStore,
-  createSidecarPlacementRoutes,
-} from "@corbits/sidecar-placement";
 import { createWorkflowCatalogAdminRoutes } from "@corbits/catalog-tools/routes";
 import { createWorkflowAccessRoutes } from "@corbits/access-tools/routes";
 import { generateId } from "@intx/hub-common";
@@ -180,6 +171,7 @@ import {
 import {
   createHubMailboxAuthorizeSender,
   createHubMailboxResolveRefs,
+  createHubPersistMailWithSessionEnsure,
 } from "./mailbox-persist";
 import {
   createCommandRegistry,
@@ -208,6 +200,8 @@ import {
   createScheduledWorkflowRoutes,
   renderWorkflowSourceTree,
   WORKFLOW_SOURCE_ENTRY,
+  ensureRunSession,
+  recordAgentSessionAtProvision,
 } from "@corbits/workflows";
 import {
   createSidecarProvisioner as createE2BSidecarProvisioner,
@@ -217,13 +211,7 @@ import {
   createDrizzleRunKeyHistoryStore,
   createRunKeyHistoryListener,
   createRunKeyHistoryRoutes,
-  lookupRunKeyHistoryReconnectKey,
 } from "@corbits/run-key-history";
-import {
-  createDrizzleWorkflowDeploySourceStore,
-  withDeploySourceRecording,
-} from "@corbits/workflows";
-import { runOneShotFoldedPrompt } from "@corbits/folded-run-one-shot";
 
 import {
   createEventCollectorRegistry,
@@ -237,6 +225,8 @@ import {
   createWorkflowAllocationService,
   createWorkflowDispatchService,
   DEFAULT_ASSET_REF,
+  resolveRoutableAddress,
+  WorkflowProvisioningError,
   type AgentRepoStore,
   type EventCollectorRegistry,
   type WsHandle,
@@ -265,6 +255,7 @@ import { createDockerSidecarProvisioner } from "@corbits/docker-provisioner";
 import {
   createProcessSidecarProvisioner,
   readProcessProvisionerConfig,
+  type ProcessProvisionerRole,
 } from "@corbits/process-provisioner";
 import { getArtifact, writeArtifactVersion } from "@corbits/artifacts";
 import {
@@ -287,11 +278,7 @@ import {
   type PresenceRoomKey,
 } from "@corbits/presence";
 import { supportedCredentialProviders } from "@corbits/connections/credential-test";
-import {
-  CATALOG_WORKFLOWS,
-  catalogWorkflowDeployableOnThisPin,
-  createGitWorkflowPusher,
-} from "@corbits/seeding";
+import { CATALOG_WORKFLOWS, createGitWorkflowPusher } from "@corbits/seeding";
 import { createHubAPI } from "@corbits/hub-api-client";
 import {
   createDrizzlePendingSeedStore,
@@ -388,9 +375,7 @@ import {
   type ScheduledDeliveryJoinDeps,
 } from "./workflow-scheduler";
 import { createToolGrantsForPins } from "./tool-grants";
-import { createMcpCredentialBindingsFor } from "./mcp-credential-bindings";
 import { reconcilePinnedToolPackagesAfterConnect } from "./connection-live-reconcile";
-import { createPinnedPackageCredentialBindingsFor } from "./pinned-package-credential-bindings";
 import { drainHubServer, shutdownHub } from "./shutdown";
 import {
   createInFlightRequestTracker,
@@ -547,14 +532,17 @@ function buildSidecarProvisioner(
   config: SidecarProvisionerConfig,
   hubDataDir: string,
   hubWebSocketUrl: string,
+  role: ProcessProvisionerRole,
 ): SidecarProvisioner {
   switch (config.id) {
     case "process":
       // Same derivation as the other two backends: the hub-side
       // allocation state lives under the hub's own data dir, and so do
       // the per-allocation directories each spawned sidecar uses as its
-      // own SIDECAR_DATA_DIR.
+      // own SIDECAR_DATA_DIR. Probe and deployment instances keep
+      // separate state so neither can adopt the other's allocations.
       return createProcessSidecarProvisioner({
+        role,
         config: readProcessProvisionerConfig({
           env: {
             ...(config.sidecarEntryPath === undefined
@@ -566,7 +554,12 @@ function buildSidecarProvisioner(
               ? {}
               : { PROCESS_PROVISIONER_RUNTIME: config.runtimePath }),
           },
-          dataDir: path.resolve(hubDataDir, "process-provisioner"),
+          dataDir: path.resolve(
+            hubDataDir,
+            role === "probe"
+              ? "process-provisioner-probe"
+              : "process-provisioner",
+          ),
           hubWebSocketUrl,
         }),
       });
@@ -719,19 +712,10 @@ export async function createHub(config: HubConfig) {
   // for the process, read here ahead of `workflow_run` and written to
   // there off every `agent.deploy.ack`.
   const runKeyHistoryStore = createDrizzleRunKeyHistoryStore(db);
-  // A folded run (a workbench host, an invited agent) settles
-  // "completed" between message occurrences as part of its own normal
-  // wake/redeploy cycle — not "done forever" the way a one-shot
-  // workflow deployment's "completed" is. The platform's own
-  // `lookupPublicKey` gates the reconnect-ownership challenge on
-  // `isLiveWorkflowRunStatus` ("deployed"/"running" only), so a folded
-  // run reconnecting mid-cycle (its sidecar dials back in, e.g. after a
-  // hub restart, while the run happens to be between occurrences) fails
-  // that challenge and gets torn down even though nothing about it
-  // actually ended. Falling back to `lookupFoldedRunReconnectKey` for a
-  // "completed" folded run keeps its reconnect honest without loosening
-  // the gate for a real workflow deployment or for a folded run that is
-  // genuinely gone ("failed"/"cancelled" still fail closed).
+  // A workbench agent is a native provisioned deployment. Reconnect
+  // ownership is Interchange's live run + `@corbits/run-key-history`.
+  // Completed means dead; wake is a fresh provision, not a folded-run
+  // idle settle.
   // CL-6345: the grant-allowance gate wraps `registerSignalCorrelation`
   // so a parked read-only call whose resource a standing grant covers is
   // auto-approved right after its approval row lands — no card for a
@@ -744,6 +728,15 @@ export async function createHub(config: HubConfig) {
     current?: (
       args: Parameters<typeof baseLookups.registerSignalCorrelation>[0],
     ) => Promise<void>;
+  } = {};
+  // Forward reference: `eventCollectors` (the wrapped
+  // `EventCollectorRegistry`) isn't constructed until later in this
+  // composition, but `createHubPersistMailWithSessionEnsure` below needs
+  // it. Set once `eventCollectors` exists; every persistMail call before
+  // that point (there are none — the server isn't serving requests yet)
+  // would just no-op.
+  const eventCollectorsRef: {
+    current?: Pick<EventCollectorRegistry, "create" | "has">;
   } = {};
   // CL-6499 (native multi-step routines): materializes a mail-triggered
   // run's authorization grants from its deploy-approved snapshot, so
@@ -778,7 +771,11 @@ export async function createHub(config: HubConfig) {
     // workbench ref is present before the post-commit bus event fires --
     // no out-of-band UPDATE, no polling read.
     persistMail: createMailboxPersist(mailboxDb, {
-      upstream: baseLookups.persistMail,
+      upstream: createHubPersistMailWithSessionEnsure(
+        db,
+        eventCollectorsRef,
+        baseLookups.persistMail,
+      ),
       authorizeSender: createHubMailboxAuthorizeSender(db),
       bus: mailboxBus,
       resolveRefs: createHubMailboxResolveRefs(chatStore, roomMessages),
@@ -790,44 +787,22 @@ export async function createHub(config: HubConfig) {
       if (gate !== undefined) return gate(args);
       return baseLookups.registerSignalCorrelation(args);
     },
-    async lookupPublicKey(agentAddress: string): Promise<string | null> {
-      // CL-6281: the repair runs before `baseLookups` because the case
-      // it exists for is exactly the one `baseLookups` answers WRONGLY —
-      // a live run whose `workflow_run.public_key` missed its own
-      // `agent.deploy.ack` — so deferring to that answer would never
-      // reach the repair at all. It cannot widen which runs may
-      // reconnect: it reads the same `liveWorkflowRunStatuses` gate
-      // `baseLookups` does, so a retired run still fails closed here.
-      // See `@corbits/run-key-history`'s `reconnect.ts` for why
-      // preferring this package's own record on disagreement is safe.
-      const reconciled = await lookupRunKeyHistoryReconnectKey(
-        db,
-        runKeyHistoryStore,
-        agentAddress,
-      );
-      if (reconciled !== null) return reconciled;
-      const key = await baseLookups.lookupPublicKey(agentAddress);
-      if (key !== null) return key;
-      return lookupFoldedRunReconnectKey(db, agentAddress);
-    },
   };
   const hubPublicKey = hexEncode(signingKey.publicKey);
-  // CL-6149: a folded run's pinned tool packages (`toolPackagePins`)
-  // carry no grants of their own — the deploy-time capability walk
+  // CL-6149: a launch's pinned tool packages (`toolPackagePins`) carry
+  // no grants of their own — the deploy-time capability walk
   // (`vendor/intx/workflow-deploy/src/capability-walk.ts`) only derives
   // `tool:` grants for inline tool factories, so a pinned package's
   // tools failed every call closed with "No matching grants". Every
   // `@corbits/*-tools` package's namespaced tool ids and approval marks
   // are read once here (`describeCorbitsToolPackages`), so
-  // `toolGrantsForPins` — the port every `FoldedRunsDeps` below is
-  // built with — can synchronously turn a launch's pins into the
-  // `tool:<qualifiedId>` grants `@corbits/folded-runs`' `deployAtHead`
-  // mints against the run's own principal.
+  // `toolGrantsForPins` — the port `createHubChatPlatform`'s
+  // `CreateHubChatPlatformDeps` is built with — can synchronously turn a
+  // launch's pins into the `tool:<qualifiedId>` grants minted against
+  // the run's own principal.
   const toolGrantsForPins = createToolGrantsForPins(
     await describeCorbitsToolPackages(),
   );
-  // See `./mcp-credential-bindings.ts`'s own doc.
-  const mcpCredentialBindingsFor = createMcpCredentialBindingsFor(db);
   // Same owning check GET /connections uses — see
   // `@corbits/connections`' `workflow-connection-routes.ts` and the
   // `createWorkflowConnectionRoutes` wiring below. Not
@@ -840,8 +815,6 @@ export async function createHub(config: HubConfig) {
       null,
       null,
     )) !== null;
-  const pinnedPackageCredentialBindingsFor =
-    createPinnedPackageCredentialBindingsFor(isConnectorConnected);
   // One resolver serves both seams, exactly as @intx/hub-sessions's own
   // reference host wires them: `resolve` turns a presented bearer token
   // into a verified identity at the handshake, and `isCurrent`
@@ -941,6 +914,17 @@ export async function createHub(config: HubConfig) {
       baseEventCollectors.create(agentAddress, tenantId, sessionId, runId);
     },
     dispatch(agentAddress, event) {
+      // CL-7480: a run's turn events can start arriving before anything
+      // else ever recorded its session — the first inbound trigger that
+      // just reconciled its principal races this same dispatch. No live
+      // collector for the address is exactly that case: ensure the
+      // session (and, inside it, the collector) before delegating,
+      // rather than silently dropping the event for a collector that
+      // never gets created.
+      if (!baseEventCollectors.has(agentAddress)) {
+        void ensureCollectorThenDispatch(agentAddress, event);
+        return;
+      }
       turnLatency.onEvent(agentAddress, event);
       baseEventCollectors.dispatch(agentAddress, event);
       // Mirrors the registry's own `isTerminal` check (event-collector-registry.ts)
@@ -957,12 +941,41 @@ export async function createHub(config: HubConfig) {
       baseEventCollectors.abandon(agentAddress);
     },
   };
+  eventCollectorsRef.current = eventCollectors;
+  // Named so `dispatch`'s no-collector branch above reads clearly; not
+  // inlined there because it needs to be `async` and `dispatch` itself
+  // must stay synchronous (the `EventCollectorRegistry` contract).
+  async function ensureCollectorThenDispatch(
+    agentAddress: string,
+    event: Parameters<EventCollectorRegistry["dispatch"]>[1],
+  ): Promise<void> {
+    try {
+      const run = await resolveRoutableAddress(db, agentAddress);
+      if (run !== undefined) {
+        await ensureRunSession({
+          db,
+          eventCollectors: baseEventCollectors,
+          runId: run.id,
+        });
+      }
+    } catch (err) {
+      reportError(err, {
+        operation: "hub.eventCollectors.ensureRunSession",
+        extra: { agentAddress },
+      });
+    }
+    turnLatency.onEvent(agentAddress, event);
+    baseEventCollectors.dispatch(agentAddress, event);
+    const isTerminal =
+      event.type === "reactor.done" ||
+      (event.type === "reactor.error" && event.data.fatal);
+    if (isTerminal) turnLatency.onSessionEnd(agentAddress);
+  }
   createHubSessionOrchestrator({
     events: sidecarRouter.events,
     router: sidecarRouter,
     db,
     eventCollectors,
-    agentRepoStore,
   });
   // A second, independent listener on the same `agent.deploy.ack` event
   // `createHubSessionOrchestrator` already reacts to above: that vendor
@@ -993,32 +1006,25 @@ export async function createHub(config: HubConfig) {
     createDeployPack: agentRepoStore.createDeployPack,
     receiveAgentStatePack: agentRepoStore.receiveAgentStatePack,
     receiveWorkflowRunPack: agentRepoStore.receiveWorkflowRunPack,
-    getDeployRef: agentRepoStore.getDeployRef,
     getSigningPublicKey: agentRepoStore.getSigningPublicKey,
     repoStore: launchCaches.repoStore,
   };
-  // Shared placement's code-sourced deploys previously left their
-  // `WorkflowDefinitionSource` durable nowhere on the hub -- only on the
-  // sidecar's local `deployment.json` (CL-6581). Wrapping the two deploy
-  // methods here, at the composition root, records that source into
-  // Postgres on every deploy without touching vendored
-  // `session-service.ts`; exclusive placement already persists its own via
-  // `workflow_run_launch_spec`, untouched.
-  const workflowDeploySourceStore = createDrizzleWorkflowDeploySourceStore(db);
-  const sessionService = withDeploySourceRecording(
-    createSessionService({
-      sidecarRouter,
-      agentRepoStore: launchAgentRepoStore,
-      assetService: launchCaches.assetService,
-      db,
-      toolPackageRegistries: {
-        httpRegistries: REGISTRIES,
-        defaultRegistry: "npmjs",
-        scopeRouting: [{ scope: "@corbits", registry: CORBITS_TOOLS_REGISTRY }],
-      },
-    }),
-    workflowDeploySourceStore,
-  );
+  // Shared-capacity `deployWorkflowFromSource` / `deployAdoptedWorkflowFromSource`
+  // are gone on this pin. The provisioned path persists its source in
+  // `workflow_run_launch_spec`; there is nothing left for a session-service
+  // wrapper to record.
+  const sessionService = createSessionService({
+    sidecarRouter,
+    sidecarAllocationRouter: sidecarRouter,
+    agentRepoStore: launchAgentRepoStore,
+    assetService: launchCaches.assetService,
+    db,
+    toolPackageRegistries: {
+      httpRegistries: REGISTRIES,
+      defaultRegistry: "npmjs",
+      scopeRouting: [{ scope: "@corbits", registry: CORBITS_TOOLS_REGISTRY }],
+    },
+  });
   const hubWebSocketUrl =
     config.sidecarWebSocketUrl ??
     `${config.baseUrl.replace(/^http/, "ws")}/api/sidecars/ws`;
@@ -1028,28 +1034,40 @@ export async function createHub(config: HubConfig) {
   // (`@corbits/process-provisioner`) as the sole default, so a
   // workbench's "run this workbench on its own sidecar" setting works on
   // one server with no operator setup; `SIDECAR_PROVISIONERS` is the one
-  // variable that changes where sidecars run. Adding a new backend here
-  // is: implement `SidecarProvisioner` in its own package, add a case to
+  // variable that changes where sidecars run. A deployment whose
+  // definition declares sidecar capabilities no registered provisioner
+  // declares fails closed at provisioner selection rather than silently
+  // landing on an unsuitable sidecar. Adding a new backend here is:
+  // implement `SidecarProvisioner` in its own package, add a case to
   // `buildSidecarProvisioner`, and add its id to
   // `apps/hub/src/config.ts`'s `SIDECAR_PROVISIONER_IDS`.
-  const sidecarPlugins = createSidecarPluginRegistry({
-    provisioners: config.sidecarProvisioners.map((provisionerConfig) =>
-      buildSidecarProvisioner(
-        provisionerConfig,
-        config.hubDataDir,
-        hubWebSocketUrl,
+  // Probes and deployments get distinct provisioner instances: when they
+  // match, Interchange adopts the probe's allocation for the deployment,
+  // and at pin 692c3106 that adopt path never deploys the workflow after
+  // the sidecar reconnects (CL-7492).
+  const buildSidecarPlugins = (role: ProcessProvisionerRole) =>
+    createSidecarPluginRegistry({
+      provisioners: config.sidecarProvisioners.map((provisionerConfig) =>
+        buildSidecarProvisioner(
+          provisionerConfig,
+          config.hubDataDir,
+          hubWebSocketUrl,
+          role,
+        ),
       ),
-    ),
-    ...(config.defaultSidecarProvisionerId !== undefined
-      ? { defaultProvisionerId: config.defaultSidecarProvisionerId }
-      : {}),
-  });
+      ...(config.defaultSidecarProvisionerId !== undefined
+        ? { defaultProvisionerId: config.defaultSidecarProvisionerId }
+        : {}),
+    });
+  const sidecarPlugins = buildSidecarPlugins("deployment");
   const workflowAllocationService = createWorkflowAllocationService({
     db,
-    plugins: sidecarPlugins,
+    deploymentPlugins: sidecarPlugins,
+    probePlugins: buildSidecarPlugins("probe"),
     preparedDeployer: sessionService,
     credentialCipher,
     allocationRouter: sidecarRouter,
+    hubWebSocketUrl,
   });
   const sidecarAllocationStore = createSidecarAllocationStore(db);
   const workflowDispatchService = createWorkflowDispatchService({
@@ -1076,6 +1094,7 @@ export async function createHub(config: HubConfig) {
       );
     },
   });
+  await workflowAllocationService.initialize?.();
   await sidecarAllocationReconciler.initialize();
   sidecarRouter.events.on("sidecar.disconnect", ({ allocated }) => {
     if (allocated === undefined) return;
@@ -1127,7 +1146,47 @@ export async function createHub(config: HubConfig) {
     workflowAllocationService,
     workflowDispatchService,
     credentialCipher,
+    // `@intx/hub-api`'s `GetSession` is a deliberately pluggable seam
+    // (its own doc comment: "so a third-party identity provider can be
+    // plugged in"), and this composition root owns it. `@corbits/chat`'s
+    // run-trigger client (CL-7490) has no browser cookie to present for
+    // most of its calls — mention fan-out, a relaunch resend, the
+    // mailbox-fanout persist seam all run with no inbound HTTP request
+    // in scope — so it signs a short-lived internal token instead (see
+    // `@corbits/chat`'s `run-trigger-internal-auth.ts`) naming the
+    // better-auth user it authenticates as. This checks that token
+    // FIRST and only falls through to the real cookie-session path when
+    // the header is absent; a PRESENT-but-invalid token fails closed
+    // (401 via a null session) rather than silently retrying as a
+    // session, the same posture `workflow-run-deploy-auth` documents for
+    // its own bearer mirror in `vendor/intx/hub-api`.
     getSession: async (headers) => {
+      const internalRunTriggerToken = headers.get(
+        "x-corbits-internal-run-trigger",
+      );
+      if (internalRunTriggerToken !== null) {
+        const userId = verifyInternalRunTriggerToken(
+          config.sessionSecret,
+          internalRunTriggerToken,
+        );
+        if (userId === null) return null;
+        const userRow = await db.query.user.findFirst({
+          where: eq(userTable.id, userId),
+        });
+        if (userRow === undefined) return null;
+        const now = new Date();
+        return {
+          user: userRow,
+          session: {
+            id: `internal_run_trigger_${userRow.id}`,
+            createdAt: now,
+            updatedAt: now,
+            userId: userRow.id,
+            expiresAt: new Date(now.getTime() + 30_000),
+            token: internalRunTriggerToken,
+          },
+        };
+      }
       const result = await auth.api.getSession({ headers });
       return result ? { user: result.user, session: result.session } : null;
     },
@@ -1428,17 +1487,24 @@ export async function createHub(config: HubConfig) {
   // across consumers. TTL-bounded by `createCryptoProviderCache` itself
   // (CL-7223).
   const cryptoProviders = createCryptoProviderCache();
+  // Delivers chat's outbound run mail through Interchange's own
+  // workflow-run mail-trigger route (CL-7490), in-process against this
+  // same `app` — see `@corbits/chat`'s `run-trigger-client.ts` and the
+  // `getSession` internal-token check above for how it authenticates.
+  const runTrigger = createRunTriggerClient({
+    app,
+    internalAuthSecret: config.sessionSecret,
+  });
   const chatPlatform = createHubChatPlatform({
     db,
-    sessionService,
-    assetService,
+    runTrigger,
+    repoStore: agentRepoStore.repoStore,
     sidecarRouter,
     eventCollectors,
     credentialCipher,
     toolGrantsForPins,
-    mcpCredentialBindingsFor,
-    pinnedPackageCredentialBindingsFor,
     cryptoProviders,
+    workflowAllocationService,
     // Chat residents are undeployed on idle again (see the comment above
     // this function): `chatIdleReapMs` (env-overridable via
     // `WORKBENCH_CHAT_IDLE_REAP_MS`, default 30 minutes) is
@@ -1874,7 +1940,6 @@ export async function createHub(config: HubConfig) {
       catalogAssetNames: CATALOG_WORKFLOWS.map(
         (workflow) => workflow.assetName,
       ),
-      catalogWorkflowDeployable: catalogWorkflowDeployableOnThisPin,
       runNow: async (args) =>
         runNowScheduledDefinition(
           { db, sidecarRouter, ...scheduledDeliveryJoinDeps },
@@ -1938,6 +2003,21 @@ export async function createHub(config: HubConfig) {
       }),
     }),
   );
+  // Resolved catalog offerings: the same ancestor-inheriting view
+  // `listVisibleOfferings` gives `workflowDeployer` above, exposed over
+  // HTTP so an out-of-process deployer (`workbench seed`) can deploy
+  // against exactly what the hub itself would deploy against, not just
+  // the offerings a tenant owns directly.
+  app.route(
+    `${TENANT_PREFIX}/catalog/resolved-offerings`,
+    createResolvedOfferingsRoutes({
+      listOfferings: (tenantId) => listVisibleOfferings(db, tenantId),
+      requireGrant: createRequireGrant({
+        grantStore: chatGrantStore,
+        conditionRegistry: chatConditionRegistry,
+      }),
+    }),
+  );
   // Bench purpose/type: benches are Interchange tenants, so this is a
   // package-owned side-table keyed by tenant id, migrated at hub start
   // like insights and preferences.
@@ -1963,17 +2043,6 @@ export async function createHub(config: HubConfig) {
     `${TENANT_PREFIX}/eval-runs`,
     createEvalRunRoutes({
       store: evalRuns.store,
-      requireGrant: createRequireGrant({
-        grantStore: chatGrantStore,
-        conditionRegistry: chatConditionRegistry,
-      }),
-    }),
-  );
-  app.route(
-    `${TENANT_PREFIX}/sidecar-placement`,
-    createSidecarPlacementRoutes({
-      store: createDrizzleSidecarPlacementStore(db),
-      hasProvisioner: config.sidecarProvisioners.length > 0,
       requireGrant: createRequireGrant({
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
@@ -2037,38 +2106,15 @@ export async function createHub(config: HubConfig) {
     }),
   );
   // CL-7361: the `deploy` half of the run-authenticated deployer this
-  // route's registry calls — the SAME `sessionService.
-  // deployWorkflowFromSource` call (already `withDeploySourceRecording`-
-  // wrapped above) the native `POST /workflows/deployments` route's own
-  // non-exclusive branch makes, not a reimplementation of install/probe/
-  // gate/freeze. Inference sources are resolved server-side from the
-  // tenant's catalog (`resolveDefinitionSources`) exactly as
-  // `agent-definitions`' `tenantDefaultModel` does above — an agent never
-  // supplies or sees a provider secret. Exclusive sidecar placement is out
-  // of scope: an agent-authored deploy always lands on shared capacity.
-  // Thin adapter over Interchange's native deploy: `registry.deploy()`
-  // (packages/agent-workflow-authoring) already resolves and authorizes the
-  // asset (own-tenant row check, `workflow:*`/create) before calling this,
-  // so this seam receives the already-resolved `assetId`/`assetName`
-  // rather than re-querying `assetTable` — the only work this adapter adds
-  // on top of native `sessionService.deployWorkflowFromSource` is
-  // server-side inference-source resolution (`resolveDefinitionSources`),
-  // because the native `/workflows/deployments` route requires the caller
-  // to supply `sources` directly and an agent caller must never see a
-  // provider secret to do that itself. `modelRequirements: null` is
-  // deliberate: a workflow's own declared model needs (if any) are not
-  // considered at this step, matching `agent-definitions`' identical
-  // tenant-default resolution above; deploy always resolves against the
-  // tenant's default/first-preference model.
+  // route's registry calls — the SAME `prepareProvisionedDeployment` the
+  // native `POST /workflows/deployments` route drives. Inference sources
+  // ride as catalog offering ids (`listVisibleOfferings`); an agent never
+  // supplies or sees a provider secret. The tree is already on the asset
+  // at `commitSha`, so this does not re-populate.
   //
   // `wf_deploy_preview` (CL-7362) is NOT wired through this
-  // deployer, and is not a probe-without-freeze call into native
-  // `sessionService` — a reviewed vendored delta that would have enabled
-  // that was reverted (see VENDORED.md). Instead `registry.previewDeploy`
-  // (packages/agent-workflow-authoring) does a static, read-only render of
-  // the already-committed source at `commitSha` straight off `RepoStore`,
-  // parsing `package.json` and the entry module text; it never touches
-  // install/probe/gate/freeze, so it truly cannot deploy anything.
+  // deployer. `registry.previewDeploy` does a static, read-only render of
+  // the already-committed source at `commitSha` straight off `RepoStore`.
   const workflowDeployer: WorkflowDeployer = {
     async deploy({ tenantId, principalId, assetId, commitSha, entry }) {
       const tenantRow = await db.query.tenant.findFirst({
@@ -2081,68 +2127,72 @@ export async function createHub(config: HubConfig) {
         );
       }
 
-      const fallbackModel =
-        (await workbenchHostInferencePreferencesResolver(tenantId))[0]?.model ??
-        null;
-      const resolution = await resolveDefinitionSources({
-        db,
-        tenantId,
-        modelRequirements: null,
-        fallbackModel,
-        invokerPreferences: {},
-        credentialCipher,
-      });
-      if (!resolution.ok) {
-        throw new WorkflowAuthorError("invalid", resolution.message);
+      const offerings = [...(await listVisibleOfferings(db, tenantId))].sort(
+        (a, b) => a.offering.priority - b.offering.priority,
+      );
+      const sourceOfferingIds = offerings.map((o) => o.offering.id);
+      const defaultSourceOfferingId = sourceOfferingIds[0];
+      if (defaultSourceOfferingId === undefined) {
+        throw new WorkflowAuthorError(
+          "invalid",
+          "no catalog offerings visible to this tenant",
+        );
       }
 
-      const anchorRunId = generateId("workflowRun");
-      const agentAddress = deriveRunAddress({
-        runId: anchorRunId,
-        domain: tenantRow.domain,
-      });
-      const config: HarnessConfig = {
-        sessionId: generateId("session"),
-        agentId: deriveRunAgentId({ runId: anchorRunId }),
-        tenantId,
-        principalId,
-        agentAddress,
-        systemPrompt: "",
-        tools: [],
-        grants: [],
-        sources: resolution.sources,
-        defaultSource: resolution.defaultSource,
-      };
-
       try {
-        const result = await sessionService.deployWorkflowFromSource({
-          tenantId,
-          anchorRunId,
-          deploymentDomain: tenantRow.domain,
-          agentAddress,
-          source: {
-            kind: "asset",
-            assetId,
-            package: { format: "source", commitSha },
-          },
-          entry,
-          definitionAssetId: assetId,
-          config,
+        const sessionId = generateId("session");
+        const prepared =
+          await workflowAllocationService.prepareProvisionedDeployment({
+            tenantId,
+            anchorRunId: generateId("workflowRun"),
+            deploymentDomain: tenantRow.domain,
+            source: {
+              kind: "asset",
+              assetId,
+              package: { format: "source", commitSha },
+            },
+            entry,
+            definitionAssetId: assetId,
+            sessionId,
+            sourceAuthorityPrincipalId: principalId,
+            sourceOfferingIds,
+            defaultSourceOfferingId,
+            deployContent: { systemPrompt: "" },
+          });
+        // The eager record every native launcher makes right after
+        // `prepareProvisionedDeployment` returns (CL-7481): this
+        // deployment mints no opening message of its own, but the
+        // trigger that eventually reconciles a principal onto it runs
+        // entirely through Interchange's own native route, with no
+        // Workbench-owned hook downstream to record the session
+        // afterward — so this is the only chance to record it at all.
+        await recordAgentSessionAtProvision({
+          db,
+          eventCollectors,
+          runId: prepared.anchorRunId,
+          sessionId,
+          sourceAuthorityPrincipalId: principalId,
         });
         return {
-          deploymentId: result.anchorRunId,
+          deploymentId: prepared.anchorRunId,
           definitionAssetId: assetId,
-          status: "deployed",
+          status: prepared.status,
         };
       } catch (err) {
         // Mirrors `@intx/hub-api`'s own `/workflows/deployments` route: an
         // install/gate rejection or an unapproved source chain is a
-        // client/definition error; anything else (a missing commit, an
-        // unreachable sidecar) is reported as `unavailable` rather than
-        // guessed apart, exactly as the native route's own catch-all does.
+        // client/definition error; a provisioning failure or anything else
+        // (a missing commit, an unreachable sidecar) is `unavailable`.
         if (err instanceof WorkflowDefinitionInvalidError) {
           throw new WorkflowAuthorError("invalid", err.message);
         }
+        if (err instanceof WorkflowProvisioningError) {
+          throw new WorkflowAuthorError("unavailable", err.message);
+        }
+        reportError(err, {
+          operation: "workflow-author-deploy",
+          tenantId,
+        });
         throw new WorkflowAuthorError(
           "unavailable",
           err instanceof Error ? err.message : "Failed to deploy workflow",
@@ -2153,7 +2203,7 @@ export async function createHub(config: HubConfig) {
   // Agent-authored workflows (CL-7360, CL-7361): an agent publishes a
   // workflow codebase as a native `kind:"workflow"` asset AND deploys it,
   // both through this workflow-run-authenticated surface — `deploy`
-  // reaches the exact same `sessionService.deployWorkflowFromSource` the
+  // reaches the exact same `prepareProvisionedDeployment` the
   // tenant-session `/workflows/deployments` route drives (`workflowDeployer`
   // above), never a second gating path. Unlike `/api/workflow-skills`
   // above, every write here also runs a real `chatGrantStore`
@@ -2345,16 +2395,16 @@ export async function createHub(config: HubConfig) {
           {
             db,
             sessionService,
-            assetService,
-            sidecarRouter,
-            eventCollectors,
+            repoStore: agentRepoStore.repoStore,
+            workflowAllocationService,
             credentialCipher,
-            toolGrantsForPins,
-            mcpCredentialBindingsFor,
-            pinnedPackageCredentialBindingsFor,
+            eventCollectors,
+            isRoutable: (address) =>
+              sidecarRouter.getRoutableAddresses().includes(address),
             cryptoProviderCache: cryptoProviders,
-            launchMode: AGENT_SECTION_MODE,
-            persistLaunch: workbenchLaunchPersistExtra,
+            persistLaunch: async (input) => {
+              await workbenchLaunchPersistExtra(input)(db);
+            },
             recordLaunchSources: ({ instanceId, sourcesDigest }) =>
               recordSourcesDigest(db, instanceId, sourcesDigest),
           },
@@ -2943,29 +2993,16 @@ export async function createHub(config: HubConfig) {
     bus: mailboxBus,
   });
 
-  // Shared `FoldedRunsDeps` for every one-shot Myra prompt below
-  // (agent-definition drafting): a real one-shot inference call
-  // that launches a folded run, awaits its single reply, and tears the run
+  // One-shot Myra prompt (agent-definition drafting): provisions a run
+  // through Interchange, awaits its single reply, and tears the run
   // down immediately — never a resident that outlives the request, so no
   // idle-sleep lifecycle is needed for it.
-  const oneShotFoldedRunsDeps = {
-    db,
-    sessionService,
-    assetService,
-    sidecarRouter,
-    eventCollectors,
-    credentialCipher,
-    hubPublicKey,
-    toolGrantsForPins,
-    mcpCredentialBindingsFor,
-    pinnedPackageCredentialBindingsFor,
-  };
 
-  // Every genuine top-level deployment run, folded runs (workbench hosts,
-  // invited agents) excluded — the scoped listing CL-6061 adds
-  // so the Agent Directory and the shell's "Running" bands stop
-  // deriving that exclusion client-side from a tenant's workbenches alone
-  // (see `@corbits/folded-runs`'s `scope-routes.ts`, which a folded run
+  // Every genuine top-level deployment run, workbench-hosted and invited-agent
+  // runs excluded — the scoped listing CL-6061 adds so the Agent Directory
+  // and the shell's "Running" bands stop deriving that exclusion
+  // client-side from a tenant's workbenches alone (see
+  // `@corbits/run-scope`'s `scope-routes.ts`, which a non-top-level run
   // with no workbench involved silently slipped past).
   app.route(
     `${TENANT_PREFIX}/top-level-runs`,
@@ -3152,13 +3189,17 @@ export async function createHub(config: HubConfig) {
           resolveMyraDefinitionIdFromDb(db, tenantId),
         runner: {
           run: (runnerInput) =>
-            runOneShotFoldedPrompt(
+            runOneShotPrompt(
               {
-                foldedRuns: oneShotFoldedRunsDeps,
+                db,
                 events: sidecarRouter.events,
                 cryptoProviders,
                 undeploy: (address, reason) =>
                   sidecarRouter.sendAgentUndeploy(address, reason),
+                repoStore: agentRepoStore.repoStore,
+                workflowAllocationService,
+                sessionService,
+                eventCollectors,
               },
               runnerInput,
             ),

@@ -179,11 +179,6 @@ const ALLOWLIST: readonly {
     tables: ["user_preferences"],
   },
   {
-    relPath: "packages/folded-runs/src/schema.ts",
-    maxOccurrences: 1,
-    tables: ["folded_run"],
-  },
-  {
     // Skills pinned to a workbench's agent definition (CL-6135): the
     // workflow-kind asset tree forbids skills.json, so this pin list is
     // package-owned state beside the native definition row.

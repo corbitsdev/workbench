@@ -21,7 +21,6 @@ import path from "node:path";
 import {
   createEd25519Crypto,
   generateKeyPair,
-  signEd25519,
   verifySSHSignature,
 } from "@intx/crypto";
 import { createSidecarOrchestrator, type HubLink } from "@intx/hub-agent";
@@ -239,7 +238,6 @@ const orchestrator = createSidecarOrchestrator({
   transport,
   cryptoOps: {
     generateKeyPair,
-    signEd25519,
     verifySSHSig: verifySSHSignature,
   },
   scheduleReconnect: watchdog.scheduleReconnect,

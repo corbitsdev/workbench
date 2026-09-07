@@ -5,10 +5,7 @@
 
 import {
   createDefaultAgentWorkbench,
-  findWorkbenchByTitle,
   findDefinitionByAssetName,
-  isWorkbenchTitleMatch,
-  type Workbench,
 } from "@corbits/chat-ui";
 import { WORKFLOW_CATALOG } from "@workbench/templates";
 
@@ -31,10 +28,6 @@ const myraWorkbench = createDefaultAgentWorkbench({
   assetName: MYRA_ASSET_NAME,
 });
 
-export function isMyraWorkbenchTitle(title: string): boolean {
-  return isWorkbenchTitleMatch(title, MYRA_WORKBENCH_TITLE);
-}
-
 /** The last workbench id `ensureMyraWorkbench` resolved to, for the shell's
  * col2-wide derivation (CL-5936): "Myra is the active surface" reduces to
  * "the open workbench is the one Talk-to-Myra last landed us on". */
@@ -47,13 +40,6 @@ export function resetMyraWorkbenchCache(): void {
   myraWorkbench.resetCache();
 }
 
-/** Prefer an exact Myra title; first match wins across the given list. */
-export function findMyraWorkbench(
-  workbenches: readonly Workbench[],
-): Workbench | undefined {
-  return findWorkbenchByTitle(workbenches, MYRA_WORKBENCH_TITLE);
-}
-
 /** Myra's deployed agent definition, matched by the seeded `assistant`
  * asset name — never by display name, which is a UI label, not a wire
  * identifier. */
@@ -64,10 +50,9 @@ export function findMyraDefinition(
 }
 
 /**
- * List workbench + chat kinds, reuse a Myra-titled row if one exists — a
- * legacy workbench-kind Myra from a bench seeded before CL-5985 included, so
- * no bench ever ends up with two — otherwise create a 1:1 chat against
- * Myra's deployed agent definition.
+ * Create (or reopen) the 1:1 chat against Myra's deployed agent definition —
+ * the server's `definitionId` dedupe on `POST /workbenches` is the one
+ * find-or-reopen path; this call always issues that create and trusts it.
  */
 export function ensureMyraWorkbench(tenantId: string) {
   return myraWorkbench.ensure(tenantId, listAgentDefinitions);

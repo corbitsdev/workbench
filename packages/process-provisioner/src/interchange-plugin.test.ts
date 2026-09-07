@@ -37,7 +37,11 @@ async function harness(
   const config = await configIn(dataDir);
   const runner = createFakeSidecarProcessRunner(opts);
   return {
-    provisioner: createProcessSidecarProvisioner({ config, runner }),
+    provisioner: createProcessSidecarProvisioner({
+      config,
+      runner,
+      role: "deployment",
+    }),
     runner,
     config,
   };
@@ -59,15 +63,6 @@ function ensureRequest(
 }
 
 describe("createProcessSidecarProvisioner", () => {
-  test("declares the process backend identity and a fingerprint over entry point and hub URL", async () => {
-    const { provisioner } = await harness();
-    expect(provisioner.id).toBe("process");
-    expect(provisioner.apiVersion).toBe(1);
-    expect(provisioner.bindingFingerprint).toBe(
-      `process:v1:${SIDECAR_ENTRY}:${HUB_WS_URL}`,
-    );
-  });
-
   test("ensure spawns the sidecar entry with the allocation's own token, data dir, and hub URL", async () => {
     const { provisioner, runner, config } = await harness();
 

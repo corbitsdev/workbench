@@ -30,7 +30,8 @@ this repo:
 - **Tenancy** — the tenant hierarchy, membership, principals, roles, and
   grants (`@intx/db`, `@intx/hub-api`).
 - **Credentials** — resolution and storage.
-- **Agents** — launch and session orchestration (`@intx/agent`,
+- **Agents** — Interchange owns launch (`prepareProvisionedDeployment`),
+  the run principal, and session primitives (`@intx/agent`,
   `@intx/hub-agent`, `@intx/hub-sessions`).
 - **Inference** — LLM calls (`@intx/inference`).
 - **Workflow runtime** — definitions, runs, and the workflow host
@@ -43,6 +44,36 @@ forks or patches Interchange internals. See [docs/TENANCY.md](docs/TENANCY.md)
 for the authoritative list of what Interchange already provides versus
 what is a genuine upstream gap workbench has had to work around
 product-side.
+
+## Agent launch
+
+Workbench is a client of Interchange. Launching an agent is Interchange
+`prepareProvisionedDeployment` onto that instance's own `kind:workflow`
+asset (default ref) in the hub git store. Interchange mints the run
+row, the allocation, and — on first trigger — the run principal. Chat
+records the returned run id, deployment id, and mail address. It does
+not pre-mint an anchor run, own an `agent_session`, or render a
+per-run `sourceRef`. `@corbits/folded-runs` and
+`@corbits/folded-run-one-shot` are gone. A one-shot wait-loop for Myra
+drafting lives in `@corbits/agent-directory` as `runOneShotPrompt` and
+still calls `prepareProvisionedDeployment`.
+
+Launch is asynchronous. The sidecar reconciler's ready hook and the
+`workflowDispatchService` queue (wired in `apps/hub`) deliver a
+message sent before the instance is ready; the UI shows a starting
+state until then. Presence while starting comes from allocation and
+deployment status, not a run principal. Wake of a reaped or lost
+instance is a fresh `prepareProvisionedDeployment` onto the same
+asset; chat updates the recorded ids.
+
+A turn is one native `sendUserMessage` per addressed agent, carrying
+Message-ID, In-Reply-To, and References. Agent replies reach humans
+through the hub `persistMail` wrapper into `@corbits/mailbox`. Turns
+do not use a correlationId. Human attachments are read from the
+mailbox frame, not Interchange `session_mail`. Inference sources ride
+as catalog offering ids (`sourceOfferingIds` /
+`defaultSourceOfferingId`). Catalog instantiate does not 409
+credential-binding workflows.
 
 ## Tenancy model
 

@@ -6,11 +6,12 @@
 // This suite proves the bearer mirror (`createWorkflowRunDeployAuth`) reaches
 // the EXACT SAME `createWorkflowRoutes` deploy handler a human session does
 // -- same `requireGrant("workflow:*", "create")` gate, same asset-scoping,
-// same install/probe/gate/freeze call into `sessionService.deployWorkflowFromSource`
-// -- rather than a parallel, weaker path. `deployWorkflowFromSource` itself
-// (the actual probe/gate/freeze internals) is a fake here: those internals
-// live in `@intx/hub-sessions` and are unchanged and already covered there;
-// what is new, and under test, is only the auth wiring in front of it.
+// same install/probe/gate/freeze call into
+// `workflowAllocationService.prepareProvisionedDeployment` -- rather than a
+// parallel, weaker path. `prepareProvisionedDeployment` itself (the actual
+// probe/provision/gate/freeze internals) is a fake here: those internals live
+// in `@intx/hub-sessions` and are unchanged and already covered there; what is
+// new, and under test, is only the auth wiring in front of it.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
@@ -19,8 +20,8 @@ import { createDB, schema, type DB } from "@intx/db";
 import { createInMemoryGrantStore } from "@intx/authz";
 import { generateId } from "@intx/hub-common";
 import type {
-  DeployWorkflowFromSourceParams,
-  SessionService,
+  PrepareProvisionedWorkflowDeploymentArgs,
+  WorkflowAllocationService,
 } from "@intx/hub-sessions";
 
 import { createRequireGrant } from "../middleware/grant";
@@ -151,51 +152,45 @@ describeIfDb("workflow deploy: bearer mirror of the session deploy route", () =>
     },
   };
 
-  /** Stands in for `sessionService.deployWorkflowFromSource`: the real
-   * install/probe/gate/freeze internals live in `@intx/hub-sessions` and
-   * are untouched by this change, so this fake only records that it was
-   * called (proving the bearer path reaches the SAME call the session path
-   * does) and persists the anchor row the real implementation would have,
-   * so the route's own read-back succeeds exactly as it does in
-   * production. */
-  function fakeSessionService(): SessionService {
+  /** Stands in for `workflowAllocationService.prepareProvisionedDeployment`:
+   * the real probe/provision/gate/freeze internals live in
+   * `@intx/hub-sessions` and are untouched by this change, so this fake only
+   * records that it was called (proving the bearer path reaches the SAME call
+   * the session path does) and persists the anchor row the real implementation
+   * would have, under the route's own server-minted `anchorRunId`, so the
+   * route's read-back succeeds exactly as it does in production. */
+  function fakeAllocationService(): WorkflowAllocationService {
     return {
-      async deployWorkflowFromSource(
-        params: DeployWorkflowFromSourceParams,
+      async prepareProvisionedDeployment(
+        args: PrepareProvisionedWorkflowDeploymentArgs,
       ) {
-        deployCalls.push(params);
-        const anchorRunId = generateId("workflowRun");
+        deployCalls.push(args);
         const definitionId = generateId("workflowDefinition");
         await db.db.insert(schema.workflowDefinition).values({
           id: definitionId,
-          tenantId: params.tenantId,
-          assetId: params.definitionAssetId,
+          tenantId: args.tenantId,
+          assetId: args.definitionAssetId,
           name: "own-workflow",
         });
         await db.db.insert(schema.workflowRun).values({
-          id: anchorRunId,
+          id: args.anchorRunId,
           definitionId,
-          anchorRunId,
-          tenantId: params.tenantId,
+          anchorRunId: args.anchorRunId,
+          tenantId: args.tenantId,
           principalId: runPrincipalId,
           status: "deployed",
         });
         return {
-          anchorRunId,
-          deploymentAddress: params.agentAddress,
-          publicKey: "pk_test",
+          anchorRunId: args.anchorRunId,
+          deploymentAddress: `${args.anchorRunId}@${args.deploymentDomain}`,
+          allocationId: "alloc_deploy_bearer_test",
+          status: "pending" as const,
         };
       },
-      async stageWorkflowStep() {
+      async deployReadyAllocation() {
         throw new Error("not exercised by this suite");
       },
-      async sendUserMessage() {
-        throw new Error("not exercised by this suite");
-      },
-      async endSession() {
-        throw new Error("not exercised by this suite");
-      },
-    } as unknown as SessionService;
+    };
   }
 
   function mountedApp(grantStore: ReturnType<typeof createInMemoryGrantStore>) {
@@ -209,7 +204,7 @@ describeIfDb("workflow deploy: bearer mirror of the session deploy route", () =>
       "/api/tenants/:tenantId/workflows",
       createWorkflowRoutes({
         db: db.db,
-        sessionService: fakeSessionService(),
+        workflowAllocationService: fakeAllocationService(),
         sidecarRouter: {} as never,
         repoStore: {} as never,
         grantStore,
@@ -236,16 +231,8 @@ describeIfDb("workflow deploy: bearer mirror of the session deploy route", () =>
             package: { format: "tarball" },
           },
           entry: "interchange.workflow",
-          sources: [
-            {
-              id: "src_1",
-              provider: "test",
-              baseURL: "https://inference.example.test",
-              apiKey: "test-key",
-              model: "test-model",
-            },
-          ],
-          defaultSource: "src_1",
+          sourceOfferingIds: ["off_1"],
+          defaultSourceOfferingId: "off_1",
         }),
       },
     );
@@ -296,7 +283,7 @@ describeIfDb("workflow deploy: bearer mirror of the session deploy route", () =>
       "/api/tenants/:tenantId/workflows",
       createWorkflowRoutes({
         db: db.db,
-        sessionService: fakeSessionService(),
+        workflowAllocationService: fakeAllocationService(),
         sidecarRouter: {} as never,
         repoStore: {} as never,
         grantStore,

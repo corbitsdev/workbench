@@ -14,7 +14,7 @@
 //      workflow-process child's spawn env for workflow-run pack-push
 //      (`SIDECAR_TOKEN`); reused here rather than minting a second
 //      credential the hub would have to track.
-//   2. The presented run address resolves to a live folded run — binds
+//   2. The presented run address resolves to a live workflow_run — binds
 //      the call to that run's own tenant + principal, so a sidecar can
 //      never act outside the run whose address it presents, even
 //      though many runs can share one sidecar's token.
@@ -29,8 +29,7 @@
 import { eq } from "drizzle-orm";
 import { sha256 } from "@intx/crypto";
 import type { DB } from "@intx/db";
-import { sidecar } from "@intx/db/schema";
-import { findFoldedRunByAddress } from "@corbits/folded-runs";
+import { sidecar, workflowRun } from "@intx/db/schema";
 
 export type ResolvedWorkflowRunScope = {
   readonly tenantId: string;
@@ -62,7 +61,9 @@ export function createWorkflowRunAuthenticator(
       });
       if (sidecarRow === undefined) return null;
 
-      const run = await findFoldedRunByAddress(deps.db, runAddress);
+      const run = await deps.db.query.workflowRun.findFirst({
+        where: eq(workflowRun.address, runAddress),
+      });
       if (run === undefined || run.principalId === null) return null;
 
       return {

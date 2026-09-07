@@ -1,15 +1,15 @@
 // Routes a multi-step routine definition onto Interchange's native
-// workflow-run trigger primitive instead of `@corbits/folded-runs`'
+// workflow-run trigger primitive instead of `@corbits/workflows`'
 // single-step fold.
 //
 // A multi-step `workflow_definition` can only exist in this repo as a
 // code-sourced `@intx/workflow` package deployed through
 // `POST /workflows/deployments`
 // (`vendor/intx/hub-api/src/routes/workflows.ts`, backed by
-// `sessionService.deployWorkflowFromSource`) — `@corbits/folded-runs`'
+// `sessionService.deployWorkflowFromSource`) — `@corbits/workflows`'
 // `readFoldedBody` throws `MultiStepFoldUnsupportedError` for exactly
-// this reason (see `packages/folded-runs/src/definition.ts`): its
-// deploy target, `@corbits/agent-runtime`'s single-turn
+// this reason (see `packages/workflows/src/definition-projection.ts`):
+// its deploy target, `@corbits/agent-runtime`'s single-turn
 // `AgentRuntimeConfig`, has no notion of step order, so folding a
 // multi-step body into it would silently run step one and drop the
 // rest. Since a code-sourced deploy is the ONLY way a multi-step
@@ -23,8 +23,8 @@
 // public surface, so the message is assembled here from the same
 // public `@intx/mime`/`@intx/crypto` primitives it uses, and delivered
 // through `SidecarRouter.routeMail` — a public method every
-// `FoldedRunsDeps` caller (including the routine launcher) already
-// holds.
+// `createHubChatPlatform` caller (including the routine launcher)
+// already holds.
 //
 // Grant authorization for this mail-triggered run is materialized by
 // the vendored session orchestrator's own `mail.outbound` handler

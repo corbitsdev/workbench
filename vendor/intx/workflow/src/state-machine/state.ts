@@ -23,12 +23,15 @@ export type RunPhase =
   | "failed"
   | "cancelled";
 
+export type TerminalRunPhase = "completed" | "failed" | "cancelled";
+
 export type StepPhase =
   | "in-flight"
   | "awaiting-signal"
   | "awaiting-timer"
   | "completed"
   | "failed"
+  | "routed"
   | "cancelled";
 
 export interface StepState {
@@ -73,6 +76,13 @@ export interface ChildState {
   spawnedBy: StepId;
   cancelRequested: boolean;
   terminalStatus?: "completed" | "failed" | "cancelled";
+  /**
+   * Reduced from `ChildCompleted.abortedTeardown`: a `failed` terminal that is
+   * a parent-cascade abort teardown rather than a genuine body failure. The
+   * onTrigger resume classifier reads it to end a torn-down `tolerate` section
+   * rather than resurrect it. See `ChildCompleted`.
+   */
+  abortedTeardown?: boolean;
 }
 
 export interface PendingTimer {
@@ -127,6 +137,32 @@ export function isTerminalRunPhase(phase: RunPhase): boolean {
   return phase === "completed" || phase === "failed" || phase === "cancelled";
 }
 
+export function decideTerminalRunFlip(phase: RunPhase): TerminalRunPhase {
+  switch (phase) {
+    case "completed":
+      return "completed";
+    case "failed":
+      return "failed";
+    case "cancelled":
+      return "cancelled";
+    case "pending":
+    case "running":
+    case "cancelling":
+      throw new Error(`decideTerminalRunFlip: non-terminal run phase ${phase}`);
+    default: {
+      const unexpected: never = phase;
+      throw new Error(
+        `decideTerminalRunFlip: unexpected run phase ${String(unexpected)}`,
+      );
+    }
+  }
+}
+
 export function isTerminalStepPhase(phase: StepPhase): boolean {
-  return phase === "completed" || phase === "failed" || phase === "cancelled";
+  return (
+    phase === "completed" ||
+    phase === "failed" ||
+    phase === "routed" ||
+    phase === "cancelled"
+  );
 }

@@ -140,6 +140,20 @@ export async function connectE2eDb(databaseUrl: string): Promise<SqlClient> {
  * WebSocket dial-in against the token hash on the `sidecar` table, so
  * the row must exist before the sidecar process starts. Mirrors
  * Interchange's dev provisioning (id + sha256(token), placeholder url).
+ *
+ * At pin 692c3106, the hub only accepts a register/reconnect frame from
+ * a sidecar identity that resolves to a live `sidecar_allocation` (or
+ * `workflow_probe`) row — the standalone, unallocated ("shared"
+ * credential scope) sidecar this used to provision no longer
+ * authenticates at all (CL-7472), so a caller of this function gets a
+ * connect-and-immediately-reject loop, not a usable dial-in. Every
+ * suite this repo runs against CI now lets the hub's own
+ * process-provisioner spawn a dedicated sidecar per allocation instead
+ * (see `startHub`'s doc comment and `scripts/e2e/chat.test.ts`); this
+ * function is kept only for the handful of scripts not yet migrated off
+ * a directly-controlled sidecar process (e.g. ones that kill and
+ * restart a specific sidecar mid-scenario) and is not a working dial-in
+ * path until they are.
  */
 export async function provisionSidecar(
   databaseUrl: string,
@@ -319,11 +333,13 @@ export async function startHub(options: {
 }
 
 /**
- * Boot the sidecar as a real process, pointed at the hub's WebSocket
- * dial-in route with the provisioned identity. Connection readiness is
- * observed by the deploy call itself (the hub answers 502 until a
- * sidecar is connected), so this only guards against an immediate
- * crash.
+ * Boot a standalone sidecar as a real process, pointed at the hub's
+ * WebSocket dial-in route with a `provisionSidecar`-issued identity.
+ * See `provisionSidecar`'s own doc comment: at pin 692c3106 this
+ * identity never authenticates (CL-7472), so the process this starts
+ * connects and is immediately rejected in a loop rather than dialing
+ * in. Kept only for the scripts not yet migrated to the hub's
+ * automatic, per-allocation process-provisioner spawn.
  */
 export function startSidecar(options: {
   hubPort: number;

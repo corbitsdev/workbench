@@ -33,16 +33,18 @@ export async function pushWorkflowSource(options: {
 /**
  * The deploy body a code-sourced asset deployment takes: the pushed
  * commit is the definition's pin, and the entry names the
- * `interchange.workflow` module the sidecar evaluates.
+ * `interchange.workflow` module the sidecar evaluates. The native route
+ * resolves inference against the tenant's own catalog, so the caller
+ * supplies the ordered catalog offering ids to deploy against rather
+ * than a raw provider/baseURL/apiKey triple — see
+ * `@corbits/seeding`'s `ensureNoopCatalogOffering` for the zero-cost way
+ * to obtain one.
  */
 export function workflowDeployBody(options: {
   assetId: string;
   commitSha: string;
-  sourceId: string;
-  provider: string;
-  baseURL: string;
-  apiKey: string;
-  model: string;
+  sourceOfferingIds: string[];
+  defaultSourceOfferingId: string;
 }): Record<string, unknown> {
   return {
     source: {
@@ -51,15 +53,7 @@ export function workflowDeployBody(options: {
       package: { format: "source", commitSha: options.commitSha },
     },
     entry: WORKFLOW_SOURCE_ENTRY,
-    sources: [
-      {
-        id: options.sourceId,
-        provider: options.provider,
-        baseURL: options.baseURL,
-        apiKey: options.apiKey,
-        model: options.model,
-      },
-    ],
-    defaultSource: options.sourceId,
+    sourceOfferingIds: options.sourceOfferingIds,
+    defaultSourceOfferingId: options.defaultSourceOfferingId,
   };
 }

@@ -1,50 +1,69 @@
+import { type } from "arktype";
+
+import { sha256 } from "@intx/crypto";
 import {
   createSidecarAllocationStore,
+  createWorkflowProbeStore,
   createWorkflowRunLaunchSpecStore,
-  getAncestorChain,
+  resolveTenantSidecarCapabilityPolicies,
   resolveSourcesByOfferingIds,
   type DB,
   type SidecarAllocation,
+  type WorkflowProbe,
 } from "@intx/db";
-import { grant, tenant as tenantTable, workflowRun } from "@intx/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { grant, workflowRun } from "@intx/db/schema";
+import { eq } from "drizzle-orm";
 import { generateId } from "@intx/hub-common";
+import { getLogger } from "@intx/log";
 import {
   hexEncode,
-  TenantConfig,
+  SidecarCapabilityRule,
   type CredentialCipher,
-  type SidecarPlacementRequirement,
 } from "@intx/types";
 import type { FrozenApprovalBundle } from "@intx/types/sidecar";
 import type { HarnessConfig } from "@intx/types/runtime";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
 import type { WorkflowDefinitionSource } from "@intx/types/workflow-sources";
-import { deriveRunAddress, deriveRunAgentId } from "@intx/workflow-deploy";
+import {
+  buildInertProjectionStepSources,
+  deriveRunAddress,
+  deriveRunAgentId,
+} from "@intx/workflow-deploy";
 
 import type { DeployContent } from "./agent-repo";
 import {
-  resolveEffectiveSidecarPlacement,
+  DestroySidecarResult,
+  EnsureSidecarResult,
+  type SidecarCapabilityMismatch,
   type SidecarPluginRegistry,
+  type SidecarProvisioner,
+  type SidecarProvisionerSelection,
 } from "./sidecar-allocation";
 import {
   SessionLaunchError,
   type DeployWorkflowDefinitionResult,
   type PreparedWorkflowDeployer,
 } from "./session-service";
-import type { SidecarAllocationRouter } from "./ws/sidecar-handler";
+import type {
+  AllocatedSidecarTarget,
+  SidecarAllocationRouter,
+} from "./ws/sidecar-handler";
 import type { InstallAndApproveResult } from "./workflow-probe-gate";
+import { buildReferencedWorkflowSourcePins } from "./workflow-source-pins";
 
-export class ExclusiveWorkflowPlacementError extends Error {
+const logger = getLogger(["hub", "workflow-allocation"]);
+
+export class WorkflowProvisioningError extends Error {
   readonly code: string;
 
   constructor(code: string, message: string) {
     super(message);
-    this.name = "ExclusiveWorkflowPlacementError";
+    this.name = "WorkflowProvisioningError";
     this.code = code;
   }
 }
 
-export type PrepareExclusiveWorkflowDeploymentArgs = {
+export type PrepareProvisionedWorkflowDeploymentArgs = {
   readonly tenantId: string;
   readonly anchorRunId: string;
   readonly deploymentDomain: string;
@@ -58,9 +77,6 @@ export type PrepareExclusiveWorkflowDeploymentArgs = {
    */
   readonly pin?: string;
   readonly definitionAssetId: string;
-  readonly placement: SidecarPlacementRequirement & {
-    readonly sharing: "exclusive";
-  };
   readonly sessionId: string;
   readonly sourceAuthorityPrincipalId: string;
   readonly sourceOfferingIds: readonly string[];
@@ -69,7 +85,7 @@ export type PrepareExclusiveWorkflowDeploymentArgs = {
   readonly toolPackagePins?: readonly ToolPackagePin[];
 };
 
-export type PreparedExclusiveWorkflowDeployment = {
+export type PreparedProvisionedWorkflowDeployment = {
   readonly anchorRunId: string;
   readonly deploymentAddress: string;
   readonly allocationId: string;
@@ -77,9 +93,11 @@ export type PreparedExclusiveWorkflowDeployment = {
 };
 
 export type WorkflowAllocationService = {
-  prepareExclusiveDeployment(
-    args: PrepareExclusiveWorkflowDeploymentArgs,
-  ): Promise<PreparedExclusiveWorkflowDeployment>;
+  initialize?(): Promise<void>;
+  reconcileReleasingProbes?(): Promise<void>;
+  prepareProvisionedDeployment(
+    args: PrepareProvisionedWorkflowDeploymentArgs,
+  ): Promise<PreparedProvisionedWorkflowDeployment>;
   deployReadyAllocation(
     allocation: SidecarAllocation,
   ): Promise<DeployWorkflowDefinitionResult | null>;
@@ -87,14 +105,26 @@ export type WorkflowAllocationService = {
 
 export type WorkflowAllocationServiceDeps = {
   readonly db: DB["db"];
-  readonly plugins: SidecarPluginRegistry;
+  readonly deploymentPlugins: SidecarPluginRegistry;
+  readonly probePlugins: SidecarPluginRegistry;
   readonly preparedDeployer: PreparedWorkflowDeployer;
-  readonly credentialCipher?: CredentialCipher;
+  /** Decrypts tenant-owned credential bindings for provisioned deployments. */
+  readonly credentialCipher: CredentialCipher;
+  readonly probeCapabilityRules?: readonly SidecarCapabilityRule[];
   readonly allocationRouter: Pick<
     SidecarAllocationRouter,
-    "isAllocatedWorkflowActive"
+    | "disconnectAllocation"
+    | "fenceAllocation"
+    | "isAllocatedWorkflowActive"
+    | "retireAllocation"
+    | "sendProbeToAllocation"
+    | "waitForAllocatedSidecar"
   >;
+  readonly hubWebSocketUrl: string;
   readonly createAllocationId?: () => string;
+  readonly createSidecarId?: () => string;
+  readonly createToken?: () => string;
+  readonly connectTimeoutMs?: number;
   readonly now?: () => Date;
 };
 
@@ -102,145 +132,239 @@ function randomAllocationId(): string {
   return `sal_${hexEncode(crypto.getRandomValues(new Uint8Array(16)))}`;
 }
 
-/** Resolve the tenant-inherited sidecar placement into one launch decision. */
-export async function resolveWorkflowSidecarPlacement(
-  db: DB["db"],
-  tenantId: string,
-): Promise<SidecarPlacementRequirement | null> {
-  const tenantIds = await getAncestorChain(db, tenantId);
-  const rows = await db.query.tenant.findMany({
-    where: inArray(tenantTable.id, tenantIds),
-    columns: { id: true, config: true },
-  });
-  const configsByTenantId = new Map(
-    rows.map((row) => [
-      row.id,
-      row.config === null
-        ? TenantConfig.assert({})
-        : TenantConfig.assert(row.config),
-    ]),
+function randomSidecarId(): string {
+  return `sc_${hexEncode(crypto.getRandomValues(new Uint8Array(16)))}`;
+}
+
+function randomToken(): string {
+  return `intx_sc_${hexEncode(crypto.getRandomValues(new Uint8Array(32)))}`;
+}
+
+function selectProvisioner(
+  selection: SidecarProvisionerSelection,
+): SidecarProvisioner {
+  if (selection.ok) return selection.provisioner;
+  throw new WorkflowProvisioningError(
+    "provisioner_no_match",
+    formatProvisionerMismatches(selection.mismatches),
   );
-  const tenantConfigs = tenantIds.map((id) => {
-    const config = configsByTenantId.get(id);
-    if (config === undefined) {
-      throw new Error(
-        `Tenant ${id} disappeared while resolving sidecar placement`,
-      );
-    }
-    return config;
+}
+
+function parseEnsureResult(value: unknown): EnsureSidecarResult {
+  const result = EnsureSidecarResult(value);
+  if (result instanceof type.errors) {
+    throw new Error(
+      `Sidecar provisioner returned an invalid ensure result: ${result.summary}`,
+    );
+  }
+  return result;
+}
+
+function parseDestroyResult(value: unknown): DestroySidecarResult {
+  const result = DestroySidecarResult(value);
+  if (result instanceof type.errors) {
+    throw new Error(
+      `Sidecar provisioner returned an invalid destroy result: ${result.summary}`,
+    );
+  }
+  return result;
+}
+
+function createProvisionedHarnessConfig(args: {
+  readonly tenantId: string;
+  readonly anchorRunId: string;
+  readonly deploymentDomain: string;
+  readonly sessionId: string;
+  readonly sourceAuthorityPrincipalId: string;
+  readonly sources: HarnessConfig["sources"];
+  readonly defaultSource: string;
+}): HarnessConfig {
+  const deploymentAddress = deriveRunAddress({
+    runId: args.anchorRunId,
+    domain: args.deploymentDomain,
   });
-  return resolveEffectiveSidecarPlacement({ tenantConfigs });
+  return {
+    sessionId: args.sessionId,
+    agentId: deriveRunAgentId({ runId: args.anchorRunId }),
+    tenantId: args.tenantId,
+    principalId: args.sourceAuthorityPrincipalId,
+    agentAddress: deploymentAddress,
+    systemPrompt: "",
+    tools: [],
+    grants: [],
+    sources: args.sources,
+    defaultSource: args.defaultSource,
+  };
 }
 
 export function createWorkflowAllocationService({
   db,
-  plugins,
+  deploymentPlugins,
+  probePlugins,
   preparedDeployer,
   credentialCipher,
+  probeCapabilityRules = [],
   allocationRouter,
+  hubWebSocketUrl,
   createAllocationId = randomAllocationId,
+  createSidecarId = randomSidecarId,
+  createToken = randomToken,
+  connectTimeoutMs = 120_000,
   now = () => new Date(),
 }: WorkflowAllocationServiceDeps): WorkflowAllocationService {
   const allocationStore = createSidecarAllocationStore(db);
+  const probeStore = createWorkflowProbeStore(db);
   const launchSpecStore = createWorkflowRunLaunchSpecStore(db);
+  const validatedProbeCapabilityRules =
+    SidecarCapabilityRule.array()(probeCapabilityRules);
 
-  async function prepareExclusiveDeployment(
-    args: PrepareExclusiveWorkflowDeploymentArgs,
-  ): Promise<PreparedExclusiveWorkflowDeployment> {
-    // Fail closed before any probe: exclusive placement has no meaning without a
-    // provisioner to stand up its dedicated sidecar, and the shared-capacity
-    // probe below is wasted work if no provisioner exists. (In-tree this is
-    // always null -- exclusive is dormant -- so a live prepare never runs here.)
-    const provisioner = plugins.getDefaultProvisioner();
-    if (provisioner === null) {
-      throw new ExclusiveWorkflowPlacementError(
-        "exclusive_provisioner_unavailable",
-        "No default sidecar provisioner is configured for exclusive workflows",
-      );
-    }
-    if (args.sourceOfferingIds.length === 0) {
-      throw new ExclusiveWorkflowPlacementError(
-        "invalid_source_offerings",
-        "Exclusive workflow deployment requires at least one catalog offering",
-      );
-    }
-    if (!args.sourceOfferingIds.includes(args.defaultSourceOfferingId)) {
-      throw new ExclusiveWorkflowPlacementError(
-        "invalid_source_offerings",
-        "The default source offering must be present in the source offering chain",
-      );
-    }
-
-    const sourceCheck = await resolveSourcesByOfferingIds(
-      db,
-      args.tenantId,
-      args.sourceOfferingIds,
-      credentialCipher,
+  if (validatedProbeCapabilityRules instanceof type.errors) {
+    throw new Error(
+      `Invalid workflow probe capability rules: ${validatedProbeCapabilityRules.summary}`,
     );
-    if (!sourceCheck.ok) {
-      throw new ExclusiveWorkflowPlacementError(
-        "source_offering_unavailable",
-        `Catalog offering ${sourceCheck.offeringId} cannot be used by the deployment authority`,
-      );
-    }
+  }
+  const configuredProbeCapabilityRules = validatedProbeCapabilityRules.map(
+    (rule) => ({ ...rule }),
+  );
 
-    // Probe + gate + freeze the code-sourced definition ONCE, on shared
-    // capacity, at request time. The freeze is sidecar-agnostic (a wire hash
-    // over the inert projection plus the resolved closure), so the frozen bundle
-    // deploys later to the dedicated allocation with no re-probe. A non-approval
-    // surfaces as a `WorkflowDefinitionInvalidError` from the deployer, which the
-    // route maps to a 409.
-    const approved = await preparedDeployer.installAndApproveWorkflowSource({
-      source: args.source,
-      entry: args.entry,
-      ...(args.pin !== undefined ? { pin: args.pin } : {}),
-      definitionAssetId: args.definitionAssetId,
-    });
-    if (!approved.approval.ok) {
-      // `installAndApproveWorkflowSource` already fails closed on a non-approval;
-      // restate the narrowing so the frozen bundle below reads the ok arm.
+  if (connectTimeoutMs <= 0) {
+    throw new Error("connectTimeoutMs must be positive");
+  }
+
+  function matchingProvisioner(
+    probe: WorkflowProbe,
+  ): SidecarProvisioner | null {
+    const provisioner = probePlugins.getProvisioner(probe.provisionerId);
+    return provisioner !== null &&
+      provisioner.apiVersion === probe.provisionerApiVersion &&
+      provisioner.bindingFingerprint === probe.provisionerBindingFingerprint
+      ? provisioner
+      : null;
+  }
+
+  async function beginProbeRelease(
+    probe: WorkflowProbe,
+    failure?: { code: string; message: string },
+  ): Promise<WorkflowProbe | null> {
+    if (probe.status === "releasing") return probe;
+    return probeStore.transition(
+      probe.id,
+      ["pending", "provisioning", "probing"],
+      "releasing",
+      {
+        ...(failure !== undefined
+          ? {
+              failureCode: failure.code,
+              failureMessage: failure.message,
+            }
+          : {}),
+        now: now(),
+      },
+    );
+  }
+
+  async function finishProbeRelease(
+    releasing: WorkflowProbe,
+    finalStatus: "succeeded" | "failed",
+  ): Promise<void> {
+    if (releasing.sidecarId !== null) {
+      const provisioner = matchingProvisioner(releasing);
+      if (provisioner === null) {
+        throw new Error(
+          `Cannot clean up workflow probe ${releasing.id}: provisioner binding ${releasing.provisionerId} is unavailable`,
+        );
+      }
+      const destroyed = parseDestroyResult(
+        await provisioner.destroy({
+          allocationId: releasing.id,
+          generation: releasing.generation,
+          sidecarId: releasing.sidecarId,
+          ...(releasing.externalRef !== null
+            ? { externalRef: releasing.externalRef }
+            : {}),
+        }),
+      );
+      if (destroyed.kind === "rejected") {
+        throw new Error(
+          `Provisioner ${provisioner.id} rejected probe cleanup: ${destroyed.message}`,
+        );
+      }
+      allocationRouter.disconnectAllocation({
+        allocationId: releasing.id,
+        generation: releasing.generation,
+      });
+    }
+    const completed = await probeStore.transition(
+      releasing.id,
+      ["releasing"],
+      finalStatus,
+      { now: now() },
+    );
+    if (completed === null) {
       throw new Error(
-        "prepareExclusiveDeployment: install did not yield an approved definition",
+        `Workflow probe ${releasing.id} changed before cleanup completed`,
       );
     }
-    // Capture the narrowed values before the transaction: TS drops the
-    // `approval.ok` narrowing inside the async callback below.
-    const definitionId = approved.approval.definitionId;
+    allocationRouter.retireAllocation({
+      allocationId: releasing.id,
+      generation: releasing.generation,
+    });
+  }
+
+  async function releaseProbe(
+    probe: WorkflowProbe,
+    finalStatus: "succeeded" | "failed",
+    failure?: { code: string; message: string },
+  ): Promise<void> {
+    const releasing = await beginProbeRelease(probe, failure);
+    if (releasing === null) return;
+    await finishProbeRelease(releasing, finalStatus);
+  }
+
+  async function createDeployment(args: {
+    request: PrepareProvisionedWorkflowDeploymentArgs;
+    approved: InstallAndApproveResult & {
+      approval: Extract<InstallAndApproveResult["approval"], { ok: true }>;
+    };
+    provisioner: SidecarProvisioner;
+    probe: WorkflowProbe;
+    adoptProbe: boolean;
+  }): Promise<PreparedProvisionedWorkflowDeployment> {
+    const { request, approved, provisioner, probe, adoptProbe } = args;
+    const probeSidecarId = probe.sidecarId;
+    if (adoptProbe && probeSidecarId === null) {
+      throw new Error(`Workflow probe ${probe.id} has no sidecar to adopt`);
+    }
+    const allocationId = adoptProbe ? probe.id : createAllocationId();
+    const createdAt = now();
+    const deploymentAddress = deriveRunAddress({
+      runId: request.anchorRunId,
+      domain: request.deploymentDomain,
+    });
     const frozenApprovalBundle: FrozenApprovalBundle = {
-      source: args.source,
-      entry: args.entry,
+      source: request.source,
+      entry: request.entry,
       projection: approved.projection,
       closure: approved.closure,
       approvedWireHash: approved.approval.approvedWireHash,
       approvedGrants: [...approved.approval.approvedGrants],
     };
 
-    const allocationId = createAllocationId();
-    const createdAt = now();
-    const deploymentAddress = deriveRunAddress({
-      runId: args.anchorRunId,
-      domain: args.deploymentDomain,
-    });
     await db.transaction(async (tx) => {
-      // The freeze already ensured (create-if-absent) the definition row keyed by
-      // the approved wire hash and returned its id; anchor to THAT row rather
-      // than re-ensuring, so the anchor's definition is exactly the one approved.
       await tx.insert(workflowRun).values({
-        id: args.anchorRunId,
-        tenantId: args.tenantId,
-        anchorRunId: args.anchorRunId,
-        definitionId,
+        id: request.anchorRunId,
+        tenantId: request.tenantId,
+        anchorRunId: request.anchorRunId,
+        definitionId: approved.approval.definitionId,
         address: deploymentAddress,
-        // Born "deployed": the anchor is live but pre-trigger. The first trigger
-        // flips it to "running" (see `anchorWithPrincipal`).
         status: "deployed",
         createdAt,
       });
       await tx.insert(grant).values({
         id: generateId("grant"),
-        tenantId: args.tenantId,
-        principalId: args.sourceAuthorityPrincipalId,
-        resource: `workflow-run:${args.anchorRunId}`,
+        tenantId: request.tenantId,
+        principalId: request.sourceAuthorityPrincipalId,
+        resource: `workflow-run:${request.anchorRunId}`,
         action: "read",
         effect: "allow",
         origin: "creator",
@@ -249,42 +373,281 @@ export function createWorkflowAllocationService({
       });
       await launchSpecStore.create(
         {
-          anchorRunId: args.anchorRunId,
-          sessionId: args.sessionId,
-          deploymentDomain: args.deploymentDomain,
-          sourceAuthorityPrincipalId: args.sourceAuthorityPrincipalId,
+          anchorRunId: request.anchorRunId,
+          sessionId: request.sessionId,
+          deploymentDomain: request.deploymentDomain,
+          sourceAuthorityPrincipalId: request.sourceAuthorityPrincipalId,
           frozenApprovalBundle,
-          sourceOfferingIds: [...args.sourceOfferingIds],
-          defaultSourceOfferingId: args.defaultSourceOfferingId,
-          deployContent: args.deployContent,
-          ...(args.toolPackagePins !== undefined
-            ? { toolPackagePins: [...args.toolPackagePins] }
+          sourceOfferingIds: [...request.sourceOfferingIds],
+          defaultSourceOfferingId: request.defaultSourceOfferingId,
+          deployContent: request.deployContent,
+          ...(request.toolPackagePins !== undefined
+            ? { toolPackagePins: [...request.toolPackagePins] }
             : {}),
           createdAt,
         },
         tx,
       );
-      await allocationStore.createPending(
-        {
-          id: allocationId,
-          anchorRunId: args.anchorRunId,
-          tenantId: args.tenantId,
-          provisionerId: provisioner.id,
-          provisionerApiVersion: provisioner.apiVersion,
-          provisionerBindingFingerprint: provisioner.bindingFingerprint,
-          placement: args.placement,
-          now: createdAt,
-        },
-        tx,
-      );
+      if (adoptProbe) {
+        if (probeSidecarId === null) {
+          throw new Error(`Workflow probe ${probe.id} lost its sidecar`);
+        }
+        await allocationStore.createAdopted(
+          {
+            id: allocationId,
+            anchorRunId: request.anchorRunId,
+            tenantId: request.tenantId,
+            provisionerId: provisioner.id,
+            provisionerApiVersion: provisioner.apiVersion,
+            provisionerBindingFingerprint: provisioner.bindingFingerprint,
+            sidecarId: probeSidecarId,
+            generation: probe.generation,
+            ...(probe.externalRef !== null
+              ? { externalRef: probe.externalRef }
+              : {}),
+            connectDeadline: new Date(createdAt.getTime() + connectTimeoutMs),
+            now: createdAt,
+          },
+          tx,
+        );
+        const completed = await probeStore.transition(
+          probe.id,
+          ["probing"],
+          "succeeded",
+          { now: createdAt, tx },
+        );
+        if (completed === null) {
+          throw new Error(`Workflow probe ${probe.id} changed before adoption`);
+        }
+      } else {
+        await allocationStore.createPending(
+          {
+            id: allocationId,
+            anchorRunId: request.anchorRunId,
+            tenantId: request.tenantId,
+            provisionerId: provisioner.id,
+            provisionerApiVersion: provisioner.apiVersion,
+            provisionerBindingFingerprint: provisioner.bindingFingerprint,
+            now: createdAt,
+          },
+          tx,
+        );
+      }
     });
 
+    if (adoptProbe) {
+      allocationRouter.disconnectAllocation({
+        allocationId: probe.id,
+        generation: probe.generation,
+      });
+    }
     return {
-      anchorRunId: args.anchorRunId,
+      anchorRunId: request.anchorRunId,
       deploymentAddress,
       allocationId,
       status: "pending",
     };
+  }
+
+  async function prepareProvisionedDeployment(
+    args: PrepareProvisionedWorkflowDeploymentArgs,
+  ): Promise<PreparedProvisionedWorkflowDeployment> {
+    if (args.sourceOfferingIds.length === 0) {
+      throw new WorkflowProvisioningError(
+        "invalid_source_offerings",
+        "Provisioned workflow deployment requires at least one catalog offering",
+      );
+    }
+    if (!args.sourceOfferingIds.includes(args.defaultSourceOfferingId)) {
+      throw new WorkflowProvisioningError(
+        "invalid_source_offerings",
+        "The default source offering must be present in the source offering chain",
+      );
+    }
+
+    const [sourceCheck, tenantPolicies] = await Promise.all([
+      resolveSourcesByOfferingIds(
+        db,
+        args.tenantId,
+        args.sourceOfferingIds,
+        credentialCipher,
+      ),
+      resolveTenantSidecarCapabilityPolicies(db, args.tenantId),
+    ]);
+    if (!sourceCheck.ok) {
+      throw new WorkflowProvisioningError(
+        "source_offering_unavailable",
+        `Catalog offering ${sourceCheck.offeringId} cannot be used by the deployment authority`,
+      );
+    }
+
+    const defaultSource = sourceCheck.sources.find(
+      (source) => source.id === args.defaultSourceOfferingId,
+    );
+    if (defaultSource === undefined) {
+      throw new WorkflowProvisioningError(
+        "invalid_source_offerings",
+        `Default offering ${args.defaultSourceOfferingId} was not resolved for deployment ${args.anchorRunId}`,
+      );
+    }
+    const probeProvisioner = selectProvisioner(
+      await probePlugins.selectProvisioner({
+        tenantPolicies,
+        probeRules: configuredProbeCapabilityRules,
+        workflowRules: [],
+      }),
+    );
+    const probeId = createAllocationId();
+    let probe = await probeStore.create({
+      id: probeId,
+      tenantId: args.tenantId,
+      definitionAssetId: args.definitionAssetId,
+      source: args.source,
+      entry: args.entry,
+      ...(args.pin !== undefined ? { pin: args.pin } : {}),
+      provisionerId: probeProvisioner.id,
+      provisionerApiVersion: probeProvisioner.apiVersion,
+      provisionerBindingFingerprint: probeProvisioner.bindingFingerprint,
+      now: now(),
+    });
+
+    try {
+      const token = createToken();
+      const sidecarId = createSidecarId();
+      const bound = await probeStore.bindSidecar({
+        probeId,
+        sidecarId,
+        tokenHashSha256: await sha256(token),
+        now: now(),
+      });
+      if (bound === null) {
+        throw new Error(
+          `Workflow probe ${probeId} changed before provisioning`,
+        );
+      }
+      probe = bound;
+      const allocationTarget: AllocatedSidecarTarget = {
+        allocationId: probe.id,
+        generation: probe.generation,
+      };
+      allocationRouter.fenceAllocation(probe.id, probe.generation);
+      const ensured = parseEnsureResult(
+        await probeProvisioner.ensure({
+          allocationId: probe.id,
+          generation: probe.generation,
+          tenantId: probe.tenantId,
+          // The provisioner contract treats this as an opaque owner id. A
+          // probe has no workflow run, so its own id is the honest owner.
+          anchorRunId: probe.id,
+          sidecarId,
+          token,
+          hubWebSocketUrl,
+        }),
+      );
+      if (ensured.kind === "rejected") {
+        throw new WorkflowProvisioningError(ensured.code, ensured.message);
+      }
+      const probing = await probeStore.markProbing({
+        probeId,
+        ...(ensured.externalRef !== undefined
+          ? { externalRef: ensured.externalRef }
+          : {}),
+        now: now(),
+      });
+      if (probing === null) {
+        throw new Error(`Workflow probe ${probeId} changed after provisioning`);
+      }
+      probe = probing;
+      await allocationRouter.waitForAllocatedSidecar(
+        allocationTarget,
+        connectTimeoutMs,
+      );
+
+      let resultRecorded = false;
+      const approved = await preparedDeployer.installAndApproveWorkflowSource({
+        source: args.source,
+        entry: args.entry,
+        ...(args.pin !== undefined ? { pin: args.pin } : {}),
+        definitionAssetId: args.definitionAssetId,
+        allocationTarget,
+        onProbeResult: async (result) => {
+          if (
+            (await probeStore.recordResult(probeId, result, now())) === null
+          ) {
+            throw new Error(
+              `Workflow probe ${probeId} changed before result persistence`,
+            );
+          }
+          resultRecorded = true;
+        },
+      });
+      if (!resultRecorded) {
+        throw new Error(
+          `Workflow probe ${probeId} completed without persisting its result`,
+        );
+      }
+      if (!approved.approval.ok) {
+        throw new Error(
+          "prepareProvisionedDeployment: install did not yield an approved definition",
+        );
+      }
+      const narrowed = {
+        ...approved,
+        approval: approved.approval,
+      };
+      const config = createProvisionedHarnessConfig({
+        tenantId: args.tenantId,
+        anchorRunId: args.anchorRunId,
+        deploymentDomain: args.deploymentDomain,
+        sessionId: args.sessionId,
+        sourceAuthorityPrincipalId: args.sourceAuthorityPrincipalId,
+        sources: sourceCheck.sources,
+        defaultSource: defaultSource.id,
+      });
+      buildInertProjectionStepSources({
+        projection: approved.projection,
+        config,
+        operatorApprovals: approved.approval.approvedGrants,
+      });
+      await buildReferencedWorkflowSourcePins({
+        projection: approved.projection,
+        config,
+        operatorApprovals: approved.approval.approvedGrants,
+      });
+      const deploymentProvisioner = selectProvisioner(
+        await deploymentPlugins.selectProvisioner({
+          tenantPolicies,
+          workflowRules:
+            approved.projection.sidecarPlacement?.capabilities ?? [],
+        }),
+      );
+      const adoptProbe =
+        deploymentProvisioner.id === probeProvisioner.id &&
+        deploymentProvisioner.apiVersion === probeProvisioner.apiVersion &&
+        deploymentProvisioner.bindingFingerprint ===
+          probeProvisioner.bindingFingerprint;
+      if (!adoptProbe) {
+        await releaseProbe(probe, "succeeded");
+      }
+      return await createDeployment({
+        request: args,
+        approved: narrowed,
+        provisioner: deploymentProvisioner,
+        probe,
+        adoptProbe,
+      });
+    } catch (error) {
+      try {
+        await releaseProbe(probe, "failed", {
+          code: "probe_failed",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      } catch {
+        // Preserve the primary probe/provisioning error. The durable
+        // `releasing` row remains discoverable for periodic cleanup.
+      }
+      throw error;
+    }
   }
 
   async function deployReadyAllocation(
@@ -367,35 +730,103 @@ export function createWorkflowAllocationService({
         `Default offering ${spec.defaultSourceOfferingId} was not resolved for allocation ${allocation.id}`,
       );
     }
-    const deploymentAddress = deriveRunAddress({
-      runId: allocation.anchorRunId,
-      domain: spec.deploymentDomain,
-    });
-    const config: HarnessConfig = {
-      sessionId: spec.sessionId,
-      agentId: deriveRunAgentId({ runId: allocation.anchorRunId }),
+    const config = createProvisionedHarnessConfig({
       tenantId: allocation.tenantId,
-      principalId: spec.sourceAuthorityPrincipalId,
-      agentAddress: deploymentAddress,
-      systemPrompt: "",
-      tools: [],
-      grants: [],
+      anchorRunId: allocation.anchorRunId,
+      deploymentDomain: spec.deploymentDomain,
+      sessionId: spec.sessionId,
+      sourceAuthorityPrincipalId: spec.sourceAuthorityPrincipalId,
       sources: resolved.sources,
       defaultSource: defaultSource.id,
-    };
+    });
 
     return preparedDeployer.deployPreparedCodeSourcedWorkflow({
       tenantId: allocation.tenantId,
       anchorRunId: allocation.anchorRunId,
       deploymentDomain: spec.deploymentDomain,
-      agentAddress: deploymentAddress,
+      agentAddress: config.agentAddress,
       source: bundle.source,
       approved,
       config,
       allocationTarget,
-      ...(credentialCipher !== undefined ? { credentialCipher } : {}),
+      credentialCipher,
     });
   }
 
-  return { prepareExclusiveDeployment, deployReadyAllocation };
+  function cleanupFinalStatus(probe: WorkflowProbe): "succeeded" | "failed" {
+    return probe.failureCode === null ? "succeeded" : "failed";
+  }
+
+  async function reconcileReleasingProbes(): Promise<void> {
+    const failures: unknown[] = [];
+    for (const probe of await probeStore.listReleasing()) {
+      try {
+        await releaseProbe(probe, cleanupFinalStatus(probe));
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    if (failures.length > 0) {
+      throw new AggregateError(
+        failures,
+        "Failed to clean up releasing workflow probes",
+      );
+    }
+  }
+
+  async function initialize(): Promise<void> {
+    const failures: unknown[] = [];
+    for (const probe of await probeStore.listActive()) {
+      let releasing: WorkflowProbe | null;
+      try {
+        releasing = await beginProbeRelease(
+          probe,
+          probe.status === "releasing"
+            ? undefined
+            : {
+                code: "probe_interrupted",
+                message: "Hub restarted before the workflow probe completed",
+              },
+        );
+      } catch (error) {
+        failures.push(error);
+        continue;
+      }
+      if (releasing === null) continue;
+      try {
+        await finishProbeRelease(releasing, cleanupFinalStatus(releasing));
+      } catch (error) {
+        logger.warn`Workflow probe ${releasing.id} cleanup remains pending after startup: ${error instanceof Error ? error.message : String(error)}`;
+      }
+    }
+    if (failures.length > 0) {
+      throw new AggregateError(
+        failures,
+        "Failed to mark interrupted workflow probes for cleanup",
+      );
+    }
+  }
+
+  return {
+    initialize,
+    reconcileReleasingProbes,
+    prepareProvisionedDeployment,
+    deployReadyAllocation,
+  };
+}
+
+function formatProvisionerMismatches(
+  mismatches: Readonly<Record<string, readonly SidecarCapabilityMismatch[]>>,
+): string {
+  const details = Object.entries(mismatches)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .flatMap(([provisionerId, failures]) =>
+      failures.map(
+        ({ capability, expected, actual }) =>
+          `${provisionerId}: ${capability} must be ${expected}, was ${actual}`,
+      ),
+    );
+  return details.length === 0
+    ? "No sidecar provisioners are registered"
+    : `No sidecar provisioner satisfies the deployment (${details.join("; ")})`;
 }

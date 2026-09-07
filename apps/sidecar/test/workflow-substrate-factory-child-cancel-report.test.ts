@@ -127,15 +127,20 @@ test("a cancel rejection during abort is reported and is not unhandled", async (
   try {
     const abort = new AbortController();
     abort.abort();
-    void runChild({
-      definition,
-      definitionRef: REF,
-      childRunId: "run-child-cancel-report",
-      input: { text: "event" },
-      parentRunId: "run-parent",
-      parentStepId: "section",
-      signal: abort.signal,
-    });
+    void runChild(
+      {
+        definition,
+        definitionRef: REF,
+        childRunId: "run-child-cancel-report",
+        input: { text: "event" },
+        parentRunId: "run-parent",
+        parentStepId: "section",
+        signal: abort.signal,
+        depth: 1,
+        maxChildSpawnDepth: 32,
+      },
+      () => undefined,
+    );
     await Bun.sleep(50);
     expect(cancelMock).toHaveBeenCalled();
     expect(reportErrorMock).toHaveBeenCalledTimes(1);
@@ -227,6 +232,8 @@ test("a signalChannel.stop rejection is reported and is not unhandled", async ()
         parentRunId: "run-parent",
         parentStepId: "section",
         signal: new AbortController().signal,
+        depth: 0,
+        maxChildSpawnDepth: 32,
       },
       () => undefined,
     );
@@ -314,6 +321,8 @@ test("a spawn-suspendable abort cancel rejection is reported and is not unhandle
         parentRunId: "run-parent",
         parentStepId: "section",
         signal: abort.signal,
+        depth: 0,
+        maxChildSpawnDepth: 32,
       },
       () => undefined,
     );

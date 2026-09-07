@@ -10,14 +10,10 @@ export {
   deployCodeSourcedWorkflow,
   type SessionService,
   type DeployWorkflowDefinitionResult,
-  type DeployWorkflowFromSourceParams,
   type DeployPreparedCodeSourcedWorkflowParams,
   type InstallAndApproveWorkflowSourceParams,
   type PreparedWorkflowDeployer,
   type DeployCodeSourcedWorkflowArgs,
-  deployAdoptedCodeSourcedWorkflow,
-  type AdoptingWorkflowDeployer,
-  type DeployAdoptedWorkflowFromSourceParams,
 } from "./session-service";
 export {
   installAndApproveWorkflowDefinition,
@@ -76,22 +72,27 @@ export {
   type HubSessionOrchestratorDeps,
   type HubSessionRouterFacade,
 } from "./hub-session-orchestrator";
-export { pushSourceUpdates, pushSourceUpdatesSubtree } from "./credential-push";
 export {
+  pushSourceUpdates,
+  pushSourceUpdatesSubtree,
+  pushCredentialRevoke,
+  pushCredentialReconcile,
+} from "./credential-push";
+export {
+  chooseFirstSidecarProvisioner,
   createSidecarPluginRegistry,
   createSidecarAllocationReconciler,
-  resolveEffectiveSidecarPlacement,
   type CreateSidecarPluginRegistryOpts,
   type DestroySidecarRequest,
   type DestroySidecarResult,
   type EnsureSidecarRequest,
   type EnsureSidecarResult,
-  type ResolveEffectiveSidecarPlacementOpts,
   type SidecarCredentialIdentity,
   type SidecarCredentialResolver,
   type SidecarOperationFailure,
   type SidecarPluginRegistry,
   type SidecarProvisioner,
+  type SidecarProvisionerChooser,
   type SidecarAllocationReconciler,
   type SidecarAllocationReconcilerDeps,
 } from "./sidecar-allocation";
@@ -99,10 +100,9 @@ export { ensureWorkflowDefinitionForAsset } from "./workflow-definition-ensure";
 export { workflowSourceAssetMountPath } from "./workflow-closure-resolution";
 export {
   createWorkflowAllocationService,
-  ExclusiveWorkflowPlacementError,
-  resolveWorkflowSidecarPlacement,
-  type PrepareExclusiveWorkflowDeploymentArgs,
-  type PreparedExclusiveWorkflowDeployment,
+  WorkflowProvisioningError,
+  type PrepareProvisionedWorkflowDeploymentArgs,
+  type PreparedProvisionedWorkflowDeployment,
   type WorkflowAllocationService,
   type WorkflowAllocationServiceDeps,
 } from "./workflow-allocation-service";

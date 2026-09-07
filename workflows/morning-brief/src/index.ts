@@ -74,10 +74,9 @@ export const MORNING_BRIEF_PENDING_SOURCES = ["Attio", "Vercel"] as const;
  * authoring-time config — it is vendored, read-only source for this
  * change — so the agent below is built directly against
  * `AgentDefinition`'s own type, which already carries the field. The
- * deploy path (`@intx/workflow-deploy`, `@intx/hub-sessions`,
- * `@corbits/folded-runs`) already resolves `toolPackagePins` into a
+ * native provisioned deploy path resolves `toolPackagePins` into a
  * tool closure at launch time; this is the declaration side of that
- * existing pipeline.
+ * pipeline.
  */
 export const MORNING_BRIEF_TOOL_PACKAGE_PINS: readonly ToolPackagePin[] = [
   { name: "@corbits/granola-tools", version: "0.0.4" },

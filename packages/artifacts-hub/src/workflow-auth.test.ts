@@ -2,7 +2,7 @@
 // sidecar token AND a resolvable run address are both required, and
 // either one missing rejects the call. Matches the fake-`db` convention
 // `packages/chat/test/chat-orchestrator.test.ts` uses for
-// `findFoldedRunByAddress` — the `where` filter is not simulated, the
+// `workflowRun.findFirst` — the `where` filter is not simulated, the
 // fake just returns whatever row the test configured.
 import { describe, expect, test } from "bun:test";
 
@@ -57,7 +57,7 @@ describe("createWorkflowRunAuthenticator", () => {
     ).toBeNull();
   });
 
-  test("rejects when the run address resolves to no folded run", async () => {
+  test("rejects when the run address resolves to no workflow_run", async () => {
     const authenticator = createWorkflowRunAuthenticator({
       db: fakeDb({ sidecarRow: { id: "sc_1" } }),
     });

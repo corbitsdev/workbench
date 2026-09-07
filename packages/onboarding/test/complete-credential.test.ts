@@ -63,6 +63,29 @@ function seedHandshake(method: string, path: string) {
   return { ...handshake, cookies: [] };
 }
 
+// `ensureDeployment` resolves a real (non-noop-pinned) workflow's deploy
+// source from the tenant's own catalog offerings (CL-7461). A test that
+// never seeds its own catalog (it stubs `seedCatalogFn` instead) still
+// needs one listable offering for the "assistant" workflow's own deploy
+// to succeed — this fixed single row is that.
+function fixedOfferingsResponse() {
+  return {
+    status: 200,
+    data: {
+      offerings: [
+        {
+          id: "off_1",
+          priority: 0,
+          modelId: "mdl_1",
+          providerId: "mpr_1",
+          origin: { tenantId: TENANT_ID, direct: true },
+        },
+      ],
+    },
+    cookies: [],
+  };
+}
+
 function principalsResponse() {
   return {
     status: 200,
@@ -149,24 +172,15 @@ function ownedCatalogModelsResponse(canonicalNames: string[]) {
 }
 
 describe("modelSourceFor", () => {
-  test("every other provider ignores a baseURLOverride and never calls the hub", async () => {
+  test("every other provider resolves to its curated default and never calls the hub", async () => {
     const api: ApiCall = (async () => {
       throw new Error("must not be called for a fixed curated provider");
     }) as ApiCall;
     expect(
-      await modelSourceFor(
-        api,
-        ["session=abc"],
-        TENANT_ID,
-        "anthropic",
-        "sk-ant",
-        "https://ignored",
-      ),
+      await modelSourceFor(api, ["session=abc"], TENANT_ID, "anthropic"),
     ).toEqual({
       provider: "anthropic",
       model: "claude-sonnet-5",
-      baseURL: "https://api.anthropic.com",
-      apiKey: "sk-ant",
     });
   });
 
@@ -188,12 +202,10 @@ describe("modelSourceFor", () => {
     };
 
     expect(
-      await modelSourceFor(api, ["session=abc"], TENANT_ID, "ollama", "ollama"),
+      await modelSourceFor(api, ["session=abc"], TENANT_ID, "ollama"),
     ).toEqual({
       provider: "openai-compatible",
       model: "llama3.2",
-      baseURL: "http://localhost:11434/v1",
-      apiKey: "ollama",
     });
   });
 
@@ -223,7 +235,6 @@ describe("modelSourceFor", () => {
       api,
       ["session=abc"],
       TENANT_ID,
-      "ollama",
       "ollama",
     );
     expect(result.model).toBe("llama3.2");
@@ -258,7 +269,6 @@ describe("modelSourceFor", () => {
       api,
       ["session=abc"],
       TENANT_ID,
-      "ollama",
       "ollama",
     );
     expect(result.model).toBe("gpt-oss:20b");
@@ -297,7 +307,6 @@ describe("modelSourceFor", () => {
       ["session=abc"],
       TENANT_ID,
       "ollama",
-      "ollama",
     );
     expect(result.model).toBe("llama3.2");
   });
@@ -334,40 +343,8 @@ describe("modelSourceFor", () => {
       ["session=abc"],
       TENANT_ID,
       "ollama",
-      "ollama",
     );
     expect(result.model).toBe("gpt-oss:20b");
-  });
-
-  test("ollama's baseURLOverride is normalized to the /v1 form", async () => {
-    const api: ApiCall = async (method, path) => {
-      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/models`) {
-        return resolvedCatalogResponse([
-          {
-            canonicalName: "qwen3.8:27b",
-            providerName: "ollama",
-            capabilities: ["plain-text"],
-          },
-        ]);
-      }
-      throw new Error(`unexpected call: ${method} ${path}`);
-    };
-
-    expect(
-      await modelSourceFor(
-        api,
-        ["session=abc"],
-        TENANT_ID,
-        "ollama",
-        "ollama",
-        "https://home-mac.example.ts.net",
-      ),
-    ).toEqual({
-      provider: "openai-compatible",
-      model: "qwen3.8:27b",
-      baseURL: "https://home-mac.example.ts.net/v1",
-      apiKey: "ollama",
-    });
   });
 });
 
@@ -751,12 +728,11 @@ describe("completeCredentialSetup", () => {
       }
       if (
         method === "GET" &&
-        (path === `/api/tenants/${TENANT_ID}/catalog/offerings` ||
-          path.startsWith(`/api/tenants/${TENANT_ID}/catalog/offerings?`))
+        path === `/api/tenants/${TENANT_ID}/catalog/resolved-offerings`
       ) {
         return {
           status: 200,
-          data: { data: [], nextCursor: null },
+          data: { offerings: [] },
           cookies: [],
         };
       }
@@ -807,6 +783,12 @@ describe("completeCredentialSetup", () => {
       }
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
         return tenantResponse();
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/resolved-offerings`
+      ) {
+        return fixedOfferingsResponse();
       }
       if (
         method === "GET" &&
@@ -1387,8 +1369,7 @@ describe("completeCredentialSetup", () => {
       }
       if (
         method === "GET" &&
-        (path === `/api/tenants/${TENANT_ID}/catalog/offerings` ||
-          path.startsWith(`/api/tenants/${TENANT_ID}/catalog/offerings?`))
+        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
       ) {
         return {
           status: 200,
@@ -1407,6 +1388,24 @@ describe("completeCredentialSetup", () => {
               updatedAt: TIMESTAMP,
             })),
             nextCursor: null,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/resolved-offerings`
+      ) {
+        return {
+          status: 200,
+          data: {
+            offerings: catalogOfferings.map((o) => ({
+              id: o.id,
+              modelId: o.modelId,
+              providerId: o.providerId,
+              priority: o.priority,
+              origin: { tenantId: TENANT_ID, direct: true },
+            })),
           },
           cookies: [],
         };
@@ -1791,6 +1790,12 @@ describe("ensureSeeded (the slow half)", () => {
     let deploymentCreatePosts = 0;
 
     const api: ApiCall = async (method, path, body) => {
+      if (
+        method === "GET" &&
+        path === `/api/tenants/${TENANT_ID}/catalog/resolved-offerings`
+      ) {
+        return fixedOfferingsResponse();
+      }
       if (
         method === "GET" &&
         path.startsWith(`/api/tenants/${TENANT_ID}/grants?`)

@@ -1,6 +1,7 @@
 import {
   createAllocationStateStore,
   createSidecarProvisioner,
+  sidecarCapabilityDeclarations,
   type AllocationStateStore,
 } from "@corbits/sandbox-sidecar";
 import type { SidecarProvisioner } from "@intx/hub-sessions";
@@ -16,8 +17,18 @@ const PROVISIONER_API_VERSION = 1 as const;
 
 export const PROCESS_PROVISIONER_ID = "process";
 
+/**
+ * Which allocations this instance owns. Interchange adopts a probe's
+ * allocation for the deployment when the two provisioners share id, api
+ * version and binding fingerprint; that adopt path does not deploy the
+ * workflow after the sidecar reconnects at the current pin, so the hub
+ * runs a separate probe instance whose fingerprint never matches.
+ */
+export type ProcessProvisionerRole = "deployment" | "probe";
+
 export type CreateProcessSidecarProvisionerOpts = {
   readonly config: ProcessProvisionerConfig;
+  readonly role: ProcessProvisionerRole;
   readonly runner?: SidecarProcessRunner;
   readonly store?: AllocationStateStore;
 };
@@ -44,7 +55,8 @@ export function createProcessSidecarProvisioner(
   return createSidecarProvisioner({
     id: PROCESS_PROVISIONER_ID,
     apiVersion: PROVISIONER_API_VERSION,
-    bindingFingerprint: `process:v1:${config.sidecarEntryPath}:${config.hubWebSocketUrl}`,
+    bindingFingerprint: `process:v1:${opts.role}:${config.sidecarEntryPath}:${config.hubWebSocketUrl}`,
+    capabilities: sidecarCapabilityDeclarations("process"),
     backend: createProcessBackend(runner, config),
     store,
   });
