@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 
 import { useEntitySearch } from "../src/use-entity-search";
 import type { UseEntitySearchResult } from "../src/use-entity-search";
+import type { SearchableEntity } from "../src/entity-search";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -26,7 +27,13 @@ const SOURCES = [
   { category: "agents", fetch: () => Promise.resolve(AGENTS) },
 ];
 
-function mount(initialQuery: string) {
+function mount(
+  initialQuery: string,
+  sources: readonly {
+    category: string;
+    fetch: () => Promise<readonly SearchableEntity[]>;
+  }[] = SOURCES,
+) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -41,7 +48,7 @@ function mount(initialQuery: string) {
       enabled: true,
       pageSize: 1,
       debounceMs: 5,
-      sources: SOURCES,
+      sources,
     });
     return null;
   }
@@ -71,10 +78,25 @@ describe("useEntitySearch", () => {
   });
 
   test("debounces the query before searching, then reports matches with the raw id never in the title", async () => {
-    const harness = mount("");
+    // Hold the workbenches fetch open so `loading: true` is observable for
+    // as long as the test needs it: the hook only drops `loading` once the
+    // search's fetches resolve, so a gated source makes that phase
+    // deterministic instead of racing the 5ms debounce on a loaded runner.
+    let releaseWorkbenches:
+      ((entities: readonly SearchableEntity[]) => void) | undefined;
+    const workbenches = new Promise<readonly SearchableEntity[]>((resolve) => {
+      releaseWorkbenches = (entities) => resolve(entities);
+    });
+    const harness = mount("", [
+      { category: "workbenches", fetch: () => workbenches },
+      ...SOURCES.slice(1),
+    ]);
     await harness.settle();
+    expect(harness.get().loading).toBe(false);
     await harness.setQuery("launch");
+    await harness.settle();
     expect(harness.get().loading).toBe(true);
+    releaseWorkbenches?.(WORKBENCHES);
     await harness.settle();
     expect(harness.get().loading).toBe(false);
     const titles = harness.get().results.map((result) => result.title);

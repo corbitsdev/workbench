@@ -8,9 +8,9 @@
 //
 // A turn's identity is the pair (warm section run, occurrence). The
 // workflow runtime names an occurrence's child run `turn__<n>` and
-// assigns `n` sequentially per section run; this store allocates the
-// same sequence per (workbench, agent) so a row's `childRunId` is the id
-// the reply message actually carries.
+// assigns `n` sequentially per section run; an agent's warm section run
+// can serve more than one workbench, so this store allocates the same
+// sequence per agent rather than restarting it in every room.
 import {
   AGENT_RUNTIME_SECTION_ID,
   agentRuntimeTurnRunId,
@@ -28,8 +28,9 @@ export interface AgentTurn {
   readonly tenantId: string;
   readonly workbenchId: string;
   readonly agentAddress: string;
-  /** The warm (agent, workbench) section run, when the dispatch reached
-   * far enough to learn it; null for a turn that never got that far. */
+  /** The warm per-agent section run, when the dispatch reached far enough
+   * to learn it; null for a turn that never got that far. One warm run
+   * exists per agent, each inbound message an occurrence. */
   readonly sectionRunId: string | null;
   /** `turn__<occurrence>` — what the reply message's `run_id` carries. */
   readonly childRunId: string;
@@ -56,13 +57,15 @@ export interface FinishAgentTurnInput {
   readonly turnId: string;
   readonly status: Exclude<AgentTurnStatus, "running">;
   readonly sectionRunId?: string;
+  /** The sidecar's actual child run id, when it reconciles an existing run. */
+  readonly childRunId?: string;
   readonly replyMessageId?: string;
   readonly error?: string;
 }
 
 export interface AgentTurnStore {
   /**
-   * Opens the next turn for (workbench, agent), allocating the
+   * Opens the next turn for an agent, allocating the
    * occurrence — and therefore the child run id — the section run will
    * use. Called before the execution plane is touched, so an in-flight
    * turn is on the projection from its first moment.
@@ -86,8 +89,8 @@ export interface AgentTurnStore {
    * newest-occurrence pick, which is the one documented fallback.
    *
    * `waitUntilFree` (below) is what `dispatchTurn` (`./workbench-service.ts`)
-   * calls before opening a second occurrence for the same (workbench,
-   * agent) — the one-in-flight-turn-per-workbench claim (`./turn-queue.ts`)
+   * calls before opening a second occurrence for the same (workbench, agent) — the
+   * one-in-flight-turn-per-workbench claim (`./turn-queue.ts`)
    * is a different, coarser guarantee (it only spans the fast dispatch
    * handoff, not the agent's actual reply) and on its own was NOT enough:
    * two messages sent to the same agent a few seconds apart could each win
@@ -109,6 +112,17 @@ export interface AgentTurnStore {
     readonly childRunId?: string;
   }): Promise<AgentTurn | undefined>;
   /**
+   * Resolves an occurrence from the child run id on an inbound sidecar event,
+   * regardless of whether the turn has already settled. This is agent-global:
+   * a closed occurrence in one workbench must never be mistaken for an
+   * unknown event and rebound to a running occurrence in another.
+   */
+  findTurnByChildRun(input: {
+    readonly tenantId: string;
+    readonly agentAddress: string;
+    readonly childRunId: string;
+  }): Promise<AgentTurn | undefined>;
+  /**
    * Every `running` turn for a workbench, across every agent — the
    * cancel endpoint's own read (CL-7201): a workbench can have more than
    * one agent turn in flight at once (`dispatchTurnBatch` fans out
@@ -127,7 +141,7 @@ export interface AgentTurnStore {
    * if none is running right now, otherwise when the current one closes
    * via `finishTurn`, or (backstop) once it ages past `AGENT_TURN_STALE_MS`
    * and this store's own staleness sweep would fail it anyway. `dispatchTurn`
-   * awaits this before opening a new occurrence for an agent, so two
+   * awaits this before opening a new occurrence for a workbench's agent, so two
    * messages to the SAME agent — one arriving mid-generation of the
    * other's reply — serialize into two turns in arrival order instead of
    * two simultaneously-`running` rows that `findRunningTurn` could only
@@ -185,6 +199,13 @@ export type AgentTurnStoreOptions = {
 
 function newTurnId(): string {
   return `turn_${crypto.randomUUID().replace(/-/g, "")}`;
+}
+
+function agentKey(input: {
+  readonly tenantId: string;
+  readonly agentAddress: string;
+}): string {
+  return `${input.tenantId} ${input.agentAddress}`;
 }
 
 function sectionKey(input: {
@@ -328,7 +349,7 @@ export function createInMemoryAgentTurnStore(
   return {
     async startTurn(input) {
       expireStaleTurns();
-      const key = sectionKey(input);
+      const key = agentKey(input);
       const occurrence = nextOccurrence.get(key) ?? 0;
       nextOccurrence.set(key, occurrence + 1);
       const childRunId = agentRuntimeTurnRunId(occurrence);
@@ -368,7 +389,7 @@ export function createInMemoryAgentTurnStore(
         workbenchId: existing.workbenchId,
         agentAddress: existing.agentAddress,
         sectionRunId: input.sectionRunId ?? existing.sectionRunId,
-        childRunId: existing.childRunId,
+        childRunId: input.childRunId ?? existing.childRunId,
         occurrence: existing.occurrence,
         requestMessageIds: existing.requestMessageIds,
         replyMessageId: input.replyMessageId ?? existing.replyMessageId,
@@ -384,6 +405,18 @@ export function createInMemoryAgentTurnStore(
 
     async findRunningTurn(input) {
       return runningTurn(input);
+    },
+
+    async findTurnByChildRun(input) {
+      expireStaleTurns();
+      return [...rows.values()]
+        .filter(
+          (turn) =>
+            turn.tenantId === input.tenantId &&
+            turn.agentAddress === input.agentAddress &&
+            turn.childRunId === input.childRunId,
+        )
+        .sort(compareTurnsNewestFirst)[0];
     },
 
     async findRunningTurns(input) {
@@ -475,7 +508,7 @@ function toAgentTurn(row: AgentTurnRow): AgentTurn {
 
 /**
  * The Postgres-backed projection. Occurrence allocation happens inside
- * the insert (`max(occurrence) + 1` over the section's own rows) with a
+ * the insert (`max(occurrence) + 1` over the agent's own rows) with a
  * unique constraint behind it, so two dispatches racing for one agent
  * cannot both claim the same child run id — one of them fails loudly
  * rather than two turns quietly sharing a run id.
@@ -488,7 +521,7 @@ export function createDrizzleAgentTurnStore<
 
   async function expireStaleTurns(scope: {
     readonly tenantId: string;
-    readonly workbenchId: string;
+    readonly workbenchId?: string;
     readonly agentAddress?: string;
   }): Promise<void> {
     const cutoff = new Date(now() - AGENT_TURN_STALE_MS);
@@ -502,7 +535,9 @@ export function createDrizzleAgentTurnStore<
       .where(
         and(
           eq(agentTurns.tenantId, scope.tenantId),
-          eq(agentTurns.workbenchId, scope.workbenchId),
+          ...(scope.workbenchId !== undefined
+            ? [eq(agentTurns.workbenchId, scope.workbenchId)]
+            : []),
           ...(scope.agentAddress !== undefined
             ? [eq(agentTurns.agentAddress, scope.agentAddress)]
             : []),
@@ -538,14 +573,37 @@ export function createDrizzleAgentTurnStore<
     return row === undefined ? undefined : toAgentTurn(row as AgentTurnRow);
   }
 
+  async function resolveTurnByChildRun(input: {
+    readonly tenantId: string;
+    readonly agentAddress: string;
+    readonly childRunId: string;
+  }): Promise<AgentTurn | undefined> {
+    await expireStaleTurns(input);
+    const [row] = await db
+      .select()
+      .from(agentTurns)
+      .where(
+        and(
+          eq(agentTurns.tenantId, input.tenantId),
+          eq(agentTurns.agentAddress, input.agentAddress),
+          eq(agentTurns.childRunId, input.childRunId),
+        ),
+      )
+      .orderBy(desc(agentTurns.startedAt), desc(agentTurns.occurrence))
+      .limit(1);
+    return row === undefined ? undefined : toAgentTurn(row as AgentTurnRow);
+  }
+
   return {
     async startTurn(input) {
-      await expireStaleTurns(input);
+      await expireStaleTurns({
+        tenantId: input.tenantId,
+        agentAddress: input.agentAddress,
+      });
       const occurrenceSql = sql<number>`(
         SELECT COALESCE(MAX(${agentTurns.occurrence}) + 1, 0)
         FROM ${agentTurns}
         WHERE ${agentTurns.tenantId} = ${input.tenantId}
-          AND ${agentTurns.workbenchId} = ${input.workbenchId}
           AND ${agentTurns.agentAddress} = ${input.agentAddress}
       )`;
       const [row] = await db
@@ -582,6 +640,9 @@ export function createDrizzleAgentTurnStore<
           ...(input.sectionRunId !== undefined
             ? { sectionRunId: input.sectionRunId }
             : {}),
+          ...(input.childRunId !== undefined
+            ? { childRunId: input.childRunId }
+            : {}),
           ...(input.replyMessageId !== undefined
             ? { replyMessageId: input.replyMessageId }
             : {}),
@@ -603,6 +664,10 @@ export function createDrizzleAgentTurnStore<
 
     async findRunningTurn(input) {
       return resolveRunningTurn(input);
+    },
+
+    async findTurnByChildRun(input) {
+      return resolveTurnByChildRun(input);
     },
 
     async findRunningTurns(input) {

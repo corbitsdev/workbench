@@ -141,12 +141,8 @@ async function renderPickerWithToaster(): Promise<void> {
   }
 }
 
-function justStartTalkingCard(): HTMLButtonElement | undefined {
-  return Array.from(
-    container?.querySelectorAll<HTMLButtonElement>(
-      "button.new-workbench-prefab-card",
-    ) ?? [],
-  ).find((card) => card.textContent?.includes("Just start talking"));
+function emptyChannelButton(): HTMLButtonElement | null {
+  return container?.querySelector(".new-workbench-empty-channel") ?? null;
 }
 
 describe("the one toast system (CL-6372)", () => {
@@ -163,7 +159,7 @@ describe("the one toast system (CL-6372)", () => {
     await renderPickerWithToaster();
 
     await act(async () => {
-      justStartTalkingCard()?.dispatchEvent(
+      emptyChannelButton()?.dispatchEvent(
         new MouseEvent("click", { bubbles: true }),
       );
     });
@@ -213,7 +209,7 @@ describe("the one toast system (CL-6372)", () => {
     await renderPickerWithToaster();
 
     await act(async () => {
-      justStartTalkingCard()?.dispatchEvent(
+      emptyChannelButton()?.dispatchEvent(
         new MouseEvent("click", { bubbles: true }),
       );
     });
@@ -231,7 +227,7 @@ describe("the one toast system (CL-6372)", () => {
     await renderPickerWithToaster();
 
     await act(async () => {
-      justStartTalkingCard()?.dispatchEvent(
+      emptyChannelButton()?.dispatchEvent(
         new MouseEvent("click", { bubbles: true }),
       );
     });
