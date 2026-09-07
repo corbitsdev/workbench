@@ -1,6 +1,6 @@
 {
-  "id": "b673a276-410f-4e34-99f9-b563273d63e1",
-  "prevId": "c5723916-35b0-432b-a488-4f54f49ad26f",
+  "id": "29cab816-ceea-4770-a010-9e3a1b28d2dc",
+  "prevId": "bdac2dcb-57fe-4ec7-a524-42a2bbe2bc0d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -521,6 +521,96 @@
           "name": "principal_tenant_id_kind_ref_id_unique",
           "nullsNotDistinct": false,
           "columns": ["tenant_id", "kind", "ref_id"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.principal_key": {
+      "name": "principal_key",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "principal_id": {
+          "name": "principal_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_key": {
+          "name": "public_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "private_key": {
+          "name": "private_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "principal_key_one_active": {
+          "name": "principal_key_one_active",
+          "columns": [
+            {
+              "expression": "principal_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"principal_key\".\"status\" = 'active'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "principal_key_principal_id_principal_id_fk": {
+          "name": "principal_key_principal_id_principal_id_fk",
+          "tableFrom": "principal_key",
+          "tableTo": "principal",
+          "columnsFrom": ["principal_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "principal_key_public_key_unique": {
+          "name": "principal_key_public_key_unique",
+          "nullsNotDistinct": false,
+          "columns": ["public_key"]
         }
       },
       "policies": {},
@@ -2299,13 +2389,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "credential_scope": {
-          "name": "credential_scope",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'shared'"
-        },
         "status": {
           "name": "status",
           "type": "text",
@@ -2345,12 +2428,7 @@
         }
       },
       "policies": {},
-      "checkConstraints": {
-        "sidecar_credential_scope_check": {
-          "name": "sidecar_credential_scope_check",
-          "value": "\"sidecar\".\"credential_scope\" in ('shared', 'allocated')"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.sidecar_allocation": {
@@ -3287,6 +3365,19 @@
           "notNull": true,
           "default": "'1'"
         },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'authored'"
+        },
+        "schedule_claimed_minute": {
+          "name": "schedule_claimed_minute",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "status": {
           "name": "status",
           "type": "text",
@@ -3425,6 +3516,12 @@
         },
         "grant_snapshot": {
           "name": "grant_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "wire_projection": {
+          "name": "wire_projection",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
@@ -4083,6 +4180,204 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.workflow_probe": {
+      "name": "workflow_probe",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "definition_asset_id": {
+          "name": "definition_asset_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entry": {
+          "name": "entry",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pin": {
+          "name": "pin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "provisioner_id": {
+          "name": "provisioner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provisioner_api_version": {
+          "name": "provisioner_api_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provisioner_binding_fingerprint": {
+          "name": "provisioner_binding_fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sidecar_id": {
+          "name": "sidecar_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "external_ref": {
+          "name": "external_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "result": {
+          "name": "result",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failure_code": {
+          "name": "failure_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failure_message": {
+          "name": "failure_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "workflow_probe_active_idx": {
+          "name": "workflow_probe_active_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"workflow_probe\".\"status\" in ('pending', 'provisioning', 'probing', 'releasing')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "workflow_probe_sidecar_idx": {
+          "name": "workflow_probe_sidecar_idx",
+          "columns": [
+            {
+              "expression": "sidecar_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "workflow_probe_tenant_id_tenant_id_fk": {
+          "name": "workflow_probe_tenant_id_tenant_id_fk",
+          "tableFrom": "workflow_probe",
+          "tableTo": "tenant",
+          "columnsFrom": ["tenant_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "workflow_probe_definition_asset_id_asset_id_fk": {
+          "name": "workflow_probe_definition_asset_id_asset_id_fk",
+          "tableFrom": "workflow_probe",
+          "tableTo": "asset",
+          "columnsFrom": ["definition_asset_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "workflow_probe_sidecar_id_sidecar_id_fk": {
+          "name": "workflow_probe_sidecar_id_sidecar_id_fk",
+          "tableFrom": "workflow_probe",
+          "tableTo": "sidecar",
+          "columnsFrom": ["sidecar_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "workflow_probe_status_check": {
+          "name": "workflow_probe_status_check",
+          "value": "\"workflow_probe\".\"status\" in ('pending', 'provisioning', 'probing', 'releasing', 'succeeded', 'failed')"
+        },
+        "workflow_probe_succeeded_result_check": {
+          "name": "workflow_probe_succeeded_result_check",
+          "value": "\"workflow_probe\".\"status\" <> 'succeeded' or \"workflow_probe\".\"result\" is not null"
+        },
+        "workflow_probe_generation_check": {
+          "name": "workflow_probe_generation_check",
+          "value": "\"workflow_probe\".\"generation\" >= 0"
+        }
+      },
       "isRLSEnabled": false
     }
   },

@@ -16,7 +16,9 @@
         "@corbits/run-scope": "workspace:*",
         "@corbits/webhook-triggers": "workspace:*",
         "@eslint/js": "^10.0.0",
+        "@intx/crypto": "workspace:*",
         "@intx/db": "workspace:*",
+        "@intx/log": "workspace:*",
         "@intx/mime": "0.3.0",
         "@intx/types": "0.3.0",
         "@types/bun": "1.3.14",
@@ -1527,6 +1529,7 @@
       "dependencies": {
         "@intx/authz": "0.3.0",
         "@intx/crypto": "0.3.0",
+        "@intx/hub-common": "0.3.0",
         "@intx/log": "0.3.0",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
@@ -1604,6 +1607,17 @@
         "@types/ssri": "catalog:",
         "openapi-types": "^12.1.3",
         "tar": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "vendor/intx/hub-common": {
+      "name": "@intx/hub-common",
+      "version": "0.3.0",
+      "dependencies": {
+        "@intx/types": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -2390,7 +2404,7 @@
 
     "@intx/hub-api": ["@intx/hub-api@workspace:vendor/intx/hub-api"],
 
-    "@intx/hub-common": ["@intx/hub-common@0.3.0", "", { "dependencies": { "@intx/types": "0.3.0" } }, "sha512-dA8pTmBTu1JHGd3rGJrMsRWrai4GBBNnPxpZFFtXwQPzgL290lx2R+9BpRo2apdKbmgd+KOVshLvOdcUhAqghw=="],
+    "@intx/hub-common": ["@intx/hub-common@workspace:vendor/intx/hub-common"],
 
     "@intx/hub-sessions": ["@intx/hub-sessions@workspace:vendor/intx/hub-sessions"],
 

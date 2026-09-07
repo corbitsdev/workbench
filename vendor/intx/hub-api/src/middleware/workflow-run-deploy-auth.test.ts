@@ -16,8 +16,14 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 
-import { createDB, schema, type DB } from "@intx/db";
+import {
+  createDB,
+  createPrincipalKeyStore,
+  schema,
+  type DB,
+} from "@intx/db";
 import { createInMemoryGrantStore } from "@intx/authz";
+import { createNoopCredentialCipher } from "@intx/crypto";
 import { generateId } from "@intx/hub-common";
 import type {
   PrepareProvisionedWorkflowDeploymentArgs,
@@ -204,6 +210,10 @@ describeIfDb("workflow deploy: bearer mirror of the session deploy route", () =>
       "/api/tenants/:tenantId/workflows",
       createWorkflowRoutes({
         db: db.db,
+        principalKeyStore: createPrincipalKeyStore({
+          db: db.db,
+          cipher: createNoopCredentialCipher(),
+        }),
         workflowAllocationService: fakeAllocationService(),
         sidecarRouter: {} as never,
         repoStore: {} as never,
@@ -283,6 +293,10 @@ describeIfDb("workflow deploy: bearer mirror of the session deploy route", () =>
       "/api/tenants/:tenantId/workflows",
       createWorkflowRoutes({
         db: db.db,
+        principalKeyStore: createPrincipalKeyStore({
+          db: db.db,
+          cipher: createNoopCredentialCipher(),
+        }),
         workflowAllocationService: fakeAllocationService(),
         sidecarRouter: {} as never,
         repoStore: {} as never,
