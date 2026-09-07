@@ -155,8 +155,8 @@ exist yet, add it in react-ui, not locally.
 
 **Avatar identity** is the one deliberate color exception. A person without
 an explicit image receives deterministic initials from the approved pastel
-palette. `@corbits/chat-ui` owns the finite Tailwind background/text class
-map and resolves a principal to one class pair; consumers never use CSS
+palette. `@corbits/chat-ui` owns the finite Tailwind color palette and
+resolves a principal to one class pair; consumers never use CSS
 variables or inline color styles. Agents use `CorbitAvatar`: a circular
 field with a dark lower visor and sensor glint. The two forms stay distinct
 at a glance in every collaborative surface.
