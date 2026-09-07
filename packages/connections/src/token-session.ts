@@ -38,7 +38,10 @@ export type RefreshedTokens = {
   readonly secret: string;
   /** Omitted when the grant carried the prior refresh token forward. */
   readonly refreshSecret?: string;
-  readonly expiresAt: Date;
+  /** `null` when the grant stated no lifetime: the row is stored
+   * non-due (the vendored oauth-core stance — missing expiry
+   * information is never treated as a short timer). */
+  readonly expiresAt: Date | null;
 };
 
 export type RefreshGrant = (
@@ -88,8 +91,8 @@ export function createCredentialTokenSession(
     ReturnType<typeof createTokenSession<BaseTokens, string>>
   >();
 
-  function sessionFor(credential: CredentialTokenRow) {
-    const existing = sessions.get(credential.id);
+  function sessionFor(credentialId: string) {
+    const existing = sessions.get(credentialId);
     if (existing !== undefined) return existing;
     const session = createTokenSession<BaseTokens, string>({
       skewMs: skewLeadMs,
@@ -118,24 +121,31 @@ export function createCredentialTokenSession(
           ...(tokens.refresh !== undefined && changedRefresh
             ? { refreshSecret: tokens.refresh }
             : {}),
-          expiresAt: new Date(tokens.expiresAt ?? now() + skewLeadMs),
+          expiresAt:
+            tokens.expiresAt === undefined ? null : new Date(tokens.expiresAt),
         });
       },
-      refreshTokens: async (refreshToken, at) => {
-        // The grant decides how to use the refresh token; the session
-        // only guarantees it runs at most once per expiry window.
-        void refreshToken;
-        void at;
-        const refreshed = await deps.refresh(credential);
+      refreshTokens: async (refreshToken) => {
+        // The grant must see the row AS PERSISTED NOW — a rotating server
+        // invalidates the prior refresh secret at every grant, so a row
+        // captured earlier would exchange a dead secret. Reload it fresh;
+        // only the id comes from the cached session.
+        const current = await deps.loadProfile(credentialId);
+        if (current === null || current.refreshSecret === null) {
+          throw new Error(`credential ${credentialId} lost its refresh secret`);
+        }
+        const refreshed = await deps.refresh(current);
         return {
           access: refreshed.secret,
           refresh: refreshed.refreshSecret ?? refreshToken,
-          expiresAt: refreshed.expiresAt.getTime(),
+          ...(refreshed.expiresAt === null
+            ? {}
+            : { expiresAt: refreshed.expiresAt.getTime() }),
         };
       },
       toAccess: (tokens) => tokens.access,
     });
-    sessions.set(credential.id, session);
+    sessions.set(credentialId, session);
     return session;
   }
 
@@ -166,7 +176,10 @@ export function createCredentialTokenSession(
         };
       }
       try {
-        const secret = await sessionFor(row).getValidToken(credentialId, now());
+        const secret = await sessionFor(credentialId).getValidToken(
+          credentialId,
+          now(),
+        );
         return { ok: true, secret, refreshed: secret !== row.secret };
       } catch (cause) {
         reportError(cause, {

@@ -147,10 +147,52 @@ describe("createServingRefresh", () => {
     expect(second.ok).toBe(false);
     expect(h.calls.marked).toEqual(["cred_1"]);
   });
+
+  test("a grant that states no expires_in persists a NULL expiry — the row never re-enters the due set", async () => {
+    const h = harness(
+      row({ expiresAt: new Date(NOW + 1000) }),
+      async (args) => ({
+        accessToken: `fresh:${args.refreshToken}`,
+        refreshToken: "rotated-refresh",
+        // no expiresIn: provider stated no lifetime
+      }),
+    );
+    const result = await h.refresh(servingOf(h));
+    expect(result).toEqual({ ok: true });
+    expect(h.row()?.expiresAt).toBeNull();
+    // Subsequent servings see a non-due row: no further grant, no push.
+    const again = await h.refresh(servingOf(h));
+    expect(again).toEqual({ ok: true });
+    expect(h.calls.refreshedTokens).toHaveLength(1);
+    expect(h.calls.pushes).toEqual(["ten_1"]);
+  });
+
+  test("a lost apply race (row claimed elsewhere) suppresses the push without erroring", async () => {
+    const d = store(row({ expiresAt: new Date(NOW + 1000) }));
+    d.store.applyRefreshedTokens = async () => false;
+    let grants = 0;
+    const refresh = createServingRefresh({
+      store: d.store,
+      hubUrl: "https://hub.example",
+      grant: async () => {
+        grants += 1;
+        return { accessToken: "fresh", expiresIn: 3600 };
+      },
+      now: () => NOW,
+    });
+    const result = await refresh(servingOf(d));
+    expect(result).toEqual({ ok: true });
+    expect(grants).toBe(1);
+    expect(d.calls.pushes).toEqual([]);
+  });
 });
 
 function servingOf(
-  h: ReturnType<typeof harness>,
+  h: {
+    row: () => NonNullable<
+      Awaited<ReturnType<ServingRefreshStore["loadRow"]>>
+    > | null;
+  },
   status: string = "active",
 ): Parameters<ReturnType<typeof createServingRefresh>>[0] {
   const current = h.row();

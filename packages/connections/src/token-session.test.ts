@@ -134,6 +134,59 @@ describe("createCredentialTokenSession", () => {
     expect(d.updates[0]?.refreshSecret).toBe("refresh-2");
   });
 
+  test("each grant call sees the CURRENT persisted row (rotated refresh secret)", async () => {
+    // A rotating server: every refresh invalidates the prior refresh
+    // token and mints the next one. The grant must therefore receive the
+    // row AS PERSISTED NOW, not the row captured when the session was
+    // first built — a stale capture sends a dead refresh secret on the
+    // second refresh and the provider answers invalid_grant.
+    let current: CredentialTokenRow = row();
+    let generation = 0;
+    const grantRows: CredentialTokenRow[] = [];
+    const session = createCredentialTokenSession({
+      loadProfile: async () => current,
+      updateTokens: async (_id, tokens) => {
+        current = {
+          ...current,
+          secret: tokens.secret,
+          refreshSecret: tokens.refreshSecret ?? current.refreshSecret,
+          expiresAt: tokens.expiresAt,
+        };
+      },
+      refresh: async (seen) => {
+        generation += 1;
+        grantRows.push(seen);
+        return {
+          secret: `rotated-access-${generation}`,
+          refreshSecret: `refresh-${generation + 1}`,
+          expiresAt: new Date(T0 + generation * 60 * 60 * 1000),
+        };
+      },
+      now: () => T0,
+    });
+
+    // First expiry: refreshes against the original pair.
+    current = { ...current, expiresAt: new Date(T0 + 1000) };
+    const first = await session.getValidToken("cred_1");
+    expect(first).toEqual({
+      ok: true,
+      secret: "rotated-access-1",
+      refreshed: true,
+    });
+    // Second expiry: the stored refresh secret is now "refresh-2"; the
+    // second grant call must see exactly that.
+    current = { ...current, expiresAt: new Date(T0 + 1000) };
+    const second = await session.getValidToken("cred_1");
+    expect(second).toEqual({
+      ok: true,
+      secret: "rotated-access-2",
+      refreshed: true,
+    });
+    expect(grantRows).toHaveLength(2);
+    expect(grantRows[1]?.refreshSecret).toBe("refresh-2");
+    expect(grantRows[1]?.secret).toBe("rotated-access-1");
+  });
+
   test("reports re-auth-required when the refresh grant fails and persists nothing", async () => {
     const d = deps({
       now: () => T0 + 10 * 60 * 1000 - 1000,

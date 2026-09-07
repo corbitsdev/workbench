@@ -1,17 +1,22 @@
 // Serving-time credential refresh for inference `oauth_token` credentials
 // (CL-7505).
 //
-// The hub's only refresh before this was the background MCP expiry sweep;
-// an expiring inference credential went stale mid-use. The vendored
-// material-resolution seam (`@intx/db`'s `buildSource`, threaded through
-// `resolveModelSources` / `resolveInstanceModelSources` /
-// `resolveDefinitionSources` as the recorded CL-7505 delta) now offers
-// every served `oauth_token` credential to the `ServingRefresh` hook built
-// here: the connections token session (`@corbits/connections`'s
-// `createCredentialTokenSession`, over the vendored `@corbits/oauth-core`)
-// refreshes the row in place — coalesced, skew-aware — and the refreshed
-// material reaches running deployments through the existing
+// The live serving-time trigger is the chat platform's `sendMail` choke
+// point: ahead of every send, `createTenantServingRefresh` refreshes each
+// due `oauth_token` credential in the tenant — via the connections token
+// session (`@corbits/connections`'s `createCredentialTokenSession`, over
+// the vendored `@corbits/oauth-core`), coalesced and skew-aware — and the
+// refreshed material reaches running deployments through the existing
 // `credentials-updated` push (`pushSourceUpdates` → `sendCredentialsUpdate`).
+// The existing MCP expiry sweep keeps running as the background backstop
+// and reconnect-nudge path.
+//
+// The vendored material-resolution seam (`@intx/db`'s `buildSource`,
+// threaded through `resolveModelSources` / `resolveInstanceModelSources` /
+// `resolveDefinitionSources` / the hub-sessions push path as the recorded
+// CL-7505 delta) also accepts this hook, but no production caller supplies
+// it yet — it is reserved for launch-time resolution on the CL-7505
+// umbrella; do not cite it as a live trigger.
 //
 // On a failed refresh the credential is marked `status: "error"` — the
 // Connections card reads any non-`active` status as needs-attention — and
@@ -161,6 +166,7 @@ export function createServingRefresh(deps: ServingRefreshDeps): ServingRefresh {
     });
 
   const sessions = new Map<string, ReturnType<typeof buildSession>>();
+  let lastApplyWon = true;
 
   function buildSession() {
     return createCredentialTokenSession({
@@ -185,7 +191,14 @@ export function createServingRefresh(deps: ServingRefreshDeps): ServingRefresh {
         } satisfies CredentialTokenRow;
       },
       updateTokens: async (credentialId, tokens) => {
-        await deps.store.applyRefreshedTokens(credentialId, tokens);
+        // False = another writer claimed the row (claimed-elsewhere): a
+        // lost race, not an error — skip the follow-up push and let the
+        // next resolution re-read whatever was persisted.
+        const applied = await deps.store.applyRefreshedTokens(
+          credentialId,
+          tokens,
+        );
+        lastApplyWon = applied;
       },
       refresh: async (row) => {
         const full = await deps.store.loadRow(row.id);
@@ -221,11 +234,13 @@ export function createServingRefresh(deps: ServingRefreshDeps): ServingRefresh {
           ...(refreshed.refreshToken === undefined
             ? {}
             : { refreshSecret: refreshed.refreshToken }),
-          expiresAt: new Date(
-            refreshed.expiresIn !== undefined
-              ? now() + refreshed.expiresIn * 1000
-              : now() + SKEW_LEAD_MS * 2,
-          ),
+          // No `expires_in` stated: persist a NULL expiry — non-due, per
+          // the vendored oauth-core stance. Never a short artificial
+          // timer that would re-refresh on every dial.
+          expiresAt:
+            refreshed.expiresIn === undefined
+              ? null
+              : new Date(now() + refreshed.expiresIn * 1000),
         };
       },
     });
@@ -248,6 +263,7 @@ export function createServingRefresh(deps: ServingRefreshDeps): ServingRefresh {
     if (serving.expiresAt === null) return { ok: true };
     if (serving.expiresAt.getTime() - SKEW_LEAD_MS > now()) return { ok: true };
 
+    lastApplyWon = true;
     let session = sessions.get(serving.id);
     if (session === undefined) {
       session = buildSession();
@@ -255,9 +271,11 @@ export function createServingRefresh(deps: ServingRefreshDeps): ServingRefresh {
     }
     const result = await session.getValidToken(serving.id);
     if (result.ok) {
-      if (result.refreshed) {
+      if (result.refreshed && lastApplyWon) {
         // Deliver the fresh material to every running instance in the
-        // tenant via the existing credentials-updated push.
+        // tenant via the existing credentials-updated push. A lost
+        // apply race (another writer claimed the row) already persisted
+        // someone else's tokens — skip the redundant push.
         await deps.store.pushUpdates(serving.tenantId);
       }
       return { ok: true };
@@ -310,6 +328,9 @@ export function createDrizzleServingRefreshStore(
               tokens.refreshSecret,
               credentialAad(credentialId, "refreshSecret"),
             );
+      // Only an `active` row is updated: a row a racing writer already
+      // claimed as expired/re-auth-required must not be resurrected with
+      // fresh tokens — the false return is the caller's lost-race signal.
       const updated = await db
         .update(credential)
         .set({
@@ -320,7 +341,9 @@ export function createDrizzleServingRefreshStore(
           expiresAt: tokens.expiresAt,
           updatedAt: now,
         })
-        .where(eq(credential.id, credentialId))
+        .where(
+          and(eq(credential.id, credentialId), eq(credential.status, "active")),
+        )
         .returning({ id: credential.id });
       return updated.length > 0;
     },
