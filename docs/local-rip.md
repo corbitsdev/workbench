@@ -39,8 +39,8 @@ bun run dev
 `bun run dev` and its boot-time seeding created — skip it on a
 genuinely fresh checkout. `bun run dev` validates `.env`, confirms
 `DATABASE_URL` is reachable, applies pending migrations, builds the web
-UI, seeds the administrator account, and starts the hub, one sidecar, and
-the web dev server together — the hub then provisions and seeds the root
+UI, seeds the administrator account, and starts the hub and the web
+build — the hub then provisions and seeds the root
 tenant itself once it is serving (see
 [README.md](../README.md#running-locally) for exactly what it checks).
 Leave `ANTHROPIC_API_KEY` unset in `.env` for

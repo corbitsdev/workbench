@@ -67,9 +67,9 @@ degradation story.
 `bun run dev` validates your `.env` (reporting every missing or malformed
 value at once), verifies the database in `DATABASE_URL` is reachable and
 actually speaks Postgres, applies any pending platform migrations, builds
-the web UI if it has not been built yet, and starts the hub and one sidecar
-together. Every required setting lives in `.env.example` with its expected
-shape, and the administrator account (`HUB_ADMIN_EMAIL` / `HUB_ADMIN_PASSWORD`,
+the web UI if it has not been built yet, and starts the hub. The hub
+provisions authenticated sidecars on demand using the configured backend.
+Every required setting lives in `.env.example` with its expected shape, and the administrator account (`HUB_ADMIN_EMAIL` / `HUB_ADMIN_PASSWORD`,
 defaulting to alice@example.com / password123 when unset)
 is seeded so you can sign in immediately.
 
@@ -112,7 +112,8 @@ bun run reset
 ```
 
 `bun run reset` drops the platform database schema and removes the hub's
-and the dev sidecar's on-disk asset directories — everything boot-time
+on-disk asset directory (which also holds provisioned sidecar state) —
+everything boot-time
 seeding and onboarding created. Nothing is re-seeded until the next `bun
 run dev` — that recreates the schema and, once the hub is serving again,
 reprovisions and re-seeds the root tenant from scratch, landing you at a

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { QueryClient } from "@tanstack/react-query";
 import {
   CODE_REVIEW_TEMPLATE,
@@ -8,6 +8,7 @@ import {
 import {
   createWorkbenchFromTemplate,
   NEW_WORKBENCH_TITLE,
+  WorkbenchPostCreateError,
 } from "./instant-agent-create";
 
 function newQueryClient(): QueryClient {
@@ -144,6 +145,172 @@ describe("createWorkbenchFromTemplate", () => {
     expect(body.reuseExisting).toBeUndefined();
     expect(body.name).toBe(NEW_WORKBENCH_TITLE);
     expect(calls.some((call) => call.path.includes("/invite"))).toBe(false);
+  });
+
+  test("a blank intent carries selected agents in its pre-invite message", async () => {
+    const calls = stubFetch((path) => {
+      if (path.includes("/workflows/definitions")) {
+        return json({ data: [assistantDefinitionWire], nextCursor: null });
+      }
+      if (path.endsWith("/chat/workbenches")) {
+        return json({
+          id: "chan-1",
+          title: NEW_WORKBENCH_TITLE,
+          kind: "workbench",
+          pinned: false,
+          participants: [],
+        });
+      }
+      if (path.endsWith("/chat/workbenches/chan-1/messages")) {
+        return json({ id: "msg-1", createdAt: "2026-01-01T00:00:00.000Z" });
+      }
+      if (path.endsWith("/chat/workbenches/chan-1/settings")) {
+        return json({
+          id: "chan-1",
+          title: "Research our next partner",
+          kind: "workbench",
+          pinned: false,
+          participants: [],
+          settings: {},
+          contextWindow: { value: 0, source: "inherit" },
+        });
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    });
+
+    await createWorkbenchFromTemplate(
+      "tnt_1",
+      "blank",
+      () => undefined,
+      newQueryClient(),
+      "Research our next partner",
+      ["def-scout", "def-scout", "def-quill"],
+    );
+
+    const createCallIndex = calls.findIndex((call) =>
+      call.path.endsWith("/chat/workbenches"),
+    );
+    const messageCallIndex = calls.findIndex((call) =>
+      call.path.endsWith("/chat/workbenches/chan-1/messages"),
+    );
+    const messageCall = calls[messageCallIndex];
+    expect(createCallIndex).toBeLessThan(messageCallIndex);
+    expect(JSON.parse(String(messageCall?.init?.body))).toEqual({
+      parts: [{ kind: "text", text: "Research our next partner" }],
+      invite: [
+        { kind: "agent", definitionId: "def-scout" },
+        { kind: "agent", definitionId: "def-quill" },
+      ],
+    });
+    expect(calls.some((call) => call.path.endsWith("/invite"))).toBe(false);
+  });
+
+  test("opens the new room while its sidebar refresh is still in flight", async () => {
+    const navigated: string[] = [];
+    let finishRefresh: (() => void) | undefined;
+    const refresh = new Promise<void>((resolve) => {
+      finishRefresh = resolve;
+    });
+    const queryClient = newQueryClient();
+    const invalidate = spyOn(
+      queryClient,
+      "invalidateQueries",
+    ).mockImplementation(() => refresh);
+    stubFetch((path) => {
+      if (path.includes("/workflows/definitions")) {
+        return json({ data: [assistantDefinitionWire], nextCursor: null });
+      }
+      if (path.endsWith("/chat/workbenches")) {
+        return json({
+          id: "chan-ready-now",
+          title: NEW_WORKBENCH_TITLE,
+          kind: "workbench",
+          pinned: false,
+          participants: [],
+        });
+      }
+      if (path.endsWith("/chat/workbenches/chan-ready-now/messages")) {
+        return json({ id: "msg-1", createdAt: "2026-01-01T00:00:00.000Z" });
+      }
+      if (path.endsWith("/chat/workbenches/chan-ready-now/settings")) {
+        return json({
+          id: "chan-ready-now",
+          title: "Ship the release",
+          kind: "workbench",
+          pinned: false,
+          participants: [],
+          settings: {},
+          contextWindow: { value: 0, source: "inherit" },
+        });
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    });
+
+    try {
+      const completed = await Promise.race([
+        createWorkbenchFromTemplate(
+          "tnt_1",
+          "blank",
+          (to) => navigated.push(to),
+          queryClient,
+          "Ship the release",
+          ["def-assistant"],
+        ).then(() => "completed"),
+        new Promise<"timed out">((resolve) => {
+          setTimeout(() => resolve("timed out"), 50);
+        }),
+      ]);
+
+      expect(completed).toBe("completed");
+      expect(navigated).toEqual(["/w/chan-ready-now"]);
+    } finally {
+      finishRefresh?.();
+      invalidate.mockRestore();
+    }
+  });
+
+  test("an opening-message failure leaves a minted blank workbench recoverable", async () => {
+    const navigated: string[] = [];
+    stubFetch((path) => {
+      if (path.includes("/workflows/definitions")) {
+        return json({ data: [assistantDefinitionWire], nextCursor: null });
+      }
+      if (path.endsWith("/chat/workbenches")) {
+        return json({
+          id: "chan-recoverable",
+          title: NEW_WORKBENCH_TITLE,
+          kind: "workbench",
+          pinned: false,
+          participants: [],
+        });
+      }
+      if (path.endsWith("/chat/workbenches/chan-recoverable/messages")) {
+        return json({ error: "agent launch failed" }, 409);
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    });
+
+    let cause: unknown;
+    try {
+      await createWorkbenchFromTemplate(
+        "tnt_1",
+        "blank",
+        (to) => navigated.push(to),
+        newQueryClient(),
+        "Research our next partner",
+        ["def-scout"],
+      );
+    } catch (error) {
+      cause = error;
+    }
+
+    expect(cause).toBeInstanceOf(WorkbenchPostCreateError);
+    if (!(cause instanceof WorkbenchPostCreateError)) {
+      throw new Error("expected a recoverable post-create error");
+    }
+    expect(cause.workbenchId).toBe("chan-recoverable");
+    expect(cause.stage).toBe("opening-message");
+    expect(navigated).toEqual([]);
   });
 
   test("picking the code-review definition names the bench after it and invites exactly its three reviewers", async () => {

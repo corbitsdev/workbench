@@ -41,10 +41,9 @@ describe("requireLocalDatabase", () => {
 });
 
 describe("resolveLocalStateDirs", () => {
-  test("resolves the hub dir against apps/hub and the sidecar dir at the repo root", () => {
+  test("resolves the hub dir against apps/hub", () => {
     const dirs = resolveLocalStateDirs("/repo", ".data/hub");
     expect(dirs.hubDataDir).toBe(path.resolve("/repo/apps/hub/.data/hub"));
-    expect(dirs.sidecarDataDir).toBe(path.resolve("/repo/.data/sidecar"));
   });
 
   test("honors an absolute HUB_DATA_DIR", () => {
@@ -98,7 +97,7 @@ describe("resetLocalState", () => {
     ]);
   });
 
-  test("reports no removed directories when neither is present", async () => {
+  test("reports no removed directories when it is not present", async () => {
     const deps: ResetDeps = {
       root: "/repo",
       resetSchema: async () => undefined,

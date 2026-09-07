@@ -40,7 +40,9 @@ function asUser(): MiddlewareHandler<AppEnv> {
 /** A hub that answers only the reads the fast half performs. Any deploy
  * traffic would have to go somewhere else entirely — and the deploy seam
  * below proves it never even starts. */
-function fakeHub(args: { seededWorkflows?: string[] } = {}) {
+function fakeHub(
+  args: { seededWorkflows?: string[]; tenantSlug?: string } = {},
+) {
   const seeded = args.seededWorkflows ?? [];
   const hub = new Hono();
   const requests: string[] = [];
@@ -55,7 +57,7 @@ function fakeHub(args: { seededWorkflows?: string[] } = {}) {
           principalId: PRINCIPAL_ID,
           tenantId: TENANT_ID,
           tenantName: "user_1's workbench",
-          tenantSlug: TENANT_SLUG,
+          tenantSlug: args.tenantSlug ?? TENANT_SLUG,
           kind: "user",
           status: "active",
           roles: [],
@@ -282,6 +284,35 @@ describe("POST /complete — connecting deploys nothing", () => {
 });
 
 describe("GET /provisioning-status", () => {
+  test.each([
+    ["", 400],
+    ["?tenantId=", 400],
+    ["?tenantId=someone-elses-bench", 403],
+  ])(
+    "rejects invalid or inaccessible selected benches: %s",
+    async (query, expectedStatus) => {
+      const { hub, requests } = fakeHub();
+      const server = Bun.serve({ port: 0, fetch: hub.fetch });
+      const store = createInMemoryPendingSeedStore(testCipher());
+      try {
+        const app = mountAuthenticated(
+          createOnboardingRoutes(
+            routeDeps({ hubUrl: `http://localhost:${server.port}`, store }),
+          ),
+        );
+        const response = await app.request(
+          `/api/onboarding/provisioning-status${query}`,
+        );
+        expect(response.status).toBe(expectedStatus);
+        expect(requests.some((request) => request.includes("/assets"))).toBe(
+          false,
+        );
+      } finally {
+        server.stop(true);
+      }
+    },
+  );
+
   // CL-7074 narrowed DEFAULT_WORKFLOWS to just the setup agent, so the
   // "some deployed, some still pending" progress bar this route used to
   // report (CL-6462, when the default set was echo/assistant/
@@ -302,7 +333,9 @@ describe("GET /provisioning-status", () => {
         ),
       );
 
-      const response = await app.request("/api/onboarding/provisioning-status");
+      const response = await app.request(
+        `/api/onboarding/provisioning-status?tenantId=${TENANT_ID}`,
+      );
       const body = (await response.json()) as {
         kind: string;
         setupAgentReady: boolean;
@@ -334,7 +367,9 @@ describe("GET /provisioning-status", () => {
         ),
       );
 
-      const response = await app.request("/api/onboarding/provisioning-status");
+      const response = await app.request(
+        `/api/onboarding/provisioning-status?tenantId=${TENANT_ID}`,
+      );
       const body = (await response.json()) as { setupAgentReady: boolean };
 
       expect(body.setupAgentReady).toBe(false);
@@ -343,8 +378,11 @@ describe("GET /provisioning-status", () => {
     }
   });
 
-  test("reports ready once every agent is live", async () => {
-    const { hub } = fakeHub({ seededWorkflows: ALL_WORKFLOWS });
+  test("reports readiness for a selected shared bench without a personal bench", async () => {
+    const { hub } = fakeHub({
+      seededWorkflows: ALL_WORKFLOWS,
+      tenantSlug: "workbench",
+    });
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     const store = createInMemoryPendingSeedStore(testCipher());
     try {
@@ -354,7 +392,9 @@ describe("GET /provisioning-status", () => {
         ),
       );
 
-      const response = await app.request("/api/onboarding/provisioning-status");
+      const response = await app.request(
+        `/api/onboarding/provisioning-status?tenantId=${TENANT_ID}`,
+      );
       const body = (await response.json()) as { kind: string };
 
       expect(body.kind).toBe("ready");

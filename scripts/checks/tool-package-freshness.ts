@@ -25,6 +25,11 @@ import {
   type CheckReport,
 } from "./lib/repo";
 
+import {
+  checkToolPackageFreshness,
+  StaleToolPackageError,
+} from "../../packages/tool-registry-publish/src/freshness-check";
+
 const PACKAGE_ROOT = "packages";
 
 /**
@@ -184,20 +189,14 @@ async function versionAtHead(
 async function main(): Promise<void> {
   const root = rootFromArgs(Bun.argv.slice(2));
   const baseRef = resolveBaseRef(root);
-  if (baseRef === undefined) {
-    const report = emptyReport();
-    report.notes.push(
-      "no base ref (no origin/main, no pull_request.base.sha); skipping — CI " +
-        "supplies the base ref for the authoritative run",
-    );
-    reportAndExit("check:tool-package-freshness", report);
-  }
-
   const registry = Bun.file(path.join(root, TOOL_PACKAGE_REGISTRY));
   const toolPackages = (await registry.exists())
     ? readToolPackageNames(await registry.text())
     : [];
-  const diff = git(root, ["diff", "--name-only", `${baseRef}...HEAD`]);
+  const diff =
+    baseRef === undefined
+      ? undefined
+      : git(root, ["diff", "--name-only", `${baseRef}...HEAD`]);
   const names = packagesWithChangedSource(
     (diff ?? "").split("\n"),
     toolPackages,
@@ -206,14 +205,25 @@ async function main(): Promise<void> {
   for (const name of names) {
     changes.push({
       name,
-      baseVersion: versionAtRef(root, baseRef, name),
+      baseVersion:
+        baseRef === undefined ? undefined : versionAtRef(root, baseRef, name),
       headVersion: await versionAtHead(root, name),
     });
   }
 
   const report = auditFreshness(changes);
+  try {
+    await checkToolPackageFreshness({
+      packageDirs: toolPackages.map((name) =>
+        path.join(root, PACKAGE_ROOT, name),
+      ),
+    });
+  } catch (error) {
+    if (!(error instanceof StaleToolPackageError)) throw error;
+    report.violations.push(error.message);
+  }
   report.notes.push(
-    `${names.length} package(s) with src/ changes since ${baseRef.slice(0, 8)}`,
+    `${toolPackages.length} tool package(s) checked against version history`,
   );
   reportAndExit("check:tool-package-freshness", report);
 }

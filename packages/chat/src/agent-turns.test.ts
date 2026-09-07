@@ -26,7 +26,7 @@ describe("createInMemoryAgentTurnStore", () => {
     expect(turn.requestMessageIds).toEqual(["msg_1"]);
   });
 
-  test("occurrences advance per (workbench, agent), never across them", async () => {
+  test("occurrences advance per agent across workbenches", async () => {
     const store = createInMemoryAgentTurnStore();
     const first = await store.startTurn(BASE);
     const second = await store.startTurn(BASE);
@@ -44,7 +44,7 @@ describe("createInMemoryAgentTurnStore", () => {
       "turn__1",
     ]);
     expect(otherAgent.childRunId).toBe("turn__0");
-    expect(otherWorkbench.childRunId).toBe("turn__0");
+    expect(otherWorkbench.childRunId).toBe("turn__2");
   });
 
   test("finishing records the outcome, the reply, and the section run", async () => {
@@ -249,6 +249,13 @@ describe("createInMemoryAgentTurnStore", () => {
         ...BASE,
         agentAddress: "ins_other@acme.example",
       });
+    });
+
+    test("the same agent in another workbench is not blocked", async () => {
+      const store = createInMemoryAgentTurnStore();
+      await store.startTurn(BASE);
+
+      await store.waitUntilFree({ ...BASE, workbenchId: "wb_2" });
     });
 
     test("a failed turn also frees the wait", async () => {

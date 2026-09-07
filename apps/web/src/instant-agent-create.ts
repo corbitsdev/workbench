@@ -26,6 +26,7 @@ import {
   type WorkbenchDefinition,
   type WorkbenchOnboardingStep,
 } from "@workbench/templates";
+import { reportError } from "@corbits/error-sink";
 
 import {
   deployWorkbenchTemplateBlock,
@@ -43,6 +44,24 @@ import { workbenchPath } from "./workbench-path";
 import type { WorkbenchTemplateId } from "./workbench-templates";
 
 export { NEW_WORKBENCH_TITLE };
+
+export function refreshWorkbenchLists(
+  queryClient: QueryClient,
+  tenantId: string,
+  workbenchId: string,
+): void {
+  void queryClient
+    .invalidateQueries({
+      queryKey: workbenchesQueryKeyPrefix(tenantId),
+    })
+    .catch((cause) => {
+      reportError(cause, {
+        operation: "refresh_workbench_lists",
+        tenantId,
+        roomId: workbenchId,
+      });
+    });
+}
 
 /**
  * Marks the two precondition failures below as intentionally
@@ -70,6 +89,16 @@ export class WorkbenchPreconditionError extends Error {
   ) {
     super(message);
     this.kind = kind;
+  }
+}
+
+export class WorkbenchPostCreateError extends Error {
+  constructor(
+    readonly workbenchId: string,
+    readonly stage: "opening-message" | "rename",
+    cause: unknown,
+  ) {
+    super("The workbench was created, but setup did not finish.", { cause });
   }
 }
 
@@ -156,7 +185,11 @@ export async function createWorkbenchFromTemplate(
   navigate: (to: string) => void,
   queryClient: QueryClient,
   firstMessage?: string,
+  selectedAgentDefinitionIds: readonly string[] = [],
 ): Promise<void> {
+  if (templateId !== "blank" && selectedAgentDefinitionIds.length > 0) {
+    throw new Error("Only a new blank workbench can select agents directly.");
+  }
   const definitions = await listAgentDefinitions(tenantId);
   const setupTemplate = findMyraDefinition(definitions);
   if (setupTemplate === undefined) {
@@ -223,27 +256,53 @@ export async function createWorkbenchFromTemplate(
         );
       },
     });
-    await queryClient.invalidateQueries({
-      queryKey: workbenchesQueryKeyPrefix(tenantId),
-    });
   }
 
   if (firstMessage !== undefined && firstMessage.trim() !== "") {
-    await sendMessage(tenantId, workbench.id, partsForSend(firstMessage, []));
+    const selectedAgentInvites = [...new Set(selectedAgentDefinitionIds)].map(
+      (definitionId) => ({ kind: "agent" as const, definitionId }),
+    );
+    try {
+      await sendMessage(
+        tenantId,
+        workbench.id,
+        partsForSend(firstMessage, []),
+        {
+          ...(selectedAgentInvites.length > 0
+            ? { invite: selectedAgentInvites }
+            : {}),
+        },
+      );
+    } catch (cause) {
+      if (templateId === "blank") {
+        throw new WorkbenchPostCreateError(
+          workbench.id,
+          "opening-message",
+          cause,
+        );
+      }
+      throw cause;
+    }
     // Blank / ad-hoc mints stay "New Workbench" until named. When the
     // prompt box already supplied the opening message, rename via the same
     // `chat/name` settings PATCH the sidebar rename uses — prefab titles
     // (`definition?.title`) are left alone by `autoNameFromFirstMessage`.
     const autoTitle = autoNameFromFirstMessage(workbench.title, firstMessage);
     if (autoTitle !== undefined) {
-      await patchWorkbenchSettings(tenantId, workbench.id, {
-        "chat/name": autoTitle,
-      });
-      await queryClient.invalidateQueries({
-        queryKey: workbenchesQueryKeyPrefix(tenantId),
-      });
+      try {
+        await patchWorkbenchSettings(tenantId, workbench.id, {
+          "chat/name": autoTitle,
+        });
+      } catch (cause) {
+        if (templateId === "blank") {
+          throw new WorkbenchPostCreateError(workbench.id, "rename", cause);
+        }
+        throw cause;
+      }
+      refreshWorkbenchLists(queryClient, tenantId, workbench.id);
     }
   }
 
+  refreshWorkbenchLists(queryClient, tenantId, workbench.id);
   navigate(workbenchPath(workbench.id));
 }

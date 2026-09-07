@@ -13,9 +13,11 @@ import type { TypingState } from "../src/typing-indicator";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Long enough that real event-loop jitter can't flip a "before expiry" /
-// "after expiry" assertion; short enough to keep the suite well under a
-// second even so.
-const TEST_TIMEOUT_MS = 120;
+// "after expiry" assertion — CI runners under load have been observed to
+// stretch a single await by well over 100ms, so every "before expiry"
+// margin below is a quarter of the expiry or better. Short enough to keep
+// the suite around two seconds even so.
+const TEST_TIMEOUT_MS = 500;
 
 function mount(
   selfPrincipalId: string | undefined,
@@ -77,19 +79,20 @@ describe("useTypingIndicator (real timer wiring)", () => {
 
   test("a second ping re-arms the expiry rather than doubling timers", async () => {
     const harness = mount("prn_self1", "chan_a");
-    harness.ping("prn_other1"); // t=0, would expire at t=120 unless re-armed
+    harness.ping("prn_other1"); // t=0, would expire at t=500 unless re-armed
 
-    await harness.settle(50); // t=50
-    harness.ping("prn_other1"); // re-armed: now expires at t=170
+    await harness.settle(150); // t=150
+    harness.ping("prn_other1"); // re-armed: now expires at t=650
 
-    // t=140 — past the original (unarmed) expiry at 120 with a 20ms
-    // margin, but well before the re-armed one at 170. Still showing here
-    // only makes sense if the re-arm actually took effect.
-    await harness.settle(90);
+    // t=400 — past the original (unarmed) expiry at 500 would be a
+    // failure of the re-arm, and it is still 250ms before the re-armed
+    // expiry at 650. Still showing here only makes sense if the re-arm
+    // actually took effect.
+    await harness.settle(250);
     expect(harness.get()?.principalId).toBe("prn_other1");
 
-    // t=210 — past the re-armed expiry at 170 with a 40ms margin.
-    await harness.settle(70);
+    // t=800 — past the re-armed expiry at 650 with a 150ms margin.
+    await harness.settle(400);
     expect(harness.get()).toBeNull();
     harness.unmount();
   });

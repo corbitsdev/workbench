@@ -12,6 +12,7 @@ import {
   reconcileSeedGrants,
   SEED_GRANTS,
   seedCatalog,
+  ensureProvider,
   seedTenant,
   SETUP_AGENT_ASSET_NAME,
   type SeedTenantArgs,
@@ -1728,6 +1729,58 @@ describe("default skills seeding", () => {
   });
 });
 
+describe("provider origins", () => {
+  test.each([null, undefined, "https://custom.example/api"])(
+    "fills only a missing provider origin: %s",
+    async (apiBaseUrl) => {
+      const patches: unknown[] = [];
+      const api = fakeAPI((method, path, body) => {
+        if (method === "POST") return { status: 409, data: {} };
+        if (method === "GET")
+          return {
+            status: 200,
+            data: {
+              data: [
+                {
+                  ...providerRow("prv_1", "anthropic"),
+                  ...(apiBaseUrl !== undefined ? { apiBaseUrl } : {}),
+                },
+              ],
+              nextCursor: null,
+            },
+          };
+        if (method === "PATCH" && path.endsWith("/providers/prv_1")) {
+          patches.push(body);
+          return {
+            status: 200,
+            data: {
+              ...providerRow("prv_1", "anthropic"),
+              apiBaseUrl: "https://api.anthropic.com",
+            },
+          };
+        }
+        return undefined;
+      });
+      expect(
+        await ensureProvider(
+          api,
+          [],
+          {
+            tenantId: TENANT_ID,
+            name: "anthropic",
+            plugin: "anthropic",
+            apiBaseUrl: "https://api.anthropic.com",
+          },
+          () => undefined,
+        ),
+      ).toBe("prv_1");
+      expect(patches).toEqual(
+        apiBaseUrl == null ? [{ apiBaseUrl: "https://api.anthropic.com" }] : [],
+      );
+    },
+  );
+});
+
 describe("seedCatalog", () => {
   test("no apiKey and no placeholderCredential plants only the catalog model", async () => {
     const { lines, log } = collector();
@@ -1761,105 +1814,122 @@ describe("seedCatalog", () => {
     expect(output).toContain("seeded without a credential");
   });
 
-  test("fresh run creates the full provider-to-offering chain", async () => {
-    const { lines, log } = collector();
-    const modelPosts: string[] = [];
-    const offeringPosts: { modelId: string; providerId: string }[] = [];
-    const handler: FakeHandler = (method, path, body) => {
-      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
-        return { status: 201, data: providerRow("prv_1", "anthropic") };
-      if (method === "POST" && path === `/api/tenants/${TENANT_ID}/credentials`)
-        return {
-          status: 201,
-          data: credentialRow("cre_1", "prv_1", "anthropic-default"),
-        };
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/models`
-      ) {
-        const canonicalName = (body as { canonicalName: string }).canonicalName;
-        modelPosts.push(canonicalName);
-        return {
-          status: 201,
-          data: catalogModelRow(`mdl_${modelPosts.length}`, canonicalName),
-        };
-      }
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/providers`
-      )
-        return {
-          status: 201,
-          data: catalogProviderRow("cpv_1", "anthropic", "cre_1"),
-        };
-      if (
-        method === "POST" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/offerings`
-      ) {
-        // Every Anthropic Direct model in the curated six is an
-        // exact-deployment probe in the pinned catalog, so each offering
-        // carries what that probe observed rather than an empty list.
-        const offeringBody = body as {
-          modelId: string;
-          providerId: string;
-          priority: number;
-          capabilities: string[];
-        };
-        expect(offeringBody.providerId).toBe("cpv_1");
-        expect(offeringBody.priority).toBe(offeringPosts.length);
-        expect(offeringBody.capabilities.length).toBeGreaterThan(0);
-        expect(offeringBody.capabilities).toContain("plain-text");
-        expect(offeringBody.capabilities).toContain(
-          "function-calling-multi-turn",
-        );
-        offeringPosts.push(offeringBody);
-        return {
-          status: 201,
-          data: catalogOfferingRow(
-            `off_${offeringPosts.length}`,
-            offeringBody.modelId,
-            offeringBody.providerId,
-          ),
-        };
-      }
-      return undefined;
-    };
+  test.each([false, true])(
+    "creates the provider-to-offering chain with an existing credential: %s",
+    async (reuseCredential) => {
+      const { lines, log } = collector();
+      const modelPosts: string[] = [];
+      const offeringPosts: { modelId: string; providerId: string }[] = [];
+      const handler: FakeHandler = (method, path, body) => {
+        if (
+          method === "POST" &&
+          path === `/api/tenants/${TENANT_ID}/providers`
+        ) {
+          expect(body).toMatchObject({
+            apiBaseUrl: "https://api.anthropic.com",
+          });
+          return { status: 201, data: providerRow("prv_1", "anthropic") };
+        }
+        if (
+          method === "POST" &&
+          path === `/api/tenants/${TENANT_ID}/credentials`
+        )
+          return {
+            status: 201,
+            data: credentialRow("cre_1", "prv_1", "anthropic-default"),
+          };
+        if (
+          method === "POST" &&
+          path === `/api/tenants/${TENANT_ID}/catalog/models`
+        ) {
+          const canonicalName = (body as { canonicalName: string })
+            .canonicalName;
+          modelPosts.push(canonicalName);
+          return {
+            status: 201,
+            data: catalogModelRow(`mdl_${modelPosts.length}`, canonicalName),
+          };
+        }
+        if (
+          method === "POST" &&
+          path === `/api/tenants/${TENANT_ID}/catalog/providers`
+        )
+          return {
+            status: 201,
+            data: catalogProviderRow("cpv_1", "anthropic", "cre_1"),
+          };
+        if (
+          method === "POST" &&
+          path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+        ) {
+          // Every Anthropic Direct model in the curated six is an
+          // exact-deployment probe in the pinned catalog, so each offering
+          // carries what that probe observed rather than an empty list.
+          const offeringBody = body as {
+            modelId: string;
+            providerId: string;
+            priority: number;
+            capabilities: string[];
+          };
+          expect(offeringBody.providerId).toBe("cpv_1");
+          expect(offeringBody.priority).toBe(offeringPosts.length);
+          expect(offeringBody.capabilities.length).toBeGreaterThan(0);
+          expect(offeringBody.capabilities).toContain("plain-text");
+          expect(offeringBody.capabilities).toContain(
+            "function-calling-multi-turn",
+          );
+          offeringPosts.push(offeringBody);
+          return {
+            status: 201,
+            data: catalogOfferingRow(
+              `off_${offeringPosts.length}`,
+              offeringBody.modelId,
+              offeringBody.providerId,
+            ),
+          };
+        }
+        return undefined;
+      };
 
-    await seedCatalog({
-      api: fakeAPI(handler),
-      cookies: [],
-      tenantId: TENANT_ID,
-      apiKey: "sk-test",
-      log,
-    });
+      await seedCatalog({
+        api: fakeAPI(handler),
+        cookies: [],
+        tenantId: TENANT_ID,
+        ...(reuseCredential
+          ? { existingCredentialId: "cre_1" }
+          : { apiKey: "sk-test" }),
+        log,
+      });
 
-    expect(modelPosts).toEqual([
-      "claude-sonnet-5",
-      "claude-opus-5",
-      "claude-opus-4-8",
-      "claude-haiku-4-5-20251001",
-      "claude-fable-5",
-      "claude-sonnet-4-6",
-    ]);
-    expect(offeringPosts.map((o) => o.modelId)).toEqual([
-      "mdl_1",
-      "mdl_2",
-      "mdl_3",
-      "mdl_4",
-      "mdl_5",
-      "mdl_6",
-    ]);
+      expect(modelPosts).toEqual([
+        "claude-sonnet-5",
+        "claude-opus-5",
+        "claude-opus-4-8",
+        "claude-haiku-4-5-20251001",
+        "claude-fable-5",
+        "claude-sonnet-4-6",
+      ]);
+      expect(offeringPosts.map((o) => o.modelId)).toEqual([
+        "mdl_1",
+        "mdl_2",
+        "mdl_3",
+        "mdl_4",
+        "mdl_5",
+        "mdl_6",
+      ]);
 
-    const output = lines.join("\n");
-    expect(output).toContain("created provider anthropic");
-    expect(output).toContain("created credential anthropic-default");
-    expect(output).toContain("created catalog model claude-sonnet-5");
-    expect(output).toContain("created catalog provider anthropic");
-    expect(output).toContain("created catalog offering");
-    expect(output).toContain(
-      "catalog ready: anthropic/claude-sonnet-5, claude-opus-5, claude-opus-4-8, claude-haiku-4-5-20251001, claude-fable-5, claude-sonnet-4-6",
-    );
-  });
+      const output = lines.join("\n");
+      expect(output).toContain("created provider anthropic");
+      if (reuseCredential) expect(output).not.toContain("created credential");
+      else expect(output).toContain("created credential anthropic-default");
+      expect(output).toContain("created catalog model claude-sonnet-5");
+      expect(output).toContain("created catalog provider anthropic");
+      expect(output).toContain("created catalog offering");
+      expect(output).toContain(
+        "catalog ready: anthropic/claude-sonnet-5, claude-opus-5, claude-opus-4-8, claude-haiku-4-5-20251001, claude-fable-5, claude-sonnet-4-6",
+      );
+    },
+  );
 
   test("fresh run gives the declared Anthropic default the lowest distinct priority", async () => {
     const { log } = collector();
@@ -2611,7 +2681,15 @@ describe("seedCatalog", () => {
       )
         return {
           status: 200,
-          data: { data: [providerRow("prv_1", "anthropic")], nextCursor: null },
+          data: {
+            data: [
+              {
+                ...providerRow("prv_1", "anthropic"),
+                apiBaseUrl: "https://api.anthropic.com",
+              },
+            ],
+            nextCursor: null,
+          },
         };
       if (
         method === "POST" &&
