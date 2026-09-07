@@ -422,7 +422,7 @@ describe("NewWorkbenchPickerRoute", () => {
       if (path.includes("/workflows/definitions")) {
         return json({ data: [], nextCursor: null });
       }
-      if (path.endsWith("/api/onboarding/provisioning-status")) {
+      if (path.endsWith("/api/onboarding/provisioning-status?tenantId=tnt_1")) {
         return json({
           kind: "provisioning",
           tenantId: "tnt_1",

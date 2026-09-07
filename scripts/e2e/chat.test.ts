@@ -619,10 +619,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   // A plain workbench never enters that dedup's `kind: "chat"` listing,
   // so it can host a resident participant to mention without leaving
   // that trap behind.
-  // CL-7492: an invited agent's provisioned run never receives its deploy
-  // frame on this pin, so its first turn never happens. Skipped, not
-  // deleted, until that lands.
-  test.skip("mention fan-out drives the mentioned run", async () => {
+  test("mention fan-out drives the mentioned run", async () => {
     const mentionRoom = await createWorkbench({
       kind: "workbench",
       name: "mention fan-out room",
@@ -706,7 +703,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     expect(participantsAfterSecondMention[0]?.address).toBe(echoAddress);
   }, 90_000);
 
-  test.skip("inviting the echo agent launches its own run, joins the workbench, and receives @mentions", async () => {
+  test("inviting the echo agent launches its own run, joins the workbench, and receives @mentions", async () => {
     // Echo is a non-conversational wiring check (`conversational: false`
     // in the workflow catalog, CL-6649) — the invite dialog's own
     // listing correctly excludes it, so this test resolves its
@@ -811,7 +808,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     return stringField(byNameRes.data, "id", "resolve echo definition by name");
   }
 
-  test.skip("a chat auto-invites the echo agent and delivers un-mentioned messages to it", async () => {
+  test("a chat auto-invites the echo agent and delivers un-mentioned messages to it", async () => {
     const chatCreated = await createWorkbench({
       kind: "chat",
       definitionId: await echoDefinitionId(),
@@ -867,25 +864,20 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     expect(fresh.length).toBeGreaterThan(0);
   }, 90_000);
 
-  // Runs after the echo chat above so its own create call — same
-  // tenant, same agent — proves the deliberate reuse path (CL-6089):
-  // "+ New Workbench" always creates, so reuse is opt-in via
-  // `reuseExisting: true` (the land-hop `ensureMyraWorkbench` uses),
-  // which reopens the existing chat with 200 and the same id back,
-  // never a fresh 201.
   test("kind filter excludes and includes by kind, and re-creating an existing agent chat reuses it", async () => {
-    // The invite cases that used to mint this chat are skipped (CL-7492),
-    // so mint it here; the reuse assertion below is the point of the test.
-    const minted = await createWorkbench({
+    const room = await createWorkbench({
+      kind: "workbench",
+      name: "kind filter room",
+    });
+    expectStatus("create kind filter room", room, 201);
+    const roomId = stringField(room.data, "id", "create kind filter room");
+    const existing = await createWorkbench({
       kind: "chat",
       definitionId: await echoDefinitionId(),
       reuseExisting: true,
     });
-    if (minted.status === 201) {
-      chatId = stringField(minted.data, "id", "create echo agent chat");
-    } else {
-      expectStatus("create echo agent chat", minted, 200);
-    }
+    expect([200, 201]).toContain(existing.status);
+    chatId = stringField(existing.data, "id", "ensure echo agent chat");
     const reopened = await createWorkbench({
       kind: "chat",
       definitionId: await echoDefinitionId(),
@@ -909,7 +901,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
       "list kind=workbench",
     ).map((item) => (item as { id: string }).id);
     expect(workbenchKindIds).not.toContain(chatId);
-    expect(workbenchKindIds).toContain(workbenchId);
+    expect(workbenchKindIds).toContain(roomId);
 
     const chatKindListed = await api(
       "GET",

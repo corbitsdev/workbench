@@ -172,7 +172,7 @@ describe("HomeRoute (the `/` land hop every entry point funnels through)", () =>
         // rather than sending anyone to `/new`.
         return json({ items: [] });
       }
-      if (path === "/api/onboarding/provisioning-status") {
+      if (path === "/api/onboarding/provisioning-status?tenantId=tnt_1") {
         return json({ kind: "ready", setupAgentReady: true });
       }
       if (path.includes("/workflows/definitions")) {
@@ -237,7 +237,7 @@ describe("the wait right after connecting a provider", () => {
       if (path === "/api/tenants/tnt_1/credentials") {
         return json({ data: [{ status: "active" }], nextCursor: null });
       }
-      if (path === "/api/onboarding/provisioning-status") {
+      if (path === "/api/onboarding/provisioning-status?tenantId=tnt_1") {
         statusReads += 1;
         state.statusCalls += 1;
         const setupAgentReady = statusReads > readyAfter;
@@ -279,6 +279,47 @@ describe("the wait right after connecting a provider", () => {
     });
   }
 
+  test("shows a readiness error and retries without pretending the agent is preparing", async () => {
+    let failReadiness = true;
+    stubFetch((path, method) => {
+      if (path === "/api/me/principals") return json(PRINCIPALS_RESPONSE);
+      if (path.endsWith("/chat/workbenches") && method === "GET")
+        return json({ items: [] });
+      if (path === "/api/onboarding/provisioning-status?tenantId=tnt_1") {
+        return failReadiness
+          ? json(
+              {
+                error: {
+                  code: "bench_unavailable",
+                  userMessage: "This workspace is unavailable. Try again.",
+                  refId: "ref_readiness",
+                },
+              },
+              409,
+            )
+          : json({ kind: "ready", setupAgentReady: true });
+      }
+      const launch = respondMyraDmLaunch(path, method);
+      if (launch !== null) return launch;
+      throw new Error(`unexpected fetch: ${method} ${path}`);
+    });
+    const navigated: string[] = [];
+    await renderHome({ retryMs: 10, stallAfterMs: 10_000, navigated });
+    for (let i = 0; i < 20; i++) await settle();
+    expect(container?.textContent).toContain(
+      "This workspace is unavailable. Try again.",
+    );
+    expect(container?.textContent).not.toContain("Preparing your agent");
+    const retry = Array.from(container?.querySelectorAll("button") ?? []).find(
+      (button) => button.textContent === "Retry",
+    );
+    expect(retry).toBeDefined();
+    failReadiness = false;
+    await act(async () => retry?.click());
+    for (let i = 0; i < 20 && navigated.length === 0; i++) await settle();
+    expect(navigated).toEqual(["/w/chan_myra_dm"]);
+  });
+
   test("shows the warm loader while Myra is still coming online — never a count", async () => {
     benchWhereMyraArrivesAfter(99);
     const navigated: string[] = [];
@@ -308,7 +349,7 @@ describe("the wait right after connecting a provider", () => {
       if (path === "/api/tenants/tnt_1/credentials") {
         return json({ data: [], nextCursor: null });
       }
-      if (path === "/api/onboarding/provisioning-status") {
+      if (path === "/api/onboarding/provisioning-status?tenantId=tnt_1") {
         return json({
           kind: "provisioning",
           setupAgentReady: false,

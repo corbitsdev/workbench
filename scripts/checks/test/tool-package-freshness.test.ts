@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -11,6 +12,83 @@ import {
 } from "../tool-package-freshness";
 
 const TOOL_PACKAGES = ["github-tools", "memory-tools"];
+
+test("rejects stale source already on main and accepts a version bump", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "tool-freshness-main-"));
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
+  );
+  const git = (...args: string[]) => {
+    const result = spawnSync(
+      "git",
+      [
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "commit.gpgsign=false",
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        ...args,
+      ],
+      { cwd: root, env, encoding: "utf8" },
+    );
+    if (result.status !== 0) throw new Error(result.stderr);
+  };
+  const check = () =>
+    spawnSync(
+      process.execPath,
+      [
+        path.resolve(import.meta.dir, "../tool-package-freshness.ts"),
+        `--root=${root}`,
+      ],
+      {
+        cwd: root,
+        env: { ...env, GITHUB_EVENT_PATH: "" },
+        encoding: "utf8",
+      },
+    );
+  try {
+    mkdirSync(path.join(root, "packages/github-tools/src"), {
+      recursive: true,
+    });
+    mkdirSync(path.join(root, "packages/tool-registry-publish/src"), {
+      recursive: true,
+    });
+    writeFileSync(
+      path.join(root, "packages/tool-registry-publish/src/registry.ts"),
+      'const CORBITS_TOOL_PACKAGE_DIRS = ["../../github-tools"];',
+    );
+    const manifest = path.join(root, "packages/github-tools/package.json");
+    writeFileSync(
+      manifest,
+      JSON.stringify({ name: "@corbits/github-tools", version: "1.0.0" }),
+    );
+    const source = path.join(root, "packages/github-tools/src/index.ts");
+    writeFileSync(source, "export const value = 1;");
+    git("init");
+    git("add", ".");
+    git("commit", "-m", "Initial package");
+    writeFileSync(source, "export const value = 2;");
+    git("add", ".");
+    git("commit", "-m", "Change source without a bump");
+    git("update-ref", "refs/remotes/origin/main", "HEAD");
+    const stale = check();
+    expect(stale.status).toBe(1);
+    expect(stale.stderr).toContain("@corbits/github-tools@1.0.0");
+    git("update-ref", "-d", "refs/remotes/origin/main");
+    expect(check().status).toBe(1);
+    writeFileSync(
+      manifest,
+      JSON.stringify({ name: "@corbits/github-tools", version: "1.0.1" }),
+    );
+    const fresh = check();
+    expect(fresh.status).toBe(0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}, 15_000);
 
 describe("packagesWithChangedSource", () => {
   test("names a package whose src/ moved", () => {

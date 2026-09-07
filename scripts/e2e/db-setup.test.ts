@@ -1,8 +1,7 @@
 // Unit gates for scripts/db-setup.ts against a real Postgres: the
 // wiring this repo owns — shipped-migration discovery out of the
 // vendored @intx/db, the setup ledger, idempotent re-runs, the loud
-// mismatch failure with its documented reset fix, and the sidecar
-// identity upsert. The migrations themselves are Interchange's to
+// mismatch failure with its documented reset fix. The migrations themselves are Interchange's to
 // test; nothing here asserts on schema contents beyond the rows this
 // script writes.
 //
@@ -16,12 +15,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 
-import {
-  dbTargetFromUrl,
-  ensureSidecarIdentity,
-  resetSchema,
-  setupDatabase,
-} from "../db-setup.ts";
+import { dbTargetFromUrl, resetSchema, setupDatabase } from "../db-setup.ts";
 import { assertDatabaseConfigured, skippedDatabaseWarning } from "./db-gate.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..", "..");
@@ -77,24 +71,6 @@ async function connectTo(url: string, database?: string): Promise<SqlClient> {
     max: 1,
     onnotice: () => undefined,
   });
-}
-
-async function sha256Hex(token: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(token),
-  );
-  return Buffer.from(digest).toString("hex");
-}
-
-function rowHashHex(row: Record<string, unknown> | undefined): string {
-  const hash = row?.["token_hash_sha256"];
-  if (!(hash instanceof Uint8Array)) {
-    throw new Error(
-      `expected token_hash_sha256 to be a Uint8Array, got ${typeof hash}`,
-    );
-  }
-  return Buffer.from(hash).toString("hex");
 }
 
 describe.skipIf(databaseUrl === undefined)("db-setup", () => {
@@ -191,30 +167,6 @@ describe.skipIf(databaseUrl === undefined)("db-setup", () => {
     const second = await setupDatabase(url);
     expect(second.action).toBe("unchanged");
     expect(second.migrations).toBe(first.migrations);
-  });
-
-  test("ensureSidecarIdentity upserts against the folded schema", async () => {
-    await ensureSidecarIdentity(url, "sc_dbsetup_test", "token-one");
-    const sql = await connectTo(url);
-    try {
-      const inserted = await sql.unsafe(
-        `SELECT "url", "token_hash_sha256" FROM "sidecar" WHERE "id" = $1`,
-        ["sc_dbsetup_test"],
-      );
-      expect(inserted).toHaveLength(1);
-      expect(String(inserted[0]?.["url"])).toBe("ws://local-sidecar");
-      expect(rowHashHex(inserted[0])).toBe(await sha256Hex("token-one"));
-
-      // A changed token heals instead of locking the sidecar out.
-      await ensureSidecarIdentity(url, "sc_dbsetup_test", "token-two");
-      const updated = await sql.unsafe(
-        `SELECT "token_hash_sha256" FROM "sidecar" WHERE "id" = $1`,
-        ["sc_dbsetup_test"],
-      );
-      expect(rowHashHex(updated[0])).toBe(await sha256Hex("token-two"));
-    } finally {
-      await sql.end();
-    }
   });
 
   test("a ledger that disagrees with the shipped set fails loudly; reset recovers", async () => {
