@@ -874,6 +874,18 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
   // which reopens the existing chat with 200 and the same id back,
   // never a fresh 201.
   test("kind filter excludes and includes by kind, and re-creating an existing agent chat reuses it", async () => {
+    // The invite cases that used to mint this chat are skipped (CL-7492),
+    // so mint it here; the reuse assertion below is the point of the test.
+    const minted = await createWorkbench({
+      kind: "chat",
+      definitionId: await echoDefinitionId(),
+      reuseExisting: true,
+    });
+    if (minted.status === 201) {
+      chatId = stringField(minted.data, "id", "create echo agent chat");
+    } else {
+      expectStatus("create echo agent chat", minted, 200);
+    }
     const reopened = await createWorkbench({
       kind: "chat",
       definitionId: await echoDefinitionId(),
