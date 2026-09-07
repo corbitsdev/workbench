@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import {
   CorbitAvatar,
-  AVATAR_COLORS,
+  AVATAR_PALETTE,
   CORBIT_DEFAULT_COLOR,
   avatarClassForPrincipal,
   avatarColorForPrincipal,
@@ -26,8 +26,9 @@ describe("avatar composition and identity resolution", () => {
     const aliceColor = avatarColorForPrincipal("usr_alice");
     const bobColor = avatarColorForPrincipal("usr_bob");
 
-    expect(AVATAR_COLORS).toContain(aliceColor);
-    expect(AVATAR_COLORS).toContain(bobColor);
+    const avatarColors = AVATAR_PALETTE.map((entry) => entry.color);
+    expect(avatarColors).toContain(aliceColor);
+    expect(avatarColors).toContain(bobColor);
 
     expect(avatarClassForPrincipal("usr_alice")).toContain(aliceColor);
 

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
-  AVATAR_COLORS,
+  AVATAR_PALETTE,
   CORBIT_DEFAULT_COLOR,
   CORBIT_GLINT_COLOR,
   CORBIT_VISOR_COLOR,
@@ -29,7 +29,9 @@ describe("avatarColorForPrincipal", () => {
       "prn_frank",
     ];
     for (const p of principals) {
-      expect(AVATAR_COLORS).toContain(avatarColorForPrincipal(p));
+      expect(AVATAR_PALETTE.map((entry) => entry.color)).toContain(
+        avatarColorForPrincipal(p),
+      );
     }
   });
 
@@ -54,6 +56,11 @@ describe("avatarClassForPrincipal", () => {
     expect(
       avatarClassForPrincipal("prn_super_secret_internal_id"),
     ).not.toContain("prn_super_secret_internal_id");
+  });
+
+  test("selects one of the palette's Tailwind class pairs", () => {
+    const paletteClassNames = AVATAR_PALETTE.map((entry) => entry.className);
+    expect(paletteClassNames).toContain(avatarClassForPrincipal("prn_alice"));
   });
 });
 
