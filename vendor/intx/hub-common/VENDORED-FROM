@@ -1,0 +1,4 @@
+Source: https://github.com/faremeter/interchange (packages/hub-common)
+Commit: c1b5bb73ff4815414af44e4662214e054e9e70e2 (origin/main, 2026-09-06)
+License: LGPL-2.1-only (see vendor/intx/LICENSE)
+Local modifications: exports map repointed from the upstream intx-src condition to direct TypeScript source resolution (types/default -> ./src/...); dist references removed. First vendored in CL-7495: the hub's signing-key series needs generateId's pky_ principal-key prefix (npm 0.3.0 predates it), and @intx/db's principal-key store depends on this package. Only src/index.ts, ids.ts, action-mapping.ts, and glob.ts are consumed; the package depends on @intx/types via workspace: so the vendored types source joins the composite project-reference graph.
