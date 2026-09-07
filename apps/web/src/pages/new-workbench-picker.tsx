@@ -160,8 +160,13 @@ export function NewWorkbenchPickerRoute() {
         cause instanceof WorkbenchPreconditionError &&
         cause.kind === "setup-agent-missing"
       ) {
-        const readiness = await fetchAgentReadiness();
-        if (readiness.kind !== "ready" && readiness.kind !== "chat-ready") {
+        const readiness = await fetchAgentReadiness(selectedTenantId);
+        if (readiness.kind === "error") {
+          toast(readiness.message);
+          setCreating(false);
+          return;
+        }
+        if (readiness.kind === "preparing") {
           setCreating(false);
           setStillSettingUp(true);
           return;

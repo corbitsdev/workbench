@@ -1666,6 +1666,22 @@ export async function ensureProvider(
       "check the hub logs for the underlying failure, then re-run: workbench seed",
     );
   }
+  if (args.apiBaseUrl !== undefined && existing.apiBaseUrl == null) {
+    const updated = await api(
+      "PATCH",
+      `/api/tenants/${args.tenantId}/providers/${existing.id}`,
+      { apiBaseUrl: args.apiBaseUrl },
+      cookies,
+    );
+    if (updated.status !== 200) {
+      throw new HubApiError(
+        `the hub rejected the API origin for provider ${args.name} with status ${updated.status}`,
+        "check the provider configuration before retrying setup",
+      );
+    }
+    parseAs(ProviderResponse, updated.data, "provider response");
+    log(`set API origin for provider ${args.name}`);
+  }
   log(`provider ${args.name} already exists (skipped)`);
   return existing.id;
 }
@@ -2195,16 +2211,14 @@ export async function seedCatalog(
       ? PLACEHOLDER_CATALOG_API_KEY
       : undefined);
 
+  const providerArgs = {
+    tenantId,
+    name: seed.provider.name,
+    plugin: seed.provider.plugin,
+    apiBaseUrl: providerBaseURL,
+  };
+
   async function plantCredential(secret: string): Promise<string> {
-    const providerArgs =
-      provider === "ollama"
-        ? {
-            tenantId,
-            name: seed.provider.name,
-            plugin: seed.provider.plugin,
-            apiBaseUrl: providerBaseURL,
-          }
-        : { tenantId, name: seed.provider.name, plugin: seed.provider.plugin };
     const providerId = await ensureProvider(api, cookies, providerArgs, log);
     const baseCredentialArgs = {
       tenantId,
@@ -2225,6 +2239,7 @@ export async function seedCatalog(
   }
   let credentialId: string;
   if (args.existingCredentialId !== undefined) {
+    await ensureProvider(api, cookies, providerArgs, log);
     credentialId = args.existingCredentialId;
   } else if (credentialSecret !== undefined) {
     credentialId = await plantCredential(credentialSecret);

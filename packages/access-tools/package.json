@@ -2,7 +2,7 @@
   "name": "@corbits/access-tools",
   "private": true,
   "description": "Myra's principal and grant tools: list_principals, list_grants, grant_access, and revoke_access as an @intx/agent tool bundle, plus the workflow-run-authenticated routes they call — a thin wrapper over the tenant's real principal/grant rows and Interchange's own grant-store authorization, never a reimplementation of authz",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "license": "LGPL-2.1-or-later",
   "type": "module",
   "exports": {

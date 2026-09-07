@@ -74,7 +74,6 @@ apps/web/src/last-workbench.ts	1	// A private-browsing tab with storage disabled
 apps/web/src/last-workbench.ts	1	return null;
 apps/web/src/onboarding.ts	1	return { kind: "error" };
 apps/web/src/onboarding.ts	1	return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
-apps/web/src/onboarding.ts	1	return { kind: "unknown" };
 apps/web/src/onboarding.ts	2	return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
 apps/web/src/onboarding.ts	3	return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
 apps/web/src/pages/agent-detail-page.tsx	1	// A handle collision is the one failure retrying can never clear, so

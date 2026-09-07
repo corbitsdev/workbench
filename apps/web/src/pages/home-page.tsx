@@ -109,8 +109,12 @@ export function HomeRoute({
     // (CL-6780), so a not-ready status with no credential is an honest
     // next step, not a forever spin on "getting ready".
     const awaitFirstWorkbench = () => {
-      void fetchAgentReadiness().then((readiness) => {
+      void fetchAgentReadiness(selectedTenantId).then((readiness) => {
         if (cancelled) return;
+        if (readiness.kind === "error") {
+          setState({ kind: "error", message: readiness.message });
+          return;
+        }
         if (readiness.kind === "ready" || readiness.kind === "chat-ready") {
           void listAgentDefinitions(selectedTenantId).then((definitions) => {
             if (cancelled) return;
