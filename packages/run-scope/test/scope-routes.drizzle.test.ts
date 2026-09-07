@@ -1,33 +1,21 @@
 // DB-gated: skipped when no DATABASE_URL is reachable, mirroring
 // `@corbits/granola-tools`'s `credential-wiring-e2e.drizzle.test.ts`.
 // Runs the real platform schema (`@intx/db`'s `runMigrations`, into its
-// own named schema on the shared e2e database) alongside
-// `@corbits/folded-runs`' own `folded_run` marker table
-// (`applyFoldedRunsMigrations`), so `listTopLevelRuns` is proven
-// against real Postgres rows and a real `NOT EXISTS` subquery, not a
-// hand-rolled fake `db`.
-//
-// This is the test CL-6061 exists to write: a self-anchored folded run
-// (workbench host, invited agent, or task — indistinguishable from each
-// other by `workflow_run`'s own columns, see `@corbits/folded-runs`'
-// `launch.ts`'s big comment) never appears in this scoped listing,
-// while a genuine top-level deployment run does.
+// own named schema on the shared e2e database) so `listTopLevelRuns`
+// is proven against real Postgres rows, not a hand-rolled fake `db`.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { eq } from "drizzle-orm";
 import { createDB, runMigrations, dropSchema } from "@intx/db";
 import { schema } from "@intx/db";
-import { applyFoldedRunsMigrations } from "@corbits/folded-runs/migrations";
-import { foldedRun } from "@corbits/folded-runs";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
-import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { listTopLevelRuns, listTopLevelRunFires } from "../src/scope-routes";
 import { dbGate } from "../../../scripts/e2e/db-gate";
 
 const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
-const SCHEMA = "folded_runs_scope_routes_test";
+const SCHEMA = "run_scope_scope_routes_test";
 const TENANT = "tnt_scope_routes";
 
 describeIfDb("listTopLevelRuns", () => {
@@ -37,31 +25,13 @@ describeIfDb("listTopLevelRuns", () => {
 
   beforeAll(async () => {
     await runMigrations(target, { schema: SCHEMA });
-    await applyFoldedRunsMigrations(databaseUrl as string);
   });
 
   afterAll(async () => {
-    // `applyFoldedRunsMigrations` always lands `folded_run` in its own
-    // fixed, global `folded_runs` schema — unlike the platform tables
-    // above, it is never scoped by `SCHEMA` — so dropping `SCHEMA`
-    // alone would leave this suite's marker rows behind for the next
-    // run against the same shared e2e database to collide with.
-    const { db, close } = createDB({ ...target, schema: SCHEMA });
-    try {
-      for (const id of [
-        "run_workbench_host1",
-        "run_invited_agent1",
-        "run_task1",
-      ]) {
-        await db.delete(foldedRun).where(eq(foldedRun.id, id));
-      }
-    } finally {
-      await close();
-    }
     await dropSchema(target, { schema: SCHEMA });
   });
 
-  test("excludes every folded run (workbench host, invited agent, task) and lists a genuine deployment", async () => {
+  test("lists a genuine top-level deployment", async () => {
     const { db, close } = createDB({ ...target, schema: SCHEMA });
     try {
       await db.insert(schema.tenant).values({
@@ -77,8 +47,6 @@ describeIfDb("listTopLevelRuns", () => {
         status: "deployed",
       });
 
-      // A genuine top-level deployment: self-anchored, addressed, no
-      // folded_run marker.
       await db.insert(schema.workflowRun).values({
         id: "run_deployment1",
         definitionId: "wfd_researcher",
@@ -88,28 +56,6 @@ describeIfDb("listTopLevelRuns", () => {
         status: "running",
         createdAt: new Date("2026-01-01T00:00:00.000Z"),
       });
-
-      // Three folded runs — workbench host, invited agent, task — all
-      // self-anchored exactly like the deployment above, each marked
-      // by its own `folded_run` row the way `launchFoldedRun` writes
-      // it unconditionally at launch.
-      const foldedIds = [
-        "run_workbench_host1",
-        "run_invited_agent1",
-        "run_task1",
-      ];
-      for (const id of foldedIds) {
-        await db.insert(schema.workflowRun).values({
-          id,
-          definitionId: "wfd_researcher",
-          anchorRunId: id,
-          tenantId: TENANT,
-          address: `${id}@scope-routes.workbench.test`,
-          status: "running",
-          createdAt: new Date("2026-01-02T00:00:00.000Z"),
-        });
-        await db.insert(foldedRun).values({ id, tenantId: TENANT });
-      }
 
       const rows = await listTopLevelRuns(db, TENANT);
 
@@ -126,7 +72,7 @@ describeIfDb("listTopLevelRuns", () => {
     }
   });
 
-  test("a child park row (no address) never appears, folded or not", async () => {
+  test("a child park row (no address) never appears", async () => {
     const { db, close } = createDB({ ...target, schema: SCHEMA });
     try {
       await db.insert(schema.workflowRun).values({
@@ -146,7 +92,7 @@ describeIfDb("listTopLevelRuns", () => {
     }
   });
 
-  test("an array of tenant ids rolls up runs across every tenant in it, still excluding folded runs and other tenants", async () => {
+  test("an array of tenant ids rolls up runs across every tenant in it, still excluding other tenants", async () => {
     const OTHER_TENANT = "tnt_scope_routes_other";
     const UNRELATED_TENANT = "tnt_scope_routes_unrelated";
     const { db, close } = createDB({ ...target, schema: SCHEMA });
@@ -199,7 +145,7 @@ describeIfDb("listTopLevelRuns", () => {
   });
 });
 
-const FIRES_SCHEMA = "folded_runs_scope_routes_fires_test";
+const FIRES_SCHEMA = "run_scope_scope_routes_fires_test";
 const FIRES_TENANT = "tnt_scope_routes_fires";
 
 describeIfDb("listTopLevelRunFires", () => {
@@ -209,18 +155,9 @@ describeIfDb("listTopLevelRunFires", () => {
 
   beforeAll(async () => {
     await runMigrations(target, { schema: FIRES_SCHEMA });
-    await applyFoldedRunsMigrations(databaseUrl as string);
   });
 
   afterAll(async () => {
-    const { db, close } = createDB({ ...target, schema: FIRES_SCHEMA });
-    try {
-      for (const id of ["run_fire1", "run_workbench_host_fires1"]) {
-        await db.delete(foldedRun).where(eq(foldedRun.id, id));
-      }
-    } finally {
-      await close();
-    }
     await dropSchema(target, { schema: FIRES_SCHEMA });
   });
 
@@ -260,9 +197,9 @@ describeIfDb("listTopLevelRunFires", () => {
         createdAt: new Date("2026-01-01T00:00:00.000Z"),
       });
 
-      // A routine fire: a folded run (marked in `folded_run`) that
-      // `resolveRoutineFires` below recognizes as a fire of "Pulse
-      // check" — must appear, carrying that routine's name.
+      // A routine fire that `resolveRoutineFires` below recognizes as
+      // a fire of "Pulse check" — must appear, carrying that routine's
+      // name.
       await db.insert(schema.workflowRun).values({
         id: "run_fire1",
         definitionId: "wfd_workbench_digest",
@@ -272,26 +209,8 @@ describeIfDb("listTopLevelRunFires", () => {
         status: "running",
         createdAt: new Date("2026-01-02T00:00:00.000Z"),
       });
-      await db
-        .insert(foldedRun)
-        .values({ id: "run_fire1", tenantId: FIRES_TENANT });
 
-      // A workbench-host folded run: no routine parent — must stay
-      // excluded even though it is fired activity, same as today.
-      await db.insert(schema.workflowRun).values({
-        id: "run_workbench_host_fires1",
-        definitionId: "wfd_workbench_digest",
-        anchorRunId: "run_workbench_host_fires1",
-        tenantId: FIRES_TENANT,
-        address: "run_workbench_host_fires1@scope-routes-fires.workbench.test",
-        status: "running",
-        createdAt: new Date("2026-01-02T12:00:00.000Z"),
-      });
-      await db
-        .insert(foldedRun)
-        .values({ id: "run_workbench_host_fires1", tenantId: FIRES_TENANT });
-
-      // A plain deployment, triggered directly (no routine, no fold):
+      // A plain deployment, triggered directly (no routine parent):
       // must appear, with no routine parent — the honest
       // definition-name fallback.
       await db.insert(schema.workflowRun).values({
@@ -350,15 +269,19 @@ describeIfDb("listTopLevelRunFires", () => {
     }
   });
 
-  test("with no resolveRoutineFires wired, every folded run drops (never a fire) while non-folded fired runs still appear", async () => {
+  test("with no resolveRoutineFires wired, fired runs still appear with no routine parent", async () => {
     const { db, close } = createDB({ ...target, schema: FIRES_SCHEMA });
     try {
       const rows = await listTopLevelRunFires(db, FIRES_TENANT, undefined);
       const ids = rows.map((row) => row.id);
-      expect(ids).not.toContain("run_fire1");
-      expect(ids).not.toContain("run_workbench_host_fires1");
+      expect(ids).toContain("run_fire1");
       expect(ids).toContain("run_direct_deployment1");
       expect(ids).not.toContain("run_never_fired1");
+      const fire = rows.find((row) => row.id === "run_fire1");
+      expect(fire).toMatchObject({
+        routineId: null,
+        routineName: null,
+      });
     } finally {
       await close();
     }

@@ -26,7 +26,13 @@ export const MISSING_DATABASE_HINT =
 const CI_JOBS_WITHOUT_POSTGRES = new Set([
   "lint",
   "typecheck",
+  // "build-test" itself is now a no-op summary job (see ci.yml); the
+  // actual GITHUB_JOB name a sharded build-test matrix run carries is
+  // "build-test-shard". Both stay listed: the summary job sets no env
+  // and never runs a suite, but naming it costs nothing and keeps this
+  // set matching ci.yml by inspection rather than by memory.
   "build-test",
+  "build-test-shard",
   "structural",
 ]);
 

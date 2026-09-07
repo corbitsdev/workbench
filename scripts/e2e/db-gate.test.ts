@@ -47,6 +47,8 @@ describe("databaseIsRequired", () => {
     process.env["CI"] = "true";
     process.env["GITHUB_JOB"] = "build-test";
     expect(databaseIsRequired()).toBe(false);
+    process.env["GITHUB_JOB"] = "build-test-shard";
+    expect(databaseIsRequired()).toBe(false);
     process.env["GITHUB_JOB"] = "structural";
     expect(databaseIsRequired()).toBe(false);
     process.env["GITHUB_JOB"] = "lint";

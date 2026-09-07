@@ -3,7 +3,27 @@
 // `message` is a log string (launch label, resolution reason, seed
 // instructions) and must never land on `agent_turns.error`, a timeline
 // notice, or an HTTP 500 body.
-import { InferenceResolutionError } from "@corbits/folded-runs";
+
+/**
+ * Thrown when the tenant catalog yields no launchable inference source.
+ * The bare `resolutionMessage` is kept alongside the log `message` so
+ * an HTTP boundary can map it without parsing the log-string.
+ */
+export class InferenceResolutionError extends Error {
+  readonly resolutionMessage: string;
+  /** Consumer-facing sentence an HTTP boundary can return verbatim. */
+  readonly guidance: string;
+  constructor(launchLabel: string, resolutionMessage: string) {
+    super(
+      `cannot resolve an inference source for ${launchLabel} ` +
+        `(${resolutionMessage}); seed a tenant catalog source (provider, ` +
+        `credential, catalog model/provider/offering) before launching`,
+    );
+    this.name = "InferenceResolutionError";
+    this.resolutionMessage = resolutionMessage;
+    this.guidance = "This agent's model isn't available here.";
+  }
+}
 
 export const MODEL_UNAVAILABLE_CONSUMER_MESSAGE =
   "This agent's model isn't available here.";

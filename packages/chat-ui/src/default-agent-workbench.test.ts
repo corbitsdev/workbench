@@ -1,40 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import {
-  createDefaultAgentWorkbench,
-  isWorkbenchTitleMatch,
-} from "./default-agent-workbench";
-import type { Workbench } from "./api";
-
-function workbench(partial: {
-  readonly id: string;
-  readonly title: string;
-  readonly kind?: string;
-}): Workbench {
-  return {
-    id: partial.id,
-    title: partial.title,
-    kind: partial.kind ?? "workbench",
-    pinned: false,
-    participants: [],
-  };
-}
+import { createDefaultAgentWorkbench } from "./default-agent-workbench";
 
 type StubDefinition = { readonly id: string; readonly name: string };
 
 function definition(id: string, name: string): StubDefinition {
   return { id, name };
 }
-
-describe("isWorkbenchTitleMatch", () => {
-  test("is case-insensitive and trims", () => {
-    expect(isWorkbenchTitleMatch("Myra", "Myra")).toBe(true);
-    expect(isWorkbenchTitleMatch(" myra ", "Myra")).toBe(true);
-    expect(isWorkbenchTitleMatch("MYRA", "Myra")).toBe(true);
-    expect(isWorkbenchTitleMatch("Myra chat", "Myra")).toBe(false);
-    expect(isWorkbenchTitleMatch("Assistant", "Myra")).toBe(false);
-  });
-});
 
 describe("createDefaultAgentWorkbench", () => {
   const realFetch = globalThis.fetch;
@@ -71,32 +43,12 @@ describe("createDefaultAgentWorkbench", () => {
     expect(agent.isCachedWorkbenchId(null)).toBe(false);
   });
 
-  test("findWorkbenchByTitle returns the first title match", () => {
-    const agent = createDefaultAgentWorkbench({
-      title: "Myra",
-      assetName: "assistant",
-    });
-    const items = [
-      workbench({ id: "a", title: "general" }),
-      workbench({ id: "b", title: "myra" }),
-      workbench({ id: "c", title: "Myra" }),
-    ];
-    expect(agent.findWorkbenchByTitle(items)?.id).toBe("b");
-    expect(
-      agent.findWorkbenchByTitle([workbench({ id: "a", title: "general" })]),
-    ).toBeUndefined();
-  });
-
-  test("creates a chat with the definitionId when no title match exists", async () => {
+  test("ensure issues exactly the definition-keyed create, with no list-by-title lookup", async () => {
     const agent = createDefaultAgentWorkbench({
       title: "Myra",
       assetName: "assistant",
     });
     const calls = stubFetch((path) => {
-      if (path.endsWith("/chat/workbenches?kind=workbench"))
-        return json({ items: [] });
-      if (path.endsWith("/chat/workbenches?kind=chat"))
-        return json({ items: [] });
       if (path.endsWith("/chat/workbenches")) {
         return json({
           id: "chat-1",
@@ -114,9 +66,9 @@ describe("createDefaultAgentWorkbench", () => {
     ]);
 
     expect(result).toEqual({ kind: "ready", workbenchId: "chat-1" });
-    const createCall = calls.find((call) =>
-      call.path.endsWith("/chat/workbenches"),
-    );
+    expect(calls).toHaveLength(1);
+    const createCall = calls[0];
+    expect(createCall?.path.endsWith("/chat/workbenches")).toBe(true);
     expect(createCall?.init?.method).toBe("POST");
     expect(JSON.parse(String(createCall?.init?.body))).toEqual({
       kind: "chat",
@@ -127,130 +79,10 @@ describe("createDefaultAgentWorkbench", () => {
     expect(agent.isCachedWorkbenchId("chat-1")).toBe(true);
   });
 
-  test("reuses an existing chat-kind title match without any settings write", async () => {
-    const agent = createDefaultAgentWorkbench({
-      title: "Myra",
-      assetName: "assistant",
-    });
-    const calls = stubFetch((path) => {
-      if (path.endsWith("/chat/workbenches?kind=workbench"))
-        return json({ items: [] });
-      if (path.endsWith("/chat/workbenches?kind=chat")) {
-        return json({
-          items: [
-            {
-              id: "chat-1",
-              title: "Myra",
-              kind: "chat",
-              pinned: false,
-              participants: [{ address: "myra@wf_1.tnt_1", handle: "myra" }],
-            },
-          ],
-        });
-      }
-      throw new Error(`unexpected fetch: ${path}`);
-    });
-
-    const result = await agent.ensure("tnt_1", async () => []);
-
-    expect(result).toEqual({ kind: "ready", workbenchId: "chat-1" });
-    expect(agent.isCachedWorkbenchId("chat-1")).toBe(true);
-    expect(calls.some((call) => call.init?.method === "PATCH")).toBe(false);
-  });
-
-  test("converts a legacy workbench-kind match carrying the agent into a chat, so it auto-responds", async () => {
-    const agent = createDefaultAgentWorkbench({
-      title: "Myra",
-      assetName: "assistant",
-    });
-    const legacyWire = {
-      id: "legacy-1",
-      title: "Myra",
-      kind: "workbench",
-      pinned: true,
-      participants: [{ address: "myra@wf_1.tnt_1", handle: "myra" }],
-    };
-    const calls = stubFetch((path) => {
-      if (path.endsWith("/chat/workbenches?kind=workbench"))
-        return json({ items: [legacyWire] });
-      if (path.endsWith("/chat/workbenches?kind=chat"))
-        return json({ items: [] });
-      if (path.endsWith("/chat/workbenches/legacy-1/settings")) {
-        return json({
-          ...legacyWire,
-          kind: "chat",
-          settings: { "chat/kind": "chat" },
-          contextWindow: { value: 50, source: "inherit" },
-        });
-      }
-      throw new Error(`unexpected fetch: ${path}`);
-    });
-
-    const result = await agent.ensure("tnt_1", async () => []);
-
-    expect(result).toEqual({ kind: "ready", workbenchId: "legacy-1" });
-    expect(agent.isCachedWorkbenchId("legacy-1")).toBe(true);
-    const patchCall = calls.find((call) => call.init?.method === "PATCH");
-    expect(
-      patchCall?.path.endsWith("/chat/workbenches/legacy-1/settings"),
-    ).toBe(true);
-    expect(JSON.parse(String(patchCall?.init?.body))).toEqual({
-      "chat/kind": "chat",
-    });
-  });
-
-  test("ignores an agent-less legacy workbench-kind match and creates the real chat", async () => {
-    const agent = createDefaultAgentWorkbench({
-      title: "Myra",
-      assetName: "assistant",
-    });
-    const calls = stubFetch((path) => {
-      if (path.endsWith("/chat/workbenches?kind=workbench")) {
-        return json({
-          items: [
-            {
-              id: "husk-1",
-              title: "Myra",
-              kind: "workbench",
-              pinned: false,
-              participants: [{ address: "sawyer", handle: "sawyer" }],
-            },
-          ],
-        });
-      }
-      if (path.endsWith("/chat/workbenches?kind=chat"))
-        return json({ items: [] });
-      if (path.endsWith("/chat/workbenches")) {
-        return json({
-          id: "chat-2",
-          title: "Myra",
-          kind: "chat",
-          pinned: false,
-          participants: [],
-        });
-      }
-      throw new Error(`unexpected fetch: ${path}`);
-    });
-
-    const result = await agent.ensure("tnt_1", async () => [
-      definition("def-assistant", "assistant"),
-    ]);
-
-    expect(result).toEqual({ kind: "ready", workbenchId: "chat-2" });
-    expect(calls.some((call) => call.init?.method === "PATCH")).toBe(false);
-  });
-
   test("errors when no definition matches the configured asset name", async () => {
     const agent = createDefaultAgentWorkbench({
       title: "Myra",
       assetName: "assistant",
-    });
-    stubFetch((path) => {
-      if (path.endsWith("/chat/workbenches?kind=workbench"))
-        return json({ items: [] });
-      if (path.endsWith("/chat/workbenches?kind=chat"))
-        return json({ items: [] });
-      throw new Error(`unexpected fetch: ${path}`);
     });
 
     const result = await agent.ensure("tnt_1", async () => [
@@ -264,13 +96,6 @@ describe("createDefaultAgentWorkbench", () => {
     const agent = createDefaultAgentWorkbench({
       title: "Myra",
       assetName: undefined,
-    });
-    stubFetch((path) => {
-      if (path.endsWith("/chat/workbenches?kind=workbench"))
-        return json({ items: [] });
-      if (path.endsWith("/chat/workbenches?kind=chat"))
-        return json({ items: [] });
-      throw new Error(`unexpected fetch: ${path}`);
     });
 
     const result = await agent.ensure("tnt_1", async () => [
@@ -286,25 +111,21 @@ describe("createDefaultAgentWorkbench", () => {
       assetName: "assistant",
     });
     stubFetch((path) => {
-      if (path.endsWith("/chat/workbenches?kind=workbench"))
-        return json({ items: [] });
-      if (path.endsWith("/chat/workbenches?kind=chat")) {
+      if (path.endsWith("/chat/workbenches")) {
         return json({
-          items: [
-            {
-              id: "chat-1",
-              title: "Myra",
-              kind: "chat",
-              pinned: false,
-              participants: [],
-            },
-          ],
+          id: "chat-1",
+          title: "Myra",
+          kind: "chat",
+          pinned: false,
+          participants: [],
         });
       }
       throw new Error(`unexpected fetch: ${path}`);
     });
 
-    await agent.ensure("tnt_1", async () => []);
+    await agent.ensure("tnt_1", async () => [
+      definition("def-assistant", "assistant"),
+    ]);
     expect(agent.isCachedWorkbenchId("chat-1")).toBe(true);
     agent.resetCache();
     expect(agent.isCachedWorkbenchId("chat-1")).toBe(false);

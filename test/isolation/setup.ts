@@ -10,11 +10,8 @@ import path from "node:path";
 
 import {
   freePort,
-  provisionSidecar,
   startHub,
-  startSidecar,
   type HubHandle,
-  type SpawnedApp,
 } from "../../scripts/e2e/harness.ts";
 import { assertDatabaseConfigured } from "../../scripts/e2e/db-gate.ts";
 
@@ -90,29 +87,21 @@ export async function prepareDatabase(databaseUrl: string): Promise<void> {
 }
 
 /**
- * Boots the real hub and a real sidecar as spawned processes, exactly
- * as `scripts/e2e/harness.ts` does for the walking skeleton — a
- * chat-workbench create launches a real agent instance over the
- * sidecar's WebSocket dial-in, so an in-process hub with no sidecar
- * attached cannot exercise the "chat workbench move" block below; it
- * would fail every one of those cases with "no sidecar available"
- * rather than proving isolation. `AppLike.request` wraps `fetch`
- * against the hub's real port, matching how a client actually reaches
- * it.
+ * Boots the real hub as a spawned process, exactly as
+ * `scripts/e2e/harness.ts` does for the walking skeleton — a
+ * chat-workbench create launches a real agent instance over its own
+ * process-provisioner-spawned sidecar's WebSocket dial-in, so an
+ * in-process hub with no sidecar plugin wired up cannot exercise the
+ * "chat workbench move" block below; it would fail every one of those
+ * cases with "no sidecar available" rather than proving isolation.
+ * `AppLike.request` wraps `fetch` against the hub's real port, matching
+ * how a client actually reaches it.
  */
 export async function bootIsolationHub(
   databaseUrl: string,
 ): Promise<IsolationHub> {
   const root = mkdtempSync(path.join(tmpdir(), "isolation-suite-"));
   const hubDataDir = path.join(root, "hub-data");
-  const sidecarDataDir = path.join(root, "sidecar-data");
-
-  // Unique per run: the `sidecar` table's id is a primary key, and a
-  // prior run's row is never cleaned up (the isolation suite runs
-  // against a shared database, never a scratch one it owns outright).
-  const sidecarId = `sidecar-isolation-suite-${crypto.randomUUID()}`;
-  const sidecarToken = crypto.randomUUID();
-  await provisionSidecar(databaseUrl, sidecarId, sidecarToken);
 
   const hub: HubHandle = await startHub({
     databaseUrl,
@@ -133,23 +122,15 @@ export async function bootIsolationHub(
     },
   });
 
-  const sidecar: SpawnedApp = startSidecar({
-    hubPort: Number(new URL(hub.baseUrl).port),
-    sidecarId,
-    token: sidecarToken,
-    dataDir: sidecarDataDir,
-  });
-
   const app: AppLike = {
     request: (requestPath, init) => fetch(`${hub.baseUrl}${requestPath}`, init),
   };
 
-  await waitForSidecarDialIn(app, sidecar);
+  await waitForSidecarDialIn(app, hub);
 
   return {
     app,
     shutdown: async () => {
-      await sidecar.stop();
       await hub.stop();
       rmSync(root, { recursive: true, force: true });
     },
@@ -169,7 +150,7 @@ export async function bootIsolationHub(
  */
 async function waitForSidecarDialIn(
   app: AppLike,
-  sidecar: SpawnedApp,
+  hub: HubHandle,
 ): Promise<void> {
   const cookie = await signUpUser(
     app,
@@ -194,10 +175,8 @@ async function waitForSidecarDialIn(
 
   const deadline = Date.now() + 30_000;
   for (;;) {
-    if (sidecar.exited()) {
-      throw new Error(
-        `sidecar exited before dialing in; output:\n${sidecar.output()}`,
-      );
+    if (hub.exited()) {
+      throw new Error(`hub exited before dialing in; output:\n${hub.output()}`);
     }
     const workbenchResponse = await app.request(
       `/api/tenants/${tenant.id}/chat/workbenches`,
@@ -212,7 +191,7 @@ async function waitForSidecarDialIn(
       throw new Error(
         `sidecar never dialed in within 30s (workbench create kept ` +
           `failing with ${workbenchResponse.status}): ` +
-          `${await workbenchResponse.text()}\nsidecar output:\n${sidecar.output()}`,
+          `${await workbenchResponse.text()}\nhub output:\n${hub.output()}`,
       );
     }
     await Bun.sleep(500);

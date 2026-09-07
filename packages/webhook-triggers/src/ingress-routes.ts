@@ -39,10 +39,10 @@ export type CreateWebhookIngressRoutesDeps = {
   /**
    * The hub composes this as `(trigger, payload) =>
    * launchWebhookTrigger(deps, trigger, payload)`, closing over the
-   * real folded-runs deps — kept as a seam here (rather than this
-   * module importing `launchWebhookTrigger` directly) so the route's
-   * own parsing/signature/lookup logic is testable without a database
-   * or the launch machinery.
+   * real Interchange launch deps — kept as a seam here (rather than
+   * this module importing `launchWebhookTrigger` directly) so the
+   * route's own parsing/signature/lookup logic is testable without a
+   * database or the launch machinery.
    */
   launch: (
     trigger: WebhookTriggerRow,

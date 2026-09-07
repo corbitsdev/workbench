@@ -12,7 +12,7 @@ import { createDB, schema } from "@intx/db";
 import { generateId } from "@intx/hub-common";
 
 import { setupDatabase } from "../../../scripts/db-setup";
-import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { createDrizzleRunTraceReader } from "../src/trace-reader";
 import { dbGate } from "../../../scripts/e2e/db-gate";
 

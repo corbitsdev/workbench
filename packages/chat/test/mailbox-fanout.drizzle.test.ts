@@ -15,7 +15,7 @@ import postgres from "postgres";
 import { sql } from "drizzle-orm";
 import { createMailboxDb, runMailboxMigrations } from "@corbits/mailbox";
 
-import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { dbGate } from "../../../scripts/e2e/db-gate";
 import {
   createDrizzleMailboxWriter,

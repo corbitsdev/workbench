@@ -17,7 +17,7 @@ import {
   createNoopCredentialCipher,
 } from "@intx/crypto";
 
-import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { applyWebhookTriggersMigrations } from "../src/migrations";
 import { createDrizzleWebhookTriggerStore } from "../src/store";
 import { dbGate } from "../../../scripts/e2e/db-gate";

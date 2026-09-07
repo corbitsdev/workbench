@@ -5,7 +5,7 @@
 // rather than a race.
 import { describe, expect, test } from "bun:test";
 
-import { InferenceResolutionError } from "@corbits/folded-runs";
+import { InferenceResolutionError } from "../src/model-unavailable";
 
 import { createInMemoryAgentTurnStore } from "../src/agent-turns";
 import { createChatRoutes } from "../src/routes";

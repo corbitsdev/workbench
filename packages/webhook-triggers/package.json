@@ -1,7 +1,7 @@
 {
   "name": "@corbits/webhook-triggers",
   "private": true,
-  "description": "Webhook-triggered workflow launches: an external service (e.g. Granola) posts a payload that maps to input for an existing tenant workflow definition, launched through the same folded-run path chat uses.",
+  "description": "Webhook-triggered workflow launches: an external service (e.g. Granola) posts a payload that maps to input for an existing tenant workflow definition, launched through Interchange's prepareProvisionedDeployment.",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
@@ -14,9 +14,10 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@corbits/agent-runtime": "workspace:*",
     "@corbits/error-sink": "workspace:*",
-    "@corbits/folded-runs": "workspace:*",
     "@corbits/migration-runner": "workspace:*",
+    "@corbits/workflows": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/hub-common": "0.3.0",

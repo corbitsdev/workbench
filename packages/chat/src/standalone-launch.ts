@@ -8,13 +8,13 @@
 // after a sidecar restart marks the run terminal, the sweep never finds
 // it, the wake path cannot resolve it, and its next occurrence 409s
 // (`workflow_run_terminal`) forever. These exports are what a standalone
-// launcher passes to `launchFoldedRun` so its run rides the exact same
-// relaunch path a room-invited agent does: the section mode the deploy
-// pins, and the `persistExtra` that writes the mapping row inside the
-// launch transaction itself.
+// launcher passes so its run rides the exact same relaunch path a
+// room-invited agent does: the section mode the deploy pins, and the
+// `persistExtra` that writes the mapping row inside the launch
+// transaction itself.
 import type { DBExecutor } from "@intx/db";
 import type { FoldedBody } from "@intx/workflow-deploy";
-import type { FoldedRunMode } from "@corbits/folded-runs";
+import type { AgentRuntimeConfig } from "@corbits/agent-runtime";
 import { workbenchLaunch } from "./schema";
 import { CHAT_TURN_TIMEOUT_MS } from "./turn-claims";
 
@@ -31,14 +31,14 @@ import { CHAT_TURN_TIMEOUT_MS } from "./turn-claims";
  * records a failed occurrence and leaves the section subscribed, so one
  * bad turn kills neither the agent nor the conversation.
  */
-export const AGENT_SECTION_MODE: FoldedRunMode = {
+export const AGENT_SECTION_MODE: AgentRuntimeConfig["mode"] = {
   kind: "section",
   turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
 };
 
 /**
- * The `persistExtra` a standalone launch hands `launchFoldedRun`: the
- * `workbench_launch` row that starts the run's life with the identity
+ * The `persistExtra` a standalone launch hands its provisioned deploy:
+ * the `workbench_launch` row that starts the run's life with the identity
  * mapping (stable id = the run id it launched as), committed atomically
  * with the run's own principal/session/run rows. Every relaunch after a
  * terminal death re-points `currentRunId` while the stable id — the

@@ -41,12 +41,9 @@ import {
   expectStatus,
   freePort,
   hop,
-  provisionSidecar,
   startHub,
-  startSidecar,
   type ApiResult,
   type HubHandle,
-  type SpawnedApp,
 } from "./harness.ts";
 
 const { tempDir, track } = createCleanupHarness();
@@ -135,10 +132,6 @@ describe.skipIf(databaseUrl === undefined)(
         expect(report.action).toBe("migrated");
       });
 
-      const sidecarId = "greeting-delivery-sidecar";
-      const sidecarToken = crypto.randomUUID();
-      await provisionSidecar(url, sidecarId, sidecarToken);
-
       const hub: HubHandle = await hop("hub boot", async () =>
         startHub({
           databaseUrl: url,
@@ -150,16 +143,6 @@ describe.skipIf(databaseUrl === undefined)(
         }),
       );
       track(hub);
-
-      const sidecar: SpawnedApp = startSidecar({
-        hubPort: new URL(hub.baseUrl).port
-          ? Number(new URL(hub.baseUrl).port)
-          : 80,
-        sidecarId,
-        token: sidecarToken,
-        dataDir: await tempDir("e2e-greeting-delivery-sidecar-data-"),
-      });
-      track(sidecar);
 
       const hubApi: ApiCall = createHubAPI(hub.baseUrl);
 
@@ -236,9 +219,9 @@ describe.skipIf(databaseUrl === undefined)(
         async () => {
           const deadline = Date.now() + 60_000;
           for (;;) {
-            if (sidecar.exited()) {
+            if (hub.exited()) {
               throw new Error(
-                `sidecar exited before ensureSeeded could run; output:\n${sidecar.output()}`,
+                `hub exited before ensureSeeded could run; output:\n${hub.output()}`,
               );
             }
             try {
@@ -269,9 +252,9 @@ describe.skipIf(databaseUrl === undefined)(
       async function deploySeededWorkflows(): Promise<void> {
         const deadline = Date.now() + 60_000;
         for (;;) {
-          if (sidecar.exited()) {
+          if (hub.exited()) {
             throw new Error(
-              `sidecar exited before default workflows could deploy; output:\n${sidecar.output()}`,
+              `hub exited before default workflows could deploy; output:\n${hub.output()}`,
             );
           }
           try {
@@ -284,23 +267,12 @@ describe.skipIf(databaseUrl === undefined)(
                 principalId: tenant.principalId,
                 domain: tenant.tenantDomain,
               },
-              model:
-                USE_OLLAMA && OLLAMA_BASE_URL !== undefined
-                  ? await modelSourceFor(
-                      hubApi,
-                      user.cookies,
-                      tenant.tenantId,
-                      CONNECT_PROVIDER,
-                      CONNECT_API_KEY,
-                      OLLAMA_BASE_URL,
-                    )
-                  : await modelSourceFor(
-                      hubApi,
-                      user.cookies,
-                      tenant.tenantId,
-                      CONNECT_PROVIDER,
-                      CONNECT_API_KEY,
-                    ),
+              model: await modelSourceFor(
+                hubApi,
+                user.cookies,
+                tenant.tenantId,
+                CONNECT_PROVIDER,
+              ),
               pushWorkflow,
               log: () => undefined,
               workflows: DEFAULT_WORKFLOWS,
@@ -356,9 +328,9 @@ describe.skipIf(databaseUrl === undefined)(
           const deadline = Date.now() + 60_000;
           let res: ApiResult;
           for (;;) {
-            if (sidecar.exited()) {
+            if (hub.exited()) {
               throw new Error(
-                `sidecar exited before chat creation; output:\n${sidecar.output()}`,
+                `hub exited before chat creation; output:\n${hub.output()}`,
               );
             }
             res = await api(
@@ -372,7 +344,7 @@ describe.skipIf(databaseUrl === undefined)(
             if (Date.now() > deadline) {
               throw new Error(
                 `chat never became mintable (hub kept answering 500): ` +
-                  `${JSON.stringify(res.data)}\nsidecar output:\n${sidecar.output()}`,
+                  `${JSON.stringify(res.data)}\nhub output:\n${hub.output()}`,
               );
             }
             await Bun.sleep(200);
@@ -448,7 +420,7 @@ describe.skipIf(databaseUrl === undefined)(
               throw new Error(
                 `no agent-authored message landed in chat ${chatId} within ` +
                   `60s of mint with zero user messages sent; messages seen: ` +
-                  `${JSON.stringify(items)}\nsidecar output:\n${sidecar.output()}`,
+                  `${JSON.stringify(items)}\nhub output:\n${hub.output()}`,
               );
             }
             await Bun.sleep(200);
@@ -527,8 +499,7 @@ describe.skipIf(databaseUrl === undefined)(
                 throw new Error(
                   `no answer to turn ${turn} within 180s; agent messages: ` +
                     `${JSON.stringify(agentTexts)}\nhub output (tail):\n` +
-                    `${hub.output().slice(-60000)}\nsidecar output (tail):\n` +
-                    `${sidecar.output().slice(-6000)}`,
+                    `${hub.output().slice(-60000)}`,
                 );
               }
               await Bun.sleep(2000);

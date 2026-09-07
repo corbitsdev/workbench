@@ -71,9 +71,9 @@ function fakeRoom(options?: { failPostOnCall: number }) {
     },
     listMessages: store.listMessages,
     getMessage: store.getMessage,
-    listActivity: store.listActivity,
     stampMailMessageId: store.stampMailMessageId,
     findByMailMessageId: store.findByMailMessageId,
+    listActivity: store.listActivity,
     deleteMessage: store.deleteMessage,
   };
   const publish: WorkbenchSubscriberRegistry["publish"] = (
@@ -150,9 +150,9 @@ function launchRowFor(runId: string, tenantId: string) {
   };
 }
 
-// The real `findFoldedRunByAddress` (exercised, not mocked, so this
-// file never risks poisoning `@corbits/folded-runs`'s module namespace
-// for `platform-adapter.test.ts` when the whole package's suite runs
+// The real address→run resolution (exercised, not mocked, so this
+// file never risks poisoning `@corbits/chat`'s module namespace for
+// `platform-adapter.test.ts` when the whole package's suite runs
 // in one process) calls `db.query.workflowRun.findFirst({ where:
 // eq(workflowRun.address, address) })`. Every scenario here configures
 // at most one run, so this fake ignores the `where` filter and simply
@@ -1341,8 +1341,8 @@ describe("createChatOrchestrator", () => {
   // stores, so every assertion below proves the posted row AND its
   // membership land in the source message's thread.
   //
-  // `findFoldedRunByAddress` is exercised for real (see this file's
-  // header comment), so the two-address fake answers by call order
+  // The real address→run resolution is exercised for real (see this
+  // file's header comment), so the two-address fake answers by call order
   // rather than inspecting the drizzle `where` expression: the tests
   // below await a macrotask between emissions, so resolutions happen in
   // emission order.
@@ -1804,17 +1804,16 @@ describe("createChatOrchestrator", () => {
     orchestrator.dispose();
   });
 
-  test("delegation falls out of the general rule: a specialist's reply threads under the delegating message's thread (CL-6314)", async () => {
+  test("delegation falls out of the general rule: a specialist's reply threads under the delegating message's thread (CL-7104)", async () => {
     const room = fakeRoom();
     const threads = createInMemoryThreadStore();
     const turnMail = createInMemoryTurnMailCorrelationStore();
     const { platform } = fakeMail();
-    const delegationMailIds: string[] = [];
+    const delegationHeaders: (string | undefined)[] = [];
     const deliverMail = platform.sendMail.bind(platform);
     platform.sendMail = async (input) => {
-      const sent = await deliverMail(input);
-      delegationMailIds.push(sent.id);
-      return sent;
+      delegationHeaders.push(input.content.messageId);
+      return deliverMail(input);
     };
     const events = createSidecarEmitter();
     const orchestrator = createChatOrchestrator({
@@ -1897,15 +1896,16 @@ describe("createChatOrchestrator", () => {
       (message) => message.sender.address === "ins_myra1@ten1.workbench.test",
     );
     expect(delegatingMessage?.threadId).toBe(thread.id);
-    // And the delegation hop recorded its own correlation, keyed by the
-    // mail id it just got back — no in-memory delegation map involved.
-    const delegationMailId = delegationMailIds[0];
-    if (delegationMailId === undefined) {
-      throw new Error("expected the delegation hop to send one mail");
-    }
+    // The delegation hop went out under the delegating row's own RFC 5322
+    // Message-ID (CL-7104) — no reply-to address, no correlation id — and
+    // recorded that header's row as the source it answers.
     if (delegatingMessage?.id === undefined) {
       throw new Error("expected the host's delegating message to be posted");
     }
+    expect(delegationHeaders).toEqual([
+      `<${delegatingMessage.id}@ten1.workbench.test>`,
+    ]);
+    const delegationMailId = delegatingMessage.id;
     expect(
       await turnMail.findTurnMailSource({
         tenantId: "ten_1",
@@ -1955,7 +1955,7 @@ describe("createChatOrchestrator", () => {
     orchestrator.dispose();
   });
 
-  test("a reply with no recorded correlation still posts, unthreaded — never lost (CL-6314)", async () => {
+  test("a reply naming no parent is reported and lands on the root thread, never a guessed parent (CL-7104)", async () => {
     const room = fakeRoom();
     const threads = createInMemoryThreadStore();
     const turnMail = createInMemoryTurnMailCorrelationStore();
@@ -1977,9 +1977,9 @@ describe("createChatOrchestrator", () => {
       approvals: { findByCorrelationId: async () => null },
     });
 
-    // No bracket, no correlation row, no running turn — a mail this
-    // process never dispatched (a pre-rollout mail): the reply still
-    // posts, exactly as before threads.
+    // No bracket, no correlation row, no running turn — nothing names a
+    // parent for this reply. It still posts, on the root thread, and the
+    // unresolvable parentage is reported rather than guessed at.
     events.emit("agent.event", {
       agentAddress: "ins_echo1@ten1.workbench.test",
       sessionId: "ses_1",
@@ -1994,14 +1994,15 @@ describe("createChatOrchestrator", () => {
       (message) => message.sender.address === "ins_echo1@ten1.workbench.test",
     );
     expect(reply).toMatchObject({ workbenchId: "ins_workbench1" });
-    expect(reply?.threadId).toBeNull();
+    const root = await threads.ensureRootThread("ten_1", "ins_workbench1");
+    expect(reply?.threadId).toBe(root.id);
     expect(
       await threads.threadIdForMessage(
         "ten_1",
         "ins_workbench1",
         reply?.id ?? "",
       ),
-    ).toBeUndefined();
+    ).toBe(root.id);
 
     orchestrator.dispose();
   });

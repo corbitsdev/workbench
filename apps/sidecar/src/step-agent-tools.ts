@@ -49,6 +49,7 @@ import { getLogger } from "@intx/log";
 import type { LoadedToolFactory, RegistryConfig } from "@intx/tool-packaging";
 import { resolveStepAddress } from "@intx/workflow-deploy";
 import { parseRunAddress } from "@intx/types";
+import type { CredentialMaterialResolver } from "@intx/types";
 import type { CredentialWiring } from "@intx/workflow-host";
 
 import { materializeToolPackages } from "./tool-materialization";
@@ -658,6 +659,35 @@ export function consumerBindings(
     });
   }
   return bindings;
+}
+
+/**
+ * Resolve an inference source's secret BY `credentialId` from the step's
+ * live credential cell, the resolver `BaseEnv.readCurrentMaterial` expects.
+ *
+ * Inference stopped carrying an inline `apiKey` upstream: an
+ * `InferenceSource` now names a `credentialId` and the reactor fills the
+ * secret at send time through this seam, off the same cell tool credentials
+ * resolve from. Reads `materialRef.current` fresh per call, so a
+ * `credentials-updated` frame mid-step is picked up, and fails closed when
+ * the credential was revoked or never delivered rather than dialing out
+ * unauthenticated.
+ */
+export function stepInferenceMaterialResolver(
+  context: StepCredentialContext,
+): CredentialMaterialResolver {
+  return (credentialId) => {
+    const current = context.wiring.materialRef.current;
+    const material = current?.materials.find(
+      (entry) => entry.credentialId === credentialId,
+    );
+    if (material === undefined) {
+      throw new Error(
+        `sidecar workflow-child step ${JSON.stringify(context.stepId)}: inference source credential ${credentialId} has no delivered material (revoked, rotated away, or never delivered)`,
+      );
+    }
+    return { secret: material.secret };
+  };
 }
 
 /**

@@ -154,10 +154,6 @@ packages/connections/src/credential-test.ts	1	return [];
 packages/connections/src/credential-test.ts	1	return undefined;
 packages/connections/src/credential-test.ts	1	return {
 packages/error-sink/src/index.ts	1	return context.refId ?? UNKNOWN_OPERATION;
-packages/folded-run-one-shot/src/one-shot-reply.ts	1	log.error`one-shot run ${triggerAddress}: undeploy failed during teardown (${reason}): ${
-packages/folded-run-one-shot/src/one-shot-reply.ts	1	void settle("planning-run-send-failed", () => {
-packages/folded-runs/src/mail.ts	1	lastError = err;
-packages/folded-runs/src/mail.ts	1	return { ok: false, error: err, attempts: attemptsUsed };
 packages/github-tools/src/pull-request-tools.ts	1	return errorResult(call.id, failureMessage(err));
 packages/github-tools/src/pull-request-tools.ts	1	return null;
 packages/github-tools/src/pull-request-tools.ts	2	return errorResult(call.id, failureMessage(err));

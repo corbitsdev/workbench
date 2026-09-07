@@ -10,7 +10,7 @@ import { eq, inArray } from "drizzle-orm";
 import { createDB, runMigrations, dropSchema, schema } from "@intx/db";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
-import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { applyRunKeyHistoryMigrations } from "../src/migrations";
 import { createDrizzleRunKeyHistoryStore } from "../src/store";
 import { runKeyHistory } from "../src/schema";

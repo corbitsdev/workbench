@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { configureSync, resetSync } from "@intx/log";
-import { InferenceResolutionError } from "@corbits/folded-runs";
+import { InferenceResolutionError } from "@corbits/chat";
 
 import { hubErrorHandler } from "./hub-error-handler";
 

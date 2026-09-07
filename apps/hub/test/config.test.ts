@@ -277,7 +277,6 @@ describe("readHubConfig", () => {
     expect(config.seedModel).toEqual({
       provider: "anthropic",
       model: "claude-sonnet-5",
-      baseURL: "https://api.anthropic.com",
       apiKey: "sk-ant-test",
     });
   });

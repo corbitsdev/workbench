@@ -10,7 +10,7 @@ import {
   type AgentDefinitionDraftingRunnerDeps,
 } from "./agent-definition-drafting";
 import type { InventorySources, PlannerInventory } from "./inventory";
-import { FoldedRunTimedOutError } from "@corbits/folded-run-one-shot";
+import { OneShotRunTimedOutError } from "./one-shot-prompt";
 
 const INVENTORY_SOURCES: InventorySources = {
   async listConversationalAgents() {
@@ -272,13 +272,13 @@ describe("createMyraAgentDefinitionDrafting", () => {
       buildDeps({
         runner: {
           run: async () => {
-            throw new FoldedRunTimedOutError(60_000);
+            throw new OneShotRunTimedOutError(60_000);
           },
         },
       }),
     );
     await expect(drafting.propose(INPUT)).rejects.toBeInstanceOf(
-      FoldedRunTimedOutError,
+      OneShotRunTimedOutError,
     );
   });
 

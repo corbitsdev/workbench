@@ -46,8 +46,9 @@ column at a time:
   things to join. Plus mints an empty channel. Nobody is auto-hosted.
 - **Agents are principals, not templates.** Opening Sales opens Sales —
   the one 1:1 tenant with that agent. The same agent can sit in its DM
-  and in many channels. Product reopens or invites; it does not clone
-  the definition or mint a sibling instance per room. Myra is the
+  and in many channels. Inviting an agent provisions a native
+  Interchange run of that definition; product reopens or invites, it
+  does not clone a sibling instance per room. Myra is the
   first-run guide in her DM, not a special home slot and not a
   parallel home route. When she creates a specialist (`create_agent`),
   the default is to mint or reopen that specialist's own DM
@@ -99,6 +100,16 @@ Routines, Files, Skills, Agents, and Plugins. Insights and Evals appear
 on that rail only after honest usage exists. New benches should not
 meet an empty Insights / Evals gallery before they have anything to
 put there.
+
+Myra is every tenant's default agent and the coordinator of its other
+agents, not merely the first-run guide. When a request needs a
+capability the bench doesn't have, she doesn't decline it or improvise
+an inline answer: she proposes a teammate — an agent, workflow, or
+skill — authors it as code, deploys it through the normal deploy flow,
+grants it only the access its job requires, and adds it to the bench
+or a DM, reporting back once it's live. She checks for an existing
+teammate that already fits before creating one, so a bench never ends
+up with two agents doing the same job.
 
 ### Code review's first minute
 

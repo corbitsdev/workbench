@@ -1,8 +1,6 @@
 // CL-6149: proves the hub's `toolGrantsForPins` port turns a launch's
 // `toolPackagePins` into the exact `tool:<qualifiedId>` grants the
-// workflow child's authz gate matches against — see
-// `@corbits/folded-runs`' `deployAtHead`, which mints these into
-// `config.grants`.
+// workflow child's authz gate matches against.
 import { describe, expect, test } from "bun:test";
 import { describeCorbitsToolPackages } from "@corbits/tool-registry-publish";
 import { createToolGrantsForPins } from "./tool-grants";

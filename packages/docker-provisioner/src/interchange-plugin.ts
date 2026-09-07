@@ -1,6 +1,7 @@
 import {
   createAllocationStateStore,
   createSidecarProvisioner,
+  sidecarCapabilityDeclarations,
   type AllocationStateStore,
 } from "@corbits/sandbox-sidecar";
 import type { SidecarProvisioner } from "@intx/hub-sessions";
@@ -33,6 +34,10 @@ export function createDockerSidecarProvisioner(
     id: "docker",
     apiVersion: PROVISIONER_API_VERSION,
     bindingFingerprint: `docker:v1:${config.image}`,
+    // Declares nothing, so this provisioner serves any deployment that
+    // states no capability requirement — the behaviour it had before
+    // Interchange replaced sidecar placement with capability selection.
+    capabilities: sidecarCapabilityDeclarations("container"),
     backend: createDockerBackend(commands, config),
     store,
   });

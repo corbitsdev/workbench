@@ -12,9 +12,8 @@
 // events by bare id (the native events route requires a deployment-anchor
 // run). This test instead reads the run row the ingress delivery created
 // straight out of the database — a harness-side fact with no route,
-// exactly as `provisionSidecar` already does for the sidecar identity
-// row — and confirms the trigger itself recorded the delivery
-// (`lastFiredAt`).
+// via `connectE2eDb` — and confirms the trigger itself recorded the
+// delivery (`lastFiredAt`).
 
 import {
   signPayload,
@@ -28,22 +27,19 @@ import {
   buildHeartbeatWorkflow,
   serializeHeartbeatWorkflow,
 } from "../../workflows/heartbeat/src/index.ts";
+import { ensureNoopCatalogOffering } from "../../packages/seeding/src/index.ts";
 import {
   api,
-  assertNeverRealProvider,
   connectE2eDb,
   createCleanupHarness,
   e2eDatabaseUrl,
   expectStatus,
   freePort,
   hop,
-  provisionSidecar,
-  pushWorkflowSource,
-  workflowDeployBody,
   startHub,
-  startSidecar,
   type HubHandle,
 } from "./harness.ts";
+import { pushWorkflowSource, workflowDeployBody } from "./workflow-source.ts";
 
 const { tempDir, track } = createCleanupHarness();
 
@@ -77,13 +73,6 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
     });
 
     const hubDataDir = await tempDir("e2e-smoke-webhook-hub-data-");
-    const sidecarDataDir = await tempDir("e2e-smoke-webhook-sidecar-data-");
-
-    const sidecarId = "sidecar-e2e-smoke-webhook";
-    const sidecarToken = crypto.randomUUID();
-    await hop("sidecar provisioning", () =>
-      provisionSidecar(url, sidecarId, sidecarToken),
-    );
 
     const hub: HubHandle = await hop("hub boot", () =>
       startHub({
@@ -96,18 +85,6 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
       }),
     );
     track(hub);
-
-    const sidecar = await hop("sidecar boot", () =>
-      Promise.resolve(
-        startSidecar({
-          hubPort: Number(new URL(hub.baseUrl).port),
-          sidecarId,
-          token: sidecarToken,
-          dataDir: sidecarDataDir,
-        }),
-      ),
-    );
-    track(sidecar);
 
     {
       const cookies = await hop("sign-up", async () => {
@@ -138,77 +115,17 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
 
       // The zero-cost catalog chain: an anthropic-plugin provider whose
       // base URL is the hub's own noop-inference endpoint, never a real
-      // model. Mirrors `workbench-digest.test.ts`'s noop catalog seeding.
-      const noopBaseUrl = `${hub.baseUrl}/api/chat/noop-inference`;
-      assertNeverRealProvider(noopBaseUrl, "noop catalog provider baseURL");
-      await hop("noop catalog seeding", async () => {
-        const model = await api(
-          hub.baseUrl,
-          "POST",
-          `/api/tenants/${tenantId}/catalog/models`,
-          { canonicalName: "noop" },
+      // model.
+      const offeringId = await hop("noop catalog seeding", () =>
+        ensureNoopCatalogOffering(
+          (method, path, body, cookies2) =>
+            api(hub.baseUrl, method, path, body, cookies2),
           cookies,
-        );
-        expectStatus("create catalog model", model, 201);
-        const modelId = stringField(model.data, "id", "create catalog model");
-
-        const provider = await api(
+          tenantId,
           hub.baseUrl,
-          "POST",
-          `/api/tenants/${tenantId}/providers`,
-          { name: "anthropic", plugin: "anthropic" },
-          cookies,
-        );
-        expectStatus("create provider", provider, 201);
-        const providerId = stringField(provider.data, "id", "create provider");
-
-        const credential = await api(
-          hub.baseUrl,
-          "POST",
-          `/api/tenants/${tenantId}/credentials`,
-          {
-            providerId,
-            name: "anthropic-default",
-            type: "api_key",
-            secret: "noop",
-          },
-          cookies,
-        );
-        expectStatus("create credential", credential, 201);
-        const credentialId = stringField(
-          credential.data,
-          "id",
-          "create credential",
-        );
-
-        const catalogProvider = await api(
-          hub.baseUrl,
-          "POST",
-          `/api/tenants/${tenantId}/catalog/providers`,
-          {
-            name: "anthropic",
-            plugin: "anthropic",
-            baseURL: noopBaseUrl,
-            credentialId,
-          },
-          cookies,
-        );
-        expectStatus("create catalog provider", catalogProvider, 201);
-        const catalogProviderId = stringField(
-          catalogProvider.data,
-          "id",
-          "create catalog provider",
-        );
-
-        const offering = await api(
-          hub.baseUrl,
-          "POST",
-          `/api/tenants/${tenantId}/catalog/offerings`,
-          { modelId, providerId: catalogProviderId },
-          cookies,
-        );
-        expectStatus("create catalog offering", offering, 201);
-      });
+          () => {},
+        ),
+      );
 
       const assetName = "heartbeat";
       const { assetId, commitSha } = await hop(
@@ -256,22 +173,17 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
       );
 
       const definitionId = await hop("workflow deploy", async () => {
-        const sourceId = "src-smoke-webhook-e2e";
-        assertNeverRealProvider(noopBaseUrl, "workflow deploy source baseURL");
         const body = workflowDeployBody({
           assetId,
           commitSha,
-          sourceId: sourceId,
-          provider: "anthropic",
-          baseURL: noopBaseUrl,
-          apiKey: "noop",
-          model: "noop",
+          sourceOfferingIds: [offeringId],
+          defaultSourceOfferingId: offeringId,
         });
         const deadline = Date.now() + 60_000;
         for (;;) {
-          if (sidecar.exited()) {
+          if (hub.exited()) {
             throw new Error(
-              `sidecar exited before deploy; output:\n${sidecar.output()}`,
+              `hub exited before deploy; output:\n${hub.output()}`,
             );
           }
           const res = await api(
@@ -284,7 +196,7 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
           if (res.status === 502) {
             if (Date.now() > deadline) {
               throw new Error(
-                `sidecar never became deployable (hub kept answering 502): ${JSON.stringify(res.data)}\nsidecar output:\n${sidecar.output()}`,
+                `sidecar never became deployable (hub kept answering 502): ${JSON.stringify(res.data)}\nhub output:\n${hub.output()}`,
               );
             }
             await Bun.sleep(200);
@@ -411,8 +323,8 @@ describe.skipIf(databaseUrl === undefined)("smoke: webhook trigger", () => {
           // No platform route reads a non-anchored run's row by bare id
           // (see the file header); this reads the fact the ingress
           // route's own launch is required to have produced, the same
-          // way `provisionSidecar` reaches the database directly for a
-          // fact no route exposes.
+          // way `connectE2eDb` reaches the database directly for a fact
+          // no route exposes.
           const sql = await connectE2eDb(url);
           try {
             const rows = await sql.unsafe(

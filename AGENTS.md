@@ -70,10 +70,11 @@ check:structural <name>`.
 - Remaining test/CI flags (what breaks if unset):
   - `DATABASE_URL` — DB-gated suites skip locally with a banner naming
     `docker compose -f docker-compose.test.yml up -d`. On CI jobs that
-    provision Postgres (`e2e`, `isolation`, `db-suites`), `CI=true`
+    provision Postgres (`e2e-suite`, `isolation`, `db-suites`), `CI=true`
     turns a missing URL into a hard failure via `dbGate`. The unit
-    jobs (`build-test`, `structural`, `lint`, `typecheck`) never
-    provision Postgres and still skip.
+    jobs (`build-test-shard` — `build-test` itself is now a summary job
+    over its 3-way shard matrix — `structural`, `lint`, `typecheck`)
+    never provision Postgres and still skip.
   - `HUB_DATA_DIR` — hub boot fails. This is required runtime config,
     not a test flag.
   - `CI` — set automatically by GitHub Actions (`true`). Not a caller
@@ -88,8 +89,9 @@ check:structural <name>`.
   - `WORKBENCH_CHECK_CONCURRENCY` — override `scripts/run-all.ts`
     parallelism. Unset uses a core-count heuristic (all cores on
     GitHub Actions, cores-2 locally).
-  - `E2E_LOG_DIR` — optional directory for hub/sidecar e2e logs.
-    Unset does not capture them.
+  - `E2E_LOG_DIR` — optional directory for hub/sidecar e2e logs. Unset
+    does not capture them; CI's `e2e-suite` matrix job sets it and
+    uploads the directory as a per-suite artifact.
   - `CHROME_PATH` — browser walkthrough looks for Chrome here first.
     Unset falls through to platform defaults and fails if none exist.
 - Tests are meaningful red/green tests only — no coverage theater. Unit

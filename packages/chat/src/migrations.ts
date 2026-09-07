@@ -590,42 +590,6 @@ export const chatMigrations: readonly ChatMigration[] = [
   },
 ];
 
-/**
- * Every folded run this package's own launches recorded in
- * `workbench_launch` (created as `channel_launch`; see the rename
- * migration below) — one row per workbench host or invited agent (see
- * `workbenchLaunch`'s own doc comment in `./schema.ts`). Exists for
- * `@corbits/folded-runs`' one-time backfill (CL-6061): before its own
- * `folded_run` marker table existed, this table was the only durable
- * record that a given run was folded. This package never writes to
- * `folded_runs.folded_run` itself — that would make it depend on a
- * package that already depends on it — so it only ever reads its own
- * schema and hands the ids back; the caller (scripts/db-setup.ts, the
- * one place that already knows every installed package) is the one
- * that inserts them as markers via `@corbits/folded-runs`' own export.
- */
-export interface WorkbenchLaunchFoldedRunSeed {
-  readonly id: string;
-  readonly tenantId: string;
-}
-
-export async function listWorkbenchLaunchFoldedRunIds(
-  databaseUrl: string,
-): Promise<WorkbenchLaunchFoldedRunSeed[]> {
-  const sql = postgres(databaseUrl, { max: 1, onnotice: () => undefined });
-  try {
-    const rows = await sql.unsafe(
-      `SELECT "current_run_id" AS "id", "tenant_id" AS "tenantId" FROM "chat"."workbench_launch"`,
-    );
-    return rows.map((row) => ({
-      id: String(row["id"]),
-      tenantId: String(row["tenantId"]),
-    }));
-  } finally {
-    await sql.end();
-  }
-}
-
 // Bookkeeping table for this package's own migrations. Named
 // distinctly from the platform's setup ledger (`workbench_setup_migration`,
 // in scripts/db-setup.ts) and from any drizzle journal, so extracting

@@ -26,7 +26,6 @@ import {
   publishCorbitsToolsRegistry,
   DEFAULT_WORKFLOWS,
   PLACEHOLDER_CATALOG_API_KEY,
-  type ModelSource,
 } from "@corbits/seeding";
 import { createHubAPI, signIn, type ApiCall } from "@corbits/hub-api-client";
 import { findPersonalTenant } from "@workbench/onboarding";
@@ -36,6 +35,12 @@ const log = getLogger(["hub", "system-seed"]);
 const DEFAULT_DEADLINE_MS = 60_000;
 const DEFAULT_POLL_INTERVAL_MS = 2_000;
 
+// Matches `packages/seeding/src/seed.ts`'s `resolveRealSourceOfferingIds`
+// failure verbatim — the one deploy failure that is expected, not
+// transient, when no operator seed key is configured.
+const NO_CATALOG_OFFERINGS_REASON =
+  "this tenant has no catalog offerings to deploy against";
+
 // Matches `workbench seed`'s own default model source (readSeedConfig in
 // the now-deleted `packages/cli/src/config.ts`): real anthropic/
 // claude-sonnet-5 when a hub-owned key is configured (`config.seedModel`),
@@ -43,14 +48,28 @@ const DEFAULT_POLL_INTERVAL_MS = 2_000;
 // and the catalog is still browsable, just not launchable.
 const SEED_MODEL_PROVIDER = "anthropic";
 const SEED_MODEL = "claude-sonnet-5";
-const SEED_MODEL_BASE_URL = "https://api.anthropic.com";
 
-function resolvedModel(seedModel: ModelSource | undefined): ModelSource {
+/**
+ * The root tenant's seed model: a provider/model pair for
+ * `seedTenant`'s deployed definitions, plus the real (or placeholder)
+ * API key `seedCatalog` needs to plant a launchable credential. Distinct
+ * from `@corbits/seeding`'s `ModelSource`, which carries no key —
+ * `seedTenant` never needs one; the deploy itself resolves inference
+ * from the tenant's catalog offerings (CL-7461).
+ */
+export type SeedModelConfig = {
+  readonly provider: string;
+  readonly model: string;
+  readonly apiKey: string;
+};
+
+function resolvedModel(
+  seedModel: SeedModelConfig | undefined,
+): SeedModelConfig {
   return (
     seedModel ?? {
       provider: SEED_MODEL_PROVIDER,
       model: SEED_MODEL,
-      baseURL: SEED_MODEL_BASE_URL,
       apiKey: PLACEHOLDER_CATALOG_API_KEY,
     }
   );
@@ -60,7 +79,7 @@ export type SystemSeedDeps = {
   baseUrl: string;
   orgSlug: string;
   admin: { email: string; password: string };
-  seedModel?: ModelSource;
+  seedModel?: SeedModelConfig;
   deadlineMs?: number;
   pollIntervalMs?: number;
 };
@@ -116,7 +135,7 @@ export async function runSystemSeed(deps: SystemSeedDeps): Promise<void> {
           principalId: tenant.principalId,
           domain: tenant.tenantDomain,
         },
-        model,
+        model: { provider: model.provider, model: model.model },
         pushWorkflow,
         log: (line) => log.info`${line}`,
         workflows: DEFAULT_WORKFLOWS,
@@ -137,6 +156,21 @@ export async function runSystemSeed(deps: SystemSeedDeps): Promise<void> {
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : String(cause);
       if (Date.now() >= deadline) {
+        // No operator seed key means `seedCatalog` can only ever plant a
+        // placeholder credential — never a real, launchable offering —
+        // so a default workflow's deploy permanently has nothing to
+        // deploy against until an operator configures one. That is the
+        // expected shape of an unconfigured dev/CI boot, not a fault the
+        // next boot can retry its way out of, so it is a logged skip
+        // rather than an error (which `reportError` would otherwise
+        // paint red on every single boot).
+        if (
+          deps.seedModel === undefined &&
+          reason.includes(NO_CATALOG_OFFERINGS_REASON)
+        ) {
+          log.info`root tenant seed skipped: no operator seed key configured, so the tenant has no catalog offerings to deploy against yet`;
+          return;
+        }
         reportError(cause, { operation: "system-seed.seedRootTenant" });
         log.error`root tenant seed did not complete before its deadline (last error: ${reason}); the next boot will retry`;
         return;

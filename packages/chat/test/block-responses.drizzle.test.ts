@@ -13,7 +13,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
-import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { applyChatMigrations } from "../src/migrations";
 import { createDrizzleBlockResponseStore } from "../src/block-responses";
 import type { BlockResponseKey } from "../src/block-responses";

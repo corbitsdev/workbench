@@ -5,105 +5,24 @@
 // real the suite fails and says which hop, it never fakes the result.
 
 import { afterAll } from "bun:test";
-import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createGitWorkflowPusher } from "../../packages/seeding/src/index.ts";
-import { WORKFLOW_SOURCE_ENTRY } from "../../packages/workflows/src/source.ts";
-import { assertDatabaseConfigured } from "./db-gate.ts";
 
-export const REPO_ROOT = path.resolve(import.meta.dir, "..", "..");
+// e2eDatabaseUrl and friends live in database-url.ts so a DB-gated unit
+// suite can resolve DATABASE_URL without paying for this file's
+// process-spawning imports (see that file's header comment). Re-exported
+// here so the suites that do spawn the hub/sidecar keep one import.
+export {
+  REPO_ROOT,
+  baseUrlToE2eUrl,
+  e2eDatabaseUrl,
+  parseEnvFileDatabaseUrl,
+} from "./database-url.ts";
+import { REPO_ROOT } from "./database-url.ts";
+
 const HUB_DIR = path.join(REPO_ROOT, "apps", "hub");
 const SIDECAR_DIR = path.join(REPO_ROOT, "apps", "sidecar");
-
-// --- environment gate -------------------------------------------------
-
-/**
- * The suite needs a real Postgres, named by DATABASE_URL. Locally a
- * missing DATABASE_URL skips the suite (a fresh checkout without a
- * database still runs the unit gates); in CI, CI=true turns that skip
- * into a loud failure so the suite can never silently vanish from the
- * pipeline.
- *
- * `bun test` workers do not always inherit process.env.DATABASE_URL
- * even when the shell sourced `.env`. Fall back to the same repo-root
- * `.env` file `bun run` would load.
- */
-export function e2eDatabaseUrl(): string | undefined {
-  const fromProcess = process.env["DATABASE_URL"];
-  const url =
-    fromProcess !== undefined && fromProcess !== ""
-      ? fromProcess
-      : databaseUrlFromRepoEnvFile();
-  if (url !== undefined && url !== "") return baseUrlToE2eUrl(url);
-  assertDatabaseConfigured(undefined, "walking-skeleton suite");
-  return undefined;
-}
-
-/**
- * Pull DATABASE_URL from a dotenv-style file body. Ignores blanks and
- * comments; trims; strips one layer of surrounding quotes. Last match
- * wins. Does not expand interpolations.
- */
-export function parseEnvFileDatabaseUrl(text: string): string | undefined {
-  let found: string | undefined;
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (line === "" || line.startsWith("#")) continue;
-    if (!line.startsWith("DATABASE_URL=")) continue;
-    let value = line.slice("DATABASE_URL=".length).trim();
-    if (value.length >= 2) {
-      const start = value[0];
-      const end = value[value.length - 1];
-      if ((start === '"' && end === '"') || (start === "'" && end === "'")) {
-        value = value.slice(1, -1);
-      }
-    }
-    found = value;
-  }
-  if (found === undefined || found === "") return undefined;
-  return found;
-}
-
-function databaseUrlFromRepoEnvFile(): string | undefined {
-  let text: string;
-  try {
-    text = readFileSync(path.join(REPO_ROOT, ".env"), "utf8");
-  } catch (error) {
-    if (isEnoent(error)) return undefined;
-    throw error;
-  }
-  return parseEnvFileDatabaseUrl(text);
-}
-
-function isEnoent(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "ENOENT"
-  );
-}
-
-/**
- * The suite tears its schema down and rebuilds it on every run, so it
- * must never run inside the developer's own database. It derives a
- * sibling database (same server, name suffixed `_e2e`) and owns that
- * one outright; scripts/db-setup.ts creates it on first use.
- */
-export function baseUrlToE2eUrl(databaseUrl: string): string {
-  const url = new URL(databaseUrl);
-  const database = url.pathname.replace(/^\//, "");
-  if (database === "") {
-    throw new Error(
-      `DATABASE_URL names no database (empty path): ${databaseUrl}. ` +
-        "Expected e.g. postgres://localhost:5432/workbench.",
-    );
-  }
-  url.pathname = `/${database}_e2e`;
-  return url.toString();
-}
 
 // --- hop naming -------------------------------------------------------
 
@@ -221,6 +140,20 @@ export async function connectE2eDb(databaseUrl: string): Promise<SqlClient> {
  * WebSocket dial-in against the token hash on the `sidecar` table, so
  * the row must exist before the sidecar process starts. Mirrors
  * Interchange's dev provisioning (id + sha256(token), placeholder url).
+ *
+ * At pin 692c3106, the hub only accepts a register/reconnect frame from
+ * a sidecar identity that resolves to a live `sidecar_allocation` (or
+ * `workflow_probe`) row — the standalone, unallocated ("shared"
+ * credential scope) sidecar this used to provision no longer
+ * authenticates at all (CL-7472), so a caller of this function gets a
+ * connect-and-immediately-reject loop, not a usable dial-in. Every
+ * suite this repo runs against CI now lets the hub's own
+ * process-provisioner spawn a dedicated sidecar per allocation instead
+ * (see `startHub`'s doc comment and `scripts/e2e/chat.test.ts`); this
+ * function is kept only for the handful of scripts not yet migrated off
+ * a directly-controlled sidecar process (e.g. ones that kill and
+ * restart a specific sidecar mid-scenario) and is not a working dial-in
+ * path until they are.
  */
 export async function provisionSidecar(
   databaseUrl: string,
@@ -400,11 +333,13 @@ export async function startHub(options: {
 }
 
 /**
- * Boot the sidecar as a real process, pointed at the hub's WebSocket
- * dial-in route with the provisioned identity. Connection readiness is
- * observed by the deploy call itself (the hub answers 502 until a
- * sidecar is connected), so this only guards against an immediate
- * crash.
+ * Boot a standalone sidecar as a real process, pointed at the hub's
+ * WebSocket dial-in route with a `provisionSidecar`-issued identity.
+ * See `provisionSidecar`'s own doc comment: at pin 692c3106 this
+ * identity never authenticates (CL-7472), so the process this starts
+ * connects and is immediately rejected in a loop rather than dialing
+ * in. Kept only for the scripts not yet migrated to the hub's
+ * automatic, per-allocation process-provisioner spawn.
  */
 export function startSidecar(options: {
   hubPort: number;
@@ -625,61 +560,7 @@ export function expectStepCompleted(events: RunEvent[], stepId: string): void {
   }
 }
 
-// --- workflow asset content over git smart-HTTP -----------------------
-
-/**
- * Publishes a workflow definition into its asset repo in the one shape
- * a `workflow`-kind asset accepts: the source codebase
- * `@corbits/workflows`'s `./source` renders. Delegates to the platform's own
- * pusher so the suite exercises the same publication path the seed and
- * the product use, and returns the commit a code-sourced deploy pins.
- */
-export async function pushWorkflowSource(options: {
-  baseUrl: string;
-  tenantId: string;
-  assetName: string;
-  tokenSecret: string;
-  workflowJson: string;
-}): Promise<{ commitSha: string }> {
-  const pushed = await createGitWorkflowPusher()({
-    remoteUrl: `${options.baseUrl}/api/tenants/${options.tenantId}/assets/workflow/${options.assetName}.git`,
-    tokenSecret: options.tokenSecret,
-    workflowJson: options.workflowJson,
-    packageName: options.assetName,
-  });
-  return { commitSha: pushed.commitSha };
-}
-
-/**
- * The deploy body a code-sourced asset deployment takes: the pushed
- * commit is the definition's pin, and the entry names the
- * `interchange.workflow` module the sidecar evaluates.
- */
-export function workflowDeployBody(options: {
-  assetId: string;
-  commitSha: string;
-  sourceId: string;
-  provider: string;
-  baseURL: string;
-  apiKey: string;
-  model: string;
-}): Record<string, unknown> {
-  return {
-    source: {
-      kind: "asset",
-      assetId: options.assetId,
-      package: { format: "source", commitSha: options.commitSha },
-    },
-    entry: WORKFLOW_SOURCE_ENTRY,
-    sources: [
-      {
-        id: options.sourceId,
-        provider: options.provider,
-        baseURL: options.baseURL,
-        apiKey: options.apiKey,
-        model: options.model,
-      },
-    ],
-    defaultSource: options.sourceId,
-  };
-}
+// pushWorkflowSource and workflowDeployBody moved to workflow-source.ts:
+// both need @corbits/seeding and @corbits/workflows, which pull in the
+// full @intx/* module graph, and most harness consumers never touch
+// them (see that file's header comment).

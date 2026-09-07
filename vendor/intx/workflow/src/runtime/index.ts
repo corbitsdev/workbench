@@ -10,7 +10,6 @@ export type {
   ParkedApprovalOp,
   PrimitiveKind,
   ReadParkedApprovalOps,
-  RunLoopIteration,
   RepoStore,
   RunResult,
   Scheduler,
@@ -34,6 +33,17 @@ export {
 
 export { runtimeRun, type RuntimeRunOptions } from "./run";
 
+export { createSuspendableChildHandle } from "./suspendable-child-handle";
+
+export { createLoopIterationHandle } from "./loop-iteration-handle";
+
+export {
+  MAX_CHILD_SPAWN_DEPTH,
+  ChildSpawnDepthExceededError,
+  resolveMaxChildSpawnDepth,
+  assertSpawnDepthWithinLimit,
+} from "./child-depth";
+
 export { RuntimeResumeUnsupportedError } from "./errors";
 
 export {
@@ -44,7 +54,7 @@ export {
 
 export { nextSchedulable, isRunDone, hasFailedStep } from "./dag";
 
-export { scopedStepId, baseStepId } from "./step-scope";
+export { scopedStepId, baseStepId, loopBodyRunId } from "./step-scope";
 
 export {
   evaluate as evaluateSelector,

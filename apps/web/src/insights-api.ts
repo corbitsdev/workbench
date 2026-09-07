@@ -14,7 +14,7 @@
 //     /scope is how a page discovers that shape to build a switcher.
 // Plus one more reused as Insights' run feed: GET /top-level-runs?feed=fires
 // → Paginated<WorkflowRunResponse & { routineId, routineName }>
-// (packages/folded-runs/src/scope-routes.ts's `listTopLevelRunFires`).
+// (packages/run-scope/src/scope-routes.ts's `listTopLevelRunFires`).
 
 import { type } from "arktype";
 import { WorkflowRunResponse, paginatedSchema } from "@intx/types";
@@ -259,10 +259,10 @@ const TOP_LEVEL_RUNS_LIMIT = 100;
 
 /**
  * Insights' run feed (CL-6062, `feed=fires` added by CL-6249): the
- * tenant's genuine *executed* runs — a routine's fire (folded run though
- * it is) included, and the resident, never-triggered deployment
+ * tenant's genuine *executed* runs — a routine's fire (not a top-level
+ * run though it is) included, and the resident, never-triggered deployment
  * placeholder for a definition (`status: "deployed"` forever) excluded —
- * both decided server-side by `@corbits/folded-runs`'s
+ * both decided server-side by `@corbits/run-scope`'s
  * `scope-routes.ts`'s `listTopLevelRunFires`, never by a definitionName
  * slug guess here. Used in place of the dead `/me/workflows/runs` — its
  * `anchorRunId IS NULL` filter never matches, because every addressed run

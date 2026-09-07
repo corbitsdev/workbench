@@ -17,7 +17,7 @@ import {
   createAgentRepoStore,
   agentDir,
 } from "@intx/hub-agent";
-import { generateKeyPair, signEd25519, verifySSHSignature } from "@intx/crypto";
+import { generateKeyPair, verifySSHSignature } from "@intx/crypto";
 import { hexEncode } from "@intx/types";
 
 import {
@@ -28,7 +28,6 @@ import {
 
 const cryptoOps = {
   generateKeyPair,
-  signEd25519,
   verifySSHSig: verifySSHSignature,
 };
 

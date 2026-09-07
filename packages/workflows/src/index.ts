@@ -31,6 +31,17 @@ export {
   type TriggerFieldsValidation,
 } from "./catalog";
 export {
+  authoredDefinitionCandidates,
+  readDefinitionProjection,
+  readFoldedBody,
+  readLiveFoldedBody,
+  resolveNewestProjectedDefinition,
+  DefinitionProjectionMissingError,
+  MultiStepFoldUnsupportedError,
+  FoldedBodySchema,
+  type DefinitionCandidate,
+} from "./definition-projection";
+export {
   CRON_FIELD_RANGES,
   cronExpressionCanFire,
   cronMatchesMinute,
@@ -44,6 +55,19 @@ export {
   type ZonedParts,
 } from "./schedule/cron";
 export { scheduleCronFromProjection } from "./schedule/from-projection";
+export {
+  ensureRunSession,
+  recordAgentSessionAtProvision,
+  endAgentSessionForPrincipal,
+  endAgentSessionForRun,
+  type EventCollectorPort,
+} from "./launch/agent-session";
+export {
+  deliverWhenRoutable,
+  isAgentUnreachableError,
+  DEFAULT_ROUTABLE_DEADLINE_MS,
+  type DeliverWhenRoutableOptions,
+} from "./deliver-when-routable";
 export {
   listScheduledWorkflowDefinitions,
   scheduledDefinitionsFromRows,

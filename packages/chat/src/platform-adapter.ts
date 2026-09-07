@@ -2,54 +2,59 @@
 // rather than by `apps/hub` — "apps stay generic; packages own the
 // domain" applies to the platform port exactly as it does to the rest
 // of chat's behavior. `createHubChatPlatform` composes the port from
-// `@corbits/folded-runs` (launch/wake/mail machinery for folded
-// interactive runs, shared with any other host that launches them)
-// plus the concerns that are chat's own: `workbench_launch` persistence,
-// invitable listing, and participant/fromWorkbenchId send semantics.
+// Interchange's `prepareProvisionedDeployment` (invite / wake / relaunch)
+// and `sendUserMessage` (via `sendRunMail`), plus the concerns that are
+// chat's own: `workbench_launch` persistence, invitable listing, and
+// participant/fromWorkbenchId send semantics.
 // A workbench itself is data — only invited agents have runs here.
-import { and, desc, eq } from "drizzle-orm";
 import {
   createAgentLifecycle,
   DEFAULT_WAKE_TIMEOUT_MS,
 } from "@corbits/agent-lifecycle";
+import { reportError } from "@corbits/error-sink";
+import { and, desc, eq } from "drizzle-orm";
 import {
   authoredDefinitionCandidates,
-  type CryptoProviderCache,
   DefinitionProjectionMissingError,
-  domainOf,
-  inferenceSourcesDigest,
-  InferenceResolutionError,
-  launchFoldedRun,
-  mintFoldedRun,
+  deliverWhenRoutable,
+  endAgentSessionForRun,
+  ensureRunSession,
+  isAgentUnreachableError,
   readFoldedBody,
-  resolveFoldedRunSessionId,
-  resolveLaunchSources,
+  recordAgentSessionAtProvision,
   resolveNewestProjectedDefinition,
-  sendFoldedMail,
-  wakeFoldedRun,
-  tagCredentialCipher,
-  type FoldedRunMode,
-  type FoldedRunsDeps,
-  type SendFoldedMailParams,
-} from "@corbits/folded-runs";
+  WORKFLOW_SOURCE_ENTRY,
+} from "@corbits/workflows";
+import { domainOf as addressDomainOf } from "./agent-address";
+import { tagCredentialCipher } from "./credential-cipher-tag";
+import type { CryptoProviderCache } from "./crypto-cache";
+import { InferenceResolutionError } from "./model-unavailable";
+import type { ToolGrantsForPins } from "./pin-ports";
+import { resolveRunSessionIdOrThrow } from "./run-session";
+import type { RunTriggerClient } from "./run-trigger-client";
+import { sendRunMail, type SendRunMailParams } from "./send-run-mail";
 import {
   findStandingLaunchByDefinition,
   isBeyondWake,
   listLaunchesBeyondWake,
   listLaunchesForTenant,
   readBindingByAddress,
+  readBindingByAddressAnyTenant,
   readPriorRuns,
   recordSourcesDigest,
   repointBinding,
   resolveLiveAgent,
   resolveLiveByStableId,
+  resolveLiveByStableIdAnyTenant,
   type AgentBinding,
   type LiveAgent,
 } from "./agent-binding";
 import type { RelaunchNoticePort } from "./relaunch-notice";
-import { AGENT_SECTION_MODE } from "./standalone-launch";
 import type { DB } from "@intx/db";
+import { listVisibleOfferings } from "@intx/db";
 import {
+  asset as assetTable,
+  principal as principalTable,
   sessionMail,
   tenant as tenantTable,
   workflowDefinition,
@@ -61,7 +66,13 @@ import { workbenchLaunch } from "./schema";
 import { isWorkbenchHostDefinitionName } from "./workbench-host-naming";
 import { withTimeout } from "./with-timeout";
 import { wrapWakeInferenceError } from "./model-unavailable";
-import type { EventCollectorRegistry, SidecarRouter } from "@intx/hub-sessions";
+import {
+  DEFAULT_ASSET_REF,
+  type EventCollectorRegistry,
+  type RepoStore,
+  type SidecarRouter,
+  type WorkflowAllocationService,
+} from "@intx/hub-sessions";
 import type { InferencePreference } from "@intx/agent";
 import { formatRunAddress, type CredentialCipher } from "@intx/types";
 import type { FoldedBody } from "@intx/workflow-deploy";
@@ -74,23 +85,40 @@ import {
   type SentMail,
 } from "./platform-port";
 
+function domainOf(address: string): string {
+  const domain = addressDomainOf(address);
+  if (domain === undefined) {
+    throw new Error(`malformed agent address, missing "@": ${address}`);
+  }
+  return domain;
+}
+
 export type CreateHubChatPlatformDeps = {
   db: DB["db"];
-  sessionService: FoldedRunsDeps["sessionService"];
-  assetService: FoldedRunsDeps["assetService"];
-  sidecarRouter: SidecarRouter;
-  /** See `FoldedRunsDeps.toolGrantsForPins`. */
-  toolGrantsForPins: FoldedRunsDeps["toolGrantsForPins"];
-  /** See `FoldedRunsDeps.mcpCredentialBindingsFor`. */
-  mcpCredentialBindingsFor?: FoldedRunsDeps["mcpCredentialBindingsFor"];
-  /** See `FoldedRunsDeps.pinnedPackageCredentialBindingsFor`. */
-  pinnedPackageCredentialBindingsFor?: FoldedRunsDeps["pinnedPackageCredentialBindingsFor"];
   /**
-   * Decrypts credential secrets when an invited agent's launch resolves
-   * inference sources against the tenant catalog — see
-   * `@corbits/folded-runs`' `FoldedRunsDeps.credentialCipher`. Tagged at
-   * construction: missing or wrong-shape input fails closed and the
-   * platform is not minted.
+   * Delivers outbound run mail through Interchange's own workflow-run
+   * mail-trigger route (CL-7490) — see `./run-trigger-client.ts` for why
+   * a raw `sessionService.sendUserMessage` can no longer stand in for
+   * this: it never reaches the trigger route's durable-dispatch branch,
+   * so a provisioned run invited but never yet triggered natively never
+   * gets its first `agent.deploy`.
+   */
+  runTrigger: RunTriggerClient;
+  repoStore: Pick<RepoStore, "resolveRef">;
+  /**
+   * Interchange's provisioned-deployment front. Invite, wake, and
+   * relaunch call `prepareProvisionedDeployment` on this; chat never
+   * mints the run row itself.
+   */
+  workflowAllocationService: Pick<
+    WorkflowAllocationService,
+    "prepareProvisionedDeployment"
+  >;
+  sidecarRouter: SidecarRouter;
+  toolGrantsForPins: ToolGrantsForPins;
+  /**
+   * Tagged at construction: missing or wrong-shape input fails closed
+   * and the platform is not minted.
    */
   credentialCipher: CredentialCipher;
   /**
@@ -102,7 +130,7 @@ export type CreateHubChatPlatformDeps = {
    */
   eventCollectors: EventCollectorRegistry;
   /**
-   * Signing-key cache for outbound folded mail. The host constructs one
+   * Signing-key cache for outbound run mail. The host constructs one
    * process-wide instance (CL-7284) and passes it here so a workbench id
    * looked up from chat cannot mint a different key than the same id
    * looked up from webhook, routine, or one-shot drafting mail. This
@@ -115,7 +143,7 @@ export type CreateHubChatPlatformDeps = {
    * behavior exactly (nothing ever sleeps, no interval runs). When
    * present, this adapter builds a `@corbits/agent-lifecycle` instance
    * from it, wiring its `isRoutable`/`undeploy`/`wake` ports onto
-   * `sidecarRouter` and `@corbits/folded-runs`' `wakeFoldedRun` —
+   * `sidecarRouter` and this adapter's `provisionOnAsset` wake —
    * `@corbits/agent-lifecycle` itself never imports the hub or this
    * package. Its sweep tears down instances idle for `idleSleepMs` via
    * `sidecarRouter.sendAgentUndeploy`, and `sendMail` calls
@@ -123,19 +151,22 @@ export type CreateHubChatPlatformDeps = {
    */
   lifecycle?: { idleSleepMs: number; sweepIntervalMs?: number };
   /**
-   * `sendFoldedMailWithReclaimRetry`'s backoff between retries of a
-   * mail send that failed with "agent is unreachable" (see
-   * RECLAIM_RETRY_DELAYS_MS below). Injectable so tests exercise the
-   * backoff in milliseconds instead of the production ~8s budget.
-   */
-  reclaimRetryDelaysMs?: readonly number[];
-  /**
-   * Per-attempt wall-clock bound on `sendFoldedMail` inside
-   * `sendFoldedMailWithReclaimRetry` (CL-6644). Defaults to
+   * Per-attempt wall-clock bound on `sendRunMail` inside
+   * `sendRunMailWithReclaimRetry` (CL-6644). Defaults to
    * `DEFAULT_WAKE_TIMEOUT_MS`. Injectable so tests exercise the bound
    * in milliseconds instead of the production ~30s budget.
    */
   mailDeliveryTimeoutMs?: number;
+  /**
+   * How long `sendRunMailWithReclaimRetry` waits for a freshly
+   * woken/relaunched run's address to show up in the hub's routing
+   * table before giving up (see `deliverWhenRoutable` in
+   * `@corbits/workflows`). Defaults to `DEFAULT_ROUTABLE_DEADLINE_MS`
+   * — the same boot-and-register budget the webhook trigger's ingress
+   * delivery waits on (CL-7476). Injectable so tests exercise the wait
+   * in milliseconds instead of the production ~20s budget.
+   */
+  routableWaitDeadlineMs?: number;
   /**
    * The invite-launch model fallback (see `./inference-preferences.ts`'s
    * `createWorkbenchHostInferencePreferencesResolver`): a
@@ -216,11 +247,10 @@ export type HubChatPlatform = ChatPlatform & {
   /**
    * Relaunches live participants in `tenantId` whose launch pins include
    * any of `packageNames` — a tool-package connector's `feedsTools` the
-   * moment its credential is stored. Bindings for those packages are
-   * folded only at deploy time (`pinnedPackageCredentialBindingsFor`),
-   * so a Myra launched at signup before Manus was pasted stays on a
-   * snapshot that cannot `resolve("manus")` until this pass mints a
-   * fresh run. Best-effort per participant, same posture as
+   * moment its credential is stored. A Myra launched at signup before
+   * Manus was pasted stays on a snapshot that cannot `resolve("manus")`
+   * until this pass mints a fresh run against the definition asset HEAD.
+   * Best-effort per participant, same posture as
    * `reconcileInferenceSources`.
    */
   reconcilePinnedToolPackages(
@@ -230,8 +260,8 @@ export type HubChatPlatform = ChatPlatform & {
 };
 
 /**
- * Composes the `ChatPlatform` port over the hub's real session
- * services and `@corbits/folded-runs`. Outbound mail is signed with
+ * Composes the `ChatPlatform` port over Interchange's provisioned
+ * deployment and `sendUserMessage`. Outbound mail is signed with
  * a `CryptoProvider` from `deps.cryptoProviders`, keyed by workbench
  * id — the host owns the cache so every mail sender in the process
  * shares it.
@@ -239,25 +269,181 @@ export type HubChatPlatform = ChatPlatform & {
 export function createHubChatPlatform(
   deps: CreateHubChatPlatformDeps,
 ): HubChatPlatform {
-  const credentialCipher = tagCredentialCipher(deps.credentialCipher);
-  const foldedRunsDeps: FoldedRunsDeps = {
+  void tagCredentialCipher(deps.credentialCipher);
+  const runMailDeps = {
     db: deps.db,
-    sessionService: deps.sessionService,
-    assetService: deps.assetService,
+    runTrigger: deps.runTrigger,
     sidecarRouter: deps.sidecarRouter,
-    eventCollectors: deps.eventCollectors,
-    toolGrantsForPins: deps.toolGrantsForPins,
-    credentialCipher,
-    ...(deps.mcpCredentialBindingsFor !== undefined
-      ? { mcpCredentialBindingsFor: deps.mcpCredentialBindingsFor }
-      : {}),
-    ...(deps.pinnedPackageCredentialBindingsFor !== undefined
-      ? {
-          pinnedPackageCredentialBindingsFor:
-            deps.pinnedPackageCredentialBindingsFor,
-        }
-      : {}),
   };
+
+  /**
+   * Resolves the principal a run-trigger's DB row names, then the
+   * better-auth `user.id` behind it — the identity
+   * `./run-trigger-client.ts` authenticates the trigger call as. Only a
+   * `kind: "user"` principal has a real login identity to authenticate
+   * as; anything else is a wiring bug this throws loud on rather than
+   * silently authenticating as nobody.
+   */
+  async function refIdForUserPrincipal(principalId: string): Promise<string> {
+    const rows = await deps.db
+      .select({ refId: principalTable.refId, kind: principalTable.kind })
+      .from(principalTable)
+      .where(eq(principalTable.id, principalId))
+      .limit(1);
+    const row = rows[0];
+    if (row === undefined || row.kind !== "user") {
+      throw new Error(
+        `principal "${principalId}" is not a user principal chat can authenticate the run trigger as`,
+      );
+    }
+    return row.refId;
+  }
+
+  /**
+   * The identity a `sendMail` call authenticates its run-trigger
+   * delivery as (see `./run-trigger-client.ts`'s `authAsUserId`):
+   * the sending human when `sendMail` named one directly, and
+   * otherwise the run's own workflow definition asset's
+   * `creatorPrincipalId` — the same authority
+   * `sourceAuthorityForAsset` already resolves for provisioning.
+   */
+  async function resolveTriggerAuthUserId(input: {
+    readonly principalId: string | undefined;
+    readonly definitionId: string | null;
+  }): Promise<string> {
+    if (input.principalId !== undefined) {
+      return refIdForUserPrincipal(input.principalId);
+    }
+    if (input.definitionId === null) {
+      throw new Error(
+        "run has no definitionId to resolve a run-trigger authority from",
+      );
+    }
+    const rows = await deps.db
+      .select({ assetId: workflowDefinition.assetId })
+      .from(workflowDefinition)
+      .where(eq(workflowDefinition.id, input.definitionId))
+      .limit(1);
+    const assetId = rows[0]?.assetId;
+    if (assetId === null || assetId === undefined) {
+      throw new Error(
+        `workflow definition "${input.definitionId}" has no asset`,
+      );
+    }
+    const creatorPrincipalId = await sourceAuthorityForAsset(assetId);
+    return refIdForUserPrincipal(creatorPrincipalId);
+  }
+
+  function offeringDigest(sourceOfferingIds: readonly string[]): string {
+    // `sources_digest` is a `text` column and this digest rides straight
+    // into it (`platform-adapter.ts`'s `insert(workbenchLaunch)`). A
+    // `\0`-joined id list is not valid UTF-8 text to Postgres
+    // (`invalid byte sequence for encoding "UTF8": 0x00`) the moment a
+    // tenant's catalog carries more than one visible offering, which
+    // permanently failed every agent launch for such a tenant. `\n` never
+    // appears inside a generated offering id, so this stays a lossless,
+    // order-sensitive join — just one Postgres can actually store.
+    return sourceOfferingIds.join("\n");
+  }
+
+  async function catalogOfferings(tenantId: string): Promise<{
+    readonly sourceOfferingIds: readonly string[];
+    readonly defaultSourceOfferingId: string;
+  }> {
+    const offerings = [...(await listVisibleOfferings(deps.db, tenantId))].sort(
+      (a, b) => a.offering.priority - b.offering.priority,
+    );
+    const first = offerings[0];
+    if (first === undefined) {
+      throw new InferenceResolutionError(
+        "this agent",
+        "no catalog offerings visible to this tenant",
+      );
+    }
+    return {
+      sourceOfferingIds: offerings.map((o) => o.offering.id),
+      defaultSourceOfferingId: first.offering.id,
+    };
+  }
+
+  /**
+   * Resolve the definition asset HEAD and ask Interchange to provision
+   * that existing source. Chat records the returned ids; it does not
+   * mint the run or rewrite the asset.
+   */
+  async function provisionOnAsset(input: {
+    readonly tenantId: string;
+    readonly deploymentDomain: string;
+    readonly sourceAuthorityPrincipalId: string;
+    readonly definitionAssetId: string;
+    readonly foldedBody: FoldedBody;
+  }): Promise<{
+    readonly runId: string;
+    readonly address: string;
+    readonly allocationId: string;
+    readonly sourcesDigest: string;
+  }> {
+    const offerings = await catalogOfferings(input.tenantId);
+    const commitSha = await deps.repoStore.resolveRef(
+      { kind: "hub" },
+      { kind: "workflow", id: input.definitionAssetId },
+      DEFAULT_ASSET_REF,
+    );
+    if (commitSha === null) {
+      throw new Error(
+        `definition asset "${input.definitionAssetId}" has no HEAD`,
+      );
+    }
+    const anchorRunId = generateId("workflowRun");
+    const sessionId = generateId("session");
+    const prepared =
+      await deps.workflowAllocationService.prepareProvisionedDeployment({
+        tenantId: input.tenantId,
+        anchorRunId,
+        deploymentDomain: input.deploymentDomain,
+        source: {
+          kind: "asset",
+          assetId: input.definitionAssetId,
+          package: { format: "source", commitSha },
+        },
+        entry: WORKFLOW_SOURCE_ENTRY,
+        definitionAssetId: input.definitionAssetId,
+        sessionId,
+        sourceAuthorityPrincipalId: input.sourceAuthorityPrincipalId,
+        sourceOfferingIds: offerings.sourceOfferingIds,
+        defaultSourceOfferingId: offerings.defaultSourceOfferingId,
+        deployContent: { systemPrompt: "" },
+        ...(input.foldedBody.toolPackagePins.length > 0
+          ? { toolPackagePins: input.foldedBody.toolPackagePins }
+          : {}),
+      });
+    await recordAgentSessionAtProvision({
+      db: deps.db,
+      eventCollectors: deps.eventCollectors,
+      runId: prepared.anchorRunId,
+      sessionId,
+      sourceAuthorityPrincipalId: input.sourceAuthorityPrincipalId,
+    });
+    return {
+      runId: prepared.anchorRunId,
+      address: prepared.deploymentAddress,
+      allocationId: prepared.allocationId,
+      sourcesDigest: offeringDigest(offerings.sourceOfferingIds),
+    };
+  }
+
+  async function sourceAuthorityForAsset(assetId: string): Promise<string> {
+    const rows = await deps.db
+      .select({ creatorPrincipalId: assetTable.creatorPrincipalId })
+      .from(assetTable)
+      .where(eq(assetTable.id, assetId))
+      .limit(1);
+    const creator = rows[0]?.creatorPrincipalId;
+    if (creator === undefined || creator === null) {
+      throw new Error(`workflow asset "${assetId}" has no creator principal`);
+    }
+    return creator;
+  }
 
   const cryptoProviders = deps.cryptoProviders;
   const wakeLogger = getLogger(["chat", "wake"]);
@@ -295,73 +481,19 @@ export function createHubChatPlatform(
   const lifecycle =
     deps.lifecycle !== undefined ? buildLifecycle(deps.lifecycle) : undefined;
 
-  // Bounded backoff for a wake racing the sidecar's own post-restart
-  // reclaim, and separately for a mail delivery racing the same
-  // window: 250ms, 500ms, 1s, 2s, 4s — a ~7.75s budget, long enough
-  // for a normal reconnect challenge to settle without leaving a
-  // sender stuck for much longer than that.
-  const RECLAIM_RETRY_DELAYS_MS = deps.reclaimRetryDelaysMs ?? [
-    250, 500, 1000, 2000, 4000,
-  ];
-
-  // CL-6644: the reclaim-retry loop's own delays only run between
-  // attempts that already failed LOUD with "agent is unreachable" --
-  // they bound nothing about an attempt that instead stalls forever
-  // (a sidecar ack that never comes, a wedged promise anywhere in
-  // `sendFoldedMail`'s call chain) without ever throwing. Each
-  // attempt gets the same kind of wall-clock bound `wakeByAddressBounded`
-  // already puts on the wake itself, so that hang becomes a rejection
+  // CL-6644: a per-attempt bound on `sendRunMail` inside
+  // `sendRunMailWithReclaimRetry` -- a send that stalls forever (a
+  // sidecar ack that never comes, a wedged promise anywhere in
+  // `sendRunMail`'s call chain) without ever throwing gets the same
+  // kind of wall-clock bound `wakeByAddressBounded` already puts on
+  // the wake itself, so that hang becomes a rejection
   // `dispatchTurnBatch`'s catch can report and notify on, instead of a
   // promise nothing ever settles.
   const MAIL_DELIVERY_TIMEOUT_MS =
     deps.mailDeliveryTimeoutMs ?? DEFAULT_WAKE_TIMEOUT_MS;
 
-  function sleep(ms: number): Promise<void> {
-    return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
-  }
-
-  function isAgentUnreachable(err: unknown): boolean {
-    return err instanceof Error && err.message.includes("agent is unreachable");
-  }
-
   function isRoutable(address: string): boolean {
     return deps.sidecarRouter.getRoutableAddresses().includes(address);
-  }
-
-  /**
-   * The tenant's current live default model — always resolved, whether
-   * or not `binding.foldedBody.model` names one of its own. A
-   * definition that declares no model resolves this same catalog
-   * default at every deploy, exactly as `launchInvite` used to resolve
-   * it at launch time (every deploy of such a run now goes through a
-   * wake or a relaunch — launches mint only — and a slept one always
-   * did). A definition that DOES name a model still needs this: it is
-   * `deployAtHead`'s retry target when that pinned model no longer
-   * resolves against the tenant's current catalog (a provider it was
-   * pinned against got disconnected, or none was connected yet when it
-   * was pinned) — so reconnecting a different provider heals an
-   * already-invited agent, not only a freshly invited one.
-   */
-  async function resolveFallbackModel(
-    binding: AgentBinding,
-  ): Promise<string | undefined> {
-    const preferences =
-      (await deps.workbenchHostInferencePreferences?.(binding.tenantId)) ?? [];
-    return preferences[0]?.model;
-  }
-
-  /**
-   * The per-deploy pins a binding carries, identical for a wake and a
-   * relaunch: an agent resolves the tenant catalog, with a fallback
-   * model when its definition declares none.
-   */
-  async function deployShapeFor(
-    binding: AgentBinding,
-  ): Promise<{ mode: FoldedRunMode; fallbackModel?: string }> {
-    const fallbackModel = await resolveFallbackModel(binding);
-    return fallbackModel !== undefined
-      ? { mode: AGENT_SECTION_MODE, fallbackModel }
-      : { mode: AGENT_SECTION_MODE };
   }
 
   /**
@@ -385,43 +517,42 @@ export function createHubChatPlatform(
         `Cannot relaunch "${binding.stableId}": its run ${run.id} names no definition`,
       );
     }
-    const newRunId = generateId("workflowRun");
-    const newAddress = formatRunAddress(
-      newRunId,
-      domainOf(binding.roomAddress),
-    );
-    wakeLogger.info`relaunching ${binding.roomAddress}: run ${run.id} is terminal (${run.status}); minting fresh run ${newRunId}`;
+    const definitionAssetId = await resolveDefinitionAssetId(run.definitionId);
+    if (definitionAssetId === undefined) {
+      throw new Error(
+        `Cannot relaunch "${binding.stableId}": definition ${run.definitionId} has no workflow asset`,
+      );
+    }
+    wakeLogger.info`relaunching ${binding.roomAddress}: run ${run.id} is terminal (${run.status})`;
 
-    const deployed = await launchFoldedRun(foldedRunsDeps, {
+    const prepared = await provisionOnAsset({
       tenantId: binding.tenantId,
-      instanceId: newRunId,
-      triggerAddress: newAddress,
-      definitionId: run.definitionId,
+      deploymentDomain: domainOf(binding.roomAddress),
+      sourceAuthorityPrincipalId:
+        await sourceAuthorityForAsset(definitionAssetId),
+      definitionAssetId,
       foldedBody: binding.foldedBody,
-      launchLabel: "the relaunched instance",
-      ...(await deployShapeFor(binding)),
     });
 
-    // After the deploy, never inside its transaction: a repoint that
-    // outlived a failed launch would leave the room addressing a run
-    // `launchFoldedRun` had already rolled back, and the next message
-    // would resolve nothing at all.
-    await repointBinding(deps.db, binding, newRunId, deployed.sourcesDigest);
-    lifecycle?.untrack(binding.liveAddress);
-    lifecycle?.track(newAddress);
+    await endAgentSessionForRun(deps.db, run.id, deps.eventCollectors);
 
-    // The turn that died with the old run never sent
-    // `message.run.ended`, so the orchestrator's turn-drop notice can
-    // never fire for it. This is the only thing that tells the reader
-    // their message was not silently swallowed.
+    await repointBinding(
+      deps.db,
+      binding,
+      prepared.runId,
+      prepared.sourcesDigest,
+    );
+    lifecycle?.untrack(binding.liveAddress);
+    lifecycle?.track(prepared.address);
+
     deps.relaunchNotice?.current?.({
       tenantId: binding.tenantId,
       roomAddress: binding.roomAddress,
       deadRunId: run.id,
       deadRunStatus: run.status,
-      newRunId,
+      newRunId: prepared.runId,
     });
-    return newAddress;
+    return prepared.address;
   }
 
   /**
@@ -586,21 +717,19 @@ export function createHubChatPlatform(
     ) {
       return false;
     }
-    const { fallbackModel } = await deployShapeFor(binding);
-    let resolved: Awaited<ReturnType<typeof resolveLaunchSources>>;
+    let offerings: Awaited<ReturnType<typeof catalogOfferings>>;
     try {
-      resolved = await resolveLaunchSources(foldedRunsDeps, {
+      offerings = await catalogOfferings(binding.tenantId);
+    } catch (error) {
+      reportError(error, {
+        operation: "chat.hasDriftedSources",
         tenantId: binding.tenantId,
-        foldedBody: binding.foldedBody,
-        launchLabel: "the inference-source drift check",
-        ...(fallbackModel !== undefined ? { fallbackModel } : {}),
+        agentId: binding.stableId,
       });
-    } catch (cause: unknown) {
-      if (cause instanceof InferenceResolutionError) return false;
-      throw cause;
+      return false;
     }
     sourcesCheckedAt.set(binding.stableId, now);
-    const digest = inferenceSourcesDigest(resolved);
+    const digest = offeringDigest(offerings.sourceOfferingIds);
     if (binding.sourcesDigest === null) {
       await recordSourcesDigest(deps.db, binding.stableId, digest);
       return false;
@@ -624,7 +753,7 @@ export function createHubChatPlatform(
    * below is reached only by an address that is actually live. A
    * parked-and-now-unroutable address still never gets deployed or
    * undeployed FOR ROUTABILITY ALONE here — it falls through to the
-   * explicit `wakeFoldedRun` redeploy a few lines down, the one wake
+   * explicit `provisionOnAsset` redeploy a few lines down, the one wake
    * path a parked deployment has left.
    *
    * CL-6365: a run that is unroutable because it DIED — the hub's own
@@ -642,7 +771,13 @@ export function createHubChatPlatform(
    * that treatment, just triggered by content drift instead of death.
    */
   async function wakeByAddress(address: string): Promise<void> {
-    const binding = await readBindingByAddress(deps.db, address);
+    // Every caller of `wakeByAddress` already reached `address` through
+    // a tenant-scoped resolution of its own (`sendMail`'s
+    // `requireLive(workbenchId, tenantId)`, `ensureAwake`'s caller-held
+    // address) — re-deriving the binding here is bookkeeping for a wake
+    // already authorized upstream, not a new trust boundary crossing, so
+    // the unscoped read is correct.
+    const binding = await readBindingByAddressAnyTenant(deps.db, address);
     if (binding === undefined) {
       throw new Error(
         `No workbench_launch binding for address "${address}"; instances ` +
@@ -665,22 +800,18 @@ export function createHubChatPlatform(
         return;
       }
 
-      const wakeParams = {
-        tenantId: binding.tenantId,
-        instanceId: live.run.id,
-        triggerAddress: live.run.address,
-        principalId: live.run.principalId,
-        foldedBody: binding.foldedBody,
-      };
-      const deployed = await wakeFoldedRun(foldedRunsDeps, {
-        ...wakeParams,
-        ...(await deployShapeFor(binding)),
-      });
-      await recordSourcesDigest(
-        deps.db,
-        binding.stableId,
-        deployed.sourcesDigest,
-      );
+      // CL-7490: not terminal, and not (yet) routable. A provisioned
+      // anchor stays "deployed" until its first trigger — this is
+      // exactly what a run mid-boot looks like from here, and relaunching
+      // it out from under its own in-flight sidecar registration is what
+      // supersedes the allocation and restarts the boot forever (the
+      // "Deployed agent" line never appears; a fresh sidecar/allocation
+      // shows up every few seconds instead). There is nothing this
+      // function can safely do for a live-but-not-yet-routable run: the
+      // caller's own routable wait (`deliverWhenRoutable`, wired through
+      // `sendRunMailWithReclaimRetry`) is what actually resolves this, by
+      // polling the routing table until the boot finishes or its budget
+      // runs out. A no-op here is the correct "nothing more to do".
     } catch (error) {
       throw wrapWakeInferenceError(error);
     }
@@ -695,11 +826,11 @@ export function createHubChatPlatform(
    *
    * When `lifecycle` is configured, this routes through
    * `lifecycle.ensureAwake` rather than calling `wakeByAddress` itself —
-   * `sendFoldedMailWithReclaimRetry`'s reclaim retry used to call
+   * `sendRunMailWithReclaimRetry`'s reclaim retry used to call
    * `wakeByAddress` directly, bypassing `lifecycle.ensureAwake`'s
    * per-address coalescing entirely. Two wakes for the same instance
-   * racing in through this bypass could both pass `wakeFoldedRun`'s
-   * `session_asset` delete and both redeploy, colliding on the same
+   * racing in through this bypass could both pass `provisionOnAsset`'s
+   * populate and both prepare, colliding on the same
    * primary key and git ref (CL-7214). Every wake path now funnels
    * through the one coalescing map `@corbits/agent-lifecycle` owns,
    * rather than this package growing a second one beside it.
@@ -735,7 +866,9 @@ export function createHubChatPlatform(
    * check that used to never run for it.
    */
   async function reconcileDriftedRun(address: string): Promise<boolean> {
-    const binding = await readBindingByAddress(deps.db, address);
+    // See the matching note in `wakeByAddress`: `address` is always
+    // reached through a tenant-scoped resolution upstream.
+    const binding = await readBindingByAddressAnyTenant(deps.db, address);
     if (binding === undefined) return false;
     const live = await resolveLiveAgent(deps.db, binding);
     if (live === undefined || live.run.address === null) return false;
@@ -847,8 +980,14 @@ export function createHubChatPlatform(
    * participant id — not the room's own address, once anything has been
    * relaunched.
    */
-  async function requireLive(stableId: string): Promise<LiveAgent> {
-    const live = await resolveLiveByStableId(deps.db, stableId);
+  async function requireLive(
+    stableId: string,
+    expectedTenantId?: string,
+  ): Promise<LiveAgent> {
+    const live =
+      expectedTenantId === undefined
+        ? await resolveLiveByStableIdAnyTenant(deps.db, stableId)
+        : await resolveLiveByStableId(deps.db, stableId, expectedTenantId);
     if (live === undefined) {
       throw new Error(`No live workbench run for "${stableId}"`);
     }
@@ -866,7 +1005,7 @@ export function createHubChatPlatform(
     const sessionIds: string[] = [];
     for (const run of await readPriorRuns(deps.db, binding)) {
       try {
-        sessionIds.push(await resolveFoldedRunSessionId(deps.db, run));
+        sessionIds.push(await resolveRunSessionIdOrThrow(deps.db, run));
       } catch {
         continue;
       }
@@ -875,54 +1014,94 @@ export function createHubChatPlatform(
   }
 
   /**
-   * `sendFoldedMail` delivers synchronously against the sidecar's
-   * current routable set — the same in-memory index `isRoutable` reads
-   * — so a send that lands in the same post-restart reclaim window
-   * `wakeByAddress` above tolerates can still fail with "agent is
-   * unreachable" even right after a successful (or no-op) wake. Each
-   * retry forces a fresh wake first: if the earlier reclaim tore the
-   * agent down, this becomes the genuine redeploy that recovers it; if
-   * the reclaim is still in flight, the wake itself waits it out (or
-   * redeploys once its own budget is exhausted) and the delay gives it
-   * more time regardless. Exhausting every delay means the condition
-   * is not transient and the caller gets a clean `AgentUnreachableError`
-   * rather than an unhandled 500.
+   * `sendRunMail` delivers synchronously against the sidecar's current
+   * routable set — the same in-memory index `isRoutable` reads — so a
+   * send lands in "agent is unreachable" for two different reasons
+   * that both need the same treatment: a run whose sidecar just
+   * finished a provisioned deploy and hasn't registered yet (CL-7476 —
+   * `deliverWhenRoutable` from `@corbits/workflows` is the exact same
+   * wait the webhook trigger's ingress delivery already uses for this),
+   * and a run that this loop's own wake tore down and is mid-reclaim.
+   * `deliverWhenRoutable` sends once, and — only on an unreachable
+   * failure — polls the routing table for `current.agentAddress` up to
+   * its shared deadline (`DEFAULT_ROUTABLE_DEADLINE_MS`, the same
+   * boot-and-register budget the webhook path waits on) before sending
+   * exactly once more.
+   *
+   * CL-7486: a wake this loop runs on the first failure can itself
+   * relaunch the run — `wakeByAddress`'s dead-run branch repoints the
+   * room's stable participant at a fresh address without telling this
+   * loop. Retrying `sendRunMail` against the address it started with
+   * would then keep hammering a run that will never become routable
+   * again. `reresolve` re-reads the live address (and its session) off
+   * the stable participant id every time `send` runs — including the
+   * one `deliverWhenRoutable` runs again after the routing-table wait —
+   * so this loop always chases whichever run is actually current, even
+   * one relaunched again while it was waiting.
    */
-  async function sendFoldedMailWithReclaimRetry(
-    params: SendFoldedMailParams,
-  ): Promise<Awaited<ReturnType<typeof sendFoldedMail>>> {
-    let loggedRetryStart = false;
-    for (let attempt = 0; ; attempt++) {
-      try {
-        // CL-7193: `sendFoldedMail` does a DB write plus a sidecar
-        // delivery that shouldn't be half-cancelled, and has no signal
-        // to accept regardless — the signal parameter is unused here,
-        // same abandon-on-timeout behavior as before.
-        return await withTimeout(
-          () => sendFoldedMail(foldedRunsDeps, params),
-          MAIL_DELIVERY_TIMEOUT_MS,
-          `mail to ${params.agentAddress} did not settle within ${String(MAIL_DELIVERY_TIMEOUT_MS)}ms`,
-        );
-      } catch (err) {
-        const delay = RECLAIM_RETRY_DELAYS_MS[attempt];
-        if (!isAgentUnreachable(err) || delay === undefined) {
-          if (loggedRetryStart) {
-            wakeLogger.info`mail to ${params.agentAddress} exhausted every reclaim retry; giving up`;
+  async function sendRunMailWithReclaimRetry(
+    params: SendRunMailParams,
+    reresolve: () => Promise<{
+      agentAddress: string;
+      anchorRunId: string;
+      sessionId: string;
+    }>,
+  ): Promise<Awaited<ReturnType<typeof sendRunMail>>> {
+    let current = params;
+    let wakedOnFailure = false;
+    async function sendCurrent() {
+      // CL-7193: `sendRunMail` does a DB write plus a sidecar delivery
+      // that shouldn't be half-cancelled, and has no signal to accept
+      // regardless — the signal parameter is unused here, same
+      // abandon-on-timeout behavior as before.
+      return withTimeout(
+        () => sendRunMail(runMailDeps, current),
+        MAIL_DELIVERY_TIMEOUT_MS,
+        `mail to ${current.agentAddress} did not settle within ${String(MAIL_DELIVERY_TIMEOUT_MS)}ms`,
+      );
+    }
+    try {
+      return await deliverWhenRoutable({
+        send: async () => {
+          try {
+            return await sendCurrent();
+          } catch (err) {
+            if (!isAgentUnreachableError(err) || wakedOnFailure) throw err;
+            // Wake exactly once, the moment the first attempt reports
+            // unreachable: if the run had already died, this is the
+            // genuine redeploy that recovers it; if a deploy is merely
+            // still booting, `wakeByAddress`/`lifecycle.ensureAwake`
+            // no-op past the routability check and this becomes a
+            // cheap reconcile. Re-resolving only after the wake means a
+            // relaunch it just performed is exactly what the fresh read
+            // picks up, rather than the address that was current a
+            // moment before.
+            wakeLogger.info`mail to ${current.agentAddress} hit "agent is unreachable"; waiting for it to become routable`;
+            wakedOnFailure = true;
+            await wakeByAddressBounded(current.agentAddress);
+            const fresh = await reresolve();
+            current = {
+              ...current,
+              agentAddress: fresh.agentAddress,
+              anchorRunId: fresh.anchorRunId,
+              sessionId: fresh.sessionId,
+            };
+            throw err;
           }
-          if (isAgentUnreachable(err)) {
-            throw new AgentUnreachableError(params.agentAddress, {
-              cause: err,
-            });
-          }
-          throw err;
-        }
-        if (!loggedRetryStart) {
-          wakeLogger.info`mail to ${params.agentAddress} hit "agent is unreachable"; retrying with backoff while the post-restart reclaim settles`;
-          loggedRetryStart = true;
-        }
-        await sleep(delay);
-        await wakeByAddressBounded(params.agentAddress);
+        },
+        isRoutable: () => isRoutable(current.agentAddress),
+        ...(deps.routableWaitDeadlineMs !== undefined
+          ? { deadlineMs: deps.routableWaitDeadlineMs }
+          : {}),
+      });
+    } catch (err) {
+      if (isAgentUnreachableError(err)) {
+        wakeLogger.info`mail to ${current.agentAddress} exhausted the routable-wait budget; giving up`;
+        throw new AgentUnreachableError(current.agentAddress, {
+          cause: err,
+        });
       }
+      throw err;
     }
   }
 
@@ -1001,6 +1180,7 @@ export function createHubChatPlatform(
           `Definition "${input.definitionId}" has not been materialized`,
         );
       }
+      const definitionAssetId = definitionRow.assetId;
 
       const tenantRow = await deps.db.query.tenant.findFirst({
         where: eq(tenantTable.id, input.tenantId),
@@ -1020,7 +1200,7 @@ export function createHubChatPlatform(
 
       const { row: resolvedDefinitionRow, projection } =
         await resolveAuthoredProjectedDefinition(input.tenantId, {
-          assetId: definitionRow.assetId,
+          assetId: definitionAssetId,
           name: definitionRow.name,
         });
 
@@ -1035,39 +1215,29 @@ export function createHubChatPlatform(
         );
       }
 
-      const instanceId = generateId("workflowRun");
-      const triggerAddress = formatRunAddress(instanceId, tenantRow.domain);
-
-      // Mint only — DB rows, no sidecar, no deploy. The agent deploys
-      // through `wakeByAddress` on its first inbound mail (or an
-      // explicit `ensureAwake` pre-warm), so an invite returns in
-      // database time. Its inference sources — including the catalog
-      // fallback a definition with no model of its own needs — resolve
-      // fresh inside the wake against the tenant catalog on every
-      // deploy. The launch body is persisted with the mint itself, in
-      // the same transaction, so a wake can rebuild the deploy config
-      // without reaching for the definition's asset. Chat owns this
-      // table; folded-runs never imports it.
-      await mintFoldedRun(foldedRunsDeps, {
-        tenantId: input.tenantId,
-        instanceId,
-        triggerAddress,
-        // The resolved row, not necessarily `input.definitionId`: a
-        // later wake reads the asset back through this id, so it must
-        // always name a row whose asset actually resolves.
-        definitionId: resolvedDefinitionRow.id,
-        persistExtra: async (tx) => {
-          await tx.insert(workbenchLaunch).values({
+      const prepared = await (async () => {
+        try {
+          return await provisionOnAsset({
             tenantId: input.tenantId,
-            instanceId,
-            currentRunId: instanceId,
+            deploymentDomain: tenantRow.domain,
+            sourceAuthorityPrincipalId: input.creatorPrincipalId,
+            definitionAssetId,
             foldedBody,
-            createdAt: new Date(),
           });
-        },
+        } catch (error) {
+          throw wrapWakeInferenceError(error);
+        }
+      })();
+      await deps.db.insert(workbenchLaunch).values({
+        tenantId: input.tenantId,
+        instanceId: prepared.runId,
+        currentRunId: prepared.runId,
+        foldedBody,
+        sourcesDigest: prepared.sourcesDigest,
+        createdAt: new Date(),
       });
 
-      return { instanceId, address: triggerAddress };
+      return { instanceId: prepared.runId, address: prepared.address };
     },
 
     async listInvitableDefinitions(
@@ -1094,7 +1264,9 @@ export function createHubChatPlatform(
     },
 
     async resolveDefinitionIdByAddress(address): Promise<string | undefined> {
-      const binding = await readBindingByAddress(deps.db, address);
+      // No tenant is threaded through this platform method's own
+      // signature; unscoped by necessity, not by omission.
+      const binding = await readBindingByAddressAnyTenant(deps.db, address);
       if (binding === undefined) return undefined;
       const live = await resolveLiveAgent(deps.db, binding);
       return live?.run.definitionId ?? undefined;
@@ -1119,7 +1291,7 @@ export function createHubChatPlatform(
       _workbenchId,
       address,
     ): Promise<void> {
-      const binding = await readBindingByAddress(deps.db, address);
+      const binding = await readBindingByAddress(deps.db, address, tenantId);
       if (binding === undefined) return;
       const live = await resolveLiveAgent(deps.db, binding);
       const definitionId = live?.run.definitionId;
@@ -1159,7 +1331,7 @@ export function createHubChatPlatform(
       // The stable id names the room's participant; the run it resolves
       // to is whichever one is alive right now, which is a different
       // run (and a different address) after every relaunch.
-      const { binding } = await requireLive(input.workbenchId);
+      const { binding } = await requireLive(input.workbenchId, input.tenantId);
       const liveAddress = binding.liveAddress;
 
       // Wake before send: a sleeping instance (the lifecycle package's
@@ -1213,7 +1385,7 @@ export function createHubChatPlatform(
       } catch (error) {
         throw wrapWakeInferenceError(error);
       }
-      const delivery = await requireLive(input.workbenchId);
+      const delivery = await requireLive(input.workbenchId, input.tenantId);
       const deliveryAddress = delivery.binding.liveAddress;
       // Tracking here (not only at launch) brings instances that were
       // already resident before this hub process started — restored by
@@ -1221,7 +1393,26 @@ export function createHubChatPlatform(
       // idle sweep the moment they see traffic.
       lifecycle?.track(deliveryAddress);
 
-      const sessionId = await resolveFoldedRunSessionId(deps.db, delivery.run);
+      // CL-7480: a run just woken/reconciled above can be routable
+      // before anything ever recorded its session — waking it is not
+      // itself a mail or dispatch seam, so nothing else along this path
+      // would ensure one. Best-effort: an ensure failure here still
+      // falls through to `resolveRunSessionIdOrThrow`'s own error.
+      try {
+        await ensureRunSession({
+          db: deps.db,
+          eventCollectors: deps.eventCollectors,
+          runId: delivery.run.id,
+        });
+      } catch (err) {
+        reportError(err, {
+          operation: "chat.sendMail.ensureRunSession",
+          tenantId: input.tenantId,
+          agentId: deliveryAddress,
+          extra: { runId: delivery.run.id },
+        });
+      }
+      const sessionId = await resolveRunSessionIdOrThrow(deps.db, delivery.run);
       const domain = domainOf(deliveryAddress);
       // `fromWorkbenchId` names the room a dispatch speaks for. A room
       // is data — it has no run — so its address is derived, never
@@ -1251,14 +1442,21 @@ export function createHubChatPlatform(
         }),
       );
 
+      const authAsUserId = await resolveTriggerAuthUserId({
+        principalId: input.principalId,
+        definitionId: delivery.run.definitionId,
+      });
+
       const sendMailBase = {
         tenantId: input.tenantId,
         sessionId,
         agentAddress: deliveryAddress,
+        anchorRunId: delivery.run.id,
         from,
         domain,
         content: input.content.content,
         cryptoProvider,
+        authAsUserId,
       };
       const withAttachments =
         attachments !== undefined
@@ -1285,7 +1483,31 @@ export function createHubChatPlatform(
           ? { references: input.content.references }
           : {}),
       };
-      const sent = await sendFoldedMailWithReclaimRetry(withThreading);
+      const sent = await sendRunMailWithReclaimRetry(
+        withThreading,
+        async () => {
+          const relive = await requireLive(input.workbenchId, input.tenantId);
+          try {
+            await ensureRunSession({
+              db: deps.db,
+              eventCollectors: deps.eventCollectors,
+              runId: relive.run.id,
+            });
+          } catch (err) {
+            reportError(err, {
+              operation: "chat.sendMail.ensureRunSession",
+              tenantId: input.tenantId,
+              agentId: relive.binding.liveAddress,
+              extra: { runId: relive.run.id },
+            });
+          }
+          return {
+            agentAddress: relive.binding.liveAddress,
+            anchorRunId: relive.run.id,
+            sessionId: await resolveRunSessionIdOrThrow(deps.db, relive.run),
+          };
+        },
+      );
 
       lifecycle?.recordActivity(deliveryAddress);
 
@@ -1314,7 +1536,7 @@ export function createHubChatPlatform(
       // newest-first is what keeps yesterday's attachment downloadable
       // after today's relaunch.
       const { binding, run } = await requireLive(workbenchId);
-      const liveSessionId = await resolveFoldedRunSessionId(deps.db, run);
+      const liveSessionId = await resolveRunSessionIdOrThrow(deps.db, run);
       const priorSessionIds = await retiredSessionIds(binding);
       for (const sessionId of [liveSessionId, ...priorSessionIds]) {
         const mailRow = await deps.db.query.sessionMail.findFirst({
@@ -1337,7 +1559,7 @@ export function createHubChatPlatform(
       let cancelled = false;
       let unsubscribeAgent: (() => void) | undefined;
 
-      void resolveLiveByStableId(deps.db, workbenchId)
+      void resolveLiveByStableIdAnyTenant(deps.db, workbenchId)
         .then((live) => {
           if (cancelled || live === undefined) return;
           unsubscribeAgent = deps.sidecarRouter.subscribeAgent(
@@ -1365,7 +1587,7 @@ export function createHubChatPlatform(
       // undelivered-mail handler holds whatever the envelope named), so
       // the lifecycle is driven on the LIVE address it resolves to —
       // that is the only address the sidecar ever announces.
-      const binding = await readBindingByAddress(deps.db, address);
+      const binding = await readBindingByAddressAnyTenant(deps.db, address);
       if (binding === undefined) {
         throw new Error(`No workbench_launch binding for address "${address}"`);
       }

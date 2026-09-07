@@ -1,5 +1,5 @@
 // DB-gated: skipped when no DATABASE_URL is reachable, mirroring
-// `@corbits/folded-runs`'s `scope-routes.drizzle.test.ts`. Runs the
+// `@corbits/run-scope`'s `scope-routes.drizzle.test.ts`. Runs the
 // real platform schema (`@intx/db`'s `runMigrations`) alongside this
 // package's own `applyRunKeyHistoryMigrations`, so the reconnect
 // repair is proven against a real `workflow_run` row and a real
@@ -18,7 +18,7 @@ import { createDB, runMigrations, dropSchema, schema } from "@intx/db";
 import { workflowRun } from "@intx/db/schema";
 
 import { dbTargetFromUrl } from "../../../scripts/db-setup";
-import { e2eDatabaseUrl } from "../../../scripts/e2e/harness";
+import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url";
 import { applyRunKeyHistoryMigrations } from "../src/migrations";
 import { createDrizzleRunKeyHistoryStore } from "../src/store";
 import { lookupRunKeyHistoryReconnectKey } from "../src/reconnect";

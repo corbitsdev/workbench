@@ -24,7 +24,7 @@ import { type } from "arktype";
 import type { DB } from "@intx/db";
 import { workflowRun } from "@intx/db/schema";
 import { formatRunAddress } from "@intx/types";
-import { FoldedBodySchema, isFoldedRunSettled } from "@corbits/folded-runs";
+import { FoldedBodySchema } from "@corbits/workflows";
 import type { FoldedBody } from "@intx/workflow-deploy";
 import { workbenchLaunch } from "./schema";
 import { domainOf, localPartOf } from "./agent-address";
@@ -135,13 +135,48 @@ async function readLaunchRow(
 export async function readBindingByAddress(
   db: DB["db"],
   address: string,
+  tenantId: string,
 ): Promise<AgentBinding | undefined> {
+  const row = await readBindingRowByAddress(db, address);
+  if (row === undefined) return undefined;
+  // A caller that already knows which tenant it is acting for must
+  // never accept a binding minted by another one — `instanceId` and
+  // `currentRunId` are collision-resistant generated ids, not scoped to
+  // a tenant, so nothing else stops an address that happens to name a
+  // row from a different tenant from resolving here. `tenantId` is
+  // required precisely so a caller cannot silently fall back to the
+  // unscoped read by forgetting to pass it — see
+  // `readBindingByAddressAnyTenant` for the one place that read is
+  // actually correct.
+  if (row.row.tenantId !== tenantId) return undefined;
+  return bindingFrom(row.row, row.domain);
+}
+
+/**
+ * The unscoped counterpart of `readBindingByAddress`, for the one caller
+ * that genuinely cannot know the tenant yet: the inbound event-stream
+ * handler discovering which tenant an address even belongs to before it
+ * can act as that tenant. Every other caller already knows its own
+ * tenant and must use `readBindingByAddress` instead.
+ */
+export async function readBindingByAddressAnyTenant(
+  db: DB["db"],
+  address: string,
+): Promise<AgentBinding | undefined> {
+  const row = await readBindingRowByAddress(db, address);
+  return row === undefined ? undefined : bindingFrom(row.row, row.domain);
+}
+
+async function readBindingRowByAddress(
+  db: DB["db"],
+  address: string,
+): Promise<{ row: LaunchRow; domain: string } | undefined> {
   const domain = requireDomain(address);
   const localPart = localPartOf(address);
   const byStableId = await readLaunchRow(db, "instanceId", localPart);
-  if (byStableId !== undefined) return bindingFrom(byStableId, domain);
-  const byRunId = await readLaunchRow(db, "currentRunId", localPart);
-  return byRunId === undefined ? undefined : bindingFrom(byRunId, domain);
+  const row =
+    byStableId ?? (await readLaunchRow(db, "currentRunId", localPart));
+  return row === undefined ? undefined : { row, domain };
 }
 
 /**
@@ -154,7 +189,7 @@ export async function resolveRoomAddress(
   db: DB["db"],
   liveAddress: string,
 ): Promise<string> {
-  const binding = await readBindingByAddress(db, liveAddress);
+  const binding = await readBindingByAddressAnyTenant(db, liveAddress);
   return binding?.roomAddress ?? liveAddress;
 }
 
@@ -183,9 +218,36 @@ export async function resolveLiveAgent(
 export async function resolveLiveByStableId(
   db: DB["db"],
   stableId: string,
+  tenantId: string,
 ): Promise<LiveAgent | undefined> {
   const row = await readLaunchRow(db, "instanceId", stableId);
   if (row === undefined) return undefined;
+  // See the matching note on `readBindingByAddress`: a caller that
+  // knows its own tenant must never be handed another tenant's launch
+  // for a stable id it happens to guess or receive by mistake. Required,
+  // not optional — see `resolveLiveByStableIdAnyTenant` for the unscoped
+  // read.
+  if (row.tenantId !== tenantId) return undefined;
+  return resolveLiveRunForRow(db, row);
+}
+
+/**
+ * The unscoped counterpart of `resolveLiveByStableId`, for a caller that
+ * has no tenant of its own to check against (e.g. it is resolving a
+ * stable id it does not yet know the tenant for).
+ */
+export async function resolveLiveByStableIdAnyTenant(
+  db: DB["db"],
+  stableId: string,
+): Promise<LiveAgent | undefined> {
+  const row = await readLaunchRow(db, "instanceId", stableId);
+  return row === undefined ? undefined : resolveLiveRunForRow(db, row);
+}
+
+async function resolveLiveRunForRow(
+  db: DB["db"],
+  row: LaunchRow,
+): Promise<LiveAgent | undefined> {
   const run = await readRun(db, row.currentRunId);
   if (run === undefined || run.address === null) return undefined;
   return { binding: bindingFrom(row, requireDomain(run.address)), run };
@@ -252,32 +314,46 @@ export async function readPriorRuns(
 }
 
 /**
- * The statuses a `workflow_run` can hold that mean "this run will never
- * accept mail again". A folded run's own idle settle lands on
- * "completed" too (see `@corbits/folded-runs`' `isFoldedRunSettled`),
- * and that one is ordinary — it wakes.
+ * The statuses a `workflow_run` can hold that are terminal regardless of
+ * whether the run ever took a turn. `"completed"` is deliberately absent
+ * here — a deployment `markTerminal`'d before its first trigger settles
+ * "completed" too (see `workflow-run-store.ts`'s `markTerminal`), and that
+ * is a run that is still booting, not one that will "never accept mail
+ * again". `isBeyondWake` below folds `"completed"` back in only once it
+ * can tell the two apart.
  */
-const TERMINAL_RUN_STATUSES: ReadonlySet<string> = new Set([
+const UNCONDITIONALLY_TERMINAL_RUN_STATUSES: ReadonlySet<string> = new Set([
   "failed",
   "cancelled",
   "canceled",
-  "completed",
 ]);
 
 /**
- * Whether this run is routable-but-dead: terminal in the hub's own
- * `workflow_run.status`, and not merely a folded run parked between
- * messages. A run this returns true for cannot be woken — its durable
- * event log already carries a terminal event, so redeploying the same
- * address would come straight back as `workflow_run_terminal` — it can
- * only be RELAUNCHED as a fresh run.
+ * Whether this run is dead: terminal in `workflow_run.status`, in a way
+ * that actually means "this run will never accept mail again" rather than
+ * "this deployment never got as far as its first trigger". A run this
+ * returns true for cannot be woken — it can only be relaunched as a fresh
+ * provisioned deployment. A run this returns false for — `"deployed"` or
+ * `"running"`, or `"completed"` with no principal ever anchored to it — is
+ * still live or still booting: waking it means waiting for it to become
+ * routable (`deliverWhenRoutable`), never relaunching it (CL-7490).
+ *
+ * `principalId` is the signal for "ever took a turn": `anchorWithPrincipal`
+ * sets it in the same update that flips `"deployed"` -> `"running"` on a
+ * deployment's first trigger, and a child run is born with one already. A
+ * `"completed"` run with no `principalId` can only be a deployment torn
+ * down before that first trigger ever landed — the store cannot tell that
+ * apart from a mid-boot deployment misreporting itself terminal, so it is
+ * treated as still booting rather than relaunched out from under a caller
+ * that is only waiting on it.
  */
 export async function isBeyondWake(
-  db: DB["db"],
-  run: { id: string; status: string },
+  _db: DB["db"],
+  run: { id: string; status: string; principalId?: string | null },
 ): Promise<boolean> {
-  if (!TERMINAL_RUN_STATUSES.has(run.status)) return false;
-  return !(await isFoldedRunSettled(db, run));
+  if (UNCONDITIONALLY_TERMINAL_RUN_STATUSES.has(run.status)) return true;
+  if (run.status !== "completed") return false;
+  return run.principalId !== null && run.principalId !== undefined;
 }
 
 /**

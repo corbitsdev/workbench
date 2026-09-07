@@ -27,8 +27,6 @@ import type { WorkbenchSettings } from "../api";
 import { WorkbenchLoadingState } from "../loading-state";
 import { CHAT_STRINGS } from "../strings";
 import { AgentsSection } from "./agents-section";
-import { CapacitySection } from "./capacity-section";
-import { getCapacityPlacement } from "./capacity-api";
 import {
   contextWindowControlState,
   contextWindowPatchValue,
@@ -39,7 +37,6 @@ import { GeneralSection } from "./general-section";
 import { MembersSection } from "./members-section";
 import { workbenchSettingsSections } from "./model";
 import type {
-  CapacityProbeState,
   WorkbenchSettingsSection,
   WorkbenchSettingsSectionId,
 } from "./model";
@@ -48,13 +45,6 @@ import { NotificationsSection } from "./notifications-section";
 type WorkbenchSettingsData = {
   readonly data: WorkbenchSettings;
   readonly benchDefault: number;
-  /** Tri-state outcome of probing whether this server's provisioner can
-   * run a workbench's agents on their own dedicated machine — a
-   * server-wide fact, not per-conversation. Gates the Capacity nav item
-   * (`workbenchSettingsSections`'s `capacityProbe`): hide only when the
-   * probe confirmed `"unavailable"`. A failed probe stays `"unknown"`
-   * so a transient miss does not permanently omit the section (CL-6828). */
-  readonly capacityProbe: CapacityProbeState;
 };
 
 const SECTION_GROUP_ORDER = ["shared", "personal", "danger"] as const;
@@ -129,15 +119,8 @@ export function WorkbenchSettingsSurface({
     Promise.all([
       getWorkbenchSettings(tenantId, workbenchId),
       getBenchChatSettings(tenantId),
-      getCapacityPlacement(tenantId)
-        .then((result): CapacityProbeState =>
-          result.provisionerAvailable ? "available" : "unavailable",
-        )
-        // A failed probe is `"unknown"`, never `"unavailable"` — folding
-        // the miss into false used to hide Capacity permanently (CL-6828).
-        .catch((): CapacityProbeState => "unknown"),
     ])
-      .then(([settings, bench, capacityProbe]) => {
+      .then(([settings, bench]) => {
         if (cancelled) return;
         const control = contextWindowControlState(settings.contextWindow);
         const storedPurpose = settings.settings["chat/purpose"];
@@ -151,7 +134,6 @@ export function WorkbenchSettingsSurface({
           data: {
             data: settings,
             benchDefault: bench.contextWindow,
-            capacityProbe,
           },
         });
       })
@@ -189,7 +171,6 @@ export function WorkbenchSettingsSurface({
   const sections = workbenchSettingsSections(
     ready !== undefined ? ready.data.kind : "workbench",
     isDm,
-    ready?.capacityProbe ?? "unavailable",
   );
   const firstSection = sections[0];
   if (firstSection === undefined) {
@@ -367,10 +348,6 @@ export function WorkbenchSettingsSurface({
                     ? { onEntityIdChange }
                     : {})}
                 />
-              ) : null}
-
-              {activeSection.id === "capacity" ? (
-                <CapacitySection tenantId={tenantId} />
               ) : null}
 
               {activeSection.id === "notifications" ? (

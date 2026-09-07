@@ -25,7 +25,6 @@ import { type } from "arktype";
 import { createExpiringMap } from "@corbits/collections";
 import {
   ARTIFACT_UPLOAD_POLICY,
-  anonymousIdentity,
   createArtifact,
   createFileArtifact,
   getArtifact,
@@ -218,14 +217,9 @@ export function createWorkflowArtifactDbStore(
       return { id: row.id, version: row.version };
     },
     async listRecent(scope, limit) {
-      const result = await listArtifacts(
-        db,
-        anonymousIdentity,
-        scope.tenantId,
-        {
-          limit,
-        },
-      );
+      const result = await listArtifacts(db, scope.tenantId, {
+        limit,
+      });
       return result.rows.map(serializeArtifactListItem);
     },
     async get(scope, artifactId) {

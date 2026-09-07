@@ -12,7 +12,7 @@
 // session really is a different session — which is the only reason
 // this test can fail.
 import { describe, expect, test } from "bun:test";
-import { createCryptoProviderCache } from "@corbits/folded-runs";
+import { createCryptoProviderCache } from "../src/crypto-cache";
 import { agentSession } from "@intx/db/schema";
 import { workbenchLaunch } from "../src/schema";
 import { createHubChatPlatform } from "../src/platform-adapter";
@@ -78,6 +78,22 @@ function createFakeDb(opts: {
           );
         },
       },
+      // CL-7481: `resolveRunSessionIdOrThrow` reads the launch spec by
+      // run id instead of walking through the run's principal — the
+      // session id it returns still matches this fixture's
+      // `ses_<principalId>` convention, since every run here is already
+      // "anchored" with a fixed principal from the moment it's defined.
+      workflowRunLaunchSpec: {
+        findFirst: async ({ where }: { where: unknown }) => {
+          const [anchorRunId] = comparedValues(where);
+          const run = opts.runs.find((row) => row.id === anchorRunId);
+          if (run === undefined) return undefined;
+          return {
+            anchorRunId,
+            sessionId: `ses_${run.principalId ?? ""}`,
+          };
+        },
+      },
     },
     select: () => ({
       from: (table: unknown) => ({
@@ -112,11 +128,16 @@ function createPlatform(db: never) {
   return createHubChatPlatform({
     db,
     toolGrantsForPins: () => [],
-    sessionService: {} as never,
-    assetService: {} as never,
+    runTrigger: {} as never,
+    repoStore: { resolveRef: async () => "sha_test" },
     sidecarRouter: { getRoutableAddresses: () => [] } as never,
     eventCollectors: {} as never,
     cryptoProviders: createCryptoProviderCache(),
+    workflowAllocationService: {
+      prepareProvisionedDeployment: async () => {
+        throw new Error("unused");
+      },
+    },
     credentialCipher: {
       encrypt: async (plaintext: string) => plaintext,
       decrypt: async (blob: string) => blob,

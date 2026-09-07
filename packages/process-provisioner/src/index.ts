@@ -2,6 +2,7 @@ export {
   createProcessSidecarProvisioner,
   PROCESS_PROVISIONER_ID,
   type CreateProcessSidecarProvisionerOpts,
+  type ProcessProvisionerRole,
 } from "./interchange-plugin";
 export {
   readProcessProvisionerConfig,

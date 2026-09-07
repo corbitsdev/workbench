@@ -33,5 +33,5 @@ export * from "./base64url";
 export * from "./concat";
 export * from "./has-code";
 export * from "./audit";
-export * from "./sidecar-placement";
 export * from "./sidecar-allocation";
+export * from "./sidecar-capabilities";

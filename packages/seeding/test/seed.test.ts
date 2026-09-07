@@ -38,9 +38,56 @@ installDisposableHubDataDir();
 const MODEL = {
   provider: "anthropic",
   model: "claude-sonnet-4-5",
-  baseURL: "https://api.anthropic.com",
-  apiKey: "sk-test",
 };
+
+// The tenant's one real catalog offering — every `seedTenant` test that
+// deploys a real (non-noop-pinned) workflow needs at least one of these
+// listable, since `ensureDeployment` now resolves its deploy source from
+// the tenant's catalog rather than a bare `ModelSource`.
+const OFFERING_ID = "off_1";
+
+function offeringsPage(ids: readonly string[] = [OFFERING_ID]): {
+  status: number;
+  data: unknown;
+} {
+  return {
+    status: 200,
+    data: {
+      data: ids.map((id, index) => ({
+        id,
+        tenantId: TENANT_ID,
+        modelId: `mdl_${id}`,
+        providerId: `mpr_${id}`,
+        priority: index,
+        deploymentTags: [],
+        capabilities: [],
+        quirks: null,
+        disabled: false,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      })),
+      nextCursor: null,
+    },
+  };
+}
+
+function resolvedOfferingsPage(ids: readonly string[] = [OFFERING_ID]): {
+  status: number;
+  data: unknown;
+} {
+  return {
+    status: 200,
+    data: {
+      offerings: ids.map((id, index) => ({
+        id,
+        modelId: `mdl_${id}`,
+        providerId: `mpr_${id}`,
+        priority: index,
+        origin: { tenantId: TENANT_ID, direct: true },
+      })),
+    },
+  };
+}
 
 const instantSleep = async (_ms: number) => {};
 
@@ -98,6 +145,45 @@ function baseRoutes(method: string, path: string) {
     path === `/api/tenants/${TENANT_ID}/workflows/deployments`
   )
     return { status: 200, data: [] };
+  if (
+    method === "GET" &&
+    path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+  )
+    return offeringsPage();
+  if (
+    method === "GET" &&
+    path === `/api/tenants/${TENANT_ID}/catalog/resolved-offerings`
+  )
+    return resolvedOfferingsPage();
+  // The noop catalog chain `ensureNoopCatalogOffering` plants for a
+  // modelSource-pinned workflow (heartbeat) — every seedTenant test that
+  // deploys one needs this fresh chain to succeed, so it lives in the
+  // shared fallback rather than every such test repeating it.
+  if (method === "POST" && path === `/api/tenants/${TENANT_ID}/catalog/models`)
+    return { status: 201, data: catalogModelRow("mdl_noop", "noop") };
+  if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`)
+    return { status: 201, data: providerRow("prv_noop", "noop") };
+  if (method === "POST" && path === `/api/tenants/${TENANT_ID}/credentials`)
+    return {
+      status: 201,
+      data: credentialRow("cre_noop", "prv_noop", "noop-default"),
+    };
+  if (
+    method === "POST" &&
+    path === `/api/tenants/${TENANT_ID}/catalog/providers`
+  )
+    return {
+      status: 201,
+      data: catalogProviderRow("cpv_noop", "noop", "cre_noop", "anthropic"),
+    };
+  if (
+    method === "POST" &&
+    path === `/api/tenants/${TENANT_ID}/catalog/offerings`
+  )
+    return {
+      status: 201,
+      data: catalogOfferingRow("off_noop", "mdl_noop", "cpv_noop"),
+    };
   const handshake = pristineScheduledDefinitionHandshake(method, path);
   if (handshake) return handshake;
   return undefined;
@@ -860,11 +946,9 @@ describe("seedTenant", () => {
     expect(assistant?.displayName).toBe("Myra");
   });
 
-  test("NOOP_MODEL_SOURCE resolves to the hub's own noop-inference endpoint", () => {
-    const resolved = NOOP_MODEL_SOURCE("http://localhost:3000");
-    expect(resolved.baseURL).toBe(
-      "http://localhost:3000/api/chat/noop-inference",
-    );
+  test("NOOP_MODEL_SOURCE names the noop provider/model pair", () => {
+    const resolved = NOOP_MODEL_SOURCE();
+    expect(resolved.provider).toBe("anthropic");
     expect(resolved.model).toBe("noop");
   });
 
@@ -934,8 +1018,8 @@ describe("seedTenant", () => {
       (w) => w.assetName === "heartbeat",
     );
     if (!heartbeat) throw new Error("expected the heartbeat workflow");
-    const resolved = heartbeat.modelSource?.("http://localhost:3000");
-    expect(resolved).toEqual(NOOP_MODEL_SOURCE("http://localhost:3000"));
+    const resolved = heartbeat.modelSource?.();
+    expect(resolved).toEqual(NOOP_MODEL_SOURCE());
   });
 
   test("fresh run pushes, deploys, and confirms the heartbeat workflow against the noop source", async () => {
@@ -1012,12 +1096,17 @@ describe("seedTenant", () => {
     expect(definition.triggers[0]?.to).toBe(`heartbeat@${TENANT_DOMAIN}`);
     expect(definition.stepOrder).toEqual(["heartbeat"]);
 
-    // The deploy's own source, not the tenant's real MODEL, is what
-    // proves the noop pin took effect: it must name the noop provider
-    // fixture, not the ordinary anthropic/claude-sonnet-4-5 model this
-    // test file's `args()` helper hands every other workflow.
-    const deployedBody = deployedSources as { sources: { model: string }[] };
-    expect(deployedBody.sources[0]?.model).toBe("noop");
+    // The deploy's own source offering, not the tenant's real catalog
+    // offering, is what proves the noop pin took effect: it must name
+    // the dedicated noop offering `ensureNoopCatalogOffering` plants,
+    // never the tenant's own `OFFERING_ID` this test file's `baseRoutes`
+    // fixture hands every real workflow.
+    const deployedBody = deployedSources as {
+      sourceOfferingIds: string[];
+      defaultSourceOfferingId: string;
+    };
+    expect(deployedBody.sourceOfferingIds).toEqual(["off_noop"]);
+    expect(deployedBody.defaultSourceOfferingId).toBe("off_noop");
 
     const output = lines.join("\n");
     expect(output).toContain("deployed workflow heartbeat as dep_3");
@@ -1135,9 +1224,14 @@ describe("seedTenant", () => {
     ]);
     expect(definition.stepOrder).toEqual(["workbench-digest"]);
 
-    // Defaults deploy against the tenant's real model (not noop).
-    const deployedBody = deployedSources as { sources: { model: string }[] };
-    expect(deployedBody.sources[0]?.model).not.toBe("noop");
+    // Defaults deploy against the tenant's real catalog offering, never
+    // the noop one.
+    const deployedBody = deployedSources as {
+      sourceOfferingIds: string[];
+      defaultSourceOfferingId: string;
+    };
+    expect(deployedBody.sourceOfferingIds).toEqual([OFFERING_ID]);
+    expect(deployedBody.defaultSourceOfferingId).toBe(OFFERING_ID);
 
     const output = lines.join("\n");
     expect(output).toContain("deployed workflow workbench-digest as dep_4");

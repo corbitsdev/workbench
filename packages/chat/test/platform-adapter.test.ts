@@ -1,11 +1,9 @@
 // Proves `createHubChatPlatform` maps each `ChatPlatform` port method
 // onto the right in-process service call. `launchWorkbench` in
-// particular proves the folded interactive-instance shape: it extracts
+// particular proves the invited-agent instance shape: it extracts
 // the folded body, resolves inference sources against the tenant
-// catalog, writes the same principal/session/run rows a folded launch
-// writes (never a deployment-shaped run), and deploys via
-// `sessionService.deployInstanceAtHead` — never
-// `deployWorkflowDefinition`.
+// catalog, and provisions via Interchange
+// `prepareProvisionedDeployment` — never `deployWorkflowDefinition`.
 //
 // `resolveDefinitionSources` is real catalog resolution (joins across
 // several tables via `@intx/db`), which a plain chainable fake `db`
@@ -17,31 +15,22 @@
 // `@intx/hub-api`'s own contract, not this package's, and is not
 // re-proven here.
 //
-// `sessionService`/`assetService`/`sidecarRouter` are fakes recording
+// `runTrigger`/`repoStore`/`sidecarRouter` are fakes recording
 // their calls, and `db` is a minimal chainable stand-in for the
 // drizzle query builder (no database involved) so the mapping is
 // exercised without a real Postgres.
 
-import { describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { IDLE_HIBERNATE_UNDEPLOY_REASON } from "@corbits/agent-lifecycle";
-import { AGENT_RUNTIME_SECTION_ID } from "@corbits/agent-runtime";
 import {
-  createCryptoProviderCache,
-  foldedRun,
-  inferenceSourcesDigest,
   DefinitionProjectionMissingError,
-  type CryptoProviderCache,
-  type FoldedRunsDeps,
-} from "@corbits/folded-runs";
-import {
-  parseWorkflowSourceEntry,
-  WORKFLOW_SOURCE_ENTRY_PATH,
+  WORKFLOW_SOURCE_ENTRY,
 } from "@corbits/workflows";
 import type { DefinitionSourceResolution } from "@intx/hub-api";
 import {
   agentSession,
   asset,
-  sessionAsset,
+  principal as principalTable,
   sessionMail,
   workflowDefinition,
   workflowDefinitionVersion,
@@ -52,17 +41,26 @@ import type { EventCollectorRegistry, SidecarRouter } from "@intx/hub-sessions";
 import { workbenchLaunch } from "../src/schema";
 import type { CreateHubChatPlatformDeps } from "../src/platform-adapter";
 import { MODEL_UNAVAILABLE_CONSUMER_MESSAGE } from "../src/model-unavailable";
+import type {
+  RunTriggerClient,
+  TriggerWorkflowRunMailInput,
+} from "../src/run-trigger-client";
+import {
+  createCryptoProviderCache,
+  type CryptoProviderCache,
+} from "../src/crypto-cache";
 
 const actualHubApi = await import("@intx/hub-api");
 
 let resolveDefinitionSourcesResult: DefinitionSourceResolution = {
   ok: true,
+  materials: [],
   sources: [
     {
       id: "off_1",
       provider: "anthropic",
       baseURL: "https://inference.invalid",
-      apiKey: "placeholder",
+      credentialId: "cred_placeholder",
       model: "claude-sonnet-5",
     },
   ],
@@ -90,40 +88,113 @@ let buildCredentialDeliveryResult: BuildCredentialDeliveryResult = {
 };
 const buildCredentialDeliveryCalls: unknown[] = [];
 
-// `deployAtHead` (reached through `launchFoldedRun`/`launchInvite`) looks
-// up `listVisibleOfferings` once per launch to correct an Ollama
-// offering's adapter-registry key (CL-6586's `withOllamaAdapterKey`) --
-// the real implementation walks a drizzle `db.query` surface this file's
-// minimal chainable fake `db` never implements. None of these fixtures
-// resolve against an Ollama offering, so an empty list is the correct
-// fake: nothing here should ever need its `provider` field corrected.
+// `provisionOnAsset` looks up `listVisibleOfferings` once per invite/wake/
+// relaunch. The real implementation walks a drizzle `db.query` surface this
+// file's minimal chainable fake `db` never implements, so the catalog is
+// stubbed here. Tests that need an empty catalog assign `visibleOfferings = []`.
+const DEFAULT_VISIBLE_OFFERINGS = [
+  {
+    offering: { id: "off_1", priority: 0 },
+    model: { canonicalName: "claude-sonnet-5" },
+    provider: { name: "anthropic" },
+  },
+];
+let visibleOfferings: typeof DEFAULT_VISIBLE_OFFERINGS = [
+  ...DEFAULT_VISIBLE_OFFERINGS,
+];
+const listVisibleOfferingsCalls: unknown[] = [];
+
 mock.module("@intx/db", () => ({
   ...actualDb,
   buildCredentialDelivery: async (...args: unknown[]) => {
     buildCredentialDeliveryCalls.push(args[0]);
     return buildCredentialDeliveryResult;
   },
-  listVisibleOfferings: async () => [],
+  listVisibleOfferings: async (...args: unknown[]) => {
+    listVisibleOfferingsCalls.push(args);
+    return visibleOfferings;
+  },
 }));
+
+beforeEach(() => {
+  visibleOfferings = [...DEFAULT_VISIBLE_OFFERINGS];
+  listVisibleOfferingsCalls.length = 0;
+});
 
 const { createHubChatPlatform: buildHubChatPlatform } =
   await import("../src/platform-adapter");
-
-function createHubChatPlatform(
-  deps: Omit<CreateHubChatPlatformDeps, "cryptoProviders"> & {
-    cryptoProviders?: CryptoProviderCache;
-  },
-) {
-  return buildHubChatPlatform({
-    ...deps,
-    cryptoProviders: deps.cryptoProviders ?? createCryptoProviderCache(),
-  });
-}
 
 const PASSTHROUGH_CIPHER = {
   encrypt: async (plaintext: string) => plaintext,
   decrypt: async (blob: string) => blob,
 };
+
+function createFakeWorkflowAllocationService(): {
+  prepareCalls: unknown[];
+  prepareProvisionedDeployment: (args: {
+    anchorRunId: string;
+    deploymentDomain: string;
+  }) => Promise<{
+    anchorRunId: string;
+    deploymentAddress: string;
+    allocationId: string;
+    status: "pending";
+  }>;
+} {
+  const prepareCalls: unknown[] = [];
+  return {
+    prepareCalls,
+    async prepareProvisionedDeployment(args: {
+      anchorRunId: string;
+      deploymentDomain: string;
+    }) {
+      prepareCalls.push(args);
+      return {
+        anchorRunId: args.anchorRunId,
+        deploymentAddress: `${args.anchorRunId}@${args.deploymentDomain}`,
+        allocationId: `alloc_${args.anchorRunId}`,
+        status: "pending" as const,
+      };
+    },
+  };
+}
+
+type FakeWorkflowAllocationService = ReturnType<
+  typeof createFakeWorkflowAllocationService
+>;
+
+let lastAllocationService: FakeWorkflowAllocationService =
+  createFakeWorkflowAllocationService();
+
+function createFakeRepoStore(sha: string | null = "sha_test") {
+  const resolveRefCalls: unknown[] = [];
+  return {
+    resolveRefCalls,
+    async resolveRef(...args: unknown[]) {
+      resolveRefCalls.push(args);
+      return sha;
+    },
+  };
+}
+
+function createHubChatPlatform(
+  deps: Omit<
+    CreateHubChatPlatformDeps,
+    "cryptoProviders" | "workflowAllocationService" | "repoStore"
+  > & {
+    cryptoProviders?: CryptoProviderCache;
+    workflowAllocationService?: FakeWorkflowAllocationService;
+    repoStore?: CreateHubChatPlatformDeps["repoStore"];
+  },
+) {
+  return buildHubChatPlatform({
+    ...deps,
+    repoStore: deps.repoStore ?? createFakeRepoStore(),
+    cryptoProviders: deps.cryptoProviders ?? createCryptoProviderCache(),
+    workflowAllocationService:
+      deps.workflowAllocationService ?? createFakeWorkflowAllocationService(),
+  });
+}
 
 function createPlatform(
   deps: Omit<
@@ -135,9 +206,12 @@ function createPlatform(
     >[0]["credentialCipher"];
   },
 ) {
+  lastAllocationService =
+    deps.workflowAllocationService ?? createFakeWorkflowAllocationService();
   return createHubChatPlatform({
     ...deps,
     credentialCipher: deps.credentialCipher ?? PASSTHROUGH_CIPHER,
+    workflowAllocationService: lastAllocationService,
   });
 }
 
@@ -221,14 +295,6 @@ function createFakeDb(opts: {
         status?: string;
       }
     | undefined;
-  /**
-   * `select().from(foldedRun).where(eq(foldedRun.id, ...))` backing
-   * `isFoldedRunSettled`'s marker check -- `true` (the default) means
-   * the configured `workflowRunRow` is a folded run, matching every
-   * run `createHubChatPlatform` itself ever launches; `false` proves
-   * the predicate does not fire for a plain "completed" status alone.
-   */
-  foldedRunMarker?: boolean;
   sessionMailRow?: { id: string; raw: Uint8Array } | undefined;
   workflowDefinitionRow?:
     | {
@@ -282,6 +348,18 @@ function createFakeDb(opts: {
    * production code asks for, in any order.
    */
   wireProjectionsByDefinitionId?: Record<string, unknown | null> | undefined;
+  /**
+   * The `workflow_run_launch_spec` row `resolveRunSessionIdOrThrow`
+   * (CL-7481) reads by run id — the session id is fixed at provision
+   * time, unlike the principal it used to be looked up by. Explicit
+   * only where a test cares about an un-anchored run's session
+   * resolving before its principal ever exists; every other test here
+   * predates CL-7481 and seeds an `agentSession` row directly, so the
+   * fallback below derives one from that instead of touching every
+   * call site.
+   */
+  workflowRunLaunchSpecRow?:
+    { anchorRunId: string; sessionId: string } | undefined;
 }) {
   const inserted: { table: unknown; values: unknown }[] = [];
   const updated: { table: unknown; values: unknown }[] = [];
@@ -327,16 +405,117 @@ function createFakeDb(opts: {
   const fake = {
     query: {
       workflowRun: {
-        findFirst: async () =>
-          opts.workflowRunRow ??
-          (inserted.findLast((row) => row.table === workflowRun)?.values as
-            typeof opts.workflowRunRow | undefined),
+        findFirst: async (query?: { where?: unknown }) => {
+          const [id] =
+            query?.where !== undefined ? boundStringValues(query.where) : [];
+          if (
+            opts.workflowRunRow !== undefined &&
+            (id === undefined || id === opts.workflowRunRow.id)
+          ) {
+            return {
+              ...opts.workflowRunRow,
+              definitionId:
+                opts.workflowRunRow.definitionId ?? opts.definitionId,
+            };
+          }
+          const insertedLaunch = inserted.findLast(
+            (row) => row.table === workbenchLaunch,
+          )?.values as
+            | { currentRunId?: string; instanceId?: string; tenantId?: string }
+            | undefined;
+          const launch = (opts.workbenchLaunchRow ?? insertedLaunch) as
+            | { currentRunId?: string; instanceId?: string; tenantId?: string }
+            | undefined;
+          const launchRunId = launch?.currentRunId ?? launch?.instanceId;
+          if (launch !== undefined && id !== undefined && id === launchRunId) {
+            const domain =
+              opts.tenantRow?.domain ??
+              opts.workflowRunRow?.address?.split("@")[1] ??
+              "ten1.workbench.test";
+            return {
+              id: launchRunId,
+              tenantId: launch.tenantId ?? "ten_1",
+              definitionId:
+                opts.workflowDefinitionRow?.id ??
+                opts.workflowRunRow?.definitionId ??
+                opts.definitionId,
+              address: `${launchRunId}@${domain}`,
+              principalId: opts.workflowRunRow?.principalId ?? null,
+              status: "pending",
+            };
+          }
+          const insertedRow = inserted.findLast(
+            (row) => row.table === workflowRun,
+          )?.values as typeof opts.workflowRunRow | undefined;
+          if (insertedRow !== undefined) return insertedRow;
+          // A run this fixture never configured: the freshly minted
+          // `anchorRunId` a fake `prepareProvisionedDeployment` just
+          // returned, which never wrote a `workflowRun` row into this
+          // fake db (Interchange's own provisioning is entirely mocked
+          // out here). `recordAgentSessionAtProvision` (CL-7481) reads
+          // the run row it just "provisioned" immediately after — this
+          // synthesizes the generic shape production code would see,
+          // so that read succeeds without every test wiring one up.
+          if (id === undefined) return undefined;
+          const domain =
+            opts.tenantRow?.domain ??
+            opts.workflowRunRow?.address?.split("@")[1] ??
+            "ten1.workbench.test";
+          return {
+            id,
+            tenantId: opts.tenantRow?.id ?? "ten_1",
+            definitionId: opts.definitionId,
+            address: `${id}@${domain}`,
+            principalId: null,
+          };
+        },
       },
       sessionMail: {
         findFirst: async () => opts.sessionMailRow,
       },
+      agentSession: {
+        findFirst: async (query?: { where?: unknown }) => {
+          const [id] =
+            query?.where !== undefined ? boundStringValues(query.where) : [];
+          return inserted.findLast(
+            (row) =>
+              row.table === agentSession &&
+              (id === undefined || (row.values as { id?: string }).id === id),
+          )?.values as { id: string; principalId: string } | undefined;
+        },
+      },
+      workflowRunLaunchSpec: {
+        findFirst: async (query?: { where?: unknown }) => {
+          const [id] =
+            query?.where !== undefined ? boundStringValues(query.where) : [];
+          if (opts.workflowRunLaunchSpecRow !== undefined) {
+            return id === undefined ||
+              id === opts.workflowRunLaunchSpecRow.anchorRunId
+              ? opts.workflowRunLaunchSpecRow
+              : undefined;
+          }
+          const seededSession = inserted.find(
+            (row) => row.table === agentSession,
+          )?.values as { id: string } | undefined;
+          if (seededSession === undefined) return undefined;
+          return { anchorRunId: id, sessionId: seededSession.id };
+        },
+      },
       workflowDefinition: {
-        findFirst: async () => opts.workflowDefinitionRow,
+        findFirst: async () =>
+          opts.workflowDefinitionRow ??
+          (opts.workflowRunRow !== undefined
+            ? {
+                id: opts.definitionId,
+                tenantId: "ten_1",
+                status: "deployed",
+                assetId: "ast_definition1",
+                name: "agent",
+                origin: "authored" as const,
+                grantRequirements: [],
+                wireHash: "hash_1",
+              }
+            : undefined),
         // The requested definition row is itself a deployed row of its
         // asset, so the real asset-sibling query always returns at
         // least it — the single-row default mirrors that.
@@ -361,6 +540,23 @@ function createFakeDb(opts: {
             };
           }
           if (table === asset) return selectChain([opts.assetRow]);
+          // The run-trigger client's auth resolution
+          // (`resolveTriggerAuthUserId` in `../src/platform-adapter.ts`)
+          // looks up the better-auth user behind a principal id. No
+          // test here cares which synthetic user a trigger call
+          // authenticates as, only that it succeeds, so this answers
+          // every lookup with the same fixed "user" principal.
+          if (table === principalTable) {
+            return selectChain([{ refId: "user_test", kind: "user" }]);
+          }
+          if (table === workflowDefinition) {
+            return selectChain([
+              {
+                assetId:
+                  opts.workflowDefinitionRow?.assetId ?? "ast_definition1",
+              },
+            ]);
+          }
           if (table === workflowDefinitionVersion) {
             // `loadFrozenWireProjection` filters on
             // `and(eq(definitionId, id), eq(version, "1"))`; the first
@@ -429,18 +625,6 @@ function createFakeDb(opts: {
               .map((row) => ({ id: (row.values as { id: string }).id }));
             return selectChain(sessions);
           }
-          if (table === foldedRun) {
-            const marker = opts.foldedRunMarker ?? true;
-            const runId =
-              opts.workflowRunRow?.id ??
-              (
-                inserted.findLast((row) => row.table === foldedRun)?.values as
-                  { id: string } | undefined
-              )?.id;
-            return selectChain(
-              marker && runId !== undefined ? [{ id: runId }] : [],
-            );
-          }
           return selectChain([]);
         },
       };
@@ -508,154 +692,35 @@ function createFakeEventCollectors(
   };
 }
 
-type AdoptedDeployCall = {
-  anchorRunId: string;
-  agentAddress: string;
+type FakeRunTrigger = RunTriggerClient & {
+  triggerCalls: TriggerWorkflowRunMailInput[];
 };
 
-type FakeSessionService = FoldedRunsDeps["sessionService"] & {
-  adoptedDeployCalls: unknown[];
-  sendUserMessageCalls: unknown[];
-};
-
-function createFakeSessionService(): FakeSessionService {
-  const adoptedDeployCalls: unknown[] = [];
-  const sendUserMessageCalls: unknown[] = [];
-  return {
-    adoptedDeployCalls,
-    sendUserMessageCalls,
-    async stageWorkflowStep() {},
-    async deployInstanceAtHead() {
-      throw new Error(
-        "deployInstanceAtHead must not be called: a folded run deploys " +
-          "its own rendered workflow source package",
-      );
-    },
-    async deployAdoptedWorkflowFromSource(params: AdoptedDeployCall) {
-      adoptedDeployCalls.push(params);
+/**
+ * Fakes `@corbits/chat`'s `RunTriggerClient` (CL-7490): the seam
+ * `sendRunMail` now delivers every provisioned run's mail through,
+ * replacing the old raw `runTrigger.triggerMail`. Each call
+ * mints a fresh `messageId` (`<trigger_N@domain>`) the same shape
+ * `vendor/intx/hub-api/src/workflow-run-trigger.ts`'s real route mints,
+ * so `mailIdFromBracketMessageId` and reply-threading assertions behave
+ * exactly as they would against the real route.
+ */
+function createFakeRunTrigger(): FakeRunTrigger {
+  const triggerCalls: TriggerWorkflowRunMailInput[] = [];
+  let counter = 0;
+  const fake: FakeRunTrigger = {
+    triggerCalls,
+    async triggerMail(input: TriggerWorkflowRunMailInput) {
+      triggerCalls.push(input);
+      counter += 1;
       return {
-        anchorRunId: params.anchorRunId,
-        deploymentAddress: params.agentAddress,
-        publicKey: "test-public-key",
+        runId: input.anchorRunId,
+        address: `${input.anchorRunId}@ten1.workbench.test`,
+        messageId: `<trigger_${String(counter)}@ten1.workbench.test>`,
       };
     },
-    async deployWorkflowDefinition() {
-      throw new Error(
-        "deployWorkflowDefinition must not be called: launchWorkbench " +
-          "launches a folded run through the adopting code-sourced front",
-      );
-    },
-    async sendUserMessage(params: unknown) {
-      sendUserMessageCalls.push(params);
-      return new TextEncoder().encode("raw-mime-bytes");
-    },
-    async endSession() {},
-  } as unknown as FakeSessionService;
-}
-
-/**
- * The workflow definition a rendered source tree carries — the deployed
- * bytes themselves, read back so a test can assert which shape was
- * pinned rather than trusting the caller's arguments.
- */
-function deployedDefinition(
-  trees: readonly Record<string, string | Uint8Array>[],
-): {
-  steps: Record<string, unknown>;
-} {
-  const tree = trees[trees.length - 1];
-  if (tree === undefined) throw new Error("no source tree was ever rendered");
-  const entry = tree[WORKFLOW_SOURCE_ENTRY_PATH];
-  if (typeof entry !== "string") {
-    throw new Error("no workflow entry module in the rendered tree");
-  }
-  return JSON.parse(parseWorkflowSourceEntry(entry, "asst_rendered")) as {
-    steps: Record<string, unknown>;
   };
-}
-
-/**
- * The credential bindings the rendered entry module default-exports —
- * the snapshot `env.credentials.resolve` reads, not the launch body's
- * own (optional) bindings.
- */
-function deployedCredentialBindings(
-  trees: readonly Record<string, string | Uint8Array>[],
-): unknown {
-  const tree = trees[trees.length - 1];
-  if (tree === undefined) throw new Error("no source tree was ever rendered");
-  const entry = tree[WORKFLOW_SOURCE_ENTRY_PATH];
-  if (typeof entry !== "string") {
-    throw new Error("no workflow entry module in the rendered tree");
-  }
-  const open = entry.indexOf("export default ");
-  const close = entry.lastIndexOf(";");
-  if (open === -1 || close === -1) {
-    throw new Error(
-      `rendered entry module has no definition literal: ${entry}`,
-    );
-  }
-  const definition = JSON.parse(
-    entry.slice(open + "export default ".length, close),
-  ) as { credentialBindings?: unknown };
-  return definition.credentialBindings ?? [];
-}
-
-function createFakeAssetService(
-  opts: {
-    assetBlob?: Uint8Array;
-    /**
-     * Per-asset overrides for `readAssetBlob`: an unresolvable ref
-     * (CL-6357) is a fake `Error`, a resolvable one a real blob. Falls
-     * back to `assetBlob` (or an empty blob) for any assetId not
-     * listed here, matching every pre-existing test's single-asset
-     * shape.
-     */
-    blobsByAssetId?: Record<string, Uint8Array | "unresolvable">;
-  } = {},
-) {
-  const createAssetCalls: unknown[] = [];
-  const readAssetBlobCalls: unknown[] = [];
-  // The bytes each deploy actually renders — the only place a test can
-  // read which shape (folded step vs. `onTrigger` section) was pinned.
-  const populatedTrees: Record<string, string | Uint8Array>[] = [];
-  return {
-    createAssetCalls,
-    readAssetBlobCalls,
-    populatedTrees,
-    async createAsset(params: unknown) {
-      createAssetCalls.push(params);
-      return {
-        id: "asst_workbench1",
-        tenantId: "ten_1",
-        kind: "workflow" as const,
-        name: "workbench",
-        displayName: null,
-        creatorPrincipalId: "prin_creator",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-    },
-    async populateAsset(params: {
-      tree: { files: Record<string, string | Uint8Array> };
-    }) {
-      populatedTrees.push(params.tree.files);
-      return { commitSha: "unused" };
-    },
-    async readAssetBlob(params: { assetId: string; path: string }) {
-      readAssetBlobCalls.push(params);
-      const override = opts.blobsByAssetId?.[params.assetId];
-      if (override === "unresolvable") {
-        throw new Error(
-          `readAssetBlob: asset ${params.assetId} refs/heads/main not resolvable`,
-        );
-      }
-      return override ?? opts.assetBlob ?? new Uint8Array();
-    },
-    async listAssetBlobs() {
-      return [];
-    },
-  };
+  return fake;
 }
 
 function createFakeSidecarRouter(
@@ -716,7 +781,7 @@ function createFakeSidecarRouter(
     },
     // Every launch and wake produces the run's `run.grants` frame before its
     // first mail. Always routable: the frame is sent after the deploy the
-    // fake `sessionService` just acked, and that deploy is what makes the
+    // fake `runTrigger` just acked, and that deploy is what makes the
     // address resident — `routableAddresses` models residency BEFORE the
     // wake (what `getRoutableAddresses` answers), not after it.
     sendRunGrants(address: string, runId: string, stepGrants: unknown) {
@@ -737,21 +802,12 @@ function createFakeSidecarRouter(
   };
 }
 
-// An inert stand-in blob for the asset service: wakes rebuild their
-// deploy config from the persisted launch body, never this blob.
-const WORKBENCH_WORKFLOW_JSON = JSON.stringify({
-  id: "wf_test",
-  trigger: { type: "mail", to: "ins_workbench1@ten1.workbench.test" },
-  steps: {},
-});
-
 /**
  * The frozen inert wire projection shape `loadFrozenWireProjection`
  * hands back — `agent.modelSources`, not the live `agent.inference.sources`
  * a serialized in-process definition carries. This is `launchInvite`'s
  * and `refreshAgentInstanceFromDefinition`'s launch-body source under
- * the `workflow.json` retirement; `WORKBENCH_WORKFLOW_JSON` above stays
- * reserved for `launchWorkbench`'s unchanged in-process live path.
+ * the `workflow.json` retirement.
  */
 function inertProjection(
   overrides: {
@@ -792,12 +848,13 @@ describe("createHubChatPlatform", () => {
   test("a failed wake keeps the minted run retryable and abandons its collector", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "cred_placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -812,10 +869,15 @@ describe("createHubChatPlatform", () => {
         displayName: null,
       },
       definitionId: "wfd_workbench1",
+      // CL-7490: `wakeByAddress` only ever redeploys a genuinely dead
+      // run now — a merely not-yet-routable one is booting and is
+      // waited on, never redeployed — so this run must be terminal for
+      // the deploy failure below to actually be reached.
       workflowRunRow: {
         id: "ins_workbench1",
         address: "ins_workbench1@ten1.workbench.test",
         principalId: "prin_run1",
+        status: "failed",
       },
       workbenchLaunchRow: {
         tenantId: "ten_1",
@@ -833,50 +895,48 @@ describe("createHubChatPlatform", () => {
       table: agentSession,
       values: { id: "ses_run1", principalId: "prin_run1" },
     });
-    const sessionService = createFakeSessionService();
+    const runTrigger = createFakeRunTrigger();
     const deployError = new Error("sidecar unreachable");
-    sessionService.deployAdoptedWorkflowFromSource = async () => {
+    const allocationService = createFakeWorkflowAllocationService();
+    allocationService.prepareProvisionedDeployment = async () => {
       throw deployError;
     };
-    const assetService = createFakeAssetService();
     const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
     const eventCollectors = createFakeEventCollectors();
 
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService,
-      assetService,
+      runTrigger,
       sidecarRouter,
       eventCollectors,
+      workflowAllocationService: allocationService,
     });
 
     await expect(
       platform.ensureAwake("ins_workbench1@ten1.workbench.test"),
     ).rejects.toThrow(deployError);
 
-    // The collector opened before the deploy attempt is abandoned, not
-    // left registered against an address nothing will ever deploy to.
-    expect(eventCollectors.abandonCalls).toEqual([
-      "ins_workbench1@ten1.workbench.test",
-    ]);
+    // Interchange provisions on invite. The collector is Interchange's;
+    // a failed prepare never opens one in chat.
+    expect(eventCollectors.abandonCalls).toEqual([]);
 
     // A wake failure is recoverable on the next message, so it never
     // deactivates or deletes the already-durable run.
     expect(db.updated).toEqual([]);
     expect(db.deleted.some((row) => row.table === workflowRun)).toBe(false);
-    expect(db.deleted.some((row) => row.table === foldedRun)).toBe(false);
   });
 
   test("a failed wake keeps the run retryable even when a child leaked", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "cred_placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -891,10 +951,13 @@ describe("createHubChatPlatform", () => {
         displayName: null,
       },
       definitionId: "wfd_workbench1",
+      // CL-7490: same reasoning as above — the run must be terminal for
+      // `wakeByAddress` to attempt a redeploy at all.
       workflowRunRow: {
         id: "ins_workbench1",
         address: "ins_workbench1@ten1.workbench.test",
         principalId: "prin_run1",
+        status: "failed",
       },
       workbenchLaunchRow: {
         tenantId: "ten_1",
@@ -912,21 +975,21 @@ describe("createHubChatPlatform", () => {
       table: agentSession,
       values: { id: "ses_run1", principalId: "prin_run1" },
     });
-    const sessionService = createFakeSessionService();
-    sessionService.deployAdoptedWorkflowFromSource = async () => {
+    const runTrigger = createFakeRunTrigger();
+    const allocationService = createFakeWorkflowAllocationService();
+    allocationService.prepareProvisionedDeployment = async () => {
       throw new SessionLaunchError("start", new Error("ack timeout"), true);
     };
-    const assetService = createFakeAssetService();
     const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
     const eventCollectors = createFakeEventCollectors();
 
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService,
-      assetService,
+      runTrigger,
       sidecarRouter,
       eventCollectors,
+      workflowAllocationService: allocationService,
     });
 
     await expect(
@@ -934,7 +997,6 @@ describe("createHubChatPlatform", () => {
     ).rejects.toThrow(SessionLaunchError);
 
     expect(db.deleted.some((row) => row.table === workflowRun)).toBe(false);
-    expect(db.deleted.some((row) => row.table === foldedRun)).toBe(false);
     const runUpdate = db.updated.find((row) => row.table === workflowRun);
     expect(runUpdate).toBeUndefined();
   });
@@ -947,15 +1009,16 @@ describe("createHubChatPlatform", () => {
   // its replies are real, so it still fails loud without a catalog
   // source; proven alongside `launchInvite`'s other tests below.
 
-  test("sendMail resolves the workbench's run's session via the shared principal and delivers via sessionService", async () => {
+  test("sendMail resolves the workbench's run's session via the shared principal and delivers via runTrigger", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "cred_placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -983,14 +1046,13 @@ describe("createHubChatPlatform", () => {
       values: { id: "ses_run1", principalId: "prin_run1" },
     });
 
-    const sessionService = createFakeSessionService();
+    const runTrigger = createFakeRunTrigger();
     const sidecarRouter = createFakeSidecarRouter();
 
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService,
-      assetService: createFakeAssetService(),
+      runTrigger,
       sidecarRouter,
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1003,15 +1065,10 @@ describe("createHubChatPlatform", () => {
     });
 
     expect(sent.id).toBeTruthy();
-    expect(sessionService.sendUserMessageCalls).toHaveLength(1);
-    const call = sessionService.sendUserMessageCalls[0] as {
-      agentAddress: string;
-      content: string;
-      sessionId: string;
-    };
-    expect(call.agentAddress).toBe("ins_workbench1@ten1.workbench.test");
-    expect(call.content).toBe("hello workbench");
-    expect(call.sessionId).toBe("ses_run1");
+    expect(runTrigger.triggerCalls).toHaveLength(1);
+    const call = runTrigger.triggerCalls[0];
+    expect(call?.anchorRunId).toBe("ins_workbench1");
+    expect(call?.content).toBe("hello workbench");
 
     const mailInsert = db.inserted.find((row) => row.table === sessionMail);
     expect(mailInsert?.values).toMatchObject({
@@ -1027,15 +1084,79 @@ describe("createHubChatPlatform", () => {
     );
   });
 
-  test("sendMail signs with the injected crypto cache keyed by workbenchId", async () => {
+  test("sendMail on a freshly provisioned, un-anchored run resolves the launch-spec session id (CL-7481)", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "cred_placeholder",
+          model: "claude-sonnet-5",
+        },
+      ],
+      defaultSource: "off_1",
+    };
+
+    // No principal on the run yet — an invite sits un-triggered until
+    // its first message. Before CL-7481, `resolveRunSessionIdOrThrow`
+    // looked the session up by this (null) principal and found nothing;
+    // now it reads the launch spec `recordAgentSessionAtProvision`
+    // wrote at provision time, keyed by the run's own id instead.
+    const db = createFakeDb({
+      assetRow: {
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        name: "workbench-1",
+        displayName: null,
+      },
+      definitionId: "wfd_workbench1",
+      workflowRunRow: {
+        id: "ins_workbench1",
+        address: "ins_workbench1@ten1.workbench.test",
+        principalId: null,
+      },
+      workflowRunLaunchSpecRow: {
+        anchorRunId: "ins_workbench1",
+        sessionId: "ses_unanchored",
+      },
+    });
+
+    const runTrigger = createFakeRunTrigger();
+    const sidecarRouter = createFakeSidecarRouter();
+
+    const platform = createPlatform({
+      toolGrantsForPins: () => [],
+      db: db as never,
+      runTrigger,
+      sidecarRouter,
+      eventCollectors: createFakeEventCollectors(),
+    });
+
+    const sent = await platform.sendMail({
+      tenantId: "ten_1",
+      workbenchId: "ins_workbench1",
+      principalId: "prin_sender",
+      content: { content: "hello workbench" },
+    });
+
+    expect(sent.id).toBeTruthy();
+    const mailInsert = db.inserted.find((row) => row.table === sessionMail);
+    expect(mailInsert?.values).toMatchObject({ sessionId: "ses_unanchored" });
+  });
+
+  test("sendMail signs with the injected crypto cache keyed by workbenchId", async () => {
+    resolveDefinitionSourcesResult = {
+      ok: true,
+      materials: [],
+      sources: [
+        {
+          id: "off_1",
+          provider: "anthropic",
+          baseURL: "https://inference.invalid",
+          credentialId: "cred_placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -1061,10 +1182,14 @@ describe("createHubChatPlatform", () => {
       values: { id: "ses_run1", principalId: "prin_run1" },
     });
 
-    const sessionService = createFakeSessionService();
+    const runTrigger = createFakeRunTrigger();
     const getKeys: string[] = [];
     const injectedProvider = {
       getPublicKey: () => new Uint8Array([7, 2, 8, 4]),
+      // Exercised for real now (CL-7490): `sendRunMail` signs its own
+      // local `session_mail` copy directly rather than through a fake
+      // `sessionService.sendUserMessage`.
+      sign: async () => new Uint8Array(64),
     };
     const cryptoProviders: CryptoProviderCache = {
       get: async (key) => {
@@ -1076,8 +1201,7 @@ describe("createHubChatPlatform", () => {
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService,
-      assetService: createFakeAssetService(),
+      runTrigger,
       sidecarRouter: createFakeSidecarRouter(),
       eventCollectors: createFakeEventCollectors(),
       cryptoProviders,
@@ -1090,22 +1214,23 @@ describe("createHubChatPlatform", () => {
       content: { content: "hello workbench" },
     });
 
+    // The crypto cache is only consulted for the local `session_mail`
+    // signing copy now (CL-7490) — delivery itself goes through the
+    // run-trigger client, which signs its own copy independently.
     expect(getKeys).toEqual(["ins_workbench1"]);
-    const call = sessionService.sendUserMessageCalls[0] as {
-      cryptoProvider: unknown;
-    };
-    expect(call.cryptoProvider).toBe(injectedProvider);
+    expect(runTrigger.triggerCalls).toHaveLength(1);
   });
 
   test("sendMail rejects within the mail-delivery deadline instead of hanging forever when delivery never settles (CL-6644)", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "cred_placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -1131,21 +1256,20 @@ describe("createHubChatPlatform", () => {
       values: { id: "ses_run1", principalId: "prin_run1" },
     });
 
-    const sessionService = createFakeSessionService();
+    const runTrigger = createFakeRunTrigger();
     // Models the observed CL-6644 symptom: the post-deploy delivery
-    // step (`sessionService.sendUserMessage`, reached through
+    // step (`runTrigger.triggerMail`, reached through
     // `sendFoldedMail`) never resolves and never rejects -- a wedged
     // ack, not a thrown "agent is unreachable" the reclaim-retry loop
     // already knows how to handle. Before the fix, `sendMail`'s
     // returned promise stayed pending forever with nothing logged.
-    sessionService.sendUserMessage = () => new Promise<never>(() => {});
+    runTrigger.triggerMail = () => new Promise<never>(() => {});
     const sidecarRouter = createFakeSidecarRouter();
 
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService,
-      assetService: createFakeAssetService(),
+      runTrigger,
       sidecarRouter,
       eventCollectors: createFakeEventCollectors(),
       mailDeliveryTimeoutMs: 20,
@@ -1161,16 +1285,17 @@ describe("createHubChatPlatform", () => {
     ).rejects.toThrow(/did not settle within 20ms/);
   });
 
-  test("launchInvite mints from the target definition and ensureAwake deploys it", async () => {
+  test("launchInvite provisions via Interchange and records the returned ids", async () => {
     resolveDefinitionSourcesCalls.length = 0;
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "cred_placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -1197,16 +1322,14 @@ describe("createHubChatPlatform", () => {
         wfd_echo: inertProjection({ id: "wfd_echo" }),
       },
     });
-    const sessionService = createFakeSessionService();
-    const assetService = createFakeAssetService();
+    const runTrigger = createFakeRunTrigger();
     const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
     const eventCollectors = createFakeEventCollectors();
 
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService,
-      assetService,
+      runTrigger,
       sidecarRouter,
       eventCollectors,
     });
@@ -1220,41 +1343,35 @@ describe("createHubChatPlatform", () => {
     expect(launched.instanceId).toMatch(/^run_/);
     expect(launched.address).toBe(`${launched.instanceId}@ten1.workbench.test`);
 
-    // The launch body came from the definition's own frozen projection,
-    // not any asset blob read.
     expect(db.wireProjectionCalls).toEqual(["wfd_echo"]);
-
-    expect(sessionService.adoptedDeployCalls).toHaveLength(0);
-    expect(resolveDefinitionSourcesCalls).toHaveLength(0);
-    await platform.ensureAwake(launched.address);
-
-    expect(sessionService.adoptedDeployCalls).toHaveLength(1);
-    const deployed = sessionService.adoptedDeployCalls[0] as AdoptedDeployCall;
-    expect(deployed.agentAddress).toBe(launched.address);
-    expect(deployed.anchorRunId).toBe(launched.instanceId);
-
-    const runInsert = db.inserted.find((row) => row.table === workflowRun);
-    expect(runInsert?.values).toMatchObject({
-      id: launched.instanceId,
-      definitionId: "wfd_echo",
-      anchorRunId: launched.instanceId,
-      tenantId: "ten_1",
-      address: launched.address,
-      status: "running",
+    expect(lastAllocationService.prepareCalls).toHaveLength(1);
+    const prepared = lastAllocationService.prepareCalls[0] as {
+      anchorRunId: string;
+      deploymentDomain: string;
+    };
+    expect(prepared.anchorRunId).toBe(launched.instanceId);
+    expect(`${prepared.anchorRunId}@${prepared.deploymentDomain}`).toBe(
+      launched.address,
+    );
+    expect(lastAllocationService.prepareCalls[0]).toMatchObject({
+      entry: WORKFLOW_SOURCE_ENTRY,
+      source: {
+        kind: "asset",
+        assetId: "asst_echo",
+        package: { format: "source", commitSha: "sha_test" },
+      },
     });
 
-    // Sources were resolved against the tenant catalog, not pinned to
-    // the noop endpoint — only a workbench host gets that pin.
-    expect(resolveDefinitionSourcesCalls).toHaveLength(1);
-
-    // CL-6329: a room agent deploys as an `onTrigger` section, so every
-    // message it is asked to answer is an occurrence with its own child
-    // run — and `onBodyFailure: "tolerate"` keeps the section subscribed
-    // after a turn that threw.
-    const rendered = deployedDefinition(assetService.populatedTrees);
-    expect(Object.keys(rendered.steps)).toEqual([AGENT_RUNTIME_SECTION_ID]);
-    expect(rendered.steps[AGENT_RUNTIME_SECTION_ID]).toMatchObject({
-      onBodyFailure: "tolerate",
+    expect(
+      db.inserted.find((row) => row.table === workflowRun),
+    ).toBeUndefined();
+    const launchInsert = db.inserted.find(
+      (row) => row.table === workbenchLaunch,
+    );
+    expect(launchInsert?.values).toMatchObject({
+      instanceId: launched.instanceId,
+      currentRunId: launched.instanceId,
+      tenantId: "ten_1",
     });
   });
 
@@ -1282,8 +1399,7 @@ describe("createHubChatPlatform", () => {
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
+      runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1300,7 +1416,7 @@ describe("createHubChatPlatform", () => {
       (row) => row.table === workflowRun,
     ).length;
     expect(launchInsertsAfterFirst).toBe(1);
-    expect(runInsertsAfterFirst).toBe(1);
+    expect(runInsertsAfterFirst).toBe(0);
 
     const second = await platform.launchInvite({
       tenantId: "ten_1",
@@ -1324,22 +1440,10 @@ describe("createHubChatPlatform", () => {
   // `resolveDefinitionSources` on every launch, or the raw stored secret
   // (ciphertext, if it was ever encrypted) gets handed to the provider as
   // its API key instead of the decrypted plaintext.
-  test("launchInvite threads credentialCipher through to resolveDefinitionSources", async () => {
-    resolveDefinitionSourcesCalls.length = 0;
-    resolveDefinitionSourcesResult = {
-      ok: true,
-      sources: [
-        {
-          id: "off_1",
-          provider: "openai-compatible",
-          baseURL: "https://openrouter.ai/api/v1",
-          apiKey: "sk-or-v1-real-key",
-          model: "anthropic/claude-sonnet-5",
-        },
-      ],
-      defaultSource: "off_1",
-    };
-
+  // Interchange takes catalog offering ids; chat does not decrypt
+  // credentials. The cipher still has to be a real cipher because
+  // `sendRunMail` signs outbound frames with it.
+  test("launchInvite looks up catalog offerings and passes their ids to Interchange", async () => {
     const db = createFakeDb({
       assetRow: {
         tenantId: "ten_1",
@@ -1360,46 +1464,34 @@ describe("createHubChatPlatform", () => {
         wfd_echo: inertProjection({ id: "wfd_echo" }),
       },
     });
-    const sessionService = createFakeSessionService();
-    const assetService = createFakeAssetService();
-    const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
-    const eventCollectors = createFakeEventCollectors();
-    const credentialCipher = {
-      encrypt: async (plaintext: string) => plaintext,
-      decrypt: async (blob: string) => blob,
-    };
-
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService,
-      assetService,
-      sidecarRouter,
-      eventCollectors,
-      credentialCipher,
+      runTrigger: createFakeRunTrigger(),
+      sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
+      eventCollectors: createFakeEventCollectors(),
     });
 
-    const launched = await platform.launchInvite({
+    await platform.launchInvite({
       tenantId: "ten_1",
       creatorPrincipalId: "prin_creator",
       definitionId: "wfd_echo",
     });
-    await platform.ensureAwake(launched.address);
 
-    expect(resolveDefinitionSourcesCalls).toHaveLength(1);
-    expect(resolveDefinitionSourcesCalls[0]).toMatchObject({
-      tenantId: "ten_1",
-      credentialCipher,
+    expect(listVisibleOfferingsCalls).toHaveLength(1);
+    expect(lastAllocationService.prepareCalls).toHaveLength(1);
+    expect(lastAllocationService.prepareCalls[0]).toMatchObject({
+      sourceOfferingIds: ["off_1"],
+      defaultSourceOfferingId: "off_1",
     });
   });
 
-  test("refuses to mint FoldedRunsDeps when credentialCipher is missing", () => {
+  test("refuses to mint the platform when credentialCipher is missing", () => {
     expect(() =>
       createHubChatPlatform({
         toolGrantsForPins: () => [],
         db: {} as never,
-        sessionService: {} as never,
-        assetService: {} as never,
+        runTrigger: {} as never,
         sidecarRouter: {} as never,
         eventCollectors: createFakeEventCollectors(),
         credentialCipher: undefined as never,
@@ -1407,13 +1499,12 @@ describe("createHubChatPlatform", () => {
     ).toThrow(/missing or has the wrong shape/);
   });
 
-  test("refuses to mint FoldedRunsDeps when credentialCipher has the wrong shape", () => {
+  test("refuses to mint the platform when credentialCipher has the wrong shape", () => {
     expect(() =>
       createHubChatPlatform({
         toolGrantsForPins: () => [],
         db: {} as never,
-        sessionService: {} as never,
-        assetService: {} as never,
+        runTrigger: {} as never,
         sidecarRouter: {} as never,
         eventCollectors: createFakeEventCollectors(),
         credentialCipher: {} as never,
@@ -1431,8 +1522,7 @@ describe("createHubChatPlatform", () => {
         const platform = createHubChatPlatform({
           toolGrantsForPins: () => [],
           db: {} as never,
-          sessionService: {} as never,
-          assetService: {} as never,
+          runTrigger: {} as never,
           sidecarRouter: {} as never,
           eventCollectors: createFakeEventCollectors(),
           credentialCipher: {
@@ -1470,8 +1560,7 @@ describe("createHubChatPlatform", () => {
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
+      runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter(),
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1523,8 +1612,7 @@ describe("createHubChatPlatform", () => {
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
+      runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1596,8 +1684,7 @@ describe("createHubChatPlatform", () => {
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
+      runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1608,8 +1695,6 @@ describe("createHubChatPlatform", () => {
       definitionId: "wfd_authored",
     });
 
-    const runInsert = db.inserted.find((row) => row.table === workflowRun);
-    expect(runInsert?.values).toMatchObject({ definitionId: "wfd_authored" });
     const launchInsert = db.inserted.find(
       (row) => row.table === workbenchLaunch,
     );
@@ -1667,8 +1752,7 @@ describe("createHubChatPlatform", () => {
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
+      runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1697,8 +1781,7 @@ describe("createHubChatPlatform", () => {
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
+      runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter(),
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1717,10 +1800,7 @@ describe("createHubChatPlatform", () => {
   // loud when the catalog has no launchable source — the noop pin
   // never applies here.
   test("launchInvite fails loud when the tenant catalog has no launchable source", async () => {
-    resolveDefinitionSourcesResult = {
-      ok: false,
-      message: 'No launchable inference source for model "claude-sonnet-5"',
-    };
+    visibleOfferings = [];
 
     const db = createFakeDb({
       assetRow: {
@@ -1745,20 +1825,18 @@ describe("createHubChatPlatform", () => {
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
+      runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
     });
 
-    const launched = await platform.launchInvite({
-      tenantId: "ten_1",
-      creatorPrincipalId: "prin_creator",
-      definitionId: "wfd_echo",
-    });
-    await expect(platform.ensureAwake(launched.address)).rejects.toThrow(
-      MODEL_UNAVAILABLE_CONSUMER_MESSAGE,
-    );
+    await expect(
+      platform.launchInvite({
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        definitionId: "wfd_echo",
+      }),
+    ).rejects.toThrow(MODEL_UNAVAILABLE_CONSUMER_MESSAGE);
   });
 
   // A `create_agent`-minted definition with no `model` of its own
@@ -1774,22 +1852,7 @@ describe("createHubChatPlatform", () => {
     model: null,
   });
 
-  test("launchInvite falls back to the workbench-host inference preferences when the definition declares no model requirements", async () => {
-    resolveDefinitionSourcesCalls.length = 0;
-    resolveDefinitionSourcesResult = {
-      ok: true,
-      sources: [
-        {
-          id: "off_1",
-          provider: "anthropic",
-          baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
-          model: "claude-sonnet-5",
-        },
-      ],
-      defaultSource: "off_1",
-    };
-
+  test("launchInvite still launches a definition with no model requirements when the catalog has offerings", async () => {
     const db = createFakeDb({
       assetRow: {
         tenantId: "ten_1",
@@ -1811,14 +1874,9 @@ describe("createHubChatPlatform", () => {
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
+      runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
-      workbenchHostInferencePreferences: async (tenantId) =>
-        tenantId === "ten_1"
-          ? [{ provider: "anthropic", model: "claude-sonnet-5" }]
-          : [],
     });
 
     const launched = await platform.launchInvite({
@@ -1826,23 +1884,16 @@ describe("createHubChatPlatform", () => {
       creatorPrincipalId: "prin_creator",
       definitionId: "wfd_echo",
     });
-    await platform.ensureAwake(launched.address);
 
     expect(launched.instanceId).toMatch(/^run_/);
-    expect(resolveDefinitionSourcesCalls).toHaveLength(1);
-    expect(resolveDefinitionSourcesCalls[0]).toMatchObject({
-      tenantId: "ten_1",
-      fallbackModel: "claude-sonnet-5",
+    expect(listVisibleOfferingsCalls).toHaveLength(1);
+    expect(lastAllocationService.prepareCalls[0]).toMatchObject({
+      sourceOfferingIds: ["off_1"],
     });
   });
 
   test("launchInvite still 409s honestly when the tenant has no connected providers to fall back to", async () => {
-    resolveDefinitionSourcesCalls.length = 0;
-    resolveDefinitionSourcesResult = {
-      ok: false,
-      message:
-        "This definition declares no model requirements; cannot resolve any inference sources",
-    };
+    visibleOfferings = [];
 
     const db = createFakeDb({
       assetRow: {
@@ -1865,27 +1916,18 @@ describe("createHubChatPlatform", () => {
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
+      runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
       eventCollectors: createFakeEventCollectors(),
-      workbenchHostInferencePreferences: async () => [],
     });
 
-    const launched = await platform.launchInvite({
-      tenantId: "ten_1",
-      creatorPrincipalId: "prin_creator",
-      definitionId: "wfd_echo",
-    });
-    await expect(platform.ensureAwake(launched.address)).rejects.toThrow(
-      MODEL_UNAVAILABLE_CONSUMER_MESSAGE,
-    );
-
-    expect(resolveDefinitionSourcesCalls).toHaveLength(1);
-    expect(resolveDefinitionSourcesCalls[0]).toMatchObject({
-      tenantId: "ten_1",
-      fallbackModel: null,
-    });
+    await expect(
+      platform.launchInvite({
+        tenantId: "ten_1",
+        creatorPrincipalId: "prin_creator",
+        definitionId: "wfd_echo",
+      }),
+    ).rejects.toThrow(MODEL_UNAVAILABLE_CONSUMER_MESSAGE);
   });
 
   test("listInvitableDefinitions lists deployed definitions, excluding workbench hosts", async () => {
@@ -1925,8 +1967,7 @@ describe("createHubChatPlatform", () => {
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
+      runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter(),
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1952,15 +1993,13 @@ describe("createHubChatPlatform", () => {
         principalId: "prin_run1",
       },
     });
-    const sessionService = createFakeSessionService();
-    const assetService = createFakeAssetService();
+    const runTrigger = createFakeRunTrigger();
     const sidecarRouter = createFakeSidecarRouter();
 
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService,
-      assetService,
+      runTrigger,
       sidecarRouter,
       eventCollectors: createFakeEventCollectors(),
     });
@@ -1993,21 +2032,28 @@ describe("createHubChatPlatform", () => {
   // when `deps.lifecycle` is configured, and that `sendMail` actually
   // redeploys a non-routable target before sending.
   describe("lifecycle wiring", () => {
-    test("sendMail wakes a non-routable workbench by redeploying before sending, then sends", async () => {
+    // CL-7490: a provisioned anchor stays "deployed" until its first
+    // trigger, so a run mid-boot looks exactly like this — live, not yet
+    // routable. `wakeByAddress` must not relaunch it; the run is waited
+    // on (`deliverWhenRoutable`, via `sendRunMailWithReclaimRetry`) until
+    // the sidecar finishes registering, then delivered once.
+    test("sendMail waits on a deployed, not-yet-routable workbench and delivers once it becomes routable, without relaunching it", async () => {
       resolveDefinitionSourcesResult = {
         ok: true,
+        materials: [],
         sources: [
           {
             id: "off_1",
             provider: "anthropic",
             baseURL: "https://inference.invalid",
-            apiKey: "placeholder",
+            credentialId: "cred_placeholder",
             model: "claude-sonnet-5",
           },
         ],
         defaultSource: "off_1",
       };
 
+      const address = "ins_workbench1@ten1.workbench.test";
       const db = createFakeDb({
         assetRow: {
           tenantId: "ten_1",
@@ -2018,9 +2064,10 @@ describe("createHubChatPlatform", () => {
         definitionId: "wfd_workbench1",
         workflowRunRow: {
           id: "ins_workbench1",
-          address: "ins_workbench1@ten1.workbench.test",
-          principalId: "prin_run1",
+          address,
+          principalId: null,
           definitionId: "wfd_workbench1",
+          status: "deployed",
         },
         workflowDefinitionRow: {
           id: "wfd_workbench1",
@@ -2046,20 +2093,30 @@ describe("createHubChatPlatform", () => {
         values: { id: "ses_run1", principalId: "prin_run1" },
       });
 
-      const sessionService = createFakeSessionService();
-      // Not in the sidecar's routable set: this workbench is asleep (or
-      // never came back after a restart) when the send arrives.
+      const runTrigger = createFakeRunTrigger();
+      let sendAttempts = 0;
+      const baseTriggerMail = runTrigger.triggerMail;
+      runTrigger.triggerMail = async (input) => {
+        sendAttempts += 1;
+        // The first attempt lands while the sidecar is still booting.
+        if (sendAttempts === 1) {
+          runTrigger.triggerCalls.push(input);
+          throw new Error("agent is unreachable");
+        }
+        return baseTriggerMail(input);
+      };
+      // Not routable yet — the sidecar is still finishing its boot;
+      // it registers a moment later, on its own, with no redeploy.
       const sidecarRouter = createFakeSidecarRouter({ routableAddresses: [] });
+      setTimeout(() => {
+        sidecarRouter.routableAddresses.push(address);
+      }, 10);
       const eventCollectors = createFakeEventCollectors();
-      const assetService = createFakeAssetService({
-        assetBlob: new TextEncoder().encode(WORKBENCH_WORKFLOW_JSON),
-      });
 
       const platform = createPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        sessionService,
-        assetService,
+        runTrigger,
         sidecarRouter,
         eventCollectors,
         lifecycle: { idleSleepMs: 60_000 },
@@ -2073,14 +2130,10 @@ describe("createHubChatPlatform", () => {
       });
 
       expect(sent.id).toBeTruthy();
-      // The redeploy happened...
-      expect(sessionService.adoptedDeployCalls).toHaveLength(1);
-      const deployed = sessionService
-        .adoptedDeployCalls[0] as AdoptedDeployCall;
-      expect(deployed.agentAddress).toBe("ins_workbench1@ten1.workbench.test");
-      expect(deployed.anchorRunId).toBe("ins_workbench1");
-      // ...before the send.
-      expect(sessionService.sendUserMessageCalls).toHaveLength(1);
+      // No relaunch: the booting run kept its own run id and address —
+      // `wakeByAddress` never called `prepareProvisionedDeployment`.
+      expect(lastAllocationService.prepareCalls).toHaveLength(0);
+      expect(runTrigger.triggerCalls).toHaveLength(2);
     });
 
     // CL-6267: the sidecar's own park/wake handler now owns respawning
@@ -2091,12 +2144,13 @@ describe("createHubChatPlatform", () => {
     test("sendMail never deploys or undeploys a routable workbench, even a completed folded run — the sidecar's park handler owns respawn", async () => {
       resolveDefinitionSourcesResult = {
         ok: true,
+        materials: [],
         sources: [
           {
             id: "off_1",
             provider: "anthropic",
             baseURL: "https://inference.invalid",
-            apiKey: "placeholder",
+            credentialId: "cred_placeholder",
             model: "claude-sonnet-5",
           },
         ],
@@ -2142,20 +2196,16 @@ describe("createHubChatPlatform", () => {
         values: { id: "ses_run1", principalId: "prin_run1" },
       });
 
-      const sessionService = createFakeSessionService();
+      const runTrigger = createFakeRunTrigger();
       const sidecarRouter = createFakeSidecarRouter({
         routableAddresses: ["ins_workbench1@ten1.workbench.test"],
       });
       const eventCollectors = createFakeEventCollectors();
-      const assetService = createFakeAssetService({
-        assetBlob: new TextEncoder().encode(WORKBENCH_WORKFLOW_JSON),
-      });
 
       const platform = createPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        sessionService,
-        assetService,
+        runTrigger,
         sidecarRouter,
         eventCollectors,
         lifecycle: { idleSleepMs: 60_000 },
@@ -2169,9 +2219,9 @@ describe("createHubChatPlatform", () => {
       });
 
       expect(sent.id).toBeTruthy();
-      expect(sessionService.adoptedDeployCalls).toHaveLength(0);
+      expect(lastAllocationService.prepareCalls).toHaveLength(0);
       expect(sidecarRouter.sendAgentUndeployCalls).toHaveLength(0);
-      expect(sessionService.sendUserMessageCalls).toHaveLength(1);
+      expect(runTrigger.triggerCalls).toHaveLength(1);
     });
 
     test("the idle sweep never undeploys an address the event collector reports as busy", async () => {
@@ -2220,8 +2270,7 @@ describe("createHubChatPlatform", () => {
       const platform = createPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        sessionService: createFakeSessionService(),
-        assetService: createFakeAssetService(),
+        runTrigger: createFakeRunTrigger(),
         sidecarRouter,
         eventCollectors,
         lifecycle: { idleSleepMs: 5, sweepIntervalMs: 5 },
@@ -2285,8 +2334,7 @@ describe("createHubChatPlatform", () => {
       const platform = createPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        sessionService: createFakeSessionService(),
-        assetService: createFakeAssetService(),
+        runTrigger: createFakeRunTrigger(),
         sidecarRouter,
         eventCollectors,
         lifecycle: { idleSleepMs: 5, sweepIntervalMs: 5 },
@@ -2352,8 +2400,7 @@ describe("createHubChatPlatform", () => {
       const platform = createPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        sessionService: createFakeSessionService(),
-        assetService: createFakeAssetService(),
+        runTrigger: createFakeRunTrigger(),
         sidecarRouter,
         eventCollectors,
         lifecycle: { idleSleepMs: 5, sweepIntervalMs: 5 },
@@ -2396,8 +2443,7 @@ describe("createHubChatPlatform", () => {
         createPlatform({
           toolGrantsForPins: () => [],
           db: db as never,
-          sessionService: createFakeSessionService(),
-          assetService: createFakeAssetService(),
+          runTrigger: createFakeRunTrigger(),
           sidecarRouter: createFakeSidecarRouter(),
           eventCollectors: createFakeEventCollectors(),
         });
@@ -2430,8 +2476,7 @@ describe("createHubChatPlatform", () => {
         createPlatform({
           toolGrantsForPins: () => [],
           db: db as never,
-          sessionService: createFakeSessionService(),
-          assetService: createFakeAssetService(),
+          runTrigger: createFakeRunTrigger(),
           sidecarRouter: createFakeSidecarRouter(),
           eventCollectors: createFakeEventCollectors(),
           lifecycle: { idleSleepMs: 60_000 },
@@ -2473,12 +2518,11 @@ describe("createHubChatPlatform", () => {
           },
         },
       });
-      const sessionService = createFakeSessionService();
+      const runTrigger = createFakeRunTrigger();
       const platform = createPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        sessionService,
-        assetService: createFakeAssetService(),
+        runTrigger,
         sidecarRouter: createFakeSidecarRouter({
           routableAddresses: [address],
         }),
@@ -2487,18 +2531,25 @@ describe("createHubChatPlatform", () => {
 
       await platform.ensureAwake(address);
 
-      expect(sessionService.adoptedDeployCalls).toHaveLength(0);
+      expect(lastAllocationService.prepareCalls).toHaveLength(0);
     });
 
-    test("redeploys a non-routable address when lifecycle is configured", async () => {
+    // CL-7490: `ensureAwake` (via `wakeByAddress`) must not redeploy a
+    // merely not-yet-routable run — only a genuinely terminal one. A
+    // `deployed`/`running` run that has not yet registered is left alone
+    // here (no unit test needed for that: `wakeByAddress` becomes a
+    // pure no-op, nothing to assert beyond "did not call prepare", which
+    // the failed-run tests below cover by contrast).
+    test("relaunches a failed, non-routable address exactly once when lifecycle is configured", async () => {
       resolveDefinitionSourcesResult = {
         ok: true,
+        materials: [],
         sources: [
           {
             id: "off_1",
             provider: "anthropic",
             baseURL: "https://inference.invalid",
-            apiKey: "placeholder",
+            credentialId: "cred_placeholder",
             model: "claude-sonnet-5",
           },
         ],
@@ -2517,6 +2568,7 @@ describe("createHubChatPlatform", () => {
           id: "ins_workbench1",
           address,
           principalId: "prin_run1",
+          status: "failed",
         },
         workbenchLaunchRow: {
           tenantId: "ten_1",
@@ -2535,12 +2587,11 @@ describe("createHubChatPlatform", () => {
         values: { id: "ses_run1", principalId: "prin_run1" },
       });
 
-      const sessionService = createFakeSessionService();
+      const runTrigger = createFakeRunTrigger();
       const platform = createPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        sessionService,
-        assetService: createFakeAssetService(),
+        runTrigger,
         sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
         eventCollectors: createFakeEventCollectors(),
         lifecycle: { idleSleepMs: 60_000 },
@@ -2548,18 +2599,19 @@ describe("createHubChatPlatform", () => {
 
       await platform.ensureAwake(address);
 
-      expect(sessionService.adoptedDeployCalls).toHaveLength(1);
+      expect(lastAllocationService.prepareCalls).toHaveLength(1);
     });
 
-    test("redeploys a non-routable address when lifecycle is not configured", async () => {
+    test("relaunches a failed, non-routable address exactly once when lifecycle is not configured", async () => {
       resolveDefinitionSourcesResult = {
         ok: true,
+        materials: [],
         sources: [
           {
             id: "off_1",
             provider: "anthropic",
             baseURL: "https://inference.invalid",
-            apiKey: "placeholder",
+            credentialId: "cred_placeholder",
             model: "claude-sonnet-5",
           },
         ],
@@ -2578,6 +2630,7 @@ describe("createHubChatPlatform", () => {
           id: "ins_workbench1",
           address,
           principalId: "prin_run1",
+          status: "failed",
         },
         workbenchLaunchRow: {
           tenantId: "ten_1",
@@ -2596,19 +2649,18 @@ describe("createHubChatPlatform", () => {
         values: { id: "ses_run1", principalId: "prin_run1" },
       });
 
-      const sessionService = createFakeSessionService();
+      const runTrigger = createFakeRunTrigger();
       const platform = createPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        sessionService,
-        assetService: createFakeAssetService(),
+        runTrigger,
         sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
         eventCollectors: createFakeEventCollectors(),
       });
 
       await platform.ensureAwake(address);
 
-      expect(sessionService.adoptedDeployCalls).toHaveLength(1);
+      expect(lastAllocationService.prepareCalls).toHaveLength(1);
     });
 
     test("rejects for an address this adapter has no folded run for", async () => {
@@ -2624,8 +2676,7 @@ describe("createHubChatPlatform", () => {
       const platform = createPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        sessionService: createFakeSessionService(),
-        assetService: createFakeAssetService(),
+        runTrigger: createFakeRunTrigger(),
         sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
         eventCollectors: createFakeEventCollectors(),
       });
@@ -2636,45 +2687,79 @@ describe("createHubChatPlatform", () => {
     });
   });
 
-  // CL-7214: `sendFoldedMailWithReclaimRetry`'s reclaim-retry loop used
-  // to call `wakeByAddress` directly, bypassing `lifecycle.ensureAwake`'s
-  // per-address coalescing entirely. Proves that a reclaim-retry wake and
-  // an independent, concurrent `ensureAwake` call for the same address
-  // now coalesce onto the same in-flight wake — never dispatching a
-  // second, concurrent `wakeFoldedRun` that would race the first on the
-  // same `session_asset` primary key and git ref.
-  describe("wakeByAddressBounded reclaim-retry coalescing", () => {
-    test("a reclaim-retry wake and a concurrent ensureAwake call for the same address never redeploy it twice", async () => {
+  // CL-7214 proved `sendRunMailWithReclaimRetry`'s reclaim-retry wake and
+  // an independent, concurrent `ensureAwake` call coalesced onto the same
+  // in-flight redeploy rather than racing two `prepareProvisionedDeployment`
+  // calls on the same `session_asset` primary key and git ref. That
+  // redeploy is no longer wakeByAddress's behavior for a live, merely
+  // not-yet-routable run (CL-7490) — the only thing left to redeploy is a
+  // genuinely terminal run, and the coalescing that guards a concurrent
+  // redeploy of it is `@corbits/agent-lifecycle`'s `pendingWakes` map,
+  // proven directly in that package's own test suite (see the note above
+  // `describe("lifecycle wiring", ...)`), not re-proven here.
+
+  // CL-7486: `sendRunMailWithReclaimRetry` used to retry every attempt
+  // against the address it started with, even after a wake in between
+  // attempts relaunched the run. A run already one relaunch generation
+  // in (`instanceId` stable, `currentRunId` already repointed once) that
+  // dies again while this loop is retrying reproduces the production
+  // failure exactly: a second relaunch repoints `currentRunId` again,
+  // and the address this loop still holds is now neither the stable
+  // `instanceId` nor the current `currentRunId` — invisible to
+  // `readBindingByAddressAnyTenant`, so the next wake for it throws "No
+  // workbench_launch binding" instead of finding the run that replaced
+  // it.
+  describe("sendRunMailWithReclaimRetry re-resolves the live address", () => {
+    test("a relaunch between retries is chased to its new address, not retried against the one that died", async () => {
       resolveDefinitionSourcesResult = {
         ok: true,
+        materials: [],
         sources: [
           {
             id: "off_1",
             provider: "anthropic",
             baseURL: "https://inference.invalid",
-            apiKey: "placeholder",
+            credentialId: "cred_placeholder",
             model: "claude-sonnet-5",
           },
         ],
         defaultSource: "off_1",
       };
-      const address = "ins_workbench1@ten1.workbench.test";
+
+      const staleAddress = "run_gen1@ten1.workbench.test";
       const db = createFakeDb({
         assetRow: {
           tenantId: "ten_1",
           creatorPrincipalId: "prin_creator",
-          name: "workbench-1",
+          name: "ins_room1",
           displayName: null,
         },
-        definitionId: "wfd_workbench1",
+        definitionId: "wfd_room1",
         workflowRunRow: {
-          id: "ins_workbench1",
-          address,
-          principalId: "prin_run1",
+          id: "run_gen1",
+          address: staleAddress,
+          principalId: "prin_room1",
+          definitionId: "wfd_room1",
+          // Already dead by the time the reclaim retry's own wake reads
+          // it — the run died again while this loop was mid-retry, not
+          // at the top of `sendMail` (which would have relaunched it
+          // before ever reaching this retry loop at all).
+          status: "failed",
+        },
+        workflowDefinitionRow: {
+          id: "wfd_room1",
+          tenantId: "ten_1",
+          status: "deployed",
+          origin: "authored",
+          assetId: "asst_room1",
         },
         workbenchLaunchRow: {
           tenantId: "ten_1",
-          instanceId: "ins_workbench1",
+          // `instanceId` is the room's own stable id, already distinct
+          // from `currentRunId` — this participant has been relaunched
+          // once before this test even starts.
+          instanceId: "ins_room1",
+          currentRunId: "run_gen1",
           foldedBody: {
             systemPrompt: "host prompt",
             model: "claude-sonnet-5",
@@ -2686,91 +2771,82 @@ describe("createHubChatPlatform", () => {
       });
       db.inserted.push({
         table: agentSession,
-        values: { id: "ses_run1", principalId: "prin_run1" },
+        values: { id: "ses_run1", principalId: "prin_room1" },
       });
 
-      const sessionService = createFakeSessionService();
-      let sendAttempts = 0;
-      sessionService.sendUserMessage = async (params: unknown) => {
-        sessionService.sendUserMessageCalls.push(params);
-        sendAttempts += 1;
-        // The first delivery attempt fails as "agent is unreachable",
-        // forcing `sendFoldedMailWithReclaimRetry` down its reclaim
-        // path — the call site that used to bypass coalescing.
-        if (sendAttempts === 1) {
+      const staleRunId = "run_gen1";
+      const runTrigger = createFakeRunTrigger();
+      const baseTriggerMail = runTrigger.triggerMail;
+      runTrigger.triggerMail = async (input) => {
+        // The dead run never becomes reachable again — only a send to
+        // whatever run the relaunch actually produced can succeed.
+        if (input.anchorRunId === staleRunId) {
+          runTrigger.triggerCalls.push(input);
           throw new Error("agent is unreachable");
         }
-        return new TextEncoder().encode("raw-mime-bytes");
+        return baseTriggerMail(input);
       };
 
-      // The first deploy (the cold wake before the first send attempt)
-      // resolves immediately; every deploy after it is held open until
-      // the test releases it, so the reclaim-retry's redeploy is still
-      // in flight when the concurrent `ensureAwake` call joins it.
-      let deployCallCount = 0;
-      const gatedDeployReleases: (() => void)[] = [];
-      const originalDeploy =
-        sessionService.deployAdoptedWorkflowFromSource.bind(sessionService);
-      sessionService.deployAdoptedWorkflowFromSource = async (
-        params: Parameters<typeof originalDeploy>[0],
+      // Routable so `sendMail`'s own opening wake-before-send gate skips
+      // waking it — the relaunch this test cares about must happen
+      // inside the reclaim-retry loop below, not before it.
+      const sidecarRouter = createFakeSidecarRouter({
+        routableAddresses: [staleAddress],
+      });
+
+      // Models the sidecar registering the relaunch's fresh address the
+      // moment its deploy actually completes — `sendRunMailWithReclaimRetry`
+      // now waits on this routing-table transition (CL-7488) instead of a
+      // fixed backoff, so the retried send needs it to flip before it can
+      // see the run through.
+      const allocationService = createFakeWorkflowAllocationService();
+      const originalPrepare =
+        allocationService.prepareProvisionedDeployment.bind(allocationService);
+      allocationService.prepareProvisionedDeployment = async (
+        params: Parameters<typeof originalPrepare>[0],
       ) => {
-        const result = await originalDeploy(params);
-        deployCallCount += 1;
-        if (deployCallCount >= 2) {
-          await new Promise<void>((resolve) => {
-            gatedDeployReleases.push(resolve);
-          });
-        }
+        const result = await originalPrepare(params);
+        sidecarRouter.routableAddresses.push(result.deploymentAddress);
         return result;
       };
 
       const platform = createPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        sessionService,
-        assetService: createFakeAssetService(),
-        sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
+        runTrigger,
+        sidecarRouter,
         eventCollectors: createFakeEventCollectors(),
-        lifecycle: { idleSleepMs: 60_000 },
-        reclaimRetryDelaysMs: [1],
+        workflowAllocationService: allocationService,
+        routableWaitDeadlineMs: 5_000,
         mailDeliveryTimeoutMs: 5_000,
       });
 
-      const sendMailPromise = platform.sendMail({
+      const sent = await platform.sendMail({
         tenantId: "ten_1",
-        workbenchId: "ins_workbench1",
+        workbenchId: "ins_room1",
         principalId: "prin_sender",
-        content: { content: "hello workbench" },
+        content: { content: "hello" },
       });
 
-      // Let the cold wake (deploy #1) resolve, the first send attempt
-      // fail, and the reclaim retry's own wake (deploy #2) start and
-      // gate.
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      expect(deployCallCount).toBe(2);
+      expect(sent.id).toBeTruthy();
+      expect(runTrigger.triggerCalls).toHaveLength(2);
+      const [first, second] = runTrigger.triggerCalls;
+      expect(first?.anchorRunId).toBe(staleRunId);
+      // The retry that follows the relaunch targets the run that
+      // replaced `run_gen1`, never the dead run the loop started with.
+      expect(second?.anchorRunId).not.toBe(staleRunId);
 
-      // A second, independent caller asks for the same address while
-      // deploy #2 is still in flight — the concurrent-wake race CL-7214
-      // closes.
-      const ensureAwakePromise = platform.ensureAwake(address);
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      expect(deployCallCount).toBe(2);
-      expect(
-        db.deleted.filter((row) => row.table === sessionAsset).length,
-      ).toBe(2);
-
-      gatedDeployReleases.forEach((release) => release());
-      await Promise.all([sendMailPromise, ensureAwakePromise]);
-
-      expect(deployCallCount).toBe(2);
-      expect(
-        db.deleted.filter((row) => row.table === sessionAsset).length,
-      ).toBe(2);
+      const repointed = db.updated.at(-1)?.values as {
+        currentRunId: string;
+        priorRunIds: string[];
+      };
+      expect(repointed.currentRunId).toBe(second?.anchorRunId ?? "");
+      expect(repointed.priorRunIds).toEqual(["run_gen1"]);
     });
   });
 
   // Proves the actual lever an edited system prompt reaches a running
-  // instance through: `wakeFoldedRun` (exercised via `sendMail`'s
+  // instance through: `wakeByAddress` (exercised via `sendMail`'s
   // wake-on-send path above) replays `workbench_launch.foldedBody`
   // verbatim and never reads the definition's asset itself, so a
   // definition edit only reaches a running instance if something
@@ -2783,15 +2859,11 @@ describe("createHubChatPlatform", () => {
       model: "claude-sonnet-5",
     });
 
-    function buildRefreshableDb() {
+    function buildRefreshableDb(workflowRunStatus?: string) {
       return createFakeDb({
-        // Unused by this describe block's tests (no launch/asset-creation
-        // path is exercised) — required only because `createFakeDb`'s
-        // options type demands them for the launchWorkbench-shaped tests
-        // above.
         assetRow: {
           tenantId: "ten_1",
-          creatorPrincipalId: null,
+          creatorPrincipalId: "prin_creator",
           name: "unused",
           displayName: null,
         },
@@ -2801,6 +2873,9 @@ describe("createHubChatPlatform", () => {
           address: "agent1@ten1.workbench.test",
           principalId: "prin_agent1",
           definitionId: "wfd_agent1",
+          ...(workflowRunStatus !== undefined
+            ? { status: workflowRunStatus }
+            : {}),
         },
         workflowDefinitionRow: {
           id: "wfd_agent1",
@@ -2829,8 +2904,7 @@ describe("createHubChatPlatform", () => {
       const platform = createPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        sessionService: createFakeSessionService(),
-        assetService: createFakeAssetService(),
+        runTrigger: createFakeRunTrigger(),
         sidecarRouter: createFakeSidecarRouter(),
         eventCollectors: createFakeEventCollectors(),
       });
@@ -2853,32 +2927,34 @@ describe("createHubChatPlatform", () => {
     test("a refreshed instance's next wake uses the new system prompt, not the one frozen at launch", async () => {
       resolveDefinitionSourcesResult = {
         ok: true,
+        materials: [],
         sources: [
           {
             id: "off_1",
             provider: "anthropic",
             baseURL: "https://inference.invalid",
-            apiKey: "placeholder",
+            credentialId: "cred_placeholder",
             model: "claude-sonnet-5",
           },
         ],
         defaultSource: "off_1",
       };
 
-      const db = buildRefreshableDb();
+      // CL-7490: `wakeByAddress` no longer redeploys a merely
+      // not-yet-routable run — only a genuinely dead one, so this run
+      // must actually be terminal (not just offline) for `sendMail`'s
+      // wake-on-send path to be the one that carries the refreshed
+      // system prompt into a fresh deploy.
+      const db = buildRefreshableDb("failed");
       db.inserted.push({
         table: agentSession,
         values: { id: "ses_agent1", principalId: "prin_agent1" },
       });
-      const sessionService = createFakeSessionService();
+      const runTrigger = createFakeRunTrigger();
       const platform = createPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        sessionService,
-        assetService: createFakeAssetService(),
-        // Not in the sidecar's routable set: the instance is asleep, so
-        // the next send must wake it — reading whatever
-        // `workbench_launch` holds at that moment.
+        runTrigger,
         sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
         eventCollectors: createFakeEventCollectors(),
         lifecycle: { idleSleepMs: 60_000 },
@@ -2897,13 +2973,14 @@ describe("createHubChatPlatform", () => {
         content: { content: "hello" },
       });
 
-      expect(sessionService.adoptedDeployCalls).toHaveLength(1);
-      const deployed = sessionService.adoptedDeployCalls[0] as {
-        config: { systemPrompt: string };
-      };
-      expect(deployed.config.systemPrompt).toBe(
-        "You are now a blunt, no-nonsense assistant.",
-      );
+      expect(lastAllocationService.prepareCalls).toHaveLength(1);
+      expect(lastAllocationService.prepareCalls[0]).toMatchObject({
+        entry: WORKFLOW_SOURCE_ENTRY,
+        source: {
+          kind: "asset",
+          package: { format: "source", commitSha: "sha_test" },
+        },
+      });
     });
 
     // CL-6452: the deploy repoints `workflow_run.definitionId` at the
@@ -2974,8 +3051,7 @@ describe("createHubChatPlatform", () => {
       const platform = createPlatform({
         toolGrantsForPins: () => [],
         db: db as never,
-        sessionService: createFakeSessionService(),
-        assetService: createFakeAssetService(),
+        runTrigger: createFakeRunTrigger(),
         sidecarRouter: createFakeSidecarRouter(),
         eventCollectors: createFakeEventCollectors(),
       });
@@ -3100,8 +3176,7 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
+      runTrigger: createFakeRunTrigger(),
       sidecarRouter,
       eventCollectors: createFakeEventCollectors(),
     });
@@ -3154,12 +3229,13 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
   test("sendMail redeploys an already-routable-but-drifted target before delivering — lifecycle.ensureAwake's routability check alone would have missed it", async () => {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       sources: [
         {
           id: "off_1",
           provider: "anthropic",
           baseURL: "https://inference.invalid",
-          apiKey: "placeholder",
+          credentialId: "cred_placeholder",
           model: "claude-sonnet-5",
         },
       ],
@@ -3174,18 +3250,15 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
       table: agentSession,
       values: { id: "ses_stale", principalId: "prin_room1" },
     });
-    const sessionService = createFakeSessionService();
+    const runTrigger = createFakeRunTrigger();
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService,
-      assetService: createFakeAssetService(),
+      runTrigger,
       sidecarRouter: createFakeSidecarRouter({
         routableAddresses: ["run_stale@ten1.workbench.test"],
       }),
       eventCollectors: createFakeEventCollectors(),
-      // Configured: `sendMail` takes the `lifecycle.ensureAwake` branch,
-      // whose own routability check alone would never have caught this.
       lifecycle: { idleSleepMs: 60_000 },
     });
 
@@ -3196,11 +3269,14 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
       content: { content: "hello" },
     });
 
-    expect(sessionService.adoptedDeployCalls).toHaveLength(1);
-    const deployed = sessionService.adoptedDeployCalls[0] as {
-      config: { systemPrompt: string };
-    };
-    expect(deployed.config.systemPrompt).toBe(FIXED_SYSTEM_PROMPT);
+    expect(lastAllocationService.prepareCalls).toHaveLength(1);
+    expect(lastAllocationService.prepareCalls[0]).toMatchObject({
+      entry: WORKFLOW_SOURCE_ENTRY,
+      source: {
+        kind: "asset",
+        package: { format: "source", commitSha: "sha_test" },
+      },
+    });
   });
 
   // The coordinator's explicit ask: "unknown" (no authored sibling this
@@ -3265,8 +3341,7 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
+      runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter({
         routableAddresses: ["run_standalone@ten1.workbench.test"],
       }),
@@ -3296,7 +3371,6 @@ describe("createHubChatPlatform relaunch sweep", () => {
 
   function createSweepFixture(opts: {
     runStatus: string;
-    parked: boolean;
     /**
      * `false` builds the standalone/invited-agent shape (CL-6367): a
      * section-mode participant whose relaunch must deploy the same
@@ -3319,7 +3393,6 @@ describe("createHubChatPlatform relaunch sweep", () => {
         definitionId: "wfd_room1",
         status: opts.runStatus,
       },
-      foldedRunMarker: opts.parked,
       workbenchLaunchRow: {
         tenantId: "ten_1",
         instanceId: "ins_room1",
@@ -3328,14 +3401,12 @@ describe("createHubChatPlatform relaunch sweep", () => {
         noopInference: opts.noopInference ?? true,
       },
     });
-    const sessionService = createFakeSessionService();
-    const assetService = createFakeAssetService();
+    const runTrigger = createFakeRunTrigger();
     const notices: unknown[] = [];
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService,
-      assetService,
+      runTrigger,
       // Routable, and dead anyway: that combination is exactly what the
       // wake path cannot fix — boot restore re-announced the address, so
       // nothing looks broken until the next message is dropped.
@@ -3345,19 +3416,18 @@ describe("createHubChatPlatform relaunch sweep", () => {
       eventCollectors: createFakeEventCollectors(),
       relaunchNotice: { current: (notice) => notices.push(notice) },
     });
-    return { db, platform, sessionService, assetService, notices };
+    return { db, platform, runTrigger, notices };
   }
 
   test("relaunches a routable-but-dead participant and tells the room", async () => {
-    const { db, platform, sessionService, notices } = createSweepFixture({
+    const { db, platform, notices } = createSweepFixture({
       runStatus: "failed",
-      parked: false,
     });
 
     const swept = await platform.sweepTerminalRuns();
 
     expect(swept).toEqual({ scanned: 1, relaunched: 1 });
-    expect(sessionService.adoptedDeployCalls).toHaveLength(1);
+    expect(lastAllocationService.prepareCalls).toHaveLength(1);
 
     // The fresh run keeps neither the dead run's id nor its address —
     // the platform derives one from the other — while the room's own
@@ -3387,22 +3457,22 @@ describe("createHubChatPlatform relaunch sweep", () => {
   // the redeployed bytes, and the room told — never the host's folded
   // step.
   test("relaunches a dead section participant as a fresh onTrigger section", async () => {
-    const { db, platform, sessionService, assetService, notices } =
-      createSweepFixture({
-        runStatus: "failed",
-        parked: false,
-        noopInference: false,
-      });
+    const { db, platform, notices } = createSweepFixture({
+      runStatus: "failed",
+      noopInference: false,
+    });
 
     const swept = await platform.sweepTerminalRuns();
 
     expect(swept).toEqual({ scanned: 1, relaunched: 1 });
-    expect(sessionService.adoptedDeployCalls).toHaveLength(1);
-
-    // The redeployed bytes carry the section shape — the agent-bearing
-    // step lives inside the `onTrigger` section, not at the head.
-    const rendered = deployedDefinition(assetService.populatedTrees);
-    expect(Object.keys(rendered.steps)).toEqual([AGENT_RUNTIME_SECTION_ID]);
+    expect(lastAllocationService.prepareCalls).toHaveLength(1);
+    expect(lastAllocationService.prepareCalls[0]).toMatchObject({
+      entry: WORKFLOW_SOURCE_ENTRY,
+      source: {
+        kind: "asset",
+        package: { format: "source", commitSha: "sha_test" },
+      },
+    });
 
     const repointed = db.updated.at(-1)?.values as {
       currentRunId: string;
@@ -3422,31 +3492,32 @@ describe("createHubChatPlatform relaunch sweep", () => {
     ]);
   });
 
-  test("leaves a folded run merely parked between messages alone", async () => {
-    const { platform, sessionService, notices } = createSweepFixture({
+  test("relaunches a completed run — wake is a fresh provision", async () => {
+    const { db, platform, notices } = createSweepFixture({
       runStatus: "completed",
-      parked: true,
     });
 
-    expect(await platform.sweepTerminalRuns()).toEqual({
-      scanned: 0,
-      relaunched: 0,
-    });
-    expect(sessionService.adoptedDeployCalls).toHaveLength(0);
-    expect(notices).toEqual([]);
+    const swept = await platform.sweepTerminalRuns();
+
+    expect(swept).toEqual({ scanned: 1, relaunched: 1 });
+    expect(lastAllocationService.prepareCalls).toHaveLength(1);
+    expect(notices).toHaveLength(1);
+    const repointed = db.updated.at(-1)?.values as {
+      currentRunId: string;
+    };
+    expect(repointed.currentRunId).not.toBe("run_dead");
   });
 
   test("leaves a running participant alone", async () => {
-    const { platform, sessionService, notices } = createSweepFixture({
+    const { platform, notices } = createSweepFixture({
       runStatus: "running",
-      parked: false,
     });
 
     expect(await platform.sweepTerminalRuns()).toEqual({
       scanned: 0,
       relaunched: 0,
     });
-    expect(sessionService.adoptedDeployCalls).toHaveLength(0);
+    expect(lastAllocationService.prepareCalls).toHaveLength(0);
     expect(notices).toEqual([]);
   });
 });
@@ -3467,29 +3538,19 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
     model: null,
   };
 
-  function sourcesFor(apiKey: string) {
-    return {
-      sources: [
-        {
-          id: "off_1",
-          provider: "anthropic",
-          baseURL: "https://inference.invalid",
-          apiKey,
-          model: "claude-sonnet-5",
-        },
-      ],
-      defaultSource: "off_1",
-    };
+  function offeringsFor(ids: readonly string[]) {
+    return ids.map((id, i) => ({
+      offering: { id, priority: i },
+      model: { canonicalName: "claude-sonnet-5" },
+      provider: { name: "anthropic" },
+    }));
   }
 
   function createRotationFixture(opts: {
-    deployedWithKey: string | null;
-    catalogKey: string;
+    deployedOfferingIds: readonly string[] | null;
+    catalogOfferingIds: readonly string[];
   }) {
-    resolveDefinitionSourcesResult = {
-      ok: true,
-      ...sourcesFor(opts.catalogKey),
-    };
+    visibleOfferings = offeringsFor(opts.catalogOfferingIds);
     const db = createFakeDb({
       assetRow: {
         tenantId: "ten_1",
@@ -3537,9 +3598,9 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
         currentRunId: "run_live",
         foldedBody: FOLDED_BODY,
         sourcesDigest:
-          opts.deployedWithKey === null
+          opts.deployedOfferingIds === null
             ? null
-            : inferenceSourcesDigest(sourcesFor(opts.deployedWithKey)),
+            : opts.deployedOfferingIds.join("\0"),
       },
       wireProjectionsByDefinitionId: {
         wfd_run_clone: inertProjection({
@@ -3557,8 +3618,7 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService: createFakeSessionService(),
-      assetService: createFakeAssetService(),
+      runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter({
         routableAddresses: ["run_live@ten1.workbench.test"],
       }),
@@ -3572,10 +3632,10 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
       { currentRunId: string; sourcesDigest: string } | undefined;
   }
 
-  test("a routable run deployed with a key the catalog has since rotated is relaunched on the new key", async () => {
+  test("a routable run deployed with offerings the catalog has since rotated is relaunched on the new chain", async () => {
     const { db, platform } = createRotationFixture({
-      deployedWithKey: "sk-ant-expired",
-      catalogKey: "sk-ant-fresh",
+      deployedOfferingIds: ["off_expired"],
+      catalogOfferingIds: ["off_fresh"],
     });
 
     await platform.ensureAwake("run_live@ten1.workbench.test");
@@ -3583,15 +3643,13 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
     const repointed = repointedLaunch(db);
     expect(repointed?.currentRunId).toBeDefined();
     expect(repointed?.currentRunId).not.toBe("run_live");
-    expect(repointed?.sourcesDigest).toBe(
-      inferenceSourcesDigest(sourcesFor("sk-ant-fresh")),
-    );
+    expect(repointed?.sourcesDigest).toBe("off_fresh");
   });
 
-  test("re-saving the same key is not a rotation: the run is left alone", async () => {
+  test("re-saving the same offerings is not a rotation: the run is left alone", async () => {
     const { db, platform } = createRotationFixture({
-      deployedWithKey: "sk-ant-same",
-      catalogKey: "sk-ant-same",
+      deployedOfferingIds: ["off_1"],
+      catalogOfferingIds: ["off_1"],
     });
 
     await platform.ensureAwake("run_live@ten1.workbench.test");
@@ -3601,8 +3659,8 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
 
   test("a run that predates digest recording gets today's chain as its baseline and is left alone", async () => {
     const { db, platform } = createRotationFixture({
-      deployedWithKey: null,
-      catalogKey: "sk-ant-fresh",
+      deployedOfferingIds: null,
+      catalogOfferingIds: ["off_fresh"],
     });
 
     await platform.ensureAwake("run_live@ten1.workbench.test");
@@ -3612,29 +3670,29 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
     );
     expect(launchWrites).toHaveLength(1);
     expect(launchWrites[0]?.values).toEqual({
-      sourcesDigest: inferenceSourcesDigest(sourcesFor("sk-ant-fresh")),
+      sourcesDigest: "off_fresh",
     });
   });
 
   test("the per-send chain check is throttled: a second send inside the interval resolves nothing", async () => {
     const { platform } = createRotationFixture({
-      deployedWithKey: "sk-ant-same",
-      catalogKey: "sk-ant-same",
+      deployedOfferingIds: ["off_1"],
+      catalogOfferingIds: ["off_1"],
     });
-    resolveDefinitionSourcesCalls.length = 0;
+    listVisibleOfferingsCalls.length = 0;
 
     await platform.ensureAwake("run_live@ten1.workbench.test");
-    const afterFirst = resolveDefinitionSourcesCalls.length;
+    const afterFirst = listVisibleOfferingsCalls.length;
     await platform.ensureAwake("run_live@ten1.workbench.test");
 
     expect(afterFirst).toBeGreaterThan(0);
-    expect(resolveDefinitionSourcesCalls).toHaveLength(afterFirst);
+    expect(listVisibleOfferingsCalls).toHaveLength(afterFirst);
   });
 
   test("reconcileInferenceSources sweeps a tenant's live participants the moment a credential lands", async () => {
     const { db, platform } = createRotationFixture({
-      deployedWithKey: "sk-ant-expired",
-      catalogKey: "sk-ant-fresh",
+      deployedOfferingIds: ["off_expired"],
+      catalogOfferingIds: ["off_fresh"],
     });
 
     const swept = await platform.reconcileInferenceSources("ten_1");
@@ -3643,19 +3701,16 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
     expect(repointedLaunch(db)?.currentRunId).not.toBe("run_live");
   });
 
-  test("connecting a provider then sending within the check interval relaunches onto the new key", async () => {
+  test("connecting a provider then sending within the check interval relaunches onto the new chain", async () => {
     const { db, platform } = createRotationFixture({
-      deployedWithKey: "sk-ant-expired",
-      catalogKey: "sk-ant-expired",
+      deployedOfferingIds: ["off_expired"],
+      catalogOfferingIds: ["off_expired"],
     });
 
     await platform.ensureAwake("run_live@ten1.workbench.test");
     expect(repointedLaunch(db)).toBeUndefined();
 
-    resolveDefinitionSourcesResult = {
-      ok: true,
-      ...sourcesFor("sk-ant-fresh"),
-    };
+    visibleOfferings = offeringsFor(["off_fresh"]);
 
     await platform.reconcileInferenceSources("ten_1");
     await platform.ensureAwake("run_live@ten1.workbench.test");
@@ -3663,9 +3718,7 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
     const repointed = repointedLaunch(db);
     expect(repointed?.currentRunId).toBeDefined();
     expect(repointed?.currentRunId).not.toBe("run_live");
-    expect(repointed?.sourcesDigest).toBe(
-      inferenceSourcesDigest(sourcesFor("sk-ant-fresh")),
-    );
+    expect(repointed?.sourcesDigest).toBe("off_fresh");
   });
 });
 
@@ -3675,22 +3728,17 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
 // resolved `manus` as not connected. Inference reconcile cannot see
 // this: Manus is not an inference provider. The connect hook has to
 // relaunch live runs whose pins include the connector's `feedsTools`
-// packages so `deployAtHead` folds `pinnedPackageCredentialBindingsFor`.
+// packages so Interchange prepare picks up the pin on a fresh
+// deployment of the same definition asset.
 describe("createHubChatPlatform pinned-tool-package connect reconciliation", () => {
   const MANUS_PIN = { name: "@corbits/manus-tools", version: "*" };
-  const MANUS_BINDING = {
-    package: "@corbits/manus-tools",
-    handle: "manus",
-    provider: "manus",
-    locator: "tenant" as const,
-  };
   const CATALOG_SOURCES = {
     sources: [
       {
         id: "off_1",
         provider: "anthropic",
         baseURL: "https://inference.invalid",
-        apiKey: "sk-ant-same",
+        credentialId: "cred_anthropic",
         model: "claude-sonnet-5",
       },
     ],
@@ -3702,6 +3750,7 @@ describe("createHubChatPlatform pinned-tool-package connect reconciliation", () 
   }) {
     resolveDefinitionSourcesResult = {
       ok: true,
+      materials: [],
       ...CATALOG_SOURCES,
     };
     buildCredentialDeliveryCalls.length = 0;
@@ -3778,7 +3827,7 @@ describe("createHubChatPlatform pinned-tool-package connect reconciliation", () 
         instanceId: "run_live",
         currentRunId: "run_live",
         foldedBody,
-        sourcesDigest: inferenceSourcesDigest(CATALOG_SOURCES),
+        sourcesDigest: "off_1",
       },
       wireProjectionsByDefinitionId: {
         wfd_run_clone: inertProjection({
@@ -3795,19 +3844,16 @@ describe("createHubChatPlatform pinned-tool-package connect reconciliation", () 
         }),
       },
     });
-    const assetService = createFakeAssetService();
     const platform = createPlatform({
       toolGrantsForPins: () => [],
       db: db as never,
-      sessionService: createFakeSessionService(),
-      assetService,
+      runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter({
         routableAddresses: ["run_live@ten1.workbench.test"],
       }),
       eventCollectors: createFakeEventCollectors(),
-      pinnedPackageCredentialBindingsFor: async () => [MANUS_BINDING],
     });
-    return { db, platform, assetService };
+    return { db, platform };
   }
 
   function repointedLaunch(db: ReturnType<typeof createFakeDb>) {
@@ -3815,36 +3861,39 @@ describe("createHubChatPlatform pinned-tool-package connect reconciliation", () 
       { currentRunId: string } | undefined;
   }
 
-  test("connecting manus after a live launch relaunches and folds the manus CredentialBinding", async () => {
-    const { db, platform, assetService } = createManusPinFixture({
+  test("connecting manus after a live launch relaunches with the pin", async () => {
+    const { db, platform } = createManusPinFixture({
       toolPackagePins: [MANUS_PIN],
     });
 
     await platform.ensureAwake("run_live@ten1.workbench.test");
     expect(repointedLaunch(db)).toBeUndefined();
-    expect(assetService.populatedTrees).toHaveLength(0);
+    expect(lastAllocationService.prepareCalls).toHaveLength(0);
 
     const swept = await platform.reconcilePinnedToolPackages("ten_1", [
       "@corbits/manus-tools",
     ]);
 
-    // Persist-only (stamp a pin/binding onto the launch row and leave
+    // Persist-only (stamp a pin onto the launch row and leave
     // `currentRunId` as `run_live`) is the bug: the sidecar keeps the
     // snapshot that cannot `resolve("manus")`. A passing result must
-    // mint a fresh run and fold the binding into the deployed entry.
+    // provision a fresh run of the same definition asset with the pin.
     expect(swept).toEqual({ scanned: 1, relaunched: 1 });
     expect(repointedLaunch(db)?.currentRunId).not.toBe("run_live");
-    expect(deployedCredentialBindings(assetService.populatedTrees)).toEqual([
-      MANUS_BINDING,
-    ]);
-    expect(buildCredentialDeliveryCalls[0]).toMatchObject({
-      tenantId: "ten_1",
-      bindings: [MANUS_BINDING],
+    expect(lastAllocationService.prepareCalls).toHaveLength(1);
+    expect(lastAllocationService.prepareCalls[0]).toMatchObject({
+      definitionAssetId: "asst_myra",
+      source: {
+        kind: "asset",
+        assetId: "asst_myra",
+        package: { format: "source", commitSha: "sha_test" },
+      },
+      toolPackagePins: [MANUS_PIN],
     });
   });
 
   test("a live run that does not pin the connected package is left alone", async () => {
-    const { db, platform, assetService } = createManusPinFixture({
+    const { db, platform } = createManusPinFixture({
       toolPackagePins: [],
     });
 
@@ -3854,6 +3903,6 @@ describe("createHubChatPlatform pinned-tool-package connect reconciliation", () 
 
     expect(swept).toEqual({ scanned: 1, relaunched: 0 });
     expect(repointedLaunch(db)).toBeUndefined();
-    expect(assetService.populatedTrees).toHaveLength(0);
+    expect(lastAllocationService.prepareCalls).toHaveLength(0);
   });
 });

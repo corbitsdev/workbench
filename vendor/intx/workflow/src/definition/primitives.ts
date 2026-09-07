@@ -101,6 +101,12 @@ export interface StepPrimitive extends PrimitiveBase {
    * the launch trigger and never re-service the consumed one.
    */
   triggers?: number | "unbounded";
+  /**
+   * Names the handler step a permanent failure of this unit routes to: the
+   * failure that remains after any retries are exhausted. Absent means a
+   * permanent failure fails the run.
+   */
+  onFailure?: string;
 }
 
 export interface MapPrimitive extends PrimitiveBase {
@@ -144,6 +150,8 @@ export interface ChildWorkflowPrimitive extends PrimitiveBase {
   definition: ChildWorkflowBody;
   input?: Selector;
   drainBehavior?: DrainBehavior;
+  /** See {@link StepPrimitive.onFailure}. */
+  onFailure?: string;
 }
 
 /**
@@ -199,23 +207,26 @@ export interface ActionPrimitive extends PrimitiveBase {
   effect?: EffectSpec;
   timeout?: number;
   drainBehavior?: DrainBehavior;
+  /** See {@link StepPrimitive.onFailure}. */
+  onFailure?: string;
 }
 
 /**
  * Bounded rework loop. Each iteration is a separate child run of `body`
- * (own run id `<loopId>[<index>]`, own event log in a shared store).
- * `runLoop` spawns iteration 0, evaluates `while` on its output, threads
- * `carry` to the next iteration's input, caps at `maxIterations`, and
- * routes to `onExhausted` when the cap is hit without `while` going
+ * (own run id `<runId>__<loopId>__<index>`, own event log in a shared
+ * store). `runLoop` spawns iteration 0, evaluates `while` on its output,
+ * threads `carry` to the next iteration's input, caps at `maxIterations`,
+ * and routes to `onExhausted` when the cap is hit without `while` going
  * false.
  *
  * `while` and `carry` are string refs to PURE functions resolved via the
  * runtime's loop-fn registry (mirroring how `handler`/`director` are
  * string refs), so the definition stays hashable. Those functions
  * receive only data and never an effect context -- they run on every
- * resume and must be side-effect free. The loop body may not contain a
- * `loop`, `awaitSignal`, `sleep`, or `childWorkflow` (enforced at
- * definition time).
+ * resume and must be side-effect free. The loop body may park on an
+ * `awaitSignal` and resume, may spawn a `childWorkflow` grandchild, and
+ * may contain a nested `loop` (bounded depth), but may not contain a
+ * `sleep` or `onTrigger` (all enforced at definition time).
  */
 export interface LoopPrimitive extends PrimitiveBase {
   kind: "loop";
@@ -307,6 +318,8 @@ export interface StepOpts<EnvReq extends BaseEnv> {
   after?: readonly string[];
   /** See {@link StepPrimitive.triggers}. Absent means `1` (batch). */
   triggers?: number | "unbounded";
+  /** See {@link StepPrimitive.onFailure}. */
+  onFailure?: string;
 }
 
 /**
@@ -395,6 +408,7 @@ export function step<EnvReq extends BaseEnv>(
     ...(opts.timeout !== undefined ? { timeout: opts.timeout } : {}),
     ...(opts.after !== undefined ? { after: opts.after } : {}),
     ...(opts.triggers !== undefined ? { triggers: opts.triggers } : {}),
+    ...(opts.onFailure !== undefined ? { onFailure: opts.onFailure } : {}),
   };
   validateRetryTriggerCombination(primitive);
   return primitive;
@@ -498,6 +512,8 @@ export interface ChildWorkflowOpts {
   input?: Selector;
   drainBehavior?: DrainBehavior;
   after?: readonly string[];
+  /** See {@link StepPrimitive.onFailure}. */
+  onFailure?: string;
 }
 
 export function childWorkflow(opts: ChildWorkflowOpts): ChildWorkflowPrimitive {
@@ -510,6 +526,7 @@ export function childWorkflow(opts: ChildWorkflowOpts): ChildWorkflowPrimitive {
     drainBehavior,
     ...(opts.input !== undefined ? { input: opts.input } : {}),
     ...(opts.after !== undefined ? { after: opts.after } : {}),
+    ...(opts.onFailure !== undefined ? { onFailure: opts.onFailure } : {}),
   };
 }
 
@@ -536,6 +553,8 @@ export interface ActionOpts {
   timeout?: number;
   drainBehavior?: DrainBehavior;
   after?: readonly string[];
+  /** See {@link StepPrimitive.onFailure}. */
+  onFailure?: string;
 }
 
 export function action(opts: ActionOpts): ActionPrimitive {
@@ -549,6 +568,7 @@ export function action(opts: ActionOpts): ActionPrimitive {
     ...(opts.effect !== undefined ? { effect: opts.effect } : {}),
     ...(opts.timeout !== undefined ? { timeout: opts.timeout } : {}),
     ...(opts.after !== undefined ? { after: opts.after } : {}),
+    ...(opts.onFailure !== undefined ? { onFailure: opts.onFailure } : {}),
   };
 }
 

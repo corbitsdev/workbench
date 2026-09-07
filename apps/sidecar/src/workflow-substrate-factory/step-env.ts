@@ -32,6 +32,7 @@ import {
 import type { DurableConversationRegistry } from "../conversation-state";
 import {
   attachStepCredentials,
+  stepInferenceMaterialResolver,
   attachStepTools,
   materializeStepTools,
   type StepToolCacheConfig,
@@ -368,9 +369,23 @@ export function createSidecarStepBuildEnv(
       hubAgentDirectoryUrl: string;
       hubChatUrl: string;
       hubWorkflowAuthoringUrl: string;
+      hubAccessUrl: string;
       sidecarToken: string;
       definitionId: string;
     } = {
+      // An `InferenceSource` names a `credentialId`, not an inline secret:
+      // the reactor fills the request's credential at send time through
+      // this resolver, off the same live cell the step's tool credentials
+      // resolve from. Omitted for a step with no credential wiring, which
+      // leaves the platform's fail-closed default in place.
+      ...(credentialWiring !== undefined
+        ? {
+            readCurrentMaterial: stepInferenceMaterialResolver({
+              wiring: credentialWiring,
+              stepId,
+            }),
+          }
+        : {}),
       // Feed the reactor the step's full ordered failover chain and pin
       // its initial source to element 0. The reactor resolves the initial
       // source by id and fails over forward through `sources`, so this
@@ -426,6 +441,10 @@ export function createSidecarStepBuildEnv(
       // (`requires: ["hubWorkflowAuthoringUrl", "sidecarToken", "address"]`)
       // for `@corbits/workflows`'s `./authoring`'s run-authenticated routes.
       hubWorkflowAuthoringUrl: deps.hubArtifactsUrl,
+      // And once more under the key `@corbits/access-tools` declares
+      // (`requires: ["hubAccessUrl", "sidecarToken", "address"]`) for its
+      // own workflow-run-authenticated principal/grant surface.
+      hubAccessUrl: deps.hubArtifactsUrl,
       sidecarToken: deps.sidecarToken,
       definitionId: deps.definitionId,
     };

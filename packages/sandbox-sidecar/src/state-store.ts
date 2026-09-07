@@ -12,7 +12,7 @@ import { type } from "arktype";
 const AllocationRecord = type({
   allocationId: "string > 0",
   sidecarId: "string > 0",
-  generation: "number.integer > 0",
+  generation: "number.integer >= 0",
   desiredState: "'ensured' | 'destroyed'",
   externalRef: "string | null",
   tokenHashSha256: "string | null",
