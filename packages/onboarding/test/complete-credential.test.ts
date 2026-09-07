@@ -6,6 +6,7 @@ import { pristineScheduledDefinitionHandshake } from "../../seeding/test/helpers
 import {
   completeCredentialSetup,
   ensureSeeded,
+  findPersonalTenant,
   modelSourceFor,
   testAndPersistCredential,
 } from "../src/complete-credential";
@@ -2084,5 +2085,159 @@ describe("ensureSeeded (the slow half)", () => {
         },
       }),
     ).rejects.toThrow("the hub rejected the deployment with status 500");
+  });
+});
+
+// CL-7506: a seeded admin's only membership is the root bench (slug = the
+// org's own slug), which never equals personalTenantSlug(userEmail,
+// userId) — connecting a credential must fall back to that existing
+// principal rather than 409 with no_personal_bench.
+describe("findPersonalTenant", () => {
+  function principalsPage(
+    principals: {
+      principalId: string;
+      tenantId: string;
+      tenantSlug: string;
+      tenantDomain?: string;
+    }[],
+  ) {
+    return {
+      status: 200,
+      data: {
+        data: principals.map((p) => ({
+          kind: "user",
+          status: "active",
+          roles: [],
+          tenantName: p.tenantSlug,
+          ...p,
+        })),
+        nextCursor: null,
+      },
+      cookies: [],
+    };
+  }
+
+  function tenantFor(slug: string, domain: string) {
+    return {
+      status: 200,
+      data: {
+        id: slug,
+        name: slug,
+        slug,
+        domain,
+        parentId: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      cookies: [],
+    };
+  }
+
+  test("seeded-admin shape: root bench is the only membership, so the slug mismatch falls back to it instead of no-personal-bench", async () => {
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return principalsPage([
+          {
+            principalId: "prn_root",
+            tenantId: "ten_root",
+            tenantSlug: "acme",
+            tenantDomain: "acme.bench.local",
+          },
+        ]);
+      }
+      if (method === "GET" && path === "/api/tenants/ten_root") {
+        return tenantFor("acme", "acme.bench.local");
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    // personalTenantSlug("alice@example.com", "user_1") is "alice-user1"
+    // — no principal carries it, yet the existing principal is picked.
+    expect(
+      await findPersonalTenant(api, ["session=abc"], "alice-user1"),
+    ).toEqual({
+      tenantId: "ten_root",
+      tenantSlug: "acme",
+      principalId: "prn_root",
+      tenantDomain: "acme.bench.local",
+    });
+  });
+
+  test("a caller with zero principals still gets no-personal-bench", async () => {
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return principalsPage([]);
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    expect(
+      await findPersonalTenant(api, ["session=abc"], "alice-user1"),
+    ).toBeUndefined();
+  });
+
+  test("an exact slug match wins even when a mismatched principal comes first", async () => {
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return principalsPage([
+          {
+            principalId: "prn_root",
+            tenantId: "ten_root",
+            tenantSlug: "acme",
+          },
+          {
+            principalId: PRINCIPAL_ID,
+            tenantId: TENANT_ID,
+            tenantSlug: TENANT_SLUG,
+          },
+        ]);
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return tenantFor(TENANT_SLUG, "alice-user1.bench.local");
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    expect(await findPersonalTenant(api, ["session=abc"], TENANT_SLUG)).toEqual(
+      {
+        tenantId: TENANT_ID,
+        tenantSlug: TENANT_SLUG,
+        principalId: PRINCIPAL_ID,
+        tenantDomain: "alice-user1.bench.local",
+      },
+    );
+  });
+
+  test("the fallback pick is the first principal in page order", async () => {
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return principalsPage([
+          {
+            principalId: "prn_first",
+            tenantId: "ten_first",
+            tenantSlug: "first-bench",
+            tenantDomain: "first.bench.local",
+          },
+          {
+            principalId: "prn_second",
+            tenantId: "ten_second",
+            tenantSlug: "second-bench",
+            tenantDomain: "second.bench.local",
+          },
+        ]);
+      }
+      if (method === "GET" && path === "/api/tenants/ten_first") {
+        return tenantFor("first-bench", "first.bench.local");
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+
+    const result = await findPersonalTenant(
+      api,
+      ["session=abc"],
+      "alice-user1",
+    );
+    expect(result?.tenantId).toBe("ten_first");
+    expect(result?.principalId).toBe("prn_first");
   });
 });
