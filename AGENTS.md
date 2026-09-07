@@ -162,9 +162,10 @@ check:structural report-error -- --write-baseline` after fixing (or
   `pull_request` job reads `pull_request.base.sha` from
   `GITHUB_EVENT_PATH`; locally it falls back to the merge base with
   `origin/main`) and flags any tool package whose `src/` differs from that
-  base while its version stayed the same. With no base ref available
-  (no `origin/main`, no pull-request event) it no-ops, deferring to CI as the
-  authoritative run.
+  base while its version stayed the same. It also runs the publisher's
+  historical freshness check against the commit that introduced each
+  package's current version, including uncommitted and untracked source.
+  This historical check still runs when no base ref is available.
 - Every package needs a `LICENSE` file (canonical LGPL-2.1-or-later text,
   copy from any existing `packages/*/LICENSE`) — the licenses check fails
   without one.

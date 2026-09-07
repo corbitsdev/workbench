@@ -962,7 +962,7 @@ describe("completeCredentialSetup", () => {
       providerId: string;
       priority: number;
     }[] = [];
-    const providers: Row[] = [];
+    const providers: (Row & { apiBaseUrl: string | null })[] = [];
     const credentials: Row[] = [];
     let assetCreatePosts = 0;
     let deploymentCreatePosts = 0;
@@ -1120,11 +1120,14 @@ describe("completeCredentialSetup", () => {
         };
       }
       if (method === "POST" && path === `/api/tenants/${TENANT_ID}/providers`) {
-        const name = (body as { name: string }).name;
+        const { name, apiBaseUrl = null } = body as {
+          name: string;
+          apiBaseUrl?: string;
+        };
         const existing = providers.find((p) => p.name === name);
         if (existing) return { status: 409, data: {}, cookies: [] };
         const id = `prv_${name}`;
-        providers.push({ name, id });
+        providers.push({ name, id, apiBaseUrl });
         return {
           status: 201,
           data: {
@@ -1132,6 +1135,29 @@ describe("completeCredentialSetup", () => {
             tenantId: TENANT_ID,
             name,
             plugin: "anthropic",
+            apiBaseUrl,
+            createdAt: TIMESTAMP,
+            updatedAt: TIMESTAMP,
+          },
+          cookies: [],
+        };
+      }
+      if (
+        method === "PATCH" &&
+        path === `/api/tenants/${TENANT_ID}/providers/prv_anthropic`
+      ) {
+        const provider = providers.find((p) => p.id === "prv_anthropic");
+        if (provider === undefined)
+          throw new Error("provider must exist before updating it");
+        provider.apiBaseUrl = (body as { apiBaseUrl: string }).apiBaseUrl;
+        return {
+          status: 200,
+          data: {
+            id: provider.id,
+            tenantId: TENANT_ID,
+            name: provider.name,
+            plugin: "anthropic",
+            apiBaseUrl: provider.apiBaseUrl,
             createdAt: TIMESTAMP,
             updatedAt: TIMESTAMP,
           },
@@ -1150,6 +1176,7 @@ describe("completeCredentialSetup", () => {
               tenantId: TENANT_ID,
               name: p.name,
               plugin: "anthropic",
+              apiBaseUrl: p.apiBaseUrl,
               createdAt: TIMESTAMP,
               updatedAt: TIMESTAMP,
             })),

@@ -6,6 +6,7 @@
 // so a broken provisioning call never leaves the user silently benchless.
 
 import { type } from "arktype";
+import { reportError } from "@corbits/error-sink";
 import type { SupportedCredentialProvider } from "@corbits/connections/credential-test";
 
 const ProvisionResult = type({
@@ -628,31 +629,51 @@ const ProvisioningStatus = type({
  *   converge in the background.
  * - `preparing` — Myra is not live yet; this is the only state worth
  *   holding someone on a loader for.
- * - `unknown` — we could not tell (offline, a hiccup, an account with no
- *   personal bench). Never rendered as either progress or failure.
+ * - `error` — readiness could not be checked; show the message and allow retry.
  */
 export type AgentReadiness =
   | { readonly kind: "ready" }
   | { readonly kind: "chat-ready" }
   | { readonly kind: "preparing" }
-  | { readonly kind: "unknown" };
+  | { readonly kind: "error"; readonly message: string };
 
 /**
  * Where this account's agents stand right now. Cheap and read-only, so a
  * surface that has to wait may poll it on a short interval.
  */
-export async function fetchAgentReadiness(): Promise<AgentReadiness> {
+export async function fetchAgentReadiness(
+  tenantId: string,
+): Promise<AgentReadiness> {
   try {
-    const response = await fetch("/api/onboarding/provisioning-status");
-    if (!response.ok) return { kind: "unknown" };
-    const body: unknown = await response.json().catch(() => null);
+    const response = await fetch(
+      `/api/onboarding/provisioning-status?${new URLSearchParams({ tenantId })}`,
+    );
+    const body: unknown = await response.json();
+    if (!response.ok) {
+      const envelope = ErrorEnvelope(body);
+      if (!(envelope instanceof type.errors)) {
+        return {
+          kind: "error",
+          message: `${envelope.error.userMessage} Reference: ${envelope.error.refId}`,
+        };
+      }
+      throw new Error(`Agent readiness request failed (${response.status})`);
+    }
     const parsed = ProvisioningStatus(body);
-    if (parsed instanceof type.errors) return { kind: "unknown" };
+    if (parsed instanceof type.errors)
+      throw new Error("Invalid agent readiness response");
     if (parsed.kind === "ready") return { kind: "ready" };
     return parsed.setupAgentReady
       ? { kind: "chat-ready" }
       : { kind: "preparing" };
-  } catch {
-    return { kind: "unknown" };
+  } catch (cause) {
+    const refId = reportError(cause, {
+      operation: "agent_readiness",
+      tenantId,
+    });
+    return {
+      kind: "error",
+      message: `Couldn't check your agent. Try again. Reference: ${refId}`,
+    };
   }
 }

@@ -67,9 +67,9 @@ degradation story.
 `bun run dev` validates your `.env` (reporting every missing or malformed
 value at once), verifies the database in `DATABASE_URL` is reachable and
 actually speaks Postgres, applies any pending platform migrations, builds
-the web UI if it has not been built yet, and starts the hub and one sidecar
-together. Every required setting lives in `.env.example` with its expected
-shape, and the administrator account (`HUB_ADMIN_EMAIL` / `HUB_ADMIN_PASSWORD`,
+the web UI if it has not been built yet, and starts the hub. The hub
+provisions authenticated sidecars on demand using the configured backend.
+Every required setting lives in `.env.example` with its expected shape, and the administrator account (`HUB_ADMIN_EMAIL` / `HUB_ADMIN_PASSWORD`,
 defaulting to alice@example.com / password123 when unset)
 is seeded so you can sign in immediately.
 

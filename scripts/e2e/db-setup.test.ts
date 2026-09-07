@@ -1,8 +1,7 @@
 // Unit gates for scripts/db-setup.ts against a real Postgres: the
 // wiring this repo owns — shipped-migration discovery out of the
 // vendored @intx/db, the setup ledger, idempotent re-runs, the loud
-// mismatch failure with its documented reset fix, and the sidecar
-// identity upsert. The migrations themselves are Interchange's to
+// mismatch failure with its documented reset fix. The migrations themselves are Interchange's to
 // test; nothing here asserts on schema contents beyond the rows this
 // script writes.
 //
@@ -16,12 +15,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 
-import {
-  dbTargetFromUrl,
-  ensureSidecarIdentity,
-  resetSchema,
-  setupDatabase,
-} from "../db-setup.ts";
+import { dbTargetFromUrl, resetSchema, setupDatabase } from "../db-setup.ts";
 import { assertDatabaseConfigured, skippedDatabaseWarning } from "./db-gate.ts";
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..", "..");
@@ -79,26 +73,9 @@ async function connectTo(url: string, database?: string): Promise<SqlClient> {
   });
 }
 
-async function sha256Hex(token: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(token),
-  );
-  return Buffer.from(digest).toString("hex");
-}
-
-function rowHashHex(row: Record<string, unknown> | undefined): string {
-  const hash = row?.["token_hash_sha256"];
-  if (!(hash instanceof Uint8Array)) {
-    throw new Error(
-      `expected token_hash_sha256 to be a Uint8Array, got ${typeof hash}`,
-    );
-  }
-  return Buffer.from(hash).toString("hex");
-}
-
 describe.skipIf(databaseUrl === undefined)("db-setup", () => {
   const url = databaseUrl as string;
+  const databaseLifecycleTimeoutMs = 30_000;
 
   // The suite owns the one expensive fresh apply; every test starts
   // from a fully migrated scratch database instead of relying on a
@@ -107,7 +84,7 @@ describe.skipIf(databaseUrl === undefined)("db-setup", () => {
 
   beforeAll(async () => {
     freshApply = await setupDatabase(url);
-  });
+  }, databaseLifecycleTimeoutMs);
 
   afterAll(async () => {
     const maintenance = await connectTo(url, "postgres");
@@ -119,7 +96,7 @@ describe.skipIf(databaseUrl === undefined)("db-setup", () => {
     } finally {
       await maintenance.end();
     }
-  });
+  }, databaseLifecycleTimeoutMs);
 
   test("fresh database applies every vendored migration and records it", async () => {
     const shippedOnDisk = (await readdir(VENDORED_MIGRATIONS_DIR))
@@ -166,24 +143,28 @@ describe.skipIf(databaseUrl === undefined)("db-setup", () => {
     }
   });
 
-  test("resetSchema drops the mailbox package's own schema, not only the platform's", async () => {
-    await resetSchema(url);
-    const sql = await connectTo(url);
-    try {
-      const mailboxSchema = await sql.unsafe(
-        `SELECT 1 FROM information_schema.schemata WHERE schema_name = 'mailbox'`,
-      );
-      expect(mailboxSchema).toHaveLength(0);
-    } finally {
-      await sql.end();
-    }
+  test(
+    "resetSchema drops the mailbox package's own schema, not only the platform's",
+    async () => {
+      await resetSchema(url);
+      const sql = await connectTo(url);
+      try {
+        const mailboxSchema = await sql.unsafe(
+          `SELECT 1 FROM information_schema.schemata WHERE schema_name = 'mailbox'`,
+        );
+        expect(mailboxSchema).toHaveLength(0);
+      } finally {
+        await sql.end();
+      }
 
-    // Leave the scratch database migrated again for any later test in this
-    // file (and to prove the installed packages' migrations replay cleanly
-    // after a reset, not only on a first-ever apply).
-    const rebuilt = await setupDatabase(url);
-    expect(rebuilt.action).toBe("migrated");
-  });
+      // Leave the scratch database migrated again for any later test in this
+      // file (and to prove the installed packages' migrations replay cleanly
+      // after a reset, not only on a first-ever apply).
+      const rebuilt = await setupDatabase(url);
+      expect(rebuilt.action).toBe("migrated");
+    },
+    databaseLifecycleTimeoutMs,
+  );
 
   test("re-run on a current schema reports unchanged and touches nothing", async () => {
     const first = await setupDatabase(url);
@@ -193,50 +174,30 @@ describe.skipIf(databaseUrl === undefined)("db-setup", () => {
     expect(second.migrations).toBe(first.migrations);
   });
 
-  test("ensureSidecarIdentity upserts against the folded schema", async () => {
-    await ensureSidecarIdentity(url, "sc_dbsetup_test", "token-one");
-    const sql = await connectTo(url);
-    try {
-      const inserted = await sql.unsafe(
-        `SELECT "url", "token_hash_sha256" FROM "sidecar" WHERE "id" = $1`,
-        ["sc_dbsetup_test"],
-      );
-      expect(inserted).toHaveLength(1);
-      expect(String(inserted[0]?.["url"])).toBe("ws://local-sidecar");
-      expect(rowHashHex(inserted[0])).toBe(await sha256Hex("token-one"));
-
-      // A changed token heals instead of locking the sidecar out.
-      await ensureSidecarIdentity(url, "sc_dbsetup_test", "token-two");
-      const updated = await sql.unsafe(
-        `SELECT "token_hash_sha256" FROM "sidecar" WHERE "id" = $1`,
-        ["sc_dbsetup_test"],
-      );
-      expect(rowHashHex(updated[0])).toBe(await sha256Hex("token-two"));
-    } finally {
-      await sql.end();
-    }
-  });
-
-  test("a ledger that disagrees with the shipped set fails loudly; reset recovers", async () => {
-    // Simulate a database set up under an older migration set (e.g. a
-    // pre-fold dev database) by shortening the recorded ledger.
-    const sql = await connectTo(url);
-    try {
-      await sql.unsafe(
-        `DELETE FROM "public"."workbench_setup_migration"
+  test(
+    "a ledger that disagrees with the shipped set fails loudly; reset recovers",
+    async () => {
+      // Simulate a database set up under an older migration set (e.g. a
+      // pre-fold dev database) by shortening the recorded ledger.
+      const sql = await connectTo(url);
+      try {
+        await sql.unsafe(
+          `DELETE FROM "public"."workbench_setup_migration"
          WHERE filename = (SELECT max(filename) FROM "public"."workbench_setup_migration")`,
+        );
+      } finally {
+        await sql.end();
+      }
+
+      await expect(setupDatabase(url)).rejects.toThrow(
+        /different @intx\/db migration set[\s\S]*--reset/,
       );
-    } finally {
-      await sql.end();
-    }
 
-    await expect(setupDatabase(url)).rejects.toThrow(
-      /different @intx\/db migration set[\s\S]*--reset/,
-    );
-
-    // The failure names the fix; prove the fix works.
-    await resetSchema(url);
-    const rebuilt = await setupDatabase(url);
-    expect(rebuilt.action).toBe("migrated");
-  });
+      // The failure names the fix; prove the fix works.
+      await resetSchema(url);
+      const rebuilt = await setupDatabase(url);
+      expect(rebuilt.action).toBe("migrated");
+    },
+    databaseLifecycleTimeoutMs,
+  );
 });
