@@ -198,6 +198,15 @@ export type CompleteCredentialArgs = CommonArgs &
     seedTenantFn?: (args: SeedTenantArgs) => ReturnType<typeof seedTenant>;
   };
 
+/**
+ * Resolves the tenant a credential connect lands on. An exact slug match
+ * against `expectedSlug` (the computed personal-bench slug) wins. If no
+ * principal carries that slug, fall back to an existing principal from
+ * the same read — the first one in page order — because the caller
+ * already has a bench (e.g. a seeded admin whose only membership is the
+ * root bench, CL-7506) and a hard no-personal-bench here would 409 the
+ * connect. Only a response with zero principals yields `undefined`.
+ */
 export async function findPersonalTenant(
   api: ApiCall,
   cookies: string[],
@@ -209,7 +218,8 @@ export async function findPersonalTenant(
     response.data,
     "principals response",
   );
-  const own = summary.data.find((p) => p.tenantSlug === expectedSlug);
+  const own =
+    summary.data.find((p) => p.tenantSlug === expectedSlug) ?? summary.data[0];
   if (!own) return undefined;
 
   const tenantResponse = await api(
