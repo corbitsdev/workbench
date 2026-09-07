@@ -1,21 +1,14 @@
 import type { CSSProperties } from "react";
 
 export const CORBIT_DEFAULT_COLOR = "#C5D2DE";
-export const AVATAR_COLORS = [
-  CORBIT_DEFAULT_COLOR,
-  "#C1D1BE",
-  "#F7EAD5",
-  "#F2B277",
+export const AVATAR_PALETTE = [
+  { color: CORBIT_DEFAULT_COLOR, className: "bg-[#C5D2DE] text-black" },
+  { color: "#C1D1BE", className: "bg-[#C1D1BE] text-black" },
+  { color: "#F7EAD5", className: "bg-[#F7EAD5] text-black" },
+  { color: "#F2B277", className: "bg-[#F2B277] text-black" },
 ] as const;
 
-export type AvatarColor = (typeof AVATAR_COLORS)[number];
-
-export const avatarColorClass: Record<AvatarColor, string> = {
-  "#C5D2DE": "bg-[#C5D2DE] text-black",
-  "#C1D1BE": "bg-[#C1D1BE] text-black",
-  "#F7EAD5": "bg-[#F7EAD5] text-black",
-  "#F2B277": "bg-[#F2B277] text-black",
-};
+export type AvatarColor = (typeof AVATAR_PALETTE)[number]["color"];
 
 export function hashPrincipal(principalId: string): number {
   let hash = 0;
@@ -25,18 +18,22 @@ export function hashPrincipal(principalId: string): number {
   return hash;
 }
 
-export function avatarColorForPrincipal(principalId: string): AvatarColor {
+function avatarPaletteEntryForPrincipal(principalId: string) {
   const hash = hashPrincipal(principalId);
-  const index = hash % AVATAR_COLORS.length;
-  const color = AVATAR_COLORS[index];
-  if (color === undefined) {
+  const index = hash % AVATAR_PALETTE.length;
+  const entry = AVATAR_PALETTE[index];
+  if (entry === undefined) {
     throw new Error("Avatar color palette is empty");
   }
-  return color;
+  return entry;
+}
+
+export function avatarColorForPrincipal(principalId: string): AvatarColor {
+  return avatarPaletteEntryForPrincipal(principalId).color;
 }
 
 export function avatarClassForPrincipal(principalId: string): string {
-  return avatarColorClass[avatarColorForPrincipal(principalId)];
+  return avatarPaletteEntryForPrincipal(principalId).className;
 }
 
 export type AvatarFill =
