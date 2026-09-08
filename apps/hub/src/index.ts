@@ -338,6 +338,10 @@ import {
   createDrizzleCredentialExpirySweepStore,
 } from "./credential-expiry-sweep";
 import {
+  createDrizzleServingRefreshStore,
+  createTenantServingRefresh,
+} from "./credential-material-refresh";
+import {
   createDrizzleInboxUnsnoozeSweepStore,
   createInboxUnsnoozeSweep,
 } from "./inbox-unsnooze-sweep";
@@ -1560,6 +1564,18 @@ export async function createHub(config: HubConfig) {
     toolGrantsForPins,
     cryptoProviders,
     workflowAllocationService,
+    // CL-7505: serving-time token refresh — every outbound mail refreshes
+    // the tenant's due oauth_token credentials first and pushes the
+    // refreshed frames, so the run dials on a live token or fails over
+    // past a credential that just went re-auth-required.
+    refreshServingCredentials: createTenantServingRefresh({
+      store: createDrizzleServingRefreshStore(
+        db,
+        credentialCipher,
+        sidecarRouter,
+      ),
+      hubUrl: config.baseUrl,
+    }),
     // Chat residents are undeployed on idle again (see the comment above
     // this function): `chatIdleReapMs` (env-overridable via
     // `WORKBENCH_CHAT_IDLE_REAP_MS`, default 30 minutes) is

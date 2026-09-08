@@ -29,7 +29,33 @@ export type SourceSkip =
   | { reason: "wallet_backed"; provider: string }
   | { reason: "credential_unresolved"; provider: string }
   | { reason: "credential_unauthorized"; provider: string }
+  | { reason: "credential_needs_reauth"; provider: string }
   | { reason: "provider_misconfigured"; provider: string };
+
+/**
+ * CL-7505 serving-time refresh seam. Before an expiring `oauth_token`
+ * credential's secret is served, the caller-supplied hook may refresh it in
+ * place (the hub composes the connections token session). `ok: false` means
+ * the credential is past saving (refresh failed / re-auth required): the
+ * offering is skipped, never served with a dead secret.
+ */
+export type ServingRefreshResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly message: string };
+
+export type ServingRefresh = (credential: {
+  readonly id: string;
+  readonly tenantId: string;
+  readonly type: string;
+  readonly status: string;
+  readonly refreshSecret: string | null;
+  readonly expiresAt: Date | null;
+}) => Promise<ServingRefreshResult>;
+
+export type ModelSourceResolutionOpts = {
+  invokerPreferences?: Record<string, ProviderPreference>;
+  servingRefresh?: ServingRefresh;
+};
 
 /**
  * Outcome of resolving an agent's model requirements to an ordered set of
@@ -117,11 +143,12 @@ function applyPreference(
   return preference.mode === "pin" ? named : [...named, ...rest];
 }
 
-async function buildSource(
+export async function buildSource(
   db: DB["db"],
   tenantId: string,
   resolved: ResolvedOffering,
   credentialCipher: CredentialCipher,
+  opts?: { servingRefresh?: ServingRefresh },
 ): Promise<
   | { ok: true; source: InferenceSource; material: CredentialMaterialEntry }
   | { ok: false; skip: SourceSkip }
@@ -147,17 +174,18 @@ async function buildSource(
   // Resolve the secret through the tenant-scoped credential resolver so a
   // provider row referencing a credential outside the tenant's ancestor
   // chain cannot leak that secret (the chain is the authority).
-  const credential = await resolveCredentialById(
+  const credentialFound = await resolveCredentialById(
     db,
     tenantId,
     provider.credentialId,
   );
-  if (credential === null) {
+  if (credentialFound === null) {
     return {
       ok: false,
       skip: { reason: "credential_unresolved", provider: provider.name },
     };
   }
+  let credential = credentialFound;
 
   // Authority to use a credential through a catalog provider is ownership
   // within the tenant hierarchy -- the same rule the tool-binding path resolves
@@ -173,6 +201,41 @@ async function buildSource(
       ok: false,
       skip: { reason: "credential_unauthorized", provider: provider.name },
     };
+  }
+
+  // CL-7505 local delta: serving-time refresh. An expiring `oauth_token`
+  // credential gets one chance to refresh in place before its secret is
+  // served; a credential the hook cannot save (grant failed, re-auth
+  // required) is skipped outright — never served unauthenticated. The hook
+  // itself owns the expiry decision, so a credential that is not near
+  // expiry no-ops through it cheaply.
+  if (opts?.servingRefresh !== undefined && credential.type === "oauth_token") {
+    const refreshed = await opts.servingRefresh({
+      id: credential.id,
+      tenantId: credential.tenantId,
+      type: credential.type,
+      status: credential.status,
+      refreshSecret: credential.refreshSecret,
+      expiresAt: credential.expiresAt,
+    });
+    if (!refreshed.ok) {
+      return {
+        ok: false,
+        skip: { reason: "credential_needs_reauth", provider: provider.name },
+      };
+    }
+    const reread = await resolveCredentialById(
+      db,
+      tenantId,
+      provider.credentialId,
+    );
+    if (reread === null) {
+      return {
+        ok: false,
+        skip: { reason: "credential_unresolved", provider: provider.name },
+      };
+    }
+    credential = reread;
   }
 
   // Validate the row once at this DB-to-runtime boundary. This narrows the
@@ -275,9 +338,7 @@ export async function resolveModelSources(
   // noop fallback for a keyless composition is resolved once at that edge
   // (`resolveCredentialCipher` in the hub app), never defaulted here.
   credentialCipher: CredentialCipher,
-  opts?: {
-    invokerPreferences?: Record<string, ProviderPreference>;
-  },
+  opts?: ModelSourceResolutionOpts,
 ): Promise<CatalogSourceResolution> {
   if (requirements.length === 0) {
     return { ok: false, reason: "no_requirements" };
@@ -311,12 +372,11 @@ export async function resolveModelSources(
     const modelSources: InferenceSource[] = [];
     const modelMaterials: CredentialMaterialEntry[] = [];
     for (const candidate of candidates) {
-      const built = await buildSource(
-        db,
-        tenantId,
-        candidate,
-        credentialCipher,
-      );
+      const built = await buildSource(db, tenantId, candidate, credentialCipher, {
+        ...(opts?.servingRefresh !== undefined
+          ? { servingRefresh: opts.servingRefresh }
+          : {}),
+      });
       if (built.ok) {
         modelSources.push(built.source);
         modelMaterials.push(built.material);
@@ -431,6 +491,7 @@ export async function resolveInstanceModelSources(
   tenantId: string,
   instance: { definitionId: string; modelPreferences: unknown },
   credentialCipher: CredentialCipher,
+  opts?: { servingRefresh?: ServingRefresh },
 ): Promise<CatalogSourceResolution> {
   // Resolve from the run's own definition by primary key. This is the SAME row
   // the launch resolves its requirements from, so a rotation or catalog edit
@@ -469,5 +530,8 @@ export async function resolveInstanceModelSources(
 
   return resolveModelSources(db, tenantId, requirements, credentialCipher, {
     invokerPreferences,
+    ...(opts?.servingRefresh !== undefined
+      ? { servingRefresh: opts.servingRefresh }
+      : {}),
   });
 }

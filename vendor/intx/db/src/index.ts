@@ -127,6 +127,7 @@ export {
   type ResolvedOffering,
 } from "./catalog-resolution";
 export {
+  buildSource,
   resolveModelSources,
   resolveInferencePreferences,
   resolveInstanceModelSources,
@@ -134,6 +135,9 @@ export {
   type CatalogSourceResolution,
   type OfferingSourceResolution,
   type SourceSkip,
+  type ServingRefresh,
+  type ServingRefreshResult,
+  type ModelSourceResolutionOpts,
 } from "./model-source-resolution";
 export {
   parseGrantRow,

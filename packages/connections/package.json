@@ -16,6 +16,7 @@
     "./connect-github-setup": "./src/connect-github-setup.ts",
     "./reconcile-duplicate-repo-grants": "./src/reconcile-duplicate-repo-grants.ts",
     "./credential-test": "./src/credential-test.ts",
+    "./token-session": "./src/token-session.ts",
     "./model-capability": "./src/model-capability.ts",
     "./template-settings": "./src/template-settings.ts",
     "./probes": "./src/probes.ts",
@@ -30,6 +31,7 @@
   },
   "dependencies": {
     "@corbits/code-review": "workspace:*",
+    "@corbits/oauth-core": "workspace:*",
     "@corbits/credential-providers": "workspace:*",
     "@corbits/error-sink": "workspace:*",
     "@corbits/github-tools": "workspace:*",
