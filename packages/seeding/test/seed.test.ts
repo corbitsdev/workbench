@@ -14,6 +14,7 @@ import {
   seedCatalog,
   ensureProvider,
   seedTenant,
+  PlaceholderCredentialError,
   SETUP_AGENT_ASSET_NAME,
   type SeedTenantArgs,
   type WorkflowPusher,
@@ -2917,5 +2918,66 @@ describe("seedCatalog", () => {
         log,
       }),
     ).rejects.toThrow(HubApiError);
+  });
+});
+
+describe("seedCatalog placeholderCredential gate", () => {
+  test("rejects a placeholder credential for an OAuth-only provider with a named error", async () => {
+    for (const provider of ["codex", "xai-oauth"] as const) {
+      let caught: unknown;
+      try {
+        await seedCatalog({
+          api: fakeAPI(() => undefined),
+          cookies: [],
+          tenantId: TENANT_ID,
+          provider,
+          placeholderCredential: true,
+          log: () => {},
+        });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(PlaceholderCredentialError);
+      expect((caught as Error).message).toContain(provider);
+    }
+  });
+
+  test("a real apiKey still seeds an OAuth-only provider — the gate is placeholder-only", async () => {
+    // Nothing past the gate runs (the fake API answers nothing), but the
+    // failure must be the hub's, not the gate's — the gate only exists to
+    // stop fake credentials, not real ones.
+    let caught: unknown;
+    try {
+      await seedCatalog({
+        api: fakeAPI(() => undefined),
+        cookies: [],
+        tenantId: TENANT_ID,
+        provider: "codex",
+        apiKey: "real-token",
+        log: () => {},
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).not.toBeInstanceOf(PlaceholderCredentialError);
+  });
+
+  test("leaves api-key providers' placeholder behavior untouched", async () => {
+    let caught: unknown;
+    try {
+      await seedCatalog({
+        api: fakeAPI(() => undefined),
+        cookies: [],
+        tenantId: TENANT_ID,
+        provider: "xai",
+        placeholderCredential: true,
+        log: () => {},
+      });
+    } catch (error) {
+      caught = error;
+    }
+    // The xai seed proceeds past the gate (and fails later against the
+    // fake API) — the gate never fires for an api-key provider.
+    expect(caught).not.toBeInstanceOf(PlaceholderCredentialError);
   });
 });

@@ -57,6 +57,11 @@ export const PROVIDER_ENV_VARS: Readonly<
   openai: ["OPENAI_API_KEY"],
   "google-genai": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
   xai: ["XAI_API_KEY"],
+  // The OAuth-only providers (CL-7510) have no env-var API-key path at
+  // all — a token only exists after its loopback OAuth login, so there is
+  // no env var an operator could plant and no name here could match.
+  "xai-oauth": [],
+  codex: [],
   openrouter: ["OPENROUTER_API_KEY"],
   "opencode-zen": ["OPENCODE_ZEN_API_KEY"],
   groq: ["GROQ_API_KEY"],

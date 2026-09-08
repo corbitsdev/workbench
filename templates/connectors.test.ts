@@ -122,6 +122,98 @@ describe("CONNECTOR_REGISTRY", () => {
     expect(descriptor?.feedsTools).toEqual([]);
   });
 
+  test("includes Codex and xai-oauth as oauth-loopback connectors, no probe", () => {
+    for (const id of ["codex", "xai-oauth"]) {
+      const descriptor = CONNECTOR_REGISTRY[id];
+      expect(descriptor?.authKind).toBe("oauth-loopback");
+      expect(descriptor?.probe).toBeUndefined();
+      expect(descriptor?.oauth).toBeDefined();
+      expect(descriptor?.oauth?.usesPKCE).toBe(true);
+      expect(descriptor?.oauth?.deploysDefaultWorkflows).toBe(true);
+      expect(descriptor?.feedsTools).toEqual([]);
+      // The OAuth client ids are the provider CLIs' public identifiers.
+      expect(descriptor?.oauth?.clientId?.({})).toBeDefined();
+    }
+  });
+
+  test("pins each loopback provider to its own fixed redirect URI", () => {
+    const codexUrl = CONNECTOR_REGISTRY["codex"]?.oauth?.buildAuthorizeUrl({
+      callbackUrl: "https://bench.example.com/ignored",
+      state: "s",
+      codeChallenge: "c",
+      clientId: "app_1",
+    });
+    expect(codexUrl?.origin).toBe("https://auth.openai.com");
+    expect(codexUrl?.searchParams.get("redirect_uri")).toBe(
+      "http://localhost:1455/auth/callback",
+    );
+    expect(codexUrl?.searchParams.get("originator")).toBe("codex_cli_rs");
+
+    const xaiUrl =
+      CONNECTOR_REGISTRY["xai-oauth"]?.oauth?.buildAuthorizeUrl({
+        callbackUrl: "https://bench.example.com/ignored",
+        state: "s",
+        codeChallenge: "c",
+        clientId: "client_1",
+      });
+    expect(xaiUrl?.origin).toBe("https://auth.x.ai");
+    expect(xaiUrl?.searchParams.get("redirect_uri")).toBe(
+      "http://127.0.0.1:1456/callback",
+    );
+    expect(xaiUrl?.searchParams.get("scope")).toContain("grok-cli:access");
+  });
+
+  test("exchanges a loopback code for tokens against the provider's own token endpoint", async () => {
+    const originalFetch = globalThis.fetch;
+    const requestedURLs: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requestedURLs.push(url);
+      return new Response(
+        JSON.stringify({
+          access_token: "at_1",
+          refresh_token: "rt_1",
+          expires_in: 3600,
+        }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+    try {
+      const result = await CONNECTOR_REGISTRY["codex"]?.oauth?.exchange({
+        code: "abc",
+        codeVerifier: "ver",
+        redirectUri: "http://localhost:1455/auth/callback",
+        clientId: "app_1",
+      });
+      expect(result).toMatchObject({
+        ok: true,
+        apiKey: "at_1",
+        refreshToken: "rt_1",
+      });
+      expect(requestedURLs).toEqual(["https://auth.openai.com/oauth/token"]);
+      expect(requestedURLs[0]).toContain("auth.openai.com");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("reports a failed loopback exchange without throwing", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response("nope", { status: 400 })) as typeof fetch;
+    try {
+      const result = await CONNECTOR_REGISTRY["xai-oauth"]?.oauth?.exchange({
+        code: "abc",
+        codeVerifier: "ver",
+        redirectUri: "http://127.0.0.1:1456/callback",
+        clientId: "client_1",
+      });
+      expect(result?.ok).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("includes the tool connectors with the right feedsTools", () => {
     expect(CONNECTOR_REGISTRY["granola"]?.feedsTools).toEqual([
       "@corbits/granola-tools",

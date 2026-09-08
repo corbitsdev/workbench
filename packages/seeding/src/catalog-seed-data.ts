@@ -35,6 +35,13 @@ export type CatalogProviderSpec = {
   readonly name: string;
   readonly plugin: AdapterPluginId;
   readonly baseURL: string;
+  /**
+   * The `quirks` bag stored on every offering this seed creates — data the
+   * serving adapter needs and cannot default (Codex's host identity:
+   * `CodexQuirks`, upstream `@corbits/codex-provider`). Absent for every
+   * provider whose adapter handles its own request shape unmodified.
+   */
+  readonly quirks?: Record<string, unknown>;
 };
 
 export type CatalogProviderSeed = {
@@ -99,6 +106,39 @@ export const CATALOG_SEEDS: Readonly<
       { canonicalName: "grok-4.5", displayName: "Grok 4.5" },
       { canonicalName: "grok-code-fast-1", displayName: "Grok Code Fast 1" },
     ],
+  },
+  "xai-oauth": {
+    provider: {
+      name: "xai-oauth",
+      plugin: "openai-responses",
+      // The grok-cli OAuth proxy — tokens from this login are rejected by
+      // api.x.ai, which expects a plain API key (the `xai` seed above).
+      baseURL: "https://cli-chat-proxy.grok.com/v1",
+    },
+    // Mirrors the proxy's own model list (the upstream xai provider's
+    // XAI_DEFAULT_MODELS); the proxy rejects any other model id.
+    models: [
+      { canonicalName: "grok-4.6", displayName: "Grok 4.6 (Grok OAuth)" },
+      { canonicalName: "grok-4.5", displayName: "Grok 4.5 (Grok OAuth)" },
+      {
+        canonicalName: "grok-composer-2.5-fast",
+        displayName: "Grok Composer 2.5 Fast (Grok OAuth)",
+      },
+    ],
+  },
+  codex: {
+    provider: {
+      name: "codex",
+      plugin: "openai-responses",
+      // The ChatGPT subscription backend, not the platform API surface.
+      baseURL: "https://chatgpt.com/backend-api",
+      // Codex's adapter validates this host identity bag and refuses to
+      // default it — there is no honest generic product name.
+      quirks: { productName: "Codex", environmentTagName: "codex_environment" },
+    },
+    // Codex publishes no live model catalog, so this curated entry is the
+    // entire list; the backend serves the Codex CLI's current default.
+    models: [{ canonicalName: "gpt-5.5", displayName: "GPT-5.5 (Codex)" }],
   },
   openrouter: {
     provider: {

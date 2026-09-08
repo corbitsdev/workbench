@@ -35,6 +35,9 @@ describe("CATALOG_SEEDS", () => {
       // inside the generic 2–5 bound.
       if (provider === "anthropic" || provider === "openai") continue;
       if (provider === "google-genai") continue;
+      // Codex publishes no live model catalog, so its curated entry is
+      // exactly one model — the bound below assumes a browsable spread.
+      if (provider === "codex") continue;
       expect(seed.models.length).toBeGreaterThanOrEqual(2);
       expect(seed.models.length).toBeLessThanOrEqual(5);
     }
@@ -81,6 +84,39 @@ describe("CATALOG_SEEDS", () => {
     ]);
     for (const model of seed.models) {
       expect(model.displayName.length).toBeGreaterThan(0);
+    }
+  });
+  test("codex and xai-oauth seed behind the openai-responses adapter", () => {
+    expect(CATALOG_SEEDS.codex.provider).toEqual({
+      name: "codex",
+      plugin: "openai-responses",
+      baseURL: "https://chatgpt.com/backend-api",
+      // The Codex adapter validates this host identity and refuses to
+      // default it — an offering without it could never serve a turn.
+      quirks: {
+        productName: "Codex",
+        environmentTagName: "codex_environment",
+      },
+    });
+    expect(CATALOG_SEEDS.codex.models.map((m) => m.canonicalName)).toEqual([
+      "gpt-5.5",
+    ]);
+
+    expect(CATALOG_SEEDS["xai-oauth"].provider).toEqual({
+      name: "xai-oauth",
+      plugin: "openai-responses",
+      baseURL: "https://cli-chat-proxy.grok.com/v1",
+    });
+    expect(
+      CATALOG_SEEDS["xai-oauth"].models.map((m) => m.canonicalName),
+    ).toEqual(["grok-4.6", "grok-4.5", "grok-composer-2.5-fast"]);
+    expect(CATALOG_SEEDS["xai-oauth"].provider.quirks).toBeUndefined();
+  });
+
+  test("no seed other than codex declares an offering quirks bag", () => {
+    for (const [provider, seed] of Object.entries(CATALOG_SEEDS)) {
+      if (provider === "codex") continue;
+      expect(seed.provider.quirks).toBeUndefined();
     }
   });
 });

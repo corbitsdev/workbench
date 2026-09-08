@@ -88,6 +88,8 @@ const INFERENCE_PROVIDER_DOCS_URL: Readonly<
   openai: "https://platform.openai.com/api-keys",
   "google-genai": "https://aistudio.google.com/apikey",
   xai: "https://console.x.ai",
+  "xai-oauth": "https://x.ai",
+  codex: "https://developers.openai.com/codex",
   "opencode-zen": "https://opencode.ai/zen",
   groq: "https://console.groq.com/keys",
   deepseek: "https://platform.deepseek.com/api_keys",
@@ -131,6 +133,7 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
   const entries: Record<string, ConnectorDescriptor> = {};
   for (const [id, config] of Object.entries(PROVIDER_TEST_CONFIG)) {
     if (id === "openrouter" || id === "huggingface") continue;
+    if (id === "codex" || id === "xai-oauth") continue;
     const providerId = id as SupportedCredentialProvider;
     // Ollama collects a URL, not a secret — it has no auth layer at all
     // (see `credential-test.ts`'s own `ollama` config entry). Every
@@ -254,6 +257,181 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
               expiresAt: result.expiresAt,
             }
           : { ok: true, apiKey: result.accessToken };
+      },
+    },
+  };
+  // The two loopback OAuth providers (CL-7510). Their authorization
+  // servers only accept the fixed `http://localhost:<port>` redirect URI
+  // the provider's own CLI registers (`authKind: "oauth-loopback"`), so
+  // `buildAuthorizeUrl` ignores the hub callback URL the generic
+  // mechanics would pass and pins the provider's own redirect instead.
+  // The constants mirror the provider CLIs' public, non-secret values the
+  // same way `openrouter-connect.ts` mirrors OpenRouter's — until the
+  // provider packages land (S2), which will replace these literals.
+  entries["codex"] = {
+    id: "codex",
+    displayName: PROVIDER_TEST_CONFIG.codex.displayName,
+    authKind: "oauth-loopback",
+    credentialPlugin: "http",
+    docsUrl: INFERENCE_PROVIDER_DOCS_URL.codex,
+    feedsTools: [],
+    oauth: {
+      authorizeUrl: "https://auth.openai.com/oauth/authorize",
+      usesPKCE: true,
+      echoesState: true,
+      deploysDefaultWorkflows: true,
+      // The Codex CLI's public client id — not a secret, and the
+      // authorization server only issues this flow's connector scopes to
+      // it.
+      clientId: () => "app_EMoamEEZ73f0CkXaXp7hrann",
+      buildAuthorizeUrl: ({ state, codeChallenge, clientId }) => {
+        const url = new URL("https://auth.openai.com/oauth/authorize");
+        if (clientId !== undefined) url.searchParams.set("client_id", clientId);
+        url.searchParams.set("redirect_uri", "http://localhost:1455/auth/callback");
+        url.searchParams.set("response_type", "code");
+        url.searchParams.set("scope", "openid profile email offline_access");
+        url.searchParams.set("state", state);
+        if (codeChallenge !== undefined) {
+          url.searchParams.set("code_challenge", codeChallenge);
+        }
+        url.searchParams.set("code_challenge_method", "S256");
+        // The Codex CLI's authorize request opts into a simplified consent
+        // screen and identifies the client; the authorization server
+        // rejects the plain flow for this client without these.
+        url.searchParams.set("codex_cli_simplified_flow", "true");
+        url.searchParams.set("id_token_add_organizations", "true");
+        url.searchParams.set("originator", "codex_cli_rs");
+        return url;
+      },
+      exchange: async ({ code, codeVerifier, clientId }) => {
+        try {
+          const response = await fetch("https://auth.openai.com/oauth/token", {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded" },
+            signal: AbortSignal.timeout(10_000),
+            body: new URLSearchParams({
+              grant_type: "authorization_code",
+              code,
+              code_verifier: codeVerifier ?? "",
+              client_id: clientId ?? "",
+              redirect_uri: "http://localhost:1455/auth/callback",
+            }).toString(),
+          });
+          if (!response.ok) {
+            return {
+              ok: false,
+              message: `Codex rejected the login (status ${response.status})`,
+            };
+          }
+          const tokens = (await response.json()) as {
+            access_token?: unknown;
+            refresh_token?: unknown;
+            expires_in?: unknown;
+          };
+          if (typeof tokens.access_token !== "string") {
+            return { ok: false, message: "Codex returned no access token" };
+          }
+          return {
+            ok: true,
+            apiKey: tokens.access_token,
+            ...(typeof tokens.refresh_token === "string"
+              ? { refreshToken: tokens.refresh_token }
+              : {}),
+            ...(typeof tokens.expires_in === "number"
+              ? {
+                  expiresAt: new Date(
+                    Date.now() + tokens.expires_in * 1000,
+                  ).toISOString(),
+                }
+              : {}),
+          };
+        } catch (cause) {
+          return {
+            ok: false,
+            message: `Codex token exchange failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+          };
+        }
+      },
+    },
+  };
+  entries["xai-oauth"] = {
+    id: "xai-oauth",
+    displayName: PROVIDER_TEST_CONFIG["xai-oauth"].displayName,
+    authKind: "oauth-loopback",
+    credentialPlugin: "http",
+    docsUrl: INFERENCE_PROVIDER_DOCS_URL["xai-oauth"],
+    feedsTools: [],
+    oauth: {
+      authorizeUrl: "https://auth.x.ai/oauth2/authorize",
+      usesPKCE: true,
+      echoesState: true,
+      deploysDefaultWorkflows: true,
+      // The grok CLI's public client id — not a secret.
+      clientId: () => "b1a00492-073a-47ea-816f-4c329264a828",
+      buildAuthorizeUrl: ({ state, codeChallenge, clientId }) => {
+        const url = new URL("https://auth.x.ai/oauth2/authorize");
+        if (clientId !== undefined) url.searchParams.set("client_id", clientId);
+        url.searchParams.set("redirect_uri", "http://127.0.0.1:1456/callback");
+        url.searchParams.set("response_type", "code");
+        url.searchParams.set(
+          "scope",
+          "openid profile email offline_access grok-cli:access api:access",
+        );
+        url.searchParams.set("state", state);
+        if (codeChallenge !== undefined) {
+          url.searchParams.set("code_challenge", codeChallenge);
+        }
+        url.searchParams.set("code_challenge_method", "S256");
+        return url;
+      },
+      exchange: async ({ code, codeVerifier, clientId }) => {
+        try {
+          const response = await fetch("https://auth.x.ai/oauth2/token", {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded" },
+            signal: AbortSignal.timeout(10_000),
+            body: new URLSearchParams({
+              grant_type: "authorization_code",
+              code,
+              code_verifier: codeVerifier ?? "",
+              client_id: clientId ?? "",
+              redirect_uri: "http://127.0.0.1:1456/callback",
+            }).toString(),
+          });
+          if (!response.ok) {
+            return {
+              ok: false,
+              message: `xAI rejected the login (status ${response.status})`,
+            };
+          }
+          const tokens = (await response.json()) as {
+            access_token?: unknown;
+            refresh_token?: unknown;
+            expires_in?: unknown;
+          };
+          if (typeof tokens.access_token !== "string") {
+            return { ok: false, message: "xAI returned no access token" };
+          }
+          return {
+            ok: true,
+            apiKey: tokens.access_token,
+            ...(typeof tokens.refresh_token === "string"
+              ? { refreshToken: tokens.refresh_token }
+              : {}),
+            ...(typeof tokens.expires_in === "number"
+              ? {
+                  expiresAt: new Date(
+                    Date.now() + tokens.expires_in * 1000,
+                  ).toISOString(),
+                }
+              : {}),
+          };
+        } catch (cause) {
+          return {
+            ok: false,
+            message: `xAI token exchange failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+          };
+        }
       },
     },
   };

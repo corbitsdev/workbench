@@ -20,6 +20,9 @@ describe("providerDisplayName", () => {
   test("resolves a known provider slug to its own display name", () => {
     expect(providerDisplayName("ollama")).toBe("Ollama (local)");
     expect(providerDisplayName("opencode-zen")).toBe("Opencode Zen");
+    // The CL-7510 OAuth-only ids resolve too, not fall back to their slug.
+    expect(providerDisplayName("codex")).toBe("Codex");
+    expect(providerDisplayName("xai-oauth")).toBe("xAI (Grok OAuth)");
   });
 
   test("falls back to the raw slug for an unrecognized provider", () => {

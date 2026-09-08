@@ -2055,6 +2055,25 @@ async function ensureCatalogOffering(
 // a log line, a screenshot, or a bug report.
 export const PLACEHOLDER_CATALOG_API_KEY = "placeholder-not-a-real-key";
 
+/**
+ * Thrown by `seedCatalog` when a caller asks for a placeholder credential
+ * against an OAuth-only provider — `codex` and `xai-oauth` have no API-key
+ * path at all, so a fake `"placeholder-not-a-real-key"` secret could never
+ * authenticate and would only make the offering look launchable when no
+ * turn against it can ever succeed. A real token from the provider's own
+ * OAuth login (or a seeded `apiKey`) is the only way to make these
+ * launchable.
+ */
+export class PlaceholderCredentialError extends Error {
+  override readonly name = "PlaceholderCredentialError";
+}
+
+/** Providers whose only credential is a real OAuth token —
+ * `placeholderCredential: true` is a `PlaceholderCredentialError` for
+ * these, never a planted fake. */
+const OAUTH_ONLY_CATALOG_PROVIDERS: ReadonlySet<SupportedCredentialProvider> =
+  new Set(["codex", "xai-oauth"]);
+
 export type SeedCatalogArgs = {
   api: ApiCall;
   cookies: string[];
@@ -2166,6 +2185,17 @@ export async function seedCatalog(
 ): Promise<SeedCatalogResult> {
   const { api, cookies, tenantId, log, provider = "anthropic" } = args;
   const seed = CATALOG_SEEDS[provider];
+
+  if (
+    args.placeholderCredential === true &&
+    OAUTH_ONLY_CATALOG_PROVIDERS.has(provider)
+  ) {
+    throw new PlaceholderCredentialError(
+      `provider "${provider}" has no API-key credential path — a placeholder ` +
+        `secret could never authenticate. Connect it through its OAuth login ` +
+        `or seed a real token instead.`,
+    );
+  }
 
   const providerBaseURL =
     provider === "ollama"
@@ -2317,11 +2347,15 @@ export async function seedCatalog(
     // model's real ceiling (or `undefined` for a provider outside this
     // mechanism's scope, or a model this catalog has not vetted a ceiling
     // for), landing on the offering's `quirks` column exactly the way
-    // `capabilitiesForDeployment` lands on its `capabilities` column.
-    const quirks = quirksForDeployment({
-      providerName: seed.provider.name,
-      canonicalName: model.canonicalName,
-    });
+    // `capabilitiesForDeployment` lands on its `capabilities` column. A
+    // provider whose seed declares its own bag (Codex's host identity)
+    // uses that instead — one quirks source per provider, never both.
+    const quirks =
+      seed.provider.quirks ??
+      quirksForDeployment({
+        providerName: seed.provider.name,
+        canonicalName: model.canonicalName,
+      });
     await ensureCatalogOffering(
       api,
       cookies,

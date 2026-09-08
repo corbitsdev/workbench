@@ -22,6 +22,8 @@ export type SupportedCredentialProvider =
   | "openai"
   | "google-genai"
   | "xai"
+  | "xai-oauth"
+  | "codex"
   | "openrouter"
   | "opencode-zen"
   | "groq"
@@ -39,6 +41,8 @@ export type SupportedCredentialProvider =
  * at deploy time they all ride the same OpenAI-compatible wire shape, so
  * their catalog `plugin` value must be `"openai-compatible"` — never their
  * own provider id — and `ModelProviderPlugin` gets no wider for them.
+ * Codex and xai-oauth are the opposite: both speak OpenAI's Responses
+ * protocol, so they ride `"openai-responses"`.
  *
  * This is NOT the same string as the registry key
  * `byProvider.get(source.provider)` resolves against (CL-6586). For every
@@ -55,7 +59,11 @@ export type SupportedCredentialProvider =
  * field — for an offering whose catalog provider is named `"ollama"`.
  */
 export type AdapterPluginId =
-  "anthropic" | "openai" | "openai-compatible" | "google-genai";
+  | "anthropic"
+  | "openai"
+  | "openai-compatible"
+  | "google-genai"
+  | "openai-responses";
 
 export type CredentialTestResult =
   { readonly ok: true } | { readonly ok: false; readonly message: string };
@@ -101,7 +109,29 @@ type ProbeRequest = {
   readonly body?: string;
 };
 
-export type ProviderTestConfig = {
+export type ProviderTestConfig = CommonProviderTestConfig &
+  (
+    | {
+        /** Set for a provider whose credential can never be proven by a
+         * free network probe — this config exists for the catalog and
+         * descriptor surfaces only, and `testProviderCredential` returns
+         * this message as a failed result without dialing anything. */
+        readonly probeless: string;
+      }
+    | {
+        /** Builds the free probe request that proves the key without spending a
+         * token: same auth layer a completion would hit, no generation cost.
+         * `baseURL` is the resolved origin for this probe — `config.baseURL`
+         * for every provider except `ollama`, which threads a caller-supplied
+         * override through here (see `TestProviderCredentialArgs.baseURL`). */
+        readonly buildProbeRequest: (
+          apiKey: string,
+          baseURL: string,
+        ) => ProbeRequest;
+      }
+  );
+
+type CommonProviderTestConfig = {
   readonly displayName: string;
   readonly baseURL: string;
   readonly adapterPlugin: AdapterPluginId;
@@ -109,12 +139,6 @@ export type ProviderTestConfig = {
    * once the credential is stored, never a claim about how this test
    * itself validates the key (it never calls this model). */
   readonly probeModel: string;
-  /** Builds the free probe request that proves the key without spending a
-   * token: same auth layer a completion would hit, no generation cost.
-   * `baseURL` is the resolved origin for this probe — `config.baseURL`
-   * for every provider except `ollama`, which threads a caller-supplied
-   * override through here (see `TestProviderCredentialArgs.baseURL`). */
-  readonly buildProbeRequest: (apiKey: string, baseURL: string) => ProbeRequest;
   /** Whether this status means "the probe proved the key," overriding the
    * default `response.ok` (2xx) check. Only Opencode Zen's probe needs
    * this: its empty-body POST can never succeed with a 2xx — the gateway
@@ -123,7 +147,8 @@ export type ProviderTestConfig = {
   readonly isKeyAccepted?: (status: number) => boolean;
   /** Whether this status/body pair means "the provider rejected the key,"
    * as opposed to a network problem or some other failure — each
-   * provider maps auth failures to its own status code. */
+   * provider maps auth failures to its own status code. Never consulted
+   * for a `probeless` provider. */
   readonly isKeyRejected: (status: number, body: string) => boolean;
 };
 
@@ -247,6 +272,47 @@ export const PROVIDER_TEST_CONFIG: Readonly<
       if (parsed instanceof type.errors) return false;
       return parsed.code === "invalid-argument";
     },
+  },
+  "xai-oauth": {
+    displayName: "xAI (Grok OAuth)",
+    // The grok-cli OAuth proxy, not api.x.ai: tokens minted by this login
+    // are rejected by the platform API surface, which expects an API key
+    // (the `xai` entry above). The proxy speaks the Responses protocol at
+    // its `/responses` path, so this provider rides `openai-responses`.
+    baseURL: "https://cli-chat-proxy.grok.com/v1",
+    adapterPlugin: "openai-responses",
+    // Kept in sync with the proxy's own model list (the upstream xai
+    // provider's XAI_DEFAULT_MODELS): the proxy rejects model ids its CLI
+    // does not serve.
+    probeModel: "grok-4.6",
+    // The proxy's own list-models route answers 401 to a bad or expired
+    // OAuth token, so the standard GET probe proves the credential.
+    buildProbeRequest: (apiKey, _baseURL) => ({
+      url: "https://cli-chat-proxy.grok.com/v1/models",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    }),
+    isKeyRejected: (status) => status === 401,
+  },
+  codex: {
+    displayName: "Codex",
+    // OpenAI's consumer authorization server and ChatGPT backend, not the
+    // platform API-key system (the `openai` entry above) — a Codex login
+    // yields a ChatGPT-subscription token the platform surface rejects.
+    baseURL: "https://chatgpt.com/backend-api",
+    adapterPlugin: "openai-responses",
+    probeModel: "gpt-5.5",
+    // Probeless, and deliberately so: Codex publishes no live model
+    // catalog (`GET /codex/models` does not exist) and has no free
+    // auth-check endpoint — the cheapest authenticated route is the
+    // billing-bearing `/codex/responses` itself. The loopback OAuth token
+    // exchange that mints the credential is the proof a real token was
+    // obtained; there is nothing a pre-flight fetch could honestly add.
+    probeless:
+      "Codex credentials cannot be tested in advance — the ChatGPT " +
+      "subscription token has no free auth-check endpoint. The OAuth " +
+      "login that produced it is itself the proof.",
+    // Never consulted (see `probeless`); required by the config shape.
+    isKeyRejected: () => false,
   },
   openrouter: {
     displayName: "OpenRouter",
@@ -468,6 +534,13 @@ export async function testProviderCredential(
 ): Promise<CredentialTestResult> {
   const config = PROVIDER_TEST_CONFIG[args.provider];
   const doFetch = args.fetchImpl ?? fetch;
+
+  // A probeless provider has no honest pre-flight probe (see `codex`):
+  // report the named reason without dialing anything.
+  if ("probeless" in config) {
+    return { ok: false, message: config.probeless };
+  }
+
   const probe = config.buildProbeRequest(
     args.apiKey,
     args.baseURL ?? config.baseURL,

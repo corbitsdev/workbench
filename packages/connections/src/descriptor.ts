@@ -6,7 +6,18 @@
 import type { CredentialTestResult } from "./credential-test";
 
 export type ConnectorAuthKind =
-  "oauth-pkce" | "oauth-code" | "api-key" | "webhook-secret";
+  | "oauth-pkce"
+  | "oauth-code"
+  // A provider whose authorization server only accepts a fixed
+  // `http://localhost:<port>` redirect URI captured by a local login
+  // server during the flow (Codex: `localhost:1455`; xai-oauth:
+  // `127.0.0.1:1456`) — unlike `oauth-pkce`/`oauth-code`, the browser
+  // never comes back to the hub, so none of `oauth-routes.ts`'s callback
+  // mechanics apply; the host runs the loopback server itself and only
+  // the descriptor's `oauth.exchange` is reused.
+  | "oauth-loopback"
+  | "api-key"
+  | "webhook-secret";
 
 /** The result of trading an authorization code for real material —
  * shared across every OAuth connector regardless of whether the
