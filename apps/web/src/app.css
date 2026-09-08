@@ -2990,6 +2990,29 @@ tr.insights-row-clickable:hover {
 /* The optional "what should this agent do?" field: visually quieter than
    the required Name field above it — a smaller label, no bold-required
    asterisk, since a name alone is the supported happy path. */
+.create-agent-panel {
+  min-width: 0;
+}
+
+.create-agent-panel [data-slot="dialog-body"] {
+  min-width: 0;
+  overflow-x: hidden;
+  padding-inline: 0.5rem 0.75rem;
+  scrollbar-gutter: stable;
+}
+
+.create-agent-panel [data-slot="dialog-body"] > *,
+.create-agent-panel .create-agent-advanced-body > * {
+  min-width: 0;
+}
+
+.create-agent-panel [data-slot="dialog-body"] input,
+.create-agent-panel [data-slot="dialog-body"] select,
+.create-agent-panel [data-slot="dialog-body"] textarea {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .create-agent-quiet-field {
   display: flex;
   flex-direction: column;
