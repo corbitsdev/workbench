@@ -491,6 +491,110 @@ describe("NewWorkbenchPickerRoute", () => {
     expect(navigated).toEqual(["/w/chan_new"]);
   });
 
+  test.each(["Research Buddy", "", null])(
+    "creating an agent with description %j preserves the draft and selects it by name",
+    async (description) => {
+      stubFetch((path) => {
+        if (path.includes("/catalog/models"))
+          return json({ data: [], nextCursor: null });
+        if (path.endsWith("/skills")) return json({ skills: [] });
+        if (path.endsWith("/agent-definitions/draft")) {
+          return json({ draft: { systemPrompt: "Research carefully." } });
+        }
+        if (path.endsWith("/agent-definitions")) {
+          return json(
+            {
+              id: "wfd_new",
+              tenantId: "tnt_1",
+              name: "research-buddy",
+              description,
+              currentVersion: "1",
+              status: "deployed",
+              createdAt: "2026-09-08T00:00:00.000Z",
+              updatedAt: "2026-09-08T00:00:00.000Z",
+              skills: [],
+            },
+            201,
+          );
+        }
+        return undefined;
+      });
+      await renderPicker();
+      await settle();
+      await act(async () => typeIntoPrompt("Research our next partner"));
+      const button = (label: string) =>
+        [...document.querySelectorAll("button")].find(
+          (element) => element.textContent === label,
+        );
+      await act(async () => button("+ Add agent")?.click());
+      expect(button("+ Create agent")).toBeDefined();
+      await act(async () => button("+ Create agent")?.click());
+      await settle();
+      expect(document.querySelector(".new-workbench-agent-popover")).toBeNull();
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+        "New agent",
+      );
+      const name = document.getElementById("create-agent-name");
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      if (!(name instanceof HTMLInputElement) || setter === undefined) {
+        throw new Error("Agent name input is missing");
+      }
+      await act(async () => {
+        setter.call(name, "Research Buddy");
+        name.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await act(async () => button("Get started")?.click());
+      await settle();
+      expect(document.querySelector('[role="dialog"]') === null).toBe(true);
+      expect(promptInput()?.value).toBe("Research our next partner");
+      expect(
+        document.querySelector(".new-workbench-agent-chip")?.textContent,
+      ).toContain("Research Buddy");
+    },
+  );
+
+  test("an empty agent list still offers creation and cancel preserves the draft", async () => {
+    stubFetch((path) => {
+      if (path.includes("/catalog/models"))
+        return json({ data: [], nextCursor: null });
+      if (path.endsWith("/skills")) return json({ skills: [] });
+      return undefined;
+    });
+    const queryClient = createTestQueryClient();
+    await renderPicker(undefined, queryClient);
+    await act(async () => {
+      queryClient.setQueryData(
+        ["tenant", "tnt_1", "invitable-definitions"],
+        [],
+      );
+      typeIntoPrompt("Keep this draft");
+    });
+    const button = (label: string) =>
+      [...document.querySelectorAll("button")].find(
+        (element) => element.textContent === label,
+      );
+    await act(async () => button("+ Add agent")?.click());
+    expect(
+      document.querySelector(".new-workbench-agent-empty")?.textContent,
+    ).toContain("No agents are available yet.");
+    expect(button("+ Create agent")).toBeDefined();
+    await act(async () => button("+ Create agent")?.click());
+    await settle();
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    const cancel = [
+      ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+    ].find((element) => element.textContent === "Cancel");
+    expect(cancel?.disabled).toBe(false);
+    await act(async () => cancel?.click());
+    await settle();
+    expect(document.querySelector('[role="dialog"]') === null).toBe(true);
+    expect(promptInput()?.value).toBe("Keep this draft");
+    expect(document.querySelector(".new-workbench-agent-chip")).toBeNull();
+  });
+
   test("Enter on a no-match agent search does not create a workbench", async () => {
     const calls = stubBlankCreate(
       undefined,
