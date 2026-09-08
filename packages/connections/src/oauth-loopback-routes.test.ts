@@ -37,6 +37,7 @@ function makeDeps(overrides?: {
     tenantId: string;
     connectorId: string;
     secret: string;
+    expiresAt: string | undefined;
     metadata: Record<string, unknown> | undefined;
     refreshSecret: string | undefined;
   }[] = [];
@@ -57,6 +58,7 @@ function makeDeps(overrides?: {
         tenantId: args.tenantId,
         connectorId: args.name,
         secret: args.secret,
+        expiresAt: args.expiresAt,
         metadata: args.metadata,
         refreshSecret: args.refreshSecret,
       });
@@ -178,10 +180,11 @@ describe("createOAuthLoopbackRoutes", () => {
     expect(persisted).toHaveLength(1);
     expect(persisted[0]?.secret).toBe("at");
     expect(persisted[0]?.refreshSecret).toBe("rt");
-    expect(persisted[0]?.metadata?.accountId).toBe("acc_42");
-    expect(persisted[0]?.metadata?.expiresAt).toBe(
-      new Date(1750000000000).toISOString(),
-    );
+    // The expiry is a first-class credential COLUMN (serving-time refresh
+    // keys on it), not free-form metadata.
+    expect(persisted[0]?.expiresAt).toBe(new Date(1750000000000).toISOString());
+    // The derived account label persists; the raw id_token never does.
+    expect(persisted[0]?.metadata).toEqual({ accountId: "acc_42" });
   });
 
   test("a non-loopback connector is refused", async () => {

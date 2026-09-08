@@ -126,14 +126,15 @@ export function createOAuthLoopbackRoutes(
           return;
         }
         const tokens = final.tokens;
+        // The derived account label is the only id_token-derived material
+        // that persists: it is a public label, while the raw id_token is a
+        // bearer-adjacent secret and metadata is stored unencrypted — so the
+        // id_token never goes there. The expiry is a first-class COLUMN
+        // (serving-time refresh keys on it), never metadata.
         const credentialMetadata: Record<string, unknown> = {
-          ...(tokens.expiresAt !== undefined
-            ? { expiresAt: new Date(tokens.expiresAt).toISOString() }
-            : {}),
           ...(tokens.accountId !== undefined
             ? { accountId: tokens.accountId }
             : {}),
-          ...(tokens.idToken !== undefined ? { idToken: tokens.idToken } : {}),
         };
         await persistConnectorCredential({
           api,
@@ -144,6 +145,9 @@ export function createOAuthLoopbackRoutes(
           credentialMetadata,
           ...(tokens.refresh !== undefined
             ? { refreshSecret: tokens.refresh }
+            : {}),
+          ...(tokens.expiresAt !== undefined
+            ? { expiresAt: new Date(tokens.expiresAt).toISOString() }
             : {}),
           ...(deps.ensureProviderFn !== undefined
             ? { ensureProviderFn: deps.ensureProviderFn }

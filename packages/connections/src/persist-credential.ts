@@ -73,8 +73,12 @@ export type PersistConnectorCredentialArgs = PersistConnectorCredentialFns & {
   readonly credentialMetadata?: Record<string, unknown>;
   /** A provider-issued refresh token — stored on the credential row's
    * own `refreshSecret` field (a secret, never metadata). Only ever set
-   * alongside `credentialMetadata`'s `expiresAt`. */
+   * alongside `expiresAt`. */
   readonly refreshSecret?: string;
+  /** ISO instant the access token expires — stored on the credential
+   * row's own `expiresAt` COLUMN, which serving-time refresh keys on
+   * (CL-7508). Never folded into `credentialMetadata`. */
+  readonly expiresAt?: string;
   /** The instance origin a url-kind connector actually points at —
    * stored as the provider row's `apiBaseUrl` and threaded into
    * `seedCatalog`'s own base-URL seam. */
@@ -138,6 +142,9 @@ export async function persistConnectorCredential(
           metadata: args.credentialMetadata,
           ...(args.refreshSecret !== undefined
             ? { refreshSecret: args.refreshSecret }
+            : {}),
+          ...(args.expiresAt !== undefined
+            ? { expiresAt: args.expiresAt }
             : {}),
         }
       : {
