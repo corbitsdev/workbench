@@ -501,6 +501,11 @@ export type OAuthLoginExecutor = (
 ) => Promise<{
   authorizeUrl: string;
   completed: Promise<OAuthLoginTokens>;
+  /** Closes the staged login's pinned-port callback listener. Called when
+   * the hub cancels the login (`oauth.login.cancel`) or the link
+   * disconnects, so an abandoned bind cannot wedge every retry of the
+   * connector until the sidecar restarts. */
+  cancel?: () => void;
 }>;
 
 /** Fail-closed placeholder: an `oauth.login.start` still gets an error
@@ -760,6 +765,11 @@ export function createHubLink(config: HubLinkConfig): HubLink {
   let handshakePending = true;
 
   const packReceiver = createPackReceiver();
+  // Staged loopback logins by requestId (see handleOAuthLoginStart).
+  const activeOAuthLogins = new Map<
+    string,
+    Awaited<ReturnType<OAuthLoginExecutor>>
+  >();
   // One sender owns the agent-state push path (`handleSyncRequest`,
   // `handleAgentUndeploy`) and the workflow-run push path
   // (`pushWorkflowRunPack`). transferIds for the two flows live in
@@ -1371,6 +1381,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
       });
       return;
     }
+    activeOAuthLogins.set(frame.requestId, handle);
     send({
       type: "oauth.login.result",
       requestId: frame.requestId,
@@ -1392,7 +1403,22 @@ export function createHubLink(config: HubLinkConfig): HubLink {
           message: err instanceof Error ? err.message : String(err),
         },
       });
+    } finally {
+      activeOAuthLogins.delete(frame.requestId);
     }
+  }
+
+  /** In-flight staged logins by requestId, so a hub `oauth.login.cancel` —
+   * or a link disconnect, where the hub will never see the terminal frame —
+   * closes the staged login's pinned-port listener. */
+  function cancelOAuthLogin(requestId: string): void {
+    activeOAuthLogins.get(requestId)?.cancel?.();
+    activeOAuthLogins.delete(requestId);
+  }
+
+  function cancelAllOAuthLogins(): void {
+    for (const handle of activeOAuthLogins.values()) handle.cancel?.();
+    activeOAuthLogins.clear();
   }
 
   async function pushWorkflowRunPack(opts: {
@@ -1600,6 +1626,9 @@ export function createHubLink(config: HubLinkConfig): HubLink {
       case "oauth.login.start":
         void handleOAuthLoginStart(frame).catch(() => undefined);
         break;
+      case "oauth.login.cancel":
+        cancelOAuthLogin(frame.requestId);
+        break;
       case "repo.pack.ack":
         handlePackAck(frame);
         break;
@@ -1723,6 +1752,10 @@ export function createHubLink(config: HubLinkConfig): HubLink {
       // belongs to the reconnect re-emit, and a lingering watchdog would only
       // fire onto a closed socket.
       registerAcker.cancelAll();
+      // The hub will never see a terminal frame for logins staged on this
+      // dead connection, and the sidecar-side listener outlives it — close
+      // those listeners so a retry can rebind the pinned ports.
+      cancelAllOAuthLogins();
       // The hub dropped every route this link held. Block workflow-run pushes
       // for the deployments it hosts until the authenticated reconnect
       // re-routes them, so the coalescing pusher does not re-ship onto the

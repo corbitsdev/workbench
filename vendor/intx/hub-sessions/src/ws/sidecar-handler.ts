@@ -672,6 +672,7 @@ export function createSidecarRouter(
   // login that failed to start.
   type PendingOAuthLogin = {
     ws: WsHandle;
+    conn: SidecarConnection;
     requestSettled: boolean;
     resolveRequest(outcome: OAuthLoginRequestOutcome): void;
     resolveFinal(outcome: OAuthLoginFinalOutcome): void;
@@ -2924,12 +2925,18 @@ export function createSidecarRouter(
       });
       const entry: PendingOAuthLogin = {
         ws: targetWs,
+        conn: targetConn,
         requestSettled: false,
         resolveRequest,
         resolveFinal: resolveCompleted,
         completed,
         timer: setTimeout(() => {
           pendingOAuthLogins.delete(requestId);
+          // Tell the sidecar to tear its callback listener down: the hub
+          // gave up, and an abandoned pinned-port bind would make every
+          // retry of this connector fail to bind until the stale login
+          // completes or the sidecar restarts.
+          targetConn.send({ type: "oauth.login.cancel", requestId });
           settleOAuthLoginError(
             requestId,
             entry,

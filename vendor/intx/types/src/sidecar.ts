@@ -995,6 +995,16 @@ export const OAuthLoginResultFrame = type({
 });
 export type OAuthLoginResultFrame = typeof OAuthLoginResultFrame.infer;
 
+/** Hub → sidecar: tear the staged login with this `requestId` down and
+ * close its pinned-port callback listener. The hub sends it when it gives
+ * up on a login (whole-login timeout) so an abandoned bind does not wedge
+ * every retry of the connector until the sidecar restarts. */
+export const OAuthLoginCancelFrame = type({
+  type: "'oauth.login.cancel'",
+  requestId: "string",
+});
+export type OAuthLoginCancelFrame = typeof OAuthLoginCancelFrame.infer;
+
 // ---------------------------------------------------------------------------
 // Discriminated frame unions
 // ---------------------------------------------------------------------------
@@ -1037,7 +1047,8 @@ export const HubFrame = MailInboundFrame.or(AgentDeployFrame)
   .or(SignalCorrelationRegisterAckFrame)
   .or(DrainDeliverFrame)
   .or(WorkflowProbeRequestFrame)
-  .or(OAuthLoginStartFrame);
+  .or(OAuthLoginStartFrame)
+  .or(OAuthLoginCancelFrame);
 export type HubFrame = typeof HubFrame.infer;
 
 /** Any frame on the wire, regardless of direction. */

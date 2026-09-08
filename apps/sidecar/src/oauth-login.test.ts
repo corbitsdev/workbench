@@ -75,4 +75,15 @@ describe("oauth loopback login service", () => {
     expect(outcome).toBeInstanceOf(OAuthCallbackPortInUseError);
     expect((outcome as OAuthCallbackPortInUseError).port).toBe(1456);
   });
+
+  test("a cancelled login frees the pinned port for the next one", async () => {
+    const service = createOAuthLoopbackLoginService();
+    const first = await service.start("codex");
+    first.cancel();
+    // If cancel did not close 1455's listener, this rebind would fail with
+    // the typed port-in-use error instead of staging a fresh login.
+    const second = await service.start("codex");
+    expect(redirectOf(second.authorizeUrl)).toBe(CODEX_REDIRECT_URI);
+    second.cancel();
+  });
 });

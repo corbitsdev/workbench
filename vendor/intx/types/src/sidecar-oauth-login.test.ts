@@ -5,6 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { type } from "arktype";
 import {
   HubFrame,
+  OAuthLoginCancelFrame,
   OAuthLoginResultFrame,
   OAuthLoginStartFrame,
   SidecarFrame,
@@ -41,6 +42,15 @@ describe("oauth.login.start frame", () => {
   test("rejects a missing requestId", () => {
     expect(
       OAuthLoginStartFrame({ type: "oauth.login.start", connectorId: "codex" }),
+    ).toBeInstanceOf(type.errors);
+  });
+
+  test("parses the cancel frame the hub sends on timeout", () => {
+    const frame = { type: "oauth.login.cancel", requestId: "req_1" };
+    expect(OAuthLoginCancelFrame(frame)).not.toBeInstanceOf(type.errors);
+    expect(HubFrame(frame)).not.toBeInstanceOf(type.errors);
+    expect(
+      OAuthLoginCancelFrame({ type: "oauth.login.cancel" }),
     ).toBeInstanceOf(type.errors);
   });
 });
