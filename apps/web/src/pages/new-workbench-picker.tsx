@@ -30,6 +30,7 @@ import { ApiQueryError, describeApiError } from "@corbits/api-query";
 import { reportError } from "@corbits/error-sink";
 
 import { useAPIQuery } from "../api";
+import { CreateAgentPanel } from "./create-agent-panel";
 import { TemplateLibraryPage } from "../workbench-templates-api";
 import { useBench } from "../bench-context";
 import {
@@ -120,6 +121,7 @@ export function NewWorkbenchPickerRoute() {
     readonly string[]
   >([]);
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
+  const [createAgentOpen, setCreateAgentOpen] = useState(false);
   const [agentQuery, setAgentQuery] = useState("");
   const [activeAgentIndex, setActiveAgentIndex] = useState(0);
   const [creating, setCreating] = useState(false);
@@ -172,6 +174,7 @@ export function NewWorkbenchPickerRoute() {
 
   useEffect(() => {
     setAgentPickerOpen(false);
+    setCreateAgentOpen(false);
     setAgentQuery("");
     setActiveAgentIndex(0);
     setSelectedAgentDefinitionIds([]);
@@ -429,10 +432,6 @@ export function NewWorkbenchPickerRoute() {
                       Couldn&apos;t load agents. You can still start without
                       one.
                     </span>
-                  ) : invitableAgents.data?.length === 0 ? (
-                    <span className="new-workbench-agent-status">
-                      No agents are available yet.
-                    </span>
                   ) : (
                     <div
                       ref={agentPickerRootRef}
@@ -508,7 +507,9 @@ export function NewWorkbenchPickerRoute() {
                           />
                           {filteredAgents.length === 0 ? (
                             <p className="new-workbench-agent-empty">
-                              No agents match that search.
+                              {invitableAgents.data?.length === 0
+                                ? "No agents are available yet."
+                                : "No agents match that search."}
                             </p>
                           ) : (
                             <div
@@ -550,6 +551,17 @@ export function NewWorkbenchPickerRoute() {
                               })}
                             </div>
                           )}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="mt-2 w-full justify-start border-t border-border"
+                            onClick={() => {
+                              closeAgentPicker();
+                              setCreateAgentOpen(true);
+                            }}
+                          >
+                            + Create agent
+                          </Button>
                         </div>
                       ) : null}
                     </div>
@@ -652,6 +664,39 @@ export function NewWorkbenchPickerRoute() {
           </>
         )}
       </div>
+      {selectedTenantId !== null && createAgentOpen ? (
+        <CreateAgentPanel
+          key={selectedTenantId}
+          open={createAgentOpen}
+          onOpenChange={setCreateAgentOpen}
+          tenantId={selectedTenantId}
+          onCreated={(definition) => {
+            queryClient.setQueryData<
+              Awaited<ReturnType<typeof listTenantInvitableDefinitions>>
+            >(
+              ["tenant", selectedTenantId, "invitable-definitions"],
+              (current) => [
+                ...(current ?? []).filter(
+                  (agent) => agent.id !== definition.id,
+                ),
+                {
+                  id: definition.id,
+                  name: definition.name,
+                  ...(definition.description !== null &&
+                  definition.description !== ""
+                    ? { description: definition.description }
+                    : {}),
+                },
+              ],
+            );
+            setSelectedAgentDefinitionIds((current) => [
+              ...current,
+              definition.id,
+            ]);
+            promptRef.current?.focus();
+          }}
+        />
+      ) : null}
     </div>
   );
 }
