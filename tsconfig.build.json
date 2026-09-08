@@ -47,6 +47,9 @@
       "path": "./packages/code-review/tsconfig.src.json"
     },
     {
+      "path": "./packages/codex-provider/tsconfig.src.json"
+    },
+    {
       "path": "./packages/collections/tsconfig.src.json"
     },
     {
@@ -177,6 +180,9 @@
     },
     {
       "path": "./packages/web-search-tools/tsconfig.src.json"
+    },
+    {
+      "path": "./packages/xai-provider/tsconfig.src.json"
     },
     {
       "path": "./vendor/intx/agent/tsconfig.src.json"

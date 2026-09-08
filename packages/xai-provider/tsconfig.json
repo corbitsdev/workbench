@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.src.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true,
+    "disableSourceOfProjectReferenceRedirect": true,
+    "declaration": false,
+    "declarationMap": false,
+    "emitDeclarationOnly": false,
+    "tsBuildInfoFile": "tsconfig.tsbuildinfo",
+    "rootDir": "../.."
+  },
+  "include": ["src"],
+  "exclude": [],
+  "references": [
+    {
+      "path": "../../vendor/intx/inference/tsconfig.src.json"
+    },
+    {
+      "path": "../../vendor/intx/types/tsconfig.src.json"
+    }
+  ]
+}
