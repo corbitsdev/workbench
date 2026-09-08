@@ -24,7 +24,6 @@ vendor/intx/hub-sessions | sawyer | 2026-11-03 | 40f873fb8059a4e9488411f2eac4428
 vendor/intx/inference | sawyer | 2026-11-03 | 81e1b31947cd8e6cac4e336d21d8a87ba063b638e0ac4ada1b0f375ec6861bf5
 vendor/intx/mail-memory | sawyer | 2026-11-03 | e281498352adbc2face631744ce9a02cb838c60a6c318961022904f0fd05d192
 vendor/intx/mailbox | sawyer | 2026-11-03 | 926bfef1b60a4ba7e600252e9ad6e37c17d387a200f79c2cbc0b3ceb612000ea
-vendor/intx/oauth-core | sawyer | 2026-10-07 | 030e27dadc9551563f74de93254eb0bdbd0558d9801b909b6c98cda88513b768
 vendor/intx/mime | sawyer | 2026-11-03 | ddf7e626172350c6a447890affc6c746b7938e04ee53af8f1d9c8cffd97d1954
 vendor/intx/types | sawyer | 2026-11-03 | 71bd6493ae6df31abd9be8ff3d2feb79260d2aae3a29a5e275945dc92ea16a12
 vendor/intx/workflow | sawyer | 2026-11-03 | c8f3a7a40d4ef429b58ba913c2faa27a5e7e98baf433dc57f864e12c907eb47a

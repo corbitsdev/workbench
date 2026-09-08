@@ -212,9 +212,6 @@
       "path": "./vendor/intx/mime/tsconfig.src.json"
     },
     {
-      "path": "./vendor/intx/oauth-core/tsconfig.src.json"
-    },
-    {
       "path": "./vendor/intx/types/tsconfig.src.json"
     },
     {
