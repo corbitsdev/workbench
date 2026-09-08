@@ -18,9 +18,11 @@
   "dependencies": {
     "@corbits/code-review": "workspace:*",
     "@corbits/connections": "workspace:*",
+    "@corbits/codex-provider": "workspace:*",
     "@corbits/jimmy-agent": "workspace:*",
     "@corbits/scout-agent": "workspace:*",
     "@corbits/workflows": "workspace:*",
+    "@corbits/xai-provider": "workspace:*",
     "arktype": "catalog:",
     "simple-icons": "^16.28.0"
   },

@@ -65,6 +65,21 @@ import {
   siSentry,
 } from "simple-icons";
 import {
+  CODEX_AUTHORIZE_EXTRA_PARAMS,
+  CODEX_AUTHORIZE_URL,
+  CODEX_CLIENT_ID,
+  CODEX_REDIRECT_URI,
+  CODEX_SCOPES,
+  CODEX_TOKEN_URL,
+} from "@corbits/codex-provider/constants";
+import {
+  XAI_AUTHORIZE_URL,
+  XAI_CLIENT_ID,
+  XAI_REDIRECT_URI,
+  XAI_SCOPES,
+  XAI_TOKEN_URL,
+} from "@corbits/xai-provider/constants";
+import {
   exchangeCodeForKey,
   OPENROUTER_AUTH_URL,
 } from "@corbits/connections/openrouter-connect";
@@ -88,6 +103,8 @@ const INFERENCE_PROVIDER_DOCS_URL: Readonly<
   openai: "https://platform.openai.com/api-keys",
   "google-genai": "https://aistudio.google.com/apikey",
   xai: "https://console.x.ai",
+  "xai-oauth": "https://x.ai",
+  codex: "https://developers.openai.com/codex",
   "opencode-zen": "https://opencode.ai/zen",
   groq: "https://console.groq.com/keys",
   deepseek: "https://platform.deepseek.com/api_keys",
@@ -131,6 +148,7 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
   const entries: Record<string, ConnectorDescriptor> = {};
   for (const [id, config] of Object.entries(PROVIDER_TEST_CONFIG)) {
     if (id === "openrouter" || id === "huggingface") continue;
+    if (id === "codex" || id === "xai-oauth") continue;
     const providerId = id as SupportedCredentialProvider;
     // Ollama collects a URL, not a secret — it has no auth layer at all
     // (see `credential-test.ts`'s own `ollama` config entry). Every
@@ -254,6 +272,175 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
               expiresAt: result.expiresAt,
             }
           : { ok: true, apiKey: result.accessToken };
+      },
+    },
+  };
+  // The two loopback OAuth providers (CL-7510). Their authorization
+  // servers only accept the fixed `http://localhost:<port>` redirect URI
+  // the provider's own CLI registers (`authKind: "oauth-loopback"`), so
+  // `buildAuthorizeUrl` ignores the hub callback URL the generic
+  // mechanics would pass and pins the provider's own redirect instead.
+  // Every endpoint, client id, and scope list come from the provider
+  // packages' own constants subpath (browser-safe, pure data — the
+  // exchange closures stay plain `fetch` so the registry can ship in the
+  // web bundle), so the descriptor can never drift from the values the
+  // adapter's own refresh path uses.
+  entries["codex"] = {
+    id: "codex",
+    displayName: PROVIDER_TEST_CONFIG.codex.displayName,
+    authKind: "oauth-loopback",
+    credentialPlugin: "http",
+    docsUrl: INFERENCE_PROVIDER_DOCS_URL.codex,
+    feedsTools: [],
+    oauth: {
+      authorizeUrl: CODEX_AUTHORIZE_URL,
+      usesPKCE: true,
+      echoesState: true,
+      deploysDefaultWorkflows: true,
+      clientId: () => CODEX_CLIENT_ID,
+      buildAuthorizeUrl: ({ state, codeChallenge, clientId }) => {
+        const url = new URL(CODEX_AUTHORIZE_URL);
+        url.searchParams.set("client_id", clientId ?? CODEX_CLIENT_ID);
+        url.searchParams.set("redirect_uri", CODEX_REDIRECT_URI);
+        url.searchParams.set("response_type", "code");
+        url.searchParams.set("scope", CODEX_SCOPES.join(" "));
+        url.searchParams.set("state", state);
+        if (codeChallenge !== undefined) {
+          url.searchParams.set("code_challenge", codeChallenge);
+        }
+        url.searchParams.set("code_challenge_method", "S256");
+        for (const [name, value] of Object.entries(
+          CODEX_AUTHORIZE_EXTRA_PARAMS,
+        )) {
+          url.searchParams.set(name, value);
+        }
+        return url;
+      },
+      exchange: async ({ code, codeVerifier }) => {
+        try {
+          const response = await fetch(CODEX_TOKEN_URL, {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded" },
+            signal: AbortSignal.timeout(10_000),
+            body: new URLSearchParams({
+              grant_type: "authorization_code",
+              code,
+              code_verifier: codeVerifier ?? "",
+              client_id: CODEX_CLIENT_ID,
+              redirect_uri: CODEX_REDIRECT_URI,
+            }).toString(),
+          });
+          if (!response.ok) {
+            return {
+              ok: false,
+              message: `Codex rejected the login (status ${response.status})`,
+            };
+          }
+          const tokens = (await response.json()) as {
+            access_token?: unknown;
+            refresh_token?: unknown;
+            expires_in?: unknown;
+          };
+          if (typeof tokens.access_token !== "string") {
+            return { ok: false, message: "Codex returned no access token" };
+          }
+          return {
+            ok: true,
+            apiKey: tokens.access_token,
+            ...(typeof tokens.refresh_token === "string"
+              ? { refreshToken: tokens.refresh_token }
+              : {}),
+            ...(typeof tokens.expires_in === "number"
+              ? {
+                  expiresAt: new Date(
+                    Date.now() + tokens.expires_in * 1000,
+                  ).toISOString(),
+                }
+              : {}),
+          };
+        } catch (cause) {
+          return {
+            ok: false,
+            message: `Codex token exchange failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+          };
+        }
+      },
+    },
+  };
+  entries["xai-oauth"] = {
+    id: "xai-oauth",
+    displayName: PROVIDER_TEST_CONFIG["xai-oauth"].displayName,
+    authKind: "oauth-loopback",
+    credentialPlugin: "http",
+    docsUrl: INFERENCE_PROVIDER_DOCS_URL["xai-oauth"],
+    feedsTools: [],
+    oauth: {
+      authorizeUrl: XAI_AUTHORIZE_URL,
+      usesPKCE: true,
+      echoesState: true,
+      deploysDefaultWorkflows: true,
+      clientId: () => XAI_CLIENT_ID,
+      buildAuthorizeUrl: ({ state, codeChallenge, clientId }) => {
+        const url = new URL(XAI_AUTHORIZE_URL);
+        url.searchParams.set("client_id", clientId ?? XAI_CLIENT_ID);
+        url.searchParams.set("redirect_uri", XAI_REDIRECT_URI);
+        url.searchParams.set("response_type", "code");
+        url.searchParams.set("scope", XAI_SCOPES.join(" "));
+        url.searchParams.set("state", state);
+        if (codeChallenge !== undefined) {
+          url.searchParams.set("code_challenge", codeChallenge);
+        }
+        url.searchParams.set("code_challenge_method", "S256");
+        return url;
+      },
+      exchange: async ({ code, codeVerifier }) => {
+        try {
+          const response = await fetch(XAI_TOKEN_URL, {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded" },
+            signal: AbortSignal.timeout(10_000),
+            body: new URLSearchParams({
+              grant_type: "authorization_code",
+              code,
+              code_verifier: codeVerifier ?? "",
+              client_id: XAI_CLIENT_ID,
+              redirect_uri: XAI_REDIRECT_URI,
+            }).toString(),
+          });
+          if (!response.ok) {
+            return {
+              ok: false,
+              message: `xAI rejected the login (status ${response.status})`,
+            };
+          }
+          const tokens = (await response.json()) as {
+            access_token?: unknown;
+            refresh_token?: unknown;
+            expires_in?: unknown;
+          };
+          if (typeof tokens.access_token !== "string") {
+            return { ok: false, message: "xAI returned no access token" };
+          }
+          return {
+            ok: true,
+            apiKey: tokens.access_token,
+            ...(typeof tokens.refresh_token === "string"
+              ? { refreshToken: tokens.refresh_token }
+              : {}),
+            ...(typeof tokens.expires_in === "number"
+              ? {
+                  expiresAt: new Date(
+                    Date.now() + tokens.expires_in * 1000,
+                  ).toISOString(),
+                }
+              : {}),
+          };
+        } catch (cause) {
+          return {
+            ok: false,
+            message: `xAI token exchange failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+          };
+        }
       },
     },
   };

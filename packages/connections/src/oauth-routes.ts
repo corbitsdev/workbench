@@ -273,6 +273,20 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
 
   const lastStartByKey = new Map<string, number>();
 
+  // A loopback OAuth connector's authorization server only accepts a fixed
+  // `http://localhost:<port>` redirect captured by the host's own login
+  // server — redirecting a browser there from this web flow would be a
+  // dead-end consent (CL-7510). These providers connect through the
+  // sidecar lane instead, so both routes refuse them with a typed error.
+  function loopbackRefusalBody(connectorId: string) {
+    return {
+      error: {
+        code: "loopback_connector",
+        message: `${connectorId} connects through a local loopback OAuth login, not this web redirect flow.`,
+      },
+    };
+  }
+
   function findOAuthDescriptor(connectorId: string) {
     const descriptor = registry[connectorId];
     if (descriptor === undefined || descriptor.oauth === undefined) {
@@ -313,6 +327,9 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
         },
         404,
       );
+    }
+    if (descriptor.authKind === "oauth-loopback") {
+      return c.json(loopbackRefusalBody(connectorId), 409);
     }
 
     const returnPath = sanitizeReturnPath(
@@ -426,6 +443,9 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
         },
         404,
       );
+    }
+    if (descriptor.authKind === "oauth-loopback") {
+      return c.json(loopbackRefusalBody(connectorId), 409);
     }
 
     // The cookie is never trusted any more than the query param was at

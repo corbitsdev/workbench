@@ -4,7 +4,6 @@
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
   "compilerOptions": {
     "types": ["bun"],
-    "noEmit": true,
     "composite": true,
     "emitDeclarationOnly": true,
     "outDir": "dist",

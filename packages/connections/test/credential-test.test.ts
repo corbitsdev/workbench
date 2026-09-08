@@ -25,6 +25,7 @@ describe("supportedCredentialProviders", () => {
         .sort(),
     ).toEqual([
       "anthropic",
+      "codex",
       "deepseek",
       "google-genai",
       "groq",
@@ -35,6 +36,7 @@ describe("supportedCredentialProviders", () => {
       "opencode-zen",
       "openrouter",
       "xai",
+      "xai-oauth",
     ]);
   });
 });
@@ -75,6 +77,62 @@ describe("providerModelSource", () => {
     expect(providerModelSource("anthropic").provider).toBe("anthropic");
     expect(providerModelSource("openai").provider).toBe("openai");
     expect(providerModelSource("google-genai").provider).toBe("google-genai");
+  });
+
+  test("maps codex and xai-oauth to the openai-responses adapter", () => {
+    expect(providerModelSource("codex").provider).toBe("openai-responses");
+    expect(providerModelSource("codex").model).toBe("gpt-5.5");
+    expect(providerModelSource("codex").baseURL).toBe(
+      "https://chatgpt.com/backend-api",
+    );
+    expect(providerModelSource("xai-oauth").provider).toBe("openai-responses");
+    expect(providerModelSource("xai-oauth").baseURL).toBe(
+      "https://cli-chat-proxy.grok.com/v1",
+    );
+  });
+});
+
+describe("codex and xai-oauth probe posture", () => {
+  test("codex never dials the network and reports why", async () => {
+    let dialed = false;
+    const fetchImpl: FetchLike = async () => {
+      dialed = true;
+      return new Response("{}", { status: 200 });
+    };
+    const result = await testProviderCredential({
+      provider: "codex",
+      apiKey: "any",
+      fetchImpl,
+    });
+    expect(dialed).toBe(false);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.message).toContain("Codex");
+  });
+
+  test("xai-oauth probes its own proxy like any bearer-token provider", async () => {
+    let url = "";
+    const fetchImpl: FetchLike = async (requested, init) => {
+      url = requested;
+      expect((init.headers as Headers).get("authorization")).toBe(
+        "Bearer tok_1",
+      );
+      return new Response(JSON.stringify({ data: [] }), { status: 200 });
+    };
+    const accepted = await testProviderCredential({
+      provider: "xai-oauth",
+      apiKey: "tok_1",
+      fetchImpl,
+    });
+    expect(url).toBe("https://cli-chat-proxy.grok.com/v1/models");
+    expect(accepted).toEqual({ ok: true });
+
+    const rejected = await testProviderCredential({
+      provider: "xai-oauth",
+      apiKey: "tok_stale",
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ error: "expired" }), { status: 401 }),
+    });
+    expect(rejected.ok).toBe(false);
   });
 });
 

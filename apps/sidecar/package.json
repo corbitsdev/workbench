@@ -16,9 +16,11 @@
   },
   "dependencies": {
     "@corbits/agent-lifecycle": "workspace:*",
+    "@corbits/codex-provider": "workspace:*",
     "@corbits/credential-providers": "workspace:*",
     "@corbits/error-sink": "workspace:*",
     "@corbits/ollama-adapter": "workspace:*",
+    "@corbits/xai-provider": "workspace:*",
     "@intx/agent": "workspace:*",
     "@intx/authz": "0.3.0",
     "@intx/crypto": "0.3.0",

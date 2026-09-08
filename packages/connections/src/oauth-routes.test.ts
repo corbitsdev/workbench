@@ -77,6 +77,11 @@ function asUser(session: { userId: string }): MiddlewareHandler<AppEnv> {
   };
 }
 
+function loopbackDescriptor(): ConnectorDescriptor {
+  const descriptor = fakeDescriptor();
+  return { ...descriptor, id: "loopback", authKind: "oauth-loopback" };
+}
+
 function mountAuthenticated(
   routes: Hono<AppEnv>,
   session: { userId: string } = { userId: "user_1" },
@@ -825,5 +830,30 @@ describe("onConnected hook", () => {
     expect(response.headers.get("location") ?? "").toContain(
       "outcome=connected",
     );
+  });
+});
+
+describe("oauth-loopback descriptors", () => {
+  test("the web start route refuses them with a typed error, never a redirect", async () => {
+    const app = connectRoutes({}, { loopback: loopbackDescriptor() });
+    const response = await app.request("/api/connections/oauth/loopback/start");
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(body.error.code).toBe("loopback_connector");
+    expect(body.error.message).toContain("loopback");
+  });
+
+  test("the callback route refuses them too", async () => {
+    const app = connectRoutes({}, { loopback: loopbackDescriptor() });
+    const response = await app.request(
+      "/api/connections/oauth/loopback/callback?code=abc",
+    );
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as {
+      error: { code: string };
+    };
+    expect(body.error.code).toBe("loopback_connector");
   });
 });

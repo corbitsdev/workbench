@@ -7,6 +7,9 @@ export const modelProviderPlugins = [
   "openai",
   "openai-compatible",
   "google-genai",
+  // Local delta (CL-7510): the workbench's loopback-OAuth providers (Codex,
+  // xai-oauth) speak OpenAI's Responses protocol and ride this plugin id.
+  "openai-responses",
 ] as const;
 export type ModelProviderPlugin = (typeof modelProviderPlugins)[number];
 export const ModelProviderPlugin = type

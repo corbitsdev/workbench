@@ -43,8 +43,17 @@ export const modelProvider = pgTable(
       .notNull()
       .references(() => tenant.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    // Local delta (CL-7510): "openai-responses" — the workbench's
+    // loopback-OAuth providers (Codex, xai-oauth) ride the Responses
+    // protocol; must stay in sync with @intx/types' modelProviderPlugins.
     plugin: text("plugin", {
-      enum: ["anthropic", "openai", "openai-compatible", "google-genai"],
+      enum: [
+        "anthropic",
+        "openai",
+        "openai-compatible",
+        "google-genai",
+        "openai-responses",
+      ],
     }).notNull(),
     baseURL: text("base_url").notNull(),
     // A provider authenticates via exactly one of credential or wallet (the

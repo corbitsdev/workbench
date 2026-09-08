@@ -69,9 +69,16 @@ describe("CREDENTIAL_PROVIDERS", () => {
   // list, so a provider added or removed there is caught here rather than
   // drifting silently.
   test("has one card for every provider the hub can test a credential against", () => {
+    // The CL-7510 loopback-OAuth ids (`codex`, `xai-oauth`) are
+    // deliberately absent: their credential only exists after a loopback
+    // OAuth login, so there is no key-paste card to render until that
+    // flow is wired — a card here would offer a paste form no key can
+    // satisfy.
+    const LOOPBACK_OAUTH_ONLY = new Set(["codex", "xai-oauth"]);
     expect(CREDENTIAL_PROVIDERS.map((p) => p.id).sort()).toEqual(
       supportedCredentialProviders()
         .map((p) => p.id)
+        .filter((id) => !LOOPBACK_OAUTH_ONLY.has(id))
         .sort(),
     );
   });

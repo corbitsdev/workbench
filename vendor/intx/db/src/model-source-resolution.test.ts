@@ -32,7 +32,7 @@ mock.module("./parse-row", () => ({
   parseModelOfferingRow: (row: Record<string, unknown>) => ({
     ...row,
     capabilities: [],
-    quirks: null,
+    quirks: (row.quirks as unknown) ?? null,
   }),
 }));
 
@@ -119,5 +119,76 @@ describe("buildSource servingRefresh seam (CL-7505)", () => {
     expect(hookCalls).toBe(0);
     expect(built.ok).toBe(true);
     if (built.ok) expect(built.material.secret).toBe("plain:enc:old");
+  });
+});
+
+// CL-7510 local delta: provider-name → adapter-registry-key dispatch. The
+// catalog `plugin` column stays the wire-format id ("openai-responses" for
+// the loopback-OAuth providers, "openai-compatible" for Ollama); only the
+// launched InferenceSource.provider is rewritten to the key the sidecar's
+// DEFAULT_ADAPTER_MANIFEST registers the custom factory under.
+describe("buildSource adapter registry-key dispatch (CL-7510)", () => {
+  resolvedRows["cred_1"] = row("api_key");
+
+  test("a codex offering dispatches under the codex registry key with its quirks threaded", async () => {
+    const codexOffering = {
+      offering: {
+        id: "off_codex",
+        priority: 0,
+        capabilities: [],
+        quirks: {
+          productName: "Codex",
+          environmentTagName: "codex_environment",
+        },
+      },
+      provider: {
+        id: "prov_codex",
+        name: "codex",
+        plugin: "openai-responses",
+        baseURL: "https://chatgpt.com/backend-api",
+        credentialId: "cred_1",
+        walletId: null,
+      },
+      model: { canonicalName: "gpt-5.5" },
+    } as unknown as Parameters<typeof buildSource>[2];
+
+    const built = await buildSource({} as never, "ten_1", codexOffering, cipher);
+    expect(built.ok).toBe(true);
+    if (built.ok) {
+      expect(built.source.provider).toBe("codex");
+      expect(built.source.quirks).toEqual({
+        productName: "Codex",
+        environmentTagName: "codex_environment",
+      });
+      expect(built.source.baseURL).toBe("https://chatgpt.com/backend-api");
+    }
+  });
+
+  test("an xai-oauth offering dispatches under the xai-oauth registry key", async () => {
+    const xaiOffering = {
+      offering: { id: "off_xai", priority: 0, capabilities: [] },
+      provider: {
+        id: "prov_xai",
+        name: "xai-oauth",
+        plugin: "openai-responses",
+        baseURL: "https://cli-chat-proxy.grok.com/v1",
+        credentialId: "cred_1",
+        walletId: null,
+      },
+      model: { canonicalName: "grok-4.6" },
+    } as unknown as Parameters<typeof buildSource>[2];
+
+    const built = await buildSource({} as never, "ten_1", xaiOffering, cipher);
+    expect(built.ok).toBe(true);
+    if (built.ok) expect(built.source.provider).toBe("xai-oauth");
+  });
+
+  test("every other provider keeps its plugin as the dispatch key", async () => {
+    const built = await buildSource({} as never, "ten_1", offering, cipher);
+    expect(built.ok).toBe(true);
+    if (built.ok) {
+      expect(built.source.provider).toBe("test-plugin");
+      expect(built.material.providerKey).toBe("test-plugin");
+    }
   });
 });

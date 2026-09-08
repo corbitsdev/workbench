@@ -17,7 +17,11 @@ import { parseToolRegistries } from "./tool-materialization";
  * Ollama deployment's `quirks.numCtx` (see `@corbits/seeding`'s
  * seed and `./workflow-substrate-factory/context-budget`) actually
  * reaches Ollama's `options.num_ctx` instead of silently falling back
- * to the built-in adapter's defaults. An operator who sets
+ * to the built-in adapter's defaults, and the CL-7510 loopback-OAuth
+ * Responses adapters (`codex`, `xai-oauth`) so a launched source —
+ * rewritten to the provider's own registry key at
+ * `@intx/db`'s `buildSource` — serves through its own adapter rather
+ * than the shared wire-format one. An operator who sets
  * `SIDECAR_ADAPTER_MANIFEST` explicitly gets exactly what they wrote --
  * this default never merges with an operator value, only replaces the
  * unset case.
@@ -27,6 +31,16 @@ const DEFAULT_ADAPTER_MANIFEST: AdapterManifest = [
     provider: "ollama",
     specifier: "@corbits/ollama-adapter",
     export: "createOllamaAdapter",
+  },
+  {
+    provider: "codex",
+    specifier: "@corbits/codex-provider",
+    export: "createCodexResponsesAdapter",
+  },
+  {
+    provider: "xai-oauth",
+    specifier: "@corbits/xai-provider",
+    export: "createXaiResponsesAdapter",
   },
 ];
 

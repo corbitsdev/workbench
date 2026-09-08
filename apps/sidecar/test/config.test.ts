@@ -15,6 +15,16 @@ const DEFAULT_MANIFEST = [
     specifier: "@corbits/ollama-adapter",
     export: "createOllamaAdapter",
   },
+  {
+    provider: "codex",
+    specifier: "@corbits/codex-provider",
+    export: "createCodexResponsesAdapter",
+  },
+  {
+    provider: "xai-oauth",
+    specifier: "@corbits/xai-provider",
+    export: "createXaiResponsesAdapter",
+  },
 ];
 
 test("parses a complete environment into config", () => {
@@ -37,6 +47,23 @@ test("parses a complete environment into config", () => {
 test("an unset SIDECAR_ADAPTER_MANIFEST defaults to the shipped Ollama adapter, not an empty registry", () => {
   const config = readSidecarConfig(VALID_ENV);
   expect(config.adapterManifest).toEqual(DEFAULT_MANIFEST);
+});
+
+test("the shipped default manifest registers the loopback-OAuth Responses adapters (CL-7510)", () => {
+  const config = readSidecarConfig(VALID_ENV);
+  const byProvider = new Map(
+    config.adapterManifest.map((entry) => [entry.provider, entry]),
+  );
+  expect(byProvider.get("codex")).toEqual({
+    provider: "codex",
+    specifier: "@corbits/codex-provider",
+    export: "createCodexResponsesAdapter",
+  });
+  expect(byProvider.get("xai-oauth")).toEqual({
+    provider: "xai-oauth",
+    specifier: "@corbits/xai-provider",
+    export: "createXaiResponsesAdapter",
+  });
 });
 
 test("an operator-set adapter manifest fully replaces the default rather than merging with it", () => {

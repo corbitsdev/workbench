@@ -14,6 +14,9 @@
       "path": "../../packages/agent-lifecycle/tsconfig.src.json"
     },
     {
+      "path": "../../packages/codex-provider/tsconfig.src.json"
+    },
+    {
       "path": "../../packages/credential-providers/tsconfig.src.json"
     },
     {
@@ -21,6 +24,9 @@
     },
     {
       "path": "../../packages/ollama-adapter/tsconfig.src.json"
+    },
+    {
+      "path": "../../packages/xai-provider/tsconfig.src.json"
     },
     {
       "path": "../../vendor/intx/agent/tsconfig.src.json"
