@@ -20,6 +20,7 @@ import {
   PluginsGallery,
   PluginConnectPanel,
   type PluginsGalleryTab,
+  type PluginPanelSubject,
 } from "@corbits/plugins-ui";
 import type { ResolvedPlugin } from "@corbits/connections/plugins";
 import { listPluginsForTenant } from "@corbits/connections/plugins";
@@ -81,7 +82,7 @@ export function PluginsRoute({
   const [skillsState, setSkillsState] = useState<SkillsState>({
     status: "loading",
   });
-  const [openPlugin, setOpenPlugin] = useState<ResolvedPlugin | null>(null);
+  const [openPlugin, setOpenPlugin] = useState<PluginPanelSubject | null>(null);
   const [createSkillOpen, setCreateSkillOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<PluginsGalleryTab>("plugins");
   const [galleryQuery, setGalleryQuery] = useState("");
@@ -100,7 +101,7 @@ export function PluginsRoute({
   const clearPendingConnectProvider = useClearPendingConnectProvider();
   const requestPluginsConnect = useRequestPluginsConnect();
   const openPluginPanel = useCallback((plugin: ResolvedPlugin) => {
-    setOpenPlugin(plugin);
+    setOpenPlugin({ kind: "connector", plugin });
     setConnectDeepLinkNotFound(false);
   }, []);
 
@@ -373,9 +374,12 @@ export function PluginsRoute({
       </PageShell>
       <PluginConnectPanel
         tenantId={tenantId}
-        plugin={openPlugin}
+        subject={openPlugin}
         onClose={() => setOpenPlugin(null)}
-        onChanged={reloadPlugins}
+        onChanged={() => {
+          reloadPlugins();
+          setOpenPlugin(null);
+        }}
       />
       <CreateSkillDialog
         open={createSkillOpen}

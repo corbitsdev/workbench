@@ -7,6 +7,7 @@
 
 import { Button } from "@corbits/react-ui";
 import type { ResolvedPlugin } from "@corbits/connections/plugins";
+import { oauthStartHref } from "@corbits/settings-ui";
 
 import { pluginIcon, pluginOutcome } from "./plugin-meta";
 import { PluginLogo } from "./plugin-logo";
@@ -25,9 +26,11 @@ const PROVENANCE_LABEL: Record<"this-workbench" | "inherited", string> = {
 };
 
 export function PluginCard({
+  tenantId,
   plugin,
   onOpen,
 }: {
+  readonly tenantId: string;
   readonly plugin: ResolvedPlugin;
   readonly onOpen: () => void;
 }) {
@@ -36,6 +39,10 @@ export function PluginCard({
     plugin.provenance !== null
       ? `${STATUS_CAPTION[plugin.status]} · ${PROVENANCE_LABEL[plugin.provenance]}`
       : STATUS_CAPTION[plugin.status];
+  const isDirectOAuthConnect =
+    plugin.status === "not_connected" &&
+    (plugin.descriptor.authKind === "oauth-pkce" ||
+      plugin.descriptor.authKind === "oauth-code");
 
   return (
     <div
@@ -58,7 +65,16 @@ export function PluginCard({
       </div>
       <div className="flex flex-none items-center gap-2">
         <span className="text-xs text-muted-foreground">{caption}</span>
-        {plugin.status === "not_connected" ? (
+        {isDirectOAuthConnect ? (
+          <Button size="sm" variant="ghost" asChild>
+            <a
+              href={oauthStartHref(tenantId, plugin.descriptor.id, "/plugins")}
+              aria-label={`Connect ${plugin.descriptor.displayName}`}
+            >
+              Connect
+            </a>
+          </Button>
+        ) : plugin.status === "not_connected" ? (
           <Button
             type="button"
             size="sm"

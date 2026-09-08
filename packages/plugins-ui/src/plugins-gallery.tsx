@@ -11,6 +11,7 @@ import {
 
 import { McpServersSection } from "./mcp-servers-section";
 import { McpPresetCard, useMcpPresetCatalog } from "./mcp-preset-cards";
+import { PluginConnectPanel } from "./plugin-connect-panel";
 import type { McpPreset } from "./mcp-servers-api";
 import {
   PLUGIN_CATEGORY_ORDER,
@@ -116,6 +117,7 @@ function PluginCatalogPanel({
   onFilterChange,
   toolCounts,
   onPresetChanged,
+  onOpenPreset,
   onOpenPlugin,
 }: {
   readonly tenantId: string;
@@ -126,6 +128,10 @@ function PluginCatalogPanel({
   readonly toolCounts: ReadonlyMap<string, number>;
   readonly onPresetChanged: (
     slug: string,
+    toolCount: number | undefined,
+  ) => void;
+  readonly onOpenPreset: (
+    preset: McpPreset,
     toolCount: number | undefined,
   ) => void;
   readonly onOpenPlugin: (plugin: ResolvedPlugin) => void;
@@ -175,10 +181,14 @@ function PluginCatalogPanel({
                 preset={entry.preset}
                 toolCount={toolCounts.get(entry.id)}
                 onChanged={(toolCount) => onPresetChanged(entry.id, toolCount)}
+                onOpen={() =>
+                  onOpenPreset(entry.preset, toolCounts.get(entry.id))
+                }
               />
             ) : (
               <PluginCard
                 key={`native:${entry.id}`}
+                tenantId={tenantId}
                 plugin={entry.plugin}
                 onOpen={() => onOpenPlugin(entry.plugin)}
               />
@@ -283,6 +293,10 @@ export function PluginsGallery({
   readonly onAutoConnectPresetHandled?: () => void;
 }) {
   const [activeFilter, setActiveFilter] = useState<PluginCatalogFilter>("All");
+  const [openPreset, setOpenPreset] = useState<{
+    readonly preset: McpPreset;
+    readonly toolCount: number | undefined;
+  } | null>(null);
   const presetCatalog = useMcpPresetCatalog(tenantId);
 
   const nativeEntries = useMemo<readonly PluginCatalogEntry[]>(
@@ -384,6 +398,9 @@ export function PluginsGallery({
                     onFilterChange={setActiveFilter}
                     toolCounts={presetCatalog.toolCounts}
                     onPresetChanged={presetCatalog.handleChanged}
+                    onOpenPreset={(preset, toolCount) =>
+                      setOpenPreset({ preset, toolCount })
+                    }
                     onOpenPlugin={onOpenPlugin}
                   />
                 )}
@@ -399,6 +416,24 @@ export function PluginsGallery({
           </div>
         )}
       </Tabs>
+      <PluginConnectPanel
+        tenantId={tenantId}
+        subject={
+          openPreset === null
+            ? null
+            : {
+                kind: "mcp-preset",
+                preset: openPreset.preset,
+                toolCount: openPreset.toolCount,
+              }
+        }
+        onClose={() => setOpenPreset(null)}
+        onChanged={(toolCount) => {
+          if (openPreset === null) return;
+          presetCatalog.handleChanged(openPreset.preset.slug, toolCount);
+          setOpenPreset(null);
+        }}
+      />
     </div>
   );
 }
