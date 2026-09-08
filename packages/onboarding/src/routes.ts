@@ -269,7 +269,14 @@ async function recentlyConnectedCredential(
   const now = args.now ?? Date.now;
   try {
     const expectedSlug = personalTenantSlug(args.userEmail, args.userId);
-    const tenant = await findPersonalTenant(api, cookies, expectedSlug);
+    // The recovery check serves the same connect flow as
+    // `testAndPersistCredential`, so it resolves through the same
+    // fallback — a seeded admin (root bench only) whose browser
+    // double-fires the callback must recover as connected, not see a
+    // strict miss turn into `state_expired` (CL-7506).
+    const tenant = await findPersonalTenant(api, cookies, expectedSlug, {
+      fallbackToFirstPrincipal: true,
+    });
     if (!tenant) return undefined;
 
     const listed = await api(
@@ -892,7 +899,9 @@ export function createOnboardingRoutes(
     let tenantId: string | undefined;
     try {
       const expectedSlug = personalTenantSlug(user.email, user.id);
-      const tenant = await findPersonalTenant(api, cookies, expectedSlug);
+      const tenant = await findPersonalTenant(api, cookies, expectedSlug, {
+        fallbackToFirstPrincipal: true,
+      });
       if (!tenant) {
         return c.json(
           makeErrorEnvelope({

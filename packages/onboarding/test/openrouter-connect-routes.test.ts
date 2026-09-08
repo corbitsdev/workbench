@@ -36,7 +36,12 @@ const MOCK_TIMESTAMP = "2026-01-01T00:00:00.000Z";
  * test that reaches one fails loudly with a 404, which is exactly the
  * proof this suite wants that the fast half never asks for a deploy.
  */
-function mockHub() {
+function mockHub(args: { tenantSlug?: string } = {}) {
+  // `tenantSlug` doubles as the seeded-admin shape: set it to "acme" and
+  // the only principal is the root bench, whose slug never equals the
+  // signed-in user's computed personal-bench slug (CL-7506).
+  const tenantSlug = args.tenantSlug ?? "user-1-user1";
+  const tenantDomain = `${tenantSlug}.bench.local`;
   const credentials: {
     id: string;
     tenantId: string;
@@ -56,7 +61,7 @@ function mockHub() {
           principalId: "prn_1",
           tenantId: "ten_1",
           tenantName: "Alice's workbench",
-          tenantSlug: "user-1-user1",
+          tenantSlug,
           kind: "user",
           status: "active",
           roles: [],
@@ -69,8 +74,8 @@ function mockHub() {
     c.json({
       id: "ten_1",
       name: "Alice's workbench",
-      slug: "user-1-user1",
-      domain: "user-1-user1.bench.local",
+      slug: tenantSlug,
+      domain: tenantDomain,
       parentId: null,
       createdAt: MOCK_TIMESTAMP,
       updatedAt: MOCK_TIMESTAMP,
@@ -503,6 +508,42 @@ describe("GET /oauth/openrouter/callback", () => {
       expect(secondRedirect.searchParams.get("tenantSlug")).toBe(
         "user-1-user1",
       );
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  // CL-7506: the recovery lookup serves the same connect flow, so it
+  // must resolve through the fallback too — a seeded admin (root bench
+  // "acme" only, slug never equals the computed "user-1-user1") whose
+  // browser double-fires the callback gets `connected`, not
+  // `state_expired`, on the second arrival.
+  test("a seeded admin's duplicate callback recovers as connected even though only the root bench matches", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: mockHub({ tenantSlug: "acme" }).fetch,
+    });
+    try {
+      const app = connectRoutes({
+        hubUrl: `http://localhost:${server.port}`,
+        openrouterConnect: {
+          exchange: async () => ({ ok: true, key: "sk-or-v1-minted" }),
+          connectCredential: connectCredentialAgainstMockHub,
+        },
+      });
+      const { response: started } = await startConnect(app);
+      const cookie = stateCookie(started);
+      const path = "/api/onboarding/oauth/openrouter/callback?code=auth_code_1";
+
+      await app.request(path, { headers: { cookie } });
+      const second = await app.request(path, { headers: { cookie } });
+
+      const secondRedirect = new URL(
+        second.headers.get("location") ?? "",
+        "https://x",
+      );
+      expect(secondRedirect.searchParams.get("outcome")).toBe("connected");
+      expect(secondRedirect.searchParams.get("tenantSlug")).toBe("acme");
     } finally {
       server.stop(true);
     }

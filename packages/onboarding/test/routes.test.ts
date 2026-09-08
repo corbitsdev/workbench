@@ -10,6 +10,7 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { createNoopCredentialCipher } from "@intx/crypto";
 import { createOnboardingRoutes } from "../src/routes";
+import { testAndPersistCredential } from "../src/complete-credential";
 import { createInMemoryPendingSeedStore } from "../src/pending-seed";
 import { createProviderHealthStore } from "@corbits/connections/provider-health";
 import { HubApiError } from "@corbits/hub-api-client";
@@ -535,5 +536,84 @@ describe("POST /complete", () => {
           line.includes("/Users/alice/abklabs/workbench/packages/memory-tools"),
       ),
     ).toBe(true);
+  });
+});
+
+// CL-7506: the connect route runs the real fast half — which resolves the
+// tenant through findPersonalTenant with the fallback flag — so a seeded
+// admin whose only membership is the root bench (slug "acme", never the
+// computed "alice-user1") must connect, not 409 no_personal_bench. The
+// persistence half is stubbed at its own seams; the hub serves the reads
+// the fast half itself performs.
+describe("POST /complete — seeded-admin fallback", () => {
+  test("connects onto the root bench when no principal matches the personal slug", async () => {
+    const hub = new Hono();
+    hub.get("/api/me/principals", (c) =>
+      c.json({
+        data: [
+          {
+            principalId: "prn_root",
+            tenantId: "ten_root",
+            tenantName: "acme",
+            tenantSlug: "acme",
+            kind: "user",
+            status: "active",
+            roles: [],
+          },
+        ],
+        nextCursor: null,
+      }),
+    );
+    hub.get("/api/tenants/ten_root", (c) =>
+      c.json({
+        id: "ten_root",
+        name: "acme",
+        slug: "acme",
+        domain: "acme.bench.local",
+        parentId: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    hub.get("/api/tenants/ten_root/assets", (c) => c.json([]));
+    hub.get("/api/tenants/ten_root/workflows/deployments", (c) => c.json([]));
+    const server = Bun.serve({ port: 0, fetch: hub.fetch });
+    try {
+      const routes = createOnboardingRoutes({
+        hubUrl: `http://localhost:${server.port}`,
+        pushWorkflow: async () => ({
+          outcome: "pushed" as const,
+          commitSha: "a".repeat(40),
+        }),
+        log: () => undefined,
+        pendingSeedStore,
+        testAndPersistCredentialFn: (args) =>
+          testAndPersistCredential({
+            ...args,
+            ensureProviderFn: async (_api, _cookies, seedArgs) =>
+              `prv_${seedArgs.name}`,
+            ensureCredentialFn: async (_api, _cookies, persistArgs) =>
+              `cred_${persistArgs.providerId}`,
+            seedCatalogFn: async () => ({ hasCompletionCapableModel: true }),
+          }),
+      });
+      const app = mountAuthenticated(routes);
+
+      const response = await app.request("/complete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ provider: "anthropic", apiKey: "sk-ant-x" }),
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        kind: string;
+        tenantSlug: string;
+      };
+      expect(body.kind).toBe("provisioning");
+      expect(body.tenantSlug).toBe("acme");
+    } finally {
+      server.stop(true);
+    }
   });
 });
