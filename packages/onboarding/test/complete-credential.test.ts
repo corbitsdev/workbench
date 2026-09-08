@@ -599,6 +599,78 @@ describe("completeCredentialSetup", () => {
     ]);
   });
 
+  test("an OAuth exchange's expiresAt reaches the credential row's column, never just metadata", async () => {
+    // The onboarding mount's share of CL-7508: the exchanged expiry is
+    // the first-class field persistConnectorCredential writes to the
+    // `expires_at` COLUMN serving-time refresh keys on — the metadata
+    // fold only types the row `oauth_token` and must not be the expiry's
+    // only ride.
+    const ensureCredentialArgs: Record<string, unknown>[] = [];
+    const api: ApiCall = async (method, path) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return principalsResponse();
+      }
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
+        return tenantResponse();
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    };
+    const baseArgs = {
+      api,
+      cookies: ["session=abc"],
+      hubUrl: "http://localhost:3000",
+      userId: "user_1",
+      userEmail: "alice@example.com",
+      provider: "huggingface" as const,
+      apiKey: "hf_oauth_minted",
+      pushWorkflow: noopPush,
+      log: collector().log,
+      seedCatalogFn: async () => ({ hasCompletionCapableModel: true }),
+      seedTenantFn: async () => {},
+    };
+
+    await completeCredentialSetup({
+      ...baseArgs,
+      credentialMetadata: { expiresAt: "2026-08-13T20:00:00.000Z" },
+      expiresAt: "2026-08-13T20:00:00.000Z",
+      ...stubPersistFns,
+      ensureCredentialFn: async (
+        _api: unknown,
+        _cookies: string[],
+        args: { providerId: string },
+      ) => {
+        ensureCredentialArgs.push(args as unknown as Record<string, unknown>);
+        return `cred_${args.providerId}`;
+      },
+    });
+    expect(ensureCredentialArgs).toEqual([
+      expect.objectContaining({
+        type: "oauth_token",
+        expiresAt: "2026-08-13T20:00:00.000Z",
+        metadata: { expiresAt: "2026-08-13T20:00:00.000Z" },
+      }),
+    ]);
+
+    // A pasted key (no exchange, no expiry) must omit the column key
+    // entirely — under exactOptionalPropertyTypes an explicit undefined
+    // is a different request shape than an absent field.
+    ensureCredentialArgs.length = 0;
+    await completeCredentialSetup({
+      ...baseArgs,
+      apiKey: "hf_pasted_key",
+      ...stubPersistFns,
+      ensureCredentialFn: async (
+        _api: unknown,
+        _cookies: string[],
+        args: { providerId: string },
+      ) => {
+        ensureCredentialArgs.push(args as unknown as Record<string, unknown>);
+        return `cred_${args.providerId}`;
+      },
+    });
+    expect(ensureCredentialArgs[0]).not.toHaveProperty("expiresAt");
+  });
+
   test("a reconnect against an expired Hugging Face credential rotates it and still reports seeded", async () => {
     const TIMESTAMP = "2026-01-01T00:00:00.000Z";
     const staleCredentialRow = () => ({

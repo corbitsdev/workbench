@@ -633,6 +633,7 @@ export function createOnboardingRoutes(
     userEmail: string;
     cookies: string[];
     apiKey: string;
+    expiresAt?: string;
     credentialMetadata?: Record<string, unknown>;
   }): Promise<TestAndPersistCredentialResult> {
     const provider = onboardingOAuthProvider(args.connectorId);
@@ -659,14 +660,13 @@ export function createOnboardingRoutes(
       pushWorkflow: deps.pushWorkflow,
       log: deps.log,
     };
-    return impl(
-      args.credentialMetadata !== undefined
-        ? {
-            ...connectCredentialArgs,
-            credentialMetadata: args.credentialMetadata,
-          }
-        : connectCredentialArgs,
-    );
+    return impl({
+      ...connectCredentialArgs,
+      ...(args.expiresAt !== undefined ? { expiresAt: args.expiresAt } : {}),
+      ...(args.credentialMetadata !== undefined
+        ? { credentialMetadata: args.credentialMetadata }
+        : {}),
+    });
   }
 
   async function recentlyConnected(args: {
