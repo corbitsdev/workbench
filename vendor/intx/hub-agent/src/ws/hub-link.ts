@@ -496,10 +496,12 @@ const defaultWorkflowProbeExecutor: WorkflowProbeExecutor = {
  * rejection (including a pinned port already in use) rides back as the
  * error arm of the `oauth.login.result` reply.
  */
-export type OAuthLoginExecutor = (connectorId: "codex" | "xai-oauth") => {
+export type OAuthLoginExecutor = (
+  connectorId: "codex" | "xai-oauth",
+) => Promise<{
   authorizeUrl: string;
   completed: Promise<OAuthLoginTokens>;
-};
+}>;
 
 /** Fail-closed placeholder: an `oauth.login.start` still gets an error
  * reply instead of hanging the hub's request. */
@@ -1355,9 +1357,9 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     // `oauth.login.result` — `started` once the executor returns the
     // authorize URL, then exactly one terminal arm — never a log-and-drop,
     // or the hub's login request hangs.
-    let handle: ReturnType<OAuthLoginExecutor>;
+    let handle: Awaited<ReturnType<OAuthLoginExecutor>>;
     try {
-      handle = oauthLoginExecutor(frame.connectorId);
+      handle = await oauthLoginExecutor(frame.connectorId);
     } catch (err) {
       send({
         type: "oauth.login.result",

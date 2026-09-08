@@ -42,6 +42,7 @@ import { createWorkflowClosureMaterializer } from "./workflow-closure-materializ
 import { MAX_INLINE_ASSET_PAYLOAD_BYTES } from "./source-asset-delivery";
 import { createDefaultHarnessBuilder } from "./default-harness";
 import { createHubLinkWatchdog } from "./hub-link-watchdog";
+import { createOAuthLoopbackLoginService } from "./oauth-login";
 import { attachShutdownRejectionHandler, runSidecarShutdown } from "./shutdown";
 import { loadOrMintSidecarKeypair } from "./signing-keypair";
 import {
@@ -216,6 +217,10 @@ const workflowProbeExecutor = createWorkflowProbeExecutor({
   }),
 });
 
+// Sidecar-hosted loopback OAuth logins (CL-7508): stages the pinned-port
+// PKCE login for codex/xai-oauth on this machine when the hub requests it.
+const oauthLoopbackLogin = createOAuthLoopbackLoginService();
+
 const watchdogLog = getLogger(["sidecar", "hub-link-watchdog"]);
 const watchdog = createHubLinkWatchdog({
   stallDeadlineMs: 60_000,
@@ -252,6 +257,7 @@ const orchestrator = createSidecarOrchestrator({
   // never echoed back to the Hub as a new sidecar-authored update.
   applyWorkflowRunPack: restoreWorkflowRunPack,
   workflowProbeExecutor,
+  oauthLoginExecutor: oauthLoopbackLogin.start,
   // Called from every connection's open handler -- the watchdog's
   // aliveness signal -- and from the close path, which immediately
   // re-schedules a reconnect that re-arms the deadline.

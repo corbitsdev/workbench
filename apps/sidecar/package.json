@@ -19,6 +19,7 @@
     "@corbits/codex-provider": "workspace:*",
     "@corbits/credential-providers": "workspace:*",
     "@corbits/error-sink": "workspace:*",
+    "@corbits/oauth-core": "github:corbitsdev/corbits-oauth-core#v0.1.1",
     "@corbits/ollama-adapter": "workspace:*",
     "@corbits/xai-provider": "workspace:*",
     "@intx/agent": "workspace:*",
