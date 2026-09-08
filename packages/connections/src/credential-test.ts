@@ -44,19 +44,17 @@ export type SupportedCredentialProvider =
  * Codex and xai-oauth are the opposite: both speak OpenAI's Responses
  * protocol, so they ride `"openai-responses"`.
  *
- * This is NOT the same string as the registry key
- * `byProvider.get(source.provider)` resolves against (CL-6586). For every
- * provider above but Ollama the two happen to be equal, because the
- * built-in `"openai-compatible"` adapter is exactly what serves them. Ollama
- * is the one exception: it needs `@corbits/ollama-adapter`'s custom factory
- * (registered under the key `"ollama"`, `apps/sidecar/src/config.ts`) so an
- * offering's `quirks.numCtx` actually reaches `options.num_ctx` — the
- * built-in adapter's stricter `quirks` schema rejects that shape outright.
- * `packages/folded-runs/src/launch.ts`'s `withOllamaAdapterKey` is the one
- * place that correction happens: it leaves `plugin`/`ModelSource.provider`
- * as the accurate `"openai-compatible"` wire format and only rewrites the
- * launched `InferenceSource.provider` — the actual registry-dispatch
- * field — for an offering whose catalog provider is named `"ollama"`.
+ * This is NOT the same string as the registry key a launched
+ * `InferenceSource.provider` dispatches against (CL-6586). The launch-time
+ * dispatch field is resolved from the catalog provider row's own `plugin`
+ * column at serving time (`vendor/intx/db/src/model-source-resolution.ts`,
+ * `buildSource`'s `provider: provider.plugin`) — there is no separate
+ * rewrite step a caller must remember to run. Ollama is the one provider
+ * whose dispatch key differs from its wire shape: it needs
+ * `@corbits/ollama-adapter`'s custom factory (registered under the key
+ * `"ollama"`, `apps/sidecar/src/config.ts`) so an offering's
+ * `quirks.numCtx` actually reaches `options.num_ctx` — the built-in
+ * adapter's stricter `quirks` schema rejects that shape outright.
  */
 export type AdapterPluginId =
   | "anthropic"
