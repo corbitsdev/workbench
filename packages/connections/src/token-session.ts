@@ -3,7 +3,7 @@
 // Inference `oauth_token` credentials go stale mid-use: the only refresh
 // the hub ran before CL-7505 was the background MCP expiry sweep, and a
 // still-valid-at-connect access token expires while a run is serving.
-// This module adapts the vendored `@corbits/oauth-core` token session
+// This module adapts the `@corbits/oauth-core` token session
 // (`createTokenSession` — skew-aware expiry, in-process coalescing of
 // concurrent refreshes) onto the shape the hub actually stores: the
 // `credential` row's `secret` / `refreshSecret` / `expiresAt` columns.
@@ -39,7 +39,7 @@ export type RefreshedTokens = {
   /** Omitted when the grant carried the prior refresh token forward. */
   readonly refreshSecret?: string;
   /** `null` when the grant stated no lifetime: the row is stored
-   * non-due (the vendored oauth-core stance — missing expiry
+   * non-due (the oauth-core stance — missing expiry
    * information is never treated as a short timer). */
   readonly expiresAt: Date | null;
 };
@@ -82,7 +82,7 @@ export function createCredentialTokenSession(
   const now = deps.now ?? Date.now;
   const skewLeadMs = deps.skewLeadMs ?? DEFAULT_SKEW_LEAD_MS;
 
-  // The vendored session keys its in-flight refresh map by profile name —
+  // The oauth-core session keys its in-flight refresh map by profile name —
   // the credential id, so concurrent calls for one credential coalesce
   // into exactly one grant while different credentials refresh in
   // parallel.

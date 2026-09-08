@@ -5,7 +5,7 @@
 // point: ahead of every send, `createTenantServingRefresh` refreshes each
 // due `oauth_token` credential in the tenant — via the connections token
 // session (`@corbits/connections`'s `createCredentialTokenSession`, over
-// the vendored `@corbits/oauth-core`), coalesced and skew-aware — and the
+// `@corbits/oauth-core`), coalesced and skew-aware — and the
 // refreshed material reaches running deployments through the existing
 // `credentials-updated` push (`pushSourceUpdates` → `sendCredentialsUpdate`).
 // The existing MCP expiry sweep keeps running as the background backstop
@@ -235,7 +235,7 @@ export function createServingRefresh(deps: ServingRefreshDeps): ServingRefresh {
             ? {}
             : { refreshSecret: refreshed.refreshToken }),
           // No `expires_in` stated: persist a NULL expiry — non-due, per
-          // the vendored oauth-core stance. Never a short artificial
+          // the oauth-core stance. Never a short artificial
           // timer that would re-refresh on every dial.
           expiresAt:
             refreshed.expiresIn === undefined
