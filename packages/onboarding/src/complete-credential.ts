@@ -170,15 +170,19 @@ export type TestAndPersistCredentialArgs = CommonArgs &
     /**
      * Free-form data stored on the credential's `metadata` field —
      * provider labels (an OAuth account id, an MCP client registration).
-     * An expiring OAuth token's expiry is NOT metadata: it is the
-     * first-class `expiresAt` field below, which writes the credential
-     * row's own column that serving-time refresh keys on. Absent for a
+     * An expiring OAuth token's expiry lives on the first-class
+     * `expiresAt` field below, which writes the credential row's own
+     * column that serving-time refresh keys on; a metadata fold may
+     * also carry it (that fold is what types the row `oauth_token`),
+     * but it must not be the expiry's only ride. Absent for a
      * pasted key or a durable-key connect flow (OpenRouter).
      */
     credentialMetadata?: Record<string, unknown>;
     /** ISO instant an OAuth exchange's access token expires — stored on
      * the credential row's own `expiresAt` COLUMN, which serving-time
-     * refresh keys on. Never folded into `credentialMetadata`. */
+     * refresh keys on. The metadata fold that types the row may also
+     * carry the expiry, but this field is the ride that lands the
+     * column. */
     expiresAt?: string;
     /** The configurable-base-URL seam `ollama` uses (see `modelSourceFor`);
      * ignored for every other provider. */
