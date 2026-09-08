@@ -20,7 +20,7 @@ vendor/intx/harness | sawyer | 2026-11-03 | 399b4e8b3b18e8969e815427625e1bfc6746
 vendor/intx/hub-agent | sawyer | 2026-11-03 | baacb5bfc3606a472c0d10f615c0b80aa2cfcbf57dc788aa4dc6f17e81eed6db
 vendor/intx/hub-api | sawyer | 2026-11-03 | 90aa5cddef828d77b62adb63186dcf82b5465926cafea1ab6b64bca263031b57
 vendor/intx/hub-common | sawyer | 2026-11-03 | 2fe74684593083f422023b2d6b337e414b5b319c6bfe02c7fa157130d7162e41
-vendor/intx/hub-sessions | sawyer | 2026-11-03 | e34705b6b15c70684b0c4e6bc2773fefaa6fb8874b04f8feaaee11f3f640c292
+vendor/intx/hub-sessions | sawyer | 2026-11-03 | f5f2bd519b16aa6de92f7f6aea81c1e2037e75f71f45a94715ea16cf7bae954f
 vendor/intx/inference | sawyer | 2026-11-03 | 81e1b31947cd8e6cac4e336d21d8a87ba063b638e0ac4ada1b0f375ec6861bf5
 vendor/intx/mail-memory | sawyer | 2026-11-03 | e281498352adbc2face631744ce9a02cb838c60a6c318961022904f0fd05d192
 vendor/intx/mailbox | sawyer | 2026-11-03 | 926bfef1b60a4ba7e600252e9ad6e37c17d387a200f79c2cbc0b3ceb612000ea

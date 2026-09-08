@@ -457,7 +457,9 @@ export type SidecarRouterConfig = {
    * listener itself.
    */
   oauthLogin?: {
-    isLocalSidecar: (identity: SidecarAuthIdentity) => boolean;
+    isLocalSidecar: (
+      identity: SidecarAuthIdentity,
+    ) => boolean | Promise<boolean>;
     /** Whole-login timeout (bind → authorize → callback → exchange).
      * Defaults to 5 minutes — a human completes the consent page. */
     timeoutMs?: number;
@@ -2898,7 +2900,7 @@ export function createSidecarRouter(
     const gate = config.oauthLogin;
     let target: { ws: WsHandle; conn: SidecarConnection } | undefined;
     for (const [ws, conn] of connections) {
-      if (gate !== undefined && gate.isLocalSidecar(conn.identity)) {
+      if (gate !== undefined && (await gate.isLocalSidecar(conn.identity))) {
         target = { ws, conn };
         break;
       }

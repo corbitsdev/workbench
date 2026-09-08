@@ -96,6 +96,11 @@ export {
   type CreateTenantConnectCredentialDeps,
 } from "./oauth-tenant-connect";
 export {
+  createOAuthLoopbackRoutes,
+  isLoopbackConnectorId,
+  type CreateOAuthLoopbackRoutesDeps,
+} from "./oauth-loopback-routes";
+export {
   isInferenceProvider,
   persistConnectorCredential,
   type PersistConnectorCredentialArgs,

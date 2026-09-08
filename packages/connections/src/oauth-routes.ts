@@ -594,6 +594,12 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
         connectCredentialArgs.credentialMetadata = {
           expiresAt: exchanged.expiresAt,
         };
+      if (exchanged.accountId !== undefined) {
+        connectCredentialArgs.credentialMetadata = {
+          ...connectCredentialArgs.credentialMetadata,
+          accountId: exchanged.accountId,
+        };
+      }
       if (exchanged.refreshToken !== undefined)
         connectCredentialArgs.refreshToken = exchanged.refreshToken;
       const result = await deps.connectCredential(connectCredentialArgs);

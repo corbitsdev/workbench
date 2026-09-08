@@ -293,6 +293,7 @@ import {
   createMcpOAuthRoutes,
   createMcpServerRoutes,
   createOAuthConnectRoutes,
+  createOAuthLoopbackRoutes,
   createTenantConnectCredential,
   createWorkflowConnectionRoutes,
   DEFAULT_RETURN_PATH_ALLOWLIST,
@@ -887,6 +888,22 @@ export async function createHub(config: HubConfig) {
     authenticateSidecar: async ({ token }) => sidecarCredentials.resolve(token),
     validateSidecarIdentity: sidecarCredentials.isCurrent,
     lookups,
+    // CL-7508: a loopback login may only run on a sidecar whose allocation
+    // was provisioned by the `process` backend — the only one that runs on
+    // this host, where the user's browser can reach the pinned ports
+    // (1455/1456). A docker/e2b-provisioned sidecar's localhost is the
+    // container or the sandbox, never this machine, so it fails the gate
+    // and the connect request gets the typed gate outcome.
+    oauthLogin: {
+      isLocalSidecar: async (identity) => {
+        const allocation = await db.query.sidecarAllocation.findFirst({
+          where: (allocation, { eq: equals }) =>
+            equals(allocation.id, identity.allocationId),
+          columns: { provisionerId: true },
+        });
+        return allocation?.provisionerId === "process";
+      },
+    },
   });
   // A finalized turn's persisted-artifact tool-call results become
   // delivery file parts (CL-6000) via `createArtifactDeliveryHandler`,
@@ -2650,6 +2667,21 @@ export async function createHub(config: HubConfig) {
         "/plugins",
         "/w/",
       ],
+    }),
+  );
+  // Loopback OAuth connect (CL-7508): codex/xai-oauth connect through a
+  // sidecar-hosted pinned-port login, not a hub redirect. The gate (a local
+  // sidecar) lives on the router; this mount only ships the authorize URL
+  // back to the caller and lets the sidecar's terminal result frame persist
+  // through the shared connect sequence.
+  app.route(
+    `${TENANT_PREFIX}/connections/oauth`,
+    createOAuthLoopbackRoutes({
+      hubUrl: config.baseUrl,
+      log: (line) => log.info`${line}`,
+      registry: CONNECTOR_REGISTRY,
+      requestOAuthLogin: (args) => sidecarRouter.requestOAuthLogin(args),
+      providerHealth: providerHealthStore,
     }),
   );
   // GitHub connect card (CL-6344): the code-review template's inline

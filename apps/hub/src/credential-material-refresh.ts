@@ -37,6 +37,8 @@ import {
 import { pushSourceUpdates, type SidecarRouter } from "@intx/hub-sessions";
 import { credentialAad, type CredentialCipher } from "@intx/types";
 import { mcpSlugOf, refreshMcpOAuthTokens } from "@corbits/connections";
+import { refreshCodexTokens } from "@corbits/codex-provider";
+import { refreshXaiTokens } from "@corbits/xai-provider";
 import type {
   OAuthClientInformationMixed,
   OAuthTokens,
@@ -55,6 +57,15 @@ const CredentialMetadata = type({
   "name?": "string",
   "clientInformation?": "unknown",
 });
+
+/** The codex credential's metadata slice: the `chatgpt_account_id` the
+ * connect flow derived from the id_token (CL-7508). */
+const CodexCredentialMetadata = type({ "accountId?": "string" });
+
+function metadataAccountId(metadata: unknown): string | undefined {
+  const parsed = CodexCredentialMetadata(metadata);
+  return parsed instanceof type.errors ? undefined : parsed.accountId;
+}
 
 /** The row shape the serving seam hands the hook (a `credential` row
  * subset; `refreshSecret` still ciphertext). */
@@ -204,6 +215,48 @@ export function createServingRefresh(deps: ServingRefreshDeps): ServingRefresh {
         const full = await deps.store.loadRow(row.id);
         if (full === null || row.refreshSecret === null) {
           throw new Error(`credential ${row.id} lost its refresh secret`);
+        }
+        // The two loopback-OAuth inference providers (CL-7508) refresh
+        // through their provider packages' own grants, not the generalized
+        // MCP `auth()` refresh: their endpoints, public client ids, and
+        // token shapes live in @corbits/{codex,xai}-provider, and the
+        // provider row's name is the connector id those packages key on.
+        if (full.providerName === "codex") {
+          const accountId = metadataAccountId(full.metadata);
+          const refreshed = await refreshCodexTokens(row.refreshSecret, now(), {
+            access: row.secret,
+            refresh: row.refreshSecret,
+            ...(row.expiresAt === null
+              ? {}
+              : { expiresAt: row.expiresAt.getTime() }),
+            // The account id rides the credential's metadata (written at
+            // connect from the id_token); carry it forward so a refresh
+            // response without an id_token never drops chatgpt-account-id.
+            ...(accountId !== undefined ? { accountId } : {}),
+          });
+          return {
+            secret: refreshed.access,
+            ...(refreshed.refresh === undefined
+              ? {}
+              : { refreshSecret: refreshed.refresh }),
+            expiresAt:
+              refreshed.expiresAt === undefined
+                ? null
+                : new Date(refreshed.expiresAt),
+          };
+        }
+        if (full.providerName === "xai-oauth") {
+          const refreshed = await refreshXaiTokens(row.refreshSecret, now());
+          return {
+            secret: refreshed.access,
+            ...(refreshed.refresh === undefined
+              ? {}
+              : { refreshSecret: refreshed.refresh }),
+            expiresAt:
+              refreshed.expiresAt === undefined
+                ? null
+                : new Date(refreshed.expiresAt),
+          };
         }
         const parsed = CredentialMetadata(full.metadata ?? {});
         const serverUrl =

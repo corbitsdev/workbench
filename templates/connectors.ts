@@ -35,6 +35,38 @@ import {
   GMAIL_SCOPE,
   GOOGLE_AUTHORIZE_URL,
 } from "@corbits/connections/gmail-connect";
+
+// Decodes the ChatGPT account id out of a Codex id_token (a JWT payload
+// claim), mirroring `@corbits/codex-provider`'s `accountIdFromIdToken`
+// without pulling that package (and its oauth-core dependency graph) into
+// this browser-shipped registry. Undefined on any malformed input — the
+// account id is a label, never a gate.
+function chatgptAccountIdFromIdToken(idToken: string): string | undefined {
+  const payload = idToken.split(".")[1];
+  if (payload === undefined) return undefined;
+  let claims: Record<string, unknown>;
+  try {
+    const base64 = payload.replaceAll("-", "+").replaceAll("_", "/");
+    claims = JSON.parse(
+      atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, "=")),
+    ) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+  if (typeof claims.chatgpt_account_id === "string") {
+    return claims.chatgpt_account_id;
+  }
+  const auth: unknown = claims["https://api.openai.com/auth"];
+  if (
+    typeof auth === "object" &&
+    auth !== null &&
+    "chatgpt_account_id" in auth
+  ) {
+    const nested = auth.chatgpt_account_id;
+    if (typeof nested === "string") return nested;
+  }
+  return undefined;
+}
 // simple-icons ships one brand per named export, tree-shaken by any bundler
 // that respects its `sideEffects: false` — importing only the brands this
 // registry actually has a listing for pulls in only those icons' data, not
@@ -321,7 +353,7 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
           const response = await fetch(CODEX_TOKEN_URL, {
             method: "POST",
             headers: { "content-type": "application/x-www-form-urlencoded" },
-            signal: AbortSignal.timeout(10_000),
+            signal: AbortSignal.timeout(15_000),
             body: new URLSearchParams({
               grant_type: "authorization_code",
               code,
@@ -340,10 +372,15 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
             access_token?: unknown;
             refresh_token?: unknown;
             expires_in?: unknown;
+            id_token?: unknown;
           };
           if (typeof tokens.access_token !== "string") {
             return { ok: false, message: "Codex returned no access token" };
           }
+          const accountId =
+            typeof tokens.id_token === "string"
+              ? chatgptAccountIdFromIdToken(tokens.id_token)
+              : undefined;
           return {
             ok: true,
             apiKey: tokens.access_token,
@@ -357,6 +394,7 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
                   ).toISOString(),
                 }
               : {}),
+            ...(accountId !== undefined ? { accountId } : {}),
           };
         } catch (cause) {
           return {
@@ -398,7 +436,7 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
           const response = await fetch(XAI_TOKEN_URL, {
             method: "POST",
             headers: { "content-type": "application/x-www-form-urlencoded" },
-            signal: AbortSignal.timeout(10_000),
+            signal: AbortSignal.timeout(15_000),
             body: new URLSearchParams({
               grant_type: "authorization_code",
               code,

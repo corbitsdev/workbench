@@ -33,6 +33,10 @@ export type OAuthExchangeResult =
        * expiring access token (Google) — stored as the credential row's
        * `refreshSecret`, never in metadata. */
       readonly refreshToken?: string;
+      /** An id_token-derived account label (codex: `chatgpt_account_id`,
+       * CL-7508) — folded into the credential's `metadata`, never stored
+       * as a secret. */
+      readonly accountId?: string;
     }
   | { readonly ok: false; readonly message: string };
 
