@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { CODEX_SCOPES } from "@corbits/codex-provider/constants";
 import { connectorDescriptors } from "@corbits/connections/registry";
 import {
   mcpPresetByName,
@@ -148,19 +149,14 @@ describe("CONNECTOR_REGISTRY", () => {
       "http://localhost:1455/auth/callback",
     );
     expect(codexUrl?.searchParams.get("originator")).toBe("codex_cli_rs");
-    // Pinned against the upstream Codex CLI's CODEX_SCOPES list — the
+    // Pinned against the upstream Codex CLI's scope grant — the
     // api.connectors.* scopes are what let the backend serve connector
     // tools to this client, and the authorization server issues them only
-    // to the Codex client id. When the @corbits/codex-provider package
-    // lands (S2), assert against its exported constant instead.
-    expect(codexUrl?.searchParams.get("scope")?.split(" ")).toEqual([
-      "openid",
-      "profile",
-      "email",
-      "offline_access",
-      "api.connectors.read",
-      "api.connectors.invoke",
-    ]);
+    // to the Codex client id. Asserted against the exported constant so
+    // the descriptor cannot drift from the adapter's refresh path.
+    expect(codexUrl?.searchParams.get("scope")?.split(" ")).toEqual(
+      CODEX_SCOPES,
+    );
 
     const xaiUrl = CONNECTOR_REGISTRY["xai-oauth"]?.oauth?.buildAuthorizeUrl({
       callbackUrl: "https://bench.example.com/ignored",

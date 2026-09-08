@@ -78,6 +78,12 @@ export const ENTRIES: readonly BrowserSafeEntry[] = [
   // wire schema, and the pure lifecycle derivation — the same read
   // `apps/web`'s workflow detail page (`workflow-detail-api.ts`) needs.
   { package: "@corbits/workflows", subpath: "./client" },
+  // The loopback OAuth descriptors in templates/connectors.ts source
+  // their client ids, redirect URIs, and scopes from these pure-data
+  // constant files so the descriptor identity and the adapter refresh
+  // path cannot drift. Plain data, zero imports — enforced here.
+  { package: "@corbits/codex-provider", subpath: "./constants" },
+  { package: "@corbits/xai-provider", subpath: "./constants" },
 ];
 
 const DENYLIST_PATTERNS: readonly RegExp[] = [
