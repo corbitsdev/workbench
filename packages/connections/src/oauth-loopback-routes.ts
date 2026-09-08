@@ -15,6 +15,9 @@
 // lands. The terminal frame arrives after this response, so the persist
 // runs detached: failures are reported, never silently dropped, and a
 // caller that needs the outcome re-checks the connection list.
+//
+// No caller ships yet: the S5 onboarding UI (apps/web) wires these POSTs;
+// tracked on CL-7511.
 import { Hono } from "hono";
 import type { TenantEnv } from "@intx/hub-api";
 import { createHubAPI } from "@corbits/hub-api-client";
