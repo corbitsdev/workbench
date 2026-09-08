@@ -83,4 +83,60 @@ describe("requestOAuthLogin cancellation", () => {
       throw new Error("expected a started retry");
     expect(sentOAuthFrames(ws, "oauth.login.start")).toHaveLength(2);
   });
+
+  test("a completed outcome resolves the pending login with its tokens", async () => {
+    const router = createAllocatedRouter({
+      oauthLogin: { isLocalSidecar: () => true, timeoutMs: 5000 },
+    });
+    const ws = await connectAllocated(router);
+
+    const pending = router.requestOAuthLogin({ connectorId: "codex" });
+    await tick();
+    const [start] = sentOAuthFrames(ws, "oauth.login.start");
+    if (start === undefined) throw new Error("no start frame sent");
+    router.handleMessage(
+      ws,
+      JSON.stringify({
+        type: "oauth.login.result",
+        requestId: start.requestId,
+        outcome: { status: "started", authorizeUrl: "https://auth.example/a" },
+      }),
+    );
+    const started = await pending;
+    if (started.status !== "started") throw new Error("expected a started login");
+
+    const tokens = { access: "at_1", refresh: "rt_1", expiresAt: 1750000000000 };
+    router.handleMessage(
+      ws,
+      JSON.stringify({
+        type: "oauth.login.result",
+        requestId: start.requestId,
+        outcome: { status: "completed", tokens },
+      }),
+    );
+    const final = await started.completed;
+    expect(final).toEqual({ status: "completed", tokens });
+  });
+
+  test("an error outcome before started settles the request as an error", async () => {
+    const router = createAllocatedRouter({
+      oauthLogin: { isLocalSidecar: () => true, timeoutMs: 5000 },
+    });
+    const ws = await connectAllocated(router);
+
+    const pending = router.requestOAuthLogin({ connectorId: "codex" });
+    await tick();
+    const [start] = sentOAuthFrames(ws, "oauth.login.start");
+    if (start === undefined) throw new Error("no start frame sent");
+    router.handleMessage(
+      ws,
+      JSON.stringify({
+        type: "oauth.login.result",
+        requestId: start.requestId,
+        outcome: { status: "error", message: "port 1455 busy" },
+      }),
+    );
+    const outcome = await pending;
+    expect(outcome).toEqual({ status: "error", message: "port 1455 busy" });
+  });
 });

@@ -2886,13 +2886,11 @@ export function createSidecarRouter(
     }
     clearTimeout(entry.timer);
     pendingOAuthLogins.delete(requestId);
-    settleOAuthLoginError(
-      requestId,
-      entry,
-      outcome.status === "error"
-        ? outcome.message
-        : "the login ended before it started",
-    );
+    if (outcome.status === "completed") {
+      entry.resolveFinal({ status: "completed", tokens: outcome.tokens });
+      return;
+    }
+    settleOAuthLoginError(requestId, entry, outcome.message);
   }
 
   async function requestOAuthLogin(args: {
