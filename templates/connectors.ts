@@ -65,6 +65,21 @@ import {
   siSentry,
 } from "simple-icons";
 import {
+  CODEX_AUTHORIZE_EXTRA_PARAMS,
+  CODEX_AUTHORIZE_URL,
+  CODEX_CLIENT_ID,
+  CODEX_REDIRECT_URI,
+  CODEX_SCOPES,
+  CODEX_TOKEN_URL,
+} from "@corbits/codex-provider/constants";
+import {
+  XAI_AUTHORIZE_URL,
+  XAI_CLIENT_ID,
+  XAI_REDIRECT_URI,
+  XAI_SCOPES,
+  XAI_TOKEN_URL,
+} from "@corbits/xai-provider/constants";
+import {
   exchangeCodeForKey,
   OPENROUTER_AUTH_URL,
 } from "@corbits/connections/openrouter-connect";
@@ -265,9 +280,11 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
   // the provider's own CLI registers (`authKind: "oauth-loopback"`), so
   // `buildAuthorizeUrl` ignores the hub callback URL the generic
   // mechanics would pass and pins the provider's own redirect instead.
-  // The constants mirror the provider CLIs' public, non-secret values the
-  // same way `openrouter-connect.ts` mirrors OpenRouter's — until the
-  // provider packages land (S2), which will replace these literals.
+  // Every endpoint, client id, and scope list come from the provider
+  // packages' own constants subpath (browser-safe, pure data — the
+  // exchange closures stay plain `fetch` so the registry can ship in the
+  // web bundle), so the descriptor can never drift from the values the
+  // adapter's own refresh path uses.
   entries["codex"] = {
     id: "codex",
     displayName: PROVIDER_TEST_CONFIG.codex.displayName,
@@ -276,46 +293,32 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
     docsUrl: INFERENCE_PROVIDER_DOCS_URL.codex,
     feedsTools: [],
     oauth: {
-      authorizeUrl: "https://auth.openai.com/oauth/authorize",
+      authorizeUrl: CODEX_AUTHORIZE_URL,
       usesPKCE: true,
       echoesState: true,
       deploysDefaultWorkflows: true,
-      // The Codex CLI's public client id — not a secret, and the
-      // authorization server only issues this flow's connector scopes to
-      // it.
-      clientId: () => "app_EMoamEEZ73f0CkXaXp7hrann",
+      clientId: () => CODEX_CLIENT_ID,
       buildAuthorizeUrl: ({ state, codeChallenge, clientId }) => {
-        const url = new URL("https://auth.openai.com/oauth/authorize");
-        if (clientId !== undefined) url.searchParams.set("client_id", clientId);
-        url.searchParams.set(
-          "redirect_uri",
-          "http://localhost:1455/auth/callback",
-        );
+        const url = new URL(CODEX_AUTHORIZE_URL);
+        url.searchParams.set("client_id", clientId ?? CODEX_CLIENT_ID);
+        url.searchParams.set("redirect_uri", CODEX_REDIRECT_URI);
         url.searchParams.set("response_type", "code");
-        // Exactly the upstream Codex CLI's scope list (CODEX_SCOPES): the
-        // two api.connectors.* scopes let the backend serve connector
-        // tools to this client, and the authorization server issues them
-        // only to the Codex client id.
-        url.searchParams.set(
-          "scope",
-          "openid profile email offline_access api.connectors.read api.connectors.invoke",
-        );
+        url.searchParams.set("scope", CODEX_SCOPES.join(" "));
         url.searchParams.set("state", state);
         if (codeChallenge !== undefined) {
           url.searchParams.set("code_challenge", codeChallenge);
         }
         url.searchParams.set("code_challenge_method", "S256");
-        // The Codex CLI's authorize request opts into a simplified consent
-        // screen and identifies the client; the authorization server
-        // rejects the plain flow for this client without these.
-        url.searchParams.set("codex_cli_simplified_flow", "true");
-        url.searchParams.set("id_token_add_organizations", "true");
-        url.searchParams.set("originator", "codex_cli_rs");
+        for (const [name, value] of Object.entries(
+          CODEX_AUTHORIZE_EXTRA_PARAMS,
+        )) {
+          url.searchParams.set(name, value);
+        }
         return url;
       },
-      exchange: async ({ code, codeVerifier, clientId }) => {
+      exchange: async ({ code, codeVerifier }) => {
         try {
-          const response = await fetch("https://auth.openai.com/oauth/token", {
+          const response = await fetch(CODEX_TOKEN_URL, {
             method: "POST",
             headers: { "content-type": "application/x-www-form-urlencoded" },
             signal: AbortSignal.timeout(10_000),
@@ -323,8 +326,8 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
               grant_type: "authorization_code",
               code,
               code_verifier: codeVerifier ?? "",
-              client_id: clientId ?? "",
-              redirect_uri: "http://localhost:1455/auth/callback",
+              client_id: CODEX_CLIENT_ID,
+              redirect_uri: CODEX_REDIRECT_URI,
             }).toString(),
           });
           if (!response.ok) {
@@ -372,21 +375,17 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
     docsUrl: INFERENCE_PROVIDER_DOCS_URL["xai-oauth"],
     feedsTools: [],
     oauth: {
-      authorizeUrl: "https://auth.x.ai/oauth2/authorize",
+      authorizeUrl: XAI_AUTHORIZE_URL,
       usesPKCE: true,
       echoesState: true,
       deploysDefaultWorkflows: true,
-      // The grok CLI's public client id — not a secret.
-      clientId: () => "b1a00492-073a-47ea-816f-4c329264a828",
+      clientId: () => XAI_CLIENT_ID,
       buildAuthorizeUrl: ({ state, codeChallenge, clientId }) => {
-        const url = new URL("https://auth.x.ai/oauth2/authorize");
-        if (clientId !== undefined) url.searchParams.set("client_id", clientId);
-        url.searchParams.set("redirect_uri", "http://127.0.0.1:1456/callback");
+        const url = new URL(XAI_AUTHORIZE_URL);
+        url.searchParams.set("client_id", clientId ?? XAI_CLIENT_ID);
+        url.searchParams.set("redirect_uri", XAI_REDIRECT_URI);
         url.searchParams.set("response_type", "code");
-        url.searchParams.set(
-          "scope",
-          "openid profile email offline_access grok-cli:access api:access",
-        );
+        url.searchParams.set("scope", XAI_SCOPES.join(" "));
         url.searchParams.set("state", state);
         if (codeChallenge !== undefined) {
           url.searchParams.set("code_challenge", codeChallenge);
@@ -394,9 +393,9 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
         url.searchParams.set("code_challenge_method", "S256");
         return url;
       },
-      exchange: async ({ code, codeVerifier, clientId }) => {
+      exchange: async ({ code, codeVerifier }) => {
         try {
-          const response = await fetch("https://auth.x.ai/oauth2/token", {
+          const response = await fetch(XAI_TOKEN_URL, {
             method: "POST",
             headers: { "content-type": "application/x-www-form-urlencoded" },
             signal: AbortSignal.timeout(10_000),
@@ -404,8 +403,8 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
               grant_type: "authorization_code",
               code,
               code_verifier: codeVerifier ?? "",
-              client_id: clientId ?? "",
-              redirect_uri: "http://127.0.0.1:1456/callback",
+              client_id: XAI_CLIENT_ID,
+              redirect_uri: XAI_REDIRECT_URI,
             }).toString(),
           });
           if (!response.ok) {
