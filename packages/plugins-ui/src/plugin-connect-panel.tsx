@@ -18,7 +18,6 @@ import {
   DialogBody,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   Input,
@@ -165,9 +164,12 @@ function ConnectedSummary({
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2">
-        <Badge tone={plugin.status === "connected" ? "success" : "danger"}>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
+        <Badge
+          className="self-start"
+          tone={plugin.status === "connected" ? "success" : "danger"}
+        >
           {plugin.status === "connected" ? "Connected" : "Needs attention"}
         </Badge>
         <span className="text-sm text-muted-foreground">
@@ -180,10 +182,12 @@ function ConnectedSummary({
           creates a connection of your own instead of changing theirs.
         </p>
       ) : null}
-      <div className="flex flex-wrap gap-2">
-        {plugin.provenance === "this-workbench" ? (
+      {plugin.provenance === "this-workbench" ? (
+        <div className="flex flex-col gap-3 border-t border-border pt-4">
+          <p className="text-sm text-muted-foreground">
+            Disconnecting removes this plugin&apos;s access from the workbench.
+          </p>
           <ConfirmButton
-            variant="destructive"
             size="sm"
             confirmLabel="Disconnect"
             disabled={busy}
@@ -191,8 +195,8 @@ function ConnectedSummary({
           >
             {busy ? "Disconnecting…" : "Disconnect"}
           </ConfirmButton>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
       {error !== null ? (
         <p className="text-sm text-destructive" role="alert">
           {error}
@@ -257,21 +261,25 @@ function McpPresetPanelContent({
 
   if (preset.connected) {
     return (
-      <div className="flex flex-col gap-3">
-        <Badge tone="success">
+      <div className="flex flex-col gap-4">
+        <Badge className="self-start" tone="success">
           {toolCount === undefined
             ? "Connected"
             : `${toolCount} tool${toolCount === 1 ? "" : "s"}`}
         </Badge>
-        <ConfirmButton
-          variant="destructive"
-          size="sm"
-          confirmLabel="Disconnect"
-          disabled={busy}
-          onConfirm={handleDisconnect}
-        >
-          {busy ? "Disconnecting…" : "Disconnect"}
-        </ConfirmButton>
+        <div className="flex flex-col gap-3 border-t border-border pt-4">
+          <p className="text-sm text-muted-foreground">
+            Disconnecting removes this plugin&apos;s access from the workbench.
+          </p>
+          <ConfirmButton
+            size="sm"
+            confirmLabel="Disconnect"
+            disabled={busy}
+            onConfirm={handleDisconnect}
+          >
+            {busy ? "Disconnecting…" : "Disconnect"}
+          </ConfirmButton>
+        </div>
         {error !== null ? (
           <p className="text-sm text-destructive" role="alert">
             {error}
@@ -392,7 +400,11 @@ export function PluginConnectPanel({
         if (!next) onClose();
       }}
     >
-      <DialogContent side="right" key={plugin?.descriptor.id ?? preset?.slug}>
+      <DialogContent
+        side="right"
+        className="max-sm:inset-x-3 max-sm:inset-y-3 max-sm:w-auto max-sm:rounded-lg max-sm:border"
+        key={plugin?.descriptor.id ?? preset?.slug}
+      >
         <DialogHeader>
           <DialogTitle>
             {plugin?.descriptor.displayName ?? preset?.displayName ?? ""}
@@ -407,7 +419,7 @@ export function PluginConnectPanel({
           </DialogDescription>
         </DialogHeader>
         {plugin !== null ? (
-          <DialogBody className="flex flex-col gap-5">
+          <DialogBody className="max-h-[calc(100dvh-8rem)] flex-none flex flex-col gap-5">
             {plugin.status !== "not_connected" ? (
               <ConnectedSummary
                 tenantId={tenantId}
@@ -500,7 +512,7 @@ export function PluginConnectPanel({
             ) : null}
           </DialogBody>
         ) : preset !== null ? (
-          <DialogBody className="flex flex-col gap-5">
+          <DialogBody className="max-h-[calc(100dvh-8rem)] flex-none flex flex-col gap-5">
             <McpPresetPanelContent
               tenantId={tenantId}
               preset={preset}
@@ -509,11 +521,6 @@ export function PluginConnectPanel({
             />
           </DialogBody>
         ) : null}
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>
-            Close
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

@@ -176,6 +176,9 @@ describe("PluginConnectPanel", () => {
       (button) => button.textContent?.includes("Disconnect") === true,
     );
     expect(disconnectButton).not.toBeUndefined();
+    expect(disconnectButton?.className).toContain("border-input");
+    expect(disconnectButton?.className).not.toContain("bg-destructive");
+    expect(container.textContent).not.toContain("Close");
 
     act(() => {
       disconnectButton?.dispatchEvent(
@@ -383,6 +386,9 @@ describe("PluginConnectPanel", () => {
     const disconnect = [...container.querySelectorAll("button")].find(
       (button) => button.textContent?.includes("Disconnect") === true,
     );
+    expect(disconnect?.className).toContain("border-input");
+    expect(disconnect?.className).not.toContain("bg-destructive");
+    expect(container.textContent).not.toContain("Close");
     act(() => {
       disconnect?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
