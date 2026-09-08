@@ -139,4 +139,35 @@ describe("requestOAuthLogin cancellation", () => {
     const outcome = await pending;
     expect(outcome).toEqual({ status: "error", message: "port 1455 busy" });
   });
+
+  test("a completed outcome before started settles the request — no hang", async () => {
+    const router = createAllocatedRouter({
+      oauthLogin: { isLocalSidecar: () => true, timeoutMs: 5000 },
+    });
+    const ws = await connectAllocated(router);
+
+    const pending = router.requestOAuthLogin({ connectorId: "codex" });
+    await tick();
+    const [start] = sentOAuthFrames(ws, "oauth.login.start");
+    if (start === undefined) throw new Error("no start frame sent");
+    // A misbehaving peer skips the started acknowledgement and answers
+    // with the terminal arm directly: the request promise must settle
+    // (as an error — the caller never saw an authorize URL) instead of
+    // hanging until the whole-login timeout.
+    router.handleMessage(
+      ws,
+      JSON.stringify({
+        type: "oauth.login.result",
+        requestId: start.requestId,
+        outcome: {
+          status: "completed",
+          tokens: { access: "at_1", refresh: "rt_1", expiresAt: 1750000000000 },
+        },
+      }),
+    );
+    const outcome = await pending;
+    if (outcome.status !== "error")
+      throw new Error("expected a request-level error");
+    expect(outcome.message).toContain("before it started");
+  });
 });

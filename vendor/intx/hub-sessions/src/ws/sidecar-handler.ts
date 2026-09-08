@@ -2887,6 +2887,16 @@ export function createSidecarRouter(
     clearTimeout(entry.timer);
     pendingOAuthLogins.delete(requestId);
     if (outcome.status === "completed") {
+      if (!entry.requestSettled) {
+        // A terminal frame arrived before the started acknowledgement —
+        // settle the request promise so the caller never hangs. The
+        // tokens are still delivered to the final consumer.
+        entry.requestSettled = true;
+        entry.resolveRequest({
+          status: "error",
+          message: "the login completed before it started",
+        });
+      }
       entry.resolveFinal({ status: "completed", tokens: outcome.tokens });
       return;
     }
