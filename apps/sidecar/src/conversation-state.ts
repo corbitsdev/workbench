@@ -474,7 +474,8 @@ export async function createDurableConversationStore(
   // does not poison the chain, while each caller still observes its own op's
   // result (or rejection) through the returned promise.
   //
-  // This serializes mirror-vs-mirror and mirror-vs-restore only. It does NOT
+  // Reactor startup reads and metadata writes join this same queue, so
+  // startup cannot read a connector metadata file mid-write. It does NOT
   // address the reactor-vs-mirror peek-snapshot window documented on
   // `runMirror` below (nothing must append to the reactor's turn array
   // between its last writeTurns and the mirror's peekTurns) -- that is a
@@ -830,8 +831,22 @@ export async function createDurableConversationStore(
     });
   }
 
+  const storageOverrides: Pick<ContextStore, "load" | "writeMetadata"> = {
+    load: (signal) => serializeStateOp(() => baseStorage.load(signal)),
+    writeMetadata: (metadata, signal) =>
+      serializeStateOp(() => baseStorage.writeMetadata(metadata, signal)),
+  };
+  const storage = new Proxy(baseStorage, {
+    get(target, prop) {
+      if (prop === "load") return storageOverrides.load;
+      if (prop === "writeMetadata") return storageOverrides.writeMetadata;
+      const value = Reflect.get(target, prop, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+
   return {
-    storage: baseStorage,
+    storage,
     restoreFromSubstrate,
     mirrorToSubstrate,
     seedInbound,
