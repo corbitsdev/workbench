@@ -30,6 +30,8 @@ import {
   type CredentialDelivery,
   type WorkflowSourceAssetMount,
   type WorkflowProjectionDefinition,
+  type OAuthLoginTokens,
+  type OAuthLoginResultFrame,
 } from "@intx/types/sidecar";
 import type {
   ConnectorThreadState,
@@ -183,6 +185,29 @@ export type WorkflowProbeResult = {
   wireHash: string;
 };
 
+/** The terminal arms of a sidecar-hosted loopback login. */
+export type OAuthLoginFinalOutcome =
+  | { status: "completed"; tokens: OAuthLoginTokens }
+  | { status: "error"; message: string };
+
+/** The typed gate outcome: no sidecar passed the locality gate. The caller
+ * must surface "connect requires a local sidecar" — the hub never hosts a
+ * loopback listener for these flows and never falls back. */
+export type OAuthLoginGateOutcome = { status: "gate"; message: string };
+
+export type OAuthLoginRequestOutcome =
+  | OAuthLoginGateOutcome
+  | { status: "error"; message: string }
+  | {
+      status: "started";
+      requestId: string;
+      authorizeUrl: string;
+      completed: Promise<OAuthLoginFinalOutcome>;
+    };
+
+/** Default whole-login timeout: a human completes the consent page. */
+export const DEFAULT_OAUTH_LOGIN_TIMEOUT_MS = 5 * 60_000;
+
 export type SidecarRouter = {
   handleOpen(ws: WsHandle): void;
   handleMessage(ws: WsHandle, data: string): void;
@@ -280,6 +305,21 @@ export type SidecarRouter = {
 
   getConnectedSidecars(): string[];
   getRoutableAddresses(): string[];
+
+  /**
+   * Start a sidecar-hosted loopback OAuth login (CL-7508) on the first
+   * connected sidecar that passes the router's locality gate. Resolves the
+   * typed gate outcome when no connected sidecar is local — never a
+   * hub-hosted fallback. On a gated-through sidecar the returned promise
+   * resolves once the sidecar reports `started` (callback server bound,
+   * authorize URL ready for the web UI to navigate); `completed` settles
+   * with the terminal outcome (tokens or a message — including bind
+   * failures like a pinned port already in use, which arrive as the
+   * error arm) or with the whole-login timeout.
+   */
+  requestOAuthLogin(args: {
+    connectorId: "codex" | "xai-oauth";
+  }): Promise<OAuthLoginRequestOutcome>;
 
   /** Typed event emitter for the receiver-dispatch surface. See
    * `sidecar-events.ts` for the event map and emission semantics. */
@@ -406,6 +446,22 @@ export type SidecarAuthenticator = (claim: {
 
 export type SidecarRouterConfig = {
   requestTimeoutMs?: number;
+  /**
+   * Sidecar-hosted OAuth loopback login policy (CL-7508). The locality gate
+   * decides whether a connected sidecar may host a loopback login: a remote
+   * sidecar's `localhost:1455`/`127.0.0.1:1456` callback opens on the wrong
+   * machine, so the hub host supplies the predicate that separates a local
+   * sidecar (same host as the user's browser) from a provisioned remote one.
+   * Absent means no sidecar is ever local and every login request resolves
+   * the typed gate outcome — the hub never falls back to hosting the
+   * listener itself.
+   */
+  oauthLogin?: {
+    isLocalSidecar: (identity: SidecarAuthIdentity) => boolean;
+    /** Whole-login timeout (bind → authorize → callback → exchange).
+     * Defaults to 5 minutes — a human completes the consent page. */
+    timeoutMs?: number;
+  };
   /** Hex-encoded 32-byte Ed25519 public key for signing deploy commits.
    * Included in agent.deploy frames so sidecars can verify pack signatures. */
   hubPublicKey?: string;
@@ -602,6 +658,25 @@ export function createSidecarRouter(
     timer: ReturnType<typeof setTimeout>;
   };
   const pendingProbes = new Map<string, PendingProbe>();
+
+  // Sidecar-hosted loopback logins (CL-7508). Keyed on requestId alone — the
+  // login is tenant-level, not address-scoped — so, like probes, the
+  // connection close sweep is the only disconnect cleanup. A login settles in
+  // two phases: the `started` arm resolves the request promise (the hub
+  // returns the authorize URL to the web UI), and exactly one terminal arm
+  // settles `completed`. An error arm that arrives before any `started`
+  // (e.g. the pinned callback port was already bound) resolves the request
+  // promise as an error and tears the entry down — the hub never waits on a
+  // login that failed to start.
+  type PendingOAuthLogin = {
+    ws: WsHandle;
+    requestSettled: boolean;
+    resolveRequest(outcome: OAuthLoginRequestOutcome): void;
+    resolveFinal(outcome: OAuthLoginFinalOutcome): void;
+    completed: Promise<OAuthLoginFinalOutcome>;
+    timer: ReturnType<typeof setTimeout>;
+  };
+  const pendingOAuthLogins = new Map<string, PendingOAuthLogin>();
 
   // Receives agent-state packs pushed from sidecars. The wire frames
   // (`repo.pack.push` / `repo.pack.done`) are shared with the
@@ -953,6 +1028,7 @@ export function createSidecarRouter(
       case "repo.pack.reject":
       case "workflow.probe.result":
       case "workflow.probe.error":
+      case "oauth.login.result":
         return true;
       case "register":
       case "reconnect":
@@ -1126,6 +1202,9 @@ export function createSidecarRouter(
         return;
       case "workflow.probe.error":
         rejectProbe(ws, frame.requestId, frame.error);
+        return;
+      case "oauth.login.result":
+        settleOAuthLogin(frame.requestId, frame.outcome);
         return;
       default:
         return assertNever(frame);
@@ -1652,6 +1731,16 @@ export function createSidecarRouter(
       clearTimeout(probe.timer);
       pendingProbes.delete(requestId);
       probe.reject(`Sidecar ${conn.sidecarId} disconnected`);
+    }
+
+    // Fail any in-flight loopback logins on this sidecar the same way: the
+    // login dies with its callback server, so a disconnect is terminal even
+    // though the browser may still be sitting on the consent page.
+    for (const [requestId, login] of pendingOAuthLogins) {
+      if (login.ws !== ws) continue;
+      clearTimeout(login.timer);
+      pendingOAuthLogins.delete(requestId);
+      settleOAuthLoginError(requestId, login, "the sidecar disconnected");
     }
 
     // Cancel any in-flight inbound pack transfers from this sidecar
@@ -2760,6 +2849,101 @@ export function createSidecarRouter(
     return sendProbeOnConnection(ws, conn, args);
   }
 
+  function settleOAuthLoginError(
+    requestId: string,
+    entry: PendingOAuthLogin,
+    message: string,
+  ): void {
+    entry.resolveFinal({ status: "error", message });
+    if (!entry.requestSettled) {
+      entry.requestSettled = true;
+      entry.resolveRequest({ status: "error", message });
+    }
+  }
+
+  function settleOAuthLogin(
+    requestId: string,
+    outcome: OAuthLoginResultFrame["outcome"],
+  ): void {
+    const entry = pendingOAuthLogins.get(requestId);
+    if (entry === undefined) {
+      logger.debug`Received oauth.login.result for uncorrelated ${requestId}`;
+      return;
+    }
+    if (outcome.status === "started") {
+      if (entry.requestSettled) return;
+      entry.requestSettled = true;
+      entry.resolveRequest({
+        status: "started",
+        requestId,
+        authorizeUrl: outcome.authorizeUrl,
+        completed: entry.completed,
+      });
+      return;
+    }
+    clearTimeout(entry.timer);
+    pendingOAuthLogins.delete(requestId);
+    settleOAuthLoginError(
+      requestId,
+      entry,
+      outcome.status === "error"
+        ? outcome.message
+        : "the login ended before it started",
+    );
+  }
+
+  async function requestOAuthLogin(args: {
+    connectorId: "codex" | "xai-oauth";
+  }): Promise<OAuthLoginRequestOutcome> {
+    const gate = config.oauthLogin;
+    let target: { ws: WsHandle; conn: SidecarConnection } | undefined;
+    for (const [ws, conn] of connections) {
+      if (gate !== undefined && gate.isLocalSidecar(conn.identity)) {
+        target = { ws, conn };
+        break;
+      }
+    }
+    if (target === undefined || gate === undefined) {
+      return {
+        status: "gate",
+        message:
+          "Connecting this provider requires a local sidecar — its login opens a pinned loopback port (codex: localhost:1455, xai-oauth: 127.0.0.1:1456) on the machine you are browsing from, and no connected sidecar is local to this hub.",
+      };
+    }
+    const targetWs = target.ws;
+    const targetConn = target.conn;
+
+    const timeoutMs = gate.timeoutMs ?? DEFAULT_OAUTH_LOGIN_TIMEOUT_MS;
+    const requestId = nextRequestId();
+    return new Promise<OAuthLoginRequestOutcome>((resolveRequest) => {
+      let resolveCompleted!: (outcome: OAuthLoginFinalOutcome) => void;
+      const completed = new Promise<OAuthLoginFinalOutcome>((resolve) => {
+        resolveCompleted = resolve;
+      });
+      const entry: PendingOAuthLogin = {
+        ws: targetWs,
+        requestSettled: false,
+        resolveRequest,
+        resolveFinal: resolveCompleted,
+        completed,
+        timer: setTimeout(() => {
+          pendingOAuthLogins.delete(requestId);
+          settleOAuthLoginError(
+            requestId,
+            entry,
+            `the login timed out after ${String(timeoutMs)}ms`,
+          );
+        }, timeoutMs),
+      };
+      pendingOAuthLogins.set(requestId, entry);
+      targetConn.send({
+        type: "oauth.login.start",
+        requestId,
+        connectorId: args.connectorId,
+      });
+    });
+  }
+
   function disconnectAllocation(target: AllocatedSidecarTarget): void {
     const current = allocatedConnections.get(target.allocationId);
     if (
@@ -2997,6 +3181,7 @@ export function createSidecarRouter(
     routeMail,
     sendRunGrants,
     sendProbeToAllocation,
+    requestOAuthLogin,
     disconnectAllocation,
     sendAgentUndeploy,
     sendSourcesUpdate,

@@ -942,6 +942,60 @@ export const WorkflowProbeErrorFrame = type({
 export type WorkflowProbeErrorFrame = typeof WorkflowProbeErrorFrame.infer;
 
 // ---------------------------------------------------------------------------
+// Sidecar-hosted OAuth loopback login (CL-7508)
+// ---------------------------------------------------------------------------
+
+/** Tokens a sidecar-hosted loopback login staged. The PKCE verifier never
+ * crosses the wire — it lives only in the sidecar's login service and dies
+ * with the callback server. */
+export const OAuthLoginTokens = type({
+  access: "string",
+  "refresh?": "string",
+  /** Epoch ms the access token expires; absent when the issuer stated no
+   * lifetime (stored non-due, never a short artificial timer). */
+  "expiresAt?": "number",
+  /** The issuer's id_token when it issues one (xai-oauth retains it). */
+  "idToken?": "string",
+  /** id_token-derived account label (codex: `chatgpt_account_id`), the
+   * value `accountIdFromIdToken` decodes; threaded into credential
+   * metadata hub-side. */
+  "accountId?": "string",
+});
+export type OAuthLoginTokens = typeof OAuthLoginTokens.infer;
+
+/** Outcome arms a `oauth.login.result` frame may carry. A login sends
+ * `started` once its callback server is bound and the authorize URL is
+ * ready for the web UI to navigate; exactly one terminal arm (`completed`
+ * or `error`) follows. */
+export const OAuthLoginOutcome = type({
+  status: "'started'",
+  authorizeUrl: "string",
+})
+  .or({ status: "'completed'", tokens: OAuthLoginTokens })
+  .or({ status: "'error'", message: "string" });
+export type OAuthLoginOutcome = typeof OAuthLoginOutcome.infer;
+
+/** Hub → sidecar: run the named connector's loopback PKCE login on the
+ * machine this sidecar runs on. The connector must pin a fixed loopback
+ * redirect (`codex` → localhost:1455, `xai-oauth` → 127.0.0.1:1456); the
+ * hub never hosts a listener for these flows. */
+export const OAuthLoginStartFrame = type({
+  type: "'oauth.login.start'",
+  requestId: "string",
+  connectorId: "'codex' | 'xai-oauth'",
+});
+export type OAuthLoginStartFrame = typeof OAuthLoginStartFrame.infer;
+
+/** Sidecar → hub: the staged progress / terminal outcome of the login the
+ * hub requested with the same `requestId`. */
+export const OAuthLoginResultFrame = type({
+  type: "'oauth.login.result'",
+  requestId: "string",
+  outcome: OAuthLoginOutcome,
+});
+export type OAuthLoginResultFrame = typeof OAuthLoginResultFrame.infer;
+
+// ---------------------------------------------------------------------------
 // Discriminated frame unions
 // ---------------------------------------------------------------------------
 
@@ -963,7 +1017,8 @@ export const SidecarFrame = RegisterFrame.or(ReconnectFrame)
   .or(PackRejectFrame)
   .or(MailInboundAckFrame)
   .or(WorkflowProbeResultFrame)
-  .or(WorkflowProbeErrorFrame);
+  .or(WorkflowProbeErrorFrame)
+  .or(OAuthLoginResultFrame);
 export type SidecarFrame = typeof SidecarFrame.infer;
 
 /** All frame types the hub sends to the sidecar. */
@@ -981,7 +1036,8 @@ export const HubFrame = MailInboundFrame.or(AgentDeployFrame)
   .or(RunGrantsFrame)
   .or(SignalCorrelationRegisterAckFrame)
   .or(DrainDeliverFrame)
-  .or(WorkflowProbeRequestFrame);
+  .or(WorkflowProbeRequestFrame)
+  .or(OAuthLoginStartFrame);
 export type HubFrame = typeof HubFrame.infer;
 
 /** Any frame on the wire, regardless of direction. */
