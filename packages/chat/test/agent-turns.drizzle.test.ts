@@ -20,7 +20,7 @@ import {
 } from "../src/agent-turns";
 import { applyChatMigrations } from "../src/migrations";
 import { createDrizzleRoomMessageStore } from "../src/room-messages";
-import { listWorkbenchReplyActivity } from "../src/workbench-reply-activity";
+import { listWorkbenchLiveState } from "../src/workbench-reply-activity";
 import { dbGate } from "../../../scripts/e2e/db-gate";
 
 function scratchUrlFor(e2eUrl: string): string {
@@ -263,7 +263,7 @@ describeIfDb("createDrizzleAgentTurnStore", () => {
       };
       const activity = async () =>
         (
-          await listWorkbenchReplyActivity({
+          await listWorkbenchLiveState({
             tenantId: TENANT,
             workbenchIds: [workbenchId],
             readCursors,

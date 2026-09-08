@@ -95,15 +95,15 @@ export function renamePayload(
 }
 
 /**
- * Optional row signals (shared / activity / time / unread). The platform's
- * listing carries `unreadCount`/`lastActivityAt`/`activity` when a mailbox
+ * Optional row signals (shared / live / time / unread). The platform's
+ * listing carries `unreadCount`/`lastActivityAt`/`live` when a mailbox
  * could be resolved, and `sharedLabel` for a conversation projected in via
  * bilateral trust. Render only when present; never invent counts or
  * timestamps.
  */
 export type WorkbenchRowSignals = {
   readonly sharedLabel?: string;
-  readonly activity?: Workbench["activity"];
+  readonly live?: Workbench["live"];
   readonly time?: string;
   readonly unread?: number;
 };
@@ -118,7 +118,7 @@ export type WorkbenchRowSignals = {
 export function workbenchRowSignals(
   workbench: Pick<
     Workbench,
-    "unreadCount" | "lastActivityAt" | "activity" | "sharedLabel"
+    "unreadCount" | "lastActivityAt" | "live" | "sharedLabel"
   >,
   isOpen: boolean,
 ): WorkbenchRowSignals {
@@ -126,12 +126,12 @@ export function workbenchRowSignals(
     ...(workbench.sharedLabel !== undefined
       ? { sharedLabel: workbench.sharedLabel }
       : {}),
-    ...(workbench.activity !== undefined
+    ...(workbench.live !== undefined
       ? {
-          activity:
-            isOpen && workbench.activity === "reply-ready"
+          live:
+            isOpen && workbench.live === "reply-ready"
               ? "idle"
-              : workbench.activity,
+              : workbench.live,
         }
       : {}),
     ...(workbench.lastActivityAt !== undefined
@@ -305,7 +305,7 @@ function WorkbenchRow({
 
   const displayTitle =
     displayWorkbenchTitle(title, workbench.id) || CHAT_STRINGS.unnamedWorkbench;
-  const { sharedLabel, activity, time, unread } = signals;
+  const { sharedLabel, live, time, unread } = signals;
   const hasUnread = typeof unread === "number" && unread > 0;
 
   return (
@@ -323,7 +323,7 @@ function WorkbenchRow({
         data-unread={hasUnread ? "true" : undefined}
         onClick={onSelect}
       >
-        <span className="shell-ch-avatar" data-activity={activity}>
+        <span className="shell-ch-avatar" data-live={live}>
           {workbench.kind === "chat" ? (
             <CorbitAvatar size="sm" ariaLabel={displayTitle} />
           ) : (
@@ -331,14 +331,14 @@ function WorkbenchRow({
               {displayTitle.slice(0, 1).toUpperCase()}
             </span>
           )}
-          {activity === "working" ? (
+          {live === "working" ? (
             <span
               className="shell-ch-orbit"
               role="img"
               aria-label="Agent working"
               title="Agent working"
             />
-          ) : activity === "reply-ready" ? (
+          ) : live === "reply-ready" ? (
             <span
               className="shell-ch-completion"
               role="img"
@@ -372,7 +372,7 @@ function WorkbenchRow({
           {time !== undefined && time !== "" ? (
             <span className="shell-ch-time">{time}</span>
           ) : null}
-          {hasUnread && activity !== "reply-ready" ? (
+          {hasUnread && live !== "reply-ready" ? (
             <Badge tone="accent">{unread}</Badge>
           ) : null}
         </span>

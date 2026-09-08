@@ -4,7 +4,7 @@ import {
   AGENT_TURN_STALE_MS,
 } from "../src/agent-turns";
 import { createInMemoryRoomMessageStore } from "../src/room-messages";
-import { listWorkbenchReplyActivity } from "../src/workbench-reply-activity";
+import { listWorkbenchLiveState } from "../src/workbench-reply-activity";
 import { createChatRoutes } from "../src/routes";
 import { buildDeps, createWorkbench, mountAs, TENANT } from "./test-support";
 
@@ -20,7 +20,7 @@ function fixture() {
     requestMessageIds: ["request_1"],
   };
   const activity = () =>
-    listWorkbenchReplyActivity({
+    listWorkbenchLiveState({
       tenantId: TENANT.id,
       workbenchIds: ["wb_1"],
       readCursors,
@@ -174,9 +174,7 @@ describe("sidebar reply activity", () => {
     const readList = async () =>
       (await app.request("/workbenches?kind=workbench")).json();
     expect(await readList()).toEqual({
-      items: [
-        expect.objectContaining({ id: workbench.id, activity: "working" }),
-      ],
+      items: [expect.objectContaining({ id: workbench.id, live: "working" })],
     });
     const reply = await f.reply({ workbenchId: workbench.id });
     await f.agentTurns.finishTurn({
@@ -188,7 +186,7 @@ describe("sidebar reply activity", () => {
     expect(await readList()).toEqual({
       items: [
         expect.objectContaining({
-          activity: "reply-ready",
+          live: "reply-ready",
           preview: "Here is the revised draft.",
         }),
       ],
@@ -206,7 +204,7 @@ describe("sidebar reply activity", () => {
     );
     expect(response.status).toBe(200);
     expect(await readList()).toEqual({
-      items: [expect.objectContaining({ activity: "idle" })],
+      items: [expect.objectContaining({ live: "idle" })],
     });
   });
 });

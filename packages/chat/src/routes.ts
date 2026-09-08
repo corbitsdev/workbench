@@ -64,7 +64,7 @@ import {
   validateSettingsPatch,
   visibilityOf,
 } from "./workbench-settings";
-import { listWorkbenchReplyActivity } from "./workbench-reply-activity";
+import { listWorkbenchLiveState } from "./workbench-reply-activity";
 import { postRoomMessage, type RoomMessageStore } from "./room-messages";
 import { WorkbenchOnboardingStep } from "./blocks";
 import type { ConnectGithubBlockData } from "./blocks";
@@ -1470,7 +1470,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         }),
       });
 
-      const replyActivity = await listWorkbenchReplyActivity({
+      const liveState = await listWorkbenchLiveState({
         tenantId: tenant.id,
         workbenchIds: rows.map((row) => row.workbenchId),
         readCursors: cursorByWorkbenchId,
@@ -1485,13 +1485,13 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             ? withTenancy(workbenchView(row), link)
             : { ...workbenchView(row), tenancy: null, legacy: true };
         const activity = activityByWorkbenchId[row.workbenchId];
-        const withReplyActivity = {
+        const withLiveState = {
           ...view,
-          activity: replyActivity.get(row.workbenchId),
+          live: liveState.get(row.workbenchId),
         };
-        if (activity === undefined) return withReplyActivity;
+        if (activity === undefined) return withLiveState;
         const withUnread = {
-          ...withReplyActivity,
+          ...withLiveState,
           unreadCount: activity.unreadCount,
         };
         if (activity.lastActivityAt === undefined) return withUnread;
@@ -1553,7 +1553,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                   tenancy: null,
                   legacy: false,
                   sharedLabel,
-                  activity: "idle",
+                  live: "idle",
                 });
               }
               return items;

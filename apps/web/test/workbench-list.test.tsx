@@ -221,7 +221,7 @@ describe("WorkbenchList avatar activity", () => {
             kind: "chat",
             pinned: false,
             participants: [],
-            activity,
+            live: activity,
             unreadCount: 1,
             preview: "Here is the revised draft.",
             lastActivityAt: new Date().toISOString(),
