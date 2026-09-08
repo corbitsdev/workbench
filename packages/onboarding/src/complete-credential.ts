@@ -198,10 +198,29 @@ export type CompleteCredentialArgs = CommonArgs &
     seedTenantFn?: (args: SeedTenantArgs) => ReturnType<typeof seedTenant>;
   };
 
+/**
+ * Resolves the tenant a caller's bench work lands on. An exact slug match
+ * against `expectedSlug` (the computed personal-bench slug) always wins.
+ *
+ * By default the match is strict: a mismatch resolves to `undefined`.
+ * The boot seeder (`apps/hub/src/system-seed.ts`) depends on that — it
+ * must keep throwing until the root bench is actually visible to the
+ * admin, never seed onto the first principal that happens to be visible.
+ *
+ * The connect-flow callers (`testAndPersistCredential`, the OAuth
+ * duplicate-callback recovery `recentlyConnectedCredential`, and the
+ * `/complete-setup` route) pass `fallbackToFirstPrincipal` so a caller
+ * that already has a bench but under a different slug — a seeded admin
+ * whose only membership is the root bench (CL-7506) — resolves to the
+ * first principal in page order instead of hard-failing
+ * `no-personal-bench`. Only a response with zero principals yields
+ * `undefined`, with or without the flag.
+ */
 export async function findPersonalTenant(
   api: ApiCall,
   cookies: string[],
   expectedSlug: string,
+  opts: { fallbackToFirstPrincipal?: boolean } = {},
 ): Promise<PersonalTenant | undefined> {
   const response = await api("GET", "/api/me/principals", undefined, cookies);
   const summary = parseAs(
@@ -209,7 +228,9 @@ export async function findPersonalTenant(
     response.data,
     "principals response",
   );
-  const own = summary.data.find((p) => p.tenantSlug === expectedSlug);
+  const own =
+    summary.data.find((p) => p.tenantSlug === expectedSlug) ??
+    (opts.fallbackToFirstPrincipal ? summary.data[0] : undefined);
   if (!own) return undefined;
 
   const tenantResponse = await api(
@@ -408,7 +429,14 @@ export async function testAndPersistCredential(
   args: TestAndPersistCredentialArgs,
 ): Promise<TestAndPersistCredentialResult> {
   const expectedSlug = personalTenantSlug(args.userEmail, args.userId);
-  const tenant = await findPersonalTenant(args.api, args.cookies, expectedSlug);
+  const tenant = await findPersonalTenant(
+    args.api,
+    args.cookies,
+    expectedSlug,
+    {
+      fallbackToFirstPrincipal: true,
+    },
+  );
   if (!tenant) return { kind: "no-personal-bench" };
 
   const descriptor = CONNECTOR_REGISTRY[args.provider];

@@ -161,6 +161,67 @@ describe("POST /complete-setup", () => {
     }
   });
 
+  // CL-7506: a seeded admin's only membership is the root bench, whose
+  // slug is the org's own — never the computed personal-bench slug. The
+  // fallback must resolve that principal here too, answering from the
+  // read instead of 409ing.
+  test("a root-bench-only admin (slug mismatch) resolves through the fallback and reports unseeded, not 409", async () => {
+    const hub = new Hono();
+    hub.get("/api/me/principals", (c) =>
+      c.json({
+        data: [
+          {
+            principalId: "prn_root",
+            tenantId: "ten_root",
+            tenantName: "acme",
+            tenantSlug: "acme",
+            kind: "user",
+            status: "active",
+            roles: [],
+          },
+        ],
+        nextCursor: null,
+      }),
+    );
+    hub.get("/api/tenants/ten_root", (c) =>
+      c.json({
+        id: "ten_root",
+        name: "acme",
+        slug: "acme",
+        domain: "acme.bench.local",
+        parentId: null,
+        createdAt: TIMESTAMP,
+        updatedAt: TIMESTAMP,
+      }),
+    );
+    hub.get("/api/tenants/ten_root/assets", (c) => c.json([]));
+    hub.get("/api/tenants/ten_root/workflows/deployments", (c) => c.json([]));
+    const server = Bun.serve({ port: 0, fetch: hub.fetch });
+    try {
+      const app = mountAuthenticated(
+        createOnboardingRoutes({
+          hubUrl: `http://localhost:${server.port}`,
+          pushWorkflow: async () => ({
+            outcome: "pushed" as const,
+            commitSha: "a".repeat(40),
+          }),
+          log: () => undefined,
+          pendingSeedStore: createInMemoryPendingSeedStore(testCipher()),
+        }),
+      );
+
+      const response = await app.request("/api/onboarding/complete-setup", {
+        method: "POST",
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { kind: string };
+      expect(body.kind).toBe("unseeded");
+    } finally {
+      server.stop(true);
+    }
+  });
+
   test("an already fully seeded bench reports ready without needing a pending row", async () => {
     const hub = new Hono();
     principalsRoute(hub);
