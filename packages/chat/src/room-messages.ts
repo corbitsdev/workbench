@@ -96,6 +96,10 @@ export interface RoomMessageStore {
     input: PostRoomMessageInput & { readonly id: string },
   ): Promise<RoomMessage>;
   listMessages(input: ListRoomMessagesInput): Promise<ListedRoomMessages>;
+  getMessages(input: {
+    readonly tenantId: string;
+    readonly messageIds: readonly string[];
+  }): Promise<readonly RoomMessage[]>;
   getMessage(input: {
     readonly tenantId: string;
     readonly workbenchId: string;
@@ -432,6 +436,20 @@ export function createDrizzleRoomMessageStore(
       return pageOf(rows.map((row) => toRoomMessage(row as MessageRow)));
     },
 
+    async getMessages(input) {
+      if (input.messageIds.length === 0) return [];
+      const rows = await db
+        .select()
+        .from(workbenchMessages)
+        .where(
+          and(
+            eq(workbenchMessages.tenantId, input.tenantId),
+            inArray(workbenchMessages.id, [...input.messageIds]),
+          ),
+        );
+      return rows.map(toRoomMessage);
+    },
+
     async getMessage(input) {
       const [row] = await db
         .select()
@@ -652,6 +670,15 @@ export function createInMemoryRoomMessageStore(): RoomMessageStore {
             message.createdAt < cursorCreatedAt ||
             (message.createdAt === cursorCreatedAt && message.id < cursor.id),
         ),
+      );
+    },
+
+    async getMessages(input) {
+      const messageIds = new Set(input.messageIds);
+      return [...byWorkbench.entries()].flatMap(([key, messages]) =>
+        key.startsWith(`${input.tenantId}:`)
+          ? messages.filter((message) => messageIds.has(message.id))
+          : [],
       );
     },
 

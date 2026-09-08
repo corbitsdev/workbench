@@ -74,11 +74,13 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
     queryKey: tenantKeys.workbenches(key, "workbench"),
     enabled,
     queryFn: () => listWorkbenches(key, "workbench"),
+    refetchInterval: 2000,
   });
   const chatsQuery = useQuery({
     queryKey: tenantKeys.workbenches(key, "chat"),
     enabled,
     queryFn: () => listWorkbenches(key, "chat"),
+    refetchInterval: 2000,
   });
   const routinesQuery = useQuery({
     queryKey: tenantKeys.topLevelRuns(key),

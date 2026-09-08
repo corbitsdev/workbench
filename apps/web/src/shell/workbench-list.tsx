@@ -26,6 +26,7 @@ import type { Workbench } from "@corbits/chat-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ChatCircle,
+  Check,
   DotsThree,
   Hash,
   MagnifyingGlass,
@@ -94,15 +95,15 @@ export function renamePayload(
 }
 
 /**
- * Optional row signals (shared / live / time / unread). The platform's
- * listing carries `unreadCount`/`lastActivityAt`/`live` when a mailbox
+ * Optional row signals (shared / activity / time / unread). The platform's
+ * listing carries `unreadCount`/`lastActivityAt`/`activity` when a mailbox
  * could be resolved, and `sharedLabel` for a conversation projected in via
  * bilateral trust. Render only when present; never invent counts or
  * timestamps.
  */
 export type WorkbenchRowSignals = {
   readonly sharedLabel?: string;
-  readonly live?: boolean;
+  readonly activity?: Workbench["activity"];
   readonly time?: string;
   readonly unread?: number;
 };
@@ -117,7 +118,7 @@ export type WorkbenchRowSignals = {
 export function workbenchRowSignals(
   workbench: Pick<
     Workbench,
-    "unreadCount" | "lastActivityAt" | "live" | "sharedLabel"
+    "unreadCount" | "lastActivityAt" | "activity" | "sharedLabel"
   >,
   isOpen: boolean,
 ): WorkbenchRowSignals {
@@ -125,7 +126,14 @@ export function workbenchRowSignals(
     ...(workbench.sharedLabel !== undefined
       ? { sharedLabel: workbench.sharedLabel }
       : {}),
-    ...(workbench.live !== undefined ? { live: workbench.live } : {}),
+    ...(workbench.activity !== undefined
+      ? {
+          activity:
+            isOpen && workbench.activity === "reply-ready"
+              ? "idle"
+              : workbench.activity,
+        }
+      : {}),
     ...(workbench.lastActivityAt !== undefined
       ? { time: formatRelativeTime(workbench.lastActivityAt) }
       : {}),
@@ -297,7 +305,7 @@ function WorkbenchRow({
 
   const displayTitle =
     displayWorkbenchTitle(title, workbench.id) || CHAT_STRINGS.unnamedWorkbench;
-  const { sharedLabel, live, time, unread } = signals;
+  const { sharedLabel, activity, time, unread } = signals;
   const hasUnread = typeof unread === "number" && unread > 0;
 
   return (
@@ -312,25 +320,34 @@ function WorkbenchRow({
         className="shell-ch-row"
         aria-current={active ? "true" : undefined}
         data-active={active ? "true" : undefined}
+        data-unread={hasUnread ? "true" : undefined}
         onClick={onSelect}
       >
-        {/* The workbench's own initial for multi-party channels, or
-            the Corbit avatar for agent DM conversations. */}
-        <span className="shell-ch-stack" aria-hidden="true">
+        <span className="shell-ch-avatar" data-activity={activity}>
           {workbench.kind === "chat" ? (
-            <span
-              data-agent="true"
-              className="!overflow-hidden !border-[1.5px] !border-background !bg-transparent !p-0"
-            >
-              <CorbitAvatar
-                size="sm"
-                ariaLabel={displayTitle}
-                className="!static !size-full"
-              />
-            </span>
+            <CorbitAvatar size="sm" ariaLabel={displayTitle} />
           ) : (
-            <span>{displayTitle.slice(0, 1).toUpperCase()}</span>
+            <span className="shell-ch-initial" aria-hidden="true">
+              {displayTitle.slice(0, 1).toUpperCase()}
+            </span>
           )}
+          {activity === "working" ? (
+            <span
+              className="shell-ch-orbit"
+              role="img"
+              aria-label="Agent working"
+              title="Agent working"
+            />
+          ) : activity === "reply-ready" ? (
+            <span
+              className="shell-ch-completion"
+              role="img"
+              aria-label="Reply ready"
+              title="Reply ready"
+            >
+              <Check aria-hidden="true" />
+            </span>
+          ) : null}
         </span>
         <span className="shell-ch-meta">
           <span className="shell-ch-name-row">
@@ -346,10 +363,6 @@ function WorkbenchRow({
                 shared
               </Badge>
             ) : null}
-            {/* Live pulse only when no unread badge. */}
-            {live === true && !hasUnread ? (
-              <span className="shell-ch-live" title="Active" />
-            ) : null}
           </span>
           {workbench.preview !== undefined && workbench.preview !== "" ? (
             <span className="shell-ch-preview">{workbench.preview}</span>
@@ -359,7 +372,9 @@ function WorkbenchRow({
           {time !== undefined && time !== "" ? (
             <span className="shell-ch-time">{time}</span>
           ) : null}
-          {hasUnread ? <Badge tone="accent">{unread}</Badge> : null}
+          {hasUnread && activity !== "reply-ready" ? (
+            <Badge tone="accent">{unread}</Badge>
+          ) : null}
         </span>
       </button>
       <div className="shell-ch-row-menu">

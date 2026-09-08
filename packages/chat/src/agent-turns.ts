@@ -15,7 +15,7 @@ import {
   AGENT_RUNTIME_SECTION_ID,
   agentRuntimeTurnRunId,
 } from "@corbits/agent-runtime";
-import { and, desc, eq, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 
 import { agentTurns } from "./schema";
 import type { ChatDb } from "./store";
@@ -163,6 +163,10 @@ export interface AgentTurnStore {
     },
     signal?: AbortSignal,
   ): Promise<void>;
+  listWorkbenchTurns(input: {
+    readonly tenantId: string;
+    readonly workbenchIds: readonly string[];
+  }): Promise<readonly AgentTurn[]>;
   listTurns(input: {
     readonly tenantId: string;
     readonly workbenchId: string;
@@ -419,6 +423,28 @@ export function createInMemoryAgentTurnStore(
         .sort(compareTurnsNewestFirst)[0];
     },
 
+    async listWorkbenchTurns(input) {
+      expireStaleTurns();
+      const workbenchIds = new Set(input.workbenchIds);
+      const ordered = [...rows.values()]
+        .filter(
+          (turn) =>
+            turn.tenantId === input.tenantId &&
+            workbenchIds.has(turn.workbenchId),
+        )
+        .sort(
+          (a, b) =>
+            Number(b.status === "running") - Number(a.status === "running") ||
+            compareTurnsNewestFirst(a, b),
+        );
+      const byWorkbench = new Map<string, AgentTurn>();
+      for (const turn of ordered) {
+        if (!byWorkbench.has(turn.workbenchId))
+          byWorkbench.set(turn.workbenchId, turn);
+      }
+      return [...byWorkbench.values()];
+    },
+
     async findRunningTurns(input) {
       expireStaleTurns();
       return [...rows.values()].filter(
@@ -668,6 +694,27 @@ export function createDrizzleAgentTurnStore<
 
     async findTurnByChildRun(input) {
       return resolveTurnByChildRun(input);
+    },
+
+    async listWorkbenchTurns(input) {
+      if (input.workbenchIds.length === 0) return [];
+      await expireStaleTurns({ tenantId: input.tenantId });
+      const rows = await db
+        .selectDistinctOn([agentTurns.workbenchId])
+        .from(agentTurns)
+        .where(
+          and(
+            eq(agentTurns.tenantId, input.tenantId),
+            inArray(agentTurns.workbenchId, [...input.workbenchIds]),
+          ),
+        )
+        .orderBy(
+          asc(agentTurns.workbenchId),
+          desc(sql`${agentTurns.status} = 'running'`),
+          desc(agentTurns.startedAt),
+          desc(agentTurns.occurrence),
+        );
+      return rows.map((row) => toAgentTurn(row));
     },
 
     async findRunningTurns(input) {

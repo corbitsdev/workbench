@@ -209,3 +209,38 @@ describe("WorkbenchList — pin visibility and order (CL-6657)", () => {
     expect(wraps[3]?.querySelector(".shell-ch-pin")).toBeNull();
   });
 });
+
+describe("WorkbenchList avatar activity", () => {
+  for (const activity of ["working", "reply-ready", "idle"] as const) {
+    test(`renders ${activity} without changing the message preview`, async () => {
+      stubFetch({
+        chats: [
+          {
+            id: "ch_myra",
+            title: "Myra",
+            kind: "chat",
+            pinned: false,
+            participants: [],
+            activity,
+            unreadCount: 1,
+            preview: "Here is the revised draft.",
+            lastActivityAt: new Date().toISOString(),
+          },
+        ],
+      });
+      const el = await mount();
+      const avatar = el.querySelector(".shell-ch-avatar");
+      expect(avatar?.querySelector('[data-corbit="true"]')).not.toBeNull();
+      expect(el.querySelector(".shell-ch-preview")?.textContent).toBe(
+        "Here is the revised draft.",
+      );
+      expect(el.querySelector(".shell-ch-live")).toBeNull();
+      expect(
+        avatar?.querySelector('[aria-label="Agent working"]') !== null,
+      ).toBe(activity === "working");
+      expect(avatar?.querySelector('[aria-label="Reply ready"]') !== null).toBe(
+        activity === "reply-ready",
+      );
+    });
+  }
+});

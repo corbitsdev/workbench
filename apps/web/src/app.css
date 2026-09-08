@@ -1464,100 +1464,100 @@ select:disabled,
   color: var(--shell-panel-faint);
 }
 
-/* Mock .ch rows in the sidebar: pad 0.32/0.42, square. */
 .shell-ch-row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 0.55rem;
-  align-items: center;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  column-gap: 0.65rem;
+  align-items: start;
   width: 100%;
-  padding: 0.32rem 0.42rem;
-  border-radius: 0;
-  color: var(--muted-foreground, var(--ui-fg-muted));
+  min-height: 3.75rem;
+  padding: 0.65rem 0.6rem;
+  border-radius: var(--radius);
+  color: var(--foreground);
   text-align: left;
   border: 0;
   background: transparent;
   cursor: pointer;
-  transition:
-    background 120ms ease,
-    color 120ms ease;
+  transition: background var(--duration-micro) var(--ease-out);
 }
 
 .shell-ch-row:hover {
-  background: color-mix(in srgb, var(--foreground) 5%, transparent);
-  color: var(--foreground, var(--ui-fg));
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
 }
 
-/* Brand rule: grey is for text/structure, not container fills — the active
-   row stays on ground and reads through a 2px orange left edge instead of a
-   band. */
 .shell-ch-row[aria-current="true"],
 .shell-ch-row[data-active="true"] {
-  background: var(--background);
-  color: var(--shell-accent);
-  box-shadow: inset 2px 0 0 0 var(--shell-accent);
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
 }
 
 .shell-ch-row[aria-current="true"] .shell-ch-name,
-.shell-ch-row[data-active="true"] .shell-ch-name {
+.shell-ch-row[data-unread="true"] .shell-ch-name {
   font-weight: 650;
 }
 
-/* A 5% foreground tint is a much quieter cue on a near-black row than the
-   same percentage on a near-white one perceptually, so dark mode's hover
-   gets a stronger mix to read at the same visible weight. */
-.dark .shell-ch-row:hover {
-  background: color-mix(in srgb, var(--foreground) 9%, transparent);
-}
-
-.shell-ch-stack {
-  display: flex;
-  width: 1.35rem;
-  height: 1.4rem;
+.shell-ch-avatar {
   position: relative;
-  flex-shrink: 0;
-}
-
-.shell-ch-stack span {
-  position: absolute;
-  width: 1.2rem;
-  height: 1.2rem;
-  border-radius: 50%;
-  border: 1.5px solid var(--background);
   display: grid;
   place-items: center;
-  font-size: 0.55rem;
-  font-weight: 700;
-  /* --muted sits within ~1.2:1 of --background in dark (near-black on
-     pure black), leaving the chip indistinguishable from the page. A
-     foreground tint reads at the same visible strength in both themes
-     since the page it's mixed against is pure white/black either way. */
+  width: 2rem;
+  height: 2rem;
+  align-self: center;
+}
+
+.shell-ch-initial {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
   background: color-mix(in srgb, var(--foreground) 10%, transparent);
-  color: var(--foreground);
+  font-size: 0.75rem;
+  font-weight: 650;
 }
 
-.shell-ch-stack span:nth-child(1) {
-  left: 0;
-  top: 0.2rem;
-  z-index: 3;
+.shell-ch-orbit {
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid transparent;
+  border-top-color: var(--primary);
+  border-right-color: var(--primary);
+  border-bottom-color: var(--primary);
+  border-radius: 50%;
+  animation: shell-ch-orbit 1.4s linear infinite;
 }
 
-.shell-ch-stack span:nth-child(2) {
-  left: 0.45rem;
-  top: 0.2rem;
-  z-index: 2;
-  background: color-mix(in srgb, var(--foreground) 16%, transparent);
+@keyframes shell-ch-orbit {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-.shell-ch-stack span:nth-child(3) {
-  left: 0.9rem;
-  top: 0.2rem;
-  z-index: 1;
+.shell-ch-completion {
+  position: absolute;
+  right: -0.05rem;
+  bottom: -0.05rem;
+  display: grid;
+  place-items: center;
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 2px solid var(--background);
+  border-radius: 50%;
+  background: var(--ok);
+  color: var(--background);
 }
 
-.shell-ch-stack span[data-agent="true"] {
-  background: var(--primary);
-  color: var(--primary-foreground);
+.shell-ch-completion svg {
+  width: 0.6rem;
+  height: 0.6rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-ch-orbit {
+    animation: none;
+  }
+  .shell-ch-row {
+    transition: none;
+  }
 }
 
 /* Agent-DM identity avatar: zero radius per brand rule, distinct from the
@@ -1606,7 +1606,7 @@ select:disabled,
 }
 
 .shell-ch-name {
-  font-weight: 580;
+  font-weight: 550;
   font-size: 0.86rem;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1622,25 +1622,6 @@ select:disabled,
   color: var(--muted-foreground, var(--ui-fg-muted));
 }
 
-.shell-ch-live {
-  width: 0.4rem;
-  height: 0.4rem;
-  border-radius: 0;
-  background: var(--ok);
-  flex-shrink: 0;
-  animation: shell-ch-pulse 2s ease infinite;
-}
-
-@keyframes shell-ch-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 40%, transparent);
-  }
-  50% {
-    box-shadow: 0 0 0 4px transparent;
-  }
-}
-
 .shell-ch-right {
   display: flex;
   flex-direction: row;
@@ -1650,6 +1631,8 @@ select:disabled,
 }
 
 .shell-ch-time {
+  line-height: 1.3rem;
+  white-space: nowrap;
   font-size: 0.66rem;
   color: var(--muted-foreground, var(--ui-fg-muted));
 }
@@ -1658,6 +1641,7 @@ select:disabled,
    workbench's message preview, or an unreachable agent's join caption. */
 .shell-ch-preview {
   display: block;
+  margin-top: 0.15rem;
   font-size: 0.72rem;
   color: var(--muted-foreground, var(--ui-fg-muted));
   overflow: hidden;

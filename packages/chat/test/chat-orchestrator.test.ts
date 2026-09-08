@@ -71,6 +71,7 @@ function fakeRoom(options?: { failPostOnCall: number }) {
     },
     listMessages: store.listMessages,
     getMessage: store.getMessage,
+    getMessages: store.getMessages,
     stampMailMessageId: store.stampMailMessageId,
     findByMailMessageId: store.findByMailMessageId,
     listActivity: store.listActivity,

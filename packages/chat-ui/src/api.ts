@@ -62,7 +62,7 @@ const WorkbenchWire = type({
   // the honest "nothing unread" answer once a mailbox is resolved.
   "unreadCount?": "number",
   "lastActivityAt?": "string",
-  "live?": "boolean",
+  "activity?": "'idle' | 'working' | 'reply-ready'",
   // A bounded, text-only snippet of the newest message (see
   // `packages/chat/src/codec.ts`'s `extractTextPreview`) — absent, never
   // an empty string, when there is no message yet or it carries no text

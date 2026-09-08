@@ -64,7 +64,7 @@ import {
   validateSettingsPatch,
   visibilityOf,
 } from "./workbench-settings";
-import { isRecentlyActive } from "./workbench-activity";
+import { listWorkbenchReplyActivity } from "./workbench-reply-activity";
 import { postRoomMessage, type RoomMessageStore } from "./room-messages";
 import { WorkbenchOnboardingStep } from "./blocks";
 import type { ConnectGithubBlockData } from "./blocks";
@@ -1444,7 +1444,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         rows.map((row) => deps.tenancy.getWorkbenchTenancy(row.workbenchId)),
       );
 
-      // Row signals (unread badge, live dot, relative time) in two bulk
+      // Message signals (unread count, preview, relative time) in two bulk
       // calls covering every row — never one per workbench. The caller's
       // own read cursors come from `workbench_read_state`, the activity
       // from the timeline itself.
@@ -1470,6 +1470,14 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         }),
       });
 
+      const replyActivity = await listWorkbenchReplyActivity({
+        tenantId: tenant.id,
+        workbenchIds: rows.map((row) => row.workbenchId),
+        readCursors: cursorByWorkbenchId,
+        agentTurns: deps.agentTurns,
+        roomMessages: deps.roomMessages,
+      });
+
       const ownItems = rows.map((row, index) => {
         const link = links[index];
         const view =
@@ -1477,13 +1485,19 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
             ? withTenancy(workbenchView(row), link)
             : { ...workbenchView(row), tenancy: null, legacy: true };
         const activity = activityByWorkbenchId[row.workbenchId];
-        if (activity === undefined) return view;
-        const withUnread = { ...view, unreadCount: activity.unreadCount };
+        const withReplyActivity = {
+          ...view,
+          activity: replyActivity.get(row.workbenchId),
+        };
+        if (activity === undefined) return withReplyActivity;
+        const withUnread = {
+          ...withReplyActivity,
+          unreadCount: activity.unreadCount,
+        };
         if (activity.lastActivityAt === undefined) return withUnread;
         const withActivity = {
           ...withUnread,
           lastActivityAt: activity.lastActivityAt,
-          live: isRecentlyActive(activity.lastActivityAt),
         };
         return activity.preview === undefined
           ? withActivity
@@ -1539,6 +1553,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
                   tenancy: null,
                   legacy: false,
                   sharedLabel,
+                  activity: "idle",
                 });
               }
               return items;

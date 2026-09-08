@@ -49,14 +49,24 @@ describe("renamePayload", () => {
 });
 
 describe("workbenchRowSignals", () => {
+  test("opening clears a ready reply but keeps an active orbit", () => {
+    expect(
+      workbenchRowSignals(workbench({ activity: "reply-ready" }), true)
+        .activity,
+    ).toBe("idle");
+    expect(
+      workbenchRowSignals(workbench({ activity: "working" }), true).activity,
+    ).toBe("working");
+  });
+
   test("passes through only the signals the platform actually sent", () => {
     expect(workbenchRowSignals(workbench(), false)).toEqual({});
     const signals = workbenchRowSignals(
-      workbench({ unreadCount: 3, live: true, sharedLabel: "Acme" }),
+      workbench({ unreadCount: 3, activity: "working", sharedLabel: "Acme" }),
       false,
     );
     expect(signals.unread).toBe(3);
-    expect(signals.live).toBe(true);
+    expect(signals.activity).toBe("working");
     expect(signals.sharedLabel).toBe("Acme");
   });
 

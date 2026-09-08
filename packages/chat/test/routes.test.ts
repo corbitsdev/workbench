@@ -1609,7 +1609,7 @@ describe("GET /workbenches", () => {
       items: {
         unreadCount?: number;
         lastActivityAt?: string;
-        live?: boolean;
+        activity?: string;
       }[];
     };
 
@@ -1618,7 +1618,7 @@ describe("GET /workbenches", () => {
     expect(body.items).toHaveLength(1);
     expect(body.items[0]?.unreadCount).toBeUndefined();
     expect(body.items[0]?.lastActivityAt).toBeUndefined();
-    expect(body.items[0]?.live).toBeUndefined();
+    expect(body.items[0]?.activity).toBe("idle");
   });
 
   test("counts messages sent since the caller's own read cursor as unread", async () => {
@@ -1641,13 +1641,13 @@ describe("GET /workbenches", () => {
         id: string;
         unreadCount?: number;
         lastActivityAt?: string;
-        live?: boolean;
+        activity?: string;
       }[];
     };
     const bobRow = bobList.items.find((item) => item.id === workbench.id);
     expect(bobRow?.unreadCount).toBe(2);
     expect(bobRow?.lastActivityAt).toBeDefined();
-    expect(bobRow?.live).toBe(true);
+    expect(bobRow?.activity).toBe("idle");
   });
 
   test("carries a bounded text preview of the newest message", async () => {
