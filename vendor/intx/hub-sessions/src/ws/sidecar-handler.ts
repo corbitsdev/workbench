@@ -2889,8 +2889,10 @@ export function createSidecarRouter(
     if (outcome.status === "completed") {
       if (!entry.requestSettled) {
         // A terminal frame arrived before the started acknowledgement —
-        // settle the request promise so the caller never hangs. The
-        // tokens are still delivered to the final consumer.
+        // settle the request promise so the caller never hangs. This
+        // ordering drops the exchanged tokens: nothing consumes the
+        // completed promise without the started arm, so the person has
+        // to run the login again.
         entry.requestSettled = true;
         entry.resolveRequest({
           status: "error",
