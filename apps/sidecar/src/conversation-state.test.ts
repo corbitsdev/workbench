@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
 
 import type {
   Principal,
@@ -310,4 +310,55 @@ test("prepareConversationForOriginatingWorkbench evicts the warm agent on room c
   expect(swappedB).toBe(true);
   expect(evictions).toHaveLength(1);
   expect(evictions[0]).toContain("chan_b");
+});
+
+test("reactor startup waits for an in-flight connector metadata write", async () => {
+  const root = tmpDir("conv-startup-metadata-");
+  const { store } = await makeStore(root);
+  await store.bindOriginatingWorkbench("chan_a");
+  const metadataPath = path.join(root, "local", "metadata.json");
+  const truncated = Promise.withResolvers<void>();
+  const resumeWrite = Promise.withResolvers<void>();
+  const writeFile = fs.promises.writeFile.bind(fs.promises);
+  let paused = false;
+  const writeSpy = spyOn(fs.promises, "writeFile").mockImplementation(
+    async (file, data, options) => {
+      if (file === metadataPath && !paused) {
+        paused = true;
+        await writeFile(file, "", options);
+        truncated.resolve();
+        await resumeWrite.promise;
+      }
+      await writeFile(file, data, options);
+    },
+  );
+  try {
+    const seed = store.seedInbound({
+      ref: { uid: 1, mailbox: "INBOX" },
+      headers: {
+        from: "human@example.test",
+        to: ["agent@example.test"],
+        date: "2026-09-08T00:00:00.000Z",
+        messageId: "<heartbeat@example.test>",
+        interchangeType: "conversation.message",
+      },
+      flags: [],
+      content: "heartbeat",
+      signatureStatus: "valid",
+    });
+    await truncated.promise;
+    const loaded = store.storage.load();
+    const outcome = loaded.then(
+      () => "loaded",
+      () => "invalid metadata",
+    );
+    await Bun.sleep(20);
+    resumeWrite.resolve();
+    await seed;
+    expect(await outcome).toBe("loaded");
+    await store.mirrorToSubstrate();
+  } finally {
+    resumeWrite.resolve();
+    writeSpy.mockRestore();
+  }
 });
