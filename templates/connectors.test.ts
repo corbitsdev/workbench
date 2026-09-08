@@ -148,6 +148,19 @@ describe("CONNECTOR_REGISTRY", () => {
       "http://localhost:1455/auth/callback",
     );
     expect(codexUrl?.searchParams.get("originator")).toBe("codex_cli_rs");
+    // Pinned against the upstream Codex CLI's CODEX_SCOPES list — the
+    // api.connectors.* scopes are what let the backend serve connector
+    // tools to this client, and the authorization server issues them only
+    // to the Codex client id. When the @corbits/codex-provider package
+    // lands (S2), assert against its exported constant instead.
+    expect(codexUrl?.searchParams.get("scope")?.split(" ")).toEqual([
+      "openid",
+      "profile",
+      "email",
+      "offline_access",
+      "api.connectors.read",
+      "api.connectors.invoke",
+    ]);
 
     const xaiUrl = CONNECTOR_REGISTRY["xai-oauth"]?.oauth?.buildAuthorizeUrl({
       callbackUrl: "https://bench.example.com/ignored",

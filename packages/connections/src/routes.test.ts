@@ -112,6 +112,24 @@ const FAKE_REGISTRY: Readonly<Record<string, ConnectorDescriptor>> = {
       exchange: async () => ({ ok: true, apiKey: "unused" }),
     },
   },
+  "loopback-connector": {
+    id: "loopback-connector",
+    displayName: "Loopback Connector",
+    authKind: "oauth-loopback",
+    credentialPlugin: "http",
+    docsUrl: "https://example.test/docs",
+    feedsTools: [],
+    oauth: {
+      authorizeUrl: "https://example.test/authorize",
+      usesPKCE: true,
+      echoesState: true,
+      deploysDefaultWorkflows: true,
+      clientId: () => "public-client-id",
+      buildAuthorizeUrl: ({ state }) =>
+        new URL(`https://example.test/authorize?state=${state}`),
+      exchange: async () => ({ ok: true, apiKey: "unused" }),
+    },
+  },
 };
 
 function mountAs(routes: Hono<TenantEnv>): Hono<TenantEnv> {
@@ -213,6 +231,13 @@ describe("GET /oauth-configured", () => {
     const body = (await response.json()) as Record<string, boolean>;
     expect(body["accepting-connector"]).toBeUndefined();
     expect(body["display-only-connector"]).toBeUndefined();
+  });
+
+  test("omits loopback connectors -- they never route through this web redirect flow", async () => {
+    const app = buildApp();
+    const response = await app.request("/oauth-configured");
+    const body = (await response.json()) as Record<string, boolean>;
+    expect(body["loopback-connector"]).toBeUndefined();
   });
 });
 

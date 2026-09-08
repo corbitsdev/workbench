@@ -336,6 +336,10 @@ export function createConnectionRoutes(
       const configured: Record<string, boolean> = {};
       for (const [id, descriptor] of Object.entries(registry)) {
         if (descriptor.oauth === undefined) continue;
+        // A loopback connector is never reachable through this web flow
+        // (its start/callback routes refuse it), so it is never reported
+        // as configured here either.
+        if (descriptor.authKind === "oauth-loopback") continue;
         const hasClientId =
           descriptor.oauth.clientId === undefined ||
           descriptor.oauth.clientId(oauthEnv) !== undefined;

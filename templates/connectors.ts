@@ -292,7 +292,14 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
           "http://localhost:1455/auth/callback",
         );
         url.searchParams.set("response_type", "code");
-        url.searchParams.set("scope", "openid profile email offline_access");
+        // Exactly the upstream Codex CLI's scope list (CODEX_SCOPES): the
+        // two api.connectors.* scopes let the backend serve connector
+        // tools to this client, and the authorization server issues them
+        // only to the Codex client id.
+        url.searchParams.set(
+          "scope",
+          "openid profile email offline_access api.connectors.read api.connectors.invoke",
+        );
         url.searchParams.set("state", state);
         if (codeChallenge !== undefined) {
           url.searchParams.set("code_challenge", codeChallenge);

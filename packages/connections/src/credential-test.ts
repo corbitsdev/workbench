@@ -126,6 +126,11 @@ export type ProviderTestConfig = CommonProviderTestConfig &
           apiKey: string,
           baseURL: string,
         ) => ProbeRequest;
+        /** Whether this status/body pair means "the provider rejected the key,"
+         * as opposed to a network problem or some other failure — each
+         * provider maps auth failures to its own status code. Only probed
+         * providers carry one; a `probeless` provider never fetches. */
+        readonly isKeyRejected: (status: number, body: string) => boolean;
       }
   );
 
@@ -143,11 +148,6 @@ type CommonProviderTestConfig = {
    * always reaches the missing-`model` validation error after a real key
    * clears auth — so a 400 there is the success signal, not a 2xx. */
   readonly isKeyAccepted?: (status: number) => boolean;
-  /** Whether this status/body pair means "the provider rejected the key,"
-   * as opposed to a network problem or some other failure — each
-   * provider maps auth failures to its own status code. Never consulted
-   * for a `probeless` provider. */
-  readonly isKeyRejected: (status: number, body: string) => boolean;
 };
 
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -283,8 +283,9 @@ export const PROVIDER_TEST_CONFIG: Readonly<
     // provider's XAI_DEFAULT_MODELS): the proxy rejects model ids its CLI
     // does not serve.
     probeModel: "grok-4.6",
-    // The proxy's own list-models route answers 401 to a bad or expired
-    // OAuth token, so the standard GET probe proves the credential.
+    // The proxy's list-models route is expected to answer 401 to a bad or
+    // expired OAuth token (mirroring the platform surface's behavior) —
+    // not yet confirmed live against a real login.
     buildProbeRequest: (apiKey, _baseURL) => ({
       url: "https://cli-chat-proxy.grok.com/v1/models",
       headers: { Authorization: `Bearer ${apiKey}` },
@@ -309,8 +310,6 @@ export const PROVIDER_TEST_CONFIG: Readonly<
       "Codex credentials cannot be tested in advance — the ChatGPT " +
       "subscription token has no free auth-check endpoint. The OAuth " +
       "login that produced it is itself the proof.",
-    // Never consulted (see `probeless`); required by the config shape.
-    isKeyRejected: () => false,
   },
   openrouter: {
     displayName: "OpenRouter",
