@@ -149,13 +149,12 @@ describe("CONNECTOR_REGISTRY", () => {
     );
     expect(codexUrl?.searchParams.get("originator")).toBe("codex_cli_rs");
 
-    const xaiUrl =
-      CONNECTOR_REGISTRY["xai-oauth"]?.oauth?.buildAuthorizeUrl({
-        callbackUrl: "https://bench.example.com/ignored",
-        state: "s",
-        codeChallenge: "c",
-        clientId: "client_1",
-      });
+    const xaiUrl = CONNECTOR_REGISTRY["xai-oauth"]?.oauth?.buildAuthorizeUrl({
+      callbackUrl: "https://bench.example.com/ignored",
+      state: "s",
+      codeChallenge: "c",
+      clientId: "client_1",
+    });
     expect(xaiUrl?.origin).toBe("https://auth.x.ai");
     expect(xaiUrl?.searchParams.get("redirect_uri")).toBe(
       "http://127.0.0.1:1456/callback",

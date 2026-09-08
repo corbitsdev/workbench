@@ -287,7 +287,10 @@ function inferenceProviderDescriptors(): Record<string, ConnectorDescriptor> {
       buildAuthorizeUrl: ({ state, codeChallenge, clientId }) => {
         const url = new URL("https://auth.openai.com/oauth/authorize");
         if (clientId !== undefined) url.searchParams.set("client_id", clientId);
-        url.searchParams.set("redirect_uri", "http://localhost:1455/auth/callback");
+        url.searchParams.set(
+          "redirect_uri",
+          "http://localhost:1455/auth/callback",
+        );
         url.searchParams.set("response_type", "code");
         url.searchParams.set("scope", "openid profile email offline_access");
         url.searchParams.set("state", state);
