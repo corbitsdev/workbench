@@ -66,15 +66,20 @@ export type PersistConnectorCredentialArgs = PersistConnectorCredentialFns & {
    * `baseURLOverride`. Always already proven by the caller, so the row
    * is stored `verified: true`. */
   readonly secret: string;
-  /** Free-form data stored on the credential's `metadata` field — the
-   * extension point an expiring OAuth token's expiry lives in. Its
-   * presence is also what types the row `oauth_token` instead of
-   * `api_key`. */
+  /** Free-form data stored on the credential's `metadata` field —
+   * provider labels (an OAuth account id, an MCP client registration).
+   * An expiring OAuth token's expiry is NOT metadata: it is the
+   * first-class `expiresAt` field, which writes the credential row's own
+   * column that serving-time refresh keys on. */
   readonly credentialMetadata?: Record<string, unknown>;
   /** A provider-issued refresh token — stored on the credential row's
    * own `refreshSecret` field (a secret, never metadata). Only ever set
-   * alongside `credentialMetadata`'s `expiresAt`. */
+   * alongside `expiresAt`. */
   readonly refreshSecret?: string;
+  /** ISO instant the access token expires — stored on the credential
+   * row's own `expiresAt` COLUMN, which serving-time refresh keys on
+   * (CL-7508). Never folded into `credentialMetadata`. */
+  readonly expiresAt?: string;
   /** The instance origin a url-kind connector actually points at —
    * stored as the provider row's `apiBaseUrl` and threaded into
    * `seedCatalog`'s own base-URL seam. */
@@ -138,6 +143,9 @@ export async function persistConnectorCredential(
           metadata: args.credentialMetadata,
           ...(args.refreshSecret !== undefined
             ? { refreshSecret: args.refreshSecret }
+            : {}),
+          ...(args.expiresAt !== undefined
+            ? { expiresAt: args.expiresAt }
             : {}),
         }
       : {

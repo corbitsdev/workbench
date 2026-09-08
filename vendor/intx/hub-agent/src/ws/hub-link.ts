@@ -34,6 +34,8 @@ import {
   type SyncRequestFrame,
   type WorkflowProbeRequestFrame,
   type WorkflowProbeResultFrame,
+  type OAuthLoginResultFrame,
+  type OAuthLoginTokens,
 } from "@intx/types/sidecar";
 import type { SignalKind } from "@intx/types";
 import { createPackReceiver, createPackSender } from "@intx/pack-transport";
@@ -485,6 +487,33 @@ const defaultWorkflowProbeExecutor: WorkflowProbeExecutor = {
   },
 };
 
+/**
+ * Executor for sidecar-hosted loopback OAuth logins (CL-7508). Runs the
+ * connector's PKCE login on this machine: binds the pinned loopback callback
+ * server, returns the authorize URL for the hub to ship to the web UI, and
+ * completes with the staged tokens once the user finishes consent. The PKCE
+ * verifier stays inside the executor — only the tokens cross the wire. A
+ * rejection (including a pinned port already in use) rides back as the
+ * error arm of the `oauth.login.result` reply.
+ */
+export type OAuthLoginExecutor = (
+  connectorId: "codex" | "xai-oauth",
+) => Promise<{
+  authorizeUrl: string;
+  completed: Promise<OAuthLoginTokens>;
+  /** Closes the staged login's pinned-port callback listener. Called when
+   * the hub cancels the login (`oauth.login.cancel`) or the link
+   * disconnects, so an abandoned bind cannot wedge every retry of the
+   * connector until the sidecar restarts. */
+  cancel?: () => void;
+}>;
+
+/** Fail-closed placeholder: an `oauth.login.start` still gets an error
+ * reply instead of hanging the hub's request. */
+const defaultOAuthLoginExecutor: OAuthLoginExecutor = () => {
+  throw new Error("oauth login execution is not implemented on this sidecar");
+};
+
 export type HubLinkConfig = {
   hubURL: string;
   sidecarId: string;
@@ -581,6 +610,16 @@ export type HubLinkConfig = {
    * request/response frame with no reply hangs the hub's probe.
    */
   workflowProbeExecutor?: WorkflowProbeExecutor;
+  /**
+   * Optional loopback-login executor (CL-7508). When present, the link routes
+   * every inbound `oauth.login.start` frame through it and answers with
+   * `oauth.login.result` frames: a `started` arm as soon as the executor
+   * returns the authorize URL, then exactly one terminal arm (`completed`
+   * with the staged tokens, or `error`). Absent, the link wires a
+   * placeholder that always errors — required because a request frame with
+   * no reply hangs the hub's login request.
+   */
+  oauthLoginExecutor?: OAuthLoginExecutor;
   /**
    * Returns the workflow-substrate deployment addresses this sidecar
    * currently hosts a live supervisor for. Called on every (re)connect to
@@ -698,6 +737,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     credentialsInboundRouter,
     applyWorkflowRunPack,
     workflowProbeExecutor = defaultWorkflowProbeExecutor,
+    oauthLoginExecutor = defaultOAuthLoginExecutor,
     getWorkflowAddresses = () => [],
     onWorkflowAddressesRoutable,
     onWorkflowAddressesUnroutable,
@@ -725,6 +765,11 @@ export function createHubLink(config: HubLinkConfig): HubLink {
   let handshakePending = true;
 
   const packReceiver = createPackReceiver();
+  // Staged loopback logins by requestId (see handleOAuthLoginStart).
+  const activeOAuthLogins = new Map<
+    string,
+    Awaited<ReturnType<OAuthLoginExecutor>>
+  >();
   // One sender owns the agent-state push path (`handleSyncRequest`,
   // `handleAgentUndeploy`) and the workflow-run push path
   // (`pushWorkflowRunPack`). transferIds for the two flows live in
@@ -1315,6 +1360,67 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     }
   }
 
+  async function handleOAuthLoginStart(
+    frame: Extract<HubFrame, { type: "oauth.login.start" }>,
+  ): Promise<void> {
+    // `oauth.login.start` is request/response: every path answers
+    // `oauth.login.result` — `started` once the executor returns the
+    // authorize URL, then exactly one terminal arm — never a log-and-drop,
+    // or the hub's login request hangs.
+    let handle: Awaited<ReturnType<OAuthLoginExecutor>>;
+    try {
+      handle = await oauthLoginExecutor(frame.connectorId);
+    } catch (err) {
+      send({
+        type: "oauth.login.result",
+        requestId: frame.requestId,
+        outcome: {
+          status: "error",
+          message: err instanceof Error ? err.message : String(err),
+        },
+      });
+      return;
+    }
+    activeOAuthLogins.set(frame.requestId, handle);
+    send({
+      type: "oauth.login.result",
+      requestId: frame.requestId,
+      outcome: { status: "started", authorizeUrl: handle.authorizeUrl },
+    });
+    try {
+      const tokens = await handle.completed;
+      send({
+        type: "oauth.login.result",
+        requestId: frame.requestId,
+        outcome: { status: "completed", tokens },
+      });
+    } catch (err) {
+      send({
+        type: "oauth.login.result",
+        requestId: frame.requestId,
+        outcome: {
+          status: "error",
+          message: err instanceof Error ? err.message : String(err),
+        },
+      });
+    } finally {
+      activeOAuthLogins.delete(frame.requestId);
+    }
+  }
+
+  /** In-flight staged logins by requestId, so a hub `oauth.login.cancel` —
+   * or a link disconnect, where the hub will never see the terminal frame —
+   * closes the staged login's pinned-port listener. */
+  function cancelOAuthLogin(requestId: string): void {
+    activeOAuthLogins.get(requestId)?.cancel?.();
+    activeOAuthLogins.delete(requestId);
+  }
+
+  function cancelAllOAuthLogins(): void {
+    for (const handle of activeOAuthLogins.values()) handle.cancel?.();
+    activeOAuthLogins.clear();
+  }
+
   async function pushWorkflowRunPack(opts: {
     agentAddress: string;
     repoId: RepoId;
@@ -1517,6 +1623,12 @@ export function createHubLink(config: HubLinkConfig): HubLink {
       case "workflow.probe.request":
         await handleWorkflowProbeRequest(frame);
         break;
+      case "oauth.login.start":
+        void handleOAuthLoginStart(frame).catch(() => undefined);
+        break;
+      case "oauth.login.cancel":
+        cancelOAuthLogin(frame.requestId);
+        break;
       case "repo.pack.ack":
         handlePackAck(frame);
         break;
@@ -1640,6 +1752,10 @@ export function createHubLink(config: HubLinkConfig): HubLink {
       // belongs to the reconnect re-emit, and a lingering watchdog would only
       // fire onto a closed socket.
       registerAcker.cancelAll();
+      // The hub will never see a terminal frame for logins staged on this
+      // dead connection, and the sidecar-side listener outlives it — close
+      // those listeners so a retry can rebind the pinned ports.
+      cancelAllOAuthLogins();
       // The hub dropped every route this link held. Block workflow-run pushes
       // for the deployments it hosts until the authenticated reconnect
       // re-routes them, so the coalescing pusher does not re-ship onto the

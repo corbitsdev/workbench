@@ -168,12 +168,22 @@ export type TestAndPersistCredentialArgs = CommonArgs &
     provider: SupportedCredentialProvider;
     apiKey: string;
     /**
-     * Free-form data stored on the credential's `metadata` field — the
-     * extension point an OAuth connect flow's token expiry lives in (see
-     * `huggingface-connect.ts`'s `exchangeCodeForToken`). Absent for a
+     * Free-form data stored on the credential's `metadata` field —
+     * provider labels (an OAuth account id, an MCP client registration).
+     * An expiring OAuth token's expiry lives on the first-class
+     * `expiresAt` field below, which writes the credential row's own
+     * column that serving-time refresh keys on; a metadata fold may
+     * also carry it (that fold is what types the row `oauth_token`),
+     * but it must not be the expiry's only ride. Absent for a
      * pasted key or a durable-key connect flow (OpenRouter).
      */
     credentialMetadata?: Record<string, unknown>;
+    /** ISO instant an OAuth exchange's access token expires — stored on
+     * the credential row's own `expiresAt` COLUMN, which serving-time
+     * refresh keys on. The metadata fold that types the row may also
+     * carry the expiry, but this field is the ride that lands the
+     * column. */
+    expiresAt?: string;
     /** The configurable-base-URL seam `ollama` uses (see `modelSourceFor`);
      * ignored for every other provider. */
     baseURLOverride?: string;
@@ -194,6 +204,9 @@ export type CompleteCredentialArgs = CommonArgs &
     provider: SupportedCredentialProvider;
     apiKey: string;
     credentialMetadata?: Record<string, unknown>;
+    /** ISO instant an OAuth exchange's access token expires — see
+     * `TestAndPersistCredentialArgs`. */
+    expiresAt?: string;
     baseURLOverride?: string;
     seedTenantFn?: (args: SeedTenantArgs) => ReturnType<typeof seedTenant>;
   };
@@ -461,6 +474,7 @@ export async function testAndPersistCredential(
     descriptor,
     secret: args.apiKey,
     log: args.log,
+    ...(args.expiresAt !== undefined ? { expiresAt: args.expiresAt } : {}),
     ...(args.credentialMetadata !== undefined
       ? { credentialMetadata: args.credentialMetadata }
       : {}),

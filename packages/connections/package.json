@@ -42,6 +42,7 @@
     "@intx/crypto": "0.3.0",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
+    "@intx/hub-sessions": "workspace:*",
     "@intx/types": "workspace:*",
     "@modelcontextprotocol/sdk": "catalog:",
     "arktype": "catalog:",

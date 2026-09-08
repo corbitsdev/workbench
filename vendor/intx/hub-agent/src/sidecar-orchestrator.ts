@@ -35,6 +35,7 @@ import {
   type CredentialsInboundRouter,
   type WorkflowRunPackApplier,
   type WorkflowProbeExecutor,
+  type OAuthLoginExecutor,
   type ReconnectScheduler,
 } from "./ws/hub-link";
 
@@ -170,6 +171,13 @@ export type SidecarOrchestratorConfig = {
    */
   workflowProbeExecutor?: WorkflowProbeExecutor;
   /**
+   * Optional loopback-login executor (CL-7508). Forwarded unchanged to
+   * `createHubLink`, where it answers every inbound `oauth.login.start`;
+   * omitted, the link answers those requests with an error rather than
+   * hanging the hub.
+   */
+  oauthLoginExecutor?: OAuthLoginExecutor;
+  /**
    * Returns the workflow-substrate deployment addresses this sidecar
    * currently hosts. Forwarded to the hub link, which announces them on
    * every (re)connect so the hub re-registers them for routing.
@@ -230,6 +238,7 @@ export function createSidecarOrchestrator(
     credentialsInboundRouter,
     applyWorkflowRunPack,
     workflowProbeExecutor,
+    oauthLoginExecutor,
     getWorkflowAddresses,
     onWorkflowAddressesRoutable,
     onWorkflowAddressesUnroutable,
@@ -323,6 +332,7 @@ export function createSidecarOrchestrator(
       ? { credentialsInboundRouter }
       : {}),
     ...(workflowProbeExecutor !== undefined ? { workflowProbeExecutor } : {}),
+    ...(oauthLoginExecutor !== undefined ? { oauthLoginExecutor } : {}),
     ...(getWorkflowAddresses !== undefined ? { getWorkflowAddresses } : {}),
     ...(onWorkflowAddressesRoutable !== undefined
       ? { onWorkflowAddressesRoutable }

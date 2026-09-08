@@ -309,6 +309,7 @@ describe("GET /oauth/huggingface/callback", () => {
       provider: string;
       apiKey: string;
       userId: string;
+      expiresAt?: string;
       credentialMetadata?: Record<string, unknown>;
     }[] = [];
     const pendingSeedStore: PendingSeedStore = createInMemoryPendingSeedStore(
@@ -330,6 +331,9 @@ describe("GET /oauth/huggingface/callback", () => {
             provider: args.provider,
             apiKey: args.apiKey,
             userId: args.userId,
+            ...(args.expiresAt !== undefined
+              ? { expiresAt: args.expiresAt }
+              : {}),
           };
           connections.push(
             args.credentialMetadata !== undefined
@@ -383,6 +387,10 @@ describe("GET /oauth/huggingface/callback", () => {
         provider: "huggingface",
         apiKey: "hf_oauth_minted",
         userId: "user_1",
+        // The first-class field through the onboarding wrapper — the
+        // hop that used to drop the exchange's expiry, leaving the
+        // row's expires_at column NULL (CL-7508).
+        expiresAt: "2026-08-13T20:00:00.000Z",
         credentialMetadata: { expiresAt: "2026-08-13T20:00:00.000Z" },
       },
     ]);
