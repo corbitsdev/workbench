@@ -17,7 +17,7 @@ apps/sidecar | sawyer | 2026-11-03
 vendor/intx/agent | sawyer | 2026-11-03 | 9dd132fda8d7aef9d70395de2d289abeb0361416b18a5079f219372df69d81a0
 vendor/intx/db | sawyer | 2026-11-03 | 2d0f5ddde3a8f9313b7d274fcc9a62d743638cb3ea4078ad4176390bde859136
 vendor/intx/harness | sawyer | 2026-11-03 | 399b4e8b3b18e8969e815427625e1bfc6746f31e791fb92cdbc2aaf2c5080dbf
-vendor/intx/hub-agent | sawyer | 2026-11-03 | 0d90c7b5db834a1161782502c43699245f04e6367932df4a9f8e77182839a9ff
+vendor/intx/hub-agent | sawyer | 2026-11-03 | b0f3b0bd760b1a397e00ff47cce5b9701273bdb04e294748afe650c4d142aa5a
 vendor/intx/hub-api | sawyer | 2026-11-03 | 90aa5cddef828d77b62adb63186dcf82b5465926cafea1ab6b64bca263031b57
 vendor/intx/hub-common | sawyer | 2026-11-03 | 2fe74684593083f422023b2d6b337e414b5b319c6bfe02c7fa157130d7162e41
 vendor/intx/hub-sessions | sawyer | 2026-11-03 | 73bcdaa2e3ae8ab040d7ce17f64c6174286b6737f31fbd7f1bb9ae368142e60b
