@@ -29,8 +29,9 @@ function plugin(
   id: string,
   displayName: string,
   status: ResolvedPlugin["status"],
+  authKind: ConnectorDescriptor["authKind"] = "api-key",
 ): ResolvedPlugin {
-  const pluginDescriptor = descriptor(id, displayName);
+  const pluginDescriptor = descriptor(id, displayName, authKind);
   if (status === "not_connected") {
     return {
       descriptor: pluginDescriptor,
@@ -292,6 +293,40 @@ describe("PluginsGallery", () => {
     const exa = container.querySelector('[data-plugin-slug="exa"]');
     expect(exa?.textContent).toContain("Connected");
     expect(exa?.textContent).toContain("Manage");
+  });
+
+  test("an OAuth plugin starts authorization from Connect instead of opening a drawer", async () => {
+    const { container } = await renderGallery([
+      plugin("huggingface", "Hugging Face", "not_connected", "oauth-pkce"),
+    ]);
+
+    const connect = container.querySelector(
+      '[aria-label="Connect Hugging Face"]',
+    );
+    expect(connect?.tagName).toBe("A");
+    expect(connect?.getAttribute("href")).toBe(
+      "/api/tenants/tenant_test/connections/oauth/huggingface/start?return=%2Fplugins",
+    );
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  test("a token preset keeps its catalog row compact and collects credentials in a drawer", async () => {
+    const { container } = await renderGallery();
+    const githubMcp = container.querySelector(
+      '[data-plugin-slug="github-mcp"]',
+    );
+    const connect = githubMcp?.querySelector(
+      '[aria-label="Connect GitHub MCP"]',
+    ) as HTMLButtonElement | null;
+
+    act(() => connect?.click());
+
+    expect(githubMcp?.querySelector("input")).toBeNull();
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(dialog?.textContent).toContain("GitHub MCP");
+    expect(
+      dialog?.querySelector("#mcp-preset-token-github-mcp"),
+    ).not.toBeNull();
   });
 
   test("status remains visible as a core field", async () => {

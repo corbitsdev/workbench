@@ -11,6 +11,7 @@ import type { Root } from "react-dom/client";
 import { MCP_PRESETS } from "@workbench/templates/connectors";
 
 import { McpPresetCard, useMcpPresetCatalog } from "../src/mcp-preset-cards";
+import type { McpPreset } from "../src/mcp-servers-api";
 
 const realFetch = globalThis.fetch;
 let mountedRoots: Root[] = [];
@@ -24,18 +25,22 @@ afterEach(() => {
 const settle = () =>
   act(() => new Promise((resolve) => setTimeout(resolve, 10)));
 
-function mountSection() {
+function mountSection(onOpen: (preset: McpPreset) => void = () => {}) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root: Root = createRoot(container);
   mountedRoots.push(root);
   act(() => {
-    root.render(<PresetCatalogHarness />);
+    root.render(<PresetCatalogHarness onOpen={onOpen} />);
   });
   return container;
 }
 
-function PresetCatalogHarness() {
+function PresetCatalogHarness({
+  onOpen,
+}: {
+  readonly onOpen: (preset: McpPreset) => void;
+}) {
   const catalog = useMcpPresetCatalog("tenant_test");
   if (!catalog.loaded) return null;
   if (catalog.loadError !== null) {
@@ -52,6 +57,7 @@ function PresetCatalogHarness() {
           onChanged={(toolCount) =>
             catalog.handleChanged(preset.slug, toolCount)
           }
+          onOpen={() => onOpen(preset)}
         />
       ))}
     </div>
@@ -350,7 +356,7 @@ describe("MCP preset catalog", () => {
     expect(canvaCard.textContent).not.toContain("tools");
   });
 
-  test("Manage reveals a named Disconnect confirmation (CL-6794)", async () => {
+  test("Manage opens the preset drawer instead of expanding its catalog row", async () => {
     globalThis.fetch = (async () =>
       new Response(
         JSON.stringify({
@@ -360,7 +366,8 @@ describe("MCP preset catalog", () => {
         }),
       )) as unknown as typeof fetch;
 
-    const container = mountSection();
+    const opened: string[] = [];
+    const container = mountSection((preset) => opened.push(preset.slug));
     await settle();
 
     const exaCard = container.querySelector(
@@ -369,16 +376,14 @@ describe("MCP preset catalog", () => {
     const manageExa = [...exaCard.querySelectorAll("button")].find(
       (button) => button.textContent?.includes("Manage") === true,
     );
-    expect(manageExa?.textContent).toContain("Exa");
+    expect(manageExa).not.toBeUndefined();
 
     act(() => {
       manageExa?.click();
     });
 
-    const disconnectExa = [...exaCard.querySelectorAll("button")].find(
-      (button) => button.textContent?.includes("Disconnect") === true,
-    );
-    expect(disconnectExa?.textContent).toContain("Exa");
+    expect(opened).toEqual(["exa"]);
+    expect(exaCard.querySelector("input")).toBeNull();
   });
 
   test("connect calls the preset connect route with the preset's slug", async () => {
@@ -430,32 +435,19 @@ describe("MCP preset catalog", () => {
     expect(container.textContent).toContain("4 tools");
   });
 
-  test("a token preset opens step-by-step guidance and posts the pasted token", async () => {
+  test("a token preset opens its drawer without expanding the catalog row", async () => {
     const calls: { url: string; init?: RequestInit }[] = [];
-    let connected = false;
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       calls.push({ url, ...(init !== undefined ? { init } : {}) });
-      if (init?.method === "POST") {
-        connected = true;
-        return new Response(
-          JSON.stringify({
-            slug: "github-mcp",
-            name: "GitHub MCP",
-            url: "https://api.githubcopilot.com/mcp/",
-            toolCount: 40,
-          }),
-        );
-      }
       return new Response(
         JSON.stringify({
-          data: PRESETS.map((p) =>
-            p.slug === "github-mcp" ? { ...p, connected } : p,
-          ),
+          data: PRESETS,
         }),
       );
     }) as unknown as typeof fetch;
 
-    const container = mountSection();
+    const opened: string[] = [];
+    const container = mountSection((preset) => opened.push(preset.slug));
     await settle();
 
     const card = container.querySelector(
@@ -470,90 +462,10 @@ describe("MCP preset catalog", () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
 
-    // Opening the form is not a connect — no POST yet, steps visible.
+    // Opening the drawer is not a connect and does not change row height.
     expect(calls.find((call) => call.init?.method === "POST")).toBeUndefined();
-    expect(card.textContent).toContain(
-      "Open github.com/settings/tokens and generate a new token.",
-    );
-    expect(card.textContent).toContain("Give it the repo scope.");
-    expect(
-      card.querySelector('a[href="https://github.com/settings/tokens"]'),
-    ).not.toBeNull();
-
-    const field = card.querySelector(
-      "#mcp-preset-token-github-mcp",
-    ) as HTMLInputElement;
-    expect(field).not.toBeNull();
-    await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        "value",
-      )?.set;
-      setter?.call(field, "ghp_pasted");
-      field.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-
-    const submitButton = [...card.querySelectorAll("button")].find(
-      (button) => button.textContent === "Connect",
-    ) as HTMLButtonElement;
-    await act(async () => {
-      submitButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    });
-
-    const connectCall = calls.find((call) => call.init?.method === "POST");
-    expect(connectCall?.url).toBe("/api/tenants/tenant_test/mcp-servers");
-    const body: unknown = JSON.parse(connectCall?.init?.body as string);
-    expect(body).toMatchObject({
-      presetSlug: "github-mcp",
-      token: "ghp_pasted",
-    });
-    expect(container.textContent).toContain("40 tools");
-  });
-
-  test("disconnect calls DELETE on the preset's slug", async () => {
-    const calls: { url: string; init?: RequestInit }[] = [];
-    let deleted = false;
-    globalThis.fetch = (async (url: string, init?: RequestInit) => {
-      calls.push({ url, ...(init !== undefined ? { init } : {}) });
-      if (init?.method === "DELETE") {
-        deleted = true;
-        return new Response(null, { status: 204 });
-      }
-      return new Response(
-        JSON.stringify({
-          data: PRESETS.map((p) =>
-            p.slug === "exa" ? { ...p, connected: !deleted } : p,
-          ),
-        }),
-      );
-    }) as unknown as typeof fetch;
-
-    const container = mountSection();
-    await settle();
-
-    const exaCard = container.querySelector(
-      '[data-plugin-slug="exa"]',
-    ) as HTMLElement;
-    const manageButton = [...exaCard.querySelectorAll("button")].find(
-      (button) => button.textContent?.includes("Manage"),
-    ) as HTMLButtonElement;
-
-    await act(async () => {
-      manageButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    });
-    const confirmButton = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent?.includes("Disconnect") === true,
-    ) as HTMLButtonElement;
-    await act(async () => {
-      confirmButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    });
-
-    const deleteCall = calls.find((call) => call.init?.method === "DELETE");
-    expect(deleteCall).not.toBeUndefined();
-    expect(deleteCall?.url).toBe("/api/tenants/tenant_test/mcp-servers/exa");
+    expect(opened).toEqual(["github-mcp"]);
+    expect(card.querySelector("input")).toBeNull();
   });
 
   // CL-6472: a fresh bench with zero connections still owns the same
