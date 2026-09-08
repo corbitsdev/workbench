@@ -73,6 +73,7 @@ export function createTenantConnectCredential(
         ...(args.credentialMetadata !== undefined
           ? { credentialMetadata: args.credentialMetadata }
           : {}),
+        ...(args.expiresAt !== undefined ? { expiresAt: args.expiresAt } : {}),
         ...(args.refreshToken !== undefined
           ? { refreshSecret: args.refreshToken }
           : {}),

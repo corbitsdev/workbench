@@ -182,6 +182,9 @@ export type CreateOAuthConnectRoutesDeps<E extends AppEnv = AppEnv> = {
     cookies: string[];
     apiKey: string;
     credentialMetadata?: Record<string, unknown>;
+    /** ISO instant the secret expires — the credential row's own
+     * `expiresAt` column, which serving-time refresh keys on. */
+    expiresAt?: string;
     refreshToken?: string;
   }) => Promise<OAuthStoreOutcome>;
   /** Best-effort duplicate-callback recovery — see this module's header.
@@ -590,10 +593,15 @@ export function createOAuthConnectRoutes<E extends AppEnv = AppEnv>(
         cookies,
         apiKey: exchanged.apiKey,
       };
-      if (exchanged.expiresAt !== undefined)
+      if (exchanged.expiresAt !== undefined) {
+        connectCredentialArgs.expiresAt = exchanged.expiresAt;
+        // The metadata fold stays: its presence is what types the row
+        // `oauth_token`, while the `expiresAt` field above lands the
+        // column serving-time refresh keys on.
         connectCredentialArgs.credentialMetadata = {
           expiresAt: exchanged.expiresAt,
         };
+      }
       if (exchanged.accountId !== undefined) {
         connectCredentialArgs.credentialMetadata = {
           ...connectCredentialArgs.credentialMetadata,

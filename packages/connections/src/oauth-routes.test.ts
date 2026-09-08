@@ -418,6 +418,54 @@ describe("GET /:connectorId/callback", () => {
     ]);
   });
 
+  test("a redirect-flow exchange's expiry lands on the first-class expiresAt field", async () => {
+    const stored: {
+      expiresAt?: string | undefined;
+      credentialMetadata?: Record<string, unknown> | undefined;
+    }[] = [];
+    const app = connectRoutes(
+      {
+        connectCredential: async (args) => {
+          stored.push({
+            expiresAt: args.expiresAt,
+            credentialMetadata: args.credentialMetadata,
+          });
+          return {
+            kind: "connected",
+            tenantId: "ten_1",
+            tenantSlug: "widget-tenant",
+            principalId: "prn_1",
+            tenantDomain: "widget-tenant.bench.local",
+          };
+        },
+      },
+      {
+        widget: fakeDescriptor({
+          exchange: async ({ code }) => ({
+            ok: true,
+            apiKey: `key-for-${code}`,
+            refreshToken: "rt_1",
+            expiresAt: "2025-09-09T00:00:00.000Z",
+          }),
+        }),
+      },
+    );
+    const { response: started } = await startConnect(app);
+    const response = await app.request(
+      "/api/connections/oauth/widget/callback?code=abc123",
+      { headers: { cookie: allCookies(started) } },
+    );
+    expect(response.status).toBe(302);
+    // The column is what serving-time refresh keys on; the metadata
+    // presence stays, since it is what types the row `oauth_token`.
+    expect(stored).toEqual([
+      {
+        expiresAt: "2025-09-09T00:00:00.000Z",
+        credentialMetadata: { expiresAt: "2025-09-09T00:00:00.000Z" },
+      },
+    ]);
+  });
+
   test("falls back to the default return path when none was requested", async () => {
     const app = connectRoutes();
     const { response: started } = await startConnect(app);
