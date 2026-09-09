@@ -75,7 +75,7 @@ export function McpPresetCard({
   readonly preset: McpPreset;
   readonly toolCount: number | undefined;
   readonly onChanged: (toolCount?: number) => void;
-  readonly onOpen: () => void;
+  readonly onOpen: (trigger: HTMLButtonElement) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(() =>
@@ -95,13 +95,13 @@ export function McpPresetCard({
       .finally(() => setBusy(false));
   }
 
-  function handleConnect() {
+  function handleConnect(trigger: HTMLButtonElement) {
     if (preset.connectionMode === "oauth") {
       window.location.href = mcpOAuthStartPath(tenantId, preset.slug);
       return;
     }
     if (preset.connectionMode === "token") {
-      onOpen();
+      onOpen(trigger);
       return;
     }
     submitConnect();
@@ -153,7 +153,7 @@ export function McpPresetCard({
               size="sm"
               variant="ghost"
               aria-label={`Manage ${preset.displayName}`}
-              onClick={onOpen}
+              onClick={(event) => onOpen(event.currentTarget)}
             >
               Manage
               <span className="sr-only"> {preset.displayName}</span>
@@ -165,7 +165,7 @@ export function McpPresetCard({
               variant="ghost"
               disabled={busy}
               aria-label={`Connect ${preset.displayName}`}
-              onClick={handleConnect}
+              onClick={(event) => handleConnect(event.currentTarget)}
             >
               {busy ? "Connecting…" : "Connect"}
             </Button>

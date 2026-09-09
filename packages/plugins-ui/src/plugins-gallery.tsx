@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Lightning } from "@corbits/icons";
 import { EmptyState, FilterChip, Tabs } from "@corbits/react-ui";
@@ -133,6 +133,7 @@ function PluginCatalogPanel({
   readonly onOpenPreset: (
     preset: McpPreset,
     toolCount: number | undefined,
+    trigger: HTMLButtonElement,
   ) => void;
   readonly onOpenPlugin: (plugin: ResolvedPlugin) => void;
 }) {
@@ -181,8 +182,8 @@ function PluginCatalogPanel({
                 preset={entry.preset}
                 toolCount={toolCounts.get(entry.id)}
                 onChanged={(toolCount) => onPresetChanged(entry.id, toolCount)}
-                onOpen={() =>
-                  onOpenPreset(entry.preset, toolCounts.get(entry.id))
+                onOpen={(trigger) =>
+                  onOpenPreset(entry.preset, toolCounts.get(entry.id), trigger)
                 }
               />
             ) : (
@@ -296,8 +297,21 @@ export function PluginsGallery({
   const [openPreset, setOpenPreset] = useState<{
     readonly preset: McpPreset;
     readonly toolCount: number | undefined;
+    readonly trigger: HTMLButtonElement;
   } | null>(null);
+  const presetFocusTrigger = useRef<HTMLButtonElement | null>(null);
   const presetCatalog = useMcpPresetCatalog(tenantId);
+
+  useEffect(() => {
+    if (openPreset !== null) return;
+    presetFocusTrigger.current?.focus();
+    presetFocusTrigger.current = null;
+  }, [openPreset]);
+
+  function closePreset() {
+    presetFocusTrigger.current = openPreset?.trigger ?? null;
+    setOpenPreset(null);
+  }
 
   const nativeEntries = useMemo<readonly PluginCatalogEntry[]>(
     () =>
@@ -398,8 +412,8 @@ export function PluginsGallery({
                     onFilterChange={setActiveFilter}
                     toolCounts={presetCatalog.toolCounts}
                     onPresetChanged={presetCatalog.handleChanged}
-                    onOpenPreset={(preset, toolCount) =>
-                      setOpenPreset({ preset, toolCount })
+                    onOpenPreset={(preset, toolCount, trigger) =>
+                      setOpenPreset({ preset, toolCount, trigger })
                     }
                     onOpenPlugin={onOpenPlugin}
                   />
@@ -427,11 +441,11 @@ export function PluginsGallery({
                 toolCount: openPreset.toolCount,
               }
         }
-        onClose={() => setOpenPreset(null)}
+        onClose={closePreset}
         onChanged={(toolCount) => {
           if (openPreset === null) return;
           presetCatalog.handleChanged(openPreset.preset.slug, toolCount);
-          setOpenPreset(null);
+          closePreset();
         }}
       />
     </div>

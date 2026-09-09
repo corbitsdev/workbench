@@ -312,14 +312,14 @@ function McpPresetPanelContent({
         className="flex flex-col gap-1.5 text-sm font-medium"
         htmlFor={tokenFieldId}
       >
-        API key
+        Personal access token
         <Input
           id={tokenFieldId}
           type="password"
           value={token}
           placeholder="Paste your access token"
           disabled={busy}
-          autoComplete="off"
+          autoComplete="new-password"
           onChange={(event) => {
             setToken(event.target.value);
             setError(null);

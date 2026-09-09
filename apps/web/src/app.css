@@ -38,9 +38,11 @@ html {
   outline-offset: 2px;
 }
 
-/* Inputs already have a visible control boundary. Color that edge on focus so
-   the focus treatment reads as one control, not a second outline outside it. */
-[data-slot="input"]:focus-visible {
+/* Inputs in side drawers already have a visible control boundary. Color that
+   edge on focus so the focus treatment reads as one control, not a second
+   outline outside it. */
+[data-slot="dialog-content"][data-side="right"]
+  [data-slot="input"]:focus-visible {
   outline: none;
   border-color: var(--accent-rail, var(--primary));
 }
