@@ -284,6 +284,155 @@ async function countMatching(page: Page, selector: string): Promise<number> {
   );
 }
 
+async function createAgentDrawerLayout(
+  page: Page,
+  viewportName: string,
+): Promise<{
+  readonly viewportName: string;
+  readonly bodyClientWidth: number;
+  readonly bodyScrollWidth: number;
+  readonly panelClientWidth: number;
+  readonly panelScrollWidth: number;
+  readonly minimumLeftClearance: number;
+  readonly maximumRightOverflow: number;
+  readonly activeControl: string;
+}> {
+  return page.evaluate((name: string) => {
+    const panel = document.querySelector<HTMLElement>(
+      '[data-slot="dialog-content"].create-agent-panel',
+    );
+    const body = panel?.querySelector<HTMLElement>('[data-slot="dialog-body"]');
+    if (panel === null || body === null) {
+      throw new Error("New Agent drawer body was not rendered");
+    }
+
+    const bodyRect = body.getBoundingClientRect();
+    const bodyContentLeft = bodyRect.left + body.clientLeft;
+    const bodyContentRight = bodyContentLeft + body.clientWidth;
+    const controls = Array.from(
+      body.querySelectorAll<HTMLElement>("input, select, textarea, button"),
+    );
+    if (controls.length === 0) {
+      throw new Error("New Agent drawer rendered no controls");
+    }
+
+    const minimumLeftClearance = Math.min(
+      ...controls.map(
+        (control) => control.getBoundingClientRect().left - bodyContentLeft,
+      ),
+    );
+    const maximumRightOverflow = Math.max(
+      ...controls.map(
+        (control) => control.getBoundingClientRect().right - bodyContentRight,
+      ),
+    );
+
+    return {
+      viewportName: name,
+      bodyClientWidth: body.clientWidth,
+      bodyScrollWidth: body.scrollWidth,
+      panelClientWidth: panel.clientWidth,
+      panelScrollWidth: panel.scrollWidth,
+      minimumLeftClearance,
+      maximumRightOverflow,
+      activeControl:
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement.id
+          : "",
+    };
+  }, viewportName);
+}
+
+async function openCreateAgentDrawer(
+  page: Page,
+  webBaseUrl: string,
+): Promise<boolean> {
+  await page.goto(`${webBaseUrl}/agents`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector('button[aria-label="Create an agent"]', {
+    timeout: 15_000,
+  });
+  await clickStable(page, 'button[aria-label="Create an agent"]');
+  await page.waitForSelector(
+    '[data-slot="dialog-content"].create-agent-panel',
+    { timeout: 15_000 },
+  );
+  await page.waitForSelector("#create-agent-name");
+  await page.type(
+    "#create-agent-name",
+    "Research Buddy with a deliberately long name",
+  );
+  await page.type(
+    "#create-agent-purpose",
+    "A deliberately long description that wraps across multiple lines so the drawer has to contain the full form without clipping its focus ring or letting the scrollbar cover the field.",
+  );
+  await page.focus("#create-agent-name");
+  await clickStable(page, ".create-agent-advanced > summary");
+  await page.waitForSelector("#create-agent-advanced-handle");
+  await page
+    .waitForFunction(
+      () => {
+        const model = document.querySelector<HTMLSelectElement>(
+          "#create-agent-advanced-model",
+        );
+        return (
+          (model !== null && model.options.length > 0) ||
+          document.querySelector('[role="status"]') !== null
+        );
+      },
+      { timeout: 5_000 },
+    )
+    .catch(() => undefined);
+  const modelValues = await page.$$eval(
+    "#create-agent-advanced-model option",
+    (options) =>
+      options
+        .map((option) => option.value)
+        .filter((value) => value.trim() !== ""),
+  );
+  const modelSelectorAvailable = modelValues.length > 0;
+  if (modelSelectorAvailable) {
+    const modelValue = modelValues[0];
+    if (modelValue === undefined) {
+      throw new Error("Model selector reported no usable options");
+    }
+    await page.select("#create-agent-advanced-model", modelValue);
+    await page.focus("#create-agent-advanced-model");
+  } else {
+    await page.focus("#create-agent-advanced-handle");
+  }
+  await page.evaluate(() => {
+    const body = document.querySelector<HTMLElement>(
+      '[data-slot="dialog-body"]',
+    );
+    if (body === null) throw new Error("New Agent drawer body was not found");
+    body.scrollTop = body.scrollHeight;
+  });
+  await page.waitForFunction(
+    () =>
+      document.querySelector<HTMLElement>('[data-slot="dialog-body"]')
+        ?.scrollTop !== 0,
+    { timeout: 5_000 },
+  );
+  return modelSelectorAvailable;
+}
+
+async function closeCreateAgentDrawer(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const panel = document.querySelector<HTMLElement>(
+      '[data-slot="dialog-content"].create-agent-panel',
+    );
+    const cancel = Array.from(panel?.querySelectorAll("button") ?? []).find(
+      (button) => button.textContent?.trim() === "Cancel",
+    );
+    if (cancel === undefined) throw new Error("Cancel button was not found");
+    cancel.click();
+  });
+  await page.waitForSelector(
+    '[data-slot="dialog-content"].create-agent-panel',
+    { hidden: true, timeout: 5_000 },
+  );
+}
+
 // --- the walkthrough -----------------------------------------------------
 
 /** The picker card that mints a plain empty channel (`workbench-templates.ts`). */
@@ -639,6 +788,63 @@ async function run(): Promise<void> {
         return {
           status: "pass",
           detail: `bare root landed in Myra's DM at ${firstWorkbenchPath}`,
+        };
+      },
+    );
+
+    await step(
+      () => page,
+      "04b-create-agent-drawer-layout",
+      async () => {
+        const previousViewport = page.viewport() ?? {
+          width: 1440,
+          height: 900,
+        };
+        const cases = [
+          { name: "desktop", width: 1280, height: 720 },
+          { name: "short", width: 1280, height: 480 },
+        ] as const;
+        const measurements: Awaited<
+          ReturnType<typeof createAgentDrawerLayout>
+        >[] = [];
+        let modelSelectorSeen = false;
+
+        try {
+          for (const viewport of cases) {
+            await page.setViewport(viewport);
+            const modelSelectorAvailable = await openCreateAgentDrawer(
+              page,
+              webBaseUrl,
+            );
+            modelSelectorSeen ||= modelSelectorAvailable;
+            const measurement = await createAgentDrawerLayout(
+              page,
+              viewport.name,
+            );
+            measurements.push(measurement);
+            if (
+              measurement.bodyScrollWidth !== measurement.bodyClientWidth ||
+              measurement.panelScrollWidth !== measurement.panelClientWidth ||
+              measurement.minimumLeftClearance < 4 ||
+              measurement.maximumRightOverflow > 1 ||
+              measurement.activeControl !==
+                (modelSelectorAvailable
+                  ? "create-agent-advanced-model"
+                  : "create-agent-advanced-handle")
+            ) {
+              throw new Error(
+                `New Agent drawer escaped its bounds at ${viewport.name}: ${JSON.stringify(measurement)}`,
+              );
+            }
+            await closeCreateAgentDrawer(page);
+          }
+        } finally {
+          await page.setViewport(previousViewport);
+        }
+
+        return {
+          status: "pass",
+          detail: `name, description, Advanced, ${modelSelectorSeen ? "model selector, " : "model catalog unavailable, "}focus, and scroll stayed contained: ${JSON.stringify(measurements)}`,
         };
       },
     );
