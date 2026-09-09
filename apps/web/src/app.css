@@ -2987,9 +2987,6 @@ tr.insights-row-clickable:hover {
   color: var(--muted-foreground);
 }
 
-/* The optional "what should this agent do?" field: visually quieter than
-   the required Name field above it — a smaller label, no bold-required
-   asterisk, since a name alone is the supported happy path. */
 .create-agent-panel {
   min-width: 0;
 }
@@ -3013,6 +3010,9 @@ tr.insights-row-clickable:hover {
   max-width: 100%;
 }
 
+/* The optional "what should this agent do?" field: visually quieter than
+   the required Name field above it — a smaller label, no bold-required
+   asterisk, since a name alone is the supported happy path. */
 .create-agent-quiet-field {
   display: flex;
   flex-direction: column;
