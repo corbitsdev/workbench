@@ -113,6 +113,20 @@ export class OneShotRunFailedError extends Error {
   }
 }
 
+// Defined here so the tests commit typechecks standalone; the send
+// path starts rejecting with it in the next commit.
+export class OneShotRunUnreachableError extends Error {
+  constructor(cause: unknown) {
+    super(
+      cause instanceof Error
+        ? `the one-shot run's sidecar never became routable: ${cause.message}`
+        : "the one-shot run's sidecar never became routable",
+      { cause },
+    );
+    this.name = "OneShotRunUnreachableError";
+  }
+}
+
 async function provisionOnAsset(
   deps: OneShotRunnerDeps,
   input: {

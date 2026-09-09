@@ -13,6 +13,7 @@ import { makeErrorEnvelope, parseErrorEnvelope } from "@corbits/error-sink";
 
 import { MyraAgentDefinitionDraftingUnavailableError } from "../src/agent-definition-drafting";
 import { createAgentDefinitionDraftRoutes } from "../src/agent-definition-draft-routes";
+import { OneShotRunUnreachableError } from "../src/one-shot-prompt";
 
 const TENANT = {
   id: "tnt_1",
@@ -131,6 +132,22 @@ describe("agent-definition draft route envelope", () => {
       "agentDirectory.draftAgentDefinition",
     );
     expect(records[0]?.properties.tenantId).toBe("tnt_1");
+  });
+
+  test("an unreachable-after-wait drafting failure answers 422 drafting_failed", async () => {
+    const app = buildApp(() =>
+      Promise.reject(
+        new OneShotRunUnreachableError(new Error("agent is unreachable")),
+      ),
+    );
+
+    const res = await postDraft(app, { name: "Research Buddy" });
+
+    expect(res.status).toBe(422);
+    const body: unknown = await res.json();
+    const envelope = parseErrorEnvelope(body);
+    expect(envelope?.error.code).toBe("drafting_failed");
+    expect(envelope?.error.userMessage).toBe(DRAFT_FAILED_MESSAGE);
   });
 
   test("a malformed body answers 400 makeErrorEnvelope, not {code, message}", async () => {
