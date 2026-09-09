@@ -307,6 +307,12 @@ function WorkbenchRow({
     displayWorkbenchTitle(title, workbench.id) || CHAT_STRINGS.unnamedWorkbench;
   const { sharedLabel, live, time, unread } = signals;
   const hasUnread = typeof unread === "number" && unread > 0;
+  const liveLabel =
+    live === "working"
+      ? "Agent working"
+      : live === "reply-ready"
+        ? "Reply ready"
+        : "";
 
   return (
     <div
@@ -325,7 +331,9 @@ function WorkbenchRow({
       >
         <span className="shell-ch-avatar" data-live={live}>
           {workbench.kind === "chat" ? (
-            <CorbitAvatar size="sm" ariaLabel={displayTitle} />
+            <span aria-hidden="true">
+              <CorbitAvatar size="sm" ariaLabel={displayTitle} />
+            </span>
           ) : (
             <span className="shell-ch-initial" aria-hidden="true">
               {displayTitle.slice(0, 1).toUpperCase()}
@@ -334,20 +342,21 @@ function WorkbenchRow({
           {live === "working" ? (
             <span
               className="shell-ch-orbit"
-              role="img"
-              aria-label="Agent working"
+              aria-hidden="true"
               title="Agent working"
             />
           ) : live === "reply-ready" ? (
             <span
               className="shell-ch-completion"
-              role="img"
-              aria-label="Reply ready"
+              aria-hidden="true"
               title="Reply ready"
             >
               <Check aria-hidden="true" />
             </span>
           ) : null}
+          <span className="sr-only" aria-live="polite" aria-atomic="true">
+            {liveLabel}
+          </span>
         </span>
         <span className="shell-ch-meta">
           <span className="shell-ch-name-row">
@@ -373,7 +382,9 @@ function WorkbenchRow({
             <span className="shell-ch-time">{time}</span>
           ) : null}
           {hasUnread && live !== "reply-ready" ? (
-            <Badge tone="accent">{unread}</Badge>
+            <Badge tone="accent" className="shell-ch-unread-badge">
+              {unread}
+            </Badge>
           ) : null}
         </span>
       </button>

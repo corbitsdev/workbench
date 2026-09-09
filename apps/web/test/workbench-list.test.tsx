@@ -230,17 +230,36 @@ describe("WorkbenchList avatar activity", () => {
       });
       const el = await mount();
       const avatar = el.querySelector(".shell-ch-avatar");
-      expect(avatar?.querySelector('[data-corbit="true"]')).not.toBeNull();
+      const corbit = avatar?.querySelector('[data-corbit="true"]');
+      expect(corbit).not.toBeNull();
+      expect(corbit?.parentElement?.getAttribute("aria-hidden")).toBe("true");
       expect(el.querySelector(".shell-ch-preview")?.textContent).toBe(
         "Here is the revised draft.",
       );
       expect(el.querySelector(".shell-ch-live")).toBeNull();
-      expect(
-        avatar?.querySelector('[aria-label="Agent working"]') !== null,
-      ).toBe(activity === "working");
-      expect(avatar?.querySelector('[aria-label="Reply ready"]') !== null).toBe(
-        activity === "reply-ready",
+      expect(avatar?.querySelector('[aria-live="polite"]')?.textContent).toBe(
+        activity === "working"
+          ? "Agent working"
+          : activity === "reply-ready"
+            ? "Reply ready"
+            : "",
       );
+      if (activity === "working") {
+        expect(avatar?.querySelector(".shell-ch-orbit")).not.toBeNull();
+      } else {
+        expect(avatar?.querySelector(".shell-ch-orbit")).toBeNull();
+      }
+      if (activity === "reply-ready") {
+        expect(avatar?.querySelector(".shell-ch-completion")).not.toBeNull();
+      } else {
+        expect(avatar?.querySelector(".shell-ch-completion")).toBeNull();
+      }
+      const unreadBadge = el.querySelector(".shell-ch-unread-badge");
+      if (activity === "reply-ready") {
+        expect(unreadBadge).toBeNull();
+      } else {
+        expect(unreadBadge?.textContent).toBe("1");
+      }
     });
   }
 });

@@ -1677,13 +1677,9 @@ select:disabled,
   opacity: 1;
 }
 
-.shell-ch-row-menu .chat-sidebar-row-menu-trigger::after {
-  inset: 0;
-}
-
-.shell-ch-row-wrap:hover .shell-ch-right,
-.shell-ch-row-wrap:focus-within .shell-ch-right,
-.shell-ch-row-wrap:has([aria-expanded="true"]) .shell-ch-right {
+.shell-ch-row-wrap:hover .shell-ch-time,
+.shell-ch-row-wrap:focus-within .shell-ch-time,
+.shell-ch-row-wrap:has([aria-expanded="true"]) .shell-ch-time {
   visibility: hidden;
 }
 
