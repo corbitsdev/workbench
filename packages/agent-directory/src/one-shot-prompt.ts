@@ -8,7 +8,9 @@ import type { AgentLifecycle } from "@corbits/agent-lifecycle";
 import { connectorReplyContent, messageRunEnded } from "@corbits/agent-events";
 import { reportError } from "@corbits/error-sink";
 import {
+  deliverWhenRoutable,
   endAgentSessionForRun,
+  isAgentUnreachableError,
   readDefinitionProjection,
   readFoldedBody,
   recordAgentSessionAtProvision,
@@ -59,6 +61,23 @@ export type OneShotRunnerDeps = {
   >;
   readonly sessionService: Pick<SessionService, "sendUserMessage">;
   readonly eventCollectors: EventCollectorPort;
+  /**
+   * Reads the hub's live sidecar routing table (same source the
+   * webhook launch path uses). A freshly provisioned run's sidecar
+   * takes several seconds to register (CL-7476), so the opening send
+   * waits — bounded — for this to turn true before its one retry.
+   */
+  readonly isRoutable: (address: string) => boolean;
+  /**
+   * Test seam only. Overrides `deliverWhenRoutable`'s default wait
+   * budget/poll so the expiry path stays fast under test; production
+   * never sets it and the defaults apply.
+   */
+  readonly deliverWait?: {
+    readonly deadlineMs?: number;
+    readonly pollIntervalMs?: number;
+    readonly sleep?: (ms: number) => Promise<void>;
+  };
   /**
    * Test seam only. Production never sets these; they default to
    * Interchange `prepareProvisionedDeployment` and `sendUserMessage`.
@@ -113,8 +132,6 @@ export class OneShotRunFailedError extends Error {
   }
 }
 
-// Defined here so the tests commit typechecks standalone; the send
-// path starts rejecting with it in the next commit.
 export class OneShotRunUnreachableError extends Error {
   constructor(cause: unknown) {
     super(
@@ -318,27 +335,33 @@ export async function runOneShotPrompt(
     void (async () => {
       try {
         const cryptoProvider = await deps.cryptoProviders.get(launched.runId);
-        if (deps.sendMail !== undefined) {
-          await deps.sendMail({
-            tenantId: input.tenantId,
-            sessionId: launched.sessionId,
-            agentAddress: launched.address,
-            from: `${input.principalId}@${tenantRow.domain}`,
-            content: input.prompt,
-            cryptoProvider,
-          });
-        } else {
-          await deps.sessionService.sendUserMessage({
-            agentAddress: launched.address,
-            from: `${input.principalId}@${tenantRow.domain}`,
-            messageId: `<${crypto.randomUUID()}@${tenantRow.domain}>`,
-            date: new Date(),
-            content: input.prompt,
-            sessionId: launched.sessionId,
-            tenantId: input.tenantId,
-            cryptoProvider,
-          });
-        }
+        await deliverWhenRoutable({
+          send: async () => {
+            if (deps.sendMail !== undefined) {
+              await deps.sendMail({
+                tenantId: input.tenantId,
+                sessionId: launched.sessionId,
+                agentAddress: launched.address,
+                from: `${input.principalId}@${tenantRow.domain}`,
+                content: input.prompt,
+                cryptoProvider,
+              });
+            } else {
+              await deps.sessionService.sendUserMessage({
+                agentAddress: launched.address,
+                from: `${input.principalId}@${tenantRow.domain}`,
+                messageId: `<${crypto.randomUUID()}@${tenantRow.domain}>`,
+                date: new Date(),
+                content: input.prompt,
+                sessionId: launched.sessionId,
+                tenantId: input.tenantId,
+                cryptoProvider,
+              });
+            }
+          },
+          isRoutable: () => deps.isRoutable(launched.address),
+          ...deps.deliverWait,
+        });
         // A run's session and event collector are ensured lazily now, at
         // the hub seams that actually see the run become mail-routable
         // (`apps/hub/src/mailbox-persist.ts`, the wrapped
@@ -350,6 +373,10 @@ export async function runOneShotPrompt(
           extra: { address: launched.address },
         });
         void settle("planning-run-send-failed", () => {
+          if (isAgentUnreachableError(cause)) {
+            reject(new OneShotRunUnreachableError(cause));
+            return;
+          }
           reject(cause instanceof Error ? cause : new Error(String(cause)));
         });
       }

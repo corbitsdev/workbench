@@ -3303,6 +3303,8 @@ export async function createHub(config: HubConfig) {
                 workflowAllocationService,
                 sessionService,
                 eventCollectors,
+                isRoutable: (address) =>
+                  sidecarRouter.getRoutableAddresses().includes(address),
               },
               runnerInput,
             ),

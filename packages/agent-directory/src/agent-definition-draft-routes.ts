@@ -17,6 +17,7 @@ import type { TenantEnv, RequireGrant } from "@intx/hub-api";
 import {
   OneShotRunFailedError,
   OneShotRunTimedOutError,
+  OneShotRunUnreachableError,
 } from "./one-shot-prompt";
 import { makeErrorEnvelope, reportError } from "@corbits/error-sink";
 import {
@@ -64,6 +65,7 @@ function isDraftingFailure(err: unknown): boolean {
     err instanceof MyraAgentDefinitionDraftingUnavailableError ||
     err instanceof OneShotRunTimedOutError ||
     err instanceof OneShotRunFailedError ||
+    err instanceof OneShotRunUnreachableError ||
     err instanceof AgentDefinitionDraftReplyUnparseableError ||
     err instanceof AgentDefinitionDraftReferenceOutOfInventoryError
   );

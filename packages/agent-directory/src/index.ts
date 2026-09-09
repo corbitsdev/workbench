@@ -123,6 +123,7 @@ export {
   OneShotDefinitionNotFoundError,
   OneShotRunTimedOutError,
   OneShotRunFailedError,
+  OneShotRunUnreachableError,
   type OneShotReply,
   type OneShotRunnerDeps,
   type OneShotPromptInput,
