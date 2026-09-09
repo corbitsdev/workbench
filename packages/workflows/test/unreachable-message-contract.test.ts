@@ -24,6 +24,11 @@ describe("vendor unreachable message contract", () => {
     expect(helper).toContain('"agent is unreachable"');
 
     const vendor = readFileSync(VENDOR_SESSION_SERVICE, "utf8");
-    expect(vendor).toContain("agent is unreachable");
+    // Anchored to the throw expression itself, not any mention in a
+    // comment: only the live throw's message keeps the classifier's
+    // sniff honest, so only the throw may satisfy this pin.
+    expect(vendor).toMatch(
+      /throw new Error\(\s*`Failed to deliver message to \$\{agentAddress\}: agent is unreachable`/,
+    );
   });
 });
