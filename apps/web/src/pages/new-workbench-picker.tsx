@@ -103,13 +103,22 @@ function agentDisplayName({
   readonly name: string;
   readonly description?: string;
 }): string {
-  return description ?? humanizeSlug(name);
+  return description === undefined || description === ""
+    ? humanizeSlug(name)
+    : description;
 }
 
 export function NewWorkbenchPickerRoute() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { selectedTenantId } = useBench();
+  const currentTenantIdRef = useRef(selectedTenantId);
+  useEffect(() => {
+    currentTenantIdRef.current = selectedTenantId;
+    return () => {
+      currentTenantIdRef.current = null;
+    };
+  }, [selectedTenantId]);
   const library = useAPIQuery(
     selectedTenantId === null
       ? ""
@@ -671,6 +680,7 @@ export function NewWorkbenchPickerRoute() {
           onOpenChange={setCreateAgentOpen}
           tenantId={selectedTenantId}
           onCreated={(definition) => {
+            if (currentTenantIdRef.current !== selectedTenantId) return;
             queryClient.setQueryData<
               Awaited<ReturnType<typeof listTenantInvitableDefinitions>>
             >(
