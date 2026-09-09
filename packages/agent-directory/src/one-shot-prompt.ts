@@ -62,10 +62,11 @@ export type OneShotRunnerDeps = {
   readonly sessionService: Pick<SessionService, "sendUserMessage">;
   readonly eventCollectors: EventCollectorPort;
   /**
-   * Reads the hub's live sidecar routing table (same source the
+   * Reads the hub's live sidecar routing table (the same source the
    * webhook launch path uses). A freshly provisioned run's sidecar
-   * takes several seconds to register (CL-7476), so the opening send
-   * waits — bounded — for this to turn true before its one retry.
+   * takes several seconds to register, so the opening send fires once;
+   * if it fails as unreachable, this is polled — bounded — until the
+   * address is routable and the send is retried exactly once.
    */
   readonly isRoutable: (address: string) => boolean;
   /**
@@ -136,8 +137,8 @@ export class OneShotRunUnreachableError extends Error {
   constructor(cause: unknown) {
     super(
       cause instanceof Error
-        ? `the one-shot run's sidecar never became routable: ${cause.message}`
-        : "the one-shot run's sidecar never became routable",
+        ? `the one-shot run's opening send kept failing while its sidecar was unreachable: ${cause.message}`
+        : "the one-shot run's opening send kept failing while its sidecar was unreachable",
       { cause },
     );
     this.name = "OneShotRunUnreachableError";
@@ -368,15 +369,24 @@ export async function runOneShotPrompt(
         // `eventCollectors` dispatch in `apps/hub/src/index.ts`) —
         // CL-7480. Nothing here needs to record it.
       } catch (cause) {
+        // The reply timer may have settled the run mid-wait; a late
+        // failure is then a phantom for an already-torn-down run.
+        if (settled) return;
+        if (isAgentUnreachableError(cause)) {
+          reportError(cause, {
+            operation: "agent-directory.one-shot.send-unreachable",
+            extra: { address: launched.address },
+          });
+          void settle("planning-run-send-unreachable", () => {
+            reject(new OneShotRunUnreachableError(cause));
+          });
+          return;
+        }
         reportError(cause, {
           operation: "agent-directory.one-shot.send",
           extra: { address: launched.address },
         });
         void settle("planning-run-send-failed", () => {
-          if (isAgentUnreachableError(cause)) {
-            reject(new OneShotRunUnreachableError(cause));
-            return;
-          }
           reject(cause instanceof Error ? cause : new Error(String(cause)));
         });
       }

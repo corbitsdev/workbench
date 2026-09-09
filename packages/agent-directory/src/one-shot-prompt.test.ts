@@ -364,16 +364,13 @@ describe("timeout tears the launched run down", () => {
   });
 });
 
-// CL-7543: a freshly provisioned run's sidecar takes several seconds to
-// boot and register with the hub, so the opening drafting mail can land
-// in that gap and fail "agent is unreachable" even though the run
-// deployed fine. The send must wait (bounded) for routability and retry
-// exactly once, and residual unreachability must surface as the typed
-// drafting failure the draft route maps to 422 — not a raw 500.
+// The bounded-wait mechanics these tests exercise are documented on
+// `OneShotRunnerDeps.isRoutable` — that JSDoc is the authoritative
+// telling; the tests below pin the observable behavior.
 describe("routable wait on the opening send", () => {
   const UNREACHABLE = new Error("agent is unreachable: run_1@acme.example");
 
-  test("retries the opening send once the run becomes routable and still completes", async () => {
+  test("retries the opening send right away when the address is routable after the first failure", async () => {
     const fake = createFakeEmitter();
     const { provision, calls: launchCalls } = createFakeProvision();
     const send = createFakeSend({ 1: UNREACHABLE });
@@ -384,7 +381,7 @@ describe("routable wait on the opening send", () => {
       provision,
       sendMail: send.sendMail,
       undeploy,
-      // Routable only from the second attempt on.
+      // Routable from the first consult on — no polling, one retry.
       isRoutable: () => send.calls >= 1,
     } as never;
 
@@ -409,7 +406,7 @@ describe("routable wait on the opening send", () => {
     ]);
   });
 
-  test("never routable: the wait expires, rejects OneShotRunUnreachableError, and settles exactly once", async () => {
+  test("rejects OneShotRunUnreachableError when the routable wait expires", async () => {
     const fake = createFakeEmitter();
     const { provision, calls: launchCalls } = createFakeProvision();
     const send = createFakeSend({ 1: UNREACHABLE, 2: UNREACHABLE });
@@ -424,7 +421,7 @@ describe("routable wait on the opening send", () => {
       deliverWait: {
         deadlineMs: 50,
         pollIntervalMs: 5,
-        sleep: async () => {},
+        sleep: (ms: number) => new Promise((r) => setTimeout(r, ms)),
       },
     } as never;
 
@@ -442,7 +439,7 @@ describe("routable wait on the opening send", () => {
     // deadline without ever reaching its second send.
     expect(send.calls).toBe(1);
     expect(undeployCalls).toEqual([
-      { address: triggerAddress, reason: "planning-run-send-failed" },
+      { address: triggerAddress, reason: "planning-run-send-unreachable" },
     ]);
     expect(fake.listenerCount("agent.event")).toBe(0);
   });
@@ -453,20 +450,22 @@ describe("routable wait on the opening send", () => {
     const send = createFakeSend({ 1: UNREACHABLE });
     const { undeploy, calls: undeployCalls } = createFakeUndeploy();
     let routabilityChecks = 0;
+    const routabilityAddresses: string[] = [];
     const deps = {
       ...createBaseDeps(),
       events: fake.emitter,
       provision,
       sendMail: send.sendMail,
       undeploy,
-      isRoutable: () => {
+      isRoutable: (address: string) => {
         routabilityChecks++;
+        routabilityAddresses.push(address);
         return routabilityChecks > 3;
       },
       deliverWait: {
         deadlineMs: 5_000,
         pollIntervalMs: 1,
-        sleep: async () => {},
+        sleep: (ms: number) => new Promise((r) => setTimeout(r, ms)),
       },
     } as never;
 
@@ -486,10 +485,52 @@ describe("routable wait on the opening send", () => {
     const result = await promise;
     expect(result.content).toBe("Hello");
     expect(routabilityChecks).toBeGreaterThan(3);
+    // The launched run's address, not some placeholder, is what the
+    // runner consults.
+    expect(routabilityAddresses).toContain(triggerAddress);
     expect(send.calls).toBe(2);
     expect(undeployCalls).toEqual([
       { address: triggerAddress, reason: "planning-run-complete" },
     ]);
+  });
+
+  test("the reply timer wins over the routable wait and no send follows the teardown", async () => {
+    const fake = createFakeEmitter();
+    const { provision, calls: launchCalls } = createFakeProvision();
+    const send = createFakeSend({ 1: UNREACHABLE });
+    const { undeploy, calls: undeployCalls } = createFakeUndeploy();
+    const deps = {
+      ...createBaseDeps(),
+      events: fake.emitter,
+      provision,
+      sendMail: send.sendMail,
+      undeploy,
+      isRoutable: () => false,
+      deliverWait: {
+        deadlineMs: 5_000,
+        pollIntervalMs: 5,
+        // Cooperative: yields to macrotasks so the reply timer can fire
+        // mid-wait (a noop sleep would starve it).
+        sleep: (ms: number) => new Promise((r) => setTimeout(r, ms)),
+      },
+    } as never;
+
+    let caught: unknown;
+    try {
+      await runOneShotPrompt(deps, { ...INPUT, timeoutMs: 50 });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(OneShotRunTimedOutError);
+    const triggerAddress = firstCall(launchCalls).address;
+    expect(undeployCalls).toEqual([
+      { address: triggerAddress, reason: "planning-run-timed-out" },
+    ]);
+    // Let any post-teardown send attempt surface before pinning the count.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(send.calls).toBeLessThanOrEqual(1);
+    expect(fake.listenerCount("agent.event")).toBe(0);
   });
 
   test("a non-unreachable send error is not retried and rejects with the original cause", async () => {

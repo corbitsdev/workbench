@@ -134,7 +134,7 @@ describe("agent-definition draft route envelope", () => {
     expect(records[0]?.properties.tenantId).toBe("tnt_1");
   });
 
-  test("an unreachable-after-wait drafting failure answers 422 drafting_failed", async () => {
+  test("an OneShotRunUnreachableError maps to the 422 drafting_failed envelope", async () => {
     const app = buildApp(() =>
       Promise.reject(
         new OneShotRunUnreachableError(new Error("agent is unreachable")),
