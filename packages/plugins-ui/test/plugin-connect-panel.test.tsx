@@ -337,6 +337,10 @@ describe("PluginConnectPanel", () => {
     const field = container.querySelector(
       "#mcp-preset-token-github-mcp",
     ) as HTMLInputElement;
+    expect(
+      container.querySelector(`label[for="${field.id}"]`)?.textContent,
+    ).toContain("Personal access token");
+    expect(field.autocomplete).toBe("new-password");
     const setter = Object.getOwnPropertyDescriptor(
       HTMLInputElement.prototype,
       "value",

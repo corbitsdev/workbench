@@ -654,6 +654,7 @@ describe("PluginsRoute", () => {
 
     // The delete resolved and `onChanged` fired `reloadPlugins`; its fetch
     // is now the deferred one above, still pending.
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
     expect(el.textContent).not.toContain("Loading plugins…");
     expect(el.textContent).toContain("GitHub");
 

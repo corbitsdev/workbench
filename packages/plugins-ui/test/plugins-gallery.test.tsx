@@ -329,6 +329,46 @@ describe("PluginsGallery", () => {
     ).not.toBeNull();
   });
 
+  test("dismissing a token drawer discards its pasted token before reopening", async () => {
+    const { container } = await renderGallery();
+    const connect = container.querySelector(
+      '[data-plugin-slug="github-mcp"] [aria-label="Connect GitHub MCP"]',
+    ) as HTMLButtonElement;
+
+    connect.focus();
+    act(() => connect.click());
+    const field = document.body.querySelector(
+      "#mcp-preset-token-github-mcp",
+    ) as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    await act(async () => {
+      setter?.call(field, "ghp_unsubmitted");
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(field.value).toBe("ghp_unsubmitted");
+
+    const close = document.body.querySelector(
+      '[role="dialog"] [aria-label="Close"]',
+    ) as HTMLButtonElement;
+    await act(async () => {
+      close.click();
+    });
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(connect);
+
+    act(() => connect.click());
+    expect(
+      (
+        document.body.querySelector(
+          "#mcp-preset-token-github-mcp",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("");
+  });
+
   test("status remains visible as a core field", async () => {
     const { container } = await renderGallery();
     const caption = [...container.querySelectorAll("span")].find(
