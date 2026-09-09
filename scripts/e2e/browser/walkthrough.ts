@@ -301,8 +301,11 @@ async function createAgentDrawerLayout(
     const panel = document.querySelector<HTMLElement>(
       '[data-slot="dialog-content"].create-agent-panel',
     );
-    const body = panel?.querySelector<HTMLElement>('[data-slot="dialog-body"]');
-    if (panel === null || body === null) {
+    if (panel === null) {
+      throw new Error("New Agent drawer was not rendered");
+    }
+    const body = panel.querySelector<HTMLElement>('[data-slot="dialog-body"]');
+    if (body === null) {
       throw new Error("New Agent drawer body was not rendered");
     }
 
