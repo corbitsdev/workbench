@@ -143,8 +143,8 @@ const ALLOWLIST: readonly {
   },
   {
     relPath: "packages/access-policy/src/schema.ts",
-    maxOccurrences: 2,
-    tables: ["policy", "pending_invite"],
+    maxOccurrences: 1,
+    tables: ["policy"],
   },
   {
     relPath: "packages/onboarding/src/schema.ts",

@@ -3,10 +3,8 @@
 // "workflow") must render exactly the human row — never the machine rows
 // flooding the human-management surface.
 //
-// CL-5879: invite-by-email creates a pending invite (not a native invite,
-// which only works for existing accounts), role changes go through the
-// native role-assignment routes, the last owner can't be demoted, and a
-// pending invite can be cancelled.
+// Role changes go through the native role-assignment routes, and the last
+// owner can't be demoted.
 //
 // CL-7378: the People table's Actions cells must not inherit page-fill's
 // nowrap+ellipsis clip, or Suspend/Remove controls get truncated.
@@ -44,15 +42,6 @@ const json = (status: number, body: unknown) =>
 
 const settle = () =>
   act(() => new Promise((resolve) => setTimeout(resolve, 10)));
-
-function setNativeValue(el: HTMLInputElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLInputElement.prototype,
-    "value",
-  )?.set;
-  setter?.call(el, value);
-  el.dispatchEvent(new Event("input", { bubbles: true }));
-}
 
 const timestamps = {
   createdAt: "2026-01-01T00:00:00.000Z",
@@ -131,7 +120,6 @@ function mockFetch(handlers: Record<string, unknown>, calls: FetchCall[]) {
 }
 
 const rolesPage = { data: [OWNER_ROLE, MEMBER_ROLE], nextCursor: null };
-const noInvites = { data: [] };
 
 describe("PeopleSection", () => {
   test("excludes workflow-kind rows and renders only the human member", async () => {
@@ -148,7 +136,6 @@ describe("PeopleSection", () => {
           nextCursor: null,
         },
         "/api/tenants/tnt_1/roles": rolesPage,
-        "/api/tenants/tnt_1/access-policy/pending-invites": noInvites,
       },
       calls,
     );
@@ -174,7 +161,6 @@ describe("PeopleSection", () => {
           nextCursor: null,
         },
         "/api/tenants/tnt_1/roles": rolesPage,
-        "/api/tenants/tnt_1/access-policy/pending-invites": noInvites,
       },
       calls,
     );
@@ -189,7 +175,7 @@ describe("PeopleSection", () => {
     }
   });
 
-  test("inviting someone creates a pending invite with the chosen role", async () => {
+  test("does not show Invite someone and never fetches reserved-email joins", async () => {
     const calls: FetchCall[] = [];
     mockFetch(
       {
@@ -198,16 +184,6 @@ describe("PeopleSection", () => {
           nextCursor: null,
         },
         "/api/tenants/tnt_1/roles": rolesPage,
-        "/api/tenants/tnt_1/access-policy/pending-invites": noInvites,
-        "POST /api/tenants/tnt_1/access-policy/pending-invites": () =>
-          json(201, {
-            id: "pinv_1",
-            tenantId: "tnt_1",
-            matchType: "email",
-            value: "bob@example.com",
-            roleId: "role_member",
-            createdAt: timestamps.createdAt,
-          }),
       },
       calls,
     );
@@ -215,44 +191,11 @@ describe("PeopleSection", () => {
     const { container, root } = mount();
     try {
       await settle();
-
-      const inviteButton = Array.from(
-        container.querySelectorAll("button"),
-      ).find((b) => b.textContent === "Invite someone");
-      expect(inviteButton).toBeDefined();
-      act(() =>
-        inviteButton?.dispatchEvent(new MouseEvent("click", { bubbles: true })),
-      );
-      await settle();
-
-      const emailInput = document.querySelector(
-        'input[type="email"]',
-      ) as HTMLInputElement;
-      act(() => setNativeValue(emailInput, "bob@example.com"));
-      await settle();
-
-      const form = document.getElementById(
-        "invite-person-form",
-      ) as HTMLFormElement;
-      act(() => {
-        form.dispatchEvent(
-          new Event("submit", { bubbles: true, cancelable: true }),
-        );
-      });
-      await settle();
-
-      const inviteCall = calls.find(
-        (c) =>
-          c.url === "/api/tenants/tnt_1/access-policy/pending-invites" &&
-          c.init?.method === "POST",
-      );
-      if (inviteCall === undefined) throw new Error("invite call not found");
-      const body = JSON.parse(inviteCall.init?.body as string);
-      expect(body).toEqual({
-        matchType: "email",
-        value: "bob@example.com",
-        roleId: "role_member",
-      });
+      expect(container.textContent).toContain("Alice Anderson");
+      expect(container.textContent).not.toContain("Invite someone");
+      expect(
+        calls.some((c) => c.url.includes("/access-policy/pending-invites")),
+      ).toBe(false);
     } finally {
       act(() => root.unmount());
       container.remove();
@@ -276,7 +219,6 @@ describe("PeopleSection", () => {
           nextCursor: null,
         },
         "/api/tenants/tnt_1/roles": rolesPage,
-        "/api/tenants/tnt_1/access-policy/pending-invites": noInvites,
         "POST /api/tenants/tnt_1/principals/prn_human_2/roles/role_owner": () =>
           json(200, {}),
         "DELETE /api/tenants/tnt_1/principals/prn_human_2/roles/role_member":
@@ -331,7 +273,6 @@ describe("PeopleSection", () => {
           nextCursor: null,
         },
         "/api/tenants/tnt_1/roles": rolesPage,
-        "/api/tenants/tnt_1/access-policy/pending-invites": noInvites,
       },
       calls,
     );
@@ -366,164 +307,19 @@ describe("PeopleSection", () => {
     }
   });
 
-  test("cancelling a pending invite deletes it", async () => {
-    const calls: FetchCall[] = [];
-    mockFetch(
-      {
-        "/api/tenants/tnt_1/principals": {
-          data: [humanPrincipal()],
-          nextCursor: null,
-        },
-        "/api/tenants/tnt_1/roles": rolesPage,
-        "/api/tenants/tnt_1/access-policy/pending-invites": {
-          data: [
-            {
-              id: "pinv_1",
-              tenantId: "tnt_1",
-              matchType: "email",
-              value: "carol@example.com",
-              roleId: "role_member",
-              createdAt: timestamps.createdAt,
-            },
-          ],
-        },
-        "DELETE /api/tenants/tnt_1/access-policy/pending-invites/pinv_1": () =>
-          json(204, undefined),
-      },
-      calls,
-    );
-
-    const { container, root } = mount();
-    try {
-      await settle();
-      expect(container.textContent).toContain("carol@example.com");
-
-      const cancelButton = Array.from(
-        container.querySelectorAll("button"),
-      ).find((b) => b.textContent === "Cancel");
-      expect(cancelButton).toBeDefined();
-      act(() =>
-        cancelButton?.dispatchEvent(new MouseEvent("click", { bubbles: true })),
-      );
-      await settle();
-
-      const confirmButton = Array.from(
-        container.querySelectorAll("button"),
-      ).find((b) => b.textContent?.includes("Cancel this invite"));
-      if (confirmButton !== undefined) {
-        act(() =>
-          confirmButton.dispatchEvent(
-            new MouseEvent("click", { bubbles: true }),
-          ),
-        );
-        await settle();
-      }
-
-      expect(
-        calls.some(
-          (c) =>
-            c.url ===
-              "/api/tenants/tnt_1/access-policy/pending-invites/pinv_1" &&
-            c.init?.method === "DELETE",
-        ),
-      ).toBe(true);
-    } finally {
-      act(() => root.unmount());
-      container.remove();
-    }
-  });
-
   // CL-7139: every mutation catch must report the failure through
   // reportError with its own operation, not just set the generic message.
   const REPORT_ERROR_CASES: {
     readonly name: string;
     readonly operation: string;
     readonly principals: unknown[];
-    readonly invites: { readonly data: unknown[] };
     readonly failingHandler: Record<string, unknown>;
     readonly trigger: (container: HTMLDivElement) => Promise<void>;
   }[] = [
     {
-      name: "invite",
-      operation: "settings.people.invite",
-      principals: [humanPrincipal()],
-      invites: noInvites,
-      failingHandler: {
-        "POST /api/tenants/tnt_1/access-policy/pending-invites": () =>
-          json(500, { error: "boom" }),
-      },
-      trigger: async (container) => {
-        const inviteButton = Array.from(
-          container.querySelectorAll("button"),
-        ).find((b) => b.textContent === "Invite someone");
-        act(() =>
-          inviteButton?.dispatchEvent(
-            new MouseEvent("click", { bubbles: true }),
-          ),
-        );
-        await settle();
-        const emailInput = document.querySelector(
-          'input[type="email"]',
-        ) as HTMLInputElement;
-        act(() => setNativeValue(emailInput, "bob@example.com"));
-        await settle();
-        const form = document.getElementById(
-          "invite-person-form",
-        ) as HTMLFormElement;
-        act(() => {
-          form.dispatchEvent(
-            new Event("submit", { bubbles: true, cancelable: true }),
-          );
-        });
-        await settle();
-      },
-    },
-    {
-      name: "cancelInvite",
-      operation: "settings.people.cancelInvite",
-      principals: [humanPrincipal()],
-      invites: {
-        data: [
-          {
-            id: "pinv_1",
-            tenantId: "tnt_1",
-            matchType: "email",
-            value: "carol@example.com",
-            roleId: "role_member",
-            createdAt: timestamps.createdAt,
-          },
-        ],
-      },
-      failingHandler: {
-        "DELETE /api/tenants/tnt_1/access-policy/pending-invites/pinv_1": () =>
-          json(500, { error: "boom" }),
-      },
-      trigger: async (container) => {
-        const cancelButton = Array.from(
-          container.querySelectorAll("button"),
-        ).find((b) => b.textContent === "Cancel");
-        act(() =>
-          cancelButton?.dispatchEvent(
-            new MouseEvent("click", { bubbles: true }),
-          ),
-        );
-        await settle();
-        const confirmButton = Array.from(
-          container.querySelectorAll("button"),
-        ).find((b) => b.textContent?.includes("Cancel this invite"));
-        act(() =>
-          confirmButton?.dispatchEvent(
-            new MouseEvent("click", { bubbles: true }),
-          ),
-        );
-        await settle();
-      },
-    },
-    {
       name: "updateStatus",
       operation: "settings.people.updateStatus",
       principals: [humanPrincipal()],
-      invites: noInvites,
       failingHandler: {
         "PATCH /api/tenants/tnt_1/principals/prn_human_1": () =>
           json(500, { error: "boom" }),
@@ -544,7 +340,6 @@ describe("PeopleSection", () => {
       name: "remove",
       operation: "settings.people.remove",
       principals: [humanPrincipal()],
-      invites: noInvites,
       failingHandler: {
         "DELETE /api/tenants/tnt_1/principals/prn_human_1": () =>
           json(500, { error: "boom" }),
@@ -582,7 +377,6 @@ describe("PeopleSection", () => {
           roles: [{ id: MEMBER_ROLE.id, name: MEMBER_ROLE.name }],
         }),
       ],
-      invites: noInvites,
       failingHandler: {
         "DELETE /api/tenants/tnt_1/principals/prn_human_2/roles/role_member":
           () => json(500, { error: "boom" }),
@@ -612,7 +406,6 @@ describe("PeopleSection", () => {
             nextCursor: null,
           },
           "/api/tenants/tnt_1/roles": rolesPage,
-          "/api/tenants/tnt_1/access-policy/pending-invites": testCase.invites,
           ...testCase.failingHandler,
         },
         calls,

@@ -129,58 +129,6 @@ describeIfDb("createDrizzleAccessPolicyStore", () => {
     }
   });
 
-  test("pending invites: exact-email match is found and consumption sticks", async () => {
-    const sql = postgres(scratchUrl, { max: 1 });
-    try {
-      const store = createDrizzleAccessPolicyStore(drizzle(sql));
-      const invite = await store.createPendingInvite("tnt_invites", {
-        matchType: "email",
-        value: "Person@Acme.Example",
-      });
-
-      const match = await store.findMatchingPendingInvite(
-        "person@acme.example",
-      );
-      expect(match?.id).toBe(invite.id);
-
-      const won = await store.consumePendingInvite(invite.id);
-      expect(won).toBe(true);
-      const afterConsume = await store.findMatchingPendingInvite(
-        "person@acme.example",
-      );
-      expect(afterConsume).toBeUndefined();
-    } finally {
-      await sql.end();
-    }
-  });
-
-  test("consumePendingInvite is atomic: two concurrent consumers of the same row, exactly one wins", async () => {
-    const sql = postgres(scratchUrl, { max: 5 });
-    try {
-      const store = createDrizzleAccessPolicyStore(drizzle(sql));
-      const invite = await store.createPendingInvite("tnt_race", {
-        matchType: "email",
-        value: "racer@acme.example",
-      });
-
-      const results = await Promise.all([
-        store.consumePendingInvite(invite.id),
-        store.consumePendingInvite(invite.id),
-        store.consumePendingInvite(invite.id),
-      ]);
-
-      expect(results.filter((won) => won)).toHaveLength(1);
-      expect(results.filter((won) => !won)).toHaveLength(2);
-
-      const rows =
-        await sql`select consumed_at from access_policy.pending_invite where id = ${invite.id}`;
-      expect(rows).toHaveLength(1);
-      expect(rows[0]?.["consumed_at"]).not.toBeNull();
-    } finally {
-      await sql.end();
-    }
-  });
-
   test("upsertPolicy is atomic: two concurrent patches to different fields on an existing row both land, neither reverts the other", async () => {
     const setupSql = postgres(scratchUrl, { max: 1 });
     try {
@@ -274,56 +222,6 @@ describeIfDb("createDrizzleAccessPolicyStore", () => {
       const rows =
         await sql`select count(*)::int as count from access_policy.policy where tenant_id = 'tnt_race_new'`;
       expect(rows[0]?.["count"]).toBe(1);
-    } finally {
-      await sql.end();
-    }
-  });
-
-  test("pending invites: a domain match is found for any email on that domain", async () => {
-    const sql = postgres(scratchUrl, { max: 1 });
-    try {
-      const store = createDrizzleAccessPolicyStore(drizzle(sql));
-      await store.createPendingInvite("tnt_domain_invites", {
-        matchType: "domain",
-        value: "@Widgets.Example",
-      });
-
-      const matchOne = await store.findMatchingPendingInvite(
-        "alice@widgets.example",
-      );
-      const matchTwo = await store.findMatchingPendingInvite(
-        "bob@widgets.example",
-      );
-      expect(matchOne?.tenantId).toBe("tnt_domain_invites");
-      expect(matchTwo?.tenantId).toBe("tnt_domain_invites");
-
-      const noMatch = await store.findMatchingPendingInvite(
-        "carol@other.example",
-      );
-      expect(noMatch).toBeUndefined();
-    } finally {
-      await sql.end();
-    }
-  });
-
-  test("deletePendingInvite only removes the row for its own tenant", async () => {
-    const sql = postgres(scratchUrl, { max: 1 });
-    try {
-      const store = createDrizzleAccessPolicyStore(drizzle(sql));
-      const invite = await store.createPendingInvite("tnt_delete_a", {
-        matchType: "email",
-        value: "someone@acme.example",
-      });
-
-      await store.deletePendingInvite("tnt_delete_b", invite.id);
-      expect(
-        await store.findMatchingPendingInvite("someone@acme.example"),
-      ).toBeDefined();
-
-      await store.deletePendingInvite("tnt_delete_a", invite.id);
-      expect(
-        await store.findMatchingPendingInvite("someone@acme.example"),
-      ).toBeUndefined();
     } finally {
       await sql.end();
     }
