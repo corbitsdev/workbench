@@ -3,7 +3,7 @@
 // connected custom servers share the same server-side store.
 
 import { reportError } from "@corbits/error-sink";
-import { Button, ConfirmButton, Input, toast } from "@corbits/react-ui";
+import { Button, toast } from "@corbits/react-ui";
 import {
   CONNECTOR_REGISTRY,
   MCP_PRESETS,
@@ -12,13 +12,11 @@ import { useEffect, useState } from "react";
 
 import {
   connectMcpPreset,
-  disconnectMcpServer,
   listMcpPresets,
   mcpOAuthStartPath,
   type McpPreset,
 } from "./mcp-servers-api";
 import { PluginLogo } from "./plugin-logo";
-import { PLUGINS_STRINGS } from "./strings";
 
 function messageOf(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
@@ -71,57 +69,42 @@ export function McpPresetCard({
   preset,
   toolCount,
   onChanged,
+  onOpen,
 }: {
   readonly tenantId: string;
   readonly preset: McpPreset;
   readonly toolCount: number | undefined;
   readonly onChanged: (toolCount?: number) => void;
+  readonly onOpen: (trigger: HTMLButtonElement) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(() =>
     mcpOauthReturnError(preset.slug),
   );
-  const [tokenFieldOpen, setTokenFieldOpen] = useState(false);
-  const [token, setToken] = useState("");
-
-  function submitConnect(pastedToken: string | undefined) {
+  function submitConnect() {
     setBusy(true);
     setError(null);
-    connectMcpPreset(tenantId, preset.slug, pastedToken)
+    connectMcpPreset(tenantId, preset.slug, undefined)
       .then((result) => {
         toast(
           `Connected — ${result.toolCount} tool${result.toolCount === 1 ? "" : "s"} available.`,
         );
-        setTokenFieldOpen(false);
-        setToken("");
         onChanged(result.toolCount);
       })
       .catch((cause: unknown) => setError(messageOf(cause)))
       .finally(() => setBusy(false));
   }
 
-  function handleConnect() {
+  function handleConnect(trigger: HTMLButtonElement) {
     if (preset.connectionMode === "oauth") {
       window.location.href = mcpOAuthStartPath(tenantId, preset.slug);
       return;
     }
     if (preset.connectionMode === "token") {
-      setTokenFieldOpen(true);
+      onOpen(trigger);
       return;
     }
-    submitConnect(undefined);
-  }
-
-  function handleDisconnect() {
-    setBusy(true);
-    setError(null);
-    disconnectMcpServer(tenantId, preset.slug)
-      .then(() => {
-        toast(`${preset.displayName} disconnected.`);
-        onChanged();
-      })
-      .catch(() => setError(PLUGINS_STRINGS.disconnectError))
-      .finally(() => setBusy(false));
+    submitConnect();
   }
 
   const presetDefinition = MCP_PRESETS.find(
@@ -136,8 +119,6 @@ export function McpPresetCard({
       ? "Connected"
       : `${toolCount} tool${toolCount === 1 ? "" : "s"}`
     : "Not connected";
-
-  const tokenFieldId = `mcp-preset-token-${preset.slug}`;
 
   return (
     <div
@@ -167,91 +148,30 @@ export function McpPresetCard({
         <div className="flex flex-none items-center gap-2">
           <span className="text-xs text-muted-foreground">{status}</span>
           {preset.connected ? (
-            <ConfirmButton
-              variant="ghost"
+            <Button
+              type="button"
               size="sm"
-              confirmLabel={
-                <>
-                  Disconnect
-                  <span className="sr-only"> {preset.displayName}</span>
-                </>
-              }
-              disabled={busy}
-              onConfirm={handleDisconnect}
+              variant="ghost"
+              aria-label={`Manage ${preset.displayName}`}
+              onClick={(event) => onOpen(event.currentTarget)}
             >
-              {busy ? "Disconnecting…" : "Manage"}
+              Manage
               <span className="sr-only"> {preset.displayName}</span>
-            </ConfirmButton>
-          ) : tokenFieldOpen ? null : (
+            </Button>
+          ) : (
             <Button
               type="button"
               size="sm"
               variant="ghost"
               disabled={busy}
               aria-label={`Connect ${preset.displayName}`}
-              onClick={handleConnect}
+              onClick={(event) => handleConnect(event.currentTarget)}
             >
               {busy ? "Connecting…" : "Connect"}
             </Button>
           )}
         </div>
       </div>
-      {tokenFieldOpen && !preset.connected ? (
-        <div className="mt-2 flex flex-col gap-2 pl-11">
-          <ol className="list-decimal space-y-1 pl-4 text-xs text-muted-foreground">
-            {(preset.tokenSteps ?? []).map((step) => (
-              <li key={step}>{step}</li>
-            ))}
-          </ol>
-          <a
-            href={preset.docsUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-xs underline underline-offset-2"
-          >
-            Create your token
-          </a>
-          <label className="sr-only" htmlFor={tokenFieldId}>
-            {`${preset.displayName} access token`}
-          </label>
-          <Input
-            id={tokenFieldId}
-            type="password"
-            value={token}
-            placeholder="Paste your access token"
-            disabled={busy}
-            onChange={(event) => {
-              setToken(event.target.value);
-            }}
-          />
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              size="sm"
-              disabled={busy || token.trim() === ""}
-              aria-label={`Connect ${preset.displayName}`}
-              onClick={() => {
-                submitConnect(token.trim());
-              }}
-            >
-              {busy ? "Connecting…" : "Connect"}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={() => {
-                setTokenFieldOpen(false);
-                setToken("");
-                setError(null);
-              }}
-            >
-              Cancel
-            </Button>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

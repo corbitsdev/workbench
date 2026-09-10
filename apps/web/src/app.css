@@ -38,6 +38,15 @@ html {
   outline-offset: 2px;
 }
 
+/* Inputs in side drawers already have a visible control boundary. Color that
+   edge on focus so the focus treatment reads as one control, not a second
+   outline outside it. */
+[data-slot="dialog-content"][data-side="right"]
+  [data-slot="input"]:focus-visible {
+  outline: none;
+  border-color: var(--accent-rail, var(--primary));
+}
+
 /* Brand type: Red Hat Display is loaded in index.html but nothing applied
    it — without this the whole app silently renders in the system fallback.
    Space Mono covers the places code/mono content asks for monospace. */

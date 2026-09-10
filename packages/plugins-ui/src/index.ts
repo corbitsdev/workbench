@@ -5,7 +5,10 @@ export { PluginCard } from "./plugin-card";
 export { SkillCard } from "./skill-card";
 export type { SkillCardData } from "./skill-card";
 export { InstalledStrip } from "./installed-strip";
-export { PluginConnectPanel } from "./plugin-connect-panel";
+export {
+  PluginConnectPanel,
+  type PluginPanelSubject,
+} from "./plugin-connect-panel";
 export { McpServersSection } from "./mcp-servers-section";
 
 export { PLUGINS_STRINGS } from "./strings";

@@ -12,7 +12,11 @@ import type { Root } from "react-dom/client";
 import type { ConnectorDescriptor } from "@corbits/connections/registry";
 import type { ResolvedPlugin } from "@corbits/connections/plugins";
 
-import { PluginConnectPanel } from "../src/plugin-connect-panel";
+import {
+  PluginConnectPanel,
+  type PluginPanelSubject,
+} from "../src/plugin-connect-panel";
+import type { McpPreset } from "../src/mcp-servers-api";
 import { PLUGINS_STRINGS } from "../src/strings";
 
 const realFetch = globalThis.fetch;
@@ -66,7 +70,14 @@ const settle = () =>
 // Dialog content renders through a Radix portal appended to
 // `document.body`, not inside the mount container — every assertion below
 // reads from `document.body` for that reason.
-function render(plugin: ResolvedPlugin | null) {
+function connectorSubject(plugin: ResolvedPlugin): PluginPanelSubject {
+  return { kind: "connector", plugin };
+}
+
+function render(
+  subject: PluginPanelSubject | null,
+  onChanged: (toolCount?: number) => void = () => {},
+) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root: Root = createRoot(container);
@@ -75,9 +86,9 @@ function render(plugin: ResolvedPlugin | null) {
     root.render(
       <PluginConnectPanel
         tenantId="ten_1"
-        plugin={plugin}
+        subject={subject}
         onClose={() => {}}
-        onChanged={() => {}}
+        onChanged={onChanged}
       />,
     );
   });
@@ -87,7 +98,9 @@ function render(plugin: ResolvedPlugin | null) {
 describe("PluginConnectPanel", () => {
   test("an oauth-pkce connector shows an OAuth connect link, not a key form", () => {
     const container = render(
-      notConnected(descriptor("huggingface", "Hugging Face", "oauth-pkce")),
+      connectorSubject(
+        notConnected(descriptor("huggingface", "Hugging Face", "oauth-pkce")),
+      ),
     );
 
     const link = container.querySelector("a");
@@ -99,7 +112,9 @@ describe("PluginConnectPanel", () => {
 
   // CL-6377: one Connect action — no separate test step or "Test" copy.
   test("an api-key connector shows the connect form", () => {
-    const container = render(notConnected(descriptor("exa", "Exa", "api-key")));
+    const container = render(
+      connectorSubject(notConnected(descriptor("exa", "Exa", "api-key"))),
+    );
 
     expect(container.querySelector('input[type="password"]')).not.toBeNull();
     expect(container.textContent).toContain("Connect");
@@ -131,7 +146,9 @@ describe("PluginConnectPanel", () => {
     }) as unknown as typeof fetch;
 
     const container = render(
-      notConnected(descriptor("granola", "Granola", "api-key")),
+      connectorSubject(
+        notConnected(descriptor("granola", "Granola", "api-key")),
+      ),
     );
     await settle();
 
@@ -145,18 +162,23 @@ describe("PluginConnectPanel", () => {
         new Response(JSON.stringify({ error: "nope" }), { status: 500 }),
       )) as unknown as typeof fetch;
 
-    const container = render({
-      descriptor: descriptor("github", "GitHub", "api-key"),
-      status: "connected",
-      provenance: "this-workbench",
-      credentialId: "cred_github",
-      credentialName: "GitHub",
-    });
+    const container = render(
+      connectorSubject({
+        descriptor: descriptor("github", "GitHub", "api-key"),
+        status: "connected",
+        provenance: "this-workbench",
+        credentialId: "cred_github",
+        credentialName: "GitHub",
+      }),
+    );
 
     const disconnectButton = [...container.querySelectorAll("button")].find(
       (button) => button.textContent?.includes("Disconnect") === true,
     );
     expect(disconnectButton).not.toBeUndefined();
+    expect(disconnectButton?.className).toContain("border-input");
+    expect(disconnectButton?.className).not.toContain("bg-destructive");
+    expect(container.textContent).not.toContain("Close");
 
     act(() => {
       disconnectButton?.dispatchEvent(
@@ -195,7 +217,9 @@ describe("PluginConnectPanel", () => {
         headers: { "content-type": "application/json" },
       })) as unknown as typeof fetch;
 
-    const container = render(notConnected(githubDescriptor()));
+    const container = render(
+      connectorSubject(notConnected(githubDescriptor())),
+    );
     await settle();
 
     const link = container.querySelector("a");
@@ -210,7 +234,9 @@ describe("PluginConnectPanel", () => {
         headers: { "content-type": "application/json" },
       })) as unknown as typeof fetch;
 
-    const container = render(notConnected(githubDescriptor()));
+    const container = render(
+      connectorSubject(notConnected(githubDescriptor())),
+    );
     await settle();
 
     expect(container.textContent).toContain(
@@ -225,7 +251,9 @@ describe("PluginConnectPanel", () => {
     globalThis.fetch = (() =>
       Promise.reject(new Error("network down"))) as unknown as typeof fetch;
 
-    const container = render(notConnected(githubDescriptor()));
+    const container = render(
+      connectorSubject(notConnected(githubDescriptor())),
+    );
     await settle();
 
     expect(container.textContent).toContain("Couldn't check");
@@ -249,7 +277,9 @@ describe("PluginConnectPanel", () => {
       });
     }) as unknown as typeof fetch;
 
-    const container = render(notConnected(githubDescriptor()));
+    const container = render(
+      connectorSubject(notConnected(githubDescriptor())),
+    );
     await settle();
 
     const retry = [...container.querySelectorAll("button")].find(
@@ -271,5 +301,111 @@ describe("PluginConnectPanel", () => {
     const container = render(null);
     expect(container.querySelector('input[type="password"]')).toBeNull();
     expect(container.querySelector("a")).toBeNull();
+  });
+
+  test("a token preset renders its guidance and submits the pasted token", async () => {
+    const preset: McpPreset = {
+      slug: "github-mcp",
+      displayName: "GitHub MCP",
+      description: "Search code, work with issues and pull requests.",
+      url: "https://api.githubcopilot.com/mcp/",
+      connectionMode: "token",
+      docsUrl: "https://github.com/settings/tokens",
+      tokenSteps: ["Create a token with repo scope."],
+      connected: false,
+    };
+    const calls: { url: string; init?: RequestInit }[] = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      calls.push({ url, ...(init === undefined ? {} : { init }) });
+      return new Response(
+        JSON.stringify({
+          slug: preset.slug,
+          name: preset.displayName,
+          url: preset.url,
+          toolCount: 40,
+        }),
+      );
+    }) as unknown as typeof fetch;
+
+    const changed: number[] = [];
+    const container = render(
+      { kind: "mcp-preset", preset, toolCount: undefined },
+      (toolCount) => {
+        if (toolCount !== undefined) changed.push(toolCount);
+      },
+    );
+    const field = container.querySelector(
+      "#mcp-preset-token-github-mcp",
+    ) as HTMLInputElement;
+    expect(
+      container.querySelector(`label[for="${field.id}"]`)?.textContent,
+    ).toContain("Personal access token");
+    expect(field.autocomplete).toBe("new-password");
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    await act(async () => {
+      setter?.call(field, "ghp_pasted");
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const connect = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Connect",
+    );
+    await act(async () => {
+      connect?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe("/api/tenants/ten_1/mcp-servers");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toMatchObject({
+      presetSlug: "github-mcp",
+      token: "ghp_pasted",
+    });
+    expect(changed).toEqual([40]);
+  });
+
+  test("a connected preset disconnects from the drawer", async () => {
+    const preset: McpPreset = {
+      slug: "exa",
+      displayName: "Exa",
+      description: "Search and research the live web.",
+      url: "https://mcp.exa.ai/mcp",
+      connectionMode: "keyless",
+      docsUrl: "https://exa.ai",
+      connected: true,
+    };
+    const calls: { url: string; init?: RequestInit }[] = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      calls.push({ url, ...(init === undefined ? {} : { init }) });
+      return new Response(null, { status: 204 });
+    }) as unknown as typeof fetch;
+
+    const container = render({
+      kind: "mcp-preset",
+      preset,
+      toolCount: 2,
+    });
+    const disconnect = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Disconnect") === true,
+    );
+    expect(disconnect?.className).toContain("border-input");
+    expect(disconnect?.className).not.toContain("bg-destructive");
+    expect(container.textContent).not.toContain("Close");
+    act(() => {
+      disconnect?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const confirm = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Disconnect") === true,
+    );
+    await act(async () => {
+      confirm?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe("/api/tenants/ten_1/mcp-servers/exa");
+    expect(calls[0]?.init?.method).toBe("DELETE");
   });
 });

@@ -1,7 +1,6 @@
-// The one-flow connect surface (CL-6090): every plugin — OAuth, api-key, or
-// Granola's key-plus-webhook combination — connects from this one
-// right-docked panel, never a "create a routine first, then come back"
-// detour. It reuses the exact mutations `@corbits/settings-ui`'s own
+// The shared configuration surface (CL-6090) keeps credential and management
+// controls out of the catalog grid. It reuses the exact mutations
+// `@corbits/settings-ui`'s own
 // Connections section already calls (`completeConnectorCredential`,
 // `deleteCredential`, `oauthStartHref`) and,
 // for Granola's webhook half, mounts `GranolaWebhookCard` wholesale rather
@@ -19,12 +18,12 @@ import {
   DialogBody,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   Input,
   toast,
 } from "@corbits/react-ui";
+import { reportError } from "@corbits/error-sink";
 import {
   GranolaWebhookCard,
   completeConnectorCredential,
@@ -37,9 +36,26 @@ import type { ResolvedPlugin } from "@corbits/connections/plugins";
 import { useEffect, useState } from "react";
 
 import { pluginOutcome } from "./plugin-meta";
+import {
+  connectMcpPreset,
+  disconnectMcpServer,
+  type McpPreset,
+} from "./mcp-servers-api";
 import { PLUGINS_STRINGS } from "./strings";
 
 const PLUGINS_RETURN_PATH = "/plugins";
+
+function messageOf(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
+export type PluginPanelSubject =
+  | { readonly kind: "connector"; readonly plugin: ResolvedPlugin }
+  | {
+      readonly kind: "mcp-preset";
+      readonly preset: McpPreset;
+      readonly toolCount: number | undefined;
+    };
 
 function ApiKeyConnectForm({
   tenantId,
@@ -148,9 +164,12 @@ function ConnectedSummary({
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2">
-        <Badge tone={plugin.status === "connected" ? "success" : "danger"}>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
+        <Badge
+          className="self-start"
+          tone={plugin.status === "connected" ? "success" : "danger"}
+        >
           {plugin.status === "connected" ? "Connected" : "Needs attention"}
         </Badge>
         <span className="text-sm text-muted-foreground">
@@ -163,10 +182,12 @@ function ConnectedSummary({
           creates a connection of your own instead of changing theirs.
         </p>
       ) : null}
-      <div className="flex flex-wrap gap-2">
-        {plugin.provenance === "this-workbench" ? (
+      {plugin.provenance === "this-workbench" ? (
+        <div className="flex flex-col gap-3 border-t border-border pt-4">
+          <p className="text-sm text-muted-foreground">
+            Disconnecting removes this plugin&apos;s access from the workbench.
+          </p>
           <ConfirmButton
-            variant="destructive"
             size="sm"
             confirmLabel="Disconnect"
             disabled={busy}
@@ -174,8 +195,145 @@ function ConnectedSummary({
           >
             {busy ? "Disconnecting…" : "Disconnect"}
           </ConfirmButton>
+        </div>
+      ) : null}
+      {error !== null ? (
+        <p className="text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function McpPresetPanelContent({
+  tenantId,
+  preset,
+  toolCount,
+  onChanged,
+}: {
+  readonly tenantId: string;
+  readonly preset: McpPreset;
+  readonly toolCount: number | undefined;
+  readonly onChanged: (toolCount?: number) => void;
+}) {
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function handleConnect() {
+    setBusy(true);
+    setError(null);
+    connectMcpPreset(tenantId, preset.slug, token.trim())
+      .then((result) => {
+        toast(
+          `Connected — ${result.toolCount} tool${result.toolCount === 1 ? "" : "s"} available.`,
+        );
+        onChanged(result.toolCount);
+      })
+      .catch((cause: unknown) => {
+        reportError(cause, {
+          operation: "plugins.mcp-preset.connect",
+          tenantId,
+        });
+        setError(messageOf(cause));
+      })
+      .finally(() => setBusy(false));
+  }
+
+  function handleDisconnect() {
+    setBusy(true);
+    setError(null);
+    disconnectMcpServer(tenantId, preset.slug)
+      .then(() => {
+        toast(`${preset.displayName} disconnected.`);
+        onChanged();
+      })
+      .catch((cause: unknown) => {
+        reportError(cause, {
+          operation: "plugins.mcp-preset.disconnect",
+          tenantId,
+        });
+        setError(PLUGINS_STRINGS.disconnectError);
+      })
+      .finally(() => setBusy(false));
+  }
+
+  if (preset.connected) {
+    return (
+      <div className="flex flex-col gap-4">
+        <Badge className="self-start" tone="success">
+          {toolCount === undefined
+            ? "Connected"
+            : `${toolCount} tool${toolCount === 1 ? "" : "s"}`}
+        </Badge>
+        <div className="flex flex-col gap-3 border-t border-border pt-4">
+          <p className="text-sm text-muted-foreground">
+            Disconnecting removes this plugin&apos;s access from the workbench.
+          </p>
+          <ConfirmButton
+            size="sm"
+            confirmLabel="Disconnect"
+            disabled={busy}
+            onConfirm={handleDisconnect}
+          >
+            {busy ? "Disconnecting…" : "Disconnect"}
+          </ConfirmButton>
+        </div>
+        {error !== null ? (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
         ) : null}
       </div>
+    );
+  }
+
+  if (preset.connectionMode !== "token") return null;
+
+  const tokenFieldId = `mcp-preset-token-${preset.slug}`;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <ol className="list-decimal space-y-1 pl-4 text-sm text-muted-foreground">
+        {(preset.tokenSteps ?? []).map((step) => (
+          <li key={step}>{step}</li>
+        ))}
+      </ol>
+      <a
+        href={preset.docsUrl}
+        target="_blank"
+        rel="noreferrer"
+        className="text-sm underline underline-offset-2"
+      >
+        Create your token
+      </a>
+      <label
+        className="flex flex-col gap-1.5 text-sm font-medium"
+        htmlFor={tokenFieldId}
+      >
+        Personal access token
+        <Input
+          id={tokenFieldId}
+          type="password"
+          value={token}
+          placeholder="Paste your access token"
+          disabled={busy}
+          autoComplete="new-password"
+          onChange={(event) => {
+            setToken(event.target.value);
+            setError(null);
+          }}
+        />
+      </label>
+      <Button
+        type="button"
+        variant="primary"
+        disabled={busy || token.trim() === ""}
+        onClick={handleConnect}
+      >
+        {busy ? "Connecting…" : "Connect"}
+      </Button>
       {error !== null ? (
         <p className="text-sm text-destructive" role="alert">
           {error}
@@ -187,16 +345,20 @@ function ConnectedSummary({
 
 export function PluginConnectPanel({
   tenantId,
-  plugin,
+  subject,
   onClose,
   onChanged,
 }: {
   readonly tenantId: string;
-  readonly plugin: ResolvedPlugin | null;
+  readonly subject: PluginPanelSubject | null;
   readonly onClose: () => void;
-  readonly onChanged: () => void;
+  readonly onChanged: (toolCount?: number) => void;
 }) {
-  const open = plugin !== null;
+  const open = subject !== null;
+  const plugin = subject?.kind === "connector" ? subject.plugin : null;
+  const preset = subject?.kind === "mcp-preset" ? subject.preset : null;
+  const toolCount =
+    subject?.kind === "mcp-preset" ? subject.toolCount : undefined;
   // CL-6830: probe is tri-state — never fold a failure into `{}`, which
   // reads as "hosted app absent" and hides one-click connect behind the
   // not-configured token paste.
@@ -211,7 +373,7 @@ export function PluginConnectPanel({
   const [oauthProbeKey, setOauthProbeKey] = useState(0);
 
   useEffect(() => {
-    if (!open) return;
+    if (plugin === null) return;
     let cancelled = false;
     setOauthProbe({ status: "loading" });
     fetchOAuthConfigured(tenantId)
@@ -224,7 +386,7 @@ export function PluginConnectPanel({
     return () => {
       cancelled = true;
     };
-  }, [open, tenantId, oauthProbeKey]);
+  }, [plugin, tenantId, oauthProbeKey]);
 
   const hostedAppAvailable =
     plugin?.descriptor.oauth !== undefined &&
@@ -238,20 +400,26 @@ export function PluginConnectPanel({
         if (!next) onClose();
       }}
     >
-      <DialogContent side="right" key={plugin?.descriptor.id}>
+      <DialogContent
+        side="right"
+        className="max-sm:inset-x-3 max-sm:inset-y-3 max-sm:w-auto max-sm:rounded-lg max-sm:border"
+        key={plugin?.descriptor.id ?? preset?.slug}
+      >
         <DialogHeader>
-          <DialogTitle>{plugin?.descriptor.displayName ?? ""}</DialogTitle>
+          <DialogTitle>
+            {plugin?.descriptor.displayName ?? preset?.displayName ?? ""}
+          </DialogTitle>
           <DialogDescription>
-            {plugin === null
-              ? ""
-              : pluginOutcome(
+            {plugin !== null
+              ? pluginOutcome(
                   plugin.descriptor.id,
                   plugin.descriptor.displayName,
-                )}
+                )
+              : (preset?.description ?? "")}
           </DialogDescription>
         </DialogHeader>
-        {plugin === null ? null : (
-          <DialogBody className="flex flex-col gap-5">
+        {plugin !== null ? (
+          <DialogBody className="max-h-[calc(100dvh-8rem)] flex-none flex flex-col gap-5">
             {plugin.status !== "not_connected" ? (
               <ConnectedSummary
                 tenantId={tenantId}
@@ -343,12 +511,16 @@ export function PluginConnectPanel({
               </div>
             ) : null}
           </DialogBody>
-        )}
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>
-            Close
-          </Button>
-        </DialogFooter>
+        ) : preset !== null ? (
+          <DialogBody className="max-h-[calc(100dvh-8rem)] flex-none flex flex-col gap-5">
+            <McpPresetPanelContent
+              tenantId={tenantId}
+              preset={preset}
+              toolCount={toolCount}
+              onChanged={onChanged}
+            />
+          </DialogBody>
+        ) : null}
       </DialogContent>
     </Dialog>
   );
