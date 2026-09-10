@@ -17,7 +17,6 @@
 
 import { type } from "arktype";
 import { AssetWithOriginResponse, ModelInfo } from "@intx/types";
-import type { InferencePreference } from "@intx/agent";
 import {
   DEFAULT_SKILLS,
   DEFAULT_WORKFLOWS,
@@ -28,7 +27,9 @@ import {
   publishCorbitsToolsRegistry,
   REQUIRED_SEED_TOOL_PACKAGES,
   seedTenant,
+  type DefaultWorkflow,
   type ModelSource,
+  type SeedTenantArgs,
   type ToolRegistryPublisher,
   type WorkflowPusher,
 } from "@corbits/seeding";
@@ -42,10 +43,7 @@ export type WorkflowPin = {
   readonly assetName: string;
   readonly displayName: string;
   readonly version: string;
-  readonly definition: (
-    tenantDomain: string,
-    inferencePreferences: readonly InferencePreference[],
-  ) => string;
+  readonly definition: DefaultWorkflow["buildJson"];
 };
 
 export type ToolPackagePin = {
@@ -300,6 +298,9 @@ export type ReconcileArgs = {
   pushWorkflow: WorkflowPusher;
   /** Defaults to the real `publishCorbitsToolsRegistry`. */
   publishToolRegistry?: ToolRegistryPublisher;
+  /** Test seam standing in for the deploy step, the same way
+   * `ensureSeeded` accepts one. */
+  seedTenantFn?: (args: SeedTenantArgs) => ReturnType<typeof seedTenant>;
   log: (line: string) => void;
 };
 
@@ -393,7 +394,8 @@ export async function reconcileTenantDesiredState(
         (pin) => pin.source.kind === "tarball-url",
       );
       for (const pin of tarballPins) {
-        if (pin.source.kind !== "tarball-url") continue;
+        const source = pin.source;
+        if (source.kind !== "tarball-url") continue;
         const outcome = await installRegistryTarball({
           api,
           cookies,
@@ -403,8 +405,8 @@ export async function reconcileTenantDesiredState(
           version: pin.version,
           fetchSource: () =>
             fetchRegistryTarballSource({
-              url: pin.source.url,
-              integrity: pin.source.integrity,
+              url: source.url,
+              integrity: source.integrity,
             }),
           log,
         });
@@ -466,13 +468,13 @@ export async function reconcileTenantDesiredState(
           `tenant ${tenantId} has no catalog offerings to deploy against`,
         );
       }
-      await seedTenant({
+      await (args.seedTenantFn ?? seedTenant)({
         api,
         cookies,
         hubUrl: args.hubUrl,
         tenant: {
           tenantId,
-          principalId: args.tenant.principalId,
+          principalId: args.tenant.principalId ?? "",
           domain: args.tenant.domain ?? "",
         },
         model,
