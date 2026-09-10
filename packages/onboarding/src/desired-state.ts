@@ -33,6 +33,7 @@ import {
   type ToolRegistryPublisher,
   type WorkflowPusher,
 } from "@corbits/seeding";
+import { reportError } from "@corbits/error-sink";
 import {
   isSidecarUnavailableError,
   parseAs,
@@ -425,10 +426,6 @@ export async function reconcileTenantDesiredState(
         });
       }
     } catch (cause) {
-      // report-error-ignore: an install failure is delivered as the pin's
-      // "failed" status in the ReconcileReport and the caller's log, not
-      // as an exception — reconcile is safe to re-run and the drain keeps
-      // the tenant's pending row for the retry.
       if (isSidecarUnavailableError(cause)) {
         sawBlocked = true;
         for (const pin of TENANT_DESIRED_STATE.toolPackages) {
@@ -448,6 +445,10 @@ export async function reconcileTenantDesiredState(
           if (pins.some((p) => p.name === pin.name)) continue;
           pins.push({ name: pin.name, kind: "tool-package", status: "failed" });
         }
+        reportError(cause, {
+          operation: "desired_state_tool_install",
+          tenantId,
+        });
         log(
           `tool-package publish for tenant ${tenantId} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
         );
@@ -463,9 +464,6 @@ export async function reconcileTenantDesiredState(
   );
   const skillPending = Object.values(status.skills).some(
     (s) => s !== "present",
-  );
-  const workflowsBlocked = Object.values(status.workflows).some(
-    (s) => s === "blocked",
   );
 
   if (!workflowPending && !skillPending) {
@@ -514,18 +512,22 @@ export async function reconcileTenantDesiredState(
         pins.push({ name: pin.name, kind: "skill", status: "installed" });
       }
     } catch (cause) {
-      // report-error-ignore: a workflow/skill install failure is delivered
-      // as each pin's "blocked"/"failed" status in the ReconcileReport and
-      // the caller's log, not as an exception — reconcile is safe to
-      // re-run and the drain keeps the tenant's pending row for the retry.
       if (isSidecarUnavailableError(cause) || model === undefined) {
         sawBlocked = true;
         for (const pin of TENANT_DESIRED_STATE.workflows) {
-          pins.push({
-            name: pin.assetName,
-            kind: "workflow",
-            status: "blocked",
-          });
+          if (status.workflows[pin.assetName] === "present") {
+            pins.push({
+              name: pin.assetName,
+              kind: "workflow",
+              status: "present",
+            });
+          } else {
+            pins.push({
+              name: pin.assetName,
+              kind: "workflow",
+              status: "blocked",
+            });
+          }
         }
         for (const pin of TENANT_DESIRED_STATE.skills) {
           if (pins.some((p) => p.name === pin.name)) continue;
@@ -563,11 +565,14 @@ export async function reconcileTenantDesiredState(
         log(
           `workflow deployment for tenant ${tenantId} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
         );
+        reportError(cause, {
+          operation: "desired_state_workflow_deploy",
+          tenantId,
+        });
       }
     }
   }
 
-  void workflowsBlocked;
   return {
     tenantId,
     ready: !sawFailure && !sawBlocked,

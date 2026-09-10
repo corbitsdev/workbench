@@ -3602,7 +3602,7 @@ export async function createHub(config: HubConfig) {
         : undefined;
     },
   };
-  observerRef.current = createTenantCreateObserver(
+  const observer = createTenantCreateObserver(
     {
       api: selfApi,
       hubUrl: config.baseUrl,
@@ -3612,10 +3612,8 @@ export async function createHub(config: HubConfig) {
     },
     app,
   );
-  const guardedApp = guardedHubApp(
-    observerRef.current === undefined ? app : observerRef.current.app,
-    guardDeps,
-  );
+  observerRef.current = observer;
+  const guardedApp = guardedHubApp(observer.app, guardDeps);
   const inFlight = createInFlightRequestTracker();
   const servingApp = withInFlightRequestTracking(guardedApp, inFlight);
 
@@ -3625,11 +3623,11 @@ export async function createHub(config: HubConfig) {
     db,
     close: async () => {
       sidecarAllocationReconciliationStopped = true;
-      // Let any in-flight tenant-create reconcile bail at its next
-      // checkpoint before the pool goes away (CL-7584) — a
-      // fire-and-forget kick must never race the DB teardown. Bounded:
-      // a kick stuck on an already-dying connection must not stall
-      // shutdown.
+      // Let any in-flight tenant-create reconcile reach its next HTTP
+      // call before the server stops — the call then fails and the kick
+      // logs it, so a fire-and-forget reconcile never races the DB
+      // teardown. Bounded: a kick stuck on an already-dying connection
+      // must not stall shutdown (CL-7584).
       observerRef.current?.stop();
       await Promise.race([
         observerRef.current?.whenIdle(),

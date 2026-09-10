@@ -32,13 +32,7 @@ const describeIfDb = dbGate(databaseUrl, import.meta.path);
 const closers: (() => Promise<void>)[] = [];
 afterAll(async () => {
   let closer: (() => Promise<void>) | undefined;
-  while ((closer = closers.pop()) !== undefined) {
-    try {
-      await closer();
-    } catch (cause) {
-      console.log("SCRATCH-STOP-THREW", cause);
-    }
-  }
+  while ((closer = closers.pop()) !== undefined) await closer();
 }, 60_000);
 
 function scratchUrlFor(label: string): string {

@@ -11,15 +11,13 @@
 // credential and does not yet have its agents". That framing is what
 // makes the three properties fall out rather than have to be engineered:
 //
-//   - Idempotent. Every pass re-reads the bench's actual asset and
-//     deployment state (`isFullySeeded`) before doing anything, and the
-//     deploy step underneath (`seedTenant`) is ensure-then-create at
-//     every step. A pass over a bench that is already done deploys
-//     nothing and simply clears the row.
-//   - Convergent. A pass that gets partway — the sidecar-unavailable
-//     class `ensureSeeded` reports as `seeded-pending-agents` — leaves
-//     the row in place, so the next pass picks up exactly the workflows
-//     that are still missing.
+//   - Idempotent. Every pass reconciles the bench against the tenant
+//     desired-state document (`reconcileTenantDesiredState`) — ensure-
+//     then-create at every step — so a pass over a converged bench
+//     deploys nothing and simply clears the row.
+//   - Convergent. A pass that gets partway — pins reported `blocked`
+//     (sidecar unavailable) or `failed` — leaves the row in place, so
+//     the next pass picks up exactly the pins that are still missing.
 //   - Restart-safe. Nothing about a bench's outstanding work lives in
 //     this process. A hub that dies mid-deploy leaves the row behind,
 //     and the next boot's first tick finishes it. In-memory state here

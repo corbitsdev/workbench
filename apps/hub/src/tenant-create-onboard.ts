@@ -50,9 +50,10 @@ export type TenantCreateObserver = {
   /** Kick a reconcile for one tenant directly (the revisit-kick wiring
    * shares this with the observer). Deduped per tenant in-process. */
   kick(args: { tenantId: string; cookies: string[] }): Promise<void>;
-  /** Stops accepting new kicks; in-flight ones bail at their next
-   * checkpoint. Hub shutdown calls this before closing the DB so a
-   * fire-and-forget kick never races the pool teardown. */
+  /** Stops accepting new kicks. In-flight ones are not interrupted —
+   * they run to their next HTTP call, which fails once the server has
+   * stopped, and the failure is caught and logged. Hub shutdown calls
+   * this before closing the DB and bounds the wait with `whenIdle`. */
   stop(): void;
   /** Resolves when every in-flight kick has finished or bailed. */
   whenIdle(): Promise<void>;
