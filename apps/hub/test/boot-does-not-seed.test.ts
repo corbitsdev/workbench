@@ -205,3 +205,216 @@ describeIfDb("createHub on a scratch database inserts no tenant", () => {
     });
   }, 60_000);
 });
+
+// CL-7579: hub boot must never plant provider credentials from
+// environment variables. Operators connect providers through the
+// onboarding/connect flow instead, so a hub booted with curated
+// provider env vars set (e.g. OLLAMA_BASE_URL) inserts zero credential
+// rows and zero catalog offerings — verified against a local fake
+// Ollama whose probe the old env-plant would have passed.
+describeIfDb("boot with provider env vars plants nothing (CL-7579)", () => {
+  function fakeOllama(): { url: string; stop: () => void } {
+    const server = Bun.serve({
+      port: 0,
+      fetch: (request) => {
+        const url = new URL(request.url);
+        if (request.method === "GET" && url.pathname === "/api/tags") {
+          return Response.json({
+            models: [{ name: "qwen3.8:27b", model: "qwen3.8:27b" }],
+          });
+        }
+        return new Response("not found", { status: 404 });
+      },
+    });
+    return { url: `http://localhost:${server.port}`, stop: () => server.stop(true) };
+  }
+
+  async function countRows(url: string, table: string): Promise<number> {
+    const sql = postgres(url, { max: 1, onnotice: () => undefined });
+    try {
+      const rows = await sql<{ count: number }[]>`
+        select count(*)::int as count from ${sql(table)}
+      `;
+      return rows[0]?.count ?? 0;
+    } finally {
+      await sql.end();
+    }
+  }
+
+  /** Fails fast once the old plant's rows appear; resolves quietly when
+   * the plant never fires, giving its boot-time retry a real window. */
+  async function expectZeroRowsFor(url: string, waitMs: number): Promise<void> {
+    const deadline = Date.now() + waitMs;
+    while (Date.now() < deadline) {
+      const credentials = await countRows(url, "credential");
+      const offerings = await countRows(url, "offering");
+      if (credentials > 0 || offerings > 0) {
+        throw new Error(
+          `boot planted state: ${credentials} credential row(s), ${offerings} offering row(s)`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+
+  async function genesisOwner(
+    baseUrl: string,
+  ): Promise<void> {
+    const signUp = await fetch(`${baseUrl}/api/auth/sign-up/email`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-real-ip": `198.51.100.${Math.floor(Math.random() * 200) + 10}`,
+      },
+      body: JSON.stringify({
+        name: "Alice",
+        email: ALICE.email,
+        password: ALICE.password,
+      }),
+    });
+    expect(signUp.status).toBe(200);
+    const cookies = signUp.headers.getSetCookie();
+    expect(cookies.length).toBeGreaterThan(0);
+    const provision = await fetch(`${baseUrl}/api/onboarding/provision`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: cookies.join("; "),
+      },
+      body: JSON.stringify({ name: "Workbench" }),
+    });
+    expect(provision.status).toBe(200);
+  }
+
+  test("process boot with OLLAMA_BASE_URL set inserts no credential or offering rows", async () => {
+    await withScratchDatabase("boot_env_key_no_plant", async (url) => {
+      // Phase 1: mint the operator identity (signup genesis) so the old
+      // plant's target — admin sign-in + root tenant by slug — resolves
+      // immediately on the second boot. Without it the plant would sit
+      // in its retry loop and the test would prove nothing.
+      const genesis = await hop("hub process boot", async () =>
+        startHub({
+          databaseUrl: url,
+          port: freePort(),
+          sessionSecret: Buffer.from(
+            crypto.getRandomValues(new Uint8Array(32)),
+          ).toString("hex"),
+          dataDir: await tempDir("hub-boot-env-plant-genesis-"),
+        }),
+      );
+      await genesisOwner(genesis.baseUrl);
+      await genesis.stop();
+
+      // Phase 2: reboot with a provider env var set, aimed at a fake
+      // Ollama whose probe would have succeeded.
+      const ollama = fakeOllama();
+      try {
+        const hub = await hop(
+          "hub process boot with OLLAMA_BASE_URL",
+          async () =>
+            startHub({
+              databaseUrl: url,
+              port: freePort(),
+              sessionSecret: Buffer.from(
+                crypto.getRandomValues(new Uint8Array(32)),
+              ).toString("hex"),
+              dataDir: await tempDir("hub-boot-env-plant-"),
+              extraEnv: { OLLAMA_BASE_URL: ollama.url },
+            }),
+        );
+        track(hub);
+        await expectZeroRowsFor(url, 15_000);
+      } finally {
+        ollama.stop();
+      }
+    });
+  }, 90_000);
+
+  test("createHub with a resolved operator bench plants no credential rows", async () => {
+    await withScratchDatabase("create_hub_env_key_no_plant", async (url) => {
+      const root = mkdtempSync(path.join(tmpdir(), "hub-createhub-plant-"));
+      const staticDir = path.join(root, "static");
+      mkdirSync(staticDir, { recursive: true });
+      writeFileSync(path.join(staticDir, "index.html"), "<html>shell</html>");
+      mkdirSync(path.join(root, "data"), { recursive: true });
+
+      // Onboarding routes reach the hub over HTTP, so the composed app
+      // must be served on a real port and `baseUrl` must name it.
+      const server = Bun.serve({
+        port: 0,
+        fetch: () => new Response("booting", { status: 503 }),
+      });
+
+      const baseConfig: HubConfig = {
+        databaseUrl: url,
+        baseUrl: `http://localhost:${server.port}`,
+        sessionSecret: "insecure-test-only-session-secret-0000",
+        hubDataDir: path.join(root, "data"),
+        hubStaticDir: staticDir,
+        defaultTenantSlug: "workbench",
+        signupRateLimit: { windowSeconds: 60, max: 5 },
+        signInRateLimit: { windowSeconds: 60, max: 10 },
+        socialProviders: {},
+        signupMode: "closed",
+        allowedEmailDomains: [],
+        allowPlaintextSecrets: true,
+        allowUnverifiedEmails: true,
+        sidecarProvisioners: [],
+        envProviderKeys: {},
+        envProviderBaseUrls: {},
+        envCredentialPlantAdmin: {
+          email: ALICE.email,
+          password: ALICE.password,
+          orgSlug: "workbench",
+        },
+        chatIdleReapMs: 30 * 60_000,
+      };
+
+      // Phase 1: mint the operator bench the old plant targeted.
+      const genesis = await createHub(baseConfig);
+      server.reload({ fetch: genesis.app.fetch });
+      const signUp = await genesis.app.request("/api/auth/sign-up/email", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-real-ip": "198.51.100.77",
+        },
+        body: JSON.stringify({
+          name: "Alice",
+          email: ALICE.email,
+          password: ALICE.password,
+        }),
+      });
+      expect(signUp.status).toBe(200);
+      const provision = await genesis.app.request("/api/onboarding/provision", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: signUp.headers.getSetCookie().join("; "),
+        },
+        body: JSON.stringify({ name: "Workbench" }),
+      });
+      expect(provision.status).toBe(200);
+      await genesis.close();
+
+      const ollama = fakeOllama();
+      try {
+        const hub = await createHub({
+          ...baseConfig,
+          hubDataDir: path.join(root, "data-2"),
+          envProviderKeys: { ollama: "ollama" },
+          envProviderBaseUrls: { ollama: ollama.url },
+        });
+        server.reload({ fetch: hub.app.fetch });
+        closers.push(async () => {
+          server.stop(true);
+          await hub.close();
+          rmSync(root, { recursive: true, force: true });
+        });
+        await expectZeroRowsFor(url, 15_000);
+      } finally {
+        ollama.stop();
+      }
+    });
+  }, 90_000);
+});
