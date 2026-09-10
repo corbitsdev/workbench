@@ -50,8 +50,8 @@ for how a pin resolves through it).
 **Never imports:**
 
 - `@corbits/hub-api-client` — the dependency direction runs the other
-  way (boot-time seeding and `@corbits/seeding` call
-  `publishCorbitsToolsRegistry` via `@corbits/seeding`'s re-export), so
+  way (`@corbits/seeding` calls `publishCorbitsToolsRegistry` via its
+  re-export), so
   this package declares its own structurally-compatible `ApiCall` type
   rather than importing `@corbits/hub-api-client`'s.
 - `HubApiError` or any operator-facing error-wrapping convention — every

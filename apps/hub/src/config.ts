@@ -273,27 +273,9 @@ function parsePositiveMsEnv(
   return n;
 }
 
-const SEED_MODEL_PROVIDER = "anthropic";
-const SEED_MODEL = "claude-sonnet-5";
-
-// Matches boot-time seeding's own defaults (`system-seed.ts`) exactly,
-// so a zero-.env-edit local checkout that seeds its admin account
-// through `bun run dev` also resolves the same operator bench for the
-// env-key auto-plant with no extra configuration.
 const DEFAULT_PLANT_ADMIN_EMAIL = "alice@example.com";
 const DEFAULT_PLANT_ADMIN_PASSWORD = "password123";
 const DEFAULT_PLANT_ORG_SLUG = "workbench";
-
-/** The root tenant's boot-time seed model: a provider/model pair
- * `seedTenant` names in every deployed definition, plus the real (or
- * placeholder) key `seedCatalog` plants a launchable credential with. No
- * `baseURL` — a workflow deploy resolves inference from the tenant's
- * catalog offerings, never a bare source tuple (CL-7461). */
-export type ModelSource = {
-  readonly provider: string;
-  readonly model: string;
-  readonly apiKey: string;
-};
 
 // One member per implemented `SidecarProvisioner` backend. Adding a new
 // backend (e.g. a remote sandbox) is: implement the contract in its own
@@ -365,7 +347,6 @@ export type HubConfig = {
   readonly signupMode: "open" | "closed";
   /** Domains allowed when signupMode is open. Empty = any domain. */
   readonly allowedEmailDomains: readonly string[];
-  readonly seedModel?: ModelSource;
   readonly socialProviders: Readonly<
     Partial<Record<SocialProviderId, SocialProviderCredential>>
   >;
@@ -630,16 +611,6 @@ function sidecarProvisionerConfigFor(
   }
 }
 
-function seedModelFrom(parsed: ParsedHubEnv): ModelSource | undefined {
-  const apiKey = parsed.ANTHROPIC_API_KEY;
-  if (apiKey === undefined) return undefined;
-  return {
-    provider: SEED_MODEL_PROVIDER,
-    model: SEED_MODEL,
-    apiKey,
-  };
-}
-
 /**
  * Parse the hub's configuration out of an environment map. Throws at
  * the call site when any variable is missing or malformed, reporting
@@ -668,7 +639,6 @@ export function readHubConfig(
     );
   }
 
-  const seedModel = seedModelFrom(parsed);
   const socialProviders = socialProvidersFrom(parsed);
   const sidecarProvisioners = sidecarProvisionersFrom(parsed);
 
@@ -737,7 +707,6 @@ export function readHubConfig(
     hubConfig.routineSchedulerPollIntervalMs = Number(
       parsed.ROUTINE_SCHEDULER_POLL_INTERVAL_MS,
     );
-  if (seedModel !== undefined) hubConfig.seedModel = seedModel;
   if (parsed.HUGGINGFACE_OAUTH_CLIENT_ID !== undefined)
     hubConfig.huggingfaceOAuthClientId = parsed.HUGGINGFACE_OAUTH_CLIENT_ID;
   if (parsed.GITHUB_APP_CLIENT_ID !== undefined)

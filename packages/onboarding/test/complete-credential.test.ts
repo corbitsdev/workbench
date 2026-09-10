@@ -2164,9 +2164,8 @@ describe("ensureSeeded (the slow half)", () => {
 // org's own slug), which never equals personalTenantSlug(userEmail,
 // userId) — the connect flow must fall back to that existing principal
 // rather than 409 with no_personal_bench. The fallback is opt-in: the
-// boot seeder (apps/hub/src/system-seed.ts) calls with no options and
-// depends on the strict match refusing to run until the root bench is
-// actually visible to the admin.
+// default (no options) is a strict slug match so a caller waiting for a
+// specific bench does not silently resolve to the first principal.
 describe("findPersonalTenant", () => {
   function principalsPage(
     principals: {
@@ -2225,10 +2224,10 @@ describe("findPersonalTenant", () => {
     };
   }
 
-  test("strict by default: a slug mismatch resolves to nothing, so the boot seeder keeps throwing until the root bench is visible", async () => {
+  test("strict by default: a slug mismatch resolves to nothing, so a caller waiting for a specific bench does not silently resolve", async () => {
     // personalTenantSlug("alice@example.com", "user_1") is "alice-user1";
     // the only principal is the root bench "acme". Without the fallback
-    // flag this must NOT silently resolve — system-seed pins on it.
+    // flag this must NOT silently resolve.
     expect(
       await findPersonalTenant(seedAdminHub(), ["session=abc"], "alice-user1"),
     ).toBeUndefined();

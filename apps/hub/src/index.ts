@@ -164,7 +164,6 @@ import { generateId } from "@intx/hub-common";
 
 import { ensureDefaultTenant } from "./default-tenant";
 import { createHubSignupTenancy } from "./signup-tenancy";
-import { runSystemSeed } from "./system-seed";
 import {
   createInMemoryMailboxEventBus,
   createMailboxDb,
@@ -405,9 +404,8 @@ const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
 // `@corbits` scope at this registry name means a `@corbits/*` pin
 // resolves only once an operator publishes a `package-registry` asset
 // named `CORBITS_TOOLS_REGISTRY` with the package's tarball —
-// `workbench setup` does exactly that onto the root tenant via
-// `@corbits/tool-registry-publish`; descendants inherit it, and
-// `seedTenant` does not pack. Until then, resolution fails loud
+// `@corbits/tool-registry-publish` is the publisher. Descendants
+// inherit it, and `seedTenant` does not pack. Until then, resolution fails loud
 // rather than silently falling through to npmjs (which could never
 // carry an unpublished scope anyway).
 const TENANT_PREFIX = "/api/tenants/:tenantId";
@@ -3691,18 +3689,6 @@ if (import.meta.main) {
   });
   const log = getLogger(["hub"]);
   log.info`Hub serving on port ${port}`;
-  // CL-7382: replaces `workbench seed`. Runs against the hub's own real
-  // origin now that it is actually listening — `runSystemSeed`'s
-  // workflow push needs a reachable origin for `git push`, not just an
-  // in-process fetch entry point. Never awaited: a slow or still-
-  // sidecar-less seed must not delay "Hub serving" or hold up shutdown
-  // wiring below it.
-  void runSystemSeed({
-    baseUrl: config.baseUrl,
-    orgSlug: config.defaultTenantSlug,
-    admin: config.envCredentialPlantAdmin,
-    ...(config.seedModel !== undefined ? { seedModel: config.seedModel } : {}),
-  });
   const SHUTDOWN_DRAIN_MS = 10_000;
   // In-flight Hono handlers (a request mid-Postgres-transaction, a git
   // write, anything that has not returned a Response yet) must finish
