@@ -76,6 +76,7 @@ import {
   ensureSeeded,
   modelSourceFor,
 } from "../../packages/onboarding/src/complete-credential.ts";
+import { reconcileTenantDesiredState } from "../../packages/onboarding/src/desired-state.ts";
 import { CredentialResponse, paginatedSchema } from "@intx/types";
 import {
   api,
@@ -319,6 +320,31 @@ describe.skipIf(databaseUrl === undefined)(
         },
       );
 
+      // CL-7584: the desired-state document. A fresh hub boots seedless —
+      // nothing grants the root its assistant until someone connects —
+      // the doc-driven reconcile converges without reinstalling, a
+      // second member never mints a second Myra, and a second tenant
+      // created through the native route converges onto its own.
+      await hop(
+        "CL-7584: the fresh hub boots seedless — the root has no assistant before anyone connects",
+        async () => {
+          const assetsRes = await api(
+            hub.baseUrl,
+            "GET",
+            `/api/tenants/${tenant.tenantId}/assets?kind=workflow&inherited=false`,
+            undefined,
+            admin.cookies,
+          );
+          expectStatus("list root workflow assets", assetsRes, 200);
+          const assets = assetsRes.data as { name: string }[];
+          if (assets.some((asset) => asset.name === "assistant")) {
+            throw new Error(
+              "the genesis root already carries an assistant on a seedless boot — hub boot seeded product state",
+            );
+          }
+        },
+      );
+
       const pushWorkflow = createGitWorkflowPusher();
 
       const connected = await hop(
@@ -528,6 +554,143 @@ describe.skipIf(databaseUrl === undefined)(
           }
           expect(planted.status).toBe("active");
           expect(planted.type).toBe("api_key");
+        },
+      );
+
+      // CL-7584: the doc-driven reconcile converges without reinstalling,
+      // a second member never mints a second Myra, and a second tenant
+      // created through the native route converges onto its own.
+      await hop(
+        "CL-7584: a second reconcile pass over the converged root issues zero non-GET calls",
+        async () => {
+          const calls: string[] = [];
+          const countingApi: ApiCall = ((method: string, path: string, body?: unknown, cookies?: string[]) => {
+            calls.push(method);
+            return hubApi(method, path, body, cookies);
+          }) as unknown as ApiCall;
+          const args = {
+            api: countingApi,
+            cookies: admin.cookies,
+            hubUrl: hub.baseUrl,
+            tenant: {
+              tenantId: tenant.tenantId,
+              principalId: tenant.principalId,
+              domain: tenant.tenantDomain,
+            },
+            model: await modelSourceFor(
+              hubApi,
+              admin.cookies,
+              tenant.tenantId,
+              "anthropic",
+            ),
+            pushWorkflow,
+            log: () => undefined,
+          };
+          const first = await reconcileTenantDesiredState(args);
+          expect(first.ready).toBe(true);
+          const nonGets = calls.filter((method) => method !== "GET").length;
+          const second = await reconcileTenantDesiredState(args);
+          expect(second.ready).toBe(true);
+          expect(calls.filter((method) => method !== "GET").length).toBe(
+            nonGets,
+          );
+        },
+      );
+
+      await hop(
+        "CL-7584: a joined member's root still carries exactly one assistant",
+        async () => {
+          const assetsRes = await api(
+            hub.baseUrl,
+            "GET",
+            `/api/tenants/${tenant.tenantId}/assets?kind=workflow&inherited=false`,
+            undefined,
+            user.cookies,
+          );
+          expectStatus("list root workflow assets", assetsRes, 200);
+          const assets = assetsRes.data as { name: string }[];
+          expect(
+            assets.filter((asset) => asset.name === "assistant").length,
+          ).toBe(1);
+        },
+      );
+
+      await hop(
+        "CL-7584: a second tenant created through the native route converges onto its own assistant",
+        async () => {
+          const createRes = await api(
+            hub.baseUrl,
+            "POST",
+            "/api/tenants",
+            { name: `Local Rip Second ${Date.now()}` },
+            admin.cookies,
+          );
+          expectStatus("create second tenant", createRes, 201);
+          const body = createRes.data as { id?: string; tenantId?: string };
+          const secondTenantId =
+            typeof body.id === "string"
+              ? body.id
+              : typeof body.tenantId === "string"
+                ? body.tenantId
+                : undefined;
+          if (secondTenantId === undefined) {
+            throw new Error(
+              `create tenant answered no id: ${JSON.stringify(body)}`,
+            );
+          }
+          // The tenant-create observer reconciles fire-and-forget; poll
+          // for the new tenant's own live assistant.
+          const deadline = Date.now() + 90_000;
+          for (;;) {
+            if (hub.exited()) {
+              throw new Error(
+                `hub exited before the second tenant converged; output:\n${hub.output()}`,
+              );
+            }
+            const assetsRes = await api(
+              hub.baseUrl,
+              "GET",
+              `/api/tenants/${secondTenantId}/assets?kind=workflow&inherited=false`,
+              undefined,
+              admin.cookies,
+            );
+            expectStatus("list second-tenant assets", assetsRes, 200);
+            const assets = assetsRes.data as { id: string; name: string }[];
+            const assistant = assets.find((a) => a.name === "assistant");
+            if (assistant !== undefined) {
+              const deploymentsRes = await api(
+                hub.baseUrl,
+                "GET",
+                `/api/tenants/${secondTenantId}/workflows/deployments`,
+                undefined,
+                admin.cookies,
+              );
+              expectStatus(
+                "list second-tenant deployments",
+                deploymentsRes,
+                200,
+              );
+              const deployments = deploymentsRes.data as {
+                definitionAssetId: string;
+                status: string;
+              }[];
+              if (
+                deployments.some(
+                  (d) =>
+                    d.definitionAssetId === assistant.id &&
+                    isLiveDeploymentStatus(d.status),
+                )
+              ) {
+                break;
+              }
+            }
+            if (Date.now() > deadline) {
+              throw new Error(
+                "the second tenant never converged onto its own assistant",
+              );
+            }
+            await Bun.sleep(500);
+          }
         },
       );
     }, 180_000);
