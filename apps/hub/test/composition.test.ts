@@ -42,13 +42,6 @@ const config: HubConfig = {
   allowPlaintextSecrets: true,
   allowUnverifiedEmails: true,
   sidecarProvisioners: [],
-  envProviderKeys: {},
-  envProviderBaseUrls: {},
-  envCredentialPlantAdmin: {
-    email: "alice@example.com",
-    password: "password123",
-    orgSlug: "workbench",
-  },
   chatIdleReapMs: 30 * 60_000,
 };
 

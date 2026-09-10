@@ -115,13 +115,6 @@ async function bootEmptyHub(args: {
     allowPlaintextSecrets: true,
     allowUnverifiedEmails: true,
     sidecarProvisioners: [],
-    envProviderKeys: {},
-    envProviderBaseUrls: {},
-    envCredentialPlantAdmin: {
-      email: "boot-admin@example.com",
-      password: "password123",
-      orgSlug: "workbench",
-    },
     chatIdleReapMs: 30 * 60_000,
   };
   const hub = await createHub(config);

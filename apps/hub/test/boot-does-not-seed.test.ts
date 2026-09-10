@@ -178,13 +178,6 @@ describeIfDb("createHub on a scratch database inserts no tenant", () => {
         allowPlaintextSecrets: true,
         allowUnverifiedEmails: true,
         sidecarProvisioners: [],
-        envProviderKeys: {},
-        envProviderBaseUrls: {},
-        envCredentialPlantAdmin: {
-          email: "alice@example.com",
-          password: "password123",
-          orgSlug: "workbench",
-        },
         chatIdleReapMs: 30 * 60_000,
       };
       const hub = await createHub(config);
@@ -360,13 +353,6 @@ describeIfDb("boot with provider env vars plants nothing (CL-7579)", () => {
         allowPlaintextSecrets: true,
         allowUnverifiedEmails: true,
         sidecarProvisioners: [],
-        envProviderKeys: {},
-        envProviderBaseUrls: {},
-        envCredentialPlantAdmin: {
-          email: ALICE.email,
-          password: ALICE.password,
-          orgSlug: "workbench",
-        },
         chatIdleReapMs: 30 * 60_000,
       };
 
@@ -402,8 +388,6 @@ describeIfDb("boot with provider env vars plants nothing (CL-7579)", () => {
         const hub = await createHub({
           ...baseConfig,
           hubDataDir: path.join(root, "data-2"),
-          envProviderKeys: { ollama: "ollama" },
-          envProviderBaseUrls: { ollama: ollama.url },
         });
         server.reload({ fetch: hub.app.fetch });
         closers.push(async () => {
