@@ -250,3 +250,38 @@ the Interchange re-pin (CL-7107 / PR #632, pin 692c3106), which adds
 the `credentialCipher` parameter this front is missing — no code in
 this ledger's callers needs to change, only the entry's derived
 `requiresCredentialCipher` result once the seam exists.
+
+## Tenant desired state (CL-7584)
+
+What every real tenant should have is data, not a procedure: the
+tenant desired-state document (`TENANT_DESIRED_STATE` in
+`packages/onboarding/src/desired-state.ts`) pins the workflows, tool
+packages, and skills by name, composed BY REFERENCE over the existing
+single-source constants (`DEFAULT_WORKFLOWS`,
+`REQUIRED_SEED_TOOL_PACKAGES`, `DEFAULT_SKILLS`). It is the pin
+source for per-tenant onboarding — no hub table, no migration, and
+nothing seeded from hub boot.
+
+`reconcileTenantDesiredState` is the only installer. It reads the
+tenant's real state (native GETs) and installs ONLY absent pins;
+with everything present it is a read-only pass — `seedTenant` is
+never entered, the registry publish is gated on the seeded check,
+and a tarball already published under its `name@version` is skipped.
+Sidecar-unavailable failures report `blocked` (the same class
+`ensureSeeded` treats as pending-agents); other failures report
+`failed` and are safe to re-run.
+
+Three triggers drive it, one reconciler: a tenant-create observation
+(`POST /api/tenants` 201), the pending-seed drain over a connected
+credential, and the revisit kick from `POST
+/api/onboarding/provision`. The `pending_seed` row remains the only
+durable work item; the tenant-create kick and the revisit kick are
+deliberately in-memory — convergence, not delivery.
+
+Member-edit posture: a reconcile only ever installs what the document
+names. A member (or anyone) deleting or editing a seeded workflow or
+skill afterwards is not reverted by a later pass — the document is a
+floor for provisioning, not a drift-enforcement policy. The only
+redeploy a pass performs is the absent-pin install; existing live
+deployments are skipped (`ensureDeployment` staleness behavior
+unchanged).
