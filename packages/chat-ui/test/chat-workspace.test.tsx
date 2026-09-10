@@ -1043,6 +1043,71 @@ describe("composer slash commands — each wired command's real action", () => {
     harness.unmount();
   });
 
+  test("removing an agent clears its routine preselection", async () => {
+    const agents = [
+      {
+        address: "myra@agents.example",
+        handle: "myra",
+        definitionId: "def_myra",
+        definitionAssetId: "asset_myra",
+        displayName: "Myra",
+      },
+    ];
+    const workbench = {
+      ...WORKBENCH_WIRE,
+      participants: [
+        { address: "myra@agents.example", handle: "myra" },
+        { address: "prn_alice", handle: "Alice" },
+      ],
+    };
+    stubFetch(undefined, workbench, { workbenchAgents: agents });
+    const baseFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === "DELETE") {
+          agents.splice(0);
+          workbench.participants.splice(0, 1);
+          return Response.json({ address: "myra@agents.example" });
+        }
+        return baseFetch(input, init);
+      },
+      { preconnect: realFetch.preconnect },
+    );
+    const opened: (string | undefined)[] = [];
+    const harness = await mount({
+      tenant: { kind: "ready", tenantId: "tnt_1" },
+      workbenchId: "ch_1",
+      onCreateRoutineInSpace: (_id, assetId) => {
+        opened.push(assetId);
+      },
+    });
+    await harness.settle();
+    act(() =>
+      harness.container
+        .querySelector<HTMLButtonElement>('button[aria-label="2 members"]')
+        ?.click(),
+    );
+    act(() =>
+      harness.container
+        .querySelector('summary[aria-label="Actions for Myra"]')
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+    );
+    const removeButton = Array.from(
+      harness.container.querySelectorAll("button"),
+    ).find((button) => button.textContent === "Remove");
+    expect(removeButton).toBeDefined();
+    act(() => removeButton?.click());
+    await act(async () => {
+      removeButton?.click();
+    });
+    await harness.settle();
+    const textarea = typeInComposer(harness.container, "/routine");
+    pressEnter(textarea);
+    await harness.settle();
+    expect(opened).toEqual([undefined]);
+    harness.unmount();
+  });
+
   test("/routine with no host-supplied hop wired falls back to an unavailable toast", async () => {
     stubFetch();
     const harness = await mount({
@@ -2007,7 +2072,7 @@ describe("Workbench header polish (CL-6106)", () => {
     harness.unmount();
   });
 
-  test("agent participant chips live in the square member stack, naming the agent by display name (CL-6424 supersedes the raw-handle tooltip)", async () => {
+  test("member preview names the agent by display name", async () => {
     stubFetch(undefined, WORKBENCH_WITH_AGENT_WIRE);
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
@@ -2254,7 +2319,7 @@ describe("Invite control visibility (CL-6781)", () => {
     harness.unmount();
   });
 
-  test("shows Invite agent once at least one definition is invitable", async () => {
+  test("offers Add member in the popover once a definition is invitable", async () => {
     globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
     globalThis.fetch = (async (
       input: RequestInfo | URL,
@@ -2308,7 +2373,12 @@ describe("Invite control visibility (CL-6781)", () => {
     await harness.settle();
     await harness.settle();
 
-    expect(harness.container.textContent).toContain("Invite agent");
+    const trigger = harness.container.querySelector<HTMLButtonElement>(
+      'button[aria-controls][aria-label$="members"]',
+    );
+    expect(trigger).not.toBeNull();
+    act(() => trigger?.click());
+    expect(harness.container.textContent).toContain("Add member");
     harness.unmount();
   });
 });

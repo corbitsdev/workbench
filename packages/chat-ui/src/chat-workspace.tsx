@@ -19,7 +19,6 @@ import {
   CaretDown,
   ChatCircle,
   SlidersHorizontal,
-  UserPlus,
   WarningCircle,
 } from "@corbits/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -116,7 +115,8 @@ import {
   applyStreamReaction,
   useWorkbenchFeed,
 } from "./use-workbench-feed";
-import { CorbitAvatar, avatarClassForPrincipal } from "./avatar";
+import { avatarClassForPrincipal } from "./avatar";
+import { ChatMembers } from "./chat-members";
 import { useWorkbenchPresenceRoster } from "./workbench-presence";
 import { type } from "arktype";
 import {
@@ -167,7 +167,7 @@ export interface PresenceMember {
 }
 
 /** One entry in the header's static member stack — an agent or a roster
- * human, normalized to the one shape the square stack renders. Live
+ * human, normalized for the member control and popover. Live
  * presence uses `PresenceMember` in a separate round stack. */
 export interface TeamAvatarEntry {
   readonly key: string;
@@ -178,8 +178,7 @@ export interface TeamAvatarEntry {
 }
 
 /** How many avatars the header shows before collapsing the rest into a
- * "+N" chip. Shared by the static member stack and the live presence
- * stack so neither overflows the 3rem bar. */
+ * "+N" chip in the live presence stack. */
 export const TEAM_AVATAR_STACK_LIMIT = 6;
 
 /** A crumb the host's `StageTopBar` can render — label plus an optional
@@ -1345,15 +1344,12 @@ function ChatWorkspaceInner({
     [presenceRoster, activeWorkbench?.participants, currentUser],
   );
 
-  // Static member stack (square) vs live presence (round) — never one
-  // combined circular team stack.
+  // Membership includes offline participants; presence is tracked separately.
   const memberStack = buildMemberAvatarStack(
     activeWorkbench?.participants ?? [],
     agentDisplayNames,
     currentUser,
   );
-  const visibleMemberStack = memberStack.slice(0, TEAM_AVATAR_STACK_LIMIT);
-  const memberStackOverflow = memberStack.length - visibleMemberStack.length;
   const visiblePresenceStack = presenceMembers.slice(
     0,
     TEAM_AVATAR_STACK_LIMIT,
@@ -1417,44 +1413,29 @@ function ChatWorkspaceInner({
           </div>
         </details>
       ) : null}
-      {visibleMemberStack.length > 0 ? (
-        <div
-          className="chat-member-stack"
-          aria-label={CHAT_STRINGS.workbenchMembersLabel}
-        >
-          {visibleMemberStack.map((entry) =>
-            entry.tone === "agent" ? (
-              <span
-                key={entry.key}
-                className="member-avatar !overflow-hidden !bg-transparent !p-0"
-                data-agent="true"
-                title={entry.label}
-              >
-                <CorbitAvatar
-                  size="sm"
-                  ariaLabel={entry.label}
-                  className="!size-full"
-                />
-              </span>
-            ) : (
-              <span
-                key={entry.key}
-                className={`member-avatar ${entry.avatarClassName ?? ""}`}
-                title={entry.label}
-              >
-                {entry.initials}
-              </span>
-            ),
-          )}
-          {memberStackOverflow > 0 ? (
-            <span
-              className="chat-member-stack-overflow"
-              title={CHAT_STRINGS.teamStackOverflow(memberStackOverflow)}
-            >
-              +{memberStackOverflow}
-            </span>
-          ) : null}
-        </div>
+      {activeWorkbenchId !== null &&
+      (memberStack.length > 0 || offerInviteControl) ? (
+        <ChatMembers
+          key={activeWorkbenchId}
+          tenantId={tenantId}
+          workbenchId={activeWorkbenchId}
+          members={memberStack}
+          agents={workbenchAgentsQuery.data ?? []}
+          currentUserPrincipalId={currentUser?.principalId}
+          canRemove={activeWorkbench?.kind === "workbench"}
+          onInvite={
+            offerInviteControl ? () => setInviteDialogOpen(true) : undefined
+          }
+          onEditAgent={
+            onSettingsOpenChange !== undefined
+              ? (definitionId) => openWorkbenchSettings("agents", definitionId)
+              : undefined
+          }
+          onParticipantsChanged={() => {
+            refreshWorkbenchLists();
+            void workbenchAgentsQuery.refetch();
+          }}
+        />
       ) : null}
       {presenceMembers.length > 0 ? (
         <div
@@ -1479,16 +1460,6 @@ function ChatWorkspaceInner({
             </span>
           ) : null}
         </div>
-      ) : null}
-      {offerInviteControl ? (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setInviteDialogOpen(true)}
-        >
-          <UserPlus />
-          {CHAT_STRINGS.inviteAgentAction}
-        </Button>
       ) : null}
       <div className="chat-workbench-settings-slot">
         <Button

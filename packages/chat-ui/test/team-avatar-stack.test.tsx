@@ -1,6 +1,6 @@
 // The workbench header's static member stack: every agent participant on
-// the workbench plus every human on the roster, square avatars, collapsing
-// anything past TEAM_AVATAR_STACK_LIMIT into a "+N" chip. Live presence is
+// the workbench plus every human on the roster, a compact avatar preview
+// alongside the full member count. Live presence is
 // a separate round stack (see presence-stack.test.tsx).
 // Mirrors presence-stack.test.tsx's stub-fetch/mount harness.
 
@@ -140,7 +140,7 @@ function humanParticipant(principalId: string, handle: string) {
 }
 
 describe("workbench header member avatar stack", () => {
-  test("renders every agent participant and every roster human in the square member stack", async () => {
+  test("previews agent and human membership separately from live presence", async () => {
     stubFetch({
       participants: [
         { address: "myra@agents.example", handle: "Myra" },
@@ -243,7 +243,7 @@ describe("workbench header member avatar stack", () => {
     harness.unmount();
   });
 
-  test("collapses anything past the limit into a +N chip", async () => {
+  test("shows the full member count with a compact avatar preview", async () => {
     const humanNames = ["Alice", "Bob", "Carla", "Dana", "Eve", "Finn"];
     const humanParticipants = humanNames.map((name, index) =>
       humanParticipant(`prn_${index}`, name),
@@ -269,12 +269,12 @@ describe("workbench header member avatar stack", () => {
     });
     await harness.settle();
 
-    // 1 agent + 6 humans = 7 total, limit is 6, so one overflows.
-    const overflow = harness.container.querySelector(
-      ".chat-member-stack-overflow",
+    expect(harness.container.querySelectorAll(".member-avatar")).toHaveLength(
+      2,
     );
-    expect(overflow).not.toBeNull();
-    expect(overflow?.textContent).toBe("+1");
+    expect(
+      harness.container.querySelector('button[aria-label="7 members"]'),
+    ).not.toBeNull();
     harness.unmount();
   });
 
