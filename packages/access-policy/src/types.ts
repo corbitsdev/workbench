@@ -43,4 +43,3 @@ export type PolicyRowShape = {
   readonly allowedDomains: string;
   readonly tenancyCreation: TenancyCreationMode;
 };
-

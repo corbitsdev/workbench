@@ -77,7 +77,7 @@ export const SETTINGS_STRINGS = {
   accessPolicyHeading: "Who can join",
   accessPolicyLoadError: "who can join",
   accessPolicySignupLabel: "Self-signup",
-  accessPolicySignupOff: "Off — operator-created members only (default)",
+  accessPolicySignupOff: "Off — no self-signup (default)",
   accessPolicySignupAllowedDomains: "Anyone with an allowed email domain",
   accessPolicySignupOpenOption: "Anyone with an account",
   accessPolicyDomainsLabel: "Allowed email domains",
