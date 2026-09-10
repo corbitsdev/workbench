@@ -619,7 +619,7 @@ export function readHubConfig(
 ): HubConfig {
   if (env.OPERATOR_TENANT_ID !== undefined) {
     throw new Error(
-      "OPERATOR_TENANT_ID is no longer read: the hub ensures the root tenant by slug at boot. " +
+      "OPERATOR_TENANT_ID is no longer read: first signup mints the root tenant by slug. " +
         "Set WORKBENCH_DEFAULT_TENANT to your existing root tenant's slug " +
         '(or remove OPERATOR_TENANT_ID to keep the default slug "workbench"), then restart.',
     );
@@ -646,7 +646,7 @@ export function readHubConfig(
           .map((d) => d.trim())
           .filter((d) => d.length > 0);
 
-  // One deployment fact shared by boot parenting, setup/seed, and the
+  // One deployment fact shared by first-signup genesis, setup/seed, and the
   // env-key auto-plant. WORKBENCH_DEFAULT_TENANT wins; ORG_SLUG is the
   // alias when that is unset.
   const defaultTenantSlug =

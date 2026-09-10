@@ -69,14 +69,14 @@ value at once), verifies the database in `DATABASE_URL` is reachable and
 actually speaks Postgres, applies any pending platform migrations, builds
 the web UI if it has not been built yet, and starts the hub. The hub
 provisions authenticated sidecars on demand using the configured backend.
-Every required setting lives in `.env.example` with its expected shape, and the administrator account (`HUB_ADMIN_EMAIL` / `HUB_ADMIN_PASSWORD`,
-defaulting to alice@example.com / password123 when unset)
-is seeded so you can sign in immediately.
-
-`bun run dev` seeds that administrator account and ensures the root
-tenant so you can sign in. An empty database is a valid hub: boot does
-not insert agents, tools, workflows, or skills. Product state arrives
-through onboarding and explicit seed callers, not production boot.
+Every required setting lives in `.env.example` with its expected shape.
+`bun run dev` may sign up the local administrator (`HUB_ADMIN_EMAIL` /
+`HUB_ADMIN_PASSWORD`, defaulting to alice@example.com / password123
+when unset) through the same auth HTTP API the UI uses. Hub boot itself
+inserts no users or tenants. An empty database is a valid hub: boot
+does not insert agents, tools, workflows, or skills. Product state
+arrives through onboarding and explicit seed callers, not production
+boot.
 `ANTHROPIC_API_KEY` is the one optional line worth setting before boot —
 with it, the env-key auto-plant puts a real credential on the operator
 bench so the catalog is launchable; without it, inference waits until
