@@ -6,7 +6,13 @@
 // DB-gated: boots against its own scratch database so a reachable
 // DATABASE_URL is required and the suite skips without one.
 import { afterAll, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import postgres from "postgres";
@@ -88,7 +94,9 @@ async function countTenants(url: string): Promise<number> {
     `;
     const count = rows[0]?.count;
     if (typeof count !== "number") {
-      throw new Error(`tenant count: expected a number, got ${JSON.stringify(rows)}`);
+      throw new Error(
+        `tenant count: expected a number, got ${JSON.stringify(rows)}`,
+      );
     }
     return count;
   } finally {
@@ -133,11 +141,13 @@ describeIfDb("hub process boot does not mint a root tenant", () => {
 
       expect(await countTenants(url)).toBe(0);
 
-      const signIn = await hop("sign-in as the former boot admin is not 200", async () =>
-        api(hub.baseUrl, "POST", "/api/auth/sign-in/email", {
-          email: ALICE.email,
-          password: ALICE.password,
-        }),
+      const signIn = await hop(
+        "sign-in as the former boot admin is not 200",
+        async () =>
+          api(hub.baseUrl, "POST", "/api/auth/sign-in/email", {
+            email: ALICE.email,
+            password: ALICE.password,
+          }),
       );
       expect(signIn.status).not.toBe(200);
     });

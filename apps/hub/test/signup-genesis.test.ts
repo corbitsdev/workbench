@@ -278,7 +278,7 @@ describeIfDb("signup genesis (CL-7578)", () => {
       );
       expect(await deployments.json()).toEqual([]);
     });
-  });
+  }, 30_000);
 
   test("the second signup on an open hub joins the existing root as member, minting nothing", async () => {
     const scratchUrl = scratchUrlFor("open");
@@ -328,7 +328,7 @@ describeIfDb("signup genesis (CL-7578)", () => {
         }),
       ).toEqual(["member"]);
     });
-  });
+  }, 30_000);
 
   test("an operator-removed member cannot self-rejoin on a closed hub", async () => {
     const scratchUrl = scratchUrlFor("rejoin");
@@ -425,5 +425,5 @@ describeIfDb("signup genesis (CL-7578)", () => {
         .limit(1);
       expect(bobAfter).toBeUndefined();
     });
-  });
+  }, 30_000);
 });

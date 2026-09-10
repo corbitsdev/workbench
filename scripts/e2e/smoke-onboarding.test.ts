@@ -94,7 +94,9 @@ describe.skipIf(databaseUrl === undefined)(
             cookies,
           );
           expectStatus("provision probe", probe, 200);
-          expect((probe.data as { kind: string }).kind).toBe("needs-onboarding");
+          expect((probe.data as { kind: string }).kind).toBe(
+            "needs-onboarding",
+          );
           const res = await api(
             baseUrl,
             "POST",
