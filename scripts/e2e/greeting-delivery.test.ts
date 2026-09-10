@@ -8,12 +8,13 @@
 // turns into an agent-authored workbench message on real machinery,
 // not merely that the route returns 201.
 //
-// Mirrors `local-rip.test.ts`'s phase A (onboard → connect a real
-// credential through the key path) rather than `chat.test.ts`'s
-// zero-credential `seedCatalog` setup: the greeting mail rides the
-// same host-session delivery path as every real reply, so it landing
-// with zero user messages sent — on a mint wired to a genuine (stub)
-// credential — proves the whole delivery chain without a paid key.
+// Mirrors `local-rip.test.ts`'s phase A (signup joins the boot root as
+// a member; the owner connects a credential through the key path)
+// rather than `chat.test.ts`'s zero-credential `seedCatalog` setup:
+// the greeting mail rides the same host-session delivery path as every
+// real reply, so it landing with zero user messages sent — on a mint
+// wired to a genuine (stub) credential — proves the whole delivery
+// chain without a paid key.
 
 import { describe, expect, test } from "bun:test";
 
@@ -25,6 +26,7 @@ import {
 } from "../../packages/seeding/src/index.ts";
 import {
   createHubAPI,
+  signIn,
   type ApiCall,
 } from "../../packages/hub-api-client/src/index.ts";
 import {
@@ -150,29 +152,51 @@ describe.skipIf(databaseUrl === undefined)(
         signUp(hub.baseUrl, "Greeting Delivery Tester"),
       );
 
+      // Under the CL-7578 genesis-or-join contract the fresh signup
+      // joins the boot-ensured root as a plain member — the genesis
+      // path is covered in-process by
+      // `apps/hub/test/signup-genesis.test.ts`.
       const provisioned = await hop(
-        "first-login provisioning mints a personal bench, unseeded",
+        "a membership probe joins the boot root as a member",
         async () => {
           const res = await api(
             hub.baseUrl,
             "POST",
             "/api/onboarding/provision",
-            { name: "Greeting Delivery Tester's Bench" },
+            undefined,
             user.cookies,
           );
-          expectStatus("provision", res, 200);
-          const data = res.data as { kind: string; tenantSlug: string };
+          expectStatus("provision probe", res, 200);
+          const data = res.data as {
+            kind: string;
+            tenantSlug: string;
+            seeded: boolean;
+          };
           expect(data.kind).toBe("provisioned");
+          expect(data.seeded).toBe(false);
+          stringField(data, "tenantSlug", "provision result");
           return data;
         },
       );
 
+      // A joined member is read-only by design, so every owner-level
+      // leg below — seeding, chat mint, turns — runs as the boot admin,
+      // the root tenant's owner (`ensureDefaultTenant`'s config
+      // defaults: alice@example.com / password123).
+      const admin = await hop("boot-admin sign-in", async () => {
+        const session = await signIn(hubApi, {
+          email: "alice@example.com",
+          password: "password123",
+        });
+        return { cookies: session.cookies, userId: session.userId };
+      });
+
       const tenant = await hop(
-        "the freshly provisioned bench resolves through findPersonalTenant",
+        "the joined root resolves through findPersonalTenant",
         async () => {
           const found = await findPersonalTenant(
             hubApi,
-            user.cookies,
+            admin.cookies,
             provisioned.tenantSlug,
           );
           if (found === undefined) {
@@ -191,10 +215,10 @@ describe.skipIf(databaseUrl === undefined)(
         async () => {
           const testArgs = {
             api: hubApi,
-            cookies: user.cookies,
+            cookies: admin.cookies,
             hubUrl: hub.baseUrl,
-            userId: user.userId,
-            userEmail: user.email,
+            userId: admin.userId,
+            userEmail: "alice@example.com",
             provider: CONNECT_PROVIDER,
             apiKey: CONNECT_API_KEY,
             pushWorkflow,
@@ -227,7 +251,7 @@ describe.skipIf(databaseUrl === undefined)(
             try {
               const seedArgs = {
                 api: hubApi,
-                cookies: user.cookies,
+                cookies: admin.cookies,
                 hubUrl: hub.baseUrl,
                 pushWorkflow,
                 log: () => undefined,
@@ -260,7 +284,7 @@ describe.skipIf(databaseUrl === undefined)(
           try {
             await seedTenant({
               api: hubApi,
-              cookies: user.cookies,
+              cookies: admin.cookies,
               hubUrl: hub.baseUrl,
               tenant: {
                 tenantId: tenant.tenantId,
@@ -269,7 +293,7 @@ describe.skipIf(databaseUrl === undefined)(
               },
               model: await modelSourceFor(
                 hubApi,
-                user.cookies,
+                admin.cookies,
                 tenant.tenantId,
                 CONNECT_PROVIDER,
               ),
@@ -301,7 +325,7 @@ describe.skipIf(databaseUrl === undefined)(
               "GET",
               `/api/tenants/${tenant.tenantId}/chat/invitable-definitions`,
               undefined,
-              user.cookies,
+              admin.cookies,
             );
             if (res.status === 200) {
               const items = arrayField(
@@ -338,7 +362,7 @@ describe.skipIf(databaseUrl === undefined)(
               "POST",
               `/api/tenants/${tenant.tenantId}/chat/workbenches`,
               { kind: "chat", definitionId: assistantDefinitionId },
-              user.cookies,
+              admin.cookies,
             );
             if (res.status !== 500) break;
             if (Date.now() > deadline) {
@@ -382,7 +406,7 @@ describe.skipIf(databaseUrl === undefined)(
               "GET",
               `/api/tenants/${tenant.tenantId}/chat/workbenches/${chatId}/messages`,
               undefined,
-              user.cookies,
+              admin.cookies,
             );
             expectStatus("list chat messages", res, 200);
             const items = arrayField(
@@ -459,7 +483,7 @@ describe.skipIf(databaseUrl === undefined)(
                   },
                 ],
               },
-              user.cookies,
+              admin.cookies,
             );
             expectStatus(`send turn ${turn}`, sent, 201);
             const sentAt = Date.now();
@@ -470,7 +494,7 @@ describe.skipIf(databaseUrl === undefined)(
                 "GET",
                 `/api/tenants/${tenant.tenantId}/chat/workbenches/${chatId}/messages`,
                 undefined,
-                user.cookies,
+                admin.cookies,
               );
               const items = arrayField(
                 res.data,

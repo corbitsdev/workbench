@@ -37,6 +37,7 @@ import {
 } from "../../packages/seeding/src/index.ts";
 import {
   createHubAPI,
+  signIn,
   type ApiCall,
 } from "../../packages/hub-api-client/src/index.ts";
 import { WORKFLOW_SOURCE_ENTRY } from "../../packages/workflows/src/source.ts";
@@ -232,24 +233,37 @@ async function main(): Promise<void> {
     signUp(hub.baseUrl, "CL-6324 Proof"),
   );
 
-  const provisioned = await hop("first-login provisioning", async () => {
-    const res = await api(
-      hub.baseUrl,
-      "POST",
-      "/api/onboarding/provision",
-      { name: "CL-6324 Proof Bench" },
-      user.cookies,
-    );
-    expectStatus("provision", res, 200);
-    const data = res.data as { kind: string; tenantSlug: string };
-    expect(data.kind).toBe("provisioned");
-    return data;
+  const provisioned = await hop(
+    "a membership probe joins the boot root",
+    async () => {
+      const res = await api(
+        hub.baseUrl,
+        "POST",
+        "/api/onboarding/provision",
+        undefined,
+        user.cookies,
+      );
+      expectStatus("provision probe", res, 200);
+      const data = res.data as { kind: string; tenantSlug: string };
+      expect(data.kind).toBe("provisioned");
+      return data;
+    },
+  );
+
+  // A joined member is read-only by design, so every owner-level leg
+  // below runs as the boot admin, the root tenant's owner.
+  const admin = await hop("boot-admin sign-in", async () => {
+    const session = await signIn(hubApi, {
+      email: "alice@example.com",
+      password: "password123",
+    });
+    return { cookies: session.cookies, userId: session.userId };
   });
 
-  const tenant = await hop("personal bench resolves", async () => {
+  const tenant = await hop("joined root resolves", async () => {
     const found = await findPersonalTenant(
       hubApi,
-      user.cookies,
+      admin.cookies,
       provisioned.tenantSlug,
     );
     if (found === undefined) {
@@ -263,10 +277,10 @@ async function main(): Promise<void> {
   const connected = await hop("connect the local Ollama", async () => {
     const result = await testAndPersistCredential({
       api: hubApi,
-      cookies: user.cookies,
+      cookies: admin.cookies,
       hubUrl: hub.baseUrl,
-      userId: user.userId,
-      userEmail: user.email,
+      userId: admin.userId,
+      userEmail: "alice@example.com",
       provider: "ollama",
       apiKey: OLLAMA_PLACEHOLDER_SECRET,
       baseURLOverride: ollamaBaseUrl,
@@ -288,7 +302,7 @@ async function main(): Promise<void> {
       try {
         await ensureSeeded({
           api: hubApi,
-          cookies: user.cookies,
+          cookies: admin.cookies,
           hubUrl: hub.baseUrl,
           pushWorkflow,
           log: () => undefined,
@@ -317,7 +331,7 @@ async function main(): Promise<void> {
         try {
           await seedTenant({
             api: hubApi,
-            cookies: user.cookies,
+            cookies: admin.cookies,
             hubUrl: hub.baseUrl,
             tenant: {
               tenantId: tenant.tenantId,
@@ -351,7 +365,7 @@ async function main(): Promise<void> {
         effect: "allow",
         origin: "system",
       },
-      user.cookies,
+      admin.cookies,
     );
     if (granted.status !== 201 && granted.status !== 409) {
       throw new Error(
@@ -381,7 +395,7 @@ async function main(): Promise<void> {
         "GET",
         `/api/tenants/${tenant.tenantId}/catalog/models?limit=200`,
         undefined,
-        user.cookies,
+        admin.cookies,
       );
       expectStatus("list the bench catalog models", models, 200);
       const modelRows = arrayField(models.data, "data", "catalog models") as {
@@ -403,7 +417,7 @@ async function main(): Promise<void> {
         "GET",
         `/api/tenants/${tenant.tenantId}/catalog/offerings?limit=200`,
         undefined,
-        user.cookies,
+        admin.cookies,
       );
       expectStatus("list the bench model offerings", offerings, 200);
       const offeringRows = arrayField(
@@ -423,7 +437,7 @@ async function main(): Promise<void> {
           "PATCH",
           `/api/tenants/${tenant.tenantId}/catalog/offerings/${offering.id}`,
           { disabled: true },
-          user.cookies,
+          admin.cookies,
         );
         expectStatus(`disable offering ${offering.id}`, patched, 200);
       }
@@ -451,7 +465,7 @@ async function main(): Promise<void> {
           "GET",
           `/api/tenants/${tenant.tenantId}/chat/invitable-definitions`,
           undefined,
-          user.cookies,
+          admin.cookies,
         );
         if (res.status === 200) {
           const items = arrayField(res.data, "items", "invitable") as {
@@ -491,7 +505,7 @@ async function main(): Promise<void> {
               "POST",
               `/api/tenants/${tenant.tenantId}/chat/workbenches`,
               { kind: "chat", definitionId: assistantDefinitionId },
-              user.cookies,
+              admin.cookies,
             );
             if (res.status !== 500) break;
             if (Date.now() > deadline) {
@@ -536,7 +550,7 @@ async function main(): Promise<void> {
       "GET",
       `/api/tenants/${tenant.tenantId}/workflows/${agentRunId}/runs/${agentRunId}/events`,
       undefined,
-      user.cookies,
+      admin.cookies,
     );
     if (res.status !== 200) return [];
     const raw = res.data;
@@ -562,7 +576,7 @@ async function main(): Promise<void> {
       "GET",
       `/api/tenants/${tenant.tenantId}/workflows/${anchorRunId}/runs`,
       undefined,
-      user.cookies,
+      admin.cookies,
     );
     if (res.status !== 200) return [];
     const raw = res.data;
@@ -590,7 +604,7 @@ async function main(): Promise<void> {
       "GET",
       `/api/tenants/${tenant.tenantId}/insights/latency`,
       undefined,
-      user.cookies,
+      admin.cookies,
     );
     expectStatus("read the turn-latency summary", res, 200);
     const total = (res.data as { total?: { samples?: unknown } }).total;
@@ -608,7 +622,7 @@ async function main(): Promise<void> {
       "GET",
       `/api/tenants/${tenant.tenantId}/chat/workbenches/${chatId}/messages`,
       undefined,
-      user.cookies,
+      admin.cookies,
     );
     expectStatus("list chat messages", res, 200);
     const items = arrayField(res.data, "items", "list chat messages") as {
@@ -727,7 +741,7 @@ async function main(): Promise<void> {
               name: SECTION_ASSET_NAME,
               displayName: "CL-6324 section-mode proof",
             },
-            user.cookies,
+            admin.cookies,
           );
           expectStatus("create the section-mode workflow asset", created, 201);
           const assetId = stringField(
@@ -747,7 +761,7 @@ async function main(): Promise<void> {
               actions: ["can_read", "can_push"],
               expiresAt: new Date(Date.now() + 600_000).toISOString(),
             },
-            user.cookies,
+            admin.cookies,
           );
           expectStatus("mint the section-mode push token", minted, 201);
           const tokenSecret = stringField(
@@ -797,7 +811,7 @@ async function main(): Promise<void> {
               sourceOfferingIds: [pinnedOfferingId],
               defaultSourceOfferingId: pinnedOfferingId,
             },
-            user.cookies,
+            admin.cookies,
           );
           expectStatus("deploy the section-mode workflow", deployed, 201);
           return stringField(
@@ -837,7 +851,7 @@ async function main(): Promise<void> {
         "POST",
         `/api/tenants/${tenant.tenantId}/workflows/${sectionDeploymentId}/mail`,
         { content: text },
-        user.cookies,
+        admin.cookies,
       );
       if (triggered.status === 202) break;
       if (triggered.status !== 409 || Date.now() > triggerDeadline) {
@@ -862,7 +876,7 @@ async function main(): Promise<void> {
           "GET",
           `/api/tenants/${tenant.tenantId}/workflows/${sectionDeploymentId}/runs/${turnRunId}/events`,
           undefined,
-          user.cookies,
+          admin.cookies,
         );
         if (res.status !== 200) continue;
         const events = arrayField(
@@ -919,7 +933,7 @@ async function main(): Promise<void> {
         "GET",
         `/api/tenants/${tenant.tenantId}/workflows/${sectionDeploymentId}/runs/${sectionDeploymentId}/events`,
         undefined,
-        user.cookies,
+        admin.cookies,
       );
       expectStatus("read the section's parent run log", parentEvents, 200);
       const events = arrayField(
@@ -960,7 +974,7 @@ async function main(): Promise<void> {
         "GET",
         `/api/tenants/${tenant.tenantId}/approvals${query}`,
         undefined,
-        user.cookies,
+        admin.cookies,
       );
       if (res.status !== 200) {
         throw new Error(
@@ -980,7 +994,7 @@ async function main(): Promise<void> {
           "POST",
           `/api/tenants/${tenant.tenantId}/approvals/${item.id}/approve`,
           { scope: "once" },
-          user.cookies,
+          admin.cookies,
         );
         const headline = headlineFor(item.toolDefinition, item.toolArguments);
         if (approved.status === 200) {
@@ -1021,7 +1035,7 @@ async function main(): Promise<void> {
         "POST",
         `/api/tenants/${tenant.tenantId}/chat/workbenches/${chatId}/messages`,
         { parts: [{ kind: "text", text }] },
-        user.cookies,
+        admin.cookies,
       );
       expectStatus("send message", sent, 201);
       const reply = await awaitFreshReply(label);
@@ -1132,7 +1146,7 @@ async function main(): Promise<void> {
           },
         ],
       },
-      user.cookies,
+      admin.cookies,
     );
     expectStatus("send the mid-turn message", sent, 201);
     // The section deployment takes the same kill mid-occurrence, so the
@@ -1143,7 +1157,7 @@ async function main(): Promise<void> {
       "POST",
       `/api/tenants/${tenant.tenantId}/workflows/${sectionDeploymentId}/mail`,
       { content: MID_TURN_PROMPT },
-      user.cookies,
+      admin.cookies,
     );
     expectStatus("send the mid-turn section message", sectionSent, 202);
     // Long enough that the turn is genuinely in flight — the child has
@@ -1189,7 +1203,7 @@ async function main(): Promise<void> {
             "GET",
             `/api/tenants/${tenant.tenantId}/chat/workbenches/${chatId}/messages`,
             undefined,
-            user.cookies,
+            admin.cookies,
           );
           // The room surviving is a hub-only read and says nothing about
           // the execution plane. The run's own health does: `liveness`
@@ -1202,7 +1216,7 @@ async function main(): Promise<void> {
             "GET",
             `/api/tenants/${tenant.tenantId}/workflows/runs/${agentRunId}/health`,
             undefined,
-            user.cookies,
+            admin.cookies,
           );
           const liveness = (health.data as { liveness?: unknown }).liveness;
           if (res.status === 200 && liveness === "ok") return;
