@@ -27,7 +27,6 @@ import { parseAs, type ApiCall } from "@corbits/hub-api-client";
 import { reportError } from "@corbits/error-sink";
 import {
   checkSignupGate,
-  resolvePendingInviteOnLogin,
   type AccessPolicyStore,
 } from "@workbench/access-policy";
 
@@ -96,9 +95,9 @@ export type ProvisionArgs = {
   userId: string;
   userEmail: string;
   /** better-auth is configured without `requireEmailVerification` — an
-   * unverified email must never pass a domain-allowlist or redeem a
-   * pending invite meant for someone else. See
-   * `@workbench/access-policy`'s `evaluateSignupGate` doc comment. */
+   * unverified email must never pass a domain-allowlist meant for
+   * someone else. See `@workbench/access-policy`'s `evaluateSignupGate`
+   * doc comment. */
   userEmailVerified: boolean;
   /** Display name for the personal bench. Required to mint: when omitted
    * (shell membership probe), returns `needs-onboarding` and creates nothing. */
@@ -342,26 +341,6 @@ export async function provisionPersonalTenantIfNeeded(
     };
     await seedTenant(existingMemberSeedArgs);
     return { kind: "existing-member", seeded: true, tenantId: own.tenantId };
-  }
-
-  // No membership yet. Before any signup decision, check whether this
-  // email was already pre-vetted through a pending invite (an admin
-  // invited an email — or a whole domain — that had no user row yet at
-  // invite time). A match joins the invited tenant directly; the
-  // closed-by-default signup gate below never runs for it. This check
-  // runs on every call, including the bare membership probe, because
-  // resolving an invite is itself the first-login decision, not
-  // something that waits on the naming step.
-  if (args.accessPolicy !== undefined) {
-    const resolved = await resolvePendingInviteOnLogin({
-      store: args.accessPolicy.store,
-      api: args.api,
-      cookies: args.cookies,
-      email: args.userEmail,
-      emailVerified: args.userEmailVerified,
-      allowUnverifiedEmails: args.accessPolicy.allowUnverifiedEmails,
-    });
-    if (resolved !== undefined) return { kind: "existing-member" };
   }
 
   // Creation requires an explicit display name from the onboarding

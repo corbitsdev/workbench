@@ -90,13 +90,12 @@ export type SignupGateArgs = {
   readonly envAllowedDomains: readonly string[];
   readonly email: string;
   /** better-auth is configured without `requireEmailVerification`, so
-   * an unverified address can claim any domain or race a pending
-   * invite meant for someone else. Every email-trust decision this
-   * gate makes requires `emailVerified` unless `allowUnverifiedEmails`
-   * opts out (dev/test only — see `ALLOW_UNVERIFIED_EMAILS`, mirroring
-   * `ALLOW_PLAINTEXT_SECRETS`). Checked before policy/env are ever
-   * consulted, so no combination of settings can allow an unverified
-   * email through. */
+   * an unverified address can claim any domain. Every email-trust
+   * decision this gate makes requires `emailVerified` unless
+   * `allowUnverifiedEmails` opts out (dev/test only — see
+   * `ALLOW_UNVERIFIED_EMAILS`, mirroring `ALLOW_PLAINTEXT_SECRETS`).
+   * Checked before policy/env are ever consulted, so no combination
+   * of settings can allow an unverified email through. */
   readonly emailVerified: boolean;
   readonly allowUnverifiedEmails: boolean;
 };

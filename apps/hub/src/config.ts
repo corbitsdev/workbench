@@ -191,7 +191,7 @@ const HubEnv = type({
     "dev/test-only opt-in to boot without CREDENTIAL_ENCRYPTION_KEY or PRINCIPAL_KEY_ENCRYPTION_KEY, storing secrets and signing keys at rest unencrypted with a boot warning; refused unless BASE_URL is a loopback address, so a real deployment can never inherit it by accident",
   ),
   "ALLOW_UNVERIFIED_EMAILS?": type("'1' | 'true'").describe(
-    "dev/test-only opt-in to let @workbench/access-policy trust an email that better-auth has not verified — self-signup domain checks and pending-invite redemption normally require emailVerified; never set this for a real deployment",
+    "dev/test-only opt-in to let @workbench/access-policy trust an email that better-auth has not verified — self-signup domain checks normally require emailVerified; never set this for a real deployment",
   ),
   "HUB_ALLOW_GIT_INSIDE_WORK_TREE?": type("'1' | 'true'").describe(
     "opt-in to initialize hub git-on-disk state inside a directory that is already a git work tree; refused by default because a nested init that misses its own .git walks up and commits onto the enclosing working branch",

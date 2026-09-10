@@ -4,9 +4,7 @@ export {
   UpdateAccessPolicy,
   SelfSignupMode,
   TenancyCreationMode,
-  CreatePendingInvite,
 } from "./types";
-export type { PendingInvite } from "./types";
 
 export {
   resolveAccessPolicy,
@@ -29,13 +27,13 @@ export {
 } from "./store";
 export type { AccessPolicyStore } from "./store";
 
-export { checkSignupGate, resolvePendingInviteOnLogin } from "./gate";
-export type { PendingInviteResolution, SignupGateCheckArgs } from "./gate";
+export { checkSignupGate } from "./gate";
+export type { SignupGateCheckArgs } from "./gate";
 
 export { createAccessPolicyRoutes } from "./routes";
 export type { CreateAccessPolicyRoutesDeps } from "./routes";
 
-export { accessPolicySchema, policy, pendingInvite } from "./schema";
+export { accessPolicySchema, policy } from "./schema";
 
 export {
   accessPolicyMigrations,

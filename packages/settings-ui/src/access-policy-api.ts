@@ -21,20 +21,6 @@ export type UpdateAccessPolicy = {
   readonly tenancyCreation?: AccessPolicy["tenancyCreation"];
 };
 
-const PendingInvite = type({
-  id: "string",
-  tenantId: "string",
-  matchType: "'email' | 'domain'",
-  value: "string",
-  "roleId?": "string",
-  "invitedBy?": "string",
-  createdAt: "string",
-  "consumedAt?": "string",
-});
-export type PendingInvite = typeof PendingInvite.infer;
-
-const PendingInvitesPage = type({ data: PendingInvite.array() });
-
 export class AccessPolicyApiError extends Error {
   constructor(
     message: string,
@@ -70,43 +56,5 @@ export function updateAccessPolicy(
     AccessPolicy,
     "saving who can join",
     { method: "PATCH", body: JSON.stringify(patch) },
-  );
-}
-
-export function listPendingInvites(
-  tenantId: string,
-): Promise<readonly PendingInvite[]> {
-  return request(
-    `/api/tenants/${tenantId}/access-policy/pending-invites`,
-    PendingInvitesPage,
-    "loading pending invites",
-  ).then((page) => page.data);
-}
-
-export function createPendingInvite(
-  tenantId: string,
-  input: {
-    readonly matchType: "email" | "domain";
-    readonly value: string;
-    readonly roleId?: string;
-  },
-): Promise<PendingInvite> {
-  return request(
-    `/api/tenants/${tenantId}/access-policy/pending-invites`,
-    PendingInvite,
-    "adding that invite",
-    { method: "POST", body: JSON.stringify(input) },
-  );
-}
-
-export function deletePendingInvite(
-  tenantId: string,
-  id: string,
-): Promise<void> {
-  return request<void>(
-    `/api/tenants/${tenantId}/access-policy/pending-invites/${id}`,
-    (data) => data as void,
-    "removing that invite",
-    { method: "DELETE" },
   );
 }

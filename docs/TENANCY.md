@@ -68,17 +68,15 @@ is never patched into a vendor route. Two layers, in order:
 domains"` (with an `allowedDomains` list), or `"open"`. An absent row
    is closed defaults, identical in effect to `selfSignup: "off"`.
 
-**closed** — self-serve email signup is rejected. An owner adds members
-via the native invite/membership path, shares a **copy-link invite**
-(token in the URL, out of scope for delivery), or pre-vets an email (or
-a whole domain) as a **pending invite** — see below — before that person
-ever logs in.
+**closed** — self-serve email signup is rejected. New humans join only
+when an operator creates them through native APIs, or an owner shares a
+**copy-link invite** (token in the URL, out of scope for delivery).
 
 **Email must be verified.** better-auth is configured without
 `requireEmailVerification`, so a freshly-registered address is not
 proof of ownership on its own. Every email-trust decision
-`@workbench/access-policy` makes — an allowed-domains match, an open-
-policy pass, a pending-invite redemption — requires
+`@workbench/access-policy` makes — an allowed-domains match or an
+open-policy pass — requires
 `user.emailVerified === true`; an unverified email is denied, fail-
 closed, regardless of what the policy or env otherwise allow.
 `ALLOW_UNVERIFIED_EMAILS=1` opts out for local dev/test only, mirroring
@@ -99,19 +97,6 @@ than leaving it silently broken. There is no plan to make the policy
 row flip the env switch automatically — the env switch is an operator
 deployment fact, the policy row is a per-bench product setting, and the
 mismatch is meant to be visible, not auto-resolved.
-
-### Pending invites (the not-yet-registered-user bridge)
-
-The native invite route (`POST /tenants/:id/members/invite`) requires an
-existing `user` row looked up by email — it cannot invite someone who
-has never signed in. `@workbench/access-policy` bridges that gap with
-its own `pending_invite` table: an admin records an email (or a domain,
-for a standing "anyone at this domain may join" rule) against a tenant
-before that person has an account. On that email's first login, the
-onboarding hook resolves the match, redeems it through the native invite
-route (now that a user row exists) and an immediate activation, and
-consumes an exact-email match (a domain match is a standing rule and is
-never consumed).
 
 ### Workbench icon
 
@@ -329,7 +314,7 @@ needs a weaker role, that is an Interchange conversation first.
 - `@corbits/bench-ui` — tenancy-kind helpers, workbench-tenancy client, tenancy contracts
 - `@workbench/onboarding` — personal bench provision under operator parent
 - `@workbench/access-policy` — closed-by-default signup/sub-workbench-
-  creation policy, pending invites (CL-5886)
+  creation policy
 - `apps/hub` — `WORKBENCH_SIGNUP`, invite routes, icon routes; one of the
   explicitly-listed apps/hub mounts pending extraction into a package (see
   [ARCHITECTURE.md](../ARCHITECTURE.md), CL-6127)
