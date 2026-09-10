@@ -11,14 +11,14 @@ requires an upstream Interchange change. **Do not patch `vendor/intx`.**
 
 ## What already works (consume, do not reimplement)
 
-| Capability                      | Where                                                                                                                                |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Tenant `parentId` hierarchy     | `@intx/db` tenant table; POST `/api/tenants` accepts `parentId`                                                                      |
-| Live ancestor-chain inheritance | `getAncestorChain` in `@intx/db` — catalog, credentials, providers walk ancestors at read time                                       |
-| Descendant walk                 | `getDescendantTenants` in `@intx/db`                                                                                                 |
-| Roles                           | Interchange native `owner` / `admin` / `member` — mirror 1:1 in UI; never invent a parallel role table                               |
-| Personal bench parenting        | `packages/onboarding` parents under the boot-ensured root tenant (`WORKBENCH_DEFAULT_TENANT`, alias `ORG_SLUG`, default `workbench`) |
-| Memberships                     | Native principal + membership routes                                                                                                 |
+| Capability                      | Where                                                                                                                                                                                                                                                  |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Tenant `parentId` hierarchy     | `@intx/db` tenant table; POST `/api/tenants` accepts `parentId`                                                                                                                                                                                        |
+| Live ancestor-chain inheritance | `getAncestorChain` in `@intx/db` — catalog, credentials, providers walk ancestors at read time                                                                                                                                                         |
+| Descendant walk                 | `getDescendantTenants` in `@intx/db`                                                                                                                                                                                                                   |
+| Roles                           | Interchange native `owner` / `admin` / `member` — mirror 1:1 in UI; never invent a parallel role table                                                                                                                                                 |
+| First-signup genesis / join     | `packages/onboarding`'s `genesisOrJoinHubSignup`: on an empty hub (zero tenants) the first signup mints the root tenant and becomes its `owner`; every later signup joins the root as a plain `member`. Signup never seeds workflows, tools, or grants |
+| Memberships                     | Native principal + membership routes                                                                                                                                                                                                                   |
 
 Inheritance is **live**. Creating a sub-workbench must **not** copy
 catalog rows, credentials, or providers from the parent — resolution
@@ -46,6 +46,25 @@ A freshly ensured root has no `access_policy` row yet, so signup falls
 back to `WORKBENCH_SIGNUP` until Settings → People → "Who can join"
 writes one. This cutover does not migrate policy rows from a previous
 operator tenant.
+
+### The 0→1 contract (first signup is genesis)
+
+On a hub that starts with **zero tenants and zero users** — the
+`skipEnsureDefaultTenant` seam, or any deployment that opts out of
+boot-time root creation — nobody has to pre-seed an admin:
+
+- The sign-up/email route admits the very first signup even when
+  `WORKBENCH_SIGNUP=closed` (the empty-hub exception in
+  `apps/hub/src/index.ts`'s `authHandler`: allowed only while both
+  `countUsers()` and `countTenants()` are zero).
+- The tenant-create guard allows that caller's unparented
+  `POST /api/tenants` while `countTenants() === 0`.
+- `genesisOrJoinHubSignup` mints the root tenant with the default
+  slug; the creator is its native `owner`.
+- Every later signup (tenants > 0, or more than one user) joins the
+  existing root as a native `member` — and never mints a tenant of its
+  own. Signup never seeds the default workflow set; seeding belongs to
+  the credential step.
 
 ## Workbench-side contracts (this repo)
 
@@ -312,7 +331,7 @@ needs a weaker role, that is an Interchange conversation first.
 ## Related packages
 
 - `@corbits/bench-ui` — tenancy-kind helpers, workbench-tenancy client, tenancy contracts
-- `@workbench/onboarding` — personal bench provision under operator parent
+- `@workbench/onboarding` — genesis-or-join first-signup provisioning
 - `@workbench/access-policy` — closed-by-default signup/sub-workbench-
   creation policy
 - `apps/hub` — `WORKBENCH_SIGNUP`, invite routes, icon routes; one of the

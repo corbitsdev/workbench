@@ -163,6 +163,7 @@ import { createWorkflowAccessRoutes } from "@corbits/access-tools/routes";
 import { generateId } from "@intx/hub-common";
 
 import { ensureDefaultTenant } from "./default-tenant";
+import { createHubSignupTenancy } from "./signup-tenancy";
 import { runSystemSeed } from "./system-seed";
 import {
   createInMemoryMailboxEventBus,
@@ -669,6 +670,10 @@ export async function createHub(config: HubConfig) {
   // Per-principal signing keys are sealed under their own operator key —
   // see `principalKeyStoreFrom`.
   const principalKeyStore = principalKeyStoreFrom(config, db, log);
+  // The genesis-or-join first-signup decision's tenancy reads/writes —
+  // also read by the sign-up gate (empty-hub exception) and the
+  // tenant-create guard below. See ./signup-tenancy.ts.
+  const signupTenancy = createHubSignupTenancy(db, principalKeyStore);
 
   const auth = betterAuth({
     baseURL: config.baseUrl,
@@ -741,14 +746,19 @@ export async function createHub(config: HubConfig) {
   // membership too — `workbench setup` then adopts the root instead of
   // colliding with it, and the root's policy row has an editor. Failure
   // here fails the boot loudly — a hub without its root tenant cannot
-  // serve first logins.
-  const operatorTenantId = await ensureDefaultTenant(
-    db,
-    auth,
-    config.envCredentialPlantAdmin,
-    config.defaultTenantSlug,
-    principalKeyStore,
-  );
+  // serve first logins. The skip seam is test-only: a suite exercising
+  // the true empty-hub first-signup path sets it so the first signup
+  // itself mints the root (CL-7578); readHubConfig never sets it.
+  const operatorTenantId =
+    config.skipEnsureDefaultTenant === true
+      ? undefined
+      : await ensureDefaultTenant(
+          db,
+          auth,
+          config.envCredentialPlantAdmin,
+          config.defaultTenantSlug,
+          principalKeyStore,
+        );
   // Account-keyed sign-in rate limit (CL-6494) — see `sign-in-rate-limit.ts`
   // for why this replaces better-auth's own IP-keyed sign-in enforcement
   // entirely rather than composing with it.
@@ -1272,14 +1282,27 @@ export async function createHub(config: HubConfig) {
       // sign-up/email path is product-controlled (docs/TENANCY.md).
       if (c.req.method === "POST" && c.req.path.endsWith(SIGN_UP_EMAIL_PATH)) {
         if (config.signupMode === "closed") {
-          return c.json(
-            {
-              error: "signup_closed",
-              message:
-                "Self-serve signup is disabled. Ask an owner for an invite.",
-            },
-            403,
-          );
+          // Empty-hub exception (CL-7578): with zero users and zero
+          // tenants, someone has to be first — the signup that opens a
+          // brand-new hub is allowed even when signup is closed, since
+          // the genesis path makes that caller the root tenant's owner.
+          // Everywhere else on the hub "empty" means zero tenants only;
+          // here a user row also counts, because it means the 0→1
+          // signup already happened.
+          const [users, tenants] = await Promise.all([
+            signupTenancy.countUsers(),
+            signupTenancy.countTenants(),
+          ]);
+          if (users > 0 || tenants > 0) {
+            return c.json(
+              {
+                error: "signup_closed",
+                message:
+                  "Self-serve signup is disabled. Ask an owner for an invite.",
+              },
+              403,
+            );
+          }
         }
         if (config.allowedEmailDomains.length > 0) {
           let email = "";
@@ -3378,6 +3401,8 @@ export async function createHub(config: HubConfig) {
 
   const onboardingDeps: Parameters<typeof createOnboardingRoutes>[0] = {
     hubUrl: config.baseUrl,
+    defaultTenantSlug: config.defaultTenantSlug,
+    tenancy: signupTenancy,
     pushWorkflow: createGitWorkflowPusher(),
     log: (line) => log.info`${line}`,
     logError: (line) => log.error`${line}`,
@@ -3396,9 +3421,6 @@ export async function createHub(config: HubConfig) {
     // routed someone to onboarding to fix.
     providerHealth: providerHealthStore,
   };
-  onboardingDeps.operatorTenantId = operatorTenantId;
-  if (config.seedModel !== undefined)
-    onboardingDeps.seedModel = config.seedModel;
   if (config.huggingfaceOAuthClientId !== undefined)
     onboardingDeps.huggingfaceClientId = config.huggingfaceOAuthClientId;
 
@@ -3573,6 +3595,7 @@ export async function createHub(config: HubConfig) {
     store: accessPolicyStore,
     resolveCallerRoleNames: (tenantId, userId) =>
       resolveCallerRoleNames(db, tenantId, userId),
+    countTenants: signupTenancy.countTenants,
     envSignupMode: config.signupMode,
     envAllowedDomains: config.allowedEmailDomains,
     allowUnverifiedEmails: config.allowUnverifiedEmails,
@@ -3587,7 +3610,8 @@ export async function createHub(config: HubConfig) {
         : undefined;
     },
   };
-  guardDeps.operatorTenantId = operatorTenantId;
+  if (operatorTenantId !== undefined)
+    guardDeps.operatorTenantId = operatorTenantId;
   const guardedApp = guardedHubApp(app, guardDeps);
   const inFlight = createInFlightRequestTracker();
   const servingApp = withInFlightRequestTracking(guardedApp, inFlight);

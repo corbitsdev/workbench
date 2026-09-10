@@ -97,6 +97,10 @@ export type ProvisionOutcome =
        * A probe `error` must not be treated as absent (CL-6868).
        */
       readonly tenantId?: string;
+      /** Present when the caller just joined the root as a plain
+       * member: the tenant they joined, for the member-onboarding UX
+       * to surface later (CL-7584). */
+      readonly tenantSlug?: string;
     }
   | { readonly kind: "needs-onboarding" }
   | {
@@ -141,7 +145,17 @@ export async function triggerFirstLoginProvisioning(
       return { kind: "error", message: FALLBACK_ERROR_MESSAGE };
     }
     if (parsed.kind === "existing-member") {
-      if (parsed.seeded === undefined) return { kind: "existing-member" };
+      if (parsed.seeded === undefined) {
+        return parsed.tenantId === undefined
+          ? { kind: "existing-member" }
+          : {
+              kind: "existing-member",
+              tenantId: parsed.tenantId,
+              ...(parsed.tenantSlug !== undefined
+                ? { tenantSlug: parsed.tenantSlug }
+                : {}),
+            };
+      }
       return parsed.tenantId === undefined
         ? { kind: "existing-member", seeded: parsed.seeded }
         : {

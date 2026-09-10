@@ -1,12 +1,14 @@
 // Smoke scenario 2/5 (CL-6004): provisioning. A signed-up user with no
 // tenant yet calls the first-login provisioning hook
-// (POST /api/onboarding/provision); it mints a personal bench through
-// the native tenant-creation route. The e2e hub never carries
-// ANTHROPIC_API_KEY, so no hub-owned seed model credential is
-// configured — this asserts that documented, typed condition of the
-// response contract (`seeded: false` with a `seedSkipReason`) rather
-// than exercising full default-workflow seeding, which needs a real
-// inference credential this suite deliberately never has.
+// (POST /api/onboarding/provision). The e2e hub boots with the
+// boot-ensured root tenant present, so under the CL-7578 genesis-or-
+// join contract the fresh signup joins that root as a plain member —
+// the genesis path (first signup on a truly empty hub mints the root
+// itself) is covered in-process by
+// `apps/hub/test/signup-genesis.test.ts`. This asserts the join over
+// the wire: `kind: "existing-member"` naming the joined root via
+// `tenantId`/`tenantSlug` (a plain member gets no wizard — CL-7584
+// owns the member UX), and an idempotent re-provision.
 
 import { describe, expect, test } from "bun:test";
 
@@ -45,7 +47,7 @@ function stringField(data: unknown, field: string, what: string): string {
 describe.skipIf(databaseUrl === undefined)(
   "smoke: onboarding provision",
   () => {
-    test("provisioning a personal bench without a seed model reports bench_unseeded", async () => {
+    test("a brand-new signup joins the boot root as a member, unseeded", async () => {
       const url = databaseUrl;
       if (url === undefined) throw new Error("unreachable: suite is skipped");
 
@@ -63,9 +65,8 @@ describe.skipIf(databaseUrl === undefined)(
             crypto.getRandomValues(new Uint8Array(32)),
           ).toString("hex"),
           dataDir,
-          // Deliberately no ANTHROPIC_API_KEY: the hub carries no
-          // hub-owned seed model credential, so provisioning must
-          // report the bench as provisioned-but-unseeded.
+          // The e2e hub carries no hub-owned seed model credential, and
+          // the join path never seeds regardless.
         }),
       );
       track(hub);
@@ -84,8 +85,8 @@ describe.skipIf(databaseUrl === undefined)(
         return res.cookies;
       });
 
-      await hop(
-        "a membership probe before naming reports needs-onboarding",
+      const provisioned = await hop(
+        "a membership probe joins the boot root as a member",
         async () => {
           const res = await api(
             baseUrl,
@@ -95,21 +96,6 @@ describe.skipIf(databaseUrl === undefined)(
             cookies,
           );
           expectStatus("provision probe", res, 200);
-          expect((res.data as { kind: string }).kind).toBe("needs-onboarding");
-        },
-      );
-
-      const provisioned = await hop(
-        "provisioning with a display name mints a personal bench, unseeded",
-        async () => {
-          const res = await api(
-            baseUrl,
-            "POST",
-            "/api/onboarding/provision",
-            { name: "Onboarding Smoke Tester's Bench" },
-            cookies,
-          );
-          expectStatus("provision", res, 200);
           const data = res.data as {
             kind: string;
             tenantId: string;
@@ -117,10 +103,7 @@ describe.skipIf(databaseUrl === undefined)(
             seeded: boolean;
             seedSkipReason?: string;
           };
-          expect(data.kind).toBe("provisioned");
-          expect(data.seeded).toBe(false);
-          expect(typeof data.seedSkipReason).toBe("string");
-          expect(data.seedSkipReason).not.toBe("");
+          expect(data.kind).toBe("existing-member");
           stringField(data, "tenantId", "provision result");
           stringField(data, "tenantSlug", "provision result");
           return data;

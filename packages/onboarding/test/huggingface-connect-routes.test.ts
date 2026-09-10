@@ -199,6 +199,17 @@ function connectRoutes(
 ): Hono<AppEnv> {
   const deps: CreateOnboardingRoutesDeps = {
     hubUrl: overrides.hubUrl ?? "https://bench.example.com",
+    // This suite never exercises the genesis-or-join join path; the
+    // stub satisfies the required tenancy wiring without a DB.
+    tenancy: {
+      countUsers: async () => 0,
+      countTenants: async () => 0,
+      findRootTenant: async () => null,
+      addActiveMember: async () => {
+        throw new Error("this suite never exercises the join path");
+      },
+    },
+    defaultTenantSlug: "workbench",
     pushWorkflow:
       overrides.pushWorkflow ??
       (async () => ({ outcome: "pushed" as const, commitSha: "a".repeat(40) })),

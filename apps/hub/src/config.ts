@@ -393,6 +393,10 @@ export type HubConfig = {
    * see `ROUTINE_SCHEDULER_POLL_INTERVAL_MS` above. Unset runs the real
    * production cadence (`routine-scheduler.ts`'s own default). */
   readonly routineSchedulerPollIntervalMs?: number;
+  /** Test-only seam to skip the boot-time `ensureDefaultTenant` call so
+   * a suite can exercise the true empty-hub first-signup path (CL-7578).
+   * Never set by `readHubConfig` and never set for a real deployment. */
+  readonly skipEnsureDefaultTenant?: boolean;
   /** Every sidecar-allocation backend registered for exclusive placement,
    * one or more, each addressable by its provisioner id. Never empty: an
    * install that configures nothing registers the `process` backend, so

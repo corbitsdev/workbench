@@ -43,6 +43,9 @@ export type TenantCreateGuardDeps = {
     tenantId: string,
     userId: string,
   ) => Promise<readonly string[] | undefined>;
+  /** Total native tenant count — the hub's signup-tenancy adapter's own
+   * read, injected so the decision stays DB-free in tests. */
+  countTenants: () => Promise<number>;
   operatorTenantId?: string;
   envSignupMode: "open" | "closed";
   envAllowedDomains: readonly string[];
@@ -115,6 +118,16 @@ export async function decideTenantCreate(
     request.parentId === undefined ||
     request.parentId === deps.operatorTenantId
   ) {
+    // Genesis on an empty hub (CL-7578): with zero tenants there is no
+    // policy, no operator tenant, and nobody to invite anyone — the
+    // first signup's unparented create is the one path that bypasses
+    // the signup gate, because the sign-up route's own empty-hub
+    // exception already admitted this caller. Empty means zero tenants
+    // only (the one emptiness rule shared with genesis.ts; user rows
+    // alone never make a hub occupied).
+    if (request.parentId === undefined && (await deps.countTenants()) === 0) {
+      return { allowed: true };
+    }
     type MutableSignupGateArgs = {
       -readonly [K in keyof Parameters<typeof checkSignupGate>[0]]: Parameters<
         typeof checkSignupGate

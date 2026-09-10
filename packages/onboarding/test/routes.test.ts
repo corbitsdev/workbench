@@ -23,6 +23,17 @@ const pendingSeedStore = createInMemoryPendingSeedStore(
   createNoopCredentialCipher(),
 );
 
+// These tests never exercise the genesis-or-join join path — the stub
+// satisfies the required tenancy wiring without standing up a DB.
+const emptyHubTenancy = {
+  countUsers: async () => 0,
+  countTenants: async () => 0,
+  findRootTenant: async () => null,
+  addActiveMember: async () => {
+    throw new Error("these suites never exercise the join path");
+  },
+};
+
 const asUser: MiddlewareHandler<AppEnv> = async (c, next) => {
   c.set("user", { id: "user_1", email: "alice@example.com" } as never);
   await next();
@@ -39,6 +50,8 @@ describe("POST /provision", () => {
   test("an unreachable hub surfaces a transient error envelope (503), not a bare 500 body", async () => {
     const lines: string[] = [];
     const routes = createOnboardingRoutes({
+      tenancy: emptyHubTenancy,
+      defaultTenantSlug: "workbench",
       // Port 0 on loopback refuses every connection immediately, so the
       // underlying fetch throws deterministically without a live hub.
       hubUrl: "http://127.0.0.1:0",
@@ -85,6 +98,8 @@ describe("POST /provision", () => {
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
       const routes = createOnboardingRoutes({
+        tenancy: emptyHubTenancy,
+        defaultTenantSlug: "workbench",
         hubUrl: `http://localhost:${server.port}`,
         pushWorkflow: async () => ({
           outcome: "pushed" as const,
@@ -125,6 +140,8 @@ describe("POST /provision", () => {
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
       const routes = createOnboardingRoutes({
+        tenancy: emptyHubTenancy,
+        defaultTenantSlug: "workbench",
         hubUrl: `http://localhost:${server.port}`,
         pushWorkflow: async () => ({
           outcome: "pushed" as const,
@@ -151,6 +168,8 @@ describe("POST /provision", () => {
     // burn a slot — otherwise the naming wizard always 429s within 10s of
     // first login).
     const routes = createOnboardingRoutes({
+      tenancy: emptyHubTenancy,
+      defaultTenantSlug: "workbench",
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => ({
         outcome: "pushed" as const,
@@ -190,6 +209,8 @@ describe("POST /provision", () => {
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
       const routes = createOnboardingRoutes({
+        tenancy: emptyHubTenancy,
+        defaultTenantSlug: "workbench",
         hubUrl: `http://localhost:${server.port}`,
         pushWorkflow: async () => ({
           outcome: "pushed" as const,
@@ -233,6 +254,8 @@ describe("POST /provision", () => {
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
       const routes = createOnboardingRoutes({
+        tenancy: emptyHubTenancy,
+        defaultTenantSlug: "workbench",
         hubUrl: `http://localhost:${server.port}`,
         pushWorkflow: async () => ({
           outcome: "pushed" as const,
@@ -268,6 +291,8 @@ describe("POST /provision", () => {
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
       const routes = createOnboardingRoutes({
+        tenancy: emptyHubTenancy,
+        defaultTenantSlug: "workbench",
         hubUrl: `http://localhost:${server.port}`,
         pushWorkflow: async () => ({
           outcome: "pushed" as const,
@@ -296,6 +321,8 @@ describe("POST /provision", () => {
 
   test("an anonymous request is rejected before provisioning runs", async () => {
     const routes = createOnboardingRoutes({
+      tenancy: emptyHubTenancy,
+      defaultTenantSlug: "workbench",
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => ({
         outcome: "pushed" as const,
@@ -318,6 +345,8 @@ describe("POST /provision", () => {
 describe("POST /complete", () => {
   test("an anonymous request is rejected before anything is seeded", async () => {
     const routes = createOnboardingRoutes({
+      tenancy: emptyHubTenancy,
+      defaultTenantSlug: "workbench",
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => ({
         outcome: "pushed" as const,
@@ -345,6 +374,8 @@ describe("POST /complete", () => {
 
   test("a missing provider is rejected with a specific message, no network call made", async () => {
     const routes = createOnboardingRoutes({
+      tenancy: emptyHubTenancy,
+      defaultTenantSlug: "workbench",
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => ({
         outcome: "pushed" as const,
@@ -386,6 +417,8 @@ describe("POST /complete", () => {
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
       const routes = createOnboardingRoutes({
+        tenancy: emptyHubTenancy,
+        defaultTenantSlug: "workbench",
         hubUrl: `http://localhost:${server.port}`,
         pushWorkflow: async () => ({
           outcome: "pushed" as const,
@@ -421,6 +454,8 @@ describe("POST /complete", () => {
     const providerHealth = createProviderHealthStore();
     providerHealth.report("tnt_own", "anthropic", "credential_failure");
     const routes = createOnboardingRoutes({
+      tenancy: emptyHubTenancy,
+      defaultTenantSlug: "workbench",
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => ({
         outcome: "pushed" as const,
@@ -459,6 +494,8 @@ describe("POST /complete", () => {
 
   test("a non-sidecar failure during setup still fails loudly with the existing 500 envelope", async () => {
     const routes = createOnboardingRoutes({
+      tenancy: emptyHubTenancy,
+      defaultTenantSlug: "workbench",
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => ({
         outcome: "pushed" as const,
@@ -493,6 +530,8 @@ describe("POST /complete", () => {
   test("a HubApiError naming an absolute file path never reaches the client", async () => {
     const lines: string[] = [];
     const routes = createOnboardingRoutes({
+      tenancy: emptyHubTenancy,
+      defaultTenantSlug: "workbench",
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => ({
         outcome: "pushed" as const,
@@ -580,6 +619,8 @@ describe("POST /complete — seeded-admin fallback", () => {
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
       const routes = createOnboardingRoutes({
+        tenancy: emptyHubTenancy,
+        defaultTenantSlug: "workbench",
         hubUrl: `http://localhost:${server.port}`,
         pushWorkflow: async () => ({
           outcome: "pushed" as const,
