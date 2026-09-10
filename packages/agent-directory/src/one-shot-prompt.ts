@@ -8,7 +8,9 @@ import type { AgentLifecycle } from "@corbits/agent-lifecycle";
 import { connectorReplyContent, messageRunEnded } from "@corbits/agent-events";
 import { reportError } from "@corbits/error-sink";
 import {
+  deliverWhenRoutable,
   endAgentSessionForRun,
+  isAgentUnreachableError,
   readDefinitionProjection,
   readFoldedBody,
   recordAgentSessionAtProvision,
@@ -60,6 +62,24 @@ export type OneShotRunnerDeps = {
   readonly sessionService: Pick<SessionService, "sendUserMessage">;
   readonly eventCollectors: EventCollectorPort;
   /**
+   * Reads the hub's live sidecar routing table (the same source the
+   * webhook launch path uses). A freshly provisioned run's sidecar
+   * takes several seconds to register, so the opening send fires once;
+   * if it fails as unreachable, this is polled — bounded — until the
+   * address is routable and the send is retried exactly once.
+   */
+  readonly isRoutable: (address: string) => boolean;
+  /**
+   * Test seam only. Overrides `deliverWhenRoutable`'s default wait
+   * budget/poll so the expiry path stays fast under test; production
+   * never sets it and the defaults apply.
+   */
+  readonly deliverWait?: {
+    readonly deadlineMs?: number;
+    readonly pollIntervalMs?: number;
+    readonly sleep?: (ms: number) => Promise<void>;
+  };
+  /**
    * Test seam only. Production never sets these; they default to
    * Interchange `prepareProvisionedDeployment` and `sendUserMessage`.
    */
@@ -110,6 +130,18 @@ export class OneShotRunFailedError extends Error {
         : "the one-shot run failed",
     );
     this.name = "OneShotRunFailedError";
+  }
+}
+
+export class OneShotRunUnreachableError extends Error {
+  constructor(cause: unknown) {
+    super(
+      cause instanceof Error
+        ? `the one-shot run's opening send kept failing while its sidecar was unreachable: ${cause.message}`
+        : "the one-shot run's opening send kept failing while its sidecar was unreachable",
+      { cause },
+    );
+    this.name = "OneShotRunUnreachableError";
   }
 }
 
@@ -304,33 +336,52 @@ export async function runOneShotPrompt(
     void (async () => {
       try {
         const cryptoProvider = await deps.cryptoProviders.get(launched.runId);
-        if (deps.sendMail !== undefined) {
-          await deps.sendMail({
-            tenantId: input.tenantId,
-            sessionId: launched.sessionId,
-            agentAddress: launched.address,
-            from: `${input.principalId}@${tenantRow.domain}`,
-            content: input.prompt,
-            cryptoProvider,
-          });
-        } else {
-          await deps.sessionService.sendUserMessage({
-            agentAddress: launched.address,
-            from: `${input.principalId}@${tenantRow.domain}`,
-            messageId: `<${crypto.randomUUID()}@${tenantRow.domain}>`,
-            date: new Date(),
-            content: input.prompt,
-            sessionId: launched.sessionId,
-            tenantId: input.tenantId,
-            cryptoProvider,
-          });
-        }
+        await deliverWhenRoutable({
+          send: async () => {
+            if (deps.sendMail !== undefined) {
+              await deps.sendMail({
+                tenantId: input.tenantId,
+                sessionId: launched.sessionId,
+                agentAddress: launched.address,
+                from: `${input.principalId}@${tenantRow.domain}`,
+                content: input.prompt,
+                cryptoProvider,
+              });
+            } else {
+              await deps.sessionService.sendUserMessage({
+                agentAddress: launched.address,
+                from: `${input.principalId}@${tenantRow.domain}`,
+                messageId: `<${crypto.randomUUID()}@${tenantRow.domain}>`,
+                date: new Date(),
+                content: input.prompt,
+                sessionId: launched.sessionId,
+                tenantId: input.tenantId,
+                cryptoProvider,
+              });
+            }
+          },
+          isRoutable: () => deps.isRoutable(launched.address),
+          ...deps.deliverWait,
+        });
         // A run's session and event collector are ensured lazily now, at
         // the hub seams that actually see the run become mail-routable
         // (`apps/hub/src/mailbox-persist.ts`, the wrapped
         // `eventCollectors` dispatch in `apps/hub/src/index.ts`) —
         // CL-7480. Nothing here needs to record it.
       } catch (cause) {
+        // The reply timer may have settled the run mid-wait; a late
+        // failure is then a phantom for an already-torn-down run.
+        if (settled) return;
+        if (isAgentUnreachableError(cause)) {
+          reportError(cause, {
+            operation: "agent-directory.one-shot.send-unreachable",
+            extra: { address: launched.address },
+          });
+          void settle("planning-run-send-unreachable", () => {
+            reject(new OneShotRunUnreachableError(cause));
+          });
+          return;
+        }
         reportError(cause, {
           operation: "agent-directory.one-shot.send",
           extra: { address: launched.address },

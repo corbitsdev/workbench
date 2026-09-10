@@ -905,6 +905,8 @@ export async function createHub(config: HubConfig) {
       },
     },
   });
+  const isSidecarRoutable = (address: string) =>
+    sidecarRouter.getRoutableAddresses().includes(address);
   // A finalized turn's persisted-artifact tool-call results become
   // delivery file parts (CL-6000) via `createArtifactDeliveryHandler`,
   // built once `chatStore`/`chatPlatform` exist further down this
@@ -2487,8 +2489,7 @@ export async function createHub(config: HubConfig) {
             workflowAllocationService,
             credentialCipher,
             eventCollectors,
-            isRoutable: (address) =>
-              sidecarRouter.getRoutableAddresses().includes(address),
+            isRoutable: isSidecarRoutable,
             cryptoProviderCache: cryptoProviders,
             persistLaunch: async (input) => {
               await workbenchLaunchPersistExtra(input)(db);
@@ -3303,6 +3304,7 @@ export async function createHub(config: HubConfig) {
                 workflowAllocationService,
                 sessionService,
                 eventCollectors,
+                isRoutable: isSidecarRoutable,
               },
               runnerInput,
             ),

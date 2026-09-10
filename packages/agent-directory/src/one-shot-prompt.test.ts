@@ -3,10 +3,11 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  runOneShotPrompt,
   OneShotDefinitionNotFoundError,
   OneShotRunFailedError,
   OneShotRunTimedOutError,
+  OneShotRunUnreachableError,
+  runOneShotPrompt,
 } from "./one-shot-prompt";
 
 /** Asserts a fake's call list recorded at least one call and returns the
@@ -107,8 +108,10 @@ function createFakeProvision() {
   };
 }
 
-/** A fake `sendMail`: records every call and either succeeds or throws. */
-function createFakeSend(behavior: "ok" | "throws" = "ok"): {
+/** A fake `sendMail`: records every call. A test scripts per-attempt
+ * failures by 1-based attempt number in `throwOn`; every other attempt
+ * succeeds. */
+function createFakeSend(throwOn: Record<number, Error> = {}): {
   calls: number;
   sendMail: (...args: unknown[]) => Promise<void>;
 } {
@@ -119,9 +122,8 @@ function createFakeSend(behavior: "ok" | "throws" = "ok"): {
     },
     sendMail: async () => {
       calls++;
-      if (behavior === "throws") {
-        throw new Error("cipher unavailable");
-      }
+      const thrown = throwOn[calls];
+      if (thrown !== undefined) throw thrown;
     },
   };
 }
@@ -166,6 +168,7 @@ function createBaseDeps() {
     repoStore: { resolveRef: async () => "sha_test" },
     workflowAllocationService: {},
     sessionService: {},
+    isRoutable: () => true,
     cryptoProviders: {
       async get() {
         return {};
@@ -186,7 +189,7 @@ describe("runOneShotPrompt", () => {
   test("happy path resolves with accumulated reply content, tears the run down, and untracks it", async () => {
     const fake = createFakeEmitter();
     const { provision, calls: launchCalls } = createFakeProvision();
-    const fakeSend = createFakeSend("ok");
+    const fakeSend = createFakeSend();
     const { sendMail } = fakeSend;
     const { undeploy, calls: undeployCalls } = createFakeUndeploy();
     const { lifecycle, tracked, activity, untracked } = createFakeLifecycle();
@@ -240,7 +243,7 @@ describe("runOneShotPrompt", () => {
   test("a failed run rejects with OneShotRunFailedError, unsubscribes, and tears the run down", async () => {
     const fake = createFakeEmitter();
     const { provision, calls: launchCalls } = createFakeProvision();
-    const { sendMail } = createFakeSend("ok");
+    const { sendMail } = createFakeSend();
     const { undeploy, calls: undeployCalls } = createFakeUndeploy();
     const deps = {
       ...createBaseDeps(),
@@ -272,7 +275,7 @@ describe("runOneShotPrompt", () => {
   test("an unknown definition throws OneShotDefinitionNotFoundError", async () => {
     const fake = createFakeEmitter();
     const { provision } = createFakeProvision();
-    const { sendMail } = createFakeSend("ok");
+    const { sendMail } = createFakeSend();
     const { undeploy } = createFakeUndeploy();
     const deps = {
       ...createBaseDeps(),
@@ -298,7 +301,7 @@ describe("send-path throw (not an !ok result)", () => {
   test("a throwing cryptoProviders.get is caught, torn down, and rejects promptly with the real cause", async () => {
     const fake = createFakeEmitter();
     const { provision, calls: launchCalls } = createFakeProvision();
-    const { sendMail } = createFakeSend("ok");
+    const { sendMail } = createFakeSend();
     const { undeploy, calls: undeployCalls } = createFakeUndeploy();
     const deps = {
       ...createBaseDeps(),
@@ -338,7 +341,7 @@ describe("timeout tears the launched run down", () => {
   test("a timeout unsubscribes AND undeploys the run it launched, before rejecting", async () => {
     const fake = createFakeEmitter();
     const { provision, calls: launchCalls } = createFakeProvision();
-    const { sendMail } = createFakeSend("ok");
+    const { sendMail } = createFakeSend();
     const { undeploy, calls: undeployCalls } = createFakeUndeploy();
     const deps = {
       ...createBaseDeps(),
@@ -358,5 +361,205 @@ describe("timeout tears the launched run down", () => {
     expect(undeployCalls).toEqual([
       { address: triggerAddress, reason: "planning-run-timed-out" },
     ]);
+  });
+});
+
+// The bounded-wait mechanics these tests exercise are documented on
+// `OneShotRunnerDeps.isRoutable` — that JSDoc is the authoritative
+// telling; the tests below pin the observable behavior.
+describe("routable wait on the opening send", () => {
+  const UNREACHABLE = new Error("agent is unreachable: run_1@acme.example");
+
+  test("retries the opening send right away when the address is routable after the first failure", async () => {
+    const fake = createFakeEmitter();
+    const { provision, calls: launchCalls } = createFakeProvision();
+    const send = createFakeSend({ 1: UNREACHABLE });
+    const { undeploy, calls: undeployCalls } = createFakeUndeploy();
+    const deps = {
+      ...createBaseDeps(),
+      events: fake.emitter,
+      provision,
+      sendMail: send.sendMail,
+      undeploy,
+      // Routable from the first consult on — no polling, one retry.
+      isRoutable: () => send.calls >= 1,
+    } as never;
+
+    const promise = runOneShotPrompt(deps, INPUT);
+    await new Promise((r) => setTimeout(r, 10));
+    const triggerAddress = firstCall(launchCalls).address;
+
+    fake.emit("agent.event", {
+      agentAddress: triggerAddress,
+      event: { type: "connector.reply", data: { content: "Hello" } },
+    });
+    fake.emit("agent.event", {
+      agentAddress: triggerAddress,
+      event: { type: "message.run.ended", data: { status: "completed" } },
+    });
+
+    const result = await promise;
+    expect(result.content).toBe("Hello");
+    expect(send.calls).toBe(2);
+    expect(undeployCalls).toEqual([
+      { address: triggerAddress, reason: "planning-run-complete" },
+    ]);
+  });
+
+  test("rejects OneShotRunUnreachableError when the routable wait expires", async () => {
+    const fake = createFakeEmitter();
+    const { provision, calls: launchCalls } = createFakeProvision();
+    const send = createFakeSend({ 1: UNREACHABLE, 2: UNREACHABLE });
+    const { undeploy, calls: undeployCalls } = createFakeUndeploy();
+    const deps = {
+      ...createBaseDeps(),
+      events: fake.emitter,
+      provision,
+      sendMail: send.sendMail,
+      undeploy,
+      isRoutable: () => false,
+      deliverWait: {
+        deadlineMs: 50,
+        pollIntervalMs: 5,
+        sleep: (ms: number) => new Promise((r) => setTimeout(r, ms)),
+      },
+    } as never;
+
+    let caught: unknown;
+    try {
+      await runOneShotPrompt(deps, INPUT);
+    } catch (err) {
+      caught = err;
+    }
+    const triggerAddress = firstCall(launchCalls).address;
+
+    expect(caught).toBeInstanceOf(OneShotRunUnreachableError);
+    expect((caught as OneShotRunUnreachableError).cause).toBe(UNREACHABLE);
+    // `deliverWhenRoutable` sends once, polls, and gives up at the
+    // deadline without ever reaching its second send.
+    expect(send.calls).toBe(1);
+    expect(undeployCalls).toEqual([
+      { address: triggerAddress, reason: "planning-run-send-unreachable" },
+    ]);
+    expect(fake.listenerCount("agent.event")).toBe(0);
+  });
+
+  test("routable mid-wait: flips true after several polls and the retried send completes", async () => {
+    const fake = createFakeEmitter();
+    const { provision, calls: launchCalls } = createFakeProvision();
+    const send = createFakeSend({ 1: UNREACHABLE });
+    const { undeploy, calls: undeployCalls } = createFakeUndeploy();
+    let routabilityChecks = 0;
+    const routabilityAddresses: string[] = [];
+    const deps = {
+      ...createBaseDeps(),
+      events: fake.emitter,
+      provision,
+      sendMail: send.sendMail,
+      undeploy,
+      isRoutable: (address: string) => {
+        routabilityChecks++;
+        routabilityAddresses.push(address);
+        return routabilityChecks > 3;
+      },
+      deliverWait: {
+        deadlineMs: 5_000,
+        pollIntervalMs: 1,
+        sleep: (ms: number) => new Promise((r) => setTimeout(r, ms)),
+      },
+    } as never;
+
+    const promise = runOneShotPrompt(deps, INPUT);
+    await new Promise((r) => setTimeout(r, 10));
+    const triggerAddress = firstCall(launchCalls).address;
+
+    fake.emit("agent.event", {
+      agentAddress: triggerAddress,
+      event: { type: "connector.reply", data: { content: "Hello" } },
+    });
+    fake.emit("agent.event", {
+      agentAddress: triggerAddress,
+      event: { type: "message.run.ended", data: { status: "completed" } },
+    });
+
+    const result = await promise;
+    expect(result.content).toBe("Hello");
+    expect(routabilityChecks).toBeGreaterThan(3);
+    // The launched run's address, not some placeholder, is what the
+    // runner consults.
+    expect(routabilityAddresses).toContain(triggerAddress);
+    expect(send.calls).toBe(2);
+    expect(undeployCalls).toEqual([
+      { address: triggerAddress, reason: "planning-run-complete" },
+    ]);
+  });
+
+  test("the reply timer wins over the routable wait and no send follows the teardown", async () => {
+    const fake = createFakeEmitter();
+    const { provision, calls: launchCalls } = createFakeProvision();
+    const send = createFakeSend({ 1: UNREACHABLE });
+    const { undeploy, calls: undeployCalls } = createFakeUndeploy();
+    const deps = {
+      ...createBaseDeps(),
+      events: fake.emitter,
+      provision,
+      sendMail: send.sendMail,
+      undeploy,
+      isRoutable: () => false,
+      deliverWait: {
+        deadlineMs: 5_000,
+        pollIntervalMs: 5,
+        // Cooperative: yields to macrotasks so the reply timer can fire
+        // mid-wait (a noop sleep would starve it).
+        sleep: (ms: number) => new Promise((r) => setTimeout(r, ms)),
+      },
+    } as never;
+
+    let caught: unknown;
+    try {
+      await runOneShotPrompt(deps, { ...INPUT, timeoutMs: 50 });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(OneShotRunTimedOutError);
+    const triggerAddress = firstCall(launchCalls).address;
+    expect(undeployCalls).toEqual([
+      { address: triggerAddress, reason: "planning-run-timed-out" },
+    ]);
+    // Let any post-teardown send attempt surface before pinning the count.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(send.calls).toBeLessThanOrEqual(1);
+    expect(fake.listenerCount("agent.event")).toBe(0);
+  });
+
+  test("a non-unreachable send error is not retried and rejects with the original cause", async () => {
+    const fake = createFakeEmitter();
+    const { provision, calls: launchCalls } = createFakeProvision();
+    const original = new Error("cipher unavailable");
+    const send = createFakeSend({ 1: original });
+    const { undeploy, calls: undeployCalls } = createFakeUndeploy();
+    const deps = {
+      ...createBaseDeps(),
+      events: fake.emitter,
+      provision,
+      sendMail: send.sendMail,
+      undeploy,
+    } as never;
+
+    let caught: unknown;
+    try {
+      await runOneShotPrompt(deps, INPUT);
+    } catch (err) {
+      caught = err;
+    }
+    const triggerAddress = firstCall(launchCalls).address;
+
+    expect(caught).toBe(original);
+    expect(send.calls).toBe(1);
+    expect(undeployCalls).toEqual([
+      { address: triggerAddress, reason: "planning-run-send-failed" },
+    ]);
+    expect(fake.listenerCount("agent.event")).toBe(0);
   });
 });
