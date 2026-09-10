@@ -245,7 +245,7 @@ async function main(): Promise<void> {
       );
       expectStatus("provision probe", res, 200);
       const data = res.data as { kind: string; tenantSlug: string };
-      expect(data.kind).toBe("provisioned");
+      expect(data.kind).toBe("existing-member");
       return data;
     },
   );

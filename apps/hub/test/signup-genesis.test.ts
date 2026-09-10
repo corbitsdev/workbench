@@ -12,7 +12,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import postgres from "postgres";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
   principal,
   principalRole,
@@ -83,6 +83,7 @@ async function bootEmptyHub(args: {
 }): Promise<{
   baseUrl: string;
   db: Awaited<ReturnType<typeof createHub>>["db"];
+  stop: () => Promise<void>;
 }> {
   const root = mkdtempSync(path.join(tmpdir(), "hub-signup-genesis-"));
   const staticDir = path.join(root, "static");
@@ -126,21 +127,36 @@ async function bootEmptyHub(args: {
   };
   const hub = await createHub(config);
   server.reload({ fetch: hub.app.fetch });
-  closers.push(async () => {
+  let stopped = false;
+  const stop = async () => {
+    if (stopped) return;
+    stopped = true;
     server.stop(true);
     await hub.close();
     rmSync(root, { recursive: true, force: true });
-  });
-  return { baseUrl, db: hub.db };
+  };
+  closers.push(stop);
+  return { baseUrl, db: hub.db, stop };
 }
+
+// Distinct client IP per sign-up: better-auth's rate-limit storage is
+// shared across every hub instance in this test process and keyed on
+// the resolved client IP, so without this the suite's sign-ups all
+// land in one budget bucket and can starve sibling suites
+// (composition.test.ts signs up against the same bucket).
+let signUpIpCounter = 0;
 
 async function signUp(
   baseUrl: string,
   args: { name: string; email: string; password: string },
 ): Promise<string[]> {
+  signUpIpCounter += 1;
   const response = await fetch(`${baseUrl}/api/auth/sign-up/email`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      "x-real-ip": `198.51.100.${signUpIpCounter}`,
+    },
     body: JSON.stringify(args),
   });
   expect(response.status).toBe(200);
@@ -290,9 +306,8 @@ describeIfDb("signup genesis (CL-7578)", () => {
       // The join path needs no display name: a plain membership probe
       // is enough, because the root already exists.
       const joined = await provision(baseUrl, bob);
-      expect(joined.kind).toBe("provisioned");
+      expect(joined.kind).toBe("existing-member");
       expect(joined.tenantSlug).toBe("workbench");
-      expect(joined.seeded).toBe(false);
       expect(joined.tenantId).toBe(genesis.tenantId);
 
       const tenants = await db.select().from(tenant);
@@ -313,6 +328,103 @@ describeIfDb("signup genesis (CL-7578)", () => {
           email: "bob@example.com",
         }),
       ).toEqual(["member"]);
+    });
+  });
+
+  test("an operator-removed member cannot self-rejoin on a closed hub", async () => {
+    const scratchUrl = scratchUrlFor("rejoin");
+    await withScratchDatabase(scratchUrl, async () => {
+      const open = await bootEmptyHub({
+        scratchUrl,
+        signupMode: "open",
+      });
+
+      const alice = await signUp(open.baseUrl, {
+        name: "Alice",
+        email: "alice@example.com",
+        password: "password123",
+      });
+      await provision(open.baseUrl, alice, "Acme");
+      const bob = await signUp(open.baseUrl, {
+        name: "Bob",
+        email: "bob@example.com",
+        password: "password123",
+      });
+      const joined = await provision(open.baseUrl, bob);
+      expect(joined.kind).toBe("existing-member");
+
+      // Operator removal: native removal deletes the member's
+      // principal rows outright, leaving the account itself alive.
+      const [bobRow] = await open.db
+        .select({ id: userTable.id })
+        .from(userTable)
+        .where(eq(userTable.email, "bob@example.com"))
+        .limit(1);
+      expect(bobRow).toBeDefined();
+      await open.db.delete(principalRole).where(
+        inArray(
+          principalRole.principalId,
+          open.db
+            .select({ id: principal.id })
+            .from(principal)
+            .where(
+              and(
+                eq(principal.kind, "user"),
+                eq(principal.refId, bobRow?.id ?? ""),
+              ),
+            ),
+        ),
+      );
+      await open.db
+        .delete(principal)
+        .where(
+          and(
+            eq(principal.kind, "user"),
+            eq(principal.refId, bobRow?.id ?? ""),
+          ),
+        );
+
+      // The hub flips signup to closed and restarts on the same data.
+      await open.stop();
+      const closed = await bootEmptyHub({
+        scratchUrl,
+        signupMode: "closed",
+      });
+
+      const signIn = await fetch(`${closed.baseUrl}/api/auth/sign-in/email`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: "bob@example.com",
+          password: "password123",
+        }),
+      });
+      expect(signIn.status).toBe(200);
+      const sessionCookies = signIn.headers.getSetCookie();
+
+      const res = await fetch(`${closed.baseUrl}/api/onboarding/provision`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: sessionCookies.join("; "),
+        },
+      });
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { error: { code: string } };
+      expect(body.error.code).toBe("signup_not_allowed");
+
+      // No principal was minted: the removal sticks.
+      const [bobAfter] = await closed.db
+        .select({ id: principal.id })
+        .from(principal)
+        .where(
+          and(
+            eq(principal.kind, "user"),
+            eq(principal.refId, bobRow?.id ?? ""),
+          ),
+        )
+        .limit(1);
+      expect(bobAfter).toBeUndefined();
     });
   });
 });

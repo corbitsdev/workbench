@@ -241,9 +241,7 @@ describe.skipIf(databaseUrl === undefined)(
             seeded: boolean;
             seedSkipReason?: string;
           };
-          expect(data.kind).toBe("provisioned");
-          expect(data.seeded).toBe(false);
-          expect(data.seedSkipReason).toBeUndefined();
+          expect(data.kind).toBe("existing-member");
           stringField(data, "tenantId", "provision result");
           stringField(data, "tenantSlug", "provision result");
           return data;

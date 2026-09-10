@@ -1286,6 +1286,9 @@ export async function createHub(config: HubConfig) {
           // tenants, someone has to be first — the signup that opens a
           // brand-new hub is allowed even when signup is closed, since
           // the genesis path makes that caller the root tenant's owner.
+          // Everywhere else on the hub "empty" means zero tenants only;
+          // here a user row also counts, because it means the 0→1
+          // signup already happened.
           const [users, tenants] = await Promise.all([
             signupTenancy.countUsers(),
             signupTenancy.countTenants(),

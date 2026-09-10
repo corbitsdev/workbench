@@ -172,8 +172,7 @@ describe.skipIf(databaseUrl === undefined)(
             tenantSlug: string;
             seeded: boolean;
           };
-          expect(data.kind).toBe("provisioned");
-          expect(data.seeded).toBe(false);
+          expect(data.kind).toBe("existing-member");
           stringField(data, "tenantSlug", "provision result");
           return data;
         },

@@ -268,15 +268,14 @@ describe("provisionPersonalTenantIfNeeded", () => {
       }),
     );
 
-    expect(result).toEqual({
-      kind: "provisioned",
-      tenantId: TENANT_ID,
-      tenantSlug: TENANT_SLUG,
-      seeded: false,
-    });
     expect(joins).toEqual([
       { tenantId: TENANT_ID, userId: "user_1", roleName: "member" },
     ]);
+    expect(result).toEqual({
+      kind: "existing-member",
+      tenantId: TENANT_ID,
+      tenantSlug: TENANT_SLUG,
+    });
   });
 
   test("a slug conflict that still leaves the caller benchless is a real failure", async () => {

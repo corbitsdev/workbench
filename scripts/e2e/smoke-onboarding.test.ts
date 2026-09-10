@@ -6,8 +6,9 @@
 // the genesis path (first signup on a truly empty hub mints the root
 // itself) is covered in-process by
 // `apps/hub/test/signup-genesis.test.ts`. This asserts the join over
-// the wire: `kind: "provisioned"` naming the joined root, `seeded:
-// false` (signup never seeds), and an idempotent re-provision.
+// the wire: `kind: "existing-member"` naming the joined root via
+// `tenantId`/`tenantSlug` (a plain member gets no wizard — CL-7584
+// owns the member UX), and an idempotent re-provision.
 
 import { describe, expect, test } from "bun:test";
 
@@ -102,9 +103,7 @@ describe.skipIf(databaseUrl === undefined)(
             seeded: boolean;
             seedSkipReason?: string;
           };
-          expect(data.kind).toBe("provisioned");
-          expect(data.seeded).toBe(false);
-          expect(data.seedSkipReason).toBeUndefined();
+          expect(data.kind).toBe("existing-member");
           stringField(data, "tenantId", "provision result");
           stringField(data, "tenantSlug", "provision result");
           return data;

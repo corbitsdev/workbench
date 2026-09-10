@@ -122,7 +122,9 @@ export async function decideTenantCreate(
     // policy, no operator tenant, and nobody to invite anyone — the
     // first signup's unparented create is the one path that bypasses
     // the signup gate, because the sign-up route's own empty-hub
-    // exception already admitted this caller.
+    // exception already admitted this caller. Empty means zero tenants
+    // only (the one emptiness rule shared with genesis.ts; user rows
+    // alone never make a hub occupied).
     if (request.parentId === undefined && (await deps.countTenants()) === 0) {
       return { allowed: true };
     }

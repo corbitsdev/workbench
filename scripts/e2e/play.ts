@@ -199,8 +199,7 @@ async function main(): Promise<void> {
         tenantSlug: string;
         seeded: boolean;
       };
-      expect(data.kind).toBe("provisioned");
-      expect(data.seeded).toBe(false);
+      expect(data.kind).toBe("existing-member");
       return data;
     },
   );

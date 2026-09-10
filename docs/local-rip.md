@@ -68,8 +68,10 @@ exactly that response.
 Signing up lands you on `/onboarding`. Submitting the "Create your
 workbench" name form calls `POST /api/onboarding/provision` with that name,
 which mints your personal bench through the platform's native
-tenant-creation route. With no `ANTHROPIC_API_KEY` configured, the response
-reports the bench as provisioned but unseeded (`seeded: false`, with a
+tenant-creation route. (An occupied hub joins you to its root as a plain
+member instead — `kind: "existing-member"` naming the tenant you joined,
+no wizard.) With no `ANTHROPIC_API_KEY` configured, a minted bench is
+unseeded (`seeded: false`, with a
 `seedSkipReason` naming why) — the UI keeps you on the credential step
 rather than pretending you're done.
 

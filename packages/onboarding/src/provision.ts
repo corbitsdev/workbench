@@ -21,13 +21,20 @@ export { ProvisionError } from "./genesis";
 export type { ProvisionErrorKind } from "./genesis";
 
 export type ProvisionResult =
-  | { readonly kind: "existing-member" }
+  | {
+      /** An account that already belongs somewhere — or has just joined
+       * the existing root as a plain member. Either way no wizard: the
+       * tenant facts ride along only when the caller just joined, for
+       * the member-onboarding UX to surface later (CL-7584). */
+      readonly kind: "existing-member";
+      readonly tenantId?: string;
+      readonly tenantSlug?: string;
+    }
   | { readonly kind: "needs-onboarding" }
   | {
-      /** The caller now belongs to a tenant — as the owner of a
-       * freshly-minted root (genesis) or as a new member of the
-       * existing root (join). `seeded` is always `false`: signup
-       * provisions membership only; the credential step owns seeding. */
+      /** The caller just minted the root tenant as its owner (genesis).
+       * `seeded` is always `false`: signup provisions membership only;
+       * the credential step owns seeding. */
       readonly kind: "provisioned";
       readonly tenantId: string;
       readonly tenantSlug: string;
@@ -53,10 +60,10 @@ export type ProvisionArgs = {
   displayName?: string;
   tenancy: HubSignupTenancy;
   log: (line: string) => void;
-  /** The closed-by-default access-policy gate. Genesis-on-empty and
-   * join never consult it — those decisions belong to the sign-up
-   * route (empty-hub exception) and the tenant-create guard — but the
-   * seam stays so the wiring shape is unchanged. */
+  /** The closed-by-default access-policy gate. Join consults it
+   * outright (a closed hub never self-grants membership); genesis on an
+   * empty hub waives only `signup_closed` — email verification and the
+   * domain allowlist still bind the first user. */
   accessPolicy?: {
     store: AccessPolicyStore;
     envSignupMode: "open" | "closed";
@@ -195,12 +202,19 @@ export async function provisionPersonalTenantIfNeeded(
       ? { displayName: args.displayName }
       : {}),
   });
-  if (result.kind === "genesis" || result.kind === "joined") {
+  if (result.kind === "genesis") {
     return {
       kind: "provisioned",
       tenantId: result.tenantId,
       tenantSlug: result.tenantSlug,
       seeded: false,
+    };
+  }
+  if (result.kind === "joined") {
+    return {
+      kind: "existing-member",
+      tenantId: result.tenantId,
+      tenantSlug: result.tenantSlug,
     };
   }
   return result;
