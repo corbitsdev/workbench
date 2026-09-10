@@ -43,10 +43,11 @@ UI, seeds the administrator account and root tenant, and starts the hub
 and the web build. An empty database is a valid hub: boot does not insert
 agents, tools, workflows, or skills (see
 [README.md](../README.md#running-locally) for exactly what it checks).
-Leave `ANTHROPIC_API_KEY` unset in `.env` for
-this walkthrough — the point is proving a bench with no hub-owned seed
+No provider API key is needed in
+`.env` for this walkthrough — the hub never reads provider env vars —
+the point is proving a bench with no hub-owned seed
 model gets fully seeded through a person's own connected credential, not
-through the operator's key.
+through an operator's key.
 
 Once `bun run dev` reports the hub and web server up, open
 `http://localhost:3000` (or whatever `BASE_URL`/`PORT` you set in `.env`).
@@ -70,7 +71,7 @@ workbench" name form calls `POST /api/onboarding/provision` with that name,
 which mints your personal bench through the platform's native
 tenant-creation route. (An occupied hub joins you to its root as a plain
 member instead — `kind: "existing-member"` naming the tenant you joined,
-no wizard.) With no `ANTHROPIC_API_KEY` configured, a minted bench is
+no wizard.) With no hub-owned credential, a minted bench is
 unseeded (`seeded: false`, with a
 `seedSkipReason` naming why) — the UI keeps you on the credential step
 rather than pretending you're done.

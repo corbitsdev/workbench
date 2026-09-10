@@ -77,13 +77,12 @@ inserts no users or tenants. An empty database is a valid hub: boot
 does not insert agents, tools, workflows, or skills. Product state
 arrives through onboarding and explicit seed callers, not production
 boot.
-`ANTHROPIC_API_KEY` is the one optional line worth setting before boot —
-with it, the env-key auto-plant puts a real credential on the operator
-bench so the catalog is launchable; without it, inference waits until
-someone connects a provider.
+Provider API keys are never read from the environment: hub boot plants no
+credentials, so setting `ANTHROPIC_API_KEY` or any other provider's env
+var has no effect. Inference waits until someone connects a provider.
 
-Leaving `ANTHROPIC_API_KEY` unset doesn't just apply to the administrator
-account: anyone who signs up gets a personal bench with no default routines
+That applies to every account, not just the administrator: anyone who
+signs up gets a personal bench with no default routines
 deployed, and first-run tells them exactly that. Onboarding walks them
 through picking a provider — Anthropic, OpenAI, Google, OpenRouter, Hugging
 Face, Groq, or another of the curated providers in

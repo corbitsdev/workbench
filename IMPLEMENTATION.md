@@ -78,10 +78,9 @@ recorded per-package in each vendored package's own `VENDORED-FROM` file.
 `bun run dev` seeds the administrator account and ensures the root
 tenant; it does not insert agents, tools, workflows, or skills. An empty
 database is a valid hub. `bun run setup` applies migrations against the
-running database and is safe to re-run. `ANTHROPIC_API_KEY` is the one
-optional variable worth setting before boot — the env-key auto-plant
-puts a real credential on the operator bench when it is set; without it,
-inference waits until someone connects a provider.
+running database and is safe to re-run. Provider API keys are never read
+from the environment — hub boot plants no credentials; inference waits
+until someone connects a provider.
 
 ## Acceptance mechanism: the e2e browser walkthrough
 

@@ -28,8 +28,8 @@ walks the chain on every read.
 
 The default tenant slug is a deployment fact, not a boot insert. An
 empty database is a valid hub: boot mints no root. First signup
-creates the root with this slug, and the env-key auto-plant resolves
-the same slug once that tenant exists:
+creates the root with this slug, and `workbench setup`/`seed` resolve
+the same slug:
 
 1. `WORKBENCH_DEFAULT_TENANT` if set
 2. else `ORG_SLUG` (alias)
@@ -37,8 +37,7 @@ the same slug once that tenant exists:
 
 Set only one. Custom-slug upgrades whose existing root is not
 `workbench` must set `WORKBENCH_DEFAULT_TENANT=<existing-org-slug>`
-before the next genesis or plant — otherwise first signup mints a
-`workbench` root. Leftover
+— otherwise first signup mints a `workbench` root. Leftover
 `OPERATOR_TENANT_ID` is no longer read: `readHubConfig` fails loudly
 and tells the operator to set `WORKBENCH_DEFAULT_TENANT` (or remove
 the stale key for the default slug).

@@ -219,7 +219,10 @@ describeIfDb("boot with provider env vars plants nothing (CL-7579)", () => {
         return new Response("not found", { status: 404 });
       },
     });
-    return { url: `http://localhost:${server.port}`, stop: () => server.stop(true) };
+    return {
+      url: `http://localhost:${server.port}`,
+      stop: () => server.stop(true),
+    };
   }
 
   async function countRows(url: string, table: string): Promise<number> {
@@ -250,9 +253,7 @@ describeIfDb("boot with provider env vars plants nothing (CL-7579)", () => {
     }
   }
 
-  async function genesisOwner(
-    baseUrl: string,
-  ): Promise<void> {
+  async function genesisOwner(baseUrl: string): Promise<void> {
     const signUp = await fetch(`${baseUrl}/api/auth/sign-up/email`, {
       method: "POST",
       headers: {
