@@ -33,6 +33,26 @@ export type {
 export { createOnboardingRoutes } from "./routes";
 export type { CreateOnboardingRoutesDeps } from "./routes";
 export {
+  desiredStateSteps,
+  readTenantDesiredStateStatus,
+  reconcileTenantDesiredState,
+  resolveTenantModelSource,
+  TENANT_DESIRED_STATE,
+} from "./desired-state";
+export type {
+  DesiredStateStatus,
+  DesiredStateStep,
+  PinState,
+  ReconcileArgs,
+  ReconcilePin,
+  ReconcilePinStatus,
+  ReconcileReport,
+  SkillPin,
+  TenantDesiredState,
+  ToolPackagePin,
+  WorkflowPin,
+} from "./desired-state";
+export {
   createBenchProvisioner,
   PROVISIONING_POLL_INTERVAL_MS,
 } from "./bench-provisioning";

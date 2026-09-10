@@ -192,7 +192,7 @@ export type CreateOnboardingRoutesDeps = {
    */
   desiredStateKick?: (args: {
     tenantId: string;
-    cookies: string[];
+    userId: string;
   }) => void;
   /** Test seam standing in for the deploy step, so a route test can
    * prove the response never waits on one. */
@@ -526,7 +526,7 @@ export function createOnboardingRoutes(
             if (!status.ready) {
               deps.desiredStateKick({
                 tenantId: kickTenantId,
-                cookies,
+                userId: user.id,
               });
             }
           }

@@ -314,6 +314,7 @@ import {
   createDrizzleAccessPolicyStore,
 } from "@workbench/access-policy";
 import { guardedHubApp, resolveCallerRoleNames } from "./tenant-create-guard";
+import { createTenantCreateObserver } from "./tenant-create-onboard";
 import {
   createInMemoryNotifyDispatchStore,
   createSinkRegistry,
@@ -3370,9 +3371,20 @@ export async function createHub(config: HubConfig) {
     sessionFor,
     log: (line) => log.info`${line}`,
     logError: (line) => log.error`${line}`,
-    publishToolRegistryFn: publishCorbitsToolsRegistry,
   });
   benchProvisioner.start();
+
+  // CL-7584: the tenant-create trigger. A 201 from the native
+  // `POST /api/tenants` route kicks a fire-and-forget desired-state
+  // reconcile for the new tenant under the creator's minted session —
+  // the revisit kick below and the drain above share this one
+  // reconciler. No durable row: the pending_seed row stays the only
+  // durable work item, and a kick lost to a restart is re-covered by
+  // the revisit kick on the tenant's next visit. The observer itself is
+  // composed just before the guard wrap, after every route mount: Hono
+  // copies routes at `.route()` time, so wrapping earlier would strand
+  // everything mounted after it.
+  let tenantCreateObserver: ReturnType<typeof createTenantCreateObserver> | undefined;
 
   const onboardingDeps: Parameters<typeof createOnboardingRoutes>[0] = {
     hubUrl: config.baseUrl,
@@ -3384,6 +3396,12 @@ export async function createHub(config: HubConfig) {
     credentialCipher,
     pendingSeedStore,
     benchProvisioner,
+    desiredStateKick: (args) => {
+      // Fire-and-forget; the route already decided pins are pending.
+      void tenantCreateObserver
+        ?.kick({ tenantId: args.tenantId, creatorUserId: args.userId })
+        .catch(() => undefined);
+    },
     accessPolicy: {
       store: accessPolicyStore,
       envSignupMode: config.signupMode,
@@ -3585,7 +3603,21 @@ export async function createHub(config: HubConfig) {
         : undefined;
     },
   };
-  const guardedApp = guardedHubApp(app, guardDeps);
+  const guardedApp = guardedHubApp(
+    createTenantCreateObserver(
+      {
+        api: selfApi,
+        hubUrl: config.baseUrl,
+        pushWorkflow: createGitWorkflowPusher(),
+        sessionFor,
+        getSessionUser: guardDeps.getSessionUser,
+        log: (line) => log.info`${line}`,
+        logError: (line) => log.error`${line}`,
+      },
+      app,
+    ).app,
+    guardDeps,
+  );
   const inFlight = createInFlightRequestTracker();
   const servingApp = withInFlightRequestTracking(guardedApp, inFlight);
 
