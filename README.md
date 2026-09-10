@@ -73,17 +73,14 @@ Every required setting lives in `.env.example` with its expected shape, and the 
 defaulting to alice@example.com / password123 when unset)
 is seeded so you can sign in immediately.
 
-`bun run dev` seeds that account and, once the hub is serving, also
-provisions and seeds the root tenant itself: publishing the
-`corbits-tools` registry, deploying the default workflow set, and
-planting the tenant catalog's model data, so interactive instances have
-a model to resolve against. This runs automatically on every hub boot
-(`apps/hub/src/system-seed.ts`), reads its configuration from `.env`
-(see `.env.example`), and is safe to re-run — restarting the hub
-re-seeds idempotently. `ANTHROPIC_API_KEY` is the one optional line
-worth setting before boot — with it, seeding plants a real credential
-and the catalog is actually launchable; without it, everything above
-still runs, but inference errors until you set it and restart the hub.
+`bun run dev` seeds that administrator account and ensures the root
+tenant so you can sign in. An empty database is a valid hub: boot does
+not insert agents, tools, workflows, or skills. Product state arrives
+through onboarding and explicit seed callers, not production boot.
+`ANTHROPIC_API_KEY` is the one optional line worth setting before boot —
+with it, the env-key auto-plant puts a real credential on the operator
+bench so the catalog is launchable; without it, inference waits until
+someone connects a provider.
 
 Leaving `ANTHROPIC_API_KEY` unset doesn't just apply to the administrator
 account: anyone who signs up gets a personal bench with no default routines
@@ -98,7 +95,8 @@ it's actually dialed for real inference, through the same in-chat "Fix this
 connection" flow any credential failure uses. The bench's default agents
 deploy in the background — "Your workbench is ready — agents will come
 online shortly," no "Connecting…" wait in the browser. Whichever provider they connect gets its own curated
-catalog entry planted the same way boot-time seeding plants Anthropic's; see
+catalog entry planted the same way onboarding plants a connected
+provider's catalog; see
 [docs/model-seeding.md](docs/model-seeding.md) for how that catalog data is
 curated and kept up to date.
 
@@ -112,12 +110,12 @@ bun run reset
 ```
 
 `bun run reset` drops the platform database schema and removes the hub's
-on-disk asset directory (which also holds provisioned sidecar state) —
-everything boot-time
-seeding and onboarding created. Nothing is re-seeded until the next `bun
-run dev` — that recreates the schema and, once the hub is serving again,
-reprovisions and re-seeds the root tenant from scratch, landing you at a
-fresh sign-up screen with the administrator's bench ready.
+on-disk asset directory (which also holds provisioned sidecar state).
+Nothing is recreated until the next `bun run dev` — that recreates the
+schema and, once the hub is serving again, ensures the administrator
+account and root tenant so you can sign in. It does not insert agents,
+tools, workflows, or skills. Product state arrives through onboarding
+and explicit seed callers.
 
 It refuses to run against anything but a local `DATABASE_URL` (localhost,
 127.0.0.1, or `::1`) — there is no override, since the schema drop is
