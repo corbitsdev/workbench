@@ -1,12 +1,19 @@
-// Process-boot proof that hub production boot does not insert product
-// state. createHub() never seeded; only `import.meta.main` did, so this
-// suite spawns the hub as a real process via startHub rather than
-// composing in-process.
+// Process-boot and createHub proof that hub production boot does not
+// mint a root tenant or an admin account. An empty database is a valid
+// hub: /status, health, and auth mechanics serve with zero tenant rows.
+// First signup (signup-genesis.test.ts) is the 0→1 path.
 //
 // DB-gated: boots against its own scratch database so a reachable
 // DATABASE_URL is required and the suite skips without one.
-import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { afterAll, expect, test } from "bun:test";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import postgres from "postgres";
 
@@ -16,30 +23,38 @@ import { e2eDatabaseUrl } from "../../../scripts/e2e/database-url.ts";
 import {
   api,
   createCleanupHarness,
-  expectStatus,
   freePort,
   hop,
   startHub,
 } from "../../../scripts/e2e/harness.ts";
+import type { HubConfig } from "../src/config.ts";
+import { createHub } from "../src/index.ts";
 
 const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const { tempDir, track } = createCleanupHarness();
 
-const ADMIN = { email: "alice@example.com", password: "password123" };
+const ALICE = { email: "alice@example.com", password: "password123" };
 
-function scratchUrl(): string {
+const closers: (() => Promise<void>)[] = [];
+afterAll(async () => {
+  let closer: (() => Promise<void>) | undefined;
+  while ((closer = closers.pop()) !== undefined) await closer();
+});
+
+function scratchUrl(suffix: string): string {
   const url = new URL(databaseUrl ?? "postgres://localhost:5432/unused");
   const database = url.pathname.replace(/^\//, "");
-  url.pathname = `/${database}_boot_does_not_seed`;
+  url.pathname = `/${database}_${suffix}`;
   return url.toString();
 }
 
 async function withScratchDatabase(
+  suffix: string,
   run: (url: string) => Promise<void>,
 ): Promise<void> {
-  const scratchUrlValue = scratchUrl();
+  const scratchUrlValue = scratchUrl(suffix);
   const maintenanceUrl = new URL(scratchUrlValue);
   maintenanceUrl.pathname = "/postgres";
   const scratchDatabase = new URL(scratchUrlValue).pathname.replace(/^\//, "");
@@ -71,76 +86,22 @@ async function withScratchDatabase(
   }
 }
 
-function namedAssets(data: unknown): { name: string }[] {
-  if (!Array.isArray(data)) {
-    throw new Error(`expected an asset list, got ${JSON.stringify(data)}`);
-  }
-  return data.map((row) => {
-    if (
-      typeof row !== "object" ||
-      row === null ||
-      typeof row.name !== "string"
-    ) {
+async function countTenants(url: string): Promise<number> {
+  const sql = postgres(url, { max: 1, onnotice: () => undefined });
+  try {
+    const rows = await sql<{ count: number }[]>`
+      select count(*)::int as count from tenant
+    `;
+    const count = rows[0]?.count;
+    if (typeof count !== "number") {
       throw new Error(
-        `expected asset rows with names, got ${JSON.stringify(data)}`,
+        `tenant count: expected a number, got ${JSON.stringify(rows)}`,
       );
     }
-    return { name: row.name };
-  });
-}
-
-function skillNames(data: unknown): string[] {
-  if (typeof data !== "object" || data === null || !("skills" in data)) {
-    throw new Error(`expected { skills }, got ${JSON.stringify(data)}`);
+    return count;
+  } finally {
+    await sql.end();
   }
-  const skills = (data as { skills: unknown }).skills;
-  if (!Array.isArray(skills)) {
-    throw new Error(`expected skills array, got ${JSON.stringify(data)}`);
-  }
-  return skills.map((row) => {
-    if (
-      typeof row !== "object" ||
-      row === null ||
-      typeof row.name !== "string"
-    ) {
-      throw new Error(
-        `expected skill rows with names, got ${JSON.stringify(data)}`,
-      );
-    }
-    return row.name;
-  });
-}
-
-function asList(data: unknown, what: string): unknown[] {
-  if (!Array.isArray(data)) {
-    throw new Error(`${what}: expected a list, got ${JSON.stringify(data)}`);
-  }
-  return data;
-}
-
-function tenantIdFromPrincipals(data: unknown): string {
-  if (typeof data !== "object" || data === null || !("data" in data)) {
-    throw new Error(
-      `principals: expected { data }, got ${JSON.stringify(data)}`,
-    );
-  }
-  const rows = (data as { data: unknown }).data;
-  if (!Array.isArray(rows) || rows.length === 0) {
-    throw new Error(
-      `principals: expected at least one membership, got ${JSON.stringify(data)}`,
-    );
-  }
-  const first = rows[0];
-  if (
-    typeof first !== "object" ||
-    first === null ||
-    typeof first.tenantId !== "string"
-  ) {
-    throw new Error(
-      `principals: missing tenantId, got ${JSON.stringify(data)}`,
-    );
-  }
-  return first.tenantId;
 }
 
 test("process boot source does not mention the deleted boot seeder", () => {
@@ -150,11 +111,14 @@ test("process boot source does not mention the deleted boot seeder", () => {
   );
   expect(indexSource).not.toContain("runSystem" + "Seed");
   expect(indexSource).not.toContain("system" + "-seed");
+  expect(indexSource).not.toContain("ensureDefault" + "Tenant");
+  expect(indexSource).not.toContain("default" + "-tenant");
+  expect(indexSource).not.toContain("skipEnsureDefault" + "Tenant");
 });
 
-describeIfDb("hub process boot does not seed product state", () => {
-  test("process boot inserts no corbits-tools, assistant, skills, or workflow deployments", async () => {
-    await withScratchDatabase(async (url) => {
+describeIfDb("hub process boot does not mint a root tenant", () => {
+  test("process boot serves /status with an empty tenant table and no boot admin", async () => {
+    await withScratchDatabase("boot_does_not_seed", async (url) => {
       const dataDir = await tempDir("hub-boot-does-not-seed-");
       const hub = await hop("hub process boot", () =>
         startHub({
@@ -168,81 +132,76 @@ describeIfDb("hub process boot does not seed product state", () => {
       );
       track(hub);
 
-      const cookies = await hop("sign in as the boot admin", async () => {
-        const res = await api(hub.baseUrl, "POST", "/api/auth/sign-in/email", {
-          email: ADMIN.email,
-          password: ADMIN.password,
-        });
-        expectStatus("sign-in", res, 200);
-        if (res.cookies.length === 0) {
-          throw new Error("sign-in returned no session cookie");
-        }
-        return res.cookies;
+      const status = await hop("/status", async () => {
+        const res = await fetch(`${hub.baseUrl}/status`);
+        expect(res.status).toBe(200);
+        return res;
       });
+      expect(await status.json()).toEqual({ status: "ok" });
 
-      const tenantId = await hop("resolve the root tenant", async () => {
-        const res = await api(
-          hub.baseUrl,
-          "GET",
-          "/api/me/principals",
-          undefined,
-          cookies,
-        );
-        expectStatus("principals", res, 200);
-        return tenantIdFromPrincipals(res.data);
-      });
+      expect(await countTenants(url)).toBe(0);
 
-      await hop("no corbits-tools package-registry", async () => {
-        const res = await api(
-          hub.baseUrl,
-          "GET",
-          `/api/tenants/${tenantId}/assets?kind=package-registry`,
-          undefined,
-          cookies,
-        );
-        expectStatus("list package-registry assets", res, 200);
-        expect(namedAssets(res.data).map((a) => a.name)).not.toContain(
-          "corbits-tools",
-        );
-      });
+      const signIn = await hop(
+        "sign-in as the former boot admin is not 200",
+        async () =>
+          api(hub.baseUrl, "POST", "/api/auth/sign-in/email", {
+            email: ALICE.email,
+            password: ALICE.password,
+          }),
+      );
+      expect(signIn.status).not.toBe(200);
+    });
+  }, 60_000);
+});
 
-      await hop("no assistant workflow asset", async () => {
-        const res = await api(
-          hub.baseUrl,
-          "GET",
-          `/api/tenants/${tenantId}/assets?kind=workflow`,
-          undefined,
-          cookies,
-        );
-        expectStatus("list workflow assets", res, 200);
-        expect(namedAssets(res.data).map((a) => a.name)).not.toContain(
-          "assistant",
-        );
-      });
+describeIfDb("createHub on a scratch database inserts no tenant", () => {
+  test("createHub serves health and auth with zero tenant rows", async () => {
+    await withScratchDatabase("create_hub_empty", async (url) => {
+      const root = mkdtempSync(path.join(tmpdir(), "hub-createhub-empty-"));
+      const staticDir = path.join(root, "static");
+      mkdirSync(staticDir, { recursive: true });
+      writeFileSync(path.join(staticDir, "index.html"), "<html>shell</html>");
+      mkdirSync(path.join(root, "data"), { recursive: true });
 
-      await hop("no skills", async () => {
-        const res = await api(
-          hub.baseUrl,
-          "GET",
-          `/api/tenants/${tenantId}/skills`,
-          undefined,
-          cookies,
-        );
-        expectStatus("list skills", res, 200);
-        expect(skillNames(res.data)).toEqual([]);
-      });
+      const config: HubConfig = {
+        databaseUrl: url,
+        baseUrl: "http://localhost:3000",
+        sessionSecret: "insecure-test-only-session-secret-0000",
+        hubDataDir: path.join(root, "data"),
+        hubStaticDir: staticDir,
+        defaultTenantSlug: "workbench",
+        signupRateLimit: { windowSeconds: 60, max: 5 },
+        signInRateLimit: { windowSeconds: 60, max: 10 },
+        socialProviders: {},
+        signupMode: "closed",
+        allowedEmailDomains: [],
+        allowPlaintextSecrets: true,
+        allowUnverifiedEmails: true,
+        sidecarProvisioners: [],
+        envProviderKeys: {},
+        envProviderBaseUrls: {},
+        envCredentialPlantAdmin: {
+          email: "alice@example.com",
+          password: "password123",
+          orgSlug: "workbench",
+        },
+        chatIdleReapMs: 30 * 60_000,
+      };
+      const hub = await createHub(config);
+      const stop = async () => {
+        await hub.close();
+        rmSync(root, { recursive: true, force: true });
+      };
+      closers.push(stop);
 
-      await hop("no workflow deployments", async () => {
-        const res = await api(
-          hub.baseUrl,
-          "GET",
-          `/api/tenants/${tenantId}/workflows/deployments`,
-          undefined,
-          cookies,
-        );
-        expectStatus("list workflow deployments", res, 200);
-        expect(asList(res.data, "deployments")).toEqual([]);
-      });
+      const status = await hub.app.request("/status");
+      expect(status.status).toBe(200);
+      expect(await status.json()).toEqual({ status: "ok" });
+
+      const me = await hub.app.request("/api/me/principals");
+      expect(me.status).toBe(401);
+
+      expect(await countTenants(url)).toBe(0);
     });
   }, 60_000);
 });

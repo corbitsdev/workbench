@@ -9,7 +9,7 @@
 // (HUB_ADMIN_EMAIL/PASSWORD, defaulted the same way those commands
 // default them) and look up the bench named ORG_SLUG among that
 // account's own memberships. On a virgin database neither the admin
-// account nor that bench exist yet — `workbench setup` (or `bun run
+// account nor that bench exist yet — first signup (or `bun run
 // dev`'s own account seeding) creates them, often as a separate
 // process, well after this hub has already started serving. Rather
 // than fail hub boot over a bench that legitimately doesn't exist yet,

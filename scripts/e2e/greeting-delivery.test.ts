@@ -8,8 +8,9 @@
 // turns into an agent-authored workbench message on real machinery,
 // not merely that the route returns 201.
 //
-// Mirrors `local-rip.test.ts`'s phase A (signup joins the boot root as
-// a member; the owner connects a credential through the key path)
+// Mirrors `local-rip.test.ts`'s phase A (alice signs up first as
+// genesis owner; a tester then joins as a member; the owner connects
+// a credential through the key path)
 // rather than `chat.test.ts`'s zero-credential `seedCatalog` setup:
 // the greeting mail rides the same host-session delivery path as every
 // real reply, so it landing with zero user messages sent — on a mint
@@ -26,7 +27,6 @@ import {
 } from "../../packages/seeding/src/index.ts";
 import {
   createHubAPI,
-  signIn,
   type ApiCall,
 } from "../../packages/hub-api-client/src/index.ts";
 import {
@@ -148,16 +148,51 @@ describe.skipIf(databaseUrl === undefined)(
 
       const hubApi: ApiCall = createHubAPI(hub.baseUrl);
 
+      const admin = await hop("alice genesis sign-up", async () => {
+        const res = await api(hub.baseUrl, "POST", "/api/auth/sign-up/email", {
+          name: "Alice",
+          email: "alice@example.com",
+          password: "password123",
+        });
+        expectStatus("alice sign-up", res, 200);
+        if (res.cookies.length === 0) {
+          throw new Error("alice sign-up returned no session cookie");
+        }
+        const userId = stringField(
+          (res.data as { user: unknown }).user,
+          "id",
+          "alice sign-up user field",
+        );
+        const probe = await api(
+          hub.baseUrl,
+          "POST",
+          "/api/onboarding/provision",
+          undefined,
+          res.cookies,
+        );
+        expectStatus("alice genesis probe", probe, 200);
+        expect((probe.data as { kind: string }).kind).toBe("needs-onboarding");
+        const minted = await api(
+          hub.baseUrl,
+          "POST",
+          "/api/onboarding/provision",
+          { name: "Workbench" },
+          res.cookies,
+        );
+        expectStatus("alice genesis provision", minted, 200);
+        expect((minted.data as { kind: string }).kind).toBe("provisioned");
+        return { cookies: res.cookies, userId };
+      });
+
       const user = await hop("sign-up", () =>
         signUp(hub.baseUrl, "Greeting Delivery Tester"),
       );
 
-      // Under the CL-7578 genesis-or-join contract the fresh signup
-      // joins the boot-ensured root as a plain member — the genesis
-      // path is covered in-process by
-      // `apps/hub/test/signup-genesis.test.ts`.
+      // Under the CL-7578 genesis-or-join contract the tester joins the
+      // genesis root as a plain member — the genesis path is covered
+      // in-process by `apps/hub/test/signup-genesis.test.ts`.
       const provisioned = await hop(
-        "a membership probe joins the boot root as a member",
+        "a membership probe joins the genesis root as a member",
         async () => {
           const res = await api(
             hub.baseUrl,
@@ -179,17 +214,8 @@ describe.skipIf(databaseUrl === undefined)(
       );
 
       // A joined member is read-only by design, so every owner-level
-      // leg below — seeding, chat mint, turns — runs as the boot admin,
-      // the root tenant's owner (`ensureDefaultTenant`'s config
-      // defaults: alice@example.com / password123).
-      const admin = await hop("boot-admin sign-in", async () => {
-        const session = await signIn(hubApi, {
-          email: "alice@example.com",
-          password: "password123",
-        });
-        return { cookies: session.cookies, userId: session.userId };
-      });
-
+      // leg below — seeding, chat mint, turns — runs as alice, the
+      // genesis owner.
       const tenant = await hop(
         "the joined root resolves through findPersonalTenant",
         async () => {

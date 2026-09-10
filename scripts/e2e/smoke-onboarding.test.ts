@@ -1,14 +1,12 @@
 // Smoke scenario 2/5 (CL-6004): provisioning. A signed-up user with no
 // tenant yet calls the first-login provisioning hook
-// (POST /api/onboarding/provision). The e2e hub boots with the
-// boot-ensured root tenant present, so under the CL-7578 genesis-or-
-// join contract the fresh signup joins that root as a plain member —
-// the genesis path (first signup on a truly empty hub mints the root
-// itself) is covered in-process by
-// `apps/hub/test/signup-genesis.test.ts`. This asserts the join over
-// the wire: `kind: "existing-member"` naming the joined root via
-// `tenantId`/`tenantSlug` (a plain member gets no wizard — CL-7584
-// owns the member UX), and an idempotent re-provision.
+// (POST /api/onboarding/provision). The e2e hub boots empty, so under
+// the CL-7578 genesis-or-join contract the first signup mints the root
+// as owner — the same genesis path covered in-process by
+// `apps/hub/test/signup-genesis.test.ts`. This asserts genesis over
+// the wire: `kind: "needs-onboarding"` then `kind: "provisioned"`
+// naming the minted root via `tenantId`/`tenantSlug`, and an
+// idempotent re-provision.
 
 import { describe, expect, test } from "bun:test";
 
@@ -47,7 +45,7 @@ function stringField(data: unknown, field: string, what: string): string {
 describe.skipIf(databaseUrl === undefined)(
   "smoke: onboarding provision",
   () => {
-    test("a brand-new signup joins the boot root as a member, unseeded", async () => {
+    test("a brand-new signup mints the root as owner, unseeded", async () => {
       const url = databaseUrl;
       if (url === undefined) throw new Error("unreachable: suite is skipped");
 
@@ -86,16 +84,27 @@ describe.skipIf(databaseUrl === undefined)(
       });
 
       const provisioned = await hop(
-        "a membership probe joins the boot root as a member",
+        "the first signup mints the root as owner",
         async () => {
-          const res = await api(
+          const probe = await api(
             baseUrl,
             "POST",
             "/api/onboarding/provision",
             undefined,
             cookies,
           );
-          expectStatus("provision probe", res, 200);
+          expectStatus("provision probe", probe, 200);
+          expect((probe.data as { kind: string }).kind).toBe(
+            "needs-onboarding",
+          );
+          const res = await api(
+            baseUrl,
+            "POST",
+            "/api/onboarding/provision",
+            { name: "Smoke Onboarding" },
+            cookies,
+          );
+          expectStatus("genesis provision", res, 200);
           const data = res.data as {
             kind: string;
             tenantId: string;
@@ -103,7 +112,7 @@ describe.skipIf(databaseUrl === undefined)(
             seeded: boolean;
             seedSkipReason?: string;
           };
-          expect(data.kind).toBe("existing-member");
+          expect(data.kind).toBe("provisioned");
           stringField(data, "tenantId", "provision result");
           stringField(data, "tenantSlug", "provision result");
           return data;

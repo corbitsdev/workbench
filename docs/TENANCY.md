@@ -26,9 +26,10 @@ walks the chain on every read.
 
 ### Root tenant slug (one deployment fact)
 
-The hub ensures a root tenant at boot by slug. An empty database is a
-valid hub: that root has an admin owner, not agents, tools, workflows, or
-skills. The same slug is the env-key auto-plant resolve:
+The default tenant slug is a deployment fact, not a boot insert. An
+empty database is a valid hub: boot mints no root. First signup
+creates the root with this slug, and the env-key auto-plant resolves
+the same slug once that tenant exists:
 
 1. `WORKBENCH_DEFAULT_TENANT` if set
 2. else `ORG_SLUG` (alias)
@@ -36,13 +37,13 @@ skills. The same slug is the env-key auto-plant resolve:
 
 Set only one. Custom-slug upgrades whose existing root is not
 `workbench` must set `WORKBENCH_DEFAULT_TENANT=<existing-org-slug>`
-before restarting — otherwise boot creates a new empty `workbench`
-root and personal-bench parenting moves under it. Leftover
+before the next genesis or plant — otherwise first signup mints a
+`workbench` root. Leftover
 `OPERATOR_TENANT_ID` is no longer read: `readHubConfig` fails loudly
 and tells the operator to set `WORKBENCH_DEFAULT_TENANT` (or remove
 the stale key for the default slug).
 
-A freshly ensured root has no `access_policy` row yet, so signup falls
+A freshly minted root has no `access_policy` row yet, so signup falls
 back to `WORKBENCH_SIGNUP` until Settings → People → "Who can join"
 writes one. This cutover does not migrate policy rows from a previous
 operator tenant.
@@ -50,8 +51,8 @@ operator tenant.
 ### The 0→1 contract (first signup is genesis)
 
 On a hub that starts with **zero tenants and zero users** — the
-`skipEnsureDefaultTenant` seam, or any deployment that opts out of
-boot-time root creation — nobody has to pre-seed an admin:
+default after boot, which never mints a root — nobody has to pre-seed
+an admin:
 
 - The sign-up/email route admits the very first signup even when
   `WORKBENCH_SIGNUP=closed` (the empty-hub exception in

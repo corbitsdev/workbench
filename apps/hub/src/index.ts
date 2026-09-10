@@ -162,7 +162,6 @@ import { createWorkflowCatalogAdminRoutes } from "@corbits/catalog-tools/routes"
 import { createWorkflowAccessRoutes } from "@corbits/access-tools/routes";
 import { generateId } from "@intx/hub-common";
 
-import { ensureDefaultTenant } from "./default-tenant";
 import { createHubSignupTenancy } from "./signup-tenancy";
 import {
   createInMemoryMailboxEventBus,
@@ -738,25 +737,6 @@ export async function createHub(config: HubConfig) {
         }
       : undefined,
   });
-  // The root tenant must exist before the first sign-in can provision a
-  // personal bench under it; boot is the one moment the hub can
-  // guarantee that ordering. Boot seeds the admin account and its owner
-  // membership too — `workbench setup` then adopts the root instead of
-  // colliding with it, and the root's policy row has an editor. Failure
-  // here fails the boot loudly — a hub without its root tenant cannot
-  // serve first logins. The skip seam is test-only: a suite exercising
-  // the true empty-hub first-signup path sets it so the first signup
-  // itself mints the root (CL-7578); readHubConfig never sets it.
-  const operatorTenantId =
-    config.skipEnsureDefaultTenant === true
-      ? undefined
-      : await ensureDefaultTenant(
-          db,
-          auth,
-          config.envCredentialPlantAdmin,
-          config.defaultTenantSlug,
-          principalKeyStore,
-        );
   // Account-keyed sign-in rate limit (CL-6494) — see `sign-in-rate-limit.ts`
   // for why this replaces better-auth's own IP-keyed sign-in enforcement
   // entirely rather than composing with it.
@@ -3608,8 +3588,6 @@ export async function createHub(config: HubConfig) {
         : undefined;
     },
   };
-  if (operatorTenantId !== undefined)
-    guardDeps.operatorTenantId = operatorTenantId;
   const guardedApp = guardedHubApp(app, guardDeps);
   const inFlight = createInFlightRequestTracker();
   const servingApp = withInFlightRequestTracking(guardedApp, inFlight);
