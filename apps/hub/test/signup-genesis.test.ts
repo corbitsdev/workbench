@@ -1,12 +1,12 @@
-// CL-7578 end-to-end proof of the 0→1 contract: a hub booted with the
-// `skipEnsureDefaultTenant` seam starts truly empty, and the first
-// signup — not a CLI, not a boot-time seed — mints the root tenant and
-// becomes its owner. The second signup joins that root as a plain
-// member. Signup never seeds workflows, tools, or grants.
+// CL-7578 end-to-end proof of the 0→1 contract: a hub booted on an
+// empty database starts truly empty, and the first signup — not a CLI,
+// not a boot-time seed — mints the root tenant and becomes its owner.
+// The second signup joins that root as a plain member. Signup never
+// seeds workflows, tools, or grants.
 //
 // DB-gated: each test boots a full hub against its own scratch
-// database (the default-tenant.test.ts recipe), so a reachable
-// DATABASE_URL is required and the suite skips without one.
+// database, so a reachable DATABASE_URL is required and the suite
+// skips without one.
 import { afterAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -123,7 +123,6 @@ async function bootEmptyHub(args: {
       orgSlug: "workbench",
     },
     chatIdleReapMs: 30 * 60_000,
-    skipEnsureDefaultTenant: true,
   };
   const hub = await createHub(config);
   server.reload({ fetch: hub.app.fetch });
