@@ -398,7 +398,7 @@ export function CreateAgentPanel({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent side="right">
+      <DialogContent side="right" className="create-agent-panel">
         <DialogHeader>
           <DialogTitle>New agent</DialogTitle>
           <DialogDescription>

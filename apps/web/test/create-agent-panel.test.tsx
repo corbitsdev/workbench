@@ -163,6 +163,15 @@ async function settle() {
 }
 
 describe("CreateAgentPanel happy path", () => {
+  test("scopes drawer overflow handling to the New Agent panel", async () => {
+    await mount();
+    expect(
+      document
+        .querySelector('[data-slot="dialog-content"]')
+        ?.classList.contains("create-agent-panel"),
+    ).toBe(true);
+  });
+
   test("Advanced is collapsed by default", async () => {
     await mount();
     const details = document.querySelector(
