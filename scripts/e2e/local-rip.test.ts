@@ -3,19 +3,19 @@
 // provider. One sequential scenario against a real hub, a real
 // sidecar, and a real Postgres.
 //
-// Phase A (onboard → connect): closed-by-default signup is respected
-// → sign up → under the CL-7578 genesis-or-join contract the fresh
-// signup joins the boot-ensured root as a plain member (the genesis
-// path — first signup on a truly empty hub mints the root — is covered
-// in-process by `apps/hub/test/signup-genesis.test.ts`) → the root's
-// owner (the boot admin) connects a real inference credential through
-// the key path (`POST /api/onboarding/complete`'s own machinery,
-// called directly — see the stubbing note below), which fully seeds
-// every default workflow, including "assistant" → the Connections
-// surface (the tenant's own credentials list, the same route
-// `connectorStatus` in `@workbench/settings-ui` reads) honestly
-// reflects the connected credential. A joined member is read-only by
-// design, so every owner-level leg runs as the boot admin.
+// Phase A (onboard → connect): alice signs up first as genesis owner
+// → a tester joins the genesis root as a plain member (the genesis
+// path — first signup on a truly empty hub mints the root — is also
+// covered in-process by `apps/hub/test/signup-genesis.test.ts`) →
+// occupied closed signup is refused → the root's owner (alice)
+// connects a real inference credential through the key path
+// (`POST /api/onboarding/complete`'s own machinery, called directly —
+// see the stubbing note below), which fully seeds every default
+// workflow, including "assistant" → the Connections surface (the
+// tenant's own credentials list, the same route `connectorStatus` in
+// `@workbench/settings-ui` reads) honestly reflects the connected
+// credential. A joined member is read-only by design, so every
+// owner-level leg runs as alice.
 //
 // Until CL-6057, this suite documented a real platform gap instead of
 // hiding it: the "assistant" default workflow pins
@@ -23,7 +23,7 @@
 // had published a `package-registry`-kind asset named "corbits-tools"
 // carrying its tarball. CL-7071 moved that publish off `seedTenant`
 // onto `workbench setup` (the root tenant; descendants inherit). The
-// connect flow runs on the boot-ensured root itself, so an explicit
+// connect flow runs on the genesis root itself, so an explicit
 // `publishCorbitsToolsRegistry` hop onto the root stands in for
 // setup, then `ensureSeeded` deploys without packing.
 //
@@ -68,7 +68,6 @@ import {
 import {
   createHubAPI,
   parseAs,
-  signIn,
   type ApiCall,
 } from "../../packages/hub-api-client/src/index.ts";
 import {
@@ -152,14 +151,64 @@ describe.skipIf(databaseUrl === undefined)(
         expect(report.action).toBe("migrated");
       });
 
-      // Closed-by-default: a hub with no WORKBENCH_SIGNUP override (the
-      // platform's own default, per `apps/hub/src/config.ts`) refuses a
-      // brand-new person outright, right at sign-up — the access-policy
-      // gate is wired into better-auth's own sign-up hook, one layer
-      // earlier than onboarding's own provisioning gate — proven against
-      // a short-lived hub of its own so the rest of this scenario's hub
-      // (which needs open signup to run at all) never muddies the
-      // assertion.
+      const hub: HubHandle = await hop("hub boot", async () =>
+        startHub({
+          databaseUrl: url,
+          port: freePort(),
+          sessionSecret: Buffer.from(
+            crypto.getRandomValues(new Uint8Array(32)),
+          ).toString("hex"),
+          dataDir: await tempDir("e2e-local-rip-hub-data-"),
+          // Deliberately no ANTHROPIC_API_KEY: like `smoke-onboarding`,
+          // this hub carries no hub-owned seed model credential — this
+          // scenario's own connect step is what finishes seeding it.
+        }),
+      );
+      track(hub);
+
+      const hubApi: ApiCall = createHubAPI(hub.baseUrl);
+
+      const admin = await hop("alice genesis sign-up", async () => {
+        const res = await api(hub.baseUrl, "POST", "/api/auth/sign-up/email", {
+          name: "Alice",
+          email: "alice@example.com",
+          password: "password123",
+        });
+        expectStatus("alice sign-up", res, 200);
+        if (res.cookies.length === 0) {
+          throw new Error("alice sign-up returned no session cookie");
+        }
+        const userId = stringField(
+          (res.data as { user: unknown }).user,
+          "id",
+          "alice sign-up user field",
+        );
+        const probe = await api(
+          hub.baseUrl,
+          "POST",
+          "/api/onboarding/provision",
+          undefined,
+          res.cookies,
+        );
+        expectStatus("alice genesis probe", probe, 200);
+        expect((probe.data as { kind: string }).kind).toBe("needs-onboarding");
+        const minted = await api(
+          hub.baseUrl,
+          "POST",
+          "/api/onboarding/provision",
+          { name: "Workbench" },
+          res.cookies,
+        );
+        expectStatus("alice genesis provision", minted, 200);
+        expect((minted.data as { kind: string }).kind).toBe("provisioned");
+        return { cookies: res.cookies, userId };
+      });
+
+      // Occupied closed signup: a hub with WORKBENCH_SIGNUP=closed
+      // refuses a brand-new person once the hub is no longer empty —
+      // the empty-hub exception already admitted alice. Proven against
+      // a short-lived hub of its own so the rest of this scenario's
+      // open hub never muddies the assertion.
       await hop("closed-by-default signup is respected", async () => {
         const closedHub = await startHub({
           databaseUrl: url,
@@ -189,42 +238,12 @@ describe.skipIf(databaseUrl === undefined)(
         }
       });
 
-      const hub: HubHandle = await hop("hub boot", async () =>
-        startHub({
-          databaseUrl: url,
-          port: freePort(),
-          sessionSecret: Buffer.from(
-            crypto.getRandomValues(new Uint8Array(32)),
-          ).toString("hex"),
-          dataDir: await tempDir("e2e-local-rip-hub-data-"),
-          // Deliberately no ANTHROPIC_API_KEY: like `smoke-onboarding`,
-          // this hub carries no hub-owned seed model credential — this
-          // scenario's own connect step is what finishes seeding it.
-        }),
-      );
-      track(hub);
-
-      const hubApi: ApiCall = createHubAPI(hub.baseUrl);
-
       const user = await hop("sign-up", () =>
         signUp(hub.baseUrl, "Local Rip Tester"),
       );
 
-      // The boot admin — the root tenant's owner, seeded by
-      // `ensureDefaultTenant` with the config defaults this hub env
-      // leaves unset (alice@example.com / password123). Every
-      // owner-level leg below runs as this identity: a joined member is
-      // read-only by design.
-      const admin = await hop("boot-admin sign-in", async () => {
-        const session = await signIn(hubApi, {
-          email: "alice@example.com",
-          password: "password123",
-        });
-        return { cookies: session.cookies, userId: session.userId };
-      });
-
       const provisioned = await hop(
-        "a membership probe joins the boot root as a member",
+        "a membership probe joins the genesis root as a member",
         async () => {
           const res = await api(
             hub.baseUrl,
@@ -372,7 +391,7 @@ describe.skipIf(databaseUrl === undefined)(
       }
 
       // CL-7071: seedTenant/ensureSeeded no longer pack. The connect
-      // flow runs on the boot-ensured root itself, so publish
+      // flow runs on the genesis root itself, so publish
       // `corbits-tools` onto the root the way `workbench setup` does.
       // Then ensureSeeded deploys assistant without packing.
       await hop(

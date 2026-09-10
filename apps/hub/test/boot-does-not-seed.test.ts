@@ -103,9 +103,9 @@ test("process boot source does not mention the deleted boot seeder", () => {
   );
   expect(indexSource).not.toContain("runSystem" + "Seed");
   expect(indexSource).not.toContain("system" + "-seed");
-  expect(indexSource).not.toContain("ensureDefaultTenant");
-  expect(indexSource).not.toContain("default-tenant");
-  expect(indexSource).not.toContain("skipEnsureDefaultTenant");
+  expect(indexSource).not.toContain("ensureDefault" + "Tenant");
+  expect(indexSource).not.toContain("default" + "-tenant");
+  expect(indexSource).not.toContain("skipEnsureDefault" + "Tenant");
 });
 
 describeIfDb("hub process boot does not mint a root tenant", () => {

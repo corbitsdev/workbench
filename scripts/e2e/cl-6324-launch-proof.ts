@@ -37,7 +37,6 @@ import {
 } from "../../packages/seeding/src/index.ts";
 import {
   createHubAPI,
-  signIn,
   type ApiCall,
 } from "../../packages/hub-api-client/src/index.ts";
 import { WORKFLOW_SOURCE_ENTRY } from "../../packages/workflows/src/source.ts";
@@ -229,12 +228,48 @@ async function main(): Promise<void> {
   const hubApi: ApiCall = createHubAPI(hub.baseUrl);
   const pushWorkflow = createGitWorkflowPusher();
 
+  const admin = await hop("alice genesis sign-up", async () => {
+    const res = await api(hub.baseUrl, "POST", "/api/auth/sign-up/email", {
+      name: "Alice",
+      email: "alice@example.com",
+      password: "password123",
+    });
+    expectStatus("alice sign-up", res, 200);
+    if (res.cookies.length === 0) {
+      throw new Error("alice sign-up returned no session cookie");
+    }
+    const userId = stringField(
+      (res.data as { user: unknown }).user,
+      "id",
+      "alice sign-up user field",
+    );
+    const probe = await api(
+      hub.baseUrl,
+      "POST",
+      "/api/onboarding/provision",
+      undefined,
+      res.cookies,
+    );
+    expectStatus("alice genesis probe", probe, 200);
+    expect((probe.data as { kind: string }).kind).toBe("needs-onboarding");
+    const minted = await api(
+      hub.baseUrl,
+      "POST",
+      "/api/onboarding/provision",
+      { name: "Workbench" },
+      res.cookies,
+    );
+    expectStatus("alice genesis provision", minted, 200);
+    expect((minted.data as { kind: string }).kind).toBe("provisioned");
+    return { cookies: res.cookies, userId };
+  });
+
   const user = await hop("sign up", async () =>
     signUp(hub.baseUrl, "CL-6324 Proof"),
   );
 
   const provisioned = await hop(
-    "a membership probe joins the boot root",
+    "a membership probe joins the genesis root",
     async () => {
       const res = await api(
         hub.baseUrl,
@@ -251,15 +286,7 @@ async function main(): Promise<void> {
   );
 
   // A joined member is read-only by design, so every owner-level leg
-  // below runs as the boot admin, the root tenant's owner.
-  const admin = await hop("boot-admin sign-in", async () => {
-    const session = await signIn(hubApi, {
-      email: "alice@example.com",
-      password: "password123",
-    });
-    return { cookies: session.cookies, userId: session.userId };
-  });
-
+  // below runs as alice, the genesis owner.
   const tenant = await hop("joined root resolves", async () => {
     const found = await findPersonalTenant(
       hubApi,
