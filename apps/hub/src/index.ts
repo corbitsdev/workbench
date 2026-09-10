@@ -360,10 +360,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type Context, Hono, type Next } from "hono";
 
 import { upgradeWebSocket, websocket } from "hono/bun";
-import {
-  CORBITS_TOOLS_REGISTRY,
-  publishCorbitsToolsRegistry,
-} from "@corbits/tool-registry-publish";
+import { CORBITS_TOOLS_REGISTRY } from "@corbits/tool-registry-publish";
 import {
   readHubConfig,
   type HubConfig,
@@ -3384,7 +3381,9 @@ export async function createHub(config: HubConfig) {
   // composed just before the guard wrap, after every route mount: Hono
   // copies routes at `.route()` time, so wrapping earlier would strand
   // everything mounted after it.
-  let tenantCreateObserver: ReturnType<typeof createTenantCreateObserver> | undefined;
+  const observerRef: {
+    current?: ReturnType<typeof createTenantCreateObserver>;
+  } = {};
 
   const onboardingDeps: Parameters<typeof createOnboardingRoutes>[0] = {
     hubUrl: config.baseUrl,
@@ -3398,8 +3397,8 @@ export async function createHub(config: HubConfig) {
     benchProvisioner,
     desiredStateKick: (args) => {
       // Fire-and-forget; the route already decided pins are pending.
-      void tenantCreateObserver
-        ?.kick({ tenantId: args.tenantId, creatorUserId: args.userId })
+      void observerRef.current
+        ?.kick({ tenantId: args.tenantId, cookies: args.cookies })
         .catch(() => undefined);
     },
     accessPolicy: {
@@ -3603,19 +3602,18 @@ export async function createHub(config: HubConfig) {
         : undefined;
     },
   };
+  observerRef.current = createTenantCreateObserver(
+    {
+      api: selfApi,
+      hubUrl: config.baseUrl,
+      pushWorkflow: createGitWorkflowPusher(),
+      log: (line) => log.info`${line}`,
+      logError: (line) => log.error`${line}`,
+    },
+    app,
+  );
   const guardedApp = guardedHubApp(
-    createTenantCreateObserver(
-      {
-        api: selfApi,
-        hubUrl: config.baseUrl,
-        pushWorkflow: createGitWorkflowPusher(),
-        sessionFor,
-        getSessionUser: guardDeps.getSessionUser,
-        log: (line) => log.info`${line}`,
-        logError: (line) => log.error`${line}`,
-      },
-      app,
-    ).app,
+    observerRef.current === undefined ? app : observerRef.current.app,
     guardDeps,
   );
   const inFlight = createInFlightRequestTracker();
@@ -3627,6 +3625,16 @@ export async function createHub(config: HubConfig) {
     db,
     close: async () => {
       sidecarAllocationReconciliationStopped = true;
+      // Let any in-flight tenant-create reconcile bail at its next
+      // checkpoint before the pool goes away (CL-7584) — a
+      // fire-and-forget kick must never race the DB teardown. Bounded:
+      // a kick stuck on an already-dying connection must not stall
+      // shutdown.
+      observerRef.current?.stop();
+      await Promise.race([
+        observerRef.current?.whenIdle(),
+        new Promise((resolve) => setTimeout(resolve, 250)),
+      ]);
       if (sidecarAllocationReconciliationTimer !== undefined) {
         clearTimeout(sidecarAllocationReconciliationTimer);
       }
@@ -3657,7 +3665,14 @@ export async function createHub(config: HubConfig) {
       await benchSettings.close();
       await evalRuns.close();
       await closeMailbox();
-      await close();
+      // The pool end waits on in-flight queries; a query whose socket
+      // died with the process must never stall shutdown, so bound it.
+      // (CL-7584: a fire-and-forget reconcile's request can be cut
+      // mid-query by this very teardown.)
+      await Promise.race([
+        close(),
+        new Promise((resolve) => setTimeout(resolve, 5_000)),
+      ]);
     },
   };
 }

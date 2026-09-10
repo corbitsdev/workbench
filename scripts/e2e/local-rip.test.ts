@@ -564,7 +564,12 @@ describe.skipIf(databaseUrl === undefined)(
         "CL-7584: a second reconcile pass over the converged root issues zero non-GET calls",
         async () => {
           const calls: string[] = [];
-          const countingApi: ApiCall = ((method: string, path: string, body?: unknown, cookies?: string[]) => {
+          const countingApi: ApiCall = ((
+            method: string,
+            path: string,
+            body?: unknown,
+            cookies?: string[],
+          ) => {
             calls.push(method);
             return hubApi(method, path, body, cookies);
           }) as unknown as ApiCall;

@@ -22,6 +22,7 @@ function harness(
 ) {
   const logged: string[] = [];
   const reconciled: string[] = [];
+  let cookiesSeenValue = "";
   const native =
     overrides.nativeApp ??
     new Hono<AppEnv>().post("/api/tenants", (c) =>
@@ -38,37 +39,34 @@ function harness(
       outcome: "pushed",
       commitSha: "a".repeat(40),
     })) as unknown as WorkflowPusher,
-    sessionFor: async () => ["better-auth.session_token=minted"],
-    getSessionUser: async () => ({
-      id: "user_1",
-      email: "alice@example.com",
-      emailVerified: true,
-    }),
     log: (line) => logged.push(line),
     reconcileFn: async (args) => {
       reconciled.push(args.tenantId);
+      cookiesSeenValue = args.cookies.join(";");
       return {
         tenantId: args.tenantId,
         ready: true,
-        pins: [
-          { name: "assistant", kind: "workflow", status: "installed" },
-        ],
+        pins: [{ name: "assistant", kind: "workflow", status: "installed" }],
       } satisfies ReconcileReport;
     },
     ...depOverrides,
   } as TenantCreateOnboardDeps;
 
+  const cookiesSeen = () => cookiesSeenValue;
   const { app, kick } = createTenantCreateObserver(deps, native);
-  return { app, kick, logged, reconciled };
+  return { app, kick, logged, reconciled, cookiesSeen };
 }
 
 describe("createTenantCreateObserver", () => {
   test("a 201 create fires one reconcile for the new tenant", async () => {
-    const { app, reconciled } = harness();
+    const { app, reconciled, cookiesSeen } = harness();
 
     const response = await app.request("/api/tenants", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        cookie: "better-auth.session_token=creator",
+      },
       body: JSON.stringify({ name: "New" }),
     });
     expect(response.status).toBe(201);
@@ -76,6 +74,7 @@ describe("createTenantCreateObserver", () => {
     // to the first await in the observer's own async work; yield once.
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(reconciled).toEqual(["ten_new"]);
+    expect(cookiesSeen()).toContain("better-auth.session_token=creator");
   });
 
   test("a 403 create fires nothing", async () => {
@@ -111,8 +110,13 @@ describe("createTenantCreateObserver", () => {
       ),
     });
 
-    const first = app.request("/api/tenants", { method: "POST" });
-    const second = app.request("/api/tenants", { method: "POST" });
+    const request = () =>
+      app.request("/api/tenants", {
+        method: "POST",
+        headers: { cookie: "better-auth.session_token=creator" },
+      });
+    const first = request();
+    const second = request();
     await Promise.all([first, second]);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(calls).toBe(1);
@@ -127,11 +131,18 @@ describe("createTenantCreateObserver", () => {
       }
       throw new Error(`stub api: unhandled ${method} ${path}`);
     }) as unknown as ApiCall;
-    const { app, logged } = harness({ api, reconcileFn: undefined as unknown as TenantCreateOnboardDeps["reconcileFn"] });
+    const { app, logged } = harness({
+      api,
+      reconcileFn:
+        undefined as unknown as TenantCreateOnboardDeps["reconcileFn"],
+    });
 
     await app.request("/api/tenants", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        cookie: "better-auth.session_token=creator",
+      },
       body: JSON.stringify({ name: "New" }),
     });
     await new Promise((resolve) => setTimeout(resolve, 0));

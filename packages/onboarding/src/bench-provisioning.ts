@@ -137,7 +137,8 @@ export function createBenchProvisioner(
    * reports the workflow pins blocked rather than throwing.
    */
   const runReconcile: NonNullable<BenchProvisionerDeps["reconcileFn"]> =
-    deps.reconcileFn ?? (async (args) => {
+    deps.reconcileFn ??
+    (async (args) => {
       const model: ModelSource | undefined = await resolveTenantModelSource(
         args.api,
         args.cookies,

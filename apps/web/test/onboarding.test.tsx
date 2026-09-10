@@ -1565,9 +1565,7 @@ describe("CL-7584 desired-state steps in finishing-setup", () => {
           setupAgentReady: true,
           deployed: ["assistant"],
           pending: [],
-          steps: [
-            { name: "assistant", label: "Myra", status: "present" },
-          ],
+          steps: [{ name: "assistant", label: "Myra", status: "present" }],
         });
       }
       throw new Error(`unexpected fetch: ${url}`);

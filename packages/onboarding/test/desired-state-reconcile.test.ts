@@ -7,7 +7,10 @@ import { describe, expect, test } from "bun:test";
 import type { ApiCall } from "@corbits/hub-api-client";
 import { SidecarUnavailableError } from "@corbits/hub-api-client";
 import type { ModelSource, WorkflowPusher } from "@corbits/seeding";
-import { installRegistryTarball, sha512Integrity } from "@corbits/tool-registry-publish";
+import {
+  installRegistryTarball,
+  sha512Integrity,
+} from "@corbits/tool-registry-publish";
 import {
   reconcileTenantDesiredState,
   resolveTenantModelSource,
@@ -366,11 +369,7 @@ describe("resolveTenantModelSource", () => {
       skills: true,
       catalogOfferings: true,
     });
-    const model = await resolveTenantModelSource(
-      h.args.api,
-      [],
-      TENANT_ID,
-    );
+    const model = await resolveTenantModelSource(h.args.api, [], TENANT_ID);
     expect(model).toEqual({ provider: "anthropic", model: "claude-x" });
   });
 

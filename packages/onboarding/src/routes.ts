@@ -190,10 +190,7 @@ export type CreateOnboardingRoutesDeps = {
    * the drain's own poll, which is why this is a latency optimization
    * rather than a correctness dependency.
    */
-  desiredStateKick?: (args: {
-    tenantId: string;
-    userId: string;
-  }) => void;
+  desiredStateKick?: (args: { tenantId: string; cookies: string[] }) => void;
   /** Test seam standing in for the deploy step, so a route test can
    * prove the response never waits on one. */
   ensureSeededFn?: typeof ensureSeeded;
@@ -524,13 +521,13 @@ export function createOnboardingRoutes(
               kickTenantId,
             );
             if (!status.ready) {
-              deps.desiredStateKick({
-                tenantId: kickTenantId,
-                userId: user.id,
-              });
+              deps.desiredStateKick({ tenantId: kickTenantId, cookies });
             }
           }
         } catch (cause) {
+          // report-error-ignore: the kick is best-effort — convergence
+          // falls back to the pending_seed drain, so a failed kick check
+          // only ever costs one delayed pass.
           deps.log(
             `desired-state kick check for user ${user.id} failed (convergence falls back to the drain): ${cause instanceof Error ? cause.message : String(cause)}`,
           );
@@ -539,6 +536,8 @@ export function createOnboardingRoutes(
 
       return c.json(result, 200);
     } catch (cause) {
+      // report-error-ignore: both branches below route through
+      // reportOnboardingError, this package's reportError wrapper.
       if (cause instanceof ProvisionError) {
         const status =
           cause.code === "signup_not_allowed"

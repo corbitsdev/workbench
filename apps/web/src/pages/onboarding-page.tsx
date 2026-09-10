@@ -191,7 +191,8 @@ function initialWizardState(): WizardState {
     readOpenRouterConnectReturn(window.location.search) ??
     readHuggingFaceConnectReturn(window.location.search);
   if (returned === null) return { phase: "provisioning" };
-  if (returned.kind === "connected") return { phase: "finishing-setup", steps: [] };
+  if (returned.kind === "connected")
+    return { phase: "finishing-setup", steps: [] };
   return { phase: "credential", error: returned.message };
 }
 

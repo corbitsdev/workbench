@@ -2,9 +2,10 @@
 // guard (./tenant-create-guard.ts), this outer layer watches the native
 // `POST /api/tenants` route: a 201 means a real tenant now exists that
 // should converge onto the tenant desired-state document. The reconcile
-// runs fire-and-forget under the creator's own minted session — the
-// same `sessionFor` seam the pending-seed drain uses — so a fresh
-// tenant gets Myra and the core pins without hub boot seeding anything.
+// runs fire-and-forget under the creator's own session — the cookies
+// that made the create are replayed, so no extra session is minted and
+// the kick never touches the DB directly — so a fresh tenant gets Myra
+// and the core pins without hub boot seeding anything.
 //
 // There is no durable work item here on purpose: the pending_seed row
 // stays the only durable queue (a connect's credential), and a
@@ -14,7 +15,7 @@
 // provisioner's in-flight map is: never a fact the system needs correct.
 import { Hono } from "hono";
 import type { AppEnv } from "@intx/hub-api";
-import type { ApiCall } from "@corbits/hub-api-client";
+import { cookiesFromHeader, type ApiCall } from "@corbits/hub-api-client";
 import {
   reconcileTenantDesiredState,
   resolveTenantModelSource,
@@ -27,17 +28,6 @@ export type TenantCreateOnboardDeps = {
   api: ApiCall;
   hubUrl: string;
   pushWorkflow: WorkflowPusher;
-  /** Mints the creator's session so the reconcile acts under a real
-   * user, exactly as the drain does. `undefined` skips the kick — a
-   * session that cannot be minted is a later-pass problem, never a
-   * failed create. */
-  sessionFor: (args: {
-    userId: string;
-    tenantId: string;
-  }) => Promise<string[] | undefined>;
-  getSessionUser: (headers: Headers) => Promise<
-    { id: string; email: string; emailVerified: boolean } | undefined
-  >;
   log: (line: string) => void;
   logError?: (line: string) => void;
   /**
@@ -59,7 +49,13 @@ export type TenantCreateObserver = {
   app: Hono<AppEnv>;
   /** Kick a reconcile for one tenant directly (the revisit-kick wiring
    * shares this with the observer). Deduped per tenant in-process. */
-  kick(args: { tenantId: string; creatorUserId: string }): Promise<void>;
+  kick(args: { tenantId: string; cookies: string[] }): Promise<void>;
+  /** Stops accepting new kicks; in-flight ones bail at their next
+   * checkpoint. Hub shutdown calls this before closing the DB so a
+   * fire-and-forget kick never races the pool teardown. */
+  stop(): void;
+  /** Resolves when every in-flight kick has finished or bailed. */
+  whenIdle(): Promise<void>;
 };
 
 export function createTenantCreateObserver(
@@ -70,21 +66,15 @@ export function createTenantCreateObserver(
   // In-process tenantId dedupe, same pattern as the provisioner's
   // in-flight map: an optimization against double kicks, never a fact.
   const kicked = new Set<string>();
+  const inFlight = new Set<Promise<void>>();
+  let stopped = false;
 
   async function runReconcile(args: {
     tenantId: string;
-    creatorUserId: string;
+    cookies: string[];
   }): Promise<void> {
-    const cookies = await deps.sessionFor({
-      userId: args.creatorUserId,
-      tenantId: args.tenantId,
-    });
-    if (cookies === undefined) {
-      deps.log(
-        `tenant-create onboarding for ${args.tenantId} has no session to act under; the revisit kick or drain will cover it`,
-      );
-      return;
-    }
+    if (stopped) return;
+    const cookies = args.cookies;
     const reconcile =
       deps.reconcileFn ??
       (async (reconcileArgs: { tenantId: string; cookies: string[] }) => {
@@ -127,21 +117,29 @@ export function createTenantCreateObserver(
     );
   }
 
-  async function kick(args: {
-    tenantId: string;
-    creatorUserId: string;
-  }): Promise<void> {
-    if (kicked.has(args.tenantId)) return;
+  function kick(args: { tenantId: string; cookies: string[] }): Promise<void> {
+    if (stopped || kicked.has(args.tenantId)) return Promise.resolve();
     kicked.add(args.tenantId);
-    try {
-      await runReconcile(args);
-    } catch (cause) {
-      logError(
-        `tenant-create onboarding for ${args.tenantId} failed (the revisit kick or drain will cover it): ${cause instanceof Error ? cause.message : String(cause)}`,
-      );
-    } finally {
-      kicked.delete(args.tenantId);
-    }
+    const operation = runReconcile(args)
+      .catch((cause: unknown) => {
+        logError(
+          `tenant-create onboarding for ${args.tenantId} failed (the revisit kick or drain will cover it): ${cause instanceof Error ? cause.message : String(cause)}`,
+        );
+      })
+      .finally(() => {
+        kicked.delete(args.tenantId);
+        inFlight.delete(operation);
+      });
+    inFlight.add(operation);
+    return operation;
+  }
+
+  function stop(): void {
+    stopped = true;
+  }
+
+  function whenIdle(): Promise<void> {
+    return Promise.allSettled([...inFlight]).then(() => undefined);
   }
 
   const app = new Hono<AppEnv>();
@@ -154,19 +152,16 @@ export function createTenantCreateObserver(
     ) {
       return;
     }
-    // The creator's identity was already resolved and allowed by the
-    // guard underneath; re-read it from the same headers for the
-    // session mint.
-    const user = await deps
-      .getSessionUser(c.req.raw.headers)
-      .catch(() => undefined);
-    if (user === undefined) return;
+    // The creator's own session cookies are replayed for the kick, so
+    // it acts under the same session that made the create without
+    // minting (or ever touching) anything of its own.
+    const cookies = cookiesFromHeader(c.req.header("cookie"));
+    if (cookies.length === 0) return;
     const body = (await c.res
       .clone()
       .json()
       .catch(() => undefined)) as
-      | { id?: unknown; tenantId?: unknown }
-      | undefined;
+      { id?: unknown; tenantId?: unknown } | undefined;
     const tenantId =
       typeof body?.id === "string"
         ? body.id
@@ -175,9 +170,9 @@ export function createTenantCreateObserver(
           : undefined;
     if (tenantId === undefined) return;
     // Fire-and-forget: a 201 must answer immediately.
-    void kick({ tenantId, creatorUserId: user.id });
+    void kick({ tenantId, cookies });
   });
   app.route("/", wrapped);
 
-  return { app, kick };
+  return { app, kick, stop, whenIdle };
 }

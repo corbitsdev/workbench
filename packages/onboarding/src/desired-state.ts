@@ -51,7 +51,11 @@ export type ToolPackagePin = {
   readonly version: string;
   readonly source:
     | { readonly kind: "workspace-pack" }
-    | { readonly kind: "tarball-url"; readonly url: string; readonly integrity: string };
+    | {
+        readonly kind: "tarball-url";
+        readonly url: string;
+        readonly integrity: string;
+      };
 };
 
 export type SkillPin = {
@@ -242,7 +246,9 @@ export type DesiredStateStep = {
 /** Labeled, doc-ordered step list for a waiting surface (the
  * onboarding page's finishing-setup view), derived from a status read
  * plus the doc's own labels. */
-export function desiredStateSteps(status: DesiredStateStatus): readonly DesiredStateStep[] {
+export function desiredStateSteps(
+  status: DesiredStateStatus,
+): readonly DesiredStateStep[] {
   return [
     ...TENANT_DESIRED_STATE.workflows.map((pin) => ({
       name: pin.assetName,
@@ -267,11 +273,7 @@ export function desiredStateSteps(status: DesiredStateStatus): readonly DesiredS
 // ---------------------------------------------------------------------------
 
 export type ReconcilePinStatus =
-  | "present"
-  | "installed"
-  | "reinstalled"
-  | "blocked"
-  | "failed";
+  "present" | "installed" | "reinstalled" | "blocked" | "failed";
 
 export type ReconcilePin = {
   readonly name: string;
@@ -294,7 +296,7 @@ export type ReconcileArgs = {
     principalId?: string;
     domain?: string;
   };
-  model: ModelSource;
+  model: ModelSource | undefined;
   pushWorkflow: WorkflowPusher;
   /** Defaults to the real `publishCorbitsToolsRegistry`. */
   publishToolRegistry?: ToolRegistryPublisher;
@@ -330,10 +332,7 @@ export async function resolveTenantModelSource(
   let best: { provider: string; model: string; priority: number } | undefined;
   for (const model of models) {
     for (const offering of model.offerings) {
-      if (
-        best === undefined ||
-        offering.priority < best.priority
-      ) {
+      if (best === undefined || offering.priority < best.priority) {
         best = {
           provider: offering.plugin,
           model: model.canonicalName,
@@ -342,7 +341,9 @@ export async function resolveTenantModelSource(
       }
     }
   }
-  return best === undefined ? undefined : { provider: best.provider, model: best.model };
+  return best === undefined
+    ? undefined
+    : { provider: best.provider, model: best.model };
 }
 
 /**
@@ -358,7 +359,10 @@ export async function resolveTenantModelSource(
 export async function reconcileTenantDesiredState(
   args: ReconcileArgs,
 ): Promise<ReconcileReport> {
-  const { api, cookies, tenantId } = { ...args, tenantId: args.tenant.tenantId };
+  const { api, cookies, tenantId } = {
+    ...args,
+    tenantId: args.tenant.tenantId,
+  };
   const log = args.log;
   const status = await readTenantDesiredStateStatus(api, cookies, tenantId);
   const pins: ReconcilePin[] = [];
@@ -387,7 +391,11 @@ export async function reconcileTenantDesiredState(
           log,
         });
         for (const pin of workspacePacks) {
-          pins.push({ name: pin.name, kind: "tool-package", status: "installed" });
+          pins.push({
+            name: pin.name,
+            kind: "tool-package",
+            status: "installed",
+          });
         }
       }
       const tarballPins = TENANT_DESIRED_STATE.toolPackages.filter(
@@ -417,11 +425,19 @@ export async function reconcileTenantDesiredState(
         });
       }
     } catch (cause) {
+      // report-error-ignore: an install failure is delivered as the pin's
+      // "failed" status in the ReconcileReport and the caller's log, not
+      // as an exception — reconcile is safe to re-run and the drain keeps
+      // the tenant's pending row for the retry.
       if (isSidecarUnavailableError(cause)) {
         sawBlocked = true;
         for (const pin of TENANT_DESIRED_STATE.toolPackages) {
           if (pins.some((p) => p.name === pin.name)) continue;
-          pins.push({ name: pin.name, kind: "tool-package", status: "blocked" });
+          pins.push({
+            name: pin.name,
+            kind: "tool-package",
+            status: "blocked",
+          });
         }
         log(
           `tool-package publish for tenant ${tenantId} is blocked (sidecar unavailable); reporting without failing`,
@@ -445,7 +461,9 @@ export async function reconcileTenantDesiredState(
   const workflowPending = Object.values(status.workflows).some(
     (s) => s !== "present",
   );
-  const skillPending = Object.values(status.skills).some((s) => s !== "present");
+  const skillPending = Object.values(status.skills).some(
+    (s) => s !== "present",
+  );
   const workflowsBlocked = Object.values(status.workflows).some(
     (s) => s === "blocked",
   );
@@ -460,7 +478,9 @@ export async function reconcileTenantDesiredState(
   } else {
     const model = args.model;
     const seedWorkflows = DEFAULT_WORKFLOWS.filter((workflow) =>
-      TENANT_DESIRED_STATE.workflows.some((pin) => pin.assetName === workflow.assetName),
+      TENANT_DESIRED_STATE.workflows.some(
+        (pin) => pin.assetName === workflow.assetName,
+      ),
     );
     try {
       if (model === undefined) {
@@ -484,16 +504,28 @@ export async function reconcileTenantDesiredState(
         confirmDeployments: false,
       });
       for (const pin of TENANT_DESIRED_STATE.workflows) {
-        pins.push({ name: pin.assetName, kind: "workflow", status: "installed" });
+        pins.push({
+          name: pin.assetName,
+          kind: "workflow",
+          status: "installed",
+        });
       }
       for (const pin of TENANT_DESIRED_STATE.skills) {
         pins.push({ name: pin.name, kind: "skill", status: "installed" });
       }
     } catch (cause) {
+      // report-error-ignore: a workflow/skill install failure is delivered
+      // as each pin's "blocked"/"failed" status in the ReconcileReport and
+      // the caller's log, not as an exception — reconcile is safe to
+      // re-run and the drain keeps the tenant's pending row for the retry.
       if (isSidecarUnavailableError(cause) || model === undefined) {
         sawBlocked = true;
         for (const pin of TENANT_DESIRED_STATE.workflows) {
-          pins.push({ name: pin.assetName, kind: "workflow", status: "blocked" });
+          pins.push({
+            name: pin.assetName,
+            kind: "workflow",
+            status: "blocked",
+          });
         }
         for (const pin of TENANT_DESIRED_STATE.skills) {
           if (pins.some((p) => p.name === pin.name)) continue;
@@ -506,14 +538,27 @@ export async function reconcileTenantDesiredState(
         sawFailure = true;
         for (const pin of TENANT_DESIRED_STATE.workflows) {
           if (status.workflows[pin.assetName] === "present") {
-            pins.push({ name: pin.assetName, kind: "workflow", status: "present" });
+            pins.push({
+              name: pin.assetName,
+              kind: "workflow",
+              status: "present",
+            });
           } else {
-            pins.push({ name: pin.assetName, kind: "workflow", status: "failed" });
+            pins.push({
+              name: pin.assetName,
+              kind: "workflow",
+              status: "failed",
+            });
           }
         }
         for (const pin of TENANT_DESIRED_STATE.skills) {
           if (pins.some((p) => p.name === pin.name)) continue;
-          pins.push({ name: pin.name, kind: "skill", status: status.skills[pin.name] === "present" ? "present" : "failed" });
+          pins.push({
+            name: pin.name,
+            kind: "skill",
+            status:
+              status.skills[pin.name] === "present" ? "present" : "failed",
+          });
         }
         log(
           `workflow deployment for tenant ${tenantId} failed: ${cause instanceof Error ? cause.message : String(cause)}`,

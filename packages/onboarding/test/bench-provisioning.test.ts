@@ -59,7 +59,11 @@ function blockedReport(tenantId: string) {
     tenantId,
     ready: false as const,
     pins: [
-      { name: "assistant", kind: "workflow" as const, status: "blocked" as const },
+      {
+        name: "assistant",
+        kind: "workflow" as const,
+        status: "blocked" as const,
+      },
     ],
   };
 }
@@ -69,7 +73,11 @@ function failedReport(tenantId: string) {
     tenantId,
     ready: false as const,
     pins: [
-      { name: "assistant", kind: "workflow" as const, status: "failed" as const },
+      {
+        name: "assistant",
+        kind: "workflow" as const,
+        status: "failed" as const,
+      },
     ],
   };
 }

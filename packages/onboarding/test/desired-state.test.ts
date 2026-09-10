@@ -58,14 +58,15 @@ function stubApi(state: StubState): ApiCall & { calls: [string, string][] } {
     ) {
       return {
         status: 200,
-        data: state.liveDeployments && state.workflowAssets
-          ? [
-              {
-                definitionAssetId: `ast_${SETUP_AGENT_ASSET_NAME}`,
-                status: "deployed",
-              },
-            ]
-          : [],
+        data:
+          state.liveDeployments && state.workflowAssets
+            ? [
+                {
+                  definitionAssetId: `ast_${SETUP_AGENT_ASSET_NAME}`,
+                  status: "deployed",
+                },
+              ]
+            : [],
         cookies: [],
       };
     }
@@ -89,12 +90,21 @@ function stubApi(state: StubState): ApiCall & { calls: [string, string][] } {
       return {
         status: 200,
         data: state.registryTarballs
-          ? [{ filename: "corbits-memory-tools-0.0.4.tgz", size: 1, integrity: "sha512-x" }]
+          ? [
+              {
+                filename: "corbits-memory-tools-0.0.4.tgz",
+                size: 1,
+                integrity: "sha512-x",
+              },
+            ]
           : [],
         cookies: [],
       };
     }
-    if (method === "GET" && path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)) {
+    if (
+      method === "GET" &&
+      path.startsWith(`/api/tenants/${TENANT_ID}/skills/`)
+    ) {
       if (state.failSkillReadsWith !== undefined) {
         return { status: state.failSkillReadsWith, data: {}, cookies: [] };
       }
@@ -168,7 +178,9 @@ describe("readTenantDesiredStateStatus", () => {
   test("a skill read failure is blocked, not pending", async () => {
     const api = stubApi({ failSkillReadsWith: 502 });
     const status = await readTenantDesiredStateStatus(api, [], TENANT_ID);
-    expect(status.skills[TENANT_DESIRED_STATE.skills[0]!.name]).toBe("blocked");
+    const firstSkill = TENANT_DESIRED_STATE.skills[0];
+    if (firstSkill === undefined) throw new Error("doc has no skills");
+    expect(status.skills[firstSkill.name]).toBe("blocked");
     expect(status.ready).toBe(false);
   });
 });
@@ -186,8 +198,8 @@ describe("desiredStateSteps", () => {
     expect(steps[0]?.name).toBe(SETUP_AGENT_ASSET_NAME);
     expect(steps[0]?.status).toBe("pending");
     expect(typeof steps[0]?.label).toBe("string");
-    expect(steps.every((s) => ["present", "pending", "blocked"].includes(s.status))).toBe(
-      true,
-    );
+    expect(
+      steps.every((s) => ["present", "pending", "blocked"].includes(s.status)),
+    ).toBe(true);
   });
 });
