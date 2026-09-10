@@ -40,10 +40,7 @@ async function fakeRegistryAssetService(
   };
 }
 
-function assetRow(
-  id: string,
-  direct: boolean,
-): AssetWithOrigin {
+function assetRow(id: string, direct: boolean): AssetWithOrigin {
   return {
     id,
     name: "corbits-tools",
@@ -51,14 +48,10 @@ function assetRow(
   } as AssetWithOrigin;
 }
 
-const MEMORY_DIR = new URL(
-  "../../../packages/memory-tools",
-  import.meta.url,
-).pathname;
-const MANUS_DIR = new URL(
-  "../../../packages/manus-tools",
-  import.meta.url,
-).pathname;
+const MEMORY_DIR = new URL("../../../packages/memory-tools", import.meta.url)
+  .pathname;
+const MANUS_DIR = new URL("../../../packages/manus-tools", import.meta.url)
+  .pathname;
 
 async function grantsFor(
   assetService: Pick<AssetService, "listAssetBlobs" | "readAssetBlob">,
@@ -80,9 +73,11 @@ describe("createToolGrantsForPins", () => {
     const assetService = await fakeRegistryAssetService([
       await packToolPackageTarball(MEMORY_DIR),
     ]);
-    const grants = await grantsFor(assetService, [assetRow("asset_1", true)], [
-      { name: "@corbits/memory-tools", version: "^1" },
-    ]);
+    const grants = await grantsFor(
+      assetService,
+      [assetRow("asset_1", true)],
+      [{ name: "@corbits/memory-tools", version: "^1" }],
+    );
     expect(grants.map((grant) => grant.resource)).toEqual([
       "tool:@corbits/memory-tools/memory:memory_search",
       "tool:@corbits/memory-tools/memory:memory_add",
@@ -91,20 +86,21 @@ describe("createToolGrantsForPins", () => {
     expect(grants.every((grant) => grant.action === "invoke")).toBe(true);
   });
 
-  test("floors an unmarked tool at allow and a `approval: \"ask\"` tool at ask", async () => {
+  test('floors an unmarked tool at allow and a `approval: "ask"` tool at ask', async () => {
     const assetService = await fakeRegistryAssetService([
       await packToolPackageTarball(MANUS_DIR),
     ]);
-    const grants = await grantsFor(assetService, [assetRow("asset_1", true)], [
-      { name: "@corbits/manus-tools", version: "*" },
-    ]);
+    const grants = await grantsFor(
+      assetService,
+      [assetRow("asset_1", true)],
+      [{ name: "@corbits/manus-tools", version: "*" }],
+    );
     expect(
       grants.find((grant) => grant.resource.endsWith(":webhook_create"))
         ?.effect,
     ).toBe("ask");
     expect(
-      grants.find((grant) => grant.resource.endsWith(":create_slides"))
-        ?.effect,
+      grants.find((grant) => grant.resource.endsWith(":create_slides"))?.effect,
     ).toBe("allow");
     expect(
       grants.find((grant) => grant.resource.endsWith(":task_list"))?.effect,
@@ -116,17 +112,21 @@ describe("createToolGrantsForPins", () => {
       await packToolPackageTarball(MEMORY_DIR),
       await packToolPackageTarball(MANUS_DIR),
     ]);
-    const grants = await grantsFor(assetService, [assetRow("asset_1", true)], [
-      { name: "@corbits/memory-tools", version: "^1" },
-      { name: "@corbits/manus-tools", version: "*" },
-      { name: "@corbits/unknown-tools", version: "^1" },
-    ]);
+    const grants = await grantsFor(
+      assetService,
+      [assetRow("asset_1", true)],
+      [
+        { name: "@corbits/memory-tools", version: "^1" },
+        { name: "@corbits/manus-tools", version: "*" },
+        { name: "@corbits/unknown-tools", version: "^1" },
+      ],
+    );
     expect(
       grants.some((grant) => grant.resource.includes("memory-tools")),
     ).toBe(true);
-    expect(
-      grants.some((grant) => grant.resource.includes("manus-tools")),
-    ).toBe(true);
+    expect(grants.some((grant) => grant.resource.includes("manus-tools"))).toBe(
+      true,
+    );
     expect(grants.some((grant) => grant.resource.includes("unknown"))).toBe(
       false,
     );
@@ -146,9 +146,11 @@ describe("createToolGrantsForPins", () => {
 
   test("a tenant with no corbits-tools asset yields no grants, never throws", async () => {
     const assetService = await fakeRegistryAssetService([]);
-    const grants = await grantsFor(assetService, [], [
-      { name: "@corbits/memory-tools", version: "^1" },
-    ]);
+    const grants = await grantsFor(
+      assetService,
+      [],
+      [{ name: "@corbits/memory-tools", version: "^1" }],
+    );
     expect(grants).toEqual([]);
   });
 
@@ -156,8 +158,8 @@ describe("createToolGrantsForPins", () => {
     const assetService = await fakeRegistryAssetService([
       await packToolPackageTarball(MEMORY_DIR),
     ]);
-    expect(await grantsFor(assetService, [assetRow("asset_1", true)], [])).toEqual(
-      [],
-    );
+    expect(
+      await grantsFor(assetService, [assetRow("asset_1", true)], []),
+    ).toEqual([]);
   });
 });

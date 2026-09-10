@@ -48,9 +48,7 @@ export async function readToolSurfaceManifests(
   return manifests;
 }
 
-async function extractTarballPackageJSON(
-  bytes: Uint8Array,
-): Promise<unknown> {
+async function extractTarballPackageJSON(bytes: Uint8Array): Promise<unknown> {
   const extractDir = await mkdtemp(path.join(tmpdir(), "corbits-surface-"));
   try {
     const tarballPath = path.join(extractDir, "in.tgz");

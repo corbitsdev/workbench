@@ -56,7 +56,9 @@ describe("ToolSurfaceManifest", () => {
   test("accepts a skill-kind entry (manifest headroom)", () => {
     const manifest = ToolSurfaceManifest({
       ...valid,
-      surface: [{ qualifiedId: "@corbits/skills/s:skills_load", kind: "skill" }],
+      surface: [
+        { qualifiedId: "@corbits/skills/s:skills_load", kind: "skill" },
+      ],
     });
     expect(manifest).not.toBeInstanceOf(type.errors);
   });

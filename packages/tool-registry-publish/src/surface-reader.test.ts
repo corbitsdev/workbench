@@ -30,9 +30,9 @@ describe("readToolSurfaceManifests", () => {
     });
     expect(manifests).toHaveLength(1);
     expect(manifests[0]?.name).toBe("@corbits/memory-tools");
-    expect(
-      manifests[0]?.surface.map((entry) => entry.qualifiedId),
-    ).toContain("@corbits/memory-tools/memory:memory_add");
+    expect(manifests[0]?.surface.map((entry) => entry.qualifiedId)).toContain(
+      "@corbits/memory-tools/memory:memory_add",
+    );
     expect(manifests[0]?.surface.every((entry) => entry.kind === "tool")).toBe(
       true,
     );
@@ -55,9 +55,7 @@ describe("readToolSurfaceManifests", () => {
     // overkill; a truncated tarball is enough to prove the reader fails
     // loud rather than returning a partial list.
     const truncated = tarball.bytes.slice(0, 64);
-    const source = memorySource(
-      new Map([["tarballs/broken.tgz", truncated]]),
-    );
+    const source = memorySource(new Map([["tarballs/broken.tgz", truncated]]));
     await expect(
       readToolSurfaceManifests({ ...source, rootDir: "tarballs" }),
     ).rejects.toThrow();

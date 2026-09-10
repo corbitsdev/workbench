@@ -26,8 +26,7 @@ describe("SKILLS_TOOL_PACKAGE_PIN", () => {
     // tarball for the pinned package, not a source-tree import.
     const dir = CORBITS_TOOL_PACKAGE_DIRS.find(
       (candidate) =>
-        path.basename(candidate) ===
-        SKILLS_TOOL_PACKAGE_PIN.name.split("/")[1],
+        path.basename(candidate) === SKILLS_TOOL_PACKAGE_PIN.name.split("/")[1],
     );
     expect(dir).toBeDefined();
     const tarball = await packToolPackageTarball(dir as string);

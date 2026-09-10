@@ -200,11 +200,7 @@ async function packToolPackageTarballUncached(
   let bundleBytes: Uint8Array;
   try {
     const outfile = path.join(bundleStagingDir, BUNDLE_ENTRY_FILENAME);
-    await runBunBuild(
-      entryFile,
-      outfile,
-      manifest.name,
-    );
+    await runBunBuild(entryFile, outfile, manifest.name);
     bundleBytes = new Uint8Array(await readFile(outfile));
   } finally {
     await rm(bundleStagingDir, { recursive: true, force: true });

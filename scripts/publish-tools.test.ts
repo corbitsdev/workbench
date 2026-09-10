@@ -118,7 +118,11 @@ function args(
 describe("runPublishTools", () => {
   test("signs in, resolves the sole membership, and publishes onto it", async () => {
     const { api, calls } = stubApi([
-      principalsRow({ id: "tenant_genesis", slug: "genesis-root", name: "Genesis Root" }),
+      principalsRow({
+        id: "tenant_genesis",
+        slug: "genesis-root",
+        name: "Genesis Root",
+      }),
     ]);
     const puts: { method: string; path: string }[] = [];
     const result = await runPublishTools(args(api, undefined, puts));
@@ -126,8 +130,7 @@ describe("runPublishTools", () => {
     expect(
       calls.some(
         (call) =>
-          call.method === "POST" &&
-          call.path === "/api/auth/sign-in/email",
+          call.method === "POST" && call.path === "/api/auth/sign-in/email",
       ),
     ).toBe(true);
     expect(
@@ -149,17 +152,25 @@ describe("runPublishTools", () => {
 
   test("honors --tenant by slug", async () => {
     const { api, calls } = stubApi([
-      principalsRow({ id: "tenant_genesis", slug: "genesis-root", name: "Genesis Root" }),
+      principalsRow({
+        id: "tenant_genesis",
+        slug: "genesis-root",
+        name: "Genesis Root",
+      }),
     ]);
     await runPublishTools(args(api, "genesis-root"));
-    expect(
-      calls.some((call) => call.path.includes("tenant_genesis")),
-    ).toBe(true);
+    expect(calls.some((call) => call.path.includes("tenant_genesis"))).toBe(
+      true,
+    );
   });
 
   test("fails when --tenant matches no membership", async () => {
     const { api } = stubApi([
-      principalsRow({ id: "tenant_genesis", slug: "genesis-root", name: "Genesis Root" }),
+      principalsRow({
+        id: "tenant_genesis",
+        slug: "genesis-root",
+        name: "Genesis Root",
+      }),
     ]);
     await expect(runPublishTools(args(api, "nope"))).rejects.toThrow(
       /no tenant matching "nope"/,
@@ -168,7 +179,11 @@ describe("runPublishTools", () => {
 
   test("fails when the admin belongs to several tenants and no --tenant is given", async () => {
     const { api } = stubApi([
-      principalsRow({ id: "tenant_genesis", slug: "genesis-root", name: "Genesis Root" }),
+      principalsRow({
+        id: "tenant_genesis",
+        slug: "genesis-root",
+        name: "Genesis Root",
+      }),
       principalsRow({ id: "tenant_other", slug: "other", name: "Other" }),
     ]);
     await expect(runPublishTools(args(api))).rejects.toThrow(

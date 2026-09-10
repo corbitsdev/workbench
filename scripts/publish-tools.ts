@@ -115,7 +115,12 @@ const Args = type({
 async function main(): Promise<void> {
   const email = process.env["HUB_ADMIN_EMAIL"];
   const password = process.env["HUB_ADMIN_PASSWORD"];
-  if (email === undefined || email === "" || password === undefined || password === "") {
+  if (
+    email === undefined ||
+    email === "" ||
+    password === undefined ||
+    password === ""
+  ) {
     console.error(
       "publish-tools: set HUB_ADMIN_EMAIL and HUB_ADMIN_PASSWORD to an existing admin account, and start the stack with `bun run dev` first.",
     );
@@ -124,7 +129,7 @@ async function main(): Promise<void> {
   const raw = process.argv.slice(2);
   const tenantIndex = raw.indexOf("--tenant");
   const tenant =
-    tenantIndex >= 0 ? raw[tenantIndex + 1] ?? undefined : undefined;
+    tenantIndex >= 0 ? (raw[tenantIndex + 1] ?? undefined) : undefined;
   const parsed = Args({ tenant });
   if (parsed instanceof type.errors) {
     console.error(`publish-tools: ${parsed.summary}`);
