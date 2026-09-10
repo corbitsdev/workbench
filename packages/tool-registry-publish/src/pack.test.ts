@@ -77,9 +77,9 @@ describe("packToolPackageTarball", () => {
         const mod = (await import(bundlePath)) as Record<string, unknown>;
         const factories = Object.values(mod).filter(
           (value) =>
-            (typeof value === "function" || typeof value === "object") &&
-            value !== null &&
-            "id" in (value as object),
+            typeof value === "function" &&
+            typeof (value as { id?: unknown }).id === "string" &&
+            Array.isArray((value as { definitions?: unknown }).definitions),
         );
         expect(factories.length).toBeGreaterThan(0);
         if (!(surface instanceof type.errors)) {

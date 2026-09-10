@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { type } from "arktype";
 import * as tar from "tar";
+import { ToolSurfaceManifest, type ToolSurfaceEntry } from "./manifest";
 
 const BUNDLE_ENTRY_FILENAME = "tool.mjs";
 
@@ -126,6 +127,57 @@ async function runBunBuild(
   }
 }
 
+// The slice of an `AnnotatedToolFactory` export the surface enumeration
+// reads, checked by duck type rather than `instanceof` since the loaded
+// module crosses a dynamic `import()` boundary — the same shape
+// `describe.ts` read before the surface moved into the packed tarball.
+type Bundle = {
+  readonly id: string;
+  readonly definitions: readonly {
+    readonly name: string;
+    readonly approval?: "ask";
+  }[];
+};
+
+function isBundle(value: unknown): value is Bundle {
+  return (
+    typeof value === "function" &&
+    typeof (value as { id?: unknown }).id === "string" &&
+    Array.isArray((value as { definitions?: unknown }).definitions)
+  );
+}
+
+async function surfaceFor(
+  entryFile: string,
+  packageName: string,
+): Promise<ToolSurfaceEntry[]> {
+  const mod = (await import(entryFile)) as Record<string, unknown>;
+  const surface: ToolSurfaceEntry[] = [];
+  for (const value of Object.values(mod)) {
+    if (!isBundle(value)) continue;
+    for (const definition of value.definitions) {
+      surface.push({
+        qualifiedId: `${value.id}:${definition.name}`,
+        kind: "tool",
+        ...(definition.approval !== undefined
+          ? { approval: definition.approval }
+          : {}),
+      });
+    }
+  }
+  const manifest = ToolSurfaceManifest({
+    name: packageName,
+    version: "0.0.0",
+    surface,
+  });
+  if (manifest instanceof type.errors) {
+    throw new Error(
+      `packToolPackageTarball: ${packageName}'s tool surface failed validation: ${manifest.summary}`,
+    );
+  }
+  return manifest.surface;
+}
+
 async function packToolPackageTarballUncached(
   packageDir: string,
 ): Promise<PackedTarball> {
@@ -139,6 +191,9 @@ async function packToolPackageTarballUncached(
     );
   }
 
+  const entryFile = entryFileFor(manifest, packageDir);
+  const surface = await surfaceFor(entryFile, manifest.name);
+
   const bundleStagingDir = await mkdtemp(
     path.join(tmpdir(), "corbits-tools-bundle-"),
   );
@@ -146,7 +201,7 @@ async function packToolPackageTarballUncached(
   try {
     const outfile = path.join(bundleStagingDir, BUNDLE_ENTRY_FILENAME);
     await runBunBuild(
-      entryFileFor(manifest, packageDir),
+      entryFile,
       outfile,
       manifest.name,
     );
@@ -159,6 +214,7 @@ async function packToolPackageTarballUncached(
     name: manifest.name,
     version: manifest.version,
     interchange: { tools: `./${BUNDLE_ENTRY_FILENAME}` },
+    surface,
   };
 
   const stagingRoot = await mkdtemp(path.join(tmpdir(), "corbits-tools-pack-"));

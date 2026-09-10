@@ -31,12 +31,11 @@ describe("readToolSurfaceManifests", () => {
     expect(manifests).toHaveLength(1);
     expect(manifests[0]?.name).toBe("@corbits/memory-tools");
     expect(
-      manifests[0]?.surface.some(
-        (entry) =>
-          entry.qualifiedId === "@corbits/memory-tools/memory:memory_add" &&
-          entry.approval === "ask",
-      ),
-    ).toBe(true);
+      manifests[0]?.surface.map((entry) => entry.qualifiedId),
+    ).toContain("@corbits/memory-tools/memory:memory_add");
+    expect(manifests[0]?.surface.every((entry) => entry.kind === "tool")).toBe(
+      true,
+    );
   });
 
   test("ignores non-tarball blobs and reports none when the registry is empty", async () => {

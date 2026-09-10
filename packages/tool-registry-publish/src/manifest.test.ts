@@ -29,12 +29,11 @@ describe("ToolSurfaceManifest", () => {
   });
 
   test("rejects a surface with duplicate qualifiedIds", () => {
+    const [first, second] = valid.surface;
+    if (first === undefined || second === undefined) throw new Error("fixture");
     const manifest = ToolSurfaceManifest({
       ...valid,
-      surface: [
-        valid.surface[0],
-        { ...valid.surface[1], qualifiedId: valid.surface[0].qualifiedId },
-      ],
+      surface: [first, { ...second, qualifiedId: first.qualifiedId }],
     });
     expect(manifest).toBeInstanceOf(type.errors);
   });

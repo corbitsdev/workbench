@@ -15,6 +15,11 @@ export {
   tarballFilenameFor,
   type PackedTarball,
 } from "./pack";
+export { ToolSurfaceEntry, ToolSurfaceManifest } from "./manifest";
+export {
+  readToolSurfaceManifests,
+  type ToolSurfaceBlobSource,
+} from "./surface-reader";
 export {
   shouldPublishTarball,
   publishCorbitsToolsRegistry,
