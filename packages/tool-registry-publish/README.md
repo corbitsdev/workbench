@@ -24,9 +24,19 @@ for how a pin resolves through it).
   `package.json`, bundles its `"."` export with the `bun build` CLI
   (an isolated subprocess — an in-process `Bun.build()` call was
   observed to fail nondeterministically alongside other live `bun`
-  processes), and tars the result. Memoized per directory for a
-  process's lifetime, so concurrent or repeated calls never race two
-  bundler invocations against the same input.
+  processes), enumerates the bundled tool factories into a
+  `ToolSurfaceManifest` (`qualifiedId`/`kind`/optional `ask` approval,
+  duplicate-qualifiedId-rejecting, arktype-parsed), and tars the result
+  with that manifest written into the synthesized `package.json`.
+  Memoized per directory for a process's lifetime, so concurrent or
+  repeated calls never race two bundler invocations against the same
+  input.
+- `readToolSurfaceManifests` — reads those manifests back out of a
+  packed `tarballs/*.tgz` blob tree with injected `listBlobs`/`readBlob`
+  (the hub wires them to its launch-path `assetService` wrapper). The
+  hub's pinned-tool grants derive from this installed manifest — the
+  source-importing describer this replaces is gone, so the hub never
+  imports tool-package sources to grant.
 - `publishCorbitsToolsRegistry` — find-or-create the tenant's
   `corbits-tools` asset (409-tolerant, so two overlapping publish runs
   for the same tenant never both fail on the asset's own name
