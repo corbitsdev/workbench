@@ -6,11 +6,6 @@ export {
   tarballsCoverRequiredSeedPackages,
 } from "./registry";
 export {
-  describeCorbitsToolPackages,
-  type CorbitsToolPackageDescription,
-  type CorbitsToolPackageTool,
-} from "./describe";
-export {
   packToolPackageTarball,
   tarballFilenameFor,
   type PackedTarball,
