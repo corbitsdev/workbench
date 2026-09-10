@@ -216,9 +216,9 @@ export type CompleteCredentialArgs = CommonArgs &
  * against `expectedSlug` (the computed personal-bench slug) always wins.
  *
  * By default the match is strict: a mismatch resolves to `undefined`.
- * The boot seeder (`apps/hub/src/system-seed.ts`) depends on that — it
- * must keep throwing until the root bench is actually visible to the
- * admin, never seed onto the first principal that happens to be visible.
+ * Callers that must wait until a specific slug is visible — rather than
+ * acting on the first principal that happens to be listed — depend on
+ * that default.
  *
  * The connect-flow callers (`testAndPersistCredential`, the OAuth
  * duplicate-callback recovery `recentlyConnectedCredential`, and the

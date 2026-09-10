@@ -36,12 +36,12 @@ bun run dev
 ```
 
 `bun run reset` drops the schema and every on-disk asset directory
-`bun run dev` and its boot-time seeding created — skip it on a
+`bun run dev` created — skip it on a
 genuinely fresh checkout. `bun run dev` validates `.env`, confirms
 `DATABASE_URL` is reachable, applies pending migrations, builds the web
-UI, seeds the administrator account, and starts the hub and the web
-build — the hub then provisions and seeds the root
-tenant itself once it is serving (see
+UI, seeds the administrator account and root tenant, and starts the hub
+and the web build. An empty database is a valid hub: boot does not insert
+agents, tools, workflows, or skills (see
 [README.md](../README.md#running-locally) for exactly what it checks).
 Leave `ANTHROPIC_API_KEY` unset in `.env` for
 this walkthrough — the point is proving a bench with no hub-owned seed
@@ -106,9 +106,9 @@ The **assistant** default workflow pins the `@corbits/memory-tools` tool
 package (`workflows/assistant/src/index.ts`), and that pin only resolves
 once a `package-registry`-kind asset named `corbits-tools` carries its
 tarball (see `apps/hub/src/index.ts`'s `CORBITS_TOOLS_REGISTRY` comment).
-Boot-time seeding (`apps/hub/src/system-seed.ts`) publishes that asset onto
-the root tenant via `@corbits/tool-registry-publish` (bundles
-`@corbits/memory-tools` into a self-contained tarball and pushes it
+Hub boot does not publish that asset. Onboarding and explicit
+`@corbits/seeding` callers publish it via `@corbits/tool-registry-publish`
+(bundles `@corbits/memory-tools` into a self-contained tarball and pushes it
 through the hub's native asset REST routes). Descendants inherit it;
 `seedTenant` does not pack. Isolated
 tests run with no explicit tenant config so the walkthrough's personal

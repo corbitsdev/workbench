@@ -1,8 +1,10 @@
 # Seed reconciliation
 
 How workbench's automatic seeding converges on the shipped defaults
-without ever fighting a member. Every seed pass — a hub boot, an
-onboarding run, boot-time seeding — must satisfy four properties:
+without ever fighting a member. Every seed pass — an onboarding run or
+an explicit `@corbits/seeding` caller — must satisfy four properties.
+Hub production boot is not a seed pass: it does not insert agents,
+tools, workflows, or skills.
 
 1. **Idempotent restart** — re-running creates nothing twice.
 2. **Content convergence** — a changed shipped default updates the
@@ -47,7 +49,7 @@ answers 503 — never a 404, which would read as "no such template".
 - A member-created artifact sharing a template's title is never touched
   and never duplicated.
 
-## Default scheduled workflows (onboarding / boot-time seeding)
+## Default scheduled workflows (onboarding)
 
 Seed never POSTs `/routines`. Native `ScheduleTrigger` ticks digest;
 last-30-days-research stays a deployed workflow, not a wrapper row.
@@ -114,7 +116,7 @@ per entry rather than each hand-rolling a definition:
   `assistant` (seeded already) and `heartbeat` (test-only,
   `CATALOG_TEST_WORKFLOWS`) are never reachable through this route.
 
-## Default skills (boot-time seeding)
+## Default skills
 
 `plantDefaultSkills` (`packages/seeding/src/seed.ts`) plants each
 `DEFAULT_SKILLS` entry through `POST /api/tenants/:id/skills`, after
@@ -127,14 +129,14 @@ first checking `GET /api/tenants/:id/skills/:name`.
   "already exists" as done, not as a reason to abort the run the
   hub's own error advice told the operator to re-run.
 
-## Tool registry publish (boot-time seeding, onto the root tenant)
+## Tool registry publish
 
 `publishCorbitsToolsRegistry` (`packages/tool-registry-publish/src/publish.ts`)
 finds-or-creates the tenant's `corbits-tools` package-registry asset,
-then PUTs whatever tarball is missing. Boot-time seeding
-(`apps/hub/src/system-seed.ts`) calls this onto the root tenant so
-descendants inherit tarballs; the rest of seeding does not pack. Two
-properties keep a failed publish from stranding a
+then PUTs whatever tarball is missing. Onboarding and explicit
+`@corbits/seeding` callers publish onto a tenant so descendants inherit
+tarballs; `seedTenant` itself does not pack. Hub boot does not publish.
+Two properties keep a failed publish from stranding a
 usable-looking-but-empty asset:
 
 - `checkToolPackageFreshness` runs **before** the asset is ever
@@ -148,9 +150,9 @@ usable-looking-but-empty asset:
   a brand-new registry and pushes every package, which is what
   actually creates the repo's first commit. Repairing a tenant with
   this history is the same operation as publishing the registry for
-  the first time: restart the hub.
+  the first time: call `publishCorbitsToolsRegistry` again.
 
-## Workflow deployments (boot-time seeding)
+## Workflow deployments
 
 `ensureDeployment` (`packages/seeding/src/seed.ts`) treats a
 workflow's `workflow_run` deployment row as seed-owned state, but the

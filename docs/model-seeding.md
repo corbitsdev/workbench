@@ -16,9 +16,7 @@ API — never discovered at runtime:
 - **`packages/seeding/src/catalog-seed-data.ts` (`CATALOG_SEEDS`)** — one
   curated seed per supported credential provider: a provider row (its
   adapter plugin and base URL) and a small hand-picked model set. This is
-  what boot-time seeding (`apps/hub/src/system-seed.ts`) plants for the
-  operator's anthropic key and what
-  onboarding plants for whichever provider a person connects — including
+  what onboarding plants for whichever provider a person connects — including
   the OpenRouter PKCE connect
   (see [onboarding-openrouter-connect.md](onboarding-openrouter-connect.md)).
 - **`packages/seeding/src/seed.ts` (`seedCatalog`)** — walks one

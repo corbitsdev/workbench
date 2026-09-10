@@ -33,18 +33,13 @@ applies what hasn't already run.
 A workflow that pins a `@corbits/*` tool package (e.g. **assistant** pinning
 `@corbits/memory-tools`) resolves that pin from a `package-registry` asset
 (`CORBITS_TOOLS_REGISTRY`) carrying the package's tarball, built by
-`@corbits/tool-registry-publish`. Boot-time seeding (`apps/hub/src/system-seed.ts`)
-publishes that tarball onto the root tenant on every hub boot (descendants
-inherit it); the rest of seeding does not pack. After changing a tool
-package's source, bump its version, then restart the hub to republish:
-
-```sh
-bun run dev
-```
-
-This is safe to re-run. Changing a tool package's source requires bumping
-its `package.json` `version` (and any pin naming that version) before
-republishing — resolution and the sidecar's materialized store key on
+`@corbits/tool-registry-publish`. Hub boot does not publish that registry
+(or any other product state). `publishCorbitsToolsRegistry` packs onto a
+tenant when onboarding or an explicit `@corbits/seeding` caller asks;
+descendants inherit it, and `seedTenant` does not pack. After changing a
+tool package's source, bump its version, then publish onto the tenant that
+owns the registry — restarting the hub does not republish.
+Resolution and the sidecar's materialized store key on
 `name@version`, not on content, so republishing unchanged-version bytes
 never reaches a running or freshly-launched agent; `tool-registry-publish`
 refuses to overwrite an existing `name@version` with different content for

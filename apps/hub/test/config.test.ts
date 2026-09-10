@@ -264,23 +264,6 @@ describe("readHubConfig", () => {
     ).toEqual(["acme.example", "corp.example"]);
   });
 
-  test("the seed model is absent when ANTHROPIC_API_KEY is not set", () => {
-    const config = readHubConfig(validEnv);
-    expect(config.seedModel).toBeUndefined();
-  });
-
-  test("ANTHROPIC_API_KEY builds an anthropic seed model with defaults", () => {
-    const config = readHubConfig({
-      ...validEnv,
-      ANTHROPIC_API_KEY: "sk-ant-test",
-    });
-    expect(config.seedModel).toEqual({
-      provider: "anthropic",
-      model: "claude-sonnet-5",
-      apiKey: "sk-ant-test",
-    });
-  });
-
   test("huggingfaceOAuthClientId is absent by default", () => {
     expect(readHubConfig(validEnv).huggingfaceOAuthClientId).toBeUndefined();
   });
