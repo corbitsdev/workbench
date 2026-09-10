@@ -8,7 +8,9 @@
 // here is also what stops the two hooks depending on each other.
 
 import { useEffect, useMemo } from "react";
-import { putReadState } from "./api";
+import { reportError } from "@corbits/error-sink";
+import { useQueryClient } from "@tanstack/react-query";
+import { putReadState, workbenchesQueryKeyPrefix } from "./api";
 import type { MessageItem } from "./api";
 import { selectThreadFeed, threadAffordanceMeta } from "./thread-feed";
 import type { ThreadAffordanceMeta } from "./timeline";
@@ -51,6 +53,7 @@ export function useWorkbenchTimelineView(args: {
   readonly navigation: ThreadNavigation;
 }): WorkbenchTimelineView {
   const { tenantId, activeWorkbenchId, feed, navigation } = args;
+  const queryClient = useQueryClient();
   const { loadedMessages, rootThreadId, threads, feedStatus } = feed;
   const { openThreadId, openThread, pendingParentMessageId } = navigation;
 
@@ -87,13 +90,26 @@ export function useWorkbenchTimelineView(args: {
     void putReadState(tenantId, activeWorkbenchId, {
       lastSeenCreatedAt: last.createdAt,
       lastSeenId: last.id,
-    }).catch(() => undefined);
+    })
+      .then(() =>
+        queryClient.invalidateQueries({
+          queryKey: workbenchesQueryKeyPrefix(tenantId),
+        }),
+      )
+      .catch((error: unknown) => {
+        reportError(error, {
+          operation: "chat.markRead",
+          tenantId,
+          roomId: activeWorkbenchId,
+        });
+      });
   }, [
     tenantId,
     activeWorkbenchId,
     openThreadId,
     pendingParentMessageId,
     feedItems,
+    queryClient,
   ]);
 
   return {

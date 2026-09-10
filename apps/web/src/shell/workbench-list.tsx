@@ -26,6 +26,7 @@ import type { Workbench } from "@corbits/chat-ui";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ChatCircle,
+  Check,
   DotsThree,
   Hash,
   MagnifyingGlass,
@@ -102,7 +103,7 @@ export function renamePayload(
  */
 export type WorkbenchRowSignals = {
   readonly sharedLabel?: string;
-  readonly live?: boolean;
+  readonly live?: Workbench["live"];
   readonly time?: string;
   readonly unread?: number;
 };
@@ -125,7 +126,14 @@ export function workbenchRowSignals(
     ...(workbench.sharedLabel !== undefined
       ? { sharedLabel: workbench.sharedLabel }
       : {}),
-    ...(workbench.live !== undefined ? { live: workbench.live } : {}),
+    ...(workbench.live !== undefined
+      ? {
+          live:
+            isOpen && workbench.live === "reply-ready"
+              ? "idle"
+              : workbench.live,
+        }
+      : {}),
     ...(workbench.lastActivityAt !== undefined
       ? { time: formatRelativeTime(workbench.lastActivityAt) }
       : {}),
@@ -299,6 +307,12 @@ function WorkbenchRow({
     displayWorkbenchTitle(title, workbench.id) || CHAT_STRINGS.unnamedWorkbench;
   const { sharedLabel, live, time, unread } = signals;
   const hasUnread = typeof unread === "number" && unread > 0;
+  const liveLabel =
+    live === "working"
+      ? "Agent working"
+      : live === "reply-ready"
+        ? "Reply ready"
+        : "";
 
   return (
     <div
@@ -312,25 +326,37 @@ function WorkbenchRow({
         className="shell-ch-row"
         aria-current={active ? "true" : undefined}
         data-active={active ? "true" : undefined}
+        data-unread={hasUnread ? "true" : undefined}
         onClick={onSelect}
       >
-        {/* The workbench's own initial for multi-party channels, or
-            the Corbit avatar for agent DM conversations. */}
-        <span className="shell-ch-stack" aria-hidden="true">
+        <span className="shell-ch-avatar" data-live={live}>
           {workbench.kind === "chat" ? (
-            <span
-              data-agent="true"
-              className="!overflow-hidden !border-[1.5px] !border-background !bg-transparent !p-0"
-            >
-              <CorbitAvatar
-                size="sm"
-                ariaLabel={displayTitle}
-                className="!static !size-full"
-              />
+            <span aria-hidden="true">
+              <CorbitAvatar size="sm" ariaLabel={displayTitle} />
             </span>
           ) : (
-            <span>{displayTitle.slice(0, 1).toUpperCase()}</span>
+            <span className="shell-ch-initial" aria-hidden="true">
+              {displayTitle.slice(0, 1).toUpperCase()}
+            </span>
           )}
+          {live === "working" ? (
+            <span
+              className="shell-ch-orbit"
+              aria-hidden="true"
+              title="Agent working"
+            />
+          ) : live === "reply-ready" ? (
+            <span
+              className="shell-ch-completion"
+              aria-hidden="true"
+              title="Reply ready"
+            >
+              <Check aria-hidden="true" />
+            </span>
+          ) : null}
+          <span className="sr-only" aria-live="polite" aria-atomic="true">
+            {liveLabel}
+          </span>
         </span>
         <span className="shell-ch-meta">
           <span className="shell-ch-name-row">
@@ -346,10 +372,6 @@ function WorkbenchRow({
                 shared
               </Badge>
             ) : null}
-            {/* Live pulse only when no unread badge. */}
-            {live === true && !hasUnread ? (
-              <span className="shell-ch-live" title="Active" />
-            ) : null}
           </span>
           {workbench.preview !== undefined && workbench.preview !== "" ? (
             <span className="shell-ch-preview">{workbench.preview}</span>
@@ -359,7 +381,11 @@ function WorkbenchRow({
           {time !== undefined && time !== "" ? (
             <span className="shell-ch-time">{time}</span>
           ) : null}
-          {hasUnread ? <Badge tone="accent">{unread}</Badge> : null}
+          {hasUnread && live !== "reply-ready" ? (
+            <Badge tone="accent" className="shell-ch-unread-badge">
+              {unread}
+            </Badge>
+          ) : null}
         </span>
       </button>
       <div className="shell-ch-row-menu">

@@ -209,3 +209,57 @@ describe("WorkbenchList — pin visibility and order (CL-6657)", () => {
     expect(wraps[3]?.querySelector(".shell-ch-pin")).toBeNull();
   });
 });
+
+describe("WorkbenchList avatar activity", () => {
+  for (const activity of ["working", "reply-ready", "idle"] as const) {
+    test(`renders ${activity} without changing the message preview`, async () => {
+      stubFetch({
+        chats: [
+          {
+            id: "ch_myra",
+            title: "Myra",
+            kind: "chat",
+            pinned: false,
+            participants: [],
+            live: activity,
+            unreadCount: 1,
+            preview: "Here is the revised draft.",
+            lastActivityAt: new Date().toISOString(),
+          },
+        ],
+      });
+      const el = await mount();
+      const avatar = el.querySelector(".shell-ch-avatar");
+      const corbit = avatar?.querySelector('[data-corbit="true"]');
+      expect(corbit).not.toBeNull();
+      expect(corbit?.parentElement?.getAttribute("aria-hidden")).toBe("true");
+      expect(el.querySelector(".shell-ch-preview")?.textContent).toBe(
+        "Here is the revised draft.",
+      );
+      expect(el.querySelector(".shell-ch-live")).toBeNull();
+      expect(avatar?.querySelector('[aria-live="polite"]')?.textContent).toBe(
+        activity === "working"
+          ? "Agent working"
+          : activity === "reply-ready"
+            ? "Reply ready"
+            : "",
+      );
+      if (activity === "working") {
+        expect(avatar?.querySelector(".shell-ch-orbit")).not.toBeNull();
+      } else {
+        expect(avatar?.querySelector(".shell-ch-orbit")).toBeNull();
+      }
+      if (activity === "reply-ready") {
+        expect(avatar?.querySelector(".shell-ch-completion")).not.toBeNull();
+      } else {
+        expect(avatar?.querySelector(".shell-ch-completion")).toBeNull();
+      }
+      const unreadBadge = el.querySelector(".shell-ch-unread-badge");
+      if (activity === "reply-ready") {
+        expect(unreadBadge).toBeNull();
+      } else {
+        expect(unreadBadge?.textContent).toBe("1");
+      }
+    });
+  }
+});

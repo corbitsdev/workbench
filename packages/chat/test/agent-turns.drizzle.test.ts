@@ -19,6 +19,8 @@ import {
   createDrizzleAgentTurnStore,
 } from "../src/agent-turns";
 import { applyChatMigrations } from "../src/migrations";
+import { createDrizzleRoomMessageStore } from "../src/room-messages";
+import { listWorkbenchLiveState } from "../src/workbench-reply-activity";
 import { dbGate } from "../../../scripts/e2e/db-gate";
 
 function scratchUrlFor(e2eUrl: string): string {
@@ -238,6 +240,93 @@ describeIfDb("createDrizzleAgentTurnStore", () => {
       expect(
         await store.findRunningTurn({ ...input, childRunId: "turn__9" }),
       ).toBeUndefined();
+    } finally {
+      await sql.end();
+    }
+  });
+  test("bulk sidebar projection preserves running precedence, reply ownership and read state", async () => {
+    const sql = postgres(scratchUrl, { max: 1, onnotice: () => undefined });
+    try {
+      let now = Date.now();
+      const agentTurns = createDrizzleAgentTurnStore(drizzle(sql), {
+        now: () => now,
+      });
+      const roomMessages = createDrizzleRoomMessageStore(drizzle(sql));
+      const workbenchId = "run_sidebar";
+      const agentAddress = "sidebar@acme.example";
+      const readCursors = new Map<string, string>();
+      const input = {
+        tenantId: TENANT,
+        workbenchId,
+        agentAddress,
+        requestMessageIds: ["sidebar_request"],
+      };
+      const activity = async () =>
+        (
+          await listWorkbenchLiveState({
+            tenantId: TENANT,
+            workbenchIds: [workbenchId],
+            readCursors,
+            agentTurns,
+            roomMessages,
+          })
+        ).get(workbenchId);
+      const older = await agentTurns.startTurn({
+        ...input,
+        agentAddress: "older@acme.example",
+      });
+      const turn = await agentTurns.startTurn(input);
+      const reply = await roomMessages.insertMessage({
+        tenantId: TENANT,
+        workbenchId,
+        id: "sidebar_reply",
+        sender: { name: "Myra", address: agentAddress },
+        parts: [{ kind: "text", text: "The draft is ready." }],
+      });
+      await agentTurns.finishTurn({
+        tenantId: TENANT,
+        turnId: turn.id,
+        status: "completed",
+        replyMessageId: reply.id,
+      });
+      expect(await activity()).toBe("working");
+      await agentTurns.finishTurn({
+        tenantId: TENANT,
+        turnId: older.id,
+        status: "cancelled",
+      });
+      expect(await activity()).toBe("reply-ready");
+      readCursors.set(workbenchId, reply.createdAt);
+      expect(await activity()).toBe("idle");
+      const next = await agentTurns.startTurn(input);
+      await agentTurns.finishTurn({
+        tenantId: TENANT,
+        turnId: next.id,
+        status: "failed",
+      });
+      readCursors.clear();
+      expect(await activity()).toBe("idle");
+      await agentTurns.startTurn(input);
+      now = Date.now() + AGENT_TURN_STALE_MS + 60_000;
+      expect(await activity()).toBe("idle");
+      expect(
+        await agentTurns.listWorkbenchTurns({
+          tenantId: "other_tenant",
+          workbenchIds: [workbenchId],
+        }),
+      ).toEqual([]);
+      expect(
+        await agentTurns.listWorkbenchTurns({
+          tenantId: TENANT,
+          workbenchIds: [],
+        }),
+      ).toEqual([]);
+      expect(
+        await roomMessages.getMessages({
+          tenantId: "other_tenant",
+          messageIds: [reply.id],
+        }),
+      ).toEqual([]);
     } finally {
       await sql.end();
     }

@@ -12,6 +12,16 @@ reimplementing it in this repo.
 The shell has exactly one nav surface: the sidebar. There is no second nav
 column and no collapse affordance — it is always present, at a fixed width.
 
+Conversation rows keep a fixed avatar footprint and two compact text lines:
+the name with its timestamp aligned on the right, then the latest message
+preview. Selection uses a quiet neutral fill; the name stays in the normal
+foreground color. While an agent works, a thin orange orbit surrounds the
+avatar, including when that conversation is selected. A completed, unread
+agent reply replaces the orbit with a small green check labeled "Reply
+ready". Opening the conversation clears that check; idle, read, failed,
+and cancelled turns show no completion badge. Reduced motion keeps the
+working indicator as a static orange arc.
+
 Top to bottom:
 
 1. **Brand row** — logo mark and a "New workbench" button (`+`) that
