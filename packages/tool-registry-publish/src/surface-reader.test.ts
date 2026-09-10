@@ -1,6 +1,28 @@
 import { describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import * as tar from "tar";
 import { packToolPackageTarball } from "./pack";
 import { readToolSurfaceManifests } from "./surface-reader";
+
+/** A registry tarball published before manifests existed: a real tgz
+ * whose package.json parses but carries no `surface` key. */
+async function legacyTarball(): Promise<Uint8Array> {
+  const dir = await mkdtemp(path.join(tmpdir(), "legacy-pkg-"));
+  await mkdir(path.join(dir, "package"), { recursive: true });
+  await writeFile(
+    path.join(dir, "package", "package.json"),
+    JSON.stringify({
+      name: "@corbits/pre-manifest-legacy",
+      version: "1.0.0",
+      interchange: { tools: {} },
+    }),
+  );
+  const out = path.join(dir, "legacy.tgz");
+  await tar.create({ cwd: dir, file: out, gzip: true }, ["package"]);
+  return new Uint8Array(await readFile(out));
+}
 
 function memorySource(files: Map<string, Uint8Array>) {
   return {
@@ -47,17 +69,37 @@ describe("readToolSurfaceManifests", () => {
     ).toEqual([]);
   });
 
-  test("rejects a tarball whose package.json is not a valid manifest", async () => {
+  test("skips a tarball whose package.json is not a valid manifest", async () => {
     const tarball = await packToolPackageTarball(
       new URL("../../memory-tools", import.meta.url).pathname,
     );
     // Corrupt the packaged manifest by re-packing a tampered file is
-    // overkill; a truncated tarball is enough to prove the reader fails
-    // loud rather than returning a partial list.
+    // overkill; a truncated tarball is enough to prove the reader skips
+    // the blob instead of failing the whole read. Registries published
+    // before manifests existed hold such blobs, and shouldPublishTarball
+    // never re-uploads an existing name@version to heal them.
     const truncated = tarball.bytes.slice(0, 64);
     const source = memorySource(new Map([["tarballs/broken.tgz", truncated]]));
-    await expect(
-      readToolSurfaceManifests({ ...source, rootDir: "tarballs" }),
-    ).rejects.toThrow();
+    expect(
+      await readToolSurfaceManifests({ ...source, rootDir: "tarballs" }),
+    ).toEqual([]);
+  });
+
+  test("returns the valid manifests and skips the manifest-less legacy ones", async () => {
+    const tarball = await packToolPackageTarball(
+      new URL("../../memory-tools", import.meta.url).pathname,
+    );
+    const source = memorySource(
+      new Map([
+        [`tarballs/${tarball.filename}`, tarball.bytes],
+        ["tarballs/legacy.tgz", await legacyTarball()],
+      ]),
+    );
+    const manifests = await readToolSurfaceManifests({
+      ...source,
+      rootDir: "tarballs",
+    });
+    expect(manifests).toHaveLength(1);
+    expect(manifests[0]?.name).toBe("@corbits/memory-tools");
   });
 });
