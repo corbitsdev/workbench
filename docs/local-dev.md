@@ -39,8 +39,12 @@ A workflow that pins a `@corbits/*` tool package (e.g. **assistant** pinning
 tenant when onboarding or an explicit `@corbits/seeding` caller asks;
 descendants inherit it, and `seedTenant` does not pack. After changing a
 tool package's source, bump its version, then publish onto the tenant that
-owns the registry — restarting the hub does not republish.
-Resolution and the sidecar's materialized store key on
+owns the registry — restarting the hub does not republish. The operator
+path is `bun run publish-tools` (with `HUB_ADMIN_EMAIL`/`HUB_ADMIN_PASSWORD`
+set, and `--tenant <id-or-slug>` when the admin belongs to more than one
+tenant): it signs in, resolves the target tenant, and installs the
+registry onto that already-existing tenant over the hub's native asset
+routes. Resolution and the sidecar's materialized store key on
 `name@version`, not on content, so republishing unchanged-version bytes
 never reaches a running or freshly-launched agent; `tool-registry-publish`
 refuses to overwrite an existing `name@version` with different content for

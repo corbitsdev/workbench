@@ -11,8 +11,9 @@ export type PinnedToolGrantDeclaration = {
 };
 
 export type ToolGrantsForPins = (
+  tenantId: string,
   pins: readonly ToolPackagePin[],
-) => readonly PinnedToolGrantDeclaration[];
+) => Promise<readonly PinnedToolGrantDeclaration[]>;
 
 export type McpCredentialBindingsFor = (
   tenantId: string,

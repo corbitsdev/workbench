@@ -4,9 +4,13 @@
 // a definition pinning skills carried a pin the corbits-tools registry
 // could never resolve at launch.
 import { describe, expect, test } from "bun:test";
+import path from "node:path";
 import type { DB } from "@intx/db";
 import type { AssetService } from "@intx/hub-sessions";
-import { describeCorbitsToolPackages } from "@corbits/tool-registry-publish";
+import {
+  CORBITS_TOOL_PACKAGE_DIRS,
+  packToolPackageTarball,
+} from "@corbits/tool-registry-publish";
 import {
   buildAgentDefinitionWorkflow,
   createAgentDefinitionCore,
@@ -18,12 +22,16 @@ import { createInMemoryDefinitionSkillsStore } from "./skills-store";
 
 describe("SKILLS_TOOL_PACKAGE_PIN", () => {
   test("resolves through the corbits-tools registry", async () => {
-    const descriptions = await describeCorbitsToolPackages();
-    const match = descriptions.find(
-      (description) => description.name === SKILLS_TOOL_PACKAGE_PIN.name,
+    // Assert against what the registry actually carries: the packed
+    // tarball for the pinned package, not a source-tree import.
+    const dir = CORBITS_TOOL_PACKAGE_DIRS.find(
+      (candidate) =>
+        path.basename(candidate) === SKILLS_TOOL_PACKAGE_PIN.name.split("/")[1],
     );
-    expect(match).toBeDefined();
-    expect(match?.version).toBe(SKILLS_TOOL_PACKAGE_PIN.version);
+    expect(dir).toBeDefined();
+    const tarball = await packToolPackageTarball(dir as string);
+    expect(tarball.name).toBe(SKILLS_TOOL_PACKAGE_PIN.name);
+    expect(tarball.version).toBe(SKILLS_TOOL_PACKAGE_PIN.version);
   });
 });
 

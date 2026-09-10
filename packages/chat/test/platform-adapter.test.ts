@@ -905,7 +905,7 @@ describe("createHubChatPlatform", () => {
     const eventCollectors = createFakeEventCollectors();
 
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger,
       sidecarRouter,
@@ -984,7 +984,7 @@ describe("createHubChatPlatform", () => {
     const eventCollectors = createFakeEventCollectors();
 
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger,
       sidecarRouter,
@@ -1050,7 +1050,7 @@ describe("createHubChatPlatform", () => {
     const sidecarRouter = createFakeSidecarRouter();
 
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger,
       sidecarRouter,
@@ -1128,7 +1128,7 @@ describe("createHubChatPlatform", () => {
     const sidecarRouter = createFakeSidecarRouter();
 
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger,
       sidecarRouter,
@@ -1199,7 +1199,7 @@ describe("createHubChatPlatform", () => {
     };
 
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger,
       sidecarRouter: createFakeSidecarRouter(),
@@ -1267,7 +1267,7 @@ describe("createHubChatPlatform", () => {
     const sidecarRouter = createFakeSidecarRouter();
 
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger,
       sidecarRouter,
@@ -1327,7 +1327,7 @@ describe("createHubChatPlatform", () => {
     const eventCollectors = createFakeEventCollectors();
 
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger,
       sidecarRouter,
@@ -1397,7 +1397,7 @@ describe("createHubChatPlatform", () => {
       },
     });
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
@@ -1465,7 +1465,7 @@ describe("createHubChatPlatform", () => {
       },
     });
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
@@ -1489,7 +1489,7 @@ describe("createHubChatPlatform", () => {
   test("refuses to mint the platform when credentialCipher is missing", () => {
     expect(() =>
       createHubChatPlatform({
-        toolGrantsForPins: () => [],
+        toolGrantsForPins: async () => [],
         db: {} as never,
         runTrigger: {} as never,
         sidecarRouter: {} as never,
@@ -1502,7 +1502,7 @@ describe("createHubChatPlatform", () => {
   test("refuses to mint the platform when credentialCipher has the wrong shape", () => {
     expect(() =>
       createHubChatPlatform({
-        toolGrantsForPins: () => [],
+        toolGrantsForPins: async () => [],
         db: {} as never,
         runTrigger: {} as never,
         sidecarRouter: {} as never,
@@ -1520,7 +1520,7 @@ describe("createHubChatPlatform", () => {
     await expect(
       (async () => {
         const platform = createHubChatPlatform({
-          toolGrantsForPins: () => [],
+          toolGrantsForPins: async () => [],
           db: {} as never,
           runTrigger: {} as never,
           sidecarRouter: {} as never,
@@ -1558,7 +1558,7 @@ describe("createHubChatPlatform", () => {
       tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
     });
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter(),
@@ -1610,7 +1610,7 @@ describe("createHubChatPlatform", () => {
     });
 
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
@@ -1682,7 +1682,7 @@ describe("createHubChatPlatform", () => {
     });
 
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
@@ -1750,7 +1750,7 @@ describe("createHubChatPlatform", () => {
     });
 
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
@@ -1779,7 +1779,7 @@ describe("createHubChatPlatform", () => {
       tenantRow: { id: "ten_1", domain: "ten1.workbench.test" },
     });
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter(),
@@ -1823,7 +1823,7 @@ describe("createHubChatPlatform", () => {
       },
     });
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
@@ -1872,7 +1872,7 @@ describe("createHubChatPlatform", () => {
       wireProjectionsByDefinitionId: { wfd_echo: NO_MODEL_PROJECTION },
     });
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
@@ -1914,7 +1914,7 @@ describe("createHubChatPlatform", () => {
       wireProjectionsByDefinitionId: { wfd_echo: NO_MODEL_PROJECTION },
     });
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
@@ -1965,7 +1965,7 @@ describe("createHubChatPlatform", () => {
       ],
     });
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter(),
@@ -1997,7 +1997,7 @@ describe("createHubChatPlatform", () => {
     const sidecarRouter = createFakeSidecarRouter();
 
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger,
       sidecarRouter,
@@ -2114,7 +2114,7 @@ describe("createHubChatPlatform", () => {
       const eventCollectors = createFakeEventCollectors();
 
       const platform = createPlatform({
-        toolGrantsForPins: () => [],
+        toolGrantsForPins: async () => [],
         db: db as never,
         runTrigger,
         sidecarRouter,
@@ -2203,7 +2203,7 @@ describe("createHubChatPlatform", () => {
       const eventCollectors = createFakeEventCollectors();
 
       const platform = createPlatform({
-        toolGrantsForPins: () => [],
+        toolGrantsForPins: async () => [],
         db: db as never,
         runTrigger,
         sidecarRouter,
@@ -2268,7 +2268,7 @@ describe("createHubChatPlatform", () => {
       });
 
       const platform = createPlatform({
-        toolGrantsForPins: () => [],
+        toolGrantsForPins: async () => [],
         db: db as never,
         runTrigger: createFakeRunTrigger(),
         sidecarRouter,
@@ -2332,7 +2332,7 @@ describe("createHubChatPlatform", () => {
       });
 
       const platform = createPlatform({
-        toolGrantsForPins: () => [],
+        toolGrantsForPins: async () => [],
         db: db as never,
         runTrigger: createFakeRunTrigger(),
         sidecarRouter,
@@ -2398,7 +2398,7 @@ describe("createHubChatPlatform", () => {
       });
 
       const platform = createPlatform({
-        toolGrantsForPins: () => [],
+        toolGrantsForPins: async () => [],
         db: db as never,
         runTrigger: createFakeRunTrigger(),
         sidecarRouter,
@@ -2441,7 +2441,7 @@ describe("createHubChatPlatform", () => {
           definitionId: "wfd_workbench1",
         });
         createPlatform({
-          toolGrantsForPins: () => [],
+          toolGrantsForPins: async () => [],
           db: db as never,
           runTrigger: createFakeRunTrigger(),
           sidecarRouter: createFakeSidecarRouter(),
@@ -2474,7 +2474,7 @@ describe("createHubChatPlatform", () => {
           definitionId: "wfd_workbench1",
         });
         createPlatform({
-          toolGrantsForPins: () => [],
+          toolGrantsForPins: async () => [],
           db: db as never,
           runTrigger: createFakeRunTrigger(),
           sidecarRouter: createFakeSidecarRouter(),
@@ -2520,7 +2520,7 @@ describe("createHubChatPlatform", () => {
       });
       const runTrigger = createFakeRunTrigger();
       const platform = createPlatform({
-        toolGrantsForPins: () => [],
+        toolGrantsForPins: async () => [],
         db: db as never,
         runTrigger,
         sidecarRouter: createFakeSidecarRouter({
@@ -2589,7 +2589,7 @@ describe("createHubChatPlatform", () => {
 
       const runTrigger = createFakeRunTrigger();
       const platform = createPlatform({
-        toolGrantsForPins: () => [],
+        toolGrantsForPins: async () => [],
         db: db as never,
         runTrigger,
         sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
@@ -2651,7 +2651,7 @@ describe("createHubChatPlatform", () => {
 
       const runTrigger = createFakeRunTrigger();
       const platform = createPlatform({
-        toolGrantsForPins: () => [],
+        toolGrantsForPins: async () => [],
         db: db as never,
         runTrigger,
         sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
@@ -2674,7 +2674,7 @@ describe("createHubChatPlatform", () => {
         definitionId: "wfd_workbench1",
       });
       const platform = createPlatform({
-        toolGrantsForPins: () => [],
+        toolGrantsForPins: async () => [],
         db: db as never,
         runTrigger: createFakeRunTrigger(),
         sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
@@ -2811,7 +2811,7 @@ describe("createHubChatPlatform", () => {
       };
 
       const platform = createPlatform({
-        toolGrantsForPins: () => [],
+        toolGrantsForPins: async () => [],
         db: db as never,
         runTrigger,
         sidecarRouter,
@@ -2902,7 +2902,7 @@ describe("createHubChatPlatform", () => {
     test("recomputes and persists the folded body from the definition's current projection", async () => {
       const db = buildRefreshableDb();
       const platform = createPlatform({
-        toolGrantsForPins: () => [],
+        toolGrantsForPins: async () => [],
         db: db as never,
         runTrigger: createFakeRunTrigger(),
         sidecarRouter: createFakeSidecarRouter(),
@@ -2952,7 +2952,7 @@ describe("createHubChatPlatform", () => {
       });
       const runTrigger = createFakeRunTrigger();
       const platform = createPlatform({
-        toolGrantsForPins: () => [],
+        toolGrantsForPins: async () => [],
         db: db as never,
         runTrigger,
         sidecarRouter: createFakeSidecarRouter({ routableAddresses: [] }),
@@ -3049,7 +3049,7 @@ describe("createHubChatPlatform", () => {
         },
       });
       const platform = createPlatform({
-        toolGrantsForPins: () => [],
+        toolGrantsForPins: async () => [],
         db: db as never,
         runTrigger: createFakeRunTrigger(),
         sidecarRouter: createFakeSidecarRouter(),
@@ -3174,7 +3174,7 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
       routableAddresses: opts.routable ? ["run_stale@ten1.workbench.test"] : [],
     });
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger: createFakeRunTrigger(),
       sidecarRouter,
@@ -3252,7 +3252,7 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
     });
     const runTrigger = createFakeRunTrigger();
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger,
       sidecarRouter: createFakeSidecarRouter({
@@ -3339,7 +3339,7 @@ describe("createHubChatPlatform stale-definition reconciliation", () => {
       },
     });
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter({
@@ -3404,7 +3404,7 @@ describe("createHubChatPlatform relaunch sweep", () => {
     const runTrigger = createFakeRunTrigger();
     const notices: unknown[] = [];
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger,
       // Routable, and dead anyway: that combination is exactly what the
@@ -3616,7 +3616,7 @@ describe("createHubChatPlatform inference-source rotation reconciliation", () =>
       },
     });
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter({
@@ -3845,7 +3845,7 @@ describe("createHubChatPlatform pinned-tool-package connect reconciliation", () 
       },
     });
     const platform = createPlatform({
-      toolGrantsForPins: () => [],
+      toolGrantsForPins: async () => [],
       db: db as never,
       runTrigger: createFakeRunTrigger(),
       sidecarRouter: createFakeSidecarRouter({

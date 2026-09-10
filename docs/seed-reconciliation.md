@@ -136,6 +136,13 @@ finds-or-creates the tenant's `corbits-tools` package-registry asset,
 then PUTs whatever tarball is missing. Onboarding and explicit
 `@corbits/seeding` callers publish onto a tenant so descendants inherit
 tarballs; `seedTenant` itself does not pack. Hub boot does not publish.
+The operator-facing install path is `bun run publish-tools`
+(`scripts/publish-tools.ts`), which signs an existing admin in and
+publishes onto an already-existing tenant — the same find-or-create,
+409-tolerant asset flow, never a new provisioning path. Each packed
+tarball's `package.json` also carries the `ToolSurfaceManifest` the
+hub reads back (`readToolSurfaceManifests`) to mint pinned-tool grants,
+so grants always describe the bytes actually installed on the tenant.
 Two properties keep a failed publish from stranding a
 usable-looking-but-empty asset:
 

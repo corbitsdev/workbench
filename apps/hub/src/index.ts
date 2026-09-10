@@ -16,6 +16,7 @@ import {
   createSidecarAllocationStore,
   createSignalCorrelationStore,
   createWorkflowRunDispatchStore,
+  listAssetsForTenant,
   listVisibleOfferings,
   resolveCredentialByName,
   resolveCredentialRequirement,
@@ -360,7 +361,6 @@ import { type Context, Hono, type Next } from "hono";
 import { upgradeWebSocket, websocket } from "hono/bun";
 import {
   CORBITS_TOOLS_REGISTRY,
-  describeCorbitsToolPackages,
   publishCorbitsToolsRegistry,
 } from "@corbits/tool-registry-publish";
 import {
@@ -834,20 +834,6 @@ export async function createHub(config: HubConfig) {
     },
   };
   const hubPublicKey = hexEncode(signingKey.publicKey);
-  // CL-6149: a launch's pinned tool packages (`toolPackagePins`) carry
-  // no grants of their own — the deploy-time capability walk
-  // (`vendor/intx/workflow-deploy/src/capability-walk.ts`) only derives
-  // `tool:` grants for inline tool factories, so a pinned package's
-  // tools failed every call closed with "No matching grants". Every
-  // `@corbits/*-tools` package's namespaced tool ids and approval marks
-  // are read once here (`describeCorbitsToolPackages`), so
-  // `toolGrantsForPins` — the port `createHubChatPlatform`'s
-  // `CreateHubChatPlatformDeps` is built with — can synchronously turn a
-  // launch's pins into the `tool:<qualifiedId>` grants minted against
-  // the run's own principal.
-  const toolGrantsForPins = createToolGrantsForPins(
-    await describeCorbitsToolPackages(),
-  );
   // Same owning check GET /connections uses — see
   // `@corbits/connections`' `workflow-connection-routes.ts` and the
   // `createWorkflowConnectionRoutes` wiring below. Not
@@ -1063,6 +1049,18 @@ export async function createHub(config: HubConfig) {
   const launchCaches = createLaunchCaches({
     assetService,
     repoStore: agentRepoStore.repoStore,
+  });
+  // CL-6149: a launch's pinned tool packages (`toolPackagePins`) carry
+  // no grants of their own — the deploy-time capability walk
+  // (`vendor/intx/workflow-deploy/src/capability-walk.ts`) only derives
+  // `tool:` grants for inline tool factories. `toolGrantsForPins` — the
+  // port `createHubChatPlatform`'s `CreateHubChatPlatformDeps` is built
+  // with — turns a launch's pins into `tool:<qualifiedId>` grants read
+  // from the tenant-resolved `corbits-tools` asset's packed manifests
+  // (CL-7582), through the same cached launch-path read seam above.
+  const toolGrantsForPins = createToolGrantsForPins({
+    listAssets: (tenantId, kind) => listAssetsForTenant(db, tenantId, kind),
+    assetService: launchCaches.assetService,
   });
   const launchAgentRepoStore: AgentRepoStore = {
     writeDeployTree: agentRepoStore.writeDeployTree,
