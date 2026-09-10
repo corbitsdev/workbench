@@ -112,10 +112,11 @@ bun run reset
 `bun run reset` drops the platform database schema and removes the hub's
 on-disk asset directory (which also holds provisioned sidecar state).
 Nothing is recreated until the next `bun run dev` — that recreates the
-schema and, once the hub is serving again, ensures the administrator
-account and root tenant so you can sign in. It does not insert agents,
-tools, workflows, or skills. Product state arrives through onboarding
-and explicit seed callers.
+schema. Hub boot itself inserts no users or tenants. Local `bun run
+dev` may then sign up the administrator through the same auth HTTP API
+the UI uses, so you can sign in. It does not insert agents, tools,
+workflows, or skills. Product state arrives through onboarding and
+explicit seed callers.
 
 It refuses to run against anything but a local `DATABASE_URL` (localhost,
 127.0.0.1, or `::1`) — there is no override, since the schema drop is

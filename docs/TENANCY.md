@@ -42,7 +42,7 @@ root and personal-bench parenting moves under it. Leftover
 and tells the operator to set `WORKBENCH_DEFAULT_TENANT` (or remove
 the stale key for the default slug).
 
-A freshly ensured root has no `access_policy` row yet, so signup falls
+A freshly minted root has no `access_policy` row yet, so signup falls
 back to `WORKBENCH_SIGNUP` until Settings → People → "Who can join"
 writes one. This cutover does not migrate policy rows from a previous
 operator tenant.
@@ -50,8 +50,8 @@ operator tenant.
 ### The 0→1 contract (first signup is genesis)
 
 On a hub that starts with **zero tenants and zero users** — the
-`skipEnsureDefaultTenant` seam, or any deployment that opts out of
-boot-time root creation — nobody has to pre-seed an admin:
+default after boot, which never mints a root — nobody has to pre-seed
+an admin:
 
 - The sign-up/email route admits the very first signup even when
   `WORKBENCH_SIGNUP=closed` (the empty-hub exception in
