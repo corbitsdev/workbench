@@ -24,7 +24,7 @@
 // carrying its tarball. CL-7071 moved that publish off `seedTenant`
 // onto `workbench setup` (the root tenant; descendants inherit). The
 // connect flow runs on the genesis root itself, so an explicit
-// `publishCorbitsToolsRegistry` hop onto the root stands in for
+// `runPublishTools` hop onto the root stands in for
 // setup, then `ensureSeeded` deploys without packing.
 //
 // Stubbing note: onboarding's own `POST /api/onboarding/complete` route
@@ -62,9 +62,9 @@ import {
   createGitWorkflowPusher,
   DEFAULT_WORKFLOWS,
   isLiveDeploymentStatus,
-  publishCorbitsToolsRegistry,
   seedTenant,
 } from "../../packages/seeding/src/index.ts";
+import { runPublishTools } from "../publish-tools.ts";
 import {
   createHubAPI,
   parseAs,
@@ -391,19 +391,24 @@ describe.skipIf(databaseUrl === undefined)(
       }
 
       // CL-7071: seedTenant/ensureSeeded no longer pack. The connect
-      // flow runs on the genesis root itself, so publish
-      // `corbits-tools` onto the root the way `workbench setup` does.
-      // Then ensureSeeded deploys assistant without packing.
+      // flow runs on the genesis root itself, so install `corbits-tools`
+      // onto that already-existing tenant with the publish-tools CLI —
+      // the same sign-in → tenant resolve → publish path an operator
+      // runs (`bun run publish-tools`) — rather than calling the
+      // publisher with a privileged cookie jar directly. Then
+      // ensureSeeded deploys assistant without packing.
       await hop(
-        "publish corbits-tools onto the provisioned root bench (setup's job, not seed's)",
+        "publish-tools installs corbits-tools onto the provisioned root bench (setup's job, not seed's)",
         async () => {
-          await publishCorbitsToolsRegistry({
-            api: hubApi,
-            cookies: admin.cookies,
+          const result = await runPublishTools({
             hubUrl: hub.baseUrl,
-            tenantId: tenant.tenantId,
+            email: "alice@example.com",
+            password: "password123",
+            tenant: provisioned.tenantSlug,
             log: () => undefined,
           });
+          expect(result.success).toBe(true);
+          expect(result.summaries.length).toBeGreaterThan(0);
         },
       );
 
