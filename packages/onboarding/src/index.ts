@@ -3,6 +3,13 @@ export {
   provisionPersonalTenantIfNeeded,
 } from "./provision";
 export type { ProvisionArgs, ProvisionResult } from "./provision";
+export { genesisOrJoinHubSignup, ProvisionError } from "./genesis";
+export type {
+  GenesisOrJoinArgs,
+  GenesisOrJoinResult,
+  HubSignupTenancy,
+  ProvisionErrorKind,
+} from "./genesis";
 export {
   completeCredentialSetup,
   findPersonalTenant,

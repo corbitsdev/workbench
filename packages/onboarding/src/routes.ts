@@ -20,7 +20,6 @@ import {
 import {
   inferenceCredentialName,
   SETUP_AGENT_ASSET_NAME,
-  type ModelSource,
   type WorkflowPusher,
 } from "@corbits/seeding";
 import {
@@ -44,6 +43,8 @@ import {
   ProvisionError,
   seededWorkflowStatus,
 } from "./provision";
+
+import type { HubSignupTenancy } from "./genesis";
 
 import {
   ensureSeeded,
@@ -137,8 +138,13 @@ const ProvisionBody = type({
 
 export type CreateOnboardingRoutesDeps = {
   hubUrl: string;
-  operatorTenantId?: string;
-  seedModel?: ModelSource;
+  /** Slug for the genesis tenant the first signup on an empty hub
+   * mints; later signups join the existing root and never read it. */
+  defaultTenantSlug: string;
+  /** Hub tenancy reads/writes for the genesis-or-join decision — see
+   * ./genesis.ts's `HubSignupTenancy`. Production wiring is
+   * `createHubSignupTenancy` in apps/hub/src/signup-tenancy.ts. */
+  tenancy: HubSignupTenancy;
   pushWorkflow: WorkflowPusher;
   log: (line: string) => void;
   /** Error-level sibling of `log`: every server-side failure path in
@@ -442,17 +448,13 @@ export function createOnboardingRoutes(
       >[0] = {
         api,
         cookies,
-        hubUrl: deps.hubUrl,
         userId: user.id,
         userEmail: user.email,
         userEmailVerified: user.emailVerified,
-        pushWorkflow: deps.pushWorkflow,
+        defaultTenantSlug: deps.defaultTenantSlug,
+        tenancy: deps.tenancy,
         log: deps.log,
       };
-      if (deps.operatorTenantId !== undefined)
-        provisionArgs.operatorTenantId = deps.operatorTenantId;
-      if (deps.seedModel !== undefined)
-        provisionArgs.seedModel = deps.seedModel;
       if (body?.name !== undefined) provisionArgs.displayName = body.name;
       if (deps.accessPolicy !== undefined)
         provisionArgs.accessPolicy = deps.accessPolicy;

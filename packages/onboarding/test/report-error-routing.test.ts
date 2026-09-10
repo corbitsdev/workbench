@@ -37,6 +37,17 @@ const pendingSeedStore = createInMemoryPendingSeedStore(
   createNoopCredentialCipher(),
 );
 
+// These tests never exercise the genesis-or-join join path — the stub
+// satisfies the required tenancy wiring without standing up a DB.
+const emptyHubTenancy = {
+  countUsers: async () => 0,
+  countTenants: async () => 0,
+  findRootTenant: async () => null,
+  addActiveMember: async () => {
+    throw new Error("these suites never exercise the join path");
+  },
+};
+
 const asUser: MiddlewareHandler<AppEnv> = async (c, next) => {
   c.set("user", { id: "user_1", email: "user_1@example.com" } as never);
   await next();
@@ -52,6 +63,8 @@ function mountAuthenticated(routes: Hono<AppEnv>): Hono<AppEnv> {
 describe("routes.ts routes caught errors through reportError", () => {
   test("a failure with no tenant known yet reports operation + userId, no tenantId", async () => {
     const routes = createOnboardingRoutes({
+      tenancy: emptyHubTenancy,
+      defaultTenantSlug: "workbench",
       hubUrl: "http://127.0.0.1:0",
       pushWorkflow: async () => ({
         outcome: "pushed" as const,
@@ -116,6 +129,8 @@ describe("routes.ts routes caught errors through reportError", () => {
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
       const routes = createOnboardingRoutes({
+        tenancy: emptyHubTenancy,
+        defaultTenantSlug: "workbench",
         hubUrl: `http://localhost:${server.port}`,
         pushWorkflow: async () => ({
           outcome: "pushed" as const,
@@ -262,6 +277,8 @@ describe("recentlyConnectedCredential reports through reportError and still find
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
     try {
       const routes = createOnboardingRoutes({
+        tenancy: emptyHubTenancy,
+        defaultTenantSlug: "workbench",
         hubUrl: `http://localhost:${server.port}`,
         pushWorkflow: async () => ({
           outcome: "pushed" as const,
