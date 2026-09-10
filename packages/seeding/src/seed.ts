@@ -2276,7 +2276,7 @@ export async function seedCatalog(
   } else {
     log(
       `catalog models for ${seed.provider.name} seeded without a credential; ` +
-        `no workbench or workflow can launch against them until a ${seed.provider.name} API key is set — set it in the hub's own environment and restart (the env-key auto-plant, CL-6101, then plants it with no other step), or set it here and re-run: workbench seed`,
+        `no workbench or workflow can launch against them until a ${seed.provider.name} API key is connected — connect one in the UI's provider step, or set it here and re-run: workbench seed`,
     );
     return {
       hasCompletionCapableModel: hasCompletionCapableModel(

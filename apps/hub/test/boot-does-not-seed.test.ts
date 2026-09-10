@@ -384,22 +384,17 @@ describeIfDb("boot with provider env vars plants nothing (CL-7579)", () => {
       expect(provision.status).toBe(200);
       await genesis.close();
 
-      const ollama = fakeOllama();
-      try {
-        const hub = await createHub({
-          ...baseConfig,
-          hubDataDir: path.join(root, "data-2"),
-        });
-        server.reload({ fetch: hub.app.fetch });
-        closers.push(async () => {
-          server.stop(true);
-          await hub.close();
-          rmSync(root, { recursive: true, force: true });
-        });
-        await expectZeroRowsFor(url, 15_000);
-      } finally {
-        ollama.stop();
-      }
+      const hub = await createHub({
+        ...baseConfig,
+        hubDataDir: path.join(root, "data-2"),
+      });
+      server.reload({ fetch: hub.app.fetch });
+      closers.push(async () => {
+        server.stop(true);
+        await hub.close();
+        rmSync(root, { recursive: true, force: true });
+      });
+      await expectZeroRowsFor(url, 15_000);
     });
   }, 90_000);
 });
