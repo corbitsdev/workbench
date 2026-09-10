@@ -24,11 +24,7 @@ export {
 // registry (CL-6843). Re-export when a preference store backs it.
 export { AuditSection } from "./audit-section";
 export { AccessPolicyBlock, AccessPolicyEditor } from "./access-policy";
-export {
-  PeopleSection,
-  PeopleTable,
-  InvitePersonDialog,
-} from "./people-section";
+export { PeopleSection, PeopleTable } from "./people-section";
 export {
   RolesSection,
   RolesTable,

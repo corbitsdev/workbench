@@ -1,25 +1,17 @@
 // The "People" settings section: every human (`kind: "user"`) principal on
-// this bench, with invite/suspend/reactivate/remove/role actions over the
-// native `/api/tenants/:tenantId/principals` and `/roles` routes, plus
-// pending invites (an email that hasn't signed up yet) over
-// `@workbench/access-policy`'s routes. Agent and workflow principals are
-// machine identities, not people to manage here — Roles/Grants sections
-// list every kind since those assign to machines too. Never renders a raw
-// principal id or a raw agent refId — see `identity.ts`.
+// this bench, with suspend/reactivate/remove/role actions over the native
+// `/api/tenants/:tenantId/principals` and `/roles` routes. Agent and
+// workflow principals are machine identities, not people to manage here —
+// Roles/Grants sections list every kind since those assign to machines
+// too. Never renders a raw principal id or a raw agent refId — see
+// `identity.ts`. New humans join only when an operator creates them
+// through native APIs.
 
 import {
   Badge,
   Button,
   ConfirmButton,
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
   EmptyState,
-  Input,
   SettingsPanel,
   Table,
   TableBody,
@@ -39,12 +31,6 @@ import {
 import { reportError } from "@corbits/error-sink";
 import { PRINCIPAL_KIND_LABEL, principalLabel } from "./identity";
 import { AccessPolicyBlock } from "./access-policy";
-import {
-  createPendingInvite,
-  deletePendingInvite,
-  listPendingInvites,
-  type PendingInvite,
-} from "./access-policy-api";
 
 import { SETTINGS_STRINGS } from "./strings";
 import {
@@ -57,8 +43,6 @@ import {
   type Principal,
   type Role,
 } from "./tenancy-api";
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const STATUS_TONE: Record<Principal["status"], "success" | "info" | "neutral"> =
   {
@@ -91,13 +75,7 @@ export function PeopleSection({
   const [query, setQuery] = useState<APIQuery<PeopleData>>({
     kind: "loading",
   });
-  const [invitesQuery, setInvitesQuery] = useState<
-    APIQuery<readonly PendingInvite[]>
-  >({ kind: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviting, setInviting] = useState(false);
-  const [inviteError, setInviteError] = useState<string | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
 
   function reload() {
@@ -131,23 +109,6 @@ export function PeopleSection({
           retry: reload,
         });
       });
-    setInvitesQuery({ kind: "loading" });
-    listPendingInvites(tenantId)
-      .then((invites) => {
-        if (!cancelled) setInvitesQuery({ kind: "ready", data: invites });
-      })
-      .catch((cause: unknown) => {
-        if (cancelled) return;
-        if (cause instanceof UnauthenticatedError) {
-          setInvitesQuery({ kind: "unauthenticated" });
-          return;
-        }
-        setInvitesQuery({
-          kind: "error",
-          message: describeQueryError(cause),
-          retry: reload,
-        });
-      });
     return () => {
       cancelled = true;
     };
@@ -161,36 +122,6 @@ export function PeopleSection({
         description={SETTINGS_STRINGS.benchNoneSelectedDescription}
       />
     );
-  }
-
-  function handleInvite(email: string, roleId: string) {
-    if (tenantId === null) return;
-    setInviting(true);
-    setInviteError(null);
-    createPendingInvite(tenantId, { matchType: "email", value: email, roleId })
-      .then(() => {
-        setInviteOpen(false);
-        reload();
-      })
-      .catch((cause: unknown) => {
-        reportError(cause, { operation: "settings.people.invite", tenantId });
-        setInviteError(SETTINGS_STRINGS.peopleInviteError);
-      })
-      .finally(() => setInviting(false));
-  }
-
-  function handleCancelInvite(invite: PendingInvite) {
-    if (tenantId === null) return;
-    setRowError(null);
-    deletePendingInvite(tenantId, invite.id)
-      .then(reload)
-      .catch((cause: unknown) => {
-        reportError(cause, {
-          operation: "settings.people.cancelInvite",
-          tenantId,
-        });
-        setRowError(SETTINGS_STRINGS.pendingInviteCancelError);
-      });
   }
 
   function handleStatusChange(
@@ -267,11 +198,6 @@ export function PeopleSection({
           title={SETTINGS_STRINGS.peopleSectionTitle}
           description={SETTINGS_STRINGS.peopleSectionDescription}
         >
-          <div className="settings-section-toolbar">
-            <Button variant="primary" onClick={() => setInviteOpen(true)}>
-              {SETTINGS_STRINGS.peopleInviteAction}
-            </Button>
-          </div>
           {rowError !== null && (
             <p className="settings-inline-error" role="alert">
               {rowError}
@@ -287,20 +213,7 @@ export function PeopleSection({
               handleRoleChange(p, roleId, people, roles)
             }
           />
-          <PendingInvitesBlock
-            query={invitesQuery}
-            roles={roles}
-            onCancel={handleCancelInvite}
-          />
           <AccessPolicyBlock tenantId={tenantId} />
-          <InvitePersonDialog
-            open={inviteOpen}
-            onOpenChange={setInviteOpen}
-            roles={roles}
-            onInvite={handleInvite}
-            submitting={inviting}
-            error={inviteError}
-          />
         </SettingsPanel>
       )}
     </QueryView>
@@ -436,180 +349,5 @@ export function PeopleTable({
         })}
       </TableBody>
     </Table>
-  );
-}
-
-function PendingInvitesBlock({
-  query,
-  roles,
-  onCancel,
-}: {
-  readonly query: APIQuery<readonly PendingInvite[]>;
-  readonly roles: readonly Role[];
-  readonly onCancel: (invite: PendingInvite) => void;
-}) {
-  return (
-    <div className="settings-pending-invites">
-      <h3 className="settings-subhead">
-        {SETTINGS_STRINGS.pendingInvitesTitle}
-      </h3>
-      <p className="settings-field-hint">
-        {SETTINGS_STRINGS.pendingInvitesDescription}
-      </p>
-      <QueryView query={query} label={SETTINGS_STRINGS.pendingInvitesLoadError}>
-        {(invites) =>
-          invites.length === 0 ? (
-            <p className="settings-field-hint">
-              {SETTINGS_STRINGS.pendingInvitesEmpty}
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {invites.map((invite) => {
-                  const role = roles.find((r) => r.id === invite.roleId);
-                  return (
-                    <TableRow key={invite.id}>
-                      <TableCell>{invite.value}</TableCell>
-                      <TableCell>
-                        {role === undefined
-                          ? SETTINGS_STRINGS.peopleInviteRoleMember
-                          : role.name.toLowerCase() === "owner"
-                            ? SETTINGS_STRINGS.peopleInviteRoleOwner
-                            : SETTINGS_STRINGS.peopleInviteRoleMember}
-                      </TableCell>
-                      <TableCell>
-                        <ConfirmButton
-                          variant="outline"
-                          size="sm"
-                          confirmLabel={
-                            SETTINGS_STRINGS.pendingInviteCancelConfirm
-                          }
-                          onConfirm={() => onCancel(invite)}
-                        >
-                          {SETTINGS_STRINGS.pendingInviteCancel}
-                        </ConfirmButton>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )
-        }
-      </QueryView>
-    </div>
-  );
-}
-
-export function InvitePersonDialog({
-  open,
-  onOpenChange,
-  roles,
-  onInvite,
-  submitting,
-  error = null,
-}: {
-  readonly open: boolean;
-  readonly onOpenChange: (open: boolean) => void;
-  readonly roles: readonly Role[];
-  readonly onInvite: (email: string, roleId: string) => void;
-  readonly submitting: boolean;
-  readonly error?: string | null;
-}) {
-  const [email, setEmail] = useState("");
-  const memberRole = findSystemRole(roles, "member");
-  const ownerRole = findSystemRole(roles, "owner");
-  const selectableRoles = [ownerRole, memberRole].filter(
-    (r): r is Role => r !== undefined,
-  );
-  const [roleId, setRoleId] = useState<string>(memberRole?.id ?? "");
-  const canSubmit = EMAIL_PATTERN.test(email.trim()) && roleId.length > 0;
-
-  function reset() {
-    setEmail("");
-    setRoleId(memberRole?.id ?? "");
-  }
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        onOpenChange(next);
-        if (!next) reset();
-      }}
-    >
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{SETTINGS_STRINGS.peopleInviteDialogTitle}</DialogTitle>
-          <DialogDescription>
-            {SETTINGS_STRINGS.peopleInviteDialogDescription}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogBody>
-          <form
-            id="invite-person-form"
-            className="settings-form-field"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (canSubmit) onInvite(email.trim(), roleId);
-            }}
-          >
-            <label className="settings-form-field">
-              <span>{SETTINGS_STRINGS.peopleInviteEmailLabel}</span>
-              <Input
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder={SETTINGS_STRINGS.peopleInviteEmailPlaceholder}
-                autoFocus
-              />
-            </label>
-            <label className="settings-form-field">
-              <span>{SETTINGS_STRINGS.peopleInviteRoleLabel}</span>
-              <select
-                className="settings-select"
-                value={roleId}
-                onChange={(event) => setRoleId(event.target.value)}
-              >
-                {selectableRoles.map((role) => (
-                  <option key={role.id} value={role.id}>
-                    {role.name.toLowerCase() === "owner"
-                      ? SETTINGS_STRINGS.peopleInviteRoleOwner
-                      : SETTINGS_STRINGS.peopleInviteRoleMember}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {error !== null && (
-              <p className="settings-inline-error" role="alert">
-                {error}
-              </p>
-            )}
-          </form>
-        </DialogBody>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {SETTINGS_STRINGS.peopleInviteCancel}
-          </Button>
-          <Button
-            type="submit"
-            form="invite-person-form"
-            variant="primary"
-            disabled={!canSubmit || submitting}
-          >
-            {submitting
-              ? SETTINGS_STRINGS.peopleInviteInviting
-              : SETTINGS_STRINGS.peopleInviteSubmit}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

@@ -44,21 +44,3 @@ export type PolicyRowShape = {
   readonly tenancyCreation: TenancyCreationMode;
 };
 
-export const CreatePendingInvite = type({
-  matchType: "'email' | 'domain'",
-  value: "string > 0",
-  "roleId?": "string > 0",
-  "invitedBy?": "string > 0",
-});
-export type CreatePendingInvite = typeof CreatePendingInvite.infer;
-
-export type PendingInvite = {
-  readonly id: string;
-  readonly tenantId: string;
-  readonly matchType: "email" | "domain";
-  readonly value: string;
-  readonly roleId?: string;
-  readonly invitedBy?: string;
-  readonly createdAt: Date;
-  readonly consumedAt?: Date;
-};

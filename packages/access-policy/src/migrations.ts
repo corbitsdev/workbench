@@ -56,6 +56,14 @@ export const accessPolicyMigrations: readonly AccessPolicyMigration[] = [
         ON "access_policy"."pending_invite" ("tenant_id");
     `,
   },
+  {
+    name: "0003_drop_pending_invite",
+    sql: `
+      DROP INDEX IF EXISTS "access_policy"."pending_invite_value_idx";
+      DROP INDEX IF EXISTS "access_policy"."pending_invite_tenant_idx";
+      DROP TABLE IF EXISTS "access_policy"."pending_invite";
+    `,
+  },
 ];
 
 const LEDGER_TABLE = "access_policy_migrations";

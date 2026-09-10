@@ -1,11 +1,11 @@
 // Tenant-scoped HTTP surface: reading/editing this tenant's own policy
-// row, managing its pending invites, and the one gated tenant-creation
-// surface — `POST .../child-tenants` — that checks `tenancyCreation`
-// against the caller's native roles (read back through the native
-// principal-detail route) before ever calling `POST /api/tenants`
-// itself. Every native call goes through the injected `ApiCall`, the
-// same self-HTTP-call seam `@workbench/onboarding` already uses —
-// nothing here reimplements tenant creation or role resolution.
+// row, and the one gated tenant-creation surface —
+// `POST .../child-tenants` — that checks `tenancyCreation` against the
+// caller's native roles (read back through the native principal-detail
+// route) before ever calling `POST /api/tenants` itself. Every native
+// call goes through the injected `ApiCall`, the same self-HTTP-call
+// seam `@workbench/onboarding` already uses — nothing here
+// reimplements tenant creation or role resolution.
 import { Hono } from "hono";
 import { type } from "arktype";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
@@ -14,7 +14,7 @@ import { cookiesFromHeader, type ApiCall } from "@corbits/hub-api-client";
 
 import { canCreateTenancy } from "./policy";
 import type { AccessPolicyStore } from "./store";
-import { CreatePendingInvite, UpdateAccessPolicy } from "./types";
+import { UpdateAccessPolicy } from "./types";
 
 const CreateChildTenant = type({
   name: "string > 0",
@@ -54,52 +54,6 @@ export function createAccessPolicyRoutes(
     const updated = await deps.store.upsertPolicy(tenant.id, patch);
     return c.json(updated);
   });
-
-  app.get(
-    "/pending-invites",
-    deps.requireGrant("access-policy:*", "manage"),
-    async (c) => {
-      const tenant = c.get("tenant");
-      const invites = await deps.store.listPendingInvites(tenant.id);
-      return c.json({ data: invites });
-    },
-  );
-
-  app.post(
-    "/pending-invites",
-    deps.requireGrant("access-policy:*", "manage"),
-    async (c) => {
-      const tenant = c.get("tenant");
-      const principal = c.get("principal");
-      const raw: unknown = await c.req.json().catch(() => undefined);
-      const parsed = CreatePendingInvite(raw);
-      if (parsed instanceof type.errors) {
-        return c.json(
-          makeErrorEnvelope({
-            code: "bad_request",
-            userMessage: `invalid invite: ${parsed.summary}`,
-          }),
-          400,
-        );
-      }
-      const invite = await deps.store.createPendingInvite(tenant.id, {
-        ...parsed,
-        invitedBy: parsed.invitedBy ?? principal.id,
-      });
-      return c.json(invite, 201);
-    },
-  );
-
-  app.delete(
-    "/pending-invites/:id",
-    deps.requireGrant("access-policy:*", "manage"),
-    async (c) => {
-      const tenant = c.get("tenant");
-      const id = c.req.param("id");
-      await deps.store.deletePendingInvite(tenant.id, id);
-      return c.body(null, 204);
-    },
-  );
 
   // The gated tenant-creation surface: any signed-in member of this
   // tenant may attempt it, but only one whose native roles satisfy this
