@@ -21,7 +21,6 @@
 # drift as unrelated code around a catch changes.
 apps/hub/src/bench-session.ts	1	const message = cause instanceof Error ? cause.message : String(cause);
 apps/hub/src/credential-expiry-sweep.ts	1	log.error`credential expiry sweep failed: ${
-apps/hub/src/env-credential-plant.ts	1	session = undefined;
 apps/hub/src/grant-allowance.ts	1	return null;
 apps/hub/src/index.ts	1	email = "";
 apps/hub/src/index.ts	1	email = undefined;

@@ -4,11 +4,12 @@ Workbench can run with no cloud LLM key at all, using a local
 [Ollama](https://ollama.com) instance as the inference provider.
 
 Set `OLLAMA_BASE_URL` in `.env` to the origin your Ollama instance listens
-on (e.g. `http://localhost:11434`, or a tailscale-tunneled origin) — see
-`apps/hub/src/config.ts`. Unlike every other provider, Ollama needs no key:
-its mere presence auto-plants a probed catalog credential on the operator
-bench at hub start. Each provider gets its own URL/key card in onboarding;
-Ollama's is the one that asks for a base URL instead of a token.
+on (e.g. `http://localhost:11434`, or a tailscale-tunneled origin) —
+`bun run dev`'s memory setup still reads it (it mounts the `@corbits/memory`
+plane against the same origin when `EMBED_BASE_URL` is unset). The hub
+itself no longer reads provider env vars at all: connect the Ollama
+provider in the UI instead — its onboarding card is the one that asks for
+a base URL instead of a token, and it needs no key.
 
 Tool-heavy turns (anything that calls `mcp_list_tools`, dispatches a task,
 or chains several tool calls) take noticeably longer — minutes, not

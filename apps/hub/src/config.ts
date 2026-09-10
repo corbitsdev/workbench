@@ -5,27 +5,10 @@
 // Anything else the hub learns is data in the database, never
 // configuration.
 //
-// ANTHROPIC_API_KEY is the one model-related variable a freshly
-// self-served personal bench needs: when set, the hub carries a seed
-// model credential (anthropic/claude-sonnet-5) it hands to
-// `@workbench/onboarding` so that bench gets the default workflow set
-// deployed at first login. Left unset, that deployment step is skipped
-// — the bench is still provisioned, only the default workflow
-// deployment is skipped, and the skip is logged.
-//
-// ANTHROPIC_API_KEY and every other curated provider's conventional key
-// (`@workbench/onboarding`'s `PROVIDER_ENV_VARS` — OPENAI_API_KEY,
-// GEMINI_API_KEY/GOOGLE_API_KEY, XAI_API_KEY, OPENROUTER_API_KEY,
-// OPENCODE_ZEN_API_KEY, GROQ_API_KEY, DEEPSEEK_API_KEY, MISTRAL_API_KEY,
-// HUGGINGFACE_API_KEY) are also read as an env-key auto-plant (CL-6101):
-// once the hub finds its own operator bench (HUB_ADMIN_EMAIL/PASSWORD
-// signed in, ORG_SLUG resolved — the same identity `workbench setup` /
-// `workbench seed` use), it plants a real, probed credential for every
-// key it finds there, making that bench's catalog launchable with no
-// `workbench seed` re-run. See `../env-credential-plant.ts`. All of
-// these — including HUB_ADMIN_EMAIL/PASSWORD/ORG_SLUG — are optional:
-// the plant is skipped, quietly and non-fatally, whenever the admin
-// identity cannot be resolved or no provider key is set.
+// Provider credentials are never read from the environment: operators
+// connect a provider in the UI (or via the same connect API the
+// onboarding flow uses), never by setting ANTHROPIC_API_KEY or any
+// other provider's env var — hub boot plants nothing.
 //
 // GOOGLE_CLIENT_ID/SECRET and GITHUB_CLIENT_ID/SECRET are each an
 // optional pair: set both to enable that OAuth provider on the sign-in
@@ -40,11 +23,6 @@
 // paste-a-token provider card.
 
 import { type } from "arktype";
-import {
-  envProviderBaseUrlsFrom,
-  envProviderKeysFrom,
-} from "@workbench/onboarding";
-import type { SupportedCredentialProvider } from "@corbits/connections/credential-test";
 
 const HTTP_URL = /^https?:\/\/.+$/;
 
@@ -83,7 +61,7 @@ const HubEnv = type({
   "WORKBENCH_DEFAULT_TENANT?": type(
     /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/,
   ).describe(
-    'slug of the root tenant the hub ensures at boot; every self-served personal bench parents under it, and setup/seed/plant resolve the same slug — ORG_SLUG is an alias when this is unset; default "workbench"',
+    'slug of the root tenant the hub ensures at boot; every self-served personal bench parents under it, and setup/seed resolve the same slug — ORG_SLUG is an alias when this is unset; default "workbench"',
   ),
   "SIGNUP_RATE_LIMIT_WINDOW_SECONDS?": type(/^[1-9]\d*$/).describe(
     "the per-IP sign-up rate-limit window, in seconds, e.g. 60",
@@ -106,50 +84,8 @@ const HubEnv = type({
   "ROUTINE_SCHEDULER_POLL_INTERVAL_MS?": type(/^[1-9]\d*$/).describe(
     "dev/test-only override for the routine scheduler's poll interval, in milliseconds — unset (default) runs the real 30s production cadence; the e2e harness sets this to a fast interval so a scheduled-routine test doesn't wait out the real cadence",
   ),
-  "ANTHROPIC_API_KEY?": type("string > 0").describe(
-    "your Anthropic API key; optional, enables the default workflow set for freshly self-served benches, and auto-plants a probed catalog credential on the operator bench at hub start",
-  ),
-  "OPENAI_API_KEY?": type("string > 0").describe(
-    "your OpenAI API key; optional, auto-plants a probed catalog credential on the operator bench at hub start",
-  ),
-  "GEMINI_API_KEY?": type("string > 0").describe(
-    "your Google Gemini API key; optional, auto-plants a probed catalog credential on the operator bench at hub start — GOOGLE_API_KEY is used when this is unset",
-  ),
-  "GOOGLE_API_KEY?": type("string > 0").describe(
-    "your Google Gemini API key, under its other common name; only read when GEMINI_API_KEY is unset",
-  ),
-  "XAI_API_KEY?": type("string > 0").describe(
-    "your xAI API key; optional, auto-plants a probed catalog credential on the operator bench at hub start",
-  ),
-  "OPENROUTER_API_KEY?": type("string > 0").describe(
-    "your OpenRouter API key; optional, auto-plants a probed catalog credential on the operator bench at hub start",
-  ),
-  "OPENCODE_ZEN_API_KEY?": type("string > 0").describe(
-    "your Opencode Zen API key; optional, auto-plants a probed catalog credential on the operator bench at hub start",
-  ),
-  "GROQ_API_KEY?": type("string > 0").describe(
-    "your Groq API key; optional, auto-plants a probed catalog credential on the operator bench at hub start",
-  ),
-  "DEEPSEEK_API_KEY?": type("string > 0").describe(
-    "your DeepSeek API key; optional, auto-plants a probed catalog credential on the operator bench at hub start",
-  ),
-  "MISTRAL_API_KEY?": type("string > 0").describe(
-    "your Mistral API key; optional, auto-plants a probed catalog credential on the operator bench at hub start",
-  ),
-  "HUGGINGFACE_API_KEY?": type("string > 0").describe(
-    "your Hugging Face router API token; optional, auto-plants a probed catalog credential on the operator bench at hub start",
-  ),
-  "OLLAMA_BASE_URL?": type("string > 0").describe(
-    "the origin your local (or tailscale-tunneled) Ollama instance listens on, e.g. http://localhost:11434; optional, auto-plants a probed catalog credential (no key required) on the operator bench at hub start",
-  ),
-  "HUB_ADMIN_EMAIL?": type(/^[^@\s]+@[^@\s]+$/).describe(
-    "the administrator account the env-key auto-plant signs in as to find the operator bench; same identity `workbench setup`/`workbench seed` use — unset falls back to alice@example.com, the same default those commands use",
-  ),
-  "HUB_ADMIN_PASSWORD?": type("string >= 8").describe(
-    "the administrator password the env-key auto-plant signs in with; unset falls back to password123, the same default `workbench setup`/`workbench seed` use",
-  ),
   "ORG_SLUG?": type(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/).describe(
-    'alias for WORKBENCH_DEFAULT_TENANT when that is unset — same root/operator slug the hub, setup, seed, and the env-key auto-plant resolve; default "workbench"',
+    'alias for WORKBENCH_DEFAULT_TENANT when that is unset — the same root/operator slug setup and seed resolve; default "workbench"',
   ),
   "GOOGLE_CLIENT_ID?": type("string > 0").describe(
     "Google OAuth client id; set together with GOOGLE_CLIENT_SECRET to enable Google sign-in",
@@ -273,9 +209,7 @@ function parsePositiveMsEnv(
   return n;
 }
 
-const DEFAULT_PLANT_ADMIN_EMAIL = "alice@example.com";
-const DEFAULT_PLANT_ADMIN_PASSWORD = "password123";
-const DEFAULT_PLANT_ORG_SLUG = "workbench";
+const DEFAULT_TENANT_SLUG = "workbench";
 
 // One member per implemented `SidecarProvisioner` backend. Adding a new
 // backend (e.g. a remote sandbox) is: implement the contract in its own
@@ -387,31 +321,6 @@ export type HubConfig = {
   /** How long an idle chat resident may sit before the hub reaps it via
    * a state-preserving undeploy. Defaults to `DEFAULT_CHAT_IDLE_REAP_MS`. */
   readonly chatIdleReapMs: number;
-  /** Every curated provider's key found under its conventional env var
-   * name (`@workbench/onboarding`'s `PROVIDER_ENV_VARS`). Empty when
-   * none are set — the env-key auto-plant then does nothing. */
-  readonly envProviderKeys: Partial<
-    Record<SupportedCredentialProvider, string>
-  >;
-  /** The configured base URL for whichever curated providers carry one
-   * (`OLLAMA_BASE_URL` today, the only such provider). Empty when unset
-   * — the env-key auto-plant then probes and seeds ollama, if present in
-   * `envProviderKeys`, against its own default local origin. */
-  readonly envProviderBaseUrls: Partial<
-    Record<SupportedCredentialProvider, string>
-  >;
-  /** The identity the env-key auto-plant signs in as to find the
-   * operator bench — the same identity `workbench setup`/`workbench
-   * seed` use, defaulted the same way when unset. Always populated
-   * (never optional): an unset HUB_ADMIN_EMAIL/PASSWORD/ORG_SLUG is a
-   * valid local-dev shape, not a reason to skip the plant outright —
-   * the plant itself degrades to a no-op, logged, when this identity
-   * does not resolve to a real operator bench. */
-  readonly envCredentialPlantAdmin: {
-    readonly email: string;
-    readonly password: string;
-    readonly orgSlug: string;
-  };
 };
 
 type ParsedHubEnv = typeof HubEnv.infer;
@@ -646,13 +555,11 @@ export function readHubConfig(
           .map((d) => d.trim())
           .filter((d) => d.length > 0);
 
-  // One deployment fact shared by first-signup genesis, setup/seed, and the
-  // env-key auto-plant. WORKBENCH_DEFAULT_TENANT wins; ORG_SLUG is the
-  // alias when that is unset.
+  // One deployment fact shared by first-signup genesis, setup, and seed.
+  // WORKBENCH_DEFAULT_TENANT wins; ORG_SLUG is the alias when that is
+  // unset.
   const defaultTenantSlug =
-    parsed.WORKBENCH_DEFAULT_TENANT ??
-    parsed.ORG_SLUG ??
-    DEFAULT_PLANT_ORG_SLUG;
+    parsed.WORKBENCH_DEFAULT_TENANT ?? parsed.ORG_SLUG ?? DEFAULT_TENANT_SLUG;
 
   const hubConfig: { -readonly [K in keyof HubConfig]: HubConfig[K] } = {
     databaseUrl: parsed.DATABASE_URL,
@@ -682,13 +589,6 @@ export function readHubConfig(
       max: parsed.SIGNIN_RATE_LIMIT_MAX
         ? Number(parsed.SIGNIN_RATE_LIMIT_MAX)
         : DEFAULT_SIGNIN_RATE_LIMIT_MAX,
-    },
-    envProviderKeys: envProviderKeysFrom(parsed),
-    envProviderBaseUrls: envProviderBaseUrlsFrom(parsed),
-    envCredentialPlantAdmin: {
-      email: parsed.HUB_ADMIN_EMAIL ?? DEFAULT_PLANT_ADMIN_EMAIL,
-      password: parsed.HUB_ADMIN_PASSWORD ?? DEFAULT_PLANT_ADMIN_PASSWORD,
-      orgSlug: defaultTenantSlug,
     },
     chatIdleReapMs: parsePositiveMsEnv(
       parsed.WORKBENCH_CHAT_IDLE_REAP_MS,

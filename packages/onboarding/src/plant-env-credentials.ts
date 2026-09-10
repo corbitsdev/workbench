@@ -3,11 +3,9 @@
 // `completeCredentialSetup` (the guided credential step). Where those
 // two plant a credential for a person who is either running the CLI by
 // hand or pasting a key into the wizard, this module plants one for
-// every curated provider whose conventional env var the hub's own
-// process was started with — so an operator who sets ANTHROPIC_API_KEY
-// (or any other curated provider's key) in the hub's environment gets a
-// launchable catalog the moment the hub boots, with no `workbench seed`
-// re-run and no manual step.
+// every curated provider whose conventional env var appears in a given
+// env map. Hub boot does not call it (CL-7579: boot reads no provider
+// env vars); it is kept as a library for a future granted setup step.
 //
 // Never reimplements credential planting: the live probe is
 // `testProviderCredential` and the actual plant is `seedCatalog` (same
@@ -16,10 +14,9 @@
 // module's only job is the env-map-to-provider translation, the
 // idempotency check that skips overwriting a provider already carrying
 // a working credential (never rotating a renamed key), backfills that
-// provider's curated catalog additively on every hub boot, and folding
-// a single provider's failure into a log line instead of an exception —
-// one bad or rate-limited key must never stop every other provider from
-// planting, and must never stop the hub itself from starting.
+// provider's curated catalog additively, and folds a single provider's
+// failure into a log line instead of an exception — one bad or
+// rate-limited key must never stop every other provider from planting.
 
 import {
   CredentialResponse,

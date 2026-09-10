@@ -206,18 +206,23 @@ made once every required connection reads satisfied. On success the
 entry moves out of Available into the ordinary scheduled/deployed
 list the rest of the page already reads.
 
-## Env provider credentials (hub boot)
+## Env provider credentials
 
-`apps/hub/src/env-credential-plant.ts` delegates to
-`plantEnvProviderCredentials` (`packages/onboarding`): keyed by the
+The hub's env-key auto-plant was removed (CL-7579): hub boot never reads
+provider credentials from the environment. Connect a provider in the UI
+(or call the same connect API a granted setup step uses) — that flow
+plants via `persistConnectorCredential` and then runs `seedCatalog`.
+`plantEnvProviderCredentials` (`packages/onboarding`) is kept as a
+library for a future granted setup step; nothing in production calls it
+today. Its semantics, should a setup step adopt it: keyed by the
 provider's stable credential name, a provider already carrying an
 active credential is not probed and its key is not overwritten — a
 rotated or hand-renamed key is never touched. `seedCatalog` still
-runs against that existing credential (`existingCredentialId`, no
-`apiKey`) so a hub restart backfills newly curated models additively:
+runs against an existing credential (`existingCredentialId`, no
+`apiKey`) so a re-connect backfills newly curated models additively:
 missing rows are planted, existing ones 409-skip, nothing is deleted.
-Removing an env var never deletes the planted credential: credentials
-are operator data once planted, not seeds to garbage-collect.
+Credentials are operator data once planted, not seeds to
+garbage-collect.
 
 ## Credential-bound catalog workflows (CL-7073)
 

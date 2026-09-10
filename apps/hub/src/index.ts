@@ -369,7 +369,6 @@ import {
   type SidecarProvisionerConfig,
 } from "./config";
 import type { SidecarProvisioner } from "@intx/hub-sessions";
-import { scheduleEnvProviderCredentialPlant } from "./env-credential-plant";
 import { withTurnPartWriteDefaults } from "./turn-part-content-default";
 import { createBootAssetWiring, REGISTRIES } from "./asset-service-factory";
 import {
@@ -3592,18 +3591,6 @@ export async function createHub(config: HubConfig) {
   const inFlight = createInFlightRequestTracker();
   const servingApp = withInFlightRequestTracking(guardedApp, inFlight);
 
-  // Env-key auto-plant (CL-6101): runs in-process against the app this
-  // function is about to return, so it needs nothing more than that
-  // app's own `fetch` — see ./env-credential-plant.ts. A no-op when no
-  // curated provider key is set in this process's environment.
-  const envCredentialPlant = scheduleEnvProviderCredentialPlant({
-    baseUrl: config.baseUrl,
-    envProviderKeys: config.envProviderKeys,
-    envProviderBaseUrls: config.envProviderBaseUrls,
-    admin: config.envCredentialPlantAdmin,
-    fetch: (request) => Promise.resolve(servingApp.fetch(request)),
-  });
-
   return {
     app: servingApp,
     whenRequestsIdle: () => inFlight.whenIdle(),
@@ -3629,7 +3616,6 @@ export async function createHub(config: HubConfig) {
       // intermittent test timeout.
       relaunchSweepSeries += 1;
       clearTimeout(relaunchSweepTimer);
-      envCredentialPlant.stop();
       chatOrchestrator.dispose();
       workflowScheduler.stop();
       credentialExpirySweep.stop();
