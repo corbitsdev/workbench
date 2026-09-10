@@ -56,6 +56,10 @@ async function manifestFromBlob(
     const bytes = await source.readBlob(blobPath);
     packageJson = await extractTarballPackageJSON(bytes);
   } catch (error) {
+    // report-error-ignore: an unreadable tarball in a registry is expected
+    // legacy data, not an incident — registries published before manifests
+    // carry such blobs and shouldPublishTarball can never heal them; a log
+    // line per skip is the whole response.
     log.warn`skipping ${blobPath}: unreadable tarball (${error instanceof Error ? error.message : String(error)})`;
     return undefined;
   }
