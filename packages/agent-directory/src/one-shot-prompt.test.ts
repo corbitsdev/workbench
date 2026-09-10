@@ -450,6 +450,7 @@ describe("routable wait on the opening send", () => {
     const send = createFakeSend({ 1: UNREACHABLE });
     const { undeploy, calls: undeployCalls } = createFakeUndeploy();
     let routabilityChecks = 0;
+    let allowRoutable = false;
     const routabilityAddresses: string[] = [];
     const deps = {
       ...createBaseDeps(),
@@ -460,7 +461,9 @@ describe("routable wait on the opening send", () => {
       isRoutable: (address: string) => {
         routabilityChecks++;
         routabilityAddresses.push(address);
-        return routabilityChecks > 3;
+        // Stays false until the test flips the gate after observing
+        // several polls — no wall-clock race against event injection.
+        return allowRoutable;
       },
       deliverWait: {
         deadlineMs: 5_000,
@@ -470,7 +473,33 @@ describe("routable wait on the opening send", () => {
     } as never;
 
     const promise = runOneShotPrompt(deps, INPUT);
-    await new Promise((r) => setTimeout(r, 10));
+
+    // Wait until the helper has polled several times while unroutable.
+    const pollDeadline = Date.now() + 2_000;
+    while (routabilityChecks < 3) {
+      if (Date.now() > pollDeadline) {
+        throw new Error(
+          `expected ≥3 routability polls before flip; saw ${String(routabilityChecks)}`,
+        );
+      }
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    const checksBeforeFlip = routabilityChecks;
+    allowRoutable = true;
+
+    // Wait for the retried send before injecting reply events — the
+    // event listener is live from provision, so injecting earlier lets
+    // a reply settle the run while the opening send is still pending
+    // (and under CI load that race fired after exactly 3 polls).
+    const sendDeadline = Date.now() + 2_000;
+    while (send.calls < 2) {
+      if (Date.now() > sendDeadline) {
+        throw new Error(
+          `expected retried send after routable flip; saw ${String(send.calls)} send(s)`,
+        );
+      }
+      await new Promise((r) => setTimeout(r, 1));
+    }
     const triggerAddress = firstCall(launchCalls).address;
 
     fake.emit("agent.event", {
@@ -484,7 +513,8 @@ describe("routable wait on the opening send", () => {
 
     const result = await promise;
     expect(result.content).toBe("Hello");
-    expect(routabilityChecks).toBeGreaterThan(3);
+    expect(checksBeforeFlip).toBeGreaterThanOrEqual(3);
+    expect(routabilityChecks).toBeGreaterThanOrEqual(checksBeforeFlip);
     // The launched run's address, not some placeholder, is what the
     // runner consults.
     expect(routabilityAddresses).toContain(triggerAddress);
