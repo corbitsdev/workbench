@@ -193,7 +193,6 @@ packages/ollama-adapter/src/inline-tool-json.ts	1	return false;
 packages/ollama-adapter/src/inline-tool-json.ts	1	return { kind: "incomplete" };
 packages/onboarding/src/pending-seed.ts	1	return drop();
 packages/onboarding/src/routes.ts	1	// Neither `ProvisionError` nor `CliError` messages are safe to show
-packages/onboarding/src/routes.ts	1	if (cause instanceof ProvisionError) {
 packages/onboarding/src/routes.ts	1	return c.json(
 packages/presence/src/artifact-persistence.ts	1	deps.onSnapshotError?.(key, error);
 packages/presence/src/client.ts	1	// A malformed update is dropped rather than crashing the client;

@@ -77,8 +77,25 @@ function fakeHub(
       updatedAt: "2026-01-01T00:00:00.000Z",
     }),
   );
-  hub.get("/api/tenants/:id/assets", (c) =>
-    c.json(
+  hub.get("/api/tenants/:id/assets", (c) => {
+    if (c.req.query("kind") === "package-registry") {
+      // The corbits-tools registry is seeded in every state this suite
+      // models — readiness now also requires resolvable tool packages.
+      return c.json([
+        {
+          id: "ast_registry",
+          tenantId: TENANT_ID,
+          kind: "package-registry",
+          name: "corbits-tools",
+          displayName: null,
+          creatorPrincipalId: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          origin: { tenantId: TENANT_ID, direct: true },
+        },
+      ]);
+    }
+    return c.json(
       seeded.map((name, index) => ({
         id: `ast_${index}`,
         tenantId: TENANT_ID,
@@ -90,7 +107,19 @@ function fakeHub(
         updatedAt: "2026-01-01T00:00:00.000Z",
         origin: { tenantId: TENANT_ID, direct: true },
       })),
-    ),
+    );
+  });
+  hub.get("/api/tenants/:id/assets/ast_registry/tarballs", (c) =>
+    c.json([
+      {
+        filename: "corbits-memory-tools-0.0.4.tgz",
+        size: 1,
+        integrity: "sha512-x",
+      },
+    ]),
+  );
+  hub.get("/api/tenants/:id/skills/:name", (c) =>
+    c.json({ name: c.req.param("name") }),
   );
   hub.get("/api/tenants/:id/workflows/deployments", (c) =>
     c.json(

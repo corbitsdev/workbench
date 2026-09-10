@@ -33,7 +33,7 @@ const closers: (() => Promise<void>)[] = [];
 afterAll(async () => {
   let closer: (() => Promise<void>) | undefined;
   while ((closer = closers.pop()) !== undefined) await closer();
-});
+}, 60_000);
 
 function scratchUrlFor(label: string): string {
   const url = new URL(databaseUrl ?? "postgres://localhost:5432/unused");

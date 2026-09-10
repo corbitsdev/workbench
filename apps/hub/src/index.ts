@@ -314,6 +314,7 @@ import {
   createDrizzleAccessPolicyStore,
 } from "@workbench/access-policy";
 import { guardedHubApp, resolveCallerRoleNames } from "./tenant-create-guard";
+import { createTenantCreateObserver } from "./tenant-create-onboard";
 import {
   createInMemoryNotifyDispatchStore,
   createSinkRegistry,
@@ -359,10 +360,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { type Context, Hono, type Next } from "hono";
 
 import { upgradeWebSocket, websocket } from "hono/bun";
-import {
-  CORBITS_TOOLS_REGISTRY,
-  publishCorbitsToolsRegistry,
-} from "@corbits/tool-registry-publish";
+import { CORBITS_TOOLS_REGISTRY } from "@corbits/tool-registry-publish";
 import {
   readHubConfig,
   type HubConfig,
@@ -3370,9 +3368,22 @@ export async function createHub(config: HubConfig) {
     sessionFor,
     log: (line) => log.info`${line}`,
     logError: (line) => log.error`${line}`,
-    publishToolRegistryFn: publishCorbitsToolsRegistry,
   });
   benchProvisioner.start();
+
+  // CL-7584: the tenant-create trigger. A 201 from the native
+  // `POST /api/tenants` route kicks a fire-and-forget desired-state
+  // reconcile for the new tenant under the creator's minted session —
+  // the revisit kick below and the drain above share this one
+  // reconciler. No durable row: the pending_seed row stays the only
+  // durable work item, and a kick lost to a restart is re-covered by
+  // the revisit kick on the tenant's next visit. The observer itself is
+  // composed just before the guard wrap, after every route mount: Hono
+  // copies routes at `.route()` time, so wrapping earlier would strand
+  // everything mounted after it.
+  const observerRef: {
+    current?: ReturnType<typeof createTenantCreateObserver>;
+  } = {};
 
   const onboardingDeps: Parameters<typeof createOnboardingRoutes>[0] = {
     hubUrl: config.baseUrl,
@@ -3384,6 +3395,12 @@ export async function createHub(config: HubConfig) {
     credentialCipher,
     pendingSeedStore,
     benchProvisioner,
+    desiredStateKick: (args) => {
+      // Fire-and-forget; the route already decided pins are pending.
+      void observerRef.current
+        ?.kick({ tenantId: args.tenantId, cookies: args.cookies })
+        .catch(() => undefined);
+    },
     accessPolicy: {
       store: accessPolicyStore,
       envSignupMode: config.signupMode,
@@ -3585,7 +3602,18 @@ export async function createHub(config: HubConfig) {
         : undefined;
     },
   };
-  const guardedApp = guardedHubApp(app, guardDeps);
+  const observer = createTenantCreateObserver(
+    {
+      api: selfApi,
+      hubUrl: config.baseUrl,
+      pushWorkflow: createGitWorkflowPusher(),
+      log: (line) => log.info`${line}`,
+      logError: (line) => log.error`${line}`,
+    },
+    app,
+  );
+  observerRef.current = observer;
+  const guardedApp = guardedHubApp(observer.app, guardDeps);
   const inFlight = createInFlightRequestTracker();
   const servingApp = withInFlightRequestTracking(guardedApp, inFlight);
 
@@ -3595,6 +3623,16 @@ export async function createHub(config: HubConfig) {
     db,
     close: async () => {
       sidecarAllocationReconciliationStopped = true;
+      // Let any in-flight tenant-create reconcile reach its next HTTP
+      // call before the server stops — the call then fails and the kick
+      // logs it, so a fire-and-forget reconcile never races the DB
+      // teardown. Bounded: a kick stuck on an already-dying connection
+      // must not stall shutdown (CL-7584).
+      observerRef.current?.stop();
+      await Promise.race([
+        observerRef.current?.whenIdle(),
+        new Promise((resolve) => setTimeout(resolve, 250)),
+      ]);
       if (sidecarAllocationReconciliationTimer !== undefined) {
         clearTimeout(sidecarAllocationReconciliationTimer);
       }
@@ -3625,7 +3663,14 @@ export async function createHub(config: HubConfig) {
       await benchSettings.close();
       await evalRuns.close();
       await closeMailbox();
-      await close();
+      // The pool end waits on in-flight queries; a query whose socket
+      // died with the process must never stall shutdown, so bound it.
+      // (CL-7584: a fire-and-forget reconcile's request can be cut
+      // mid-query by this very teardown.)
+      await Promise.race([
+        close(),
+        new Promise((resolve) => setTimeout(resolve, 5_000)),
+      ]);
     },
   };
 }

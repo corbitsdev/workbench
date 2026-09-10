@@ -11,15 +11,13 @@
 // credential and does not yet have its agents". That framing is what
 // makes the three properties fall out rather than have to be engineered:
 //
-//   - Idempotent. Every pass re-reads the bench's actual asset and
-//     deployment state (`isFullySeeded`) before doing anything, and the
-//     deploy step underneath (`seedTenant`) is ensure-then-create at
-//     every step. A pass over a bench that is already done deploys
-//     nothing and simply clears the row.
-//   - Convergent. A pass that gets partway — the sidecar-unavailable
-//     class `ensureSeeded` reports as `seeded-pending-agents` — leaves
-//     the row in place, so the next pass picks up exactly the workflows
-//     that are still missing.
+//   - Idempotent. Every pass reconciles the bench against the tenant
+//     desired-state document (`reconcileTenantDesiredState`) — ensure-
+//     then-create at every step — so a pass over a converged bench
+//     deploys nothing and simply clears the row.
+//   - Convergent. A pass that gets partway — pins reported `blocked`
+//     (sidecar unavailable) or `failed` — leaves the row in place, so
+//     the next pass picks up exactly the pins that are still missing.
 //   - Restart-safe. Nothing about a bench's outstanding work lives in
 //     this process. A hub that dies mid-deploy leaves the row behind,
 //     and the next boot's first tick finishes it. In-memory state here
@@ -32,14 +30,13 @@
 // module stays out of the auth mechanism entirely.
 
 import { reportError } from "@corbits/error-sink";
-import {
-  publishCorbitsToolsRegistry,
-  type ToolRegistryPublisher,
-  type WorkflowPusher,
-} from "@corbits/seeding";
+import type { ModelSource, WorkflowPusher } from "@corbits/seeding";
 import { type ApiCall } from "@corbits/hub-api-client";
-import { ensureSeeded } from "./complete-credential";
-import { isFullySeeded } from "./provision";
+import {
+  reconcileTenantDesiredState,
+  resolveTenantModelSource,
+  type ReconcileReport,
+} from "./desired-state";
 import {
   PENDING_SEED_SCAN_LIMIT,
   type PendingSeed,
@@ -70,16 +67,22 @@ export type BenchProvisionerDeps = {
   sessionFor: SessionForUser;
   log: (line: string) => void;
   logError?: (line: string) => void;
-  /** Test seams. Production passes neither; the real implementations are
-   * the module-level imports above. */
-  ensureSeededFn?: typeof ensureSeeded;
-  isFullySeededFn?: typeof isFullySeeded;
   /**
-   * Republish an empty or missing `corbits-tools` registry. Same job
-   * grant reconcile does on every sign-in — not a hot agent-launch
-   * path. Production uses `publishCorbitsToolsRegistry`.
+   * The convergence step, doc-driven (CL-7584): reads the tenant's real
+   * state against `TENANT_DESIRED_STATE` and installs only absent pins.
+   * Production resolves the deploy model from the tenant's catalog and
+   * delegates to `reconcileTenantDesiredState`; tests replace the whole
+   * thing. A `blocked` report keeps the row; `failed` keeps it too and
+   * counts as a failure for backoff.
    */
-  publishToolRegistryFn?: ToolRegistryPublisher;
+  reconcileFn?: (args: {
+    api: ApiCall;
+    cookies: string[];
+    hubUrl: string;
+    tenant: { tenantId: string; principalId?: string; domain?: string };
+    pushWorkflow: WorkflowPusher;
+    log: (line: string) => void;
+  }) => Promise<ReconcileReport>;
   now?: () => number;
 };
 
@@ -124,10 +127,23 @@ export function createBenchProvisioner(
 ): BenchProvisioner {
   const now = deps.now ?? Date.now;
   const logError = deps.logError ?? deps.log;
-  const runEnsureSeeded = deps.ensureSeededFn ?? ensureSeeded;
-  const runIsFullySeeded = deps.isFullySeededFn ?? isFullySeeded;
-  const runPublishToolRegistry =
-    deps.publishToolRegistryFn ?? publishCorbitsToolsRegistry;
+
+  /**
+   * The production reconcile: resolve the tenant's deploy model from its
+   * resolved catalog, then install only the desired-state pins that are
+   * absent. `undefined` model means no launchable offering — reconcile
+   * reports the workflow pins blocked rather than throwing.
+   */
+  const runReconcile: NonNullable<BenchProvisionerDeps["reconcileFn"]> =
+    deps.reconcileFn ??
+    (async (args) => {
+      const model: ModelSource | undefined = await resolveTenantModelSource(
+        args.api,
+        args.cookies,
+        args.tenant.tenantId,
+      );
+      return reconcileTenantDesiredState({ ...args, model });
+    });
 
   const inFlight = new Map<string, Promise<BenchProvisionOutcome>>();
   // Backoff bookkeeping for a failing bench, keyed the same way
@@ -207,69 +223,54 @@ export function createBenchProvisioner(
       return "failed";
     }
 
-    // Repair an empty or missing corbits-tools registry the same way
-    // sign-in reconciles seed grants — before the fully-seeded check,
-    // so a bench whose assistant is already deployed does not drain as
-    // done while GET tarballs is still [].
+    // Doc-driven convergence (CL-7584): reconcile installs only the
+    // desired-state pins this bench is still missing. Row semantics are
+    // unchanged — ready clears the row, blocked keeps it as pending,
+    // failed keeps it and backs off.
+    let report: ReconcileReport;
     try {
-      await runPublishToolRegistry({
+      report = await runReconcile({
         api: deps.api,
         cookies,
         hubUrl: deps.hubUrl,
-        tenantId: seed.tenantId,
+        tenant: {
+          tenantId: seed.tenantId,
+          principalId: seed.principalId,
+          domain: seed.tenantDomain,
+        },
+        pushWorkflow: deps.pushWorkflow,
         log: deps.log,
       });
     } catch (cause) {
       reportError(cause, {
-        operation: "pending_seed_publish_tool_registry",
+        operation: "pending_seed_reconcile",
         tenantId: seed.tenantId,
       });
       logError(
-        `bench provisioning for tenant ${seed.tenantId} could not publish corbits-tools; holding for a later pass`,
+        `bench provisioning for tenant ${seed.tenantId} failed; its pending row stays for a retry: ${cause instanceof Error ? cause.message : String(cause)}`,
       );
       return "failed";
     }
 
-    if (await runIsFullySeeded(deps.api, cookies, seed.tenantId)) {
-      await deps.store.clear({
-        userId: seed.userId,
-        tenantId: seed.tenantId,
-      });
+    if (report.ready) {
+      await deps.store.clear({ userId: seed.userId, tenantId: seed.tenantId });
+      deps.log(
+        `bench ${seed.tenantId} finished provisioning (${report.pins.length} pins present)`,
+      );
       return "converged";
     }
 
-    const seededArgs = {
-      api: deps.api,
-      cookies,
-      hubUrl: deps.hubUrl,
-      pushWorkflow: deps.pushWorkflow,
-      log: deps.log,
-      tenant: {
-        tenantId: seed.tenantId,
-        tenantSlug: "",
-        principalId: seed.principalId,
-        tenantDomain: seed.tenantDomain,
-      },
-      provider: seed.provider,
-      apiKey: seed.apiKey,
-      ...(seed.baseURLOverride !== undefined
-        ? { baseURLOverride: seed.baseURLOverride }
-        : {}),
-    };
-    const result = await runEnsureSeeded(seededArgs);
-
-    if (result.kind === "seeded-pending-agents") {
+    if (report.pins.some((pin) => pin.status === "failed")) {
       deps.log(
-        `bench ${seed.tenantId} is partly provisioned (${result.deployed.length} live, ${result.pending.length} waiting); its pending row stays for the next pass`,
+        `bench provisioning for tenant ${seed.tenantId} failed; its pending row stays for a retry`,
       );
-      return "pending";
+      return "failed";
     }
 
-    await deps.store.clear({ userId: seed.userId, tenantId: seed.tenantId });
     deps.log(
-      `bench ${seed.tenantId} finished provisioning: ${result.workflows.length} agents live`,
+      `bench ${seed.tenantId} is partly provisioned; its pending row stays for the next pass`,
     );
-    return "converged";
+    return "pending";
   }
 
   async function provisionBench(

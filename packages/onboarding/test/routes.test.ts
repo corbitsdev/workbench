@@ -658,3 +658,167 @@ describe("POST /complete — seeded-admin fallback", () => {
     }
   });
 });
+
+// CL-7584: the revisit kick and the doc-derived step list. A probe that
+// lands on a tenant with pending desired-state pins fires exactly one
+// fire-and-forget reconcile kick; a converged tenant fires none;
+// `/provisioning-status` carries the doc-labeled steps a waiting
+// surface renders.
+describe("CL-7584 desired-state kicks and steps", () => {
+  const joinedTenancy = {
+    countUsers: async () => 1,
+    countTenants: async () => 1,
+    findRootTenant: async () => ({ id: "ten_root", slug: "workbench" }),
+    addActiveMember: async () => ({ principalId: "prn_root" }),
+  };
+
+  function assetRow(name: string, kind: string) {
+    return {
+      id: `ast_${name}`,
+      tenantId: "ten_root",
+      kind,
+      name,
+      displayName: null,
+      creatorPrincipalId: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      origin: { tenantId: "ten_root", direct: true },
+    };
+  }
+
+  function mountHub(state: { seeded: boolean }) {
+    const hub = new Hono();
+    hub.get("/api/me/principals", (c) =>
+      c.json({
+        data: [
+          {
+            principalId: "prn_root",
+            tenantId: "ten_root",
+            tenantName: "workbench",
+            tenantSlug: "workbench",
+            kind: "user",
+            status: "active",
+            roles: [],
+          },
+        ],
+        nextCursor: null,
+      }),
+    );
+    hub.get("/api/tenants/ten_root", (c) =>
+      c.json({
+        id: "ten_root",
+        name: "workbench",
+        slug: "workbench",
+        domain: "workbench.bench.local",
+        parentId: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    hub.get("/api/tenants/ten_root/assets", (c) => {
+      if (c.req.query("kind") === "workflow") {
+        return c.json(state.seeded ? [assetRow("assistant", "workflow")] : []);
+      }
+      if (c.req.query("kind") === "package-registry") {
+        return c.json(
+          state.seeded ? [assetRow("corbits-tools", "package-registry")] : [],
+        );
+      }
+      return c.json([]);
+    });
+    hub.get("/api/tenants/ten_root/workflows/deployments", (c) =>
+      c.json(
+        state.seeded
+          ? [{ definitionAssetId: "ast_assistant", status: "deployed" }]
+          : [],
+      ),
+    );
+    hub.get("/api/tenants/ten_root/assets/ast_corbits-tools/tarballs", (c) =>
+      c.json(
+        state.seeded
+          ? [
+              {
+                filename: "corbits-memory-tools-0.0.4.tgz",
+                size: 1,
+                integrity: "sha512-x",
+              },
+            ]
+          : [],
+      ),
+    );
+    hub.get("/api/tenants/ten_root/skills/:name", (c) =>
+      state.seeded
+        ? c.json({ name: c.req.param("name") })
+        : c.json({ error: "none" }, 404),
+    );
+    return hub;
+  }
+
+  function routesWithKick(hub: Hono, kicks: string[]) {
+    const server = Bun.serve({ port: 0, fetch: hub.fetch });
+    const routes = createOnboardingRoutes({
+      tenancy: joinedTenancy,
+      defaultTenantSlug: "workbench",
+      hubUrl: `http://localhost:${server.port}`,
+      pushWorkflow: async () => ({
+        outcome: "pushed" as const,
+        commitSha: "a".repeat(40),
+      }),
+      log: () => undefined,
+      pendingSeedStore,
+      desiredStateKick: (args) => kicks.push(args.tenantId),
+    });
+    return { server, app: mountAuthenticated(routes) };
+  }
+
+  test("a joined member's probe fires one kick when pins are pending", async () => {
+    const hub = mountHub({ seeded: false });
+    const kicks: string[] = [];
+    const { server, app } = routesWithKick(hub, kicks);
+    try {
+      const response = await app.request("/provision", { method: "POST" });
+      expect(response.status).toBe(200);
+      // Give the fire-and-forget kick a beat; it is synchronous at the
+      // boundary (the kick itself is queued by the collector).
+      expect(kicks).toEqual(["ten_root"]);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("a converged tenant's probe fires no kick", async () => {
+    const hub = mountHub({ seeded: true });
+    const kicks: string[] = [];
+    const { server, app } = routesWithKick(hub, kicks);
+    try {
+      const response = await app.request("/provision", { method: "POST" });
+      expect(response.status).toBe(200);
+      expect(kicks).toEqual([]);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("GET /provisioning-status carries the doc-derived step list", async () => {
+    const hub = mountHub({ seeded: false });
+    const { server, app } = routesWithKick(hub, []);
+    try {
+      const response = await app.request(
+        "/provisioning-status?tenantId=ten_root",
+      );
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        kind: string;
+        setupAgentReady: boolean;
+        steps: { name: string; label: string; status: string }[];
+      };
+      expect(body.kind).toBe("provisioning");
+      expect(body.setupAgentReady).toBe(false);
+      expect(body.steps[0]?.name).toBe("assistant");
+      expect(body.steps.every((s) => s.status === "pending")).toBe(true);
+      expect(body.steps.every((s) => s.label.length > 0)).toBe(true);
+    } finally {
+      server.stop(true);
+    }
+  });
+});

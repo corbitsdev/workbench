@@ -49,7 +49,11 @@ import {
   submitCredential,
   triggerFirstLoginProvisioning,
 } from "../onboarding";
-import type { CredentialProvider, CredentialProviderCard } from "../onboarding";
+import type {
+  CredentialProvider,
+  CredentialProviderCard,
+  OnboardingStep,
+} from "../onboarding";
 import { OnboardingLayout } from "../onboarding/onboarding-layout";
 import type { SessionUser } from "../session";
 
@@ -84,7 +88,12 @@ type WizardState =
       readonly errorRefId?: string;
     }
   | { readonly phase: "submitting" }
-  | { readonly phase: "finishing-setup" };
+  | {
+      readonly phase: "finishing-setup";
+      /** CL-7584: the desired-state steps the hub reports as still
+       * pending, rendered under the loader until ready collapses them. */
+      readonly steps: readonly OnboardingStep[];
+    };
 
 function ProviderCardButton({
   provider,
@@ -182,7 +191,8 @@ function initialWizardState(): WizardState {
     readOpenRouterConnectReturn(window.location.search) ??
     readHuggingFaceConnectReturn(window.location.search);
   if (returned === null) return { phase: "provisioning" };
-  if (returned.kind === "connected") return { phase: "finishing-setup" };
+  if (returned.kind === "connected")
+    return { phase: "finishing-setup", steps: [] };
   return { phase: "credential", error: returned.message };
 }
 
@@ -311,13 +321,30 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
   // creates one the first time an account has none.
   useEffect(() => {
     if (state.phase === "finishing-setup") {
-      void completeSetup().then((outcome) => {
-        if (outcome.kind === "connected") {
-          navigate("/");
-        } else if (outcome.kind === "unseeded") {
-          setResumingUnseeded(true);
-          setState({ phase: "credential", error: null });
-        } else {
+      let cancelled = false;
+      // Poll until ready: each pass renders the hub's own desired-state
+      // step list (CL-7584); a ready answer collapses it and hands off.
+      void (async () => {
+        for (;;) {
+          const outcome = await completeSetup();
+          if (cancelled) return;
+          if (outcome.kind === "connected") {
+            if (!outcome.agentsPending) {
+              navigate("/");
+              return;
+            }
+            setState({
+              phase: "finishing-setup",
+              steps: outcome.steps ?? [],
+            });
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            continue;
+          }
+          if (outcome.kind === "unseeded") {
+            setResumingUnseeded(true);
+            setState({ phase: "credential", error: null });
+            return;
+          }
           setState(
             outcome.refId === undefined
               ? { phase: "credential", error: outcome.message }
@@ -327,9 +354,12 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
                   errorRefId: outcome.refId,
                 },
           );
+          return;
         }
-      });
-      return;
+      })();
+      return () => {
+        cancelled = true;
+      };
     }
     runProvisioning(defaultTeamName(user));
     // Mount-only: this reads `state.phase` exactly once, at the value
@@ -421,6 +451,19 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
           </p>
           <div className="onboarding-content">
             <WorkbenchLoadingState delayMs={0} title="Preparing your agent…" />
+            {state.steps.length > 0 && (
+              <ul className="onboarding-steps">
+                {state.steps.map((step) => (
+                  <li
+                    key={step.name}
+                    className="onboarding-step"
+                    data-status={step.status}
+                  >
+                    {step.label}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       </OnboardingLayout>

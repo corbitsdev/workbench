@@ -50,6 +50,41 @@ never reaches a running or freshly-launched agent; `tool-registry-publish`
 refuses to overwrite an existing `name@version` with different content for
 exactly this reason.
 
+## Per-tenant desired-state reconciliation (CL-7584)
+
+Every real tenant converges onto the tenant desired-state document
+(`TENANT_DESIRED_STATE`, `packages/onboarding/src/desired-state.ts`) — a
+plain client-side const composed by reference over `DEFAULT_WORKFLOWS`,
+`REQUIRED_SEED_TOOL_PACKAGES`, and `DEFAULT_SKILLS`. It is not a hub
+table and there is no migration; growing the core workflow set later is
+an edit to the upstream constants, never a schema change.
+
+`reconcileTenantDesiredState` is the one installer: it reads the
+tenant's real state with native GETs only and installs ONLY the absent
+pins — tool packages first (workspace-pack publish, or a verified
+`tarball-url` fetch through `installRegistryTarball`; no external
+artifacts exist yet, so the doc pins only workspace-pack this build),
+then skills, grants, and workflows together through `seedTenant` with
+`confirmDeployments: false`. Sidecar-unavailable (502-class) pins
+report `blocked` without throwing; anything else reports `failed` and
+is safe to re-run. With every pin present a reconcile pass is reads
+only — `seedTenant` is never entered.
+
+Convergence has three triggers, all driving the same reconciler:
+
+1. A tenant-create observation: a 201 from `POST /api/tenants` fires a
+   fire-and-forget reconcile under the creator's minted session
+   (`apps/hub/src/tenant-create-onboard.ts`).
+2. The pending-seed drain: `runOnce` delegates to the same reconcile;
+   the `pending_seed` row stays the only durable work item (ready
+   clears it, blocked keeps it, failed keeps it and backs off).
+3. The revisit kick: `POST /api/onboarding/provision` fires a kick when
+   the caller's tenant still has pending pins — how a joined member's
+   bench converges.
+
+`GET /api/onboarding/provisioning-status` carries the doc-derived
+`steps` list the onboarding page renders; a ready answer collapses it.
+
 ## Memory plane
 
 The memory plane (embeddings-backed recall) is `@corbits/memory`, mounted

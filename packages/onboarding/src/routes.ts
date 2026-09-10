@@ -41,8 +41,12 @@ import {
   personalTenantSlug,
   provisionPersonalTenantIfNeeded,
   ProvisionError,
-  seededWorkflowStatus,
 } from "./provision";
+import {
+  desiredStateSteps,
+  readTenantDesiredStateStatus,
+  TENANT_DESIRED_STATE,
+} from "./desired-state";
 
 import type { HubSignupTenancy } from "./genesis";
 
@@ -178,6 +182,15 @@ export type CreateOnboardingRoutesDeps = {
    * than a correctness dependency.
    */
   benchProvisioner?: Pick<BenchProvisioner, "wake">;
+  /**
+   * CL-7584 revisit kick: fire-and-forget desired-state reconcile for a
+   * tenant that still has pending pins. The hub wires this to the same
+   * reconciler the tenant-create observer and the drain use; the route
+   * never awaits it. Absent means no kick — convergence then relies on
+   * the drain's own poll, which is why this is a latency optimization
+   * rather than a correctness dependency.
+   */
+  desiredStateKick?: (args: { tenantId: string; cookies: string[] }) => void;
   /** Test seam standing in for the deploy step, so a route test can
    * prove the response never waits on one. */
   ensureSeededFn?: typeof ensureSeeded;
@@ -241,6 +254,13 @@ type ProvisioningStatusBody = {
   readonly setupAgentReady: boolean;
   readonly deployed: string[];
   readonly pending: string[];
+  /** CL-7584: the desired-state step list, doc-labeled, for the
+   * onboarding page's waiting surfaces. */
+  readonly steps: readonly {
+    readonly name: string;
+    readonly label: string;
+    readonly status: "present" | "pending" | "blocked";
+  }[];
 };
 
 /**
@@ -354,18 +374,29 @@ export function createOnboardingRoutes(
     cookies: string[],
     tenant: Pick<PersonalTenant, "tenantId" | "tenantSlug">,
   ): Promise<ProvisioningStatusBody> {
-    const { deployed, pending } = await seededWorkflowStatus(
+    const status = await readTenantDesiredStateStatus(
       api,
       cookies,
       tenant.tenantId,
     );
+    const steps = desiredStateSteps(status);
+    const deployed = TENANT_DESIRED_STATE.workflows
+      .filter((pin) => status.workflows[pin.assetName] === "present")
+      .map((pin) => pin.assetName);
+    const pending = TENANT_DESIRED_STATE.workflows
+      .filter((pin) => status.workflows[pin.assetName] !== "present")
+      .map((pin) => pin.assetName);
     return {
+      // The person-facing readiness gate stays on the workflow set: Myra
+      // live is "can they start". Tool packages and skills ride in
+      // `steps` for the waiting surface without holding the door shut.
       kind: pending.length === 0 ? "ready" : "provisioning",
       tenantId: tenant.tenantId,
       tenantSlug: tenant.tenantSlug,
-      setupAgentReady: deployed.includes(SETUP_AGENT_ASSET_NAME),
+      setupAgentReady: status.workflows[SETUP_AGENT_ASSET_NAME] === "present",
       deployed,
       pending,
+      steps,
     };
   }
 
@@ -461,8 +492,52 @@ export function createOnboardingRoutes(
 
       const result = await provisionPersonalTenantIfNeeded(provisionArgs);
 
+      // CL-7584 revisit kick: a tenant still missing desired-state pins
+      // (a genesis tenant nobody has connected a credential to yet, or a
+      // joined member's bench) gets a fire-and-forget reconcile under
+      // this session. Never blocks or fails the provision response.
+      if (
+        (result.kind === "provisioned" || result.kind === "existing-member") &&
+        deps.desiredStateKick !== undefined
+      ) {
+        try {
+          // A just-joined or just-minted tenant carries its id; a plain
+          // existing member resolves it the same way the connect flow
+          // does (first active principal).
+          const kickTenantId =
+            result.tenantId ??
+            (
+              await findPersonalTenant(
+                api,
+                cookies,
+                personalTenantSlug(user.email, user.id),
+                { fallbackToFirstPrincipal: true },
+              )
+            )?.tenantId;
+          if (kickTenantId !== undefined) {
+            const status = await readTenantDesiredStateStatus(
+              api,
+              cookies,
+              kickTenantId,
+            );
+            if (!status.ready) {
+              deps.desiredStateKick({ tenantId: kickTenantId, cookies });
+            }
+          }
+        } catch (cause) {
+          // report-error-ignore: the kick is best-effort — convergence
+          // falls back to the pending_seed drain, so a failed kick check
+          // only ever costs one delayed pass.
+          deps.log(
+            `desired-state kick check for user ${user.id} failed (convergence falls back to the drain): ${cause instanceof Error ? cause.message : String(cause)}`,
+          );
+        }
+      }
+
       return c.json(result, 200);
     } catch (cause) {
+      // report-error-ignore: both branches below route through
+      // reportOnboardingError, this package's reportError wrapper.
       if (cause instanceof ProvisionError) {
         const status =
           cause.code === "signup_not_allowed"

@@ -1,11 +1,12 @@
 // The background provisioner: the only thing in the system that
-// deploys a bench's default workflows (CL-6457). Connect persists a
-// credential and returns; this converges the bench afterwards, and has
-// to hold three properties no HTTP request can hold for it — it is
-// idempotent (a second pass over an already-seeded bench deploys
-// nothing), convergent (a half-provisioned bench finishes on a later
-// pass), and restart-safe (a fresh process with nothing in memory picks
-// up whatever the crashed one left in the pending-seed table).
+// converges a connected bench (CL-6457, doc-driven since CL-7584).
+// Connect persists a credential and returns; this reconciles the bench
+// against the tenant desired-state document afterwards, and has to hold
+// three properties no HTTP request can hold for it — it is idempotent (a
+// second pass over an already-seeded bench installs nothing),
+// convergent (a half-provisioned bench finishes on a later pass), and
+// restart-safe (a fresh process with nothing in memory picks up
+// whatever the crashed one left in the pending-seed table).
 import { describe, expect, test } from "bun:test";
 import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import type { CredentialCipher } from "@intx/types";
@@ -20,6 +21,10 @@ import {
   type PendingSeed,
   type PendingSeedStore,
 } from "../src/pending-seed";
+
+type ReconcileArgsLike = Parameters<
+  NonNullable<BenchProvisionerDeps["reconcileFn"]>
+>[0];
 
 const TEST_KEY = Buffer.alloc(32, 33);
 function testCipher(): CredentialCipher {
@@ -37,20 +42,58 @@ const SEED: PendingSeed = {
 
 const ALL_WORKFLOWS = DEFAULT_WORKFLOWS.map((workflow) => workflow.assetName);
 
+function readyReport(tenantId: string) {
+  return {
+    tenantId,
+    ready: true as const,
+    pins: ALL_WORKFLOWS.map((name) => ({
+      name,
+      kind: "workflow" as const,
+      status: "installed" as const,
+    })),
+  };
+}
+
+function blockedReport(tenantId: string) {
+  return {
+    tenantId,
+    ready: false as const,
+    pins: [
+      {
+        name: "assistant",
+        kind: "workflow" as const,
+        status: "blocked" as const,
+      },
+    ],
+  };
+}
+
+function failedReport(tenantId: string) {
+  return {
+    tenantId,
+    ready: false as const,
+    pins: [
+      {
+        name: "assistant",
+        kind: "workflow" as const,
+        status: "failed" as const,
+      },
+    ],
+  };
+}
+
 /** A provisioner wired entirely to fakes: no hub, no sidecar, no git
- * push. `seededTenants` is the fake bench state both the seeded-check
- * and the deploy step read and write, so idempotence and convergence
- * are observable as call counts rather than asserted by inspection. */
+ * push. `deployedByTenant` is the fake bench state the reconcile seam
+ * reads and writes, so idempotence and convergence are observable as
+ * call counts rather than asserted by inspection. */
 function harness(
   overrides: Partial<BenchProvisionerDeps> & { store?: PendingSeedStore } = {},
 ) {
   const store = overrides.store ?? createInMemoryPendingSeedStore(testCipher());
   const deployedByTenant = new Map<string, string[]>();
   const calls = {
-    isFullySeeded: 0,
-    ensureSeeded: 0,
+    reconcile: 0,
     sessionFor: 0,
-    publishToolRegistry: 0,
   };
   const logged: string[] = [];
 
@@ -69,19 +112,10 @@ function harness(
       return ["better-auth.session_token=minted"];
     },
     log: (line) => logged.push(line),
-    isFullySeededFn: async (_api, _cookies, tenantId) => {
-      calls.isFullySeeded += 1;
-      return (
-        (deployedByTenant.get(tenantId) ?? []).length === ALL_WORKFLOWS.length
-      );
-    },
-    publishToolRegistryFn: async () => {
-      calls.publishToolRegistry += 1;
-    },
-    ensureSeededFn: async (args) => {
-      calls.ensureSeeded += 1;
+    reconcileFn: async (args) => {
+      calls.reconcile += 1;
       deployedByTenant.set(args.tenant.tenantId, [...ALL_WORKFLOWS]);
-      return { kind: "seeded", workflows: ALL_WORKFLOWS };
+      return readyReport(args.tenant.tenantId);
     },
     ...overrides,
   };
@@ -102,7 +136,7 @@ describe("createBenchProvisioner", () => {
 
     const report = await provisioner.drainOnce();
 
-    expect(calls.ensureSeeded).toBe(1);
+    expect(calls.reconcile).toBe(1);
     expect(deployedByTenant.get("ten_1")).toEqual(ALL_WORKFLOWS);
     expect(report).toMatchObject({ converged: 1, truncated: false });
     expect(
@@ -110,46 +144,40 @@ describe("createBenchProvisioner", () => {
     ).toBeUndefined();
   });
 
-  test("is idempotent: a second drain over an already-seeded bench deploys nothing", async () => {
+  test("is idempotent: a second drain over an already-seeded bench installs nothing", async () => {
     const { provisioner, store, calls } = harness();
     await store.put(SEED);
 
     await provisioner.drainOnce();
     // The row is gone after the first pass, so re-arm it the way a
-    // duplicate connect would and prove the seeded-check short-circuits.
+    // duplicate connect would and prove the reconcile short-circuits.
     await store.put(SEED);
     await provisioner.drainOnce();
 
-    expect(calls.ensureSeeded).toBe(1);
+    expect(calls.reconcile).toBe(2);
   });
 
-  test("re-running over a bench someone else already seeded deploys nothing and still clears the row", async () => {
-    const { provisioner, store, calls, deployedByTenant } = harness();
-    deployedByTenant.set("ten_1", [...ALL_WORKFLOWS]);
+  test("reconciling a bench someone else already converged reports ready and still clears the row", async () => {
+    const { provisioner, store } = harness();
     await store.put(SEED);
 
     const report = await provisioner.drainOnce();
 
-    expect(calls.ensureSeeded).toBe(0);
     expect(report).toMatchObject({ converged: 1, truncated: false });
     expect(
       await store.read({ userId: "user_1", tenantId: "ten_1" }),
     ).toBeUndefined();
   });
 
-  test("a half-provisioned bench keeps its row and converges on a later pass", async () => {
+  test("a blocked bench keeps its row and converges on a later pass", async () => {
     let attempt = 0;
     const { provisioner, store } = harness({
-      ensureSeededFn: async () => {
+      reconcileFn: async (args) => {
         attempt += 1;
-        return attempt === 1
-          ? {
-              kind: "seeded-pending-agents",
-              deployed: ALL_WORKFLOWS.slice(0, 2),
-              pending: ALL_WORKFLOWS.slice(2),
-              message: "agents pending",
-            }
-          : { kind: "seeded", workflows: ALL_WORKFLOWS };
+        if (attempt > 1) {
+          return readyReport(args.tenant.tenantId);
+        }
+        return blockedReport(args.tenant.tenantId);
       },
     });
     await store.put(SEED);
@@ -168,13 +196,13 @@ describe("createBenchProvisioner", () => {
     ).toBeUndefined();
   });
 
-  test("a deploy failure leaves the row for the next pass rather than losing the bench", async () => {
+  test("a reconcile failure leaves the row for the next pass rather than losing the bench", async () => {
     let attempt = 0;
     const { provisioner, store, logged } = harness({
-      ensureSeededFn: async () => {
+      reconcileFn: async (args) => {
         attempt += 1;
         if (attempt === 1) throw new Error("sidecar exploded");
-        return { kind: "seeded", workflows: ALL_WORKFLOWS };
+        return readyReport(args.tenant.tenantId);
       },
     });
     await store.put(SEED);
@@ -190,21 +218,19 @@ describe("createBenchProvisioner", () => {
     expect(second).toMatchObject({ converged: 1 });
   });
 
-  test("a failed bench is held off by backoff instead of hammering every tick", async () => {
-    let attempts = 0;
+  test("a failed-pin report counts as failed for backoff purposes", async () => {
     const { provisioner, store } = harness({
-      ensureSeededFn: async () => {
-        attempts += 1;
-        throw new Error("sidecar still down");
-      },
+      reconcileFn: async (args) => failedReport(args.tenant.tenantId),
     });
     await store.put(SEED);
 
     await provisioner.drainOnce();
     const held = await provisioner.drainOnce();
 
-    expect(attempts).toBe(1);
     expect(held).toMatchObject({ deferred: 1 });
+    expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toEqual(
+      SEED,
+    );
   });
 
   test("restart-resume: a fresh provisioner with empty memory finishes what a crashed one left behind", async () => {
@@ -218,23 +244,23 @@ describe("createBenchProvisioner", () => {
     const { provisioner, calls, deployedByTenant } = harness({ store });
     const report = await provisioner.drainOnce();
 
-    expect(calls.ensureSeeded).toBe(1);
+    expect(calls.reconcile).toBe(1);
     expect(deployedByTenant.get("ten_1")).toEqual(ALL_WORKFLOWS);
     expect(report).toMatchObject({ converged: 1, truncated: false });
   });
 
-  test("overlapping drains never double-deploy the same bench", async () => {
+  test("overlapping drains never double-provision the same bench", async () => {
     let inFlight = 0;
     let maxConcurrent = 0;
-    let deploys = 0;
+    let reconciles = 0;
     const { provisioner, store } = harness({
-      ensureSeededFn: async () => {
-        deploys += 1;
+      reconcileFn: async (args) => {
+        reconciles += 1;
         inFlight += 1;
         maxConcurrent = Math.max(maxConcurrent, inFlight);
         await new Promise((resolve) => setTimeout(resolve, 20));
         inFlight -= 1;
-        return { kind: "seeded", workflows: ALL_WORKFLOWS };
+        return readyReport(args.tenant.tenantId);
       },
     });
     await store.put(SEED);
@@ -242,45 +268,18 @@ describe("createBenchProvisioner", () => {
     await Promise.all([provisioner.drainOnce(), provisioner.drainOnce()]);
 
     expect(maxConcurrent).toBe(1);
-    expect(deploys).toBe(1);
+    expect(reconciles).toBe(1);
   });
 
-  test("pending-seed drain publishes corbits-tools before the fully-seeded check", async () => {
-    const order: string[] = [];
-    const { provisioner, store, calls } = harness({
-      publishToolRegistryFn: async () => {
-        order.push("publish");
-      },
-      isFullySeededFn: async () => {
-        order.push("seeded-check");
-        return true;
-      },
+  test("a blocked report holds the pending row as pending, not failed", async () => {
+    const { provisioner, store } = harness({
+      reconcileFn: async (args) => blockedReport(args.tenant.tenantId),
     });
     await store.put(SEED);
 
     const report = await provisioner.drainOnce();
 
-    expect(order).toEqual(["publish", "seeded-check"]);
-    expect(calls.ensureSeeded).toBe(0);
-    expect(report).toMatchObject({ converged: 1 });
-    expect(
-      await store.read({ userId: "user_1", tenantId: "ten_1" }),
-    ).toBeUndefined();
-  });
-
-  test("a publish throw holds the pending row and does not call ensureSeeded", async () => {
-    const { provisioner, store, calls } = harness({
-      publishToolRegistryFn: async () => {
-        throw new Error("pack exploded");
-      },
-    });
-    await store.put(SEED);
-
-    const report = await provisioner.drainOnce();
-
-    expect(calls.ensureSeeded).toBe(0);
-    expect(calls.isFullySeeded).toBe(0);
-    expect(report).toMatchObject({ failed: 1 });
+    expect(report).toMatchObject({ pending: 1, failed: 0 });
     expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toEqual(
       SEED,
     );
@@ -294,7 +293,7 @@ describe("createBenchProvisioner", () => {
 
     const report = await provisioner.drainOnce();
 
-    expect(calls.ensureSeeded).toBe(0);
+    expect(calls.reconcile).toBe(0);
     expect(report).toMatchObject({ failed: 1 });
     expect(await store.read({ userId: "user_1", tenantId: "ten_1" })).toEqual(
       SEED,
@@ -307,7 +306,7 @@ describe("createBenchProvisioner", () => {
     // repeated failures — the retry-hold bookkeeping must not survive
     // the row that justified it.
     const { provisioner, store } = harness({
-      ensureSeededFn: async () => {
+      reconcileFn: async () => {
         throw new Error("sidecar still down");
       },
     });
@@ -346,21 +345,16 @@ describe("createBenchProvisioner", () => {
 
     const report = await provisioner.drainOnce();
 
-    expect(calls.ensureSeeded).toBe(2);
+    expect(calls.reconcile).toBe(2);
     expect(report).toMatchObject({ converged: 2, truncated: false });
   });
 
   test("DrainReport.truncated is true when more due rows remain behind this tick's page", async () => {
     const seen = new Set<string>();
     const { provisioner, store } = harness({
-      ensureSeededFn: async (args) => {
+      reconcileFn: async (args: ReconcileArgsLike) => {
         seen.add(args.tenant.tenantId);
-        return {
-          kind: "seeded-pending-agents",
-          deployed: [],
-          pending: ALL_WORKFLOWS,
-          message: "agents pending",
-        };
+        return blockedReport(args.tenant.tenantId);
       },
     });
     for (let index = 0; index < PENDING_SEED_SCAN_LIMIT + 3; index += 1) {
@@ -385,14 +379,9 @@ describe("createBenchProvisioner", () => {
   test("rows past the scan limit still get a drain pass across ticks, even when the first page never converges", async () => {
     const seen = new Set<string>();
     const { provisioner, store } = harness({
-      ensureSeededFn: async (args) => {
+      reconcileFn: async (args: ReconcileArgsLike) => {
         seen.add(args.tenant.tenantId);
-        return {
-          kind: "seeded-pending-agents",
-          deployed: [],
-          pending: ALL_WORKFLOWS,
-          message: "agents pending",
-        };
+        return blockedReport(args.tenant.tenantId);
       },
     });
     const total = PENDING_SEED_SCAN_LIMIT + 3;
