@@ -2007,7 +2007,7 @@ describe("Workbench header polish (CL-6106)", () => {
     harness.unmount();
   });
 
-  test("agent participant chips live in the square member stack, naming the agent by display name (CL-6424 supersedes the raw-handle tooltip)", async () => {
+  test("member preview names the agent by display name", async () => {
     stubFetch(undefined, WORKBENCH_WITH_AGENT_WIRE);
     const harness = await mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
@@ -2254,7 +2254,7 @@ describe("Invite control visibility (CL-6781)", () => {
     harness.unmount();
   });
 
-  test("shows Invite agent once at least one definition is invitable", async () => {
+  test("offers Add member in the popover once a definition is invitable", async () => {
     globalThis.EventSource = StubEventSource as unknown as typeof EventSource;
     globalThis.fetch = (async (
       input: RequestInfo | URL,
@@ -2308,7 +2308,12 @@ describe("Invite control visibility (CL-6781)", () => {
     await harness.settle();
     await harness.settle();
 
-    expect(harness.container.textContent).toContain("Invite agent");
+    const trigger = harness.container.querySelector<HTMLButtonElement>(
+      'button[aria-controls][aria-label$="members"]',
+    );
+    expect(trigger).not.toBeNull();
+    act(() => trigger?.click());
+    expect(harness.container.textContent).toContain("Add member");
     harness.unmount();
   });
 });

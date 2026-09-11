@@ -19,7 +19,6 @@ import {
   CaretDown,
   ChatCircle,
   SlidersHorizontal,
-  UserPlus,
   WarningCircle,
 } from "@corbits/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -116,8 +115,8 @@ import {
   applyStreamReaction,
   useWorkbenchFeed,
 } from "./use-workbench-feed";
-import { CorbitAvatar, avatarClassForPrincipal } from "./avatar";
-import { useWorkbenchPresenceRoster } from "./workbench-presence";
+import { avatarClassForPrincipal } from "./avatar";
+import { ChatMembers } from "./chat-members";
 import { type } from "arktype";
 import {
   ChatMessageEventData,
@@ -153,22 +152,8 @@ export type TenantResolution =
   | { readonly kind: "empty" }
   | { readonly kind: "ready"; readonly tenantId: string };
 
-/**
- * One live presence entry for the workbench's who's-here stack (CL-6328) —
- * derived from this workbench's own `/stream` connection
- * (`useWorkbenchPresenceRoster`), never a second connection or an HTTP
- * heartbeat poll. The roster carries only ids, so display names and avatar
- * classes resolve client-side against the workbench's participants.
- */
-export interface PresenceMember {
-  readonly principalId: string;
-  readonly displayName: string;
-  readonly avatarClassName: string;
-}
-
 /** One entry in the header's static member stack — an agent or a roster
- * human, normalized to the one shape the square stack renders. Live
- * presence uses `PresenceMember` in a separate round stack. */
+ * human, normalized for the member control and popover. */
 export interface TeamAvatarEntry {
   readonly key: string;
   readonly initials: string;
@@ -176,11 +161,6 @@ export interface TeamAvatarEntry {
   readonly tone: "agent" | "neutral";
   readonly avatarClassName?: string;
 }
-
-/** How many avatars the header shows before collapsing the rest into a
- * "+N" chip. Shared by the static member stack and the live presence
- * stack so neither overflows the 3rem bar. */
-export const TEAM_AVATAR_STACK_LIMIT = 6;
 
 /** A crumb the host's `StageTopBar` can render — label plus an optional
  * parent href. The last crumb is the current page. */
@@ -206,8 +186,7 @@ const WORKBENCHES_LIST_CHROME: ChatHeaderChrome = {
  * human on the roster. Agents first (they have no presence concept of
  * their own); humans follow. Roster humans are included even when live
  * presence is empty (CL-6779) — onboarding/template rooms often list the
- * signed-in human as a participant before any `chat.presence.snapshot`
- * arrives. Live who's-here is a separate round stack, not mixed in here.
+ * signed-in human as a participant before any live update arrives.
  *
  * Each person gets a stable generated color keyed by address. Human labels
  * prefer `currentUser.name` when the roster entry
@@ -217,7 +196,13 @@ export function buildMemberAvatarStack(
   participants: readonly ParticipantRecord[],
   displayNames?: AgentDisplayNames,
   currentUser?: CurrentUser,
+  owner?: ParticipantRecord | null,
 ): readonly TeamAvatarEntry[] {
+  const roster =
+    owner != null &&
+    !participants.some((participant) => participant.address === owner.address)
+      ? [...participants, owner]
+      : participants;
   const agents = participants
     .filter((participant) => isAgentAddress(participant.address))
     .map((participant) => {
@@ -232,12 +217,12 @@ export function buildMemberAvatarStack(
       };
     });
 
-  const humans = participants
+  const humans = roster
     .filter((participant) => !isAgentAddress(participant.address))
     .map((participant) => {
       const label = typingLabel(
         localPartOf(participant.address),
-        participants,
+        roster,
         currentUser,
       );
       return {
@@ -896,8 +881,6 @@ function ChatWorkspaceInner({
   } = useStreamingReply(activeWorkbenchId);
   const { activity: turnActivity, handleStreamEvent: handleTurnActivityEvent } =
     useTurnActivity(activeWorkbenchId);
-  const { roster: presenceRoster, handleStreamEvent: handlePresenceEvent } =
-    useWorkbenchPresenceRoster(activeWorkbenchId);
 
   // "Here at all" comes for free from the open `/stream` connection itself
   // (see `packages/chat/src/workbench-presence.ts`) — this ping only
@@ -953,7 +936,6 @@ function ChatWorkspaceInner({
       handleTypingEvent(eventType, data);
       handleStreamingReplyEvent(eventType, data);
       handleTurnActivityEvent(eventType, data);
-      handlePresenceEvent(eventType, data);
       if (activeWorkbenchId === null) return;
       switch (eventType) {
         case "chat.message": {
@@ -1323,43 +1305,13 @@ function ChatWorkspaceInner({
     !workbenchGone &&
     messagesState.kind !== "ready";
 
-  // Who's live in this workbench right now, beyond the static participants
-  // list — derived from this workbench's own `chat.presence`/
-  // `chat.presence.snapshot` stream events (CL-6328), never a second
-  // connection or an HTTP heartbeat poll. Display name and color are
-  // resolved client-side (the roster itself carries only ids) the same way
-  // `typingLabel` resolves a typing ping's principal.
-  const presenceMembers: readonly PresenceMember[] = useMemo(
-    () =>
-      presenceRoster.map((member) => {
-        return {
-          principalId: member.principalId,
-          displayName: typingLabel(
-            member.principalId,
-            activeWorkbench?.participants ?? [],
-            currentUser,
-          ),
-          avatarClassName: avatarClassForPrincipal(member.principalId),
-        };
-      }),
-    [presenceRoster, activeWorkbench?.participants, currentUser],
-  );
-
-  // Static member stack (square) vs live presence (round) — never one
-  // combined circular team stack.
+  // Membership includes offline participants.
   const memberStack = buildMemberAvatarStack(
     activeWorkbench?.participants ?? [],
     agentDisplayNames,
     currentUser,
+    activeWorkbench?.owner,
   );
-  const visibleMemberStack = memberStack.slice(0, TEAM_AVATAR_STACK_LIMIT);
-  const memberStackOverflow = memberStack.length - visibleMemberStack.length;
-  const visiblePresenceStack = presenceMembers.slice(
-    0,
-    TEAM_AVATAR_STACK_LIMIT,
-  );
-  const presenceStackOverflow =
-    presenceMembers.length - visiblePresenceStack.length;
 
   const showRoomChrome =
     workbenchesState.kind === "ready" &&
@@ -1417,78 +1369,22 @@ function ChatWorkspaceInner({
           </div>
         </details>
       ) : null}
-      {visibleMemberStack.length > 0 ? (
-        <div
-          className="chat-member-stack"
-          aria-label={CHAT_STRINGS.workbenchMembersLabel}
-        >
-          {visibleMemberStack.map((entry) =>
-            entry.tone === "agent" ? (
-              <span
-                key={entry.key}
-                className="member-avatar !overflow-hidden !bg-transparent !p-0"
-                data-agent="true"
-                title={entry.label}
-              >
-                <CorbitAvatar
-                  size="sm"
-                  ariaLabel={entry.label}
-                  className="!size-full"
-                />
-              </span>
-            ) : (
-              <span
-                key={entry.key}
-                className={`member-avatar ${entry.avatarClassName ?? ""}`}
-                title={entry.label}
-              >
-                {entry.initials}
-              </span>
-            ),
-          )}
-          {memberStackOverflow > 0 ? (
-            <span
-              className="chat-member-stack-overflow"
-              title={CHAT_STRINGS.teamStackOverflow(memberStackOverflow)}
-            >
-              +{memberStackOverflow}
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-      {presenceMembers.length > 0 ? (
-        <div
-          className="chat-presence-stack"
-          aria-label={CHAT_STRINGS.workbenchPresenceLabel}
-        >
-          {visiblePresenceStack.map((member) => (
-            <span
-              key={member.principalId}
-              className={`chat-presence-avatar ${member.avatarClassName}`}
-              title={member.displayName}
-            >
-              {member.displayName.slice(0, 1).toUpperCase()}
-            </span>
-          ))}
-          {presenceStackOverflow > 0 ? (
-            <span
-              className="chat-presence-stack-overflow"
-              title={CHAT_STRINGS.teamStackOverflow(presenceStackOverflow)}
-            >
-              +{presenceStackOverflow}
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-      {offerInviteControl ? (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setInviteDialogOpen(true)}
-        >
-          <UserPlus />
-          {CHAT_STRINGS.inviteAgentAction}
-        </Button>
+      {activeWorkbenchId !== null &&
+      (memberStack.length > 0 || offerInviteControl) ? (
+        <ChatMembers
+          key={activeWorkbenchId}
+          members={memberStack}
+          agents={workbenchAgentsQuery.data ?? []}
+          currentUserPrincipalId={currentUser?.principalId}
+          onInvite={
+            offerInviteControl ? () => setInviteDialogOpen(true) : undefined
+          }
+          onEditAgent={
+            onSettingsOpenChange !== undefined
+              ? (definitionId) => openWorkbenchSettings("agents", definitionId)
+              : undefined
+          }
+        />
       ) : null}
       <div className="chat-workbench-settings-slot">
         <Button
