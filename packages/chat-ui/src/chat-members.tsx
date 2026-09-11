@@ -3,6 +3,10 @@ import {
   Avatar,
   Button,
   ConfirmButton,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuTrigger,
   useDismissablePopover,
 } from "@corbits/react-ui";
 import { CaretDown, DotsThree, Plus } from "@corbits/icons";
@@ -93,11 +97,11 @@ export function ChatMembers({
               key={member.key}
               title={member.label}
               data-agent={member.tone === "agent" ? "true" : undefined}
-              className={`member-avatar relative ${index === 0 ? "z-10" : "-ml-1.5"}`}
+              className={`member-avatar relative flex size-6 shrink-0 items-center justify-center ${index === 0 ? "z-10" : "-ml-1.5"}`}
             >
               {member.tone === "agent" ? (
                 <CorbitAvatar
-                  size="sm"
+                  size={24}
                   ariaLabel={member.label}
                   className="[&_svg]:!size-full"
                 />
@@ -141,7 +145,10 @@ export function ChatMembers({
               );
               const editable = agent !== undefined && onEditAgent !== undefined;
               return (
-                <li key={member.key} className="flex items-start gap-3 py-2">
+                <li
+                  key={member.key}
+                  className="chat-member-row flex items-start gap-3 rounded-md px-2 py-2 transition-colors hover:bg-muted focus-within:bg-muted"
+                >
                   {member.tone === "agent" ? (
                     <CorbitAvatar size="lg" ariaLabel={member.label} />
                   ) : (
@@ -164,45 +171,61 @@ export function ChatMembers({
                           : "Member"}
                     </p>
                   </div>
-                  {editable || (canRemove && !self) ? (
-                    <details name={`${panelId}-actions`} className="shrink-0">
-                      <summary
-                        aria-label={`Actions for ${member.label}`}
-                        className="flex min-h-10 w-10 cursor-pointer list-none items-center justify-center rounded-md hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden"
+                  {editable || (canRemove && !self && !member.isOwner) ? (
+                    <Menu>
+                      <MenuTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label={`Actions for ${member.label}`}
+                          className="flex min-h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                        >
+                          <DotsThree aria-hidden="true" className="size-5" />
+                        </button>
+                      </MenuTrigger>
+                      <MenuContent
+                        align="start"
+                        onEscapeKeyDown={(event) => event.stopPropagation()}
+                        onCloseAutoFocus={(event) => {
+                          if (open) return;
+                          event.preventDefault();
+                          triggerRef.current?.focus();
+                        }}
+                        onPointerDown={(event) => event.stopPropagation()}
                       >
-                        <DotsThree aria-hidden="true" className="size-5" />
-                      </summary>
-                      <div className="flex flex-col gap-1 py-1">
                         {editable ? (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
+                          <MenuItem
+                            onSelect={() => {
                               close();
                               onEditAgent(agent.definitionId);
                             }}
                           >
                             Edit agent
-                          </Button>
+                          </MenuItem>
                         ) : null}
-                        {canRemove && !self ? (
-                          <ConfirmButton
-                            size="sm"
-                            disabled={removing !== null}
-                            confirmLabel={
-                              CHAT_STRINGS.workbenchSettingsRemoveConfirmLabel
-                            }
-                            onConfirm={() => {
-                              void remove(member.key);
-                            }}
+                        {canRemove && !self && !member.isOwner ? (
+                          <MenuItem
+                            asChild
+                            onSelect={(event) => event.preventDefault()}
                           >
-                            {removing === member.key
-                              ? CHAT_STRINGS.workbenchSettingsRemoving
-                              : CHAT_STRINGS.workbenchSettingsRemoveAction}
-                          </ConfirmButton>
+                            <ConfirmButton
+                              size="sm"
+                              className="w-full justify-start border-0 px-2.5 py-2 text-sm font-normal"
+                              disabled={removing !== null}
+                              confirmLabel={
+                                CHAT_STRINGS.workbenchSettingsRemoveConfirmLabel
+                              }
+                              onConfirm={() => {
+                                void remove(member.key);
+                              }}
+                            >
+                              {removing === member.key
+                                ? CHAT_STRINGS.workbenchSettingsRemoving
+                                : CHAT_STRINGS.workbenchSettingsRemoveAction}
+                            </ConfirmButton>
+                          </MenuItem>
                         ) : null}
-                      </div>
-                    </details>
+                      </MenuContent>
+                    </Menu>
                   ) : null}
                 </li>
               );

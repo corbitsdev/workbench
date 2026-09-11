@@ -51,7 +51,7 @@ function mount(overrides: Partial<Parameters<typeof ChatMembers>[0]> = {}) {
 }
 
 function button(label: string) {
-  const match = Array.from(container.querySelectorAll("button")).find(
+  const match = Array.from(document.querySelectorAll("button")).find(
     (node) =>
       node.getAttribute("aria-label") === label ||
       node.textContent?.trim() === label,
@@ -60,15 +60,27 @@ function button(label: string) {
   return match;
 }
 function click(label: string) {
-  act(() => button(label).click());
+  const match = Array.from(
+    document.querySelectorAll("button, [role='menuitem']"),
+  ).find(
+    (node) =>
+      node.getAttribute("aria-label") === label ||
+      node.textContent?.trim() === label,
+  );
+  if (!(match instanceof HTMLElement)) {
+    throw new Error(`Missing clickable control: ${label}`);
+  }
+  act(() => match.click());
 }
 function actions() {
-  const summary = container.querySelector("summary");
-  if (summary === null) throw new Error("Missing member actions");
-  act(() => summary.click());
+  act(() =>
+    button("Actions for Myra").dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, button: 0 }),
+    ),
+  );
 }
 
-test("shows counts, identities, self label, and closes on Escape with focus restored", () => {
+test("shows counts, identities, self label, and closes the action menu on Escape", () => {
   mount();
   expect(container.textContent).toContain("1 person · 1 agent");
   expect(container.textContent).toContain("Alice");
@@ -77,13 +89,44 @@ test("shows counts, identities, self label, and closes on Escape with focus rest
     container.querySelector('[aria-label="Actions for Alice"]'),
   ).toBeNull();
   actions();
+  expect(document.querySelector('[role="menu"]')).not.toBeNull();
+  expect(document.querySelector("summary")).toBeNull();
+  expect(
+    Array.from(document.querySelectorAll('[role="menuitem"]')).some(
+      (item) => item.textContent?.trim() === "Remove",
+    ),
+  ).toBe(true);
+  const menu = document.querySelector('[role="menu"]');
+  expect(menu).not.toBeNull();
   act(() =>
-    document.dispatchEvent(
+    menu?.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
     ),
   );
-  expect(container.querySelector("section")).toBeNull();
-  expect(document.activeElement).toBe(button("2 members"));
+  expect(container.querySelector("section")).not.toBeNull();
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+});
+
+test("keeps trigger avatars equal and highlights each member row", () => {
+  mount();
+
+  const triggerAvatars = Array.from(
+    container.querySelectorAll(".member-avatar"),
+  );
+  expect(triggerAvatars).toHaveLength(2);
+  expect(
+    triggerAvatars.every((avatar) => avatar.classList.contains("size-6")),
+  ).toBe(true);
+
+  const memberRows = Array.from(container.querySelectorAll(".chat-member-row"));
+  expect(memberRows).toHaveLength(2);
+  expect(
+    memberRows.every(
+      (row) =>
+        row.classList.contains("hover:bg-muted") &&
+        row.classList.contains("focus-within:bg-muted"),
+    ),
+  ).toBe(true);
 });
 
 test("edits by definition ID and closes before invoking the existing editor", () => {
@@ -94,6 +137,7 @@ test("edits by definition ID and closes before invoking the existing editor", ()
     },
   });
   actions();
+  expect(document.querySelector('[role="menu"]')).not.toBeNull();
   click("Edit agent");
   expect(edited).toBe("def_myra");
   expect(container.querySelector("section")).toBeNull();
@@ -116,7 +160,7 @@ test("opens the existing invite flow and preserves fixed-chat controls", () => {
 test("does not offer unavailable invite or unresolved agent editing", () => {
   mount({ onInvite: undefined, agents: [], canRemove: false });
   expect(container.textContent).not.toContain("Add member");
-  expect(container.querySelector("summary")).toBeNull();
+  expect(document.querySelector('[aria-label="Actions for Myra"]')).toBeNull();
 });
 
 test("removal requires confirmation, sends the participant address, and refreshes on success", async () => {
@@ -138,18 +182,39 @@ test("removal requires confirmation, sends the participant address, and refreshe
   actions();
   click("Remove");
   expect(removed).toBe("");
-  act(() =>
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })),
-  );
-  click("2 members");
-  actions();
-  expect(button("Remove")).toBeDefined();
-  click("Remove");
   await act(async () => {
     button("Click again to remove").click();
   });
   expect(removed).toContain("/participants/myra%40agents.example");
   expect(refreshes).toBe(1);
+});
+
+test("keyboard confirmation remains usable in the action menu", async () => {
+  let removed = 0;
+  globalThis.fetch = Object.assign(
+    async () => {
+      removed += 1;
+      return Response.json({ address: "myra@agents.example" });
+    },
+    { preconnect: realFetch.preconnect },
+  );
+  mount();
+  actions();
+  const target = button("Remove");
+  act(() => {
+    target.focus();
+    target.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+  });
+  expect(removed).toBe(0);
+  expect(target.textContent).toContain("Click again to remove");
+  await act(async () => {
+    target.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+  });
+  expect(removed).toBe(1);
 });
 
 test("failed removal stays recoverable and does not refresh", async () => {
@@ -175,4 +240,27 @@ test("failed removal stays recoverable and does not refresh", async () => {
   expect(container.querySelector('[role="alert"]')).not.toBeNull();
   expect(refreshes).toBe(0);
   expect(button("Remove").disabled).toBe(false);
+});
+
+test("another viewer cannot remove the native owner", () => {
+  mount({
+    currentUserPrincipalId: "prn_bob",
+    members: [
+      {
+        key: "myra@agents.example",
+        initials: "",
+        label: "Myra",
+        tone: "agent",
+      },
+      {
+        key: "prn_alice",
+        initials: "A",
+        label: "Alice",
+        tone: "neutral",
+        isOwner: true,
+      },
+    ],
+  });
+  expect(container.textContent).toContain("Alice");
+  expect(document.querySelector('[aria-label="Actions for Alice"]')).toBeNull();
 });

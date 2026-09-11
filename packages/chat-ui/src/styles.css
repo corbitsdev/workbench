@@ -3137,40 +3137,6 @@
   border-left: 1px solid var(--border);
 }
 
-/* Who's live in this workbench right now, beyond the static member stack
-   above — round (vs. the member stack's square avatars) and colored per
-   principal (server-assigned, see @corbits/presence) so "live" reads at a
-   glance without any extra chrome or a status dot. */
-.chat-presence-stack {
-  display: flex;
-  align-items: center;
-  margin-left: 0.35rem;
-}
-
-.chat-presence-avatar,
-.chat-presence-stack-overflow {
-  display: grid;
-  place-items: center;
-  width: 1.5rem;
-  height: 1.5rem;
-  flex-shrink: 0;
-  border-radius: 50%;
-  border: 1.5px solid var(--background);
-  margin-left: -0.35rem;
-  font-size: 0.625rem;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.chat-presence-avatar:first-child {
-  margin-left: 0;
-}
-
-.chat-presence-stack-overflow {
-  background: var(--muted);
-  color: var(--muted-foreground);
-}
-
 /* Message body column: bubble/parts + reaction/pin row share one flex
    column so chips sit under the bubble instead of as a loose sibling of
    the whole header+bubble cluster (CL-6661). Each direct child is a

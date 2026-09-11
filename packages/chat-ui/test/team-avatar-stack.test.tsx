@@ -1,8 +1,7 @@
 // The workbench header's static member stack: every agent participant on
 // the workbench plus every human on the roster, a compact avatar preview
-// alongside the full member count. Live presence is
-// a separate round stack (see presence-stack.test.tsx).
-// Mirrors presence-stack.test.tsx's stub-fetch/mount harness.
+// alongside the full member count. The member control is the only header
+// identity surface; live presence must not add another avatar stack.
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, createElement } from "react";
@@ -125,12 +124,6 @@ function mount(props: Parameters<typeof ChatWorkspace>[0]) {
   };
 }
 
-function firstStream(): StubEventSource {
-  const instance = StubEventSource.instances[0];
-  if (instance === undefined) throw new Error("no stream connected");
-  return instance;
-}
-
 /** A human participant whose bare address (no `@`, so `isAgentAddress`
  * reads it as human) IS its own principal id — this is what lets the
  * presence roster's bare `principalId` resolve back to a display name
@@ -140,7 +133,7 @@ function humanParticipant(principalId: string, handle: string) {
 }
 
 describe("workbench header member avatar stack", () => {
-  test("previews agent and human membership separately from live presence", async () => {
+  test("previews agent and human membership without a duplicate live stack", async () => {
     stubFetch({
       participants: [
         { address: "myra@agents.example", handle: "Myra" },
@@ -150,14 +143,6 @@ describe("workbench header member avatar stack", () => {
     const harness = mount({
       tenant: { kind: "ready", tenantId: "tnt_1" },
       workbenchId: "ch_1",
-    });
-    await harness.settle();
-    act(() => {
-      firstStream().emit("chat.presence.snapshot", {
-        members: [
-          { principalId: "prn_alice", lastActiveAt: "2026-01-01T00:00:00Z" },
-        ],
-      });
     });
     await harness.settle();
 
@@ -176,13 +161,10 @@ describe("workbench header member avatar stack", () => {
     expect(agentAvatar.querySelector('[data-corbit="true"]')).not.toBeNull();
     expect(memberHumans).toHaveLength(1);
     expect((memberHumans[0] as HTMLElement).title).toBe("Alice");
-    const liveStack = harness.container.querySelector(".chat-presence-stack");
-    expect(liveStack).not.toBeNull();
-    const liveAvatars = harness.container.querySelectorAll(
-      ".chat-presence-avatar",
-    );
-    expect(liveAvatars).toHaveLength(1);
-    expect((liveAvatars[0] as HTMLElement).title).toBe("Alice");
+    expect(harness.container.querySelector(".chat-presence-stack")).toBeNull();
+    expect(
+      harness.container.querySelectorAll(".chat-presence-avatar"),
+    ).toHaveLength(0);
     expect(
       harness.container.querySelector(".chat-member-stack-overflow"),
     ).toBeNull();
@@ -259,16 +241,6 @@ describe("workbench header member avatar stack", () => {
       workbenchId: "ch_1",
     });
     await harness.settle();
-    act(() => {
-      firstStream().emit("chat.presence.snapshot", {
-        members: humanNames.map((_, index) => ({
-          principalId: `prn_${index}`,
-          lastActiveAt: "2026-01-01T00:00:00Z",
-        })),
-      });
-    });
-    await harness.settle();
-
     expect(harness.container.querySelectorAll(".member-avatar")).toHaveLength(
       2,
     );
@@ -278,10 +250,7 @@ describe("workbench header member avatar stack", () => {
     harness.unmount();
   });
 
-  test("own presence avatar uses currentUser.name, never Member (CL-6655)", async () => {
-    // The signed-in reader is live in presence but not yet on the workbench
-    // participants list (or has no handle there) — without currentUser.name
-    // the stack title falls back to "Member".
+  test("does not render a duplicate live avatar (CL-6655)", async () => {
     stubFetch({
       participants: [{ address: "myra@agents.example", handle: "Myra" }],
     });
@@ -291,22 +260,11 @@ describe("workbench header member avatar stack", () => {
       currentUser: { principalId: "prn_self", name: "sawyer" },
     });
     await harness.settle();
-    act(() => {
-      firstStream().emit("chat.presence.snapshot", {
-        members: [
-          { principalId: "prn_self", lastActiveAt: "2026-01-01T00:00:00Z" },
-        ],
-      });
-    });
-    await harness.settle();
 
-    const presenceAvatars = harness.container.querySelectorAll(
-      ".chat-presence-avatar",
-    );
-    expect(presenceAvatars).toHaveLength(1);
-    expect((presenceAvatars[0] as HTMLElement).title).toBe("sawyer");
-    expect((presenceAvatars[0] as HTMLElement).title).not.toBe("Member");
-    expect(presenceAvatars[0]?.textContent).toBe("S");
+    expect(harness.container.querySelector(".chat-presence-stack")).toBeNull();
+    expect(
+      harness.container.querySelectorAll(".chat-presence-avatar"),
+    ).toHaveLength(0);
     harness.unmount();
   });
 

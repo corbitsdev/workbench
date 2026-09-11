@@ -1088,13 +1088,17 @@ describe("composer slash commands — each wired command's real action", () => {
         ?.click(),
     );
     act(() =>
-      harness.container
-        .querySelector('summary[aria-label="Actions for Myra"]')
-        ?.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+      document
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="Actions for Myra"]',
+        )
+        ?.dispatchEvent(
+          new PointerEvent("pointerdown", { bubbles: true, button: 0 }),
+        ),
     );
-    const removeButton = Array.from(
-      harness.container.querySelectorAll("button"),
-    ).find((button) => button.textContent === "Remove");
+    const removeButton = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent === "Remove",
+    );
     expect(removeButton).toBeDefined();
     act(() => removeButton?.click());
     await act(async () => {

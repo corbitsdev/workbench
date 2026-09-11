@@ -942,31 +942,44 @@ const MoveWorkbenchBody = type({
 
 export { findExistingAgentChat };
 
-/** Annotates a workbench view with its native child-tenancy — the
- * `tenancy` field every workbench created after this rollout carries,
- * never `null` unless a caller reaches a route that skips the
- * annotation (there are none; `GET /workbenches` handles the one place a
- * link can be legitimately missing itself, via its own `legacy`
- * branch). */
-function withTenancy(
-  view: ReturnType<typeof workbenchView>,
-  link: { tenantId: string; parentTenantId: string; slug: string },
-): ReturnType<typeof workbenchView> & {
-  tenancy: { tenantId: string; parentTenantId: string; slug: string };
-  legacy: false;
-} {
-  return {
-    ...view,
-    tenancy: {
-      tenantId: link.tenantId,
-      parentTenantId: link.parentTenantId,
-      slug: link.slug,
-    },
-    legacy: false,
-  };
-}
-
 export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
+  async function withTenancy(
+    view: ReturnType<typeof workbenchView>,
+    link: { tenantId: string; parentTenantId: string; slug: string },
+    owningTenantId: string,
+  ) {
+    const ownerUserId = await deps.tenancy.getWorkbenchOwnerUserId(
+      link.tenantId,
+    );
+    const ownerPrincipal =
+      ownerUserId === undefined
+        ? undefined
+        : await deps.tenancy.getTenantPrincipalByRefId(
+            owningTenantId,
+            ownerUserId,
+          );
+    const owner =
+      ownerPrincipal?.kind === "user" && ownerPrincipal.status === "active"
+        ? {
+            address: ownerPrincipal.id,
+            handle:
+              (await deps.resolvePrincipalName?.(
+                owningTenantId,
+                ownerPrincipal.id,
+              )) ?? "Member",
+          }
+        : null;
+    return {
+      ...view,
+      tenancy: {
+        tenantId: link.tenantId,
+        parentTenantId: link.parentTenantId,
+        slug: link.slug,
+      },
+      legacy: false,
+      owner,
+    };
+  }
   const app = new Hono<TenantEnv>();
   const registry =
     deps.workbenchSubscribers ?? createWorkbenchSubscriberRegistry();
@@ -1053,7 +1066,7 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
           );
           return c.json(
             link !== undefined
-              ? withTenancy(workbenchView(existing), link)
+              ? await withTenancy(workbenchView(existing), link, tenant.id)
               : { ...workbenchView(existing), tenancy: null, legacy: true },
             200,
           );
@@ -1309,9 +1322,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         });
 
         return c.json(
-          withTenancy(
+          await withTenancy(
             workbenchView({ workbenchId, settings: finalSettings }),
             workbenchTenant,
+            tenant.id,
           ),
           201,
         );
@@ -1380,9 +1394,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
               : joined.settings;
 
           return c.json(
-            withTenancy(
+            await withTenancy(
               workbenchView({ workbenchId, settings: finalSettings }),
               workbenchTenant,
+              tenant.id,
             ),
             201,
           );
@@ -1415,7 +1430,10 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         }
       }
 
-      return c.json(withTenancy(workbenchView(row), workbenchTenant), 201);
+      return c.json(
+        await withTenancy(workbenchView(row), workbenchTenant, tenant.id),
+        201,
+      );
     },
   );
 
@@ -1478,31 +1496,33 @@ export function createChatRoutes(deps: CreateChatRoutesDeps): Hono<TenantEnv> {
         roomMessages: deps.roomMessages,
       });
 
-      const ownItems = rows.map((row, index) => {
-        const link = links[index];
-        const view =
-          link !== undefined
-            ? withTenancy(workbenchView(row), link)
-            : { ...workbenchView(row), tenancy: null, legacy: true };
-        const activity = activityByWorkbenchId[row.workbenchId];
-        const withLiveState = {
-          ...view,
-          live: liveState.get(row.workbenchId),
-        };
-        if (activity === undefined) return withLiveState;
-        const withUnread = {
-          ...withLiveState,
-          unreadCount: activity.unreadCount,
-        };
-        if (activity.lastActivityAt === undefined) return withUnread;
-        const withActivity = {
-          ...withUnread,
-          lastActivityAt: activity.lastActivityAt,
-        };
-        return activity.preview === undefined
-          ? withActivity
-          : { ...withActivity, preview: activity.preview };
-      });
+      const ownItems = await Promise.all(
+        rows.map(async (row, index) => {
+          const link = links[index];
+          const view =
+            link !== undefined
+              ? await withTenancy(workbenchView(row), link, tenant.id)
+              : { ...workbenchView(row), tenancy: null, legacy: true };
+          const activity = activityByWorkbenchId[row.workbenchId];
+          const withLiveState = {
+            ...view,
+            live: liveState.get(row.workbenchId),
+          };
+          if (activity === undefined) return withLiveState;
+          const withUnread = {
+            ...withLiveState,
+            unreadCount: activity.unreadCount,
+          };
+          if (activity.lastActivityAt === undefined) return withUnread;
+          const withActivity = {
+            ...withUnread,
+            lastActivityAt: activity.lastActivityAt,
+          };
+          return activity.preview === undefined
+            ? withActivity
+            : { ...withActivity, preview: activity.preview };
+        }),
+      );
 
       // Workbenches a sibling tenant projected into this one (CL-5882) —
       // a UNION with this tenant's own rows above, never a replacement.
