@@ -117,6 +117,13 @@ test("keeps trigger avatars equal and highlights each member row", () => {
   expect(
     triggerAvatars.every((avatar) => avatar.classList.contains("size-6")),
   ).toBe(true);
+  const renderedAvatars = Array.from(
+    container.querySelectorAll('.chat-member-stack [role="img"]'),
+  );
+  expect(renderedAvatars).toHaveLength(2);
+  expect(
+    renderedAvatars.every((avatar) => avatar.classList.contains("size-6")),
+  ).toBe(true);
 
   const memberRows = Array.from(container.querySelectorAll(".chat-member-row"));
   expect(memberRows).toHaveLength(2);

@@ -101,7 +101,7 @@ export function ChatMembers({
             >
               {member.tone === "agent" ? (
                 <CorbitAvatar
-                  size={24}
+                  size="sm"
                   ariaLabel={member.label}
                   className="[&_svg]:!size-full"
                 />
