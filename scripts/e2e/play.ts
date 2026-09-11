@@ -178,33 +178,75 @@ async function main(): Promise<void> {
 
   const hubApi: ApiCall = createHubAPI(hub.baseUrl);
 
+  const admin = await hop("alice genesis sign-up", async () => {
+    const res = await api(hub.baseUrl, "POST", "/api/auth/sign-up/email", {
+      name: "Alice",
+      email: "alice@example.com",
+      password: "password123",
+    });
+    expectStatus("alice sign-up", res, 200);
+    if (res.cookies.length === 0) {
+      throw new Error("alice sign-up returned no session cookie");
+    }
+    const userId = stringField(
+      (res.data as { user: unknown }).user,
+      "id",
+      "alice sign-up user field",
+    );
+    const probe = await api(
+      hub.baseUrl,
+      "POST",
+      "/api/onboarding/provision",
+      undefined,
+      res.cookies,
+    );
+    expectStatus("alice genesis probe", probe, 200);
+    expect((probe.data as { kind: string }).kind).toBe("needs-onboarding");
+    const minted = await api(
+      hub.baseUrl,
+      "POST",
+      "/api/onboarding/provision",
+      { name: "Workbench" },
+      res.cookies,
+    );
+    expectStatus("alice genesis provision", minted, 200);
+    expect((minted.data as { kind: string }).kind).toBe("provisioned");
+    return { cookies: res.cookies, userId };
+  });
+
   const user = await hop("sign-up", () =>
     signUp(hub.baseUrl, "Greeting Delivery Tester"),
   );
 
   const provisioned = await hop(
-    "first-login provisioning mints a personal bench, unseeded",
+    "a membership probe joins the genesis root as a member",
     async () => {
       const res = await api(
         hub.baseUrl,
         "POST",
         "/api/onboarding/provision",
-        { name: "Greeting Delivery Tester's Bench" },
+        undefined,
         user.cookies,
       );
-      expectStatus("provision", res, 200);
-      const data = res.data as { kind: string; tenantSlug: string };
-      expect(data.kind).toBe("provisioned");
+      expectStatus("provision probe", res, 200);
+      const data = res.data as {
+        kind: string;
+        tenantSlug: string;
+        seeded: boolean;
+      };
+      expect(data.kind).toBe("existing-member");
       return data;
     },
   );
 
+  // A joined member is read-only by design, so every owner-level leg
+  // below runs as alice, the genesis owner.
   const tenant = await hop(
-    "the freshly provisioned bench resolves through findPersonalTenant",
+    "the joined root resolves through findPersonalTenant",
     async () => {
       const found = await findPersonalTenant(
         hubApi,
-        user.cookies,
+        admin.cookies,
         provisioned.tenantSlug,
       );
       if (found === undefined) {
@@ -223,10 +265,10 @@ async function main(): Promise<void> {
     async () => {
       const testArgs = {
         api: hubApi,
-        cookies: user.cookies,
+        cookies: admin.cookies,
         hubUrl: hub.baseUrl,
-        userId: user.userId,
-        userEmail: user.email,
+        userId: admin.userId,
+        userEmail: "alice@example.com",
         provider: CONNECT_PROVIDER,
         apiKey: CONNECT_API_KEY,
         pushWorkflow,
@@ -259,7 +301,7 @@ async function main(): Promise<void> {
         try {
           const seedArgs = {
             api: hubApi,
-            cookies: user.cookies,
+            cookies: admin.cookies,
             hubUrl: hub.baseUrl,
             pushWorkflow,
             log: () => undefined,
@@ -292,7 +334,7 @@ async function main(): Promise<void> {
       try {
         await seedTenant({
           api: hubApi,
-          cookies: user.cookies,
+          cookies: admin.cookies,
           hubUrl: hub.baseUrl,
           tenant: {
             tenantId: tenant.tenantId,
@@ -301,7 +343,7 @@ async function main(): Promise<void> {
           },
           model: await modelSourceFor(
             hubApi,
-            user.cookies,
+            admin.cookies,
             tenant.tenantId,
             CONNECT_PROVIDER,
           ),
@@ -333,7 +375,7 @@ async function main(): Promise<void> {
           "GET",
           `/api/tenants/${tenant.tenantId}/chat/invitable-definitions`,
           undefined,
-          user.cookies,
+          admin.cookies,
         );
         if (res.status === 200) {
           const items = arrayField(
@@ -370,7 +412,7 @@ async function main(): Promise<void> {
           "POST",
           `/api/tenants/${tenant.tenantId}/chat/workbenches`,
           { kind: "chat", definitionId: assistantDefinitionId },
-          user.cookies,
+          admin.cookies,
         );
         if (res.status !== 500) break;
         if (Date.now() > deadline) {
@@ -420,7 +462,7 @@ async function main(): Promise<void> {
           "GET",
           `/api/tenants/${tenant.tenantId}/chat/workbenches/${chatId}/messages`,
           undefined,
-          user.cookies,
+          admin.cookies,
         );
         expectStatus("list chat messages", res, 200);
         const items = arrayField(res.data, "items", "list chat messages") as {
@@ -480,7 +522,7 @@ async function main(): Promise<void> {
       "GET",
       `/api/tenants/${tenant.tenantId}/chat/workbenches/${chatId}/messages`,
       undefined,
-      user.cookies,
+      admin.cookies,
     );
     const items = arrayField(res.data, "items", "list") as {
       id: string;
@@ -523,7 +565,7 @@ async function main(): Promise<void> {
         "GET",
         `/api/tenants/${tenant.tenantId}/approvals${query}`,
         undefined,
-        user.cookies,
+        admin.cookies,
       );
       if (res.status !== 200) {
         throw new Error(
@@ -543,7 +585,7 @@ async function main(): Promise<void> {
           "POST",
           `/api/tenants/${tenant.tenantId}/approvals/${item.id}/approve`,
           { scope: "once" },
-          user.cookies,
+          admin.cookies,
         );
         const headline = headlineFor(item.toolDefinition, item.toolArguments);
         if (approved.status === 200) {
@@ -566,7 +608,7 @@ async function main(): Promise<void> {
       "POST",
       `/api/tenants/${tenant.tenantId}/chat/workbenches/${chatId}/messages`,
       { parts: [{ kind: "text", text: human }] },
-      user.cookies,
+      admin.cookies,
     );
     expectStatus("send", sent, 201);
     const t0 = Date.now();
@@ -648,7 +690,7 @@ async function main(): Promise<void> {
     "GET",
     `/api/tenants/${tenant.tenantId}/routines`,
     undefined,
-    user.cookies,
+    admin.cookies,
   );
   console.log("\nROUTINES:", JSON.stringify(routines.data).slice(0, 800));
   const invitable = await api(
@@ -656,7 +698,7 @@ async function main(): Promise<void> {
     "GET",
     `/api/tenants/${tenant.tenantId}/chat/invitable`,
     undefined,
-    user.cookies,
+    admin.cookies,
   );
   console.log("AGENTS:", JSON.stringify(invitable.data).slice(0, 800));
 }

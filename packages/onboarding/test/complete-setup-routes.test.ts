@@ -40,6 +40,17 @@ function testCipher(): CredentialCipher {
   return createEnvKeyCredentialCipher(TEST_KEY);
 }
 
+// These tests never exercise the genesis-or-join join path — the stub
+// satisfies the required tenancy wiring without standing up a DB.
+const emptyHubTenancy = {
+  countUsers: async () => 0,
+  countTenants: async () => 0,
+  findRootTenant: async () => null,
+  addActiveMember: async () => {
+    throw new Error("these suites never exercise the join path");
+  },
+};
+
 const TENANT_ID = "ten_1";
 const PRINCIPAL_ID = "prn_1";
 const TENANT_SLUG = "user-1-user1";
@@ -113,6 +124,8 @@ describe("POST /complete-setup", () => {
     app.route(
       "/api/onboarding",
       createOnboardingRoutes({
+        tenancy: emptyHubTenancy,
+        defaultTenantSlug: "workbench",
         hubUrl: "https://bench.example.com",
         pushWorkflow: async () => ({
           outcome: "pushed" as const,
@@ -139,6 +152,8 @@ describe("POST /complete-setup", () => {
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes({
+          tenancy: emptyHubTenancy,
+          defaultTenantSlug: "workbench",
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => ({
             outcome: "pushed" as const,
@@ -200,6 +215,8 @@ describe("POST /complete-setup", () => {
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes({
+          tenancy: emptyHubTenancy,
+          defaultTenantSlug: "workbench",
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => ({
             outcome: "pushed" as const,
@@ -253,6 +270,8 @@ describe("POST /complete-setup", () => {
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes({
+          tenancy: emptyHubTenancy,
+          defaultTenantSlug: "workbench",
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => ({
             outcome: "pushed" as const,
@@ -303,6 +322,8 @@ describe("POST /complete-setup", () => {
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes({
+          tenancy: emptyHubTenancy,
+          defaultTenantSlug: "workbench",
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => ({
             outcome: "pushed" as const,
@@ -338,6 +359,8 @@ describe("POST /complete-setup", () => {
       let ensureSeededCalls = 0;
       const app = mountAuthenticated(
         createOnboardingRoutes({
+          tenancy: emptyHubTenancy,
+          defaultTenantSlug: "workbench",
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => ({
             outcome: "pushed" as const,
@@ -403,6 +426,8 @@ describe("POST /complete-setup", () => {
       let wakes = 0;
       const app = mountAuthenticated(
         createOnboardingRoutes({
+          tenancy: emptyHubTenancy,
+          defaultTenantSlug: "workbench",
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => ({
             outcome: "pushed" as const,
@@ -466,6 +491,8 @@ describe("POST /complete-setup", () => {
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes({
+          tenancy: emptyHubTenancy,
+          defaultTenantSlug: "workbench",
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => ({
             outcome: "pushed" as const,
@@ -514,6 +541,8 @@ describe("POST /complete-setup", () => {
       await withPendingSeed(pendingSeedStore, { ttlMs: -1 });
       const app = mountAuthenticated(
         createOnboardingRoutes({
+          tenancy: emptyHubTenancy,
+          defaultTenantSlug: "workbench",
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => ({
             outcome: "pushed" as const,
@@ -555,6 +584,8 @@ describe("POST /complete-setup", () => {
       let ensureSeededCalls = 0;
       const app = mountAuthenticated(
         createOnboardingRoutes({
+          tenancy: emptyHubTenancy,
+          defaultTenantSlug: "workbench",
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => ({
             outcome: "pushed" as const,
@@ -643,6 +674,8 @@ describe("POST /complete-setup", () => {
       let ensureSeededCalls = 0;
       const app = mountAuthenticated(
         createOnboardingRoutes({
+          tenancy: emptyHubTenancy,
+          defaultTenantSlug: "workbench",
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => ({
             outcome: "pushed" as const,
@@ -729,6 +762,8 @@ describe("POST /complete-setup", () => {
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes({
+          tenancy: emptyHubTenancy,
+          defaultTenantSlug: "workbench",
           hubUrl: `http://localhost:${server.port}`,
           pushWorkflow: async () => ({
             outcome: "pushed" as const,

@@ -3,15 +3,19 @@
 // provider. One sequential scenario against a real hub, a real
 // sidecar, and a real Postgres.
 //
-// Phase A (onboard → connect): closed-by-default signup is respected
-// → sign up → first-login provisioning mints a personal bench,
-// unseeded (no hub-owned seed model) → connecting a real inference
-// credential through the key path (`POST /api/onboarding/complete`'s
-// own machinery, called directly — see the stubbing note below) fully
-// seeds every default workflow, including "assistant" → the
-// Connections surface (the tenant's own credentials list, the same
-// route `connectorStatus` in `@workbench/settings-ui` reads) honestly
-// reflects the connected credential.
+// Phase A (onboard → connect): alice signs up first as genesis owner
+// → a tester joins the genesis root as a plain member (the genesis
+// path — first signup on a truly empty hub mints the root — is also
+// covered in-process by `apps/hub/test/signup-genesis.test.ts`) →
+// occupied closed signup is refused → the root's owner (alice)
+// connects a real inference credential through the key path
+// (`POST /api/onboarding/complete`'s own machinery, called directly —
+// see the stubbing note below), which fully seeds every default
+// workflow, including "assistant" → the Connections surface (the
+// tenant's own credentials list, the same route `connectorStatus` in
+// `@workbench/settings-ui` reads) honestly reflects the connected
+// credential. A joined member is read-only by design, so every
+// owner-level leg runs as alice.
 //
 // Until CL-6057, this suite documented a real platform gap instead of
 // hiding it: the "assistant" default workflow pins
@@ -19,9 +23,8 @@
 // had published a `package-registry`-kind asset named "corbits-tools"
 // carrying its tarball. CL-7071 moved that publish off `seedTenant`
 // onto `workbench setup` (the root tenant; descendants inherit). The
-// boot-ensured root is the personal bench's parent, so the provisioned
-// personal bench is a child of the root: an explicit
-// `publishCorbitsToolsRegistry` hop onto that bench stands in for
+// connect flow runs on the genesis root itself, so an explicit
+// `runPublishTools` hop onto the root stands in for
 // setup, then `ensureSeeded` deploys without packing.
 //
 // Stubbing note: onboarding's own `POST /api/onboarding/complete` route
@@ -59,9 +62,9 @@ import {
   createGitWorkflowPusher,
   DEFAULT_WORKFLOWS,
   isLiveDeploymentStatus,
-  publishCorbitsToolsRegistry,
   seedTenant,
 } from "../../packages/seeding/src/index.ts";
+import { runPublishTools } from "../publish-tools.ts";
 import {
   createHubAPI,
   parseAs,
@@ -138,7 +141,7 @@ async function signUp(
 describe.skipIf(databaseUrl === undefined)(
   "local-rip: onboard → connect",
   () => {
-    test("a brand-new person signs up, gets a personal bench, and connects a real provider through the key path", async () => {
+    test("a brand-new person signs up, joins the root as a member, and the owner connects a real provider through the key path", async () => {
       const url = databaseUrl;
       if (url === undefined) throw new Error("unreachable: suite is skipped");
 
@@ -148,14 +151,64 @@ describe.skipIf(databaseUrl === undefined)(
         expect(report.action).toBe("migrated");
       });
 
-      // Closed-by-default: a hub with no WORKBENCH_SIGNUP override (the
-      // platform's own default, per `apps/hub/src/config.ts`) refuses a
-      // brand-new person outright, right at sign-up — the access-policy
-      // gate is wired into better-auth's own sign-up hook, one layer
-      // earlier than onboarding's own provisioning gate — proven against
-      // a short-lived hub of its own so the rest of this scenario's hub
-      // (which needs open signup to run at all) never muddies the
-      // assertion.
+      const hub: HubHandle = await hop("hub boot", async () =>
+        startHub({
+          databaseUrl: url,
+          port: freePort(),
+          sessionSecret: Buffer.from(
+            crypto.getRandomValues(new Uint8Array(32)),
+          ).toString("hex"),
+          dataDir: await tempDir("e2e-local-rip-hub-data-"),
+          // Deliberately no ANTHROPIC_API_KEY: like `smoke-onboarding`,
+          // this hub carries no hub-owned seed model credential — this
+          // scenario's own connect step is what finishes seeding it.
+        }),
+      );
+      track(hub);
+
+      const hubApi: ApiCall = createHubAPI(hub.baseUrl);
+
+      const admin = await hop("alice genesis sign-up", async () => {
+        const res = await api(hub.baseUrl, "POST", "/api/auth/sign-up/email", {
+          name: "Alice",
+          email: "alice@example.com",
+          password: "password123",
+        });
+        expectStatus("alice sign-up", res, 200);
+        if (res.cookies.length === 0) {
+          throw new Error("alice sign-up returned no session cookie");
+        }
+        const userId = stringField(
+          (res.data as { user: unknown }).user,
+          "id",
+          "alice sign-up user field",
+        );
+        const probe = await api(
+          hub.baseUrl,
+          "POST",
+          "/api/onboarding/provision",
+          undefined,
+          res.cookies,
+        );
+        expectStatus("alice genesis probe", probe, 200);
+        expect((probe.data as { kind: string }).kind).toBe("needs-onboarding");
+        const minted = await api(
+          hub.baseUrl,
+          "POST",
+          "/api/onboarding/provision",
+          { name: "Workbench" },
+          res.cookies,
+        );
+        expectStatus("alice genesis provision", minted, 200);
+        expect((minted.data as { kind: string }).kind).toBe("provisioned");
+        return { cookies: res.cookies, userId };
+      });
+
+      // Occupied closed signup: a hub with WORKBENCH_SIGNUP=closed
+      // refuses a brand-new person once the hub is no longer empty —
+      // the empty-hub exception already admitted alice. Proven against
+      // a short-lived hub of its own so the rest of this scenario's
+      // open hub never muddies the assertion.
       await hop("closed-by-default signup is respected", async () => {
         const closedHub = await startHub({
           databaseUrl: url,
@@ -185,31 +238,12 @@ describe.skipIf(databaseUrl === undefined)(
         }
       });
 
-      const hub: HubHandle = await hop("hub boot", async () =>
-        startHub({
-          databaseUrl: url,
-          port: freePort(),
-          sessionSecret: Buffer.from(
-            crypto.getRandomValues(new Uint8Array(32)),
-          ).toString("hex"),
-          dataDir: await tempDir("e2e-local-rip-hub-data-"),
-          // Deliberately no ANTHROPIC_API_KEY: like `smoke-onboarding`,
-          // this hub carries no hub-owned seed model credential, so
-          // first-login provisioning must report the bench as
-          // provisioned-but-unseeded — this scenario's own connect step
-          // is what finishes seeding it.
-        }),
-      );
-      track(hub);
-
-      const hubApi: ApiCall = createHubAPI(hub.baseUrl);
-
       const user = await hop("sign-up", () =>
         signUp(hub.baseUrl, "Local Rip Tester"),
       );
 
-      await hop(
-        "a membership probe before naming reports needs-onboarding",
+      const provisioned = await hop(
+        "a membership probe joins the genesis root as a member",
         async () => {
           const res = await api(
             hub.baseUrl,
@@ -219,21 +253,6 @@ describe.skipIf(databaseUrl === undefined)(
             user.cookies,
           );
           expectStatus("provision probe", res, 200);
-          expect((res.data as { kind: string }).kind).toBe("needs-onboarding");
-        },
-      );
-
-      const provisioned = await hop(
-        "first-login provisioning mints a personal bench, unseeded",
-        async () => {
-          const res = await api(
-            hub.baseUrl,
-            "POST",
-            "/api/onboarding/provision",
-            { name: "Local Rip Tester's Bench" },
-            user.cookies,
-          );
-          expectStatus("provision", res, 200);
           const data = res.data as {
             kind: string;
             tenantId: string;
@@ -241,12 +260,25 @@ describe.skipIf(databaseUrl === undefined)(
             seeded: boolean;
             seedSkipReason?: string;
           };
-          expect(data.kind).toBe("provisioned");
-          expect(data.seeded).toBe(false);
-          expect(typeof data.seedSkipReason).toBe("string");
+          expect(data.kind).toBe("existing-member");
+          stringField(data, "tenantId", "provision result");
+          stringField(data, "tenantSlug", "provision result");
           return data;
         },
       );
+
+      await hop("re-provisioning the same account is idempotent", async () => {
+        const res = await api(
+          hub.baseUrl,
+          "POST",
+          "/api/onboarding/provision",
+          { name: "Local Rip Tester's Bench" },
+          user.cookies,
+        );
+        expectStatus("re-provision", res, 200);
+        const data = res.data as { kind: string };
+        expect(data.kind).toBe("existing-member");
+      });
 
       await hop(
         "the provisioned bench is a real tenant membership",
@@ -274,7 +306,7 @@ describe.skipIf(databaseUrl === undefined)(
         async () => {
           const found = await findPersonalTenant(
             hubApi,
-            user.cookies,
+            admin.cookies,
             provisioned.tenantSlug,
           );
           if (found === undefined) {
@@ -294,10 +326,10 @@ describe.skipIf(databaseUrl === undefined)(
         async () => {
           const result = await testAndPersistCredential({
             api: hubApi,
-            cookies: user.cookies,
+            cookies: admin.cookies,
             hubUrl: hub.baseUrl,
-            userId: user.userId,
-            userEmail: user.email,
+            userId: admin.userId,
+            userEmail: "alice@example.com",
             provider: "anthropic",
             apiKey: STUB_API_KEY,
             pushWorkflow,
@@ -333,7 +365,7 @@ describe.skipIf(databaseUrl === undefined)(
           try {
             return await seedTenant({
               api: hubApi,
-              cookies: user.cookies,
+              cookies: admin.cookies,
               hubUrl: hub.baseUrl,
               tenant: {
                 tenantId: tenant.tenantId,
@@ -342,7 +374,7 @@ describe.skipIf(databaseUrl === undefined)(
               },
               model: await modelSourceFor(
                 hubApi,
-                user.cookies,
+                admin.cookies,
                 tenant.tenantId,
                 "anthropic",
               ),
@@ -358,21 +390,25 @@ describe.skipIf(databaseUrl === undefined)(
         }
       }
 
-      // CL-7071: seedTenant/ensureSeeded no longer pack. The provisioned
-      // personal bench is a child of the boot-ensured root, so publish
-      // `corbits-tools` onto the bench itself the way `workbench setup`
-      // does onto the root. Then ensureSeeded deploys assistant without
-      // packing.
+      // CL-7071: seedTenant/ensureSeeded no longer pack. The connect
+      // flow runs on the genesis root itself, so install `corbits-tools`
+      // onto that already-existing tenant with the publish-tools CLI —
+      // the same sign-in → tenant resolve → publish path an operator
+      // runs (`bun run publish-tools`) — rather than calling the
+      // publisher with a privileged cookie jar directly. Then
+      // ensureSeeded deploys assistant without packing.
       await hop(
-        "publish corbits-tools onto the provisioned root bench (setup's job, not seed's)",
+        "publish-tools installs corbits-tools onto the provisioned root bench (setup's job, not seed's)",
         async () => {
-          await publishCorbitsToolsRegistry({
-            api: hubApi,
-            cookies: user.cookies,
+          const result = await runPublishTools({
             hubUrl: hub.baseUrl,
-            tenantId: tenant.tenantId,
+            email: "alice@example.com",
+            password: "password123",
+            tenant: provisioned.tenantSlug,
             log: () => undefined,
           });
+          expect(result.success).toBe(true);
+          expect(result.summaries.length).toBeGreaterThan(0);
         },
       );
 
@@ -389,7 +425,7 @@ describe.skipIf(databaseUrl === undefined)(
             try {
               await ensureSeeded({
                 api: hubApi,
-                cookies: user.cookies,
+                cookies: admin.cookies,
                 hubUrl: hub.baseUrl,
                 pushWorkflow,
                 log: () => undefined,

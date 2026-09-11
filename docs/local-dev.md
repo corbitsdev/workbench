@@ -4,11 +4,12 @@ Workbench can run with no cloud LLM key at all, using a local
 [Ollama](https://ollama.com) instance as the inference provider.
 
 Set `OLLAMA_BASE_URL` in `.env` to the origin your Ollama instance listens
-on (e.g. `http://localhost:11434`, or a tailscale-tunneled origin) — see
-`apps/hub/src/config.ts`. Unlike every other provider, Ollama needs no key:
-its mere presence auto-plants a probed catalog credential on the operator
-bench at hub start. Each provider gets its own URL/key card in onboarding;
-Ollama's is the one that asks for a base URL instead of a token.
+on (e.g. `http://localhost:11434`, or a tailscale-tunneled origin) —
+`bun run dev`'s memory setup still reads it (it mounts the `@corbits/memory`
+plane against the same origin when `EMBED_BASE_URL` is unset). The hub
+itself no longer reads provider env vars at all: connect the Ollama
+provider in the UI instead — its onboarding card is the one that asks for
+a base URL instead of a token, and it needs no key.
 
 Tool-heavy turns (anything that calls `mcp_list_tools`, dispatches a task,
 or chains several tool calls) take noticeably longer — minutes, not
@@ -33,18 +34,17 @@ applies what hasn't already run.
 A workflow that pins a `@corbits/*` tool package (e.g. **assistant** pinning
 `@corbits/memory-tools`) resolves that pin from a `package-registry` asset
 (`CORBITS_TOOLS_REGISTRY`) carrying the package's tarball, built by
-`@corbits/tool-registry-publish`. Boot-time seeding (`apps/hub/src/system-seed.ts`)
-publishes that tarball onto the root tenant on every hub boot (descendants
-inherit it); the rest of seeding does not pack. After changing a tool
-package's source, bump its version, then restart the hub to republish:
-
-```sh
-bun run dev
-```
-
-This is safe to re-run. Changing a tool package's source requires bumping
-its `package.json` `version` (and any pin naming that version) before
-republishing — resolution and the sidecar's materialized store key on
+`@corbits/tool-registry-publish`. Hub boot does not publish that registry
+(or any other product state). `publishCorbitsToolsRegistry` packs onto a
+tenant when onboarding or an explicit `@corbits/seeding` caller asks;
+descendants inherit it, and `seedTenant` does not pack. After changing a
+tool package's source, bump its version, then publish onto the tenant that
+owns the registry — restarting the hub does not republish. The operator
+path is `bun run publish-tools` (with `HUB_ADMIN_EMAIL`/`HUB_ADMIN_PASSWORD`
+set, and `--tenant <id-or-slug>` when the admin belongs to more than one
+tenant): it signs in, resolves the target tenant, and installs the
+registry onto that already-existing tenant over the hub's native asset
+routes. Resolution and the sidecar's materialized store key on
 `name@version`, not on content, so republishing unchanged-version bytes
 never reaches a running or freshly-launched agent; `tool-registry-publish`
 refuses to overwrite an existing `name@version` with different content for

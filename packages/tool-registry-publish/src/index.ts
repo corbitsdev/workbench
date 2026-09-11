@@ -6,15 +6,15 @@ export {
   tarballsCoverRequiredSeedPackages,
 } from "./registry";
 export {
-  describeCorbitsToolPackages,
-  type CorbitsToolPackageDescription,
-  type CorbitsToolPackageTool,
-} from "./describe";
-export {
   packToolPackageTarball,
   tarballFilenameFor,
   type PackedTarball,
 } from "./pack";
+export { ToolSurfaceEntry, ToolSurfaceManifest } from "./manifest";
+export {
+  readToolSurfaceManifests,
+  type ToolSurfaceBlobSource,
+} from "./surface-reader";
 export {
   shouldPublishTarball,
   publishCorbitsToolsRegistry,

@@ -193,28 +193,69 @@ async function main(): Promise<void> {
   const hubApi: ApiCall = createHubAPI(hub.baseUrl);
   const pushWorkflow = createGitWorkflowPusher();
 
+  const admin = await hop("alice genesis sign-up", async () => {
+    const res = await api(hub.baseUrl, "POST", "/api/auth/sign-up/email", {
+      name: "Alice",
+      email: "alice@example.com",
+      password: "password123",
+    });
+    expectStatus("alice sign-up", res, 200);
+    if (res.cookies.length === 0) {
+      throw new Error("alice sign-up returned no session cookie");
+    }
+    const userId = stringField(
+      (res.data as { user: unknown }).user,
+      "id",
+      "alice sign-up user field",
+    );
+    const probe = await api(
+      hub.baseUrl,
+      "POST",
+      "/api/onboarding/provision",
+      undefined,
+      res.cookies,
+    );
+    expectStatus("alice genesis probe", probe, 200);
+    expect((probe.data as { kind: string }).kind).toBe("needs-onboarding");
+    const minted = await api(
+      hub.baseUrl,
+      "POST",
+      "/api/onboarding/provision",
+      { name: "Workbench" },
+      res.cookies,
+    );
+    expectStatus("alice genesis provision", minted, 200);
+    expect((minted.data as { kind: string }).kind).toBe("provisioned");
+    return { cookies: res.cookies, userId };
+  });
+
   const user = await hop("sign up", async () =>
     signUp(hub.baseUrl, "CL-6451 Proof"),
   );
 
-  const provisioned = await hop("first-login provisioning", async () => {
-    const res = await api(
-      hub.baseUrl,
-      "POST",
-      "/api/onboarding/provision",
-      { name: "CL-6451 Proof Bench" },
-      user.cookies,
-    );
-    expectStatus("provision", res, 200);
-    const data = res.data as { kind: string; tenantSlug: string };
-    expect(data.kind).toBe("provisioned");
-    return data;
-  });
+  const provisioned = await hop(
+    "a membership probe joins the genesis root",
+    async () => {
+      const res = await api(
+        hub.baseUrl,
+        "POST",
+        "/api/onboarding/provision",
+        undefined,
+        user.cookies,
+      );
+      expectStatus("provision probe", res, 200);
+      const data = res.data as { kind: string; tenantSlug: string };
+      expect(data.kind).toBe("existing-member");
+      return data;
+    },
+  );
 
-  const tenant = await hop("personal bench resolves", async () => {
+  // A joined member is read-only by design, so every owner-level leg
+  // below runs as alice, the genesis owner.
+  const tenant = await hop("joined root resolves", async () => {
     const found = await findPersonalTenant(
       hubApi,
-      user.cookies,
+      admin.cookies,
       provisioned.tenantSlug,
     );
     if (found === undefined) {
@@ -228,10 +269,10 @@ async function main(): Promise<void> {
   const connected = await hop("connect Ollama", async () => {
     const result = await testAndPersistCredential({
       api: hubApi,
-      cookies: user.cookies,
+      cookies: admin.cookies,
       hubUrl: hub.baseUrl,
-      userId: user.userId,
-      userEmail: user.email,
+      userId: admin.userId,
+      userEmail: "alice@example.com",
       provider: "ollama",
       apiKey: OLLAMA_PLACEHOLDER_SECRET,
       baseURLOverride: ollamaBaseUrl,
@@ -252,7 +293,7 @@ async function main(): Promise<void> {
       try {
         await ensureSeeded({
           api: hubApi,
-          cookies: user.cookies,
+          cookies: admin.cookies,
           hubUrl: hub.baseUrl,
           pushWorkflow,
           log: () => undefined,
@@ -282,7 +323,7 @@ async function main(): Promise<void> {
         try {
           await seedTenant({
             api: hubApi,
-            cookies: user.cookies,
+            cookies: admin.cookies,
             hubUrl: hub.baseUrl,
             tenant: {
               tenantId: tenant.tenantId,
@@ -320,7 +361,7 @@ async function main(): Promise<void> {
           "GET",
           `/api/tenants/${tenant.tenantId}/chat/invitable-definitions`,
           undefined,
-          user.cookies,
+          admin.cookies,
         );
         if (res.status === 200) {
           const items = arrayField(res.data, "items", "invitable") as {
@@ -349,7 +390,7 @@ async function main(): Promise<void> {
       "POST",
       `/api/tenants/${tenant.tenantId}/chat/workbenches`,
       { kind: "workbench", name: "CL-6451 proof room" },
-      user.cookies,
+      admin.cookies,
     );
     expectStatus("create workbench", res, 201);
     return stringField(res.data, "id", "create workbench");
@@ -361,7 +402,7 @@ async function main(): Promise<void> {
       "GET",
       `/api/tenants/${tenant.tenantId}/chat/workbenches/${workbenchId}/agents`,
       undefined,
-      user.cookies,
+      admin.cookies,
     );
     expectStatus("read the room's agents", res, 200);
     return arrayField(res.data, "items", "room participants") as {
@@ -380,7 +421,7 @@ async function main(): Promise<void> {
           "POST",
           `/api/tenants/${tenant.tenantId}/chat/workbenches/${workbenchId}/invite`,
           { definitionId: assistant.id },
-          user.cookies,
+          admin.cookies,
         );
         if (res.status === 201) {
           return stringField(res.data, "address", "invite");
@@ -432,7 +473,7 @@ async function main(): Promise<void> {
       "GET",
       `/api/tenants/${tenant.tenantId}/chat/workbenches/${workbenchId}/turns`,
       undefined,
-      user.cookies,
+      admin.cookies,
     );
     expectStatus("list the room's turns", res, 200);
     return arrayField(res.data, "items", "list turns") as Turn[];
@@ -446,7 +487,7 @@ async function main(): Promise<void> {
       "GET",
       `/api/tenants/${tenant.tenantId}/chat/workbenches/${workbenchId}/messages`,
       undefined,
-      user.cookies,
+      admin.cookies,
     );
     expectStatus("list room messages", res, 200);
     const items = arrayField(res.data, "items", "list room messages") as {
@@ -470,7 +511,7 @@ async function main(): Promise<void> {
       "POST",
       `/api/tenants/${tenant.tenantId}/chat/workbenches/${workbenchId}/messages`,
       { parts: [{ kind: "text", text }] },
-      user.cookies,
+      admin.cookies,
     );
     expectStatus(`send "${text.slice(0, 40)}"`, res, 201);
     // The heart of CL-6451: the `@assistant` message must NOT have been

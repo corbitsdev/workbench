@@ -69,24 +69,20 @@ value at once), verifies the database in `DATABASE_URL` is reachable and
 actually speaks Postgres, applies any pending platform migrations, builds
 the web UI if it has not been built yet, and starts the hub. The hub
 provisions authenticated sidecars on demand using the configured backend.
-Every required setting lives in `.env.example` with its expected shape, and the administrator account (`HUB_ADMIN_EMAIL` / `HUB_ADMIN_PASSWORD`,
-defaulting to alice@example.com / password123 when unset)
-is seeded so you can sign in immediately.
+Every required setting lives in `.env.example` with its expected shape.
+`bun run dev` may sign up the local administrator (`HUB_ADMIN_EMAIL` /
+`HUB_ADMIN_PASSWORD`, defaulting to alice@example.com / password123
+when unset) through the same auth HTTP API the UI uses. Hub boot itself
+inserts no users or tenants. An empty database is a valid hub: boot
+does not insert agents, tools, workflows, or skills. Product state
+arrives through onboarding and explicit seed callers, not production
+boot.
+Provider API keys are never read from the environment: hub boot plants no
+credentials, so setting `ANTHROPIC_API_KEY` or any other provider's env
+var has no effect. Inference waits until someone connects a provider.
 
-`bun run dev` seeds that account and, once the hub is serving, also
-provisions and seeds the root tenant itself: publishing the
-`corbits-tools` registry, deploying the default workflow set, and
-planting the tenant catalog's model data, so interactive instances have
-a model to resolve against. This runs automatically on every hub boot
-(`apps/hub/src/system-seed.ts`), reads its configuration from `.env`
-(see `.env.example`), and is safe to re-run — restarting the hub
-re-seeds idempotently. `ANTHROPIC_API_KEY` is the one optional line
-worth setting before boot — with it, seeding plants a real credential
-and the catalog is actually launchable; without it, everything above
-still runs, but inference errors until you set it and restart the hub.
-
-Leaving `ANTHROPIC_API_KEY` unset doesn't just apply to the administrator
-account: anyone who signs up gets a personal bench with no default routines
+That applies to every account, not just the administrator: anyone who
+signs up gets a personal bench with no default routines
 deployed, and first-run tells them exactly that. Onboarding walks them
 through picking a provider — Anthropic, OpenAI, Google, OpenRouter, Hugging
 Face, Groq, or another of the curated providers in
@@ -98,7 +94,8 @@ it's actually dialed for real inference, through the same in-chat "Fix this
 connection" flow any credential failure uses. The bench's default agents
 deploy in the background — "Your workbench is ready — agents will come
 online shortly," no "Connecting…" wait in the browser. Whichever provider they connect gets its own curated
-catalog entry planted the same way boot-time seeding plants Anthropic's; see
+catalog entry planted the same way onboarding plants a connected
+provider's catalog; see
 [docs/model-seeding.md](docs/model-seeding.md) for how that catalog data is
 curated and kept up to date.
 
@@ -112,12 +109,13 @@ bun run reset
 ```
 
 `bun run reset` drops the platform database schema and removes the hub's
-on-disk asset directory (which also holds provisioned sidecar state) —
-everything boot-time
-seeding and onboarding created. Nothing is re-seeded until the next `bun
-run dev` — that recreates the schema and, once the hub is serving again,
-reprovisions and re-seeds the root tenant from scratch, landing you at a
-fresh sign-up screen with the administrator's bench ready.
+on-disk asset directory (which also holds provisioned sidecar state).
+Nothing is recreated until the next `bun run dev` — that recreates the
+schema. Hub boot itself inserts no users or tenants. Local `bun run
+dev` may then sign up the administrator through the same auth HTTP API
+the UI uses, so you can sign in. It does not insert agents, tools,
+workflows, or skills. Product state arrives through onboarding and
+explicit seed callers.
 
 It refuses to run against anything but a local `DATABASE_URL` (localhost,
 127.0.0.1, or `::1`) — there is no override, since the schema drop is

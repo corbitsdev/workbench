@@ -1,8 +1,10 @@
 # Seed reconciliation
 
 How workbench's automatic seeding converges on the shipped defaults
-without ever fighting a member. Every seed pass — a hub boot, an
-onboarding run, boot-time seeding — must satisfy four properties:
+without ever fighting a member. Every seed pass — an onboarding run or
+an explicit `@corbits/seeding` caller — must satisfy four properties.
+Hub production boot is not a seed pass: it does not insert agents,
+tools, workflows, or skills.
 
 1. **Idempotent restart** — re-running creates nothing twice.
 2. **Content convergence** — a changed shipped default updates the
@@ -47,7 +49,7 @@ answers 503 — never a 404, which would read as "no such template".
 - A member-created artifact sharing a template's title is never touched
   and never duplicated.
 
-## Default scheduled workflows (onboarding / boot-time seeding)
+## Default scheduled workflows (onboarding)
 
 Seed never POSTs `/routines`. Native `ScheduleTrigger` ticks digest;
 last-30-days-research stays a deployed workflow, not a wrapper row.
@@ -114,7 +116,7 @@ per entry rather than each hand-rolling a definition:
   `assistant` (seeded already) and `heartbeat` (test-only,
   `CATALOG_TEST_WORKFLOWS`) are never reachable through this route.
 
-## Default skills (boot-time seeding)
+## Default skills
 
 `plantDefaultSkills` (`packages/seeding/src/seed.ts`) plants each
 `DEFAULT_SKILLS` entry through `POST /api/tenants/:id/skills`, after
@@ -127,14 +129,21 @@ first checking `GET /api/tenants/:id/skills/:name`.
   "already exists" as done, not as a reason to abort the run the
   hub's own error advice told the operator to re-run.
 
-## Tool registry publish (boot-time seeding, onto the root tenant)
+## Tool registry publish
 
 `publishCorbitsToolsRegistry` (`packages/tool-registry-publish/src/publish.ts`)
 finds-or-creates the tenant's `corbits-tools` package-registry asset,
-then PUTs whatever tarball is missing. Boot-time seeding
-(`apps/hub/src/system-seed.ts`) calls this onto the root tenant so
-descendants inherit tarballs; the rest of seeding does not pack. Two
-properties keep a failed publish from stranding a
+then PUTs whatever tarball is missing. Onboarding and explicit
+`@corbits/seeding` callers publish onto a tenant so descendants inherit
+tarballs; `seedTenant` itself does not pack. Hub boot does not publish.
+The operator-facing install path is `bun run publish-tools`
+(`scripts/publish-tools.ts`), which signs an existing admin in and
+publishes onto an already-existing tenant — the same find-or-create,
+409-tolerant asset flow, never a new provisioning path. Each packed
+tarball's `package.json` also carries the `ToolSurfaceManifest` the
+hub reads back (`readToolSurfaceManifests`) to mint pinned-tool grants,
+so grants always describe the bytes actually installed on the tenant.
+Two properties keep a failed publish from stranding a
 usable-looking-but-empty asset:
 
 - `checkToolPackageFreshness` runs **before** the asset is ever
@@ -148,9 +157,9 @@ usable-looking-but-empty asset:
   a brand-new registry and pushes every package, which is what
   actually creates the repo's first commit. Repairing a tenant with
   this history is the same operation as publishing the registry for
-  the first time: restart the hub.
+  the first time: call `publishCorbitsToolsRegistry` again.
 
-## Workflow deployments (boot-time seeding)
+## Workflow deployments
 
 `ensureDeployment` (`packages/seeding/src/seed.ts`) treats a
 workflow's `workflow_run` deployment row as seed-owned state, but the
@@ -204,18 +213,23 @@ made once every required connection reads satisfied. On success the
 entry moves out of Available into the ordinary scheduled/deployed
 list the rest of the page already reads.
 
-## Env provider credentials (hub boot)
+## Env provider credentials
 
-`apps/hub/src/env-credential-plant.ts` delegates to
-`plantEnvProviderCredentials` (`packages/onboarding`): keyed by the
+The hub's env-key auto-plant was removed (CL-7579): hub boot never reads
+provider credentials from the environment. Connect a provider in the UI
+(or call the same connect API a granted setup step uses) — that flow
+plants via `persistConnectorCredential` and then runs `seedCatalog`.
+`plantEnvProviderCredentials` (`packages/onboarding`) is kept as a
+library for a future granted setup step; nothing in production calls it
+today. Its semantics, should a setup step adopt it: keyed by the
 provider's stable credential name, a provider already carrying an
 active credential is not probed and its key is not overwritten — a
 rotated or hand-renamed key is never touched. `seedCatalog` still
-runs against that existing credential (`existingCredentialId`, no
-`apiKey`) so a hub restart backfills newly curated models additively:
+runs against an existing credential (`existingCredentialId`, no
+`apiKey`) so a re-connect backfills newly curated models additively:
 missing rows are planted, existing ones 409-skip, nothing is deleted.
-Removing an env var never deletes the planted credential: credentials
-are operator data once planted, not seeds to garbage-collect.
+Credentials are operator data once planted, not seeds to
+garbage-collect.
 
 ## Credential-bound catalog workflows (CL-7073)
 

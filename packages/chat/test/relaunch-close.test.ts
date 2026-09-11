@@ -127,7 +127,7 @@ function createFakeDb(opts: {
 function createPlatform(db: never) {
   return createHubChatPlatform({
     db,
-    toolGrantsForPins: () => [],
+    toolGrantsForPins: async () => [],
     runTrigger: {} as never,
     repoStore: { resolveRef: async () => "sha_test" },
     sidecarRouter: { getRoutableAddresses: () => [] } as never,

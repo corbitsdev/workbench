@@ -45,6 +45,7 @@ function depsFor(args: {
     string,
     { tenancyCreation: "owners" | "owners-admins" | "none" }
   >;
+  tenants?: number;
 }): TenantCreateGuardDeps {
   const store = createInMemoryAccessPolicyStore();
   for (const [tenantId, policy] of Object.entries(
@@ -56,6 +57,7 @@ function depsFor(args: {
   const deps: TenantCreateGuardDeps = {
     store,
     resolveCallerRoleNames: args.resolveCallerRoleNames ?? noMembership,
+    countTenants: async () => args.tenants ?? 1,
     envSignupMode: args.envSignupMode ?? "closed",
     envAllowedDomains: [],
     allowUnverifiedEmails: false,
@@ -217,6 +219,29 @@ describe("guardedHubApp — bypass shape B: arbitrary parentId under a tenant th
 });
 
 describe("guardedHubApp — top-level and operator-tenant creation go through the signup gate", () => {
+  test("no parentId on an empty hub (genesis) is allowed even with signup closed", async () => {
+    const { app: nativeApp, created } = stubNativeApp();
+    const deps = depsFor({
+      user: {
+        id: "usr_first",
+        email: "first@example.com",
+        emailVerified: true,
+      },
+      envSignupMode: "closed",
+      tenants: 0,
+    });
+    const wrapped = guardedHubApp(nativeApp, deps);
+
+    const response = await wrapped.request("/api/tenants", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Acme", slug: "workbench" }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(created).toHaveLength(1);
+  });
+
   test("no parentId, signup closed -> denied, fail closed", async () => {
     const { app: nativeApp, created } = stubNativeApp();
     const deps = depsFor({

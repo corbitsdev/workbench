@@ -38,75 +38,39 @@ describe("readHubConfig", () => {
       allowUnverifiedEmails: false,
       sidecarProvisioners: [{ id: "process" }],
       defaultSidecarProvisionerId: "process",
-      envProviderKeys: {},
-      envProviderBaseUrls: {},
-      envCredentialPlantAdmin: {
-        email: "alice@example.com",
-        password: "password123",
-        orgSlug: "workbench",
-      },
       chatIdleReapMs: 30 * 60_000,
     });
   });
 
-  describe("envProviderKeys", () => {
-    test("empty when no provider key env vars are set", () => {
-      expect(readHubConfig(validEnv).envProviderKeys).toEqual({});
+  test("provider env vars are no longer configuration", () => {
+    const config = readHubConfig({
+      ...validEnv,
+      ANTHROPIC_API_KEY: "sk-ant-test",
+      OPENAI_API_KEY: "sk-oai-test",
+      OLLAMA_BASE_URL: "http://localhost:11434",
+      HUB_ADMIN_EMAIL: "owner@acme.example",
+      HUB_ADMIN_PASSWORD: "correct-horse-battery",
     });
-
-    test("collects every curated provider's key under its conventional env var", () => {
-      const config = readHubConfig({
-        ...validEnv,
-        ANTHROPIC_API_KEY: "sk-ant-test",
-        OPENROUTER_API_KEY: "sk-or-test",
-      });
-      expect(config.envProviderKeys).toEqual({
-        anthropic: "sk-ant-test",
-        openrouter: "sk-or-test",
-      });
-    });
-
-    test("GEMINI_API_KEY wins over GOOGLE_API_KEY for google-genai", () => {
-      const config = readHubConfig({
-        ...validEnv,
-        GEMINI_API_KEY: "gemini-key",
-        GOOGLE_API_KEY: "google-key",
-      });
-      expect(config.envProviderKeys["google-genai"]).toBe("gemini-key");
-    });
-
-    test("OLLAMA_BASE_URL plants the fixed placeholder secret and its own base URL", () => {
-      const config = readHubConfig({
-        ...validEnv,
-        OLLAMA_BASE_URL: "http://localhost:11434",
-      });
-      expect(config.envProviderKeys.ollama).toBe("ollama");
-      expect(config.envProviderBaseUrls.ollama).toBe("http://localhost:11434");
-    });
-  });
-
-  describe("envCredentialPlantAdmin", () => {
-    test("defaults to the same identity workbench setup/seed use", () => {
-      expect(readHubConfig(validEnv).envCredentialPlantAdmin).toEqual({
-        email: "alice@example.com",
-        password: "password123",
-        orgSlug: "workbench",
-      });
-    });
-
-    test("honors HUB_ADMIN_EMAIL/HUB_ADMIN_PASSWORD/ORG_SLUG when set", () => {
-      const config = readHubConfig({
-        ...validEnv,
-        HUB_ADMIN_EMAIL: "owner@acme.example",
-        HUB_ADMIN_PASSWORD: "correct-horse-battery",
-        ORG_SLUG: "acme",
-      });
-      expect(config.envCredentialPlantAdmin).toEqual({
-        email: "owner@acme.example",
-        password: "correct-horse-battery",
-        orgSlug: "acme",
-      });
-    });
+    expect(Object.keys(config).sort()).toEqual(
+      [
+        "allowPlaintextSecrets",
+        "allowUnverifiedEmails",
+        "allowedEmailDomains",
+        "baseUrl",
+        "chatIdleReapMs",
+        "databaseUrl",
+        "defaultSidecarProvisionerId",
+        "defaultTenantSlug",
+        "hubDataDir",
+        "hubStaticDir",
+        "sessionSecret",
+        "signInRateLimit",
+        "signupMode",
+        "signupRateLimit",
+        "socialProviders",
+        "sidecarProvisioners",
+      ].sort(),
+    );
   });
 
   describe("social providers", () => {
@@ -180,7 +144,6 @@ describe("readHubConfig", () => {
   test("ORG_SLUG aliases WORKBENCH_DEFAULT_TENANT when the latter is unset", () => {
     const config = readHubConfig({ ...validEnv, ORG_SLUG: "acme" });
     expect(config.defaultTenantSlug).toBe("acme");
-    expect(config.envCredentialPlantAdmin.orgSlug).toBe("acme");
   });
 
   test("WORKBENCH_DEFAULT_TENANT wins over ORG_SLUG when both are set", () => {
@@ -190,7 +153,6 @@ describe("readHubConfig", () => {
       ORG_SLUG: "acme",
     });
     expect(config.defaultTenantSlug).toBe("root");
-    expect(config.envCredentialPlantAdmin.orgSlug).toBe("root");
   });
 
   test("OPERATOR_TENANT_ID fails loudly with an actionable message", () => {
@@ -262,23 +224,6 @@ describe("readHubConfig", () => {
         WORKBENCH_ALLOWED_EMAIL_DOMAINS: "acme.example, corp.example",
       }).allowedEmailDomains,
     ).toEqual(["acme.example", "corp.example"]);
-  });
-
-  test("the seed model is absent when ANTHROPIC_API_KEY is not set", () => {
-    const config = readHubConfig(validEnv);
-    expect(config.seedModel).toBeUndefined();
-  });
-
-  test("ANTHROPIC_API_KEY builds an anthropic seed model with defaults", () => {
-    const config = readHubConfig({
-      ...validEnv,
-      ANTHROPIC_API_KEY: "sk-ant-test",
-    });
-    expect(config.seedModel).toEqual({
-      provider: "anthropic",
-      model: "claude-sonnet-5",
-      apiKey: "sk-ant-test",
-    });
   });
 
   test("huggingfaceOAuthClientId is absent by default", () => {

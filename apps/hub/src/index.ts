@@ -16,6 +16,7 @@ import {
   createSidecarAllocationStore,
   createSignalCorrelationStore,
   createWorkflowRunDispatchStore,
+  listAssetsForTenant,
   listVisibleOfferings,
   resolveCredentialByName,
   resolveCredentialRequirement,
@@ -162,8 +163,7 @@ import { createWorkflowCatalogAdminRoutes } from "@corbits/catalog-tools/routes"
 import { createWorkflowAccessRoutes } from "@corbits/access-tools/routes";
 import { generateId } from "@intx/hub-common";
 
-import { ensureDefaultTenant } from "./default-tenant";
-import { runSystemSeed } from "./system-seed";
+import { createHubSignupTenancy } from "./signup-tenancy";
 import {
   createInMemoryMailboxEventBus,
   createMailboxDb,
@@ -361,7 +361,6 @@ import { type Context, Hono, type Next } from "hono";
 import { upgradeWebSocket, websocket } from "hono/bun";
 import {
   CORBITS_TOOLS_REGISTRY,
-  describeCorbitsToolPackages,
   publishCorbitsToolsRegistry,
 } from "@corbits/tool-registry-publish";
 import {
@@ -370,7 +369,6 @@ import {
   type SidecarProvisionerConfig,
 } from "./config";
 import type { SidecarProvisioner } from "@intx/hub-sessions";
-import { scheduleEnvProviderCredentialPlant } from "./env-credential-plant";
 import { withTurnPartWriteDefaults } from "./turn-part-content-default";
 import { createBootAssetWiring, REGISTRIES } from "./asset-service-factory";
 import {
@@ -404,9 +402,8 @@ const MAX_TARBALL_BYTES = 10 * 1024 * 1024;
 // `@corbits` scope at this registry name means a `@corbits/*` pin
 // resolves only once an operator publishes a `package-registry` asset
 // named `CORBITS_TOOLS_REGISTRY` with the package's tarball —
-// `workbench setup` does exactly that onto the root tenant via
-// `@corbits/tool-registry-publish`; descendants inherit it, and
-// `seedTenant` does not pack. Until then, resolution fails loud
+// `@corbits/tool-registry-publish` is the publisher. Descendants
+// inherit it, and `seedTenant` does not pack. Until then, resolution fails loud
 // rather than silently falling through to npmjs (which could never
 // carry an unpublished scope anyway).
 const TENANT_PREFIX = "/api/tenants/:tenantId";
@@ -669,6 +666,10 @@ export async function createHub(config: HubConfig) {
   // Per-principal signing keys are sealed under their own operator key —
   // see `principalKeyStoreFrom`.
   const principalKeyStore = principalKeyStoreFrom(config, db, log);
+  // The genesis-or-join first-signup decision's tenancy reads/writes —
+  // also read by the sign-up gate (empty-hub exception) and the
+  // tenant-create guard below. See ./signup-tenancy.ts.
+  const signupTenancy = createHubSignupTenancy(db, principalKeyStore);
 
   const auth = betterAuth({
     baseURL: config.baseUrl,
@@ -735,20 +736,6 @@ export async function createHub(config: HubConfig) {
         }
       : undefined,
   });
-  // The root tenant must exist before the first sign-in can provision a
-  // personal bench under it; boot is the one moment the hub can
-  // guarantee that ordering. Boot seeds the admin account and its owner
-  // membership too — `workbench setup` then adopts the root instead of
-  // colliding with it, and the root's policy row has an editor. Failure
-  // here fails the boot loudly — a hub without its root tenant cannot
-  // serve first logins.
-  const operatorTenantId = await ensureDefaultTenant(
-    db,
-    auth,
-    config.envCredentialPlantAdmin,
-    config.defaultTenantSlug,
-    principalKeyStore,
-  );
   // Account-keyed sign-in rate limit (CL-6494) — see `sign-in-rate-limit.ts`
   // for why this replaces better-auth's own IP-keyed sign-in enforcement
   // entirely rather than composing with it.
@@ -847,20 +834,6 @@ export async function createHub(config: HubConfig) {
     },
   };
   const hubPublicKey = hexEncode(signingKey.publicKey);
-  // CL-6149: a launch's pinned tool packages (`toolPackagePins`) carry
-  // no grants of their own — the deploy-time capability walk
-  // (`vendor/intx/workflow-deploy/src/capability-walk.ts`) only derives
-  // `tool:` grants for inline tool factories, so a pinned package's
-  // tools failed every call closed with "No matching grants". Every
-  // `@corbits/*-tools` package's namespaced tool ids and approval marks
-  // are read once here (`describeCorbitsToolPackages`), so
-  // `toolGrantsForPins` — the port `createHubChatPlatform`'s
-  // `CreateHubChatPlatformDeps` is built with — can synchronously turn a
-  // launch's pins into the `tool:<qualifiedId>` grants minted against
-  // the run's own principal.
-  const toolGrantsForPins = createToolGrantsForPins(
-    await describeCorbitsToolPackages(),
-  );
   // Same owning check GET /connections uses — see
   // `@corbits/connections`' `workflow-connection-routes.ts` and the
   // `createWorkflowConnectionRoutes` wiring below. Not
@@ -1077,6 +1050,18 @@ export async function createHub(config: HubConfig) {
     assetService,
     repoStore: agentRepoStore.repoStore,
   });
+  // CL-6149: a launch's pinned tool packages (`toolPackagePins`) carry
+  // no grants of their own — the deploy-time capability walk
+  // (`vendor/intx/workflow-deploy/src/capability-walk.ts`) only derives
+  // `tool:` grants for inline tool factories. `toolGrantsForPins` — the
+  // port `createHubChatPlatform`'s `CreateHubChatPlatformDeps` is built
+  // with — turns a launch's pins into `tool:<qualifiedId>` grants read
+  // from the tenant-resolved `corbits-tools` asset's packed manifests
+  // (CL-7582), through the same cached launch-path read seam above.
+  const toolGrantsForPins = createToolGrantsForPins({
+    listAssets: (tenantId, kind) => listAssetsForTenant(db, tenantId, kind),
+    assetService: launchCaches.assetService,
+  });
   const launchAgentRepoStore: AgentRepoStore = {
     writeDeployTree: agentRepoStore.writeDeployTree,
     createDeployPack: agentRepoStore.createDeployPack,
@@ -1272,14 +1257,27 @@ export async function createHub(config: HubConfig) {
       // sign-up/email path is product-controlled (docs/TENANCY.md).
       if (c.req.method === "POST" && c.req.path.endsWith(SIGN_UP_EMAIL_PATH)) {
         if (config.signupMode === "closed") {
-          return c.json(
-            {
-              error: "signup_closed",
-              message:
-                "Self-serve signup is disabled. Ask an owner for an invite.",
-            },
-            403,
-          );
+          // Empty-hub exception (CL-7578): with zero users and zero
+          // tenants, someone has to be first — the signup that opens a
+          // brand-new hub is allowed even when signup is closed, since
+          // the genesis path makes that caller the root tenant's owner.
+          // Everywhere else on the hub "empty" means zero tenants only;
+          // here a user row also counts, because it means the 0→1
+          // signup already happened.
+          const [users, tenants] = await Promise.all([
+            signupTenancy.countUsers(),
+            signupTenancy.countTenants(),
+          ]);
+          if (users > 0 || tenants > 0) {
+            return c.json(
+              {
+                error: "signup_closed",
+                message:
+                  "Self-serve signup is disabled. Ask an owner for an invite.",
+              },
+              403,
+            );
+          }
         }
         if (config.allowedEmailDomains.length > 0) {
           let email = "";
@@ -3378,6 +3376,8 @@ export async function createHub(config: HubConfig) {
 
   const onboardingDeps: Parameters<typeof createOnboardingRoutes>[0] = {
     hubUrl: config.baseUrl,
+    defaultTenantSlug: config.defaultTenantSlug,
+    tenancy: signupTenancy,
     pushWorkflow: createGitWorkflowPusher(),
     log: (line) => log.info`${line}`,
     logError: (line) => log.error`${line}`,
@@ -3396,9 +3396,6 @@ export async function createHub(config: HubConfig) {
     // routed someone to onboarding to fix.
     providerHealth: providerHealthStore,
   };
-  onboardingDeps.operatorTenantId = operatorTenantId;
-  if (config.seedModel !== undefined)
-    onboardingDeps.seedModel = config.seedModel;
   if (config.huggingfaceOAuthClientId !== undefined)
     onboardingDeps.huggingfaceClientId = config.huggingfaceOAuthClientId;
 
@@ -3573,6 +3570,7 @@ export async function createHub(config: HubConfig) {
     store: accessPolicyStore,
     resolveCallerRoleNames: (tenantId, userId) =>
       resolveCallerRoleNames(db, tenantId, userId),
+    countTenants: signupTenancy.countTenants,
     envSignupMode: config.signupMode,
     envAllowedDomains: config.allowedEmailDomains,
     allowUnverifiedEmails: config.allowUnverifiedEmails,
@@ -3587,22 +3585,9 @@ export async function createHub(config: HubConfig) {
         : undefined;
     },
   };
-  guardDeps.operatorTenantId = operatorTenantId;
   const guardedApp = guardedHubApp(app, guardDeps);
   const inFlight = createInFlightRequestTracker();
   const servingApp = withInFlightRequestTracking(guardedApp, inFlight);
-
-  // Env-key auto-plant (CL-6101): runs in-process against the app this
-  // function is about to return, so it needs nothing more than that
-  // app's own `fetch` — see ./env-credential-plant.ts. A no-op when no
-  // curated provider key is set in this process's environment.
-  const envCredentialPlant = scheduleEnvProviderCredentialPlant({
-    baseUrl: config.baseUrl,
-    envProviderKeys: config.envProviderKeys,
-    envProviderBaseUrls: config.envProviderBaseUrls,
-    admin: config.envCredentialPlantAdmin,
-    fetch: (request) => Promise.resolve(servingApp.fetch(request)),
-  });
 
   return {
     app: servingApp,
@@ -3629,7 +3614,6 @@ export async function createHub(config: HubConfig) {
       // intermittent test timeout.
       relaunchSweepSeries += 1;
       clearTimeout(relaunchSweepTimer);
-      envCredentialPlant.stop();
       chatOrchestrator.dispose();
       workflowScheduler.stop();
       credentialExpirySweep.stop();
@@ -3667,18 +3651,6 @@ if (import.meta.main) {
   });
   const log = getLogger(["hub"]);
   log.info`Hub serving on port ${port}`;
-  // CL-7382: replaces `workbench seed`. Runs against the hub's own real
-  // origin now that it is actually listening — `runSystemSeed`'s
-  // workflow push needs a reachable origin for `git push`, not just an
-  // in-process fetch entry point. Never awaited: a slow or still-
-  // sidecar-less seed must not delay "Hub serving" or hold up shutdown
-  // wiring below it.
-  void runSystemSeed({
-    baseUrl: config.baseUrl,
-    orgSlug: config.defaultTenantSlug,
-    admin: config.envCredentialPlantAdmin,
-    ...(config.seedModel !== undefined ? { seedModel: config.seedModel } : {}),
-  });
   const SHUTDOWN_DRAIN_MS = 10_000;
   // In-flight Hono handlers (a request mid-Postgres-transaction, a git
   // write, anything that has not returned a Response yet) must finish
