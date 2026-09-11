@@ -74,7 +74,6 @@ describe("buildMemberAvatarStack", () => {
       { address: "prn_alice", handle: "Alice" },
     );
     expect(stack.map((entry) => entry.label)).toEqual(["Myra", "Alice"]);
-    expect(stack[1]?.isOwner).toBe(true);
   });
 
   test("does not duplicate an owner already in the roster and protects that row", () => {
@@ -87,7 +86,6 @@ describe("buildMemberAvatarStack", () => {
     );
     expect(stack).toHaveLength(1);
     expect(stack[0]?.label).toBe("Alice Smith");
-    expect(stack[0]?.isOwner).toBe(true);
   });
 
   test("prefers resolved agent display names over handle slugs (CL-6424)", () => {

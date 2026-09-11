@@ -1,8 +1,7 @@
-import { useId, useState } from "react";
+import { useId } from "react";
 import {
   Avatar,
   Button,
-  ConfirmButton,
   Menu,
   MenuContent,
   MenuItem,
@@ -10,43 +9,30 @@ import {
   useDismissablePopover,
 } from "@corbits/react-ui";
 import { CaretDown, DotsThree, Plus } from "@corbits/icons";
-import { reportError } from "@corbits/error-sink";
 
-import { describeChatError, removeWorkbenchParticipant } from "./api";
 import type { WorkbenchAgent } from "./api";
 import { CorbitAvatar } from "./avatar";
 import type { TeamAvatarEntry } from "./chat-workspace";
 import { localPartOf } from "./timeline";
-import { CHAT_STRINGS } from "./strings";
 
 export function ChatMembers({
-  tenantId,
-  workbenchId,
   members,
   agents,
   currentUserPrincipalId,
-  canRemove,
   onInvite,
   onEditAgent,
-  onParticipantsChanged,
 }: {
-  readonly tenantId: string;
-  readonly workbenchId: string;
   readonly members: readonly TeamAvatarEntry[];
   readonly agents: readonly WorkbenchAgent[];
   readonly currentUserPrincipalId: string | undefined;
-  readonly canRemove: boolean;
   readonly onInvite: (() => void) | undefined;
   readonly onEditAgent: ((definitionId: string) => void) | undefined;
-  readonly onParticipantsChanged: () => void;
 }) {
   const { open, setOpen, rootRef, triggerRef, close } = useDismissablePopover<
     HTMLDivElement,
     HTMLButtonElement
   >();
   const panelId = useId();
-  const [removing, setRemoving] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const agentCount = members.filter((member) => member.tone === "agent").length;
   const peopleCount = members.length - agentCount;
   const representatives = [
@@ -56,26 +42,6 @@ export function ChatMembers({
 
   const preview =
     representatives.length === 2 ? representatives : members.slice(0, 2);
-
-  async function remove(address: string) {
-    setRemoving(address);
-    setError(null);
-    try {
-      await removeWorkbenchParticipant(tenantId, workbenchId, address);
-      onParticipantsChanged();
-    } catch (cause) {
-      const refId = reportError(cause, {
-        operation: "chat.removeMember",
-        tenantId,
-        roomId: workbenchId,
-      });
-      setError(
-        `${describeChatError(cause, CHAT_STRINGS.workbenchSettingsRemoveError)} (${refId})`,
-      );
-    } finally {
-      setRemoving(null);
-    }
-  }
 
   return (
     <div ref={rootRef} className="relative">
@@ -171,7 +137,7 @@ export function ChatMembers({
                           : "Member"}
                     </p>
                   </div>
-                  {editable || (canRemove && !self && !member.isOwner) ? (
+                  {editable ? (
                     <Menu>
                       <MenuTrigger asChild>
                         <button
@@ -192,38 +158,14 @@ export function ChatMembers({
                         }}
                         onPointerDown={(event) => event.stopPropagation()}
                       >
-                        {editable ? (
-                          <MenuItem
-                            onSelect={() => {
-                              close();
-                              onEditAgent(agent.definitionId);
-                            }}
-                          >
-                            Edit agent
-                          </MenuItem>
-                        ) : null}
-                        {canRemove && !self && !member.isOwner ? (
-                          <MenuItem
-                            asChild
-                            onSelect={(event) => event.preventDefault()}
-                          >
-                            <ConfirmButton
-                              size="sm"
-                              className="w-full justify-start border-0 px-2.5 py-2 text-sm font-normal"
-                              disabled={removing !== null}
-                              confirmLabel={
-                                CHAT_STRINGS.workbenchSettingsRemoveConfirmLabel
-                              }
-                              onConfirm={() => {
-                                void remove(member.key);
-                              }}
-                            >
-                              {removing === member.key
-                                ? CHAT_STRINGS.workbenchSettingsRemoving
-                                : CHAT_STRINGS.workbenchSettingsRemoveAction}
-                            </ConfirmButton>
-                          </MenuItem>
-                        ) : null}
+                        <MenuItem
+                          onSelect={() => {
+                            close();
+                            onEditAgent(agent.definitionId);
+                          }}
+                        >
+                          Edit agent
+                        </MenuItem>
                       </MenuContent>
                     </Menu>
                   ) : null}
@@ -231,11 +173,6 @@ export function ChatMembers({
               );
             })}
           </ul>
-          {error !== null ? (
-            <p role="alert" className="mb-3 text-sm text-destructive">
-              {error}
-            </p>
-          ) : null}
           {onInvite !== undefined ? (
             <div className="border-t border-border pt-3">
               <Button

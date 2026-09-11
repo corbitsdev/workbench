@@ -160,7 +160,6 @@ export interface TeamAvatarEntry {
   readonly label: string;
   readonly tone: "agent" | "neutral";
   readonly avatarClassName?: string;
-  readonly isOwner?: boolean;
 }
 
 /** A crumb the host's `StageTopBar` can render — label plus an optional
@@ -231,7 +230,6 @@ export function buildMemberAvatarStack(
         initials: label.slice(0, 1).toUpperCase(),
         label,
         tone: "neutral" as const,
-        ...(participant.address === owner?.address ? { isOwner: true } : {}),
         avatarClassName: avatarClassForPrincipal(participant.address),
       };
     });
@@ -1375,12 +1373,9 @@ function ChatWorkspaceInner({
       (memberStack.length > 0 || offerInviteControl) ? (
         <ChatMembers
           key={activeWorkbenchId}
-          tenantId={tenantId}
-          workbenchId={activeWorkbenchId}
           members={memberStack}
           agents={workbenchAgentsQuery.data ?? []}
           currentUserPrincipalId={currentUser?.principalId}
-          canRemove={activeWorkbench?.kind === "workbench"}
           onInvite={
             offerInviteControl ? () => setInviteDialogOpen(true) : undefined
           }
@@ -1389,10 +1384,6 @@ function ChatWorkspaceInner({
               ? (definitionId) => openWorkbenchSettings("agents", definitionId)
               : undefined
           }
-          onParticipantsChanged={() => {
-            refreshWorkbenchLists();
-            void workbenchAgentsQuery.refetch();
-          }}
         />
       ) : null}
       <div className="chat-workbench-settings-slot">

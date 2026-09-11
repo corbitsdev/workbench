@@ -3,13 +3,11 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { ChatMembers } from "../src/chat-members";
 
-const realFetch = globalThis.fetch;
 const container = document.createElement("div");
 let root: ReturnType<typeof createRoot>;
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
-  globalThis.fetch = realFetch;
 });
 
 function mount(overrides: Partial<Parameters<typeof ChatMembers>[0]> = {}) {
@@ -18,8 +16,6 @@ function mount(overrides: Partial<Parameters<typeof ChatMembers>[0]> = {}) {
   act(() =>
     root.render(
       <ChatMembers
-        tenantId="tnt_1"
-        workbenchId="ch_1"
         members={[
           {
             key: "myra@agents.example",
@@ -39,10 +35,8 @@ function mount(overrides: Partial<Parameters<typeof ChatMembers>[0]> = {}) {
           },
         ]}
         currentUserPrincipalId="prn_alice"
-        canRemove={true}
         onInvite={() => {}}
         onEditAgent={() => {}}
-        onParticipantsChanged={() => {}}
         {...overrides}
       />,
     ),
@@ -95,7 +89,7 @@ test("shows counts, identities, self label, and closes the action menu on Escape
     Array.from(document.querySelectorAll('[role="menuitem"]')).some(
       (item) => item.textContent?.trim() === "Remove",
     ),
-  ).toBe(true);
+  ).toBe(false);
   const menu = document.querySelector('[role="menu"]');
   expect(menu).not.toBeNull();
   act(() =>
@@ -156,7 +150,6 @@ test("opens the existing invite flow and preserves fixed-chat controls", () => {
     onInvite: () => {
       invited = true;
     },
-    canRemove: false,
   });
   expect(container.textContent).not.toContain("Remove");
   click("Add member");
@@ -165,91 +158,12 @@ test("opens the existing invite flow and preserves fixed-chat controls", () => {
 });
 
 test("does not offer unavailable invite or unresolved agent editing", () => {
-  mount({ onInvite: undefined, agents: [], canRemove: false });
+  mount({ onInvite: undefined, agents: [] });
   expect(container.textContent).not.toContain("Add member");
   expect(document.querySelector('[aria-label="Actions for Myra"]')).toBeNull();
 });
 
-test("removal requires confirmation, sends the participant address, and refreshes on success", async () => {
-  let removed = "";
-  let refreshes = 0;
-  globalThis.fetch = Object.assign(
-    async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(init?.method).toBe("DELETE");
-      removed = String(input);
-      return Response.json({ address: "myra@agents.example" });
-    },
-    { preconnect: realFetch.preconnect },
-  );
-  mount({
-    onParticipantsChanged: () => {
-      refreshes += 1;
-    },
-  });
-  actions();
-  click("Remove");
-  expect(removed).toBe("");
-  await act(async () => {
-    button("Click again to remove").click();
-  });
-  expect(removed).toContain("/participants/myra%40agents.example");
-  expect(refreshes).toBe(1);
-});
-
-test("keyboard confirmation remains usable in the action menu", async () => {
-  let removed = 0;
-  globalThis.fetch = Object.assign(
-    async () => {
-      removed += 1;
-      return Response.json({ address: "myra@agents.example" });
-    },
-    { preconnect: realFetch.preconnect },
-  );
-  mount();
-  actions();
-  const target = button("Remove");
-  act(() => {
-    target.focus();
-    target.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
-    );
-  });
-  expect(removed).toBe(0);
-  expect(target.textContent).toContain("Click again to remove");
-  await act(async () => {
-    target.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
-    );
-  });
-  expect(removed).toBe(1);
-});
-
-test("failed removal stays recoverable and does not refresh", async () => {
-  let refreshes = 0;
-  globalThis.fetch = Object.assign(
-    async () =>
-      Response.json(
-        { error: { code: "forbidden", message: "Not allowed" } },
-        { status: 403 },
-      ),
-    { preconnect: realFetch.preconnect },
-  );
-  mount({
-    onParticipantsChanged: () => {
-      refreshes += 1;
-    },
-  });
-  actions();
-  click("Remove");
-  await act(async () => {
-    button("Click again to remove").click();
-  });
-  expect(container.querySelector('[role="alert"]')).not.toBeNull();
-  expect(refreshes).toBe(0);
-  expect(button("Remove").disabled).toBe(false);
-});
-
-test("another viewer cannot remove the native owner", () => {
+test("does not offer actions for the native owner", () => {
   mount({
     currentUserPrincipalId: "prn_bob",
     members: [
@@ -264,7 +178,6 @@ test("another viewer cannot remove the native owner", () => {
         initials: "A",
         label: "Alice",
         tone: "neutral",
-        isOwner: true,
       },
     ],
   });
