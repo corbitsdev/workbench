@@ -248,6 +248,18 @@ describe("createTenantCreateObserver production deployer path", () => {
     });
   }
 
+  // The kick is fire-and-forget behind the 201: the singleton lookup plus
+  // paginated-principal fetch settles after the response is serialized.
+  // Poll — never a fixed sleep — so the suite stays green when the whole
+  // monorepo test leg runs packages in parallel.
+  async function awaitSettled(done: () => boolean) {
+    const deadline = Date.now() + 2000;
+    while (!done()) {
+      if (Date.now() > deadline) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
   test("the creator's principalId and tenant domain reach the reconcile seam", async () => {
     const seen: {
       tenantId: string;
@@ -279,7 +291,7 @@ describe("createTenantCreateObserver production deployer path", () => {
 
     const response = await postCreate(app);
     expect(response.status).toBe(201);
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await awaitSettled(() => seen.length === 1);
     expect(seen).toEqual([
       {
         tenantId: "ten_new",
@@ -314,7 +326,9 @@ describe("createTenantCreateObserver production deployer path", () => {
 
     const response = await postCreate(app);
     expect(response.status).toBe(201);
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await awaitSettled(() =>
+      logged.some((line) => line.includes("no deployable principal")),
+    );
     expect(calls).toBe(0);
     expect(
       logged.some((line) => line.includes("no deployable principal")),
@@ -342,7 +356,9 @@ describe("createTenantCreateObserver production deployer path", () => {
 
     const response = await postCreate(app);
     expect(response.status).toBe(201);
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await awaitSettled(() =>
+      logged.some((line) => line.includes("no deployable principal")),
+    );
     expect(calls).toBe(0);
     expect(
       logged.some((line) => line.includes("no deployable principal")),
