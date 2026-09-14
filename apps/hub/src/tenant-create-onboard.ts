@@ -19,6 +19,7 @@ import { cookiesFromHeader, type ApiCall } from "@corbits/hub-api-client";
 import {
   reconcileTenantDesiredState,
   resolveTenantModelSource,
+  resolveTenantDeployer,
   TENANT_DESIRED_STATE,
   type ReconcileReport,
 } from "@workbench/onboarding/desired-state";
@@ -32,7 +33,9 @@ export type TenantCreateOnboardDeps = {
   logError?: (line: string) => void;
   /**
    * The convergence step. Production resolves the tenant's deploy model
-   * from its resolved catalog and delegates to
+   * from its resolved catalog plus the creator's deploy identity (owner
+   * principal + domain, via `resolveTenantDeployer` — a fresh native
+   * tenant has no pending-seed row to read those from) and delegates to
    * `reconcileTenantDesiredState`; with no offerings it reports the
    * workflow pins blocked (logged, never thrown). Tests replace the
    * whole thing.
@@ -102,11 +105,29 @@ export function createTenantCreateObserver(
             })),
           } satisfies ReconcileReport;
         }
+        // A fresh native tenant has no pending-seed row to read deploy
+        // identity from — resolve the creator's owner principal (minted
+        // in the create transaction) plus the tenant domain before
+        // reconciling, so the deploy lands under a real identity.
+        const deployer = await resolveTenantDeployer(
+          deps.api,
+          reconcileArgs.cookies,
+          reconcileArgs.tenantId,
+        );
+        if (deployer === undefined) {
+          throw new Error(
+            `tenant-create onboarding for ${reconcileArgs.tenantId} has no deployable principal: the session holds no active user principal on the new tenant`,
+          );
+        }
         return reconcileTenantDesiredState({
           api: deps.api,
           cookies: reconcileArgs.cookies,
           hubUrl: deps.hubUrl,
-          tenant: { tenantId: reconcileArgs.tenantId },
+          tenant: {
+            tenantId: reconcileArgs.tenantId,
+            principalId: deployer.principalId,
+            domain: deployer.tenantDomain,
+          },
           model,
           pushWorkflow: deps.pushWorkflow,
           log: deps.log,

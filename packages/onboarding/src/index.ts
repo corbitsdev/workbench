@@ -36,6 +36,7 @@ export {
   desiredStateSteps,
   readTenantDesiredStateStatus,
   reconcileTenantDesiredState,
+  resolveTenantDeployer,
   resolveTenantModelSource,
   TENANT_DESIRED_STATE,
 } from "./desired-state";
@@ -48,6 +49,7 @@ export type {
   ReconcilePinStatus,
   ReconcileReport,
   SkillPin,
+  TenantDeployer,
   TenantDesiredState,
   ToolPackagePin,
   WorkflowPin,

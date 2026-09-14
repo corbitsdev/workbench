@@ -16,7 +16,13 @@
 // and exactly one definition of "already done".
 
 import { type } from "arktype";
-import { AssetWithOriginResponse, ModelInfo } from "@intx/types";
+import {
+  AssetWithOriginResponse,
+  ModelInfo,
+  PrincipalSummary,
+  TenantResponse,
+  paginatedSchema,
+} from "@intx/types";
 import {
   DEFAULT_SKILLS,
   DEFAULT_WORKFLOWS,
@@ -112,9 +118,9 @@ const WorkflowDeploymentStatus = type({
 });
 
 /** Which of `pins`' asset names already carry an active deployment on
- * this tenant. The same asset-then-deployment lookup `seedTenant` and
- * `isFullySeeded` perform; parameterized over the doc's pins so the
- * desired-state reader never re-derives it. Read-only. */
+ * this tenant. The same asset-then-deployment lookup `seedTenant`
+ * performs; parameterized over the doc's pins so the desired-state
+ * reader never re-derives it. Read-only. */
 export async function seededWorkflowNames(
   api: ApiCall,
   cookies: string[],
@@ -228,6 +234,12 @@ export async function readTenantDesiredStateStatus(
     tools === "present" &&
     Object.values(workflows).every((s) => s === "present") &&
     Object.values(skills).every((s) => s === "present");
+  // NOTE the two readiness gates (cf. `provisioningStatus` in
+  // `./routes.ts`): this `ready` covers tools AND skills AND workflows —
+  // the full desired state — while the person-facing `/provision` and
+  // `/complete-setup` answers gate only on the workflow set (Myra live
+  // is "can they start"). Tools and skills still ride in `steps` for the
+  // waiting surface; they report `blocked` rather than holding the door.
   return {
     tenantId,
     stateId: TENANT_DESIRED_STATE.stateId,
@@ -294,8 +306,12 @@ export type ReconcileArgs = {
   hubUrl: string;
   tenant: {
     tenantId: string;
-    principalId?: string;
-    domain?: string;
+    /** Required: deploying under an empty-string identity is the
+     * second-tenant-never-converges class (CL-7584) — a caller with no
+     * deployable principal resolves `resolveTenantDeployer` first, or
+     * reports the pins blocked without entering here. */
+    principalId: string;
+    domain: string;
   };
   model: ModelSource | undefined;
   pushWorkflow: WorkflowPusher;
@@ -345,6 +361,59 @@ export async function resolveTenantModelSource(
   return best === undefined
     ? undefined
     : { provider: best.provider, model: best.model };
+}
+
+export type TenantDeployer = {
+  readonly tenantId: string;
+  readonly principalId: string;
+  readonly tenantDomain: string;
+};
+
+/**
+ * The deploy identity for a tenant nobody has connected a credential
+ * to yet. The tenant-create kick (CL-7584) reconciles exactly such a
+ * tenant — a native `POST /api/tenants` that mints the creator's owner
+ * principal in the same transaction — so there is no pending-seed row
+ * to read `principalId`/`tenantDomain` from. This resolves both from
+ * the API instead: the session's own active user principal on the
+ * tenant, plus the tenant row's domain. `undefined` when the session
+ * holds no deployable principal there (suspended, invited, agent, or
+ * absent alike) — the caller reports the pins blocked rather than
+ * deploying under an empty-string identity.
+ */
+export async function resolveTenantDeployer(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+): Promise<TenantDeployer | undefined> {
+  const response = await api("GET", "/api/me/principals", undefined, cookies);
+  const summary = parseAs(
+    paginatedSchema(PrincipalSummary),
+    response.data,
+    "principals response",
+  );
+  const own = summary.data.find(
+    (p) =>
+      p.tenantId === tenantId && p.kind === "user" && p.status === "active",
+  );
+  if (!own) return undefined;
+
+  const tenantResponse = await api(
+    "GET",
+    `/api/tenants/${tenantId}`,
+    undefined,
+    cookies,
+  );
+  const tenant = parseAs(
+    TenantResponse,
+    tenantResponse.data,
+    "tenant response",
+  );
+  return {
+    tenantId,
+    principalId: own.principalId,
+    tenantDomain: tenant.domain,
+  };
 }
 
 /**
@@ -399,6 +468,12 @@ export async function reconcileTenantDesiredState(
           });
         }
       }
+      // The tarball-url half of the tool install: live and wired, but
+      // data-gated — no `tarball-url` pin exists in
+      // `TENANT_DESIRED_STATE` yet (no external artifacts exist), so this
+      // loop is a no-op until populating a pin makes it fire. Kept, tested
+      // at the `installRegistryTarball` unit level, so adding an artifact
+      // stays a data edit.
       const tarballPins = TENANT_DESIRED_STATE.toolPackages.filter(
         (pin) => pin.source.kind === "tarball-url",
       );
@@ -492,8 +567,8 @@ export async function reconcileTenantDesiredState(
         hubUrl: args.hubUrl,
         tenant: {
           tenantId,
-          principalId: args.tenant.principalId ?? "",
-          domain: args.tenant.domain ?? "",
+          principalId: args.tenant.principalId,
+          domain: args.tenant.domain,
         },
         model,
         pushWorkflow: args.pushWorkflow,

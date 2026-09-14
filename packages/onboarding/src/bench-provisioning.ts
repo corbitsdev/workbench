@@ -79,7 +79,7 @@ export type BenchProvisionerDeps = {
     api: ApiCall;
     cookies: string[];
     hubUrl: string;
-    tenant: { tenantId: string; principalId?: string; domain?: string };
+    tenant: { tenantId: string; principalId: string; domain: string };
     pushWorkflow: WorkflowPusher;
     log: (line: string) => void;
   }) => Promise<ReconcileReport>;

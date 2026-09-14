@@ -91,7 +91,8 @@ type WizardState =
   | {
       readonly phase: "finishing-setup";
       /** CL-7584: the desired-state steps the hub reports as still
-       * pending, rendered under the loader until ready collapses them. */
+       * pending or blocked, rendered under the loader until ready
+       * collapses them. */
       readonly steps: readonly OnboardingStep[];
     };
 
@@ -460,6 +461,16 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
                     data-status={step.status}
                   >
                     {step.label}
+                    {/* `blocked` (sidecar unavailable, the hub keeps
+                      retrying) reads differently from plain `pending`
+                      (still working) so a held-up pin is visible, not an
+                      identical spinner row. */}
+                    {step.status === "blocked" && (
+                      <span className="onboarding-step-note">
+                        {" "}
+                        — waiting, retrying…
+                      </span>
+                    )}
                   </li>
                 ))}
               </ul>

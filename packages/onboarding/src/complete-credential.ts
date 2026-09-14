@@ -80,7 +80,8 @@ import {
   type PersistConnectorCredentialFns,
 } from "@corbits/connections/persist-credential";
 import { CONNECTOR_REGISTRY } from "@workbench/templates/connectors";
-import { personalTenantSlug, seededWorkflowStatus } from "./provision";
+import { TENANT_DESIRED_STATE, seededWorkflowNames } from "./desired-state";
+import { personalTenantSlug } from "./provision";
 
 /** The onboarding UI's copy for a partial seed: every durable step
  * (credential, tenant, grants, assets) already succeeded, and the
@@ -508,11 +509,11 @@ export async function testAndPersistCredential(
  * the hub cannot reach the sidecar) does not fail this call — every step
  * ahead of the deploy loop already durably succeeded, and the sidecar
  * coming back is an operational fact outside the caller's control, not
- * a reason to tell someone their onboarding failed. `seededWorkflowStatus`
- * re-reads the tenant's actual asset/deployment state (rather than
- * hand-tracking a loop index) to report exactly which default workflows
- * made it live and which are still pending. Any other error out of
- * `seedTenant` still throws, unchanged.
+ * a reason to tell someone their onboarding failed. The doc's
+ * `seededWorkflowNames` re-reads the tenant's actual asset/deployment
+ * state (rather than hand-tracking a loop index) to report exactly which
+ * default workflows made it live and which are still pending. Any other
+ * error out of `seedTenant` still throws, unchanged.
  */
 export async function ensureSeeded(
   args: EnsureSeededArgs,
@@ -546,10 +547,14 @@ export async function ensureSeeded(
     args.log(
       `sidecar unavailable while deploying default workflows for tenant ${args.tenant.tenantId}; completing onboarding with agents pending: ${cause.message}`,
     );
-    const { deployed, pending } = await seededWorkflowStatus(
+    // The single doc-status reader (the same lookup
+    // `readTenantDesiredStateStatus` derives its workflow pins from) —
+    // no second seeded-check lives alongside it.
+    const { deployed, pending } = await seededWorkflowNames(
       args.api,
       args.cookies,
       args.tenant.tenantId,
+      TENANT_DESIRED_STATE.workflows,
     );
     return {
       kind: "seeded-pending-agents",

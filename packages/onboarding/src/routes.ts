@@ -390,6 +390,9 @@ export function createOnboardingRoutes(
       // The person-facing readiness gate stays on the workflow set: Myra
       // live is "can they start". Tool packages and skills ride in
       // `steps` for the waiting surface without holding the door shut.
+      // (Cf. `DesiredStateStatus.ready` in `./desired-state.ts`, which
+      // covers the full tools+skills+workflows state — the reconcile
+      // loop's gate, not this response's.)
       kind: pending.length === 0 ? "ready" : "provisioning",
       tenantId: tenant.tenantId,
       tenantSlug: tenant.tenantSlug,

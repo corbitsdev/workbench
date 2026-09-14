@@ -76,7 +76,10 @@ import {
   ensureSeeded,
   modelSourceFor,
 } from "../../packages/onboarding/src/complete-credential.ts";
-import { reconcileTenantDesiredState } from "../../packages/onboarding/src/desired-state.ts";
+import {
+  reconcileTenantDesiredState,
+  resolveTenantModelSource,
+} from "../../packages/onboarding/src/desired-state.ts";
 import { CredentialResponse, paginatedSchema } from "@intx/types";
 import {
   api,
@@ -623,11 +626,24 @@ describe.skipIf(databaseUrl === undefined)(
       await hop(
         "CL-7584: a second tenant created through the native route converges onto its own assistant",
         async () => {
+          const stamp = Date.now();
           const createRes = await api(
             hub.baseUrl,
             "POST",
             "/api/tenants",
-            { name: `Local Rip Second ${Date.now()}` },
+            {
+              name: `Local Rip Second ${stamp}`,
+              // `slug` is required by the native route's `CreateTenant`
+              // validator, and `parentId` makes the new tenant a child of
+              // the root tenant: catalog visibility walks the ancestor
+              // chain (`listVisibleOfferings`), so only a child inherits
+              // the root's seeded offerings — a sibling root would resolve
+              // no models and the kick would report the workflow pins
+              // blocked forever. The child still gets its OWN assistant
+              // assets and deployments; only the catalog is inherited.
+              slug: `local-rip-second-${stamp}`,
+              parentId: tenant.tenantId,
+            },
             admin.cookies,
           );
           expectStatus("create second tenant", createRes, 201);
@@ -643,15 +659,44 @@ describe.skipIf(databaseUrl === undefined)(
               `create tenant answered no id: ${JSON.stringify(body)}`,
             );
           }
+          // Pre-poll guard through the same `resolveTenantModelSource`
+          // path the kick reconciles with: the child must resolve the
+          // root's inherited offerings before the kick can deploy
+          // anything. If this is undefined the poll below can only time
+          // out as blocked, so fail fast with the reason.
+          const model = await resolveTenantModelSource(
+            hubApi,
+            admin.cookies,
+            secondTenantId,
+          );
+          if (model === undefined) {
+            throw new Error(
+              "the second tenant resolves no catalog models (expected the root's inherited offerings)",
+            );
+          }
           // The tenant-create observer reconciles fire-and-forget; poll
-          // for the new tenant's own live assistant.
+          // for the new tenant's own live assistant. The status read is
+          // the same doc lookup the kick reconciles against, so a timeout
+          // reports per-pin pending/blocked/failed instead of a bare
+          // "never converged".
           const deadline = Date.now() + 90_000;
+          let lastSteps: unknown;
           for (;;) {
             if (hub.exited()) {
               throw new Error(
                 `hub exited before the second tenant converged; output:\n${hub.output()}`,
               );
             }
+            const statusRes = await api(
+              hub.baseUrl,
+              "GET",
+              `/api/onboarding/provisioning-status?tenantId=${secondTenantId}`,
+              undefined,
+              admin.cookies,
+            );
+            if (statusRes.status === 200) lastSteps = statusRes.data;
+            else
+              lastSteps = `provisioning-status ${statusRes.status}: ${JSON.stringify(statusRes.data)}`;
             const assetsRes = await api(
               hub.baseUrl,
               "GET",
@@ -691,7 +736,7 @@ describe.skipIf(databaseUrl === undefined)(
             }
             if (Date.now() > deadline) {
               throw new Error(
-                "the second tenant never converged onto its own assistant",
+                `the second tenant never converged onto its own assistant; last provisioning-status: ${JSON.stringify(lastSteps ?? "no provisioning-status read yet")}`,
               );
             }
             await Bun.sleep(500);
