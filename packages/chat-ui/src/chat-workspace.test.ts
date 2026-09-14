@@ -66,6 +66,28 @@ describe("buildMemberAvatarStack", () => {
     expect(stack.map((entry) => entry.initials)).toEqual(["A"]);
   });
 
+  test("includes the native owner missing from the mention roster, never the viewer", () => {
+    const stack = buildMemberAvatarStack(
+      [{ address: "myra@agents.example", handle: "myra" }],
+      undefined,
+      { principalId: "prn_bob", name: "Bob" },
+      { address: "prn_alice", handle: "Alice" },
+    );
+    expect(stack.map((entry) => entry.label)).toEqual(["Myra", "Alice"]);
+  });
+
+  test("does not duplicate an owner already in the roster and protects that row", () => {
+    const owner = { address: "prn_alice", handle: "Alice" };
+    const stack = buildMemberAvatarStack(
+      [owner],
+      undefined,
+      { principalId: "prn_alice", name: "Alice Smith" },
+      owner,
+    );
+    expect(stack).toHaveLength(1);
+    expect(stack[0]?.label).toBe("Alice Smith");
+  });
+
   test("prefers resolved agent display names over handle slugs (CL-6424)", () => {
     const participants: readonly ParticipantRecord[] = [
       { address: "run_myra@dana.localhost", handle: "myra" },

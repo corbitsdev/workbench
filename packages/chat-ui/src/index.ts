@@ -1,7 +1,6 @@
 export { ChatWorkspace } from "./chat-workspace";
 export type {
   TenantResolution,
-  PresenceMember,
   ChatHeaderChrome,
   ChatHeaderCrumb,
 } from "./chat-workspace";
