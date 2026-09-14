@@ -659,9 +659,12 @@ describe("POST /complete — seeded-admin fallback", () => {
   });
 });
 
-// CL-7584: the revisit kick and the doc-derived step list. A probe that
-// lands on a tenant with pending desired-state pins fires exactly one
-// fire-and-forget reconcile kick; a converged tenant fires none;
+// CL-7584: the revisit kick and the doc-derived step list. Every probe on
+// a joined or just-minted tenant fires exactly one fire-and-forget
+// reconcile kick — unconditionally, without awaiting the multi-GET status
+// read (`reconcileTenantDesiredState` is reads-only when converged, so the
+// pending check would only ever delay the response); a repeat probe after
+// a killed kick re-fires safely (idempotent, no new queue);
 // `/provisioning-status` carries the doc-labeled steps a waiting
 // surface renders.
 describe("CL-7584 desired-state kicks and steps", () => {
@@ -686,7 +689,7 @@ describe("CL-7584 desired-state kicks and steps", () => {
     };
   }
 
-  function mountHub(state: { seeded: boolean }) {
+  function mountHub(state: { seeded: boolean; brokenStatus?: boolean }) {
     const hub = new Hono();
     hub.get("/api/me/principals", (c) =>
       c.json({
@@ -716,6 +719,11 @@ describe("CL-7584 desired-state kicks and steps", () => {
       }),
     );
     hub.get("/api/tenants/ten_root/assets", (c) => {
+      // The latency probe: the first read the old inline pending-check
+      // awaited. A 500 here must never cost the kick its fire.
+      if (state.brokenStatus === true) {
+        return c.json({ error: { code: "boom" } }, 500);
+      }
       if (c.req.query("kind") === "workflow") {
         return c.json(state.seeded ? [assetRow("assistant", "workflow")] : []);
       }
@@ -786,14 +794,32 @@ describe("CL-7584 desired-state kicks and steps", () => {
     }
   });
 
-  test("a converged tenant's probe fires no kick", async () => {
+  test("a converged tenant's probe still fires one kick — the reconcile is reads-only when converged", async () => {
     const hub = mountHub({ seeded: true });
     const kicks: string[] = [];
     const { server, app } = routesWithKick(hub, kicks);
     try {
       const response = await app.request("/provision", { method: "POST" });
       expect(response.status).toBe(200);
-      expect(kicks).toEqual([]);
+      // No pending-check gates the kick: converged or not, the probe
+      // fires and the reconcile itself no-ops on reads alone.
+      expect(kicks).toEqual(["ten_root"]);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test("a failing status read neither delays nor suppresses the kick", async () => {
+    const hub = mountHub({ seeded: false, brokenStatus: true });
+    // With the pending-check inline, this 500 would swallow the kick
+    // (kicks == []); with the kick unconditional, the response never
+    // touches the status endpoints.
+    const kicks: string[] = [];
+    const { server, app } = routesWithKick(hub, kicks);
+    try {
+      const response = await app.request("/provision", { method: "POST" });
+      expect(response.status).toBe(200);
+      expect(kicks).toEqual(["ten_root"]);
     } finally {
       server.stop(true);
     }
@@ -811,9 +837,9 @@ describe("CL-7584 desired-state kicks and steps", () => {
       expect(first.status).toBe(200);
       expect(kicks).toEqual(["ten_root"]);
       // The retry is the same idempotent probe, not a new queue table or
-      // endpoint: the revisit re-reads the pins, finds them still pending,
-      // and re-fires. The `pending_seed` row covers the credential half;
-      // this re-kick covers the desired-state half.
+      // endpoint: the revisit fires again unconditionally, and the
+      // reconcile itself re-reads the pins. The `pending_seed` row covers
+      // the credential half; this re-kick covers the desired-state half.
       const revisit = await app.request("/provision", { method: "POST" });
       expect(revisit.status).toBe(200);
       expect(kicks).toEqual(["ten_root", "ten_root"]);

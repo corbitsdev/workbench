@@ -8,7 +8,10 @@ import { Hono } from "hono";
 import type { AppEnv } from "@intx/hub-api";
 import type { ApiCall } from "@corbits/hub-api-client";
 import type { WorkflowPusher } from "@corbits/seeding";
-import type { ReconcileReport } from "@workbench/onboarding/desired-state";
+import type {
+  ReconcileReport,
+  reconcileTenantDesiredState,
+} from "@workbench/onboarding/desired-state";
 import {
   createTenantCreateObserver,
   type TenantCreateOnboardDeps,
@@ -17,6 +20,7 @@ import {
 function harness(
   overrides: Omit<Partial<TenantCreateOnboardDeps>, "reconcileFn"> & {
     reconcileFn?: TenantCreateOnboardDeps["reconcileFn"] | undefined;
+    reconcileStateFn?: typeof reconcileTenantDesiredState | undefined;
     nativeApp?: Hono<AppEnv>;
   } = {},
 ) {
@@ -150,6 +154,198 @@ describe("createTenantCreateObserver", () => {
       logged.some(
         (line) => line.includes("ten_new") && line.includes("blocked"),
       ),
+    ).toBe(true);
+  });
+});
+
+// CL-7584: the production deployer path, DB-free. Past the
+// model===undefined gate the observer resolves the creator's deploy
+// identity (`resolveTenantDeployer`: GET /api/me/principals paginated +
+// GET /api/tenants/:id) and hands principalId/tenantDomain to the
+// reconcile seam — never a void-identity deploy when the session holds
+// no deployable principal there.
+describe("createTenantCreateObserver production deployer path", () => {
+  const DEPLOYER_PRINCIPAL_ID = "prn_creator";
+  const TENANT_DOMAIN = "new.bench.local";
+
+  function principalsPayload(entries: {
+    status: string;
+    principalId?: string;
+  }) {
+    return {
+      data: [
+        {
+          principalId: entries.principalId ?? DEPLOYER_PRINCIPAL_ID,
+          tenantId: "ten_new",
+          tenantName: "New",
+          tenantSlug: "new",
+          kind: "user",
+          status: entries.status,
+          roles: [],
+        },
+      ],
+      nextCursor: null,
+    };
+  }
+
+  function productionApi(principals: { data: unknown[]; nextCursor: null }) {
+    const api = (async (method: string, path: string) => {
+      if (method === "GET" && path === "/api/tenants/ten_new/models") {
+        return {
+          status: 200,
+          data: [
+            {
+              id: "mdl_0",
+              canonicalName: "llama3.2",
+              offerings: [
+                {
+                  offeringId: "off_0",
+                  providerId: "cpv_1",
+                  providerName: "ollama",
+                  plugin: "openai-compatible",
+                  priority: 0,
+                  deploymentTags: [],
+                  capabilities: [],
+                  pricing: [],
+                },
+              ],
+            },
+          ],
+          cookies: [],
+        };
+      }
+      if (method === "GET" && path === "/api/me/principals") {
+        return { status: 200, data: principals, cookies: [] };
+      }
+      if (method === "GET" && path === "/api/tenants/ten_new") {
+        return {
+          status: 200,
+          data: {
+            id: "ten_new",
+            name: "New",
+            slug: "new",
+            domain: TENANT_DOMAIN,
+            parentId: null,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+          cookies: [],
+        };
+      }
+      throw new Error(`stub api: unhandled ${method} ${path}`);
+    }) as unknown as ApiCall;
+    return api;
+  }
+
+  function postCreate(app: Hono<AppEnv>) {
+    return app.request("/api/tenants", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: "better-auth.session_token=creator",
+      },
+      body: JSON.stringify({ name: "New" }),
+    });
+  }
+
+  test("the creator's principalId and tenant domain reach the reconcile seam", async () => {
+    const seen: {
+      tenantId: string;
+      principalId: string;
+      domain: string;
+      modelDefined: boolean;
+    }[] = [];
+    const reconcileStateFn: typeof reconcileTenantDesiredState = (async (
+      args,
+    ) => {
+      seen.push({
+        tenantId: args.tenant.tenantId,
+        principalId: args.tenant.principalId,
+        domain: args.tenant.domain,
+        modelDefined: args.model !== undefined,
+      });
+      return {
+        tenantId: args.tenant.tenantId,
+        ready: true,
+        pins: [],
+      };
+    }) as typeof reconcileTenantDesiredState;
+    const { app, logged } = harness({
+      api: productionApi(principalsPayload({ status: "active" })),
+      reconcileFn:
+        undefined as unknown as TenantCreateOnboardDeps["reconcileFn"],
+      reconcileStateFn,
+    });
+
+    const response = await postCreate(app);
+    expect(response.status).toBe(201);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(seen).toEqual([
+      {
+        tenantId: "ten_new",
+        principalId: DEPLOYER_PRINCIPAL_ID,
+        domain: TENANT_DOMAIN,
+        modelDefined: true,
+      },
+    ]);
+    expect(
+      logged.some((line) => line.includes("no deployable principal")),
+    ).toBe(false);
+  });
+
+  test("a suspended principal never reaches the seam — blocked, never void-identity", async () => {
+    let calls = 0;
+    const reconcileStateFn: typeof reconcileTenantDesiredState = (async (
+      args,
+    ) => {
+      calls += 1;
+      return {
+        tenantId: args.tenant.tenantId,
+        ready: true,
+        pins: [],
+      };
+    }) as typeof reconcileTenantDesiredState;
+    const { app, logged } = harness({
+      api: productionApi(principalsPayload({ status: "suspended" })),
+      reconcileFn:
+        undefined as unknown as TenantCreateOnboardDeps["reconcileFn"],
+      reconcileStateFn,
+    });
+
+    const response = await postCreate(app);
+    expect(response.status).toBe(201);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(calls).toBe(0);
+    expect(
+      logged.some((line) => line.includes("no deployable principal")),
+    ).toBe(true);
+  });
+
+  test("no principal on the tenant never reaches the seam — blocked, never void-identity", async () => {
+    let calls = 0;
+    const reconcileStateFn: typeof reconcileTenantDesiredState = (async (
+      args,
+    ) => {
+      calls += 1;
+      return {
+        tenantId: args.tenant.tenantId,
+        ready: true,
+        pins: [],
+      };
+    }) as typeof reconcileTenantDesiredState;
+    const { app, logged } = harness({
+      api: productionApi({ data: [], nextCursor: null }),
+      reconcileFn:
+        undefined as unknown as TenantCreateOnboardDeps["reconcileFn"],
+      reconcileStateFn,
+    });
+
+    const response = await postCreate(app);
+    expect(response.status).toBe(201);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(calls).toBe(0);
+    expect(
+      logged.some((line) => line.includes("no deployable principal")),
     ).toBe(true);
   });
 });
