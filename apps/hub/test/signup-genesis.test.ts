@@ -33,6 +33,10 @@ const closers: (() => Promise<void>)[] = [];
 afterAll(async () => {
   let closer: (() => Promise<void>) | undefined;
   while ((closer = closers.pop()) !== undefined) await closer();
+  // 60s, not bun's 5s default hook timeout: each closer shuts a whole
+  // booted hub (server close + DB pool drain) sequentially, and under CI
+  // load that chain exceeds 5s — the timeout is the teardown budget, not
+  // a symptom being hidden.
 }, 60_000);
 
 function scratchUrlFor(label: string): string {

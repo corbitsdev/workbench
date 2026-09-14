@@ -574,7 +574,7 @@ describe("App landing fresh on a hub-seeded workbench", () => {
 
   test("existing-member, seeded: true does NOT hard-skip when no active credential is confirmed (CL-6101 review)", async () => {
     // `seeded: true` for an existing member means every default workflow
-    // has an active deployment (`isFullySeeded`'s own check) — never
+    // has an active deployment (the doc reader's workflow pins) — never
     // that a credential was checked. With the credentials read
     // confirming nothing active, the page must fall through to the
     // credential step.
@@ -970,6 +970,70 @@ describe("the OpenRouter connect card", () => {
       });
 
       expect(calls).toEqual(["/"]);
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
+  test("a blocked desired-state step renders distinctly from a pending one", async () => {
+    // CL-7584: `blocked` (sidecar unavailable — the hub keeps retrying)
+    // must not read as plain `pending` (still working). A person staring
+    // at "Preparing your agent" while the sidecar is down deserves to see
+    // which pin is held up rather than an identical spinner row.
+    globalThis.fetch = (async (url: string) => {
+      if (url === "/api/onboarding/complete-setup") {
+        return json({
+          kind: "provisioning",
+          tenantSlug: "ada-user1",
+          deployed: [],
+          pending: ["assistant"],
+          steps: [
+            { name: "assistant", label: "Myra", status: "pending" },
+            {
+              name: "corbits-tools",
+              label: "Tool packages",
+              status: "blocked",
+            },
+          ],
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    }) as unknown as typeof fetch;
+
+    window.history.replaceState(
+      null,
+      "",
+      "/onboarding?connect=openrouter&outcome=connected&tenantSlug=ada-user1",
+    );
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      act(() => {
+        root.render(
+          <App
+            path={ONBOARDING_PATH}
+            navigate={noop}
+            session={signedIn}
+            onSignedIn={noop}
+            onSignOut={noop}
+            onRetry={noop}
+          />,
+        );
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+
+      const blocked = container.querySelector('li[data-status="blocked"]');
+      const pending = container.querySelector('li[data-status="pending"]');
+      expect(blocked?.textContent).toContain("Tool packages");
+      expect(pending?.textContent).toContain("Myra");
+      // The blocked row carries retry copy the pending row does not.
+      expect(blocked?.textContent).toContain("retrying");
+      expect(pending?.textContent).not.toContain("retrying");
     } finally {
       act(() => root.unmount());
       container.remove();

@@ -799,6 +799,29 @@ describe("CL-7584 desired-state kicks and steps", () => {
     }
   });
 
+  test("a revisit after a killed kick re-fires the reconcile — no new queue", async () => {
+    const hub = mountHub({ seeded: false });
+    const kicks: string[] = [];
+    const { server, app } = routesWithKick(hub, kicks);
+    try {
+      // The first kick "dies with the process": the fire is recorded but
+      // the reconcile never runs, so the pins stay pending — exactly what
+      // a hub kill between kick and converge leaves behind.
+      const first = await app.request("/provision", { method: "POST" });
+      expect(first.status).toBe(200);
+      expect(kicks).toEqual(["ten_root"]);
+      // The retry is the same idempotent probe, not a new queue table or
+      // endpoint: the revisit re-reads the pins, finds them still pending,
+      // and re-fires. The `pending_seed` row covers the credential half;
+      // this re-kick covers the desired-state half.
+      const revisit = await app.request("/provision", { method: "POST" });
+      expect(revisit.status).toBe(200);
+      expect(kicks).toEqual(["ten_root", "ten_root"]);
+    } finally {
+      server.stop(true);
+    }
+  });
+
   test("GET /provisioning-status carries the doc-derived step list", async () => {
     const hub = mountHub({ seeded: false });
     const { server, app } = routesWithKick(hub, []);

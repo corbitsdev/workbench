@@ -1,9 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_WORKFLOWS } from "@corbits/seeding";
 import type { ApiCall } from "@corbits/hub-api-client";
 import type { HubSignupTenancy } from "../src/genesis";
 import {
-  isFullySeeded,
   personalTenantSlug,
   provisionPersonalTenantIfNeeded,
 } from "../src/provision";
@@ -12,59 +10,6 @@ const TENANT_ID = "ten_new";
 const PRINCIPAL_ID = "prn_new";
 const MEMBER_PRINCIPAL_ID = "prn_member";
 const TENANT_SLUG = "workbench";
-
-const TOOLS_ASSET_ID = "ast_corbits_tools";
-const SEEDED_MEMORY_TARBALL = {
-  filename: "corbits-memory-tools-0.0.4.tgz",
-  size: 12,
-  integrity: "sha512-seeded",
-};
-
-function corbitsToolsAssetRow(tenantId: string) {
-  return {
-    id: TOOLS_ASSET_ID,
-    tenantId,
-    kind: "package-registry",
-    name: "corbits-tools",
-    displayName: null,
-    creatorPrincipalId: null,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    origin: { tenantId, direct: true },
-  };
-}
-
-function corbitsToolsRegistryResponse(
-  method: string,
-  path: string,
-  tenantId: string,
-  tarballs:
-    | readonly { filename: string; size: number; integrity: string }[]
-    | "missing",
-): { status: number; data: unknown; cookies: string[] } | undefined {
-  const inheritedList = `/api/tenants/${tenantId}/assets?kind=package-registry&inherited=true`;
-  const localList = `/api/tenants/${tenantId}/assets?kind=package-registry&inherited=false`;
-  if (method === "GET" && (path === inheritedList || path === localList)) {
-    if (tarballs === "missing") {
-      return { status: 200, data: [], cookies: [] };
-    }
-    return {
-      status: 200,
-      data: [corbitsToolsAssetRow(tenantId)],
-      cookies: [],
-    };
-  }
-  if (
-    method === "GET" &&
-    path === `/api/tenants/${tenantId}/assets/${TOOLS_ASSET_ID}/tarballs`
-  ) {
-    if (tarballs === "missing") {
-      return { status: 200, data: [], cookies: [] };
-    }
-    return { status: 200, data: [...tarballs], cookies: [] };
-  }
-  return undefined;
-}
 
 function collector() {
   const lines: string[] = [];
@@ -305,99 +250,10 @@ describe("provisionPersonalTenantIfNeeded", () => {
   });
 });
 
-describe("isFullySeeded", () => {
-  test("isFullySeeded is false when corbits-tools exists but has no tarballs", async () => {
-    const api: ApiCall = async (method, path) => {
-      const registry = corbitsToolsRegistryResponse(
-        method,
-        path,
-        TENANT_ID,
-        [],
-      );
-      if (registry !== undefined) return registry;
-      if (
-        method === "GET" &&
-        path ===
-          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
-      ) {
-        return {
-          status: 200,
-          data: DEFAULT_WORKFLOWS.map((workflow, index) => ({
-            id: `ast_${index}`,
-            tenantId: TENANT_ID,
-            kind: "workflow",
-            name: workflow.assetName,
-            displayName: workflow.displayName,
-            creatorPrincipalId: PRINCIPAL_ID,
-            createdAt: "2026-01-01T00:00:00.000Z",
-            updatedAt: "2026-01-01T00:00:00.000Z",
-            origin: { tenantId: TENANT_ID, direct: true },
-          })),
-          cookies: [],
-        };
-      }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
-      ) {
-        return {
-          status: 200,
-          data: DEFAULT_WORKFLOWS.map((_workflow, index) => ({
-            definitionAssetId: `ast_${index}`,
-            status: "deployed",
-          })),
-          cookies: [],
-        };
-      }
-      throw new Error(`unexpected call: ${method} ${path}`);
-    };
-
-    expect(await isFullySeeded(api, ["session=abc"], TENANT_ID)).toBe(false);
-  });
-
-  test("isFullySeeded is true when workflows are live and corbits-tools carries memory-tools", async () => {
-    const api: ApiCall = async (method, path) => {
-      const registry = corbitsToolsRegistryResponse(method, path, TENANT_ID, [
-        SEEDED_MEMORY_TARBALL,
-      ]);
-      if (registry !== undefined) return registry;
-      if (
-        method === "GET" &&
-        path ===
-          `/api/tenants/${TENANT_ID}/assets?kind=workflow&inherited=false`
-      ) {
-        return {
-          status: 200,
-          data: DEFAULT_WORKFLOWS.map((workflow, index) => ({
-            id: `ast_${index}`,
-            tenantId: TENANT_ID,
-            kind: "workflow",
-            name: workflow.assetName,
-            displayName: workflow.displayName,
-            creatorPrincipalId: PRINCIPAL_ID,
-            createdAt: "2026-01-01T00:00:00.000Z",
-            updatedAt: "2026-01-01T00:00:00.000Z",
-            origin: { tenantId: TENANT_ID, direct: true },
-          })),
-          cookies: [],
-        };
-      }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/workflows/deployments`
-      ) {
-        return {
-          status: 200,
-          data: DEFAULT_WORKFLOWS.map((_workflow, index) => ({
-            definitionAssetId: `ast_${index}`,
-            status: "deployed",
-          })),
-          cookies: [],
-        };
-      }
-      throw new Error(`unexpected call: ${method} ${path}`);
-    };
-
-    expect(await isFullySeeded(api, ["session=abc"], TENANT_ID)).toBe(true);
-  });
-});
+// NOTE `isFullySeeded` and `seededWorkflowStatus` lived here until
+// CL-7584 collapsed them into the doc-status reader: the same
+// workflows-live + registry-seeded semantics now come from
+// `readTenantDesiredStateStatus` (./desired-state.ts), covered by
+// `./desired-state.test.ts`, and the partial-seed catch path in
+// `./complete-credential.test.ts` pins the `seededWorkflowNames`
+// deployed/pending report. A second seeded-check must not regrow here.

@@ -10,6 +10,7 @@ import type { ModelSource, WorkflowPusher } from "@corbits/seeding";
 import { installRegistryTarball } from "@corbits/tool-registry-publish";
 import {
   reconcileTenantDesiredState,
+  resolveTenantDeployer,
   resolveTenantModelSource,
   TENANT_DESIRED_STATE,
   type ReconcileArgs,
@@ -379,5 +380,110 @@ describe("resolveTenantModelSource", () => {
     });
     const model = await resolveTenantModelSource(h.args.api, [], TENANT_ID);
     expect(model).toBeUndefined();
+  });
+});
+
+describe("resolveTenantDeployer", () => {
+  // The tenant-create kick (CL-7584) reconciles a tenant nobody has
+  // connected a credential to yet, so there is no pending-seed row to
+  // read deploy identity from — it resolves the creator's owner
+  // principal plus the tenant domain straight from the API instead of
+  // deploying under empty-string ids.
+  function deployerPrincipalsPage(
+    principals: {
+      principalId: string;
+      tenantId: string;
+      kind?: string;
+      status?: string;
+    }[],
+  ) {
+    return {
+      status: 200,
+      data: {
+        data: principals.map((p) => ({
+          kind: "user",
+          status: "active",
+          roles: [],
+          tenantName: p.tenantId,
+          tenantSlug: p.tenantId,
+          ...p,
+        })),
+        nextCursor: null,
+      },
+      cookies: [],
+    };
+  }
+
+  function deployerTenant(domain: string) {
+    return {
+      status: 200,
+      data: {
+        id: "ten_child",
+        name: "second",
+        slug: "second",
+        domain,
+        parentId: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      cookies: [],
+    };
+  }
+
+  test("resolves the active user principal for the tenant id plus the tenant domain", async () => {
+    const api = (async (method: string, path: string) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return deployerPrincipalsPage([
+          { principalId: "prn_root", tenantId: "ten_root" },
+          { principalId: "prn_child", tenantId: "ten_child" },
+        ]);
+      }
+      if (method === "GET" && path === "/api/tenants/ten_child") {
+        return deployerTenant("second.localhost");
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    }) as unknown as ApiCall;
+
+    await expect(
+      resolveTenantDeployer(api, ["session=abc"], "ten_child"),
+    ).resolves.toEqual({
+      tenantId: "ten_child",
+      principalId: "prn_child",
+      tenantDomain: "second.localhost",
+    });
+  });
+
+  test("ignores suspended and non-user principals, resolving to nothing without reading the tenant", async () => {
+    const api = (async (method: string, path: string) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return deployerPrincipalsPage([
+          { principalId: "prn_root", tenantId: "ten_root" },
+          {
+            principalId: "prn_suspended",
+            tenantId: "ten_child",
+            status: "suspended",
+          },
+          { principalId: "prn_agent", tenantId: "ten_child", kind: "agent" },
+        ]);
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    }) as unknown as ApiCall;
+
+    await expect(
+      resolveTenantDeployer(api, ["session=abc"], "ten_child"),
+    ).resolves.toBeUndefined();
+  });
+
+  test("zero principals resolves to nothing without reading the tenant", async () => {
+    const api = (async (method: string, path: string) => {
+      if (method === "GET" && path === "/api/me/principals") {
+        return deployerPrincipalsPage([]);
+      }
+      throw new Error(`unexpected call: ${method} ${path}`);
+    }) as unknown as ApiCall;
+
+    await expect(
+      resolveTenantDeployer(api, ["session=abc"], "ten_child"),
+    ).resolves.toBeUndefined();
   });
 });
