@@ -331,7 +331,7 @@ function WorkbenchRow({
       >
         <span className="shell-ch-avatar" data-live={live}>
           {workbench.kind === "chat" ? (
-            <span aria-hidden="true">
+            <span className="flex" aria-hidden="true">
               <CorbitAvatar size="sm" ariaLabel={displayTitle} />
             </span>
           ) : (
