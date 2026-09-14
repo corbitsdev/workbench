@@ -183,12 +183,13 @@ export type CreateOnboardingRoutesDeps = {
    */
   benchProvisioner?: Pick<BenchProvisioner, "wake">;
   /**
-   * CL-7584 revisit kick: fire-and-forget desired-state reconcile for a
-   * tenant that still has pending pins. The hub wires this to the same
-   * reconciler the tenant-create observer and the drain use; the route
-   * never awaits it. Absent means no kick — convergence then relies on
-   * the drain's own poll, which is why this is a latency optimization
-   * rather than a correctness dependency.
+   * CL-7584 revisit kick: fire-and-forget desired-state reconcile for the
+   * caller's tenant, fired unconditionally — never gated on a pending
+   * check (the reconciler itself is reads-only when converged). The hub
+   * wires this to the same reconciler the tenant-create observer and the
+   * drain use; the route never awaits it. Absent means no kick —
+   * convergence then relies on the drain's own poll, which is why this is
+   * a latency optimization rather than a correctness dependency.
    */
   desiredStateKick?: (args: { tenantId: string; cookies: string[] }) => void;
   /** Test seam standing in for the deploy step, so a route test can
@@ -495,45 +496,58 @@ export function createOnboardingRoutes(
 
       const result = await provisionPersonalTenantIfNeeded(provisionArgs);
 
-      // CL-7584 revisit kick: a tenant still missing desired-state pins
-      // (a genesis tenant nobody has connected a credential to yet, or a
-      // joined member's bench) gets a fire-and-forget reconcile under
-      // this session. Never blocks or fails the provision response.
+      // CL-7584 revisit kick: fire unconditionally — never await the
+      // multi-GET status read on this hot path. `reconcileTenantDesiredState`
+      // is reads-only when converged (it never enters `seedTenant` with
+      // every pin present), so a pending-check here would only ever delay
+      // this response; the reconcile itself re-reads the pins behind the
+      // fire-and-forget boundary. Repeat probes re-kick safely
+      // (idempotent) and `pending_seed` stays the only durable row.
       if (
         (result.kind === "provisioned" || result.kind === "existing-member") &&
         deps.desiredStateKick !== undefined
       ) {
-        try {
-          // A just-joined or just-minted tenant carries its id; a plain
-          // existing member resolves it the same way the connect flow
-          // does (first active principal).
-          const kickTenantId =
-            result.tenantId ??
-            (
-              await findPersonalTenant(
+        const kick = deps.desiredStateKick;
+        const fire = (tenantId: string) => {
+          try {
+            kick({ tenantId, cookies });
+          } catch (cause) {
+            // report-error-ignore: the kick is best-effort — convergence
+            // falls back to the pending_seed drain, so a failed kick only
+            // ever costs one delayed pass.
+            deps.log(
+              `desired-state kick for user ${user.id} failed (convergence falls back to the drain): ${cause instanceof Error ? cause.message : String(cause)}`,
+            );
+          }
+        };
+        // A just-joined or just-minted tenant carries its id and fires
+        // synchronously, before this response is even serialized.
+        const directTenantId = result.tenantId;
+        if (directTenantId !== undefined) {
+          fire(directTenantId);
+        } else {
+          // A plain existing member carries no id — resolve it the same
+          // way the connect flow does (first active principal) behind the
+          // fire-and-forget boundary, so the response never waits on it
+          // either.
+          void (async () => {
+            try {
+              const found = await findPersonalTenant(
                 api,
                 cookies,
                 personalTenantSlug(user.email, user.id),
                 { fallbackToFirstPrincipal: true },
-              )
-            )?.tenantId;
-          if (kickTenantId !== undefined) {
-            const status = await readTenantDesiredStateStatus(
-              api,
-              cookies,
-              kickTenantId,
-            );
-            if (!status.ready) {
-              deps.desiredStateKick({ tenantId: kickTenantId, cookies });
+              );
+              if (found?.tenantId !== undefined) fire(found.tenantId);
+            } catch (cause) {
+              // report-error-ignore: the kick lookup is best-effort —
+              // convergence falls back to the pending_seed drain, so a
+              // failed lookup only ever costs one delayed pass.
+              deps.log(
+                `desired-state kick lookup for user ${user.id} failed (convergence falls back to the drain): ${cause instanceof Error ? cause.message : String(cause)}`,
+              );
             }
-          }
-        } catch (cause) {
-          // report-error-ignore: the kick is best-effort — convergence
-          // falls back to the pending_seed drain, so a failed kick check
-          // only ever costs one delayed pass.
-          deps.log(
-            `desired-state kick check for user ${user.id} failed (convergence falls back to the drain): ${cause instanceof Error ? cause.message : String(cause)}`,
-          );
+          })();
         }
       }
 

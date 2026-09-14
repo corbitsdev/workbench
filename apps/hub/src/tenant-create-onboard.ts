@@ -44,6 +44,16 @@ export type TenantCreateOnboardDeps = {
     tenantId: string;
     cookies: string[];
   }) => Promise<ReconcileReport>;
+  /**
+   * Test seam for the reconcile step itself. The production default
+   * resolves the tenant's deploy model plus the creator's deploy identity
+   * and delegates to `reconcileTenantDesiredState`; tests inject a spy
+   * here to prove `principalId`/`tenantDomain` reach the seam without
+   * standing up the reconcile's full status-read surface. The blocked
+   * branches (no catalog offerings, no deployable principal) return or
+   * throw before this is ever entered.
+   */
+  reconcileStateFn?: typeof reconcileTenantDesiredState;
 };
 
 export type TenantCreateObserver = {
@@ -119,7 +129,9 @@ export function createTenantCreateObserver(
             `tenant-create onboarding for ${reconcileArgs.tenantId} has no deployable principal: the session holds no active user principal on the new tenant`,
           );
         }
-        return reconcileTenantDesiredState({
+        const reconcileState =
+          deps.reconcileStateFn ?? reconcileTenantDesiredState;
+        return reconcileState({
           api: deps.api,
           cookies: reconcileArgs.cookies,
           hubUrl: deps.hubUrl,

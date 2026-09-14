@@ -779,6 +779,13 @@ describe("CL-7584 desired-state kicks and steps", () => {
     return { server, app: mountAuthenticated(routes) };
   }
 
+  // The kick is fire-and-forget behind the response: a probe that must
+  // first resolve its tenant (a plain existing member carries no id)
+  // settles the lookup after the 200 is already serialized.
+  function settleKicks() {
+    return new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
   test("a joined member's probe fires one kick when pins are pending", async () => {
     const hub = mountHub({ seeded: false });
     const kicks: string[] = [];
@@ -786,8 +793,7 @@ describe("CL-7584 desired-state kicks and steps", () => {
     try {
       const response = await app.request("/provision", { method: "POST" });
       expect(response.status).toBe(200);
-      // Give the fire-and-forget kick a beat; it is synchronous at the
-      // boundary (the kick itself is queued by the collector).
+      await settleKicks();
       expect(kicks).toEqual(["ten_root"]);
     } finally {
       server.stop(true);
@@ -803,6 +809,7 @@ describe("CL-7584 desired-state kicks and steps", () => {
       expect(response.status).toBe(200);
       // No pending-check gates the kick: converged or not, the probe
       // fires and the reconcile itself no-ops on reads alone.
+      await settleKicks();
       expect(kicks).toEqual(["ten_root"]);
     } finally {
       server.stop(true);
@@ -819,6 +826,7 @@ describe("CL-7584 desired-state kicks and steps", () => {
     try {
       const response = await app.request("/provision", { method: "POST" });
       expect(response.status).toBe(200);
+      await settleKicks();
       expect(kicks).toEqual(["ten_root"]);
     } finally {
       server.stop(true);
@@ -835,6 +843,7 @@ describe("CL-7584 desired-state kicks and steps", () => {
       // a hub kill between kick and converge leaves behind.
       const first = await app.request("/provision", { method: "POST" });
       expect(first.status).toBe(200);
+      await settleKicks();
       expect(kicks).toEqual(["ten_root"]);
       // The retry is the same idempotent probe, not a new queue table or
       // endpoint: the revisit fires again unconditionally, and the
@@ -842,6 +851,7 @@ describe("CL-7584 desired-state kicks and steps", () => {
       // the credential half; this re-kick covers the desired-state half.
       const revisit = await app.request("/provision", { method: "POST" });
       expect(revisit.status).toBe(200);
+      await settleKicks();
       expect(kicks).toEqual(["ten_root", "ten_root"]);
     } finally {
       server.stop(true);
