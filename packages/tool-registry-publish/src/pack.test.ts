@@ -99,17 +99,17 @@ describe("packToolPackageTarball", () => {
         }
 
         if (tarball.name === "@corbits/catalog-tools") {
-          // Both bundles this package exports (the read-only
-          // `catalogTools` and CL-7468's write-capable
-          // `catalogOfferingTools`) must resolve by id from the packed
-          // tarball the sidecar actually loads, not just from the
-          // workspace source tree — a bundle dropped from `./index.ts`'s
-          // re-exports would still leave `factories.length` above 0.
+          // The single read-only `catalogTools` bundle must resolve by id
+          // from the packed tarball the sidecar actually loads, not just
+          // from the workspace source tree — a bundle dropped from
+          // `./index.ts`'s re-exports would still leave
+          // `factories.length` above 0. Catalog administration is UI-only
+          // (CL-7588), so there is no second bundle anymore.
           const ids = factories.map(
             (factory) => (factory as { id: string }).id,
           );
           expect(ids).toContain("@corbits/catalog-tools/catalog");
-          expect(ids).toContain("@corbits/catalog-tools/off");
+          expect(ids).not.toContain("@corbits/catalog-tools/off");
         }
       } finally {
         await rm(extractDir, { recursive: true, force: true });
