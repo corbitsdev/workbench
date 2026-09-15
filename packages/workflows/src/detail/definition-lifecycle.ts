@@ -5,11 +5,11 @@
 // Native rows carry no "lifecycle" column of their own — `workflow_model.md`
 // keys `workflow_definition` on `(asset_id, wire_hash)`, so a redeploy mints
 // a new row rather than mutating one. What a person needs is a single
-// reading of the newest row for the asset, folded against the one
-// Workbench-owned signal native rows don't carry: whether a deploy was ever
-// attempted at all (`@corbits/workflows`'s `./deploy-source`'s per-anchor-run
-// record). Kept in its own module, with no DB import, so the four states
-// below are covered by a plain unit test rather than a route fixture.
+// reading of the newest row for the asset, derived from native rows alone
+// (CL-7591 cut over off the deleted Workbench durability store: native
+// deployments/triggers are the only deploy-attempt signal). Kept in
+// its own module, with no DB import, so the states below are covered by a
+// plain unit test rather than a route fixture.
 import { isFrozen } from "../launchable/target-rule";
 
 export type WorkflowLifecycle =
@@ -45,12 +45,14 @@ export type WorkflowLifecycleResult = {
 
 /**
  * Derive an asset's lifecycle from its `workflow_definition` rows (any
- * order) and whether a deploy was ever attempted for it.
+ * order) — native rows only.
  *
- * - No rows, no deploy attempt on record → `source-only`: nothing has ever
- *   tried to run this asset.
- * - No rows, a deploy attempt IS on record → `build-failed`: a deploy was
- *   asked for and never produced a definition row at all.
+ * - No rows → `source-only`: nothing has ever produced a definition row
+ *   for this asset. (The native cutover removed the Workbench
+ *   deploy-attempt signal, so a failed deploy leaves no rows and reads
+ *   the same as never-attempted. `build-failed` stays in the
+ *   `WorkflowLifecycle` union only as wire/UI shape compatibility — the
+ *   route no longer produces it.)
  * - Rows exist: the newest one decides. Not yet frozen (see `isFrozen`) →
  *   `pending-approval`. Frozen and `status: "deployed"` → `deployed`.
  *   Frozen but rolled back / replaced (`status: "stopped"`) →
@@ -58,11 +60,10 @@ export type WorkflowLifecycleResult = {
  */
 export function deriveWorkflowLifecycle(
   rows: readonly DefinitionLifecycleRow[],
-  hasDeployAttempt: boolean,
 ): WorkflowLifecycleResult {
   if (rows.length === 0) {
     return {
-      lifecycle: hasDeployAttempt ? "build-failed" : "source-only",
+      lifecycle: "source-only",
       currentDefinitionId: null,
       wireHash: null,
     };

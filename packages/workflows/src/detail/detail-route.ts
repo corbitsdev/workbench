@@ -5,15 +5,17 @@
 // approved grants, credential binding names — never a value). Mounted
 // alongside the vendored `createWorkflowDefinitionRoutes` at
 // `${TENANT_PREFIX}/workflows/definitions` (`apps/hub/src/index.ts`), not
-// inside it: this is a Workbench-owned read composed over native rows plus
-// `@corbits/workflows`'s `./deploy-source`'s deploy-attempt record, not something
-// `vendor/intx/hub-api` knows about.
+// inside it: this is a Workbench-owned read composed over native rows,
+// not something `vendor/intx/hub-api` knows about.
 //
 // Every field is read-only and native: `workflow_definition` /
 // `workflow_definition_version` (via `@intx/db`'s `loadFrozenGrantSnapshot`
 // / `loadFrozenWireProjection`, the same freeze-transaction reads the run
 // path uses) and `asset` for the display name. `workflow.json` is never
-// read (see docs/workflow-model.md's retirement).
+// read (see docs/workflow-model.md's retirement). Since CL-7591 the read
+// is native-only: the deleted Workbench durability store is gone,
+// so `source` is always null and the lifecycle derives from native rows
+// alone (native deployments/triggers are the deploy-attempt signal).
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { Hono } from "hono";
 import type { DB } from "@intx/db";
@@ -25,8 +27,6 @@ import {
 } from "@intx/db";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
 import { idResource } from "@intx/hub-api";
-import type { WorkflowDeploySourceDb } from "../deploy-source/store";
-import { workflowDeploySource } from "../deploy-source/schema";
 
 import { deriveWorkflowLifecycle } from "./definition-lifecycle";
 import type { WorkflowDefinitionDetail } from "./definition-detail";
@@ -84,26 +84,6 @@ function projectStep(
     toolPins,
     grants: [...(perStepGrants.get(stepId) ?? [])],
   };
-}
-
-/** The `WorkflowDefinitionAssetSource` `package.commitSha`, when the deploy
- * source names a source-tree package at a pinned commit — `""` for every
- * other source shape (a registry pin, or a tarball package, neither of
- * which carries a commit sha). Read defensively: `source` is a jsonb
- * column typed as `WorkflowDefinitionSource` only by convention, not
- * re-validated here. */
-function commitShaFromSource(source: unknown): string {
-  if (source === null || typeof source !== "object") return "";
-  const pkg = (source as Record<string, unknown>).package;
-  if (pkg === null || typeof pkg !== "object") return "";
-  const commitSha = (pkg as Record<string, unknown>).commitSha;
-  return typeof commitSha === "string" ? commitSha : "";
-}
-
-function originFromSource(source: unknown): string {
-  if (source === null || typeof source !== "object") return "unknown";
-  const kind = (source as Record<string, unknown>).kind;
-  return typeof kind === "string" ? kind : "unknown";
 }
 
 export function createWorkflowDetailRoute({
@@ -164,21 +144,6 @@ export function createWorkflowDetailRoute({
         ]),
       );
 
-      const deploySourceRows = await (
-        db as unknown as WorkflowDeploySourceDb<Record<string, unknown>>
-      )
-        .select()
-        .from(workflowDeploySource)
-        .where(
-          and(
-            eq(workflowDeploySource.definitionAssetId, definitionAssetId),
-            eq(workflowDeploySource.tenantId, tenantCtx.id),
-          ),
-        )
-        .orderBy(desc(workflowDeploySource.recordedAt))
-        .limit(1);
-      const deploySource = deploySourceRows[0] ?? null;
-
       const { lifecycle, currentDefinitionId, wireHash } =
         deriveWorkflowLifecycle(
           definitionRows.map((row) => ({
@@ -194,7 +159,6 @@ export function createWorkflowDetailRoute({
             status: row.status,
             createdAt: row.createdAt.toISOString(),
           })),
-          deploySource !== null,
         );
 
       const current = definitionRows.find(
@@ -243,15 +207,10 @@ export function createWorkflowDetailRoute({
         lifecycle,
         ...(currentDefinitionId !== null ? { currentDefinitionId } : {}),
         ...(wireHash !== null ? { wireHash } : {}),
-        ...(deploySource !== null
-          ? {
-              source: {
-                commitSha: commitShaFromSource(deploySource.source),
-                entry: deploySource.entry,
-                origin: originFromSource(deploySource.source),
-              },
-            }
-          : { source: null }),
+        // CL-7591 native cutover: the Workbench durability store is
+        // deleted, so `source` is always null — the detail surface reads
+        // native rows only.
+        source: null,
         steps,
         grants: {
           declared: declaredGrantNames,

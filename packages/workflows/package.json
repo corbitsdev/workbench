@@ -1,7 +1,7 @@
 {
   "name": "@corbits/workflows",
   "private": true,
-  "description": "The workflow domain package: the two-file source codebase every authoring path renders/reads (`./source`), the durable deploy-source record for a code-sourced deploy (`./deploy-source`), the definition detail read a workflow's own page uses (`./detail`), and letting an agent author/republish/deploy a workflow through Interchange's native source pipeline (`./authoring`)",
+  "description": "The workflow domain package: the two-file source codebase every authoring path renders/reads (`./source`), the definition detail read a workflow's own page uses (`./detail`), and letting an agent author/republish/deploy a workflow through Interchange's native source pipeline (`./authoring`)",
   "version": "0.0.1",
   "license": "LGPL-2.1-or-later",
   "type": "module",
@@ -16,7 +16,6 @@
   },
   "dependencies": {
     "@corbits/error-sink": "workspace:*",
-    "@corbits/migration-runner": "workspace:*",
     "@intx/authz": "0.3.0",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
@@ -27,8 +26,7 @@
     "arktype": "catalog:",
     "cronstrue": "^3.24.0",
     "drizzle-orm": "catalog:",
-    "hono": "catalog:",
-    "postgres": "catalog:"
+    "hono": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

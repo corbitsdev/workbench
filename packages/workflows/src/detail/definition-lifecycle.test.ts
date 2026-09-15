@@ -18,8 +18,8 @@ function row(patch: Partial<DefinitionLifecycleRow>): DefinitionLifecycleRow {
 }
 
 describe("deriveWorkflowLifecycle", () => {
-  test("no definition rows and no deploy attempt is source-only", () => {
-    const result = deriveWorkflowLifecycle([], false);
+  test("no definition rows is source-only — the native cutover removed the deploy-attempt signal", () => {
+    const result = deriveWorkflowLifecycle([]);
     expect(result).toEqual({
       lifecycle: "source-only",
       currentDefinitionId: null,
@@ -27,26 +27,16 @@ describe("deriveWorkflowLifecycle", () => {
     });
   });
 
-  test("no definition rows but a deploy attempt on record is build-failed", () => {
-    const result = deriveWorkflowLifecycle([], true);
-    expect(result).toEqual({
-      lifecycle: "build-failed",
-      currentDefinitionId: null,
-      wireHash: null,
-    });
-  });
-
   test("newest row lacking an approved hash is pending-approval", () => {
-    const result = deriveWorkflowLifecycle(
-      [row({ id: "wfd_2", approvedWireHash: null })],
-      true,
-    );
+    const result = deriveWorkflowLifecycle([
+      row({ id: "wfd_2", approvedWireHash: null }),
+    ]);
     expect(result.lifecycle).toBe("pending-approval");
     expect(result.currentDefinitionId).toBe("wfd_2");
   });
 
   test("newest row approved and deployed is deployed", () => {
-    const result = deriveWorkflowLifecycle([row({ id: "wfd_3" })], true);
+    const result = deriveWorkflowLifecycle([row({ id: "wfd_3" })]);
     expect(result).toEqual({
       lifecycle: "deployed",
       currentDefinitionId: "wfd_3",
@@ -55,10 +45,9 @@ describe("deriveWorkflowLifecycle", () => {
   });
 
   test("newest row approved but stopped is superseded", () => {
-    const result = deriveWorkflowLifecycle(
-      [row({ id: "wfd_4", status: "stopped" })],
-      true,
-    );
+    const result = deriveWorkflowLifecycle([
+      row({ id: "wfd_4", status: "stopped" }),
+    ]);
     expect(result.lifecycle).toBe("superseded");
   });
 
@@ -73,7 +62,7 @@ describe("deriveWorkflowLifecycle", () => {
       status: "deployed",
       createdAt: "2026-02-01T00:00:00.000Z",
     });
-    const result = deriveWorkflowLifecycle([older, newer], true);
+    const result = deriveWorkflowLifecycle([older, newer]);
     expect(result.lifecycle).toBe("deployed");
     expect(result.currentDefinitionId).toBe("wfd_new");
   });
