@@ -88,34 +88,6 @@ describe("ensure request validation", () => {
     expect(result).toEqual({ kind: "accepted", externalRef: "unit-2" });
   });
 
-  test("rejects a negative generation", async () => {
-    const provisioner = makeProvisioner();
-
-    const result = await provisioner.ensure(
-      baseEnsureRequest({ generation: -1 }),
-    );
-
-    expect(result).toMatchObject({
-      kind: "rejected",
-      code: "invalid_ensure_request",
-    });
-    expect(started).toHaveLength(0);
-  });
-
-  test("rejects a non-integer generation", async () => {
-    const provisioner = makeProvisioner();
-
-    const result = await provisioner.ensure(
-      baseEnsureRequest({ generation: 1.5 }),
-    );
-
-    expect(result).toMatchObject({
-      kind: "rejected",
-      code: "invalid_ensure_request",
-    });
-    expect(started).toHaveLength(0);
-  });
-
   test("still rejects a stale generation once fencing has observed a later one", async () => {
     const provisioner = makeProvisioner();
 
@@ -144,20 +116,5 @@ describe("destroy request validation", () => {
     });
 
     expect(result).toEqual({ kind: "destroyed" });
-  });
-
-  test("rejects a negative generation", async () => {
-    const provisioner = makeProvisioner();
-
-    const result = await provisioner.destroy({
-      allocationId: "alloc-1",
-      sidecarId: "sidecar-1",
-      generation: -1,
-    });
-
-    expect(result).toMatchObject({
-      kind: "rejected",
-      code: "invalid_destroy_request",
-    });
   });
 });

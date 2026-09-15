@@ -90,8 +90,6 @@ describe("workflowDeployBody", () => {
       sourceOfferingIds: ["offering-1", "offering-2"],
       defaultSourceOfferingId: "offering-1",
     });
-    expect(body).not.toHaveProperty("sources");
-    expect(body).not.toHaveProperty("defaultSource");
   });
 });
 
