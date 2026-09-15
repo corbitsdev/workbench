@@ -313,6 +313,12 @@ import {
   createDrizzleAccessPolicyStore,
 } from "@workbench/access-policy";
 import { guardedHubApp, resolveCallerRoleNames } from "./tenant-create-guard";
+import {
+  loadAnchorDispatch,
+  resolveAnchorTenantId,
+  withDispatchTenantGuard,
+  withTenantBoundAllocationService,
+} from "./dispatch-tenant-guard";
 import { createTenantCreateObserver } from "./tenant-create-onboard";
 import {
   createInMemoryNotifyDispatchStore,
@@ -1129,7 +1135,7 @@ export async function createHub(config: HubConfig) {
         : {}),
     });
   const sidecarPlugins = buildSidecarPlugins("deployment");
-  const workflowAllocationService = createWorkflowAllocationService({
+  const nativeWorkflowAllocationService = createWorkflowAllocationService({
     db,
     deploymentPlugins: sidecarPlugins,
     probePlugins: buildSidecarPlugins("probe"),
@@ -1138,6 +1144,19 @@ export async function createHub(config: HubConfig) {
     allocationRouter: sidecarRouter,
     hubWebSocketUrl,
   });
+  // [Intx gap] CL-7324: the native dispatch path joins anchor + allocation
+  // on `anchorRunId` alone, so a foreign-tenant allocation bound to an
+  // anchor would dispatch cross-tenant. Vendor is read-only — wrap the
+  // service here, once, so `createApp`, the reconciler `onReady`, and
+  // every Workbench-owned call site below all share the tenant-bound
+  // instance (see ./dispatch-tenant-guard.ts).
+  const workflowAllocationService = withTenantBoundAllocationService(
+    nativeWorkflowAllocationService,
+    {
+      resolveAnchorTenantId: (anchorRunId) =>
+        resolveAnchorTenantId(db, anchorRunId),
+    },
+  );
   const sidecarAllocationStore = createSidecarAllocationStore(db);
   const workflowDispatchService = createWorkflowDispatchService({
     dispatchStore: createWorkflowRunDispatchStore(db),
@@ -3619,8 +3638,15 @@ export async function createHub(config: HubConfig) {
   );
   observerRef.current = observer;
   const guardedApp = guardedHubApp(observer.app, guardDeps);
+  // [Intx gap] CL-7324: deny foreign-tenant allocations at the two dispatch
+  // routes (403 `allocation_tenant_mismatch`) before the native handler can
+  // enqueue or materialize grants — same outer-wrap composition as the
+  // tenant-create guard above. See ./dispatch-tenant-guard.ts.
+  const dispatchGuardedApp = withDispatchTenantGuard(guardedApp, {
+    loadAnchorDispatch: (anchorRunId) => loadAnchorDispatch(db, anchorRunId),
+  });
   const inFlight = createInFlightRequestTracker();
-  const servingApp = withInFlightRequestTracking(guardedApp, inFlight);
+  const servingApp = withInFlightRequestTracking(dispatchGuardedApp, inFlight);
 
   return {
     app: servingApp,
