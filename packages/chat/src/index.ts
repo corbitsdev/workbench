@@ -371,6 +371,16 @@ export type {
   PostRoomMessageInput,
 } from "./room-messages";
 
+export {
+  createDrizzleMessagePartsStore,
+  createInMemoryMessagePartsStore,
+} from "./message-parts";
+export type {
+  MessagePartsRow,
+  MessagePartsStore,
+  RecordMessagePartsInput,
+} from "./message-parts";
+
 export { resolveWorkbenchIdForAgentFrame } from "./mail-headers";
 
 export {

@@ -543,6 +543,37 @@ export const turnMailCorrelation = chatSchema.table(
 );
 
 /**
+ * Chat-owned rich-part sidecar for timeline rows that live as native
+ * @corbits/mailbox frames (CL-7594): one row per frame, keyed by the
+ * frame's own RFC 5322 Message-ID, carrying the `Part[]` payload the
+ * room UI's blocks render from. The mailbox owns the frame — identity,
+ * threading, read state — and knows nothing of this table; a frame with
+ * no row here renders its text-only fallback. Presence-as-truth like
+ * `messageClientIds`: a missing row is a normal state, never an error.
+ */
+export const messageParts = chatSchema.table(
+  "message_parts",
+  {
+    tenantId: text("tenant_id").notNull(),
+    mailMessageId: text("mail_message_id").notNull(),
+    workbenchId: text("workbench_id").notNull(),
+    parts: jsonb("parts").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.tenantId, table.mailMessageId],
+    }),
+    index("message_parts_workbench_idx").on(
+      table.tenantId,
+      table.workbenchId,
+    ),
+  ],
+);
+
+/**
  * The turn projection (CL-6329): one row per agent turn, opened by the
  * dispatch seam and closed when the turn settles. Traceability is a
  * product concern, so a room answers "which run produced this reply, and

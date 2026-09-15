@@ -588,6 +588,30 @@ export const chatMigrations: readonly ChatMigration[] = [
         ("tenant_id", "agent_address", "occurrence");
     `,
   },
+  {
+    // CL-7594: chat-owned rich-part sidecar for timeline rows that now
+    // live as native @corbits/mailbox frames. The mailbox owns a frame's
+    // identity, threading, and read state; this table owns only the chat
+    // rendering — the `Part[]` payload the room UI's blocks were built
+    // from — keyed by the frame's own RFC 5322 Message-ID. No backfill:
+    // pre-cutover rows keep their parts inline in `workbench_messages`
+    // until migration 0032 drops that table, and a frame with no sidecar
+    // row renders its text-only fallback, never an error.
+    name: "0031_message_parts_sidecar",
+    sql: `
+      CREATE TABLE IF NOT EXISTS "chat"."message_parts" (
+        "tenant_id" text NOT NULL,
+        "mail_message_id" text NOT NULL,
+        "workbench_id" text NOT NULL,
+        "parts" jsonb NOT NULL,
+        "created_at" timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY ("tenant_id", "mail_message_id")
+      );
+
+      CREATE INDEX IF NOT EXISTS "message_parts_workbench_idx"
+        ON "chat"."message_parts" ("tenant_id", "workbench_id");
+    `,
+  },
 ];
 
 // Bookkeeping table for this package's own migrations. Named
