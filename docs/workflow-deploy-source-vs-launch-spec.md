@@ -1,5 +1,10 @@
 # `workflow_deploy_source` vs `workflow_run_launch_spec`
 
+> Superseded by CL-7591: `@corbits/workflows`'s `./deploy-source` (the
+> `workflow_deploy_source` table) is deleted and the workflow detail read
+> is native-only. This analysis is kept as the historical decision record
+> for CL-7271; do not read it as a description of the current schema.
+
 Analysis for CL-7271. Read against the vendored pin `a8bc06ae`.
 
 ## The claim under test
