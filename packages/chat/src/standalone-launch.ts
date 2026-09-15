@@ -9,32 +9,11 @@
 // it, the wake path cannot resolve it, and its next occurrence 409s
 // (`workflow_run_terminal`) forever. These exports are what a standalone
 // launcher passes so its run rides the exact same relaunch path a
-// room-invited agent does: the section mode the deploy pins, and the
-// `persistExtra` that writes the mapping row inside the launch
-// transaction itself.
+// room-invited agent does: the `persistExtra` that writes the mapping row
+// inside the launch transaction itself.
 import type { DBExecutor } from "@intx/db";
 import type { FoldedBody } from "@intx/workflow-deploy";
-import type { AgentRuntimeConfig } from "@corbits/agent-runtime";
 import { workbenchLaunch } from "./schema";
-import { CHAT_TURN_TIMEOUT_MS } from "./turn-claims";
-
-/**
- * The shape every launched agent run deploys as — chat's room invites
- * and standalone routine/webhook launches alike: an `onTrigger` section
- * (CL-6329), one warm run per agent, each inbound message an occurrence
- * running as its own child run (`turn__<n>`) with its own event log.
- * That child id is what a reply's `run_id` carries, which is the whole
- * reason a reply is traceable.
- *
- * `onBodyFailure: "tolerate"` — authored in the section shape itself
- * (`@corbits/agent-runtime`) — is the failure edge: a turn that throws
- * records a failed occurrence and leaves the section subscribed, so one
- * bad turn kills neither the agent nor the conversation.
- */
-export const AGENT_SECTION_MODE: AgentRuntimeConfig["mode"] = {
-  kind: "section",
-  turnTimeoutMs: CHAT_TURN_TIMEOUT_MS,
-};
 
 /**
  * The `persistExtra` a standalone launch hands its provisioned deploy:

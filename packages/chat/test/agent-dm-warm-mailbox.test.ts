@@ -55,9 +55,9 @@ describe("agent DM pin (CL-7108)", () => {
   });
 
   test("a group conversation with a definition id is not a DM", () => {
-    expect(
-      isAgentDmSettings({ ...dmSettings(), "chat/kind": "group" }),
-    ).toBe(false);
+    expect(isAgentDmSettings({ ...dmSettings(), "chat/kind": "group" })).toBe(
+      false,
+    );
   });
 
   test("a chat without a definition id is not a DM", () => {
@@ -184,17 +184,20 @@ describe("agent DM conversation trail (CL-7108)", () => {
     ]);
 
     // Every inbound mail is a threaded turn: each dispatched frame carries
-    // its own row-derived Message-ID (CL-7450), and each turn's
-    // correlation back to its row is recorded for the reply path.
+    // its own row-derived Message-ID (CL-7450), and each dispatch mail's
+    // correlation back to the row it answers is recorded for the reply
+    // path (CL-6314) — keyed by the answered row, whose derived
+    // Message-ID the sidecar's bracket reports back.
     expect(sentMail).toHaveLength(2);
     expect(sentMail[0]?.messageId).toBe(`<${first.id}@${DOMAIN}>`);
     expect(sentMail[1]?.messageId).toBe(`<${second.id}@${DOMAIN}>`);
     for (const posted of [first, second]) {
       const source = await turnMailCorrelation.findTurnMailSource({
         tenantId: TENANT_ID,
-        mailMessageId: `<${posted.id}@${DOMAIN}>`,
+        mailId: posted.id,
       });
-      expect(source?.tenantId).toBe(TENANT_ID);
+      expect(source?.workbenchId).toBe(WORKBENCH_ID);
+      expect(source?.sourceMessageId).toBe(posted.id);
     }
   });
 });

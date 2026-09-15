@@ -13,6 +13,7 @@ import {
   ParticipantsSetting,
   type ParticipantRecord,
 } from "./participants";
+import { definitionIdOfSettings } from "./agent-dm-mode";
 
 const PatchSettingsBody = type("Record<string, unknown>");
 
@@ -245,7 +246,7 @@ export function workbenchView(row: {
   const kind = kindOf(row.settings);
   const name = row.settings["chat/name"];
   const pinned = row.settings["chat/pinned"];
-  const definitionId = row.settings["chat/definitionId"];
+  const definitionId = definitionIdOfSettings(row.settings);
   return {
     id: row.workbenchId,
     title: typeof name === "string" ? name : row.workbenchId,
