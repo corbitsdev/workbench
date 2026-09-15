@@ -67,12 +67,19 @@ export function gitFixture(cwd: string, args: readonly string[]): void {
   env["GIT_AUTHOR_EMAIL"] = "safety@test";
   env["GIT_COMMITTER_NAME"] = "safety-test";
   env["GIT_COMMITTER_EMAIL"] = "safety@test";
-  const result = Bun.spawnSync(["git", "-c", "core.hooksPath=", ...args], {
-    cwd,
-    stdout: "pipe",
-    stderr: "pipe",
-    env,
-  });
+  // Test fixtures author their own throwaway identities and must never
+  // inherit the operator's ambient config: `core.hooksPath=` above, and
+  // `commit.gpgsign=false` here so a global `commit.gpgsign = true` can't
+  // hang (or sign) a fixture commit (CL-7492).
+  const result = Bun.spawnSync(
+    ["git", "-c", "core.hooksPath=", "-c", "commit.gpgsign=false", ...args],
+    {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+      env,
+    },
+  );
   if (result.exitCode !== 0) {
     throw new Error(
       `git ${args.join(" ")} failed: ${result.stderr.toString()}`,

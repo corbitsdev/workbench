@@ -71,12 +71,15 @@ async function git(args: string[], cwd: string): Promise<string> {
   delete env["GIT_DIR"];
   delete env["GIT_WORK_TREE"];
   delete env["GIT_INDEX_FILE"];
-  const child = Bun.spawn(["git", "-c", "core.hooksPath=", ...args], {
-    cwd,
-    env,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  const child = Bun.spawn(
+    ["git", "-c", "core.hooksPath=", "-c", "commit.gpgsign=false", ...args],
+    {
+      cwd,
+      env,
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
   const [stdout, stderr, code] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
@@ -202,6 +205,45 @@ describe("createGitWorkflowPusher", () => {
       await writeFile(
         globalConfig,
         `[core]\nhooksPath = ${hooksDir}\n`,
+        "utf-8",
+      );
+      process.env.GIT_CONFIG_GLOBAL = globalConfig;
+
+      const remoteDir = join(work, "remote.git");
+      await git(["init", "--bare", "--initial-branch=main", remoteDir], work);
+
+      const pusher = createGitWorkflowPusher();
+      const outcome = await pusher({
+        remoteUrl: `file://${remoteDir}`,
+        tokenSecret: "unused-for-file-transport",
+        workflowJson: '{"v":1}',
+        packageName: "@workbench-seed/test",
+      });
+
+      expect(outcome.outcome).toBe("pushed");
+      expect(outcome.commitSha).toMatch(/^[0-9a-f]{40}$/);
+    } finally {
+      if (previousGlobal === undefined) {
+        delete process.env.GIT_CONFIG_GLOBAL;
+      } else {
+        process.env.GIT_CONFIG_GLOBAL = previousGlobal;
+      }
+      await rm(work, { recursive: true, force: true });
+    }
+  });
+
+  test("commits the seed tree even when the operator's global config enables commit signing", async () => {
+    const work = await scratchWorkDir("workflow-push-gpgsign-");
+    const previousGlobal = process.env.GIT_CONFIG_GLOBAL;
+    try {
+      // Seed commits are authored as seed@workbench.localhost and must
+      // never inherit the operator's signing identity: with
+      // `commit.gpgsign = true` globally (and a gpg program that fails
+      // closed) the push still succeeds (CL-7492).
+      const globalConfig = join(work, "gitconfig");
+      await writeFile(
+        globalConfig,
+        "[commit]\n\tgpgsign = true\n[gpg]\n\tprogram = /bin/false\n",
         "utf-8",
       );
       process.env.GIT_CONFIG_GLOBAL = globalConfig;
