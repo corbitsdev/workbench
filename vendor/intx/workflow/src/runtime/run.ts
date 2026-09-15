@@ -1489,17 +1489,34 @@ async function runStep(
     }
 
     // Build per-step abort: timeout AND outer cancellation both abort.
+    // `step.timeout` is an execution budget: it bounds active agent
+    // invocations, not parked-idle waits. Each input park below disarms
+    // it before waiting and re-arms a fresh budget on resume; the
+    // approval park stays armed (an approval wait holds a mandatory
+    // snapshot and stays bounded by the execution timer, unlike
+    // trigger-idle input). Disarming never affects cancellation: the
+    // outer-abort listener aborts `stepAbort` independently of the timer.
     const stepAbort = new AbortController();
     const onOuter = () => {
       stepAbort.abort();
     };
     abort.addEventListener("abort", onOuter, { once: true });
     let timer: ReturnType<typeof setTimeout> | undefined;
-    if (step.timeout !== undefined) {
-      timer = setTimeout(() => {
-        stepAbort.abort();
-      }, step.timeout);
-    }
+    const armStepTimer = (): void => {
+      if (timer !== undefined) clearTimeout(timer);
+      if (step.timeout !== undefined) {
+        timer = setTimeout(() => {
+          stepAbort.abort();
+        }, step.timeout);
+      }
+    };
+    const disarmStepTimer = (): void => {
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+    };
+    armStepTimer();
 
     try {
       // Suspend/resume bridge. The first invocation drives a plain agent
@@ -1526,6 +1543,12 @@ async function runStep(
       // `{ suspend }` arm below.
       if (resumeFromPark !== undefined) {
         const parkState = await reloadState(env, runId);
+        // An input re-park is trigger-idle, not execution: disarm the
+        // execution timer across the wait and re-arm a fresh budget on
+        // resume. An approval re-park keeps the timer armed (see the
+        // approval-park note below).
+        const resumeIsInput = resumeFromPark.parkKind === "input";
+        if (resumeIsInput) disarmStepTimer();
         const decision = await parkOnSignal(
           env,
           runId,
@@ -1536,6 +1559,7 @@ async function runStep(
           parkState,
           stepAbort.signal,
         );
+        if (resumeIsInput) armStepTimer();
         resume = {
           correlationId: resumeFromPark.correlationId,
           decision,
@@ -1594,6 +1618,10 @@ async function runStep(
           if (!hasMoreTriggers) break;
           const inputCorrelationId = env.newId("corr");
           const rearmState = await reloadState(env, runId);
+          // The step is trigger-idle until its next trigger arrives: disarm
+          // the execution timer across the park and re-arm a fresh budget
+          // for the next turn on resume.
+          disarmStepTimer();
           const decision = await parkOnSignal(
             env,
             runId,
@@ -1605,6 +1633,7 @@ async function runStep(
             rearmState,
             stepAbort.signal,
           );
+          armStepTimer();
           resume = {
             correlationId: inputCorrelationId,
             decision,
@@ -1618,7 +1647,9 @@ async function runStep(
         // reduced state passed to `parkOnSignal` reads the step as
         // `in-flight`, and its re-park guard emits a fresh `SignalAwaited`
         // rather than treating this as a re-park of an already-awaiting
-        // gate.
+        // gate. The execution timer stays armed across this approval park:
+        // an approval wait holds a mandatory snapshot and stays bounded by
+        // `step.timeout`; only trigger-idle input parks disarm (above).
         const parkState = await reloadState(env, runId);
         const decision = await parkOnSignal(
           env,

@@ -59,6 +59,8 @@ import type {
 import {
   buildInertProjectionStepSources,
   deriveRunAddress,
+  deriveStepAgentId,
+  resolveStepAddress,
   WorkflowDefinitionInvalidError,
   type DeployContent as OrchestratorDeployContent,
 } from "@intx/workflow-deploy";
@@ -197,6 +199,21 @@ export type DeployPreparedCodeSourcedWorkflowParams = {
   approved: InstallAndApproveResult;
   /** Harness config carrying the re-resolved per-step inference chain. */
   config: HarnessConfig;
+  /**
+   * Deploy content staged into every step's tree. The prompt rides each
+   * step's tree verbatim; the step-tools path never reads it (the step
+   * prompt comes from the closure-evaluated definition), so one shared
+   * content is staged per step and the per-step manifests resolve fresh
+   * from `toolPackagePins` inside `stageWorkflowStep`.
+   */
+  deployContent: DeployContent;
+  /**
+   * Pinned tool packages, rehydrated from the launch spec. Resolved per
+   * step into a full closure manifest staged where `materializeStepTools`
+   * reads it. Empty or undefined skips the resolver entirely: the step
+   * trees stage with no manifest and the child materializes empty tools.
+   */
+  toolPackagePins?: readonly ToolPackagePin[];
   /** The exact allocation generation to deploy onto. */
   allocationTarget: AllocatedSidecarTarget;
   /** Cipher for the definition's tenant-owned credential bindings, if any. */
@@ -964,6 +981,51 @@ export async function deployCodeSourcedWorkflow(
   return { publicKey };
 }
 
+/**
+ * Map one top-level prepared-deploy step onto `stageWorkflowStep` args.
+ * Split out (pure) so the pins threading has a direct unit test: pins ride
+ * verbatim when present; when absent the key stays absent so the
+ * empty/undefined skip inside `stageWorkflowStep` is preserved bit-for-bit.
+ */
+export function preparedStepStageArgs(params: {
+  anchorRunId: string;
+  deploymentDomain: string;
+  stepId: string;
+  stepCount: number;
+  config: HarnessConfig;
+  deployContent: DeployContent;
+  toolPackagePins?: readonly ToolPackagePin[];
+  allocationTarget: AllocatedSidecarTarget;
+}): {
+  agentAddress: string;
+  agentId: string;
+  runId: string;
+  config: HarnessConfig;
+  deployContent: DeployContent;
+  toolPackagePins?: readonly ToolPackagePin[];
+  allocationTarget: AllocatedSidecarTarget;
+} {
+  return {
+    agentAddress: resolveStepAddress({
+      runId: params.anchorRunId,
+      stepId: params.stepId,
+      domain: params.deploymentDomain,
+      stepCount: params.stepCount,
+    }),
+    agentId: deriveStepAgentId({
+      runId: params.anchorRunId,
+      stepId: params.stepId,
+    }),
+    runId: params.anchorRunId,
+    config: params.config,
+    deployContent: params.deployContent,
+    ...(params.toolPackagePins !== undefined
+      ? { toolPackagePins: params.toolPackagePins }
+      : {}),
+    allocationTarget: params.allocationTarget,
+  };
+}
+
 export function createSessionService(
   deps: SessionServiceDeps,
 ): SessionService & PreparedWorkflowDeployer {
@@ -1587,6 +1649,36 @@ export function createSessionService(
       allocationTarget: params.allocationTarget,
       agentAddress: params.agentAddress,
     });
+
+    // Stage every top-level step's deploy tree BEFORE the deployment frame:
+    // the frame spawns the child, whose step tools read each step's staged
+    // manifest (`deploy/tool-packages-manifest.json` + asset packs) from
+    // disk. The address goes through `resolveStepAddress` -- the single
+    // owner of the head/step collapse -- so this producer and the sidecar
+    // consumer (`stepDeployTreeDir`, keyed off the host-sourced stepCount)
+    // never derive divergent addresses: a one-step workflow stages at the
+    // head, a multi-step one at each `<runId>-<stepId>` address. The step
+    // agent id is hub-local (the `agent-state` repo the pack is built
+    // from); the pack itself routes by step address. Asset-pack fan-out
+    // inside `stageWorkflowStep` records its `session_asset` rows against
+    // the anchor run, the deployment's durable identity.
+    const stepOrder = params.approved.projection.stepOrder;
+    for (const stepId of stepOrder) {
+      await stageWorkflowStep(
+        preparedStepStageArgs({
+          anchorRunId: params.anchorRunId,
+          deploymentDomain: params.deploymentDomain,
+          stepId,
+          stepCount: stepOrder.length,
+          config: params.config,
+          deployContent: params.deployContent,
+          ...(params.toolPackagePins !== undefined
+            ? { toolPackagePins: params.toolPackagePins }
+            : {}),
+          allocationTarget: params.allocationTarget,
+        }),
+      );
+    }
 
     const commonEmit = {
       approved: params.approved,
