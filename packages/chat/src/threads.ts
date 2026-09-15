@@ -121,30 +121,43 @@ export interface ThreadStore {
    * creates a sibling sub-thread under that sub-thread's parent rather
    * than a third level (CL-5948). Never throws for depth. */
   forkThread(input: ForkThreadInput): Promise<WorkbenchThread>;
+  /**
+   * Reads take the workbench the thread is addressed in — descriptors
+   * parse without mail, so ancestry-only callers pass no reader. The
+   * reader's `principalId` is needed only where the answer lives on the
+   * reader's own copies: delivery titles resolve off the frame carrying
+   * the delivery ref, and readings without it report a null title.
+   */
   getThread(
     tenantId: string,
+    workbenchId: string,
     threadId: string,
+    principalId?: string,
   ): Promise<WorkbenchThread | undefined>;
+  /** Every thread with a frame in the reader's own copies, root first. */
   listThreads(
     tenantId: string,
     workbenchId: string,
+    principalId: string,
   ): Promise<readonly WorkbenchThread[]>;
-  assignMessage(input: AssignMessageInput): Promise<void>;
+  /** The msg_ ids reading in a thread, off the reader's own copies. */
   listMessageIds(
     tenantId: string,
+    workbenchId: string,
     threadId: string,
+    principalId: string,
   ): Promise<readonly string[]>;
   /**
-   * Every membership row this workbench has, as `messageId -> threadId`.
-   * A message with no row is absent rather than defaulted to the root
-   * thread: the "root feed by default" contract belongs to whoever
-   * reads a thread's messages (see the threads route in `./routes.ts`),
-   * so this stays a faithful report of what was actually written.
+   * Every message's thread in the reader's own copies, as `messageId ->
+   * threadId` — derived per frame, never defaulted: a root-feed frame
+   * reports the root descriptor explicitly.
    */
   listThreadAssignments(
     tenantId: string,
     workbenchId: string,
+    principalId: string,
   ): Promise<ReadonlyMap<string, string>>;
+  /** The thread one message reads in, resolved tenant-wide. */
   threadIdForMessage(
     tenantId: string,
     workbenchId: string,
@@ -214,7 +227,7 @@ export async function mailAncestryOf(
   // two ancestors; the bound is the cap, never a guess about cycles.
   for (let depth = 0; depth < 2; depth++) {
     if (current === null) break;
-    const thread = await store.getThread(tenantId, current);
+    const thread = await store.getThread(tenantId, workbenchId, current);
     if (thread === undefined || thread.parentMessageId === null) break;
     ancestors.unshift(thread.parentMessageId);
     current =
