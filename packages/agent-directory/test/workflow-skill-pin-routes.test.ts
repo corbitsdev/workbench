@@ -13,6 +13,7 @@ import type { DB } from "@intx/db";
 import {
   buildAgentDefinitionWorkflow,
   serializeAgentDefinitionWorkflow,
+  readPinnedSkillNames,
 } from "../src/agent-workflow";
 import {
   createWorkflowSkillPinRoutes,
@@ -25,10 +26,10 @@ import {
 } from "../src/definition-asset";
 import type { PinnedSkillIndexResolver } from "../src/routes";
 import {
-  createInMemoryDefinitionSkillsStore,
-  type DefinitionSkillsStore,
-} from "../src/skills-store";
-import { SOURCE_TREE_PATHS } from "./source-tree";
+  definitionFrom,
+  SOURCE_TREE_PATHS,
+  storedDefinitionBytesWithSkills,
+} from "./source-tree";
 
 const TENANT_ID = "tnt_1";
 const OTHER_TENANT_ID = "tnt_2";
@@ -174,14 +175,12 @@ function buildApp(opts: {
   assetService?: AssetService;
   db?: DB["db"];
   authenticator?: WorkflowRunAuthenticator;
-  skillsStore?: DefinitionSkillsStore;
   deployer?: ReturnType<typeof recordingAgentDefinitionDeployer>;
 }): Hono {
   return createWorkflowSkillPinRoutes({
     db: opts.db ?? fakeDbWithRows([]),
     assetService: opts.assetService ?? fakeAssetService(),
     skillIndex: fakeSkillIndex,
-    skillsStore: opts.skillsStore ?? createInMemoryDefinitionSkillsStore(),
     authenticator: opts.authenticator ?? authenticateAsTenant1,
     deployer: opts.deployer ?? recordingAgentDefinitionDeployer(),
   }) as unknown as Hono;
@@ -270,7 +269,6 @@ test("pins a skill onto another definition in the same tenant and re-indexes its
   lookupTenant = TENANT_ID;
   let writtenFiles: Record<string, string | Uint8Array> | undefined;
   let writtenMessage: string | undefined;
-  const skillsStore = createInMemoryDefinitionSkillsStore();
   const deployer = recordingAgentDefinitionDeployer();
   const app = buildApp({
     db: fakeDbWithRows([
@@ -288,7 +286,6 @@ test("pins a skill onto another definition in the same tenant and re-indexes its
         return Promise.resolve({ commitSha: "deadbeef" });
       },
     }),
-    skillsStore,
     deployer,
   });
   const response = await postPin(app, {
@@ -303,7 +300,10 @@ test("pins a skill onto another definition in the same tenant and re-indexes its
   expect(deployer.deploys[0]?.commitSha).toBe("deadbeef");
   expect(Object.keys(writtenFiles ?? {})).toEqual(SOURCE_TREE_PATHS);
   expect(writtenMessage).toBe("Pin research skill to research-buddy");
-  expect(await skillsStore.getSkills("ast_1")).toEqual(["research"]);
+  // The written tree's stanza is the pins — no side table to consult.
+  expect(readPinnedSkillNames(definitionFrom(writtenFiles))).toEqual([
+    "research",
+  ]);
   const body = (await response.json()) as { skills: string[] };
   expect(body.skills).toEqual(["research"]);
 });
@@ -346,8 +346,6 @@ test("a definition still on the retired envelope is a 409, never a 500, and writ
 test("pinning the same skill twice is idempotent, never duplicated", async () => {
   lookupId = TARGET_DEFINITION_ID;
   lookupTenant = TENANT_ID;
-  const skillsStore = createInMemoryDefinitionSkillsStore();
-  await skillsStore.setSkills("ast_1", ["research"]);
   const app = buildApp({
     db: fakeDbWithRows([
       {
@@ -357,7 +355,11 @@ test("pinning the same skill twice is idempotent, never duplicated", async () =>
         name: "research-buddy",
       },
     ]),
-    skillsStore,
+    assetService: fakeAssetService({
+      readAssetBlob: readAssetBlobFor(
+        storedDefinitionBytesWithSkills("research"),
+      ),
+    }),
   });
   const response = await postPin(app, {
     definitionId: TARGET_DEFINITION_ID,
@@ -366,7 +368,6 @@ test("pinning the same skill twice is idempotent, never duplicated", async () =>
   expect(response.status).toBe(200);
   const body = (await response.json()) as { skills: string[] };
   expect(body.skills).toEqual(["research"]);
-  expect(await skillsStore.getSkills("ast_1")).toEqual(["research"]);
 });
 
 test("a malformed body is a 400", async () => {

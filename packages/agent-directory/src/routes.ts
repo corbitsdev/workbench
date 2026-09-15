@@ -36,6 +36,7 @@ import {
   DuplicateAgentHandleError,
   readAgentCapabilities,
   readAgentSystemPrompt,
+  readPinnedSkillNames,
   reindexPinnedSkills,
   withAgentSystemPrompt,
   withoutAgentModel,
@@ -55,7 +56,6 @@ import {
   WorkflowAuthorError,
   type AgentDefinitionDeployer,
 } from "./definition-asset";
-import type { DefinitionSkillsStore } from "./skills-store";
 import {
   CreateAgentDefinitionInput,
   RestoreDefinitionInput,
@@ -92,7 +92,6 @@ export type CreateAgentDefinitionRoutesDeps = {
   db: DB["db"];
   assetService: AssetService;
   skillIndex: PinnedSkillIndexResolver;
-  skillsStore: DefinitionSkillsStore;
   history: DefinitionAssetHistory;
   capabilityInventory: CapabilityInventoryProvider;
   requireGrant: RequireGrant;
@@ -137,7 +136,6 @@ export function createAgentDefinitionRoutes({
   db,
   assetService,
   skillIndex,
-  skillsStore,
   history,
   capabilityInventory,
   requireGrant,
@@ -228,7 +226,6 @@ export function createAgentDefinitionRoutes({
           db,
           assetService,
           skillIndex,
-          skillsStore,
           deployer,
           ...(tenantDefaultModel !== undefined ? { tenantDefaultModel } : {}),
         },
@@ -277,15 +274,34 @@ export function createAgentDefinitionRoutes({
 
       const entries = await Promise.all(
         ids.map(async (definitionId) => {
-          const row = await db.query.workflowDefinition.findFirst({
-            where: and(
-              eq(workflowDefinition.id, definitionId),
-              eq(workflowDefinition.tenantId, tenant.id),
-            ),
-          });
-          if (row === undefined || row.assetId === null) return null;
-          const skills = await skillsStore.getSkills(row.assetId);
-          return [definitionId, skills] as const;
+          try {
+            const row = await db.query.workflowDefinition.findFirst({
+              where: and(
+                eq(workflowDefinition.id, definitionId),
+                eq(workflowDefinition.tenantId, tenant.id),
+              ),
+            });
+            if (row === undefined || row.assetId === null) return null;
+            // Pins read out of the asset's own stanza: the bulk read
+            // survives the side table's deletion by going to the same
+            // source `GET /:definitionId` reads. One unreadable asset
+            // (a pre-cutover retired envelope, a missing blob) must not
+            // fail the whole batch — skip that id, report it, serve the
+            // healthy ones.
+            const workflowJson = await readAgentDefinitionWorkflowJson(
+              assetService,
+              row.assetId,
+            );
+            const skills = readPinnedSkillNames(workflowJson);
+            return [definitionId, skills] as const;
+          } catch (err) {
+            reportError(err, {
+              operation: "agentDirectory.bulkSkills",
+              tenantId: tenant.id,
+              extra: { definitionId },
+            });
+            return null;
+          }
         }),
       );
 
@@ -386,7 +402,10 @@ export function createAgentDefinitionRoutes({
         row.assetId,
       );
       const capabilities = readAgentCapabilities(workflowJson);
-      const skills = await skillsStore.getSkills(row.assetId);
+      // Pins read out of the asset's own stanza: deleting the side
+      // table leaves this surface's only skills source the snapshot
+      // every write reindexes.
+      const skills = readPinnedSkillNames(workflowJson);
 
       return c.json({
         id: row.id,
@@ -473,11 +492,9 @@ export function createAgentDefinitionRoutes({
         row.assetId,
       );
 
-      // Pinned skills live outside the asset tree (see
-      // `DefinitionSkillsStore`), so restoring a prior commit only ever
-      // rewrites the definition's source tree — the definition's
-      // currently pinned skills are untouched by restoring an earlier
-      // instructions revision.
+      // Pins live in the asset's own stanza (reindexed on every write),
+      // so restoring a prior commit restores that revision's pins with
+      // the source tree — there is no side table left to stay behind.
       await writeAndDeployAgentDefinition({
         assetService,
         deployer,
@@ -490,7 +507,7 @@ export function createAgentDefinitionRoutes({
       });
 
       const capabilities = readAgentCapabilities(restoredWorkflowJson);
-      const skills = await skillsStore.getSkills(row.assetId);
+      const skills = readPinnedSkillNames(restoredWorkflowJson);
 
       return c.json({
         id: row.id,
@@ -546,7 +563,6 @@ export function createAgentDefinitionRoutes({
         db,
         assetService,
         deployer,
-        skillsStore,
         skillIndex,
         tenantId: tenant.id,
         principalId: principal.id,
@@ -685,7 +701,9 @@ export function createAgentDefinitionRoutes({
         prepare: async (snapshot) => {
           const workflowJson = withoutAgentModel(snapshot);
           const capabilities = readAgentCapabilities(workflowJson);
-          const skills = await skillsStore.getSkills(row.assetId);
+          // The snapshot carries the pins in its stanza — read them from
+          // the commit being prepared, not a deleted side table.
+          const skills = readPinnedSkillNames(workflowJson);
           return {
             workflowJson,
             message: `Clear ${row.name}'s model`,
@@ -832,10 +850,11 @@ export function createAgentDefinitionRoutes({
             snapshot,
             await skillIndex.resolve(tenant.id, principal.id, body.skills),
           );
+          // The reindexed stanza is the pins: the commit above writes
+          // the source of truth, so no post-write side-table sync.
           return {
             workflowJson,
             message: `Update agent skills for ${row.name}`,
-            afterWrite: () => skillsStore.setSkills(assetId, body.skills),
             result: { skills: body.skills },
           };
         },

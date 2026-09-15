@@ -22,6 +22,8 @@ import { asset, workflowDefinition } from "@intx/db/schema";
 import { AssetServiceError } from "@intx/hub-sessions";
 import type { AssetService } from "@intx/hub-sessions";
 import {
+  AVAILABLE_SKILLS_CLOSE_TAG,
+  AVAILABLE_SKILLS_OPEN_TAG,
   withAvailableSkills,
   type PinnedSkillIndexEntry,
 } from "@corbits/skills";
@@ -32,7 +34,6 @@ import {
   writeAndDeployAgentDefinition,
   type AgentDefinitionDeployer,
 } from "./definition-asset";
-import type { DefinitionSkillsStore } from "./skills-store";
 import { createPinnedVersionResolver } from "./tool-package-version";
 
 export const AGENT_DEFINITION_STEP_ID = "agent";
@@ -123,6 +124,48 @@ export function reindexPinnedSkills(
     );
   }
   return JSON.stringify(definition);
+}
+
+/** Reads a definition's pinned skill names back out of its serialized
+ * `workflow.json` — the `<available_skills>` stanza `reindexPinnedSkills`
+ * writes into the step agent's system prompt. The asset is the source of
+ * truth for pins: every writer of pins (create, skills edit, capability
+ * add, run pin) reindexes the stanza in the same commit it deploys, so a
+ * reader never needs side state beside the definition row. Every builder
+ * in this codebase produces exactly one step, so the definition's one
+ * step is unambiguous regardless of the step's own key. */
+export function readPinnedSkillNames(workflowJson: string): readonly string[] {
+  const raw: unknown = JSON.parse(workflowJson);
+  const definition = DefinitionWithAgentSteps(raw);
+  if (definition instanceof type.errors) {
+    throw new Error(
+      `workflow.json does not carry step agents to read pinned skills from: ${definition.summary}`,
+    );
+  }
+  const [step] = Object.values(definition.steps);
+  if (step === undefined) {
+    throw new Error("workflow.json has no steps");
+  }
+  const open = step.agent.systemPrompt.indexOf(AVAILABLE_SKILLS_OPEN_TAG);
+  const close = step.agent.systemPrompt.indexOf(AVAILABLE_SKILLS_CLOSE_TAG);
+  if (open === -1 || close === -1 || close < open) return [];
+  // Stanza lines render as `- name: description`, and skill names can
+  // never contain a space or a colon, so the first colon on a `- ` line
+  // always ends the name — even when the description itself holds colons.
+  const body = step.agent.systemPrompt.slice(
+    open + AVAILABLE_SKILLS_OPEN_TAG.length,
+    close,
+  );
+  const names: string[] = [];
+  for (const line of body.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("- ")) continue;
+    const colon = trimmed.indexOf(":", 2);
+    if (colon === -1) continue;
+    const name = trimmed.slice(2, colon).trim();
+    if (name !== "") names.push(name);
+  }
+  return names;
 }
 
 /** Reads a definition's system prompt back out of its serialized
@@ -435,7 +478,6 @@ export type CreateAgentDefinitionCoreDeps = {
       names: readonly string[],
     ): Promise<readonly PinnedSkillIndexEntry[]>;
   };
-  readonly skillsStore: DefinitionSkillsStore;
   /**
    * Resolves the tenant's current catalog default model — the same
    * first-connected-provider model `@corbits/chat`'s
@@ -500,8 +542,9 @@ export class DuplicateAgentHandleError extends Error {
 /**
  * The full create-agent-definition sequence: resolve the tenant's mail
  * domain, build and pin the definition's serialized workflow, materialize
- * it as a `workflow`-kind asset, persist its pinned skills, and
- * project it onto a first-class `workflow_definition` row. Factored out
+ * it as a `workflow`-kind asset carrying its pinned-skills index in its
+ * own stanza, and project it onto a first-class `workflow_definition`
+ * row. Factored out
  * of `./routes.ts`'s `POST /` handler so `./workflow-create-routes.ts`
  * (a workflow-run-authenticated surface a tool call reaches, never a
  * person through a form) can create a definition through the exact
@@ -604,7 +647,6 @@ export async function createAgentDefinitionCore(
     workflowJson,
     message: `Define agent ${input.name}`,
   });
-  await deps.skillsStore.setSkills(assetId, input.skills);
 
   // The deploy above projects, walks, and stamps the definition row in
   // one transaction — the same machinery the sidecar probe deploy

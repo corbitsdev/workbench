@@ -165,14 +165,6 @@ const ALLOWLIST: readonly {
     tables: ["user_preferences"],
   },
   {
-    // Skills pinned to a workbench's agent definition (CL-6135): the
-    // workflow-kind asset tree forbids skills.json, so this pin list is
-    // package-owned state beside the native definition row.
-    relPath: "packages/agent-directory/src/schema.ts",
-    maxOccurrences: 1,
-    tables: ["agent_directory.definition_skills"],
-  },
-  {
     // Eval-run history (CL-6143): one row per (eval, config) scored
     // run, product-owned scoring data, never tenancy.
     relPath: "packages/evals/src/store/schema.ts",

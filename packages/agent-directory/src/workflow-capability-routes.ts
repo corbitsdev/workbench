@@ -62,7 +62,6 @@ import {
   type AgentDefinitionDeployer,
 } from "./definition-asset";
 import type { PinnedSkillIndexResolver } from "./routes";
-import type { DefinitionSkillsStore } from "./skills-store";
 import { makeErrorEnvelope } from "@corbits/error-sink";
 
 /**
@@ -114,7 +113,6 @@ export type CreateWorkflowCapabilityRoutesDeps = {
   db: DB["db"];
   assetService: AssetService;
   skillIndex: PinnedSkillIndexResolver;
-  skillsStore: DefinitionSkillsStore;
   capabilityInventory: CapabilityInventoryProvider;
   authenticator: WorkflowRunAuthenticator;
   /** Deploys the definition's commit through the native source pipeline
@@ -239,7 +237,6 @@ export function createWorkflowCapabilityRoutes(
       db: deps.db,
       assetService: deps.assetService,
       deployer: deps.deployer,
-      skillsStore: deps.skillsStore,
       skillIndex: deps.skillIndex,
       tenantId: scope.tenantId,
       principalId: scope.principalId,

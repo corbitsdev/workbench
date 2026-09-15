@@ -41,7 +41,6 @@ export type PreparedAgentAssetWrite<T> = {
   workflowJson: string;
   message: string;
   result: T;
-  afterWrite?: () => Promise<void>;
 };
 
 export type CommitLatestAgentAssetSnapshotArgs<T> = {
@@ -81,9 +80,6 @@ export async function commitLatestAgentAssetSnapshot<T>(
         workflowJson: prepared.workflowJson,
         message: prepared.message,
       });
-      if (prepared.afterWrite !== undefined) {
-        await prepared.afterWrite();
-      }
       return true;
     });
     if (wrote) return prepared.result;

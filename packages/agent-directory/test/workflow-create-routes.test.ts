@@ -19,7 +19,6 @@ import type {
   WorkflowRunAuthenticator,
 } from "../src/workflow-capability-routes";
 import type { PinnedSkillIndexResolver } from "../src/routes";
-import { createInMemoryDefinitionSkillsStore } from "../src/skills-store";
 import type { CapabilityInventoryProvider } from "../src/capability-inventory";
 import { CORBITS_TOOLS_REGISTRY } from "@corbits/tool-registry-publish";
 import { definitionFrom, SOURCE_TREE_PATHS } from "./source-tree";
@@ -197,7 +196,6 @@ function buildApp(
     db: opts.db ?? fakeDb(),
     assetService: opts.assetService ?? fakeAssetService(),
     skillIndex: opts.skillIndex ?? fakeSkillIndex,
-    skillsStore: opts.skillsStore ?? createInMemoryDefinitionSkillsStore(),
     capabilityInventory: opts.capabilityInventory ?? fakeCapabilityInventory,
     authenticator: opts.authenticator ?? authenticateAsRun,
     deployer: opts.deployer ?? recordingAgentDefinitionDeployer(),
