@@ -84,7 +84,9 @@ test("listGrants passes filters through and reads the native page envelope", asy
     principalId: "prin_2",
     resource: "workflow-run:*",
   });
-  expect(seenUrl).toContain("/grants?principalId=prin_2&resource=workflow-run%3A*");
+  expect(seenUrl).toContain(
+    "/grants?principalId=prin_2&resource=workflow-run%3A*",
+  );
   expect(grants).toHaveLength(1);
   expect(grants[0]).toMatchObject({
     id: "grant_1",
@@ -97,7 +99,10 @@ test("listGrants passes filters through and reads the native page envelope", asy
 
 test("grantAccess posts one native single-action body per action and parses single GrantResponse objects", async () => {
   const posted: unknown[] = [];
-  const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+  const fetchImpl = (async (
+    url: string | URL | Request,
+    init?: RequestInit,
+  ) => {
     expect(String(url)).toBe(
       "https://hub.example.com/api/workflow-access/grants",
     );
@@ -105,7 +110,10 @@ test("grantAccess posts one native single-action body per action and parses sing
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
     posted.push(body);
     return new Response(
-      JSON.stringify({ ...nativeGrant(`grant_${posted.length}`), action: body["action"] }),
+      JSON.stringify({
+        ...nativeGrant(`grant_${posted.length}`),
+        action: body["action"],
+      }),
       { status: 201 },
     );
   }) as unknown as typeof fetch;
@@ -177,7 +185,8 @@ test("a 404 with the native error envelope from revokeAccess surfaces as AccessN
 });
 
 test("revokeAccess treats a native 204 with no body as success", async () => {
-  const fetchImpl = (async () => new Response(null, { status: 204 })) as unknown as typeof fetch;
+  const fetchImpl = (async () =>
+    new Response(null, { status: 204 })) as unknown as typeof fetch;
 
   await revokeAccess(testConfig(fetchImpl), "grant_1");
 });
@@ -186,7 +195,10 @@ test("a grant body without principalId is a shape error, never a null-linked gra
   const { principalId: _link, ...linkless } = nativeGrant("grant_1");
   void _link;
   const fetchImpl = (async () =>
-    Response.json({ data: [linkless], nextCursor: null })) as unknown as typeof fetch;
+    Response.json({
+      data: [linkless],
+      nextCursor: null,
+    })) as unknown as typeof fetch;
 
   await expect(listGrants(testConfig(fetchImpl), {})).rejects.toThrow(
     "did not match the expected shape",

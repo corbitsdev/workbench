@@ -45,7 +45,8 @@ test("a 403 with the native error envelope from grant_access surfaces as a clear
       JSON.stringify({
         error: {
           code: "forbidden",
-          message: "Myra can only grant room:read — she herself holds no room:write here",
+          message:
+            "Myra can only grant room:read — she herself holds no room:write here",
         },
       }),
       { status: 403 },
