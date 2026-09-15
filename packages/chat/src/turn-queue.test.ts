@@ -395,4 +395,57 @@ describe("turn queue drains everything that was enqueued", () => {
     // directly rather than only being queued.
     expect(holders.has("wb")).toBe(false);
   });
+
+  // CL-6167: a transient claim-store failure on a turn's opening tryClaim
+  // must not drop the turn. Sequential, zero concurrency — turn-1 healthy,
+  // turn-2's claim rejects (durable I/O can reject outright, not just
+  // resolve false) — and `run()` documents "never rejects", so the throw
+  // must neither propagate (routeMessage logs-and-swallows it, leaving the
+  // message durable but no agent ever asked and no notice on the timeline)
+  // nor strand the turn in the pending map (nothing would ever drain it
+  // while the store keeps failing). The turn dispatches claim-less instead.
+  test("does not reject run() and still dispatches when the opening tryClaim throws", async () => {
+    const holders = new Map<string, string>();
+    let n = 0;
+    let tryClaimCalls = 0;
+
+    const claims: TurnClaimStore = {
+      async tryClaim(c) {
+        tryClaimCalls += 1;
+        // Turn-1 claims cleanly; turn-2 arrives after turn-1 released and
+        // meets a transient store failure instead.
+        if (tryClaimCalls === 1) {
+          const t = String(++n);
+          holders.set(c.workbenchId, t);
+          return t;
+        }
+        throw new Error("claim store connection reset");
+      },
+      async release(c, t) {
+        if (holders.get(c.workbenchId) !== t) return false;
+        holders.delete(c.workbenchId);
+        return true;
+      },
+      async holds(c, t) {
+        return holders.get(c.workbenchId) === t;
+      },
+    };
+
+    const queue = createWorkbenchTurnQueue({
+      claims,
+      publish: () => undefined,
+    });
+    const dispatched: string[] = [];
+    const dispatch = async (batch: readonly QueuedTurn[]) => {
+      for (const t of batch) dispatched.push(t.messageId);
+    };
+
+    await queue.run("wb", turn("m1", "one"), dispatch);
+    expect(dispatched).toEqual(["m1"]);
+
+    // Does not reject, despite the opening tryClaim throwing — and the
+    // turn still reaches dispatch rather than dropping silently.
+    await queue.run("wb", turn("m2", "two"), dispatch);
+    expect(dispatched).toEqual(["m1", "m2"]);
+  });
 });
