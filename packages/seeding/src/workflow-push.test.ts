@@ -71,12 +71,15 @@ async function git(args: string[], cwd: string): Promise<string> {
   delete env["GIT_DIR"];
   delete env["GIT_WORK_TREE"];
   delete env["GIT_INDEX_FILE"];
-  const child = Bun.spawn(["git", "-c", "core.hooksPath=", "-c", "commit.gpgsign=false", ...args], {
-    cwd,
-    env,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  const child = Bun.spawn(
+    ["git", "-c", "core.hooksPath=", "-c", "commit.gpgsign=false", ...args],
+    {
+      cwd,
+      env,
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
   const [stdout, stderr, code] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
