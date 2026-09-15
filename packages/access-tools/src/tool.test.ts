@@ -38,14 +38,14 @@ test("list_grants rejects invalid input before ever calling fetch", async () => 
   }
 });
 
-test("a 403 from grant_access surfaces as a clear tool error", async () => {
+test("a 403 with the native error envelope from grant_access surfaces as a clear tool error", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () =>
     new Response(
       JSON.stringify({
         error: {
           code: "forbidden",
-          userMessage: "You do not have permission to perform this action",
+          message: "Myra can only grant room:read — she herself holds no room:write here",
         },
       }),
       { status: 403 },
@@ -55,14 +55,14 @@ test("a 403 from grant_access surfaces as a clear tool error", async () => {
     const result = await bundle.run(
       callFor(GRANT_ACCESS_TOOL, {
         principalId: "prin_2",
-        resource: "workflow-run:*",
-        actions: ["read"],
+        resource: "room:*",
+        actions: ["write"],
       }),
       new AbortController().signal,
     );
     expect(result.isError).toBe(true);
     expect(result.content).toBe(
-      "You do not have permission to perform this action",
+      "Granting access failed: Myra can only grant room:read — she herself holds no room:write here",
     );
   } finally {
     globalThis.fetch = originalFetch;
@@ -71,25 +71,48 @@ test("a 403 from grant_access surfaces as a clear tool error", async () => {
 
 test("a successful grant_access round-trips into list_grants", async () => {
   const originalFetch = globalThis.fetch;
-  const grantRow = {
-    id: "grant_1",
-    principalId: "prin_2",
-    resource: "workflow-run:*",
-    action: "read",
-    effect: "allow",
-  };
-  let grantCreated = false;
+  function nativeRow(id: string, action: string) {
+    return {
+      id,
+      principalId: "prin_2",
+      resource: "workflow-run:*",
+      action,
+      effect: "allow",
+      origin: "invoker",
+      conditions: null,
+      expiresAt: null,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    };
+  }
+  const posted: unknown[] = [];
   globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
     const path = new URL(String(url)).pathname;
     if (init?.method === "POST" && path.endsWith("/grants")) {
-      grantCreated = true;
-      return new Response(JSON.stringify({ grants: [grantRow] }), {
-        status: 201,
-      });
+      const body = JSON.parse(String(init?.body)) as { action: string };
+      posted.push(body);
+      // Native `POST /grants` creates exactly one single-action grant and
+      // returns the single `GrantResponse` object.
+      return new Response(
+        JSON.stringify(nativeRow(`grant_${posted.length}`, body.action)),
+        { status: 201 },
+      );
     }
     if (path.endsWith("/grants")) {
+      // Native `GET /grants` returns the `{data, nextCursor}` page envelope.
       return new Response(
-        JSON.stringify({ grants: grantCreated ? [grantRow] : [] }),
+        JSON.stringify({
+          data:
+            posted.length === 0
+              ? []
+              : posted.map((body, index) =>
+                  nativeRow(
+                    `grant_${index + 1}`,
+                    (body as { action: string }).action,
+                  ),
+                ),
+          nextCursor: null,
+        }),
       );
     }
     throw new Error(`unexpected request: ${String(url)}`);
@@ -101,11 +124,12 @@ test("a successful grant_access round-trips into list_grants", async () => {
       callFor(GRANT_ACCESS_TOOL, {
         principalId: "prin_2",
         resource: "workflow-run:*",
-        actions: ["read"],
+        actions: ["read", "write"],
       }),
       new AbortController().signal,
     );
     expect(grantResult.isError).toBe(false);
+    expect(grantResult.content).toContain("2 grants created");
 
     const listResult = await bundle.run(
       callFor(LIST_GRANTS_TOOL, { principalId: "prin_2" }),
