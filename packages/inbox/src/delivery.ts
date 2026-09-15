@@ -3,13 +3,20 @@
 // group) and status so list filters and the three-column UI work without
 // re-deriving on every read.
 
+import { and, eq, or } from "drizzle-orm";
 import {
   deliverInboxItems,
+  mailboxKey,
+  principalMail,
   type DeliverInboxItemsOpts,
   type MailboxDb,
   type MailboxEventBus,
 } from "@corbits/mailbox";
-import type { MailboxDelivery, NotifyInboxItem } from "@corbits/notify/mailbox";
+import type {
+  MailboxDelivery,
+  NotifyInboxItem,
+  ResolveExistingMailIds,
+} from "@corbits/notify/mailbox";
 
 import { classificationFromRefs } from "./group";
 
@@ -72,5 +79,60 @@ export function createWorkbenchMailboxDelivery(
     }
 
     return deliverInboxItems(db, stamped, writeOpts);
+  };
+}
+
+/**
+ * CL-7238 read-back for `@corbits/notify`'s crash window: a redelivery
+ * reports an already-committed row as pre-existing (`id: null`), so the
+ * host resolves it to its row id here and the missing dispatch rows get
+ * repaired instead of lost. Served from the mailbox unique mail key —
+ * the same `mailboxKey.inbox(source, externalId)` the write dedupes on —
+ * so the lookup can never disagree with the delivery about which row an
+ * item belongs to. Positional in, positional out, `null` where no row
+ * exists; the dispatch store dedupes by (mail row, sink), so a benign
+ * redelivery's repair never double-queues.
+ */
+export function createResolveExistingMailIds(
+  db: MailboxDb,
+): ResolveExistingMailIds {
+  return async (items) => {
+    if (items.length === 0) return [];
+    const keyed = items.map((item) => ({
+      tenantId: item.tenantId,
+      principalId: item.principalId,
+      messageKey: mailboxKey.inbox(item.source, item.externalId),
+    }));
+    const rows = await db
+      .select({
+        id: principalMail.id,
+        tenantId: principalMail.tenantId,
+        principalId: principalMail.principalId,
+        messageKey: principalMail.messageKey,
+      })
+      .from(principalMail)
+      .where(
+        or(
+          ...keyed.map((key) =>
+            and(
+              eq(principalMail.tenantId, key.tenantId),
+              eq(principalMail.principalId, key.principalId),
+              eq(principalMail.messageKey, key.messageKey),
+            ),
+          ),
+        ),
+      );
+    const idsByKey = new Map(
+      rows.map((row) => [
+        `${row.tenantId}\n${row.principalId}\n${row.messageKey}`,
+        row.id,
+      ]),
+    );
+    return keyed.map(
+      (key) =>
+        idsByKey.get(
+          `${key.tenantId}\n${key.principalId}\n${key.messageKey}`,
+        ) ?? null,
+    );
   };
 }
