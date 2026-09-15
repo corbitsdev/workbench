@@ -29,15 +29,23 @@ const RoomMessageSender = type({
  * The full rendered timeline row a `chat.message` event carries —
  * everything `postRoomMessage`'s caller already has in hand from the
  * insert it just did, so a subscriber never needs to refetch the
- * message it was just told about.
+ * message it was just told about. `ref` names the workbench the row
+ * lives on; the mail headers ride along only when the row was actually
+ * mailed (a human send through the mailbox fan-out) — Message-ID always,
+ * In-Reply-To and References when the row answers a thread — and are
+ * absent, never invented, for a row nobody mailed.
  */
 export const ChatMessageEventData = type({
   id: "string",
   workbenchId: "string",
+  ref: type({ kind: "'workbench'", id: "string" }),
   createdAt: "string",
   threadId: "string | null",
   sender: RoomMessageSender,
   parts: Part.array(),
+  "messageId?": "string",
+  "inReplyTo?": "string",
+  "references?": "string[]",
 });
 export type ChatMessageEventData = typeof ChatMessageEventData.infer;
 

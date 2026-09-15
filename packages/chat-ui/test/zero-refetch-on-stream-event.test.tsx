@@ -167,6 +167,7 @@ describe("zero refetches on a stream event, post-hydration (CL-6328 §6/1.2)", (
       firstStream().emit("chat.message", {
         id: "m_streamed",
         workbenchId: "ch_1",
+        ref: { kind: "workbench", id: "ch_1" },
         createdAt: "2026-01-01T00:00:10.000Z",
         threadId: null,
         sender: { name: "Bob", address: "prn_bob@acme.example" },
@@ -219,6 +220,7 @@ describe("zero refetches on a stream event, post-hydration (CL-6328 §6/1.2)", (
       firstStream().emit("chat.message", {
         id: "msg_confirmed",
         workbenchId: "ch_1",
+        ref: { kind: "workbench", id: "ch_1" },
         createdAt: "2026-01-01T00:00:05.000Z",
         threadId: null,
         clientId: sentClientId,
