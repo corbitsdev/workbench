@@ -30,7 +30,6 @@ import { readdir } from "node:fs/promises";
 
 import { applyChatMigrations } from "../packages/chat/src/migrations";
 import { applyWebhookTriggersMigrations } from "../packages/webhook-triggers/src/migrations";
-import { reconcileDuplicateRepoGrants } from "../packages/connections/src/reconcile-duplicate-repo-grants";
 import { applyNotifyMigrations } from "../packages/notify/src/migrations";
 import {
   applyInboxMigrations,
@@ -107,21 +106,10 @@ async function applyInstalledPackageMigrations(
     }
   }
 
-  // CL-7242: not a package migration (no schema, no ledger, no DDL at
-  // all) -- a plain, always-safe-to-re-run DELETE against the
-  // platform's own `grant` table through @intx/db's published export,
-  // cleaning up any repo grants CL-7242's race duplicated before this
-  // fix's lease started preventing new ones. See
-  // reconcile-duplicate-repo-grants.ts for why this is DML, not DDL,
-  // and why that distinction is what keeps it off the vendored-delta
-  // ledger.
-  const { removedIds } = await reconcileDuplicateRepoGrants(databaseUrl);
-  if (removedIds.length > 0) {
-    console.log(
-      `db-setup: removed ${removedIds.length} duplicate repo grant(s): ` +
-        removedIds.join(", "),
-    );
-  }
+  // CL-7593: the one-time CL-7242 duplicate-grant cleanup ran its era
+  // (the repo_review_lease now prevents new duplicates at write time),
+  // so db-setup no longer performs it: setup applies migrations only,
+  // and grant state stays on the native grant routes.
 
   await dropRoutinesSchemaAfterDigestHandoff(databaseUrl);
 }
