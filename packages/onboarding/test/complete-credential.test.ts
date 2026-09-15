@@ -114,24 +114,33 @@ function seedHandshake(method: string, path: string): ApiResult | undefined {
 }
 
 // `ensureDeployment` resolves a real (non-noop-pinned) workflow's deploy
-// source from the tenant's own catalog offerings (CL-7461). A test that
+// source from the tenant's native model discovery (CL-7588). A test that
 // never seeds its own catalog (it stubs `seedCatalogFn` instead) still
-// needs one listable offering for the "assistant" workflow's own deploy
-// to succeed — this fixed single row is that.
-function fixedOfferingsResponse() {
+// needs one discoverable offering for the "assistant" workflow's own
+// deploy to succeed — this fixed single row is that.
+function fixedDiscoveredModelsResponse() {
   return {
     status: 200,
-    data: {
-      offerings: [
-        {
-          id: "off_1",
-          priority: 0,
-          modelId: "mdl_1",
-          providerId: "mpr_1",
-          origin: { tenantId: TENANT_ID, direct: true },
-        },
-      ],
-    },
+    data: [
+      {
+        id: "mdl_1",
+        canonicalName: "model-1",
+        displayName: null,
+        description: null,
+        offerings: [
+          {
+            offeringId: "off_1",
+            providerId: "mpr_1",
+            providerName: "anthropic",
+            plugin: "anthropic",
+            priority: 0,
+            deploymentTags: [],
+            capabilities: [],
+            pricing: [],
+          },
+        ],
+      },
+    ],
     cookies: [],
   };
 }
@@ -850,11 +859,11 @@ describe("completeCredentialSetup", () => {
       }
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/resolved-offerings`
+        path === `/api/tenants/${TENANT_ID}/models`
       ) {
         return {
           status: 200,
-          data: { offerings: [] },
+          data: [],
           cookies: [],
         };
       }
@@ -908,9 +917,9 @@ describe("completeCredentialSetup", () => {
       }
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/resolved-offerings`
+        path === `/api/tenants/${TENANT_ID}/models`
       ) {
-        return fixedOfferingsResponse();
+        return fixedDiscoveredModelsResponse();
       }
       if (
         method === "GET" &&
@@ -1543,19 +1552,28 @@ describe("completeCredentialSetup", () => {
       }
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/resolved-offerings`
+        path === `/api/tenants/${TENANT_ID}/models`
       ) {
         return {
           status: 200,
-          data: {
-            offerings: catalogOfferings.map((o) => ({
-              id: o.id,
-              modelId: o.modelId,
-              providerId: o.providerId,
-              priority: o.priority,
-              origin: { tenantId: TENANT_ID, direct: true },
-            })),
-          },
+          data: catalogOfferings.map((o) => ({
+            id: o.modelId,
+            canonicalName: o.modelId,
+            displayName: null,
+            description: null,
+            offerings: [
+              {
+                offeringId: o.id,
+                providerId: o.providerId,
+                providerName: "anthropic",
+                plugin: "anthropic",
+                priority: o.priority,
+                deploymentTags: [],
+                capabilities: [],
+                pricing: [],
+              },
+            ],
+          })),
           cookies: [],
         };
       }
@@ -1941,9 +1959,9 @@ describe("ensureSeeded (the slow half)", () => {
     const api: ApiCall = async (method, path, body) => {
       if (
         method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/catalog/resolved-offerings`
+        path === `/api/tenants/${TENANT_ID}/models`
       ) {
-        return fixedOfferingsResponse();
+        return fixedDiscoveredModelsResponse();
       }
       if (
         method === "GET" &&
