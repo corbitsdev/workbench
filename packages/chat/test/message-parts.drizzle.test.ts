@@ -75,8 +75,8 @@ describe("createInMemoryMessagePartsStore", () => {
       "<absent@chat>",
     ]);
     expect(rows).toHaveLength(1);
-    expect(rows[0].mailMessageId).toBe("<m1@chat>");
-    expect(rows[0].parts).toEqual([TEXT_PART]);
+    expect(rows[0]?.mailMessageId).toBe("<m1@chat>");
+    expect(rows[0]?.parts).toEqual([TEXT_PART]);
     expect(await store.listMessagePartsForFrames("ten_1", [])).toEqual([]);
   });
 });
@@ -149,8 +149,8 @@ describeIfDb("createDrizzleMessagePartsStore", () => {
         "<m1@chat>",
       ]);
       expect(rows).toHaveLength(1);
-      expect(rows[0].workbenchId).toBe("run_1");
-      expect(rows[0].parts).toEqual([TEXT_PART, BLOCK_PART]);
+      expect(rows[0]?.workbenchId).toBe("run_1");
+      expect(rows[0]?.parts).toEqual([TEXT_PART, BLOCK_PART]);
     } finally {
       await sql.end();
     }

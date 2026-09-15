@@ -121,7 +121,9 @@ export function createDrizzleMessagePartsStore<
         )
         .limit(1);
       if (rows.length === 0) return null;
-      return parseStoredParts(rows[0].parts);
+      const first = rows[0];
+      if (first === undefined) return null;
+      return parseStoredParts(first.parts);
     },
 
     async listMessagePartsForFrames(tenantId, mailMessageIds) {
