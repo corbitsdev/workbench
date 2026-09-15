@@ -1,9 +1,18 @@
-// A minimal client for `@corbits/access-tools`' own workflow-run-
-// authenticated surface (`./routes.ts`, mounted at
-// `/api/workflow-access`): same auth-header shape, same error-handling,
+// Client for the workflow-run-authenticated counterpart of the native
+// Interchange tenant routes (`@intx/hub-api`: `createPrincipalRoutes`,
+// `createGrantRoutes`) — see `./routes.ts`, mounted at
+// `/api/workflow-access`. Same auth-header shape, same error-handling,
 // same arktype-response-parsing pattern as every other tool bundle's
 // `client.ts` in this codebase (`@corbits/agent-directory-tools`,
-// `@corbits/capability-tools`).
+// `@corbits/capability-tools`); only the base path differs.
+//
+// Every request and response speaks the native Interchange contract:
+// `{data, nextCursor}` pages for `GET /principals` and `GET /grants`,
+// one single-action `POST /grants` body per grant (returning the single
+// `GrantResponse` object), `DELETE /grants/:grantId` returning `204`, and
+// the canonical `{error: {code, message}}` envelope on failures
+// (`AccessForbiddenError` / `AccessNotFoundError` surface the hub's
+// `message` verbatim so Myra can act on it).
 import { type } from "arktype";
 
 export interface AccessToolClientConfig {
@@ -42,130 +51,132 @@ function authHeaders(config: AccessToolClientConfig): Record<string, string> {
   };
 }
 
-/** Pulls `error.userMessage` out of the canonical hub envelope
- * (`{error: {code, userMessage, refId}}`), if `body` matches that shape. */
+/** Pulls `error.message` out of the canonical hub envelope
+ * (`{error: {code, message}}`, per `errorResponse` in
+ * `@intx/hub-common/errors`), if `body` matches that shape. */
 function errorMessageFrom(body: unknown): string | undefined {
   if (body === null || typeof body !== "object" || !("error" in body)) {
     return undefined;
   }
   const error = (body as { error: unknown }).error;
-  if (
-    error === null ||
-    typeof error !== "object" ||
-    !("userMessage" in error)
-  ) {
+  if (error === null || typeof error !== "object" || !("message" in error)) {
     return undefined;
   }
-  const userMessage = (error as { userMessage: unknown }).userMessage;
-  return typeof userMessage === "string" ? userMessage : undefined;
+  const message = (error as { message: unknown }).message;
+  return typeof message === "string" ? message : undefined;
 }
 
-async function readErrorMessage(
+export class AccessForbiddenError extends Error {
+  override readonly name = "AccessForbiddenError";
+}
+
+export class AccessNotFoundError extends Error {
+  override readonly name = "AccessNotFoundError";
+}
+
+async function throwForStatus(
+  operation: string,
   response: Response,
-  fallback: string,
-): Promise<string> {
-  const body: unknown = await response.json().catch(() => undefined);
-  return errorMessageFrom(body) ?? fallback;
-}
-
-/** Thrown when the access route rejects the request as forbidden —
- * the caller's own principal has no `principal:*`/`grant:*` grant of
- * its own — distinct from a bare transport/HTTP failure, so a caller
- * can report honestly that a human must grant it access first. */
-export class AccessForbiddenError extends Error {}
-
-/** Thrown for a not-found principal/grant id, distinct from a bare
- * transport/HTTP failure. */
-export class AccessNotFoundError extends Error {}
-
-async function doRequest(
-  config: AccessToolClientConfig,
-  path: string,
-  init: RequestInit,
-  failureLabel: string,
-): Promise<Response> {
-  const doFetch = config.fetchImpl ?? fetch;
-  const response = await doFetch(`${config.hubAccessUrl}${path}`, {
-    ...init,
-    headers: { ...authHeaders(config), ...(init.headers ?? {}) },
-  });
+): Promise<never> {
+  const body: unknown = await response.json().catch(() => null);
+  const message = errorMessageFrom(body) ?? response.statusText;
   if (response.status === 403) {
-    throw new AccessForbiddenError(
-      await readErrorMessage(response, `${failureLabel}: forbidden`),
-    );
+    throw new AccessForbiddenError(`${operation} failed: ${message}`);
   }
   if (response.status === 404) {
-    throw new AccessNotFoundError(
-      await readErrorMessage(response, `${failureLabel}: not found`),
-    );
+    throw new AccessNotFoundError(`${operation} failed: ${message}`);
   }
-  if (!response.ok) {
-    throw new Error(
-      `${failureLabel}: ${response.status} ${response.statusText}`,
-    );
-  }
-  return response;
+  throw new Error(`${operation} failed: ${message}`);
 }
 
 const ListedPrincipalsResponse = type({
-  principals: type({
+  data: type({
     id: "string",
-    kind: "'user'|'agent'|'workflow'",
+    kind: "'user' | 'agent' | 'workflow'",
     refId: "string",
-    status: "'active'|'suspended'|'invited'|'deactivated'",
+    status: "'active' | 'suspended' | 'invited' | 'deactivated'",
   }).array(),
+  "nextCursor?": "string | null",
 });
-
-export async function listPrincipals(
-  config: AccessToolClientConfig,
-): Promise<readonly ListedPrincipal[]> {
-  const response = await doRequest(
-    config,
-    "/principals",
-    { headers: authHeaders(config) },
-    "Listing principals failed",
-  );
-  const body: unknown = await response.json();
-  const parsed = ListedPrincipalsResponse(body);
-  if (parsed instanceof type.errors) {
-    throw new Error(
-      `List-principals response did not match the expected shape: ${parsed.summary}`,
-    );
-  }
-  return parsed.principals;
-}
 
 const ListedGrantsResponse = type({
-  grants: type({
+  data: type({
     id: "string",
-    principalId: "string | null",
+    "principalId?": "string | null",
     resource: "string",
     action: "string",
-    effect: "'allow'|'deny'|'ask'",
+    effect: "'allow' | 'deny' | 'ask'",
   }).array(),
+  "nextCursor?": "string | null",
 });
+
+const CreatedGrantResponse = type({
+  id: "string",
+  "principalId?": "string | null",
+  resource: "string",
+  action: "string",
+  effect: "'allow' | 'deny' | 'ask'",
+});
+
+/** Lists every principal in the run's tenant, following the native
+ * `nextCursor` pages to the end — Myra needs the full list to find the
+ * agent she just created before granting it access. */
+export async function listPrincipals(
+  config: AccessToolClientConfig,
+): Promise<ListedPrincipal[]> {
+  const fetchImpl = config.fetchImpl ?? ((...args) => fetch(...args));
+  const principals: ListedPrincipal[] = [];
+  let cursor: string | null | undefined;
+  do {
+    const url =
+      cursor === undefined || cursor === null
+        ? `${config.hubAccessUrl}/principals`
+        : `${config.hubAccessUrl}/principals?cursor=${encodeURIComponent(cursor)}`;
+    const response = await fetchImpl(url, {
+      headers: { ...authHeaders(config) },
+    });
+    if (!response.ok) {
+      await throwForStatus("Listing principals", response);
+    }
+    const body: unknown = await response.json();
+    const parsed = ListedPrincipalsResponse(body);
+    if (parsed instanceof type.errors) {
+      throw new Error(
+        `Principals response did not match the expected shape: ${parsed.summary}`,
+      );
+    }
+    principals.push(...parsed.data);
+    cursor = parsed.nextCursor ?? null;
+  } while (cursor !== null);
+  return principals;
+}
 
 export interface ListGrantsFilter {
   readonly principalId?: string;
   readonly resource?: string;
+  readonly action?: string;
 }
 
+/** Lists grants in the run's tenant, passing the given filters through as
+ * the native `GET /grants` query params (`principalId`, `resource`,
+ * `action`). */
 export async function listGrants(
   config: AccessToolClientConfig,
   filter?: ListGrantsFilter,
-): Promise<readonly ListedGrant[]> {
+): Promise<ListedGrant[]> {
+  const fetchImpl = config.fetchImpl ?? ((...args) => fetch(...args));
   const params = new URLSearchParams();
-  if (filter?.principalId !== undefined) {
+  if (filter?.principalId !== undefined)
     params.set("principalId", filter.principalId);
-  }
   if (filter?.resource !== undefined) params.set("resource", filter.resource);
-  const query = params.toString();
-  const response = await doRequest(
-    config,
-    `/grants${query.length > 0 ? `?${query}` : ""}`,
-    { headers: authHeaders(config) },
-    "Listing grants failed",
-  );
+  if (filter?.action !== undefined) params.set("action", filter.action);
+  const query = params.size === 0 ? "" : `?${params.toString()}`;
+  const response = await fetchImpl(`${config.hubAccessUrl}/grants${query}`, {
+    headers: { ...authHeaders(config) },
+  });
+  if (!response.ok) {
+    await throwForStatus("Listing grants", response);
+  }
   const body: unknown = await response.json();
   const parsed = ListedGrantsResponse(body);
   if (parsed instanceof type.errors) {
@@ -173,41 +184,58 @@ export async function listGrants(
       `List-grants response did not match the expected shape: ${parsed.summary}`,
     );
   }
-  return parsed.grants;
+  return parsed.data;
 }
 
+/** Grants access by posting one native single-action `POST /grants` body
+ * per requested action — `effect: "allow"`, `origin: "invoker"` — and
+ * parsing each single `GrantResponse` object the hub returns. */
 export async function grantAccess(
   config: AccessToolClientConfig,
-  input: GrantAccessRequest,
-): Promise<readonly ListedGrant[]> {
-  const response = await doRequest(
-    config,
-    "/grants",
-    {
+  request: GrantAccessRequest,
+): Promise<ListedGrant[]> {
+  const fetchImpl = config.fetchImpl ?? ((...args) => fetch(...args));
+  const created: ListedGrant[] = [];
+  for (const action of request.actions) {
+    const response = await fetchImpl(`${config.hubAccessUrl}/grants`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input),
-    },
-    "Granting access failed",
-  );
-  const body: unknown = await response.json();
-  const parsed = ListedGrantsResponse(body);
-  if (parsed instanceof type.errors) {
-    throw new Error(
-      `Grant-access response did not match the expected shape: ${parsed.summary}`,
-    );
+      headers: { ...authHeaders(config), "content-type": "application/json" },
+      body: JSON.stringify({
+        principalId: request.principalId,
+        resource: request.resource,
+        action,
+        effect: "allow",
+        origin: "invoker",
+      }),
+    });
+    if (!response.ok) {
+      await throwForStatus("Granting access", response);
+    }
+    const body: unknown = await response.json();
+    const parsed = CreatedGrantResponse(body);
+    if (parsed instanceof type.errors) {
+      throw new Error(
+        `Grant-access response did not match the expected shape: ${parsed.summary}`,
+      );
+    }
+    created.push(parsed);
   }
-  return parsed.grants;
+  return created;
 }
 
+/** Revokes the grant with the given id. The native
+ * `DELETE /grants/:grantId` returns `204` with no body, so success is the
+ * absence of a throw. */
 export async function revokeAccess(
   config: AccessToolClientConfig,
   grantId: string,
 ): Promise<void> {
-  await doRequest(
-    config,
-    `/grants/${encodeURIComponent(grantId)}`,
-    { method: "DELETE" },
-    "Revoking access failed",
+  const fetchImpl = config.fetchImpl ?? ((...args) => fetch(...args));
+  const response = await fetchImpl(
+    `${config.hubAccessUrl}/grants/${encodeURIComponent(grantId)}`,
+    { method: "DELETE", headers: { ...authHeaders(config) } },
   );
+  if (!response.ok) {
+    await throwForStatus("Revoking access", response);
+  }
 }
