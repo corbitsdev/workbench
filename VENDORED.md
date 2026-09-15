@@ -122,7 +122,7 @@ credentials, and an attachments-only inbound mail resolves its parts instead
 of throwing. `findStepGrantsEntry` collapses a single-step deployment's sole
 grants entry onto a body step whose own id the parent snapshot never lists.
 Upstream never runs tool-bearing body agents, so the seam has no upstream
-analog. `vendor/intx/workflow` carries no local delta: upstream `b977ade6` ships the
+analog. `vendor/intx/workflow` carries one local delta (corbitsdev/workbench#709 step-timer budget — see its ledger row): upstream `b977ade6` ships the
 `onTrigger` body-failure policy workbench had vendored as
 `onBodyFailure: "continue"` (CL-6326, CL-6324) under the literal `"tolerate"`,
 so the authoring site (`@corbits/agent-runtime`) says `"tolerate"` and `@intx/db`
