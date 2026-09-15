@@ -97,6 +97,30 @@ test("listGrants passes filters through and reads the native page envelope", asy
   });
 });
 
+test("listGrants follows nextCursor so a full page plus one all return", async () => {
+  const all = Array.from({ length: 51 }, (_, i) =>
+    nativeGrant(`grant_${i + 1}`),
+  );
+  const seen: string[] = [];
+  const fetchImpl = (async (url: string | URL | Request) => {
+    const raw = String(url);
+    seen.push(raw);
+    if (raw.includes("cursor=page_2")) {
+      return Response.json({ data: all.slice(50), nextCursor: null });
+    }
+    return Response.json({ data: all.slice(0, 50), nextCursor: "page_2" });
+  }) as unknown as typeof fetch;
+
+  const grants = await listGrants(testConfig(fetchImpl), {
+    principalId: "prin_2",
+  });
+  expect(grants).toHaveLength(51);
+  expect(grants.map((g) => g.id)).toEqual(all.map((g) => g.id));
+  expect(seen).toHaveLength(2);
+  expect(seen[0]).toContain("principalId=prin_2");
+  expect(seen[1]).toContain("cursor=page_2");
+});
+
 test("grantAccess posts one native single-action body per action and parses single GrantResponse objects", async () => {
   const posted: unknown[] = [];
   const fetchImpl = (async (
@@ -191,7 +215,7 @@ test("revokeAccess treats a native 204 with no body as success", async () => {
   await revokeAccess(testConfig(fetchImpl), "grant_1");
 });
 
-test("a grant body without principalId is a shape error, never a null-linked grant", async () => {
+test("a grant body missing principalId is a shape error, never a null-linked grant", async () => {
   const { principalId: _link, ...linkless } = nativeGrant("grant_1");
   void _link;
   const fetchImpl = (async () =>
