@@ -124,7 +124,9 @@ function pageResponse<T>(
   return {
     data: items,
     nextCursor:
-      lastRow !== undefined ? encodeCursor(lastRow.createdAt, lastRow.id) : null,
+      lastRow !== undefined
+        ? encodeCursor(lastRow.createdAt, lastRow.id)
+        : null,
   };
 }
 
@@ -376,11 +378,16 @@ export function createWorkflowAccessRoutes(
       rolesByPrincipal.set(a.principalId, list);
     }
 
-    const userRefIds = rows.filter((p) => p.kind === "user").map((p) => p.refId);
+    const userRefIds = rows
+      .filter((p) => p.kind === "user")
+      .map((p) => p.refId);
     const workflowRefIds = rows
       .filter((p) => p.kind === "workflow")
       .map((p) => p.refId);
-    const identities = new Map<string, { displayName: string; email?: string }>();
+    const identities = new Map<
+      string,
+      { displayName: string; email?: string }
+    >();
     if (userRefIds.length > 0) {
       const users = await deps.db.query.user.findMany({
         where: (u, { inArray }) => inArray(u.id, userRefIds),
@@ -440,10 +447,7 @@ export function createWorkflowAccessRoutes(
       conditions.push(
         or(
           lt(grant.createdAt, new Date(cursor.t)),
-          and(
-            eq(grant.createdAt, new Date(cursor.t)),
-            lt(grant.id, cursor.id),
-          ),
+          and(eq(grant.createdAt, new Date(cursor.t)), lt(grant.id, cursor.id)),
         ) ?? sql`false`,
       );
     }
