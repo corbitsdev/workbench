@@ -27,7 +27,7 @@ import {
   buildHeartbeatWorkflow,
   serializeHeartbeatWorkflow,
 } from "../../workflows/heartbeat/src/index.ts";
-import { ensureNoopCatalogOffering } from "../../packages/seeding/src/index.ts";
+import { ensureNoopCatalogOffering } from "../../packages/connections/src/seed-catalog.ts";
 import {
   api,
   connectE2eDb,

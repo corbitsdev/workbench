@@ -3,25 +3,49 @@
 // token as the basic-auth password and a GIT_ASKPASS shim as the
 // non-interactive fallback — the platform's established asset-push
 // convention. Content-aware: an identical tree is a reported skip, not
-// a duplicate commit, which is what makes re-running seed safe.
+// a duplicate commit, which is what makes re-running boot convergence
+// safe.
 //
 // The pushed tree is the source codebase `@corbits/workflows`'s `./source`
 // renders — the one shape a workflow-kind asset accepts (see
 // `vendor/intx/hub-sessions/src/workflow-kind.ts`), shared with every
 // other authoring path in this repo.
+//
+// Hub-local on purpose (CL-7585): this is a dumb transport —
+// caller-supplied bytes in, a commit sha out. It owns no catalog, no
+// default set, no seed order, no turn timeouts; all of that died with
+// the old seeding package. Hub boot (the bench provisioner, the onboarding
+// routes, the tenant-create observer) is the only caller.
 
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { renderWorkflowSourceTree } from "@corbits/workflows";
 import { HubApiError } from "@corbits/hub-api-client";
-import type { WorkflowPusher } from "./seed";
+
+export type PushOutcome = "pushed" | "unchanged";
+
+/**
+ * What the push left on the asset's `main`: whether it wrote a commit,
+ * and the sha that commit (or the already-current one) sits at. The sha
+ * IS the deploy pin — a code-sourced deploy sources
+ * `package: { format: "source", commitSha }`.
+ */
+export type PushResult = { outcome: PushOutcome; commitSha: string };
+
+export type WorkflowPusher = (args: {
+  remoteUrl: string;
+  tokenSecret: string;
+  workflowJson: string;
+  /** Name the rendered source package declares; never leaves the asset. */
+  packageName: string;
+}) => Promise<PushResult>;
 
 function requireGit(): void {
   if (Bun.which("git") === null) {
     throw new HubApiError(
       "git is not installed or not on PATH; the workflow push uses the system git binary",
-      "install git (macOS: `xcode-select --install`), then re-run: workbench seed",
+      "install git (macOS: `xcode-select --install`), then restart the hub",
     );
   }
 }
@@ -73,7 +97,7 @@ async function headSha(repoDir: string): Promise<string> {
   if (result.code !== 0) {
     throw new HubApiError(
       `reading the pushed workflow commit failed: ${result.output}`,
-      "confirm the hub is running (`bun run dev`) and re-run: workbench seed",
+      "confirm the hub is running and check the hub logs for the underlying git failure",
     );
   }
   return result.output.trim();
@@ -89,7 +113,7 @@ function withToken(remoteUrl: string, tokenSecret: string): string {
 export function createGitWorkflowPusher(): WorkflowPusher {
   return async ({ remoteUrl, tokenSecret, workflowJson, packageName }) => {
     requireGit();
-    const work = await mkdtemp(join(tmpdir(), "workbench-seed-"));
+    const work = await mkdtemp(join(tmpdir(), "workbench-push-"));
     try {
       const askpass = join(work, "askpass.sh");
       await writeFile(
@@ -101,10 +125,10 @@ export function createGitWorkflowPusher(): WorkflowPusher {
       const gitEnv = {
         GIT_ASKPASS: askpass,
         GIT_TERMINAL_PROMPT: "0",
-        GIT_AUTHOR_NAME: "Workbench Seed",
-        GIT_AUTHOR_EMAIL: "seed@workbench.localhost",
-        GIT_COMMITTER_NAME: "Workbench Seed",
-        GIT_COMMITTER_EMAIL: "seed@workbench.localhost",
+        GIT_AUTHOR_NAME: "Workbench",
+        GIT_AUTHOR_EMAIL: "hub@workbench.localhost",
+        GIT_COMMITTER_NAME: "Workbench",
+        GIT_COMMITTER_EMAIL: "hub@workbench.localhost",
       };
       const authRemote = withToken(remoteUrl, tokenSecret);
       const repoDir = join(work, "repo");
@@ -117,7 +141,7 @@ export function createGitWorkflowPusher(): WorkflowPusher {
       if (clone.code !== 0) {
         throw new HubApiError(
           `cloning the workflow asset repo failed: ${clone.output}`,
-          "confirm the hub is running (`bun run dev`) and re-run: workbench seed",
+          "confirm the hub is running and check the hub logs for the underlying git failure",
         );
       }
 
@@ -131,7 +155,11 @@ export function createGitWorkflowPusher(): WorkflowPusher {
         let existing: string | null = null;
         try {
           existing = await readFile(target, "utf-8");
-        } catch (_cause) {
+        } catch (cause) {
+          // A missing file is the normal case (a new tree entry); any
+          // other read failure is rethrown — failing the push loudly
+          // rather than silently pushing a tree never fully read.
+          if ((cause as { code?: string })?.code !== "ENOENT") throw cause;
           existing = null;
         }
         if (existing === contents) continue;
@@ -147,7 +175,7 @@ export function createGitWorkflowPusher(): WorkflowPusher {
         {
           label: "commit",
           args: [
-            // Seed commits are authored as seed@workbench.localhost and
+            // Pushed commits are authored as hub@workbench.localhost and
             // must never inherit the operator's signing identity
             // (CL-7492): a global `commit.gpgsign = true` would fail the
             // commit — or worse, sign a bot commit with a personal key.
@@ -160,14 +188,14 @@ export function createGitWorkflowPusher(): WorkflowPusher {
           ],
         },
         {
-          // Forced deliberately: this asset repo is seed-owned (this
+          // Forced deliberately: this asset repo is hub-owned (this
           // pusher is its only writer), so `main` always carries
           // exactly the canonical tree this run computed. A plain push
           // 409s as "non-fast-forward" the moment the remote's `main`
           // shares no ancestry with this run's fresh clone — an
-          // existing asset whose repo was seeded through a different
+          // existing asset whose repo was pushed through a different
           // path, in particular — which would otherwise fail the entire
-          // seed on a re-run rather than repointing the ref it owns.
+          // converge on a re-run rather than repointing the ref it owns.
           label: "push",
           args: [
             "-c",
@@ -184,7 +212,7 @@ export function createGitWorkflowPusher(): WorkflowPusher {
         if (result.code !== 0) {
           throw new HubApiError(
             `the workflow source ${step.label} failed: ${result.output}`,
-            "confirm the hub is running (`bun run dev`) and re-run: workbench seed",
+            "confirm the hub is running and check the hub logs for the underlying git failure",
           );
         }
       }

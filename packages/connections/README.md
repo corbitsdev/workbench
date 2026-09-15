@@ -13,9 +13,9 @@ never here.
 
 ## How it composes with Interchange
 
-- Credentials are stored and read through `@corbits/seeding`'s
-  `ensureProvider`/`ensureCredential` helpers over the native hub API —
-  this package never reimplements credential storage.
+- Credentials are stored and read through this package's
+  `./src/seed-catalog.ts` `ensureProvider`/`ensureCredential` helpers over
+  the native hub API — this package never reimplements credential storage.
 - `plugins.ts`'s tenant-inheritance resolution calls the native, already
   chain-aware `GET /credentials/resolve/:name` route
   (`vendor/intx/hub-api/src/routes/credentials.ts`, backed by

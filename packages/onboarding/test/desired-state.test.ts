@@ -4,7 +4,7 @@
 // state against it using native hub reads only.
 import { describe, expect, test } from "bun:test";
 import type { ApiCall } from "@corbits/hub-api-client";
-import { SETUP_AGENT_ASSET_NAME } from "@corbits/seeding";
+import { SETUP_AGENT_ASSET_NAME } from "../src/tenant-seed";
 import {
   desiredStateSteps,
   readTenantDesiredStateStatus,

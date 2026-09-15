@@ -72,7 +72,7 @@ const PLACEHOLDER_MODEL = "noop";
 
 /**
  * Plants the same catalog-model/provider/credential/offering chain as
- * `@corbits/seeding`'s `ensureNoopCatalogOffering`, but pointed at an
+ * `@corbits/connections`' `seed-catalog` `ensureNoopCatalogOffering`, but pointed at an
  * unreachable placeholder host rather than the hub's own
  * `noop-inference` endpoint — deliberately, since this suite never
  * calls inference and asserts only that the deploy is

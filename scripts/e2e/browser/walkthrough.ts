@@ -37,7 +37,7 @@ import {
   type HubHandle,
   type SpawnedApp,
 } from "../harness.ts";
-import { createGitWorkflowPusher } from "../../../packages/seeding/src/index.ts";
+import { createGitWorkflowPusher } from "../../../packages/connections/src/workflow-push.ts";
 import { createHubAPI } from "../../../packages/hub-api-client/src/index.ts";
 import {
   ensureSeeded,

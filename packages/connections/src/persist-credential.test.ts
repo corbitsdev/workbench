@@ -8,7 +8,7 @@ import type {
   EnsureCredentialArgs,
   EnsureProviderArgs,
   SeedCatalogArgs,
-} from "@corbits/seeding";
+} from "./seed-catalog";
 import type { ConnectorDescriptor } from "./descriptor";
 import {
   isInferenceProvider,

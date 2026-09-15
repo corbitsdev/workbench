@@ -25,7 +25,7 @@ import {
   type EnsureCredentialArgs,
   type EnsureProviderArgs,
   type SeedCatalogArgs,
-} from "@corbits/seeding";
+} from "./seed-catalog";
 import type { ApiCall } from "@corbits/hub-api-client";
 import type { ConnectorDescriptor } from "./descriptor";
 

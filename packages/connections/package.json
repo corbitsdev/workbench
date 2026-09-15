@@ -23,7 +23,11 @@
     "./huggingface-connect": "./src/huggingface-connect.ts",
     "./gmail-connect": "./src/gmail-connect.ts",
     "./openrouter-connect": "./src/openrouter-connect.ts",
-    "./github-connect": "./src/github-connect.ts"
+    "./github-connect": "./src/github-connect.ts",
+    "./catalog-seed-data": "./src/catalog-seed-data.ts",
+    "./seed-catalog": "./src/seed-catalog.ts",
+    "./default-skills": "./src/default-skills.ts",
+    "./workflow-push": "./src/workflow-push.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -35,10 +39,11 @@
     "@corbits/error-sink": "workspace:*",
     "@corbits/github-tools": "workspace:*",
     "@corbits/hub-api-client": "workspace:*",
+    "@corbits/inference-catalog": "workspace:*",
     "@corbits/inference-settings": "workspace:*",
     "@corbits/mcp-tools": "workspace:*",
     "@corbits/oauth-core": "github:corbitsdev/corbits-oauth-core#v0.1.1",
-    "@corbits/seeding": "workspace:*",
+    "@corbits/workflows": "workspace:*",
     "@intx/crypto": "0.3.0",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",

@@ -208,7 +208,6 @@ packages/sandbox-sidecar/src/provisioner.ts	1	return rejected(...classify(error,
 packages/sandbox-sidecar/src/provisioner.ts	1	return rejected(...classify(error, "start_unit_failed"));
 packages/scout-agent/src/artifact-tool.ts	1	return {
 packages/scout-agent/src/artifact-tool.ts	2	return {
-packages/seeding/src/workflow-push.ts	1	existing = null;
 packages/settings-ui/src/account-section.tsx	1	toast(SETTINGS_STRINGS.accountEmailCopyError);
 packages/skills-tools/src/tool.ts	1	return errorResult(call.id, err);
 packages/skills-tools/src/tool.ts	2	return errorResult(call.id, err);

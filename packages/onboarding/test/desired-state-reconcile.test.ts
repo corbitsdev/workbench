@@ -6,7 +6,8 @@
 import { describe, expect, test } from "bun:test";
 import type { ApiCall } from "@corbits/hub-api-client";
 import { SidecarUnavailableError } from "@corbits/hub-api-client";
-import type { ModelSource, WorkflowPusher } from "@corbits/seeding";
+import type { ModelSource } from "../src/tenant-seed";
+import type { WorkflowPusher } from "@corbits/connections/workflow-push";
 import { installRegistryTarball } from "@corbits/tool-registry-publish";
 import {
   reconcileTenantDesiredState,

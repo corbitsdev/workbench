@@ -10,7 +10,7 @@
 import { describe, expect, test } from "bun:test";
 import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import type { CredentialCipher } from "@intx/types";
-import { DEFAULT_WORKFLOWS } from "@corbits/seeding";
+import { DEFAULT_WORKFLOWS } from "../src/tenant-seed";
 import {
   createBenchProvisioner,
   type BenchProvisionerDeps,

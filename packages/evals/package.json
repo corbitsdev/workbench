@@ -29,7 +29,7 @@
     "@modelcontextprotocol/sdk": "catalog:",
     "@corbits/connections": "workspace:*",
     "@corbits/hub-api-client": "workspace:*",
-    "@corbits/seeding": "workspace:*",
+    "@corbits/workflows": "workspace:*",
     "@workbench/onboarding": "workspace:*",
     "arktype": "catalog:",
     "drizzle-orm": "catalog:",

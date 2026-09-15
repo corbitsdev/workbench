@@ -17,11 +17,9 @@ import {
   supportedCredentialProviders,
   type SupportedCredentialProvider,
 } from "@corbits/connections/credential-test";
-import {
-  inferenceCredentialName,
-  SETUP_AGENT_ASSET_NAME,
-  type WorkflowPusher,
-} from "@corbits/seeding";
+import { inferenceCredentialName } from "@corbits/connections/seed-catalog";
+import { SETUP_AGENT_ASSET_NAME } from "./tenant-seed";
+import type { WorkflowPusher } from "@corbits/connections/workflow-push";
 import {
   cookiesFromHeader,
   createHubAPI,

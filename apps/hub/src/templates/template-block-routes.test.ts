@@ -2,6 +2,17 @@
 // `buildBlockWorkflowSource` builder, mounted the same way
 // `./connect-github-routes.test.ts` mounts its routes: a bare `Hono`
 // with a tenant-injecting middleware, every port a plain fake.
+//
+// GAP PINS (CL-7585): the per-workflow `buildJson` closures died with
+// the seeding package and have no native home yet, so the builder
+// answers `undefined` for every asset name and each formerly-deployable
+// block 404s below. These tests pin that gap in the open — no silent
+// no-op, no fake deploy. When the follow-up lane lands the builders'
+// new home, the 404s become deploys again and these pins flip back to
+// the deploy assertions. Dropped until then: the already-deployed 200
+// (no deployable name can reach the deploy port) and the failing-deploy
+// 500 (the route's catch branch is dead while no builder returns a
+// real source).
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
@@ -72,46 +83,22 @@ function buildApp(overrides: Partial<TemplateBlockRoutesDeps> = {}) {
 }
 
 describe("POST /:assetName/deploy", () => {
-  test("deploys the code-review block as a source-form definition carrying the github tool pin", async () => {
+  test("every formerly-deployable block answers 404 while the builders have no home, deploying nothing", async () => {
     const { app, deployed } = buildApp();
-    const res = await app.request("/code-review/deploy", { method: "POST" });
-    expect(res.status).toBe(201);
-    expect(await res.json()).toEqual({ id: "wfd_code_review", created: true });
-
-    expect(deployed).toHaveLength(1);
-    const source = deployed[0];
-    if (source === undefined) throw new Error("nothing deployed");
-    expect(source.tenantId).toBe(TENANT.id);
-    expect(source.principalId).toBe(PRINCIPAL.id);
-    expect(source.assetName).toBe("code-review");
-    expect(source.displayName).toBe("Code review");
-
-    const definition = JSON.parse(source.workflowJson) as {
-      triggers: { type: string; to: string }[];
-      steps: Record<
-        string,
-        { agent: { toolPackagePins?: { name: string }[] } }
-      >;
-    };
-    expect(definition.triggers).toEqual([
-      { type: "mail", to: "code-review@acme.example" },
-    ]);
-    const pins = Object.values(definition.steps).flatMap(
-      (step) => step.agent.toolPackagePins ?? [],
-    );
-    expect(pins.map((pin) => pin.name)).toContain("@corbits/github-tools");
-  });
-
-  test("an already-deployed block answers 200 with created: false", async () => {
-    const { app } = buildApp({
-      deployWorkflowSource: async () => ({
-        id: "wfd_existing",
-        created: false,
-      }),
-    });
-    const res = await app.request("/code-review/deploy", { method: "POST" });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ id: "wfd_existing", created: false });
+    for (const assetName of [
+      "code-review",
+      "exa-topic-watch",
+      "last-30-days-research",
+      "granola-call",
+    ]) {
+      const res = await app.request(`/${assetName}/deploy`, {
+        method: "POST",
+      });
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { error?: { code?: string } };
+      expect(body.error?.code).toBe("not_found");
+    }
+    expect(deployed).toHaveLength(0);
   });
 
   test("an asset name no block builder covers answers 404, deploying nothing", async () => {
@@ -121,24 +108,6 @@ describe("POST /:assetName/deploy", () => {
     });
     expect(res.status).toBe(404);
     expect(deployed).toHaveLength(0);
-  });
-
-  test("the GTM template's first block (exa-topic-watch) deploys through the route now that it is registered (CL-7073)", async () => {
-    const { app, deployed } = buildApp();
-    const res = await app.request("/exa-topic-watch/deploy", {
-      method: "POST",
-    });
-    expect(res.status).toBe(201);
-    expect(deployed).toHaveLength(1);
-    const source = deployed[0];
-    if (source === undefined) throw new Error("nothing deployed");
-    expect(source.assetName).toBe("exa-topic-watch");
-    const definition = JSON.parse(source.workflowJson) as {
-      triggers: { type: string; to: string }[];
-    };
-    expect(definition.triggers).toEqual([
-      { type: "mail", to: "exa-topic-watch@acme.example" },
-    ]);
   });
 
   test("a denied grant answers a 403 envelope with a refId, deploying nothing", async () => {
@@ -164,24 +133,6 @@ describe("POST /:assetName/deploy", () => {
     expect(deployed).toHaveLength(0);
   });
 
-  test("deploys any on-demand catalog workflow, not just code-review (CL-7073)", async () => {
-    const { app, deployed } = buildApp();
-    const res = await app.request("/last-30-days-research/deploy", {
-      method: "POST",
-    });
-    expect(res.status).toBe(201);
-    expect(deployed).toHaveLength(1);
-    const source = deployed[0];
-    if (source === undefined) throw new Error("nothing deployed");
-    expect(source.assetName).toBe("last-30-days-research");
-    const definition = JSON.parse(source.workflowJson) as {
-      triggers: { type: string; to: string }[];
-    };
-    expect(definition.triggers).toEqual([
-      { type: "mail", to: "last-30-days-research@acme.example" },
-    ]);
-  });
-
   test("assistant is seeded, never deployed through this route", async () => {
     const { app, deployed } = buildApp();
     const res = await app.request("/assistant/deploy", { method: "POST" });
@@ -194,25 +145,5 @@ describe("POST /:assetName/deploy", () => {
     const res = await app.request("/heartbeat/deploy", { method: "POST" });
     expect(res.status).toBe(404);
     expect(deployed).toHaveLength(0);
-  });
-
-  test("a credential-bound catalog workflow deploys the same way a credential-free one does", async () => {
-    const { app, deployed } = buildApp();
-    const res = await app.request("/granola-call/deploy", { method: "POST" });
-    expect(res.status).toBe(201);
-    expect(deployed).toHaveLength(1);
-    expect(deployed[0]?.assetName).toBe("granola-call");
-  });
-
-  test("a failing deploy port answers a 500 envelope, never a raw error", async () => {
-    const { app } = buildApp({
-      deployWorkflowSource: async () => {
-        throw new Error("disk full");
-      },
-    });
-    const res = await app.request("/code-review/deploy", { method: "POST" });
-    expect(res.status).toBe(500);
-    const body = (await res.json()) as { error?: { userMessage?: string } };
-    expect(JSON.stringify(body)).not.toContain("disk full");
   });
 });

@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import type { WorkflowPusher } from "@corbits/seeding";
-import { CATALOG_SEEDS, SETUP_AGENT_ASSET_NAME } from "@corbits/seeding";
-import { type ApiCall, SidecarUnavailableError } from "@corbits/hub-api-client";
-import { pristineScheduledDefinitionHandshake } from "../../seeding/test/helpers";
+import type { WorkflowPusher } from "@corbits/connections/workflow-push";
+import { CATALOG_SEEDS } from "@corbits/connections/catalog-seed-data";
+import { SETUP_AGENT_ASSET_NAME } from "../src/tenant-seed";
+import {
+  type ApiCall,
+  type ApiResult,
+  SidecarUnavailableError,
+} from "@corbits/hub-api-client";
 import {
   completeCredentialSetup,
   ensureSeeded,
@@ -54,14 +58,59 @@ function collector() {
   return { lines, log: (line: string) => lines.push(line) };
 }
 
-function seedHandshake(method: string, path: string) {
-  const handshake = pristineScheduledDefinitionHandshake(
-    method,
-    path,
-    TENANT_ID,
-  );
-  if (handshake === undefined) return undefined;
-  return { ...handshake, cookies: [] };
+// Local copy of the single handshake fixture this suite needs (inlined
+// when the shared test helpers were deleted with CL-7585): a "pristine"
+// scheduled assistant deployment whose definition handshake reports zero
+// revisions and zero chat history.
+const PRISTINE_TIMESTAMP = "2026-01-01T00:00:00.000Z";
+const PRISTINE_DIGEST_DEFINITION_ID = "wfd_digests-pristine";
+
+function pristineScheduledDefinitionHandshake(
+  method: string,
+  path: string,
+  tenantId: string,
+): ApiResult | undefined {
+  const definitionMatch = /^\/v1\/definitions\/([^/]+)$/.exec(path);
+  if (definitionMatch && method === "GET") {
+    return {
+      status: 200,
+      data: {
+        digest: {
+          definitionId: PRISTINE_DIGEST_DEFINITION_ID,
+          revision: 0,
+          historyCount: 0,
+          mailboxCount: 0,
+          chatCount: 0,
+        },
+      },
+      cookies: [],
+    };
+  }
+  const deploymentMatch = /^\/v1\/deployments\/([^/]+)$/.exec(path);
+  if (deploymentMatch && method === "GET") {
+    return {
+      status: 200,
+      data: {
+        deployment: {
+          id: deploymentMatch[1],
+          tenantId,
+          kind: "scheduled",
+          workerId: null,
+          processId: null,
+          definitionId: PRISTINE_DIGEST_DEFINITION_ID,
+          channelKeys: [],
+          createdAt: PRISTINE_TIMESTAMP,
+          updatedAt: PRISTINE_TIMESTAMP,
+        },
+      },
+      cookies: [],
+    };
+  }
+  return undefined;
+}
+
+function seedHandshake(method: string, path: string): ApiResult | undefined {
+  return pristineScheduledDefinitionHandshake(method, path, TENANT_ID);
 }
 
 // `ensureDeployment` resolves a real (non-noop-pinned) workflow's deploy

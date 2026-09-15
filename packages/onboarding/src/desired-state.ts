@@ -4,7 +4,7 @@
 // existing single-source constants (`DEFAULT_WORKFLOWS`,
 // `REQUIRED_SEED_TOOL_PACKAGES`, `DEFAULT_SKILLS`). It is not a hub
 // table, not a migration, and never seeded from hub boot: adding a core
-// workflow later is an edit to `@corbits/seeding`'s constants, which
+// workflow later is an edit to `./tenant-seed`'s constants, which
 // this document mirrors, nothing more.
 //
 // `reconcileTenantDesiredState` is the one installer: it reads the
@@ -23,22 +23,24 @@ import {
   TenantResponse,
   paginatedSchema,
 } from "@intx/types";
+import { DEFAULT_SKILLS } from "@corbits/connections/default-skills";
 import {
-  DEFAULT_SKILLS,
   DEFAULT_WORKFLOWS,
-  fetchRegistryTarballSource,
-  installRegistryTarball,
-  isCorbitsToolsRegistrySeeded,
   isLiveDeploymentStatus,
-  publishCorbitsToolsRegistry,
-  REQUIRED_SEED_TOOL_PACKAGES,
   seedTenant,
   type DefaultWorkflow,
   type ModelSource,
   type SeedTenantArgs,
   type ToolRegistryPublisher,
-  type WorkflowPusher,
-} from "@corbits/seeding";
+} from "./tenant-seed";
+import {
+  fetchRegistryTarballSource,
+  installRegistryTarball,
+  isCorbitsToolsRegistrySeeded,
+  publishCorbitsToolsRegistry,
+  REQUIRED_SEED_TOOL_PACKAGES,
+} from "@corbits/tool-registry-publish";
+import type { WorkflowPusher } from "@corbits/connections/workflow-push";
 import { reportError } from "@corbits/error-sink";
 import {
   isSidecarUnavailableError,

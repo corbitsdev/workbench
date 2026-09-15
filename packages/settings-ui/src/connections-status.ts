@@ -14,7 +14,7 @@ export type ConnectorStatusResult =
 /**
  * The backend names a connector's provider row after the connector's
  * lowercase `id` (see `packages/connections/src/routes.ts`'s and
- * `@corbits/seeding`'s `seed.ts`'s own `ensureProvider` calls,
+ * `packages/connections/src/seed-catalog.ts`'s own `ensureProvider` calls,
  * both of which pass `descriptor.id`/`seed.provider.name`, never a
  * display label) — matching on that id is how a card finds its provider
  * without a new list route. `displayName` is UI-only and never reaches

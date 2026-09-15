@@ -16,7 +16,7 @@
 
 import { beforeAll, describe, expect, test } from "bun:test";
 
-import { seedCatalog } from "../../packages/seeding/src/index.ts";
+import { seedCatalog } from "../../packages/connections/src/seed-catalog.ts";
 import {
   createHubAPI,
   type ApiCall,

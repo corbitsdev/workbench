@@ -13,7 +13,7 @@ import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import type { RequireGrant, TenantEnv } from "@intx/hub-api";
-import type { EnsureCredentialArgs } from "@corbits/seeding";
+import type { EnsureCredentialArgs } from "./seed-catalog";
 import type { ApiCall } from "@corbits/hub-api-client";
 import { persistConnectorCredential } from "@corbits/connections";
 import type { ConnectorDescriptor } from "@corbits/connections/registry";

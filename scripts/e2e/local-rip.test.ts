@@ -57,13 +57,13 @@
 import { describe, expect, test } from "bun:test";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
+import { createGitWorkflowPusher } from "../../packages/connections/src/workflow-push.ts";
 import {
   CATALOG_WORKFLOWS,
-  createGitWorkflowPusher,
   DEFAULT_WORKFLOWS,
   isLiveDeploymentStatus,
   seedTenant,
-} from "../../packages/seeding/src/index.ts";
+} from "../../packages/onboarding/src/tenant-seed.ts";
 import { runPublishTools } from "../publish-tools.ts";
 import {
   createHubAPI,

@@ -34,8 +34,8 @@ test("a seeded Ollama model's quirks.numCtx reaches the built request as options
     provider: "ollama",
     model: "gpt-oss:20b",
   };
-  // Shaped exactly like `@corbits/seeding`'s seed writes onto a
-  // catalog offering's `quirks` column (`quirksForDeployment`).
+  // Shaped exactly like `@corbits/inference-catalog`'s
+  // `quirksForDeployment` writes onto a catalog offering's `quirks` column.
   const quirks = { default: { numCtx: 32_768 } };
   const adapter = registry.resolve(source, quirks);
 

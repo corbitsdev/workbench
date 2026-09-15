@@ -30,7 +30,8 @@
 // module stays out of the auth mechanism entirely.
 
 import { reportError } from "@corbits/error-sink";
-import type { ModelSource, WorkflowPusher } from "@corbits/seeding";
+import type { ModelSource } from "./tenant-seed";
+import type { WorkflowPusher } from "@corbits/connections/workflow-push";
 import { type ApiCall } from "@corbits/hub-api-client";
 import {
   reconcileTenantDesiredState,

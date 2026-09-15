@@ -1,6 +1,6 @@
 // Declarative dev catalog seed data — pure data, no HTTP. Mirrors
 // Interchange's own bin/lib/catalog-seed-data.ts idiom: a plain data
-// module `seedCatalog` (see seed.ts) drives through the catalog HTTP
+// module `seedCatalog` (see seed-catalog.ts) drives through the catalog HTTP
 // API, kept importable on its own so nothing here ever grows a network
 // dependency.
 //
@@ -281,50 +281,3 @@ export const CATALOG_SEEDS: Readonly<
     ],
   },
 };
-
-/** A single provider/model pair, structurally the shape a workbench-host
- * launch's `inference.sources` list carries (`InferencePreference` in
- * `@intx/agent`) — named locally rather than imported so this package,
- * which never launches agents itself, does not need `@intx/agent` as a
- * dependency. */
-export type WorkbenchHostInferencePreference = {
-  readonly provider: string;
-  readonly model: string;
-};
-
-/**
- * Orders a bench's connected providers into a workbench-host inference
- * preference list, each entry naming that provider's curated default
- * model (`CATALOG_SEEDS`' first model — the same one onboarding hands a
- * freshly connected provider). The list follows `CATALOG_SEEDS`'
- * declared order, which lists anthropic first; since a connected
- * provider can only appear if `connectedProviders` names it, this
- * naturally keeps anthropic at the head whenever it is one of the
- * connected providers, with no special-casing required here.
- *
- * A name absent from `CATALOG_SEEDS` (nothing this catalog seeds, or a
- * typo) is silently dropped rather than guessed at — only providers
- * this catalog actually curates models for can head a preference list.
- * `connectedProviders` with nothing recognized yields an empty list,
- * which is the honest result: the workbench-host launch path already
- * treats an empty preference list as a loud failure rather than a
- * silent dead host.
- */
-export function deriveWorkbenchHostInferencePreferences(
-  connectedProviders: readonly string[],
-): WorkbenchHostInferencePreference[] {
-  const connected = new Set(connectedProviders);
-  const preferences: WorkbenchHostInferencePreference[] = [];
-  for (const providerName of Object.keys(
-    CATALOG_SEEDS,
-  ) as SupportedCredentialProvider[]) {
-    if (!connected.has(providerName)) continue;
-    const defaultModel = CATALOG_SEEDS[providerName].models[0];
-    if (defaultModel === undefined) continue;
-    preferences.push({
-      provider: providerName,
-      model: defaultModel.canonicalName,
-    });
-  }
-  return preferences;
-}

@@ -7,7 +7,7 @@ import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { AppEnv } from "@intx/hub-api";
 import type { ApiCall } from "@corbits/hub-api-client";
-import type { WorkflowPusher } from "@corbits/seeding";
+import type { WorkflowPusher } from "../src/git-workflow-push";
 import type {
   ReconcileReport,
   reconcileTenantDesiredState,
