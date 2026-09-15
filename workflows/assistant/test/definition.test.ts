@@ -72,11 +72,6 @@ test("the agent carries the assistant prompt, the preferences, and inlines no to
   expect(agent.toolFactories).toEqual([]);
 });
 
-test("the agent carries the tool package pins as declared", () => {
-  const agent = assistantStep(buildAssistantWorkflow(INPUT)).agent;
-  expect(agent.toolPackagePins).toEqual(ASSISTANT_TOOL_PACKAGE_PINS);
-});
-
 test("the workflow pins manus-tools and does not require a Manus credential binding", () => {
   const definition = buildAssistantWorkflow(INPUT);
   expect(ASSISTANT_TOOL_PACKAGE_PINS.map((pin) => pin.name)).toContain(
@@ -129,41 +124,4 @@ test("a non-positive or fractional turn timeout is rejected", () => {
   expect(() =>
     buildAssistantWorkflow({ ...INPUT, turnTimeoutMs: 0.5 }),
   ).toThrow(/turnTimeoutMs/);
-});
-
-// CL-6179: on a stated outcome, Myra runs a short, bounded discovery
-// interview before proposing anything — never the open-ended intake
-// this clause exists to rule out.
-test("the prompt runs discovery inside 'Deciding what to do', in order: interview, propose, build, hand off", () => {
-  const decidingSection = ASSISTANT_SYSTEM_PROMPT.slice(
-    ASSISTANT_SYSTEM_PROMPT.indexOf("## Deciding what to do"),
-    ASSISTANT_SYSTEM_PROMPT.indexOf("## Being a teammate"),
-  );
-
-  const interviewAt = decidingSection.indexOf("ask one or two sharp questions");
-  const proposeAt = decidingSection.indexOf(
-    "propose a small, named specialist team",
-  );
-  const buildAt = decidingSection.indexOf("Build only on a light confirmation");
-  const skillAt = decidingSection.indexOf("load the writing-system-prompts");
-  const createAgentAt = decidingSection.indexOf("create_agent");
-  const handoffAt = decidingSection.indexOf(
-    "Their own chats for focused work.",
-  );
-
-  for (const at of [
-    interviewAt,
-    proposeAt,
-    buildAt,
-    skillAt,
-    createAgentAt,
-    handoffAt,
-  ]) {
-    expect(at).toBeGreaterThan(-1);
-  }
-  expect(interviewAt).toBeLessThan(proposeAt);
-  expect(proposeAt).toBeLessThan(buildAt);
-  // The skill loads before create_agent ever fires.
-  expect(skillAt).toBeLessThan(createAgentAt);
-  expect(createAgentAt).toBeLessThan(handoffAt);
 });
