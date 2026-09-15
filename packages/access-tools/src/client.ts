@@ -102,7 +102,7 @@ const ListedPrincipalsResponse = type({
 const ListedGrantsResponse = type({
   data: type({
     id: "string",
-    "principalId?": "string | null",
+    principalId: "string | null",
     resource: "string",
     action: "string",
     effect: "'allow' | 'deny' | 'ask'",
@@ -112,7 +112,7 @@ const ListedGrantsResponse = type({
 
 const CreatedGrantResponse = type({
   id: "string",
-  "principalId?": "string | null",
+  principalId: "string | null",
   resource: "string",
   action: "string",
   effect: "'allow' | 'deny' | 'ask'",
