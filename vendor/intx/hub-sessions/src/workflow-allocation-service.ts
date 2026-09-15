@@ -170,6 +170,24 @@ function parseDestroyResult(value: unknown): DestroySidecarResult {
   return result;
 }
 
+/**
+ * Narrow the launch spec's persisted deploy content back to the deploy shape.
+ * The prepare path persisted a `DeployContent`; only the prompt rides forward
+ * (per-step manifests resolve fresh from pins at deploy time), so anything
+ * without a string prompt fails closed rather than staging a prompt-less tree.
+ */
+function preparedDeployContent(
+  value: Record<string, unknown>,
+): DeployContent {
+  const systemPrompt = value["systemPrompt"];
+  if (typeof systemPrompt !== "string") {
+    throw new Error(
+      "prepared deploy: launch spec deployContent has no string systemPrompt; refusing to stage step trees without a prompt",
+    );
+  }
+  return { systemPrompt };
+}
+
 function createProvisionedHarnessConfig(args: {
   readonly tenantId: string;
   readonly anchorRunId: string;
@@ -748,6 +766,13 @@ export function createWorkflowAllocationService({
       source: bundle.source,
       approved,
       config,
+      deployContent: preparedDeployContent(spec.deployContent),
+      // Pins rehydrated from the frozen launch spec. Undefined (or empty)
+      // skips the tool-package resolver: no manifest is staged and the
+      // child materializes empty step tools rather than the pinned closure.
+      ...(spec.toolPackagePins !== null
+        ? { toolPackagePins: spec.toolPackagePins }
+        : {}),
       allocationTarget,
       credentialCipher,
     });
