@@ -103,7 +103,11 @@ describe("chat.message SSE event mail headers (CL-7448)", () => {
       workbenchId: WORKBENCH_ID,
       updatedBy: SENDER,
       settings: {
-        "chat/participants": participantsOf(SENDER, OTHER_HUMANS, AGENT_ADDRESS),
+        "chat/participants": participantsOf(
+          SENDER,
+          OTHER_HUMANS,
+          AGENT_ADDRESS,
+        ),
       },
     });
 
@@ -133,7 +137,11 @@ describe("chat.message SSE event mail headers (CL-7448)", () => {
       workbenchId: WORKBENCH_ID,
       updatedBy: SENDER,
       settings: {
-        "chat/participants": participantsOf(SENDER, OTHER_HUMANS, AGENT_ADDRESS),
+        "chat/participants": participantsOf(
+          SENDER,
+          OTHER_HUMANS,
+          AGENT_ADDRESS,
+        ),
       },
     });
 

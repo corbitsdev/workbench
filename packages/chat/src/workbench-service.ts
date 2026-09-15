@@ -59,6 +59,7 @@ import {
   postRoomMessage,
   insertRoomMessageRow,
   publishRoomMessageEvent,
+  type PublishedMailHeaders,
   type RoomMessageStore,
 } from "./room-messages";
 import { mailMessageIdFor, mailThreadHeaders } from "./mail-headers";
@@ -1537,9 +1538,10 @@ export async function sendWorkbenchMessage(
   });
 
   const mailboxDeps = deps.mailbox;
+  let mail: PublishedMailHeaders | undefined;
   if (mailboxDeps !== undefined) {
     try {
-      await mailboxFanOutForSend(deps, mailboxDeps, input, posted.id);
+      mail = await mailboxFanOutForSend(deps, mailboxDeps, input, posted.id);
     } catch (err) {
       await deps.roomMessages.deleteMessage({
         tenantId: input.tenantId,
@@ -1550,7 +1552,7 @@ export async function sendWorkbenchMessage(
     }
   }
 
-  publishRoomMessageEvent(deps, posted);
+  publishRoomMessageEvent(deps, posted, mail);
 
   return {
     id: posted.id,
@@ -1576,13 +1578,17 @@ export async function sendWorkbenchMessage(
  * sender's `input.senderAddress` carries their OWN tenant's domain, which
  * would otherwise stamp a row living in the owner tenant with a
  * Message-ID nobody else's mail agrees is addressed under.
+ *
+ * Returns the stamped mail identity — the row's own Message-ID plus the
+ * threading headers when the row answers a thread — so the send's own
+ * `chat.message` publish names the same thread the mail went out as.
  */
 async function mailboxFanOutForSend(
   deps: SendWorkbenchMessageDeps,
   mailboxDeps: MailboxFanoutDeps,
   input: SendWorkbenchMessageInput,
   messageId: string,
-): Promise<void> {
+): Promise<PublishedMailHeaders> {
   const domain = await mailboxDeps.resolveTenantDomain(input.tenantId);
   const mailMessageId = mailMessageIdFor(messageId, domain);
   await deps.roomMessages.stampMailMessageId({
@@ -1629,6 +1635,12 @@ async function mailboxFanOutForSend(
     ...(inReplyTo !== undefined ? { inReplyTo } : {}),
     ...(references.length > 0 ? { references } : {}),
   });
+
+  return {
+    messageId: mailMessageId,
+    ...(inReplyTo !== undefined ? { inReplyTo } : {}),
+    ...(references.length > 0 ? { references } : {}),
+  };
 }
 
 /**

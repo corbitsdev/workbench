@@ -300,19 +300,44 @@ export async function insertRoomMessageRow(
   });
 }
 
+/**
+ * The mail identity a published `chat.message` names when its row was
+ * actually mailed: the row's own Message-ID, plus the threading headers
+ * when the row answers a thread. The human send path returns exactly
+ * this from its mailbox fan-out (`./workbench-service.ts`).
+ */
+export interface PublishedMailHeaders {
+  readonly messageId: string;
+  readonly inReplyTo?: string;
+  readonly references?: readonly string[];
+}
+
 /** The publish half of `postRoomMessage`, for a row `insertRoomMessageRow`
- * already stored. */
+ * already stored. `mail` is the row's own mail identity when it was
+ * actually mailed — Message-ID always, threading headers when the row
+ * answers a thread — so the event names the same thread the mail went
+ * out as. Absent, the event carries the row's stamp when it has one and
+ * no headers otherwise: a row nobody mailed is never given headers it
+ * did not go out with. */
 export function publishRoomMessageEvent(
   deps: { readonly publish: WorkbenchSubscriberRegistry["publish"] },
   message: RoomMessage,
+  mail?: PublishedMailHeaders,
 ): void {
+  const messageId = mail?.messageId ?? message.mailMessageId ?? undefined;
   const data = ChatMessageEventData.assert({
     id: message.id,
     workbenchId: message.workbenchId,
+    ref: { kind: "workbench" as const, id: message.workbenchId },
     createdAt: message.createdAt,
     threadId: message.threadId,
     sender: message.sender,
     parts: message.parts,
+    ...(messageId !== undefined ? { messageId } : {}),
+    ...(mail?.inReplyTo !== undefined ? { inReplyTo: mail.inReplyTo } : {}),
+    ...(mail?.references !== undefined && mail.references.length > 0
+      ? { references: [...mail.references] }
+      : {}),
   });
   deps.publish(message.workbenchId, { type: "chat.message", data });
 }
