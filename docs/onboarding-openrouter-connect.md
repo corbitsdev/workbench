@@ -61,7 +61,7 @@ at `/api/onboarding`); the wizard only navigates.
    second, for a connection that had actually succeeded. The callback
    now returns as soon as the key is proven and stored — see
    `complete-credential.ts`'s module comment for the fast/slow split,
-   and `ensureSeeded` for the deploy step's new home.
+   and the desired-state reconcile for the deploy step.
 5. **Nothing rides forward — the credential row is the handoff.**
    Credential secrets are write-only through the hub's own API, so
    nothing needs to re-fetch the key once this request ends. The

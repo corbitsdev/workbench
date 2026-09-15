@@ -3374,8 +3374,9 @@ export async function createHub(config: HubConfig) {
   // package's provision.ts.
   // Connecting a provider deploys nothing by itself (CL-6457): the
   // onboarding routes persist the credential and kick the desired-state
-  // reconcile below, which converges every bench — including one a
-  // previous process died halfway through, since the reconcile re-reads
+  // reconcile below, which converges the bench on the next kick (tenant
+  // create, connect, revisit probe) — including one a previous process
+  // died halfway through, since the reconcile re-reads
   // the pins on every kick rather than consuming a durable work item.
   // (CL-7586 removed the pending-seed drain that used to do this.)
 
