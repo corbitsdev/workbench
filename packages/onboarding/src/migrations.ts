@@ -1,4 +1,4 @@
-// Package-owned migrations for @corbits/onboarding. Bookkeeping uses
+// Package-owned migrations for @workbench/onboarding. Bookkeeping uses
 // its own ledger table so the package can be extracted without
 // disentangling history from the platform drizzle journal. Every table
 // this package owns — including its ledger — lives in its own

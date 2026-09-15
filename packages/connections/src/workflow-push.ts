@@ -148,8 +148,11 @@ export function createGitWorkflowPusher(): WorkflowPusher {
         let existing: string | null = null;
         try {
           existing = await readFile(target, "utf-8");
-        } catch (_cause) {
-          // report-error-ignore: a missing file means "changed", not an error — nothing to report.
+        } catch (cause) {
+          // A missing file is the normal case (a new tree entry); any
+          // other read failure is rethrown — failing the push loudly
+          // rather than silently pushing a tree never fully read.
+          if ((cause as { code?: string })?.code !== "ENOENT") throw cause;
           existing = null;
         }
         if (existing === contents) continue;

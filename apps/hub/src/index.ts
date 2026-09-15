@@ -279,27 +279,20 @@ import {
   type PresenceRoomKey,
 } from "@corbits/presence";
 import { supportedCredentialProviders } from "@corbits/connections/credential-test";
-import { createGitWorkflowPusher } from "./git-workflow-push";
-// The workflows the hub boot-converges natively, in push order (CL-7585):
-// the product's three scheduled automatables first (the order the old
-// seeding package's catalog used), then its two conversational agents.
-// No seeding package anymore — boot owns this list directly, and the
-// Routines picker admits a tenant's installed asset only when the same
-// installed-asset registry says so (see `installedAssetNames` on the
-// scheduled routes' catalog below).
-const HUB_BOOT_WORKFLOW_ASSET_NAMES = [
-  "heartbeat",
-  "morning-brief",
-  "weekly-review",
-  "concierge",
-  "librarian",
-] as const;
+import { createGitWorkflowPusher } from "@corbits/connections/workflow-push";
 import { createHubAPI } from "@corbits/hub-api-client";
 import {
   createDrizzlePendingSeedStore,
   createBenchProvisioner,
   createOnboardingRoutes,
 } from "@workbench/onboarding";
+// The deployable-through-the-catalog-instantiate-route set, by asset
+// name (CL-7585): `@workbench/onboarding`'s `tenant-seed`
+// `CATALOG_WORKFLOWS`, strings only — the Routines picker admits a
+// tenant's installed asset only when the same installed-asset registry
+// says so (see `installedAssetNames` on the scheduled routes' catalog
+// below).
+import { CATALOG_WORKFLOW_ASSET_NAMES } from "@workbench/onboarding/tenant-seed";
 import {
   createConnectionRoutes,
   isInferenceProvider,
@@ -2067,7 +2060,7 @@ export async function createHub(config: HubConfig) {
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
       }),
-      catalogAssetNames: [...HUB_BOOT_WORKFLOW_ASSET_NAMES],
+      catalogAssetNames: [...CATALOG_WORKFLOW_ASSET_NAMES],
       runNow: async (args) =>
         runNowScheduledDefinition(
           { db, sidecarRouter, ...scheduledDeliveryJoinDeps },

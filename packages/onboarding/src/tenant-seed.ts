@@ -475,6 +475,16 @@ export const CATALOG_WORKFLOWS: readonly DefaultWorkflow[] = [
 ];
 
 /**
+ * The asset names of `CATALOG_WORKFLOWS`, strings only (CL-7585): callers
+ * that name the catalog set without building anything from it (the hub's
+ * scheduled-routes catalog, the Routines Available list) import this
+ * rather than `CATALOG_WORKFLOWS` itself, so no per-workflow `buildJson`
+ * closure crosses into their code.
+ */
+export const CATALOG_WORKFLOW_ASSET_NAMES: readonly string[] =
+  CATALOG_WORKFLOWS.map((workflow) => workflow.assetName);
+
+/**
  * The deployable-through-the-catalog-instantiate-route entry for one
  * asset name (CL-7073), or `undefined` if none exists. `CATALOG_WORKFLOWS`
  * is the one source of truth for "has a source package under

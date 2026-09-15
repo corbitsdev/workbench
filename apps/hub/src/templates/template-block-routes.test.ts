@@ -3,16 +3,16 @@
 // `./connect-github-routes.test.ts` mounts its routes: a bare `Hono`
 // with a tenant-injecting middleware, every port a plain fake.
 //
-// GAP PINS (CL-7585): the per-workflow `buildJson` closures died with
-// the seeding package and have no native home yet, so the builder
-// answers `undefined` for every asset name and each formerly-deployable
-// block 404s below. These tests pin that gap in the open — no silent
-// no-op, no fake deploy. When the follow-up lane lands the builders'
-// new home, the 404s become deploys again and these pins flip back to
-// the deploy assertions. Dropped until then: the already-deployed 200
-// (no deployable name can reach the deploy port) and the failing-deploy
-// 500 (the route's catch branch is dead while no builder returns a
-// real source).
+// WIRING PINS (CL-7585): the per-workflow `buildJson` closures live on
+// `@workbench/onboarding`'s tenant-seed `CATALOG_WORKFLOWS` entries and
+// `buildBlockWorkflowSource` wires them through
+// `deployableCatalogWorkflow`, so every catalog workflow deploys below
+// with its real rendered definition — no silent no-op, no fake deploy.
+// These tests pin that wiring in the open: the trigger address stamped
+// into each deployed definition proves the real builder ran against the
+// requesting tenant's domain. Dropped: nothing — the already-deployed
+// 200 (the port reports `created: false`) and the failing-deploy 500
+// (the route's catch branch) both run again.
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
@@ -83,7 +83,7 @@ function buildApp(overrides: Partial<TemplateBlockRoutesDeps> = {}) {
 }
 
 describe("POST /:assetName/deploy", () => {
-  test("every formerly-deployable block answers 404 while the builders have no home, deploying nothing", async () => {
+  test("every catalog workflow deploys its real rendered definition", async () => {
     const { app, deployed } = buildApp();
     for (const assetName of [
       "code-review",
@@ -94,10 +94,57 @@ describe("POST /:assetName/deploy", () => {
       const res = await app.request(`/${assetName}/deploy`, {
         method: "POST",
       });
-      expect(res.status).toBe(404);
-      const body = (await res.json()) as { error?: { code?: string } };
-      expect(body.error?.code).toBe("not_found");
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { id: string; created: boolean };
+      expect(body.created).toBe(true);
+      expect(typeof body.id).toBe("string");
     }
+    expect(deployed).toHaveLength(4);
+    for (const args of deployed) {
+      // A real rendered definition for THIS workflow: it parses, it
+      // has steps to launch, and it names its own asset. (Not every
+      // entry is mail-triggered, so the name — not a trigger address
+      // — is the per-workflow pin.)
+      expect(args.tenantId).toBe(TENANT.id);
+      expect(args.principalId).toBe(PRINCIPAL.id);
+      const parsed = JSON.parse(args.workflowJson) as {
+        stepOrder?: readonly string[];
+      };
+      expect(parsed.stepOrder?.length).toBeGreaterThan(0);
+      expect(args.workflowJson).toContain(args.assetName);
+    }
+    // code-review is mail-triggered: its builder stamps the requesting
+    // tenant's trigger address in, proving the tenant's domain reaches
+    // the real catalog builder (first deploy in the loop above).
+    expect(deployed[0]?.workflowJson).toContain("code-review@acme.example");
+  });
+
+  test("an already-deployed definition answers 200 without redeploying", async () => {
+    const { app, deployed } = buildApp({
+      deployWorkflowSource: async (args) => {
+        deployed.push(args);
+        return { id: "wfd_code_review", created: false };
+      },
+    });
+    const res = await app.request("/code-review/deploy", { method: "POST" });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { id: string; created: boolean };
+    expect(body).toEqual({ id: "wfd_code_review", created: false });
+    expect(deployed).toHaveLength(1);
+  });
+
+  test("a failing deploy answers a 500 envelope, deploying nothing more", async () => {
+    const { app, deployed } = buildApp({
+      deployWorkflowSource: async () => {
+        throw new Error("asset store is down");
+      },
+    });
+    const res = await app.request("/code-review/deploy", { method: "POST" });
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as {
+      error: { code: string; userMessage: string };
+    };
+    expect(body.error.code).toBe("deploy_failed");
     expect(deployed).toHaveLength(0);
   });
 

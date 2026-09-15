@@ -1,7 +1,7 @@
 // The Routines page's "Available" section (CL-7073): every catalog
-// workflow (`@corbits/onboarding`'s `tenant-seed` `CATALOG_WORKFLOWS` —
+// workflow (`@workbench/onboarding`'s `tenant-seed` `CATALOG_WORKFLOWS` —
 // injected here by asset name so this package never depends back on
-// `@corbits/onboarding`, which already depends on `@corbits/workflows`) that has no deployed
+// `@workbench/onboarding`, which already depends on `@corbits/workflows`) that has no deployed
 // definition of that asset name on the caller's bench yet, alongside
 // this package's own `WORKFLOW_CATALOG` display metadata and whether the
 // tenant already satisfies its required connections.
@@ -134,13 +134,14 @@ async function connectionSatisfactionByConnector(
  * Every catalog asset name with no deployed `workflow_definition` on this
  * tenant yet, enriched with `WORKFLOW_CATALOG` metadata and connection
  * satisfaction. `catalogAssetNames` names the full
- * deployable-through-the-catalog-instantiate-route set (`@corbits/onboarding`'s
+ * deployable-through-the-catalog-instantiate-route set (`@workbench/onboarding`'s
  * `tenant-seed` `CATALOG_WORKFLOWS`, by asset name) — the caller's job, not this
  * package's, since importing that package here would cycle back through
  * its own dependency on `@corbits/workflows`. A
  * catalog name with no `WORKFLOW_CATALOG` entry is skipped rather than
- * thrown on: the two lists are asserted equal in the onboarding
- * (`packages/onboarding/test`) suite, so this is defense against the caller
+ * thrown on: every catalog name is asserted to have an entry in the
+ * onboarding (`packages/onboarding/test/tenant-seed-catalog.test.ts`)
+ * suite, so this is defense against the caller
  * passing a stale name, not an expected path.
  */
 export async function listAvailableCatalogWorkflows(args: {

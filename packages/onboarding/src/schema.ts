@@ -1,4 +1,4 @@
-// The one product table `@corbits/onboarding` owns: a single pending
+// The one product table `@workbench/onboarding` owns: a single pending
 // deferred-seed row per (user, tenant), keyed for upsert. Lives in its
 // own `onboarding` Postgres schema, never `public` — see
 // docs/package-migrations.md. See `./pending-seed.ts` for what the row
