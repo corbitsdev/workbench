@@ -7,12 +7,13 @@
 // dispatch row per (mail row, enabled sink). A sink is never called from this
 // path: the mail is the durable record, and a copy of it is the worker's job.
 //
-// That queuing step is NOT atomic with the mail write, and nothing
-// reconciles the two if a crash or a throw lands between them (CL-7238):
-// a mail row can end up committed with no dispatch row ever queued for it.
-// Closing that gap needs a seam `@corbits/mailbox` doesn't expose today
-// (an in-transaction hook, or a way to read back an existing row's id by
-// key) — see CL-7238 for why this can't be fixed from this package alone.
+// That queuing step is NOT atomic with the mail write: a crash or a
+// throw between them leaves a mail row committed with no dispatch row
+// queued (CL-7238). The mail delivery reports such rows with a `null`
+// id, so a redelivery resolves their ids through the host's
+// `resolveExistingMailIds` read-back and repairs the missing dispatch
+// rows; the dispatch store dedupes by (mail row, sink), so the repair
+// never double-queues.
 import {
   parseNotificationEvent,
   type ApprovalNotification,
@@ -25,6 +26,7 @@ import type {
   MailboxDelivery,
   NotifyAddressing,
   NotifyInboxItem,
+  ResolveExistingMailIds,
 } from "./mailbox";
 import { notificationExternalId, renderNotification } from "./render";
 import type { SinkRegistry } from "./sinks";
@@ -38,6 +40,15 @@ export interface NotifyDeliveryDeps {
   readonly addressing: NotifyAddressing;
   readonly dispatch: NotifyDispatchStore;
   readonly sinks: SinkRegistry;
+  /**
+   * Read-back for the CL-7238 crash window: when the mail delivery
+   * reports an item as pre-existing (`id: null`), the row was committed
+   * by an earlier attempt that died before its dispatch enqueue.
+   * Resolving those items to their row ids lets this call repair the
+   * missing dispatch rows; without it a redelivery after such a crash
+   * still loses the dispatch. The host owns this wiring.
+   */
+  readonly resolveExistingMailIds?: ResolveExistingMailIds;
 }
 
 export interface NotifyDeliveryReport {
@@ -75,8 +86,9 @@ export async function deliverNotification(
   input: unknown,
 ): Promise<NotifyDeliveryReport> {
   const event = parseNotificationEvent(input);
+  const items = toInboxItems(event, deps.addressing);
   const written: { id: string; tenantId: string; principalId: string }[] = [];
-  await deps.mail(toInboxItems(event, deps.addressing), {
+  const results = await deps.mail(items, {
     enqueue: ({ id, item }) => {
       written.push({
         id,
@@ -86,8 +98,30 @@ export async function deliverNotification(
     },
   });
 
+  // CL-7238: a `null` id marks a row committed by an earlier attempt
+  // that died before its dispatch enqueue (or a benign redelivery).
+  // Resolve those ids so the enqueue below repairs the missing rows;
+  // without the read-back there is nothing to enqueue for them.
+  const deduped = items.filter(
+    (_, index) => (results[index]?.id ?? null) === null,
+  );
+  const repaired: { id: string; tenantId: string; principalId: string }[] = [];
+  if (deduped.length > 0 && deps.resolveExistingMailIds !== undefined) {
+    const resolved = await deps.resolveExistingMailIds(deduped);
+    deduped.forEach((item, index) => {
+      const id = resolved[index];
+      if (id !== undefined && id !== null) {
+        repaired.push({
+          id,
+          tenantId: item.tenantId,
+          principalId: item.principalId,
+        });
+      }
+    });
+  }
+
   const queued: EnqueueDispatchInput[] = [];
-  for (const row of written) {
+  for (const row of [...written, ...repaired]) {
     const enabled = await deps.sinks.listEnabledFor({
       tenantId: row.tenantId,
       principalId: row.principalId,
