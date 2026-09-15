@@ -19,7 +19,7 @@ function scratchUrlFor(e2eUrl: string): string {
 const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
-const migrationNames = ["0001_pending_seed"];
+const migrationNames = ["0001_pending_seed", "0002_drop_pending_seed"];
 
 describeIfDb("applyOnboardingMigrations", () => {
   const scratchUrl = scratchUrlFor(
@@ -56,7 +56,11 @@ describeIfDb("applyOnboardingMigrations", () => {
     }
   }, 20000);
 
-  test("applies the pending_seed table into its own schema and is idempotent on a second run", async () => {
+  // CL-7586 retired the pending-seed drain: 0001 stays so replays from
+  // an empty database still see the full history, and 0002 drops the
+  // table the drain converged. A fresh bench ends with the ledger full
+  // and no pending_seed table anywhere.
+  test("applies the full history into its own schema, drops the retired pending_seed table, and is idempotent on a second run", async () => {
     const first = await applyOnboardingMigrations(scratchUrl);
     expect(first.applied).toEqual(migrationNames);
 
@@ -70,24 +74,13 @@ describeIfDb("applyOnboardingMigrations", () => {
         `SELECT table_name FROM information_schema.tables ` +
           `WHERE table_schema = 'onboarding' AND table_name = 'pending_seed'`,
       );
-      expect(tables.map((row) => String(row["table_name"]))).toEqual([
-        "pending_seed",
-      ]);
+      expect(tables).toHaveLength(0);
 
       const inPublic = await sql.unsafe(
         `SELECT table_name FROM information_schema.tables ` +
           `WHERE table_schema = 'public' AND table_name = 'pending_seed'`,
       );
       expect(inPublic).toHaveLength(0);
-
-      const primaryKeyColumns = await sql.unsafe(
-        `SELECT a.attname FROM pg_index i ` +
-          `JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) ` +
-          `WHERE i.indrelid = 'onboarding.pending_seed'::regclass AND i.indisprimary`,
-      );
-      expect(
-        primaryKeyColumns.map((row) => String(row["attname"])).sort(),
-      ).toEqual(["tenant_id", "user_id"]);
     } finally {
       await sql.end();
     }

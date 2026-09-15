@@ -2,27 +2,23 @@
 // layer. The live repro: pasting a key sat on "Connecting…" for 2+
 // minutes because `POST /complete` deployed five default workflows —
 // ~20s each — before it answered. The fix is structural, so the test is
-// too: the deploy step is handed in as a seam that takes five seconds
-// and records when it ran, and the route has to answer long before it
-// could possibly have waited on that. A route that ever awaits a deploy
-// again fails here on the clock, not on a mock's call count alone.
+// too: the follow-up work is handed in as a kick seam that takes five
+// seconds and records when it ran, and the route has to answer long
+// before it could possibly have waited on that. A route that ever awaits
+// a deploy again fails here on the clock, not on a mock's call count
+// alone. CL-7586 deleted the pending-seed drain the kick used to wake:
+// the kick now names the tenant for the desired-state reconcile, and no
+// row is parked anywhere.
 import { describe, expect, test } from "bun:test";
 import type { AppEnv } from "@intx/hub-api";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import { createEnvKeyCredentialCipher } from "@intx/crypto";
-import type { CredentialCipher } from "@intx/types";
-import { DEFAULT_WORKFLOWS, SETUP_AGENT_ASSET_NAME } from "@corbits/seeding";
-import { createOnboardingRoutes } from "../src/routes";
 import {
-  createInMemoryPendingSeedStore,
-  type PendingSeedStore,
-} from "../src/pending-seed";
-
-const TEST_KEY = Buffer.alloc(32, 44);
-function testCipher(): CredentialCipher {
-  return createEnvKeyCredentialCipher(TEST_KEY);
-}
+  DEFAULT_WORKFLOWS,
+  SETUP_AGENT_ASSET_NAME,
+  inferenceCredentialName,
+} from "@corbits/seeding";
+import { createOnboardingRoutes } from "../src/routes";
 
 const TENANT_ID = "ten_1";
 const PRINCIPAL_ID = "prn_1";
@@ -41,7 +37,11 @@ function asUser(): MiddlewareHandler<AppEnv> {
  * traffic would have to go somewhere else entirely — and the deploy seam
  * below proves it never even starts. */
 function fakeHub(
-  args: { seededWorkflows?: string[]; tenantSlug?: string } = {},
+  args: {
+    seededWorkflows?: string[];
+    tenantSlug?: string;
+    inferenceCredential?: boolean;
+  } = {},
 ) {
   const seeded = args.seededWorkflows ?? [];
   const hub = new Hono();
@@ -118,6 +118,12 @@ function fakeHub(
       },
     ]),
   );
+  hub.get("/api/tenants/:id/credentials", (c) =>
+    c.json({
+      data: args.inferenceCredential === true ? [activeCredentialRow()] : [],
+      nextCursor: null,
+    }),
+  );
   hub.get("/api/tenants/:id/skills/:name", (c) =>
     c.json({ name: c.req.param("name") }),
   );
@@ -132,11 +138,26 @@ function fakeHub(
   return { hub, requests };
 }
 
+/** The one row `/complete-setup`'s credential check looks for: an
+ * active credential under the name `seedCatalog` persists inference
+ * keys as. */
+function activeCredentialRow() {
+  return {
+    id: "cre_1",
+    tenantId: TENANT_ID,
+    providerId: "prv_1",
+    name: inferenceCredentialName("anthropic"),
+    type: "api_key",
+    status: "active",
+    metadata: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+}
+
 function routeDeps(args: {
   hubUrl: string;
-  store: PendingSeedStore;
-  onDeploy?: () => void;
-  deployDelayMs?: number;
+  onKick?: (tenantId: string) => void;
 }) {
   return {
     hubUrl: args.hubUrl,
@@ -156,7 +177,6 @@ function routeDeps(args: {
       commitSha: "a".repeat(40),
     }),
     log: () => undefined,
-    pendingSeedStore: args.store,
     testAndPersistCredentialFn: async () => ({
       kind: "connected" as const,
       tenantId: TENANT_ID,
@@ -164,13 +184,17 @@ function routeDeps(args: {
       principalId: PRINCIPAL_ID,
       tenantDomain: TENANT_DOMAIN,
     }),
-    ensureSeededFn: async () => {
-      args.onDeploy?.();
-      await new Promise((resolve) =>
-        setTimeout(resolve, args.deployDelayMs ?? 0),
-      );
-      return { kind: "seeded" as const, workflows: ALL_WORKFLOWS };
-    },
+    // CL-7586 deleted the pending-seed drain: the route hands follow-up
+    // work to the desired-state reconcile as a fire-and-forget kick
+    // naming the tenant. Tests hand in slow kicks to prove the route
+    // answers without waiting on them.
+    ...(args.onKick === undefined
+      ? {}
+      : {
+          desiredStateKick: ({ tenantId }: { tenantId: string }) => {
+            args.onKick?.(tenantId);
+          },
+        }),
   };
 }
 
@@ -182,20 +206,23 @@ function mountAuthenticated(routes: Hono<AppEnv>): Hono<AppEnv> {
 }
 
 describe("POST /complete — connecting deploys nothing", () => {
-  test("answers in a moment even when a deploy would take five seconds", async () => {
+  test("answers in a moment even when the kicked reconcile would take five seconds", async () => {
     const { hub, requests } = fakeHub();
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const store = createInMemoryPendingSeedStore(testCipher());
-    let deployStarted = false;
+    let kickStarted = false;
+    let kickFinished = false;
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes(
           routeDeps({
             hubUrl: `http://localhost:${server.port}`,
-            store,
-            deployDelayMs: 5_000,
-            onDeploy: () => {
-              deployStarted = true;
+            onKick: () => {
+              kickStarted = true;
+              void new Promise((resolve) => setTimeout(resolve, 5_000)).then(
+                () => {
+                  kickFinished = true;
+                },
+              );
             },
           }),
         ),
@@ -211,8 +238,10 @@ describe("POST /complete — connecting deploys nothing", () => {
 
       expect(response.status).toBe(200);
       expect(elapsedMs).toBeLessThan(1_000);
-      // The response never waited on a deploy — the whole point.
-      expect(deployStarted).toBe(false);
+      // The response never waited on the kicked reconcile — the whole
+      // point: the kick started, but its five seconds are still running.
+      expect(kickStarted).toBe(true);
+      expect(kickFinished).toBe(false);
       // And nothing deploy-shaped was even attempted against the hub.
       expect(
         requests.filter(
@@ -233,11 +262,10 @@ describe("POST /complete — connecting deploys nothing", () => {
   test("reports the bench as provisioning, naming the agents still to come", async () => {
     const { hub } = fakeHub();
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const store = createInMemoryPendingSeedStore(testCipher());
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes(
-          routeDeps({ hubUrl: `http://localhost:${server.port}`, store }),
+          routeDeps({ hubUrl: `http://localhost:${server.port}` }),
         ),
       );
 
@@ -262,33 +290,32 @@ describe("POST /complete — connecting deploys nothing", () => {
     }
   });
 
-  test("hands the drain a pending row carrying the key it will deploy against", async () => {
+  test("kicks the desired-state reconcile for the bench instead of parking a row", async () => {
     const { hub } = fakeHub();
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const store = createInMemoryPendingSeedStore(testCipher());
+    const kickedTenants: string[] = [];
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes(
-          routeDeps({ hubUrl: `http://localhost:${server.port}`, store }),
+          routeDeps({
+            hubUrl: `http://localhost:${server.port}`,
+            onKick: (tenantId) => {
+              kickedTenants.push(tenantId);
+            },
+          }),
         ),
       );
 
-      await app.request("/api/onboarding/complete", {
+      const response = await app.request("/api/onboarding/complete", {
         method: "POST",
         body: JSON.stringify({ provider: "anthropic", apiKey: "sk-ant-x" }),
         headers: { "content-type": "application/json" },
       });
 
-      expect(
-        await store.read({ userId: "user_1", tenantId: TENANT_ID }),
-      ).toEqual({
-        userId: "user_1",
-        tenantId: TENANT_ID,
-        principalId: PRINCIPAL_ID,
-        tenantDomain: TENANT_DOMAIN,
-        provider: "anthropic",
-        apiKey: "sk-ant-x",
-      });
+      expect(response.status).toBe(200);
+      // No row is parked anywhere: the reconcile learns the tenant from
+      // the kick's arguments, not from a drain table.
+      expect(kickedTenants).toEqual([TENANT_ID]);
     } finally {
       server.stop(true);
     }
@@ -297,11 +324,16 @@ describe("POST /complete — connecting deploys nothing", () => {
   test("an already-provisioned bench reconnecting reports ready, with nothing left pending", async () => {
     const { hub } = fakeHub({ seededWorkflows: ALL_WORKFLOWS });
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const store = createInMemoryPendingSeedStore(testCipher());
+    const kickedTenants: string[] = [];
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes(
-          routeDeps({ hubUrl: `http://localhost:${server.port}`, store }),
+          routeDeps({
+            hubUrl: `http://localhost:${server.port}`,
+            onKick: (tenantId) => {
+              kickedTenants.push(tenantId);
+            },
+          }),
         ),
       );
 
@@ -317,6 +349,8 @@ describe("POST /complete — connecting deploys nothing", () => {
 
       expect(body.kind).toBe("ready");
       expect(body.pending).toEqual([]);
+      // Nothing left to reconcile, so no kick either.
+      expect(kickedTenants).toEqual([]);
     } finally {
       server.stop(true);
     }
@@ -333,11 +367,10 @@ describe("GET /provisioning-status", () => {
     async (query, expectedStatus) => {
       const { hub, requests } = fakeHub();
       const server = Bun.serve({ port: 0, fetch: hub.fetch });
-      const store = createInMemoryPendingSeedStore(testCipher());
       try {
         const app = mountAuthenticated(
           createOnboardingRoutes(
-            routeDeps({ hubUrl: `http://localhost:${server.port}`, store }),
+            routeDeps({ hubUrl: `http://localhost:${server.port}` }),
           ),
         );
         const response = await app.request(
@@ -365,11 +398,10 @@ describe("GET /provisioning-status", () => {
   test("reports provisioning, with the setup agent not yet ready, before she deploys", async () => {
     const { hub } = fakeHub({ seededWorkflows: [] });
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const store = createInMemoryPendingSeedStore(testCipher());
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes(
-          routeDeps({ hubUrl: `http://localhost:${server.port}`, store }),
+          routeDeps({ hubUrl: `http://localhost:${server.port}` }),
         ),
       );
 
@@ -399,11 +431,10 @@ describe("GET /provisioning-status", () => {
     );
     const { hub } = fakeHub({ seededWorkflows: others });
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const store = createInMemoryPendingSeedStore(testCipher());
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes(
-          routeDeps({ hubUrl: `http://localhost:${server.port}`, store }),
+          routeDeps({ hubUrl: `http://localhost:${server.port}` }),
         ),
       );
 
@@ -424,11 +455,10 @@ describe("GET /provisioning-status", () => {
       tenantSlug: "workbench",
     });
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const store = createInMemoryPendingSeedStore(testCipher());
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes(
-          routeDeps({ hubUrl: `http://localhost:${server.port}`, store }),
+          routeDeps({ hubUrl: `http://localhost:${server.port}` }),
         ),
       );
 
@@ -444,29 +474,27 @@ describe("GET /provisioning-status", () => {
   });
 });
 
-describe("POST /complete-setup — no longer deploys inline either", () => {
-  test("returns provisioning status without waiting on a deploy", async () => {
-    const { hub } = fakeHub();
+describe("POST /complete-setup — kicks instead of deploying", () => {
+  test("kicks the reconcile and answers provisioning without waiting on it", async () => {
+    // The key is already persisted under the setup catalog's name, so
+    // the route finds something to reconcile toward; the workflows are
+    // not deployed yet, so the answer is provisioning either way.
+    const { hub } = fakeHub({ inferenceCredential: true });
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const store = createInMemoryPendingSeedStore(testCipher());
-    let deployStarted = false;
+    let kickStarted = false;
+    let kickFinished = false;
     try {
-      await store.put({
-        userId: "user_1",
-        tenantId: TENANT_ID,
-        principalId: PRINCIPAL_ID,
-        tenantDomain: TENANT_DOMAIN,
-        provider: "openrouter",
-        apiKey: "sk-or-v1-minted",
-      });
       const app = mountAuthenticated(
         createOnboardingRoutes(
           routeDeps({
             hubUrl: `http://localhost:${server.port}`,
-            store,
-            deployDelayMs: 5_000,
-            onDeploy: () => {
-              deployStarted = true;
+            onKick: () => {
+              kickStarted = true;
+              void new Promise((resolve) => setTimeout(resolve, 5_000)).then(
+                () => {
+                  kickFinished = true;
+                },
+              );
             },
           }),
         ),
@@ -481,25 +509,23 @@ describe("POST /complete-setup — no longer deploys inline either", () => {
 
       expect(response.status).toBe(200);
       expect(elapsedMs).toBeLessThan(1_000);
-      expect(deployStarted).toBe(false);
       expect(body.kind).toBe("provisioning");
-      // The row stays: it is the drain's work item, not a spent token.
-      expect(
-        await store.read({ userId: "user_1", tenantId: TENANT_ID }),
-      ).toBeDefined();
+      // Same structural guarantee as /complete: the kicked reconcile
+      // started, but the route never waited on its five seconds.
+      expect(kickStarted).toBe(true);
+      expect(kickFinished).toBe(false);
     } finally {
       server.stop(true);
     }
   });
 
-  test("still reports unseeded when there is nothing to provision with yet", async () => {
+  test("still reports unseeded when there is no key to reconcile toward yet", async () => {
     const { hub } = fakeHub();
     const server = Bun.serve({ port: 0, fetch: hub.fetch });
-    const store = createInMemoryPendingSeedStore(testCipher());
     try {
       const app = mountAuthenticated(
         createOnboardingRoutes(
-          routeDeps({ hubUrl: `http://localhost:${server.port}`, store }),
+          routeDeps({ hubUrl: `http://localhost:${server.port}` }),
         ),
       );
 

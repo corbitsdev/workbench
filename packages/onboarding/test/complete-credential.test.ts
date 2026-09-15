@@ -1588,9 +1588,10 @@ describe("completeCredentialSetup", () => {
 
   // CL-6264: the credential-persist half already succeeded (the tenant,
   // principal, and credential are real and durable) by the time the
-  // deploy step hits a sidecar-unavailable failure, so `/complete`'s own
-  // route can write a pending-seed row for the retry path — it needs
-  // `principalId`/`tenantDomain` threaded all the way out here to do it.
+  // deploy step hits a sidecar-unavailable failure, so the retry path —
+  // the desired-state reconcile's redeploy — still has a durable tenant
+  // identity to deploy under: it needs `principalId`/`tenantDomain`
+  // threaded all the way out here to do it.
   test("a sidecar-unavailable deploy still reports the durable tenant identity, not just deployed/pending", async () => {
     const api: ApiCall = async (method, path) => {
       if (method === "GET" && path === "/api/me/principals") {
@@ -1848,10 +1849,10 @@ describe("ensureSeeded (the slow half)", () => {
   });
 
   test("deploys the setup agent before anything else, so a waiting person can start as soon as she is live", async () => {
-    // CL-6462. This is the deploy path the background drain runs
-    // (bench-provisioning's `runOnce` → `ensureSeeded` → `seedTenant`),
-    // and `seedTenant` works through the list in order at ~20s each — so
-    // the order handed in here is the order a fresh signup experiences.
+    // CL-6462. This is the deploy path the explicit setup flow runs
+    // (`ensureSeeded` → `seedTenant`), and `seedTenant` works through
+    // the list in order at ~20s each — so the order handed in here is
+    // the order a fresh signup experiences.
     // CL-7074 narrowed DEFAULT_WORKFLOWS to just the setup agent, so
     // "before anything else" is now trivially satisfied by being the
     // only entry — this still pins that fact rather than assuming it.

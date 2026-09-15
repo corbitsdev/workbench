@@ -373,8 +373,8 @@ export type TenantDeployer = {
  * The deploy identity for a tenant nobody has connected a credential
  * to yet. The tenant-create kick (CL-7584) reconciles exactly such a
  * tenant — a native `POST /api/tenants` that mints the creator's owner
- * principal in the same transaction — so there is no pending-seed row
- * to read `principalId`/`tenantDomain` from. This resolves both from
+ * principal in the same transaction — so there is no stored row to
+ * read `principalId`/`tenantDomain` from. This resolves both from
  * the API instead: the session's own active user principal on the
  * tenant, plus the tenant row's domain. `undefined` when the session
  * holds no deployable principal there (suspended, invited, agent, or

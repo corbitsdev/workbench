@@ -32,7 +32,7 @@ import {
   type ChatStore,
   type RoomMessageStore,
 } from "@corbits/chat";
-import type { SessionForUser } from "@workbench/onboarding";
+import type { SessionForUser } from "./bench-session";
 import {
   createAutoProvisionPrincipalResolver,
   createDrizzleSlackChannelBindingStore,

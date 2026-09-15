@@ -45,8 +45,9 @@ API — never discovered at runtime:
   that same entry's first model (`CATALOG_SEEDS[provider].models[0]`) —
   the one place a provider's default model is named, so the deploy target
   and the catalog it is chosen from can never drift apart — but that
-  deploy happens in the background, never in the connect request itself
-  (CL-6457; see [bench-provisioning.md](bench-provisioning.md)). This is also how a
+  deploy happens through the desired-state reconcile, never in the
+  connect request itself (CL-6457; see
+  [seed-reconciliation.md](seed-reconciliation.md)). This is also how a
   bench the hub's own sign-in hook could only mark `bench_unseeded` (no
   hub-owned `ANTHROPIC_API_KEY` configured) finishes seeding: the first
   working credential a user connects, through whichever onboarding path

@@ -272,11 +272,11 @@ Sidecar-unavailable failures report `blocked` (the same class
 `failed` and are safe to re-run.
 
 Three triggers drive it, one reconciler: a tenant-create observation
-(`POST /api/tenants` 201), the pending-seed drain over a connected
-credential, and the revisit kick from `POST
-/api/onboarding/provision`. The `pending_seed` row remains the only
-durable work item; the tenant-create kick and the revisit kick are
-deliberately in-memory — convergence, not delivery.
+(`POST /api/tenants` 201), the credential-connect kick over a freshly
+persisted credential, and the revisit kick from `POST
+/api/onboarding/provision`. Every kick is deliberately in-memory — there
+is no parked row and no durable work item anywhere; convergence comes
+from re-reading the bench's real state on each pass, not delivery.
 
 Member-edit posture: a reconcile only ever installs what the document
 names. A member (or anyone) deleting or editing a seeded workflow or

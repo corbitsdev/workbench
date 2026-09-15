@@ -16,13 +16,13 @@
 // exchanged material and persisting it as a credential
 // (`deps.connectCredential`), recovering a duplicate callback
 // (`deps.recentlyConnected`), and anything that runs after a credential
-// is durably stored — like onboarding's pending-seed / deploy-default-
-// workflows step (`deps.afterConnected`) — are all injected. This keeps
+// is durably stored — like onboarding's persist-then-kick step
+// (`deps.afterConnected`) — are all injected. This keeps
 // `packages/connections` ignorant of tenant provisioning and workflow
 // deployment; `packages/onboarding` supplies its own
-// `testAndPersistCredential`/`sealPendingSeed` unchanged as those deps
-// when it mounts this factory, exactly preserving the sealed-state and
-// pending-seed machinery the survey found already hardened.
+// `testAndPersistCredential` and desired-state kick as those deps when
+// it mounts this factory, and this package itself never deploys
+// anything.
 //
 // `returnPath` (so both `/onboarding` and `/settings/connections` can
 // use the same routes): read from `?return=` on `/start`, carried across
@@ -199,7 +199,7 @@ export type CreateOAuthConnectRoutesDeps<E extends AppEnv = AppEnv> = {
   }) => Promise<{ tenantSlug: string } | undefined>;
   /** Runs once a credential is durably stored, only for a connector
    * whose `oauth.deploysDefaultWorkflows` is true — onboarding's
-   * pending-seed sealing lives here, entirely outside this package.
+   * desired-state kick lives here, entirely outside this package.
    * Given the Hono `Context` directly so it can set its own cookie. */
   readonly afterConnected?: (args: {
     c: Context<E>;

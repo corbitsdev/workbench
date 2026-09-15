@@ -133,11 +133,6 @@ const ALLOWLIST: readonly {
     tables: ["policy"],
   },
   {
-    relPath: "packages/onboarding/src/schema.ts",
-    maxOccurrences: 1,
-    tables: ["pending_seed"],
-  },
-  {
     // `@corbits/mailbox`'s enrichment carries only priority,
     // classification and status — there is no column for a snooze's
     // `until` timestamp, so the reopen sweep has nothing to scan. This

@@ -290,11 +290,11 @@ export type CreateConnectionRoutesDeps = {
    * non-inference connector, and never merely because a credential row
    * exists (seeding plants that row regardless of whether it actually
    * resolves an offering). The composition wires this to the same
-   * durable pending-seed drain onboarding's own credential step feeds,
-   * so a provider connected through Settings deploys the tenant's
-   * default workflows exactly like one connected through onboarding —
-   * see `./connected-hook.ts`. Absent means this hub build never
-   * re-seeds off a Settings connect (every existing test double). */
+   * desired-state kick onboarding's own credential step fires, so a
+   * provider connected through Settings converges the tenant's default
+   * workflows exactly like one connected through onboarding — see
+   * `./connected-hook.ts`. Absent means this hub build never re-kicks
+   * off a Settings connect (every existing test double). */
   onInferenceCredentialUsable?: InferenceCredentialSeedableHook;
 };
 

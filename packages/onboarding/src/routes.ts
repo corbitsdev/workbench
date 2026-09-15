@@ -51,13 +51,11 @@ import {
 import type { HubSignupTenancy } from "./genesis";
 
 import {
-  ensureSeeded,
   findPersonalTenant,
   testAndPersistCredential,
   type PersonalTenant,
   type TestAndPersistCredentialResult,
 } from "./complete-credential";
-import type { BenchProvisioner } from "./bench-provisioning";
 import {
   createOAuthConnectRoutes,
   DEFAULT_RETURN_PATH_ALLOWLIST,
@@ -65,7 +63,6 @@ import {
   type OAuthExchangeResult,
 } from "@corbits/connections";
 import { CONNECTOR_REGISTRY } from "@workbench/templates/connectors";
-import type { PendingSeedStore } from "./pending-seed";
 import { exchangeCodeForKey } from "./openrouter-connect";
 import { exchangeCodeForToken as exchangeHuggingFaceCodeForToken } from "./huggingface-connect";
 import type { ProviderHealthStore } from "@corbits/connections/provider-health";
@@ -174,27 +171,13 @@ export type CreateOnboardingRoutesDeps = {
     connectCredential?: typeof testAndPersistCredential;
   };
   /**
-   * The background drain these routes hand provisioning work to
-   * (CL-6457). No route here ever deploys a workflow itself; the most a
-   * route does is write the pending-seed row and nudge this. Absent
-   * only means no nudge — the drain's own poll still picks the row up on
-   * its next tick, which is why this is a latency optimization rather
-   * than a correctness dependency.
-   */
-  benchProvisioner?: Pick<BenchProvisioner, "wake">;
-  /**
    * CL-7584 revisit kick: fire-and-forget desired-state reconcile for the
    * caller's tenant, fired unconditionally — never gated on a pending
    * check (the reconciler itself is reads-only when converged). The hub
-   * wires this to the same reconciler the tenant-create observer and the
-   * drain use; the route never awaits it. Absent means no kick —
-   * convergence then relies on the drain's own poll, which is why this is
-   * a latency optimization rather than a correctness dependency.
+   * wires this to the same reconciler the tenant-create observer uses;
+   * the route never awaits it. Absent means no kick.
    */
   desiredStateKick?: (args: { tenantId: string; cookies: string[] }) => void;
-  /** Test seam standing in for the deploy step, so a route test can
-   * prove the response never waits on one. */
-  ensureSeededFn?: typeof ensureSeeded;
   /** Test seam for `POST /complete`'s fast half — credential persist and
    * catalog seed, the only work that call still does inline. */
   testAndPersistCredentialFn?: typeof testAndPersistCredential;
@@ -208,13 +191,6 @@ export type CreateOnboardingRoutesDeps = {
    * optional dep here.
    */
   providerHealth?: ProviderHealthStore;
-  /** Server-side custody for a just-connected credential's plaintext
-   * key between the OAuth callback and this package's own
-   * `/complete-setup` follow-up — see `./pending-seed.ts`'s module
-   * comment for why this replaced an HttpOnly cookie (CL-6031). Built
-   * from `createDrizzlePendingSeedStore(db, credentialCipher)` in
-   * production; tests inject `createInMemoryPendingSeedStore`. */
-  pendingSeedStore: PendingSeedStore;
   /** The closed-by-default access-policy gate threaded straight into
    * `provisionPersonalTenantIfNeeded` — see that function's own
    * `accessPolicy` doc comment. Absent means no access-policy package
@@ -239,8 +215,8 @@ export type CreateOnboardingRoutesDeps = {
  * What every provisioning-aware route answers with (CL-6457): where this
  * bench's agents actually are, read from the bench's own asset and
  * deployment state rather than from anything a caller remembers. `ready`
- * means every default workflow is live; `provisioning` means the drain
- * still has work to do.
+ * means every default workflow is live; `provisioning` means pins are
+ * still missing.
  *
  * `setupAgentReady` is the only field a waiting surface should ever
  * branch on (CL-6462): it says whether the one agent a person talks to
@@ -337,6 +313,55 @@ async function recentlyConnectedCredential(
       `duplicate-callback recovery check failed for user ${args.userId} [${refId}]`,
     );
     return undefined;
+  }
+}
+
+/**
+ * Whether the tenant holds any active inference credential — what
+ * `/complete-setup` answers `unseeded` from now that no pending-seed row
+ * records "a credential was just connected" (CL-7586). Best-effort like
+ * the duplicate-callback recovery above: a hub read failure answers
+ * "none", and the caller falls back to the ordinary credential step
+ * rather than surfacing a second failure mode.
+ */
+async function hasActiveInferenceCredential(
+  api: ApiCall,
+  cookies: string[],
+  tenantId: string,
+  log: (line: string) => void,
+): Promise<boolean> {
+  try {
+    const listed = await api(
+      "GET",
+      `/api/tenants/${tenantId}/credentials`,
+      undefined,
+      cookies,
+    );
+    const credentials = parseAs(
+      paginatedSchema(CredentialResponse),
+      listed.data,
+      "credentials response",
+    ).data;
+    const names = new Set(
+      supportedCredentialProviders().map((provider) =>
+        inferenceCredentialName(provider.id),
+      ),
+    );
+    return credentials.some(
+      (credential) =>
+        credential.status === "active" && names.has(credential.name),
+    );
+  } catch (cause) {
+    // Never the raw cause detail — this path lists credentials after a
+    // connect and can see secret-shaped hub/parse errors (CL-7255).
+    const refId = reportError(cause, {
+      operation: "onboarding_complete_setup_credential_check",
+      extra: { tenantId },
+    });
+    log(
+      `complete-setup credential check failed for tenant ${tenantId} [${refId}]`,
+    );
+    return false;
   }
 }
 
@@ -502,7 +527,7 @@ export function createOnboardingRoutes(
       // every pin present), so a pending-check here would only ever delay
       // this response; the reconcile itself re-reads the pins behind the
       // fire-and-forget boundary. Repeat probes re-kick safely
-      // (idempotent) and `pending_seed` stays the only durable row.
+      // (idempotent).
       if (
         (result.kind === "provisioned" || result.kind === "existing-member") &&
         deps.desiredStateKick !== undefined
@@ -512,11 +537,10 @@ export function createOnboardingRoutes(
           try {
             kick({ tenantId, cookies });
           } catch (cause) {
-            // report-error-ignore: the kick is best-effort — convergence
-            // falls back to the pending_seed drain, so a failed kick only
-            // ever costs one delayed pass.
+            // report-error-ignore: the kick is best-effort — a failed
+            // kick only ever costs one missed reconcile.
             deps.log(
-              `desired-state kick for user ${user.id} failed (convergence falls back to the drain): ${cause instanceof Error ? cause.message : String(cause)}`,
+              `desired-state kick for user ${user.id} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
             );
           }
         };
@@ -540,11 +564,10 @@ export function createOnboardingRoutes(
               );
               if (found?.tenantId !== undefined) fire(found.tenantId);
             } catch (cause) {
-              // report-error-ignore: the kick lookup is best-effort —
-              // convergence falls back to the pending_seed drain, so a
-              // failed lookup only ever costs one delayed pass.
+              // report-error-ignore: the kick lookup is best-effort — a
+              // failed lookup only ever costs one missed reconcile.
               deps.log(
-                `desired-state kick lookup for user ${user.id} failed (convergence falls back to the drain): ${cause instanceof Error ? cause.message : String(cause)}`,
+                `desired-state kick lookup for user ${user.id} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
               );
             }
           })();
@@ -608,9 +631,9 @@ export function createOnboardingRoutes(
   // entries. What stays here, unchanged: persisting the exchanged
   // material (`testAndPersistCredential`, the fast half — no probe, no
   // workflow deploy), the duplicate-callback recovery lookup
-  // (`recentlyConnectedCredential`, below), and writing the pending-seed
-  // row the deferred `/complete-setup` deploy step reads (see
-  // `./pending-seed.ts`). Every test seam this package's deps already
+  // (`recentlyConnectedCredential`, below), and firing the desired-state
+  // kick `/complete-setup` and the revisit probe build on (see
+  // `afterConnected`, below). Every test seam this package's deps already
   // exposed (`openrouterConnect`/`huggingfaceConnect` overrides) still
   // works — they're threaded into the registry entries' `oauth.exchange`
   // below.
@@ -782,11 +805,11 @@ export function createOnboardingRoutes(
   }
 
   /** Runs only for a connector whose `oauth.deploysDefaultWorkflows` is
-   * true (both OpenRouter and Hugging Face) — writes the plaintext
-   * material into the pending-seed store `/complete-setup` reads, so
-   * the deferred workflow deploy never blocks this redirect. The
-   * browser gets nothing from this call: no cookie, no ciphertext, only
-   * the ordinary redirect — see `./pending-seed.ts`'s module comment. */
+   * true (both OpenRouter and Hugging Face) — fires the desired-state
+   * revisit kick for the just-connected bench, so its default workflows
+   * converge without the redirect waiting on a deploy. Best-effort:
+   * the onboarding page's own `/complete-setup` call kicks again, and
+   * the reconciler itself is reads-only when converged. */
   async function afterConnected(args: {
     c: import("hono").Context;
     connectorId: string;
@@ -800,17 +823,23 @@ export function createOnboardingRoutes(
     const provider = onboardingOAuthProvider(args.connectorId);
     if (provider === undefined) {
       throw new Error(
-        `onboarding's pending-seed store only holds its own providers, not ${args.connectorId}`,
+        `onboarding only converges its own providers, not ${args.connectorId}`,
       );
     }
-    await deps.pendingSeedStore.put({
-      userId: args.userId,
-      tenantId: args.tenantId,
-      principalId: args.principalId,
-      tenantDomain: args.tenantDomain,
-      provider,
-      apiKey: args.apiKey,
-    });
+    if (deps.desiredStateKick === undefined) return;
+    try {
+      deps.desiredStateKick({
+        tenantId: args.tenantId,
+        cookies: cookiesFromHeader(args.c.req.header("cookie")),
+      });
+    } catch (cause) {
+      // report-error-ignore: the kick is best-effort — `/complete-setup`
+      // kicks again when the onboarding page lands, so a failed kick
+      // here only ever costs one missed reconcile.
+      deps.log(
+        `desired-state kick after OAuth connect for user ${args.userId} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+    }
   }
 
   app.route(
@@ -880,9 +909,10 @@ export function createOnboardingRoutes(
     try {
       // The fast half, and only the fast half (CL-6457): persist the
       // credential, seed its catalog, answer. Deploying this bench's
-      // default workflows is the background drain's job — a request that
+      // default workflows never blocks this response — a request that
       // waits on it is the 2+ minute "Connecting…" this route exists to
-      // never reproduce.
+      // never reproduce. Convergence is kicked below; the response only
+      // ever reports status.
       const result = await runTestAndPersistCredential(
         parsed.baseURL !== undefined
           ? { ...baseCompleteCredentialArgs, baseURLOverride: parsed.baseURL }
@@ -920,29 +950,25 @@ export function createOnboardingRoutes(
       tenantId = result.tenantId;
 
       const status = await provisioningStatus(cookies, result);
-      if (status.kind === "ready") {
-        await deps.pendingSeedStore.clear({
-          userId: user.id,
-          tenantId: result.tenantId,
-        });
-        return c.json(status, 200);
-      }
+      if (status.kind === "ready") return c.json(status, 200);
 
-      // The row is the drain's work item — durable, so a hub that dies
-      // mid-deploy resumes this bench on its next boot rather than
-      // stranding it half-provisioned.
-      await deps.pendingSeedStore.put({
-        userId: user.id,
-        tenantId: result.tenantId,
-        principalId: result.principalId,
-        tenantDomain: result.tenantDomain,
-        provider: parsed.provider,
-        apiKey: parsed.apiKey,
-        ...(parsed.baseURL !== undefined
-          ? { baseURLOverride: parsed.baseURL }
-          : {}),
-      });
-      deps.benchProvisioner?.wake();
+      // Pins still missing: kick the desired-state reconcile for this
+      // bench (fire-and-forget — the response answers from the status
+      // read above, never waits on the deploy) and answer the same
+      // status, so the waiting surface polls `/provisioning-status` for
+      // live progress.
+      if (deps.desiredStateKick !== undefined) {
+        try {
+          deps.desiredStateKick({ tenantId: result.tenantId, cookies });
+        } catch (cause) {
+          // report-error-ignore: the kick is best-effort — the revisit
+          // kick on the tenant's next visit covers it, so a failed kick
+          // here only ever costs one missed reconcile.
+          deps.log(
+            `desired-state kick after credential connect for user ${user.id} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+          );
+        }
+      }
       return c.json(status, 200);
     } catch (cause) {
       // Neither `ProvisionError` nor `CliError` messages are safe to show
@@ -965,16 +991,16 @@ export function createOnboardingRoutes(
   });
 
   // Runs after the onboarding page lands — from a fresh connect
-  // (`outcome=connected`) or a plain reload — and drives the slow half
-  // the OAuth callback never runs: deploying the default workflows
-  // against whichever credential is already on the caller's own
-  // personal bench. Already-seeded is answered from a single read, no
-  // pending token required, so a returning fully-set-up account (or a
-  // second overlapping call once the first finishes) gets the same
-  // `seeded` answer without redoing any work. `kind: "unseeded"` (200,
-  // not an error) means there is nothing this call can do yet — no
-  // pending credential to seed with — and the caller should fall back
-  // to the ordinary credential step rather than treat it as a failure.
+  // (`outcome=connected`) or a plain reload — and answers where the
+  // caller's own personal bench stands. Already-seeded is answered from
+  // reads alone, so a returning fully-set-up account gets the same
+  // status without redoing any work. `kind: "unseeded"` (200, not an
+  // error) means the bench holds no active inference credential yet —
+  // nothing this call can converge — and the caller should fall back to
+  // the ordinary credential step rather than treat it as a failure.
+  // Otherwise the bench has a credential and missing pins, so this call
+  // kicks the desired-state reconcile (fire-and-forget) and answers the
+  // status for the waiting surface to poll on.
   app.post("/complete-setup", async (c) => {
     const user = c.get("user");
     if (!user) {
@@ -1009,24 +1035,32 @@ export function createOnboardingRoutes(
       tenantId = tenant.tenantId;
 
       const status = await provisioningStatus(cookies, tenant);
-      if (status.kind === "ready") {
-        await deps.pendingSeedStore.clear({
-          userId: user.id,
-          tenantId: tenant.tenantId,
-        });
-        return c.json(status, 200);
+      if (status.kind === "ready") return c.json(status, 200);
+
+      // Not yet provisioned — whether there is a credential to converge
+      // with is read from the bench itself. None: nothing this call can
+      // do, and not a failure — the caller falls back to the ordinary
+      // credential step.
+      const seeded = await hasActiveInferenceCredential(
+        api,
+        cookies,
+        tenant.tenantId,
+        deps.log,
+      );
+      if (!seeded) return c.json({ kind: "unseeded" }, 200);
+
+      if (deps.desiredStateKick !== undefined) {
+        try {
+          deps.desiredStateKick({ tenantId: tenant.tenantId, cookies });
+        } catch (cause) {
+          // report-error-ignore: the kick is best-effort — the revisit
+          // kick on the tenant's next visit covers it, so a failed kick
+          // here only ever costs one missed reconcile.
+          deps.log(
+            `desired-state kick from complete-setup for user ${user.id} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+          );
+        }
       }
-
-      // Not yet provisioned, and no credential parked to provision with
-      // — nothing this call can do, and not a failure: the caller falls
-      // back to the ordinary credential step.
-      const pending = await deps.pendingSeedStore.read({
-        userId: user.id,
-        tenantId: tenant.tenantId,
-      });
-      if (pending === undefined) return c.json({ kind: "unseeded" }, 200);
-
-      deps.benchProvisioner?.wake();
       return c.json(status, 200);
     } catch (cause) {
       // report-error-ignore: CL-7234 — reportOnboardingError itself needs

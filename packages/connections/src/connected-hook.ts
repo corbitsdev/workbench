@@ -43,10 +43,9 @@ export async function fireConnectedHook(
 // `/complete` just left the tenant with `hasUsableModel` true — a model
 // with a resolvable offering, whether or not this tenant's bench has
 // ever deployed its default workflows. A composition wires this to the
-// same durable pending-seed drain the onboarding credential step already
-// feeds (`@workbench/onboarding`'s `pendingSeedStore` + `benchProvisioner`),
-// so a tenant that connects its own provider through Settings converges
-// on Myra and the default workflow set exactly like one that connects
+// same desired-state kick the onboarding credential step fires, so a
+// tenant that connects its own provider through Settings converges on
+// Myra and the default workflow set exactly like one that connects
 // through onboarding — never stuck waiting on an operator-configured
 // hub key. `apiKey` here is the same secret `/complete` just stored
 // (the URL placeholder for a `credentialInputKind: "url"` connector like
@@ -61,8 +60,8 @@ export type InferenceCredentialSeedableInfo = {
   readonly apiKey: string;
   /** The real instance origin a `credentialInputKind: "url"` connector
    * (Ollama) was just pointed at — absent for every other provider.
-   * Carried through to the drain so its deploy targets this tenant's
-   * actual endpoint rather than a curated default. */
+   * Carried through to the kick so the reconcile's deploy targets this
+   * tenant's actual endpoint rather than a curated default. */
   readonly baseURLOverride?: string;
 };
 

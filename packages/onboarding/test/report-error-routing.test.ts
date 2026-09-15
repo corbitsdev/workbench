@@ -1,5 +1,5 @@
-// CL-7234: every caught failure in this package's routes, background
-// drain, and env-credential-plant paths must reach @corbits/error-sink's
+// CL-7234: every caught failure in this package's routes and
+// env-credential-plant paths must reach @corbits/error-sink's
 // reportError with the operation/tenant context it expects — the same
 // precedent ../src/provision.ts already sets. This mocks
 // @corbits/error-sink and dynamically imports each module under test
@@ -11,7 +11,6 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { AppEnv } from "@intx/hub-api";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import { createNoopCredentialCipher } from "@intx/crypto";
 
 let reportErrorCalls: [unknown, Record<string, unknown>][] = [];
 beforeEach(async () => {
@@ -28,14 +27,8 @@ afterEach(() => {
 });
 
 const { createOnboardingRoutes } = await import("../src/routes");
-const { createInMemoryPendingSeedStore } = await import("../src/pending-seed");
-const { createBenchProvisioner } = await import("../src/bench-provisioning");
 const { plantEnvProviderCredentials } =
   await import("../src/plant-env-credentials");
-
-const pendingSeedStore = createInMemoryPendingSeedStore(
-  createNoopCredentialCipher(),
-);
 
 // These tests never exercise the genesis-or-join join path — the stub
 // satisfies the required tenancy wiring without standing up a DB.
@@ -71,7 +64,6 @@ describe("routes.ts routes caught errors through reportError", () => {
         commitSha: "a".repeat(40),
       }),
       log: () => undefined,
-      pendingSeedStore,
     });
     const app = mountAuthenticated(routes);
 
@@ -137,7 +129,6 @@ describe("routes.ts routes caught errors through reportError", () => {
           commitSha: "a".repeat(40),
         }),
         log: () => undefined,
-        pendingSeedStore,
       });
       const app = mountAuthenticated(routes);
 
@@ -157,44 +148,6 @@ describe("routes.ts routes caught errors through reportError", () => {
     } finally {
       server.stop(true);
     }
-  });
-});
-
-describe("bench-provisioning.ts's whole-drain failure reports through reportError", () => {
-  test("a listDue failure (not scoped to any one bench) reports operation only", async () => {
-    const provisioner = createBenchProvisioner({
-      api: (async () => {
-        throw new Error("unused");
-      }) as unknown as Parameters<typeof createBenchProvisioner>[0]["api"],
-      hubUrl: "https://bench.example.com",
-      store: {
-        listDue: async () => {
-          throw new Error("db unreachable");
-        },
-        read: async () => undefined,
-        put: async () => undefined,
-        clear: async () => undefined,
-      },
-      pushWorkflow: async () => ({
-        outcome: "pushed" as const,
-        commitSha: "a".repeat(40),
-      }),
-      sessionFor: async () => ["better-auth.session_token=minted"],
-      log: () => undefined,
-    });
-
-    provisioner.wake();
-    // wake() is fire-and-forget; give its internal drainOnce().catch a
-    // turn to run before asserting.
-    await new Promise((resolve) => setTimeout(resolve, 10));
-
-    expect(reportErrorCalls).toHaveLength(1);
-    const [, context] = reportErrorCalls[0] as [
-      unknown,
-      Record<string, unknown>,
-    ];
-    expect(context.operation).toBe("bench_provisioning_drain");
-    expect(context.tenantId).toBeUndefined();
   });
 });
 
@@ -287,7 +240,6 @@ describe("recentlyConnectedCredential reports through reportError and still find
         log: (line) => {
           logs.push(line);
         },
-        pendingSeedStore,
       });
       const app = mountAuthenticated(routes);
 

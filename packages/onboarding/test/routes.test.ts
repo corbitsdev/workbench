@@ -8,20 +8,10 @@ import { describe, expect, test } from "bun:test";
 import type { AppEnv } from "@intx/hub-api";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import { createNoopCredentialCipher } from "@intx/crypto";
 import { createOnboardingRoutes } from "../src/routes";
 import { testAndPersistCredential } from "../src/complete-credential";
-import { createInMemoryPendingSeedStore } from "../src/pending-seed";
 import { createProviderHealthStore } from "@corbits/connections/provider-health";
 import { HubApiError } from "@corbits/hub-api-client";
-
-// These tests never exercise the pending-seed store — it is required
-// wiring for `createOnboardingRoutes`, and its dedicated coverage lives
-// in `./complete-setup-routes.test.ts`, `./connect-deploys-nothing.test.ts`
-// and `../src/pending-seed.test.ts`.
-const pendingSeedStore = createInMemoryPendingSeedStore(
-  createNoopCredentialCipher(),
-);
 
 // These tests never exercise the genesis-or-join join path — the stub
 // satisfies the required tenancy wiring without standing up a DB.
@@ -60,7 +50,6 @@ describe("POST /provision", () => {
         commitSha: "a".repeat(40),
       }),
       log: (line) => lines.push(line),
-      pendingSeedStore,
     });
     const app = mountAuthenticated(routes);
 
@@ -106,7 +95,6 @@ describe("POST /provision", () => {
           commitSha: "a".repeat(40),
         }),
         log: () => undefined,
-        pendingSeedStore,
       });
       const app = mountAuthenticated(routes);
 
@@ -148,7 +136,6 @@ describe("POST /provision", () => {
           commitSha: "a".repeat(40),
         }),
         log: () => undefined,
-        pendingSeedStore,
       });
       const app = mountAuthenticated(routes);
 
@@ -176,7 +163,6 @@ describe("POST /provision", () => {
         commitSha: "a".repeat(40),
       }),
       log: () => undefined,
-      pendingSeedStore,
     });
     const app = mountAuthenticated(routes);
     const named = {
@@ -217,7 +203,6 @@ describe("POST /provision", () => {
           commitSha: "a".repeat(40),
         }),
         log: () => undefined,
-        pendingSeedStore,
       });
       const app = mountAuthenticated(routes);
 
@@ -262,7 +247,6 @@ describe("POST /provision", () => {
           commitSha: "a".repeat(40),
         }),
         log: () => undefined,
-        pendingSeedStore,
       });
       const app = mountAuthenticated(routes);
 
@@ -299,7 +283,6 @@ describe("POST /provision", () => {
           commitSha: "a".repeat(40),
         }),
         log: () => undefined,
-        pendingSeedStore,
       });
       const app = mountAuthenticated(routes);
 
@@ -329,7 +312,6 @@ describe("POST /provision", () => {
         commitSha: "a".repeat(40),
       }),
       log: () => undefined,
-      pendingSeedStore,
     });
 
     const response = await routes.request("/provision", { method: "POST" });
@@ -353,7 +335,6 @@ describe("POST /complete", () => {
         commitSha: "a".repeat(40),
       }),
       log: () => undefined,
-      pendingSeedStore,
     });
 
     const response = await routes.request("/complete", {
@@ -382,7 +363,6 @@ describe("POST /complete", () => {
         commitSha: "a".repeat(40),
       }),
       log: () => undefined,
-      pendingSeedStore,
     });
     const app = mountAuthenticated(routes);
 
@@ -425,7 +405,6 @@ describe("POST /complete", () => {
           commitSha: "a".repeat(40),
         }),
         log: () => undefined,
-        pendingSeedStore,
         providerHealth,
         testAndPersistCredentialFn: async () => ({
           kind: "connected",
@@ -462,7 +441,6 @@ describe("POST /complete", () => {
         commitSha: "a".repeat(40),
       }),
       log: () => undefined,
-      pendingSeedStore,
       providerHealth,
       testAndPersistCredentialFn: async () => ({
         kind: "invalid-credential",
@@ -483,14 +461,17 @@ describe("POST /complete", () => {
     );
   });
 
-  // CL-6457 moved partial-deploy convergence off this route entirely:
-  // `/complete` no longer deploys anything, so there is no half-finished
-  // deploy for it to report. What the route still owes the drain — a
-  // durable pending row carrying the key the deploy runs against — is
-  // covered by `./connect-deploys-nothing.test.ts` ("hands the drain a
-  // pending row carrying the key it will deploy against"), and the
-  // convergence that row buys is covered by `./bench-provisioning.test.ts`
-  // ("a half-provisioned bench keeps its row and converges on a later pass").
+  // CL-6457 moved partial-deploy convergence off this route entirely,
+  // and CL-7586 deleted the pending-seed drain: `/complete` no longer
+  // deploys anything and parks no row, so there is no half-finished
+  // deploy for it to report. What the route still owes the waiting
+  // surface — a fire-and-forget kick naming the tenant for the
+  // desired-state reconcile — is covered by
+  // `./connect-deploys-nothing.test.ts` ("hands follow-up work to the
+  // desired-state reconcile as a fire-and-forget kick"), and the
+  // convergence that kick buys is covered by
+  // `./desired-state-reconcile.test.ts` ("a non-sidecar failure reports
+  // failed, and a re-run can converge").
 
   test("a non-sidecar failure during setup still fails loudly with the existing 500 envelope", async () => {
     const routes = createOnboardingRoutes({
@@ -502,7 +483,6 @@ describe("POST /complete", () => {
         commitSha: "a".repeat(40),
       }),
       log: () => undefined,
-      pendingSeedStore,
       testAndPersistCredentialFn: async () => {
         throw new Error("the hub rejected deployment with status 500");
       },
@@ -539,7 +519,6 @@ describe("POST /complete", () => {
       }),
       log: () => undefined,
       logError: (line) => lines.push(line),
-      pendingSeedStore,
       testAndPersistCredentialFn: async () => {
         throw new HubApiError(
           "publishing the corbits-tools package-registry asset failed: " +
@@ -627,7 +606,6 @@ describe("POST /complete — seeded-admin fallback", () => {
           commitSha: "a".repeat(40),
         }),
         log: () => undefined,
-        pendingSeedStore,
         testAndPersistCredentialFn: (args) =>
           testAndPersistCredential({
             ...args,
@@ -773,7 +751,6 @@ describe("CL-7584 desired-state kicks and steps", () => {
         commitSha: "a".repeat(40),
       }),
       log: () => undefined,
-      pendingSeedStore,
       desiredStateKick: (args) => kicks.push(args.tenantId),
     });
     return { server, app: mountAuthenticated(routes) };
@@ -853,8 +830,8 @@ describe("CL-7584 desired-state kicks and steps", () => {
       expect(kicks).toEqual(["ten_root"]);
       // The retry is the same idempotent probe, not a new queue table or
       // endpoint: the revisit fires again unconditionally, and the
-      // reconcile itself re-reads the pins. The `pending_seed` row covers
-      // the credential half; this re-kick covers the desired-state half.
+      // reconcile itself re-reads the pins. There is no durable queue
+      // left — this re-kick is the whole recovery story.
       const revisit = await app.request("/provision", { method: "POST" });
       expect(revisit.status).toBe(200);
       await awaitKicks(kicks, 2);

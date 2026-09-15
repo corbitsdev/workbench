@@ -385,8 +385,8 @@ describe("resolveTenantModelSource", () => {
 
 describe("resolveTenantDeployer", () => {
   // The tenant-create kick (CL-7584) reconciles a tenant nobody has
-  // connected a credential to yet, so there is no pending-seed row to
-  // read deploy identity from — it resolves the creator's owner
+  // connected a credential to yet, so there is no connected identity to
+  // deploy under — it resolves the creator's owner
   // principal plus the tenant domain straight from the API instead of
   // deploying under empty-string ids.
   function deployerPrincipalsPage(

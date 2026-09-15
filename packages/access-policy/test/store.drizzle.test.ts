@@ -1,6 +1,6 @@
 // DB-gated: skipped when no DATABASE_URL is reachable (a fresh checkout
 // still runs the unit gates), mirroring `@workbench/onboarding`'s own
-// `pending-seed-store.drizzle.test.ts`. Runs against its own scratch
+// `migrations.test.ts`. Runs against its own scratch
 // database, never the developer's or the walking-skeleton suite's.
 //
 // Proves what the in-memory fake cannot: that

@@ -1,7 +1,7 @@
 import { generateId } from "@intx/hub-common";
 import { reportError } from "@corbits/error-sink";
 import type { WorkbenchTenancyStore } from "@corbits/chat";
-import type { SessionForUser } from "@workbench/onboarding";
+import type { SessionForUser } from "./bench-session";
 
 /**
  * Slack auto-provisioned identities are members. POST /api/tenants is

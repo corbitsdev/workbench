@@ -83,13 +83,14 @@ expiring token.
    routines against that token never happens here** — see
    `docs/onboarding-openrouter-connect.md`'s step 4 for why (the same
    duplicate-callback defect and fast/slow split apply here unchanged).
-5. **The plaintext token rides forward server-side**, the same
-   `@workbench/onboarding` pending-seed store OpenRouter's flow uses
-   (step 5 in `docs/onboarding-openrouter-connect.md`) — a row keyed by
-   `(userId, tenantId)` carrying `provider: "huggingface"` and the
-   minted access token, never the expiry metadata (that's already
-   stored on the credential row by this point) and never anything the
-   browser sees.
+5. **Nothing rides forward — the credential row is the handoff**, the
+   same kick OpenRouter's flow fires (step 5 in
+   `docs/onboarding-openrouter-connect.md`): the token is stored typed
+   `oauth_token`, the desired-state reconcile is kicked fire-and-forget
+   for the bench, and the callback 302s immediately. No row keyed by
+   `(userId, tenantId)`, no expiry metadata parked anywhere (that's
+   already on the credential row by this point), nothing the browser
+   sees.
 6. **Back to the wizard.** Every ending 302s to
    `/onboarding?connect=huggingface&...`, parsed by
    `readHuggingFaceConnectReturn` exactly as `readOpenRouterConnectReturn`
