@@ -50,6 +50,7 @@ describe("postRoomMessage", () => {
         data: {
           id: posted.id,
           workbenchId: WORKBENCH,
+          ref: { kind: "workbench", id: WORKBENCH },
           createdAt: posted.createdAt,
           threadId: null,
           sender: { name: null, address: "prn_ada@acme.example" },
