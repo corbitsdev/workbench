@@ -857,10 +857,7 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/models`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/models`) {
         return {
           status: 200,
           data: [],
@@ -915,10 +912,7 @@ describe("completeCredentialSetup", () => {
       if (method === "GET" && path === `/api/tenants/${TENANT_ID}`) {
         return tenantResponse();
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/models`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/models`) {
         return fixedDiscoveredModelsResponse();
       }
       if (
@@ -1550,10 +1544,7 @@ describe("completeCredentialSetup", () => {
           cookies: [],
         };
       }
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/models`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/models`) {
         return {
           status: 200,
           data: catalogOfferings.map((o) => ({
@@ -1957,10 +1948,7 @@ describe("ensureSeeded (the slow half)", () => {
     let deploymentCreatePosts = 0;
 
     const api: ApiCall = async (method, path, body) => {
-      if (
-        method === "GET" &&
-        path === `/api/tenants/${TENANT_ID}/models`
-      ) {
+      if (method === "GET" && path === `/api/tenants/${TENANT_ID}/models`) {
         return fixedDiscoveredModelsResponse();
       }
       if (

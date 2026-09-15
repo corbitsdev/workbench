@@ -32,6 +32,11 @@ import {
   AssetResponse,
   AssetWithOriginResponse,
   GrantResponse,
+  ModelInfo,
+  ModelOfferingResponse,
+  ModelProviderResponse,
+  ModelResponse,
+  ProviderResponse,
   WorkflowRunHealth,
   WorkflowDefinitionResponse,
   paginatedSchema,
@@ -546,8 +551,8 @@ export const SEED_GRANTS: readonly { resource: string; action: string }[] = [
 
 // Grants planted ONLY on Myra's own run principal (see
 // `plantAssistantRunPrincipalGrants`), not the tenant's shared principal
-// `SEED_GRANTS` above reconciles — these let Myra mint/revoke grants and
-// administer the catalog for her own specialist agents without handing
+// `SEED_GRANTS` above reconciles — these let Myra mint/revoke grants
+// for her own specialist agents without handing
 // every seeded principal in the tenant that same reach.
 //
 // `@corbits/access-tools`' workflow-run-authenticated routes
@@ -558,14 +563,13 @@ export const SEED_GRANTS: readonly { resource: string; action: string }[] = [
 // mint grants for every principal in the tenant, not just its own
 // specialist agents.
 //
-// CL-7468: `@corbits/catalog-tools`' `create_offering`/
-// `set_offering_priority`/`disable_offering` resolve a canonical model
-// name and a provider name to ids (read) before writing the offering
-// itself (create/manage) through the tenant-admin catalog routes
-// (`vendor/intx/hub-api/src/routes/{models,model-providers,
-// model-offerings}.ts`). Scoped to Myra's run principal for the same
-// reason as the access-tools grants above: a tenant-wide grant would let
-// every seeded principal administer the catalog, not just Myra.
+// CL-7588: catalog administration is UI-only — writes go through the
+// tenant-admin catalog routes (`vendor/intx/hub-api/src/routes/
+// {models,model-providers,model-offerings}.ts`) behind a browser session,
+// never through a workflow child. Myra's run principal keeps the catalog
+// reads her `list_model_concepts`/`pick_models`/`estimate_run_cost` tools
+// resolve through, and nothing more: a tenant-wide grant would let every
+// seeded principal administer the catalog, not just Myra.
 const ASSISTANT_RUN_PRINCIPAL_GRANTS: readonly {
   resource: string;
   action: string;
@@ -577,8 +581,6 @@ const ASSISTANT_RUN_PRINCIPAL_GRANTS: readonly {
   { resource: "model:*", action: "read" },
   { resource: "model-provider:*", action: "read" },
   { resource: "model-offering:*", action: "read" },
-  { resource: "model-offering:*", action: "create" },
-  { resource: "model-offering:*", action: "manage" },
 ];
 
 // The grants table has no unique constraint and the create route is a
@@ -968,44 +970,39 @@ async function ensureDeployment(
   return deployment.id;
 }
 
-const ResolvedOfferingResponse = type({
-  id: "string",
-  priority: "number",
-  modelId: "string",
-  providerId: "string",
-  origin: { tenantId: "string", direct: "boolean" },
-});
-
-const ResolvedOfferingsResponse = type({
-  offerings: ResolvedOfferingResponse.array(),
-});
+const DiscoveredModelsResponse = ModelInfo.array();
 
 /**
- * Lists the offerings visible to a tenant, including any inherited from
- * an ancestor tenant — the same resolved view `listVisibleOfferings`
- * (`@intx/db`) gives the hub's own workflow deployer
- * (`apps/hub/src/index.ts`'s `workflowDeployer`), exposed at
- * `GET .../catalog/resolved-offerings`. Seeding a tenant whose catalog is
+ * Lists the offering ids visible to a tenant by flattening the platform's
+ * own model discovery (`GET .../models`): every model resolved for the
+ * tenant after inheritance, shadowing, and disable suppression, with each
+ * model's offerings in resolution order. Seeding a tenant whose catalog is
  * inherited rather than directly owned (e.g. a sub-tenant under a
  * parent that already carries a real provider key) needs this resolved
- * list, not the tenant-owned-only `GET .../catalog/offerings`.
+ * view, not the tenant-owned-only `GET .../catalog/offerings`.
  */
-async function listResolvedCatalogOfferings(
+async function listDiscoveredModelOfferings(
   api: ApiCall,
   cookies: string[],
   tenantId: string,
-): Promise<(typeof ResolvedOfferingResponse.infer)[]> {
+): Promise<{ id: string; priority: number }[]> {
   const listed = await api(
     "GET",
-    `/api/tenants/${tenantId}/catalog/resolved-offerings`,
+    `/api/tenants/${tenantId}/models`,
     undefined,
     cookies,
   );
-  return parseAs(
-    ResolvedOfferingsResponse,
+  const models = parseAs(
+    DiscoveredModelsResponse,
     listed.data,
-    "resolved catalog offerings response",
-  ).offerings;
+    "discovered models response",
+  );
+  return models.flatMap((model) =>
+    model.offerings.map((offering) => ({
+      id: offering.offeringId,
+      priority: offering.priority,
+    })),
+  );
 }
 
 /**
@@ -1035,7 +1032,7 @@ async function resolveRealSourceOfferingIds(
   sourceOfferingIds: readonly string[];
   defaultSourceOfferingId: string;
 }> {
-  const offerings = (await listResolvedCatalogOfferings(api, cookies, tenantId))
+  const offerings = (await listDiscoveredModelOfferings(api, cookies, tenantId))
     .filter((offering) => offering.id !== excludeOfferingId)
     .sort((a, b) => a.priority - b.priority);
   const defaultSourceOfferingId = offerings[0]?.id;
