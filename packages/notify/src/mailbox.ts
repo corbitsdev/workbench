@@ -37,10 +37,23 @@ export type NotifyDeliverOpts = {
   readonly enqueue?: (delivered: { id: string; item: NotifyInboxItem }) => void;
 };
 
+/** Results align positionally with `items`, mirroring the vendor delivery. */
 export type MailboxDelivery = (
   items: NotifyInboxItem[],
   opts?: NotifyDeliverOpts,
 ) => Promise<NotifyDeliveredItem[]>;
+
+/**
+ * Read-back for mail rows an earlier delivery committed before dying
+ * ahead of its dispatch enqueue (CL-7238). The input lists the items
+ * the mail delivery just reported as pre-existing (`id: null`); the
+ * result aligns positionally with the input, with `null` where no row
+ * exists. The host serves this from the mailbox's unique mail key — a
+ * lookup the seam doesn't expose today, so the host owns the wiring.
+ */
+export type ResolveExistingMailIds = (
+  items: readonly NotifyInboxItem[],
+) => Promise<readonly (string | null)[]>;
 
 /**
  * How a notification addresses mail. The host owns its own address space —
