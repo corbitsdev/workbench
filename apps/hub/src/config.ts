@@ -216,6 +216,14 @@ const DEFAULT_TENANT_SLUG = "workbench";
 // package, add a member here with its settings, add its id to
 // `SIDECAR_PROVISIONER_IDS`, and register it in
 // `sidecarProvisionerFrom`'s per-id parsing below.
+//
+// CL-7324: this is the CLOSED dispatchable-backend set — dispatchable
+// work may only ever land on one of these hub-provisioned backends, and
+// only ever tenant-bound (the anchor run's tenant; see
+// `./dispatch-tenant-guard.ts`). No schema change carries that rule: it is
+// enforced at the dispatch seams, not declared in config, so a new backend
+// id added here is provisionable but never implicitly dispatchable
+// cross-tenant.
 export type DockerSidecarProvisionerConfig = {
   readonly id: "docker";
   readonly image: string;
