@@ -22,7 +22,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { OLLAMA_PLACEHOLDER_SECRET } from "@corbits/connections/credential-test";
-import { createGitWorkflowPusher } from "@corbits/seeding";
+import { createGitWorkflowPusher } from "./git-workflow-push";
 import { createHubAPI, type ApiCall } from "@corbits/hub-api-client";
 import { getLogger } from "@intx/log";
 import { completeCredentialSetup } from "@workbench/onboarding";

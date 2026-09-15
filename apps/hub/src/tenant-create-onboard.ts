@@ -23,7 +23,7 @@ import {
   TENANT_DESIRED_STATE,
   type ReconcileReport,
 } from "@workbench/onboarding/desired-state";
-import type { WorkflowPusher } from "@corbits/seeding";
+import type { WorkflowPusher } from "@corbits/connections/workflow-push";
 
 export type TenantCreateOnboardDeps = {
   api: ApiCall;

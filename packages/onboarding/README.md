@@ -9,7 +9,7 @@ workflow deploys.
 
 - `provision.ts`'s `provisionPersonalTenantIfNeeded` mints the personal
   bench through the hub's native tenant-creation route and
-  `@corbits/seeding`'s `seedTenant`/`DEFAULT_WORKFLOWS` — never a
+  `./src/tenant-seed.ts`'s `seedTenant`/`DEFAULT_WORKFLOWS` — never a
   product-owned tenant table of its own.
 - `complete-credential.ts` proves a pasted key with
   `@corbits/connections`'s `testProviderCredential` before storing it

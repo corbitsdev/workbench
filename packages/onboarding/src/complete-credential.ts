@@ -62,14 +62,14 @@ import {
 } from "@intx/types";
 import { type SupportedCredentialProvider } from "@corbits/connections/credential-test";
 import { preferCompletionCapable } from "@corbits/connections/model-capability";
+import { CATALOG_SEEDS } from "@corbits/connections/catalog-seed-data";
 import {
-  CATALOG_SEEDS,
   DEFAULT_WORKFLOWS,
   seedTenant,
   type ModelSource,
   type SeedTenantArgs,
-  type WorkflowPusher,
-} from "@corbits/seeding";
+} from "./tenant-seed";
+import type { WorkflowPusher } from "@corbits/connections/workflow-push";
 import {
   isSidecarUnavailableError,
   parseAs,
@@ -467,7 +467,7 @@ export async function testAndPersistCredential(
   // UI — a pasted key or a completed OAuth exchange — always rotates a
   // name-conflicting credential (a regenerated key, or a retry after a
   // bad paste): see `ensureCredential`'s own `verified` doc comment in
-  // `@corbits/seeding`'s `seed.ts` for the full rotation rule.
+  // `@corbits/connections/seed-catalog` for the full rotation rule.
   await persistConnectorCredential({
     api: args.api,
     cookies: args.cookies,

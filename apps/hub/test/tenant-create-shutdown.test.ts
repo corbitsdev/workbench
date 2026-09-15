@@ -11,7 +11,7 @@ import path from "node:path";
 import postgres from "postgres";
 import { Hono } from "hono";
 import type { ApiCall } from "@corbits/hub-api-client";
-import type { WorkflowPusher } from "@corbits/seeding";
+import type { WorkflowPusher } from "@corbits/connections/workflow-push";
 import type { HubConfig } from "../src/config.ts";
 import { createHub } from "../src/index.ts";
 import {

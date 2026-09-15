@@ -561,6 +561,6 @@ export function expectStepCompleted(events: RunEvent[], stepId: string): void {
 }
 
 // pushWorkflowSource and workflowDeployBody moved to workflow-source.ts:
-// both need @corbits/seeding and @corbits/workflows, which pull in the
+// both need @corbits/connections and @corbits/workflows, which pull in the
 // full @intx/* module graph, and most harness consumers never touch
 // them (see that file's header comment).

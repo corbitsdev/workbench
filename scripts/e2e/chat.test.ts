@@ -29,7 +29,7 @@
 
 import { beforeAll, describe, expect, test } from "bun:test";
 
-import { seedCatalog } from "../../packages/seeding/src/index.ts";
+import { seedCatalog } from "../../packages/connections/src/seed-catalog.ts";
 import {
   createHubAPI,
   type ApiCall,
@@ -191,7 +191,7 @@ describe.skipIf(databaseUrl === undefined)("chat e2e", () => {
     // principal, user2 carries no grants of its own by default (only
     // the tenant creator gets the platform's wildcard owner grant),
     // so this also plants the read/write grants chat's routes gate
-    // on, exactly as `packages/seeding/src/seed.ts`'s
+    // on, exactly as `packages/onboarding/src/tenant-seed.ts`'s
     // `plantGrant` does for a tenant's own owner.
     const invited = await api(
       "POST",

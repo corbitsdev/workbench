@@ -279,13 +279,20 @@ import {
   type PresenceRoomKey,
 } from "@corbits/presence";
 import { supportedCredentialProviders } from "@corbits/connections/credential-test";
-import { CATALOG_WORKFLOWS, createGitWorkflowPusher } from "@corbits/seeding";
+import { createGitWorkflowPusher } from "@corbits/connections/workflow-push";
 import { createHubAPI } from "@corbits/hub-api-client";
 import {
   createDrizzlePendingSeedStore,
   createBenchProvisioner,
   createOnboardingRoutes,
 } from "@workbench/onboarding";
+// The deployable-through-the-catalog-instantiate-route set, by asset
+// name (CL-7585): `@workbench/onboarding`'s `tenant-seed`
+// `CATALOG_WORKFLOWS`, strings only — the Routines picker admits a
+// tenant's installed asset only when the same installed-asset registry
+// says so (see `installedAssetNames` on the scheduled routes' catalog
+// below).
+import { CATALOG_WORKFLOW_ASSET_NAMES } from "@workbench/onboarding/tenant-seed";
 import {
   createConnectionRoutes,
   isInferenceProvider,
@@ -1546,7 +1553,8 @@ export async function createHub(config: HubConfig) {
   // Mounted outside the tenant prefix — the sidecar reaches it as a
   // plain inference endpoint, never through tenant-scoped auth, the
   // same way it reaches a real provider's API. Pinned by the heartbeat
-  // and workbench-digest workflows' seeds (`@corbits/seeding`), whose
+  // and workbench-digest workflow seeds (from the deleted seeding
+  // package), whose
   // agents never produce text. `config.baseUrl` (not `localhost`) is
   // what makes the URL usable from a sidecar on another machine.
   app.route("/api/chat/noop-inference", createNoopInferenceRoutes());
@@ -2052,9 +2060,7 @@ export async function createHub(config: HubConfig) {
         grantStore: chatGrantStore,
         conditionRegistry: chatConditionRegistry,
       }),
-      catalogAssetNames: CATALOG_WORKFLOWS.map(
-        (workflow) => workflow.assetName,
-      ),
+      catalogAssetNames: [...CATALOG_WORKFLOW_ASSET_NAMES],
       runNow: async (args) =>
         runNowScheduledDefinition(
           { db, sidecarRouter, ...scheduledDeliveryJoinDeps },
@@ -3069,7 +3075,7 @@ export async function createHub(config: HubConfig) {
   // `@intx/hub-api` mounts above. Reuses the SAME `chatGrantStore`/
   // `chatConditionRegistry` every other extension's own requireGrant
   // check runs against, so a seeded principal's real grants (see
-  // `@corbits/seeding`'s `SEED_GRANTS`) gate this surface exactly like
+  // the deleted seeding package's `SEED_GRANTS`) gate this surface exactly like
   // every other write route.
   app.route(
     "/api/workflow-access",

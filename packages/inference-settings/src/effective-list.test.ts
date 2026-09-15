@@ -125,7 +125,7 @@ describe("defaultModelForProvider", () => {
 
   test("CL-6351: skips an embedding-capability offering tied at the same priority even when its name sorts first", () => {
     // Two offerings tied at the same priority -- exactly what
-    // `packages/seeding/src/seed.ts`'s `seedCatalog` does for a fresh
+    // `packages/connections/src/seed-catalog.ts`'s `seedCatalog` does for a fresh
     // Ollama connect. The embedding offering's real capability data (no
     // "plain-text") is what routes around it; "all-minilm" sorting before
     // "qwen3:8b" alone is no longer enough to make it win.

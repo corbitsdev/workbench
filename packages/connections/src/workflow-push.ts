@@ -15,7 +15,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { renderWorkflowSourceTree } from "@corbits/workflows";
 import { HubApiError } from "@corbits/hub-api-client";
-import type { WorkflowPusher } from "./seed";
+
+export type PushOutcome = "pushed" | "unchanged";
+
+/**
+ * What the push left on the asset's `main`: whether it wrote a commit,
+ * and the sha that commit (or the already-current one) sits at. The sha
+ * IS the deploy pin — a code-sourced deploy sources
+ * `package: { format: "source", commitSha }`.
+ */
+export type PushResult = { outcome: PushOutcome; commitSha: string };
+
+export type WorkflowPusher = (args: {
+  remoteUrl: string;
+  tokenSecret: string;
+  workflowJson: string;
+  /** Name the rendered source package declares; never leaves the asset. */
+  packageName: string;
+}) => Promise<PushResult>;
 
 function requireGit(): void {
   if (Bun.which("git") === null) {
@@ -131,7 +148,11 @@ export function createGitWorkflowPusher(): WorkflowPusher {
         let existing: string | null = null;
         try {
           existing = await readFile(target, "utf-8");
-        } catch (_cause) {
+        } catch (cause) {
+          // A missing file is the normal case (a new tree entry); any
+          // other read failure is rethrown — failing the push loudly
+          // rather than silently pushing a tree never fully read.
+          if ((cause as { code?: string })?.code !== "ENOENT") throw cause;
           existing = null;
         }
         if (existing === contents) continue;

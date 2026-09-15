@@ -34,7 +34,7 @@ import {
   inferenceCredentialName,
   seedCatalog,
   type SeedCatalogArgs,
-} from "@corbits/seeding";
+} from "@corbits/connections/seed-catalog";
 import { parseAs, type ApiCall } from "@corbits/hub-api-client";
 
 /**

@@ -1,10 +1,10 @@
 // Publishing a workflow definition as a `workflow`-kind asset — split out
-// of harness.ts because both helpers below need `@corbits/seeding` and
+// of harness.ts because both helpers below need `@corbits/connections` and
 // `@corbits/workflows`, which pull in the full `@intx/*` module graph.
 // Most harness consumers (spawning the hub/sidecar, calling its HTTP
 // API) never touch these two; keeping them here means importing
 // harness.ts no longer pays that load cost on their behalf.
-import { createGitWorkflowPusher } from "../../packages/seeding/src/index.ts";
+import { createGitWorkflowPusher } from "../../packages/connections/src/workflow-push.ts";
 import { WORKFLOW_SOURCE_ENTRY } from "../../packages/workflows/src/source.ts";
 
 /**
@@ -37,8 +37,8 @@ export async function pushWorkflowSource(options: {
  * resolves inference against the tenant's own catalog, so the caller
  * supplies the ordered catalog offering ids to deploy against rather
  * than a raw provider/baseURL/apiKey triple — see
- * `@corbits/seeding`'s `ensureNoopCatalogOffering` for the zero-cost way
- * to obtain one.
+ * `@corbits/connections`' `seed-catalog` `ensureNoopCatalogOffering` for
+ * the zero-cost way to obtain one.
  */
 export function workflowDeployBody(options: {
   assetId: string;

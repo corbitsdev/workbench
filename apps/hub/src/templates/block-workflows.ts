@@ -2,25 +2,25 @@
 // on demand — the instantiate path's block-workflow resolution
 // (CL-6405) generalized to any catalog entry with a source package
 // under `workflows/<name>` (CL-7073), not just `code-review`.
-// `@corbits/seeding`'s `CATALOG_WORKFLOWS` is the one source of truth
-// for which asset names are deployable this way and how to build each
-// one's definition JSON — the exact same list and `buildJson` the CLI's
-// `workbench seed` / the first-login provisioning hook would use to
-// deploy the same asset via its own HTTP self-call path. This module
-// only adapts that shared build step to the tenant's real, ordered
-// inference preferences and to the source-form deploy this route uses
-// (see `./template-block-routes.ts` and the hub's `deployWorkflowSource`
-// binding).
 //
-// Server-only, on purpose: building a catalog workflow's definition
-// pulls in its workflow package (e.g. `@corbits/granola-call-workflow`)
-// and with it `@intx/agent`/`@intx/workflow` — the heavy graph
-// `./templates.ts` keeps every manifest consumer off. Only
-// `./template-block-routes.ts` (mounted in `apps/hub`) imports this; it
-// is deliberately not re-exported from the package root.
-
-import { deployableCatalogWorkflow } from "@corbits/seeding";
-import { workflowCatalogEntry } from "@workbench/templates";
+// Runtime wiring (CL-7585): the per-workflow `buildJson` closures (each
+// one closing over its workflow package's trigger address and turn
+// timeouts) live on `@workbench/onboarding`'s tenant-seed
+// `CATALOG_WORKFLOWS` entries, reached here through
+// `deployableCatalogWorkflow` — the hub names no builder of its own, so
+// the catalog's deployable set and the block sources served here can
+// never drift apart silently. `assistant` (seeded, never redeployed
+// here) and `heartbeat` (test-only, never deployed onto a real bench)
+// are outside `CATALOG_WORKFLOWS`, so they answer `undefined` here, same
+// as any name outside the catalog entirely — a route answering
+// `undefined` as a 404 is the honest statement of that.
+//
+// Server-only, on purpose: each `buildJson` closure pulls in its
+// workflow package (e.g. `@corbits/granola-call-workflow`) and with it
+// `@intx/agent`/`@intx/workflow`. Only `./template-block-routes.ts`
+// (mounted in `apps/hub`) imports this; it is deliberately not
+// re-exported from the package root.
+import { deployableCatalogWorkflow } from "@workbench/onboarding/tenant-seed";
 
 export interface BlockWorkflowBuildInput {
   readonly tenantDomain: string;
@@ -37,23 +37,24 @@ export interface BlockWorkflowSource {
 }
 
 /**
- * The serialized source-form definition for one catalog workflow, or
- * `undefined` for an asset name with no declared source package —
- * `assistant` (seeded, never redeployed here) and `heartbeat`
- * (test-only, never deployed onto a real bench) both answer `undefined`,
- * same as any name outside the catalog entirely. A route answering
- * `undefined` as a 404 is the honest statement of that gap.
+ * The serialized source-form definition for one catalog workflow — or
+ * `undefined` for `assistant`, `heartbeat`, and any name outside the
+ * catalog. `buildJson` is a required field on every `CATALOG_WORKFLOWS`
+ * entry, so a catalog name always answers here: the deployable set and
+ * the served sources cannot drift apart silently.
  */
 export function buildBlockWorkflowSource(
   assetName: string,
   input: BlockWorkflowBuildInput,
 ): BlockWorkflowSource | undefined {
-  const entry = deployableCatalogWorkflow(assetName);
-  if (entry === undefined) return undefined;
+  const workflow = deployableCatalogWorkflow(assetName);
+  if (workflow === undefined) {
+    return undefined;
+  }
   return {
-    assetName,
-    displayName: workflowCatalogEntry(assetName)?.displayName ?? assetName,
-    workflowJson: entry.buildJson(
+    assetName: workflow.assetName,
+    displayName: workflow.displayName,
+    workflowJson: workflow.buildJson(
       input.tenantDomain,
       input.inferencePreferences,
     ),

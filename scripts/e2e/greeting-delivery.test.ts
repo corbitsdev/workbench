@@ -20,11 +20,11 @@
 import { describe, expect, test } from "bun:test";
 
 import { resetSchema, setupDatabase } from "../db-setup.ts";
+import { createGitWorkflowPusher } from "../../packages/connections/src/workflow-push.ts";
 import {
-  createGitWorkflowPusher,
   DEFAULT_WORKFLOWS,
   seedTenant,
-} from "../../packages/seeding/src/index.ts";
+} from "../../packages/onboarding/src/tenant-seed.ts";
 import {
   createHubAPI,
   type ApiCall,

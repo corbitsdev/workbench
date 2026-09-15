@@ -39,9 +39,10 @@ export type CreateScheduledWorkflowRoutesDeps = {
     tenantId: string,
   ) => Promise<readonly ScheduledWorkflowDefinition[]>;
   /** Every asset name deployable through the catalog instantiate route —
-   * `@corbits/seeding`'s `CATALOG_WORKFLOWS`, by asset name. Passed in by
-   * the caller (`apps/hub`) rather than imported here: `@corbits/seeding`
-   * already depends on this package, so importing it back would cycle. */
+   * `@workbench/onboarding`'s `tenant-seed` `CATALOG_WORKFLOWS`, by asset name.
+   * Passed in by the caller (`apps/hub`) rather than imported here:
+   * `@workbench/onboarding` already depends on this package, so importing it
+   * back would cycle. */
   catalogAssetNames?: readonly string[];
   listAvailable?: (
     db: DB["db"],

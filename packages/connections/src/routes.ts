@@ -31,7 +31,7 @@ import {
   type EnsureCredentialArgs,
   type EnsureProviderArgs,
   type SeedCatalogArgs,
-} from "@corbits/seeding";
+} from "./seed-catalog";
 import {
   cookiesFromHeader,
   createHubAPI,

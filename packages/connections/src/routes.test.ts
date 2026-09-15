@@ -845,8 +845,8 @@ describe("GET /provider-health", () => {
 // A fake `ApiCall` for `disconnectConnector` itself: unlike the route
 // tests above (which stub the whole function), these exercise the real
 // cleanup ordering against a scripted native-hub double, the same
-// `fakeAPI`-style pattern `packages/seeding/test/helpers.ts` uses for
-// `ensureProvider`/`ensureCredential`/`seedCatalog`.
+// `fakeAPI`-style pattern `packages/connections/src/seed-catalog.test.ts`
+// uses for `ensureProvider`/`ensureCredential`/`seedCatalog`.
 type FakeCall = {
   readonly method: string;
   readonly path: string;

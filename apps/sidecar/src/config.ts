@@ -14,8 +14,8 @@ import { parseToolRegistries } from "./tool-materialization";
 /**
  * The shipped default manifest: registers `@corbits/ollama-adapter`'s
  * `createOllamaAdapter` for the `"ollama"` provider key so a seeded
- * Ollama deployment's `quirks.numCtx` (see `@corbits/seeding`'s
- * seed and `./workflow-substrate-factory/context-budget`) actually
+ * Ollama deployment's `quirks.numCtx` (see `@corbits/inference-catalog`'s
+ * `quirksForDeployment` and `./workflow-substrate-factory/context-budget`) actually
  * reaches Ollama's `options.num_ctx` instead of silently falling back
  * to the built-in adapter's defaults, and the CL-7510 loopback-OAuth
  * Responses adapters (`codex`, `xai-oauth`) so a launched source —

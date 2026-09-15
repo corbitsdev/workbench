@@ -23,8 +23,8 @@ DSL's only invokable primitive that performs work at all — `step` — means
 going through an agent, so this definition is deployed with its
 `inferencePreferences` pinned to the hub's `noop-inference` endpoint
 (`packages/chat/src/noop-inference.ts`), the same trick channel-host
-anchors use to avoid burning a real model call on every message. See
-`NOOP_MODEL_SOURCE` in `packages/seeding/src/seed.ts` for the pin.
+anchors use to avoid burning a real model call on every message (see
+that file's header comment for the pin shape).
 
 Under that pin, every run resolves against a constant, locally served
 SSE response — no request ever reaches a real provider, so triggering
