@@ -38,7 +38,7 @@ import { Hono } from "hono";
 import { type } from "arktype";
 
 import { parseGrantRow, type DB } from "@intx/db";
-import { grant, principal, principalRole, role, tenant } from "@intx/db/schema";
+import { grant, principal, tenant } from "@intx/db/schema";
 import { generateId } from "@intx/hub-common";
 import {
   createRequireGrant,
