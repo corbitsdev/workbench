@@ -154,37 +154,43 @@ export async function listPrincipals(
 export interface ListGrantsFilter {
   readonly principalId?: string;
   readonly resource?: string;
-  readonly action?: string;
 }
 
-/** Lists grants in the run's tenant, passing the given filters through as
- * the native `GET /grants` query params (`principalId`, `resource`,
- * `action`). */
+/** Lists every grant in the run's tenant matching the given filters,
+ * following the native `nextCursor` pages to the end — the mirror honors
+ * the same `principalId`/`resource` query params as the native
+ * `GET /grants`. */
 export async function listGrants(
   config: AccessToolClientConfig,
   filter?: ListGrantsFilter,
 ): Promise<ListedGrant[]> {
   const fetchImpl = config.fetchImpl ?? ((...args) => fetch(...args));
-  const params = new URLSearchParams();
-  if (filter?.principalId !== undefined)
-    params.set("principalId", filter.principalId);
-  if (filter?.resource !== undefined) params.set("resource", filter.resource);
-  if (filter?.action !== undefined) params.set("action", filter.action);
-  const query = params.size === 0 ? "" : `?${params.toString()}`;
-  const response = await fetchImpl(`${config.hubAccessUrl}/grants${query}`, {
-    headers: { ...authHeaders(config) },
-  });
-  if (!response.ok) {
-    await throwForStatus("Listing grants", response);
-  }
-  const body: unknown = await response.json();
-  const parsed = ListedGrantsResponse(body);
-  if (parsed instanceof type.errors) {
-    throw new Error(
-      `List-grants response did not match the expected shape: ${parsed.summary}`,
-    );
-  }
-  return parsed.data;
+  const grants: ListedGrant[] = [];
+  let cursor: string | null | undefined;
+  do {
+    const params = new URLSearchParams();
+    if (filter?.principalId !== undefined)
+      params.set("principalId", filter.principalId);
+    if (filter?.resource !== undefined) params.set("resource", filter.resource);
+    if (cursor !== undefined && cursor !== null) params.set("cursor", cursor);
+    const query = params.size === 0 ? "" : `?${params.toString()}`;
+    const response = await fetchImpl(`${config.hubAccessUrl}/grants${query}`, {
+      headers: { ...authHeaders(config) },
+    });
+    if (!response.ok) {
+      await throwForStatus("Listing grants", response);
+    }
+    const body: unknown = await response.json();
+    const parsed = ListedGrantsResponse(body);
+    if (parsed instanceof type.errors) {
+      throw new Error(
+        `List-grants response did not match the expected shape: ${parsed.summary}`,
+      );
+    }
+    grants.push(...parsed.data);
+    cursor = parsed.nextCursor ?? null;
+  } while (cursor !== null);
+  return grants;
 }
 
 /** Grants access by posting one native single-action `POST /grants` body
